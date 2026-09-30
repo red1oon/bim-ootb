@@ -7,7 +7,7 @@
 // committed) or B) Variation Order (required once committed). "Committed" is read from records (ProjOrderState.readState).
 (function () {
   'use strict';
-  var SRC = ['../viewer/proj_fold.js?v=3', '../viewer/vo_fold.js?v=2', '../viewer/proj_control.js?v=1', '../viewer/proj_order_state.js?v=1'];
+  var SRC = ['../viewer/proj_fold.js?v=3', '../viewer/vo_fold.js?v=2', '../viewer/proj_control.js?v=1', '../viewer/proj_order_state.js?v=2'];
   var _loaded = null, _store = null, _busy = false, _sel = [];
 
   function _load(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load ' + src)); }; document.body.appendChild(s); }); }
@@ -27,7 +27,7 @@
   }
   function _now() { return new Date().toISOString().replace('T', ' ').slice(0, 19); }
   function _cur() { return window.__S8_LOCALE_CUR || 'RM'; }
-  function _building() { return window.__dwName; }
+  function _building() { return window.ProjOrderState.projectKey(window.__dwName); }   // the ERP Project Value = the Viewer's building label for this resident
 
   // the selection -> {guids, edits(by guid), edited}
   function _selection() {

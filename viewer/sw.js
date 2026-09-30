@@ -190,7 +190,8 @@
 //   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
 // v1453 (2026-09-30) §S9 PROJECT ORDER READ: new viewer/proj_order_state.js (the ONE owner of the Project-Order read + Generate / delete&re-issue / VO);
 //   find_erp_push.js _ensureErpDb is OPFS-first (the diff.js VO precedent). viewer.html script tag + PRECACHE_ASSETS in the SAME commit.
-const CACHE_VERSION = 'v1453';   // bump on each deploy; per-change detail is the git commit message.
+// v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
+const CACHE_VERSION = 'v1454';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.

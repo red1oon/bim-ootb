@@ -43,6 +43,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   };
   const rectOf = (sel) => pg.evaluate(s => { const e = document.querySelector(s); if (!e || e.style.display === 'none') return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, sel);
   await t.open('Duplex');
+  if (process.env.S9_LOCAL) await pg.evaluate(() => { window.__S9_BUILDING_LABELS = {}; });   // FIXTURE only: the local Viewer opens the Modeller's own DB, which carries no federated building label
 
   // ── subject: two above-grade walls with no hosted filling ──
   const walls = await pg.evaluate(() => { const O = window.Bonsai.oplog, out = [];
@@ -96,7 +97,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   await t.sleep(1200);
   const gen = slog().slice(n1).filter(l => /^§S9-GENERATE/.test(l)).pop() || '', st1 = slog().slice(n1).filter(l => /^§S9-STATE/.test(l)).pop() || '';
   const exp0 = expectPlanned({}); const projId = kv(gen, 'project');
-  const nProj = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.__dwName); });
+  const nProj = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.ProjOrderState.projectKey(window.__dwName)); });
   await shot('s9-2-generated', [await rectOf('#s9-panel')], 12);
   V('P3 GENERATE', gen && nProj === 1 && kv(gen, 'plannedAmt') === exp0 && kv(st1, 'generated') === 'true' && kv(st1, 'plannedAmt') === exp0 ? 'PASS' : (gen ? 'FAIL' : 'INCONCLUSIVE'),
     gen.slice(0, 160) + ' independentPlanned=' + exp0 + ' projectRows=' + nProj + ' stateAfter=' + (st1.match(/generated=true.*?kind=/) || [''])[0]);
@@ -130,9 +131,10 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   const vpush = vlog.filter(l => /§PROJ_PUSH project=/.test(l)).pop() || '', vcost = vlog.filter(l => /§FIND_COST/.test(l)).pop() || '';
   const vlink = await vp.evaluate(() => { const a = document.getElementById('find-erp-open'); return a ? { href: a.getAttribute('href'), vis: a.style.display !== 'none' } : null; });
   const vplanned = (vpush.match(/plannedAmt=(\S+)/) || [])[1], vlines = (vpush.match(/lines=\+(\d+)/) || [])[1];
-  const vstate = await vp.evaluate(async (b) => { const SQL = window.APP._SQL; const st = await window.ProjOrderState.openStore(SQL, () => { throw new Error('no store'); }); return { src: st.src, rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.__dwName)).catch(e => ({ err: String(e).slice(0, 80) }));
-  V('P4 VIEWER-EQUAL', vpush && vplanned === planned0 && vlines === '0' && vlink && vlink.vis && vlink.href.indexOf('record=' + projId) >= 0 ? 'PASS' : (vpush ? 'FAIL' : 'INCONCLUSIVE'),
-    'viewer ' + vpush.slice(0, 200) + ' | modellerPlanned=' + planned0 + ' viewerPlanned=' + vplanned + ' lines=+' + vlines + ' link=' + JSON.stringify(vlink) + ' viewerCost="' + vcost.slice(0, 120) + '" opfsStore=' + JSON.stringify(vstate));
+  const vstate = await vp.evaluate(async (b) => { const SQL = window.APP._SQL; const st = await window.ProjOrderState.openStore(SQL, () => { throw new Error('no store'); }); return { src: st.src, rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.ProjOrderState.projectKey(window.__dwName))).catch(e => ({ err: String(e).slice(0, 80) }));
+  const vkey = await vp.evaluate(() => window.APP.activeBuilding), mkey = await pg.evaluate(() => window.ProjOrderState.projectKey(window.__dwName));
+  V('P4 VIEWER-EQUAL', vpush && vkey === mkey && vplanned === planned0 && vlines === '0' && vlink && vlink.vis && vlink.href.indexOf('record=' + projId) >= 0 ? 'PASS' : (vpush ? 'FAIL' : 'INCONCLUSIVE'),
+    'buildingKey viewer=' + vkey + ' modeller=' + mkey + ' | viewer ' + vpush.slice(0, 200) + ' | modellerPlanned=' + planned0 + ' viewerPlanned=' + vplanned + ' lines=+' + vlines + ' link=' + JSON.stringify(vlink) + ' viewerCost="' + vcost.slice(0, 120) + '" opfsStore=' + JSON.stringify(vstate));
 
   // P6 — edit one wall of the PO (select only A, scale its longest axis by the real cube)
   await pg.bringToFront().catch(() => { });
@@ -173,7 +175,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   await t.sleep(1000);
   const dr = slog().slice(n3).filter(l => /^§S9-DELETE-REISSUE ok/.test(l)).pop() || '', st3 = slog().slice(n3).filter(l => /^§S9-STATE/.test(l)).pop() || '';
   const fac = {}; fac[guidA] = f1; const exp1 = expectPlanned(fac, [guidA]);   // A re-issues from the SELECTION (wall A, edited)
-  const nProj2 = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.__dwName); });
+  const nProj2 = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.ProjOrderState.projectKey(window.__dwName)); });
   await shot('s9-4-option-a', [await rectOf('#s9-panel')], 12);
   V('P7 OPTION-A', dr && nProj2 === 1 && kv(st3, 'plannedAmt') === exp1 && /scopeNote=more/.test(st2) ? 'PASS' : (dr ? 'FAIL' : 'INCONCLUSIVE'),
     dr.slice(0, 200) + ' | scopeNote(before A)=' + kv(st2, 'scopeNote') + ' projectRows=' + nProj2 + ' plannedAmt ' + planned0 + '->' + kv(st3, 'plannedAmt') + ' independent(post-edit)=' + exp1);
@@ -187,8 +189,8 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   V('P8 UNDO', st4 && partsCostOf(st4) === costA0 && kv(st4, 'edited') === 'false' ? 'PASS' : (st4 ? 'FAIL' : 'INCONCLUSIVE'), st4.slice(0, 200) + ' | partsCost=' + partsCostOf(st4) + ' original=' + costA0);
 
   // P9 — committed (a completed sub purchase order on the project, as the ERP would hold it) then edit again
-  await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(), db = s.db; const pid = db.exec("SELECT C_Project_ID FROM C_Project WHERE Value=?", [window.__dwName])[0].values[0][0];
-    db.run("INSERT INTO C_Order (C_Order_ID,AD_Client_ID,AD_Org_ID,IsActive,C_BPartner_ID,Description,IsSOTrx,DocStatus,GrandTotal,C_Project_ID,DocumentNo) VALUES (991001,11,11,'Y',120,'Sub-contract PO (fixture): ' || ?,'N','CO',1000,?,'FIX-1')", [window.__dwName, pid]);
+  await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(), db = s.db; const pid = db.exec("SELECT C_Project_ID FROM C_Project WHERE Value=?", [window.ProjOrderState.projectKey(window.__dwName)])[0].values[0][0];
+    db.run("INSERT INTO C_Order (C_Order_ID,AD_Client_ID,AD_Org_ID,IsActive,C_BPartner_ID,Description,IsSOTrx,DocStatus,GrandTotal,C_Project_ID,DocumentNo) VALUES (991001,11,11,'Y',120,'Sub-contract PO (fixture): ' || ?,'N','CO',1000,?,'FIX-1')", [window.ProjOrderState.projectKey(window.__dwName), pid]);
     await window.ProjOrderState.persist(db); });
   const f2 = await doScale();
   if (!f2) { V('P9 COMMITTED', 'INCONCLUSIVE', 'second scale did not land'); V('P10 OPTION-B', 'INCONCLUSIVE', 'second scale did not land'); return; }
@@ -196,7 +198,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   await pg.click('#s9-erp-btn'); for (let i = 0; i < 60 && !/§S9-STATE/.test(slog().slice(n5).join('\n')); i++) await t.sleep(400); await t.sleep(600);
   const st5 = slog().slice(n5).filter(l => /^§S9-STATE/.test(l)).pop() || '';
   const c5 = await pg.evaluate(() => ({ aDisabled: document.getElementById('s9-a') ? document.getElementById('s9-a').disabled : null, refuse: (document.getElementById('s9-refuse') || {}).textContent || null, b: !!document.getElementById('s9-b') && !document.getElementById('s9-b').disabled }));
-  const rowsBefore = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.__dwName); });
+  const rowsBefore = await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(); return window.ProjOrderState.countProjects(s.db, window.ProjOrderState.projectKey(window.__dwName)); });
   await shot('s9-5-committed', [await rectOf('#s9-panel')], 12);
   V('P9 COMMITTED', kv(st5, 'committed') === 'true' && c5.aDisabled === true && /committed/.test(c5.refuse || '') && c5.b && /issueVO/.test(kv(st5, 'actions') || '') && !/deleteReissue/.test(kv(st5, 'actions') || '') ? 'PASS' : (st5 ? 'FAIL' : 'INCONCLUSIVE'),
     st5.slice(0, 220) + ' | A disabled=' + c5.aDisabled + ' reason="' + (c5.refuse || '').slice(0, 130) + '" B enabled=' + c5.b + ' projectRows=' + rowsBefore);
@@ -208,7 +210,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   const cls = dimsOf(guidA)[0], rate = RATES[cls].rate, load = BigDecimal.of('1').add(BigDecimal.of('0.10')).add(BigDecimal.of('0.15')).multiply(BigDecimal.of('1').add(BigDecimal.of('0.05')));
   const expVO = BigDecimal.of(String(rate)).multiply(BigDecimal.of('1.3')).multiply(load).setScale(2, HALF_UP).setScale(2, HALF_UP).toString();
   await shot('s9-6-option-b', [await rectOf('#s9-panel')], 12);
-  const vstate2 = await vp.evaluate(async (b) => { const st = await window.ProjOrderState.openStore(window.APP._SQL, () => { throw new Error('no store'); }); const s = window.ProjOrderState.readState(st.db, b, [], { ProjControl: window.ProjControl }); return { src: st.src, vos: s.vos.length, committed: s.committed.is, vo0: s.vos[0] && s.vos[0].total, rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.__dwName)).catch(e => ({ err: String(e).slice(0, 80) }));
+  const vstate2 = await vp.evaluate(async (b) => { const st = await window.ProjOrderState.openStore(window.APP._SQL, () => { throw new Error('no store'); }); const s = window.ProjOrderState.readState(st.db, b, [], { ProjControl: window.ProjControl }); return { src: st.src, vos: s.vos.length, committed: s.committed.is, vo0: s.vos[0] && s.vos[0].total, rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.ProjOrderState.projectKey(window.__dwName))).catch(e => ({ err: String(e).slice(0, 80) }));
   V('P10 OPTION-B', vo && kv(vo, 'grandTotal') === expVO && /vos=1/.test(st6) && vstate2.vos === 1 && vstate2.committed === true ? 'PASS' : (vo ? 'FAIL' : 'INCONCLUSIVE'),
     vo.slice(0, 200) + ' independent=' + expVO + ' (rate ' + rate + ' x1.3 x loading ' + load.toString() + ') | modeller state ' + (st6.match(/vos=\d+/) || [''])[0] + ' | viewer reads ' + JSON.stringify(vstate2));
 }, { width: 1200, height: 850, dpr: 2, url: process.env.S9_LOCAL ? undefined : LIVE + '/modeller/modeller.html', noExit: true }).then(r => {

@@ -23,6 +23,13 @@ const OUT = process.env.OUT || path.join(__dirname, 's8_shots'); fs.mkdirSync(OU
 const BigDecimal = require(path.join(ROOT, 'erp', 'bigdecimal.js'));
 const initSqlJs = require(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.js'));
 const rt = {}; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'viewer', 'rates.js'), 'utf8') + '\n;__o.RATES=RATES;', { __o: rt, console, window: undefined });
+const shotRects = async (pg, label, rects, pad) => {   // guide shot: clip = union of viewport rects (+pad), dpr comes from the page
+  rects = rects.filter(Boolean); const vp = pg.viewport(); pad = pad == null ? 14 : pad;
+  const x0 = Math.max(0, Math.min(...rects.map(r => r.x)) - pad), y0 = Math.max(0, Math.min(...rects.map(r => r.y)) - pad), x1 = Math.min(vp.width, Math.max(...rects.map(r => r.x + r.w)) + pad), y1 = Math.min(vp.height, Math.max(...rects.map(r => r.y + r.h)) + pad);
+  await pg.screenshot({ path: path.join(OUT, label + '.png'), clip: { x: Math.round(x0), y: Math.round(y0), width: Math.round(x1 - x0), height: Math.round(y1 - y0) } });
+  console.log('  §SHOTCLIP ' + label + ' ' + [x0, y0, x1 - x0, y1 - y0].map(Math.round));
+};
+const rectSel = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s); if (!e || e.style.display === 'none') return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, sel);
 const verdict = [];
 const V = (n, s, d) => { verdict.push(s); console.log('§S8_EDIT_DELTA ' + n + ' ' + d + ' => ' + s); };
 const area = (d) => { const s = d.slice().sort((a, b) => b - a); return s[0] * s[1]; };
@@ -103,7 +110,8 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   const hoverLine = s8lines().slice(nBefore).pop();
   await pg.mouse.click(pt[0], pt[1]); await t.sleep(1200);
   const pin = await pg.evaluate(() => { const e = document.getElementById('s8-delta-pin'); return e && e.style.display !== 'none' ? e.textContent : null; });
-  await t.shotClip('s8-hover', fid, 140);
+  await shotRects(pg, 's8-1-hover-label', [await rectSel(pg, '#s8-delta-label'), { x: pt[0] - 90, y: pt[1] - 60, w: 180, h: 120 }], 10);
+  await shotRects(pg, 's8-2-click-line', [await rectSel(pg, '#s8-delta-pin'), { x: pt[0] - 160, y: pt[1] - 110, w: 320, h: 200 }], 10);
   const lastLine = s8lines().filter(l => kv(l, 'guid') === guid).pop();
   console.log('  §S8_LINES ' + s8lines().length + ' last=' + (lastLine || '').slice(0, 260));
   const owners1 = await pg.evaluate(() => ({ ED: !!window.EditDelta, SA: !!window.ScheduleAuthor }));

@@ -128,7 +128,12 @@ runE2E('W-CONNECT-COMMIT', async (t) => {
   V('C5 EQUAL', !(vl && ml) ? 'INCONCLUSIVE' : (eq ? 'PASS' : 'FAIL'), 'modeller: costDelta=' + (ml && mk(ml, 'costDelta')) + ' sched=' + (ml && mk(ml, 'schedDelta')) + ' qty=' + (ml && mk(ml, 'qty')) + ' | viewer: costDelta=' + (vl && mk(vl, 'costDelta')) + ' sched=' + (vl && mk(vl, 'schedDelta')) + ' qty=' + (vl && mk(vl, 'qty')));
   console.log('  §CC_VEDITS ' + JSON.stringify(await vp.evaluate((g) => { const E = window.EditDeltaViewer; return { keys: Object.keys(E._edits), has: !!E._edits[g], lbl: E.labelFor(g), hoverFn: typeof (window.APP && APP.toggleHoverName), hs: String(document.querySelector('script[src*="hover_name"]') && document.querySelector('script[src*="hover_name"]').src) }; }, guid)).slice(0, 400));
   const h1 = await hoverAtCentre();
-  await vp.screenshot({ path: path.join(OUT, 'viewer-s8-hover.png'), clip: { x: Math.max(0, (hp ? hp[0] : 400) - 260), y: Math.max(0, (hp ? hp[1] : 250) - 100), width: 520, height: 220 } });
+  { // guide shot at dpr 2, clip = the hover label + the pixel it hangs from
+    await vp.setViewport({ width: 900, height: 600, deviceScaleFactor: 2 }); await t.sleep(600);
+    const lr = await vp.evaluate(() => { const e = document.getElementById('hover-name-label'); if (!e || e.style.display === 'none') return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+    if (lr && hp) { const x0 = Math.max(0, Math.min(lr.x, hp[0] - 70) - 10), y0 = Math.max(0, Math.min(lr.y, hp[1] - 50) - 10), x1 = Math.min(900, Math.max(lr.x + lr.w, hp[0] + 70) + 10), y1 = Math.min(600, Math.max(lr.y + lr.h, hp[1] + 50) + 10);
+      await vp.screenshot({ path: path.join(OUT, 'viewer-s8-hover.png'), clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } }); console.log('  §SHOTCLIP viewer-s8-hover ' + [x0, y0, x1 - x0, y1 - y0].map(Math.round)); }
+    await vp.setViewport({ width: 900, height: 600, deviceScaleFactor: 1 }); }
   V('C6 HOVER', !sameEl ? 'INCONCLUSIVE' : (h1 && h1.s8 && mlabel && h1.s8 === mlabel ? 'PASS' : 'FAIL'), 'viewerLabel=' + JSON.stringify(h1 && h1.s8) + ' modellerLabel=' + JSON.stringify(mlabel) + (h1 && h1.s8 === mlabel ? ' (byte-equal)' : ''));
 
   // undo in the Modeller

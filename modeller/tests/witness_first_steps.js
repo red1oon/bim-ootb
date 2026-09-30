@@ -14,6 +14,7 @@ const { runE2E } = require('./e2e_harness');
 const URL = process.env.E2E_URL || 'https://red1oon.github.io/bim-ootb/modeller/modeller.html';
 const OUT = process.env.OUT || path.join(__dirname, 'first_steps_shots');
 fs.mkdirSync(OUT, { recursive: true });
+const HOSTED = !!process.env.FIRST_STEPS_HOSTED;   // FIRST_STEPS_HOSTED=1: the SAME flow on a wall that HOSTS a door/window (finding #1 regression: one Ctrl+Z must undo the whole gesture)
 const verdict = [];
 const V = (n, name, state, detail) => { verdict.push([n, state]); console.log('§FIRST_STEPS step=' + n + ' ' + name + ' ' + detail + ' => ' + state); };
 
@@ -76,10 +77,10 @@ runE2E('W-FIRST-STEPS', async (t) => {
 
   // ── 5. click ONE wall → exactly one element selected ────────────────────────────────────────────
   // A real wall: the op's own ifc_class matches /Wall/ (not a size guess), axis-aligned (rotX=rotY=0), element-scale, visible from the fitted camera.
-  const wallFids = await pg.evaluate(() => { const ops = window.Bonsai.oplog._geomOps(); const cand = window.__e2e.candidates().map(c => c.fid); const by = new Map(ops.map(o => [o.id, o])); return cand.filter(f => { const o = by.get(f); const P = o && o.parameters; if (!P || !/Wall/i.test(P.ifc_class || '')) return false; const pl = P.placement; if (pl && !(Math.abs(pl.rotX || 0) < 1e-6 && Math.abs(pl.rotY || 0) < 1e-6)) return false;
+  const wallFids = await pg.evaluate((hosted) => { const ops = window.Bonsai.oplog._geomOps(); const cand = window.__e2e.candidates().map(c => c.fid); const by = new Map(ops.map(o => [o.id, o])); return cand.filter(f => { const o = by.get(f); const P = o && o.parameters; if (!P || !/Wall/i.test(P.ifc_class || '')) return false; const pl = P.placement; if (pl && !(Math.abs(pl.rotX || 0) < 1e-6 && Math.abs(pl.rotY || 0) < 1e-6)) return false;
     // baby-steps subject = a wall with NO hosted door/window (one Ctrl+Z undoes it) — asked of the app's own cascade resolver, not guessed
-    const r = window.SdgCascade.ridersFor([f], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, new Set([f])); return r.length === 0; }); });
-  console.log('  §WALL-CANDIDATES (no hosted fillings) n=' + wallFids.length + ' fids=' + wallFids.slice(0, 12));
+    const r = window.SdgCascade.ridersFor([f], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, new Set([f])); return hosted ? r.length >= 1 : r.length === 0; }); }, HOSTED);
+  console.log('  §WALL-CANDIDATES (' + (HOSTED ? 'HOSTING a filling' : 'no hosted fillings') + ') n=' + wallFids.length + ' fids=' + wallFids.slice(0, 12));
   let sel = null;
   for (const wf of wallFids) {
     const pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), wf); if (!pt) continue;
@@ -138,7 +139,7 @@ runE2E('W-FIRST-STEPS', async (t) => {
     const resid = c2 ? Math.hypot(c2[0] - c0[0], c2[1] - c0[1], c2[2] - c0[2]) : Infinity;
     const slider = await pg.evaluate(() => { const s = document.getElementById('hist-slider'); return { v: +s.value, max: +s.max }; });
     const b = await t.bboxScreen(fid); await shotRect('step8-undone', [{ x: b.x, y: b.y, w: b.width, h: b.height }], 110);
-    V(8, 'UNDO', (global.__moved.after.len === global.__moved.before.len) ? 'INCONCLUSIVE' : (u.cur < cur0 && resid < 1e-3 ? 'PASS' : 'FAIL'), 'cursor ' + cur0 + '→' + u.cur + ' centreResidual=' + resid.toExponential(2) + 'm slider=' + slider.v + '/' + slider.max + ' status="' + (await stat()).slice(0, 90) + '"');
+    V(8, 'UNDO', (global.__moved.after.len === global.__moved.before.len) ? 'INCONCLUSIVE' : (u.cur < cur0 && resid < 1e-3 && (!HOSTED || u.cur === global.__moved.before.cur) ? 'PASS' : 'FAIL'), 'cursor ' + cur0 + '→' + u.cur + (HOSTED ? ' (want ' + global.__moved.before.cur + ': ONE Ctrl+Z undoes the whole hosted gesture)' : '') + ' centreResidual=' + resid.toExponential(2) + 'm slider=' + slider.v + '/' + slider.max + ' status="' + (await stat()).slice(0, 90) + '"');
   }
 
   // ── 9. Save → a snapshot file is written ────────────────────────────────────────────────────────
