@@ -63,6 +63,13 @@
       if (_bimErpDb) return Promise.resolve(_bimErpDb);
       var SQL = A._SQL || (typeof window !== 'undefined' && (window.SQL || window._SQL_CACHED));   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !global.ProjFold) return Promise.resolve(null);
+      // §S9 (TM_4D5D_VARIANCE_LANE §S9): OPFS-FIRST, exactly as diff.js _loadVoErpDb already does for the VO path — so a Project Order the MODELLER (or an
+      // earlier session) generated is the SAME store this push amends (context-based: an existing Project Order is a variant, not a duplicate). Falls back to the seed.
+      if (global.ProjOrderState && global.ProjOrderState.openStore) {
+        return global.ProjOrderState.openStore(SQL, function () { return A.cachedFetch('../erp/ad_seed.db'); })
+          .then(function (st) { _bimErpDb = st.db; return _bimErpDb; })
+          .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
+      }
       return A.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
         .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
