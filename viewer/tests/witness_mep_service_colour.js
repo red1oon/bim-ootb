@@ -48,8 +48,8 @@ const BLD = { HHS: 'HHS_Office_Federated_extracted.db', Hospital: 'Hospital_extr
       if (!a) continue; out.painted++; out.codes[a.code] = (out.codes[a.code] || 0) + 1;
       if (Math.abs(a.r - gr) < 1e-6 && Math.abs(a.g - gg) < 1e-6 && Math.abs(a.b - gb) < 1e-6) out.green++;
       const pipe = /^IfcPipe/.test(e.c);
-      if (pipe && e.d === 'FP' && a.code === 'FP') out.fpPipeRed++;
-      if (pipe && e.d === 'PLB' && a.code === 'WATER') out.plbPipeGreen++;
+      if (pipe && e.d === 'FP' && (a.code === 'FP' || a.code === 'FP_FIT')) out.fpPipeRed++;
+      if (pipe && e.d === 'PLB' && (a.code === 'WATER' || a.code === 'WATER_FIT')) out.plbPipeGreen++;
       if (/duct/i.test(e.n || '') && a.code === 'DUCT') out.ductGrey++;
     }
     A._mepHueDisc = false; return out; }, [JSON.parse(rows(BLD[key]) || '[]'), disc]);
@@ -59,9 +59,12 @@ const BLD = { HHS: 'HHS_Office_Federated_extracted.db', Hospital: 'Hospital_extr
   V(vac.length === 0, 'population judged on every building', vac.length ? 'VACUOUS: ' + vac.join(',') : '');
   V(T.HHS.green === 0 && T.HHS.ductNames > 0 && T.HHS.ductGrey === T.HHS.ductNames, 'G1 HHS: no HUD green, every named duct galvanised grey',
     'green=' + T.HHS.green + ' ducts ' + T.HHS.ductGrey + '/' + T.HHS.ductNames);
-  V(T.Hospital.fpPipeT2 > 0 && T.Hospital.fpPipeRed === T.Hospital.fpPipeT2, 'G2a Hospital FP pipes with no colour of their own are ALL fire red (own-hue fire-red fittings stay theirs)', T.Hospital.fpPipeRed + ' / ' + T.Hospital.fpPipeT2);
-  V(T.Hospital.plbPipeT2 > 0 && T.Hospital.plbPipeGreen === T.Hospital.plbPipeT2, 'G2b Hospital PLB supply pipes ALL water green (DWV/sanitary -> drainage black)', T.Hospital.plbPipeGreen + ' / ' + T.Hospital.plbPipeT2 + ', drain=' + (T.Hospital.codes.DRAIN || 0));
+  V(T.Hospital.fpPipeT2 > 0 && T.Hospital.fpPipeRed === T.Hospital.fpPipeT2, 'G2a Hospital FP pipes with no colour of their own ALL painted fire (red segments / orange fittings; own-hue fittings stay theirs)', T.Hospital.fpPipeRed + ' / ' + T.Hospital.fpPipeT2);
+  V(T.Hospital.plbPipeT2 > 0 && T.Hospital.plbPipeGreen === T.Hospital.plbPipeT2, 'G2b Hospital PLB supply pipes ALL water-painted (green segments / galvanised fittings; DWV/sanitary -> drainage black)', T.Hospital.plbPipeGreen + ' / ' + T.Hospital.plbPipeT2 + ', drain=' + (T.Hospital.codes.DRAIN || 0));
   V(T.Terminal.painted === (T.Terminal.codes.DUCT || 0) && T.Terminal.painted <= T.Terminal.t2 && T.Terminal.pop - T.Terminal.t2 > 0, 'G3 Terminal: only its colourless ducts painted (galvanised); every authored element untouched', 'painted=' + T.Terminal.painted + ' tier2=' + T.Terminal.t2 + ' authored/own-hue=' + (T.Terminal.pop - T.Terminal.t2));
+  V((T.Hospital.codes.FP || 0) > 0 && (T.Hospital.codes.FP_FIT || 0) > 0 && (T.Hospital.codes.SPRINKLER || 0) > 0, 'G5 parts distinguishable on the fire line: red segments, orange fittings, brass heads all present',
+    'FP=' + (T.Hospital.codes.FP || 0) + ' FP_FIT=' + (T.Hospital.codes.FP_FIT || 0) + ' SPRINKLER=' + (T.Hospital.codes.SPRINKLER || 0) + ' | HHS SPRINKLER=' + (T.HHS.codes.SPRINKLER || 0));
+  Object.keys(T).forEach(k => S('   no-own-colour share bld=' + k + ' MEP tier2=' + T[k].t2 + '/' + T[k].pop + ' = ' + (T[k].pop ? (100 * T[k].t2 / T[k].pop).toFixed(1) : '-') + ' %'));
   const red = await tally('HHS', true);
   S('   RED CONTROL (&mephue=disc) HHS ' + JSON.stringify(red));
   V(red.green > 0, 'G4 RED CONTROL: the 09-02 HUD palette brings the green back (G1 can fail)', 'green=' + red.green);

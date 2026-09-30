@@ -604,7 +604,7 @@ function setupStreaming(A) {
   A._mepNameHint = function(name) {
     if (!name) return null;
     if (/duct/i.test(name)) return { code: 'DUCT', r: 0.55, g: 0.58, b: 0.55 };  // STD_MAT.IfcDuct — galvanized sheet-metal grey
-    if (/sprinkler|groove|coupling|victaulic/i.test(name)) return _hexToRgb('FP', 0xcc8844); // DISC_COLORS.FP — brick/orange. Grooved/Victaulic couplings are the standard FP sprinkler-pipe joint (same trade as sprinkler heads) — were falling through to the flat blue-grey IfcFlowFitting default (user report 2026-08-15: "the nice red groove tooling joints are replaced as blue")
+    if (/sprinkler|groove|coupling|victaulic/i.test(name)) { var _fp = _hexToRgb('FP', 0xcc8844); if (/sprinkler/i.test(name)) _fp.sprinkler = true; return _fp; } // DISC_COLORS.FP — brick/orange. Grooved/Victaulic couplings are the standard FP sprinkler-pipe joint (same trade as sprinkler heads) — were falling through to the flat blue-grey IfcFlowFitting default (user report 2026-08-15: "the nice red groove tooling joints are replaced as blue")
     if (/diffuser|grille|grill|exhaust/i.test(name)) return _hexToRgb('ACMV', 0xcc4444); // DISC_COLORS.ACMV — red, air terminals
     if (/dwv|sanitary/i.test(name)) return _hexToRgb('SAN', 0xaa44aa);           // DISC_COLORS.SAN — magenta
     if (/pipe/i.test(name)) return _hexToRgb('PLB', 0x8844cc);                  // DISC_COLORS.PLB — purple
@@ -772,17 +772,27 @@ function setupStreaming(A) {
   var SERVICE_PAINT = {
     FIRE:  { code: 'FP',    hex: 0xAB2524, src: 'RAL 3000 flame red (BS 1710 fire)' },
     WATER: { code: 'WATER', hex: 0x3E753B, src: 'RAL 6010 grass green (BS 1710 water)' },
-    DRAIN: { code: 'DRAIN', hex: 0x131516, src: 'RAL 9005 jet black (BS 1710 other/drainage)' }
+    DRAIN: { code: 'DRAIN', hex: 0x131516, src: 'RAL 9005 jet black (BS 1710 other/drainage)' },
+    // v2 parts by function: grooved fittings/couplings ship in orange enamel (Victaulic 51.01 standard coating); RAL 2004 is the nearest
+    // RAL orange (Victaulic publishes no RAL) — stated approximation
+    FIRE_FIT: { code: 'FP_FIT', hex: 0xE75B12, src: 'orange enamel (Victaulic 51.01) as RAL 2004 pure orange' }
   };
+  var FIT_CLASSES = { IfcPipeFitting: 1, IfcFlowFitting: 1 };
+  var SPRINKLER_CLASSES = { IfcFireSuppressionTerminal: 1 };
+  var _oeS = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+  var BRASS = { code: 'SPRINKLER', r: _oeS(0.91), g: _oeS(0.778), b: _oeS(0.423), src: 'physicallybased.info Brass (sprinkler natural brass finish)' };
   var WATER_TRADES = { PLB: 1, HEAT: 1, ACMV: 1, HVAC: 1 };
   var PIPE_CLASSES = { IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1 };
   var DUCT_CLASSES = { IfcDuct: 1, IfcDuctSegment: 1, IfcDuctFitting: 1 };
   A._mepServiceColour = function(ifcClass, discipline, mepHint) {
     var hc = mepHint && mepHint.code, paint = null;
-    if (discipline === 'FP' || hc === 'FP') paint = SERVICE_PAINT.FIRE;
+    if (SPRINKLER_CLASSES[ifcClass] || (hc === 'FP' && mepHint.sprinkler)) return BRASS;
+    if (discipline === 'FP' || hc === 'FP') paint = FIT_CLASSES[ifcClass] ? SERVICE_PAINT.FIRE_FIT : SERVICE_PAINT.FIRE;
     else if (hc === 'DUCT' || DUCT_CLASSES[ifcClass]) return { code: 'DUCT', r: 0.53, g: 0.56, b: 0.53, src: 'STD_MAT.IfcDuctSegment galvanised' };
     else if (hc === 'SAN' || (discipline === 'SAN' && (PIPE_CLASSES[ifcClass] || hc === 'PLB'))) paint = SERVICE_PAINT.DRAIN;
-    else if (WATER_TRADES[discipline] && (PIPE_CLASSES[ifcClass] || hc === 'PLB')) paint = SERVICE_PAINT.WATER;
+    else if (WATER_TRADES[discipline] && (PIPE_CLASSES[ifcClass] || hc === 'PLB')) {
+      if (FIT_CLASSES[ifcClass]) return { code: 'WATER_FIT', r: 0.58, g: 0.60, b: 0.63, src: 'STD_MAT.IfcPipeFitting galvanised' };
+      paint = SERVICE_PAINT.WATER; }
     if (!paint) return null;
     return { code: paint.code, r: ((paint.hex >> 16) & 255) / 255, g: ((paint.hex >> 8) & 255) / 255, b: (paint.hex & 255) / 255, src: paint.src };
   };
