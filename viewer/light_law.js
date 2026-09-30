@@ -35,7 +35,9 @@
     // L3 — §FILM_LAW temporal adaptation (films, ALT+C R1): EV100 stops per second toward the metered target. up = target
     // above current (scene brighter, eye dark->light), down = below. Unreal speed_up 3.0 / speed_down 1.0; HDRP dark->light 3 /
     // light->dark 1 (prompts/photoreal_probes/engine_light_laws.md [UE-CES] [HDRP-EXP]).
-    ADAPT: { up: 3, down: 1 },
+    // red1 2026-10-01: "Go for normal cam since it is better than game engine" — a camera's auto-exposure settles a large change in
+    // ~0.5-2 s (no measured source in engine_light_laws.md; a choice, not an extraction): 7 EV indoors now adapts in ~1.8 s, was ~7 s.
+    ADAPT: { up: 6, down: 4 },
     // L1a — §COVE_LIGHT levels (audit #46, red1 exception §COVE_NO_STRIP "need not be accurate").
     COVE: { trimLuxVoid: 100, unknownLux: 100, color: 0xffe4b5 },
     // L1b (red1 2026-09-27: camera torch, offset for visible shadows; 2026-09-28: "can be more dramatic and realistic") — a real

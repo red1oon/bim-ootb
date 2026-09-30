@@ -4707,7 +4707,11 @@ async function setupEffects(A, renderer, scene, camera) {
     var _camSourcedOff = !A._maxqActive && !!A._stillCalibOn && !!(window.SourcedLight && window.SourcedLight.installed && window.SourcedLight.installed());
     // §FILM_LAW S3 (bim-compiler ALTC_SHOWSTOPPERS.md §FILM_LAW; stopper S-LAW-6, D4; §LIGHT_ONE_SCALE L1a — the cove is the only
     // added source): a parity film turns the eye-riding fill off as Alt+S does, on the film's own calibration switch (&calib=0 keeps it).
-    var _camFilmOff = !!A._maxqActive && !!A._filmParity && !!A._stillCalibOn;
+    // §FILM_CAM_LIGHT (red1 2026-10-01: "that cam light was obviously not showing during going thru wall, it used to show its
+    // reflection clearly"): bim-ootb 118dd73f (2026-09-27, §FILM_LAW S3) switched the eye light off in parity films; the 450 lm torch
+    // that replaced it is ~23 cd/m2 on a wall 2 m away = ~1% of mid-grey at a daylight exposure (invisible). Films keep the eye light
+    // again: 3 units ~ 68,000 cd at the film's calibration (sun 4.4 = 100 klux), 4 m reach -> ~2,700 cd/m2 at 2 m. &filmcamlight=0 = off.
+    var _camFilmOff = !!A._maxqActive && !!A._filmParity && !!A._stillCalibOn && /[?&]filmcamlight=0/.test(location.search);
     A._camLight.intensity = (_camSourcedOff || _camFilmOff) ? 0 : CAM_LIGHT_INTENSITY;
     console.log('§CAM_LIGHT ' + (_camSourcedOff ? 'off (§SOURCED_LIGHT: not a real source)' : _camFilmOff ? 'off (film, L1a: not a real source)' : 'on') + ' intensity=' + A._camLight.intensity + ' distance=' + CAM_LIGHT_DISTANCE +
       ' decay=' + CAM_LIGHT_DECAY + ' forwardOffset=' + CAM_LIGHT_FORWARD_OFFSET);
