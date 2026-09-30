@@ -20,6 +20,7 @@ runE2E('W-FIRST-STEPS-MEP', async (t) => {
   const pg = t.pg;
   const rectOf = (sel) => pg.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; }, sel);
   const shotRect = async (label, rects, pad) => {
+    await pg.evaluate(() => { if (window.A && window.A.requestRender) window.A.requestRender(); }); await t.sleep(900);   // the renderer is idle-gated: ask for a frame so the shot shows the CURRENT state
     rects = rects.filter(Boolean); const vp = pg.viewport(); pad = pad == null ? 12 : pad;
     const x0 = Math.max(0, Math.min(...rects.map(r => r.x)) - pad), y0 = Math.max(0, Math.min(...rects.map(r => r.y)) - pad), x1 = Math.min(vp.width, Math.max(...rects.map(r => r.x + r.w)) + pad), y1 = Math.min(vp.height, Math.max(...rects.map(r => r.y + r.h)) + pad);
     if (!(x1 - x0 > 20 && y1 - y0 > 20)) { console.log('  §SHOTCLIP ' + label + ' SKIPPED (clip off-screen ' + [x0, y0, x1, y1].map(Math.round) + ')'); return; }
@@ -31,7 +32,8 @@ runE2E('W-FIRST-STEPS-MEP', async (t) => {
     const segs = window.__dwChains.PLB || [];
     const all = O._allGeom ? O._allGeom() : [];
     const MH = window.ModellerHistory, tips = MH && MH.list ? MH.list() : null;
-    return { fixtures: cnt(o => o.userData && o.userData.dwDisc === 'PLB'), tubes: cnt(o => o.userData && o.userData.dwChain === 'PLB'), runs: segs.length, oplog: O.length, cursor: O.cursor, activeRows: all.filter(o => !o.undone).length,
+    const glass = g.children.filter(m => m.isMesh && m.material && m.material.transparent && m.material.opacity < 0.2).length, solid = g.children.filter(m => m.isMesh && m.material && m.material.opacity > 0.9).length;
+    return { glass: glass, solid: solid, fixtures: cnt(o => o.userData && o.userData.dwDisc === 'PLB'), tubes: cnt(o => o.userData && o.userData.dwChain === 'PLB'), runs: segs.length, oplog: O.length, cursor: O.cursor, activeRows: all.filter(o => !o.undone).length,
       key: segs.map(s => [s.from, s.to].map(p => p.map(v => v.toFixed(3)).join(',')).join('>')).sort().join('|'), raw: segs.map(s => [s.from, s.to]), label: tips && tips.length ? tips[tips.length - 1].label : null }; });
   const settleWalk = async () => { const okw = await pg.waitForFunction(() => (window.__dwChains.PLB || []).length > 0 && ((window.__dwRowsByDisc || {}).PLB || {}).walk && !Object.keys(window.__dwChainAnimating || {}).some(k => window.__dwChainAnimating[k]) && !!(window.__dwRouteSig || {}).PLB, { timeout: 180000, polling: 300 }).then(() => true).catch(() => false);
     await pg.evaluate(async () => { const MH = window.ModellerHistory; await ((MH && MH.pending && MH.pending()) || Promise.resolve()); await new Promise(r => setTimeout(r, 0)); await new Promise(r => setTimeout(r, 0)); }); return okw; };
@@ -48,7 +50,7 @@ runE2E('W-FIRST-STEPS-MEP', async (t) => {
   const meshes = await pg.evaluate(() => window.Bonsai.group().children.filter(o => o.isMesh).length);
   await t.sleep(400);
   await shotRect('mep1-duplex-bare', [{ x: 240, y: 10, w: 850, h: 740 }], 0);
-  V(1, 'BARE-ARC', meshes > 0 && s0.fixtures === 0 && s0.runs === 0 ? 'PASS' : (meshes > 0 ? 'FAIL' : 'INCONCLUSIVE'), 'building=' + await pg.evaluate(() => window.__dwName) + ' meshes=' + meshes + ' plumbingFixtures=' + s0.fixtures + ' pipeRuns=' + s0.runs + ' oplog=' + s0.oplog);
+  V(1, 'BARE-ARC', meshes > 0 && s0.fixtures === 0 && s0.runs === 0 ? 'PASS' : (meshes > 0 ? 'FAIL' : 'INCONCLUSIVE'), 'building=' + await pg.evaluate(() => window.__dwName) + ' meshes=' + meshes + ' plumbingFixtures=' + s0.fixtures + ' pipeRuns=' + s0.runs + ' oplog=' + s0.oplog + ' seeThroughMeshes=' + s0.glass + ' solidMeshes=' + s0.solid);
 
   // ── 2. find the Plumbing (PLB) walk row in the Outliner ────────────────────────────────────────
   await pg.evaluate(() => { const e = document.querySelector('[data-bnode="dw-PLB"]'); if (e) e.scrollIntoView({ block: 'center' }); }); await t.sleep(500);
@@ -63,12 +65,12 @@ runE2E('W-FIRST-STEPS-MEP', async (t) => {
   const ok = await settleWalk(); const walkMs = Date.now() - tw0;
   const s1 = await state();
   const sw = await pg.evaluate(() => { const O = window.Bonsai.oplog, ops = O._geomOps().filter(o => o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.disc === 'PLB'); return { n: ops.length, fit: (window.__dwFittings && (window.__dwFittings.PLB || []).length) || 0 }; });
-  const b3 = await pg.evaluate(() => { const g = window.Bonsai.group(), root = g.children.find(o => o.userData && o.userData.dwRoot); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  const svcRect = () => pg.evaluate(() => { const g = window.Bonsai.group(), root = g.children.find(o => o.userData && o.userData.dwRoot); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     root.children.filter(o => o.userData && (o.userData.dwDisc === 'PLB' || o.userData.dwChain === 'PLB')).forEach(m => { const n = m.isInstancedMesh ? m.count : 1; const mat = new window.THREE.Matrix4(); for (let i = 0; i < n; i++) { if (m.isInstancedMesh) m.getMatrixAt(i, mat); else mat.identity(); const v = new window.THREE.Vector3().setFromMatrixPosition(mat).applyMatrix4(m.matrixWorld); const p = window.__e2e.proj(v.x, v.y, v.z); x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } }); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; });
   await t.flySettle(); await pg.click('#b-fit'); await t.sleep(1800);   // frame the whole building (the walk leaves the structure see-through so the services read)
-  await shotRect('mep3-walk-done', [{ x: 240, y: 10, w: 850, h: 740 }], 0);
+  await shotRect('mep3-walk-done', [await svcRect()], 70);
   V(3, 'WALK-PLB', ok && s1.fixtures > 0 && s1.runs > 0 && s1.tubes === s1.runs && sw.n >= s1.runs ? 'PASS' : (s1.fixtures === 0 ? 'INCONCLUSIVE' : 'FAIL'),
-    'fixtures=' + s1.fixtures + ' pipeRuns=' + s1.runs + ' tubesDrawn=' + s1.tubes + ' signedSweeps=' + sw.n + ' fittings=' + sw.fit + ' oplog ' + s0.oplog + '->' + s1.oplog + ' historyNode="' + s1.label + '" walkMs=' + walkMs + ' status="' + await pg.evaluate(() => document.getElementById('stat').textContent) + '" (older guide: 18 fixtures / 18 runs — measured now, not copied)');
+    'fixtures=' + s1.fixtures + ' pipeRuns=' + s1.runs + ' tubesDrawn=' + s1.tubes + ' signedSweeps=' + sw.n + ' fittings=' + sw.fit + ' oplog ' + s0.oplog + '->' + s1.oplog + ' historyNode="' + s1.label + '" seeThroughMeshes=' + s1.glass + ' solidMeshes=' + s1.solid + ' walkMs=' + walkMs + ' status="' + await pg.evaluate(() => document.getElementById('stat').textContent) + '" (older guide: 18 fixtures / 18 runs — measured now, not copied)');
 
   // ── 4. pipe sizes are READ from the signed pipe rows; click one pipe ──────────────────────────
   const sizes = await pg.evaluate(() => { const by = {}; window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_SWEEP' && o.parameters && o.parameters._dw && o.parameters._dw.disc === 'PLB').forEach(o => { const P = o.parameters, k = (P._dw.rule || '?') + ' · ' + (P._dw.crossSection || '?') + ' · ' + (P.profile.w * 1000).toFixed(1) + ' mm'; by[k] = (by[k] || 0) + 1; }); return by; });
@@ -123,13 +125,13 @@ runE2E('W-FIRST-STEPS-MEP', async (t) => {
   const s7 = await state();
   await pg.click('#b-fit'); await t.sleep(1200);
   await shotRect('mep7-undo-walk', [{ x: 240, y: 10, w: 850, h: 740 }], 0);
-  V(7, 'UNDO-WALK', s7.fixtures === 0 && s7.tubes === 0 && s7.cursor === s0.cursor ? 'PASS' : 'FAIL', 'fixtures ' + s6.fixtures + '->' + s7.fixtures + ' tubes ' + s6.tubes + '->' + s7.tubes + ' runs ' + s6.runs + '->' + s7.runs + ' cursor ' + s6.cursor + '->' + s7.cursor + ' (pre-walk cursor ' + s0.cursor + ') activeRows ' + s6.activeRows + '->' + s7.activeRows + ' historyNode="' + s7.label + '"');
+  V(7, 'UNDO-WALK', s7.fixtures === 0 && s7.tubes === 0 && s7.cursor === s0.cursor ? 'PASS' : 'FAIL', 'fixtures ' + s6.fixtures + '->' + s7.fixtures + ' tubes ' + s6.tubes + '->' + s7.tubes + ' runs ' + s6.runs + '->' + s7.runs + ' cursor ' + s6.cursor + '->' + s7.cursor + ' (pre-walk cursor ' + s0.cursor + ') activeRows ' + s6.activeRows + '->' + s7.activeRows + ' seeThroughMeshes=' + s7.glass + ' solidMeshes=' + s7.solid);
 
   // ── 8. Ctrl+Y brings the walk back ─────────────────────────────────────────────────────────────
   const i2 = await idle(); await key('KeyY'); await settleWalk(); await t.sleep(1500);
   const s8 = await state();
   await t.flySettle(); await pg.click('#b-fit'); await t.sleep(1800);
-  await shotRect('mep8-redo-walk', [{ x: 240, y: 10, w: 850, h: 740 }], 0);
+  await shotRect('mep8-redo-walk', [await svcRect()], 70);
   V(8, 'REDO-WALK', s8.fixtures === s1.fixtures && s8.runs === s1.runs && s8.tubes === s1.tubes && s8.cursor >= s1.cursor - 0 ? 'PASS' : 'FAIL', 'fixtures=' + s8.fixtures + ' (walk gave ' + s1.fixtures + ') runs=' + s8.runs + ' (walk gave ' + s1.runs + ') tubes=' + s8.tubes + ' cursor ' + s7.cursor + '->' + s8.cursor + ' (after-walk cursor ' + s1.cursor + ') activeRows ' + s7.activeRows + '->' + s8.activeRows + ' (after-walk ' + s1.activeRows + ')');
 }, { width: 1200, height: 850, dpr: 2, url: URL, noExit: true }).then(r => {
   const c = s => verdict.filter(v => v === s).length;
