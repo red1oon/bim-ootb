@@ -4623,7 +4623,10 @@ async function setupEffects(A, renderer, scene, camera) {
     else if (!A._maxqActive && /[?&]normrepair=0/.test(location.search)) console.log('§NORMAL_REPAIR off (&normrepair=0)');
     if ((!A._maxqActive || A._filmParity) && window.GlassFresnel) { try { window.GlassFresnel.stage(A); } catch (eGF) { console.warn('§GLASS_FRESNEL failed: ' + eGF.message); } }   // §GLASS_FRESNEL
     if (!A._maxqActive) { try { _camTorchStage(false); } catch (eT) { console.warn('§CAM_TORCH failed: ' + eT.message); } }   // §ALTS_ALL: torch in the scene before the stage meter
-    if (!A._maxqActive && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }
+    // §FILM_INHERIT (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT"; ALTC_SHOWSTOPPERS S2): parity films stage the SAME
+    // SourcedLight as Alt+S (zone grid, sky-view field, ground field — restored from the baked sidecar). Per frame the film only
+    // gates it (A._filmParityStep -> SourcedLight.filmGate): on while the whole building stands, off during build-up / storey cuts.
+    if ((!A._maxqActive || A._filmParity) && window.SourcedLight) { try { window.SourcedLight.stage(A); } catch (eSL) { console.warn('§SOURCED_LIGHT failed: ' + eSL.message); } }
     _stMs.sourcedStage = performance.now() - _stS;   // §SOURCED_LIGHT — after lamps + portals
     // §FILM_FILL_RESTORE (2026-09-24, red1 on the HHS + Hospital interior A/B pairs: "restored is better")
     // — films only. PR #1601 halved the fill in scene.js (ambient 0.785->0.386, hemi 1.257->0.617) for the
@@ -4791,12 +4794,18 @@ async function setupEffects(A, renderer, scene, camera) {
       out.elev = +el.toFixed(1); out.day = day ? 1 : 0; out.inside = inside == null ? '-' : (inside ? 1 : 0); out.lampsOff = lampsOff ? 1 : 0;
     }
     if (typeof A._filmParityShadowFit === 'function') out.fit = A._filmParityShadowFit();
+    // §FILM_INHERIT gate: the zone grid + field describe the FINISHED building (ALTC_SHOWSTOPPERS S3), so they are on only while
+    // the film shows the whole building (A._filmGeomWhole, cinema_maxq.js); then the portals park, exactly as Alt+S retires them
+    // under the field. Off (build-up, storey cut) = the film's previous model (portals, no field). Uniforms only: no recompile.
+    var _slOk = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive() && window.SourcedLight.filmGate);
+    A._filmFieldOn = _slOk && A._filmGeomWhole !== false && !(A._filmInheritOff === true || /[?&]filminherit=0/.test(location.search));
+    if (_slOk) out.sl = window.SourcedLight.filmGate(A._filmFieldOn, frameIdx);
     if (window.SkyPortal && typeof window.SkyPortal.frame === 'function') { try { out.portal = window.SkyPortal.frame(A); } catch (eP) { out.portal = 'err ' + eP.message; } }
     out.ms = +(performance.now() - t0).toFixed(1);
     var key = JSON.stringify([out.day, out.inside, out.lampsOff]);
     if (key !== _fpLast || frameIdx % 24 === 0) { _fpLast = key;
       console.log('§FILM_PARITY_FRAME f=' + frameIdx + ' sunElev=' + out.elev + ' daylight=' + out.day + ' camInside=' + out.inside + ' lampsOff=' + out.lampsOff +
-        (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' ms=' + out.ms); }
+        (out.fit ? ' fit=' + out.fit : '') + (out.portal ? ' portal=' + out.portal : '') + ' sourced=' + (out.sl || 'not-staged') + ' ms=' + out.ms); }
     return out;
   };
   // ══ §FILM_EXPOSURE — §FILM_LAW S1 (bim-compiler prompts/ALTC_SHOWSTOPPERS.md §FILM_LAW; ALT+C R1; §LIGHT_ONE_SCALE L3 via

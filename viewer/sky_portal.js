@@ -293,6 +293,12 @@
   function frame(A) {
     if (!film || !placed.length) return null;
     var t0 = performance.now(), cam = A.camera.position;
+    // §FILM_INHERIT: with the sky-view field on (A._filmFieldOn) the film retires its portals as Alt+S does — park every light at
+    // intensity 0 (count and shadow maps unchanged: no recompile). They come back through the normal re-aim when the field goes off.
+    if (A._filmFieldOn) {
+      var parked = 0; for (var q = 0; q < placed.length; q++) { if (placed[q].intensity > 0 || film.assign[q]) { placed[q].intensity = 0; film.assign[q] = null; parked++; } }
+      return 'retired(field) parkedNow=' + parked + ' ' + (performance.now() - t0).toFixed(1) + 'ms';
+    }
     var near = film.panes.filter(function (p) { p._dist = p.c.distanceTo(cam); return p._dist <= PORTAL_RANGE; });
     if (film.byArea) { near.forEach(function (p) { var to = cam.clone().sub(p.c).normalize(); p._score = p.area * Math.max(0.05, Math.abs(to.dot(p.n))); }); near.sort(function (a, b) { return b._score - a._score; }); }
     else near.sort(function (a, b) { return a._dist - b._dist; });

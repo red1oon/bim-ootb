@@ -1872,6 +1872,38 @@ async function setupScene(A) {
       console.log('§LIGHT_FIELD_PATCH applied ' + dbFile + ' key=' + H.key + ' bytes=' + H.bytes + ' raw=' + H.raw_bytes + ' created=' + H.created + ' ms=' + Math.round(performance.now() - t0) + ' from ' + u); return out;
     } catch (e) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' — ' + (e && e.message)); return buf; }
   };
+  // §FILM_FIELD_BY_BUILDING (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT"): a film opens its PATH db (HospitalAjaibPath.db,
+  // Hospital_silent.db) — that file name has no sidecar, the baked field is keyed on the building's own db (patches/Hospital_meta.db
+  // .lightfield.bin). §POC_BAKE measured §LIGHT_FIELD_PATCH none (404) + §LIGHT_FIELD_DB skip reason=no-table on the film. So, when the
+  // opened db has no light_field_cache row, look the sidecar up by BUILDING (A.activeBuilding) and put the row into the live A.db
+  // before LightZones.primeDb reads it. Same LFP1 container as _applyLightFieldPatch; light_zones.js still checks key (its code hash)
+  // and fp (geometry) — a sidecar for other geometry is rejected there and the build runs as before. light_zones.js is NOT edited
+  // (an edit re-keys every baked sidecar).
+  A._lightFieldByBuilding = async function() {
+    var t0 = performance.now();
+    try {
+      if (!A.db) return;
+      var has = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'");
+      if (has && has[0] && has[0].values.length) return;
+      for (var w = 0; !A.activeBuilding && w < 40; w++) await new Promise(function (r) { setTimeout(r, 250); });
+      var bld = A.activeBuilding, url = A.DB_URL || '';
+      if (!bld || !url) { console.log('§LIGHT_FIELD_BY_BUILDING skip bld=' + bld + ' url=' + (url ? 'yes' : 'none')); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var names = [bld + '_meta.db', bld + '_extracted.db'].filter(function (n) { return n !== own; });
+      for (var i = 0; i < names.length; i++) {
+        var u = dir + 'patches/' + names[i] + '.lightfield.bin', r = await fetch(u); if (!r.ok) continue;
+        var ab = await r.arrayBuffer(), dv = new DataView(ab);
+        if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_BY_BUILDING bad magic ' + u); continue; }
+        var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
+        if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_BY_BUILDING blob ' + blob.byteLength + ' != header ' + H.bytes); continue; }
+        A.db.run("CREATE TABLE IF NOT EXISTS light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+        var st = A.db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
+        console.log('§LIGHT_FIELD_BY_BUILDING found bld=' + bld + ' opened=' + own + ' sidecar=' + names[i] + ' key=' + H.key + ' bytes=' + H.bytes + ' ms=' + Math.round(performance.now() - t0) + ' (row put into the live db; LightZones.primeDb checks key + fp)');
+        return;
+      }
+      console.log('§LIGHT_FIELD_BY_BUILDING none bld=' + bld + ' opened=' + own + ' tried=' + names.join(',') + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { console.warn('§LIGHT_FIELD_BY_BUILDING failed ' + (e && e.message)); }
+  };
   A._applyPendingPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);

@@ -3854,6 +3854,11 @@
         // Two controls, both falsifiable: __ilForceOn defeats the gate outright (§118's own), and
         // __ilNoRelight restores §116's original "off to the end" so the relight can be proved to be
         // the thing that lit the windows, rather than assumed.
+        // §FILM_INHERIT: the Alt+S zone grid + sky field describe the FINISHED, uncut building (ALTC_SHOWSTOPPERS S3). Whole = no
+        // build-up and no storey reveal in this film, or past the same relight boundary the fixtures use (plan.beats.rise = storeys
+        // returned, else topout). effects.js A._filmParityStep reads it to gate SourcedLight.
+        var _srOn = !!(plan && plan.storeyReveal && plan.storeyReveal.on);
+        A._filmGeomWhole = !(_buildup || _srOn) || !!A._ilPastTopout;
         A._interiorLightsOff = A._ilPastStick &&
           !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
           !(typeof window !== 'undefined' && window.__ilForceOn);
