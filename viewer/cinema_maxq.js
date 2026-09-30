@@ -3854,11 +3854,19 @@
         // Two controls, both falsifiable: __ilForceOn defeats the gate outright (§118's own), and
         // __ilNoRelight restores §116's original "off to the end" so the relight can be proved to be
         // the thing that lit the windows, rather than assumed.
-        // §FILM_INHERIT: the Alt+S zone grid + sky field describe the FINISHED, uncut building (ALTC_SHOWSTOPPERS S3). Whole = no
-        // build-up and no storey reveal in this film, or past the same relight boundary the fixtures use (plan.beats.rise = storeys
-        // returned, else topout). effects.js A._filmParityStep reads it to gate SourcedLight.
+        // §FILM_INHERIT: the Alt+S zone grid + sky field describe the FINISHED, uncut building (ALTC_SHOWSTOPPERS S3). Whole =
+        // (no build-up, or past its topout) AND (no storey reveal, or past plan.beats.rise where the storeys have returned) AND no
+        // discipline hidden by the reveal round (A.hiddenDiscs, set this frame by cpeRevealApplyVisual above). NOT the fixtures'
+        // relight clock (§129.47 beats.rise even without a storey reveal): geometry, not lamps, decides. effects.js reads it.
         var _srOn = !!(plan && plan.storeyReveal && plan.storeyReveal.on);
-        A._filmGeomWhole = !(_buildup || _srOn) || !!A._ilPastTopout;
+        var _geoTop = (_buildup && plan && plan.beats) ? _buildupTopoutU(plan).u : null;
+        var _geoWhy = (_buildup && !(_geoTop != null && _tnFilm >= _geoTop)) ? 'buildup' :
+          (_srOn && !(plan.beats && typeof plan.beats.rise === 'number' && _tnFilm >= plan.beats.rise)) ? 'storey-reveal' :
+          (A.hiddenDiscs && A.hiddenDiscs.size) ? 'discs-hidden:' + Array.from(A.hiddenDiscs).join('+') : '';
+        A._filmGeomWhole = !_geoWhy;
+        if (_geoWhy !== A._filmGeomWhyLast) { A._filmGeomWhyLast = _geoWhy;
+          console.log('§FILM_GEOM_WHOLE f=' + i + ' tn=' + _tnFilm.toFixed(4) + ' whole=' + (_geoWhy ? 0 : 1) + (_geoWhy ? ' why=' + _geoWhy : '') +
+            ' topoutU=' + (_geoTop != null ? _geoTop.toFixed(4) : '-') + ' riseU=' + (plan && plan.beats && typeof plan.beats.rise === 'number' ? plan.beats.rise.toFixed(4) : '-') + ' storeyReveal=' + (_srOn ? 1 : 0)); }
         A._interiorLightsOff = A._ilPastStick &&
           !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
           !(typeof window !== 'undefined' && window.__ilForceOn);

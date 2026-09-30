@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1518';
+const CACHE_VERSION = 'v1519';
+// v1519 (2026-09-30) §FILM_GEOM_WHOLE gate on geometry (topout / storeys back / no hidden discs), §FILM_INHERIT_GATE logs first call, §SOURCED_OWN_COST timer. sourced_light 74, cinema_maxq 13.
 // v1518 (2026-09-30) §FILM_INHERIT: parity films stage SourcedLight (sky-view field) gated per frame on whole-building frames, portals retire under it; §FILM_FIELD_BY_BUILDING sidecar lookup by building (scene.js/main.js). effects 130, sky_portal 24, sourced_light 73, cinema_maxq 12, scene 68, main 52.
 // v1517/v1516 (2026-09-30) §FAST_BAKE FB1+FB2 sky-portal film classification (sky_portal.js 22-23).
 // v1515 (2026-09-30) §MIRROR_OWN_MAT stills only (films skip the room capture). effects.js?v=129.

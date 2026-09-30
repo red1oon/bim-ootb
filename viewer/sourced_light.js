@@ -1278,11 +1278,13 @@
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0, taaRestarts = 0; lastU = new WeakMap(); ordCache = null;
     set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
+    var ownN = 0, ownMs = 0, ownBindMs = 0;   // §SOURCED_OWN_COST (§FILM_INHERIT cost hunt): CPU of this hook per render, logged every 240 renders
     var own = function (renderer, scene, camera) {
+      var _oT0 = performance.now();
       if (active) {
         if (!lampSync(A) && !A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
         try { irBuild(A); } catch (eIR2) { IRP[0] = 0; }   // cheap when nothing changed (key compare)
-        var bb = bindLights(A, camera);
+        var _bT0 = performance.now(), bb = bindLights(A, camera); ownBindMs += performance.now() - _bT0;
         if (lampPushAll) { lampPushAll = false; progN = -3; }
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
@@ -1298,6 +1300,7 @@
         var line = '§SOURCED_LIGHT_BIND points=' + bb.points + ' bound=' + bb.pointsBound + ' (litOutside=' + bb.litOutside + ') litUnbound=' + bb.litUnbound + ' spots=' + bb.spots + ' portalsBound=' + bb.spotsBound;
         if (line !== lastLog) { lastLog = line; console.log(line); }
       }
+      ownMs += performance.now() - _oT0; if (++ownN % 240 === 0) { console.log('§SOURCED_OWN_COST renders=' + ownN + ' meanMs=' + (ownMs / 240).toFixed(2) + ' bindMeanMs=' + (ownBindMs / 240).toFixed(2) + ' (CPU in the onBeforeRender hook per render; a film frame = ~20 renders)'); ownMs = 0; ownBindMs = 0; }
       if (prevOBR) prevOBR.apply(this, arguments);
     };
     own._sourced = true; A.scene.onBeforeRender = own;
@@ -1517,7 +1520,7 @@
   function filmGate(on, f) {
     if (!active) return 'not-active';
     var want = on ? 1 : 0;
-    if (P[0] !== want) { P[0] = want; console.log('§FILM_INHERIT_GATE f=' + f + ' sourced=' + (want ? 'ON' : 'OFF') + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (' + (want ? 'whole building on screen' : 'build-up / storey cut: the film\'s previous model') + ')'); }
+    if (P[0] !== want || filmGateLast === null) { P[0] = want; console.log('§FILM_INHERIT_GATE f=' + f + ' sourced=' + (want ? 'ON' : 'OFF') + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (' + (want ? 'whole building on screen' : 'build-up / storey cut: the film\'s previous model') + ')'); }
     filmGateLast = want; return want ? 'on' : 'off';
   }
   function unstage(A, quiet) {
