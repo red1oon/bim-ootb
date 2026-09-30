@@ -14,6 +14,26 @@
   var PORTAL_INSIDE_M = 0.3;
   var PORTAL_ANGLE = 70 * Math.PI / 180, PORTAL_SHADOW_SIZE = 512, UPRAY_OFF = 0.5, UPRAY_MAX = 30;
   var placed = [], film = null;   // film: §FILM_PARITY per-frame state (cached panes + the fixed light set's assignments)
+  // §FAST_BAKE FB1 (bim-compiler prompts/ALTC_FOUNDATION.md "§BAKE_SPEED BREAKDOWN"): a pane's inward side is camera-independent,
+  // so the film classification is kept per BUILDING across unstage/stage (a bake stages twice: 70.8 s + 53.0 s on Hospital v1515).
+  // sig = the visible glass (pane keys: plane + tile, so another building or a 4D glass change reclassifies). NOT the visible
+  // target count: the two stagings of one Hospital bake differ by one non-glass object (4855 vs 4856, fb/timing.log), which
+  // defeated the reuse on the first try; the count is logged instead.
+  var filmCache = null;   // { sig, targets, inward: { paneKey: Vector3 | 0 } }
+
+  // §FAST_BAKE FB2: skyCount only asks "did this ray hit ANYTHING within far?" — stop at the first object hit instead of
+  // intersectObjects' all-objects-then-sort, and let three-mesh-bvh stop at its first triangle (firstHitOnly). Same boolean
+  // as intersectObjects(targets, false).length > 0: same layer test, same per-object raycast, same near/far.
+  var _hitTmp = [];
+  function anyHit(rc, targets) {
+    rc.firstHitOnly = true;
+    for (var i = 0; i < targets.length; i++) {
+      var o = targets[i]; if (!o.layers.test(rc.layers)) continue;
+      _hitTmp.length = 0; o.raycast(rc, _hitTmp);
+      if (_hitTmp.length) { _hitTmp.length = 0; return true; }
+    }
+    return false;
+  }
 
   function dial(A, key, name, def, lo, hi) {
     var v = (typeof A[key] === 'number') ? A[key] : null;
@@ -143,9 +163,11 @@
     // §SKY_PORTAL_SIDE (watcher): 5 rays per side from 0.5 m off the glass — up, straight out, out+up, out+/-along
     // the facade — and count SKY (no hit within UPRAY_MAX). The side with more sky is outside; a tie is skipped.
     rc.far = 60;
-    function skyCount(pt, out, along) {
+    function skyCount(pt, out, along, brute) {
       var dirs = [up, out, out.clone().add(up).normalize(), out.clone().add(along).normalize(), out.clone().sub(along).normalize()], k = 0;
-      dirs.forEach(function (d) { rc.set(pt, d); if (!rc.intersectObjects(targets, false).length) k++; }); return k;
+      dirs.forEach(function (d) { rc.set(pt, d);
+        if (brute) { rc.firstHitOnly = false; if (!rc.intersectObjects(targets, false).length) k++; }   // §FAST_BAKE witness arm only
+        else if (!anyHit(rc, targets)) k++; }); return k;
     }
     var skipped = 0, H = A.hemi.intensity, sky = A.hemi.color, shadowed = 0, unsh = 0, iSum = 0;
     // §SOURCED_LIGHT_CALIB: a window of area A seen from inside is a Lambertian emitter of the sky's radiance E_sky/pi, so
@@ -181,14 +203,34 @@
     film = null;
     if (A._maxqActive && A._filmParity) {
       var tC = performance.now(), cached = [];
+      var sig = panes.map(function (p) { return p.key; }).join(';');
+      var reuse = !!(filmCache && filmCache.sig === sig), nReused = 0, tgtWas = filmCache ? filmCache.targets : null;
+      if (!reuse) filmCache = { sig: sig, targets: targets.length, inward: {} };
       panes.forEach(function (p) {
-        if (p._inward) { cached.push(p); return; }
+        if (p._inward) { filmCache.inward[p.key] = p._inward; cached.push(p); return; }
+        if (reuse && filmCache.inward.hasOwnProperty(p.key)) { var w = filmCache.inward[p.key]; nReused++; if (w) { p._inward = w.clone(); cached.push(p); } return; }
         var nNeg = p.n.clone().negate();
         var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u);
-        if (sa === sb) return; p._inward = sa < sb ? p.n.clone() : nNeg; cached.push(p);
+        if (sa === sb) { filmCache.inward[p.key] = 0; return; } p._inward = sa < sb ? p.n.clone() : nNeg; filmCache.inward[p.key] = p._inward.clone(); cached.push(p);
       });
       film = { panes: cached, H: H, sky: sky.clone(), gain: gain, exposure: PORTAL_EXPOSURE, byArea: byArea, nShadow: shadowed, assign: [] };
-      console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + ' classified once ms=' + (performance.now() - tC).toFixed(0));
+      var cMs = performance.now() - tC;
+      console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + (reuse ? ' reused=' + nReused + ' (§FAST_BAKE FB1, same visible glass; targets then/now=' + tgtWas + '/' + targets.length + ')' : ' classified once') +
+        ' ms=' + cMs.toFixed(0) + ' targets=' + targets.length + ' ray=first-hit (§FAST_BAKE FB2)');
+      // §FAST_BAKE_WITNESS (&portalwitness=1): re-classify EVERY pane with the old brute-force intersectObjects and compare the
+      // inward side pane by pane. PASS only if mismatches=0 over all panes; INCONCLUSIVE if no pane was judged.
+      if (/[?&]portalwitness=1/.test(location.search)) {   // also on a reuse: the cached sides vs a fresh brute pass on THIS staging's targets
+        var tW = performance.now(), judged = 0, mism = 0, ex = [];
+        panes.forEach(function (p) {
+          var nNeg = p.n.clone().negate();
+          var sa = skyCount(p.c.clone().addScaledVector(p.n, UPRAY_OFF), p.n, p.u, true), sb = skyCount(p.c.clone().addScaledVector(nNeg, UPRAY_OFF), nNeg, p.u, true);
+          var want = sa === sb ? 0 : (sa < sb ? 1 : -1), c0 = filmCache.inward[p.key], got = !c0 ? 0 : (c0.dot(p.n) > 0 ? 1 : -1);
+          judged++; if (want !== got) { mism++; if (ex.length < 5) ex.push(p.key + ' want=' + want + ' got=' + got); }
+        });
+        console.log('§FAST_BAKE_WITNESS ' + (judged === 0 ? 'INCONCLUSIVE' : mism === 0 ? 'PASS' : 'FAIL') + ' panesJudged=' + judged + ' mismatches=' + mism +
+          ' fastMs=' + cMs.toFixed(0) + ' bruteMs=' + (performance.now() - tW).toFixed(0) + (ex.length ? ' e.g. ' + ex.join(' | ') : '') +
+          (reuse ? ' arm=reuse' : ' arm=fresh') + ' — issue it proves: the first-hit ray (and a reused cache) gives the same inward side as intersectObjects on every pane');
+      }
     }
     // §STILL_LIGHT_PAD — pad to the budget's fixed counts (intensity 0) so every still has the same spot-light count
     // and the same shadowed-spot count: no recompile between presses.
