@@ -283,6 +283,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<!-- §S8 (TM_4D5D_VARIANCE_LANE §S8): hover/click on an EDITED element shows its material-cost + labour Δ. Loads the Viewer-side owners LAZILY on first use. -->
+<script src="edit_delta_ui.js?v=1" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
@@ -805,6 +807,8 @@ if (window.Connect && bConnect) {
   // broadcast {tip,length} so connected surfaces RE-FOLD the shared store. Inbound → reload() (re-read the
   // signed log + re-fold), echo-guarded. The op-log persists to localStorage = the shared signed substrate.
   let _applyingRemoteId = false, _lastIdTip = null;
+  // §S8: featureId->guid for every feature carrying a live edit op (the seed rows carry no guid — the Modeller's own §ARC-1 bridge does). Additive payload field.
+  function _editedGuids() { try { const seen = new Set(), out = []; for (const o of window.Bonsai.oplog._geomOps()) { const p = o.parameters || {}; if (o.op_type === 'GEOM_MOVE' || o.op_type === 'GEOM_SCALE' || o.op_type === 'GEOM_ROTATE') { if (p.parent != null && !seen.has(p.parent)) { seen.add(p.parent); const g = (window.__arcGuidByFid || {})[p.parent]; if (g) out.push({ fid: p.parent, guid: g }); } } } return out; } catch (e) { return []; } }
   function _chainTip() { const O = window.Bonsai.oplog; const ops = (O && O.db) ? O._geomOps() : []; return ops.length ? ops[ops.length - 1].op_hash : null; }
   window.addEventListener('bonsai:oplog', () => {
     if (!window.Connect || !window.Connect.on || _applyingRemoteId) return;
@@ -814,7 +818,7 @@ if (window.Connect && bConnect) {
     // _emit() dispatches THIS event BEFORE it writes the shared store (_save). Defer the broadcast one tick so a
     // peer that reloads from the store reads the just-committed op, not the pre-commit bytes (the P3 race).
     const len = window.Bonsai.oplog.length;
-    setTimeout(() => { if (window.Connect && window.Connect.on) window.Connect.publish('identity', { tip: tip, length: len, surface: 'modeller' }); }, 0);
+    setTimeout(() => { if (window.Connect && window.Connect.on) window.Connect.publish('identity', { tip: tip, length: len, surface: 'modeller', edits: _editedGuids(), store: window.Bonsai.oplog._KEY }); }, 0);
   });
   window.Connect.subscribe('identity', async (id) => {
     if (!id || !window.Bonsai.oplog) return;
@@ -1202,6 +1206,7 @@ function setSelectionIds(ids, primary) {
   const bmv = document.getElementById('b-move'); if (bmv) bmv.disabled = selectedId == null;   // Move acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
+  try { window.dispatchEvent(new CustomEvent('dagevu:select', { detail: { fid: selectedId } })); } catch (e) { }   // §S8 additive
   console.log('§MODELLER select featureId=' + selectedId + (selectedIds.size > 1 ? ' set=[' + Array.from(selectedIds).join(',') + '] n=' + selectedIds.size : ''));
   // §ZOOM-SEL: Find-panel-style automatic frame on every real selection change (click / marquee / Outliner
   // pick — every path funnels through here). Empty selection is a guarded no-op inside zoomToSelection.
@@ -1617,6 +1622,7 @@ function setHover(mesh) {
   _hoverMesh = mesh; _hoverId = hid;
   if (mesh && !selectedIds.has(hid)) _emis(mesh, 0x14324a);   // faint hover tint (< selection 0x2b5a8c)
   canvas.style.cursor = modeCursor() || (mesh ? 'pointer' : '');   // a mode owns the cursor; else hover shows pointer
+  try { window.dispatchEvent(new CustomEvent('dagevu:hover', { detail: { fid: hid } })); } catch (e) { }   // §S8 additive
   if (window.A && A.requestRender) A.requestRender();
 }
 canvas.addEventListener('pointermove', (e) => {
