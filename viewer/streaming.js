@@ -2049,6 +2049,11 @@ function setupStreaming(A) {
     if (A.xrayOn) { mat.transparent = true; mat.opacity = 0.3; mat.side = THREE.DoubleSide; }
     if (A.wireOn) { mat.wireframe = true; }
     if (A.sectionOn) { mat.clippingPlanes = [A.sectionPlane]; mat.clipShadows = true; }
+    // §BEAM_UNDER_SLAB (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-09-30 "floor line slight black strip", Terminal …734512094):
+    // a concrete beam's TOP face lies in the floor slab's top plane (ray hit distance 0 on both: IfcSlab CementRender 868686 + IfcBeam
+    // 303030) -> depth fight, the dark beam wins a band (Lu 88 -> 39 whatever the light). The finished floor covers the beam: beam faces
+    // are pushed back a hair in depth so any coplanar slab face draws on top; a beam seen on its own is unchanged.
+    if (ifcClass === 'IfcBeam' || ifcClass === 'IfcBeamStandardCase') { mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 4; A._beamOffsetMats = (A._beamOffsetMats || 0) + 1; if (A._beamOffsetMats === 1) console.log('§BEAM_UNDER_SLAB polygonOffset(1,4) on IfcBeam materials (coplanar slab tops win the depth test)'); }
     A._matCache[cacheKey] = mat;
     return mat;
   };
