@@ -3446,17 +3446,6 @@ function setupCpeLoadPath(A) {
         if (_lp.armPose && A.camera && A.camera.quaternion) {
           A.camera.position.set(_lp.armPose.x, _lp.armPose.y, _lp.armPose.z);
           A.camera.quaternion.copy(_lp.armPose.quaternion);
-          // §132 T4 PAN (red1 2026-10-01: "I like the pan as it is more smooth than a hard freeze"): the pan red1 saw came from the clip
-          // clock bug (§LOADPATH_CLIP_CLOCK, cinema_maxq.js) — a real hold is a hard freeze. Made deliberate: yaw about world up by
-          // PAN_DEG * sin(pi * t / T) — out and BACK, so the first and last hold frames equal the arm pose (no jump at resume).
-          // &lppan=<deg> / APP._lpPanDeg. DEFAULT 0 = HARD FREEZE (red1 2026-10-01: "remove all the drift in film path cam"; a pan
-          // also defeats §129.57 frame reuse — ~30 min per film). Opt-in only.
-          (function () { var m = /[?&]lppan=(-?[0-9.]+)/.exec(location.search), deg = m ? +m[1] : (typeof A._lpPanDeg === 'number' ? A._lpPanDeg : 0);
-            var T = _lp.durSec + (_lp.far ? _lp.far.durSec : 0), t = (typeof elapsed === "number" && isFinite(elapsed)) ? elapsed : 0;
-            if (!deg || !(T > 0) || typeof THREE === 'undefined') return;
-            var yaw = deg * Math.PI / 180 * Math.sin(Math.PI * Math.max(0, Math.min(1, t / T)));
-            A.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
-            _lp.panMaxDeg = Math.max(_lp.panMaxDeg || 0, Math.abs(yaw * 180 / Math.PI)); })();
           if (A.camera.updateMatrixWorld) A.camera.updateMatrixWorld();
           _lp.lastHoldPose = { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z,
             quaternion: A.camera.quaternion.clone() };
@@ -3708,7 +3697,6 @@ function setupCpeLoadPath(A) {
         ' => ' + (_whitenVacuous ? 'INCONCLUSIVE reason=nothing-to-whiten' : (_whitenOk ? 'PASS' : 'FAIL')));
       materialsRestored += _restoreGhost();
       clonesReverted = _disposeChainClones(_lp.hopsUp) + (_lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0);
-      console.log('§LOADPATH_PAN maxYawDeg=' + (_lp.panMaxDeg || 0).toFixed(2) + ' (§132 T4: out-and-back yaw during the freeze; 0 = hard freeze / &lppan=0)');
       if (_lp.twins && _lp.twins.length) { var _twN = 0; _lp.twins.forEach(function (tw) { _twN += _disposeChainClones(tw.hopsUp); });
         console.log('§LOADPATH_TWINS_SYNC twins=' + _lp.twins.length + ' maxLag=' + (_lp.twinMaxLag || 0) + ' clonesDisposed=' + _twN + ' (maxLag = hops a twin was ever ahead/behind the near stack; 0 = one load path shown N times)'); }
       try { if (typeof A._applyDiscVisibility === 'function') A._applyDiscVisibility(); } catch (e1) {}
