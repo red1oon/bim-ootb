@@ -4585,6 +4585,8 @@
             '|rev' + (A._loadPathVisualRev || 0) + '+' + _prevVisualRev +
             '|p' + (_rp ? _rp.x.toFixed(4) + ',' + _rp.y.toFixed(4) + ',' + _rp.z.toFixed(4) : '-') +
             '|t' + (_rt ? _rt.x.toFixed(4) + ',' + _rt.y.toFixed(4) + ',' + _rt.z.toFixed(4) : '-') +
+            // rotation too (2026-10-01): an opt-in freeze pan (&lppan) only rotates the camera — without this the reuse froze it.
+            '|q' + (A.camera ? A.camera.quaternion.x.toFixed(5) + ',' + A.camera.quaternion.y.toFixed(5) + ',' + A.camera.quaternion.z.toFixed(5) + ',' + A.camera.quaternion.w.toFixed(5) : '-') +
             '|s' + ((A.sunCompassInfo && A.sunCompassInfo()) ? (+A.sunCompassInfo().elevation).toFixed(3) : '-') +
             '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-');
         }

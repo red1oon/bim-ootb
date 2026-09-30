@@ -2593,7 +2593,7 @@ function setupCpeLoadPath(A) {
   // §132 §LOADPATH_TWINS — pick up to N chains with the near stack's SIGNATURE (hop sequence of IFC class @ storey, top-down), spaced
   // >= TWIN_MIN_SEP m apart (IFC plan x/y of the chains' members) and in view of the arm camera widened for the pan (|ndc.x| <= 1.6).
   // Clones are built here (their REAL world boxes decide the view test, never DB boxes — ROUND 5's rule); rejects are disposed at once.
-  var TWIN_MIN_SEP = 6, TWIN_NDC_X = 1.6, TWIN_NDC_Y = 1.1;
+  var TWIN_MIN_SEP = 6, TWIN_NDC_X = 0.95, TWIN_NDC_Y = 0.95;   // inside the frozen frame (no pan by default)
   function _twinsWanted() {
     var m = /[?&]lptwins=(\d+)/.exec(location.search), v = m ? +m[1] : (typeof A._lpTwins === 'number' ? A._lpTwins : 3);
     return Math.max(0, Math.min(8, v | 0));
@@ -3449,8 +3449,9 @@ function setupCpeLoadPath(A) {
           // §132 T4 PAN (red1 2026-10-01: "I like the pan as it is more smooth than a hard freeze"): the pan red1 saw came from the clip
           // clock bug (§LOADPATH_CLIP_CLOCK, cinema_maxq.js) — a real hold is a hard freeze. Made deliberate: yaw about world up by
           // PAN_DEG * sin(pi * t / T) — out and BACK, so the first and last hold frames equal the arm pose (no jump at resume).
-          // &lppan=<deg> / APP._lpPanDeg (0 = hard freeze).
-          (function () { var m = /[?&]lppan=(-?[0-9.]+)/.exec(location.search), deg = m ? +m[1] : (typeof A._lpPanDeg === 'number' ? A._lpPanDeg : 18);
+          // &lppan=<deg> / APP._lpPanDeg. DEFAULT 0 = HARD FREEZE (red1 2026-10-01: "remove all the drift in film path cam"; a pan
+          // also defeats §129.57 frame reuse — ~30 min per film). Opt-in only.
+          (function () { var m = /[?&]lppan=(-?[0-9.]+)/.exec(location.search), deg = m ? +m[1] : (typeof A._lpPanDeg === 'number' ? A._lpPanDeg : 0);
             var T = _lp.durSec + (_lp.far ? _lp.far.durSec : 0), t = (typeof elapsed === "number" && isFinite(elapsed)) ? elapsed : 0;
             if (!deg || !(T > 0) || typeof THREE === 'undefined') return;
             var yaw = deg * Math.PI / 180 * Math.sin(Math.PI * Math.max(0, Math.min(1, t / T)));
