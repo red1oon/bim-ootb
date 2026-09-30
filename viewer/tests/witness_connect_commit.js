@@ -56,7 +56,7 @@ runE2E('W-CONNECT-COMMIT', async (t) => {
   const con = { m: await pg.evaluate(() => !!(window.Connect && window.Connect.on)), v: await vp.evaluate(() => !!(window.Connect && window.Connect.on)) };
   V('C1 CONNECTED', con.m && con.v ? 'PASS' : 'FAIL', 'modeller=' + con.m + ' viewer=' + con.v);
   // C0 baseline
-  const base = await vp.evaluate(() => ({ edits: Object.keys((window.EditDeltaViewer && EditDeltaViewer._edits) || {}).length, hasEDV: !!window.EditDeltaViewer }));
+  const base = await vp.evaluate(() => ({ edits: Object.keys((window.EditDeltaViewer && window.EditDeltaViewer._edits) || {}).length, hasEDV: !!window.EditDeltaViewer }));
   const idIn0 = vlog.filter(l => /^§CONNECT-ID-IN viewer/.test(l)).length;
   V('C0 BASELINE', base.edits === 0 && idIn0 === 0 && vlines().length === 0 ? 'PASS' : 'FAIL', 'viewerEditedGuids=' + base.edits + ' idIn=' + idIn0 + ' s8lines=' + vlines().length + ' EditDeltaViewer=' + base.hasEDV);
 
