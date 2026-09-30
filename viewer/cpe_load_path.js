@@ -862,6 +862,7 @@ function setupCpeLoadPath(A) {
             var m = new THREE.Mesh(geo, cl);
             m.matrixAutoUpdate = false;
             m.matrix.copy(tmpMat);
+            try { if (obj.getBoundingBoxAt) { var _lb = obj.getBoundingBoxAt(geomId, new THREE.Box3()); if (_lb && !_lb.isEmpty()) m.userData._lpBox = _lb.applyMatrix4(tmpMat); } } catch (eBB) {}   // §LOADPATH_VIEW_CULL
             m.matrixWorldNeedsUpdate = true;
             m.frustumCulled = false;
             m.userData._loadPathClone = true;   // never a building element / never re-whitened / never in allElse
@@ -884,6 +885,7 @@ function setupCpeLoadPath(A) {
             var m2 = new THREE.Mesh(obj.geometry, cl);   // ONE shared geometry across all instances — no range extraction needed
             m2.matrixAutoUpdate = false;
             m2.matrix.copy(tmpMat);
+            try { if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox(); if (obj.geometry.boundingBox) m2.userData._lpBox = obj.geometry.boundingBox.clone().applyMatrix4(tmpMat); } catch (eBB2) {}   // §LOADPATH_VIEW_CULL
             m2.matrixWorldNeedsUpdate = true;
             m2.frustumCulled = false;
             m2.userData._loadPathClone = true;
@@ -897,10 +899,37 @@ function setupCpeLoadPath(A) {
     });
     return { containers: containers, elements: elements, elementsFailed: elementsFailed };
   }
+  // ══ §LOADPATH_VIEW_CULL (2026-10-01, red1: "It is a black screen mostly … can't it not occlude or avoid doing that?") ══
+  // The un-packed pieces above are frustumCulled=false (their geometry is the container's WHOLE shared buffer, so three.js's own
+  // bounds test would be meaningless), so every freeze render drew all ~63k of them: §FRAME_COST i=86 held=73797 inFrustum=18856.
+  // The freeze camera is fixed (hard freeze), so the in-view set is decided ONCE at arm from each piece's own world box. Off-view
+  // pieces move to LP_OFFVIEW_LAYER: the film camera (TAA / AO / bounce all render through it) skips them; every shadow-casting
+  // light's shadow camera enables that layer, so an off-screen piece still casts its shadow into the frame. No piece is removed;
+  // pieces without a box stay on layer 0 (drawn, as before). Restored with the clones.
+  var LP_OFFVIEW_LAYER = 29, _lpCullLights = [];
+  function _cullBatchedClonesToView() {
+    if (typeof THREE === 'undefined' || !A.camera || !_batchedClones.length) return null;
+    var t0 = performance.now(), cam = A.camera; cam.updateMatrixWorld();
+    var fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    var inV = 0, off = 0, noBox = 0;
+    _batchedClones.forEach(function (m) {
+      var b = m.userData._lpBox;
+      if (!b) { noBox++; return; }
+      if (fr.intersectsBox(b)) { inV++; return; }
+      m.layers.set(LP_OFFVIEW_LAYER); off++;
+    });
+    _lpCullLights = [];
+    if (off) A.scene.traverse(function (o) { if (o.isLight && o.castShadow && o.shadow && o.shadow.camera && !o.shadow.camera.layers.isEnabled(LP_OFFVIEW_LAYER)) { o.shadow.camera.layers.enable(LP_OFFVIEW_LAYER); _lpCullLights.push(o); } });
+    var r = { pieces: _batchedClones.length, inView: inV, offView: off, noBox: noBox, shadowLights: _lpCullLights.length, ms: Math.round(performance.now() - t0) };
+    console.log('§LOADPATH_VIEW_CULL pieces=' + r.pieces + ' inView=' + inV + ' offView=' + off + ' noBox=' + noBox + ' shadowLightsSeeingThem=' + r.shadowLights + ' ms=' + r.ms +
+      ' (off-view pieces skipped by the film camera, still in every shadow map; &lpcull=0 = draw all as before)');
+    return r;
+  }
+  function _uncullLights() { _lpCullLights.forEach(function (o) { try { o.shadow.camera.layers.disable(LP_OFFVIEW_LAYER); } catch (e) {} }); _lpCullLights = []; }
   function _restoreBatchedElementClones() {
     var n = _batchedClones.length;
     _batchedClones.forEach(function (m) { A.scene.remove(m); m.geometry.dispose(); });
-    _batchedClones = [];
+    _batchedClones = []; _uncullLights();   // §LOADPATH_VIEW_CULL
     var nHidden = _batchedHidden.length;
     _batchedHidden.forEach(function (o) { o.visible = true; });
     _batchedHidden = [];
@@ -3457,6 +3486,7 @@ function setupCpeLoadPath(A) {
             // (`batchedSkipped`) unchanged — this is an independent, additional pass, not a
             // replacement for it.
             _lp.batchUnpackResult = _buildBatchedElementClones();
+            if (!/[?&]lpcull=0/.test(location.search)) { try { _lp.viewCull = _cullBatchedClonesToView(); } catch (eVC) { console.warn('§LOADPATH_VIEW_CULL failed ' + (eVC && eVC.message) + ' — all pieces drawn as before'); } }
             var _bu = _lp.batchUnpackResult;
             console.log('§LOADPATH_BATCH_UNPACK containers=' + _bu.containers + ' elements=' + _bu.elements +
               ' elementsFailed=' + _bu.elementsFailed +
