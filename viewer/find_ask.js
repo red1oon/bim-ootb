@@ -9,6 +9,7 @@
  * sources, rows?, cols?, building, at}. A missing precondition is INCONCLUSIVE, never a fake 0.
  * Loaded in the lazy Navigate bundle BEFORE navigate_find.js (main.js), which calls FindAsk.mount().
  */
+/* global SEQUENCE_RULES, LABOR_RATES, EQUIPMENT_ALLOCATION, EQUIPMENT_RATES, ExcelJS, _TRL */
 (function () {
   'use strict';
 
@@ -18,11 +19,6 @@
 
   function _cur() { return (typeof _TRL !== 'undefined' && _TRL.cur) || 'RM'; }
   function _fmt(n) { return (typeof n === 'number' && isFinite(n)) ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : String(n); }
-  function _discs() {
-    var out = [];
-    try { (A_ref.dbQuery('SELECT DISTINCT discipline FROM elements_meta WHERE discipline IS NOT NULL ORDER BY 1') || []).forEach(function (r) { out.push(r[0]); }); } catch (e) { /* ignore */ }
-    return out;
-  }
   var A_ref = null;
 
   // ── §B evidence capture: the ENGINE's own § lines, printed as normal (never suppressed) ──
@@ -48,9 +44,9 @@
     { id: 'schedule_4d', q: '4D schedule timeline', kw: /4d|schedule|timeline|duration|how long|gantt/i,
       tags: /§4D_REAL_TASKS|§AUTHOR_DETECT|§GANTT |§GANTT_SOURCE|§CREW_DAY |§HR_COST|§ASK_/, run: runSchedule },
     { id: 'cost_total', q: 'Total cost (5D)', kw: /cost|5d|price|budget|how much/i,
-      tags: /§NLP_DEC|§ASK_/, run: runCost },
+      tags: /§ASK_/, run: runCost },
     { id: 'largest_room', q: 'Largest rooms', kw: /room|largest|biggest|area|space/i,
-      tags: /§ROOM_VOL|§ASK_/, run: runRooms },
+      tags: /§ROOM_VOL|§ROOM_GRAPH|§ASK_/, run: runRooms },
     { id: 'exit_path', q: 'Worst-case path to exit', kw: /exit|egress|escape|evacuat|fire/i,
       tags: /§ESCAPE_ROUTE|§ROOM_GRAPH|§ASK_/, run: runExit },
     { id: 'counts', q: 'Element counts by discipline', kw: /count|how many|number|disciplin|element/i,
@@ -67,7 +63,7 @@
   // clash_pair — measure.js:76 _loadClashRules + measure.js:526 _queryClashesPairAll; tolerance per rule
   // exactly as clash_matrix.js:296 sets it; narrow phase = clash_narrow.js qualifyRows (§M).
   async function runClash(opts) {
-    var A = A_ref, a = (opts && opts.discA) || 'ARC', b = (opts && opts.discB) || 'MEP', q = 'Clashes ' + a + ' vs ' + b;
+    var A = A_ref, a = (opts && (opts.a || opts.discA)) || 'ARC', b = (opts && (opts.b || opts.discB)) || 'MEP', q = 'Find clashes between ' + a + ' and ' + b;
     var src = { engine: 'measure.js _queryClashesPairAll + clash_narrow.js qualifyRows', rules: 'clash_rules.json' };
     if (!A._loadClashRules || !A._queryClashesPairAll) return _answer('clash_pair', q, 'INCONCLUSIVE', 'clash engine not loaded (measure.js)', null, { sources: src });
     if (!A._hasBbox) return _answer('clash_pair', q, 'INCONCLUSIVE', 'building has no element bounding boxes (A._hasBbox=false)', null, { sources: src });
@@ -107,8 +103,9 @@
   //  2. otherwise the PLAYED timeline the Time Machine generates (kernel_ops) — time_machine.js:10346
   //     tmGenerateTimeline(), read back via tmScheduleSource() (project window) + tmOpsSnapshot()
   //     (per-op start/end/trade), and the labour cost the generator computed (A._hrCost, §HR_COST).
-  async function runSchedule() {
-    var A = A_ref, q = '4D schedule timeline';
+  async function runSchedule(opts) {
+    var A = A_ref, o = opts || {}, filtered = !!(o.storey || o.phase || o.trade);
+    var q = window.FindAskGrammar ? window.FindAskGrammar.render('schedule_4d', { storey: o.storey, phase: o.phase, trade: o.trade }) : '4D schedule timeline';
     if (!A.db) return _answer('schedule_4d', q, 'INCONCLUSIVE', 'no building loaded', null, {});
     var DAY = 86400000;
     // local calendar date — the same day the Time Machine's own §GANTT anchor/end line prints
@@ -122,7 +119,7 @@
         equipmentRates: typeof EQUIPMENT_RATES !== 'undefined' ? EQUIPMENT_RATES : null
       });
     }
-    if (tasks && tasks.length) {
+    if (tasks && tasks.length && !filtered) {
       var src1 = { engine: 'schedule_read_4d.js readTasks (authored schedule in the DB)' };
       var days = 0, start = null, finish = null, phases = [];
       tasks.forEach(function (t) {
@@ -144,7 +141,7 @@
       try {
         var r = A.db.exec("SELECT timestamp, parameters FROM kernel_ops WHERE undone = 0 AND op_type = 'ELEMENT_PLACE'");
         if (!r.length) return [];
-        return r[0].values.map(function (row) { var pm = row[1] ? JSON.parse(row[1]) : {}; return { s: row[0], e: pm._end_ts || (row[0] + 60000), r: pm.resource || null }; });
+        return r[0].values.map(function (row) { var pm = row[1] ? JSON.parse(row[1]) : {}; return { s: row[0], e: pm._end_ts || (row[0] + 60000), r: pm.resource || null, st: pm.storey || null, ph: pm.phase || null }; });
       } catch (e) { return []; }
     }
     var ops = readOps(), generated = false;
@@ -153,6 +150,12 @@
       ops = readOps();
     }
     if (!ops.length) return _answer('schedule_4d', q, 'INCONCLUSIVE', 'no timeline could be read or generated', null, { sources: src2 });
+    var allN = ops.length;
+    if (filtered) {
+      ops = ops.filter(function (x) { return (!o.storey || x.st === o.storey) && (!o.phase || x.ph === o.phase) && (!o.trade || x.r === o.trade); });
+      console.log('§ASK_4D_FILTER storey=' + (o.storey || '*') + ' phase=' + (o.phase || '*') + ' trade=' + (o.trade || '*') + ' kept=' + ops.length + ' of ' + allN);
+      if (!ops.length) return _answer('schedule_4d', q, 'VACUOUS', 'no scheduled elements match this sentence', { elements: 0 }, { sources: src2 });
+    }
     var ss = { source: 'generated', projectStart: Infinity, projectEnd: -Infinity };
     ops.forEach(function (o) { if (o.s < ss.projectStart) ss.projectStart = o.s; if (o.e > ss.projectEnd) ss.projectEnd = o.e; });
     var byTrade = {};
@@ -161,47 +164,60 @@
       t.n++; if (o.s < t.s) t.s = o.s; if (o.e > t.e) t.e = o.e;
     });
     var trades = Object.keys(byTrade).sort(function (x, y) { return byTrade[x].s - byTrade[y].s; });
-    var hr = A._hrCost || null;
+    var hr = filtered ? null : (A._hrCost || null);   // A._hrCost is a BUILDING total — never shown as a slice's cost
     var val = { source: ss.source, elements: ops.length, start: iso(ss.projectStart), finish: iso(ss.projectEnd),
       days: Math.round((ss.projectEnd - ss.projectStart) / DAY), trades: trades.length, generated: generated,
       labourCost: hr ? hr.total : null, personDays: hr ? hr.personDays : null, currency: _cur() };
     var rows2 = trades.map(function (k) { var t = byTrade[k]; return [k, t.n, iso(t.s), iso(t.e), Math.max(0, Math.round((t.e - t.s) / DAY))]; });
     return _answer('schedule_4d', q, 'OK', ops.length + ' elements scheduled ' + val.start + ' → ' + val.finish + ' (' + val.days + ' days), ' + trades.length + ' trades' +
-      (hr ? ', labour cost ' + _cur() + ' ' + _fmt(hr.total) + ' (' + _fmt(hr.personDays) + ' person-days; time-phased labour, not a BOQ)' : ''), val,
+      (hr ? ', labour cost ' + _cur() + ' ' + _fmt(hr.total) + ' (' + _fmt(hr.personDays) + ' person-days; time-phased labour, not a BOQ)' : (filtered ? ' (labour cost is published for the whole building only)' : '')), val,
       { sources: src2, cols: ['Trade', 'Elements', 'First start', 'Last finish', 'Span days'], rows: rows2 });
   }
 
-  // cost_total — decoder.js 'total cost' over qto_cache, the SAME call nlp.js:288-306 makes.
-  async function runCost() {
-    var A = A_ref, q = 'Total cost (5D)', src = { engine: 'decoder.js BimDecoder total cost (qto_cache)', rules: 'active rate pack' };
-    if (typeof BimDecoder === 'undefined' || !A.db) return _answer('cost_total', q, 'INCONCLUSIVE', 'decoder.js not loaded', null, { sources: src });
+  // cost_total — SUM over qto_cache (the decoder.js:217 sum), cost type + filters from the §H sentence.
+  var CT_COL = { all: 'COALESCE(material_cost,0)+COALESCE(labour_cost,0)+COALESCE(equipment_cost,0)', materials: 'COALESCE(material_cost,0)',
+    labour: 'COALESCE(labour_cost,0)', equipment: 'COALESCE(equipment_cost,0)' };
+  async function runCost(opts) {
+    var A = A_ref, o = opts || {}, ct = CT_COL[o.ctype] ? o.ctype : 'all';
+    var q = window.FindAskGrammar ? window.FindAskGrammar.render('cost_total', { ctype: ct, disc: o.disc, storey: o.storey, cls: o.cls }) : 'Find 5D cost of ' + ct;
+    var src = { engine: 'qto_cache SUM (decoder.js:217 cost sum) — ' + ct, rules: 'rate pack in qto_cache.rate_template' };
     var has = 0;
     try { has = (A.dbQuery("SELECT count(*) FROM sqlite_master WHERE name='qto_cache'") || [[0]])[0][0]; } catch (e) { has = 0; }
     if (!has) return _answer('cost_total', q, 'INCONCLUSIVE', 'this building has no qto_cache table (quantities were never costed) — no total is claimed', null, { sources: src });
-    var d = BimDecoder.decode('total cost', { storeys: [] });
-    if (!d || d.kind !== 'cost') return _answer('cost_total', q, 'INCONCLUSIVE', 'decoder did not read "total cost" as a cost query', null, { sources: src });
-    var cur = _cur(), cur2 = (typeof _TRL !== 'undefined' && _TRL.cur2) || 'USD', rate = (typeof _TRL !== 'undefined' && _TRL.cur_rate) || 3.91;
-    var f = BimDecoder.formatResult(d, function (s, p) { return A.db.exec(s, p || []); }, { cur: cur, cur2: cur2, rate: rate });
-    // formatResult's table holds DISPLAY strings ('RM 1,234'); the number comes from the decoder's own
-    // planned SQL (d.sql/d.params — the same statement formatResult runs), never re-parsed from text.
-    var raw = null;
-    try { var rr = A.db.exec(d.sql, d.params || []); raw = (rr && rr[0] && rr[0].values[0]) ? rr[0].values[0] : null; } catch (e) { raw = null; }
-    var total = raw ? raw[0] : null, elems = raw ? raw[1] : null;
-    console.log('[NLP2026] §NLP_DEC kind=cost n=0 "' + String(f.summary).substring(0, 60) + '" (via Ask)');
-    if (total === null || total === undefined) return _answer('cost_total', q, 'VACUOUS', 'qto_cache holds no costed rows', null, { sources: src });
-    return _answer('cost_total', q, 'OK', f.summary, { total: total, elements: elems, currency: cur }, { sources: src, cols: f.table.cols, rows: f.table.vals });
+    var w = [], p = [];
+    if (o.disc) { w.push('discipline = ?'); p.push(o.disc); }
+    if (o.storey) { w.push('storey = ?'); p.push(o.storey); }
+    if (o.cls) { w.push('ifc_class = ?'); p.push(o.cls); }
+    var where = w.length ? ' WHERE ' + w.join(' AND ') : '';
+    var r = A.db.exec('SELECT ROUND(SUM(' + CT_COL[ct] + ')), SUM(element_count), count(*), GROUP_CONCAT(DISTINCT rate_template) FROM qto_cache' + where, p);
+    var v = (r && r[0] && r[0].values[0]) || [null, 0, 0, null];
+    if (!v[2]) return _answer('cost_total', q, 'VACUOUS', 'no costed rows match this sentence', { total: null, rows: 0 }, { sources: src });
+    var det = A.db.exec('SELECT discipline, storey, ifc_class, qty, uom, element_count, ROUND(' + CT_COL[ct] + ') FROM qto_cache' + where + ' ORDER BY 7 DESC', p);
+    var cur = _cur();
+    console.log('§ASK_COST ctype=' + ct + ' disc=' + (o.disc || '*') + ' storey=' + (o.storey || '*') + ' cls=' + (o.cls || '*') + ' rows=' + v[2] + ' total=' + v[0] + ' rateTemplate=' + v[3]);
+    return _answer('cost_total', q, 'OK', cur + ' ' + _fmt(v[0]) + ' — ' + ct + ', ' + _fmt(v[1]) + ' elements in ' + v[2] + ' cost rows (rates: ' + v[3] + ')',
+      { total: v[0], elements: v[1], rows: v[2], ctype: ct, rateTemplate: v[3], currency: cur },
+      { sources: src, cols: ['Discipline', 'Storey', 'Class', 'Qty', 'UoM', 'Elements', 'Cost (' + ct + ')'], rows: det && det[0] ? det[0].values : [] });
   }
 
   // largest_room — navigate_find.js:2303 A.allRoomVolumes(); area = Σ size.x*size.z per room guid.
-  async function runRooms() {
-    var A = A_ref, q = 'Largest rooms', src = { engine: 'navigate_find.js allRoomVolumes (IfcSpace boxes, habitable only)' };
+  async function runRooms(opts) {
+    var A = A_ref, o = opts || {}, q = 'Find largest rooms' + (o.storey ? ' on ' + o.storey : ''), src = { engine: 'navigate_find.js allRoomVolumes (IfcSpace boxes, habitable only)' };
     if (typeof A.allRoomVolumes !== 'function') return _answer('largest_room', q, 'INCONCLUSIVE', 'room lens not loaded', null, { sources: src });
     var boxes = A.allRoomVolumes() || [], by = {};
     boxes.forEach(function (b) {
       var r = by[b.guid] || (by[b.guid] = { guid: b.guid, name: b.name, category: b.category, area: 0, boxes: 0 });
       r.area += b.size.x * b.size.z; r.boxes++;
     });
-    var rooms = Object.keys(by).map(function (k) { return by[k]; }).sort(function (x, y) { return y.area - x.area; });
+    var rooms = Object.keys(by).map(function (k) { return by[k]; });
+    if (o.storey) {
+      // room → storey from the room graph node (the same graph the exit engine walks)
+      var st = {};
+      try { var g = A.getRoomGraph(); (g && g.nodes || []).forEach(function (n) { st[n.guid] = n.storey; }); } catch (e) { /* none */ }
+      rooms = rooms.filter(function (r) { return st[r.guid] === o.storey; });
+      console.log('§ASK_ROOMS_FILTER storey=' + o.storey + ' kept=' + rooms.length);
+    }
+    rooms.sort(function (x, y) { return y.area - x.area; });
     if (!rooms.length) return _answer('largest_room', q, 'VACUOUS', 'no habitable rooms (IfcSpace) in this building', { rooms: 0 }, { sources: src });
     var top = rooms[0];
     var val = { rooms: rooms.length, largest: { guid: top.guid, name: top.name, areaM2: +top.area.toFixed(2) } };
@@ -211,9 +227,10 @@
 
   // exit_path — cpe_escape_route.js:359 A.escapeRouteBuild(): the worst room (argmax route cost).
   // Route COST is not metres (cpe_escape_route.js:84-90); walkM is the drawn 3D length.
-  async function runExit() {
-    var A = A_ref, q = 'Worst-case path to exit', src = { engine: 'cpe_escape_route.js escapeRouteBuild (room_graph.js escapeRoute)', rules: 'egress_rules.json' };
+  async function runExit(opts) {
+    var A = A_ref, o = opts || {}, q = 'Find path to exit' + (o.roomName ? ' from ' + o.roomName : ' (worst-case room)'), src = { engine: 'cpe_escape_route.js escapeRouteBuild (room_graph.js escapeRoute)', rules: 'egress_rules.json' };
     if (typeof A.escapeRouteBuild !== 'function') return _answer('exit_path', q, 'INCONCLUSIVE', 'escape-route engine not loaded', null, { sources: src });
+    if (o.roomGuid) return runExitFrom(o, q, src);
     var rec = null;
     try { rec = A.escapeRouteBuild(); } catch (e) { rec = null; }
     if (!rec) return _answer('exit_path', q, 'INCONCLUSIVE', 'no exit route could be built (see evidence — usually no walkable raster / no exits in this building)', null, { sources: src });
@@ -223,37 +240,75 @@
       { sources: src, cols: ['Field', 'Value'], rows: Object.keys(val).map(function (k) { return [k, val[k]]; }) });
   }
 
+  // exit from ONE room — room_graph.js:2086 RoomGraph.escapeRoute (nearest exit by route cost), walk
+  // metres = the shortestPath polyline length, measured exactly as cpe_escape_route.js:396-403 does.
+  async function runExitFrom(o, q, src) {
+    var A = A_ref, RG = window.RoomGraph;
+    if (!RG || typeof A.getRoomGraph !== 'function') return _answer('exit_path', q, 'INCONCLUSIVE', 'room graph not loaded', null, { sources: src });
+    var g = A.getRoomGraph(), esc = null;
+    try { esc = RG.escapeRoute(g, o.roomGuid, {}); } catch (e) { esc = null; }
+    if (!esc || esc.distance == null || !isFinite(esc.distance)) return _answer('exit_path', q, 'INCONCLUSIVE', 'no exit reachable from ' + o.roomName + ' (see §ESCAPE_ROUTE evidence)', null, { sources: src });
+    var sp = null, L = null;
+    try { sp = RG.shortestPath(g, o.roomGuid, esc.exitGuid); } catch (e) { sp = null; }
+    var poly = sp && sp.polyline && sp.polyline.length > 1 ? sp.polyline : null;
+    if (poly) { L = 0; for (var i = 1; i < poly.length; i++) L += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y, (poly[i].z || 0) - (poly[i - 1].z || 0)); }
+    var ex = g.nodesByGuid && g.nodesByGuid[esc.exitGuid], exName = (ex && ex.name) || 'Exit';
+    var val = { room: o.roomName, roomGuid: o.roomGuid, exit: exName, exitGuid: esc.exitGuid, walkM: L === null ? null : +L.toFixed(2), routeCost: +(+esc.distance).toFixed(2), doors: (esc.doors || []).length, hops: (esc.path || []).length };
+    return _answer('exit_path', q, 'OK', 'From ' + o.roomName + ' to ' + exName + ': ' + (L === null ? 'walk length not drawable' : L.toFixed(1) + ' m walk') + ', ' + val.doors + ' doors', val,
+      { sources: src, cols: ['Field', 'Value'], rows: Object.keys(val).map(function (k) { return [k, val[k]]; }) });
+  }
+
   // counts — elements_meta GROUP BY discipline (the table Find's discipline axis reads).
-  async function runCounts() {
-    var A = A_ref, q = 'Element counts by discipline', src = { engine: 'elements_meta GROUP BY discipline' };
+  async function runCounts(opts) {
+    var A = A_ref, by = (opts && opts.by === 'storey') ? 'storey' : 'discipline', q = 'Find element count by ' + by, src = { engine: 'elements_meta GROUP BY ' + by };
     var rows = [];
-    try { rows = A.dbQuery('SELECT discipline, count(*) FROM elements_meta GROUP BY discipline ORDER BY 2 DESC') || []; } catch (e) { rows = []; }
+    try { rows = A.dbQuery('SELECT ' + by + ', count(*) FROM elements_meta GROUP BY ' + by + ' ORDER BY 2 DESC') || []; } catch (e) { rows = []; }
     if (!rows.length) return _answer('counts', q, 'VACUOUS', 'no elements', { total: 0 }, { sources: src });
-    var total = rows.reduce(function (s, r) { return s + r[1]; }, 0), by = {};
-    rows.forEach(function (r) { by[r[0] || '(none)'] = r[1]; });
-    return _answer('counts', q, 'OK', total + ' elements: ' + rows.map(function (r) { return (r[0] || '(none)') + ' ' + r[1]; }).join(', '), { total: total, byDiscipline: by },
-      { sources: src, cols: ['Discipline', 'Elements'], rows: rows.map(function (r) { return [r[0] || '(none)', r[1]]; }) });
+    var total = rows.reduce(function (s, r) { return s + r[1]; }, 0), byG = {};
+    rows.forEach(function (r) { byG[r[0] || '(none)'] = r[1]; });
+    return _answer('counts', q, 'OK', total + ' elements: ' + rows.map(function (r) { return (r[0] || '(none)') + ' ' + r[1]; }).join(', '), { total: total, by: by, groups: byG },
+      { sources: src, cols: [by === 'storey' ? 'Storey' : 'Discipline', 'Elements'], rows: rows.map(function (r) { return [r[0] || '(none)', r[1]]; }) });
   }
 
   // ── run + record ──
-  async function askRun(id, opts) {
-    var A = A_ref, e = CATALOG.filter(function (c) { return c.id === id; })[0];
-    if (!e) throw new Error('unknown ask id ' + id);
+  // askRun(sentence) — a §H sentence {tpl, slots, text} the user confirmed; askRun('id') = that
+  // template's default sentence (API/witness convenience).
+  async function askRun(x, opts) {
+    var A = A_ref, G = window.FindAskGrammar, sent = null;
+    if (x && typeof x === 'object') sent = x;
+    else if (G) { var V0 = await _vocabFresh(); sent = G.make(x, Object.assign(G.defaults(x, V0), opts || {}), V0); }
+    else sent = { tpl: x, slots: opts || {}, text: x };
+    var e = CATALOG.filter(function (c) { return c.id === sent.tpl; })[0];
+    if (!e) throw new Error('unknown ask template ' + sent.tpl);
     var cap = _capture(e.tags), ans;
-    try { ans = await e.run(opts || {}); }
-    catch (err) { ans = _answer(id, e.q, 'INCONCLUSIVE', 'engine threw: ' + (err && err.message), null, {}); }
+    console.log('§ASK_CONFIRM tpl=' + sent.tpl + ' "' + sent.text + '"');
+    try { ans = await e.run(sent.slots || {}); }
+    catch (err) { ans = _answer(sent.tpl, sent.text, 'INCONCLUSIVE', 'engine threw: ' + (err && err.message), null, {}); }
+    ans.question = sent.text; ans.slots = sent.slots || {};
     var v = ans.value === null || ans.value === undefined ? '' : JSON.stringify(ans.value);
-    console.log('§ASK_ANSWER id=' + id + ' verdict=' + ans.verdict + ' value=' + v.slice(0, 400));
+    console.log('§ASK_ANSWER id=' + sent.tpl + ' verdict=' + ans.verdict + ' value=' + v.slice(0, 400));
     ans.evidence = cap.stop();
     A.askAnswers.push(ans);
+    _vocab = null;   // a run can create data (e.g. the 4D timeline) — rebuild the vocabulary next time
     _render();
     return ans;
   }
 
-  function askMatch(text) {
-    var t = (text || '').trim();
-    if (!t) return CATALOG.slice();
-    return CATALOG.filter(function (c) { return c.kw.test(t) || c.q.toLowerCase().indexOf(t.toLowerCase()) >= 0; });
+  // ── vocabulary cache (FindAskGrammar.vocab over THIS building + clash_rules.json) ──
+  var _vocab = null, _rules = null;
+  async function _vocabFresh() {
+    var A = A_ref;
+    if (_vocab && _vocab.building === A.activeBuilding) return _vocab;
+    if (!_rules && A._loadClashRules) _rules = await new Promise(function (r) { A._loadClashRules(r); });
+    _vocab = window.FindAskGrammar.vocab(A, _rules);
+    console.log('§ASK_VOCAB building=' + _vocab.building + ' discs=' + _vocab.discs.length + ' storeys=' + _vocab.storeys.length + ' qto=' + _vocab.hasQto +
+      ' qtoClasses=' + _vocab.qtoClasses.length + ' raster=' + _vocab.hasRaster + ' ops=' + _vocab.opsCount + ' phases=' + _vocab.opsPhases.length +
+      ' trades=' + _vocab.opsTrades.length + ' pairs=' + _vocab.pairs.length + ' rooms=' + _vocab.rooms.length);
+    return _vocab;
+  }
+  async function askSuggest(text) {
+    var V = await _vocabFresh();
+    return window.FindAskGrammar.suggest(A_ref, V, text || '', 10);
   }
 
   // ── §E workbook (ExcelJS, lazy — boq_charts.html:59 precedent) ──
@@ -314,12 +369,12 @@
 
   function _render() {
     if (!ui) return;
-    var A = A_ref, list = askMatch(ui.filter);
-    ui.catalog.innerHTML = list.map(function (c) {
-      var pair = c.pair ? ' <select data-k="a">' + ui.discOpts('ARC') + '</select> vs <select data-k="b">' + ui.discOpts('MEP') + '</select>' : '';
-      return '<div class="ask-q" data-id="' + c.id + '" style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px">' +
-        '<span style="flex:1">' + _esc(c.q) + pair + '</span><button class="ask-run" style="padding:3px 10px;font-size:11px;border:1px solid rgba(79,195,247,0.4);border-radius:6px;background:rgba(79,195,247,0.15);color:#4fc3f7;cursor:pointer">Run</button></div>';
-    }).join('') || '<div style="padding:6px 10px;font-size:11px;opacity:0.7">No canned question matches — try clash, 4D, cost, room, exit, count.</div>';
+    var A = A_ref, list = ui.suggestions || [];
+    ui.catalog.innerHTML = list.map(function (sg, k) {
+      return '<div class="ask-q" data-k="' + k + '" data-tpl="' + sg.tpl + '" title="' + _esc(sg.available ? 'Run this question' : sg.reason) + '" style="padding:5px 10px;font-size:12px;' +
+        (sg.available ? 'cursor:pointer;color:#e0f7fa' : 'opacity:0.4;cursor:not-allowed') + '">' + (k === 0 && sg.available ? '\u21B5 ' : '') + _esc(sg.text) +
+        (sg.available ? '' : ' <span style="font-size:10px">— ' + _esc(sg.reason) + '</span>') + '</div>';
+    }).join('') || '<div style="padding:6px 10px;font-size:11px;opacity:0.7">' + _esc(ui.hint || 'No question fits those words — try: cost MEP · schedule Level 1 · clash ARC MEP · largest room · exit · count') + '</div>';
     ui.answers.innerHTML = A.askAnswers.map(function (a, i) {
       return '<div class="ask-card" style="margin:4px 10px;padding:6px 8px;border-left:3px solid ' + (BADGE[a.verdict] || '#999') + ';background:rgba(255,255,255,0.04);font-size:12px">' +
         '<div style="opacity:0.7">' + (i + 1) + '. ' + _esc(a.question) + ' · <b style="color:' + (BADGE[a.verdict] || '#999') + '">' + a.verdict + '</b></div>' +
@@ -332,7 +387,7 @@
   function mount(A, panel) {
     A_ref = A;
     if (!A.askAnswers) A.askAnswers = [];
-    A.askRun = askRun; A.askMatch = askMatch; A.askBuildWorkbook = askBuildWorkbook; A.askSave = askSave;
+    A.askRun = askRun; A.askSuggest = askSuggest; A.askBuildWorkbook = askBuildWorkbook; A.askSave = askSave;
     A.askCatalog = function () { return CATALOG.map(function (c) { return { id: c.id, question: c.q }; }); };
     var bar = document.createElement('div');
     bar.id = 'find-ask-switch';
@@ -349,9 +404,18 @@
     var searchBar = panel.querySelector('.find-search-bar');
     panel.insertBefore(bar, searchBar ? searchBar.nextSibling : panel.firstChild);
     panel.insertBefore(pane, bar.nextSibling);
-    var discs = _discs();
-    ui = { filter: '', active: false, catalog: pane.querySelector('#find-ask-catalog'), answers: pane.querySelector('#find-ask-answers'), count: pane.querySelector('#find-ask-count'),
-      discOpts: function (sel) { return (discs.length ? discs : ['ARC', 'MEP', 'STR', 'ELEC', 'FP', 'ACMV']).map(function (d) { return '<option' + (d === sel ? ' selected' : '') + '>' + d + '</option>'; }).join(''); } };
+    ui = { filter: '', active: false, suggestions: [], catalog: pane.querySelector('#find-ask-catalog'), answers: pane.querySelector('#find-ask-answers'), count: pane.querySelector('#find-ask-count') };
+    // Only the NEWEST request may redraw: on a slow first vocabulary build an older (e.g. empty-box)
+    // request can resolve after the typed one and would put stale sentences on screen.
+    var _seq = 0;
+    function refresh(text) {
+      var my = ++_seq;
+      ui.filter = text || '';
+      return askSuggest(ui.filter).then(function (list) {
+        if (my === _seq) { ui.suggestions = list; _render(); } else console.log('§ASK_SUGGEST_STALE dropped request ' + my + ' (newest ' + _seq + ')');
+        return list;
+      });
+    }
     var hidden = [];
     function setMode(ask) {
       ui.active = ask;
@@ -361,7 +425,7 @@
           if (ch === bar || ch === pane || ch === searchBar || ch.id === 'find-close') return;
           hidden.push([ch, ch.style.display]); ch.style.display = 'none';
         });
-        pane.style.display = 'block'; discs = _discs(); _render();
+        pane.style.display = 'block'; refresh(ui.filter);
       } else {
         hidden.forEach(function (h) { h[0].style.display = h[1]; }); hidden = [];
         pane.style.display = 'none';
@@ -376,26 +440,26 @@
     pane.querySelector('#find-ask-save').addEventListener('click', function () { askSave(); });
     pane.querySelector('#find-ask-clear').addEventListener('click', function () { A.askAnswers.length = 0; _render(); });
     ui.catalog.addEventListener('click', function (ev) {
-      var btn = ev.target.closest('.ask-run'); if (!btn) return;
-      var row = btn.closest('.ask-q'), id = row.getAttribute('data-id'), o = {};
-      var sa = row.querySelector('select[data-k="a"]'), sb = row.querySelector('select[data-k="b"]');
-      if (sa && sb) { o.discA = sa.value; o.discB = sb.value; }
-      btn.disabled = true; btn.textContent = '…';
-      askRun(id, o).then(function () { btn.disabled = false; btn.textContent = 'Run'; });
+      var row = ev.target.closest('.ask-q'); if (!row) return;
+      var sg = ui.suggestions[+row.getAttribute('data-k')];
+      if (!sg || !sg.available) return;
+      askRun(sg);
     });
-    // Find's _handleInput delegates here while Ask is active: typed/voice text filters the catalog;
-    // an explicit submit (Enter/voice final) runs the single best match.
+    // Find's _handleInput delegates here while Ask is active. Typed/spoken words only FILTER the
+    // sentence list (§H). Enter confirms the top available sentence; a VOICE final never runs anything.
     A.askIsActive = function () { return !!(ui && ui.active); };
     A.askInput = function (text, explicit) {
-      ui.filter = text || ''; _render();
-      var m = askMatch(text);
-      console.log('§ASK_FILTER "' + String(text).slice(0, 60) + '" matches=' + m.length + (explicit ? ' explicit' : ''));
-      if (explicit && m.length) return askRun(m[0].id, {});
-      return null;
+      var voice = !!A.inputWasVoice; A.inputWasVoice = false;
+      return refresh(text).then(function (list) {
+        var top = list.filter(function (x) { return x.available; })[0];
+        console.log('§ASK_SUGGEST "' + String(text).slice(0, 60) + '" n=' + list.length + ' top="' + (top ? top.text : '') + '"' + (explicit ? (voice ? ' voice(no-run)' : ' enter') : ''));
+        if (explicit && !voice && top) return askRun(top);
+        return null;
+      });
     };
     A.askSetMode = setMode;
     setMode(false);
-    console.log('§ASK_MOUNT catalog=' + CATALOG.length);
+    console.log('§ASK_MOUNT templates=' + CATALOG.length + ' grammar=' + !!window.FindAskGrammar);
   }
 
   window.FindAsk = { mount: mount, catalog: CATALOG };

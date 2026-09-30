@@ -18,6 +18,7 @@
 // Verdict: INCONCLUSIVE (exit 2) when nothing was judged OK — never PASS on an empty population.
 //
 // Env: BLD (default Clinic) · BLD_DIR (default ~/bim-ootb/buildings) · ROOT · PORT · GPU=sw|real · LOAD_MS · LOG
+/* global SEQUENCE_RULES, LABOR_RATES, EQUIPMENT_ALLOCATION, EQUIPMENT_RATES, Buffer */
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
@@ -80,6 +81,67 @@ async function oracle(ids) {
   return out;
 }
 
+
+// W6/W7 in-page probe — the witness's OWN vocabulary (own SQL, own parse), never FindAskGrammar.vocab.
+async function grammarProbe(rulePairs) {
+  const A = window.APP, q = (sql, p) => { try { return p ? (A.db.exec(sql, p)[0] || { values: [] }).values : (A.dbQuery(sql) || []); } catch (e) { return []; } };
+  const col = (rows) => rows.map(r => r[0]).filter(v => v !== null && v !== '').map(String);
+  const has = (t) => +((q("SELECT count(*) FROM sqlite_master WHERE name='" + t + "'")[0] || [0])[0]) > 0;
+  const W = { discs: col(q('SELECT DISTINCT discipline FROM elements_meta')), qto: has('qto_cache'), raster: has('storey_walkable_raster') };
+  W.qd = W.qto ? col(q('SELECT DISTINCT discipline FROM qto_cache')) : []; W.qs = W.qto ? col(q('SELECT DISTINCT storey FROM qto_cache')) : [];
+  W.qc = W.qto ? col(q('SELECT DISTINCT ifc_class FROM qto_cache')) : [];
+  const ops = q("SELECT parameters FROM kernel_ops WHERE undone=0 AND op_type='ELEMENT_PLACE'").map(r => { try { return JSON.parse(r[0]); } catch (e) { return {}; } });
+  W.os = [...new Set(ops.map(o => o.storey).filter(Boolean))]; W.op = [...new Set(ops.map(o => o.phase).filter(Boolean))]; W.ot = [...new Set(ops.map(o => o.resource).filter(Boolean))];
+  W.rooms = [...new Set((A.allRoomVolumes() || []).map(v => String(v.name)))];
+  let gst = []; try { gst = [...new Set((A.getRoomGraph().nodes || []).map(n => n.storey).filter(Boolean).map(String))]; } catch (e) { /* none */ }
+  const pairs = rulePairs.filter(p => W.discs.includes(p[0]) && W.discs.includes(p[1])).map(p => p.slice().sort().join('|'));
+  const inputs = ['cost. MEP', 'cost material ' + (W.qd[0] || '') + ' ' + (W.qs[0] || ''), 'schedule ' + (W.os[0] || ''), '4d ' + (W.op[0] || ''),
+    'clash', 'largest room', 'exit', 'count', '', 'zzqx qqzz'];
+  const bad = [], seen = [];
+  for (const t of inputs) {
+    const list = await A.askSuggest(t);
+    seen.push({ t, n: list.length, top: list.slice(0, 4).map(x => x.text) });
+    for (const sg of list) {
+      const s = sg.slots || {}, in_ = (v, arr) => v === null || v === undefined || arr.includes(v);
+      let ok = true;
+      if (sg.tpl === 'cost_total') ok = ['all', 'materials', 'labour', 'equipment'].includes(s.ctype) && in_(s.disc, W.qd) && in_(s.storey, W.qs) && in_(s.cls, W.qc) && sg.available === W.qto;
+      if (sg.tpl === 'schedule_4d') ok = in_(s.storey, W.os) && in_(s.phase, W.op) && in_(s.trade, W.ot);
+      if (sg.tpl === 'clash_pair') ok = pairs.includes([s.a, s.b].sort().join('|'));
+      if (sg.tpl === 'largest_room') ok = in_(s.storey, gst);
+      if (sg.tpl === 'exit_path') ok = in_(s.roomName, W.rooms) && sg.available === W.raster;
+      if (sg.tpl === 'counts') ok = ['discipline', 'storey'].includes(s.by);
+      if (!ok) bad.push(t + ' → ' + sg.text);
+    }
+  }
+  const byT = Object.fromEntries(seen.map(x => [x.t, x]));
+  const w6 = { bad, seen,
+    emptyDefaults: byT[''].n === 6, junkEmpty: byT['zzqx qqzz'].n === 0,
+    costMep: !(W.qto && W.qd.includes('MEP')) ? 'n/a' : JSON.stringify(byT['cost. MEP'].top) === JSON.stringify(['all', 'materials', 'labour', 'equipment'].map(c => 'Find 5D cost of ' + c + ' for MEP')) };
+  // W7 — filters actually applied (witness SQL / own op filter)
+  const w7 = {};
+  if (W.qto && W.qd[0] && W.qs[0]) {
+    const sg = (await A.askSuggest('cost material ' + W.qd[0] + ' ' + W.qs[0])).find(x => x.slots.disc === W.qd[0] && x.slots.storey === W.qs[0] && x.slots.ctype === 'materials');
+    const a = sg ? await A.askRun(sg) : null;
+    const want = +((q('SELECT ROUND(SUM(COALESCE(material_cost,0))) FROM qto_cache WHERE discipline=? AND storey=?', [W.qd[0], W.qs[0]])[0] || [null])[0]);
+    w7.cost = { sentence: sg && sg.text, got: a && a.value && a.value.total, want, ok: !!a && a.verdict === 'OK' && +a.value.total === want };
+  }
+  if (W.os[0]) {
+    const sg = (await A.askSuggest('schedule ' + W.os[0])).find(x => x.tpl === 'schedule_4d' && x.slots.storey === W.os[0] && !x.slots.phase && !x.slots.trade);
+    const a = sg ? await A.askRun(sg) : null, want = ops.filter(o => o.storey === W.os[0]).length;
+    w7.sched = { sentence: sg && sg.text, got: a && a.value && a.value.elements, want, ok: !!a && a.verdict === 'OK' && a.value.elements === want && a.value.labourCost === null };
+  }
+  { const sg = (await A.askSuggest('count')).find(x => x.slots.by === 'storey'); const a = sg ? await A.askRun(sg) : null;
+    const rows = q('SELECT storey, count(*) FROM elements_meta GROUP BY storey ORDER BY 2 DESC');
+    w7.countStorey = { sentence: sg && sg.text, ok: !!a && a.value.total === rows.reduce((t, r) => t + r[1], 0) && Object.keys(a.value.groups).length === rows.length }; }
+  const rec = A.escapeRouteRecord ? A.escapeRouteRecord() : null;
+  if (rec) {
+    const sg = (await A.askSuggest('exit ' + rec.roomName)).find(x => x.slots.roomGuid === rec.roomGuid);
+    const a = sg ? await A.askRun(sg) : null;
+    w7.exitFrom = { sentence: sg && sg.text, got: a && a.value && a.value.exitGuid, want: rec.exitGuid, ok: !!a && a.verdict === 'OK' && a.value.exitGuid === rec.exitGuid };
+  }
+  return { w6, w7 };
+}
+
 (async () => {
   await new Promise(r => server.listen(PORT, '127.0.0.1', r));
   const gpuArgs = { sw: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'], real: ['--use-angle=gl-egl', '--ignore-gpu-blocklist'] }[GPU] || [];
@@ -107,21 +169,26 @@ async function oracle(ids) {
     log(`§ASKW_SCOPE building=${scope.building} discs=${scope.discs.join(',')}`);
     const pair = scope.discs.includes('MEP') ? ['ARC', 'MEP'] : ['ARC', scope.discs.find(d => d && d !== 'ARC') || 'STR'];
 
-    // W5 — UI path for clash_pair: Ask pill → type "clash" → Run
+    // W5 — UI path: Ask pill → type "clash A B" → the top sentence is that pair → click it → one new card.
+    //      Plus: a VOICE final must only fill the list, never run (§H).
     await page.click('#find-mode-ask');
-    await page.evaluate(() => { const el = document.getElementById('find-name'); el.value = 'clash'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-    await page.waitForFunction(() => document.querySelectorAll('#find-ask-catalog .ask-q').length === 1, { timeout: 5000 }).catch(() => {});
-    const uiBefore = await page.evaluate(() => ({ cards: document.querySelectorAll('.ask-card').length, catalog: Array.from(document.querySelectorAll('#find-ask-catalog .ask-q')).map(e => e.dataset.id) }));
-    log(`§ASKW_UI filter="clash" catalog=[${uiBefore.catalog}] cardsBefore=${uiBefore.cards}`);
-    await page.evaluate((p) => { const row = document.querySelector('#find-ask-catalog .ask-q[data-id="clash_pair"]'); if (!row) return;
-      row.querySelector('select[data-k="a"]').value = p[0]; row.querySelector('select[data-k="b"]').value = p[1]; row.querySelector('.ask-run').click(); }, pair);
-    await page.waitForFunction((n) => (window.APP.askAnswers || []).length > n, { timeout: 900000, polling: 500 }, uiBefore.cards);
+    const typed = 'clash ' + pair.join(' ');
+    await page.evaluate((t) => { const el = document.getElementById('find-name'); el.value = t; el.dispatchEvent(new Event('input', { bubbles: true })); }, typed);
+    await page.waitForFunction((w) => { const r = document.querySelector('#find-ask-catalog .ask-q'); return r && r.textContent.indexOf(w) >= 0; }, { timeout: 120000 }, 'clash').catch(() => {});
+    const uiBefore = await page.evaluate(() => ({ cards: document.querySelectorAll('.ask-card').length, list: Array.from(document.querySelectorAll('#find-ask-catalog .ask-q')).map(e => e.textContent) }));
+    log(`§ASKW_UI typed="${typed}" suggestions=${JSON.stringify(uiBefore.list.slice(0, 4))} cardsBefore=${uiBefore.cards}`);
+    await page.evaluate(() => { const r = document.querySelector('#find-ask-catalog .ask-q'); if (r) r.click(); });
+    await page.waitForFunction((n) => (window.APP.askAnswers || []).length > n, { timeout: 900000, polling: 500 }, uiBefore.cards)
+      .catch(() => { throw new Error('W5: clicking the top suggestion ran nothing — top was "' + uiBefore.list[0] + '"'); });
     const uiAfter = await page.evaluate(() => { const c = document.querySelectorAll('.ask-card'); const a = window.APP.askAnswers[window.APP.askAnswers.length - 1];
-      return { cards: c.length, lastText: c.length ? c[c.length - 1].textContent : '', summary: a.summary }; });
-    const w5 = uiBefore.catalog.length >= 1 && uiBefore.catalog.includes('clash_pair') && uiAfter.cards === uiBefore.cards + 1 && uiAfter.lastText.includes(uiAfter.summary);
-    log(`§ASKW_W5 ${w5 ? 'PASS' : 'FAIL'} cardsAfter=${uiAfter.cards} summaryInCard=${uiAfter.lastText.includes(uiAfter.summary)}`);
+      return { cards: c.length, lastText: c.length ? c[c.length - 1].textContent : '', summary: a.summary, question: a.question }; });
+    const voice = await page.evaluate(async () => { const A = window.APP, n = A.askAnswers.length; A.inputWasVoice = true; await A.askInput('cost', true); return { before: n, after: A.askAnswers.length }; });
+    const want = 'Find clashes between ' + pair[0] + ' and ' + pair[1];
+    const w5 = /^\u21B5 ?/.test(uiBefore.list[0] || '') && (uiBefore.list[0] || '').replace(/^\u21B5 ?/, '') === want && uiAfter.question === want &&
+      uiAfter.cards === uiBefore.cards + 1 && uiAfter.lastText.includes(uiAfter.summary) && voice.after === voice.before;
+    log(`§ASKW_W5 ${w5 ? 'PASS' : 'FAIL'} top="${uiBefore.list[0]}" want="${want}" cardsAfter=${uiAfter.cards} summaryInCard=${uiAfter.lastText.includes(uiAfter.summary)} voiceRan=${voice.after - voice.before}`);
 
-    // Remaining catalog through the API (same askRun the Run button calls)
+    // Default sentence of every other template through the API (same askRun a click calls)
     for (const id of ['schedule_4d', 'cost_total', 'largest_room', 'exit_path', 'counts']) {
       await page.evaluate((i) => window.APP.askRun(i), id);
     }
@@ -150,7 +217,7 @@ async function oracle(ids) {
         if (a.id === 'counts') parity = v.total === O.counts;
       }
       const engineTags = a.evidence.filter(t => !/^§ASK_/.test(t));
-      const evidenceReal = a.verdict !== 'OK' || (a.id === 'counts') || (engineTags.length > 0 && engineTags.every(t => consoleTags.has(t)));
+      const evidenceReal = a.verdict !== 'OK' || (a.id === 'counts') || (a.id === 'cost_total' && a.evidence.includes('§ASK_COST')) || (engineTags.length > 0 && engineTags.every(t => consoleTags.has(t)));
       let honest = true; // W3
       if (a.verdict === 'OK' && (a.value === null || a.value === undefined)) honest = false;
       if (a.id === 'cost_total') honest = honest && ((a.verdict === 'OK') === O.qtoVisible);
@@ -160,6 +227,15 @@ async function oracle(ids) {
       log(`§ASKW_ROW id=${a.id} verdict=${a.verdict} W1=${parity === null ? 'n/a' : parity ? 'PASS' : 'FAIL'} W2=${evidenceReal ? 'PASS' : 'FAIL'}(${engineTags.join(',') || '-'}) W3=${honest ? 'PASS' : 'FAIL'} W4=${saved ? 'PASS' : 'FAIL'} summary="${a.summary}"`);
       return { id: a.id, verdict: a.verdict, parity, evidenceReal, honest, saved, w5 };
     });
+    const rulePairs = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'clash_rules.json'), 'utf8')).clash_rules.map(r => [r.source.discipline, r.target.discipline]);
+    const G = await page.evaluate(grammarProbe, rulePairs);
+    G.w6.seen.forEach(x => log(`§ASKW_W6_INPUT "${x.t}" n=${x.n} top=${JSON.stringify(x.top)}`));
+    const w6ok = G.w6.bad.length === 0 && G.w6.emptyDefaults && G.w6.junkEmpty && G.w6.costMep !== false;
+    log(`§ASKW_W6 ${w6ok ? 'PASS' : 'FAIL'} offDataSlots=${G.w6.bad.length}${G.w6.bad.length ? ' ' + JSON.stringify(G.w6.bad.slice(0, 5)) : ''} emptyDefaults=${G.w6.emptyDefaults} junkEmpty=${G.w6.junkEmpty} costMep=${G.w6.costMep}`);
+    const w7keys = Object.keys(G.w7), w7ok = w7keys.length > 0 && w7keys.every(k => G.w7[k].ok);
+    w7keys.forEach(k => log(`§ASKW_W7 ${k} ${G.w7[k].ok ? 'PASS' : 'FAIL'} ${JSON.stringify(G.w7[k])}`));
+    log(`§ASKW_W7 ${w7ok ? 'PASS' : (w7keys.length ? 'FAIL' : 'INCONCLUSIVE')} judged=${w7keys.join(',')}`);
+    rows.forEach(r => { r.w6 = w6ok; r.w7 = w7ok; });
     const judged = rows.filter(r => r.verdict === 'OK').length;
     if (judged === 0) { log('§ASKW_VERDICT INCONCLUSIVE — no answer came back OK, nothing was judged'); process.exitCode = 2; }
     else {
@@ -171,6 +247,8 @@ async function oracle(ids) {
         .invariant('W3 honest-inconclusive', rs => rs.every(r => r.honest))
         .invariant('W4 save-roundtrip', rs => rs.length === xrows.length && rs.every(r => r.saved))
         .invariant('W5 ui-wired', rs => rs.every(r => r.w5))
+        .invariant('W6 grammar-from-data', rs => rs.every(r => r.w6))
+        .invariant('W7 filter-parity', rs => rs.every(r => r.w7))
         .redControl(rs => rs.map(r => r.verdict === 'OK' ? Object.assign({}, r, { parity: false }) : r))
         .run();
       verdictLine = res.fail ? 'FAIL' : 'PASS';

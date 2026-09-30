@@ -203,7 +203,8 @@ async function initViewer() {
         // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
         // would still carry its own copy AND the new wiring would never run.
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
-        'find_ask.js?v=1',
+        'find_ask_grammar.js?v=1',
+        'find_ask.js?v=2',
         'navigate_find.js?v=61',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
