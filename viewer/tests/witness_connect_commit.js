@@ -35,7 +35,7 @@ runE2E('W-CONNECT-COMMIT', async (t) => {
   const br = pg.browser(), cdp = await br.target().createCDPSession();
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', newWindow: true, width: 800, height: 560 });
   const vt = await br.waitForTarget(x => x._targetId === targetId); const vp = await vt.page();
-  await vp.setViewport({ width: 800, height: 500, deviceScaleFactor: 1 });
+  await vp.setViewport({ width: 1000, height: 640, deviceScaleFactor: 1 });
   console.log('  §CC_WINDOWS modeller.visibility=' + await pg.evaluate(() => document.visibilityState) + ' viewer.visibility=' + await vp.evaluate(() => document.visibilityState));
   const vlog = []; vp.on('console', m => { const x = m.text(); if (/^§/.test(x)) vlog.push(x); });
   const verr = []; vp.on('pageerror', e => verr.push(String(e).slice(0, 160)));
@@ -129,11 +129,11 @@ runE2E('W-CONNECT-COMMIT', async (t) => {
   console.log('  §CC_VEDITS ' + JSON.stringify(await vp.evaluate((g) => { const E = window.EditDeltaViewer; return { keys: Object.keys(E._edits), has: !!E._edits[g], lbl: E.labelFor(g), hoverFn: typeof (window.APP && APP.toggleHoverName), hs: String(document.querySelector('script[src*="hover_name"]') && document.querySelector('script[src*="hover_name"]').src) }; }, guid)).slice(0, 400));
   const h1 = await hoverAtCentre();
   { // guide shot at dpr 2, clip = the hover label + the pixel it hangs from
-    await vp.setViewport({ width: 900, height: 600, deviceScaleFactor: 2 }); await t.sleep(600);
+    await vp.setViewport({ width: 1000, height: 640, deviceScaleFactor: 2 }); await t.sleep(600);
     const lr = await vp.evaluate(() => { const e = document.getElementById('hover-name-label'); if (!e || e.style.display === 'none') return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
-    if (lr && hp) { const x0 = Math.max(0, Math.min(lr.x, hp[0] - 70) - 10), y0 = Math.max(0, Math.min(lr.y, hp[1] - 50) - 10), x1 = Math.min(900, Math.max(lr.x + lr.w, hp[0] + 70) + 10), y1 = Math.min(600, Math.max(lr.y + lr.h, hp[1] + 50) + 10);
+    if (lr && hp) { const x0 = Math.max(0, Math.min(lr.x, hp[0] - 70) - 10), y0 = Math.max(0, Math.min(lr.y, hp[1] - 50) - 10), x1 = Math.min(1000, Math.max(lr.x + lr.w, hp[0] + 70) + 10), y1 = Math.min(640, Math.max(lr.y + lr.h, hp[1] + 50) + 10);
       await vp.screenshot({ path: path.join(OUT, 'viewer-s8-hover.png'), clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } }); console.log('  §SHOTCLIP viewer-s8-hover ' + [x0, y0, x1 - x0, y1 - y0].map(Math.round)); }
-    await vp.setViewport({ width: 900, height: 600, deviceScaleFactor: 1 }); }
+    await vp.setViewport({ width: 1000, height: 640, deviceScaleFactor: 1 }); }
   V('C6 HOVER', !sameEl ? 'INCONCLUSIVE' : (h1 && h1.s8 && mlabel && h1.s8 === mlabel ? 'PASS' : 'FAIL'), 'viewerLabel=' + JSON.stringify(h1 && h1.s8) + ' modellerLabel=' + JSON.stringify(mlabel) + (h1 && h1.s8 === mlabel ? ' (byte-equal)' : ''));
 
   // undo in the Modeller

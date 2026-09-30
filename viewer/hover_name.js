@@ -41,7 +41,10 @@ function setupHoverName(A) {
 
   function _positionLabel() {
     if (!_label) return;
-    _label.style.left = (_mouseX + 14) + 'px';
+    // §S8: keep the label inside the window (the Δ line can be long): flip left of the cursor when it would run off the right edge.
+    var w = _label.offsetWidth || 0, x = _mouseX + 14;
+    if (w && x + w > window.innerWidth - 6) x = Math.max(6, _mouseX - 14 - w);
+    _label.style.left = x + 'px';
     _label.style.top = (_mouseY + 16) + 'px';
   }
 
@@ -166,7 +169,7 @@ function setupHoverName(A) {
     lbl.innerHTML = '<div>' + String(name).replace(/</g, '&lt;') + '</div>' +
       (room ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(room).replace(/</g, '&lt;') + '</div>' : '') +
       (win4d ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(win4d).replace(/</g, '&lt;') + '</div>' : '')
-      + (s8 ? '<div id="s8-hover-line" style="color:#ffd166;font-size:10px;margin-top:2px">' + String(s8).replace(/</g, '&lt;') + '</div>' : '');
+      + (s8 ? '<div id="s8-hover-line" style="color:#ffd166;font-size:10px;margin-top:2px;white-space:normal;max-width:380px">' + String(s8).replace(/</g, '&lt;') + '</div>' : '');
     lbl.style.display = 'block';
     _positionLabel();
     // §IDLE_GATE parks the rAF chain when nothing moves — force one frame so the label isn't

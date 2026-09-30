@@ -111,7 +111,7 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   await pg.mouse.click(pt[0], pt[1]); await t.sleep(1200);
   const pin = await pg.evaluate(() => { const e = document.getElementById('s8-delta-pin'); return e && e.style.display !== 'none' ? e.textContent : null; });
   await shotRects(pg, 's8-1-hover-label', [await rectSel(pg, '#s8-delta-label'), { x: pt[0] - 90, y: pt[1] - 60, w: 180, h: 120 }], 10);
-  await shotRects(pg, 's8-2-click-line', [await rectSel(pg, '#s8-delta-pin'), { x: pt[0] - 160, y: pt[1] - 110, w: 320, h: 200 }], 10);
+  await shotRects(pg, 's8-2-click-line', [await rectSel(pg, '#s8-delta-pin'), await rectSel(pg, '#s9-erp-btn')], 16);
   const lastLine = s8lines().filter(l => kv(l, 'guid') === guid).pop();
   console.log('  §S8_LINES ' + s8lines().length + ' last=' + (lastLine || '').slice(0, 260));
   const owners1 = await pg.evaluate(() => ({ ED: !!window.EditDelta, SA: !!window.ScheduleAuthor }));
