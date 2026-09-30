@@ -20,7 +20,7 @@
 //                       one new .ask-card whose text holds that answer's summary.
 // Verdict: INCONCLUSIVE (exit 2) when nothing was judged OK — never PASS on an empty population.
 //
-// Env: BLD (default Clinic) · BLD_DIR (default ~/bim-ootb/buildings) · ROOT · PORT · GPU=sw|real · LOAD_MS · LOG
+// Env: SAVE_XLSX (write the full workbook to this path, §J) · BLD (default Clinic) · BLD_DIR (default ~/bim-ootb/buildings) · ROOT · PORT · GPU=sw|real · LOAD_MS · LOG
 /* global SEQUENCE_RULES, LABOR_RATES, EQUIPMENT_ALLOCATION, EQUIPMENT_RATES, Buffer */
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
@@ -258,6 +258,12 @@ async function grammarProbe(rulePairs) {
       w8 = ok;
     } else log('§ASKW_W8 n/a — no exit route in this building (nothing to compare)');
     rows.forEach(r => { r.w6 = w6ok; r.w7 = w7ok; r.w8 = w8 !== false; });
+    // §J — SAVE_XLSX: the FULL workbook (defaults + W7 drill-downs), same bytes as the Save .xlsx button
+    if (process.env.SAVE_XLSX) {
+      const full = await page.evaluate(async () => { const buf = await window.APP.askBuildWorkbook(); let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return { b64: btoa(s), n: window.APP.askAnswers.length }; });
+      fs.writeFileSync(process.env.SAVE_XLSX, Buffer.from(full.b64, 'base64'));
+      log(`§ASKW_SAVED file=${process.env.SAVE_XLSX} answers=${full.n} bytes=${Buffer.from(full.b64, 'base64').length}`);
+    }
     const judged = rows.filter(r => r.verdict === 'OK').length;
     if (judged === 0) { log('§ASKW_VERDICT INCONCLUSIVE — no answer came back OK, nothing was judged'); process.exitCode = 2; }
     else {

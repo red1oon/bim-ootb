@@ -135,6 +135,25 @@ storey/phase/trade filters only after a timeline exists (the whole-building sent
   `§ESCAPE_ROUTE_ALTERNATES` line; `escapeRouteFor(worst room)` = the film record (same exit, walk,
   common path, alternate exits in order); every alternate is a graph exit node ≠ the best exit.
 
+## §J External-AI test — our own Claude as the outside user (user, 2026-09-30)
+> *"we be testing with our own Claude Code as the 'external AI user'"* … *"do the next step"*
+
+The end of the chain is not "the workbook saves" — it is **an outside AI, given only the saved file
+and our canned prompt, answers from it without inventing**. Test it with a fresh Claude (Agent tool,
+Sonnet, NO project context, told to read only the one .xlsx).
+
+1. `witness_find_ask_answers.js` gains `SAVE_XLSX=<path>`: after W1–W8 it writes the FULL answers
+   workbook (defaults + the W7 drill-down sentences) to disk — the same bytes Save .xlsx downloads.
+2. The fresh Claude gets: the file path, the prompt from the workbook's own "Prompt for your AI" cell,
+   and a fixed question list — answerable ones (clashes ARC vs MEP, schedule length, total cost,
+   materials cost STR on Level 1, worst escape route + alternatives, largest room) and TRAPS the file
+   cannot answer (clashes PLB vs STR, cost on Level 3, fire-sprinkler count).
+3. **W9 AI-GROUNDED** (`scripts`-free judge, `viewer/tests/judge_external_ai.py`) — issue: an outside AI
+   could state numbers the file never gave (the exact failure the product exists to prevent). PASS iff
+   (a) every number in each answer appears in the workbook, (b) each answerable question cites an
+   Evidence tag or Engine value present in the row it used, (c) every trap is answered "not in the
+   file" with no number. Reports per-question and overall; INCONCLUSIVE if the AI returned nothing.
+
 ## §G Status
 - 2026-09-30 spec written. Branch `feat/find-ask-answers` (bim-ootb). Built: `viewer/find_ask.js`,
   2 hooks in `navigate_find.js` (mount after panel append; `_handleInput` delegates while Ask is
@@ -187,3 +206,17 @@ storey/phase/trade filters only after a timeline exists (the whole-building sent
   - Alternatives are in the ENGINE's order (route cost, which penalises utility rooms), so walk metres
     are not monotonic (261 before 241) — by design, not re-sorted.
   - **Clinic `§ASKW_VERDICT PASS judgedOK=4/6 pass=11 fail=0`** — W8 n/a (no walk raster).
+- **2026-09-30 §J external-AI test — `§W9_VERDICT PASS judged=9 fail=0`** (branch `feat/ask-external-ai-test`):
+  - Workbook: `SAVE_XLSX` Hospital run (`§ASKW_SAVED answers=10 bytes=43743`, witness `PASS 6/6 pass=11`).
+  - Outside AI = a fresh Claude (Sonnet, Agent tool, no project context, told to read only the one .xlsx and
+    follow the workbook's own "Prompt for your AI" cell). Questions: `viewer/tests/external_ai_questions.json`.
+  - 6/6 answerable questions: every number found in the workbook, both Evidence + Engine cells cited
+    verbatim (e.g. q5 listed all 7 alternative exits with walk metres from the exit detail sheet). 3/3 traps
+    (clash PLB vs STR, equipment cost for MEP, sprinkler-head count) answered "not in the file", no number.
+  - Red control: fabricated answers (invented cost 81,250,000; a correct number with no citation; a trap
+    answered "about 40") → `§W9_VERDICT FAIL judged=3 fail=3`.
+  - Judge defect found + fixed on the first real run: a refusal naming "STR Level 1" was read as stating the
+    number 1. Workbook labels carrying a digit are now stripped before numbers are read (red control still
+    FAIL 3/3 after the fix).
+  - Infra note: the first Hospital save timed out at 15 min under load average 28 on 20 cores (other
+    sessions' headless-Chrome runs) — retried with `LOAD_MS=2400000`, not a code fault.
