@@ -907,6 +907,9 @@ function setupCpeLoadPath(A) {
   // light's shadow camera enables that layer, so an off-screen piece still casts its shadow into the frame. No piece is removed;
   // pieces without a box stay on layer 0 (drawn, as before). Restored with the clones.
   var LP_OFFVIEW_LAYER = 29, _lpCullLights = [];
+  var _lpStackOnlyHidden = [];
+  function _unhideStackOnly() { var n = _lpStackOnlyHidden.length; _lpStackOnlyHidden.forEach(function (o) { o.visible = true; }); _lpStackOnlyHidden = []; A._lpStackOnly = false;
+    if (n) console.log('§LOADPATH_STACK_ONLY_RESTORE shown=' + n); return n; }
   function _cullBatchedClonesToView() {
     if (typeof THREE === 'undefined' || !A.camera || !_batchedClones.length) return null;
     var t0 = performance.now(), cam = A.camera; cam.updateMatrixWorld();
@@ -3413,7 +3416,12 @@ function setupCpeLoadPath(A) {
           // side (everything but the stack, which is never in this population — see _applyWhiten's
           // own `_loadPathClone` exclusion) is cut away. `window.__lpNoSectionCut=1` kills it for an
           // A/B, same convention as every other control tap in this file.
-          sectionCut = (!window.__lpNoSectionCut && _lp.chainBox && camPos3) ? _placeSectionCutPlane(_lp.chainBox, camPos3) : null;
+          // §LOADPATH_STACK_ONLY (2026-10-01, red1: "it is supposed to identify the stack only and draw that only.. no context
+          // background other than the overlay info panel … Yes cut off that 13s stuff!"): the freeze hides the building instead of the
+          // white cut-away (which un-packed 63,059 pieces = ~13 s/frame). No cut plane, no whiten, no cap, no un-pack.
+          // &lpcontext=1 / APP._lpContext=true = the previous white cut-away look.
+          _lp.stackOnly = !/[?&]lpcontext=1/.test(location.search) && A._lpContext !== true;
+          sectionCut = (!_lp.stackOnly && !window.__lpNoSectionCut && _lp.chainBox && camPos3) ? _placeSectionCutPlane(_lp.chainBox, camPos3) : null;
           if (sectionCut && A.renderer) A.renderer.localClippingEnabled = true;
           // Exposed so `_visibleWitness` can tell "this beat's own intentional section-cut
           // population" apart from an unexpected/leftover clip plane elsewhere in the scene —
@@ -3428,7 +3436,18 @@ function setupCpeLoadPath(A) {
         // opposite order — _restoreWhiten() before _restoreGhost() — in _restore()/_forceRestore().
         // §129 OPEN ITEM — the section-cut plane (shine mode only) rides the SAME whiten pass: "the
         // cut surface and everything behind it get the concrete/white treatment" (red1's own words).
-        _lp.whitenResult = _applyWhiten(sectionCut ? sectionCut.plane : null);
+        if (_lp.stackOnly) {
+          _lp.whitenResult = { n: 0, stackOnly: true };
+          _lpStackOnlyHidden = [];
+          A.scene.traverse(function (o) {
+            if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isLine || o.isLineSegments || o.isPoints || o.isSprite)) return;
+            if (!o.visible || (o.userData && o.userData._loadPathClone)) return;
+            o.visible = false; _lpStackOnlyHidden.push(o);
+          });
+          A._lpStackOnly = true;
+          console.log('§LOADPATH_STACK_ONLY hidden=' + _lpStackOnlyHidden.length + ' stacks=' + (1 + (_lp.far ? 1 : 0) + (_lp.twins ? _lp.twins.length : 0)) +
+            ' (building + 3D overlays hidden for the freeze; stack clones + 2D info panel only; exposure held; &lpcontext=1 = white cut-away)');
+        } else _lp.whitenResult = _applyWhiten(sectionCut ? sectionCut.plane : null);
         // ROUND 16 item 3 — `backdropFaded` is now true in BOTH modes (_backdropApply's own gate on
         // `_lookGhost()` is removed); `ghosted`/`clipped` stay mode-specific (shine mode never
         // ghosts/clips the building itself, only the backdrop).
@@ -3445,7 +3464,7 @@ function setupCpeLoadPath(A) {
         // the right stencil wiring — never a pixel readback, per this project's own FUNDAMENTAL LAW).
         if (!_lookGhost()) {
           if (!sectionCut) {
-            console.log('§LOADPATH_CUT INCONCLUSIVE reason=' + (window.__lpNoSectionCut ? 'control-off' : 'no-chainbox-or-campos'));
+            console.log('§LOADPATH_CUT ' + (_lp.stackOnly ? 'OFF reason=stack-only (building hidden, nothing to cut)' : 'INCONCLUSIVE reason=' + (window.__lpNoSectionCut ? 'control-off' : 'no-chainbox-or-campos')));
           } else {
             var _cutMarginM = sectionCut.planeDepth - sectionCut.farDepth;
             var _cutClippedN = _whitenTouched.filter(function (t) {
@@ -3670,6 +3689,7 @@ function setupCpeLoadPath(A) {
   };
 
   function _restore(exitFSec) {
+    try { _unhideStackOnly(); } catch (eSO) { console.warn('§LOADPATH_STACK_ONLY_RESTORE failed ' + (eSO && eSO.message)); }
     // §129.4 PRIMAL LAW clause 4 — a witness must be able to say INCONCLUSIVE, not just PASS/FAIL,
     // when nothing was actually judged (no Time Machine cursor to compare against).
     var haveCursor = (typeof window.tmGetState === 'function') && _lp.cursorAtEntry != null;
@@ -3796,6 +3816,7 @@ function setupCpeLoadPath(A) {
       ' planesLeft=0 clonesReverted=' + clonesReverted + '/' + clonesN + ' => ' + restoreVerdict);
   }
   function _forceRestore() {
+    try { _unhideStackOnly(); } catch (eSO2) {}
     A._loadPathVisualRev = (A._loadPathVisualRev || 0) + 1;   // §129.57 — the release changes everything back
     if (_lp && _lp.armed) { _restore(_lp.holdEndSec); return; }
     // Nothing armed — still clear any leftover touch state defensively (bake-abort safety).

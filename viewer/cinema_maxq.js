@@ -4084,7 +4084,8 @@
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
         // §FILM_LAW S1 (bim-compiler ALTC_SHOWSTOPPERS.md §FILM_LAW; ALT+C R1): meter this frame (same §METER_EV chain as Alt+S)
         // and ease the exposure toward it at the engine adaptation speeds, frame clock 1/fps. LAST light write before the fold.
-        if (A._maxqActive && A._filmParity && !A._burninDatumDir && A._filmExposureStep) { try { A._filmExposureStep(i, fps); } catch (eFE) { console.warn('§FILM_EXPOSURE failed: ' + eFE.message); } }
+        // §LOADPATH_STACK_ONLY: exposure held through the freeze (a black frame with one stack would otherwise be metered up).
+        if (A._maxqActive && A._filmParity && !A._burninDatumDir && A._filmExposureStep && !(A._lpStackOnly && A._loadPathHoldFrameActive)) { try { A._filmExposureStep(i, fps); } catch (eFE) { console.warn('§FILM_EXPOSURE failed: ' + eFE.message); } }
         var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:

@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1528';
+const CACHE_VERSION = 'v1529';
+// v1529 (2026-10-01) §LOADPATH_STACK_ONLY: the freeze shows only the stack(s) + 2D info panel (building hidden, exposure held); &lpcontext=1 = old white cut-away. cpe_load_path 7, cinema_maxq 21.
 // v1528 (2026-10-01) §LOADPATH_VIEW_CULL: freeze pieces outside the fixed camera view skipped by the film camera (still cast shadows). cpe_load_path 6.
 // v1527 (2026-10-01) §LOADPATH_CLIP_SKIP: a clip without the freeze point inserts no freeze frames. cinema_maxq 20.
 // v1526 (2026-10-01) §FILM_GEOM_WHOLE: storey reveal counts as cut only inside its own window. cinema_maxq 19.
