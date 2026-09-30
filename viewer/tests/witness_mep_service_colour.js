@@ -37,8 +37,14 @@ const BLD = { HHS: 'HHS_Office_Federated_extracted.db', Hospital: 'Hospital_extr
   const tally = async (key, disc) => page.evaluate(([R, disc]) => {
     const A = window.APP; A._mepHueDisc = disc; const out = { pop: 0, painted: 0, codes: {}, green: 0, fpPipeRed: 0, plbPipeGreen: 0, ductGrey: 0, ductNames: 0, fpPipeT2: 0, plbPipeT2: 0, t2: 0 };
     const G = A.DISC_COLORS.MEP, gr = ((G >> 16) & 255) / 255, gg = ((G >> 8) & 255) / 255, gb = (G & 255) / 255;
+    out.proxy = { nocol: 0, equip: 0, steel: 0, porcelain: 0, teal: 0 };
     for (const e of R) {
-      if (!A._mepHueEligible(e.c, e.d || '', e.r, e.m || '')) continue; out.pop++;
+      if (e.c === 'IfcBuildingElementProxy' && !A._isAuthoredMatName(e.m || '') && (!e.r || A._isExporterPlaceholder(e.r, e.m || ''))) {
+        out.proxy.nocol++; const v = A._elementVariant(e.c, e.n, e.m || '');
+        if (v === 'proxy:equip') out.proxy.equip++; else if (v === 'proxy:steel') out.proxy.steel++; else if (v === 'porcelain') out.proxy.porcelain++; else if (!v) out.proxy.teal++; }
+      if (!A._mepHueEligible(e.c, e.d || '', e.r, e.m || '')) continue;
+      if (A._proxyVariant(e.c, e.n, e.m || '')) continue;   // §PROXY_NAME_MAT wins over the MEP rule (_getMaterial passes no albedo to it)
+      out.pop++;
       let r0 = 0.7, g0 = 0.7, b0 = 0.7; if (e.r && e.r.indexOf(',') >= 0) { const p = e.r.split(',').map(Number); r0 = p[0]; g0 = p[1]; b0 = p[2]; }
       const a = A._mepDiscAlbedo(r0, g0, b0, e.r, e.c, e.d || '', A._mepNameHint(e.n), e.m || '');
       if (/duct/i.test(e.n || '')) out.ductNames++;
@@ -64,6 +70,11 @@ const BLD = { HHS: 'HHS_Office_Federated_extracted.db', Hospital: 'Hospital_extr
   V(T.Terminal.painted === (T.Terminal.codes.DUCT || 0) && T.Terminal.painted <= T.Terminal.t2 && T.Terminal.pop - T.Terminal.t2 > 0, 'G3 Terminal: only its colourless ducts painted (galvanised); every authored element untouched', 'painted=' + T.Terminal.painted + ' tier2=' + T.Terminal.t2 + ' authored/own-hue=' + (T.Terminal.pop - T.Terminal.t2));
   V((T.Hospital.codes.FP || 0) > 0 && (T.Hospital.codes.FP_FIT || 0) > 0 && (T.Hospital.codes.SPRINKLER || 0) > 0, 'G5 parts distinguishable on the fire line: red segments, orange fittings, brass heads all present',
     'FP=' + (T.Hospital.codes.FP || 0) + ' FP_FIT=' + (T.Hospital.codes.FP_FIT || 0) + ' SPRINKLER=' + (T.Hospital.codes.SPRINKLER || 0) + ' | HHS SPRINKLER=' + (T.HHS.codes.SPRINKLER || 0));
+  const hp = T.HHS.proxy;
+  V(hp.nocol > 0 && hp.equip >= 43 + 24 + 54 + 4 && hp.steel >= 81 && hp.teal < hp.nocol * 0.1, 'G6 P1 HHS colourless proxies take their name material (equip RAL 7035 / steel / ceramic), teal only when unmatched',
+    JSON.stringify(hp));
+  V((T.HHS.codes.LUMINAIRE || 0) > 0 && (T.Hospital.codes.LUMINAIRE || 0) > 0, 'G7 P2 light housings RAL 9016 white (HHS pendants/recessed, Hospital IfcLightFixture)',
+    'HHS=' + (T.HHS.codes.LUMINAIRE || 0) + ' Hospital=' + (T.Hospital.codes.LUMINAIRE || 0) + ' Clinic=' + (T.Clinic.codes.LUMINAIRE || 0));
   Object.keys(T).forEach(k => S('   no-own-colour share bld=' + k + ' MEP tier2=' + T[k].t2 + '/' + T[k].pop + ' = ' + (T[k].pop ? (100 * T[k].t2 / T[k].pop).toFixed(1) : '-') + ' %'));
   const red = await tally('HHS', true);
   S('   RED CONTROL (&mephue=disc) HHS ' + JSON.stringify(red));

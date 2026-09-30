@@ -798,6 +798,30 @@
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     return n;
   }
+  // §GLASS_TONE_STILL (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md, red1 2026-10-01 "tone down glass in stills"): Alt+S only — every glassy
+  // material's IFC colour is pulled toward its own luminance, c -> L + k (c - L). k = 0.3 is an AUTHORED presentation choice (no source);
+  // &glasstone=k (0 = neutral, 1 = IFC colour). Restored at unstage. Films never stage (S2), so films are unaffected.
+  var glassTone = [];
+  function glassToneOn(A) {
+    glassToneOff(A, true);
+    var m0 = /[?&]glasstone=([0-9.]+)/.exec(location.search), k = typeof A._stillGlassTone === 'number' ? A._stillGlassTone : (m0 ? parseFloat(m0[1]) : 0.3);
+    k = Math.max(0, Math.min(1, isFinite(k) ? k : 0.3)); if (k >= 1) { console.log('§GLASS_TONE off (k=1)'); return 0; }
+    var seen = new Set(), s0 = 0, s1 = 0;
+    var sat = function (c) { var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx > 0 ? (mx - mn) / mx : 0; };
+    A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.material || (o.userData && o.userData.skyPortal)) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (!glassy(m) || !m.color || seen.has(m)) return; seen.add(m);
+        var c = m.color, L = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; glassTone.push([m, c.clone()]); s0 += sat(c);
+        c.setRGB(L + k * (c.r - L), L + k * (c.g - L), L + k * (c.b - L)); s1 += sat(c); }); });
+    var n = glassTone.length;
+    console.log('§GLASS_TONE mats=' + n + ' k=' + k + ' meanSat ' + (n ? (s0 / n).toFixed(3) : '-') + ' -> ' + (n ? (s1 / n).toFixed(3) : '-'));
+    return n;
+  }
+  function glassToneOff(A, quiet) {
+    if (!glassTone.length) return 0; var n = glassTone.length;
+    glassTone.forEach(function (r) { r[0].color.copy(r[1]); }); glassTone = [];
+    if (!quiet) console.log('§GLASS_TONE restored mats=' + n);
+    return n;
+  }
   function glassOff(A, quiet) {
     if (!glassSet.length) return 0; var n = glassSet.length;
     glassSet.forEach(function (r) { r[0].customDepthMaterial = r[1]; r[0].customDistanceMaterial = r[2]; }); glassSet = [];
@@ -1276,6 +1300,7 @@
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
     var gl = /[?&]glassshadow=1/.test(location.search) ? 0 : glassOn(A);   // &glassshadow=1 = glass casts as before (A/B)
+    try { glassToneOn(A); } catch (eGT) { console.warn('§GLASS_TONE failed: ' + eGT.message); }
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0, taaRestarts = 0; lastU = new WeakMap(); ordCache = null;
     set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
@@ -1514,7 +1539,7 @@
 
   function unstage(A, quiet) {
     if (!quiet) A._sourcedCap = null;
-    glassOff(A, quiet); meterOff(A);
+    glassOff(A, quiet); glassToneOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
     COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)

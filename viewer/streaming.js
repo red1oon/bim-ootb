@@ -733,9 +733,19 @@ function setupStreaming(A) {
     return '';
   };
   // the element's presentation variant: §ENTOURAGE first (Alt+S shader), else §PORCELAIN (finish, both views)
+  // §PROXY_NAME_MAT (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md P1, red1 2026-10-01): a colourless proxy takes its material from its
+  // authored Revit family name instead of the STD_MAT teal flag. RAL 7035 = the RAL list's "electrical and instrumentation panels" grey.
+  var PROXY_EQUIP = /wshp|heat pump|panelboard|switchboard|transformer|sensor|switch|receptacle|cctv|camera|ahu|cooling tower|(^|[^a-z])fan([^a-z]|$)|water heater|boiler|chiller/i;
+  var PROXY_STEEL = /stahl|steel|balkon|balcony/i;
+  A.PROXY_NAME_MAT = { equip: { r: 0xCB / 255, g: 0xD0 / 255, b: 0xCC / 255, src: 'RAL 7035 light grey (equipment housings)' },
+    steel: { r: 0.50, g: 0.52, b: 0.55, src: 'STD_MAT.IfcMember steel' } };
+  A._proxyVariant = function(ifcClass, name, matName) {
+    if (ifcClass !== 'IfcBuildingElementProxy' || !name || A._isAuthoredMatName(matName)) return '';
+    return PROXY_EQUIP.test(name) ? 'proxy:equip' : (PROXY_STEEL.test(name) ? 'proxy:steel' : '');
+  };
   A._elementVariant = function(ifcClass, name, matName) {
     var bm = A._bareMetalKey(ifcClass, name, matName);
-    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '');
+    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '') || A._proxyVariant(ifcClass, name, matName);
   };
   // ONE owner for "which trade colour does this MEP element belong to" — the first source that
   // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
@@ -780,6 +790,8 @@ function setupStreaming(A) {
   var FIT_CLASSES = { IfcPipeFitting: 1, IfcFlowFitting: 1 };
   var SPRINKLER_CLASSES = { IfcFireSuppressionTerminal: 1 };
   var _oeS = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+  // §LUMINAIRE_WHITE (P2): pendant luminaire datasheets give "housing colour traffic white RAL 9016" (Regiolux panella / alevo)
+  var LUMINAIRE = { code: 'LUMINAIRE', r: 0xF7 / 255, g: 0xFB / 255, b: 0xF5 / 255, src: 'RAL 9016 traffic white (luminaire housing)' };
   var BRASS = { code: 'SPRINKLER', r: _oeS(0.91), g: _oeS(0.778), b: _oeS(0.423), src: 'physicallybased.info Brass (sprinkler natural brass finish)' };
   var WATER_TRADES = { PLB: 1, HEAT: 1, ACMV: 1, HVAC: 1 };
   var PIPE_CLASSES = { IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1 };
@@ -787,6 +799,7 @@ function setupStreaming(A) {
   A._mepServiceColour = function(ifcClass, discipline, mepHint) {
     var hc = mepHint && mepHint.code, paint = null;
     if (SPRINKLER_CLASSES[ifcClass] || (hc === 'FP' && mepHint.sprinkler)) return BRASS;
+    if (ifcClass === 'IfcLightFixture' || hc === 'ELEC') return LUMINAIRE;   // §LUMINAIRE_WHITE (P2)
     if (discipline === 'FP' || hc === 'FP') paint = FIT_CLASSES[ifcClass] ? SERVICE_PAINT.FIRE_FIT : SERVICE_PAINT.FIRE;
     else if (hc === 'DUCT' || DUCT_CLASSES[ifcClass]) return { code: 'DUCT', r: 0.53, g: 0.56, b: 0.53, src: 'STD_MAT.IfcDuctSegment galvanised' };
     else if (hc === 'SAN' || (discipline === 'SAN' && (PIPE_CLASSES[ifcClass] || hc === 'PLB'))) paint = SERVICE_PAINT.DRAIN;
@@ -1695,7 +1708,9 @@ function setupStreaming(A) {
     if (_isPorc && (!rgbaStr || _isPh)) { r = STD_MAT.IfcSanitaryTerminal.r; g = STD_MAT.IfcSanitaryTerminal.g; b = STD_MAT.IfcSanitaryTerminal.b; }
     if (_bare && (!rgbaStr || _isPh)) { var _oe = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
       r = _oe(_bare.lin[0]); g = _oe(_bare.lin[1]); b = _oe(_bare.lin[2]); }   // cited srgb-linear, stored sRGB-encoded (Z9 decodes at stage)
-    var _mepAlb = (noMepHue || _isPorc || _bare) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
+    var _pvm = (typeof matVariant === 'string' && matVariant.indexOf('proxy:') === 0) ? A.PROXY_NAME_MAT[matVariant.slice(6)] : null;   // §PROXY_NAME_MAT
+    if (_pvm && (!rgbaStr || _isPh)) { r = _pvm.r; g = _pvm.g; b = _pvm.b; }
+    var _mepAlb = (noMepHue || _isPorc || _bare || _pvm) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
     if (_mepAlb) {
       r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
       A._mepHueCounts = A._mepHueCounts || {};
