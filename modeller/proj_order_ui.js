@@ -47,7 +47,7 @@
     return _store;
   }
 
-  var PANEL_CSS = 'position:fixed;z-index:9998;left:14px;bottom:120px;display:none;width:min(560px,92vw);background:rgba(10,10,30,0.94);color:#dfe6f2;font:12px/1.4 system-ui,sans-serif;padding:8px 10px;border-radius:6px;border:1px solid rgba(79,195,247,0.45)';
+  var PANEL_CSS = 'position:fixed;z-index:9998;left:14px;bottom:172px;display:none;width:min(560px,92vw);background:rgba(10,10,30,0.94);color:#dfe6f2;font:12px/1.4 system-ui,sans-serif;padding:8px 10px;border-radius:6px;border:1px solid rgba(79,195,247,0.45)';
   var BTN_CSS = 'position:fixed;z-index:9998;left:14px;bottom:84px;display:none;background:rgba(10,10,30,0.9);color:#4fc3f7;font:12px system-ui,sans-serif;padding:4px 10px;border-radius:5px;border:1px solid rgba(79,195,247,0.45);cursor:pointer';
   function _el(id, tag, css) { var e = document.getElementById(id); if (!e) { e = document.createElement(tag || 'div'); e.id = id; e.style.cssText = css; document.body.appendChild(e); } return e; }
 

@@ -51,7 +51,7 @@
 
   function _el(id, css) { var e = document.getElementById(id); if (!e) { e = document.createElement('div'); e.id = id; e.style.cssText = css; document.body.appendChild(e); } return e; }
   var HOVER_CSS = 'position:fixed;z-index:9999;pointer-events:none;display:none;max-width:460px;background:rgba(10,10,30,0.92);color:#ffd166;font:11px/1.35 system-ui,sans-serif;padding:5px 9px;border-radius:5px;border:1px solid rgba(255,209,102,0.4)';
-  var PIN_CSS = 'position:fixed;z-index:9998;left:14px;bottom:78px;display:none;max-width:560px;background:rgba(10,10,30,0.88);color:#ffd166;font:11px/1.35 system-ui,sans-serif;padding:5px 9px;border-radius:5px;border:1px solid rgba(255,209,102,0.35)';
+  var PIN_CSS = 'position:fixed;z-index:9998;left:14px;bottom:122px;display:none;max-width:560px;background:rgba(10,10,30,0.88);color:#ffd166;font:11px/1.35 system-ui,sans-serif;padding:5px 9px;border-radius:5px;border:1px solid rgba(255,209,102,0.35)';
 
   async function showHover() {
     var fid = _hoverFid, box = _el('s8-delta-label', HOVER_CSS);
