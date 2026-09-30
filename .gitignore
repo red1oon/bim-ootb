@@ -88,3 +88,4 @@ IFC/KUL/*
 out/
 sandbox/spike_ssgi_webgpu/out/
 buildings/patches/*.lightfield.bin
+buildings/patches/*.prebake.json

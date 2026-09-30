@@ -2367,8 +2367,41 @@ function setupCpeLoadPath(A) {
       // v8 HOLD-POINT SEARCH — building-only, independent of which candidate eventually wins.
       // ROUND 7 — `items`/`pick.valid` are passed so the search's own fallback criterion (no sample
       // reached 80%) can land on the sample where SOME candidate chain shows the most hops.
-      var buildingBox = _buildingWorldBBox(items);
-      var shot = _searchHoldPoint(plan, topoutU, filmSecFull, buildingBox, items, pick.valid);
+      // §PREBAKE PB1 (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): buildingBox + hold-point search + candidate ranking
+      // are pure data (path x geometry) — 155 s on Hospital_silent. Reused from patches/<db>.prebake.json when the key matches.
+      var _pbT0 = performance.now(), _pbKey = null, _pbRec = null, _pbWhy = '';
+      try {
+        var _pf = (typeof A._bakeCameraPoseAt === 'function') ? A._bakeCameraPoseAt : (plan && typeof plan.poseAt === 'function') ? plan.poseAt : null;
+        var _ps = _pf ? [0, 0.25, 0.5, 0.75, 1].map(function (t) { var p = _pf(t); return p ? [p.x, p.y, p.z, p.tx, p.ty, p.tz].map(function (v) { return (+v).toFixed(3); }).join(',') : '-'; }).join(';') : 'nopose';
+        var _bs = 0; items.forEach(function (it) { _bs += it.x0 + it.x1 + it.y0 + it.y1 + it.bz + it.tz; });
+        var _src = function (n) { var e = document.querySelector('script[src*="' + n + '"]'); return e ? e.getAttribute('src') : '-'; };
+        var _chainH = A._prebakeFnv ? A._prebakeFnv(pick.valid.map(function (c) { return c.idx + ':' + c.chain.join('.'); }).join('|')) : '-';
+        _pbKey = [_src('cpe_load_path.js'), _src('cinema_maxq.js'), items.length, _bs.toFixed(2), items[0].guid, items[items.length - 1].guid, _ps,
+          (+filmSecFull).toFixed(3), (+topoutU).toFixed(5), JSON.stringify(plan && plan.beats || null), A.camera ? A.camera.fov : '-', outW + 'x' + outH,
+          pick.valid.length, _chainH, window.__lpPickThinnest ? 'thin' : 'thick'].join('|');
+        if (A._prebakeFnv) _pbKey = A._prebakeFnv(_pbKey);
+        var _pr = A._prebake && A._prebake.loadPath;
+        if (!A._prebake) _pbWhy = 'no-sidecar';
+        else if (!_pr) _pbWhy = 'no-loadPath-part';
+        else if (_pr.key !== _pbKey) _pbWhy = 'key-mismatch';
+        else if (!_pr.cand || _pr.cand.length !== pick.valid.length) _pbWhy = 'candidate-count';
+        else if (!pick.valid[_pr.winPos] || items[pick.valid[_pr.winPos].idx].guid !== _pr.winGuid) _pbWhy = 'winner-guid';
+        else _pbRec = _pr;
+      } catch (ePB) { _pbRec = null; _pbWhy = 'error ' + (ePB && ePB.message); }
+      var _pbCheck = /[?&]prebakecheck=1/.test(location.search);
+      var buildingBox, shot, _pbResolved = null;
+      if (_pbRec) {
+        buildingBox = _pbRec.buildingBox; shot = _pbRec.shot;
+        pick.valid.forEach(function (c, k) { var r = _pbRec.cand[k]; c.visibleHops = r[0]; c.footprint = r[1]; c.minMemberPx = r[2]; c.memberPx = r[3]; });
+        var _w = pick.valid[_pbRec.winPos];
+        _pbResolved = { idx: _w.idx, chain: _w.chain, depth: _w.depth, visibleHops: _w.visibleHops, footprint: _w.footprint, minMemberPx: _w.minMemberPx, memberPx: _w.memberPx, rule: _pbRec.rule };
+        console.log('§PREBAKE loadPath src=sidecar key=' + _pbKey + ' shotTn=' + shot.tNorm.toFixed(4) + ' winner=' + _pbRec.winGuid + ' ms=' + Math.round(performance.now() - _pbT0));
+      }
+      if (!_pbRec || _pbCheck) {
+        buildingBox = _pbRec && !_pbCheck ? buildingBox : _buildingWorldBBox(items);
+        var _shotC = _searchHoldPoint(plan, topoutU, filmSecFull, buildingBox, items, pick.valid);
+        if (!_pbRec) shot = _shotC; else A._pbShotCheck = _shotC;
+      }
 
       // §129.7 item 3 — rank every MONOTONE-DESCENDING, >=1-visible-hop candidate by minMemberPx
       // DESC FIRST ("a thicker member or a nearer one both raise it"), then hops-in-the-shot, then
@@ -2413,7 +2446,25 @@ function setupCpeLoadPath(A) {
         });
         return { minMemberPx: memberPx.length ? Math.min.apply(null, memberPx) : 0, memberPx: memberPx };
       }
-      var resolved = _rankValid(items, pick.valid, visibleHopsOf, minMemberPxOf, !!window.__lpPickThinnest);
+      var resolved = _pbResolved;
+      if (!_pbResolved || _pbCheck) {
+        var _resC = _rankValid(items, pick.valid, visibleHopsOf, minMemberPxOf, !!window.__lpPickThinnest);
+        if (!_pbResolved) {
+          resolved = _resC;
+          try {   // record what was COMPUTED for --write-prebake (never a sidecar-sourced result)
+            if (A._prebakeOut && _pbKey) {
+              var _wp = pick.valid.findIndex(function (c) { return c.idx === resolved.idx; });
+              A._prebakeOut.loadPath = { key: _pbKey, buildingBox: buildingBox, shot: shot, winPos: _wp, winGuid: items[resolved.idx].guid, rule: resolved.rule,
+                cand: pick.valid.map(function (c) { return [c.visibleHops, c.footprint, c.minMemberPx, c.memberPx]; }) };
+            }
+          } catch (eRec) { console.warn('§PREBAKE loadPath record failed ' + (eRec && eRec.message)); }
+          console.log('§PREBAKE loadPath src=computed reason=' + _pbWhy + ' key=' + _pbKey + ' ms=' + Math.round(performance.now() - _pbT0));
+        } else {
+          var _sc = A._pbShotCheck, okT = _sc && Math.abs(_sc.tNorm - shot.tNorm) < 1e-9, okW = items[_resC.idx].guid === items[_pbResolved.idx].guid;
+          console.log('§PREBAKE_CHECK loadPath ' + (okT && okW ? 'PASS' : 'FAIL') + ' shotTn sidecar/computed=' + shot.tNorm.toFixed(6) + '/' + (_sc ? _sc.tNorm.toFixed(6) : '?') +
+            ' winner sidecar/computed=' + items[_pbResolved.idx].guid + '/' + items[_resC.idx].guid + ' — issue it proves: the cached hold point + pick equal a fresh computation');
+        }
+      }
       var pickItem = items[resolved.idx];
       // stackInFrame — informational only (never gates PICK/ranking since v9 item 7): the winning
       // chain's own union-bbox corner fraction at the hold point, unchanged v8 metric.

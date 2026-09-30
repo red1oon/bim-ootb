@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1523';
+const CACHE_VERSION = 'v1524';
+// v1524 (2026-10-01) §PREBAKE: per-db patches/<db>.prebake.json — load-path shot (PB1) + window sides (PB2), key-checked, falls back to computing. scene 69, main 53, cpe_load_path 5, sky_portal 25.
 // v1523 (2026-10-01) freeze pan + rotation reuse key REMOVED (red1: original freeze had no drift checks). cpe_load_path 4, cinema_maxq 17.
 // v1522 (2026-10-01) freeze = hard freeze by default (&lppan opt-in), twins must sit inside the frozen frame. cpe_load_path 3, cinema_maxq 16 (reuse key carries the camera rotation).
 // v1521 (2026-10-01) §132 §LOADPATH_TWINS (same load path shown in several spots) + T4 out-and-back pan in the freeze; §LOADPATH_CLIP_CLOCK clip clock freezes through the hold. cpe_load_path 2, cinema_maxq 15.

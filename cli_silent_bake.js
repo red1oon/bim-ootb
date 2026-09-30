@@ -64,6 +64,7 @@
 //     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
 //     [--still-budget taa,ao]                          override the 8/12 bake fold (LARGE_DB_BAKE.md
 //                                                       §2 L3); absent = unchanged default quality
+//     [--write-prebake]                               §PREBAKE: save this bake's computed setup (load-path shot, window sides) to buildings/patches/<db>.prebake.json
 //     [--url-query '&torch=0']                         raw viewer URL switches appended (off-switch arms)
 //     [--frame-range a:b]                              render frames a..b-1 of the FULL film,
 //                                                       frame-exact (LARGE_DB_BAKE.md §2 L4) — NOT
@@ -973,6 +974,18 @@ const server = http.createServer((req, res) => {
       log(`§CLAIM_SUPPRESSED §${k} fired ${lines.length}x — ${lines.length - CLAIM_CAP - 1} identical-tag lines omitted, last one follows`);
       log('§CLAIM ' + lines[lines.length - 1].slice(0, 1400));
     }
+  }
+  // §PREBAKE (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): --write-prebake saves what THIS bake computed (load-path shot,
+  // window sides) to <root>/buildings/patches/<db>.prebake.json — the next bake of the same db reads it (scene.js A._loadPrebake).
+  // Only computed parts are written (a sidecar-sourced result is never re-recorded); nothing computed = no file touched.
+  if (has('write-prebake')) {
+    try {
+      const j = await page.evaluate(() => (window.APP && window.APP._prebakeRecord) ? window.APP._prebakeRecord() : null);
+      const dbFile = DB.includes('/') ? path.basename(DB) : DB + '.db';
+      const outPb = path.join(ROOT, 'buildings', 'patches', dbFile + '.prebake.json');
+      if (j) { fs.mkdirSync(path.dirname(outPb), { recursive: true }); fs.writeFileSync(outPb, j); log(`§PREBAKE_WRITE ${outPb} bytes=${Buffer.byteLength(j)} parts=${Object.keys(JSON.parse(j)).filter(k => k !== 'v' && k !== 'created').join(',')}`); }
+      else log('§PREBAKE_WRITE skipped (nothing computed this bake — already served from a sidecar, or the steps did not run)');
+    } catch (e) { log('§PREBAKE_WRITE failed ' + (e && e.message)); }
   }
   log(`§CLI_BAKE_WALL totalSec=${((Date.now() - t0) / 1000).toFixed(0)} aborted=${aborted || 'no'} fileOk=${fileOk}`);
 

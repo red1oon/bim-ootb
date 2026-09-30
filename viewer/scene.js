@@ -1879,6 +1879,25 @@ async function setupScene(A) {
   // before LightZones.primeDb reads it. Same LFP1 container as _applyLightFieldPatch; light_zones.js still checks key (its code hash)
   // and fp (geometry) — a sidecar for other geometry is rejected there and the build runs as before. light_zones.js is NOT edited
   // (an edit re-keys every baked sidecar).
+  // §PREBAKE (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): pure-data setup results cached per db in
+  // patches/<db>.prebake.json (load-path shot PB1, window sides PB2). Loaded once, never blocks; each consumer checks its own key
+  // and falls back to computing. A._prebakeOut collects what this session COMPUTED (cli_silent_bake.js --write-prebake saves it).
+  A._prebakeFnv = function (str) { var h = 0x811c9dc5; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + str.length; };
+  A._prebake = null; A._prebakeOut = {};
+  A._loadPrebake = async function() {
+    var t0 = performance.now();
+    try {
+      if (/[?&]prebake=0/.test(location.search)) { console.log('§PREBAKE sidecar ignored (&prebake=0)'); return; }
+      var url = A.DB_URL || ''; if (!url) { console.log('§PREBAKE sidecar skip (no DB_URL)'); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0], u = dir + 'patches/' + own + '.prebake.json';
+      var r = await fetch(u); if (!r.ok) { console.log('§PREBAKE sidecar none ' + own + ' (' + r.status + ')'); return; }
+      var j = await r.json();
+      if (!j || j.v !== 1 || typeof j !== 'object') { console.warn('§PREBAKE sidecar bad format ' + u); return; }
+      A._prebake = j;
+      console.log('§PREBAKE sidecar loaded ' + own + ' parts=[' + Object.keys(j).filter(function (k) { return k !== 'v' && k !== 'created'; }).join(',') + '] created=' + j.created + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { A._prebake = null; console.warn('§PREBAKE sidecar failed ' + (e && e.message) + ' — computing as usual'); }
+  };
+  A._prebakeRecord = function () { var o = { v: 1, created: new Date().toISOString() }, n = 0; Object.keys(A._prebakeOut || {}).forEach(function (k) { o[k] = A._prebakeOut[k]; n++; }); return n ? JSON.stringify(o) : null; };
   A._lightFieldByBuilding = async function() {
     var t0 = performance.now();
     try {

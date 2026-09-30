@@ -205,6 +205,13 @@
       var tC = performance.now(), cached = [];
       var sig = panes.map(function (p) { return p.key; }).join(';');
       var reuse = !!(filmCache && filmCache.sig === sig), nReused = 0, tgtWas = filmCache ? filmCache.targets : null;
+      // §PREBAKE PB2: the per-db sidecar's pane sides seed the cache when its key (hash of the same pane-key list) matches.
+      var sigH = A._prebakeFnv ? A._prebakeFnv(sig) : null, pb = A._prebake && A._prebake.portal, pbUsed = false;
+      if (!reuse && pb && sigH && pb.key === sigH && pb.inward) {
+        filmCache = { sig: sig, targets: targets.length, inward: {} };
+        Object.keys(pb.inward).forEach(function (k) { var w = pb.inward[k]; filmCache.inward[k] = w ? new THREE.Vector3(w[0], w[1], w[2]) : 0; });
+        reuse = true; pbUsed = true; tgtWas = 'sidecar';
+      } else if (!reuse && A._prebake) console.log('§PREBAKE portal src=computed reason=' + (!pb ? 'no-portal-part' : 'key-mismatch'));
       if (!reuse) filmCache = { sig: sig, targets: targets.length, inward: {} };
       panes.forEach(function (p) {
         if (p._inward) { filmCache.inward[p.key] = p._inward; cached.push(p); return; }
@@ -215,6 +222,11 @@
       });
       film = { panes: cached, H: H, sky: sky.clone(), gain: gain, exposure: PORTAL_EXPOSURE, byArea: byArea, nShadow: shadowed, assign: [] };
       var cMs = performance.now() - tC;
+      if (pbUsed) console.log('§PREBAKE portal src=sidecar key=' + sigH + ' panes=' + Object.keys(filmCache.inward).length + ' reused=' + nReused + ' ms=' + cMs.toFixed(0));
+      else if (!reuse && A._prebakeOut && sigH) {   // record what was COMPUTED (--write-prebake)
+        var rec = {}; Object.keys(filmCache.inward).forEach(function (k) { var w = filmCache.inward[k]; rec[k] = w ? [+w.x.toFixed(6), +w.y.toFixed(6), +w.z.toFixed(6)] : 0; });
+        A._prebakeOut.portal = { key: sigH, inward: rec };
+      }
       console.log('§SKY_PORTAL_FILM_CACHE panes=' + cached.length + ' of ' + panes.length + (reuse ? ' reused=' + nReused + ' (§FAST_BAKE FB1, same visible glass; targets then/now=' + tgtWas + '/' + targets.length + ')' : ' classified once') +
         ' ms=' + cMs.toFixed(0) + ' targets=' + targets.length + ' ray=first-hit (§FAST_BAKE FB2)');
       // §FAST_BAKE_WITNESS (&portalwitness=1): re-classify EVERY pane with the old brute-force intersectObjects and compare the
