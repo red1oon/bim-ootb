@@ -455,6 +455,7 @@
     // real cross-space overlaps.
     var avoidAll = opts.avoid || [];
     var out = [], refused = {}, skipped = [], used = 0;
+    var schedYawN = 0, schedYawMeshN = 0;             // §SCHED-YAW: wall-anchored devices given a mesh-frame yaw (of which: frame measured off the mesh)
     all.forEach(function (sp) {
       var stype = _spaceTypeFor(disc, sp);
       if (!stype) { skipped.push(sp.label); return; }
@@ -547,9 +548,23 @@
           if (!cleared) { pos[0] = basePos[0]; pos[1] = basePos[1]; console.log(TAG + ' §SCHED-CLASH ' + disc + '/' + e.device_id + ' in ' + sp.label + ' — no clear position in this space (kept rule position, residual overlap reported)'); }
           else if (movedClear > 0.05) console.log(TAG + ' §SCHED-CLEAR ' + disc + '/' + e.device_id + ' in ' +
             sp.label + ' — slid to clear a co-located fixture bbox' + (wallAnchored ? ' (along its wall run)' : ''));
+          // §SCHED-YAW (2026-09-30, W-DW-ROT-UNITS re-point): every consumer of a walked placement reads `yaw` (radians —
+          // _renderDiscWalk makeRotationZ(p.yaw), _commitDiscWalk placement.rot = p.yaw·180/π), but this path wrote its
+          // facing to `rot` only, so all 102 Duplex ELEC fixtures were drawn AND signed at 0° (measured 2026-09-30).
+          // `yaw` here is the facing (the wall normal INTO the room, _snapToWall/_schedFacing) re-expressed in the mesh's
+          // own frame: the mesh's thin horizontal axis is its depth (MEASURED from the geo buffer — Duplex receptacle
+          // 031416… is 0.0587 deep on local X, 23c614…/4730c9… 0.0587 deep on local Y — else the rule's own dims), and that
+          // axis is what turns onto the normal: thin X → yaw = facing, thin Y → yaw = facing − π/2. Only wall-anchored
+          // devices carry it; a ceiling/floor device has no wall to face and stays unrotated (never an invented turn).
+          var meshYaw = null;
+          if (wallAnchored && yaw != null) {
+            var ext = _meshLocalXY(opts.geoDb || bdb, e.geometry_hash) || { dx: e.dim_x_m || 0, dy: e.dim_y_m || 0, src: 'rule-dims' };
+            meshYaw = (ext.dx > 0 && ext.dy > 0 && ext.dy < ext.dx) ? yaw - Math.PI / 2 : yaw;
+            schedYawN++; if (ext.src !== 'rule-dims') schedYawMeshN++;
+          }
           out.push({ disc: disc, ifc_class: 'IfcFlowTerminal', device: e.device_id,
             x: pos[0], y: pos[1], z: pos[2], storey: sp.storey, spaceGuid: sp.guid,
-            space: sp.label, rot: yaw,
+            space: sp.label, rot: yaw, yaw: meshYaw == null ? undefined : meshYaw,
             bx: e.dim_x_m || null, by: e.dim_y_m || null, bz: e.dim_z_m || null,
             geometry_hash: e.geometry_hash, element_name: e.element_name,
             prim: _primFor('IfcFlowTerminal'),
@@ -557,6 +572,8 @@
         }
       });
     });
+    if (schedYawN) console.log(TAG + ' §SCHED-YAW disc=' + disc + ' wallAnchored=' + schedYawN + ' meshFrameMeasured=' + schedYawMeshN +
+      ' ruleDims=' + (schedYawN - schedYawMeshN) + ' (facing → mesh-frame yaw; every consumer reads placement.yaw)');
     return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused };
   }
 
@@ -1095,6 +1112,22 @@
     var R = _eulerMat3(w.rx || 0, w.ry || 0, w.rot || 0);
     var wMin = [Infinity, Infinity, Infinity], wMax = [-Infinity, -Infinity, -Infinity];
     [0, 1].forEach(function (xi) { [0, 1].forEach(function (yi) { [0, 1].forEach(function (zi) {
+  // §SCHED-YAW: a mesh's LOCAL horizontal extents {dx, dy} read off its own vertex buffer (the geo handle or the building
+  // DB), cached per hash; null when the hash is not in this DB. The thin one is the device's depth — what faces a wall.
+  var _meshXYCache = {};
+  function _meshLocalXY(db, ghash) {
+    if (!db || !ghash) return null;
+    if (_meshXYCache[ghash] !== undefined) return _meshXYCache[ghash];
+    var geo = _geomRow(db, ghash), res = null;
+    if (geo && geo.vb && geo.vb.length) {
+      var u8 = (geo.vb instanceof Uint8Array) ? geo.vb : new Uint8Array(geo.vb);
+      var n3 = Math.floor(u8.byteLength / 4 / 3) * 3, f32 = new Float32Array(u8.buffer, u8.byteOffset, n3);
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (var i = 0; i + 2 < f32.length; i += 3) { if (f32[i] < x0) x0 = f32[i]; if (f32[i] > x1) x1 = f32[i]; if (f32[i + 1] < y0) y0 = f32[i + 1]; if (f32[i + 1] > y1) y1 = f32[i + 1]; }
+      if (isFinite(x0) && isFinite(y0)) res = { dx: x1 - x0, dy: y1 - y0, src: 'mesh' };
+    }
+    return (_meshXYCache[ghash] = res);
+  }
       var c = [xi ? lMax[0] : lMin[0], yi ? lMax[1] : lMin[1], zi ? lMax[2] : lMin[2]];
       var wx = R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2] + w.x;
       var wy = R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2] + w.y;
