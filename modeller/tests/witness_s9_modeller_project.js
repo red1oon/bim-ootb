@@ -144,12 +144,12 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   const guidA = await pg.evaluate(f => window.__arcGuidByFid[f], fidA);
   const opBbox = await pg.evaluate(f => window.Bonsai.oplog._geomOps().find(o => o.id === f).parameters.bbox, fidA);
   const ld = [opBbox[1] - opBbox[0], opBbox[3] - opBbox[2], opBbox[5] - opBbox[4]], axis = ['scaleX', 'scaleY', 'scaleZ'][ld.indexOf(Math.max.apply(null, ld))];
-  const doScale = async () => {
+  const doScale = async (mult) => {
     await pg.click('#b-move'); await t.sleep(700);
     const giz = await pg.evaluate((ax) => { const gz = window.A.scene.getObjectByName('MoveGizmo'); if (!gz) return null; let cube = null; gz.traverse(o => { if (o.userData && o.userData.moveAxis === ax) cube = o; }); if (!cube) return null; const w = new window.THREE.Vector3(); cube.getWorldPosition(w); const c = new window.THREE.Vector3(); gz.getWorldPosition(c); return { cube: [w.x, w.y, w.z], centre: [c.x, c.y, c.z] }; }, axis);
     if (!giz) return null;
     await t.frameElement(fidA, 0.3);
-    const od = [giz.cube[0] - giz.centre[0], giz.cube[1] - giz.centre[1], giz.cube[2] - giz.centre[2]], oL = Math.hypot(od[0], od[1], od[2]) || 1, dW = 0.3 * Math.max.apply(null, ld);
+    const od = [giz.cube[0] - giz.centre[0], giz.cube[1] - giz.centre[1], giz.cube[2] - giz.centre[2]], oL = Math.hypot(od[0], od[1], od[2]) || 1, dW = (mult || 1) * 0.3 * Math.max.apply(null, ld);
     const down = await t.proj(giz.cube[0], giz.cube[1], giz.cube[2]), up = await t.proj(giz.cube[0] + od[0] / oL * dW, giz.cube[1] + od[1] / oL * dW, giz.cube[2] + od[2] / oL * dW);
     const b = await t.oplog(); await t.drag(down, up, 10); await t.sleep(2200);
     const a = await t.oplog(), l = await t.lastOp();
@@ -193,7 +193,7 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   await pg.evaluate(async () => { const s = await window.ProjOrderUI.store(), db = s.db; const pid = db.exec("SELECT C_Project_ID FROM C_Project WHERE Value=?", [window.ProjOrderState.projectKey(window.__dwName)])[0].values[0][0];
     db.run("INSERT INTO C_Order (C_Order_ID,AD_Client_ID,AD_Org_ID,IsActive,C_BPartner_ID,Description,IsSOTrx,DocStatus,GrandTotal,C_Project_ID,DocumentNo) VALUES (991001,11,11,'Y',120,'Sub-contract PO (fixture): ' || ?,'N','CO',1000,?,'FIX-1')", [window.ProjOrderState.projectKey(window.__dwName), pid]);
     await window.ProjOrderState.persist(db); });
-  const f2 = await doScale();
+  const f2 = await doScale(2);   // a LARGER second stretch: the VO is the difference to the order line as it stands (already holding the first stretch after A)
   if (!f2) { V('P9 COMMITTED', 'INCONCLUSIVE', 'second scale did not land'); V('P10 OPTION-B', 'INCONCLUSIVE', 'second scale did not land'); return; }
   const n5 = slog().length;
   await pg.click('#s9-erp-btn'); for (let i = 0; i < 60 && !/§S9-STATE/.test(slog().slice(n5).join('\n')); i++) await t.sleep(400); await t.sleep(600);
@@ -204,16 +204,20 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
   V('P9 COMMITTED', kv(st5, 'committed') === 'true' && c5.aDisabled === true && /committed/.test(c5.refuse || '') && c5.b && /issueVO/.test(kv(st5, 'actions') || '') && !/deleteReissue/.test(kv(st5, 'actions') || '') ? 'PASS' : (st5 ? 'FAIL' : 'INCONCLUSIVE'),
     st5.slice(0, 220) + ' | A disabled=' + c5.aDisabled + ' reason="' + (c5.refuse || '').slice(0, 130) + '" B enabled=' + c5.b + ' projectRows=' + rowsBefore);
 
-  // P10 — option B
+  // P10 — option B: ONE PRICING BASIS. VO == round0(rate x area(second stretch)) - the order line as it stands (after A); PO + VO == a fresh fold of the edited part.
   const n6 = slog().length;
   await pg.click('#s9-b'); for (let i = 0; i < 120 && !/§S9-VO /.test(slog().slice(n6).join('\n')); i++) await t.sleep(400); await t.sleep(1000);
   const vo = slog().slice(n6).filter(l => /^§S9-VO /.test(l)).pop() || '', st6 = slog().slice(n6).filter(l => /^§S9-STATE/.test(l)).pop() || '';
-  const cls = dimsOf(guidA)[0], rate = RATES[cls].rate, load = BigDecimal.of('1').add(BigDecimal.of('0.10')).add(BigDecimal.of('0.15')).multiply(BigDecimal.of('1').add(BigDecimal.of('0.05')));
-  const expVO = BigDecimal.of(String(rate)).multiply(BigDecimal.of('1.3')).multiply(load).setScale(2, HALF_UP).setScale(2, HALF_UP).toString();
+  const facs2 = {}; facs2[guidA] = f2;
+  const freshEdited = expectPlanned(facs2, [guidA]);                 // fresh fold of the edited part (selection = A)
+  const poNow = kv(st3, 'plannedAmt');                                  // the order line as it stands after A
+  const expVO = BigDecimal.of(freshEdited).subtract(BigDecimal.of(poNow)).toString();
+  const inv = BigDecimal.of(poNow).add(BigDecimal.of(kv(vo, 'grandTotal') || '0')).compareTo(BigDecimal.of(freshEdited)) === 0;
   await shot('s9-6-option-b', [await rectOf('#s9-panel')], 12);
-  const vstate2 = await vp.evaluate(async (b) => { const st = await window.ProjOrderState.openStore(window.APP._SQL, () => { throw new Error('no store'); }); const s = window.ProjOrderState.readState(st.db, b, [], { ProjControl: window.ProjControl }); return { src: st.src, vos: s.vos.length, committed: s.committed.is, vo0: s.vos[0] && s.vos[0].total, rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.ProjOrderState.projectKey(window.__dwName))).catch(e => ({ err: String(e).slice(0, 80) }));
-  V('P10 OPTION-B', vo && kv(vo, 'grandTotal') === expVO && /vos=1/.test(st6) && vstate2.vos === 1 && vstate2.committed === true ? 'PASS' : (vo ? 'FAIL' : 'INCONCLUSIVE'),
-    vo.slice(0, 200) + ' independent=' + expVO + ' (rate ' + rate + ' x1.3 x loading ' + load.toString() + ') | modeller state ' + (st6.match(/vos=\d+/) || [''])[0] + ' | viewer reads ' + JSON.stringify(vstate2));
+  const voLine = await pg.evaluate(() => (document.getElementById('s9-vos') || {}).textContent || null);
+  const vstate2 = await vp.evaluate(async (b) => { const st = await window.ProjOrderState.openStore(window.APP._SQL, () => { throw new Error('no store'); }); const s = window.ProjOrderState.readState(st.db, b, [], { ProjControl: window.ProjControl }); return { src: st.src, vos: s.vos.length, committed: s.committed.is, vo0: s.vos[0] && s.vos[0].total, st0: s.vos[0] && window.ProjOrderState.voStatusLabel(s.vos[0].status), rows: window.ProjOrderState.countProjects(st.db, b) }; }, await pg.evaluate(() => window.ProjOrderState.projectKey(window.__dwName))).catch(e => ({ err: String(e).slice(0, 80) }));
+  V('P10 OPTION-B', vo && BigDecimal.of(kv(vo, 'grandTotal')).compareTo(BigDecimal.of(expVO)) === 0 && Number(expVO) > 0 && inv && /vos=1/.test(st6) && /Drafted/.test(voLine || '') && vstate2.vos === 1 && vstate2.committed === true && vstate2.st0 === 'Drafted' ? 'PASS' : (vo ? 'FAIL' : 'INCONCLUSIVE'),
+    vo.slice(0, 200) + ' independent(fresh fold of edited - order line)=' + freshEdited + '-' + poNow + '=' + expVO + ' | INVARIANT PO(' + poNow + ') + VO(' + kv(vo, 'grandTotal') + ') == fresh fold (' + freshEdited + '): ' + inv + ' | panel "' + (voLine || '').slice(0, 90) + '" | viewer reads ' + JSON.stringify(vstate2));
 }, { width: 1200, height: 850, dpr: 2, url: process.env.S9_LOCAL ? undefined : LIVE + '/modeller/modeller.html', noExit: true }).then(r => {
   const c = s => verdict.filter(v => v === s).length;
   console.log('§S9_MODELLER SUMMARY ' + c('PASS') + ' PASS / ' + c('FAIL') + ' FAIL / ' + c('INCONCLUSIVE') + ' INCONCLUSIVE (harness ' + JSON.stringify(r) + ')');

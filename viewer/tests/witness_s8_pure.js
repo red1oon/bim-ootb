@@ -55,7 +55,7 @@ const realLog = console.log; const quiet = (f) => { console.log = () => {}; try 
 
   // P2 — identity net
   { const ctx = quiet(() => ED.classCtx(duplex.db, env)); const r = duplex.db.exec("SELECT m.guid FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x>0");
-    let n = 0, bad = 0; for (const [g] of r[0].values) { const rec = ED.readRecord(duplex.db, g); const d = quiet(() => ED.deltaFor(rec, null, ctx, env)); n++; if (d.costDelta !== '0.00' || d.labourSecsDelta !== 0) bad++; }
+    let n = 0, bad = 0; for (const [g] of r[0].values) { const rec = ED.readRecord(duplex.db, g); const d = quiet(() => ED.deltaFor(rec, null, ctx, env)); n++; if (d.costDelta !== '0' || d.labourSecsDelta !== 0) bad++; }
     G('P2 IDENTITY', n === 0 ? 'INCONCLUSIVE' : (bad === 0 ? 'PASS' : 'FAIL'), 'elements=' + n + ' nonZeroDelta=' + bad);
   }
 
@@ -68,16 +68,16 @@ const realLog = console.log; const quiet = (f) => { console.log = () => {}; try 
     // independent recompute: area via SQL on scaled columns
     const ex = (sx, sy, sz) => duplex.db.exec("SELECT MAX(a,b,c) * CASE WHEN a>=b AND a>=c THEN MAX(b,c) WHEN b>=a AND b>=c THEN MAX(a,c) ELSE MAX(a,b) END FROM (SELECT ROUND(t.bbox_x,4)*" + sx + " a, ROUND(t.bbox_y,4)*" + sy + " b, ROUND(t.bbox_z,4)*" + sz + " c FROM element_transforms t WHERE t.guid='" + guid + "')")[0].values[0][0];
     const aB = ex(1, 1, 1), aA = ex(1, 1.5, 1); const rate = env.RATES.IfcWallStandardCase.rate;
-    const exp = BigDecimal.of(String(rate)).multiply(BigDecimal.of(aA.toFixed(6))).subtract(BigDecimal.of(String(rate)).multiply(BigDecimal.of(aB.toFixed(6)))).setScale(2, BigDecimal.RoundingMode.HALF_UP).toString();
+    const exp = BigDecimal.of(String(rate)).multiply(BigDecimal.of(aA.toFixed(6))).setScale(0, BigDecimal.RoundingMode.HALF_UP).subtract(BigDecimal.of(String(rate)).multiply(BigDecimal.of(aB.toFixed(6))).setScale(0, BigDecimal.RoundingMode.HALF_UP)).toString();   // ONE BASIS: round0(rate x qty) per row, as proj_fold
     G('P3 WALL-COST', d.costDelta === exp && aA > aB ? 'PASS' : (aA === aB ? 'INCONCLUSIVE' : 'FAIL'), 'guid=' + guid + ' unit=' + d.unit + ' rate=' + rate + ' area ' + aB.toFixed(3) + '->' + aA.toFixed(3) + ' costDelta=' + d.costDelta + ' expected(independent)=' + exp);
     const direct = SA._installSecs(rec.cls, SA.matchNameOverride(rec.cls, rec.name, env.SEQUENCE_NAME_OVERRIDES) || SA.matchRule(rec.cls, env.SEQUENCE_RULES, env.SEQUENCE_DEFAULT), env.LABOR_RATES, null, null);
     G('P4 WALL-FLAT', d.labourSecsDelta === 0 && d.schedBasis === 'flat per element' ? 'PASS' : 'FAIL', 'labourSecs ' + d.labourSecsBefore + '->' + d.labourSecsAfter + ' delta=' + d.labourSecsDelta + ' basis=' + d.schedBasis + ' ownerFlatSecs=' + direct);
     // P6 move
     const mv = ED.netEdits([{ op_type: 'GEOM_MOVE', parameters: { parent: 1, dx: 0.5, dy: 0, dz: 0 } }]).get(1); const dm = quiet(() => ED.deltaFor(rec, mv, ctx, env));
-    G('P6 MOVE', dm.costDelta === '0.00' && dm.labourSecsDelta === 0 && dm.labels.indexOf('a move changes no quantity') >= 0 ? 'PASS' : 'FAIL', 'costDelta=' + dm.costDelta + ' labourDelta=' + dm.labourSecsDelta + ' labels[0]=' + dm.labels[0]);
+    G('P6 MOVE', dm.costDelta === '0' && dm.labourSecsDelta === 0 && dm.labels.indexOf('a move changes no quantity') >= 0 ? 'PASS' : 'FAIL', 'costDelta=' + dm.costDelta + ' labourDelta=' + dm.labourSecsDelta + ' labels[0]=' + dm.labels[0]);
     // P7 grid
     const gm = ED.netEdits([{ op_type: 'GEOM_GRID_MOVE', parameters: { commands: [{ featureId: 1 }] } }]).get(1); const dg = quiet(() => ED.deltaFor(rec, gm, ctx, env));
-    G('P7 GRID-BLOCKED', dg.unsupported.indexOf('GEOM_GRID_MOVE') >= 0 && dg.costDelta === '0.00' ? 'PASS' : 'FAIL', 'unsupported=' + JSON.stringify(dg.unsupported) + ' costDelta=' + dg.costDelta);
+    G('P7 GRID-BLOCKED', dg.unsupported.indexOf('GEOM_GRID_MOVE') >= 0 && dg.costDelta === '0' ? 'PASS' : 'FAIL', 'unsupported=' + JSON.stringify(dg.unsupported) + ' costDelta=' + dg.costDelta);
   }
 
   // P5 — a linear class

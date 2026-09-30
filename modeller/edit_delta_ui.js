@@ -7,7 +7,7 @@
 // Events come from two additive dispatchEvent lines in modeller.html (setHover -> 'dagevu:hover', setSelectionIds -> 'dagevu:select').
 (function () {
   'use strict';
-  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=8', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=1'];
+  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=8', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
   var _loading = null, _db = null, _dbBuf = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
 
   function _load(src) {
@@ -33,6 +33,16 @@
     var b = window.__dwBuf; _db = new SQL.Database(b instanceof Uint8Array ? b : new Uint8Array(b)); _dbBuf = b; return _db;
   }
 
+  // The op-log record of an ARC element (used when the opened DB carries no element_transforms — e.g. a user .ifc opened directly, measured 2026-09-30):
+  // class + local bbox extents from the signed seed row, discipline/storey from elements_meta when present. Never invented: absent -> null.
+  function opRecord(guid, db) {
+    var fid = (window.__arcFidByGuid || {})[guid]; if (fid == null || !window.Bonsai || !window.Bonsai.oplog || !window.Bonsai.oplog.db) return null;
+    var op = window.Bonsai.oplog._geomOps().find(function (o) { return o.id === fid; }); var P = op && op.parameters; if (!P || !P.bbox || !P.ifc_class) return null;
+    var b = P.bbox, rec = { guid: guid, cls: P.ifc_class, dims: [b[1] - b[0], b[3] - b[2], b[5] - b[4]], disc: '_', storey: '_', name: null };
+    try { var r = db && db.exec("SELECT discipline, storey, element_name FROM elements_meta WHERE guid='" + String(guid).replace(/'/g, "''") + "'"); if (r && r.length && r[0].values.length) { rec.disc = r[0].values[0][0] || '_'; rec.storey = r[0].values[0][1] || '_'; rec.name = r[0].values[0][2]; } } catch (e) { }
+    return rec;
+  }
+
   // Compute the Δ line for a featureId at the CURRENT cursor. Returns {d,line} | null (null = nothing edited, nothing to show).
   async function compute(fid) {
     if (fid == null || !window.Bonsai || !window.Bonsai.oplog || !window.Bonsai.oplog.db) return null;
@@ -43,7 +53,7 @@
     if (!(await _ensure())) return null;
     var db = await _dbFor(); if (!db) return null;
     var ED = window.EditDelta, net = ED.netEdits(ops).get(fid) || null;
-    var d = ED.deltaForEdit(db, guid, net, ED.envFromGlobals()); if (!d) return null;
+    var d = ED.deltaForEdit(db, guid, net, ED.envFromGlobals(), function (g) { return opRecord(g, db); }); if (!d) return null;
     if (hasEdit) _seenEdited[fid] = true;
     ED.logLine(d, 'modeller');
     return { d: d, line: hasEdit ? ED.line(d) : 'Δ 0 — edit undone (no quantity change)' };
@@ -75,5 +85,5 @@
   window.addEventListener('dagevu:select', function (e) { _selFid = e.detail ? e.detail.fid : null; showPin(); });
   // an edit/undo changes the numbers under a still cursor / still selection -> refresh both (after the fold settles a tick)
   window.addEventListener('bonsai:oplog', function () { setTimeout(function () { showPin(); showHover(); }, 60); });
-  window.EditDeltaUI = { compute: compute, ensure: _ensure, _seen: _seenEdited };
+  window.EditDeltaUI = { compute: compute, ensure: _ensure, opRecord: opRecord, _seen: _seenEdited };
 })();

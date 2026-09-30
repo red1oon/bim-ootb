@@ -7,7 +7,7 @@
  * never a duration. Read the log after every run.
  *
  * ISSUES this witness proves or disproves (each gate names one):
- *   M0 CONTROL      — the instrument sees what the shipped witnesses see: Duplex Walk-ALL places exactly 185
+ *   M0 CONTROL      — the instrument sees what the shipped witnesses see: Duplex Walk-ALL places exactly 177 (was 185 = ACMV 19 / ELEC 102 / PLB 18 / FP 46; re-baselined 2026-09-30, see M0 below)
  *                     (ACMV 19 / ELEC 102 / PLB 18 / FP 46, W-E2E-WALK-ALL §AFTER). If this fails, the run is VOID.
  *   M1 NO-ERROR     — every resident opens + walks with 0 pageerror and the signed op-log verifies.
  *   M2 ROUTED (L1+L2) — a user Walk produces ≥1 routed PLB run on EVERY resident in the run. RED on main 2026-09-24:
@@ -125,7 +125,12 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   console.log('--- gates ---');
   if (R.Duplex) {
     const d = R.Duplex.D, tot = ['ACMV', 'ELEC', 'PLB', 'FP'].reduce((s, k) => s + ((d[k] || {}).placed || 0), 0);
-    chk('M0 CONTROL (Duplex Walk-ALL = 185, the W-E2E-WALK-ALL count — else this run is VOID)', tot === 185, 'placed=' + tot);
+    // M0 RE-BASELINE 2026-09-30 (guide session; root-caused from the §-logs, not assumed): 185 -> 177 is FP 46 -> 38, exactly the 8 sprinklers of the UNDERGROUND FP band
+    // [-2.0,-0.5] m (a solo FP walk still logs '§NOSPACES-ZONE ... band=[-2.0065,-0.5065] placed=8'; in Walk-ALL the final FP is 38 = 15+14 host-bound-zone + 9 floats, zones=4).
+    // #1768 (§GATE-STOREY-FLOOR, 'clash gate stops sinking fixtures underground': its own message measured FP sprinklers ~1 m below the floor, drawn and signed there)
+    // is the named cause; ACMV 19 / ELEC 102 / PLB 18 are unchanged. RED-first: the old 185 counted those 8 underground fixtures, so it was wrong, not the product.
+    const M0_BASE = { ACMV: 19, ELEC: 102, PLB: 18, FP: 38 }, M0_TOTAL = 177;
+    chk('M0 CONTROL (Duplex Walk-ALL = 177 = ACMV 19 / ELEC 102 / PLB 18 / FP 38; was 185 with FP 46 incl. 8 underground sprinklers, #1768 — else this run is VOID)', tot === M0_TOTAL, 'placed=' + tot);
   } else console.log('  ⚠ M0 CONTROL not run (Duplex not in the resident list) — treat this run as UNCALIBRATED');
   for (const k of RESIDENTS) {
     const r = R[k];

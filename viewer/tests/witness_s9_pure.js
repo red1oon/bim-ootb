@@ -8,8 +8,8 @@
 //   S4 VARIANT        an EDITED part of a generated PO -> decide() = variant, offering deleteReissue AND issueVO (uncommitted).
 //   S5 OPTION-A       delete & re-issue leaves EXACTLY ONE project row, and the new plannedAmt == the independent sum over the POST-EDIT quantities.
 //   S6 COMMITTED      a completed sub purchase order on the project (fixture) -> committed=true FROM RECORDS; option A is REFUSED with its reason named (and changes 0 rows).
-//   S7 OPTION-B       issueVO adds exactly one VO order; its GrandTotal == the independent BigDecimal (rate x 1.3 x loading x count); the contract's revised sum
-//                     moves ONLY when the VO is approved (vo_approve), by exactly its GrandTotal.
+//   S7 OPTION-B       ONE PRICING BASIS: the VO == amount(edited rows) - the order line it amends, and PlannedAmt(original PO) + VO == a FRESH fold of the edited parts, to the cent;
+//                     status reads Drafted then Approved; the contract's revised sum moves ONLY on approval.
 //   S8 LAUNCH         the ERP link carries the C_Project id: ../erp/idempiere.html?client=garden&window=130&record=<id>.
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -74,18 +74,21 @@ const HALF_UP = BigDecimal.RoundingMode.HALF_UP;
   G('S6 COMMITTED', sC.committed.is && dC.actions.join() === 'issueVO' && refused.ok === false && /committed/.test(refused.reason) && PS.countProjects(erpC, BUILD) === beforeRows && sC2.plannedAmt === amtBefore ? 'PASS' : 'FAIL',
     'committed=' + sC.committed.is + ' why=' + JSON.stringify(sC.committed.why) + ' actions=' + dC.actions.join() + ' optionA.ok=' + refused.ok + ' reason="' + (refused.reason || '').slice(0, 90) + '" projectRows ' + beforeRows + '->' + PS.countProjects(erpC, BUILD) + ' plannedAmt unchanged=' + (sC2.plannedAmt === amtBefore));
 
-  // S7 — option B on the committed copy
-  const voRows = PS.voRowsForEdited(bdb, [walls[0]], env);
+  // S7 — option B on the committed copy: ONE PRICING BASIS (red1 2026-09-30 Q1): VO == amount(edited rows) - the order line it amends; PO + VO == a FRESH fold of the edited parts, to the cent
+  const ex = {}; sC.lines.forEach(l => { ex[l.cls] = l.amt; });
+  const voRows = PS.voRowsFromEdit(bdb, guids, env, edits, null, ex);
   const vo = quiet(() => PS.issueVO(erpC, BUILD, voRows, env, NOW, 'USD'));
-  const load = BigDecimal.of('1').add(BigDecimal.of('0.10')).add(BigDecimal.of('0.15')).multiply(BigDecimal.of('1').add(BigDecimal.of('0.05')));
-  const expVO = voRows.reduce((s, r) => s.add(BigDecimal.of(String(r.rate)).multiply(BigDecimal.of('1.3')).multiply(load).setScale(2, HALF_UP).multiply(BigDecimal.of(String(r.count))).setScale(2, HALF_UP)), BigDecimal.ZERO).toString();
+  const rowsE = PS.pricedRowsFor(bdb, guids, env, edits).rows, rows0b = PS.pricedRowsFor(bdb, guids, env, null).rows;
+  const expVO = BigDecimal.of(indep(rowsE)).subtract(BigDecimal.of(indep(rows0b))).toString();
   const sV = PS.readState(erpC, BUILD, ['IfcWallStandardCase'], env);
   const rev0 = sV.contract.revised;
+  const fresh = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db')));
+  const freshPlanned = quiet(() => PS.generate(fresh, BUILD, rowsE, env, NOW, 'USD')).plannedAmt;
   const ap = quiet(() => VoApprove.approveVariationOrder(erpC, vo.orderId, { now: NOW }));
   const sV2 = PS.readState(erpC, BUILD, ['IfcWallStandardCase'], env);
-  const revExp = BigDecimal.of(sV.contract.original).add(BigDecimal.of(expVO)).toString();
-  G('S7 OPTION-B', vo.created.orders === 1 && vo.grandTotal === expVO && sV.vos.length === 1 && rev0 === sV.contract.original && ap.ok && BigDecimal.of(sV2.contract.revised).compareTo(BigDecimal.of(revExp)) === 0 ? 'PASS' : 'FAIL',
-    'voRows=' + JSON.stringify(voRows.map(r => r.status + ':' + r.cls + 'x' + r.count + '@' + r.rate)) + ' grandTotal=' + vo.grandTotal + ' independent=' + expVO + ' voOrders=' + sV.vos.length + ' revised before-approve=' + rev0 + ' (original ' + sV.contract.original + ') after-approve=' + sV2.contract.revised + ' expected=' + revExp);
+  const inv = BigDecimal.of(s1.plannedAmt).add(BigDecimal.of(vo.grandTotal)).compareTo(BigDecimal.of(freshPlanned)) === 0;
+  G('S7 OPTION-B', vo.created.orders === 1 && BigDecimal.of(vo.grandTotal).compareTo(BigDecimal.of(expVO)) === 0 && Number(expVO) > 0 && inv && sV.vos.length === 1 && rev0 === sV.contract.original && ap.ok && BigDecimal.of(sV2.contract.revised).compareTo(BigDecimal.of(freshPlanned)) === 0 && PS.voStatusLabel(sV.vos[0].status) === 'Drafted' && PS.voStatusLabel(sV2.vos[0].status) === 'Approved' ? 'PASS' : 'FAIL',
+    'voRows=' + JSON.stringify(voRows.map(r => r.status + ':' + r.cls + '@' + r.rate)) + ' grandTotal=' + vo.grandTotal + ' independent(edited-original)=' + expVO + ' | INVARIANT PO(' + s1.plannedAmt + ') + VO(' + vo.grandTotal + ') == fresh fold of edited parts (' + freshPlanned + '): ' + inv + ' | status ' + PS.voStatusLabel(sV.vos[0].status) + ' -> ' + PS.voStatusLabel(sV2.vos[0].status) + ' revised before-approve=' + rev0 + ' after=' + sV2.contract.revised);
 
   // S5 — option A on the uncommitted store
   const rows1b = PS.pricedRowsFor(bdb, guids, env, edits).rows;

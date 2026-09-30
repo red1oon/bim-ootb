@@ -47,13 +47,13 @@
   function _q(s) { return String(s).replace(/'/g, "''"); }
 
   // readRecord(db, guid) -> {guid, cls, name, dims:[bx,by,bz]} | null — the element's RECORD (element_transforms ⋈ elements_meta).
-  function readRecord(db, guid) {
+  function readRecord(db, guid, fallback) {
     var r;
     try {
       r = db.exec("SELECT m.ifc_class, m.element_name, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m " +
         "JOIN element_transforms t ON m.guid=t.guid WHERE m.guid='" + _q(guid) + "' AND t.bbox_x IS NOT NULL");
-    } catch (e) { return null; }
-    if (!r.length || !r[0].values.length) return null;
+    } catch (e) { r = []; }   // a DB without element_transforms (e.g. a user IFC opened directly) -> the op-log fallback below
+    if (!r.length || !r[0].values.length) { var fb = fallback ? fallback(guid) : null; if (fb) { var q4 = function (x) { return Math.round((x || 0) * 1e4) / 1e4; }; return { guid: guid, cls: fb.cls, name: fb.name || null, dims: [q4(fb.dims[0]), q4(fb.dims[1]), q4(fb.dims[2])], source: 'oplog' }; } return null; }
     var v = r[0].values[0];
     // record precision 0.1 mm: two surfaces hold the SAME element in different float widths (float32 mesh-side vs double) — differences ~1e-7 m must not become a cent
     var r4 = function (x) { return Math.round((x || 0) * 1e4) / 1e4; };
@@ -98,9 +98,11 @@
     var unit = rt ? rt.unit : 'EA', rate = rt ? rt.rate : 0;
     var priced = !!rt;
     var qB = qtyOf(unit, before), qA = qtyOf(unit, after);
-    var cB = _money(String(rate), qB), cA = _money(String(rate), qA);
     var HU = _BD.RoundingMode.HALF_UP;
-    var costDelta = cA.subtract(cB).setScale(2, HU);
+    // ONE PRICING BASIS (red1 2026-09-30, Q1): the Project Order line's basis (proj_fold: round(rate x qty) to 0 dp, HALF_UP). The hover Δ, a fresh fold and a VO are all
+    // differences of THESE row amounts, so the user sees one number everywhere.
+    var cB = _money(String(rate), qB).setScale(0, HU), cA = _money(String(rate), qA).setScale(0, HU);
+    var costDelta = cA.subtract(cB);
     var lb = _labour(rec, before, ctx, env), la = _labour(rec, after, ctx, env);
     var basisSecs = (env.LABOR_RATES && env.LABOR_RATES._productivity_basis_secs) || DAY_SECS;
     var secsDelta = la.secs - lb.secs;
@@ -110,13 +112,13 @@
     if (!priced) labels.push('unpriced class (rate 0, as the 5D report bills it)');
     if (unit === 'EA') labels.push('per-item rate: size does not change cost');
     if (n.unsupported.length) labels.push('quantity Δ not computed for ' + n.unsupported.join(','));
-    labels.push('cost: projected — active rate pack (rates.js + the user\'s locale pack) × bbox quantity Δ, this element');
+    labels.push('cost: projected — the Project Order line basis (active rate pack × bbox quantity, rounded to the unit like proj_fold), this element');
     labels.push('schedule: projected — labour time per shipped duration rule (' + la.basis + '); finish date not re-solved');
     return {
       guid: rec.guid, cls: rec.cls, unit: unit, basis: 'bbox',
       dimsBefore: before, dimsAfter: after,
       qtyBefore: qB, qtyAfter: qA, rate: rate, priced: priced,
-      costBefore: cB.setScale(2, HU).toString(), costAfter: cA.setScale(2, HU).toString(), costDelta: costDelta.toString(),
+      costBefore: cB.toString(), costAfter: cA.toString(), costDelta: costDelta.toString(),
       labourSecsBefore: lb.secs, labourSecsAfter: la.secs, labourSecsDelta: secsDelta,
       labourDaysDelta: +(secsDelta / basisSecs).toFixed(4), schedBasis: la.basis,
       finish: 'not re-solved', unsupported: n.unsupported.slice(), labels: labels
@@ -124,8 +126,8 @@
   }
 
   // deltaForEdit(db, guid, net, env) — record read + class ctx + deltaFor. null when the guid has no record.
-  function deltaForEdit(db, guid, net, env) {
-    var rec = readRecord(db, guid);
+  function deltaForEdit(db, guid, net, env, fallback) {
+    var rec = readRecord(db, guid, fallback);
     if (!rec) return null;
     return deltaFor(rec, net, classCtx(db, env), env);
   }
@@ -136,7 +138,7 @@
     var sign = function (s) { return (String(s)[0] === '-' ? '' : '+') + s; };
     var sd = d.labourSecsDelta;
     return 'Δ ' + d.cls + ' ' + d.unit + ' ' + d.qtyBefore.toFixed(3) + '→' + d.qtyAfter.toFixed(3) +
-      ' · material ' + sign(d.costDelta) + ' (projected, active rate pack ' + d.rate + '/' + d.unit + ')' +
+      ' · material ' + sign(d.costDelta) + ' (projected, order-line basis, rate ' + d.rate + '/' + d.unit + ')' +
       ' · labour ' + (sd >= 0 ? '+' : '') + sd + 's (' + (d.labourDaysDelta >= 0 ? '+' : '') + d.labourDaysDelta + 'd, ' + d.schedBasis + ')' +
       ' · finish date not re-solved';
   }

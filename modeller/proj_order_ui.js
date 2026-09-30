@@ -7,7 +7,7 @@
 // committed) or B) Variation Order (required once committed). "Committed" is read from records (ProjOrderState.readState).
 (function () {
   'use strict';
-  var SRC = ['../viewer/proj_fold.js?v=3', '../viewer/vo_fold.js?v=2', '../viewer/proj_control.js?v=1', '../viewer/proj_order_state.js?v=2'];
+  var SRC = ['../viewer/proj_fold.js?v=3', '../viewer/vo_fold.js?v=2', '../viewer/proj_control.js?v=1', '../viewer/proj_order_state.js?v=3'];
   var _loaded = null, _store = null, _busy = false, _sel = [];
 
   function _load(src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load ' + src)); }; document.body.appendChild(s); }); }
@@ -27,7 +27,8 @@
   }
   function _now() { return new Date().toISOString().replace('T', ' ').slice(0, 19); }
   function _cur() { return window.__S8_LOCALE_CUR || 'RM'; }
-  function _building() { return window.ProjOrderState.projectKey(window.__dwName); }   // the ERP Project Value = the Viewer's building label for this resident
+  async function _building() { return window.ProjOrderState.projectKey(window.__dwName, await _bdb()); }   // the ERP Project Value: measured Viewer label, else the model's own IFC name, else its loaded name (generic for any user IFC)
+  async function _fb() { var db = await _bdb(); return function (g) { return window.EditDeltaUI.opRecord(g, db); }; }
 
   // the selection -> {guids, edits(by guid), edited}
   function _selection() {
@@ -63,13 +64,13 @@
     if (!sel.guids.length) { panel.style.display = 'none'; return; }
     panel.style.display = 'block';
     if (!(await _ensure())) { panel.textContent = 'ERP owners could not be loaded.'; return; }
-    var PS = window.ProjOrderState, env = _env(), st = await _db(), db = st.db, building = _building();
-    var priced = PS.pricedRowsFor(await _bdb(), sel.guids, env, sel.edits);
+    var PS = window.ProjOrderState, env = _env(), st = await _db(), db = st.db, building = await _building(), fb = await _fb();
+    var priced = PS.pricedRowsFor(await _bdb(), sel.guids, env, sel.edits, fb);
     var classes = priced.rows.map(function (r) { return r.cls; });
     var state = PS.readState(db, building, classes, env), dec = PS.decide(state, sel.edited);
     var sumCost = priced.rows.reduce(function (s, r) { return s + r.cost; }, 0);
     // scope note, from records: does the Project Order hold MORE for these classes than the selected (unedited) parts price at? Then A re-issues from the selection only.
-    var base = PS.pricedRowsFor(await _bdb(), sel.guids, env, null), baseCost = base.rows.reduce(function (s, r) { return s + r.cost; }, 0);
+    var base = PS.pricedRowsFor(await _bdb(), sel.guids, env, null, fb), baseCost = base.rows.reduce(function (s, r) { return s + r.cost; }, 0);
     var poForClasses = state.generated ? state.lines.filter(function (l) { return classes.indexOf(l.cls) >= 0; }).reduce(function (s, l) { return s + Number(l.amt); }, 0) : 0;
     var scopeNote = state.generated && state.inPO.length && poForClasses !== baseCost ? (poForClasses > baseCost ? 'more' : 'less') : null;
     console.log('§S9-STATE building=' + building + ' parts=' + sel.guids.length + ' edited=' + sel.edited + ' generated=' + state.generated + (state.generated ? ' project=' + state.projectId + ' plannedAmt=' + state.plannedAmt + ' committed=' + state.committed.is + ' vos=' + state.vos.length : '') +
@@ -81,6 +82,7 @@
         (state.committed.is ? 'committed to a vendor (' + state.committed.why.join('; ') + ')' : 'not committed') + (state.vos.length ? ' · ' + state.vos.length + ' Variation Order(s)' : '') + '</div>';
       if (state.contract) html += '<div style="opacity:.75">Contract: original ' + _money(state.contract.original) + ' + approved VOs ' + _money(state.contract.approvedVOs) + ' = revised ' + _money(state.contract.revised) + '</div>';
       if (scopeNote) html += '<div id="s9-scope" style="color:#ffcf8b">Note: the Project Order holds ' + scopeNote + ' for these classes (' + _money(poForClasses) + ') than the selected parts price at (' + _money(baseCost) + ') - A re-issues from the selected parts only.</div>';
+      if (state.vos.length) html += '<div id="s9-vos" style="opacity:.85">Variation Orders (status read from the ERP record): ' + state.vos.map(function (v) { return v.docNo + ' · ' + PS.voStatusLabel(v.status) + ' · ' + _money(v.total); }).join(' | ') + '</div>';
       if (dec.kind === 'variant') html += '<div style="color:#ffd166" id="s9-variant">These parts are edited: a variant item of this Project Order. Choose A or B.</div>';
     }
     if (msg) html += '<div id="s9-msg" style="color:#8be28b">' + msg + '</div>';
@@ -105,12 +107,17 @@
   async function act(kind) {
     if (_busy) return; _busy = true;
     try {
-      var PS = window.ProjOrderState, env = _env(), st = await _db(), db = st.db, building = _building(), sel = _selection();
-      var bdb = await _bdb(), priced = PS.pricedRowsFor(bdb, sel.guids, env, sel.edits);
+      var PS = window.ProjOrderState, env = _env(), st = await _db(), db = st.db, building = await _building(), sel = _selection(), fb = await _fb();
+      var bdb = await _bdb(), priced = PS.pricedRowsFor(bdb, sel.guids, env, sel.edits, fb);
       var state = PS.readState(db, building, priced.rows.map(function (r) { return r.cls; }), env), msg = '';
       if (kind === 'generate') { var r = PS.generate(db, building, priced.rows, env, _now(), _cur()); msg = 'Generated Project Order #' + r.projectId + ' · planned ' + _money(r.plannedAmt) + '.'; }
       else if (kind === 'deleteReissue') { var d = PS.deleteReissue(db, building, priced.rows, env, _now(), _cur(), state); msg = d.ok ? 'Deleted and re-issued: Project Order #' + d.result.projectId + ' · planned ' + _money(d.result.plannedAmt) + ' (' + d.projectRowsAfter + ' Project Order).' : 'Refused: ' + d.reason; }
-      else if (kind === 'issueVO') { var vr = PS.voRowsForEdited(bdb, sel.guids, env), v = PS.issueVO(db, building, vr, env, _now(), _cur()); msg = 'Variation Order ' + (v.docNo || '') + ' issued · ' + _money(v.grandTotal) + ' (draft).'; }
+      else if (kind === 'issueVO') {
+        var ex = {}; state.lines.forEach(function (l) { ex[l.cls] = l.amt; });
+        var vr = PS.voRowsFromEdit(bdb, sel.guids, env, sel.edits, fb, ex);
+        if (!vr.length) msg = 'Nothing to send: the order line already holds these quantities.';
+        else { var v = PS.issueVO(db, building, vr, env, _now(), _cur()); msg = 'Variation Order ' + (v.docNo || '') + ' sent · ' + _money(v.grandTotal) + ' · status ' + PS.voStatusLabel('DR') + ' (approval is done on the ERP side).'; }
+      }
       var ok = await PS.persist(db);
       console.log('§S9-ACT kind=' + kind + ' persisted=' + ok);
       await render(msg);

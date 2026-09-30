@@ -192,7 +192,8 @@
 //   find_erp_push.js _ensureErpDb is OPFS-first (the diff.js VO precedent). viewer.html script tag + PRECACHE_ASSETS in the SAME commit.
 // v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
 // v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
-const CACHE_VERSION = 'v1455';   // bump on each deploy; per-change detail is the git commit message.
+// v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
+const CACHE_VERSION = 'v1456';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.

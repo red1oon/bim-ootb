@@ -76,7 +76,8 @@ async function runE2E(NAME, body, opts) {
     async open(key, oo) {
       oo = oo || {};   // §GUIDE-POC additive: {panelOpen:true} = caller already clicked #b-open; {noFit:true} = leave the camera as Open left it
       if (!oo.panelOpen) await pg.click('#b-open'); await sleep(200);
-      await pg.click('#m-open-panel .mo-row[data-key="' + key + '"]');
+      if (oo.rowText) await pg.evaluate(txt => { const r = Array.from(document.querySelectorAll('#m-open-panel .mo-row')).find(x => new RegExp(txt).test(x.textContent)); if (r) r.click(); }, oo.rowText);   // §S9 additive: a chooser row WITHOUT a data-key (the 'FROM IFC' rows)
+      else await pg.click('#m-open-panel .mo-row[data-key="' + key + '"]');
       await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
       await sleep(2200);
       if (!oo.noFit) { const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); } }
