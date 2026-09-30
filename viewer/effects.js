@@ -4367,7 +4367,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // A/B comparison, not deleted — set `APP._photoDuskMood = true` before pressing Alt+S to get
     // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
     // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
-    var _duskMood = !!A._photoDuskMood;
+    var _duskMood = !!A._photoDuskMood || /[?&]dusk=1/.test(location.search);   // §STILL_DUSK_URL (red1 2026-10-01): &dusk=1 = the same dusk package from a link
     // §PHOTO_SUN_SEPARATION_FIX (2026-08-16): a direct A.sun.position->sunPosition uniform sync
     // was attempted here to fix a sky/shadow mismatch, but shipped WITHOUT live verification and
     // caused a real regression (sky rendered fully black in production) — REVERTED. The mismatch

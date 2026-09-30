@@ -480,7 +480,7 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(), D = A._lampData;
     if (!Z || !D || !A._lampDataOn) { LAMP[0] = 0; return null; }
     if (D.ver === lampVer && lampTex) return lampLast;
-    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (&lampen=0)'); }
+    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (default: lamps at rated output; &lampen=1 = EN 12464-1 scaling)'); }
     var t0 = performance.now(), L = D.lamps, n = L.length, R = D.range > 0 ? D.range : Z.cell * Math.max(Z.nx, Z.ny, Z.nz);
     if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
     var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
@@ -697,7 +697,10 @@
       .catch(function () { spaceUsesCache[bld] = null; console.log('§SPACE_USES bld=' + bld + ' none (fetch failed)'); return null; });
   }
   function enRowForUse(name) { for (var i = 0; i < EN_ROWS.length; i++) if (EN_ROWS[i][2] != null && EN_ROWS[i][0].test(name || '')) return [EN_ROWS[i][1], EN_ROWS[i][2]]; return null; }
-  function enOn(A) { return !(A._stillLampEn === false || /[?&]lampen=0/.test(location.search)); }
+  // §LAMPS_RATED_DEFAULT (red1 2026-10-01: "leave the lights on as normal practice when clients view property"): lamps run at their rated
+  // output by default; the EN 12464-1 target scaling is opt-in (&lampen=1 / APP._stillLampEn = true). HHS ground floor measured: EN scaling
+  // held lamps at ~13 % of rated (p50 0.13); rated lamps lift the metered luminance +13 % there.
+  function enOn(A) { return A._stillLampEn === true || /[?&]lampen=1/.test(location.search); }
   function enApply(A, Z, D) {
     var LZ = global.LightZones, t0 = performance.now(), vols = [];
     try { vols = A.allRoomVolumes ? (A.allRoomVolumes() || []) : []; } catch (eV) { vols = []; }
