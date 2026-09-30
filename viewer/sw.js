@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1510';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1511';   // bump on each deploy; per-change detail is the git commit message.
+// v1511 (2026-09-30) §SKY_FIELD_OPEN_ROOF: open cells under a roof/canopy get exact F + exact ground-view Gd (were 1). light_zones.js?v=27.
 // v1510 (2026-09-30) §BEAM_UNDER_SLAB: IfcBeam materials polygonOffset(1,4) — coplanar slab tops win the depth fight. streaming.js?v=83.
 // v1509 (2026-09-30) §GI_REDIST_DEFAULT_OFF (&giredist=1 = on) + §MIRROR_PARALLAX (box-projected mirror env from the zone grid).
 //   gi_still.js?v=36 effects.js?v=126 glass_fresnel.js?v=11.

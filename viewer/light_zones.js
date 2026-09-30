@@ -331,7 +331,7 @@
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
     // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
     var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sm' + (skySmoothOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') : 0)]
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sm' + (skySmoothOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') + (skyOpenRoofOn(A) ? 'r' : '') : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -791,6 +791,12 @@
   // …709239282): the lattice's 0.5 m cell steps = the "tiles" (Lf jumps 738, F steps 1229 vs 360 / 1039 with exact cells, which cost
   // Clinic -0.5..-1 EV). Every COVERED cell := mean F over same-zone non-solid covered cells of its 3x3x3 block (open / solid / other
   // zones excluded: nothing crosses a wall; open-cell exact values untouched). &skysmooth=0 / APP._stillSkySmooth=false = off (fingerprint).
+  // §SKY_FIELD_OPEN_ROOF (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_OPEN_ROOF — SPEC"): open cells under a roof / canopy (an opaque SOLID
+  // cell above within SA_OCC_UP) are exact targets too, and every open target gets an exact ground-view Gd (open cells default to F = Gd = 1).
+  function skyOpenRoofOn(A) { return !!(A && A._stillSkyOpenRoof !== false && !(typeof location !== 'undefined' && /[?&]skyopenroof=0/.test(location.search))); }
+  var GD_DIRS = null; function gdDirs() { if (GD_DIRS) return GD_DIRS; var S = 16, D = new Float32Array(S * S * 3), q = 0;   // cos-weighted about -y, stratified, golden-rotated rows
+    for (var a = 0; a < S; a++) { var r = Math.sqrt((a + 0.5) / S), rot = (a * 0.6180339887) % 1; for (var b = 0; b < S; b++) { var ph = 2 * Math.PI * (b + rot) / S; D[q++] = r * Math.cos(ph); D[q++] = -Math.sqrt(1 - r * r); D[q++] = r * Math.sin(ph); } }
+    return (GD_DIRS = D); }
   function skySmoothOn(A) { return !!(A && A._stillSkySmooth !== false && !(typeof location !== 'undefined' && /[?&]skysmooth=0/.test(location.search))); }
   function logSkySmooth(bld, s, how) { console.log('§SKY_FIELD_SMOOTH bld=' + bld + ' cache=' + how + ' ' + (!s ? 'absent (record built before §SKY_FIELD_SMOOTH)' : !s.on ? 'off (&skysmooth=0 / APP._stillSkySmooth=false)' :
     'on cells=' + s.cells + (s.cells ? '' : ' VACUOUS') + ' meanAbsDF=' + s.meanAbs + ' maxDF=' + s.maxDF + ' sumF before/after=' + s.sum0 + '/' + s.sum1 + ' ratio=' + s.ratio + ' ms=' + s.ms)); }
@@ -816,7 +822,7 @@
     console.log('§SKY_FIELD_EXACT_ALL bld=' + bld + ' cache=' + how + ' ' + (s.on ? 'on' : s.why) + (s.on && !s.cells ? ' VACUOUS (no target cell)' : '') + ' N=' + s.n + ' cells=' + s.cells + ' (readCovered ' + s.cRead + ' / shellRedone ' + (s.cShell || 0) + ' / nearOccluderCovered ' + s.cOccCov + ' / openUnderOccluder ' + s.cOpen + ') occluderTris=' + s.occTris + ' occluderCells=' + s.occCells +
       ' rays=' + s.rays + ' insideRays=' + s.inRays + ' ms=' + s.ms + ' usPerRay=' + s.usPerRay + ' startedInside=' + s.inside + ' (nudged ' + s.nudged + ', unresolved ' + s.unresolved + ' kept old value)' +
       ' covered: raised(>0.005)=' + s.raised + ' lowered(>0.005)=' + s.lowered + ' meanAbsDF=' + s.meanAbs + ' maxRaise=' + s.maxRaise + ' maxDrop=' + s.maxDrop + ' bentSkipped=' + s.bentSkipped +
-      ' open: openCellsRecomputed=' + s.cOpen + ' lowered(>0.005)=' + s.openLowered + ' meanF=' + s.openMeanF + ' (lattice value replaced; open cells beside boundary walls only keep F 1)' + (s.cov === false ? ' covered=off (open-only §SKY_FIELD_EXACT_OPEN, read cells kept ' + s.covKept + '; &skyexactcov=1 replaces covered)' : s.cov ? ' covered=on (&skyexactcov=1)' : '')); }
+      ' open: openCellsRecomputed=' + s.cOpen + ' lowered(>0.005)=' + s.openLowered + ' meanF=' + s.openMeanF + ' (lattice value replaced; open cells beside boundary walls only keep F 1)' + ' §SKY_FIELD_OPEN_ROOF roofAdded=' + (s.roofAdded || 0) + ' gdExact=' + (s.gdN || 0) + ' gdMean=' + (s.gdN ? (s.gdSum / s.gdN).toFixed(4) : '-') + (s.cov === false ? ' covered=off (open-only §SKY_FIELD_EXACT_OPEN, read cells kept ' + s.covKept + '; &skyexactcov=1 replaces covered)' : s.cov ? ' covered=on (&skyexactcov=1)' : '')); }
   // §SKY_FIELD_EXACT sub-directions: per FIELD_DIRS d, K = 16 fixed directions inside d's own quadrature cell (the plane-y=1 points,
   // 0.05 step, that pick d as nearest — the same integrand cos x (1 + 2 sin elev) dOmega that makes w_d), stratified 4 x 4 by
   // cumulative weight (x quartiles, then z quartiles inside each). Flat [ux,uy,uz] x 16 per d; stage 1 = SUB_S1 (one per x quartile).
@@ -869,7 +875,7 @@
         if (hit) vt = (bounce && !inG) ? FG[c] / 10000 : 0;
         val[c] = vt; if (zc !== SOLID && vt > 0) acc[c] += w * vt; } });
     var Gd = new Uint16Array(N), covered = 0, nonZero = 0, maxG = 0;
-    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { Gd[c2] = 10000; continue; } covered++; var g = Math.min(1, acc[c2]); if (g > maxG) maxG = g; if (g > 0) nonZero++; Gd[c2] = Math.round(g * 10000); }
+    var gdX = Z._gdExact || null; for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { Gd[c2] = (gdX && gdX.has(c2)) ? Math.round(Math.min(1, gdX.get(c2)) * 10000) : 10000; continue; } covered++; var g = Math.min(1, acc[c2]); if (g > maxG) maxG = g; if (g > 0) nonZero++; Gd[c2] = Math.round(g * 10000); }
     var vals = new Float32Array(covered), vi = 0;
     for (var c3 = 0; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0) continue; vals[vi++] = acc[c3]; }
     vals.sort(); val = acc = null;
@@ -1152,10 +1158,11 @@
         // occluder cells dilated by 2 in x and z (Chebyshev 2 in plan)
         for (var cO = 0; cO < N; cO++) { if (!OM[cO]) continue; var iO = cO % nx, kO = (cO / nxy) | 0; for (var ddz = -2; ddz <= 2; ddz++) for (var ddx = -2; ddx <= 2; ddx++) { var i2 = iO + ddx, k2 = kO + ddz; if (i2 >= 0 && k2 >= 0 && i2 < nx && k2 < nz) M2[cO + ddx + ddz * nxy] = 1; } }
         OM = occM = null; saTg = new Uint8Array(N);
-        for (var kT = 0; kT < nz; kT++) for (var iT = 0; iT < nx; iT++) { var above = 1e9;   // j distance to the nearest plan-dilated occluder cell at or above
-          for (var jT = ny - 1; jT >= 0; jT--) { var cT = iT + jT * nx + kT * nxy; if (M2[cT]) above = jT; var vT = zone[cT]; if (vT === SOLID) continue;
+        var saRoof = skyOpenRoofOn(A), gTz = Z.glassT; saS.roofAdded = 0; Z._gdExact = null;
+        for (var kT = 0; kT < nz; kT++) for (var iT = 0; iT < nx; iT++) { var above = 1e9, sAbove = 1e9;   // j of the nearest plan-dilated occluder cell / opaque SOLID cell at or above
+          for (var jT = ny - 1; jT >= 0; jT--) { var cT = iT + jT * nx + kT * nxy; if (M2[cT]) above = jT; var vT = zone[cT]; if (vT === SOLID) { sAbove = jT; continue; }   // any SOLID above (a glass roof too: exact F = T x sky there, not 1)
             var near = (above - jT) <= 2 || (jT >= 1 && M2[cT - nx]) || (jT >= 2 && M2[cT - 2 * nx]);
-            if (vT === 0) { if (near || (above - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; } }
+            if (vT === 0) { if (near || (above - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; } else if (saRoof && (sAbove - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; saS.roofAdded++; } }
             else if (!saCov) { if (isRead && isRead[cT]) saS.covKept++; }   // §SKY_FIELD_EXACT_OPEN: covered cells keep the lattice (+ lower bound)
             else if (isRead && isRead[cT]) { saTg[cT] = 1; saS.cRead++; }
             else if (saShell && rSlot && rSlot[cT] >= 0) { saTg[cT] = 4; saS.cShell++; }   // a shell-recomputed read cell, redone with the fixed set
@@ -1172,7 +1179,15 @@
           var sA = 0, bx = 0, by = 0, bz = 0;
           for (var dA = 0; dA < nSD; dA++) { var qA = dA * 3, vA = exact(xA, yA, zA, SD[qA], SD[qA + 1], SD[qA + 2]); if (vA > 0) { sA += vA; bx += vA * SD[qA]; by += vA * SD[qA + 1]; bz += vA * SD[qA + 2]; } }
           saS.rays += nSD; var fA = sA / nSD, oldA = tgA === 2 ? 1 : acc[cA], dFA = fA - oldA; acc[cA] = fA;
-          if (tgA === 2) { oSum += fA; if (dFA < -0.005) saS.openLowered++; continue; }
+          if (tgA === 2) { oSum += fA; if (dFA < -0.005) saS.openLowered++;
+            // §SKY_FIELD_OPEN_ROOF: exact ground-view escape (a ray escapes = leaves the grid / ends on a surface in an OPEN cell; glass x T)
+            var GDd = gdDirs(), nGD = GDd.length / 3, gE = 0;
+            for (var dG = 0; dG < nGD; dG++) { var qG = dG * 3; ray.origin.set(xA, yA, zA); ray.direction.set(GDd[qG], GDd[qG + 1], GDd[qG + 2]); var hG = bvhO.raycastFirst(ray, DS), farG = hG ? hG.distance : Infinity, esc = 1;
+              if (hG) { var cG = cellOf(Z, hG.point.x - GDd[qG] * 0.05, hG.point.y - GDd[qG + 1] * 0.05, hG.point.z - GDd[qG + 2] * 0.05); esc = (cG < 0 || zone[cG] === 0) ? 1 : 0; }
+              if (esc && bvhG) { var hsG = bvhG.raycast(ray, DS, 0, farG); if (hsG.length > 1) hsG.sort(byD); var lastG = -1; for (var hq = 0; hq < hsG.length; hq++) { if (hsG[hq].distance >= farG) break; if (lastG < 0 || hsG[hq].distance - lastG > 0.3) esc *= GT[hsG[hq].faceIndex] / 255; lastG = hsG[hq].distance + 0.01; } }
+              gE += esc; }
+            saS.rays += nGD; if (!Z._gdExact) Z._gdExact = new Map(); Z._gdExact.set(cA, gE / nGD); saS.gdSum = (saS.gdSum || 0) + gE / nGD; saS.gdN = (saS.gdN || 0) + 1;
+            continue; }
           nCov++; dAbs += Math.abs(dFA); if (dFA > 0.005) saS.raised++; if (dFA < -0.005) saS.lowered++; if (dFA > saS.maxRaise) saS.maxRaise = dFA; if (dFA < saS.maxDrop) saS.maxDrop = dFA;
           var zzA = (zone[cA] & ZONE_MASK) * 3;
           if (tgA === 1 && rSlot[cA] >= 0) { var rb = rSlot[cA] * 3; zb[zzA] += bx / nSD - latB[rb]; zb[zzA + 1] += by / nSD - latB[rb + 1]; zb[zzA + 2] += bz / nSD - latB[rb + 2]; } else saS.bentSkipped++; }
