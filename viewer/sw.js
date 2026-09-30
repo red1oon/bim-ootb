@@ -188,7 +188,9 @@
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
 // v1452 (2026-09-30) §S8 EDIT→Δ: new viewer/edit_delta.js (one pure Δ function) + edit_delta_viewer.js (Connect 'identity' subscriber, P3);
 //   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
-const CACHE_VERSION = 'v1452';   // bump on each deploy; per-change detail is the git commit message.
+// v1453 (2026-09-30) §S9 PROJECT ORDER READ: new viewer/proj_order_state.js (the ONE owner of the Project-Order read + Generate / delete&re-issue / VO);
+//   find_erp_push.js _ensureErpDb is OPFS-first (the diff.js VO precedent). viewer.html script tag + PRECACHE_ASSETS in the SAME commit.
+const CACHE_VERSION = 'v1453';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -908,6 +910,7 @@ const PRECACHE_ASSETS = [
   'info_4d_panel.js',
   'edit_delta.js',
   'edit_delta_viewer.js',
+  'proj_order_state.js',
   // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
   // sched4d pill. KEEP BOTH on any precache conflict.
   // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without

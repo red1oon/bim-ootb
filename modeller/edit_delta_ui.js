@@ -20,7 +20,7 @@
       window.__TRL_NO_AUTORUN = true;   // locale_loader.js: expose the owners WITHOUT the Viewer's UI side effects (toast / DOM translate)
       _loading = SRC.reduce(function (p, s) { return p.then(function () { return _load(s); }); }, Promise.resolve())
         // the price the Viewer uses IS the user's locale rate pack (locale_loader overrides RATES/LABOR_RATES) — apply it the same way, by the same owner
-        .then(function () { return new Promise(function (res) { var L = window._TRL_LOADER, code = L.detectLocale(); L.fetchLocale(code, function (err, data) { if (data) L.applyRateOverrides(data); console.log('§S8-LAZY locale=' + code + ' applied=' + !!data + ' IfcWallStandardCase.rate=' + (window.RATES.IfcWallStandardCase || {}).rate); res(); }); }); })
+        .then(function () { return new Promise(function (res) { var L = window._TRL_LOADER, code = L.detectLocale(); L.fetchLocale(code, function (err, data) { if (data) { L.applyRateOverrides(data); window.__S8_LOCALE_CUR = data.cur || null; } console.log('§S8-LAZY locale=' + code + ' applied=' + !!data + ' IfcWallStandardCase.rate=' + (window.RATES.IfcWallStandardCase || {}).rate); res(); }); }); })
         .then(function () { console.log('§S8-LAZY modeller loaded viewer owners ms=' + (performance.now() - t0).toFixed(0)); return true; })
         .catch(function (e) { console.warn('§S8-LAZY LOAD_FAIL ' + e.message); _loading = null; return false; });
     }
@@ -75,5 +75,5 @@
   window.addEventListener('dagevu:select', function (e) { _selFid = e.detail ? e.detail.fid : null; showPin(); });
   // an edit/undo changes the numbers under a still cursor / still selection -> refresh both (after the fold settles a tick)
   window.addEventListener('bonsai:oplog', function () { setTimeout(function () { showPin(); showHover(); }, 60); });
-  window.EditDeltaUI = { compute: compute, _seen: _seenEdited };
+  window.EditDeltaUI = { compute: compute, ensure: _ensure, _seen: _seenEdited };
 })();

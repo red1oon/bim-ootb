@@ -284,7 +284,9 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- §S8 (TM_4D5D_VARIANCE_LANE §S8): hover/click on an EDITED element shows its material-cost + labour Δ. Loads the Viewer-side owners LAZILY on first use. -->
-<script src="edit_delta_ui.js?v=1" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
+<script src="edit_delta_ui.js?v=2" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
+<!-- §S9 (TM_4D5D_VARIANCE_LANE §S9): "ERP ▸ Project Order" for the selected parts. Lazy: the Viewer-side ERP owners load only when the button is clicked. -->
+<script src="proj_order_ui.js?v=2" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->

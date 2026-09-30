@@ -89,7 +89,7 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   const landed = last && last.op_type === 'GEOM_SCALE' && after.len === before.len + 1 && factors && factors.some(f => Math.abs(f - 1) > 1e-4);
   V('D1 SCALE-COMMIT', landed ? 'PASS' : 'INCONCLUSIVE', 'oplog ' + before.len + '->' + after.len + ' op=' + (last && last.op_type) + ' factors=' + JSON.stringify(factors));
   if (!landed) return;
-  let m1 = await meshDims(); for (let i = 0; i < 10 && !m1; i++) { await t.sleep(300); m1 = await meshDims(); }
+  let m1 = await meshDims(); for (let i = 0; i < 60 && (!m1 || (m0 && Math.abs(area(m1) - area(m0)) < 1e-9)); i++) { await t.sleep(400); m1 = await meshDims(); }   // the re-fold replaces the mesh asynchronously: wait until it HAS changed (or give up honestly)
 
   // leave Move mode (hover is suppressed in a tool mode), hover + click the edited wall
   await pg.keyboard.press('Escape'); await t.sleep(500);
