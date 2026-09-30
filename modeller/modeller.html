@@ -1298,14 +1298,19 @@ window.Bonsai.isInstanceHidden = (im, i) => !!(im && im.userData && im.userData.
 // mesh at the SAME xyz (parameters._dw, _commitDiscWalk) which wins the raycast and fully covers the marker —
 // hiding only the instance changes ZERO pixels. The placement's fids are matched by _dw.disc + placement xyz
 // toFixed(4) (the exact rounding _commitDiscWalk wrote).
+// §I5b-TWIN-CZ (2026-09-30, W-E2E-INSTHIDE H1 RED on main 8311ba5f): since §LIVEWIRE a hash-carrying placement commits its
+// SEAT (centre − bz/2) in placement.z and keeps the centre in _dw.cz, while the rendered record's z IS the centre — so the
+// exact placement.z match found 0 twins for every LOD400 walk fixture and the eye hid only the instance, which changes
+// ZERO pixels (the twin draws over it). Match the centre field, falling back to placement.z for hash-less legacy ops.
 function _dwTwinFids(disc, rec) {
   const O = window.Bonsai.oplog; if (!O || !O._geomOps || rec.x == null) return [];
   const kx = (+rec.x).toFixed(4), ky = (+rec.y).toFixed(4), kz = (+rec.z).toFixed(4);
   const out = [];
   (O._geomOps() || []).forEach(o => {
     const pm = o.parameters;
-    if (pm && pm._dw && pm._dw.disc === disc && pm.placement &&
-        (+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+pm.placement.z).toFixed(4) === kz) out.push(o.id);
+    if (!(pm && pm._dw && pm._dw.disc === disc && pm.placement)) return;
+    const cz = pm._dw.cz != null ? pm._dw.cz : pm.placement.z;
+    if ((+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+cz).toFixed(4) === kz) out.push(o.id);
   });
   return out;
 }
