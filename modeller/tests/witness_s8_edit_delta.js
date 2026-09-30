@@ -5,7 +5,7 @@
  *   of that edit; Ctrl+Z returns the Δ to 0. Run vs LIVE by default (E2E_URL, default the live modeller) — RED on a build without §S8.
  *   D0 BASELINE     before any edit, hover/click on the wall shows NO Δ (and prints no §S8-DELTA) — proves the Δ is caused by the edit.
  *   D1 SCALE-COMMIT one GEOM_SCALE on the wall's longest local axis lands (else INCONCLUSIVE — nothing to judge).
- *   D2 COST-EXACT   displayed costDelta == rate x (area(dims*fx,fy,fz) - area(dims)) recomputed HERE from the DB record + the op's own factors
+ *   D2 COST-EXACT   displayed costDelta == round0(rate x area(after)) - round0(rate x area(before)) (the Project Order line basis) recomputed HERE from the DB record + the op's own factors
  *                   (independent of edit_delta.js: own SQL, own BigDecimal). Falsifies a wrong quantity/rate/rounding.
  *   D3 COST-FOLD    the same Δ agrees (rel 2e-3) with the area change of the REAL folded mesh bbox (float32) — falsifies netEdits drifting from the fold.
  *   D4 SCHED        the labour Δ equals the value asserted for a flat M2 wall: 0 and basis 'flat per element' (the shipped rule; nothing invented).
@@ -127,7 +127,7 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   const rate = pr.r.rate, unit = pr.r.unit; console.log('  §S8_RATE_SOURCE locale=' + pr.locale + ' ' + rec[0] + '=' + rate + '/' + unit);
   const expA = BigDecimal.of(String(rate)).multiply(BigDecimal.of(area(scaled).toFixed(6)));
   const expB = BigDecimal.of(String(rate)).multiply(BigDecimal.of(area(dims).toFixed(6)));
-  const exp = expA.subtract(expB).setScale(2, BigDecimal.RoundingMode.HALF_UP).toString();
+  const exp = expA.setScale(0, BigDecimal.RoundingMode.HALF_UP).subtract(expB.setScale(0, BigDecimal.RoundingMode.HALF_UP)).toString();   // ONE BASIS: round0(rate x qty) per row, as the Project Order line
   V('D2 COST-EXACT', unit === 'M2' && shownCost === exp && +exp > 0 ? 'PASS' : (+exp === 0 ? 'INCONCLUSIVE' : 'FAIL'), 'cls=' + rec[0] + ' unit=' + unit + ' rate=' + rate + ' area ' + area(dims).toFixed(3) + '->' + area(scaled).toFixed(3) + ' shown=' + shownCost + ' independent=' + exp);
   // D3 — vs the real fold
   if (!m0 || !m1) V('D3 COST-FOLD', 'INCONCLUSIVE', 'mesh bbox unavailable');
@@ -145,7 +145,7 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   await pg.mouse.move(pt[0] + 3, pt[1] + 3); await pg.mouse.move(pt[0], pt[1]); await t.sleep(1200);
   const zeroLine = s8lines().filter(l => kv(l, 'guid') === guid).pop();
   const pin2 = await pg.evaluate(() => { const e = document.getElementById('s8-delta-pin'); return e && e.style.display !== 'none' ? e.textContent : null; });
-  V('D6 UNDO', u.len === before.len || u.cur === before.cur ? (kv(zeroLine || '', 'costDelta') === '0.00' && /undone/.test(pin2 || '') ? 'PASS' : 'FAIL') : 'INCONCLUSIVE', 'oplog cursor=' + u.cur + ' (want ' + before.cur + ') costDelta=' + kv(zeroLine || '', 'costDelta') + ' pin=' + JSON.stringify(pin2));
+  V('D6 UNDO', u.len === before.len || u.cur === before.cur ? (kv(zeroLine || '', 'costDelta') === '0' && /undone/.test(pin2 || '') ? 'PASS' : 'FAIL') : 'INCONCLUSIVE', 'oplog cursor=' + u.cur + ' (want ' + before.cur + ') costDelta=' + kv(zeroLine || '', 'costDelta') + ' pin=' + JSON.stringify(pin2));
 
   // D7 — a pure move on the same wall
   await t.flySettle(); await pg.click('#b-move'); await t.sleep(700);
@@ -159,7 +159,7 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   let pt2 = null; for (let i = 0; i < 10 && !pt2; i++) { pt2 = await pg.evaluate(f => window.__e2e.clickPointFor(f), fid); if (!pt2) await t.sleep(400); }
   if (pt2) { await pg.mouse.move(pt2[0] + 3, pt2[1] + 3); await pg.mouse.move(pt2[0], pt2[1]); await t.sleep(1500); }
   const mvLine = s8lines().slice(n2).filter(l => kv(l, 'guid') === guid).pop();
-  V('D7 MOVE', !(l2 && l2.op_type === 'GEOM_MOVE' && a2.len === b2.len + 1) ? 'INCONCLUSIVE' : (mvLine && kv(mvLine, 'costDelta') === '0.00' ? 'PASS' : 'FAIL'), 'lastOp=' + (l2 && l2.op_type) + ' costDelta=' + (mvLine ? kv(mvLine, 'costDelta') : 'no line'));
+  V('D7 MOVE', !(l2 && l2.op_type === 'GEOM_MOVE' && a2.len === b2.len + 1) ? 'INCONCLUSIVE' : (mvLine && kv(mvLine, 'costDelta') === '0' ? 'PASS' : 'FAIL'), 'lastOp=' + (l2 && l2.op_type) + ' costDelta=' + (mvLine ? kv(mvLine, 'costDelta') : 'no line'));
 }, { width: 1200, height: 850, dpr: 2, url: URL, noExit: true }).then(r => {
   const c = s => verdict.filter(v => v === s).length;
   console.log('§S8_EDIT_DELTA SUMMARY ' + c('PASS') + ' PASS / ' + c('FAIL') + ' FAIL / ' + c('INCONCLUSIVE') + ' INCONCLUSIVE (harness ' + JSON.stringify(r) + ')');

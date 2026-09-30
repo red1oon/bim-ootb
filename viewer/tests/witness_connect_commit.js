@@ -142,7 +142,7 @@ runE2E('W-CONNECT-COMMIT', async (t) => {
   await pg.keyboard.down('Control'); await pg.keyboard.press('KeyZ'); await pg.keyboard.up('Control'); await t.sleep(3000);
   const vz = vlines().slice(nv).filter(l => mk(l, 'guid') === guid).pop();
   const h2 = await hoverAtCentre();
-  V('C7 UNDO', !vz ? 'FAIL' : (mk(vz, 'costDelta') === '0.00' && (!h2 || !h2.s8) ? 'PASS' : 'FAIL'), 'viewer=' + (vz ? 'costDelta=' + mk(vz, 'costDelta') : 'no line after undo') + ' viewerLabelS8=' + JSON.stringify(h2 && h2.s8));
+  V('C7 UNDO', !vz ? 'FAIL' : (mk(vz, 'costDelta') === '0' && (!h2 || !h2.s8) ? 'PASS' : 'FAIL'), 'viewer=' + (vz ? 'costDelta=' + mk(vz, 'costDelta') : 'no line after undo') + ' viewerLabelS8=' + JSON.stringify(h2 && h2.s8));
   vlog.filter(l => /^§(S8|CONNECT|HOVER_NAME)/.test(l)).slice(-14).forEach(l => console.log('  §CC_VLOG ' + l.slice(0, 200)));
   V('C8 CHAIN', (await t.verifyChain()) === true ? 'PASS' : 'FAIL', 'verifyChain(shared store)=' + (await t.verifyChain()));
   V('C9 NO-ERROR', verr.length === 0 ? 'PASS' : 'FAIL', 'viewer pageerrors=' + verr.length + ' ' + verr.slice(0, 2).join(' | '));
