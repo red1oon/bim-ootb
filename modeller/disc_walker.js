@@ -455,6 +455,7 @@
     // real cross-space overlaps.
     var avoidAll = opts.avoid || [];
     var out = [], refused = {}, skipped = [], used = 0;
+    var schedYawN = 0, schedYawMeshN = 0;             // §SCHED-YAW: wall-anchored devices given a mesh-frame yaw (of which: frame measured off the mesh)
     all.forEach(function (sp) {
       var stype = _spaceTypeFor(disc, sp);
       if (!stype) { skipped.push(sp.label); return; }
@@ -547,9 +548,23 @@
           if (!cleared) { pos[0] = basePos[0]; pos[1] = basePos[1]; console.log(TAG + ' §SCHED-CLASH ' + disc + '/' + e.device_id + ' in ' + sp.label + ' — no clear position in this space (kept rule position, residual overlap reported)'); }
           else if (movedClear > 0.05) console.log(TAG + ' §SCHED-CLEAR ' + disc + '/' + e.device_id + ' in ' +
             sp.label + ' — slid to clear a co-located fixture bbox' + (wallAnchored ? ' (along its wall run)' : ''));
+          // §SCHED-YAW (2026-09-30, W-DW-ROT-UNITS re-point): every consumer of a walked placement reads `yaw` (radians —
+          // _renderDiscWalk makeRotationZ(p.yaw), _commitDiscWalk placement.rot = p.yaw·180/π), but this path wrote its
+          // facing to `rot` only, so all 102 Duplex ELEC fixtures were drawn AND signed at 0° (measured 2026-09-30).
+          // `yaw` here is the facing (the wall normal INTO the room, _snapToWall/_schedFacing) re-expressed in the mesh's
+          // own frame: the mesh's thin horizontal axis is its depth (MEASURED from the geo buffer — Duplex receptacle
+          // 031416… is 0.0587 deep on local X, 23c614…/4730c9… 0.0587 deep on local Y — else the rule's own dims), and that
+          // axis is what turns onto the normal: thin X → yaw = facing, thin Y → yaw = facing − π/2. Only wall-anchored
+          // devices carry it; a ceiling/floor device has no wall to face and stays unrotated (never an invented turn).
+          var meshYaw = null;
+          if (wallAnchored && yaw != null) {
+            var ext = _meshLocalXY(opts.geoDb || bdb, e.geometry_hash) || { dx: e.dim_x_m || 0, dy: e.dim_y_m || 0, src: 'rule-dims' };
+            meshYaw = (ext.dx > 0 && ext.dy > 0 && ext.dy < ext.dx) ? yaw - Math.PI / 2 : yaw;
+            schedYawN++; if (ext.src !== 'rule-dims') schedYawMeshN++;
+          }
           out.push({ disc: disc, ifc_class: 'IfcFlowTerminal', device: e.device_id,
             x: pos[0], y: pos[1], z: pos[2], storey: sp.storey, spaceGuid: sp.guid,
-            space: sp.label, rot: yaw,
+            space: sp.label, rot: yaw, yaw: meshYaw == null ? undefined : meshYaw,
             bx: e.dim_x_m || null, by: e.dim_y_m || null, bz: e.dim_z_m || null,
             geometry_hash: e.geometry_hash, element_name: e.element_name,
             prim: _primFor('IfcFlowTerminal'),
@@ -557,6 +572,8 @@
         }
       });
     });
+    if (schedYawN) console.log(TAG + ' §SCHED-YAW disc=' + disc + ' wallAnchored=' + schedYawN + ' meshFrameMeasured=' + schedYawMeshN +
+      ' ruleDims=' + (schedYawN - schedYawMeshN) + ' (facing → mesh-frame yaw; every consumer reads placement.yaw)');
     return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused };
   }
 
@@ -653,6 +670,7 @@
       "' AND n_measured>0 AND z_band_lo IS NOT NULL AND z_band_hi IS NOT NULL AND src_storey_area_m2>0");
     if (!rows.length) return { noRules: 'no measured z-band rule_placement rows for ' + disc };
     var bind = {}, verdicts = [];
+    var bandMid = {}, bandMidMoved = 0;   // §BAND-MIDPOINT: per-guid corrected midpoints for this walk (+ how many moved >0.5 m)
     if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
       _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
         .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
@@ -711,10 +729,25 @@
       }
       var pitch = Math.max(0.5, Math.sqrt(r.src_storey_area_m2 / r.n_measured));
       var els = _rows(bdb,
-        'SELECT t.center_x cx, t.center_y cy, t.bbox_x bx, t.bbox_y by_ FROM elements_meta em ' +
+        'SELECT em.guid g, t.center_x cx, t.center_y cy, t.center_z cz, t.bbox_x bx, t.bbox_y by_, ' +
+        'COALESCE(t.rotation_x,0) rx, COALESCE(t.rotation_y,0) ry, COALESCE(t.rotation_z,0) rot FROM elements_meta em ' +
         'JOIN element_transforms t ON t.guid = em.guid ' +
         'WHERE em.ifc_class NOT IN (' + genCls + ",'IfcSpace') " +
         'AND t.center_z + t.bbox_z/2 >= ' + r.z_band_lo + ' AND t.center_z - t.bbox_z/2 <= ' + r.z_band_hi);
+      // §BAND-MIDPOINT (2026-09-30, W-DW-DENSITY-TE D3 re-baseline): a raw element_transforms.center is the IFC placement-line
+      // ORIGIN, not the element's midpoint (§BUG-A: up to 11.27 m off on 73/2147 elements of this substrate). occupancy()/
+      // hostBind already correct it through _trueMidpoint; this band envelope did not, so its bbox and cells — and every
+      // §NOSPACES-TOPUP grid point spread across that bbox — could sit up to 9.9 m outside the real building (measured:
+      // OFFBOX PLB 47 / ELEC 142 / FP 79 / ACMV 93 placements). Same correction, cached per guid for the walk.
+      // The COUNT keeps the miner's own raw-centre bbox (stamp_terminal_src_area.py band_area(): min/max of center ± bbox/2)
+      // so ratio ≈ 1 on a building's own rules is byte-identical to before; only WHERE the fixtures go is corrected.
+      var rx0 = Infinity, rx1 = -Infinity, ry0 = Infinity, ry1 = -Infinity;
+      els.forEach(function (e) {
+        rx0 = Math.min(rx0, e.cx - e.bx / 2); rx1 = Math.max(rx1, e.cx + e.bx / 2);
+        ry0 = Math.min(ry0, e.cy - e.by_ / 2); ry1 = Math.max(ry1, e.cy + e.by_ / 2);
+        var mid = bandMid[e.g] || (bandMid[e.g] = _trueMidpoint(bdb, e.g, { x: e.cx, y: e.cy, z: e.cz, rx: e.rx, ry: e.ry, rot: e.rot }, opts && opts.geoDb));
+        if (mid.verified) { if (Math.abs(mid.x - e.cx) > 0.5 || Math.abs(mid.y - e.cy) > 0.5) bandMidMoved++; e.cx = mid.x; e.cy = mid.y; }
+      });
       var seen = {}, cells = [];
       var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       els.forEach(function (e) {
@@ -733,9 +766,9 @@
         return;
       }
       // bandArea: SAME XY-bbox footprint formula the mining side used to stamp src_storey_area_m2
-      // (stamp_terminal_src_area.py band_area(): min/max of center ± bbox/2) — parity keeps the
+      // (stamp_terminal_src_area.py band_area(): min/max of RAW center ± bbox/2) — parity keeps the
       // ratio ≈1 when a building walks its own measured rules; cells stay the position sampler.
-      var bandArea = (x1 - x0) * (y1 - y0);
+      var bandArea = (rx1 - rx0) * (ry1 - ry0);
       var count = Math.round(r.n_measured * bandArea / r.src_storey_area_m2);
       // a thin band (ceiling grids: 0.14–1.6 m) holds few ARC elements — when the area-bound count
       // exceeds the ARC cells, TOP UP from a uniform grid at the row's own MEASURED cadence
@@ -766,6 +799,9 @@
       console.log(TAG + ' §NOSPACES-ZONE ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi +
         '] n_measured=' + r.n_measured + ' ratio=' + (bandArea / r.src_storey_area_m2).toFixed(2) + ' placed=' + placeN);
     });
+    var bandMidN = Object.keys(bandMid).length;
+    if (bandMidN) console.log(TAG + ' §BAND-MIDPOINT disc=' + disc + ' elements=' + bandMidN + ' corrected>0.5m=' + bandMidMoved +
+      ' (band envelope + cells on mesh-recovered midpoints, not raw placement origins)');
     return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
   }
 
@@ -1075,6 +1111,22 @@
       } catch (e) { /* table doesn't exist on this DB -- try the next name */ }
     }
     return null;
+  }
+  // §SCHED-YAW: a mesh's LOCAL horizontal extents {dx, dy} read off its own vertex buffer (the geo handle or the building
+  // DB), cached per hash; null when the hash is not in this DB. The thin one is the device's depth — what faces a wall.
+  var _meshXYCache = {};
+  function _meshLocalXY(db, ghash) {
+    if (!db || !ghash) return null;
+    if (_meshXYCache[ghash] !== undefined) return _meshXYCache[ghash];
+    var geo = _geomRow(db, ghash), res = null;
+    if (geo && geo.vb && geo.vb.length) {
+      var u8 = (geo.vb instanceof Uint8Array) ? geo.vb : new Uint8Array(geo.vb);
+      var n3 = Math.floor(u8.byteLength / 4 / 3) * 3, f32 = new Float32Array(u8.buffer, u8.byteOffset, n3);
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (var i = 0; i + 2 < f32.length; i += 3) { if (f32[i] < x0) x0 = f32[i]; if (f32[i] > x1) x1 = f32[i]; if (f32[i + 1] < y0) y0 = f32[i + 1]; if (f32[i + 1] > y1) y1 = f32[i + 1]; }
+      if (isFinite(x0) && isFinite(y0)) res = { dx: x1 - x0, dy: y1 - y0, src: 'mesh' };
+    }
+    return (_meshXYCache[ghash] = res);
   }
   function _trueMidpoint(bdb, guid, w, geoDb) {
     var fallback = { x: w.x, y: w.y, z: w.z, verified: false };
