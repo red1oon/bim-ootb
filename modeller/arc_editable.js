@@ -59,6 +59,33 @@
     try { var r = db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline='ARC'"); return !!(r.length && r[0].values[0][0] > 0); }
     catch (e) { return false; }
   }
+  function _hasTable(db, name) {
+    try { return db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + name + "'").length > 0; } catch (e) { return false; }
+  }
+  // §SLIDE-SEED (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §SLIDE-REAL-WALLS Phase B): the self-heal patch tables written by
+  // bim-compiler scripts/gen_slide_host_patch.py — slide_hosts = a host wall's UNCUT body (IfcRelVoidsElement subtraction
+  // disabled at tessellation) in the shipped mesh's own local frame, slide_openings = each authored opening's own solid as a
+  // WORLD box (the GEOM_CUT void). Absent on every building without the patch → {} and the seed is byte-identical to before.
+  // The uncut blob is recentred by the SAME RealGeometry.recenter resolveHashes uses, so the fold's §ARC-ANCHOR contract holds.
+  function _slideTables(db) {
+    var out = { hosts: {}, openings: [] };
+    if (!_hasTable(db, 'slide_hosts') || !_hasTable(db, 'slide_openings')) return out;
+    var recenter = RealGeometry && RealGeometry.recenter;
+    if (!recenter) return out;
+    try {
+      var r = db.exec('SELECT host_guid, geometry_hash, vertices, faces FROM slide_hosts');
+      if (r.length) r[0].values.forEach(function (v) {
+        var vb = v[2], fb = v[3]; if (!vb || !fb || !vb.byteLength || !fb.byteLength) return;
+        var raw = new Float32Array(vb.buffer, vb.byteOffset, Math.floor(vb.byteLength / 4));
+        var faces = new Uint32Array(fb.buffer, fb.byteOffset, Math.floor(fb.byteLength / 4));
+        var rc = recenter(raw);
+        out.hosts[v[0]] = { hash: v[1], positions: rc.positions, faces: faces, bbox: rc.bbox, anchorOffset: rc.anchorOffset };
+      });
+      var o = db.exec('SELECT opening_guid, host_guid, filling_guid, x0, y0, z0, x1, y1, z1 FROM slide_openings');
+      if (o.length) o[0].values.forEach(function (v) { out.openings.push({ opening: v[0], host: v[1], filling: v[2], c1: [v[3], v[4], v[5]], c2: [v[6], v[7], v[8]] }); });
+    } catch (e) { _log(TAG + ' §SLIDE-SEED tables unreadable — ' + (e && e.message)); return { hosts: {}, openings: [] }; }
+    return out;
+  }
 
   // §LOD400-STALL fix (Bug 1 root cause): some elements_meta schemas (e.g. Terminal_meta.db, built by a
   // different extraction path than *_extracted.db) have NO `id` column — guid is the sole PRIMARY KEY. The
@@ -219,6 +246,7 @@
     var layerGate = geomIdx.table ? _layerGate(db, geoDb || db) : { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
     var layerRefused = 0;
     var anchorOps = [];   // §ANCHOR — collected SEPARATELY, appended AFTER the normal ops (see below)
+    var slide = geomIdx.table ? _slideTables(db) : { hosts: {}, openings: [] }, slideSeeded = {}, slideHostN = 0;   // §SLIDE-SEED
     if (r.length) r[0].values.forEach(function (v) {
       var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0, rgba = v[11], isAnchor = v[12] === 1;
       // §ANCHOR branch — BEFORE every count/audit/hardfail below (the user's binding condition: anchors are
@@ -334,6 +362,11 @@
       // onto the real mesh's own half-height at fold time (see bonsai_library.js foldInsert §REAL-GEOM).
       if (geomIdx.table) {
         var rHash = geomIdx.byGuid[guid], real = rHash != null ? geomIdx.resolved[rHash] : null;
+        // §SLIDE-SEED: a host in the slide_hosts patch table folds its UNCUT body (its own content hash) in place of the
+        // shipped baked mesh — only when the baked mesh resolved too (the element is real either way); its authored
+        // openings become GEOM_CUT rows in seedArc, so the door can slide and the hole rides (§CUT-MOVE).
+        var sh = real && slide.hosts[guid];
+        if (sh) { rHash = sh.hash; real = sh; params.slideHost = true; slideSeeded[guid] = true; slideHostN++; }
         if (real) {
           params.realGeomHash = rHash;
           realResolved++;
@@ -343,7 +376,7 @@
           // §LAYER-SOLID-SEED: carry this hash's real per-layer face ranges (if any) alongside the mesh —
           // bonsai_library.js registerRealGeometry stores it; bonsai_kernel.js._insertCutLayerSeed reads it
           // at cut-seed time. null for every hash without authored layers (unchanged behaviour).
-          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces, anchorOffset: real.anchorOffset, layers: layerGate.layerRanges[rHash] || null }); }
+          if (!geomSeen[rHash]) { geomSeen[rHash] = true; geomAssets.push({ hash: rHash, ifc_class: cls, bbox: real.bbox, v: real.positions, f: real.faces, anchorOffset: real.anchorOffset, layers: layerGate.layerRanges[rHash] || null, uncut: !!sh }); }
         }
       }
       if (rx || ry) {
@@ -396,7 +429,8 @@
     return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, noSubstrate: noSubstrate, geomTable: geomIdx.table, geomap: gmAudit,
       anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
-      layerRefused: layerRefused };
+      layerRefused: layerRefused,
+      slide: { hosts: slideHostN, hostGuids: slideSeeded, openings: slide.openings, tableHosts: Object.keys(slide.hosts).length } };   // §SLIDE-SEED
   }
 
   // buildBridge(ops, ids) — ops[i] committed as kernel_ops row ids[i] (== its featureId). Build both directions
@@ -448,6 +482,23 @@
     var res = await io.commitGroup(groupOps, gid);
     var ids = (res && res.ids) || [];
     var bridge = buildBridge(built.ops, ids);
+    // §SLIDE-SEED (§SLIDE-REAL-WALLS Phase B): one GEOM_CUT per authored opening whose host seeded as an UNCUT body — its
+    // own idempotent seed group, committed AFTER the hosts exist so parent = the host's fid from the bridge. The void is
+    // the opening's own solid as a WORLD box (the worker's makeBoxFromCorners frame); §CUT-MOVE carries it with the door.
+    var cutIds = [], cutOps = [];
+    if (built.slide && built.slide.openings.length && bridge && bridge.fidByGuid) {
+      built.slide.openings.forEach(function (o) {
+        var hf = bridge.fidByGuid[o.host], ff = bridge.fidByGuid[o.filling];
+        if (hf == null || !built.slide.hostGuids[o.host]) { _log(TAG + ' §SLIDE-SEED skip opening=' + o.opening + ' host=' + o.host + ' — host not seeded as an uncut body'); return; }
+        cutOps.push({ op_type: 'GEOM_CUT', params: { parent: hf, void: { c1: o.c1, c2: o.c2 }, slide: { opening: o.opening, filling: o.filling, fillingFid: ff == null ? null : ff }, provenance: 'ifc:opening-box' }, outputGuid: o.opening });
+      });
+      if (cutOps.length) {
+        try { var cr = await io.commitGroup(cutOps, 'arcseed-cuts-' + name); cutIds = (cr && cr.ids) || []; }
+        catch (e) { _log(TAG + ' §SLIDE-SEED cut commit failed — ' + (e && e.message)); }
+      }
+      _log(TAG + ' §SLIDE-SEED building=' + name + ' uncutHosts=' + built.slide.hosts + '/' + built.slide.tableHosts + ' openings=' + built.slide.openings.length +
+        ' cuts=' + cutIds.length + ' (uncut body + one GEOM_CUT per authored opening; the hole rides the door via §CUT-MOVE)');
+    }
     if (io.fold) { try { await io.fold(); } catch (e) { _log(TAG + ' fold after seed failed ' + (e && e.message)); } }
     built.skipped.forEach(function (s) { _log(TAG + ' §ARC-SEED skip guid=' + s.guid + ' class=' + s.ifc_class + ' reason=' + s.reason); });
     // §ANCHOR: every seed/element count below is over the NORMAL ops only — anchors are excluded from
@@ -476,7 +527,7 @@
       ' (geomTable=' + (built.geomTable || 'none') + ' realResolved=' + built.realResolved + '/' + normalN + ')');
     if (built.noSubstrate) console.error(TAG + ' §GEOM-HARDFAIL building=' + name + ' NO geometry substrate — ' + built.noSubstrate +
       ' element(s) refused, NOTHING seeded as a box (§GEO-SERVED-DEGRADED / §WALK-LOD400-ONLY: LOD400 or fail hard)');
-    return { committed: committedNormal, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops,
+    return { committed: committedNormal, skipped: built.skipped.length, ids: ids, bridge: bridge, ops: built.ops, slideCutIds: cutIds, slideCutOps: cutOps, slide: built.slide,
       matched: built.matched, unmatched: built.unmatched, tilted: built.tilted, realResolved: built.realResolved, hardfail: built.hardfail,
       geomap: built.geomap, anchorN: anchorN, layerGate: built.layerGate, layerRefused: built.layerRefused, noSubstrate: built.noSubstrate };
   }

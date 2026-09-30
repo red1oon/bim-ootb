@@ -222,10 +222,16 @@
       if (!window.Bonsai.library) return null;
       const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
       if (!P || !P.realGeomHash) return null;
-      const layers = window.Bonsai.library.layersFor(P.realGeomHash);
-      if (!layers || !layers.length) return null;
+      let layers = window.Bonsai.library.layersFor(P.realGeomHash);
+      // §SLIDE-SEED (§SLIDE-REAL-WALLS Phase B): an UNCUT host body (slide_hosts patch — its authored openings are GEOM_CUT
+      // rows) has no layer index but IS one closed real solid, so it seeds as a SINGLE range through the same
+      // buildTriFace+sewAndSolidify path a layered wall takes — the "single-range seed opens it to plain walls" the
+      // Phase M verdict named. Every vertex is the extractor's own (opening subtraction disabled), nothing idealized.
+      const uncut = (!layers || !layers.length) && window.Bonsai.library.isUncutBody && window.Bonsai.library.isUncutBody(P.realGeomHash);
+      if ((!layers || !layers.length) && !uncut) return null;
       let fold; try { fold = window.Bonsai.library.foldInsert(op, null, null); } catch (e) { return null; }
       if (!fold || !fold.positions || !fold.indices || !fold.positions.length || !fold.indices.length) return null;
+      if (uncut) layers = [{ start: 0, count: fold.indices.length / 3 }];
       return { positions: fold.positions, indices: fold.indices, layers: layers.map(l => ({ start: l.start, count: l.count })) };
     },
 
