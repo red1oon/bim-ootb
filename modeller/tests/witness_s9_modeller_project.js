@@ -56,7 +56,8 @@ runE2E('W-S9-MODELLER-PROJECT', async (t) => {
     await pg.mouse.move(pt[0], pt[1]); await t.sleep(80); if (shift) await pg.keyboard.down('Shift'); await pg.mouse.click(pt[0], pt[1]); if (shift) await pg.keyboard.up('Shift'); await t.sleep(500); return true; };
   let fidA = null, fidB = null;
   for (const wf of walls) { if (fidA == null) { if (await pick(wf, false)) { const s = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (s.length === 1 && s[0] === wf) fidA = wf; else { await t.flySettle(); await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(900); } } }
-    else { await t.flySettle(); if (await pick(wf, true)) { const s = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (s.length === 2) { fidB = wf; break; } } } }
+    else { await t.flySettle(); if (!fidB && !global.__dollied) { global.__dollied = true; await t.dolly(2.6); await t.sleep(500); }   // the first pick zoomed onto wall A: pull back so a neighbour is in view
+      if (await pick(wf, true)) { const s = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (s.length === 2) { fidB = wf; break; } } } }
   if (fidA == null || fidB == null) { V('P1 BUTTON', 'INCONCLUSIVE', 'could not select two walls by real clicks (A=' + fidA + ' B=' + fidB + ')'); return; }
   await t.flySettle(); await t.sleep(500);
   const guids = await pg.evaluate(() => Array.from(window.Bonsai._selSet).map(f => window.__arcGuidByFid[f]));
