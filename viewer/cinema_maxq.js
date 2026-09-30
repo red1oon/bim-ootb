@@ -3258,6 +3258,13 @@
             _lpArmFrameTn = _lpGrid.armFrameTn;
             _lpArmTnMatch = Math.abs(_lpArmFrameTn - _lpArmTn) <= _lpGrid.step + 1e-9;
             A._loadPathArmFrameTn = _lpArmFrameTn; A._loadPathArmTnMatch = _lpArmTnMatch;
+            // §LOADPATH_CLIP_SKIP (2026-10-01, red1 clip 1065:1195): a clip that does not CONTAIN the freeze point got the 165 freeze
+            // frames spliced onto its last frame anyway (armTnMatch=false => FAIL, ~35 min of wrong freeze). Outside the clip = no freeze.
+            if (_frameRange && !_lpArmTnMatch) {
+              console.log('§LOADPATH_CLIP_SKIP armTn=' + _lpArmTn.toFixed(4) + ' clipTn=[' + (_frameRange.a / (_frameRange.total - 1)).toFixed(4) + ',' + (_frameRange.b / (_frameRange.total - 1)).toFixed(4) +
+                '] — the freeze point is outside this clip: no freeze frames inserted');
+              _lpFramesInserted = 0; _lpArmTnMatch = true; A._loadPathArmTnMatch = true;
+            }
             nFrames = _lpNFramesOriginal + _lpFramesInserted;
             console.log('§LOADPATH_HOLD_INSERT armTn=' + _lpArmTn.toFixed(4) + ' holdFrameStart=' + _lpHoldFrameStart +
               ' armFrameTn=' + _lpArmFrameTn.toFixed(6) + ' armTnMatch=' + _lpArmTnMatch +
