@@ -225,37 +225,34 @@
       { sources: src, cols: ['Room', 'GUID', 'Category', 'Area m²', 'Boxes'], rows: rooms.slice(0, 50).map(function (r) { return [r.name, r.guid, r.category, +r.area.toFixed(2), r.boxes]; }) });
   }
 
-  // exit_path — cpe_escape_route.js:359 A.escapeRouteBuild(): the worst room (argmax route cost).
-  // Route COST is not metres (cpe_escape_route.js:84-90); walkM is the drawn 3D length.
-  async function runExit(opts) {
-    var A = A_ref, o = opts || {}, q = 'Find path to exit' + (o.roomName ? ' from ' + o.roomName : ' (worst-case room)'), src = { engine: 'cpe_escape_route.js escapeRouteBuild (room_graph.js escapeRoute)', rules: 'egress_rules.json' };
-    if (typeof A.escapeRouteBuild !== 'function') return _answer('exit_path', q, 'INCONCLUSIVE', 'escape-route engine not loaded', null, { sources: src });
-    if (o.roomGuid) return runExitFrom(o, q, src);
-    var rec = null;
-    try { rec = A.escapeRouteBuild(); } catch (e) { rec = null; }
-    if (!rec) return _answer('exit_path', q, 'INCONCLUSIVE', 'no exit route could be built (see evidence — usually no walkable raster / no exits in this building)', null, { sources: src });
+  // exit_path — best route + ranked alternatives, from the SAME record the Alt-C film's "Escape Route"
+  // beat draws: worst room = A.escapeRouteBuild(); a named room = A.escapeRouteFor(guid). Both fill the
+  // alternates via cpe_escape_route.js _computeAlternates (escapeRoutes + divergenceFrom). Route COST is
+  // not metres (cpe_escape_route.js:84-90); walkM / totalM are drawn 3D lengths.
+  function _exitAnswer(rec, q, src, worst) {
+    var alts = (rec.alternates || []).map(function (a) { return { rank: a.rank, exit: a.exitName, exitGuid: a.exitGuid, walkM: +(+a.totalM).toFixed(2), afterSplitM: +(+a.lenM).toFixed(2) }; });
+    var common = rec.commonPathM == null ? null : +(+rec.commonPathM).toFixed(2);
     var val = { room: rec.roomName, roomGuid: rec.roomGuid, storey: rec.storey, exit: rec.exitName, exitGuid: rec.exitGuid,
-      walkM: +rec.walkM.toFixed(2), routeCost: +(+rec.graphCostM).toFixed(2), doors: rec.doors, hops: rec.hops, roomsScanned: rec.roomsScanned };
-    return _answer('exit_path', q, 'OK', 'From ' + rec.roomName + ' to ' + rec.exitName + ': ' + rec.walkM.toFixed(1) + ' m walk, ' + rec.doors + ' doors (worst of ' + rec.roomsScanned + ' rooms)', val,
-      { sources: src, cols: ['Field', 'Value'], rows: Object.keys(val).map(function (k) { return [k, val[k]]; }) });
+      walkM: +rec.walkM.toFixed(2), routeCost: +(+rec.graphCostM).toFixed(2), doors: rec.doors, hops: rec.hops,
+      exitsReachable: rec.exitsReachable, commonPathM: common, splitAt: rec.divergence ? rec.divergence.name : null, alternates: alts };
+    if (worst) val.roomsScanned = rec.roomsScanned;
+    var altTxt = alts.length
+      ? ' ' + alts.length + ' alternative exit' + (alts.length > 1 ? 's' : '') + ' (' + alts.map(function (a) { return a.walkM.toFixed(0); }).slice(0, 5).join(', ') + (alts.length > 5 ? ', …' : '') + ' m); the first ' +
+        (common === null ? '?' : common.toFixed(1)) + ' m has no choice of route' + (val.splitAt ? ' (routes split at ' + val.splitAt + ')' : '') + '.'
+      : ' No alternative exit — the whole walk has no choice of route.';
+    var rows = [[0, 'BEST', rec.exitName, val.walkM, common, val.doors]].concat(alts.map(function (a) { return [a.rank, 'alternative', a.exit, a.walkM, common, '']; }));
+    return _answer('exit_path', q, 'OK', 'Best: ' + rec.roomName + ' → ' + rec.exitName + ', ' + rec.walkM.toFixed(1) + ' m walk, ' + rec.doors + ' doors' + (worst ? ' (worst of ' + rec.roomsScanned + ' rooms).' : '.') + altTxt, val,
+      { sources: src, cols: ['Rank', 'Route', 'Exit', 'Walk m', 'Shared (no-choice) m', 'Doors'], rows: rows });
   }
-
-  // exit from ONE room — room_graph.js:2086 RoomGraph.escapeRoute (nearest exit by route cost), walk
-  // metres = the shortestPath polyline length, measured exactly as cpe_escape_route.js:396-403 does.
-  async function runExitFrom(o, q, src) {
-    var A = A_ref, RG = window.RoomGraph;
-    if (!RG || typeof A.getRoomGraph !== 'function') return _answer('exit_path', q, 'INCONCLUSIVE', 'room graph not loaded', null, { sources: src });
-    var g = A.getRoomGraph(), esc = null;
-    try { esc = RG.escapeRoute(g, o.roomGuid, {}); } catch (e) { esc = null; }
-    if (!esc || esc.distance == null || !isFinite(esc.distance)) return _answer('exit_path', q, 'INCONCLUSIVE', 'no exit reachable from ' + o.roomName + ' (see §ESCAPE_ROUTE evidence)', null, { sources: src });
-    var sp = null, L = null;
-    try { sp = RG.shortestPath(g, o.roomGuid, esc.exitGuid); } catch (e) { sp = null; }
-    var poly = sp && sp.polyline && sp.polyline.length > 1 ? sp.polyline : null;
-    if (poly) { L = 0; for (var i = 1; i < poly.length; i++) L += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y, (poly[i].z || 0) - (poly[i - 1].z || 0)); }
-    var ex = g.nodesByGuid && g.nodesByGuid[esc.exitGuid], exName = (ex && ex.name) || 'Exit';
-    var val = { room: o.roomName, roomGuid: o.roomGuid, exit: exName, exitGuid: esc.exitGuid, walkM: L === null ? null : +L.toFixed(2), routeCost: +(+esc.distance).toFixed(2), doors: (esc.doors || []).length, hops: (esc.path || []).length };
-    return _answer('exit_path', q, 'OK', 'From ' + o.roomName + ' to ' + exName + ': ' + (L === null ? 'walk length not drawable' : L.toFixed(1) + ' m walk') + ', ' + val.doors + ' doors', val,
-      { sources: src, cols: ['Field', 'Value'], rows: Object.keys(val).map(function (k) { return [k, val[k]]; }) });
+  async function runExit(opts) {
+    var A = A_ref, o = opts || {}, q = 'Find path to exit' + (o.roomName ? ' from ' + o.roomName : ' (worst-case room)');
+    var src = { engine: 'cpe_escape_route.js ' + (o.roomGuid ? 'escapeRouteFor' : 'escapeRouteBuild') + ' + _computeAlternates (room_graph.js escapeRoutes/divergenceFrom) — the Alt-C film Escape Route record', rules: 'egress_rules.json' };
+    var fn = o.roomGuid ? A.escapeRouteFor : A.escapeRouteBuild;
+    if (typeof fn !== 'function') return _answer('exit_path', q, 'INCONCLUSIVE', 'escape-route engine not loaded', null, { sources: src });
+    var rec = null;
+    try { rec = o.roomGuid ? A.escapeRouteFor(o.roomGuid) : A.escapeRouteBuild(); } catch (e) { rec = null; }
+    if (!rec) return _answer('exit_path', q, 'INCONCLUSIVE', o.roomGuid ? 'no exit reachable from ' + o.roomName + ' (see §ESCAPE_ROUTE evidence)' : 'no exit route could be built (see evidence — usually no walkable raster / no exits in this building)', null, { sources: src });
+    return _exitAnswer(rec, q, src, !o.roomGuid);
   }
 
   // counts — elements_meta GROUP BY discipline (the table Find's discipline axis reads).

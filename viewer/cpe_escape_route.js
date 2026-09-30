@@ -356,6 +356,107 @@ function setupCpeEscapeRoute(A) {
              headsOnRoute: Object.keys(used).length };
   }
 
+  // §ESCAPE_ALTERNATES_SHARED (bim-ootb prompts/FIND_ASK_ANSWERS.md §I, 2026-09-30) — the §13.1
+  // alternates/divergence block, moved VERBATIM out of escapeRouteBuild() so the film's worst-case
+  // record and the Find panel's per-room answer (A.escapeRouteFor) are computed by ONE function.
+  // Writes onto `_rec`: alternates, redPts, yellowPts, commonPathM, divergence, divSnapM,
+  // exitsReachable, cased(=null). `poly` = the primary route's shortestPath polyline (model coords).
+  function _computeAlternates(RG, graph, node, esc, poly, _rec) {
+    _rec.alternates = []; _rec.redPts = null; _rec.yellowPts = null;
+    _rec.commonPathM = null; _rec.divergence = null; _rec.divSnapM = null;
+    _rec.exitsReachable = 1; _rec.cased = null;
+    var _allT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var _all = null;
+    try { _all = RG.escapeRoutes ? RG.escapeRoutes(graph, node.guid, { log: function () {} }) : null; }
+    catch (eA) { console.log('§ESCAPE_ROUTE_ALTERNATES INCONCLUSIVE — escapeRoutes threw: ' + (eA && eA.message)); }
+    if (_all && _all.routes && _all.routes.length) {
+      _rec.exitsReachable = _all.routes.length;
+      // Route 0 is the nearest exit — the SAME exit escapeRoute() chose, so the drawn primary is
+      // the line the selection already measured. A disagreement is logged, never papered over.
+      var primaryAgrees = (_all.routes[0].exitGuid === esc.exitGuid);
+      // The divergence: where the occupant FIRST gains a choice. `null` is a REAL state, not a
+      // failure — one route is a prefix of the other, or there is only one exit — and it means the
+      // WHOLE walk is common path. That is §13.6's "red line with no heads", the worst reading
+      // available, and it is drawn as such rather than hidden behind a yellow line.
+      var div = (_all.routes.length > 1 && RG.divergenceFrom)
+        ? RG.divergenceFrom(_all.routes[0].path, _all.routes[1].path) : null;
+      var divNode = div ? (graph.nodesByGuid[div.node] || null) : null;
+      var splitM = null;
+      if (divNode && divNode.cx != null && divNode.cy != null) {
+        var snap = _nearestOnPoly(poly, _cum(poly), { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 });
+        splitM = snap.m; _rec.divSnapM = snap.dist;
+        _rec.divergence = { guid: div.node, name: divNode.name || div.node, index: div.index };
+      }
+      var cum0 = _cum(poly), total0 = cum0[cum0.length - 1];
+      if (splitM == null) splitM = total0;      // no divergence found -> the whole walk is common
+      _rec.commonPathM = splitM;
+      function toThree(list) {
+        return list.map(function (q) { var c = A.ifc2three(q.x, q.y, q.z || 0); return { x: c.x, y: c.y + 0.05, z: c.z }; });
+      }
+      _rec.redPts = toThree(_cutRange(poly, cum0, 0, splitM));
+      _rec.yellowPts = toThree(_cutRange(poly, cum0, splitM, total0));
+      // ── the BLUE fan. §13.6: NO CAP. Every reachable exit gets a head, because capping them
+      // would make a snake and a hydra look the same, which is the one reading this picture is for.
+      for (var ri = 1; ri < _all.routes.length; ri++) {
+        var rr = _all.routes[ri], spr = null;
+        try { spr = RG.shortestPath(graph, node.guid, rr.exitGuid); } catch (eP) { spr = null; }
+        var pl = (spr && spr.polyline && spr.polyline.length > 1) ? spr.polyline : null;
+        if (!pl) continue;
+        var cumR = _cum(pl), totR = cumR[cumR.length - 1], sM = totR;
+        if (divNode && divNode.cx != null) sM = _nearestOnPoly(pl, cumR, { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 }).m;
+        var tail = _cutRange(pl, cumR, sM, totR);
+        if (tail.length < 2) continue;
+        _rec.alternates.push({ exitGuid: rr.exitGuid,
+          exitName: (graph.nodesByGuid[rr.exitGuid] && graph.nodesByGuid[rr.exitGuid].name) || 'Exit',
+          rank: ri, pts3: toThree(tail), lenM: _cum(tail)[tail.length - 1], totalM: totR });
+      }
+      var _allMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _allT0;
+      console.log('§ESCAPE_ROUTE_ALTERNATES exitsReachable=' + _all.routes.length +
+        ' primaryExitAgreesWithSelection=' + primaryAgrees +
+        ' divergence=' + (_rec.divergence ? '"' + _rec.divergence.name + '" (' + _rec.divergence.guid + ') atIndex=' + _rec.divergence.index : 'NONE') +
+        ' commonPathRED=' + splitM.toFixed(2) + 'm (§1006.2.1 quantity: no choice exists over this stretch)' +
+        ' primaryYELLOW=' + (total0 - splitM).toFixed(2) + 'm' +
+        ' blueAlternates=' + _rec.alternates.length + '/' + (_all.routes.length - 1) + ' drawn (NO CAP — §13.6)' +
+        ' altSpanM=[' + (_all.routes.length > 1 ? _all.routes[1].distance.toFixed(1) + '..' + _all.routes[_all.routes.length - 1].distance.toFixed(1) : '-') + ']' +
+        ' divSnapM=' + (_rec.divSnapM == null ? 'n/a' : _rec.divSnapM.toFixed(2)) +
+        ' (how far the graph\'s divergence NODE sat from the drawn polyline — a large snap means the' +
+        ' cut is not where the graph says the choice appears)' +
+        ' shape=' + (_rec.alternates.length === 0 ? 'NO-HEADS (routes never diverge — the worst case, §13.6)'
+          : (splitM / Math.max(1e-9, total0) > 0.5 ? 'SNAKE (long common spine, choice only at the end — BAD egress)'
+            : 'HYDRA (choice close to the room, many heads — GOOD egress)')) +
+        ' ms=' + _allMs.toFixed(0));
+    } else {
+      console.log('§ESCAPE_ROUTE_ALTERNATES NONE — escapeRoutes returned no routes for the chosen' +
+        ' room, so no divergence and no alternates can be drawn. The primary line is drawn alone.');
+    }
+  }
+
+  // Per-room escape record for the Find panel Ask mode — the SAME passes escapeRouteBuild() makes for
+  // its winner (escapeRoute → shortestPath polyline measured in three-space → _computeAlternates),
+  // for one named room. Read-only: draws nothing, does not touch the film's cached _rec.
+  A.escapeRouteFor = function (roomGuid) {
+    var RG = _resolveRoomGraph();
+    if (!RG || typeof A.getRoomGraph !== 'function') { console.log('§ESCAPE_ROUTE_FOR INCONCLUSIVE — room graph not loaded'); return null; }
+    var graph = A.getRoomGraph(), node = graph && graph.nodesByGuid ? graph.nodesByGuid[roomGuid] : null;
+    if (!node) { console.log('§ESCAPE_ROUTE_FOR room=' + roomGuid + ' NO_GRAPH_NODE'); return null; }
+    var esc = RG.escapeRoute(graph, roomGuid, { log: function () {} });
+    if (!esc || esc.distance == null || !isFinite(esc.distance)) { console.log('§ESCAPE_ROUTE_FOR room=' + roomGuid + ' NO_EXIT_REACHABLE'); return null; }
+    var sp = null;
+    try { sp = RG.shortestPath(graph, roomGuid, esc.exitGuid); } catch (eS) { sp = null; }
+    var poly = (sp && sp.polyline && sp.polyline.length > 1) ? sp.polyline : null;
+    if (!poly || typeof A.ifc2three !== 'function') { console.log('§ESCAPE_ROUTE_FOR room=' + roomGuid + ' NO_POLYLINE'); return null; }
+    var pts3 = poly.map(function (p) { var c = A.ifc2three(p.x, p.y, p.z || 0); return { x: c.x, y: c.y + 0.05, z: c.z }; });
+    var cum = _cum(pts3), exitNode = graph.nodesByGuid[esc.exitGuid] || null;
+    var rec = { roomGuid: roomGuid, roomName: node.name || roomGuid, storey: node.storey,
+      exitGuid: esc.exitGuid, exitName: (exitNode && exitNode.name) || 'Exit',
+      walkM: cum[cum.length - 1], graphCostM: esc.distance, doors: (esc.doors || []).length, hops: (esc.path || []).length };
+    _computeAlternates(RG, graph, node, esc, poly, rec);
+    console.log('§ESCAPE_ROUTE_FOR room="' + rec.roomName + '" exit=' + rec.exitGuid + ' walk=' + rec.walkM.toFixed(2) + 'm exitsReachable=' + rec.exitsReachable +
+      ' commonPath=' + (rec.commonPathM == null ? 'n/a' : rec.commonPathM.toFixed(2) + 'm') + ' divergence=' + (rec.divergence ? '"' + rec.divergence.name + '"' : 'NONE') +
+      ' alternates=' + rec.alternates.length);
+    return rec;
+  };
+
   A.escapeRouteBuild = function () {
     // Cached per building — INCLUDING a null result. A build that came back empty must not be
     // retried once per frame: the scan is a Dijkstra per room and the reason it failed will not
@@ -481,73 +582,7 @@ function setupCpeEscapeRoute(A) {
     // INSIDE that loop, and nothing here is inside it. MEASURED on this DB: the whole room scan is
     // scanMs=8 over 7 real rooms, so one more search for the winner is not a cost worth shaping
     // the design around.
-    _rec.alternates = []; _rec.redPts = null; _rec.yellowPts = null;
-    _rec.commonPathM = null; _rec.divergence = null; _rec.divSnapM = null;
-    _rec.exitsReachable = 1; _rec.cased = null;
-    var _allT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
-    var _all = null;
-    try { _all = RG.escapeRoutes ? RG.escapeRoutes(graph, node.guid, { log: function () {} }) : null; }
-    catch (eA) { console.log('§ESCAPE_ROUTE_ALTERNATES INCONCLUSIVE — escapeRoutes threw: ' + (eA && eA.message)); }
-    if (_all && _all.routes && _all.routes.length) {
-      _rec.exitsReachable = _all.routes.length;
-      // Route 0 is the nearest exit — the SAME exit escapeRoute() chose, so the drawn primary is
-      // the line the selection already measured. A disagreement is logged, never papered over.
-      var primaryAgrees = (_all.routes[0].exitGuid === esc.exitGuid);
-      // The divergence: where the occupant FIRST gains a choice. `null` is a REAL state, not a
-      // failure — one route is a prefix of the other, or there is only one exit — and it means the
-      // WHOLE walk is common path. That is §13.6's "red line with no heads", the worst reading
-      // available, and it is drawn as such rather than hidden behind a yellow line.
-      var div = (_all.routes.length > 1 && RG.divergenceFrom)
-        ? RG.divergenceFrom(_all.routes[0].path, _all.routes[1].path) : null;
-      var divNode = div ? (graph.nodesByGuid[div.node] || null) : null;
-      var splitM = null;
-      if (divNode && divNode.cx != null && divNode.cy != null) {
-        var snap = _nearestOnPoly(poly, _cum(poly), { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 });
-        splitM = snap.m; _rec.divSnapM = snap.dist;
-        _rec.divergence = { guid: div.node, name: divNode.name || div.node, index: div.index };
-      }
-      var cum0 = _cum(poly), total0 = cum0[cum0.length - 1];
-      if (splitM == null) splitM = total0;      // no divergence found -> the whole walk is common
-      _rec.commonPathM = splitM;
-      function toThree(list) {
-        return list.map(function (q) { var c = A.ifc2three(q.x, q.y, q.z || 0); return { x: c.x, y: c.y + 0.05, z: c.z }; });
-      }
-      _rec.redPts = toThree(_cutRange(poly, cum0, 0, splitM));
-      _rec.yellowPts = toThree(_cutRange(poly, cum0, splitM, total0));
-      // ── the BLUE fan. §13.6: NO CAP. Every reachable exit gets a head, because capping them
-      // would make a snake and a hydra look the same, which is the one reading this picture is for.
-      for (var ri = 1; ri < _all.routes.length; ri++) {
-        var rr = _all.routes[ri], spr = null;
-        try { spr = RG.shortestPath(graph, node.guid, rr.exitGuid); } catch (eP) { spr = null; }
-        var pl = (spr && spr.polyline && spr.polyline.length > 1) ? spr.polyline : null;
-        if (!pl) continue;
-        var cumR = _cum(pl), totR = cumR[cumR.length - 1], sM = totR;
-        if (divNode && divNode.cx != null) sM = _nearestOnPoly(pl, cumR, { x: divNode.cx, y: divNode.cy, z: divNode.cz || 0 }).m;
-        var tail = _cutRange(pl, cumR, sM, totR);
-        if (tail.length < 2) continue;
-        _rec.alternates.push({ exitGuid: rr.exitGuid,
-          exitName: (graph.nodesByGuid[rr.exitGuid] && graph.nodesByGuid[rr.exitGuid].name) || 'Exit',
-          rank: ri, pts3: toThree(tail), lenM: _cum(tail)[tail.length - 1], totalM: totR });
-      }
-      var _allMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - _allT0;
-      console.log('§ESCAPE_ROUTE_ALTERNATES exitsReachable=' + _all.routes.length +
-        ' primaryExitAgreesWithSelection=' + primaryAgrees +
-        ' divergence=' + (_rec.divergence ? '"' + _rec.divergence.name + '" (' + _rec.divergence.guid + ') atIndex=' + _rec.divergence.index : 'NONE') +
-        ' commonPathRED=' + splitM.toFixed(2) + 'm (§1006.2.1 quantity: no choice exists over this stretch)' +
-        ' primaryYELLOW=' + (total0 - splitM).toFixed(2) + 'm' +
-        ' blueAlternates=' + _rec.alternates.length + '/' + (_all.routes.length - 1) + ' drawn (NO CAP — §13.6)' +
-        ' altSpanM=[' + (_all.routes.length > 1 ? _all.routes[1].distance.toFixed(1) + '..' + _all.routes[_all.routes.length - 1].distance.toFixed(1) : '-') + ']' +
-        ' divSnapM=' + (_rec.divSnapM == null ? 'n/a' : _rec.divSnapM.toFixed(2)) +
-        ' (how far the graph\'s divergence NODE sat from the drawn polyline — a large snap means the' +
-        ' cut is not where the graph says the choice appears)' +
-        ' shape=' + (_rec.alternates.length === 0 ? 'NO-HEADS (routes never diverge — the worst case, §13.6)'
-          : (splitM / Math.max(1e-9, total0) > 0.5 ? 'SNAKE (long common spine, choice only at the end — BAD egress)'
-            : 'HYDRA (choice close to the room, many heads — GOOD egress)')) +
-        ' ms=' + _allMs.toFixed(0));
-    } else {
-      console.log('§ESCAPE_ROUTE_ALTERNATES NONE — escapeRoutes returned no routes for the chosen' +
-        ' room, so no divergence and no alternates can be drawn. The primary line is drawn alone.');
-    }
+    _computeAlternates(RG, graph, node, esc, poly, _rec);
     // ── §13.2 the grey casing, over the PRIMARY route (the one the numbers are about) ──
     var _hd = _sprinklerHeads();
     var _cov = _casedSpans(poly, _cum(poly), _hd, _storeyElevations(graph));
