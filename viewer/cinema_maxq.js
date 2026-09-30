@@ -500,7 +500,9 @@
   // margin costs 75 ms/frame (1,164 vs 1,089); that is the deliberate price of the sample size.
   // Alt+S is UNTOUCHED: A._stillBudget is set only around the bake's frame loop and cleared on
   // every exit path, so a still keeps all 40 renders.
-  var MAXQ_STILL_BUDGET = { taa: 8, ao: 12 };
+  // §FRAME_COST S5 (2026-10-01, red1: "As seen before … there is no slightly grainier visual"): ao 12 -> 8. 8/8 is the MEASURED row
+  // above (RMS 0.37, AT THE FLOOR); 6 was never measured, so not taken. Saves 4 composer renders per frame (~0.2 s at 960x540).
+  var MAXQ_STILL_BUDGET = { taa: 8, ao: 8 };
   // §129.20 IDEA, NOT IMPLEMENTED (2026-09-18, red1: "during the freeze, can we save timings during
   // the bake by copying similar frames?") — genuinely worth investigating given the cost breakdown
   // just above: TAA+AO composer renders are ~85% of per-frame cost, and during a load-path hold
@@ -1679,7 +1681,9 @@
     // PHOTON actually changed. This reads the real encoded pixels themselves, a 5x5 median sample at
     // 5 fixed fractional points across the frame (building-heavy regions in the sighted stills), on
     // hold frames only, so a real change (or its total absence) is undeniable either way.
-    try {
+    // §FRAME_COST S4 (2026-10-01): its own spec above says "on hold frames only" but it ran on EVERY frame (255 lines in a 255-frame
+    // clip, mid2.log) — 16 getImageData readbacks per frame on a canvas without willReadFrequently (Chrome's own warning in the log).
+    if (A._loadPathHoldFrameActive) try {
       var _pxPts = [[0.30, 0.55], [0.45, 0.65], [0.60, 0.45], [0.20, 0.75], [0.70, 0.70],
         [0.53, 0.87], [0.62, 0.92], [0.05, 0.42], [0.10, 0.50], [0.85, 0.60], [0.784, 0.77],
         [0.913, 0.031], [0.95, 0.08], [0.80, 0.15], [0.41, 0.21], [0.35, 0.12]];
