@@ -3586,7 +3586,18 @@
         // maxStepElsewhere fields measure.
         var _lpHoldCtl = null, _tn;
         if (_frameRange) {
-          _tn = (_frameRange.a + i) / (_frameRange.total - 1);
+          // §LOADPATH_CLIP_CLOCK (red1 2026-10-01 on the Hospital mid clip: "it broke the momentum path … getting out of the freeze
+          // supposed to continue the full ARC return … straight cut to no ARC DISCs only"). MEASURED: a --frame-range clip ran the
+          // film clock THROUGH the 165 inserted hold frames (§FILM_GEOM_WHOLE f=250 tn=0.4653 on a clip whose range ends at 0.4516),
+          // so the whole post-freeze return was consumed during the freeze and the clip resumed inside the discipline round. A clip
+          // now freezes the clock exactly like the full film (branch below): hold frames pin _tn at the arm frame, later frames are
+          // shifted back by the inserted count.
+          var _iF = i;
+          if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze && i >= _lpHoldFrameStart) {
+            if (i < _lpHoldFrameStart + _lpFramesInserted) { _iF = _lpHoldFrameStart; _lpHoldCtl = { inHold: true, elapsedSec: (i - _lpHoldFrameStart) / fps }; }
+            else { _iF = i - _lpFramesInserted; _lpHoldCtl = { inHold: false, elapsedSec: null }; }
+          } else if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze) _lpHoldCtl = { inHold: false, elapsedSec: null };
+          _tn = (_frameRange.a + _iF) / (_frameRange.total - 1);
         } else if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze && i >= _lpHoldFrameStart) {
           if (i < _lpHoldFrameStart + _lpFramesInserted) {
             _tn = _lpNFramesOriginal > 1 ? _lpHoldFrameStart / (_lpNFramesOriginal - 1) : 0;

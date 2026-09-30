@@ -2590,6 +2590,59 @@ function setupCpeLoadPath(A) {
   // `mesh.visible` (opacity stays 1 always, see _buildChainClones); ghost mode animates
   // opacity/transparent/depthWrite exactly as §129.7's own v10 LOOK did. No-ops once fully revealed
   // (idempotent — safe to call every frame with a clamped `stackElapsed`).
+  // §132 §LOADPATH_TWINS — pick up to N chains with the near stack's SIGNATURE (hop sequence of IFC class @ storey, top-down), spaced
+  // >= TWIN_MIN_SEP m apart (IFC plan x/y of the chains' members) and in view of the arm camera widened for the pan (|ndc.x| <= 1.6).
+  // Clones are built here (their REAL world boxes decide the view test, never DB boxes — ROUND 5's rule); rejects are disposed at once.
+  var TWIN_MIN_SEP = 6, TWIN_NDC_X = 1.6, TWIN_NDC_Y = 1.1;
+  function _twinsWanted() {
+    var m = /[?&]lptwins=(\d+)/.exec(location.search), v = m ? +m[1] : (typeof A._lpTwins === 'number' ? A._lpTwins : 3);
+    return Math.max(0, Math.min(8, v | 0));
+  }
+  function _sigOf(hopsUp) { return hopsUp.map(function (h) { return h.cls + '@' + h.storey; }).join('>'); }
+  function _planCentre(hopsUp) {
+    var x = 0, y = 0; hopsUp.forEach(function (h) { var it = _lp.items[h.idx]; x += (it.x0 + it.x1) / 2; y += (it.y0 + it.y1) / 2; });
+    return { x: x / hopsUp.length, y: y / hopsUp.length };
+  }
+  function _pickTwins() {
+    var want = _twinsWanted();
+    if (!want || !_lp || !_lp.hopsUp || !_lp.hopsUp.length || !_lp.validCandidates || !A.camera || typeof THREE === 'undefined') {
+      console.log('§LOADPATH_TWINS picked=0 reason=' + (!want ? 'off (&lptwins=0)' : 'no-near-or-camera')); return [];
+    }
+    var t0 = performance.now(), sig = _sigOf(_lp.hopsUp), nearIdx = _lp.pickItem ? _lp.items.indexOf(_lp.pickItem) : -1;
+    var taken = [_planCentre(_lp.hopsUp)]; if (_lp.far) taken.push(_planCentre(_lp.far.hopsUp));
+    var usedGuids = {}; _lp.hopsUp.forEach(function (h) { usedGuids[h.guid] = 1; }); if (_lp.far) _lp.far.hopsUp.forEach(function (h) { usedGuids[h.guid] = 1; });
+    var same = [];
+    _lp.validCandidates.forEach(function (c) {
+      if (c.idx === nearIdx || !c.chain || c.chain.length < 2) return;
+      var d = _chainDrawnInfo(c.chain); if (!d || !d.drawnIdx || d.drawnIdx.length !== _lp.hopsUp.length) return;
+      var up = d.drawnIdx.slice().reverse().map(function (i, k) { return { guid: _lp.items[i].guid, cls: _lp.items[i].cls, storey: _lp.items[i].storey, idx: i, k: k }; });
+      if (_sigOf(up) !== sig) return;
+      if (up.some(function (h) { return usedGuids[h.guid]; })) return;
+      var pc = _planCentre(up), n0 = taken[0];
+      same.push({ c: c, up: up, pc: pc, dNear: Math.hypot(pc.x - n0.x, pc.y - n0.y) });
+    });
+    same.sort(function (a, b) { return a.dNear - b.dNear; });   // nearest same-signature stacks first: most likely inside the pan
+    var out = [], rej = { spacing: 0, offView: 0, noClone: 0 }, ndcs = [], seps = [];
+    var cam = A.camera; cam.updateMatrixWorld(); var v = new THREE.Vector3();
+    for (var j = 0; j < same.length && out.length < want; j++) {
+      var s0 = same[j], sep = Math.min.apply(null, taken.map(function (t) { return Math.hypot(s0.pc.x - t.x, s0.pc.y - t.y); }));
+      if (sep < TWIN_MIN_SEP) { rej.spacing++; continue; }
+      s0.up.forEach(function (h, k) { h.hex = _hexForHop(k, s0.up.length); });
+      var n = _buildChainClones(s0.up); if (!n) { rej.noClone++; continue; }
+      var box = _chainWorldBBox(s0.up); if (!box) { _disposeChainClones(s0.up); rej.noClone++; continue; }
+      box.getCenter(v); v.project(cam);
+      if (!(v.z > -1 && v.z < 1 && Math.abs(v.x) <= TWIN_NDC_X && Math.abs(v.y) <= TWIN_NDC_Y)) { _disposeChainClones(s0.up); rej.offView++; continue; }
+      taken.push(s0.pc); s0.up.forEach(function (h) { usedGuids[h.guid] = 1; });
+      out.push({ name: 'twin' + (out.length + 1), pickItem: _lp.items[s0.c.idx], hopsUp: s0.up, chainBox: box, revealedHops: 0, stackOk: undefined, durSec: _lp.durSec, twin: true });
+      ndcs.push(v.x.toFixed(2)); seps.push(sep.toFixed(1));
+      _clonesWitness(s0.up, _lp.items[s0.c.idx], 'twin' + out.length);
+    }
+    console.log('§LOADPATH_TWINS sig=' + _lp.hopsUp.length + 'hops want=' + want + ' sameSig=' + same.length + ' picked=' + out.length +
+      ' guids=[' + out.map(function (t) { return t.pickItem.guid; }).join(',') + '] sepM=[' + seps.join(',') + '] ndcX=[' + ndcs.join(',') + ']' +
+      (out.length < want ? ' short reason=' + (same.length ? 'spacing:' + rej.spacing + ',offView:' + rej.offView + ',noClone:' + rej.noClone : 'no-same-signature') : '') +
+      ' ms=' + Math.round(performance.now() - t0) + ' (same load path as the near stack, rising with it; no panels/labels)');
+    return out;
+  }
   function _revealStackStep(stack, stackElapsed) {
     var K = stack.hopsUp.length;
     var revealed = Math.max(0, Math.min(K, Math.floor(stackElapsed) + 1));
@@ -3232,6 +3285,8 @@ function setupCpeLoadPath(A) {
         // §129.8 item 1 — SHINE-THROUGH LOOK witness, once per arm: mode, and the ghost/clip/fade
         // fields this beat's own witnesses (§LOADPATH_VISIBLE) must all read 0/false for in shine
         // mode (FAIL if any survives — checked from real state, not the mode flag alone).
+        // §132 §LOADPATH_TWINS (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §132): the SAME load path elsewhere in the model.
+        try { _lp.twins = _pickTwins(); } catch (eTw) { _lp.twins = []; console.warn('§LOADPATH_TWINS_ERR ' + (eTw && eTw.message)); }
         var nClones = _buildChainClones(_lp.hopsUp);
         var nClonesFar = _lp.far ? _buildChainClones(_lp.far.hopsUp) : 0;
         _fetchHopScheduleCost(_lp.hopsUp);
@@ -3391,6 +3446,16 @@ function setupCpeLoadPath(A) {
         if (_lp.armPose && A.camera && A.camera.quaternion) {
           A.camera.position.set(_lp.armPose.x, _lp.armPose.y, _lp.armPose.z);
           A.camera.quaternion.copy(_lp.armPose.quaternion);
+          // §132 T4 PAN (red1 2026-10-01: "I like the pan as it is more smooth than a hard freeze"): the pan red1 saw came from the clip
+          // clock bug (§LOADPATH_CLIP_CLOCK, cinema_maxq.js) — a real hold is a hard freeze. Made deliberate: yaw about world up by
+          // PAN_DEG * sin(pi * t / T) — out and BACK, so the first and last hold frames equal the arm pose (no jump at resume).
+          // &lppan=<deg> / APP._lpPanDeg (0 = hard freeze).
+          (function () { var m = /[?&]lppan=(-?[0-9.]+)/.exec(location.search), deg = m ? +m[1] : (typeof A._lpPanDeg === 'number' ? A._lpPanDeg : 18);
+            var T = _lp.durSec + (_lp.far ? _lp.far.durSec : 0), t = (typeof elapsed === "number" && isFinite(elapsed)) ? elapsed : 0;
+            if (!deg || !(T > 0) || typeof THREE === 'undefined') return;
+            var yaw = deg * Math.PI / 180 * Math.sin(Math.PI * Math.max(0, Math.min(1, t / T)));
+            A.camera.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw));
+            _lp.panMaxDeg = Math.max(_lp.panMaxDeg || 0, Math.abs(yaw * 180 / Math.PI)); })();
           if (A.camera.updateMatrixWorld) A.camera.updateMatrixWorld();
           _lp.lastHoldPose = { x: A.camera.position.x, y: A.camera.position.y, z: A.camera.position.z,
             quaternion: A.camera.quaternion.clone() };
@@ -3463,6 +3528,8 @@ function setupCpeLoadPath(A) {
         var farDurSec = _lp.far ? _lp.far.durSec : 0;
         if (_lp.far) _revealStackStep(_lp.far, Math.min(elapsed, farDurSec));
         if (elapsed >= farDurSec) _revealStackStep(_lp, elapsed - farDurSec);
+        if (_lp.twins && _lp.twins.length && elapsed >= farDurSec) _lp.twins.forEach(function (tw) { _revealStackStep(tw, elapsed - farDurSec); });   // §132: rise WITH the near stack
+        if (_lp.twins && _lp.twins.length) { var _lagT = 0; _lp.twins.forEach(function (tw) { _lagT = Math.max(_lagT, Math.abs((tw.revealedHops || 0) - (_lp.revealedHops || 0))); }); _lp.twinMaxLag = Math.max(_lp.twinMaxLag || 0, _lagT); }
         if (!_lp.midFired && elapsed >= _lp.durSec / 2) {
           _lp.midFired = true;
           A._loadPathMidHoldThisFrame = true;   // §129.6 items 4/8 — cinema_maxq.js's own §HUD_LAYOUT/§LOADPATH_FOCUS trigger, same frame
@@ -3640,6 +3707,9 @@ function setupCpeLoadPath(A) {
         ' => ' + (_whitenVacuous ? 'INCONCLUSIVE reason=nothing-to-whiten' : (_whitenOk ? 'PASS' : 'FAIL')));
       materialsRestored += _restoreGhost();
       clonesReverted = _disposeChainClones(_lp.hopsUp) + (_lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0);
+      console.log('§LOADPATH_PAN maxYawDeg=' + (_lp.panMaxDeg || 0).toFixed(2) + ' (§132 T4: out-and-back yaw during the freeze; 0 = hard freeze / &lppan=0)');
+      if (_lp.twins && _lp.twins.length) { var _twN = 0; _lp.twins.forEach(function (tw) { _twN += _disposeChainClones(tw.hopsUp); });
+        console.log('§LOADPATH_TWINS_SYNC twins=' + _lp.twins.length + ' maxLag=' + (_lp.twinMaxLag || 0) + ' clonesDisposed=' + _twN + ' (maxLag = hops a twin was ever ahead/behind the near stack; 0 = one load path shown N times)'); }
       try { if (typeof A._applyDiscVisibility === 'function') A._applyDiscVisibility(); } catch (e1) {}
       try { if (typeof window.tmSetCursor === 'function') window.__forceFull = true; } catch (e2) {}
     }
@@ -3667,7 +3737,8 @@ function setupCpeLoadPath(A) {
       if (_lp && _lp.indoorAnnotHidden) { _lp.indoorAnnotHidden.forEach(function (o) { o.visible = true; }); _lp.indoorAnnotHidden = null; }
       _restoreWhiten();   // LIFO — before _restoreGhost(), same discipline as _restore() above
       var materialsRestored = _restoreGhost();
-      var clonesReverted = (_lp ? _disposeChainClones(_lp.hopsUp) : 0) + (_lp && _lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0);
+      var clonesReverted = (_lp ? _disposeChainClones(_lp.hopsUp) : 0) + (_lp && _lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0) +
+        (_lp && _lp.twins ? _lp.twins.reduce(function (s, tw) { return s + _disposeChainClones(tw.hopsUp); }, 0) : 0);
       if (_lp) _lp.far = null;
       console.log('§LOADPATH_RESTORE materialsRestored=' + materialsRestored + '/' + materialsRestored +
         ' planesLeft=0 clonesReverted=' + clonesReverted + '/' + clonesReverted + ' => PASS (forced, nothing armed)');
