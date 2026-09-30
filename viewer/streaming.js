@@ -764,6 +764,28 @@ function setupStreaming(A) {
     }
     return null;
   };
+  // §MEP_SERVICE_COLOUR (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MEP_SERVICE_COLOUR, red1 2026-10-01 "follow how industry does
+  // it"): BS 1710 pipeline identification, RAL references (promain.co.uk pipeline identification chart), RAL -> sRGB hex from the
+  // Wikipedia List of RAL colours. Ducts are bare galvanised sheet (STD_MAT.IfcDuctSegment, the _mepNameHint 'DUCT' value). Anything
+  // with no known service returns null = its own class STD_MAT (no HUD hue). Stored sRGB-encoded like STD_MAT.
+  A._mepHueDisc = /[?&]mephue=disc/.test(typeof location !== 'undefined' ? location.search : '');
+  var SERVICE_PAINT = {
+    FIRE:  { code: 'FP',    hex: 0xAB2524, src: 'RAL 3000 flame red (BS 1710 fire)' },
+    WATER: { code: 'WATER', hex: 0x3E753B, src: 'RAL 6010 grass green (BS 1710 water)' },
+    DRAIN: { code: 'DRAIN', hex: 0x131516, src: 'RAL 9005 jet black (BS 1710 other/drainage)' }
+  };
+  var WATER_TRADES = { PLB: 1, HEAT: 1, ACMV: 1, HVAC: 1 };
+  var PIPE_CLASSES = { IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1 };
+  var DUCT_CLASSES = { IfcDuct: 1, IfcDuctSegment: 1, IfcDuctFitting: 1 };
+  A._mepServiceColour = function(ifcClass, discipline, mepHint) {
+    var hc = mepHint && mepHint.code, paint = null;
+    if (discipline === 'FP' || hc === 'FP') paint = SERVICE_PAINT.FIRE;
+    else if (hc === 'DUCT' || DUCT_CLASSES[ifcClass]) return { code: 'DUCT', r: 0.53, g: 0.56, b: 0.53, src: 'STD_MAT.IfcDuctSegment galvanised' };
+    else if (hc === 'SAN' || (discipline === 'SAN' && (PIPE_CLASSES[ifcClass] || hc === 'PLB'))) paint = SERVICE_PAINT.DRAIN;
+    else if (WATER_TRADES[discipline] && (PIPE_CLASSES[ifcClass] || hc === 'PLB')) paint = SERVICE_PAINT.WATER;
+    if (!paint) return null;
+    return { code: paint.code, r: ((paint.hex >> 16) & 255) / 255, g: ((paint.hex >> 8) & 255) / 255, b: (paint.hex & 255) / 255, src: paint.src };
+  };
   // HSV hue transfer: H and S from the trade colour, V from the element's own albedo. HSV and not
   // HSL because HSL desaturates hard as L->1 — at the off-white default's L=0.885 an HSL
   // recombination returns near-white, which is the very look being fixed. HSV keeps the chroma:
@@ -799,6 +821,10 @@ function setupStreaming(A) {
     if (A._isAuthoredMatName(matName)) return null;                  // tier 1a — real authored material
     var chroma = A._chromaOf(rgbaStr);
     if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) return null;  // tier 1b — already has a hue
+    if (!A._mepHueDisc) {   // §MEP_SERVICE_COLOUR (default): the service's real paint colour, verbatim; &mephue=disc = the 09-02 HUD palette below
+      var sc = A._mepServiceColour(ifcClass, discipline, mepHint);
+      return sc ? { r: sc.r, g: sc.g, b: sc.b, tier: 2, code: sc.code, src: sc.src, v: null } : null;
+    }
     var trade = A._mepTradeHue(discipline, mepHint);
     if (!trade) return null;                                         // tier 3 — no trade hue available
     if (chroma === null) {
