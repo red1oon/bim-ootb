@@ -214,6 +214,8 @@
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
+    // FIND_ASK_ANSWERS.md §D — Ask mode (find_ask.js, loaded just before this file in main.js)
+    if (window.FindAsk && window.FindAsk.mount) { try { window.FindAsk.mount(A, panel); } catch (eAsk) { console.warn('§ASK_MOUNT_ERR ' + eAsk.message); } }
     // §FIND_VIS_TRACE (diagnostic, 2026-07-06): a "Find box appears on its own at onset" bug
     // has been reported but not reproduced synthetically (cold load / simulated back-forward
     // both stayed hidden). Log a stack trace every time this panel's visibility flips, so the
@@ -4193,6 +4195,8 @@
     // NLP only fires on Enter or chip click (explicit=true), never on live typing.
     var _nlpRe = /^(count|how many|number of|total|cost|show|list|what|find|search)\b/i;
     function _handleInput(text, explicit) {
+      // FIND_ASK_ANSWERS.md §D — while Ask is active, typed/voice/chip text drives the Ask catalog
+      if (A.askIsActive && A.askIsActive()) { A.askInput((text || '').trim(), explicit); return; }
       var trimmed = (text || '').trim();
       if (!trimmed) { elResults.innerHTML = ''; elCount.textContent = ''; return; }
       // NLP query detection
