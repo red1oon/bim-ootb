@@ -2761,6 +2761,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // (Clinic: 5 meshes holding only the 22 mirrors) gets ONE dedicated material for the still: IFC colour, metal 1, roughness 0.02,
   // env = the §GLASS_ENV capture of this press, SL_MIRROR (sourced_light.js slMirK: no sky gate).
   function _mirrorOwnApply() {
+    // stills only: films (MaxQ) skip the §GLASS_ENV capture, and with SL_MIRROR (no sky gate) a film mirror would show the sky HDRI indoors
+    if (A._maxqActive) { console.log('§MIRROR_OWN_MAT skipped (film: no per-frame room capture yet — Alt+C lane)'); return; }
     _mirrorReflectMats(); if (!_mirrorMeshList.length || _mirrorOwnSaved.length) return;
     var byCol = Object.create(null), mats = [], ok = 0;
     _mirrorMeshList.forEach(function(o) {
