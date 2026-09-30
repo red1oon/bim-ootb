@@ -15,6 +15,17 @@
   function _one(db, sql, p) { var r = db.exec(sql, p || []); return (r.length && r[0].values.length) ? r[0].values[0] : null; }
   function _all(db, sql, p) { var r = db.exec(sql, p || []); return r.length ? r[0].values : []; }
   function _q(s) { return String(s).replace(/'/g, "''"); }
+  // The ERP C_Project.Value is the Viewer's building LABEL (find_erp_push.js: Value=A.activeBuilding; the seed's own twin is Value='Hospital'). The Modeller knows a
+  // resident by its KEY ('Duplex'), which is not always that label: MEASURED 2026-09-30 on the live Viewer, the Duplex resident's activeBuilding is
+  // 'Ifc2x3_Duplex_Federated' (the OCI extracted DB's building column) — W-S9-MODELLER-PROJECT P4 first FAILED on exactly this (two surfaces, two Project Orders).
+  // Only labels MEASURED on the live Viewer are listed; anything else falls back to the resident key and SAYS so (§S9-BUILDING source=resident-key).
+  // ⛔ red1: is a resident->label table the right home, or should the Modeller's manifest carry it? (§S9-BLOCKED 4)
+  var BUILDING_LABELS = { Duplex: 'Ifc2x3_Duplex_Federated' };
+  function projectKey(residentKey) {
+    var L = (typeof window !== 'undefined' && window.__S9_BUILDING_LABELS) || API.BUILDING_LABELS || BUILDING_LABELS, k = L[residentKey] || residentKey;
+    console.log('§S9-BUILDING resident=' + residentKey + ' key=' + k + ' source=' + (L[residentKey] ? 'measured-viewer-label' : 'resident-key'));
+    return k;
+  }
   function launchUrl(projectId) { return '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(projectId); }   // == find_erp_push.js's link
 
   // ── store: OPFS-first (what the > ERP / > VO pushes wrote), else the seed — the diff.js _loadVoErpDb precedent ──
@@ -145,7 +156,7 @@
     return r;
   }
 
-  var API = { openStore: openStore, persist: persist, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
+  var API = { BUILDING_LABELS: BUILDING_LABELS, projectKey: projectKey, openStore: openStore, persist: persist, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
     deleteReissue: deleteReissue, voRowsForEdited: voRowsForEdited, issueVO: issueVO, launchUrl: launchUrl, countProjects: countProjects, STORE_FILE: STORE_FILE };
   if (typeof window !== 'undefined') window.ProjOrderState = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
