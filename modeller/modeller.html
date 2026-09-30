@@ -2837,6 +2837,20 @@ function _runGate(before, moved) {
     window.__gateOrange.length ? { action: { label: 'Accept', fn: () => { acceptOrange(); } }, ms: 10000 } : {});
   return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
 }
+// §ONE-GESTURE-ONE-UNDO (bim-compiler prompts/MODELLER_MASTER.md §SESSION 2026-09-30b — Witness: W-E2E-GESTURE-UNDO).
+// ONE user gesture (one Move-gizmo release / arrow nudge / rotate / scale) = ONE undo step = ONE redo step. The group
+// boundary lives in ONE place — bonsai_oplog.js commitGesture(): one signed 'gesture-grp-N' gid that O.undo()/O.redo() treat
+// as one LIFO step (§P8) and ModellerHistory records as ONE node. So a gesture that lands >1 row (every selected target,
+// plus every induced rider: hosted-by door/window rides) commits through it; a 1-row gesture keeps commit() unchanged.
+// Before: commitMove committed wall + riders as separate commit() calls — Duplex wall #110 196→199, one Ctrl+Z → 198, wall
+// still 0.417 m off, next Save refused (door-out). The item-drag slide (bonsai_itemdrag.js commit) already takes this path.
+async function _commitUserGesture(ops) {
+  const O = window.Bonsai.oplog;
+  if (ops.length === 1) return O.commit({ op_type: ops[0].op_type, parameters: ops[0].params }, {});
+  const r = await O.commitGesture(ops);
+  console.log('§ONE-GESTURE gid=' + r.gid + ' rows=' + (r.ids || []).length + ' ops=' + ops.map(o => o.op_type + '(' + (o.params.induced || 'p' + o.params.parent) + ')').join(',') + ' verify=' + r.verify + ' (one Ctrl+Z / one Ctrl+Y)');
+  return r;
+}
 async function commitMove(dx, dy, dz) {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
   if (!ids.length) return;                                     // guard: never move an absent/undone feature
@@ -2844,21 +2858,19 @@ async function commitMove(dx, dy, dz) {
   setStat(ids.length > 1 ? ('moving ' + ids.length + ' objects…') : 'moving…');
   try {
     let lastVerify = true;
-    for (const tid of ids) {                                   // group move = N signed GEOM_MOVE by the SAME delta
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz } }, {});
-      lastVerify = res.verify;
-      console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
-    }
     // §SDG-CASCADE (W-SDG-CASCADE-MODELLER): a moved HOST drags its hosted FILLINGS (door/window rides the wall),
     // resolved through the §ARC-1 featureId↔guid bridge over REAL rel_fills_host edges. Same delta = rigid ride
     // (rosetta-invertible). Directional + one-hop; deduped against the moved set so a co-selected door never double-moves.
     const riders = (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid)
       ? window.SdgCascade.ridersFor(ids, window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, new Set(ids))
       : [];
-    for (const rfid of riders) {
-      const rr = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: rfid, dx, dy, dz, induced: 'hosted-by' } }, {});
-      console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + rr.verify);
-    }
+    // group move = N signed GEOM_MOVE by the SAME delta + the riders — ONE gesture (§ONE-GESTURE-ONE-UNDO)
+    const gOps = ids.map(tid => ({ op_type: 'GEOM_MOVE', params: { parent: tid, dx, dy, dz } }))
+      .concat(riders.map(rfid => ({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx, dy, dz, induced: 'hosted-by' } })));
+    const res = await _commitUserGesture(gOps);
+    lastVerify = res.verify;
+    for (const tid of ids) console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
+    for (const rfid of riders) console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + res.verify);
     if (riders.length) console.log('§SDG-CASCADE hosted-by hosts=' + ids.length + ' riders=' + riders.length);
     // §GATE-1 (W-SDG-GATE): the planner's gate — after the ride, CHECK what the edit BROKE. RED = hard violation
     // (wall clash / door out of its host), ORANGE = soft accept/ignore (tight clearance). REPORTS (does not revert);
@@ -3029,17 +3041,18 @@ async function commitRotate(drot) {
     selMeshes().forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; cen[m.userData.featureId] = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 }; });
     const rad = drot * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
     let v = true;
+    const gOps = [];                                          // §ONE-GESTURE-ONE-UNDO: every spin + orbit move = ONE gesture
     for (const tid of ids) {
-      const r1 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
-      v = r1.verify;
+      gOps.push({ op_type: 'GEOM_ROTATE', params: { parent: tid, drot } });
       const C = cen[tid];
       if (G && C) {                                           // orbit this child's centre about G by the same yaw
         const ox = C.x - G.x, oy = C.y - G.y;
         const dx = (G.x + (cs * ox - sn * oy)) - C.x, dy = (G.y + (sn * ox + cs * oy)) - C.y;
-        if (Math.hypot(dx, dy) > 1e-4) { const r2 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz: 0 } }, {}); v = r2.verify; }
+        if (Math.hypot(dx, dy) > 1e-4) gOps.push({ op_type: 'GEOM_MOVE', params: { parent: tid, dx, dy, dz: 0 } });
       }
-      console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     }
+    v = (await _commitUserGesture(gOps)).verify;
+    for (const tid of ids) console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects about centroid' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
@@ -3060,11 +3073,8 @@ async function commitScale(ax, f) {
   try {
     const P = { fx: 1, fy: 1, fz: 1 }; P['f' + ax] = f;
     let v = true;
-    for (const tid of ids) {
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SCALE', parameters: { parent: tid, fx: P.fx, fy: P.fy, fz: P.fz } }, {});
-      v = res.verify;
-      console.log('§SCALE commit ' + ax + '=' + f.toFixed(3) + ' parent=' + tid + ' verify=' + v);
-    }
+    v = (await _commitUserGesture(ids.map(tid => ({ op_type: 'GEOM_SCALE', params: { parent: tid, fx: P.fx, fy: P.fy, fz: P.fz } })))).verify;   // §ONE-GESTURE-ONE-UNDO
+    for (const tid of ids) console.log('§SCALE commit ' + ax + '=' + f.toFixed(3) + ' parent=' + tid + ' verify=' + v);
     setStat('scaled #' + ids[0] + ' ' + ax.toUpperCase() + ' ×' + f.toFixed(2) + '  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
