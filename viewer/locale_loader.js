@@ -348,6 +348,15 @@
     });
   }
 
+  // §S8 (prompts/RATES_SOURCE_OF_TRUTH.md §5, 2026-09-30): the Modeller DISPLAYS an edit's cost Δ and must price it with the SAME rates the Viewer
+  // prices with — which are the user's LOCALE rates (this file overrides the global RATES/LABOR_RATES on load: en_US IfcWall 48/M2 vs the CIDB 145).
+  // A page that sets window.__TRL_NO_AUTORUN before loading this file gets the owners WITHOUT the side effects (no _TRL merge, no DOM translate,
+  // no toast, no event): it calls fetchLocale(detectLocale(), cb) then applyRateOverrides(data) itself. The Viewer never sets the flag.
+  if (window.__TRL_NO_AUTORUN) {
+    window._TRL_LOADER = { detectLocale: detectLocale, fetchLocale: fetchLocale, applyRateOverrides: applyRateOverrides, isoToFlag: isoToFlag, AVAILABLE_LOCALES: AVAILABLE_LOCALES, openFlagPicker: toggleFlagPicker, noAutorun: true };
+    return;
+  }
+
   // ── Main init ──
   var localeCode = detectLocale();
 
