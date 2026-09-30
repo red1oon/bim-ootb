@@ -105,6 +105,14 @@
   // Phase 3 multi-step branch-switch UI should await `pending()` between steps before firing the next.
   var _pending = null;
   function pending() { return _pending; }
+  // §MHIST-SWITCH-TARGETED: what O.undo() (backward: highest-id active row) / O.redo() (forward: lowest-id undone row) would
+  // pick RIGHT NOW, under the same _treeOwned/_treeUndone exclusions those primitives apply — is it one of `ids`?
+  function _boundaryAgrees(O, ids, forward) {
+    var own = O._treeOwned, tu = O._treeUndone, all = O._allGeom(), pick = null;
+    if (forward) { for (var i = 0; i < all.length; i++) { var o = all[i]; if (o.undone && !(own && own.has(o.id)) && !(tu && tu.has(o.id))) { pick = o; break; } } }
+    else { for (var j = all.length - 1; j >= 0; j--) { var a = all[j]; if (!a.undone && !(own && own.has(a.id))) { pick = a; break; } } }
+    return !!pick && ids.indexOf(pick.id) >= 0;
+  }
   function _restore(entry, forward) {
     var O = window.Bonsai && window.Bonsai.oplog;
     if (!entry || !O) { _pending = null; return; }
@@ -119,6 +127,16 @@
     if ((on.length || off.length) && O._setUndone) {
       O._setUndone(on, forward ? 0 : 1); O._setUndone(off, forward ? 1 : 0);
       if (!rows || !rows.length) { rows = on.length ? on : off; del = !on.length; }   // own node: re-apply one flip through setUndone so it folds + emits
+    }
+    // §MHIST-SWITCH-TARGETED (2026-09-30, W-MODELLER-GIT-HISTORY G6): a commit/gesture node carries its rows in `ids` but
+    // stays on the boundary walk (gridundo U6: exactly one O.undo() per Ctrl+Z). That walk is only correct while the
+    // kernel's LIFO boundary and the tree cursor AGREE. A DIRECT switch between two non-trunk tips breaks that: undoing
+    // the old branch leaves {B,C} freshly undone beside D, so O.redo()'s lowest-id pick reactivates B, not D (measured on
+    // main 8311ba5f: active=[1,2], want=[1,4]). So peek at the boundary's own pick first; only when it is NOT one of this
+    // node's rows, replay the node's rows by id through setUndone (the §MHIST-ROWS primitive). The linear path is untouched.
+    if ((!rows || !rows.length) && entry.ids && entry.ids.length && O.setUndone && O._allGeom && !_boundaryAgrees(O, entry.ids, forward)) {
+      rows = entry.ids.slice(); del = false;
+      console.log('§MHIST_TARGETED "' + (entry.label || entry.type) + '" ' + (forward ? 'redo' : 'undo') + ' ids=[' + rows + '] (boundary pick is not this node\'s row)');
     }
     // §UNDO-RESURRECT (SPEC_UNDO_RESURRECT.md): rows this node leaves UNDONE are its own until it re-applies them —
     // O.redo()'s lowest-id pick (a later plain edit's Ctrl+Y) must not reactivate them (it brought back an undone
