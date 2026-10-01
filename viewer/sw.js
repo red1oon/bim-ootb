@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1529';
+const CACHE_VERSION = 'v1530';
+// v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
 // v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.
 // v1528 (2026-10-01) §FLOOR_CONTACT: new viewer/contact_floor.js — exact form-factor occlusion of furniture over upward floor fragments (lamps + diffuse irradiance; &floorcontact=0 off). sourced_light.js?v=73.
 // v1527 (2026-10-01) §WALL_TEXTURE (R5 plaster texture, contrast 1.05; &r5tex=0) + §FURNITURE_POLISH (roughness 0.35; &furnpolish=0|r). streaming.js?v=84 import.js?v=5.

@@ -23,8 +23,10 @@
   var FLOOR_CLASSES = ['IfcFurniture', 'IfcFurnishingElement', 'IfcRailing', 'IfcStair', 'IfcStairFlight', 'IfcRamp', 'IfcRampFlight'];
   var OBJ_CLASSES = FLOOR_CLASSES.concat(['IfcColumn', 'IfcBeam', 'IfcMember', 'IfcBuildingElementProxy',
     'IfcDuctSegment', 'IfcDuctFitting', 'IfcPipeSegment', 'IfcPipeFitting', 'IfcCableCarrierSegment', 'IfcCableCarrierFitting',
-    'IfcFlowSegment', 'IfcFlowFitting', 'IfcFlowTerminal', 'IfcFlowController', 'IfcAirTerminal', 'IfcSanitaryTerminal', 'IfcValve',
-    'IfcEnergyConversionDevice', 'IfcFlowMovingDevice', 'IfcUnitaryEquipment', 'IfcElectricAppliance', 'IfcLightFixture']);
+    'IfcFlowSegment', 'IfcFlowFitting', 'IfcFlowController', 'IfcSanitaryTerminal', 'IfcValve',
+    'IfcEnergyConversionDevice', 'IfcFlowMovingDevice', 'IfcUnitaryEquipment', 'IfcElectricAppliance']);
+  // NOT occluders (red1 v1529 Terminal …844515926 'a bit too strong': dark halos on the ceiling round flush diffusers / light fittings):
+  // IfcLightFixture (it emits, it does not shade the ceiling it lights) and IfcAirTerminal (flush ceiling diffusers).
   var CELL = 0.10, RADIUS = 1.5, MAXLEV = 4, VOX = 0.10, BX = 256, BY = 64, BZ = 256, DMAX = 1.0, TRI_CAP = 3000000;
   var floorCache = null, triCache = null, sdfCache = null;
 

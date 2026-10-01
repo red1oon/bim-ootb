@@ -305,7 +305,7 @@
   var DFP = new Float32Array(4), DFO = new Float32Array(4), DFN = new Float32Array(4), dfTex = null, dDf = null, dfLast = null;   // §OBJECT_CONTACT
   function dfBuild(A) {
     DFP[0] = 0; dfTex = null;
-    var q = location.search, m = /[?&]objcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillObjContact === 'number' ? A._stillObjContact : 1);
+    var q = location.search, m = /[?&]objcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillObjContact === 'number' ? A._stillObjContact : 0.5);   // 0.5: red1 v1529 'a bit too strong' (was 1)
     if (!(str > 0)) { dfLast = { on: false, why: '&objcontact=0' }; console.log('§OBJECT_CONTACT off (&objcontact=0)'); return; }
     var D = global.ContactFloor.buildSdf(A);
     if (!D || !D.tex || !D.voxelsMarked) { dfLast = { on: false, why: 'no objects in the box', used: D && D.used }; console.log('§OBJECT_CONTACT off (no objects in the camera box: used ' + (D ? D.used : '?') + ')'); return; }
