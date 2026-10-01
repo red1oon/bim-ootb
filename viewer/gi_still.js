@@ -946,6 +946,9 @@
       // zone) are re-rendered at the daylight exposure the light law gives EV 15 ("sunny 16", = this model's 100 klx sun; exterior stills
       // meter EV ~14-15) and blended in through a soft mask. Interior pixels untouched. &windowpull=0 / APP._stillWindowPull=false = off.
       try { windowPull(A, octx, w, h, R); } catch (eWP) { console.warn('§WINDOW_PULL failed: ' + (eWP && eWP.message)); }
+      // §LOCAL_EXPOSURE (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-10-01 "indoors do show own lighting impact no matter how slight"):
+      // the eye's local adaptation (as Unreal Engine 5 "Local Exposure"): lamp-lit shadowed regions are lifted, sunlit ones held.
+      try { localExposure(A, octx, w, h, R); } catch (eLE) { console.warn('§LOCAL_EXPOSURE failed: ' + (eLE && eLE.message)); }
       const under = document.createElement('canvas'); under.width = w; under.height = h;
       under.getContext('2d').drawImage(G.colorCanvas, 0, 0);
       window.__giStillDebugCanvas = { bounce: bounce, under: under };
@@ -1001,6 +1004,38 @@
       return R;
     } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
   }
+  // §LOCAL_EXPOSURE: Y = linear luminance of the finished still; B = mean log2 Y on a 1/8 grid, Gaussian-blurred (sigma 4 cells), bilinear
+  // up; dEV = (c - 1) (B - median B) clamped to +-CAP; rgb_lin x 2^dEV. c = 0.6, CAP = 1 EV are AUTHORED (no source): &localexp=c (1 = off).
+  function localExposure(A, octx, w, h, R) {
+    const m0 = /[?&]localexp=([0-9.]+)/.exec(location.search);
+    let c = typeof A._stillLocalExp === 'number' ? A._stillLocalExp : (m0 ? parseFloat(m0[1]) : 0.6); c = Math.max(0, Math.min(1, isFinite(c) ? c : 0.6));
+    if (c >= 1) { console.log('§LOCAL_EXPOSURE off (c=1)'); return; }
+    const CAP = 1, G = 8, t0 = performance.now(), F = octx.getImageData(0, 0, w, h), D = F.data, gw = Math.ceil(w / G), gh = Math.ceil(h / G);
+    const lut = new Float32Array(256); for (let i = 0; i < 256; i++) { const v = i / 255; lut[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    const sum = new Float32Array(gw * gh), cnt = new Float32Array(gw * gh), EPS = 1e-4;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, Y = 0.2126 * lut[D[i]] + 0.7152 * lut[D[i + 1]] + 0.0722 * lut[D[i + 2]], g = ((y / G) | 0) * gw + ((x / G) | 0); sum[g] += Math.log2(Y + EPS); cnt[g]++; }
+    let Bg = new Float32Array(gw * gh); for (let g = 0; g < Bg.length; g++) Bg[g] = cnt[g] ? sum[g] / cnt[g] : 0;
+    const SIG = 4, RAD = 12, K = []; let ks = 0; for (let k = -RAD; k <= RAD; k++) { const v = Math.exp(-k * k / (2 * SIG * SIG)); K.push(v); ks += v; } for (let k = 0; k < K.length; k++) K[k] /= ks;
+    const tmp = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * Bg[y * gw + Math.min(gw - 1, Math.max(0, x + k))]; tmp[y * gw + x] = a; }
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * tmp[Math.min(gh - 1, Math.max(0, y + k)) * gw + x]; Bg[y * gw + x] = a; }
+    const srt = Array.from(Bg).sort((p, q) => p - q), med = srt[srt.length >> 1];
+    const wp = R._wpGrid, dList = []; let up = 0, dn = 0;
+    const oe = v => v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+    for (let y = 0; y < h; y++) { const gy = Math.min(gh - 1.001, Math.max(0, y / G - 0.5)), y0 = gy | 0, fy = gy - y0;
+      for (let x = 0; x < w; x++) { const gx = Math.min(gw - 1.001, Math.max(0, x / G - 0.5)), x0 = gx | 0, fx = gx - x0;
+        const b = (Bg[y0 * gw + x0] * (1 - fx) + Bg[y0 * gw + x0 + 1] * fx) * (1 - fy) + (Bg[(y0 + 1) * gw + x0] * (1 - fx) + Bg[(y0 + 1) * gw + x0 + 1] * fx) * fy;
+        let dEV = Math.max(-CAP, Math.min(CAP, (c - 1) * (b - med)));
+        if (wp) { const mx = Math.min(wp.mw - 1, Math.max(0, (x / wp.S) | 0)), my = Math.min(wp.mh - 1, Math.max(0, (y / wp.S) | 0)); const mv = wp.B[my * wp.mw + mx]; if (mv > 0) dEV *= Math.max(0, 1 - mv); }
+        if ((x & 15) === 0 && (y & 15) === 0) dList.push(dEV);
+        if (Math.abs(dEV) < 0.01) continue; if (dEV > 0) up++; else dn++;
+        const k = Math.pow(2, dEV), i = (y * w + x) * 4;
+        D[i] = Math.round(255 * Math.min(1, oe(lut[D[i]] * k))); D[i + 1] = Math.round(255 * Math.min(1, oe(lut[D[i + 1]] * k))); D[i + 2] = Math.round(255 * Math.min(1, oe(lut[D[i + 2]] * k))); } }
+    octx.putImageData(F, 0, 0);
+    dList.sort((p, q) => p - q); const pc = q => dList.length ? dList[Math.min(dList.length - 1, (q * dList.length) | 0)].toFixed(2) : '-';
+    R.localExposure = { c: c, cap: CAP, p5: +pc(0.05), p50: +pc(0.5), p95: +pc(0.95), liftedPct: +(100 * up / (w * h)).toFixed(1), loweredPct: +(100 * dn / (w * h)).toFixed(1) };
+    console.log('§LOCAL_EXPOSURE on c=' + c + ' cap=+-' + CAP + 'EV dEV p5/p50/p95=' + pc(0.05) + '/' + pc(0.5) + '/' + pc(0.95) + ' lifted=' + R.localExposure.liftedPct + '% lowered=' + R.localExposure.loweredPct + '% windowMask=' + (wp ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0));
+  }
   function windowPull(A, octx, w, h, R) {
     const THREE = window.THREE, LZ = window.LightZones, LL = window.LightLaw, t0 = performance.now();
     if (/[?&]windowpull=0/.test(location.search) || A._stillWindowPull === false) { console.log('§WINDOW_PULL off (&windowpull=0 / APP._stillWindowPull=false)'); return; }
@@ -1052,6 +1087,7 @@
           D[i] += (O[i] - D[i]) * mm; D[i + 1] += (O[i + 1] - D[i + 1]) * mm; D[i + 2] += (O[i + 2] - D[i + 2]) * mm;
           if (m > 0.5) { sA += (D[i] + D[i + 1] + D[i + 2]) / 3; if (D[i] >= 254.5 && D[i + 1] >= 254.5 && D[i + 2] >= 254.5) clipA++; } } }
     octx.putImageData(F, 0, 0);
+    R._wpGrid = { B: B, mw: mw, mh: mh, S: S };   // §LOCAL_EXPOSURE skips the view-out pixels (already exposed for outside)
     R.windowPull = { viewOutPct: +(100 * nWin / nRay).toFixed(2), blendedPct: +(100 * nPx / (w * h)).toFixed(2), eIn: +e0.toFixed(3), eOut: +eOut.toFixed(3), stops: +Math.log2(e0 / eOut).toFixed(2), corePx: nCore, meanBefore: nCore ? +(sB / nCore).toFixed(1) : null, meanAfter: nCore ? +(sA / nCore).toFixed(1) : null, meanPullRender: nCore ? +(sO / nCore).toFixed(1) : null, clippedBefore: nCore ? +(100 * clipB / nCore).toFixed(1) : null, clippedAfter: nCore ? +(100 * clipA / nCore).toFixed(1) : null, rays: nRay, capped: capped, ms: Math.round(performance.now() - t0) };
     console.log('§WINDOW_PULL on viewOut=' + R.windowPull.viewOutPct + '% of rays blended=' + R.windowPull.blendedPct + '% px exposure in/out=' + R.windowPull.eIn + '/' + R.windowPull.eOut + ' (' + R.windowPull.stops + ' stops) core ' + R.windowPull.corePx + 'px mean ' + R.windowPull.meanBefore + ' -> ' + R.windowPull.meanAfter + ' (pull render ' + R.windowPull.meanPullRender + ') clipped ' + R.windowPull.clippedBefore + '% -> ' + R.windowPull.clippedAfter + '% (EV15 via LightLaw) maskPx=' + nRay + ' glassNearest=' + nGlass + (capped ? ' CAPPED' : '') + ' ms=' + R.windowPull.ms);
   }

@@ -143,12 +143,24 @@
     '}',
     // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today.
     // posView/nView are kept for the call sites' sake; the zone is the once-computed _slFZ (§SOURCED_LIGHT_LINK)
+    // §LAMP_CONTACT_SHADOW (bim-compiler PHOTOREAL_STILL_RENDER.md): screen-space contact shadow toward the lamps' dominant direction,
+    // marched against the phase-1 depth. uSLCs = (on, length m, thickness m, steps); uSLCsP = projection; uSLCsNF = (near, far).
+    'uniform vec4 uSLCs; uniform sampler2D uSLCsT; uniform mat4 uSLCsP; uniform vec2 uSLCsNF;',
+    'float slContact( vec3 p, vec3 n, vec3 d ) {',
+    '  vec3 o = p + n * 0.02; float occ = 0.0;',
+    '  for ( int i = 1; i <= 32; i ++ ) { if ( float( i ) > uSLCs.w ) break;',
+    '    vec3 q = o + d * ( uSLCs.y * float( i ) / uSLCs.w ); vec4 c = uSLCsP * vec4( q, 1.0 ); vec2 uv = c.xy / c.w * 0.5 + 0.5;',
+    '    if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) break;',
+    '    float dz = texture2D( uSLCsT, uv ).r; float sz = ( uSLCsNF.x * uSLCsNF.y ) / ( ( uSLCsNF.y - uSLCsNF.x ) * dz - uSLCsNF.y );',
+    '    float dd = sz - q.z; if ( dd > 0.01 && dd < uSLCs.z ) { occ = 1.0; break; } }',
+    '  return 1.0 - occ;',
+    '}',
     'float slPass( float lz, vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
     'float _slSpec = -1.0;',
-    'uniform vec4 uSLAo; uniform sampler2D uSLAoT;',   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
+    'uniform vec4 uSLAo; uniform sampler2D uSLAoT; uniform sampler2D uSLAoTL;',   // §AO_LAMPS_FURNITURE: uSLAoTL = the lamp-only AO (furniture-height radius); = uSLAoT when not built   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -262,16 +274,36 @@
   // recompile. three CLONES a Texture uniform per program (UniformsUtils.clone), so the texture is set on every live material's
   // program uniforms (renderer.properties), exactly like push() does for the zone textures; a program born later gets dAo (AO 1).
   var aoTex = null;
+  // §LAMP_CONTACT_SHADOW state: typed arrays shared by reference; the depth texture set per program like the AO texture
+  var CSP = new Float32Array(4), CSM = new Float32Array(16), CSN = new Float32Array(2), csTex = null;
+  function csSet(A, depthTex, camera) {
+    if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
+    var q = location.search, dial = function (n, d) { var m = new RegExp('[?&]' + n + '=([0-9.]+)').exec(q); var v = m ? parseFloat(m[1]) : d; return isFinite(v) ? v : d; };
+    var on = !!depthTex && camera && camera.isPerspectiveCamera && (/[?&]contact=1/.test(q) || A._stillContact === true);   // OFF by default (red1 2026-10-01: hard, jagged patches under Terminal tables) until the soft version passes
+    CSP[0] = on ? 1 : 0; CSP[1] = Math.max(0.05, Math.min(2, dial('contactlen', 0.5))); CSP[2] = Math.max(0.02, Math.min(2, dial('contactthick', 0.5))); CSP[3] = 16;
+    if (camera) { CSM.set(camera.projectionMatrix.elements); CSN[0] = camera.near; CSN[1] = camera.far; }
+    csTex = on ? depthTex : null;
+    var n = 0, seen = new Set();
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+      if (!m || seen.has(m)) return; seen.add(m);
+      var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLCsT) return;
+      U.uSLCs.value = CSP; U.uSLCsT.value = csTex || dAo; U.uSLCsP.value = CSM; U.uSLCsNF.value = CSN; n++; }); });
+    console.log('§LAMP_CONTACT ' + (on ? 'on' : 'off') + ' len=' + CSP[1] + ' thick=' + CSP[2] + ' steps=' + CSP[3] + ' near=' + CSN[0] + ' far=' + CSN[1] + ' mats=' + n +
+      (on ? '' : ' (' + (!depthTex ? 'no depth' : 'default off; &contact=1 = on') + ')'));
+    return n;
+  }
   function aoOn(on) { if (aoPatched && !linkFailed) AOP[0] = on ? 1 : 0; }   // the per-render gate (typed array shared by every program)
-  function aoSet(A, texture, on, w, h) {
+  var aoTexL = null;   // §AO_LAMPS_FURNITURE
+  function aoSet(A, texture, on, w, h, textureL) {
     if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
     AOP[0] = on ? 1 : 0; if (w > 0 && h > 0) { AOP[2] = 1 / w; AOP[3] = 1 / h; }
+    aoTexL = textureL || null;
     aoTex = texture || null;   // bound whether or not x is on (x is flipped per render by aoOn); null = release to dAo
     var n = 0, seen = new Set();
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
       if (!m || seen.has(m)) return; seen.add(m);
       var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLAoT) return;
-      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; n++; }); });
+      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; n++; }); });
     return n;
   }
   function install(THREE) {
@@ -300,7 +332,7 @@
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
           '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -319,7 +351,8 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
-        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tvec3 _slCD0 = reflectedLight.directDiffuse, _slCS0 = reflectedLight.directSpecular, _slCDir = vec3( 0.0 );\n' +   // §LAMP_CONTACT_SHADOW
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
@@ -327,7 +360,11 @@
         '\t\t\tvec3 _lv = ( viewMatrix * vec4( _la.xyz, 1.0 ) ).xyz - geometryPosition; float _ld = length( _lv );\n' +
         '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ) * _slAoL; directLight.visible = true;\n' +
         '\t\t\tRE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );\n' +
-        '\t\t}\n\t}\n}\n#endif\n' + sp);
+        '\t\t\t_slCDir += directLight.direction * dot( directLight.color, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( dot( geometryNormal, directLight.direction ), 0.0 );\n' +
+        '\t\t}\n' +
+        '\t\tif ( uSLCs.x > 0.5 && uSLAo.x > 0.5 && dot( _slCDir, _slCDir ) > 1e-20 ) { float _slCf = slContact( geometryPosition, geometryNormal, normalize( _slCDir ) );\n' +
+        '\t\t\treflectedLight.directDiffuse = _slCD0 + ( reflectedLight.directDiffuse - _slCD0 ) * _slCf; reflectedLight.directSpecular = _slCS0 + ( reflectedLight.directSpecular - _slCS0 ) * _slCf; }\n' +
+        '\t}\n}\n#endif\n' + sp);
       ok++;
     } else console.warn('§LAMP_UNCAPPED anchor missing (spot section) — lamp data path inert, the pool path stays');
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
@@ -381,7 +418,8 @@
     dAo = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); dAo.needsUpdate = true;
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
-      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo };
+      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo }; U.uSLAoTL = { value: dAo };
+      U.uSLCs = { value: CSP }; U.uSLCsT = { value: dAo }; U.uSLCsP = { value: CSM }; U.uSLCsNF = { value: CSN };   // §LAMP_CONTACT_SHADOW
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
@@ -445,12 +483,13 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(), D = A._lampData;
     if (!Z || !D || !A._lampDataOn) { LAMP[0] = 0; return null; }
     if (D.ver === lampVer && lampTex) return lampLast;
-    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (&lampen=0)'); }
+    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (default: lamps at rated output; &lampen=1 = EN 12464-1 scaling)'); }
     var t0 = performance.now(), L = D.lamps, n = L.length, R = D.range > 0 ? D.range : Z.cell * Math.max(Z.nx, Z.ny, Z.nz);
     if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
     var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
     for (var i = 0; i < n; i++) { var q = L[i], z = lampZone(LZ, q); lz[i] = z;
-      ld.set([q.x, q.y, q.z, z, q.r, q.g, q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
+      var sh = q.__shadowLight; if (sh) sh.color.setRGB(q.r, q.g, q.b);   // §LAMP_SHADOW_TOPK: a real shadowed PointLight carries this lamp (post-§LAMP_EN colour); the loop gets 0
+      ld.set([q.x, q.y, q.z, z, sh ? 0 : q.r, sh ? 0 : q.g, sh ? 0 : q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
       if (q.I > 0) { lit++; sumI += q.I; } byZ[z === 0 ? 0 : (z === OUTSIDE ? 2 : 1)]++; }
     if (lampTex) lampTex.dispose(); lampTex = lampTex2D(THREE, ld, 2, Math.max(1, n));
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + n + ':' + R + ':' + ph.toFixed(3), tl = performance.now(), S = lampLast && lampLast.lists;
@@ -661,7 +700,10 @@
       .catch(function () { spaceUsesCache[bld] = null; console.log('§SPACE_USES bld=' + bld + ' none (fetch failed)'); return null; });
   }
   function enRowForUse(name) { for (var i = 0; i < EN_ROWS.length; i++) if (EN_ROWS[i][2] != null && EN_ROWS[i][0].test(name || '')) return [EN_ROWS[i][1], EN_ROWS[i][2]]; return null; }
-  function enOn(A) { return !(A._stillLampEn === false || /[?&]lampen=0/.test(location.search)); }
+  // §LAMPS_RATED_DEFAULT (red1 2026-10-01: "leave the lights on as normal practice when clients view property"): lamps run at their rated
+  // output by default; the EN 12464-1 target scaling is opt-in (&lampen=1 / APP._stillLampEn = true). HHS ground floor measured: EN scaling
+  // held lamps at ~13 % of rated (p50 0.13); rated lamps lift the metered luminance +13 % there.
+  function enOn(A) { return A._stillLampEn === true || /[?&]lampen=1/.test(location.search); }
   function enApply(A, Z, D) {
     var LZ = global.LightZones, t0 = performance.now(), vols = [];
     try { vols = A.allRoomVolumes ? (A.allRoomVolumes() || []) : []; } catch (eV) { vols = []; }
@@ -798,6 +840,30 @@
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     return n;
   }
+  // §GLASS_TONE_STILL (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md, red1 2026-10-01 "tone down glass in stills"): Alt+S only — every glassy
+  // material's IFC colour is pulled toward its own luminance, c -> L + k (c - L). k = 0.3 is an AUTHORED presentation choice (no source);
+  // &glasstone=k (0 = neutral, 1 = IFC colour). Restored at unstage. Films never stage (S2), so films are unaffected.
+  var glassTone = [];
+  function glassToneOn(A) {
+    glassToneOff(A, true);
+    var m0 = /[?&]glasstone=([0-9.]+)/.exec(location.search), k = typeof A._stillGlassTone === 'number' ? A._stillGlassTone : (m0 ? parseFloat(m0[1]) : 0.3);
+    k = Math.max(0, Math.min(1, isFinite(k) ? k : 0.3)); if (k >= 1) { console.log('§GLASS_TONE off (k=1)'); return 0; }
+    var seen = new Set(), s0 = 0, s1 = 0;
+    var sat = function (c) { var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx > 0 ? (mx - mn) / mx : 0; };
+    A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.material || (o.userData && o.userData.skyPortal)) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (!glassy(m) || !m.color || seen.has(m)) return; seen.add(m);
+        var c = m.color, L = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; glassTone.push([m, c.clone()]); s0 += sat(c);
+        c.setRGB(L + k * (c.r - L), L + k * (c.g - L), L + k * (c.b - L)); s1 += sat(c); }); });
+    var n = glassTone.length;
+    console.log('§GLASS_TONE mats=' + n + ' k=' + k + ' meanSat ' + (n ? (s0 / n).toFixed(3) : '-') + ' -> ' + (n ? (s1 / n).toFixed(3) : '-'));
+    return n;
+  }
+  function glassToneOff(A, quiet) {
+    if (!glassTone.length) return 0; var n = glassTone.length;
+    glassTone.forEach(function (r) { r[0].color.copy(r[1]); }); glassTone = [];
+    if (!quiet) console.log('§GLASS_TONE restored mats=' + n);
+    return n;
+  }
   function glassOff(A, quiet) {
     if (!glassSet.length) return 0; var n = glassSet.length;
     glassSet.forEach(function (r) { r[0].customDepthMaterial = r[1]; r[0].customDistanceMaterial = r[2]; }); glassSet = [];
@@ -810,7 +876,7 @@
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
-    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; }   // §ZERO Z10
+    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
@@ -1276,6 +1342,7 @@
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
     var gl = /[?&]glassshadow=1/.test(location.search) ? 0 : glassOn(A);   // &glassshadow=1 = glass casts as before (A/B)
+    try { glassToneOn(A); } catch (eGT) { console.warn('§GLASS_TONE failed: ' + eGT.message); }
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
     prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0, taaRestarts = 0; lastU = new WeakMap(); ordCache = null;
     set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
@@ -1526,7 +1593,7 @@
   }
   function unstage(A, quiet) {
     if (!quiet) A._sourcedCap = null;
-    glassOff(A, quiet); meterOff(A);
+    glassOff(A, quiet); glassToneOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
     COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)
@@ -1538,5 +1605,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, filmGate: filmGate, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, filmGate: filmGate, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, csSet: csSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

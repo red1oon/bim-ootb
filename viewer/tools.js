@@ -2210,6 +2210,57 @@ function setupTools(A) {
   var _ntuLastLine = null;   // §BAKE_INTERIOR_TOPUP — run-length guard, this runs once per baked frame
   var _nbgLastTotal = -1, _nbgLastPlaced = -1, _nbgLastLit = -1;   // §NIGHT_BUILDUP_GATE dedup
 
+  // §LAMP_SHADOW_TOPK (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §CONTACT_BRIGHT (a)) — the data lamps (§LAMP_UNCAPPED) cast
+  // no shadows, so the floor under seats/tables is lit through them. Alt+S only: the K lamps that light the eye's zone most
+  // (I x three's getDistanceAttenuation at the eye) leave the data list and become real PointLights with a cube shadow map,
+  // rendered once per pick (shadow.autoUpdate false); they stay in the data list at shader colour 0. &lampshadow=K (default 0 = off, max 16), &lampshadowmap=px (default 512).
+  A._lampShadowLights = [];
+  A._lampShadowKey = '';
+  A._lampShadowClear = function() {
+    if (!A._lampShadowLights.length) return;
+    A._lampShadowLights.forEach(function(l) { A.scene.remove(l); if (l.shadow && l.shadow.map) l.shadow.map.dispose(); l.dispose(); });
+    console.log('§LAMP_SHADOW cleared k=' + A._lampShadowLights.length);
+    A._lampShadowLights = []; A._lampShadowKey = '';
+  };
+  A._lampShadowPick = function(L, camPos) {
+    var m = /[?&]lampshadow=([0-9]+)/.exec(location.search), K = typeof A._stillLampShadow === 'number' ? A._stillLampShadow : (m ? +m[1] : 0);
+    K = Math.max(0, Math.min(16, K | 0));
+    if (!K || !L.length) { A._lampShadowClear(); return L; }
+    var t0 = performance.now(), dec = _stillLampDecay(), LZ = window.LightZones, ez = 0;
+    var zAt = function(p) { try { var v = LZ && LZ.get() ? LZ.atLamp(p) : 0; return v > 0 && v < 0xFFFF ? v : 0; } catch (e) { return 0; } };
+    ez = zAt(camPos);
+    var W = L.map(function(q, i) {
+      var d = Math.sqrt((q.x - camPos.x) * (q.x - camPos.x) + (q.y - camPos.y) * (q.y - camPos.y) + (q.z - camPos.z) * (q.z - camPos.z));
+      var att = 1 / Math.max(Math.pow(d, dec), 0.01);   // three getDistanceAttenuation (range cutoff below)
+      if (q.range > 0) { var f = Math.max(0, Math.min(1, 1 - Math.pow(d / q.range, 4))); att *= f * f; }
+      return { i: i, w: q.I > 0 ? q.I * att : 0 };
+    }).filter(function(e) { return e.w > 0 && (!ez || zAt(new THREE.Vector3(L[e.i].x, L[e.i].y, L[e.i].z)) === ez); });
+    W.sort(function(a, b) { return b.w - a.w; });
+    var pick = W.slice(0, K), tot = W.reduce(function(s, e) { return s + e.w; }, 0);
+    var key = pick.map(function(e) { var q = L[e.i]; return q.x.toFixed(2) + ',' + q.y.toFixed(2) + ',' + q.z.toFixed(2); }).join('|');
+    var px = (function() { var mm = /[?&]lampshadowmap=([0-9]+)/.exec(location.search); return mm ? Math.max(64, Math.min(2048, +mm[1])) : 512; })();
+    if (key !== A._lampShadowKey) {
+      A._lampShadowClear();
+      pick.forEach(function(e) { var q = L[e.i];
+        var pl = new THREE.PointLight(0xffffff, 1, q.range > 0 ? q.range : 0, dec);
+        pl.position.set(q.x, q.y, q.z); pl.castShadow = true; pl.shadow.mapSize.set(px, px);
+        pl.shadow.camera.near = 0.05; pl.shadow.camera.far = q.range > 0 ? q.range : 60;
+        pl.shadow.autoUpdate = false; pl.shadow.needsUpdate = true; pl.name = 'lamp_shadow'; pl.userData.lampShadow = true;
+        A.scene.add(pl); A._lampShadowLights.push(pl); });
+      A._lampShadowKey = key;
+      if (pick.length && A.renderer && A.renderer.shadowMap) A.renderer.shadowMap.needsUpdate = true;   // renderer autoUpdate is off (§SHADOW_INIT): the new maps render on the next frame
+    }
+    // colour x intensity every call (the data lamps' own values; §LAMP_UNCAPPED r,g,b already carry I)
+    pick.forEach(function(e, j) { var q = L[e.i], pl = A._lampShadowLights[j]; if (pl) { pl.color.setRGB(q.r, q.g, q.b); pl.intensity = 1; pl.decay = dec; } });
+    var line = '§LAMP_SHADOW k=' + pick.length + '/' + K + ' map=' + px + ' eyeZone=' + ez + ' cands=' + W.length + ' share=' +
+      (tot > 0 ? (pick.reduce(function(s, e) { return s + e.w; }, 0) / tot).toFixed(3) : 0) + ' picked=' +
+      pick.map(function(e) { return (L[e.i].guid || '?') + ':' + (e.w / (tot || 1)).toFixed(3); }).join(',') + ' ms=' + (performance.now() - t0).toFixed(1);
+    if (line.replace(/ ms=.*/, '') !== A._lampShadowLast) { A._lampShadowLast = line.replace(/ ms=.*/, ''); console.log(line); }
+    // the picked lamps STAY in the data list (§LAMP_EN room scaling + the lux check see them); sourced_light.js lampBuild writes
+    // their shader colour 0 and hands their post-EN colour to q.__shadowLight
+    pick.forEach(function(e, j) { L[e.i].__shadowLight = A._lampShadowLights[j] || null; });
+    return L;
+  };
   A._nightUpdateLights = function() {
     // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
     // BEFORE the _nightMode gate so a night-off session still cleans up.
@@ -2221,6 +2272,7 @@ function setupTools(A) {
       A._nightBakePool = null;
       A._nightBakeSlotByPos = null;   // §57.3-FIX — stale slot assignments must not leak into the next bake
     }
+    if (A._lampShadowLights.length && !(A._lampDataOn && A._stillRefineActive && !A._maxqActive)) A._lampShadowClear();   // §LAMP_SHADOW_TOPK teardown
     if (!A._nightMode || !A._nightFixtures.length) return;
     var allPos = A._nightFixtureWorldPositions();
     // §NIGHT_BUILDUP_GATE (2026-09-05): a fixture
@@ -2476,6 +2528,7 @@ function setupTools(A) {
         _ldC.set(A.nightFixtureColor(f.pos));   // same Color path as PointLight.color (sRGB hex -> working space)
         _ldL.push({ guid: f.pos.__guid || null, x: f.pos.x, y: f.pos.y, z: f.pos.z, r: _ldC.r * _I, g: _ldC.g * _I, b: _ldC.b * _I, I: _I, range: _stillLampRange() });
       });
+      _ldL = A._lampShadowPick(_ldL, camPos);
       A._lampDataUsed = true;
       var _ldKey = _filmLD ? _ldL.map(function (q) { return (q.guid || (q.x.toFixed(2) + ',' + q.y.toFixed(2) + ',' + q.z.toFixed(2))) + ':' + q.I.toFixed(4); }).join('|') : null;
       if (!_filmLD || !A._lampData || A._lampDataKey !== _ldKey) {   // films: a new version only when the lamp data really changed
@@ -2487,7 +2540,7 @@ function setupTools(A) {
         ' plScale=' + (A._stillLampsOff ? 0 : (A._nightPLScale || 1)) + ' lampMul=' + _stillLampMul();
       if (_ldLine !== A._lampDataLastLine) { A._lampDataLastLine = _ldLine; console.log(_ldLine + ' ver=' + A._lampData.ver); }
       needed = [];
-    }
+    } else A._lampShadowClear();
     if (A._maxqActive) {
       if (!A._nightBakePool) {
         var _poolN = Math.min(200, Math.max(1, allPos.length));

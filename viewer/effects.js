@@ -4382,7 +4382,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // A/B comparison, not deleted — set `APP._photoDuskMood = true` before pressing Alt+S to get
     // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
     // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
-    var _duskMood = !!A._photoDuskMood;
+    var _duskMood = !!A._photoDuskMood || /[?&]dusk=1/.test(location.search);   // §STILL_DUSK_URL (red1 2026-10-01): &dusk=1 = the same dusk package from a link
     // §PHOTO_SUN_SEPARATION_FIX (2026-08-16): a direct A.sun.position->sunPosition uniform sync
     // was attempted here to fix a sky/shadow mismatch, but shipped WITHOUT live verification and
     // caused a real regression (sky rendered fully black in production) — REVERTED. The mismatch
@@ -5404,8 +5404,11 @@ async function setupEffects(A, renderer, scene, camera) {
       // indirect terms in a second TAA phase (sourced_light.js aoPatch). Half float, no depth, the composer's size.
       var aoOnlyRT = new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
       var adapter = {
+        n8: n8,                // §LAMP_CONTACT_SHADOW: the phase-1 depth (n8.beautyRenderTarget.depthTexture) feeds the lamp contact march
         aoOnly: false,         // §ZERO Z10: true = write N8AO's AO into aoOnlyRT, pass the TAA frame through unchanged
         aoOnlyRT: aoOnlyRT,
+        aoIndRT: aoOnlyRT,     // §AO_LAMPS_FURNITURE: the indirect AO (law radius); aoLampRT = the lamp-only AO (furniture radius)
+        aoLampRT: new THREE.WebGLRenderTarget(rt.width, rt.height, { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false }),
         enabled: false,        // §PHOTO_AO_GATE: disabled = EffectComposer skips it entirely — the
                                // zero-cost-when-off discipline everything else in this file follows
         needsSwap: true, clear: false, renderToScreen: false,
@@ -5414,6 +5417,7 @@ async function setupEffects(A, renderer, scene, camera) {
           _stillAODepthDirty = true;
           if (aoScratchRT) aoScratchRT.setSize(w, h);
           aoOnlyRT.setSize(w, h);   // §ZERO Z10
+          if (adapter.aoLampRT) adapter.aoLampRT.setSize(w, h);   // §AO_LAMPS_FURNITURE
           if (shadowRestoreMat) shadowRestoreMat.uniforms.resolution.value.set(w, h);
         },
         render: function(renderer2, writeBuffer, readBuffer) {
@@ -5438,7 +5442,7 @@ async function setupEffects(A, renderer, scene, camera) {
           renderer2.autoClear = oldAutoClear;
           n8.renderToScreen = false;
           if (adapter.aoOnly) {   // §ZERO Z10: AO into the private target; the frame on screen stays the TAA image (no restore pass —
-            n8.render(renderer2, aoOnlyRT, readBuffer);   // direct light is never multiplied by AO in this mode, nothing to restore)
+            n8.render(renderer2, adapter.aoOnlyRT, readBuffer);   // §AO_LAMPS_FURNITURE: swappable (phase 1b writes the lamp AO)   // direct light is never multiplied by AO in this mode, nothing to restore)
             var oac = renderer2.autoClear; renderer2.autoClear = false;
             copyMat.uniforms.tDiffuse.value = readBuffer.texture; renderer2.setRenderTarget(writeBuffer); copyQuad.render(renderer2);
             renderer2.autoClear = oac;
@@ -5524,7 +5528,7 @@ async function setupEffects(A, renderer, scene, camera) {
   function _stopStillAOPhase(reason) {
     if (_stillAORAF) { cancelAnimationFrame(_stillAORAF); _stillAORAF = null; }
     if (_aoIndirectBound && window.SourcedLight && window.SourcedLight.aoSet) {   // §ZERO Z10: materials back to AO 1 (dummy texture, x = 0)
-      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); console.log('§AO_INDIRECT released (' + reason + ')'); }
+      _aoIndirectBound = false; window.SourcedLight.aoSet(A, null, false); if (window.SourcedLight.csSet) window.SourcedLight.csSet(A, null, null); console.log('§AO_INDIRECT released (' + reason + ')'); }
     if (A._stillAOAdapter) A._stillAOAdapter.aoOnly = false;
     if (A._stillAOAdapter && A._stillAOAdapter.enabled) {
       A._stillAOAdapter.enabled = false;
@@ -5553,10 +5557,44 @@ async function setupEffects(A, renderer, scene, camera) {
       ' power=' + c.intensity + ' falloff=' + c.distanceFalloff + ' patch=' + (patched ? 1 : 0) + (mode === 'composite' ? ' (world-radius step only: aomap patch not installed)' : ''));
     return mode;
   }
+  // §AO_LAMPS_FURNITURE (bim-compiler PHOTOREAL_STILL_RENDER.md §SEAT_SHADOW, red1 "Go" 2026-10-01): the lamp term gets its OWN AO, world radius
+  // DERIVED from the building's furniture heights (90th percentile of element_transforms.bbox_z over IfcFurniture/IfcFurnishingElement,
+  // clamped 0.5..1.5 m): many ceiling luminaires ~ one broad overhead source, whose visibility is what hemispheric AO measures; the 0.5 m law
+  // radius cannot see a 0.74 m table top (§CONTACT_BOUNCE 09-28: 1-2 %). Indirect AO keeps the law radius. &aolampr=m overrides, 0 = off.
+  var _aoLampRCache = {};
+  function _aoLampRadius() {
+    var m = /[?&]aolampr=([0-9.]+)/.exec(location.search); if (m) return { r: Math.min(1.5, +m[1]), src: '&aolampr' };
+    if (!/[?&]aolampr=auto/.test(location.search) && A._stillAoLamps !== true) return { r: 0, src: 'default off (measured no gain 2026-10-01: Terminal seats/open 1.08 -> 1.07 at 0.75 m, 1.08 at 1.5 m; &aolampr=auto|m = on)' };
+    var b = A.activeBuilding || '?'; if (_aoLampRCache[b]) return _aoLampRCache[b];
+    var res = { r: 0, src: 'no furniture' };
+    try { var q = A.dbQuery("SELECT t.bbox_z FROM elements_meta e JOIN element_transforms t ON t.guid = e.guid WHERE e.ifc_class IN ('IfcFurniture','IfcFurnishingElement') AND t.bbox_z > 0 ORDER BY t.bbox_z");
+      if (q && q.length) { var p90 = +q[Math.min(q.length - 1, Math.floor(0.9 * q.length))][0]; res = { r: Math.max(0.5, Math.min(1.5, p90)), src: 'furniture p90 ' + p90.toFixed(2) + ' m of ' + q.length }; } }
+    catch (e) { res = { r: 0, src: 'query failed: ' + e.message }; }
+    return (_aoLampRCache[b] = res);
+  }
+  function _aoLampPhase(ao, t0, f0, aoFrames) {
+    var law = window.LightLaw && window.LightLaw.AO, R = _aoLampRadius(), base = ao.pass.configuration.aoRadius;
+    if (!(R.r > base + 0.05)) { console.log('§AO_LAMPS_FURNITURE skip r=' + R.r + ' (' + R.src + ') — lamps use the law AO'); ao.adapter.aoLampReady = false; _aoIndirectTaa2(ao, t0, f0); return; }
+    var t1 = performance.now(), sig = _camSig(), k = 0;
+    ao.adapter.aoOnlyRT = ao.adapter.aoLampRT; ao.pass.configuration.aoRadius = R.r; ao.pass.firstFrame();
+    (function stepL() {
+      _stillAORAF = null;
+      if (!A._stillRefineActive || !ao.adapter.enabled) { ao.adapter.aoOnlyRT = ao.adapter.aoIndRT; ao.pass.configuration.aoRadius = base; return; }
+      if (_camSig() !== sig) { sig = _camSig(); _stillAODepthDirty = true; }
+      A._composer.render(); k++;
+      if (k >= aoFrames) {
+        ao.adapter.aoOnlyRT = ao.adapter.aoIndRT; ao.pass.configuration.aoRadius = base; ao.adapter.aoLampReady = true;
+        console.log('§AO_LAMPS_FURNITURE on r=' + R.r.toFixed(2) + 'm (' + R.src + ') indirectR=' + base + 'm frames=' + k + ' ms=' + Math.round(performance.now() - t1));
+        _aoIndirectTaa2(ao, t0, f0); return;
+      }
+      _stillAORAF = requestAnimationFrame(stepL);
+    })();
+  }
   function _aoIndirectTaa2(ao, t0, aoFrames) {
     ao.adapter.enabled = false; ao.adapter.aoOnly = false;   // the AO buffer is final; the frame is rebuilt with it inside the lighting
     var SL = window.SourcedLight, rtA = ao.adapter.aoOnlyRT;
-    var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height);   // bind the texture on every live program (x stays 0)
+    var nb = SL.aoSet(A, rtA.texture, false, rtA.width, rtA.height, ao.adapter.aoLampReady ? ao.adapter.aoLampRT.texture : null);   // bind the texture on every live program (x stays 0); §AO_LAMPS_FURNITURE lamp AO
+    if (SL.csSet) { try { SL.csSet(A, ao.adapter.n8 && ao.adapter.n8.beautyRenderTarget && ao.adapter.n8.beautyRenderTarget.depthTexture, A.camera); } catch (eCS) { console.warn('§LAMP_CONTACT failed: ' + eCS.message); } }
     _aoIndirectBound = true;
     if (nb <= 0) { console.warn('§AO_INDIRECT no patched program took the AO (bound=' + nb + ') — frame kept without AO'); A._stillRefineBusy = false; return; }
     var taaN = _stillBudget().taa, sig = _camSig(), k = 0, t2 = performance.now();
@@ -5614,7 +5652,7 @@ async function setupEffects(A, renderer, scene, camera) {
         if (f >= _aoFrames) {
           console.log('§PHOTO_AO done frames=' + f + ' totalMs=' + Math.round(performance.now() - t0) +
             ' avgRenderMs=' + (renderMs / f).toFixed(1) + ' mode=' + _aoMode + (_aoMode === 'shader' ? ' (AO buffer ready — second TAA phase next)' : ' (frozen with AO — stays until interaction)'));
-          if (_aoMode === 'shader') { _aoIndirectTaa2(ao, t0, f); return; }   // §ZERO Z10: busy stays true until the second TAA lands
+          if (_aoMode === 'shader') { _aoLampPhase(ao, t0, f, _aoFrames); return; }   // §AO_LAMPS_FURNITURE, then §ZERO Z10's second TAA
           A._stillRefineBusy = false;   // §CINEMA_ROW_BUSY: real completion — icon drops "processing"
           return;
         }
