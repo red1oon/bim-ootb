@@ -160,7 +160,7 @@
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
     'float _slSpec = -1.0;',
-    'uniform vec4 uSLAo; uniform sampler2D uSLAoT;',   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
+    'uniform vec4 uSLAo; uniform sampler2D uSLAoT; uniform sampler2D uSLAoTL;',   // §AO_LAMPS_FURNITURE: uSLAoTL = the lamp-only AO (furniture-height radius); = uSLAoT when not built   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -293,15 +293,17 @@
     return n;
   }
   function aoOn(on) { if (aoPatched && !linkFailed) AOP[0] = on ? 1 : 0; }   // the per-render gate (typed array shared by every program)
-  function aoSet(A, texture, on, w, h) {
+  var aoTexL = null;   // §AO_LAMPS_FURNITURE
+  function aoSet(A, texture, on, w, h, textureL) {
     if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
     AOP[0] = on ? 1 : 0; if (w > 0 && h > 0) { AOP[2] = 1 / w; AOP[3] = 1 / h; }
+    aoTexL = textureL || null;
     aoTex = texture || null;   // bound whether or not x is on (x is flipped per render by aoOn); null = release to dAo
     var n = 0, seen = new Set();
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
       if (!m || seen.has(m)) return; seen.add(m);
       var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLAoT) return;
-      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; n++; }); });
+      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; n++; }); });
     return n;
   }
   function install(THREE) {
@@ -330,7 +332,7 @@
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
           '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -349,7 +351,7 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
-        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
         '\t\tvec3 _slCD0 = reflectedLight.directDiffuse, _slCS0 = reflectedLight.directSpecular, _slCDir = vec3( 0.0 );\n' +   // §LAMP_CONTACT_SHADOW
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
@@ -416,7 +418,7 @@
     dAo = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); dAo.needsUpdate = true;
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
-      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo };
+      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo }; U.uSLAoTL = { value: dAo };
       U.uSLCs = { value: CSP }; U.uSLCsT = { value: dAo }; U.uSLCsP = { value: CSM }; U.uSLCsNF = { value: CSN };   // §LAMP_CONTACT_SHADOW
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
@@ -873,7 +875,7 @@
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
-    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; }   // §ZERO Z10
+    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
