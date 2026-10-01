@@ -1094,14 +1094,18 @@
     var GM = window.Bonsai && window.Bonsai.gridmove;
     if (!GM || GM._strWrapped) return;
     var orig = GM.commit.bind(GM);
-    GM.commit = async function (gridId, delta) {
-      var res = await orig(gridId, delta);                 // the modeller commits GEOM_GRID_MOVE first
+    GM.commit = async function (gridId, delta, extra) {
+      // §GRID-SPAN-GATE: read the dragged line's position BEFORE the commit — an "Add one more" gesture inserts a line
+      // into Bonsai.grid in the same commit, which shifts the gx/gy indices, so a post-commit G.xs[index] is a different line.
+      var _G0 = window.Bonsai && window.Bonsai.grid, _m0 = GM._map && GM._map[gridId];
+      var _pos0 = (_G0 && _m0) ? (_m0.axis === 'x' ? _G0.xs[_m0.index] : _G0.ys[_m0.index]) : null;
+      var res = await orig(gridId, delta, extra);          // the modeller commits GEOM_GRID_MOVE first
       try {
         if (ready && window.swbOnGridMove) {
           var m = GM._map && GM._map[gridId];               // gridId → {axis,index}
           var G = window.Bonsai.grid;
           if (m && G) {
-            var pos = m.axis === 'x' ? G.xs[m.index] : G.ys[m.index];
+            var pos = _pos0 != null ? _pos0 : (m.axis === 'x' ? G.xs[m.index] : G.ys[m.index]);   // pre-commit position (§GRID-SPAN-GATE); the walker snaps it to its own line either way
             // §STRWALK_RACE_FIX (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 3, TOCTOU-shaped): the
             // injected `commit` callback used to call window.Bonsai.oplog.commit() DIRECTLY, per op, inside
             // str_walker_bridge.js's swbOnGridMove forEach — that forEach never awaits it, so a 30-op rewalk
