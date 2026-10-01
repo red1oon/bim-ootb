@@ -1261,7 +1261,12 @@
       // on every frame with errors, and whenever STALE starts/stops. Frame 1 also prints the census of what reaches the pass.
       {
         const fp = G.fpLastRead, errN = G.gpuErr.n - (film.errAt == null ? 0 : film.errAt);
-        const stale = !!(fpBefore && fpBefore.hash === fp.hash && fp.clearPct < 99.9);   // all-clear twice (nothing to draw, e.g. sky only) is not stale — same rule as the still's §GI_CARRY
+        // STALE needs the CAMERA to have moved (2026-10-02, HHS bake f=528-536: inside the load-path freeze the camera is frozen and the
+        // frame mostly black — consecutive passes came out identical with 0 GPU errors, three false STALEs switched the bounce off for 74%
+        // of the film). Same picture from the same pose is legitimate; same picture after the camera moved means nothing was drawn.
+        const camKey = A.camera ? A.camera.position.toArray().map(v => v.toFixed(3)).join(',') + '|' + A.camera.quaternion.toArray().map(v => v.toFixed(4)).join(',') + '|' + A.camera.fov : '-';
+        const camMoved = film.camKeyPrev != null && film.camKeyPrev !== camKey; film.camKeyPrev = camKey;
+        const stale = !!(fpBefore && fpBefore.hash === fp.hash && fp.clearPct < 99.9 && camMoved);   // all-clear twice (nothing to draw) is not stale either
         film.errAt = G.gpuErr.n;
         film.staleN = (film.staleN || 0) + (stale ? 1 : 0); film.errFrames = (film.errFrames || 0) + (errN > 0 ? 1 : 0);
         if (film.frames === 0) {
@@ -1278,7 +1283,7 @@
         if (film.frames < 3 || errN > 0 || stale !== !!film.staleLast) {
           const line = '§GI_FILM_CARRY f=' + (film.frames + 1) + ' verdict=' + (errN > 0 ? 'FAIL' : stale ? 'STALE' : (fpBefore ? 'OK' : 'INCONCLUSIVE')) +
             ' fp=' + fp.hash + ' maskClear=' + fp.clearPct + '% gpuErrors=' + errN + (errN > 0 && G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : '') +
-            ' staleFrames=' + film.staleN + ' errFrames=' + film.errFrames + ' lost=' + !!G.renderer._isDeviceLost;
+            ' staleFrames=' + film.staleN + ' errFrames=' + film.errFrames + ' camMoved=' + (camMoved ? 1 : 0) + ' lost=' + !!G.renderer._isDeviceLost;
           if (errN > 0 || stale) console.warn(line); else console.log(line);
         }
         film.staleLast = stale;
@@ -1288,7 +1293,7 @@
           ctx.drawImage(film.entry, 0, 0, w, h);
           film.frames++; film.ms += performance.now() - t0;
           try { G.rt.dispose(); G.renderer.dispose(); } catch (e) {}
-          film.G = null; film.oriented = false; film.errAt = null; film.staleLast = false;
+          film.G = null; film.oriented = false; film.errAt = null; film.staleLast = false; film.camKeyPrev = null;
           film.rebuilds = (film.rebuilds || 0) + 1;
           if (film.rebuilds > GI_FILM_MAX_REBUILDS) { film.off = true; console.warn('§GI_FILM_OFF reason=gpu-failures at f=' + film.frames + ' rebuilds=' + (film.rebuilds - 1) + ' — the rest of the film bakes without the bounce'); }
           else console.warn('§GI_FILM_REBUILD f=' + film.frames + ' #' + film.rebuilds + ' of ' + GI_FILM_MAX_REBUILDS + ' — this frame without the bounce, renderer rebuilt on the next frame');

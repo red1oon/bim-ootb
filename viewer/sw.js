@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1542';
+const CACHE_VERSION = 'v1543';
+// v1543 (2026-10-02) §GI_FILM_CARRY: STALE only when the camera moved (frozen camera + identical pass is legitimate — HHS freeze false STALEs switched the bounce off). gi_still 45.
 // v1542 (2026-10-02) §FREEZE_PERF_ROOMS: CCTV panel counts logical rooms (room_guid, as room_graph.js:327), not boxes — HHS 100 boxes = 75 rooms. cpe_freeze_perf 5.
 // v1541 (2026-10-01) §FREEZE_ANIM line-by-line reveal on the hold clock (stack rows, info card, CCTV panel; reuse key carries it; &lpanim=0 static) + CCTV panel plain-English copy (§19.4). cpe_load_path 10, cpe_freeze_perf 4, cinema_maxq 27.
 // v1540 (2026-10-01) merge of feat/freeze-perf-panels (v1535-v1537: CCTV panel in the load-path freeze, §FREEZE_BANDS) into fix/fast-bake v1539.
