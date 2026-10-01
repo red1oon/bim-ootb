@@ -20,27 +20,34 @@ self.onmessage = function(e) {
   }
 };
 
-// IFC base64 GUID alphabet (22 chars from 128-bit)
+// IFC base64 GUID alphabet (22 chars from 128 bits; the FIRST char carries only 2 bits, so it must be 0-3).
 var IFC64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
-
+var _mix32 = function(x) { x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); return (x ^ (x >>> 16)) >>> 0; };
+function _enc128(w) {            // w = 4 x uint32, most significant first -> 22-char IfcGloballyUniqueId
+  var v = 0n, i;
+  for (i = 0; i < 4; i++) v = (v << 32n) | BigInt(w[i] >>> 0);
+  var s = '';
+  for (i = 0; i < 21; i++) { s = IFC64[Number(v & 63n)] + s; v >>= 6n; }
+  return IFC64[Number(v & 3n)] + s;
+}
+// §IFCX-X1 (prompts/IFC_COMPLIANCE_SELFCHECK.md §EXPORTER_FIX): DETERMINISTIC + unique. Pre-fix newGuid() used Math.random over all 64
+// chars: non-deterministic and the first char was invalid ~94% of the time (ifcopenshell: IfcGloballyUniqueId base64 validation).
+// The last word IS the counter (injective), the other three are Math.imul mixes of it.
+var _guidSeq = 0, _usedGuids = {};
 function newGuid() {
-  var c = [];
-  for (var i = 0; i < 22; i++) c.push(IFC64[Math.floor(Math.random() * 64)]);
-  return c.join('');
+  var g;
+  do { var n = _guidSeq++; g = _enc128([_mix32(n + 0x9e3779b9), _mix32(n ^ 0x7f4a7c15), _mix32(Math.imul(n + 1, 0x2545f491)), n]); } while (_usedGuids[g]);
+  _usedGuids[g] = 1; return g;
 }
 
-// Convert element GUID (hex or IFC) to valid 22-char IFC GlobalId
+// Source GUID -> valid, UNIQUE 22-char IFC GlobalId. A valid 22-char source id is kept as is; a 32-hex UUID is converted EXACTLY
+// (128 bits -> 22 chars); anything else, or a repeat, gets a deterministic synthetic id. Never random.
 function toIfcGuid(guid) {
-  if (!guid) return newGuid();
-  if (guid.length === 22 && /^[0-9A-Za-z_$]+$/.test(guid)) return guid;
-  // Hex GUID → pad/convert to 22 chars
-  var result = '';
-  for (var i = 0; i < guid.length && result.length < 22; i++) {
-    var v = parseInt(guid[i], 16);
-    if (!isNaN(v)) result += IFC64[v] + IFC64[(v * 7 + i) % 64];
-  }
-  while (result.length < 22) result += IFC64[result.length % 64];
-  return result.substring(0, 22);
+  var g = null;
+  if (guid && guid.length === 22 && /^[0-3][0-9A-Za-z_$]{21}$/.test(guid)) g = guid;
+  else if (guid && /^[0-9a-fA-F]{32}$/.test(guid)) g = _enc128([parseInt(guid.substr(0, 8), 16), parseInt(guid.substr(8, 8), 16), parseInt(guid.substr(16, 8), 16), parseInt(guid.substr(24, 8), 16)]);
+  if (g && !_usedGuids[g]) { _usedGuids[g] = 1; return g; }
+  return newGuid();
 }
 
 function stepStr(s) {
@@ -92,8 +99,15 @@ function buildIFC(data) {
 
   var buildingName = meta.buildingName || meta.name || 'Building';
   var projectName = meta.projectName || buildingName;
-  var timestamp = Math.floor(Date.now() / 1000);
-  var dateStr = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+  // §IFCX-X1 determinism: the stamp comes from the SOURCE (project_metadata.import_date via meta.importDate), never the wall clock, so the
+  // same building gives the same bytes. No source stamp -> fixed epoch, logged (never silent).
+  var _impMs = meta.importDate ? Date.parse(meta.importDate) : NaN;
+  var _stampSrc = isNaN(_impMs) ? 'none(epoch)' : 'project_metadata.import_date';
+  if (isNaN(_impMs)) _impMs = 0;
+  var timestamp = Math.floor(_impMs / 1000);
+  var dateStr = new Date(_impMs).toISOString().substring(0, 19);   // IFC header time_stamp is ISO 8601 (YYYY-MM-DDTHH:MM:SS)
+  _guidSeq = 0; _usedGuids = {};                                    // per-export GUID state (a worker is reused across exports)
+  console.log('[S229] §IFCX_B_TIMESTAMP source=' + _stampSrc + ' value=' + dateStr);
 
   postMessage({ type: 'progress', pct: 10, phase: 'Writing header + spatial hierarchy...' });
 
@@ -263,20 +277,28 @@ function buildIFC(data) {
 
   // ── Phase 2: Elements — reference RepresentationMap via IfcMappedItem ──
   var storeyElements = {};  // storeyId → [elementId]
-  var exportedCount = 0;
+  var exportedCount = 0, skipped = [];
 
   for (var i = 0; i < elements.length; i++) {
     var el = elements[i];
     // Resolve geometry hash for this element
     var elHash = guidHashMap[el.guid];
     var repInfo = elHash ? hashToRepMap[elHash] : null;
+    var skipWhy = null;
     if (!repInfo) {
       // Legacy fallback: try geoMap directly
       var geo = geoMap[el.guid];
-      if (!geo || !geo.vertices || !geo.faces) continue;
-      elHash = geo.hash || el.guid;
-      repInfo = hashToRepMap[elHash];
-      if (!repInfo) continue;
+      if (!geo || !geo.vertices || !geo.faces) skipWhy = (!elHash ? 'no-geometry-row-for-guid(no element_instances join)' : 'hash-has-no-usable-geometry');
+      else {
+        elHash = geo.hash || el.guid;
+        repInfo = hashToRepMap[elHash];
+        if (!repInfo) skipWhy = 'geometry-not-tessellated(verts<3 or faces<1)';
+      }
+    }
+    if (skipWhy) {   // §IFCX: every skipped element is NAMED (pre-fix: 3 of 1122 vanished with no logged reason)
+      skipped.push(skipWhy);
+      console.log('[S229] §IFCX_B_SKIP guid=' + el.guid + ' class=' + (el.ifcClass || '?') + ' reason=' + skipWhy);
+      continue;
     }
 
     var tx = txMap[el.guid] || { cx: 0, cy: 0, cz: 0 };
@@ -328,7 +350,9 @@ function buildIFC(data) {
     var elName = el.name || el.guid || '';
 
     var idElement = next();
-    lines.push('#' + idElement + '=' + stepType + '(' + stepStr(elGuid) + ',#' + idOwner + ',' + stepStr(elName) + ',$,$,#' + idElLP + ',#' + idProdShape + ',$);');
+    var _ar = IFC4_ARITY[stepType] || 9, _pad = '';
+    for (var _k = 8; _k < _ar; _k++) _pad += ',$';              // §IFCX pad to the IFC4 arity (trailing optional attributes -> `$`)
+    lines.push('#' + idElement + '=' + stepType + '(' + stepStr(elGuid) + ',#' + idOwner + ',' + stepStr(elName) + ',$,$,#' + idElLP + ',#' + idProdShape + ',$' + _pad + ');');
 
     // Track for storey containment
     var storeyName = el.storey || 'Default';
@@ -369,9 +393,15 @@ function buildIFC(data) {
     "END-ISO-10303-21;\n";
 
   console.log('[S229] §EXPORT_BUILD elements=' + exportedCount + '/' + elements.length + ' lines=' + lines.length);
+  console.log('[S229] §IFCX_B_COUNTS exported=' + exportedCount + ' skipped=' + skipped.length + ' skippedReasons=' + JSON.stringify(skipped.reduce(function(a, r) { a[r] = (a[r] || 0) + 1; return a; }, {})) +
+    ' guidsUnique=' + Object.keys(_usedGuids).length);
 
   return header + lines.join('\n') + '\n' + footer;
 }
+
+// §IFCX: IFC4 STEP attribute counts per mapped entity — EXTRACTED from ifcopenshell.ifcopenshell_wrapper schema_by_name('IFC4') all_attributes()
+// (prompts/IFC_COMPLIANCE_SELFCHECK.md §EXPORTER_FIX). Products are padded with `$` to this arity; a missing trailing attribute is invalid.
+var IFC4_ARITY = {IFCAIRTERMINAL: 9, IFCALARM: 9, IFCBEAM: 9, IFCBUILDINGELEMENTPART: 9, IFCBUILDINGELEMENTPROXY: 9, IFCCABLECARRIERSEGMENT: 9, IFCCABLESEGMENT: 9, IFCCHILLER: 9, IFCCOIL: 9, IFCCOLUMN: 9, IFCCOMPRESSOR: 9, IFCCOVERING: 9, IFCCURTAINWALL: 9, IFCDISTRIBUTIONELEMENT: 8, IFCDOOR: 13, IFCDUCTFITTING: 9, IFCDUCTSEGMENT: 9, IFCELECTRICAPPLIANCE: 9, IFCFAN: 9, IFCFIRESUPPRESSIONTERMINAL: 9, IFCFLOWCONTROLLER: 8, IFCFLOWFITTING: 8, IFCFLOWSEGMENT: 8, IFCFLOWTERMINAL: 8, IFCFOOTING: 9, IFCFURNISHINGELEMENT: 8, IFCFURNITURE: 9, IFCJUNCTIONBOX: 9, IFCLIGHTFIXTURE: 9, IFCMEMBER: 9, IFCOPENINGELEMENT: 9, IFCOUTLET: 9, IFCPILE: 10, IFCPIPEFITTING: 9, IFCPIPESEGMENT: 9, IFCPLATE: 9, IFCRAILING: 9, IFCRAMP: 9, IFCRAMPFLIGHT: 9, IFCREINFORCINGBAR: 14, IFCROOF: 9, IFCSANITARYTERMINAL: 9, IFCSLAB: 9, IFCSPACE: 11, IFCSTACKTERMINAL: 9, IFCSTAIR: 9, IFCSTAIRFLIGHT: 13, IFCSWITCHINGDEVICE: 9, IFCTRANSPORTELEMENT: 9, IFCUNITARYEQUIPMENT: 9, IFCVALVE: 9, IFCWALL: 9, IFCWALLSTANDARDCASE: 9, IFCWASTETERMINAL: 9, IFCWINDOW: 13};
 
 // Map IfcClass name to STEP entity type
 function ifcClassToStep(cls) {

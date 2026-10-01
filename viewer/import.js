@@ -700,6 +700,7 @@ function setupImport(A) {
         for (var r = 0; r < pmRows[0].values.length; r++) {
           if (pmRows[0].values[r][0] === 'building_name') meta.buildingName = pmRows[0].values[r][1];
           if (pmRows[0].values[r][0] === 'project_name') meta.projectName = pmRows[0].values[r][1];
+          if (pmRows[0].values[r][0] === 'import_date') meta.importDate = pmRows[0].values[r][1];   // §IFCX-X1: deterministic export stamp from the SOURCE row
         }
       }
     } catch(e) {}

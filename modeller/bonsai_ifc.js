@@ -9,12 +9,29 @@
   'use strict';
   const TAG = '§IFC';
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src : location.href;
-  const GUID_AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$';
-  function guid(n) {                          // deterministic 22-char IfcGloballyUniqueId (no Math.random)
-    let s = '', x = (n + 1) * 2654435761 >>> 0;
-    for (let i = 0; i < 22; i++) { s += GUID_AB[x % 64]; x = (x * 1103515245 + 12345) >>> 0; }
-    return s;
+  // §IFCX-X1 (prompts/IFC_COMPLIANCE_SELFCHECK.md §EXPORTER_FIX): a VALID, DETERMINISTIC, INJECTIVE IfcGloballyUniqueId.
+  // The pre-fix guid() took `x % 64` of a mod-2^32 LCG for each of 22 chars: the low 6 bits of such an LCG depend only on the
+  // low 6 bits of the seed, so every id was a function of 6 seed bits = at most 64 distinct ids (measured 132/196 and 863/3225
+  // only because `x * 1103515245` overflows 2^53 in floating point and leaks accidental variety). Math.imul alone gives 64.
+  // Here: 128 bits = 4 words, the LAST word IS n (injective), the other three are Math.imul murmur mixes of n; encoded in the
+  // true IFC alphabet with the top char carrying 2 bits (so the first char is always 0-3, as IFC requires). No Math.random.
+  const GUID_AB = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
+  const _mix = (x) => { x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); return (x ^ (x >>> 16)) >>> 0; };
+  function guid(n) {
+    const w = [_mix(n + 0x9e3779b9), _mix(n ^ 0x7f4a7c15), _mix(Math.imul(n + 1, 0x2545f491)), n >>> 0];
+    let v = 0n; for (let i = 0; i < 4; i++) v = (v << 32n) | BigInt(w[i]);
+    let s = ''; for (let i = 0; i < 21; i++) { s = GUID_AB[Number(v & 63n)] + s; v >>= 6n; }
+    return GUID_AB[Number(v & 3n)] + s;
   }
+  const _isIfcGuid = (g) => typeof g === 'string' && /^[0-3][0-9A-Za-z_$]{21}$/.test(g);
+
+  // §IFCX-X3/X4: IFC4 STEP attribute counts (EXTRACTED from ifcopenshell.ifcopenshell_wrapper schema_by_name('IFC4')
+  // all_attributes() — derived attributes are not counted because web-ifc writes them as `*` itself). web-ifc writes
+  // a missing trailing argument as `*`, which is illegal for a non-derived attribute; every product is padded to its arity.
+  const _ARITY = { IFCWALL: 9, IFCWALLSTANDARDCASE: 9, IFCSLAB: 9, IFCDOOR: 13, IFCWINDOW: 13, IFCROOF: 9, IFCCOLUMN: 9, IFCBEAM: 9,
+    IFCSTAIR: 9, IFCSTAIRFLIGHT: 13, IFCRAILING: 9, IFCCOVERING: 9, IFCFOOTING: 9, IFCCURTAINWALL: 9, IFCFURNISHINGELEMENT: 8,
+    IFCBUILDINGELEMENTPROXY: 9, IFCPLATE: 9, IFCMEMBER: 9, IFCRAMPFLIGHT: 9, IFCBUILDINGELEMENTPART: 9, IFCFLOWTERMINAL: 8,
+    IFCOPENINGELEMENT: 9, IFCCONTROLLER: 9, IFCSITE: 14, IFCBUILDING: 12, IFCBUILDINGSTOREY: 12 };
 
   // ── GEOM_ARRAY export mapping (prompts/BONSAI_ARRAY_PATTERN_SPEC.md Task 5) ────────────────────────
   // NON-INVENT, corrected 2026-07-07 per the spec's own "2026-07-07 Research finding": IfcElementAssembly
@@ -81,6 +98,7 @@
       const _cutMoves = window.CutMove ? window.CutMove.netOverrides(ops) : null;   // §CUT-MOVE/§CUT-RESIZE: net void overrides (cut_move.js, one definition)
       if (!ops.length) throw new Error('nothing authored to export');
       const mID = api.CreateModel({ schema: 'IFC4', name: 'bonsai_model.ifc' });
+      const _h = (e) => new T.Handle(e.expressID);
       const len = v => api.CreateIfcType(mID, T.IFCLENGTHMEASURE, v);
       const real = v => api.CreateIfcType(mID, T.IFCREAL, v);
       const plm = v => api.CreateIfcType(mID, T.IFCPOSITIVELENGTHMEASURE, v);
@@ -91,22 +109,53 @@
       const place3 = (o) => api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT3D,
         api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(o[0]), len(o[1]), len(o[2])]), z3(), x3());
 
-      const productFromRep = (rep, type, name, gn, extra) => {   // an already-built IfcShapeRepresentation -> a product
+      // ── §IFCX-X4 representation context: ONE IfcGeometricRepresentationContext + a 'Body' sub-context; every
+      // IfcShapeRepresentation below references the sub-context (pre-fix: ContextOfItems was null on 196/196).
+      // Derived attributes (SubContext dims/precision/WCS/TrueNorth, SIUnit dimensions) are skipped by web-ifc itself and written `*`.
+      const _ctx = api.CreateIfcEntity(mID, T.IFCGEOMETRICREPRESENTATIONCONTEXT, null, label('Model'),
+        api.CreateIfcType(mID, T.IFCDIMENSIONCOUNT, 3), real(1e-5), place3([0, 0, 0]), null);
+      api.WriteLine(mID, _ctx);
+      const _sub = api.CreateIfcEntity(mID, T.IFCGEOMETRICREPRESENTATIONSUBCONTEXT, label('Body'), label('Model'),
+        _h(_ctx), null, T.IFC4.IfcGeometricProjectionEnum.MODEL_VIEW, null);
+      api.WriteLine(mID, _sub);
+      const bodyCtx = _h(_sub);
+      // ── §IFCX-X3 units: SI metre / m2 / m3 / radian. The unit is a property of the SOURCE data: extracted building DBs and the
+      // viewer scene are metres (B declares METRE; Duplex wall bbox 16.97 x 0.55 x 2.90). Not guessed per-file.
+      const _unit = (u, n) => { const e = api.CreateIfcEntity(mID, T.IFCSIUNIT, T.IFC4.IfcUnitEnum[u], null, T.IFC4.IfcSIUnitName[n]); api.WriteLine(mID, e); return _h(e); };
+      const _units = api.CreateIfcEntity(mID, T.IFCUNITASSIGNMENT, [_unit('LENGTHUNIT', 'METRE'), _unit('AREAUNIT', 'SQUARE_METRE'),
+        _unit('VOLUMEUNIT', 'CUBIC_METRE'), _unit('PLANEANGLEUNIT', 'RADIAN')]);
+      api.WriteLine(mID, _units);
+
+      // GlobalIds: unique by construction; a source GUID is used only if it is a valid IFC GUID and not yet taken.
+      const _usedGuids = new Set(); let _synth = 0;
+      const mkGuid = (preferred) => {
+        if (_isIfcGuid(preferred) && !_usedGuids.has(preferred)) { _usedGuids.add(preferred); return preferred; }
+        let g; do { g = guid(_synth++); } while (_usedGuids.has(g)); _usedGuids.add(g); return g;
+      };
+      const gid = (preferred) => api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, mkGuid(preferred));
+      const _contain = [];   // {ent, srcGuid} — every spatially-contained product (openings are voids, related via IfcRelVoidsElement)
+
+      const productFromRep = (rep, type, name, gn, extra, srcGuid) => {   // an already-built IfcShapeRepresentation -> a product
         const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
-        const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn));
+        const g = gid(srcGuid);
         const args = [g, null, label(name), null, null, null, pds, null];
-        if (extra) args.push(...extra);                       // IfcOpeningElement adds Tag + PredefinedType
+        if (extra) args.push(...extra);                       // IfcOpeningElement/IfcMember: PredefinedType
+        const ar = _ARITY[_typeName(type)];
+        if (ar) { while (args.length < ar) args.push(null); args.length = ar; }   // §IFCX pad/trim to the IFC4 arity (null -> `$`)
         const e = api.CreateIfcEntity(mID, type, ...args);
         api.WriteLine(mID, e);
+        if (type !== T.IFCOPENINGELEMENT) _contain.push({ ent: e, srcGuid: srcGuid || null });
         return e;
       };
-      const product = (solid, type, name, gn, extra) => {     // shape shell -> IfcWall / IfcOpeningElement
-        const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
-        return productFromRep(rep, type, name, gn, extra);
+      const _typeNames = {}; for (const k of Object.keys(_ARITY)) if (T[k] != null) _typeNames[T[k]] = k;
+      const _typeName = (t) => _typeNames[t];
+      const product = (solid, type, name, gn, extra, srcGuid) => {     // shape shell -> IfcWall / IfcOpeningElement
+        const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, bodyCtx, label('Body'), label('SweptSolid'), [solid]);
+        return productFromRep(rep, type, name, gn, extra, srcGuid);
       };
 
       const wallByFeature = new Map();
-      let walls = 0, openings = 0, rels = 0, gn = 0, arrays = 0, arrayMembers = 0;
+      let openingsNoHost = 0, walls = 0, openings = 0, rels = 0, gn = 0, arrays = 0, arrayMembers = 0;
       let firstWall = null, firstArray = null;
 
       // ── §IFC-EXPORT-SEED (MODELLER_MASTER.md row 36 / §IFC-EXPORT-SEED) ───────────────────────────
@@ -184,12 +233,15 @@
           if (!mesh) { seedNoMesh++; continue; }   // NO SILENT BOX — counted and named in §IFC-SEED below
           const fs = triFaceSet(mesh);
           if (!fs) { seedNoMesh++; continue; }
+          // the SOURCE element guid: arc_editable's guidByFid bridge (the op-log's own outputGuid can be kernel-derived, not the DB row's)
+          const _srcGuid = (typeof window !== 'undefined' && window.__arcGuidByFid && window.__arcGuidByFid[fid]) || op.outputGuid;
           const cls = P.ifc_class || 'IfcBuildingElementProxy';
           const ent = _CLASS_MAP[cls] || 'IFCBUILDINGELEMENTPROXY';
           if (!_CLASS_MAP[cls]) seedProxy++;
           seedByClass[cls] = (seedByClass[cls] || 0) + 1;
-          const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('Tessellation'), [fs]);
-          productFromRep(rep, T[ent], (P.ifc_class || 'Element') + ' ' + op.id, gn++);
+          const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, bodyCtx, label('Body'), label('Tessellation'), [fs]);
+          const _pe = productFromRep(rep, T[ent], (P.ifc_class || 'Element') + ' ' + op.id, gn++, null, _srcGuid);
+          wallByFeature.set(op.id, _pe); wallByFeature.set(fid, _pe);   // §IFCX: a seeded host can be voided by a later GEOM_CUT
           seeded++;
           continue;
         }
@@ -215,14 +267,13 @@
           const rectPlace = api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT2D, api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(0), len(0)]), null);
           const rect = api.CreateIfcEntity(mID, T.IFCRECTANGLEPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Void'), rectPlace, plm(dx || 1e-3), plm(dy || 1e-3));
           const voidSolid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, rect, place3([cx, cy, z0]), z3(), plm(dz || 1e-3));
-          const opening = product(voidSolid, T.IFCOPENINGELEMENT, 'Opening ' + op.id, gn++, [null, null]);
-          openings++;
           const wall = wallByFeature.get(op.parent);
-          if (wall) {
-            const rel = api.CreateIfcEntity(mID, T.IFCRELVOIDSELEMENT, api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++)),
-              null, null, null, new T.Handle(wall.expressID), new T.Handle(opening.expressID));
-            api.WriteLine(mID, rel); rels++;
-          }
+          if (!wall) { openingsNoHost++; continue; }   // §IFCX: an IfcOpeningElement with no host violates IfcRelVoidsElement (inverse [1:1]); counted, never emitted orphaned
+          const opening = product(voidSolid, T.IFCOPENINGELEMENT, 'Opening ' + op.id, gn++, [null], op.outputGuid);
+          openings++;
+          const rel = api.CreateIfcEntity(mID, T.IFCRELVOIDSELEMENT, gid(),
+            null, null, null, new T.Handle(wall.expressID), new T.Handle(opening.expressID));
+          api.WriteLine(mID, rel); rels++;
         } else if (op.op_type === 'GEOM_ARRAY') {
           const parentOp = ops.find(o => o.id === op.parent);
           if (!parentOp || parentOp.op_type !== 'GEOM_EXTRUDE_POLY') continue;   // HONEST SCOPE: only the demoed leaf types export
@@ -243,7 +294,7 @@
             const poly = api.CreateIfcEntity(mID, T.IFCPOLYLINE, cpts);
             const prof = api.CreateIfcEntity(mID, T.IFCARBITRARYCLOSEDPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Member'), poly);
             const solid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, prof, place3([0, 0, 0]), z3(), plm(pp.depth));
-            const baseRep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
+            const baseRep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, bodyCtx, label('Body'), label('SweptSolid'), [solid]);
             repMap = api.CreateIfcEntity(mID, T.IFCREPRESENTATIONMAP, place3([0, 0, 0]), baseRep);
           }
           for (let i = 0; i < count; i++) {
@@ -254,7 +305,7 @@
               const xform = api.CreateIfcEntity(mID, T.IFCCARTESIANTRANSFORMATIONOPERATOR3D, null, null,
                 api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(d.dx), len(d.dy), len(d.dz)]), null, null);
               const mapped = api.CreateIfcEntity(mID, T.IFCMAPPEDITEM, repMap, xform);
-              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('MappedRepresentation'), [mapped]);
+              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, bodyCtx, label('Body'), label('MappedRepresentation'), [mapped]);
             } else {
               const depth = _evalFormula(P.formula, { i, n: count, v0 });
               const cpts = pts.map(pt => api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(pt[0]), len(pt[1])]));
@@ -262,7 +313,7 @@
               const poly = api.CreateIfcEntity(mID, T.IFCPOLYLINE, cpts);
               const prof = api.CreateIfcEntity(mID, T.IFCARBITRARYCLOSEDPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Member'), poly);
               const solid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, prof, place3([d.dx, d.dy, d.dz]), z3(), plm(depth));
-              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
+              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, bodyCtx, label('Body'), label('SweptSolid'), [solid]);
             }
             // IfcMember: base8 (GlobalId..Tag) + PredefinedType = 9 args
             const member = productFromRep(rep, T.IFCMEMBER, 'Array ' + op.id + ' #' + i, gn++, [T.IFC4.IfcMemberTypeEnum.MULLION]);
@@ -270,11 +321,11 @@
           }
           // ONE shared IfcMemberType + IfcRelDefinesByType — the real IFC TYPING relationship (not
           // aggregation) expressing "these N instances came from the same array template" (see file header).
-          const typeGuid = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
+          const typeGuid = gid();
           const memberType = api.CreateIfcEntity(mID, T.IFCMEMBERTYPE, typeGuid, null, label('Array ' + op.id + ' Type'), null, null, null, null, null,
             T.IFC4.IfcMemberTypeEnum.MULLION);
           api.WriteLine(mID, memberType);
-          const relGuid = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
+          const relGuid = gid();
           const relType = api.CreateIfcEntity(mID, T.IFCRELDEFINESBYTYPE, relGuid, null, null, null,
             memberHandles.map(m => new T.Handle(m.expressID)), new T.Handle(memberType.expressID));
           api.WriteLine(mID, relType);
@@ -283,9 +334,65 @@
         }
       }
 
-      const bytes = api.SaveModel(mID);
+      // ── §IFCX-X2 spatial chain (IFC4: Project -> Site -> Building -> Storey(s) -> products). EXTRACTED from the open building's own
+      // rows (window.__dwBuf: spatial_structure/elements_meta) — storey names, the building/storey GUIDs and each element's storey are the
+      // SOURCE's. Nothing is invented: if the DB or a storey for a guid is not readable the product is contained in the IfcBuilding
+      // itself (legal IFC4: IfcRelContainedInSpatialStructure accepts any IfcSpatialElement) and the log says so.
+      const src = { storeyOf: {}, storeyGuid: {}, buildingGuid: null, buildingName: null, rows: 0, err: null };
+      try {
+        if (typeof window !== 'undefined' && window.__dwBuf && window.SQL) {
+          const sdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+          const q = (sql) => { const r = sdb.exec(sql); return r.length ? r[0].values : []; };
+          try { q('SELECT guid, storey FROM elements_meta').forEach(r => { if (r[1]) src.storeyOf[r[0]] = r[1]; src.rows++; }); } catch (e) { src.err = 'elements_meta: ' + e.message; }
+          try { q("SELECT guid, type, name FROM spatial_structure WHERE type IN ('IfcBuilding','IfcBuildingStorey')").forEach(r => {
+            if (r[1] === 'IfcBuilding') { src.buildingGuid = r[0]; } else if (r[2]) src.storeyGuid[r[2]] = r[0]; }); } catch (e) { /* no spatial_structure table: synthetic spatial GUIDs */ }
+          try { const pm = q("SELECT value FROM project_metadata WHERE key='building_name'"); if (pm.length) src.buildingName = pm[0][0]; } catch (e) { /* optional */ }
+          sdb.close();
+        } else src.err = 'no window.__dwBuf/SQL';
+      } catch (e) { src.err = String(e && e.message || e); }
+      const _comp = T.IFC4.IfcElementCompositionEnum.ELEMENT;
+      const _spatial = (type, name, srcGuid, extraAt8) => {
+        const args = [gid(srcGuid), null, name != null ? label(name) : null, null, null, null, null, null, _comp];
+        const ar = _ARITY[_typeName(type)]; while (args.length < ar) args.push(null); args.length = ar;
+        const e = api.CreateIfcEntity(mID, type, ...args); api.WriteLine(mID, e); return e;
+      };
+      const _agg = (parent, kids) => { const r = api.CreateIfcEntity(mID, T.IFCRELAGGREGATES, gid(), null, null, null, _h(parent), kids.map(_h)); api.WriteLine(mID, r); };
+      const project = api.CreateIfcEntity(mID, T.IFCPROJECT, gid(), null, (src.buildingName || window.__dwName) ? label(src.buildingName || window.__dwName) : null,
+        null, null, null, null, [_h(_ctx)], _h(_units));
+      api.WriteLine(mID, project);
+      const site = _spatial(T.IFCSITE, null, null);
+      const building = _spatial(T.IFCBUILDING, src.buildingName || null, src.buildingGuid);
+      _agg(project, [site]); _agg(site, [building]);
+      const storeyEnt = {}, storeyMembers = {}, bldgMembers = [];
+      _contain.forEach(c => {
+        const sn = c.srcGuid ? src.storeyOf[c.srcGuid] : null;
+        if (!sn) { bldgMembers.push(c.ent); return; }
+        if (!storeyEnt[sn]) { storeyEnt[sn] = _spatial(T.IFCBUILDINGSTOREY, sn, src.storeyGuid[sn]); storeyMembers[sn] = []; }
+        storeyMembers[sn].push(c.ent);
+      });
+      const storeyNames = Object.keys(storeyEnt).sort();      // deterministic order
+      if (storeyNames.length) _agg(building, storeyNames.map(n => storeyEnt[n]));
+      const _rel = (structure, ents) => { if (!ents.length) return; const r = api.CreateIfcEntity(mID, T.IFCRELCONTAINEDINSPATIALSTRUCTURE, gid(), null, null, null, ents.map(_h), _h(structure)); api.WriteLine(mID, r); };
+      storeyNames.forEach(n => _rel(storeyEnt[n], storeyMembers[n]));
+      _rel(building, bldgMembers);
+      console.log(TAG + ' §IFCX_A_SPATIAL project=1 site=1 building=1 storeys=' + storeyNames.length + ' contained=' + _contain.length +
+        ' inStorey=' + (_contain.length - bldgMembers.length) + ' inBuildingDirect=' + bldgMembers.length + ' dbRows=' + src.rows +
+        ' srcErr=' + (src.err || 'none') + ' guidsUnique=' + _usedGuids.size);
+
+      let bytes = api.SaveModel(mID);
       api.CloseModel(mID);
-      console.log(TAG + ' build walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
+      // §IFCX-X1 determinism + header validity: web-ifc stamps FILE_NAME with the wall clock and writes author/organization/authorization
+      // as `$` (STEP header requires LIST[1:?] STRING / STRING — ifcopenshell flags 3 errors on every file). Rewrite ONLY that one header
+      // line: fixed stamp (no source timestamp exists for an op-log), empty-string author/org/authorization (no source), name+tools kept.
+      { const enc = new TextEncoder(), HEAD = 4096;
+        const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(HEAD, bytes.length)));
+        const m = /FILE_NAME\('([^']*)','[^']*',[^;]*?,'([^']*)','([^']*)',[^;]*?\);/.exec(head);
+        if (m) { const rep = enc.encode("FILE_NAME('" + m[1] + "','1970-01-01T00:00:00',(''),(''),'" + m[2] + "','" + m[3] + "','');");
+          const nb = new Uint8Array(bytes.length - m[0].length + rep.length);
+          nb.set(bytes.subarray(0, m.index), 0); nb.set(rep, m.index); nb.set(bytes.subarray(m.index + m[0].length), m.index + rep.length); bytes = nb;
+          console.log(TAG + ' §IFCX_A_HEADER rewritten stamp=1970-01-01T00:00:00 (source=none) author/org/authorization=empty (source=none)'); }
+        else console.log(TAG + ' §IFCX_A_HEADER NOT-REWRITTEN FILE_NAME pattern not found'); }
+      console.log(TAG + ' build openingsNoHost=' + openingsNoHost + ' walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
       // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were
       // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
