@@ -4109,6 +4109,30 @@ function setupCpeLoadPath(A) {
   // place in the freeze still breaking that ruling. #0277bd is the project blue #4fc3f7 taken to a
   // weight that clears contrast against a light plate rather than a dark one.
   var FREEZE_INK_TOTALS = '#0277bd';
+  // §FREEZE_BANDS (2026-10-01, red1: "beef up the graphics of the load path black page info panels, with more striking color";
+  // picked "colour header bands" — white body kept for legibility, a solid group-colour title band + left accent stripe).
+  // One colour per GROUP (bim-compiler PERFORMANCE_AS_CLASH.md §13): Structure = the project blue (NOT amber — §61 ruled yellow
+  // out of the freeze), Security = teal, Comfort = violet. Measured WCAG contrast: white title on band 6.67 / 5.08 / 5.70 (>= 4.5),
+  // band against the black page 3.15 / 4.14 / 3.68 (>= 3 for marks). &lpbands=0 = the §129.58 look (control).
+  var FREEZE_BAND = { structure: '#0B5CAD', security: '#0E7C70', comfort: '#7C3AED' };
+  function _freezeBandsOn() { return !(typeof location !== 'undefined' && /[?&]lpbands=0/.test(location.search)); }
+  function _lum(hex) { return [1, 3, 5].map(function (i) { var v = parseInt(hex.slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); })
+    .reduce(function (s, v, i) { return s + v * [0.2126, 0.7152, 0.0722][i]; }, 0); }
+  function _contrast(a, b) { var x = _lum(a), y = _lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  var _freezeBandWitnessed = {};
+  function _freezeBand(ctx, x, y, bw, bh, rad, bandH, group, fontPx, name) {
+    var col = FREEZE_BAND[group]; if (!col) return;
+    var stripe = Math.max(3, Math.round(fontPx * 0.22));
+    ctx.save();
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rad); ctx.clip(); }
+    ctx.fillStyle = col; ctx.fillRect(x, y, bw, bandH); ctx.fillRect(x, y + bandH, stripe, bh - bandH);
+    ctx.restore();
+    if (!_freezeBandWitnessed[name]) { _freezeBandWitnessed[name] = true;
+      var c1 = _contrast('#FFFFFF', col), c2 = _contrast(col, '#000000');
+      console.log('§FREEZE_BAND panel=' + name + ' group=' + group + ' color=' + col + ' bandPx=' + bandH + ' stripePx=' + stripe +
+        ' whiteOnBand=' + c1.toFixed(2) + ' bandVsBlack=' + c2.toFixed(2) + ' => ' + (c1 >= 4.5 && c2 >= 3 ? 'PASS' : 'FAIL') + ' (WCAG AA text 4.5, marks 3)'); }
+  }
+  A._freezeBand = _freezeBand; A._freezeBandsOn = _freezeBandsOn;
 
   function _drawStackInfoPanel(ctx, w, h, k, stack, stackName, yBottom, avoidRect) {
     if (!stack || !stack.hopsUp || !stack.hopsUp.length) return null;
@@ -4185,16 +4209,18 @@ function setupCpeLoadPath(A) {
     // backdrop (§LOADPATH_BACKDROP allElseAtBlack=51/51), which is exactly why the card next to it
     // was already carrying a white slab of its own. Now they share one.
     _freezePlateDraw(ctx, x, y, panelW, panelH, rr);
+    var _band = _freezeBandsOn();   // §FREEZE_BANDS — the header IS the band (title + totals in white on Structure blue)
+    if (_band) _freezeBand(ctx, x, y, panelW, panelH, rr, headerH, 'structure', fontPx, 'stack.' + stackName);
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.font = '700 ' + headerFontPx + 'px ' + FREEZE_F;
-    ctx.fillStyle = FREEZE_INK_TITLE;
+    ctx.fillStyle = _band ? '#FFFFFF' : FREEZE_INK_TITLE;
     ctx.fillText(headerText, x + pad, y + headerH * 0.34);
     ctx.font = '700 ' + Math.round(headerFontPx * 0.86) + 'px ' + FREEZE_F;
-    ctx.fillStyle = FREEZE_INK_TOTALS;   // §61 — was rgba(255,215,0,0.95) gold; yellow is the one HUD ink red1 ruled out ("Replace yellow with blue is better contrast")
+    ctx.fillStyle = _band ? 'rgba(255,255,255,0.92)' : FREEZE_INK_TOTALS;   // §61 — was rgba(255,215,0,0.95) gold; yellow is the one HUD ink red1 ruled out ("Replace yellow with blue is better contrast")
     ctx.fillText(totalsText, x + pad, y + headerH * 0.72);
-    // Divider — a clean, professional break between the summary header and the itemised rows below.
-    ctx.fillStyle = FREEZE_INK_RULE;
-    ctx.fillRect(x + pad, y + headerH - divider, panelW - pad * 2, divider);
+    // Divider — a clean, professional break between the summary header and the itemised rows below (the band edge is the break when banded).
+    if (!_band) { ctx.fillStyle = FREEZE_INK_RULE;
+    ctx.fillRect(x + pad, y + headerH - divider, panelW - pad * 2, divider); }
     ctx.font = '600 ' + fontPx + 'px ' + FREEZE_F;
     // §129.23 — bottom-up: hop1 (ri=0) draws at the panel's OWN bottom-most row; each higher hop
     // stacks ABOVE it. `panelH` already reserves exactly `revealed` rows worth of space below the
@@ -4488,6 +4514,7 @@ function setupCpeLoadPath(A) {
     // §129.58 — the same reversed plate the info panel now uses, so the two freeze boxes cannot
     // drift apart again. Was a bare opaque `rgba(255,255,255,1)` slab with no border.
     _freezePlateDraw(ctx, rect.x, rect.y, rect.w, rect.h, rr);
+    if (_freezeBandsOn()) _freezeBand(ctx, rect.x, rect.y, rect.w, rect.h, rr, Math.max(4, Math.round(layout.fontPx * 0.3)), 'structure', layout.fontPx, 'card');   // §FREEZE_BANDS: the card has no title row — a top strip + stripe
     // §129.39 (2026-09-19, red1 on a 1080p frame: "its text is still too small") — THIS FUNCTION
     // NEVER SET ctx.font. `_infoCardLayout` sets it, measures the lines with it, and then hands the
     // context back through its OWN ctx.restore() — so every fillText below ran at the canvas 2D
@@ -4568,6 +4595,12 @@ function setupCpeLoadPath(A) {
       // here, same frame as the ladders, so it draws/witnesses for whatever `_lp.hopsUp`/`_lp.
       // pickItem` is ACTUALLY drawn (fallback included), never `picked.near` from the arm block.
       _drawInfoCard(ctx, w, h, k, cardLayout);
+      // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — Audio/Visual panels in the black, clear of everything drawn above
+      if (A.freezePerfCompositeOntoCanvas && A._freezePerfOn && (A._freezePerfOn.visual || A._freezePerfOn.audio)) {
+        var _cr = cardLayout.rect, _taken = [nearPanelBox, farPanelBox, _cr ? { x0: _cr.x, y0: _cr.y, x1: _cr.x + _cr.w, y1: _cr.y + _cr.h } : null,
+          _stackScreenBox(_lp, w, h), _lp.far ? _stackScreenBox(_lp.far, w, h) : null].filter(Boolean);
+        A.freezePerfCompositeOntoCanvas(ctx, w, h, { plate: _freezePlateDraw, bodyPx: _freezeBodyPx, font: FREEZE_F }, _taken);
+      }
     } catch (e) { if (!A._loadPathDrawWarned) { A._loadPathDrawWarned = true; _err('DRAW', e); } }
   };
 

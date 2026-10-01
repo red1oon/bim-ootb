@@ -2993,6 +2993,10 @@
         // their stored override JSON, `__maxqBake`'s own merge never touches it) falls back to the
         // OLD `!!_measure` behaviour, so no bake made before today silently loses the feature.
         _loadPath = (_ov.loadPath !== undefined) ? !!_ov.loadPath : !!_measure;
+        // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19): Audio / Visual panels draw only inside the load-path freeze composite.
+        A._freezePerfOn = { visual: !!_ov.visualPanel, audio: !!_ov.audioPanel };
+        if ((_ov.visualPanel || _ov.audioPanel) && !_loadPath) console.log('§FREEZE_PERF_PANEL group=' + (_ov.visualPanel ? 'visual' : '') + (_ov.audioPanel ? (_ov.visualPanel ? '+' : '') + 'audio' : '') + ' skipped reason=load-path-off');
+        if (_ov.audioPanel) console.log('§FREEZE_PERF_PANEL group=audio skipped reason=not-built (α table + §N reference witness first)');
         // §129.6 item 6b (2026-09-15) SUPERSEDES the original fold-under-measure: Cost/Ledger are now
         // rows of the pie-chart HUD (cpe_resource_panel.js), gated by the SAME toggle as the
         // "4D/5D" (--label/--4d5d) checkbox — NOT --measure. The load path 3D effect itself is
@@ -3246,6 +3250,7 @@
       // (red1: "I don't mind it adds few secs"), and `_tn` (below) is remapped so it holds constant
       // at the arm value for exactly those inserted frames, then resumes from that SAME value —
       // never shifting any OTHER beat's own boundary.
+      if (_loadPath && A._freezePerfOn && A._freezePerfOn.visual && A.freezePerfBuild) { try { A.freezePerfBuild(A.dbQuery); } catch (eFP) { console.warn('§FREEZE_PERF_BUILD failed: ' + (eFP && eFP.message)); } }   // §FREEZE_PERF_PANEL BUILD, once per bake
       if (_loadPath && A.loadPathBuild) {
         try {
           A.loadPathBuild(plan, _filmSecFull, _revealU, A.db, w, h, fps);   // §129.7 items 3+6 — real output px/fps
@@ -5033,7 +5038,8 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
+            // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -5050,7 +5056,7 @@
           // census never printed. So no bake log could answer that question: you had to read the
           // command line, or look at frames. Every other flag here is reported; this one is now too.
           ' clash=' + (ov.clash ? 1 : 0) +
-          ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) +
+          ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) + ' visualPanel=' + (ov.visualPanel ? 1 : 0) + ' audioPanel=' + (ov.audioPanel ? 1 : 0) +
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
           ' loadPath=' + (ov.loadPath ? 1 : 0) + ' ledger=' + (ov.ledger ? 1 : 0) + ' cost=' + (ov.cost ? 1 : 0) +
           ' sunCompass=' + (ov.sunCompass ? 1 : 0) + ' sunDate=' + (ov.sunDate || '-'));

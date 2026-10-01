@@ -49,6 +49,8 @@
 //                                                       -41% per frame, 1.72% of pixels changed.
 //                                                       OFF by default — verified on one 30s slice,
 //                                                       not yet on a full film. Read the film.
+//     [--visual-panel] [--audio-panel]                §FREEZE_PERF_PANEL: CCTV coverage / room acoustics panels in the
+//                                                       load-path freeze (need --load-path; audio not built yet)
 //     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
 //                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
 //                                                       §7). OFF by default; needs a site lat/long in
@@ -213,6 +215,9 @@ const _fEscapeRoute = triState('escape-route', 'no-escape-route');
 // It draws nothing at all on a building whose DB has no site latitude/longitude, and the bake log
 // says §SUN_COMPASS INCONCLUSIVE with the reason — read the log, do not infer from the video.
 const _fSunCompass = triState('sun-compass', 'no-sun-compass');
+// §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19) — Audio / Visual panels in the load-path freeze; draw only with --load-path.
+const _fVisualPanel = triState('visual-panel', 'no-visual-panel');
+const _fAudioPanel = triState('audio-panel', 'no-audio-panel');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 else if (_f4d5d !== undefined) FLAGS.roomTitle = _f4d5d;
@@ -225,6 +230,8 @@ if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
 if (_fCost !== undefined) FLAGS.cost = _fCost;
 if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
+if (_fVisualPanel !== undefined) FLAGS.visualPanel = _fVisualPanel;
+if (_fAudioPanel !== undefined) FLAGS.audioPanel = _fAudioPanel;
 // §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
 // afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
 if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
