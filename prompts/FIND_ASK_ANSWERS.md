@@ -220,3 +220,19 @@ Sonnet, NO project context, told to read only the one .xlsx).
     FAIL 3/3 after the fix).
   - Infra note: the first Hospital save timed out at 15 min under load average 28 on 20 cores (other
     sessions' headless-Chrome runs) — retried with `LOAD_MS=2400000`, not a code fault.
+
+## §K ⛔ OPEN — live split-DB buildings carry no `qto_cache`, so cost sentences are greyed LIVE (found 2026-10-01)
+Found while capturing `docs/AskFirstSteps.md` (bim-compiler) on the live site. The live viewer opens
+Hospital / Terminal in split mode (`§DB_SPLIT_DETECT` → `_meta.db` + `_geo.db`); `A.db` is the META db.
+- Live Terminal `A.db` tables (`§CENTRES_QUERY`): project_metadata, elements_meta, element_transforms,
+  element_instances, rel_contained_in_space, spatial_structure, rel_aggregates, storey_walkable_raster —
+  **no qto_cache** → `§ASK_VOCAB … qto=false`, every "Find 5D cost …" sentence greyed.
+- The live `Terminal_extracted.db` DOES have it (161 rows, downloaded + counted) — but split mode never
+  reads the extracted DB. Live `Hospital_meta.db`: no qto_cache either. Local `Hospital_meta.db` has 218
+  rows, which is why §G's Hospital witness passed: **the local DB is not the live DB.**
+- Same gap hits the shipped NLP "total cost" chip (decoder.js reads `qto_cache` from `A.db`).
+- Fix per the DB rule (patch + self-heal loader, never a binary): add `qto_cache` CREATE + INSERTs
+  (rows copied from that building's own live `_extracted.db`) to `buildings/patches/<bld>_meta.db.sql` on
+  OCI — the loader `A._applyPendingPatch` already applies it. Needs the owner of those patch files'
+  generator, or user OK, since the patch files are shared with other lanes. Witness: re-run
+  `witness_find_ask_answers.js` against the LIVE URL (not the local DB) — cost_total OK on Terminal.
