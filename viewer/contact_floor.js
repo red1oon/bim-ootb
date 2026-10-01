@@ -21,7 +21,9 @@
 // &floorcontact=0 / &objcontact=0 = off; =s = strength.
 (function (global) {
   var FLOOR_CLASSES = ['IfcFurniture', 'IfcFurnishingElement', 'IfcRailing', 'IfcStair', 'IfcStairFlight', 'IfcRamp', 'IfcRampFlight'];
-  var OBJ_CLASSES = FLOOR_CLASSES.concat(['IfcColumn', 'IfcBeam', 'IfcMember', 'IfcBuildingElementProxy',
+  // IfcBeam / IfcMember left out (red1 v1530 Hospital …846906842 'some patchy'): beams and members are framed INTO ceilings and walls —
+  // that corner is the existing AO's job, and 6,635 Hospital members (mullions, posts, frames) gave blotchy ceiling patches.
+  var OBJ_CLASSES = FLOOR_CLASSES.concat(['IfcColumn', 'IfcBuildingElementProxy',
     'IfcDuctSegment', 'IfcDuctFitting', 'IfcPipeSegment', 'IfcPipeFitting', 'IfcCableCarrierSegment', 'IfcCableCarrierFitting',
     'IfcFlowSegment', 'IfcFlowFitting', 'IfcFlowController', 'IfcSanitaryTerminal', 'IfcValve',
     'IfcEnergyConversionDevice', 'IfcFlowMovingDevice', 'IfcUnitaryEquipment', 'IfcElectricAppliance']);
