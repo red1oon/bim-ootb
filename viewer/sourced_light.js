@@ -145,6 +145,30 @@
     // posView/nView are kept for the call sites' sake; the zone is the once-computed _slFZ (§SOURCED_LIGHT_LINK)
     // §LAMP_CONTACT_SHADOW (bim-compiler PHOTOREAL_STILL_RENDER.md): screen-space contact shadow toward the lamps' dominant direction,
     // marched against the phase-1 depth. uSLCs = (on, length m, thickness m, steps); uSLCsP = projection; uSLCsNF = (near, far).
+    // §FLOOR_CONTACT (contact_floor.js): the share of a uniform overhead source the furniture above an upward-facing floor fragment
+    // hides (exact differential form factor, CPU-built per building). uSLCf = (on, levels, cell m, atlas rows); uSLCfG = (nx, nz,
+    // strength, band m above the level); uSLCfL[i] = (x0, z0, floor y, first row). Returns the visibility 1 - strength x occ.
+    'uniform vec4 uSLCf; uniform vec4 uSLCfG; uniform vec4 uSLCfL[ 4 ]; uniform sampler2D uSLCfT;',
+    // §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns …) in a box around the
+    // camera; uSLDf = (on, strength, voxel m, max distance m); uSLDfO = box origin (world); uSLDfN = voxel counts. Classic distance-field
+    // occlusion along the normal (5 samples, 6 .. 96 cm). Upward floor fragments take the smaller of the floor map and this.
+    'uniform vec4 uSLDf; uniform vec4 uSLDfO; uniform vec4 uSLDfN; uniform highp sampler3D uSLDfT;',
+    'float slDF( vec3 nw ) {',
+    '  if ( uSLDf.x < 0.5 ) return 1.0; vec3 box = uSLDfN.xyz * uSLDf.z; float occ = 0.0; float d = 0.06;',
+    '  for ( int i = 0; i < 5; i ++ ) { vec3 q = ( _slWP + nw * d - uSLDfO.xyz ) / box;',
+    '    if ( any( lessThan( q, vec3( 0.0 ) ) ) || any( greaterThan( q, vec3( 1.0 ) ) ) ) return 1.0;',
+    '    float sd = texture( uSLDfT, q ).r * uSLDf.w; occ += max( 0.0, d - sd ) / d; d *= 2.0; }',
+    '  return 1.0 - uSLDf.y * clamp( occ / 5.0, 0.0, 1.0 );',
+    '}',
+    'float slCF( vec3 nView ) {',
+    '  vec3 nw = normalize( ( vec4( nView, 0.0 ) * viewMatrix ).xyz ); float vo = slDF( nw );',
+    '  if ( uSLCf.x < 0.5 || nw.y < 0.7 ) return vo;',
+    '  for ( int i = 0; i < 4; i ++ ) { if ( float( i ) >= uSLCf.y ) break; vec4 L = uSLCfL[ i ]; float dy = _slWP.y - L.z;',
+    '    if ( dy < -0.05 || dy > uSLCfG.w ) continue; vec2 g = ( _slWP.xz - L.xy ) / uSLCf.z;',
+    '    if ( g.x < 0.0 || g.y < 0.0 || g.x >= uSLCfG.x || g.y >= uSLCfG.y ) continue;',
+    '    return min( vo, 1.0 - uSLCfG.z * texture2D( uSLCfT, vec2( g.x / uSLCfG.x, ( L.w + g.y ) / uSLCf.w ) ).r ); }',
+    '  return vo;',
+    '}',
     'uniform vec4 uSLCs; uniform sampler2D uSLCsT; uniform mat4 uSLCsP; uniform vec2 uSLCsNF;',
     'float slContact( vec3 p, vec3 n, vec3 d ) {',
     '  vec3 o = p + n * 0.02; float occ = 0.0;',
@@ -276,6 +300,32 @@
   var aoTex = null;
   // §LAMP_CONTACT_SHADOW state: typed arrays shared by reference; the depth texture set per program like the AO texture
   var CSP = new Float32Array(4), CSM = new Float32Array(16), CSN = new Float32Array(2), csTex = null;
+  // §FLOOR_CONTACT state (contact_floor.js builds the map; set at stage, pushed with every program like the zone texture)
+  var CFP = new Float32Array(4), CFG = new Float32Array(4), CFL = new Float32Array(16), cfTex = null, cfLast = null;
+  var DFP = new Float32Array(4), DFO = new Float32Array(4), DFN = new Float32Array(4), dfTex = null, dDf = null, dfLast = null;   // §OBJECT_CONTACT
+  function dfBuild(A) {
+    DFP[0] = 0; dfTex = null;
+    var q = location.search, m = /[?&]objcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillObjContact === 'number' ? A._stillObjContact : 1);
+    if (!(str > 0)) { dfLast = { on: false, why: '&objcontact=0' }; console.log('§OBJECT_CONTACT off (&objcontact=0)'); return; }
+    var D = global.ContactFloor.buildSdf(A);
+    if (!D || !D.tex || !D.voxelsMarked) { dfLast = { on: false, why: 'no objects in the box', used: D && D.used }; console.log('§OBJECT_CONTACT off (no objects in the camera box: used ' + (D ? D.used : '?') + ')'); return; }
+    DFP[0] = 1; DFP[1] = Math.min(1, str); DFP[2] = D.vox; DFP[3] = D.dmax; DFO[0] = D.org[0]; DFO[1] = D.org[1]; DFO[2] = D.org[2]; DFN[0] = D.n[0]; DFN[1] = D.n[1]; DFN[2] = D.n[2]; dfTex = D.tex;
+    dfLast = { on: true, strength: DFP[1], elements: D.elements, used: D.used, culled: D.culled, tris: D.tris, capped: D.capped, voxelsMarked: D.voxelsMarked, mb: D.mb, ms: D.ms };
+    console.log('§OBJECT_CONTACT on strength=' + DFP[1] + ' box=' + D.n.join('x') + ' vox=' + D.vox + ' org=[' + D.org.map(function (v) { return v.toFixed(1); }) + '] objects=' + D.elements + ' drawsInBox=' + D.used + ' culled=' + D.culled +
+      ' tris=' + D.tris + (D.capped ? ' CAPPED' : '') + ' voxelsMarked=' + D.voxelsMarked + ' voxelsWithin50cm=' + D.voxelsNear50cm + ' gpuMB=' + D.mb + ' ms=' + D.ms);
+  }
+  function cfBuild(A) {
+    CFP[0] = 0; cfTex = null;
+    var q = location.search, m = /[?&]floorcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillFloorContact === 'number' ? A._stillFloorContact : 1);
+    if (!(str > 0) || !global.ContactFloor) { cfLast = { on: false, why: !global.ContactFloor ? 'contact_floor.js not loaded' : '&floorcontact=0' }; console.log('§FLOOR_CONTACT off (' + cfLast.why + ')'); return; }
+    var C = global.ContactFloor.build(A);
+    if (!C || !C.tex || !C.levels.length) { cfLast = { on: false, why: 'no furniture geometry', furniture: C && C.furniture, draws: C && C.draws }; console.log('§FLOOR_CONTACT off (no furniture geometry: classes ' + (C ? C.furniture : '?') + ' draws ' + (C ? C.draws : '?') + ')'); return; }
+    CFP[0] = 1; CFP[1] = C.levels.length; CFP[2] = C.cell; CFP[3] = C.H; CFG[0] = C.nx; CFG[1] = C.nz; CFG[2] = Math.min(1, str); CFG[3] = 0.15;
+    C.levels.forEach(function (L, i) { CFL[i * 4] = L.x0; CFL[i * 4 + 1] = L.z0; CFL[i * 4 + 2] = L.y; CFL[i * 4 + 3] = L.row0; });
+    cfTex = C.tex; cfLast = { on: true, strength: CFG[2], levels: C.levels.length, furniture: C.furniture, draws: C.draws, tris: C.tris, grid: C.nx + 'x' + C.nz, occTexels: C.occTexels, occMean: +C.occMean.toFixed(3), occMax: +C.occMax.toFixed(3), ms: C.ms };
+    console.log('§FLOOR_CONTACT on strength=' + CFG[2] + ' levels=' + C.levels.length + ' [' + C.levels.map(function (L) { return 'y' + L.y.toFixed(2) + ':' + L.elements; }).join(' ') + '] furniture=' + C.furniture + ' draws=' + C.draws + ' tris=' + C.tris +
+      ' grid=' + C.nx + 'x' + C.nz + ' cell=' + C.cell + ' radius=' + C.radius + ' occTexels=' + C.occTexels + ' occMean=' + C.occMean.toFixed(3) + ' occMax=' + C.occMax.toFixed(3) + (C.capped ? ' CAPPED ' + C.capped : '') + (C.droppedElements ? ' droppedElements=' + C.droppedElements : '') + ' ms=' + C.ms);
+  }
   function csSet(A, depthTex, camera) {
     if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
     var q = location.search, dial = function (n, d) { var m = new RegExp('[?&]' + n + '=([0-9.]+)').exec(q); var v = m ? parseFloat(m[1]) : d; return isFinite(v) ? v : d; };
@@ -351,14 +401,15 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
-        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +   // §AO_LAMPS (below)
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +
+        '\t\tfloat _slCFv = slCF( geometryNormal );\n' +   // §FLOOR_CONTACT   // §AO_LAMPS (below)
         '\t\tvec3 _slCD0 = reflectedLight.directDiffuse, _slCS0 = reflectedLight.directSpecular, _slCDir = vec3( 0.0 );\n' +   // §LAMP_CONTACT_SHADOW
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
         '\t\t\tif ( !( _slFZ < -0.5 || _la.w < 0.5 || abs( _slFZ - _la.w ) < 0.5 ) ) continue; _slLNP += 1.0;\n' +
         '\t\t\tvec3 _lv = ( viewMatrix * vec4( _la.xyz, 1.0 ) ).xyz - geometryPosition; float _ld = length( _lv );\n' +
-        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ) * _slAoL; directLight.visible = true;\n' +
+        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ) * _slAoL * _slCFv; directLight.visible = true;\n' +
         '\t\t\tRE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );\n' +
         '\t\t\t_slCDir += directLight.direction * dot( directLight.color, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( dot( geometryNormal, directLight.direction ), 0.0 );\n' +
         '\t\t}\n' +
@@ -377,6 +428,10 @@
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slHemi( hemisphereLights[ i ].skyColor, hemisphereLights[ i ].groundColor, hemisphereLights[ i ].direction, geometryPosition, geometryNormal )'); ok++; }
     else console.warn('§GROUND_VIEW_FIELD anchor "getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal )" missing: hemi ungated');
     C.lights_fragment_begin = fb;
+    // §FLOOR_CONTACT: the diffuse irradiance (IR, cove, sky field / hemi, ambient) of an upward floor fragment under furniture
+    var fe = C.lights_fragment_end, e1 = 'RE_IndirectDiffuse( irradiance, geometryPosition';
+    if (fe && fe.indexOf(e1) >= 0) { C.lights_fragment_end = fe.replace(e1, 'RE_IndirectDiffuse( irradiance * slCF( geometryNormal ), geometryPosition'); ok++; }
+    else console.warn('§FLOOR_CONTACT anchor missing (lights_fragment_end RE_IndirectDiffuse) — floor contact on lamps only');
     // IBL (scene.environment) is sky light too: its diffuse irradiance and its reflections are gated indoors like the hemi.
     // The white-Lambert §METER cannot see IBL, so ungated it was amplified by the meter's +4-6 stops into a purple cast on
     // every weakly lamp-lit surface (Clinic corridor / Hospital café, 2026-09-25).
@@ -416,10 +471,13 @@
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
     // §ZERO Z10: a 1x1 white AO (visibility 1) so the sampler always has a texture of its kind (aoSet swaps it per program).
     dAo = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); dAo.needsUpdate = true;
+    dDf = new THREE.Data3DTexture(new Uint8Array([255]), 1, 1, 1); dDf.format = THREE.RedFormat; dDf.type = THREE.UnsignedByteType; dDf.needsUpdate = true;   // §OBJECT_CONTACT dummy (distance = max)
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo }; U.uSLAoTL = { value: dAo };
       U.uSLCs = { value: CSP }; U.uSLCsT = { value: dAo }; U.uSLCsP = { value: CSM }; U.uSLCsNF = { value: CSN };   // §LAMP_CONTACT_SHADOW
+      U.uSLCf = { value: CFP }; U.uSLCfG = { value: CFG }; U.uSLCfL = { value: CFL }; U.uSLCfT = { value: dAo };   // §FLOOR_CONTACT
+      U.uSLDf = { value: DFP }; U.uSLDfO = { value: DFO }; U.uSLDfN = { value: DFN }; U.uSLDfT = { value: dDf };   // §OBJECT_CONTACT
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
@@ -878,6 +936,8 @@
     if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
+    if (U.uSLDf) { U.uSLDf.value = DFP; U.uSLDfO.value = DFO; U.uSLDfN.value = DFN; U.uSLDfT.value = (active && DFP[0] > 0.5 && dfTex) ? dfTex : dDf; }   // §OBJECT_CONTACT
+    if (U.uSLCf) { U.uSLCf.value = CFP; U.uSLCfG.value = CFG; U.uSLCfL.value = CFL; U.uSLCfT.value = (active && CFP[0] > 0.5 && cfTex) ? cfTex : dAo; }   // §FLOOR_CONTACT
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
@@ -1336,6 +1396,8 @@
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
     try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }
+    try { cfBuild(A); } catch (eCF) { CFP[0] = 0; cfTex = null; console.warn('§FLOOR_CONTACT build failed: ' + eCF.message); }
+    try { if (global.ContactFloor) dfBuild(A); else console.log('§OBJECT_CONTACT off (contact_floor.js not loaded)'); } catch (eDF) { DFP[0] = 0; dfTex = null; console.warn('§OBJECT_CONTACT build failed: ' + eDF.message); }
     try { irCoveApply(A); } catch (eCI) { console.warn('§COVE_IR failed: ' + eCI.message); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)
     var set = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) set.add(m); }); });
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
@@ -1584,6 +1646,8 @@
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
     COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)
+    CFP[0] = 0;   // §FLOOR_CONTACT (the map stays cached in ContactFloor per building)
+    DFP[0] = 0;   // §OBJECT_CONTACT
     if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
     prevOBR = null; lastLog = '';
@@ -1592,5 +1656,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, csSet: csSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { floorContact: function () { return cfLast; }, objectContact: function () { return dfLast; }, irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, csSet: csSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);
