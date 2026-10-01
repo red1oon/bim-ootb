@@ -40,7 +40,7 @@
   // Occluders are taken from the ARC + STR disciplines only (= the witness fgeo.js's reference geometry: MEP/PLB/FP/ELEC proxies are
   // indoor services — MEASURED Hospital occluder census: 10.16M tris all disciplines, 4.3M of them PLB/MEP/ELEC/FP proxies).
   var OCC_DISC = { ARC: 1, STR: 1, '': 1, undefined: 1 };
-  var OCCLUDERS = ['IfcMember', 'IfcBeam', 'IfcColumn', 'IfcRailing', 'IfcStair', 'IfcStairFlight', 'IfcBuildingElementProxy', 'IfcFooting', 'IfcRamp', 'IfcRampFlight', 'IfcFurniture', 'IfcFurnishingElement'];   // §SKY_FIELD_FURNITURE (red1 2026-10-01): seats/tables block daylight
+  var OCCLUDERS = ['IfcMember', 'IfcBeam', 'IfcColumn', 'IfcRailing', 'IfcStair', 'IfcStairFlight', 'IfcBuildingElementProxy', 'IfcFooting', 'IfcRamp', 'IfcRampFlight'];
 
   // Every boundary draw: { geo, matrix, start, count } in world space. Instanced/plain meshes carry ifcClass per mesh;
   // a BatchedMesh carries one element per instance (guidMap[bm.id + '_' + i]).

@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1531';
+const CACHE_VERSION = 'v1532';
+// v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
 // v1531 (2026-10-01) §OBJECT_CONTACT: beams + members no longer occluders (red1 'some patchy' — blotches on ceilings between beams). contact_floor.js?v=4.
 // v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
 // v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.
