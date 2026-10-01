@@ -29,6 +29,7 @@ DB="${1:-HHS_Office_Federated_silent}"
 #   BAKE_W / BAKE_H / BAKE_FPS  size + rate (1920 / 1080 / 24)
 #   BAKE_EXTRA                  extra cli args, e.g. "--frame-range 1065:1200 --write-prebake"
 #   BAKE_TAG                    short label for the file name (e.g. mid_AFTER)
+#   BAKE_DAY                    day-counter corner override (tl|tr|...); unset = the path's saved setting
 BAKE_W="${BAKE_W:-1920}"; BAKE_H="${BAKE_H:-1080}"; BAKE_FPS="${BAKE_FPS:-24}"; BAKE_EXTRA="${BAKE_EXTRA:-}"; BAKE_TAG="${BAKE_TAG:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAMP="$(date +%Y-%m-%d_%H%M)"
@@ -74,11 +75,14 @@ run() {
     # §GI_FILM_CARRY C4 (2026-10-01): hold the shared GPU lock like the stills runs (shots.sh) do. Without it the 0733 bake ran beside an
     # Alt+S stills batch on the same 8 GB card and its bounce renderer ran out of GPU memory (VK_ERROR_OUT_OF_DEVICE_MEMORY).
     echo "§BAKE_SCRIPT gpu.lock wait start $(date -Is)"
+    # §BAKE_DAY_SAVED (2026-10-01, red1: "the Hospital label location option in saved setting of silent DB supposed to be top left"): --day was
+    # hard-coded `tr`, overriding the saved cinema_path.day_counter (Hospital_silent = tl on all 4 bands). Now the saved setting wins; BAKE_DAY=tl|tr|... forces.
+    echo "§BAKE_SCRIPT day=${BAKE_DAY:-saved}"
     flock "${GPU_LOCK:-/tmp/claude-1000/gpu.lock}" node "$ROOT/cli_silent_bake.js" \
       --db "$DB" --out "$SCRATCH" \
       --gpu real --width "$BAKE_W" --height "$BAKE_H" --fps "$BAKE_FPS" $BAKE_EXTRA \
       --dlod-proxy --reveal \
-      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --escape-route --sun-compass --day tr
+      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --escape-route --sun-compass ${BAKE_DAY:+--day $BAKE_DAY}
     echo "§BAKE_SCRIPT node exit=$?"
 
     # DELIVERY GATE — three independent checks, because any one of them alone has been fooled
