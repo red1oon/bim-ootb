@@ -142,9 +142,12 @@
         if (!taken.some(function (t) { return overlaps(r, t); })) pick = r;
       }
       if (!pick) { pick = { x0: cands[0][0], y0: cands[0][1], x1: cands[0][0] + bw, y1: cands[0][1] + bh }; ov = taken.filter(function (t) { return overlaps(pick, t); }).length; }
-      theme.plate(ctx, pick.x0, pick.y0, bw, bh, Math.round(Math.min(bw, bh) * 0.06));
-      ctx.fillStyle = 'rgba(20,22,28,0.95)'; ctx.textBaseline = 'middle';
-      ctx.font = '600 ' + titlePx + 'px ' + theme.font; ctx.fillText(title, pick.x0 + pad, pick.y0 + titlePx);
+      var rad = Math.round(Math.min(bw, bh) * 0.06), band = A._freezeBand && A._freezeBandsOn && A._freezeBandsOn();
+      theme.plate(ctx, pick.x0, pick.y0, bw, bh, rad);
+      if (band) A._freezeBand(ctx, pick.x0, pick.y0, bw, bh, rad, Math.round(titlePx * 1.75), 'security', fontPx, 'cctv');   // §FREEZE_BANDS — Security teal
+      ctx.fillStyle = band ? '#FFFFFF' : 'rgba(20,22,28,0.95)'; ctx.textBaseline = 'middle';
+      ctx.font = '600 ' + titlePx + 'px ' + theme.font; ctx.fillText(title, pick.x0 + pad, pick.y0 + Math.round(titlePx * 0.875));
+      ctx.fillStyle = 'rgba(20,22,28,0.95)';
       ctx.font = '400 ' + fontPx + 'px ' + theme.font;
       lines.forEach(function (l, i) { ctx.fillText(l, pick.x0 + pad, pick.y0 + Math.round(titlePx * 1.9) + i * rowH + rowH / 2); });
       ctx.restore();
