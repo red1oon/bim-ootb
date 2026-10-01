@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1534';
+const CACHE_VERSION = 'v1538';
+// v1538 (2026-10-01) merge of fix/sky-surface v1526-v1531 (IFC surface names, plaster texture, furniture polish, floor/object contact — stills) into fix/fast-bake v1534. sourced_light 77, contact_floor 4.
 // v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
 // v1533 (2026-10-01) merge of fix/sky-surface v1516-v1525 (MEP service colour, furniture in the sky field, lamp contact shadow off, local exposure, rated lamps) into fix/fast-bake v1532.
 // v1532 (2026-10-01) §INTERIOR_LIGHTS_ARC: interior lights off only with no ARC on screen (freeze / reveal hiding ARC), on otherwise. cinema_maxq 23.
@@ -205,6 +206,12 @@ const CACHE_VERSION = 'v1534';
 // v1519 (2026-09-30) §FILM_GEOM_WHOLE gate on geometry (topout / storeys back / no hidden discs), §FILM_INHERIT_GATE logs first call, §SOURCED_OWN_COST timer. sourced_light 74, cinema_maxq 13.
 // v1518 (2026-09-30) §FILM_INHERIT: parity films stage SourcedLight (sky-view field) gated per frame on whole-building frames, portals retire under it; §FILM_FIELD_BY_BUILDING sidecar lookup by building (scene.js/main.js). effects 130, sky_portal 24, sourced_light 73, cinema_maxq 12, scene 68, main 52.
 // v1517/v1516 (2026-09-30) §FAST_BAKE FB1+FB2 sky-portal film classification (sky_portal.js 22-23).
+// v1531 (2026-10-01) §OBJECT_CONTACT: beams + members no longer occluders (red1 'some patchy' — blotches on ceilings between beams). contact_floor.js?v=4.
+// v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
+// v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.
+// v1528 (2026-10-01) §FLOOR_CONTACT: new viewer/contact_floor.js — exact form-factor occlusion of furniture over upward floor fragments (lamps + diffuse irradiance; &floorcontact=0 off). sourced_light.js?v=73.
+// v1527 (2026-10-01) §WALL_TEXTURE (R5 plaster texture, contrast 1.05; &r5tex=0) + §FURNITURE_POLISH (roughness 0.35; &furnpolish=0|r). streaming.js?v=84 import.js?v=5.
+// v1526 (2026-10-01) §IFC_SURFACE_NAMES: new viewer/ifc_surface_names.js — IFC load keeps the authored surface-style / material names (elements_meta.material_name + element_surfaces), was NULL.
 // v1515 (2026-09-30) §MIRROR_OWN_MAT stills only (films skip the room capture). effects.js?v=129.
 // v1514 (2026-09-30) §STILL_RES_DEFAULT_1440: Alt+S default 1440p (measured +10..70 % press time, 4k fails the bounce). effects.js?v=128.
 // v1513 (2026-09-30) merge fix/case4-column (§CSM_READBACK_GLASS) into fix/sky-surface. effects.js?v=127.   // bump on each deploy; per-change detail is the git commit message.
@@ -894,6 +901,7 @@ const PRECACHE_ASSETS = [
   'still_fault.js',     // §FAULT: per-press self-check line (Alt+S)
   'shadow_cascade.js',  // §STILL_SHADOW_CASCADE: Alt+S sun shadow from cascaded maps
   'light_law.js',   // §LIGHT_LAW_MODULE: the photometric chain's values + formulas (one source for Alt+S, later Alt+C)
+  'contact_floor.js',   // §FLOOR_CONTACT: furniture occlusion map for upward floor fragments (form factor)
   'sourced_light.js',   // §SOURCED_LIGHT: zone-bound lamps/portals, no sourceless sky indoors
   'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
@@ -955,6 +963,7 @@ const PRECACHE_ASSETS = [
   'main.js',
   // Workers (fetched on demand by import/export flows)
   'import_worker.js',
+  'ifc_surface_names.js',   // §IFC_SURFACE_NAMES (importScripts'd by import_worker.js)
   'ifc_export_worker.js',
   'mesh_import_worker.js',
   // Grid + 2D modules

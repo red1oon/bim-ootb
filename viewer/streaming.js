@@ -899,6 +899,11 @@ function setupStreaming(A) {
   var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
   A._surfSubstance = function(n) {
     n = (n || '').toLowerCase(); if (!n) return '';
+    // §IFC_SURFACE_NAMES: an IfcMaterialLayerSet arrives as 'A | B | … | Z' in layer order — only the two FACE layers (first, last) are
+    // seen; a stud or insulation core is not the surface (Clinic: 'Plasterboard | Metal - Stud Layer | … | Plasterboard' is plaster).
+    // Framing / fill layers (stud, firring, loose insulation, air; an insulated PANEL is cladding, kept) are never the seen face of a one-sided lining ('Metal - Stud Layer |
+    // Plasterboard', 481 Clinic walls): skipped when choosing the faces, kept if they are all there is.
+    if (n.indexOf(' | ') >= 0) { var _ly0 = n.split(' | '), _lyF = _ly0.filter(function (x) { return !/stud|firring|air gap|air space/.test(x) && !(/insulat/.test(x) && !/panel/.test(x)); }), _ly = _lyF.length ? _lyF : _ly0, _f = A._surfSubstance(_ly[0]), _l = A._surfSubstance(_ly[_ly.length - 1]); return _f || _l; }
     if (/glass|glaz/.test(n)) return 'glass';
     if (/metal|steel|alumin|copper|silver|brass|bronze|iron|zinc|galvani|chrome/.test(n)) return 'metal';
     if (/plaster|gypsum|board|papan|skim|lepaan/.test(n)) return 'plaster';   // finished boards/renders before raw cement
@@ -1772,6 +1777,14 @@ function setupStreaming(A) {
     if (surfRow && surfRow !== 'R9') {
       var _SRP = { R1: [0.55, null], R2c: [0.8, null], R2p: [0.8, null], R3: [0.85, null], R4: [0.35, 0.3], R5: [0.75, null], R6: [0.45, null] }[surfRow];
       if (_SRP) { opts.roughness = _SRP[0]; if (_SRP[1] != null) opts.envMapIntensity = _SRP[1]; }
+      // §FURNITURE_POLISH (red1 2026-10-01 "Furniture should have some polish"): furniture / furnishing elements whose material names no
+      // fabric read as a finished (lacquered / laminated) surface: roughness 0.35 instead of the class default 0.60. AUTHORED value (no
+      // source); &furnpolish=0 = off, &furnpolish=r overrides. Clinic's own names: 'Counter Top', 'Laminate - Ivory, Matte' (matte kept 0.6).
+      var _furnPolished = false;
+      if ((ifcClass === 'IfcFurniture' || ifcClass === 'IfcFurnishingElement') && !/fabric|textile|uphol|cloth|matte|carpet/i.test(matName || '')) {
+        var _fp = /[?&]furnpolish=([0-9.]+)/.exec(location.search), _fpv = _fp ? parseFloat(_fp[1]) : 0.35;
+        if (_fpv > 0) { opts.roughness = Math.max(0.05, Math.min(1, _fpv)); _furnPolished = true; }
+      }
       // §FLOOR_WASH dials (red1: "a bit of bright wash, particularly the floor"; look arms, read at load, defaults
       // unchanged): &r4rough= overrides R4's 0.35.
       if (surfRow === 'R4') { var _r4m = /[?&]r4rough=([0-9.]+)/.exec(location.search); if (_r4m) opts.roughness = Math.max(0.02, Math.min(1, parseFloat(_r4m[1]))); }
@@ -1780,6 +1793,7 @@ function setupStreaming(A) {
     // a dielectric takes the global envMapIntensity 0.6 (the 0.05 overrides exist only for high-metalness classes)
     if (_isPorc) { opts.roughness = Math.max(0.08, A.PORCELAIN_PBR.roughness); opts.metalness = A.PORCELAIN_PBR.metalness; if (opts.envMap) opts.envMapIntensity = 0.6; }
     const mat = new THREE.MeshStandardMaterial(opts);
+    if (typeof _furnPolished !== 'undefined' && _furnPolished) mat.userData.furnPolish = opts.roughness;   // §FURNITURE_POLISH
     if (_isPorc) { mat.userData._photoEnvExempt = true; mat.userData._porcelain = true; }   // Alt+S boost must not move the cited finish
     // §FLOOR_WASH: &r4envboost=0 exempts R4 floors from Alt+S's x2 env boost (roughness 0.35 <= PHOTO_GLOSSY_ROUGHNESS_MAX
     // 0.5 makes them "glossy", so their sky reflection doubles 0.3 -> 0.6 in the still), via the existing exemption flag.
@@ -1811,7 +1825,10 @@ function setupStreaming(A) {
     // than the shipped contrast (1.9 / 1.6 -> 1.2 / 1.1); every other row renders its own colour smooth.
     if (surfRow === 'R9') { triMat = null; _triSrc = 'surf:R9'; }   // majority-glass batch: never a wear texture, whatever items[0] is
     else if (surfRow) {
-      var _SR = { R1: [_TRI_METAL, 1.2], R2c: [_TRI_CONCRETE, 1.6 * 0.7], R2p: [_TRI_PLASTER, 1.5 * 0.7], R3: [_TRI_CONCRETE, 1.1] }[surfRow];
+      // §WALL_TEXTURE (red1 2026-10-01 "surfacing is bland when all greyish. Walls … should have some diff texture"): R5 (painted plaster /
+      // plasterboard walls + coverings) now carries the plaster set at the soft R2p contrast (1.05); was smooth (R1-R3 only). &r5tex=0 = smooth.
+      var _r5 = /[?&]r5tex=0/.test(location.search) ? null : [_TRI_PLASTER, 1.5 * 0.7];
+      var _SR = { R1: [_TRI_METAL, 1.2], R2c: [_TRI_CONCRETE, 1.6 * 0.7], R2p: [_TRI_PLASTER, 1.5 * 0.7], R3: [_TRI_CONCRETE, 1.1], R5: _r5 }[surfRow];
       triMat = _SR ? Object.assign({}, _SR[0], { contrastBoost: _SR[1] }) : null;
       _triSrc = 'surf:' + surfRow;
     }
