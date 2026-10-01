@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.70.1](https://github.com/red1oon/bim-ootb/compare/v1.70.0...v1.70.1) (2026-09-30)
+
+
+### 🐛 Fixes
+
+* **modeller:** one gesture = one undo — move/rotate/scale with hosted riders commit as ONE gesture (sw v67) ([#1794](https://github.com/red1oon/bim-ootb/issues/1794)) ([b0ffae5](https://github.com/red1oon/bim-ootb/commit/b0ffae52a3b17900bedb77e4be4724adf5bfba36))
+
 ## [1.70.0](https://github.com/red1oon/bim-ootb/compare/v1.69.0...v1.70.0) (2026-09-26)
 
 
