@@ -4819,6 +4819,11 @@ async function setupEffects(A, renderer, scene, camera) {
     var _slOk = !!(window.SourcedLight && window.SourcedLight.isActive && window.SourcedLight.isActive() && window.SourcedLight.filmGate);
     A._filmFieldOn = _slOk && A._filmGeomWhole !== false && !(A._filmInheritOff === true || /[?&]filminherit=0/.test(location.search));
     if (_slOk) out.sl = window.SourcedLight.filmGate(A._filmFieldOn, frameIdx);
+    // §FILM_GATE_EXPOSURE_SNAP (2026-10-01, Hospital full bake f=2352, the "flash" at 2:36.8): the gate switches the lighting model in one
+    // frame (shader reads it as on/off), the meter target moved 16.45 -> 15.64 EV and the 4-EV/s ease took 3 frames — the picture dipped to
+    // luma 87.8 and overshot to 110. On the switch frame only, exposure goes straight to its target (the first-frame rule), so brightness stays
+    // continuous across the model change. Logged; &gatesnap=0 = the eased behaviour (control).
+    if (_slOk && out.sl !== A._filmGateLastSl) { if (A._filmGateLastSl != null && !/[?&]gatesnap=0/.test(location.search)) A._filmExpSnapAt = frameIdx; A._filmGateLastSl = out.sl; }
     if (window.SkyPortal && typeof window.SkyPortal.frame === 'function') { try { out.portal = window.SkyPortal.frame(A); } catch (eP) { out.portal = 'err ' + eP.message; } }
     // §FILM_GLASS_ENV (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 4): the still's room capture (GlassFresnel.capture:
     // 6-face cube at the camera + §MIRROR_PARALLAX box) once per SHOT while the new lighting is on — on the first such frame and at every
@@ -4870,7 +4875,9 @@ async function setupEffects(A, renderer, scene, camera) {
       console.log('§FILM_EXPOSURE VACUOUS f=' + frameIdx + ' reason=no luminance read (pixels=' + (m ? m.pixels : '-') + ') exposure=' + R.toneMappingExposure.toFixed(4) + ' held');
       return null;
     }
-    var Lcd = m.L * lp, tEv = LL.ev100(Lcd), dt = 1 / (fps > 0 ? fps : 15), a = LL.adaptEv(_fe.ev, tEv, dt);
+    var _snap = (A._filmExpSnapAt === frameIdx);
+    var Lcd = m.L * lp, tEv = LL.ev100(Lcd), dt = 1 / (fps > 0 ? fps : 15), a = LL.adaptEv(_snap ? null : _fe.ev, tEv, dt);
+    if (_snap) console.log('§FILM_GATE_EXPOSURE_SNAP f=' + frameIdx + ' evWas=' + (_fe.ev != null ? _fe.ev.toFixed(3) : '-') + ' -> target ' + tEv.toFixed(3) + ' (lighting model switched this frame: exposure jumps with it, no ease)');
     var exp = LL.exposureFromEv(a.ev, lp, LL.acesDiv(R, THREE));
     _fe.ev = a.ev; _fe.n++; R.toneMappingExposure = exp;
     A._meterLast = { exposure: exp, stops: Math.log2(exp / _fe.base), ev100: a.ev, Lcd: Lcd, targetEv100: tEv, film: true };

@@ -2158,6 +2158,9 @@
     // §FRAME_QA (§ALTS_ALL G6 / §BAKE_RELEASE_GATE, bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD"): the luma of the
     // EXACT canvas about to be encoded (scene + overlays), 64x36 box-downsampled — a black / white / NaN frame is visible in the log,
     // not only by eye. Logged by the capture loop beside §FRAME_HASH (same global index). ~1 ms per frame.
+    // §FILM_BLANK_FRAME witness switch (&blankframe=F:K, test only): K captures starting at frame F come back all black, the way the
+    // 2026-10-01 out-of-memory blank did. K=1 proves the retry recovers; K>=4 proves the last-good hold.
+    if (window.__forceBlankLeft > 0) { window.__forceBlankLeft--; ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'copy'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h); ctx.restore(); }
     try { var _qc = A.__frameQaCv || (A.__frameQaCv = document.createElement('canvas')); _qc.width = 64; _qc.height = 36;
       var _qx = _qc.getContext('2d', { willReadFrequently: true }); _qx.drawImage(c, 0, 0, 64, 36); var _qd = _qx.getImageData(0, 0, 64, 36).data, _qs = 0, _qmn = 255, _qmx = 0, _qdk = 0, _qcl = 0;
       for (var _qi = 0; _qi < _qd.length; _qi += 4) { var _ql = 0.2126 * _qd[_qi] + 0.7152 * _qd[_qi + 1] + 0.0722 * _qd[_qi + 2]; _qs += _ql; if (_ql < _qmn) _qmn = _ql; if (_ql > _qmx) _qmx = _ql; if (_ql <= 15) _qdk++; if (_ql >= 250) _qcl++; }
@@ -4638,7 +4641,25 @@
             A._lpCamDirN = (A._lpCamDirN || 0) + 1; var _cdv = A.camera.getWorldDirection(new THREE.Vector3());
             if (A._lpCamDirN === 1 || A._lpCamDirN % 15 === 0) console.log('§LOADPATH_HOLD_CAMDIR n=' + A._lpCamDirN + ' i=' + i + ' pos=[' + A.camera.position.x.toFixed(2) + ',' + A.camera.position.y.toFixed(2) + ',' + A.camera.position.z.toFixed(2) + '] dir=[' + _cdv.x.toFixed(3) + ',' + _cdv.y.toFixed(3) + ',' + _cdv.z.toFixed(3) + '] yawDeg=' + (Math.atan2(_cdv.x, _cdv.z) * 180 / Math.PI).toFixed(2) + ' pitchDeg=' + (Math.asin(Math.max(-1, Math.min(1, _cdv.y))) * 180 / Math.PI).toFixed(2) + ' frameRange=' + (_frameRange ? 1 : 0));
           } catch (eCD) {} }
+          { var _bfm = /[?&]blankframe=(\d+):(\d+)/.exec(location.search); if (_bfm && (_frameRange ? _frameRange.a + i : i) === +_bfm[1]) window.__forceBlankLeft = +_bfm[2]; }
           blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
+          // §FILM_BLANK_FRAME (2026-10-01, Hospital full bake frames 2325-2341: 16 captures came back ALL ZERO — lumaMax=0.0, HUD included,
+          // one hash — while §FILM_EXPOSURE metered a normal scene; GPU out-of-memory on the shared card at that minute). The capture canvas,
+          // not the render, went blank, and the only blank guard lived in the bounce path (off by then). A real film frame always carries
+          // light or HUD, so an all-zero capture is retried after a short wait (0.5 / 2 / 5 s); if it stays blank, the LAST GOOD frame is
+          // used instead of black (a held frame reads as a stutter, black reads as a cut). Logged every time.
+          if (A._frameQa && !A._frameQa.err && +A._frameQa.max === 0) {
+            var _bfOk = false, _bfWaits = [500, 2000, 5000];
+            for (var _bt = 0; _bt < _bfWaits.length && !_bfOk; _bt++) {
+              await new Promise(function (r) { setTimeout(r, _bfWaits[_bt]); });
+              blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
+              _bfOk = !!(A._frameQa && !A._frameQa.err && +A._frameQa.max > 0);
+              console.warn('§FILM_BLANK_FRAME i=' + (_frameRange ? _frameRange.a + i : i) + ' try=' + (_bt + 1) + ' waitMs=' + _bfWaits[_bt] + ' recovered=' + _bfOk + (_bfOk ? ' lumaMean=' + (+A._frameQa.mean).toFixed(1) : ''));
+            }
+            if (!_bfOk && A._lastGoodFrameBlob) { blob = A._lastGoodFrameBlob; A._blankHeld = (A._blankHeld || 0) + 1;
+              console.warn('§FILM_BLANK_FRAME i=' + (_frameRange ? _frameRange.a + i : i) + ' STILL BLANK after 3 tries -> held the last good frame (held so far ' + A._blankHeld + ')'); }
+          }
+          if (A._frameQa && +A._frameQa.max > 0) A._lastGoodFrameBlob = blob;
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
         // ROUND 13 item C — track whichever frame lands CLOSEST to the hold's own middle
