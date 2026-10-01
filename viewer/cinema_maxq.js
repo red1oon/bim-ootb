@@ -1668,7 +1668,7 @@
       try { await window.__giCaptureFrame(ctx, w, h); }
       catch (eGI) {
         if (!A._giCaptureErrLogged) { A._giCaptureErrLogged = true;
-          console.warn('§GI_CAPTURE_ERR ' + (eGI && eGI.message) + ' — reverting to the app renderer for the rest of this bake'); }
+          console.warn('§GI_CAPTURE_ERR ' + (eGI && eGI.message) + ' at ' + String(eGI && eGI.stack || '').split('\n').slice(1, 6).map(l => l.trim()).join(' | ') + ' — reverting to the app renderer for the rest of this bake'); }
         window.__giCaptureFrame = null;
         ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
       }

@@ -71,7 +71,10 @@ run() {
     # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
     # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
     # the round, §CPE_REVEAL_LEAK silent, windows relight past topout (emissiveMats 8/8).
-    node "$ROOT/cli_silent_bake.js" \
+    # §GI_FILM_CARRY C4 (2026-10-01): hold the shared GPU lock like the stills runs (shots.sh) do. Without it the 0733 bake ran beside an
+    # Alt+S stills batch on the same 8 GB card and its bounce renderer ran out of GPU memory (VK_ERROR_OUT_OF_DEVICE_MEMORY).
+    echo "§BAKE_SCRIPT gpu.lock wait start $(date -Is)"
+    flock "${GPU_LOCK:-/tmp/claude-1000/gpu.lock}" node "$ROOT/cli_silent_bake.js" \
       --db "$DB" --out "$SCRATCH" \
       --gpu real --width "$BAKE_W" --height "$BAKE_H" --fps "$BAKE_FPS" $BAKE_EXTRA \
       --dlod-proxy --reveal \

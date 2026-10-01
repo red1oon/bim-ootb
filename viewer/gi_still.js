@@ -125,6 +125,7 @@
       for (let y = 0; y < h; y++) out.set(fb.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
       fb = out;
     }
+    if (G.filmCarry && rt === G.rt) G.fpLastRead = fingerprint(fb);   // §GI_FILM_CARRY: what the bounce target held at its last readback
     return fb;
   }
   // §GI_READBACK_CHURN (red1 2026-09-26: Alt+S "stalls and hangs the chrome browser badly"; leak audit: ~370 MB of
@@ -196,6 +197,8 @@
       let top = 0, bottom = 0;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fb[(y * W + x) * 4 + 3] > 0.5) { if (y < H / 2) top++; else bottom++; }
       const flipOut = top > bottom;
+      // §GI_FILM_CARRY C3: a floor that drew NOTHING (top=bottom=0) is no answer — measured in the 0733 bake under GPU out-of-memory.
+      if (top + bottom === 0) { console.warn('§GI_ROW_PROBE floor pixels as read: top=0 bottom=0 -> NO ANSWER (nothing was drawn; GPU errors so far=' + G.gpuErr.n + ')'); return null; }
       console.log('§GI_ROW_PROBE floor pixels as read: top=' + top + ' bottom=' + bottom + ' -> flipOut=' + flipOut + ' (a floor below the eye fills the bottom half)');
       return { flipOut: flipOut, top: top, bottom: bottom };
     } finally { prt.dispose(); pg.dispose(); }
@@ -775,8 +778,12 @@
       console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
     } else {
       await stage('checking picture orientation (once)', () => decideOrientation(G));
-      try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
-      console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
+      // §GI_FILM_CARRY C3: an orientation measured while the GPU was failing is not a fact about this platform — never cache it.
+      if (G.gpuErr.n > 0 || /probe failed/.test((G.orient && G.orient.decidedBy) || '')) console.warn('§GI_ORIENT_CACHE NOT stored: gpuErrors=' + G.gpuErr.n + ' decidedBy=' + (G.orient && G.orient.decidedBy) + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : ''));
+      else {
+        try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
+        console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
+      }
     }
     if (pipeStats) console.log('§GI_STILL pipelines sync=' + pipeStats.sync + ' syncMs=' + pipeStats.syncMs.toFixed(0) +
       ' async=' + pipeStats.async + ' shaderModules=' + pipeStats.modules + ' moduleMs=' + pipeStats.moduleMs.toFixed(0) +
@@ -1197,6 +1204,7 @@
   // window.GiFilm.arm() at film start, removed by disarm(). §GI_TAP_SYNC_GRAB: the app frame is copied at the hook's first
   // line, before any await (a WebGL canvas does not keep its pixels past the task that drew it).
   let film = null;   // { G, frames, ms, entry }
+  const GI_FILM_MAX_REBUILDS = 2;   // §GI_FILM_CARRY C2
   async function filmFrame(ctx, w, h) {
     const A = window.APP, t0 = performance.now();
     if (!film.entry || film.entry.width !== w || film.entry.height !== h) { film.entry = document.createElement('canvas'); film.entry.width = w; film.entry.height = h; }
@@ -1218,6 +1226,11 @@
         console.log('§GI_FILM_BLANK_GRAB at capture ' + (film.frames + 1) + ' try ' + (tries + 1) + ' -> re-rendered, picture now=' + !blankNow() + ' (total ' + film.blank + ')');
       }
     }
+    // §GI_FILM_CARRY witness switch &gifilmdrop=F:N — frames F..F+N-1 (1-based) drop the geometry pass the way a WebGPU error does
+    // (the existing __GI_STILL_INJECT_GEOM_DROP hook). Set BEFORE any rebuild: left on through a rebuild, the new target was never drawn
+    // and readRenderTargetPixelsAsync threw (measured, 'format' of undefined). Test only; nothing sets it in normal use.
+    { const m = /[?&]gifilmdrop=(\d+):(\d+)/.exec(location.search); if (m) { const k = film.frames + 1; window.__GI_STILL_INJECT_GEOM_DROP = k >= +m[1] && k < +m[1] + +m[2]; } }
+    if (film.off) { ctx.drawImage(film.entry, 0, 0, w, h); film.frames++; return; }   // §GI_FILM_CARRY C2: bounce switched off for the rest of the film
     A._sceneBorrowed = true;
     try {
       if (!film.G || film.G.w !== w || film.G.h !== h) {
@@ -1228,6 +1241,7 @@
         console.log('§GI_FILM built ' + w + 'x' + h + ' ms=' + film.buildMs + ' (once per film)');
       }
       const G = film.G;
+      G.filmCarry = true;   // §GI_FILM_CARRY: from here (incl. the orientation passes) readRT remembers the target's last fingerprint
       G.setMode('composite', encodeMode());
       G.gainU.value = readGain(); G.aoU.value = readAo(true); G.albU.value = 0; G.boundU.value = 0;   // FIX 13: films unbounded until Z13   // §ZERO Z11: films unchanged (0.55, estimate receiver)
       G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
@@ -1237,8 +1251,50 @@
       G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
       G.colorCtx.clearRect(0, 0, w, h); G.colorCtx.drawImage(film.entry, 0, 0, w, h); G.colorTex.needsUpdate = true;
       if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
+      const fpBefore = G.fpLastRead || null;   // the last readback of this target (a previous frame, or the orientation passes after a build)
       await renderGeom(G);
       const f = await readRT(G);
+      // §GI_FILM_CARRY (2026-10-01, ALTC_FOUNDATION §RESUME 08:30 item 1, the 0733 "bottom 43% frozen from frame 1"): the still's
+      // §GI_CARRY ported to films. build() replaces renderer.onError, so three.js's own "Uncaptured WebGPU" line never reaches the
+      // log — a dropped geometry pass was silent here. Per frame: WebGPU errors since the last frame, and this pass's fingerprint
+      // against the last one (equal = nothing was drawn, the target still holds an old pass = STALE). Logged on the first 3 frames,
+      // on every frame with errors, and whenever STALE starts/stops. Frame 1 also prints the census of what reaches the pass.
+      {
+        const fp = G.fpLastRead, errN = G.gpuErr.n - (film.errAt == null ? 0 : film.errAt);
+        const stale = !!(fpBefore && fpBefore.hash === fp.hash && fp.clearPct < 99.9);   // all-clear twice (nothing to draw, e.g. sky only) is not stale — same rule as the still's §GI_CARRY
+        film.errAt = G.gpuErr.n;
+        film.staleN = (film.staleN || 0) + (stale ? 1 : 0); film.errFrames = (film.errFrames || 0) + (errN > 0 ? 1 : 0);
+        if (film.frames === 0) {
+          const c = { mesh: 0, inst: 0, batched: 0, sprite: 0, points: 0, line: 0, rawGlsl: 0, lights: 0, other: 0 };
+          A.scene.traverseVisible(o => {
+            if (o.isLight) c.lights++;
+            else if (o.isSprite) c.sprite++; else if (o.isPoints) c.points++; else if (o.isLine) c.line++;
+            else if (o.isBatchedMesh) c.batched++; else if (o.isInstancedMesh) c.inst++;
+            else if (o.isMesh) { if (o.material && o.material.isShaderMaterial && !o.material.isNodeMaterial) c.rawGlsl++; else c.mesh++; }
+            else if (o.material) c.other++;
+          });
+          console.log('§GI_FILM_CENSUS visible ' + JSON.stringify(c) + ' interiorLightsOff=' + !!A._interiorLightsOff + ' gpuErrorsAtBuild=' + G.gpuErr.n + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : ''));
+        }
+        if (film.frames < 3 || errN > 0 || stale !== !!film.staleLast) {
+          const line = '§GI_FILM_CARRY f=' + (film.frames + 1) + ' verdict=' + (errN > 0 ? 'FAIL' : stale ? 'STALE' : (fpBefore ? 'OK' : 'INCONCLUSIVE')) +
+            ' fp=' + fp.hash + ' maskClear=' + fp.clearPct + '% gpuErrors=' + errN + (errN > 0 && G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : '') +
+            ' staleFrames=' + film.staleN + ' errFrames=' + film.errFrames + ' lost=' + !!G.renderer._isDeviceLost;
+          if (errN > 0 || stale) console.warn(line); else console.log(line);
+        }
+        film.staleLast = stale;
+        // C2 self-heal: never composite a pass that errored or did not draw. This frame is the app's own; the renderer is disposed and
+        // rebuilt on the next frame (orientation re-measured); after GI_FILM_MAX_REBUILDS the bounce is off for the rest of the film.
+        if (errN > 0 || stale) {
+          ctx.drawImage(film.entry, 0, 0, w, h);
+          film.frames++; film.ms += performance.now() - t0;
+          try { G.rt.dispose(); G.renderer.dispose(); } catch (e) {}
+          film.G = null; film.oriented = false; film.errAt = null; film.staleLast = false;
+          film.rebuilds = (film.rebuilds || 0) + 1;
+          if (film.rebuilds > GI_FILM_MAX_REBUILDS) { film.off = true; console.warn('§GI_FILM_OFF reason=gpu-failures at f=' + film.frames + ' rebuilds=' + (film.rebuilds - 1) + ' — the rest of the film bakes without the bounce'); }
+          else console.warn('§GI_FILM_REBUILD f=' + film.frames + ' #' + film.rebuilds + ' of ' + GI_FILM_MAX_REBUILDS + ' — this frame without the bounce, renderer rebuilt on the next frame');
+          return;
+        }
+      }
       const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
       const d = img.data, fo = G.flipOut;
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -1276,7 +1332,7 @@
     },
     disarm: function () {
       if (window.__giCaptureFrame === filmFrame) window.__giCaptureFrame = null;
-      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0) + ' blankGrabsRecovered=' + (film.blank || 0));
+      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0) + ' blankGrabsRecovered=' + (film.blank || 0) + ' staleFrames=' + (film.staleN || 0) + ' errFrames=' + (film.errFrames || 0) + ' rebuilds=' + (film.rebuilds || 0) + ' off=' + !!film.off + ' gpuErrors=' + (film.G ? film.G.gpuErr.n : 0) + (film.G && film.G.gpuErr.first ? ' first="' + film.G.gpuErr.first + '"' : ''));
         if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
     }
   };
