@@ -16,7 +16,9 @@
 // AUDIO (§19, M2) — not built yet (needs the α table vendored + the §N reference-room witness first).
 (function () {
   'use strict';
-  var A = (typeof window !== 'undefined') ? (window.APP = window.APP || {}) : {};
+  // main.js:10 REPLACES window.APP with a fresh object after this file loads (measured: the first freeze bake logged no §FREEZE_PERF line
+  // at all), so functions are parked on a holder here and moved onto the real APP by setupCpeFreezePerf(APP), the main.js setup idiom.
+  var A = {};
   var CAM = { name: 'Paxton10 Mini Bullet', hDeg: 103, vDeg: 55, px: 2560, src: 'IFC/LOD/CCTV_Paxton10MiniBulletCamera_CORE.ifc LensAngleOfView' };
   var DORI = [['I', 250], ['R', 125], ['O', 62.5], ['D', 25]];   // IEC 62676-4:2014 px/m
   var MOUNT_INSET_M = 0.1;    // ~design parameter: camera 0.1 m in from both walls and below the ceiling (logged, not a standard)
@@ -165,5 +167,11 @@
 
   // test seam for the node witness (no DOM)
   A._freezePerfInternals = { coverage: coverage, judgeRoom: judgeRoom, doriRangeM: doriRangeM, CAM: CAM, DORI: DORI };
-  if (typeof module !== 'undefined' && module.exports) module.exports = A._freezePerfInternals;
+  var setup = function (app) {
+    ['freezePerfBuild', 'freezePerfCompositeOntoCanvas', '_freezePerfInternals'].forEach(function (k) { app[k] = A[k]; });
+    A = app;   // every closure above reads A — from here it is the live APP (A._freezePerfOn, A._freezeBand, A.dbQuery ...)
+    console.log('§FREEZE_PERF_INIT wired (visual built; audio not built) — draws only inside the load-path freeze');
+  };
+  if (typeof window !== 'undefined') window.setupCpeFreezePerf = setup;
+  if (typeof module !== 'undefined' && module.exports) { module.exports = A._freezePerfInternals; module.exports.build = function (q) { return A.freezePerfBuild(q); }; }
 })();

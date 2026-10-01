@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1536';
+const CACHE_VERSION = 'v1537';
+// v1537 (2026-10-01) §FREEZE_PERF_PANEL wired through setupCpeFreezePerf(APP) (main.js replaced window.APP — the panel never reached the film). main 54, cpe_freeze_perf 3.
 // v1536 (2026-10-01) §FREEZE_BANDS: freeze panels get group-colour header bands + accent stripe (Structure blue, Security teal, Comfort violet; &lpbands=0 = old). cpe_load_path 9, cpe_freeze_perf 2.
 // v1535 (2026-10-01) §FREEZE_PERF_PANEL: new viewer/cpe_freeze_perf.js — Visual (CCTV coverage, best room) panel in the load-path freeze; Alt+C 'Visual' checkbox / --visual-panel. cpe_load_path 8, cpe_freeze_perf 1.
 // v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
