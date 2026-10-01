@@ -351,7 +351,7 @@
 
     // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
     // Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE.
-    async commit(gridId, delta) {
+    async commit(gridId, delta, extra) {
       const preview = this.previewCommands(gridId, delta);
       let commands = preview.commands, riders = preview.riders;
       // §DAGEVU: an honest refusal is a hard stop, never a fabricated resolution — nothing is committed. The thrown
@@ -381,17 +381,20 @@
       // §CUT-RESIZE: when any factor ≠ 1, one GEOM_CUT_RESIZE row rides the SAME gesture too (SPEC_GEOM_CUT_RESIZE.md §3).
       const cutRiders = preview.cutRiders || [];
       const resizeRiders = cutRiders.filter(c => c.fx !== 1 || c.fy !== 1 || c.fz !== 1);
-      if ((riders.length || cutRiders.length) && window.Bonsai.oplog.commitGesture) {
+      // §GRID-SPAN-GATE: extra.ops = the "Add one more" GEOM_INSERT rows — they join THIS gesture (one Ctrl+Z).
+      const extraOps = (extra && extra.ops) || [];
+      if ((riders.length || cutRiders.length || extraOps.length) && window.Bonsai.oplog.commitGesture) {
         const ops = [{ op_type: 'GEOM_GRID_MOVE', params: { gridId, delta, commands } }]
           .concat(riders.map(r => ({ op_type: 'GEOM_MOVE',
             params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })))
           .concat(cutRiders.map(c => ({ op_type: 'GEOM_CUT_MOVE',
             params: { cutId: c.cutId, parent: c.parent, dx: c.dx, dy: c.dy, dz: c.dz, induced: 'anchor-hold' } })))
           .concat(resizeRiders.map(c => ({ op_type: 'GEOM_CUT_RESIZE',
-            params: { cutId: c.cutId, parent: c.parent, fx: c.fx, fy: c.fy, fz: c.fz, induced: 'anchor-hold' } })));
+            params: { cutId: c.cutId, parent: c.parent, fx: c.fx, fy: c.fy, fz: c.fz, induced: 'anchor-hold' } })))
+          .concat(extraOps);
         const gres = await window.Bonsai.oplog.commitGesture(ops);
         console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
-          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' cutRiders=' + cutRiders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
+          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' cutRiders=' + cutRiders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount + (extraOps.length ? ' §GRID-SPAN extraOps=' + extraOps.length : ''));
         riders.forEach(r => console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
           ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' (in gesture group)'));
         cutRiders.forEach(c => console.log(TAG + ' §CUT-MOVE anchor-hold cut=#' + c.cutId + ' (wall #' + c.parent + ', under held opening #' + c.fillingFid + ') authored shift dx=' + c.dx.toFixed(3) +

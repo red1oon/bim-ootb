@@ -143,7 +143,7 @@
       var rr = base.walked.map(function (w) { return w.residual; });
       var colRMS = Math.sqrt(rr.reduce(function (s, r) { return s + r * r; }, 0) / (rr.length || 1));
       var cx0 = 0, cy0 = 0; cols.forEach(function (c) { cx0 += c.x; cy0 += c.y; }); cx0 /= cols.length; cy0 /= cols.length;
-      _state = { base: base, columnCount: cols.length, system: 'column-framed',
+      _state = { base: base, base0: base, columnCount: cols.length, system: 'column-framed',   // base0 = the PRISTINE walk (§GRID-SPAN-GATE folds the op-log onto it; `base` is imperative and not undone)
                  colBbox: colBbox, section: section, colDz: colDz,
                  centres: { mesh: _lastCentres.real, anchor: _lastCentres.anchor }, colRMS: colRMS,
                  centroid: { x: cx0, y: cy0 }, rotation: base.grid.rotation || null };   // §ROW7-ROT
@@ -345,7 +345,26 @@
              elements: elements, lowConfidence: lowConf, lowConfThreshold: STRWALK_LOW_CONF };
   }
 
-  var api = { swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbReplay: swbReplay, swbRenderOps: swbRenderOps, swbCanopyOps: swbCanopyOps, swbTabData: swbTabData };
+  // §GRID-SPAN-GATE (MODELLER_MASTER §GRID-SPAN-GATE SPEC 2026-10-02): what the span gate may read from the walker. Pure reads.
+  function swbGateInfo() {
+    if (!_state) return null;
+    return { system: _state.system, base0: _state.base0 || null, section: _state.section || null, colBbox: _state.colBbox || {},
+             theta: _theta(), centroid: _state.centroid || { x: 0, y: 0 }, colDz: _state.colDz || 0 };
+  }
+  // The WORLD-axis authoring grid that is exactly the walker's measured lattice lines: line k is placed so that
+  // _frameDatum() (the existing authoring-grid -> lattice projection through the column centroid) returns the
+  // lattice line value exactly. ONLY for a column-framed walk (a wall-bearing semi-grid is not column-derived).
+  function swbGridSpec() {
+    if (!_state || _state.system !== 'column-framed' || !_state.base0) return null;
+    var g = _state.base0.grid, t = _theta(), c = Math.cos(t), s = Math.sin(t), c0 = _state.centroid || { x: 0, y: 0 };
+    var xs = g.xLines.map(function (u) { return (u - c0.y * s) / c; });
+    var ys = g.yLines.map(function (v) { return (v + c0.x * s) / c; });
+    function lab(n, alpha) { var o = []; for (var i = 0; i < n; i++) o.push(alpha ? (i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(65 + Math.floor(i / 26) - 1) + String.fromCharCode(65 + (i % 26))) : String(i + 1)); return o; }
+    var z = Infinity; _state.base0.walked.forEach(function (w) { var bb = _state.colBbox[w.srcGuid]; var f = w.z - (bb ? bb.bz / 2 : 0); if (f < z) z = f; });   // the columns' foot (measured)
+    return { xs: xs, ys: ys, xlabels: lab(xs.length, true), ylabels: lab(ys.length, false), columnDerived: true, z: isFinite(z) ? z : 0 };
+  }
+
+  var api = { swbGateInfo: swbGateInfo, swbGridSpec: swbGridSpec, swbInit: swbInit, swbOnGridMove: swbOnGridMove, swbReplay: swbReplay, swbRenderOps: swbRenderOps, swbCanopyOps: swbCanopyOps, swbTabData: swbTabData };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') Object.keys(api).forEach(function (k) { window[k] = api[k]; });
 })();

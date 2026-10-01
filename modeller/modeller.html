@@ -242,10 +242,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="bonsai_ifc.js?v=3" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
-<script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
-<script src="bonsai_gridmove.js?v=3" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
+<script src="bonsai_gridmove.js?v=4" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
 <script src="bonsai_outliner.js?v=15" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
@@ -275,9 +275,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=8" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="str_walker_bridge.js?v=9" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="grid_span_gate.js?v=1" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
 <script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
-<script src="str_walker_outliner.js?v=22" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_outliner.js?v=23" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
 <script src="bonsai_library.js?v=23" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
@@ -1933,8 +1934,9 @@ function nearestGridline(x, y) {
 function gmPreviewLine(axis, coord) {
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
   const G = window.Bonsai.grid;
-  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], 0.03), new THREE.Vector3(coord, G.ys[G.ys.length - 1], 0.03)]
-                         : [new THREE.Vector3(G.xs[0], coord, 0.03), new THREE.Vector3(G.xs[G.xs.length - 1], coord, 0.03)];
+  const gz = (G.z || 0) + 0.03;   // §GRID-SPAN-GATE: a column-derived grid sits at the columns' foot, not z=0
+  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], gz), new THREE.Vector3(coord, G.ys[G.ys.length - 1], gz)]
+                         : [new THREE.Vector3(G.xs[0], coord, gz), new THREE.Vector3(G.xs[G.xs.length - 1], coord, gz)];
   gmPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: 0xffd24f }));
   scene.add(gmPreview);
 }
@@ -1989,8 +1991,175 @@ function gmTint(commands, riders, excludedFids, dagevu) {
   if (window.A && A.requestRender) A.requestRender();
   return { t, s, x, h, r };
 }
+// ═══ §GRID-SPAN-GATE (MODELLER_MASTER §GRID-SPAN-GATE SPEC 2026-10-02, row 38) ═══════════════════════════════════
+// While a gridline of a COLUMN-FRAMED building is dragged, every bay the drag widens/narrows is coloured
+// GREEN/ORANGE/RED by the EXISTING span rule (str_walker.js SW_SPAN_RULES via GridSpanGate.check — no new thresholds).
+// ORANGE hover = required preliminary depth; RED hover = the limit + "Add one more?". Release on RED opens the prompt:
+// Add one more = ONE gesture (drag + a column line at the bay midpoint, real column copies), Cancel = stop at the limit.
+const GSG_HEX = { GREEN: 0x1ea83c, ORANGE: 0xe08a00, RED: 0xd21e1e };
+let _gsg = null, _gsgStrips = null, _gsgTip = null, _gsgPrompt = null, _gsgLastSig = null;
+window.Bonsai.gridspan = { last: null, hover: null, prompt: null, refused: null, session: null };
+function gsgTipEl() {
+  if (_gsgTip) return _gsgTip;
+  const d = document.createElement('div'); d.id = 'gsg-tip';
+  d.style.cssText = 'position:fixed;z-index:60;max-width:320px;padding:8px 10px;border-radius:6px;font:12px/1.35 system-ui,sans-serif;color:#fff;display:none;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  document.body.appendChild(d); _gsgTip = d; return d;
+}
+function gsgClear() {
+  if (_gsgStrips) { scene.remove(_gsgStrips); _gsgStrips.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _gsgStrips = null; }
+  if (_gsgTip) { _gsgTip.style.display = 'none'; _gsgTip.innerHTML = ''; }
+  _gsgPrompt = null; _gsgLastSig = null;
+  const B = window.Bonsai.gridspan; B.last = null; B.hover = null; B.prompt = null;
+  if (window.A && A.requestRender) A.requestRender();
+}
+// One walker-identity -> one material read (names are the building's own data; unreadable => REFUSED, never guessed).
+function gsgMaterial() {
+  const key = window.__dwName || ''; if (_gsgMatCache && _gsgMatCache.key === key) return _gsgMatCache.v;
+  let v = null;
+  try { const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)); v = window.GridSpanGate.readMaterial(db); db.close(); }
+  catch (e) { v = { material: null, error: String(e && e.message || e) }; }
+  _gsgMatCache = { key, v };
+  console.log('§GRID-SPAN material=' + (v.material || 'unknown') + (v.material ? '' : ' refused') + ' beams rc=' + (v.beams ? v.beams.rc : '?') + ' steel=' + (v.beams ? v.beams.steel : '?') + ' unnamed=' + (v.beams ? v.beams.none : '?') + ' of ' + (v.beams ? v.beams.n : '?') + ' IfcBeam rows (all STR rows rc=' + v.rc + ' steel=' + v.steel + ' unnamed=' + v.none + ' of ' + v.n + ') mixed=' + v.mixed + ' · source ' + v.source);
+  return v;
+}
+let _gsgMatCache = null;
+function gsgBegin(gl) {
+  _gsg = null; gsgClear();
+  const GS = window.GridSpanGate; if (!GS || !window.swbGateInfo) return;
+  const info = window.swbGateInfo();
+  if (!info || info.system !== 'column-framed' || !info.base0) { console.log('§GRID-SPAN system=' + (info ? info.system : 'none') + ' skip — a wall-bearing grid has no beam span rule'); return; }
+  if (!window.Bonsai.grid._columnDerived) { console.log('§GRID-SPAN grid=authored skip — the span gate judges a COLUMN-derived grid only'); return; }
+  const m = window.Bonsai.gridmove._map && window.Bonsai.gridmove._map[gl.id]; if (!m) return;
+  const mi = gsgMaterial();
+  if (!mi.material) { window.Bonsai.gridspan.refused = 'material-unknown'; console.log('§GRID-SPAN material=unknown refused — no colour, no guess'); setStat('span gate: material unreadable from the building\'s own names — not coloured'); return; }
+  if (!GS.ruleFor(mi.material)) { window.Bonsai.gridspan.refused = 'rule-lookup'; console.log('§GRID-SPAN rule lookup FAILED for ' + mi.material + ' — refused, no colour'); return; }
+  window.Bonsai.gridspan.refused = null;
+  _gsg = { info, mat: mi.material, depth: info.section ? info.section.depth : null, axis: m.axis, index: m.index, gridId: gl.id, last: null };
+  window.Bonsai.gridspan.session = { gridId: gl.id, axis: m.axis, index: m.index, material: mi.material, depth: _gsg.depth };
+  console.log('§GRID-SPAN begin grid=' + gl.id + ' material=' + mi.material + ' measuredBeamDepth=' + (_gsg.depth != null ? _gsg.depth.toFixed(3) + 'm' : 'none') + ' rule=' + GS.ruleFor(mi.material).source.slice(0, 40));
+}
+function gsgPaint(pv) {
+  if (_gsgStrips) { scene.remove(_gsgStrips); _gsgStrips.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _gsgStrips = null; }
+  const g = new THREE.Group(); g.name = 'GridSpanBays'; const th = _gsg.info.theta || 0;
+  const ext = Math.max(Math.abs(pv.lines.x[pv.lines.x.length - 1] - pv.lines.x[0]), Math.abs(pv.lines.y[pv.lines.y.length - 1] - pv.lines.y[0]));
+  const w = Math.max(1.0, ext * 0.016);
+  pv.pieces.forEach(pc => {
+    const len = pc.u1 - pc.u0, uc = (pc.u0 + pc.u1) / 2;
+    const lat = pc.spanAxis === 'x' ? [uc, pc.onPos] : [pc.onPos, uc];
+    const wc = window.swToWorld(lat[0], lat[1], th);
+    const geo = pc.spanAxis === 'x' ? new THREE.BoxGeometry(len, w, 0.04) : new THREE.BoxGeometry(w, len, 0.04);
+    const mat = new THREE.MeshBasicMaterial({ color: GSG_HEX[pc.signal], transparent: true, opacity: 0.85, depthTest: false });
+    const mesh = new THREE.Mesh(geo, mat); mesh.position.set(wc[0], wc[1], (window.Bonsai.grid.z || 0) + 0.06); mesh.rotation.z = th; mesh.renderOrder = 999;
+    mesh.userData = { gsg: true, signal: pc.signal, guid: pc.guid };
+    g.add(mesh);
+  });
+  scene.add(g); _gsgStrips = g;
+}
+function gsgShowTip(text, signal, cx, cy, buttons) {
+  const t = gsgTipEl(); t.style.background = signal === 'RED' ? '#b01818' : signal === 'ORANGE' ? '#b36b00' : '#14702a';
+  t.innerHTML = '<div id="gsg-text"></div>' + (buttons ? '<div style="margin-top:6px;display:flex;gap:8px"><button id="gsg-add" style="cursor:pointer;padding:4px 10px;border:0;border-radius:4px;background:#fff;color:#111;font-weight:600">Add one more</button><button id="gsg-cancel" style="cursor:pointer;padding:4px 10px;border:1px solid #fff;border-radius:4px;background:transparent;color:#fff">Cancel</button></div>' : '');
+  t.querySelector('#gsg-text').textContent = text;
+  t.style.pointerEvents = buttons ? 'auto' : 'none';
+  t.style.left = Math.min(window.innerWidth - 340, cx + 18) + 'px'; t.style.top = Math.min(window.innerHeight - 90, cy + 18) + 'px'; t.style.display = 'block';
+}
+function gsgUpdate(dg, hit, ev) {
+  if (!_gsg || _gsgPrompt) return;
+  const GS = window.GridSpanGate, O = window.Bonsai.oplog;
+  const pv = GS.preview(_gsg.info, O._geomOps(), O.cursor, _gsg.axis, _gsg.index, dg.delta, _gsg.mat, _gsg.depth);
+  _gsg.last = pv; window.Bonsai.gridspan.last = pv;
+  gsgPaint(pv);
+  const w = pv.worst;
+  if (!w) { if (_gsgTip) _gsgTip.style.display = 'none'; return; }
+  if (_gsgLastSig !== w.signal) { _gsgLastSig = w.signal; console.log('§GRID-SPAN step grid=' + _gsg.gridId + ' Δ=' + dg.delta.toFixed(3) + ' worst=' + w.signal + ' span=' + w.span.toFixed(3) + ' bays=' + pv.bays.length + ' pieces=' + pv.pieces.length + ' material=' + _gsg.mat); }
+  // HOVER: the pointer's coordinate along the drag axis (lattice frame) inside a non-green bay (±1 m: the grab is within snap tolerance of the line).
+  const p = window.swToFrame(hit.x, hit.y, _gsg.info.theta || 0), ha = _gsg.axis === 'x' ? p[0] : p[1];
+  let hov = null;
+  pv.bays.forEach(b => { if (b.signal === 'GREEN') return; const u0 = Math.min.apply(null, b.pieces.map(q => q.u0)), u1 = Math.max.apply(null, b.pieces.map(q => q.u1));
+    if (ha >= u0 - 1 && ha <= u1 + 1 && (!hov || GS.RANK[b.signal] > GS.RANK[hov.signal] || (GS.RANK[b.signal] === GS.RANK[hov.signal] && b.span > hov.span))) hov = b; });
+  if (!hov) { if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.hover = null; return; }
+  const pc = hov.pieces.reduce((a, q) => (RANKS(q) > RANKS(a) ? q : a), hov.pieces[0]);
+  window.Bonsai.gridspan.hover = { signal: hov.signal, text: pc.message, span: hov.span, requiredDepth: pc.requiredDepth, maxSpan: pc.maxSpan, material: _gsg.mat, a: hov.a, b: hov.b };
+  gsgShowTip(pc.message, hov.signal, ev.clientX, ev.clientY, false);
+}
+function RANKS(q) { return window.GridSpanGate.RANK[q.signal]; }
+// Release on RED: do NOT commit — open the prompt. Returns true when it took the release.
+function gsgIntercept(ev) {
+  if (!_gsg || !_gsg.last || !_gsg.last.worst || _gsg.last.worst.signal !== 'RED' || !_dragGrid) return false;
+  const GS = window.GridSpanGate, O = window.Bonsai.oplog, pv = _gsg.last, bay = pv.worst;
+  const clamp = GS.clampDelta(_gsg.info, O._geomOps(), O.cursor, _gsg.axis, _gsg.index, _dragGrid.delta, _gsg.mat, _gsg.depth);
+  _gsgPrompt = { gridId: _dragGrid.id, delta: _dragGrid.delta, pv, bay, clamp };
+  const msg = bay.pieces[0].message;
+  gsgShowTip(msg, 'RED', ev.clientX, ev.clientY, true);
+  window.Bonsai.gridspan.prompt = { open: true, gridId: _dragGrid.id, delta: _dragGrid.delta, clamp, bay: { a: bay.a, b: bay.b, n: bay.n, span: bay.span }, text: msg };
+  console.log('§GRID-SPAN prompt RED span=' + bay.span.toFixed(3) + ' limit=' + bay.pieces[0].maxSpan + ' ' + _gsg.mat + ' Δ=' + _dragGrid.delta.toFixed(3) + ' clampΔ=' + clamp.toFixed(3) + ' — Add one more / Cancel');
+  document.getElementById('gsg-add').onclick = () => gsgAddOne();
+  document.getElementById('gsg-cancel').onclick = () => gsgCancel();
+  setStat('span over the limit — Add one more? / Cancel (stops the drag at the limit)');
+  return true;
+}
+function gsgCancel() {
+  if (!_gsgPrompt) return;
+  const p = _gsgPrompt; _gsgPrompt = null; if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.prompt = null;
+  console.log('§GRID-SPAN cancel — drag stopped at the limit: Δ ' + p.delta.toFixed(3) + ' → ' + p.clamp.toFixed(3));
+  if (_dragGrid) { _dragGrid.delta = p.clamp; }
+  commitGridMove();
+}
+// The columns of "Add one more": one per girder of the bay, COPIES of the girder's FROM column (its own real mesh hash).
+function gsgBuildAdd(p) {
+  const GS = window.GridSpanGate, G = window.Bonsai.grid, O = window.Bonsai.oplog, info = _gsg.info, bay = p.bay, axis = _gsg.axis, th = info.theta || 0;
+  const lines = p.pv.lines[axis], posArr = (axis === 'x' ? G.xs : G.ys).slice(); posArr[_gsg.index] += p.delta;
+  const uMid = (lines[bay.a] + lines[bay.b]) / 2, posMid = (posArr[bay.a] + posArr[bay.b]) / 2;
+  let index = bay.b; for (let k = bay.a + 1; k <= bay.b; k++) { if (lines[k] > uMid) { index = k; break; } }
+  const id = 'ss-' + axis + bay.a + '-' + bay.b + '-' + O.length;
+  const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)), geo = window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+  const refuse = (why) => { try { db.close(); } catch (e) { } try { if (geo) geo.close(); } catch (e) { } return { refused: why }; };
+  if (!geo) return refuse('no geometry database is loaded for this building — a real column mesh cannot be resolved');
+  const gi = window.RealGeometry.buildGeometryIndex(db, geo), ops = [], regs = {}, copies = [];
+  for (const pc of bay.pieces) {
+    const src = pc.srcFrom; const hash = src ? gi.byGuid[src] : null;
+    if (!hash) return refuse('girder ' + pc.guid + ': its column has no geometry hash — no real column mesh to copy');
+    const got = regs[hash] || window.RealGeometry.resolveHashes(geo, [hash])[hash];
+    if (!got) return refuse('column hash ' + hash + ' does not resolve to a real mesh in the geometry database');
+    regs[hash] = got;
+    const wk = info.base0.walked.find(w => w.srcGuid === src), bb = info.colBbox[src];
+    if (!wk || !bb) return refuse('source column ' + src + ' is not in the walked frame');
+    const lat = pc.spanAxis === 'x' ? [uMid, pc.onPos] : [pc.onPos, uMid], wc = window.swToWorld(lat[0], lat[1], th);
+    let color = 0xbfbfbf; try { const r = db.exec("SELECT material_rgba FROM elements_meta WHERE guid='" + String(src).replace(/'/g, "''") + "'"); const c = r.length && String(r[0].values[0][0] || '').split(',').map(Number); if (c && c.length >= 3) color = (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255); } catch (e) { }
+    ops.push({ op_type: 'GEOM_INSERT', params: {
+      bbox: [-bb.bx / 2, bb.bx / 2, -bb.by / 2, bb.by / 2, -bb.bz / 2, bb.bz / 2], realGeomHash: hash,
+      placement: { x: +wc[0].toFixed(4), y: +wc[1].toFixed(4), z: +(wk.z - bb.bz / 2).toFixed(4), rot: +(th * 180 / Math.PI).toFixed(4) },
+      lod: '200', color, ifc_class: 'IfcColumn', provenance: 'derived:user-edit',
+      spanSplit: { id, axis, index, pos: posMid, u: uMid, girder: pc.guid, srcGuid: src },
+      _gsg: { srcGuid: src, hash, girder: pc.guid } } });
+    copies.push({ girder: pc.guid, srcGuid: src, hash });
+  }
+  try { db.close(); } catch (e) { } try { geo.close(); } catch (e) { }
+  window.Bonsai.library.registerRealGeometry(Object.keys(regs).map(h => ({ hash: h, v: regs[h].positions, f: regs[h].faces, bbox: regs[h].bbox, anchorOffset: [0, 0, 0] })));
+  return { ops, id, index, uMid, posMid, copies };
+}
+async function gsgAddOne() {
+  if (!_gsgPrompt) return;
+  const p = _gsgPrompt, built = gsgBuildAdd(p);
+  if (built.refused) {
+    console.log('§GRID-SPAN add refused: ' + built.refused); window.Bonsai.gridspan.refused = 'add:' + built.refused;
+    gsgShowTip('Cannot add a column here: ' + built.refused, 'RED', parseInt(_gsgTip.style.left, 10) || 0, parseInt(_gsgTip.style.top, 10) || 0, true); return;
+  }
+  console.log('§GRID-SPAN add one more: ' + built.ops.length + ' column(s) at ' + _gsg.axis + '-line index ' + built.index + ' (bay midpoint u=' + built.uMid.toFixed(3) + ') copies=' + built.copies.map(c => c.hash).filter((h, i, a) => a.indexOf(h) === i).join(',') + ' — ONE gesture with the drag');
+  window.Bonsai.gridspan.lastAdd = { id: built.id, n: built.ops.length, index: built.index, uMid: built.uMid, copies: built.copies, gridId: p.gridId, delta: p.delta };
+  _gsgPrompt = null; if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.prompt = null;
+  _dragGrid.delta = p.delta;
+  await commitGridMove({ ops: built.ops });
+}
 function enterGridMove() {
+  // §GRID-SPAN-GATE: measured on a real Open (HospitalGarage) the authoring grid was still the default A–D×1–3 while the walker
+  // had measured a 17×29 column lattice. When the walker is column-framed and the grid is the UNTOUCHED default, lay the building's
+  // own lattice lines as the grid (a user/witness-authored grid is never replaced).
+  if (window.Bonsai.grid._isDefault && window.swbGridSpec) {
+    const spec = window.swbGridSpec();
+    if (spec) { window.Bonsai.grid.define(spec); console.log('§GRID-SPAN grid=column-derived xs=' + spec.xs.length + ' ys=' + spec.ys.length + ' (the walker\'s measured lattice; was the default A–D×1–3)'); }
+  }
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
+  GROUND.constant = -(window.Bonsai.grid.z || 0);   // §GRID-SPAN-GATE: the drag plane IS the grid's plane (0 for every authored grid — unchanged)
   gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false; applyModeCursor();   // grab gridlines, not the camera
   // §GREEN-EXCLUDE: fresh empty opt-out set every session — seeded empty, scoped to THIS drag session only (not
   // persisted, not a per-user default — GRID_PREDRAG_GREENORANGE_PREVIEW.md explicitly defers that).
@@ -1998,6 +2167,7 @@ function enterGridMove() {
   setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch, ctrl+click wall=opt-out green, ctrl+click opening=anchor↔ride)');
 }
 function exitGridMove() {
+  GROUND.constant = 0;
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();   // §GREEN-EXCLUDE: end of session
@@ -2006,6 +2176,7 @@ function exitGridMove() {
   // rebuilds fresh off whatever the scene looks like now.
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.endDragSession) window.Bonsai.gridmove.endDragSession();
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
+  gsgClear(); _gsg = null;                                      // §GRID-SPAN-GATE: bay strips + tooltip + prompt
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
 canvas.addEventListener('pointerdown', (e) => {
@@ -2052,10 +2223,12 @@ canvas.addEventListener('pointerdown', (e) => {
     // §SCALE_CHECK_FIX (Finding 1): gridline-grab = the drag session boundary — cache the attach-map engine +
     // mesh/box maps ONCE here so every pointermove frame below reuses them instead of rebuilding from scratch.
     if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession(gl.axis, orthoAt);
+    try { gsgBegin(gl); } catch (err) { console.error('§GRID-SPAN begin failed ' + (err && err.message)); }   // §GRID-SPAN-GATE
   }
 });
 canvas.addEventListener('pointermove', (e) => {
   if (!gridMoving) return;
+  if (_gsgPrompt) return;   // §GRID-SPAN-GATE: the Add-one-more / Cancel prompt owns the drag until answered
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -2079,6 +2252,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (preview.dimLabel) lbl += ' · ' + preview.dimLabel;   // §DAGEVU: the engine's measured readout (wall w→w', held/ride/REFUSED) — the SAME string the status line carries
   } catch (err) { }
   if (typeof dimLabelShow === 'function') dimLabelShow(lbl, hit);   // §V7
+  try { gsgUpdate(_dragGrid, hit, e); } catch (err) { console.error('§GRID-SPAN update failed ' + (err && err.stack || err)); }   // §GRID-SPAN-GATE
 });
 // §DAGEVU: ONE status-line composer for the pointermove frame AND the mid-drag ctrl+click recompute (both print
 // the engine's dimLabel verbatim — never a second math path, per §V7's own rule).
@@ -2087,14 +2261,14 @@ function gmStatText(dg, r2, preview) {
     (r2.x ? ', ' + r2.x + ' excluded(green)' : '') + (r2.h ? ', ' + r2.h + ' held' : '') +
     (r2.r ? ', ' + r2.r + ' REFUSED(red)' : '') + (preview.dimLabel ? ' · ' + preview.dimLabel : '');
 }
-async function commitGridMove() {
+async function commitGridMove(extra) {
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7 (also covers the FAIL path below)
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
   const { id, delta } = _dragGrid;
   setStat('recomposing…');
   const _gateBefore = _gateBoxes();                            // §STRETCH-1: snapshot AABBs BEFORE the stretch (delta-honest gate)
   try {
-    const res = await window.Bonsai.gridmove.commit(id, delta);
+    const res = await window.Bonsai.gridmove.commit(id, delta, extra);
     // §STRETCH-1 (W-SDG-GATE): gate the STRETCH like a move — RED (a stretched wall now clashing, or a door fallen
     // out of its host) / ORANGE (clearance). The changed set = the engine's recompose commands' featureIds
     // PLUS §STRETCH-RIDE riders (RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE): a rider's
@@ -2109,8 +2283,9 @@ async function commitGridMove() {
     audioCue('commit'); exitGridMove(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
+window.__dg = () => _dragGrid;   // test hook (§GRID-SPAN-GATE witness reads the live drag delta)
 window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };   // test hook (§STRETCH-GATE smoke)
-canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
+canvas.addEventListener('pointerup', (e) => { if (gridMoving && _dragGrid) { if (!_gsgPrompt && gsgIntercept(e)) return; if (_gsgPrompt) return; commitGridMove(); } });   // §GRID-SPAN-GATE: a release on RED opens the prompt instead of committing
 
 // ── ROOM MOVE (whole-room drag) ───────────────────────────────────────────────────────────────────
 // Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.5 — Witness: W-ROOMMOVE-UI.
