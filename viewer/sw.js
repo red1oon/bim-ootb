@@ -187,7 +187,7 @@
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
 const CACHE_VERSION = 'v1539';
-// v1539 (2026-10-01) §FILM_BLANK_FRAME (all-zero capture retried 0.5/2/5 s, else last good frame held; &blankframe=F:K test) + §FILM_GATE_EXPOSURE_SNAP (exposure jumps with the lighting-model switch; &gatesnap=0). effects 133, cinema_maxq 25.
+// v1539 (2026-10-01) §FILM_BLANK_FRAME (all-zero capture retried 0.5/2/5 s, else last good frame held; &blankframe=F:K test) + §FILM_GATE_EXPOSURE_SNAP (exposure jumps with the lighting-model switch; &gatesnap=0). effects 134, cinema_maxq 26.
 // v1538 (2026-10-01) merge of fix/sky-surface v1526-v1531 (IFC surface names, plaster texture, furniture polish, floor/object contact — stills) into fix/fast-bake v1534. sourced_light 77, contact_floor 4.
 // v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
 // v1533 (2026-10-01) merge of fix/sky-surface v1516-v1525 (MEP service colour, furniture in the sky field, lamp contact shadow off, local exposure, rated lamps) into fix/fast-bake v1532.
