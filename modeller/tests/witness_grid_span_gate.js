@@ -103,7 +103,9 @@ runE2E('W-GRID-SPAN-GATE', async (t) => {
   const addBox = await pg.evaluate(() => { const r = document.getElementById('gsg-add').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
   await shot('span-prompt', { x: Math.max(0, addBox[0] - 330), y: Math.max(0, addBox[1] - 190), width: 660, height: 380 });
   await pg.mouse.move(addBox[0], addBox[1]); await t.sleep(100); await pg.mouse.click(addBox[0], addBox[1]); await t.sleep(2500);
-  for (let i = 0; i < 20 && (await t.oplog()).len === ol0.len; i++) await t.sleep(500);
+  // wait for the gesture to FINISH (live is slower): grid line folded in, gesture log printed, all 5 meshes folded
+  for (let i = 0; i < 90; i++) { const st = await pg.evaluate(() => ({ ys: window.Bonsai.grid.ys.length, m: window.Bonsai.group().children.filter(o => o.isMesh && o.userData.featureId != null).length })); if (st.ys === grid0 + 1 && t.slog.some(l => /§GESTURE gid=.*§GRID-SPAN extraOps=/.test(l))) break; await t.sleep(500); }
+  await t.sleep(1500);
   const ol2 = await t.oplog();
   const ops2 = await pg.evaluate(() => window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters.spanSplit).map(o => ({ id: o.id, h: o.parameters.realGeomHash, src: o.parameters.spanSplit.srcGuid, p: o.parameters.placement, bbox: o.parameters.bbox })));
   const gl = t.slog.filter(l => /§GESTURE gid=.*§GRID-SPAN extraOps=/.test(l)).pop() || '';
@@ -127,13 +129,16 @@ runE2E('W-GRID-SPAN-GATE', async (t) => {
     halves && col.every(c => c === 'GREEN') && after.ys === grid0 + 1 && after.lines === grid0 + 1, JSON.stringify(after.sp.slice(0, 2)) + ' ' + col.join(','));
   // G7: one Ctrl+Z / Ctrl+Y
   const nIns2 = await pg.evaluate(() => window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length);
-  await pg.keyboard.down('Control'); await pg.keyboard.press('z'); await pg.keyboard.up('Control'); await t.sleep(2500);
+  await pg.keyboard.down('Control'); await pg.keyboard.press('z'); await pg.keyboard.up('Control'); for (let i = 0; i < 90; i++) { const a = await pg.evaluate(() => { const O = window.Bonsai.oplog; return O._geomOps().slice(0, O.cursor).filter(o => o.op_type === 'GEOM_INSERT' && o.parameters.spanSplit).length; }); if (a === 0) break; await t.sleep(500); }
+  await t.sleep(1000);
   const undo = await pg.evaluate(() => { const O = window.Bonsai.oplog, i = window.swbGateInfo(), st = window.GridSpanGate.fold(i, O._geomOps(), O.cursor);
     const act = O._geomOps().slice(0, O.cursor).filter(o => o.op_type === 'GEOM_INSERT' && o.parameters.spanSplit).length;
     return { act, ys: window.Bonsai.grid.ys.length, split: st.pieces.filter(p => /#[12]$/.test(p.guid)).length, y8: window.Bonsai.grid.ys[8], y7: window.Bonsai.grid.ys[7] }; });
   await shot('span-undone', cl(midPx, 420, 260));
   t.assert('G7a ONE Ctrl+Z removes the added columns, restores the grid line count and the bay spans', undo.act === 0 && undo.ys === grid0 && undo.split === 0 && Math.abs((undo.y8 - undo.y7) - setup.gap[0]) < 1e-6, JSON.stringify(undo));
-  await pg.keyboard.down('Control'); await pg.keyboard.press('y'); await pg.keyboard.up('Control'); await t.sleep(2500);
+  await pg.keyboard.down('Control'); await pg.keyboard.press('y'); await pg.keyboard.up('Control');
+  for (let i = 0; i < 90; i++) { const a = await pg.evaluate(() => { const O = window.Bonsai.oplog; return O._geomOps().slice(0, O.cursor).filter(o => o.op_type === 'GEOM_INSERT' && o.parameters.spanSplit).length; }); if (a === exp5.n) break; await t.sleep(500); }
+  await t.sleep(1000);
   const redo = await pg.evaluate(() => { const O = window.Bonsai.oplog; return { act: O._geomOps().slice(0, O.cursor).filter(o => o.op_type === 'GEOM_INSERT' && o.parameters.spanSplit).length, ys: window.Bonsai.grid.ys.length }; });
   t.assert('G7b ONE Ctrl+Y re-adds them (' + exp5.n + ' columns, grid ' + grid0 + '->' + (grid0 + 1) + ')', redo.act === exp5.n && redo.ys === grid0 + 1, JSON.stringify(redo));
   t.assert('G7c chain verifies', (await t.verifyChain()) === true);
