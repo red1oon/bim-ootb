@@ -72,38 +72,45 @@
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     var q = dbQuery || A.dbQuery, rows = [];
     try {
-      rows = q("SELECT guid, name, object_type, center_x, center_y, center_z, size_x, size_y, size_z FROM spatial_structure" +
-               " WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x > 0 AND size_y > 0 AND size_z > 0") || [];
+      // §FREEZE_PERF_ROOMS (2026-10-01, HHS bake: "Rooms checked: 100" counted BOXES — one room spans several rectangles sharing a
+      // name + room_guid). Logical room = room_guid, falling back to the row's guid: the SAME key common/room_graph.js:327 uses.
+      var sel = " guid, name, object_type, center_x, center_y, center_z, size_x, size_y, size_z", wh = " FROM spatial_structure WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x > 0 AND size_y > 0 AND size_z > 0";
+      try { rows = q("SELECT" + sel + ", room_guid" + wh) || []; } catch (eRg) { rows = (q("SELECT" + sel + ", NULL" + wh) || []); }
     } catch (e) { console.warn('§FREEZE_PERF_BUILD rooms query failed: ' + (e && e.message)); rows = []; }
-    var rooms = [], area = 0, recArea = 0, blind = 0, compiled = 0, marginMax = 0;
+    var rooms = [], area = 0, recArea = 0, blind = 0, compiled = 0, marginMax = 0, byRoom = {}, roomOrder = [];
     rows.forEach(function (r) {
-      var room = { guid: r[0], name: r[1] || r[0], compiled: r[2] === 'COMPILED', cx: +r[3], cy: +r[4], cz: +r[5], sx: +r[6], sy: +r[7], sz: +r[8] };
+      var room = { guid: r[0], name: r[1] || r[0], compiled: r[2] === 'COMPILED', cx: +r[3], cy: +r[4], cz: +r[5], sx: +r[6], sy: +r[7], sz: +r[8], key: r[9] || r[0] };
       var b = judgeRoom(room, GRID_M), b2 = judgeRoom(room, 2 * GRID_M);
       room.area = room.sx * room.sy; room.best = b;
       room.recPct = 100 * b.rec; room.blindM2 = room.area * b.shares[5];
       room.marginPct = Math.abs(100 * b.rec - 100 * b2.rec);     // derived: grid-pitch sensitivity (§18)
       marginMax = Math.max(marginMax, room.marginPct);
-      area += room.area; recArea += room.area * b.rec; blind += room.blindM2; if (room.compiled) compiled++;
+      area += room.area; recArea += room.area * b.rec; blind += room.blindM2;
       rooms.push(room);
+      // one camera per BOX (each rectangle of a multi-rect room gets its own best corner); the room's numbers are its boxes' sums
+      var g = byRoom[room.key]; if (!g) { g = byRoom[room.key] = { key: room.key, name: room.name, compiled: room.compiled, area: 0, rec: 0, blindM2: 0, boxes: 0 }; roomOrder.push(g); }
+      g.area += room.area; g.rec += room.area * b.rec; g.blindM2 += room.blindM2; g.boxes++;
       console.log('§COVERAGE room="' + room.name + '" cam=corner' + b.corner + '@' + b.cam.map(function (v) { return v.toFixed(2); }).join(',') +
         ' covered%=' + room.recPct.toFixed(1) + ' (±' + room.marginPct.toFixed(1) + ') blind_m2=' + room.blindM2.toFixed(2) +
         ' dori=I' + (100 * b.shares[0]).toFixed(0) + '/R' + (100 * b.shares[1]).toFixed(0) + '/O' + (100 * b.shares[2]).toFixed(0) +
         '/D' + (100 * b.shares[3]).toFixed(0) + '/beyond' + (100 * b.shares[4]).toFixed(0) + '/blind' + (100 * b.shares[5]).toFixed(0) + '%' +
         ' box=' + room.sx.toFixed(1) + 'x' + room.sy.toFixed(1) + 'x' + room.sz.toFixed(1) + 'm');
     });
-    var byBlind = rooms.slice().sort(function (a, b) { return b.blindM2 - a.blindM2; });
-    var best = rooms.slice().sort(function (a, b) { return (b.recPct - a.recPct) || (b.area - a.area); })[0] || null;
-    built = { rooms: rooms, area: area, recPct: area ? 100 * recArea / area : 0, blindM2: blind, compiled: compiled,
+    var logical = roomOrder.map(function (g) { g.recPct = g.area ? 100 * g.rec / g.area : 0; if (g.compiled) compiled++; return g; });
+    var byBlind = logical.slice().sort(function (a, b) { return b.blindM2 - a.blindM2; });
+    var best = logical.slice().sort(function (a, b) { return (b.recPct - a.recPct) || (b.area - a.area); })[0] || null;
+    console.log('§FREEZE_PERF_ROOMS boxes=' + rooms.length + ' rooms=' + logical.length + ' multiBox=' + logical.filter(function (g) { return g.boxes > 1; }).length + ' (key = room_guid, else guid — room_graph.js:327)');
+    built = { rooms: logical, boxes: rooms, area: area, recPct: area ? 100 * recArea / area : 0, blindM2: blind, compiled: compiled,
               worst: byBlind.slice(0, 3), best: best, marginMax: marginMax,
               dori: DORI.map(function (d) { return [d[0], doriRangeM(d[1])]; }),
               ms: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0) };
-    console.log('§PERF_CLASH_TIMING group=visual rooms=' + rooms.length + ' ms=' + built.ms);
+    console.log('§PERF_CLASH_TIMING group=visual rooms=' + logical.length + ' boxes=' + rooms.length + ' ms=' + built.ms);
     if (best) console.log('§FREEZE_PERF_BEST group=visual room="' + best.name + '" value=' + best.recPct.toFixed(1) + '% basis=recognise%');
-    console.log('§FREEZE_PERF_BUILD group=visual rooms=' + rooms.length + ' compiled=' + compiled + ' floor_m2=' + area.toFixed(1) +
+    console.log('§FREEZE_PERF_BUILD group=visual rooms=' + logical.length + ' boxes=' + rooms.length + ' compiled=' + compiled + ' floor_m2=' + area.toFixed(1) +
       ' recognise%=' + built.recPct.toFixed(1) + ' blind_m2=' + blind.toFixed(1) + ' marginMax=±' + marginMax.toFixed(1) + '%' +
       ' dori_m=' + built.dori.map(function (d) { return d[0] + d[1].toFixed(1); }).join('/') +
       ' cam="' + CAM.name + '" ' + CAM.hDeg + 'x' + CAM.vDeg + 'deg ' + CAM.px + 'px mountInset=' + MOUNT_INSET_M + 'm(~design) grid=' + GRID_M + 'm' +
-      (rooms.length ? '' : ' => INCONCLUSIVE reason=no-rooms'));
+      (logical.length ? '' : ' => INCONCLUSIVE reason=no-rooms'));
     return built;
   };
 
