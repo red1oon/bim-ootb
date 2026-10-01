@@ -1,0 +1,364 @@
+// ⚠ DO NOT REMOVE — Scope guard
+// Scope: W-ERP-FIRST-SETUP — the "set up a brand-new ERP from scratch" journey a first-time Odoo / iDempiere user
+//   expects, EXECUTED step by step in a real headless browser (software rendering, --disable-gpu) over the served
+//   bundle. Spec + the checklist this judges: bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS1 (S01..S26).
+//   THE ISSUE this test proves/disproves, per step: can a new user do THIS step today, measured by a value
+//   (record count, option count, §-line, status text) — never by a screenshot. Each step prints exactly one
+//     §FIRST-SETUP step=Sxx verdict=VERIFIED|GAP|INCONCLUSIVE claim="…" evidence=…
+//   and is compared with the spec's pinned EXPECT verdict. A step that changed either way prints DRIFT and the
+//   run exits 1 — so a fixed gap and a regressed step are both LOUD (PRIMAL LAW §4: a vacuous population prints
+//   INCONCLUSIVE, never VERIFIED).
+// §-log first — READ tests/poc_erp_first_setup_live.log (verdicts) and tests/poc_erp_first_setup_live.page.log
+//   (every console line the page printed) before any conclusion. Exit code is not evidence.
+// Run:  node tests/poc_erp_first_setup_live.js        (cwd = bim-ootb/erp; serves the REPO ROOT so ../common resolves)
+'use strict';
+const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
+const http = require('http'), fs = require('fs'), path = require('path');
+
+const REPO = path.join(__dirname, '..', '..');
+const LOGF = path.join(__dirname, 'poc_erp_first_setup_live.log');
+const PAGELOGF = path.join(__dirname, 'poc_erp_first_setup_live.page.log');
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream',
+  '.png': 'image/png', '.css': 'text/css', '.wasm': 'application/wasm', '.zip': 'application/zip' };
+const server = http.createServer((req, res) => {
+  const p = decodeURIComponent(req.url.split('?')[0]);
+  fs.readFile(path.join(REPO, p), (e, buf) => {
+    if (e) { res.writeHead(404); res.end('404 ' + p); return; }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Content-Length': buf.length }); res.end(buf);
+  });
+});
+
+// The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
+const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'G', S08: 'G', S09: 'G', S10: 'V',
+  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'G', S15: 'G', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+  S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
+// FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
+
+const OUT = [];
+const say = (s) => { OUT.push(s); console.log(s); };
+const RES = [];
+function step(id, verdict, claim, evidence) {
+  const v = { V: 'VERIFIED', G: 'GAP', I: 'INCONCLUSIVE' }[verdict];
+  RES.push({ id, verdict, claim, evidence });
+  say('§FIRST-SETUP step=' + id + ' verdict=' + v + ' claim="' + claim + '" evidence=' + String(evidence).replace(/\s+/g, ' ').slice(0, 420));
+}
+
+const PAGELOG = [], ERRS = [];
+const since = (n, re) => PAGELOG.slice(n).filter(l => re.test(l));
+const last = (n, re) => since(n, re).pop() || '';
+
+async function q(page, sql) {
+  return page.evaluate(s => { try { const r = window.__idmpDb.exec(s); return r.length ? r[0].values : []; } catch (e) { return 'ERR ' + e.message; } }, sql);
+}
+async function one(page, sql) { const r = await q(page, sql); return Array.isArray(r) && r.length ? r[0][0] : r; }
+async function status(page) { return page.$eval('#idmp-status', e => e.innerText).catch(() => ''); }
+async function opts(page, col) {
+  return page.$$eval('#idmp-inline-mount select[data-col="' + col + '"] option', o => o.map(x => ({ v: x.value, t: x.text }))).catch(() => []);
+}
+async function openWin(page, base, login, win) {
+  await page.goto(base + '/idempiere.html?login=' + encodeURIComponent(login) + '&window=' + win, { waitUntil: 'load' });
+  await page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 20000 });
+  await page.waitForTimeout(900);
+}
+async function clickNew(page) {
+  await page.click('#idmp-toolbar button[title^="New record"]');
+  await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 });
+  await page.waitForTimeout(700);
+}
+async function save(page) { await page.click('#idmp-toolbar button[title^="Save"]'); await page.waitForTimeout(1400); }
+async function setSel(page, col, val) { await page.selectOption('#idmp-inline-mount select[data-col="' + col + '"]', String(val)); await page.waitForTimeout(250); }
+async function fillBlur(page, col, val) {
+  const loc = page.locator('#idmp-inline-mount input[data-col="' + col + '"]').first();
+  await loc.fill(String(val)); await loc.blur().catch(() => {}); await page.waitForTimeout(250);
+}
+const recCount = (s) => { const m = /(\d+) records|Record \d+ of (\d+)/.exec(s || ''); return m ? Number(m[1] || m[2]) : (/0 records/.test(s) ? 0 : null); };
+const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => {
+  const c = window.__crud; if (!c || !c.readTip) return res('no-crud');
+  const f = () => { try { res(c.readTip(t, i)); } catch (e) { res('ERR ' + e.message); } };
+  if (typeof c.withSidecar === 'function') c.withSidecar(f); else f();
+}), [table, id]);
+
+(async () => {
+  await new Promise(r => server.listen(0, r));
+  const base = 'http://localhost:' + server.address().port + '/erp';
+  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-gpu'] });   // software rendering ONLY
+  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  page.on('console', m => PAGELOG.push(m.text()));
+  page.on('pageerror', e => { ERRS.push(String(e)); PAGELOG.push('PAGEERR ' + e); });
+  page.on('dialog', async d => { PAGELOG.push('DIALOG ' + d.message()); await d.accept(); });
+  const seedBytes = { n: null };
+  page.on('response', r => { if (/\/erp\/ad_seed\.db/.test(r.url())) seedBytes.n = Number(r.headers()['content-length'] || 0) || null; });
+  const genesisSrc = fs.readFileSync(path.join(REPO, 'erp', 'genesis.js'), 'utf8');
+  const fixA = /FIX-A/.test(genesisSrc);
+  say('§W-ERP-FIRST-SETUP start served=' + REPO + ' genesis FIX-A=' + (fixA ? 'present' : 'absent') + ' gpu=disabled');
+  if (fixA) { EXPECT.S08 = 'V'; EXPECT.S09 = 'V'; }
+  const fixB = /FS2 FIX-B/.test(fs.readFileSync(path.join(REPO, 'erp', 'idempiere.html'), 'utf8'));
+  say('§W-ERP-FIRST-SETUP trial-balance FIX-B=' + (fixB ? 'present' : 'absent'));
+  if (fixB) EXPECT.S24 = 'V';
+
+  // ── S01 first load ───────────────────────────────────────────────────────────────────────────────────────────
+  try {
+    await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+    await page.evaluate(() => new Promise(r => { const q = indexedDB.deleteDatabase('erp_cache'); q.onsuccess = q.onerror = q.onblocked = () => r(); }));
+    seedBytes.n = null;
+    const n0 = PAGELOG.length;
+    await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => !!window.__idmpDb, null, { timeout: 30000 });
+    const boot = last(n0, /§IDEMPIERE boot db=/);
+    step('S01', /db=network/.test(boot) && seedBytes.n > 1e6 ? 'V' : 'I', 'a cold first load fetches the ERP data file and boots',
+      'seedBytes=' + seedBytes.n + ' (' + (seedBytes.n / 1048576).toFixed(1) + ' MiB) ' + boot);
+  } catch (e) { step('S01', 'I', 'first load', 'harness: ' + e.message); }
+
+  // ── S02 login model ──────────────────────────────────────────────────────────────────────────────────────────
+  try {
+    await page.waitForFunction(() => document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 20000 });
+    const tenants = await page.$$eval('#idmp-login-clients .nm', e => e.map(x => x.textContent.trim()));
+    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))");
+    await page.waitForSelector('#idmp-login-step1:visible', { timeout: 8000 });
+    const users = await page.$$eval('#idmp-login-users .nm', e => e.map(x => x.textContent.trim()));
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))");
+    await page.waitForSelector('#idmp-login-step2:visible', { timeout: 8000 });
+    const step2 = (await page.$eval('#idmp-login-step2', e => e.innerText)).replace(/\s+/g, ' ');
+    step('S02', tenants.length >= 2 && users.length >= 1 && /ROLE/i.test(step2) ? 'V' : 'G',
+      'login walks tenant -> user -> role/organisation', 'tenants=' + tenants.length + '[' + tenants.join(',') + '] users(System)=' + users.length + ' step2="' + step2.slice(0, 120) + '"');
+  } catch (e) { step('S02', 'I', 'login model', 'harness: ' + e.message); }
+
+  // ── S03..S07 create a new company (System → Initial Tenant Setup) ──────────────────────────────────────────────
+  let CID = null;
+  const NAME = 'FirstCo', ADMIN = 'owner';
+  try {
+    await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 10000 });
+    await page.evaluate(() => document.querySelectorAll('#idmp-tree .idmp-row:not(.leaf)').forEach(r => { if (!r.parentElement.classList.contains('open')) r.click(); }));
+    await page.click("#idmp-tree .idmp-row.leaf:has(.nm:text-is('Initial Tenant Setup'))", { timeout: 6000 });
+    await page.waitForSelector('[data-genesis-create]', { timeout: 8000 });
+    const ccy = await page.$$eval('.idmp-procpane select option', o => o.map(x => x.text));
+    await page.fill('[data-genesis-name]', NAME); await page.fill('[data-genesis-admin]', ADMIN);
+    const n0 = PAGELOG.length;
+    await page.click('[data-genesis-create]');
+    await page.waitForSelector('[data-genesis-enter]', { timeout: 25000 });
+    CID = Number(await one(page, "SELECT AD_Client_ID FROM AD_Client WHERE Name='" + NAME + "'"));
+    const created = last(n0, /§W-GENESIS-SYSADMIN-LIVE created client=/);
+    await page.click('[data-genesis-enter]');
+    await page.waitForSelector('#idmp-login-step1:visible', { timeout: 8000 });
+    const users = await page.$$eval('#idmp-login-users .nm', e => e.map(x => x.textContent.trim()));
+    step('S03', CID >= 17 && users.indexOf(ADMIN) >= 0 ? 'V' : 'G', 'System -> Initial Tenant Setup -> name + admin -> a new, enterable company',
+      'client=' + CID + ' ' + created + ' enterUsers=[' + users.join(',') + ']');
+    step('S04', ccy.length > 1 ? 'V' : 'G', 'the setup form lets the user pick the company currency', 'currencyOptions=' + ccy.length + ' [' + ccy.join(' | ') + ']');
+    const coa = Number(await one(page, 'SELECT COUNT(*) FROM C_ElementValue WHERE AD_Client_ID=' + CID));
+    step('S05', coa === 311 ? 'V' : (coa ? 'G' : 'I'), 'the new company has the iDempiere default chart of accounts', 'C_ElementValue=' + coa);
+    const per = await q(page, 'SELECT p.Name, p.StartDate, p.EndDate FROM C_Period p WHERE p.AD_Client_ID=' + CID);
+    const yr = await one(page, 'SELECT FiscalYear FROM C_Year WHERE AD_Client_ID=' + CID);
+    const thisYear = String(new Date().getFullYear());
+    step('S06', Array.isArray(per) && per.length === 12 && String(yr) === thisYear ? 'V' : 'G',
+      'a calendar with 12 monthly periods for the current year (MYear.java:250)', 'year=' + yr + ' (today ' + thisYear + ') periods=' + (Array.isArray(per) ? per.length : per) + ' ' + JSON.stringify(per).slice(0, 120));
+    const dts = await q(page, 'SELECT DocBaseType FROM C_DocType WHERE AD_Client_ID=' + CID);
+    const dbt = Array.isArray(dts) ? dts.map(r => r[0]) : [];
+    const need = ['SOO', 'POO', 'MMS', 'MMR', 'ARI', 'API', 'ARR', 'APP', 'GLJ'];
+    const missing = need.filter(x => dbt.indexOf(x) < 0);
+    step('S07', missing.length === 0 ? 'V' : 'G', 'document types for orders, shipments, receipts, invoices, payments, journals exist',
+      'docTypes=' + dbt.length + ' [' + dbt.join(',') + '] missing=[' + missing.join(',') + ']');
+  } catch (e) { step('S03', 'I', 'create a new company', 'harness: ' + e.message); }
+
+  // ── S08 + S10 own org offered; create a customer ──────────────────────────────────────────────────────────────
+  const HQ = CID ? await one(page, 'SELECT AD_Org_ID FROM AD_Org WHERE AD_Client_ID=' + CID + ' ORDER BY AD_Org_ID LIMIT 1') : null;
+  async function createBP(kind, value, name) {
+    await openWin(page, base, ADMIN, 123);
+    const before = recCount(await status(page));
+    await clickNew(page);
+    const orgs = await opts(page, 'ad_org_id');
+    const own = orgs.find(o => String(o.v) === String(HQ));
+    const grp = (await opts(page, 'c_bp_group_id')).find(o => /\(\d+\)$/.test(o.t) && Number(/\((\d+)\)$/.exec(o.t)[1]) >= CID * 100000);
+    await setSel(page, 'ad_org_id', own ? own.v : '0');
+    if (grp) await setSel(page, 'c_bp_group_id', grp.v);
+    await fillBlur(page, 'value', value); await fillBlur(page, 'name', name);
+    await page.check('#idmp-inline-mount input[data-col="' + kind + '"]');
+    const n0 = PAGELOG.length; await save(page);
+    const gridIds = await page.$$eval('.idmp-grid tbody tr[data-ad-record]', e => e.map(x => x.getAttribute('data-ad-record')));
+    return { before, after: recCount(await status(page)), gridIds, own: !!own, orgN: orgs.length, grp: grp ? grp.t : null,
+      val: last(n0, /§CRUD validate key=c_bpartner/), per: last(n0, /§CRUD-PERSIST key=c_bpartner/) };
+  }
+  try {
+    const c = await createBP('iscustomer', 'C-001', 'Acme Retail Sdn Bhd');
+    step('S08', c.own ? 'V' : 'G', 'the new company\'s own organization is offered on a new record', 'HQ=' + HQ + ' inOrgPicker=' + c.own + ' orgOptions=' + c.orgN);
+    step('S10', /verb=create ok/.test(c.val) && c.per && c.after === (c.before || 0) + 1 ? 'V' : 'G',
+      'create a customer in the new company (org ' + (c.own ? 'HQ' : '*') + ')', 'group=' + c.grp + ' ' + c.val.slice(0, 80) + ' persist=' + !!c.per + ' records ' + c.before + '->' + c.after + ' gridIds=[' + c.gridIds.join(',') + ']');
+    const v = await createBP('isvendor', 'V-001', 'Kedai Bekalan Sdn Bhd');
+    const dup = v.gridIds.filter((x, i, a) => a.indexOf(x) !== i);
+    step('S11', /verb=create ok/.test(v.val) && v.per ? 'V' : 'G',
+      'create a vendor in the new company', v.val.slice(0, 80) + ' persist=' + !!v.per + ' records ' + v.before + '->' + v.after + ' gridIds=[' + v.gridIds.join(',') + ']');
+    step('S11b', v.gridIds.length ? (dup.length ? 'G' : 'V') : 'I', 'right after a second New+Save, the list shows each record once',
+      'gridIds=[' + v.gridIds.join(',') + '] duplicates=[' + dup.join(',') + '] statusCount=' + v.after);
+  } catch (e) { step('S08', 'I', 'own org / customer', 'harness: ' + e.message); }
+
+  // ── S09 setup defaults visible in their own windows (count AFTER S10/S11 minus the two we made) ──────────────
+  try {
+    const seen = {};
+    for (const [w, label] of [[146, 'PriceList'], [117, 'Calendar'], [139, 'Warehouse']]) {
+      await page.goto(base + '/idempiere.html?login=' + ADMIN + '&window=' + w, { waitUntil: 'load' });
+      await page.waitForTimeout(1300); seen[label] = recCount(await status(page));
+    }
+    await openWin(page, base, ADMIN, 123); seen.BPartner = recCount(await status(page));
+    const rowsBP = Number(await one(page, 'SELECT COUNT(*) FROM C_BPartner WHERE AD_Client_ID=' + CID));
+    const allVisible = seen.PriceList >= 1 && seen.Calendar >= 1 && seen.BPartner >= rowsBP + 2;
+    step('S09', allVisible ? 'V' : 'G', 'the masters setup created (BP, price list, calendar) show in their own windows',
+      'gridRecords=' + JSON.stringify(seen) + ' setupBProws=' + rowsBP + ' (+2 made in S10/S11)');
+  } catch (e) { step('S09', 'I', 'setup defaults visible', 'harness: ' + e.message); }
+
+  // ── S12 product needs a tax category of this tenant ────────────────────────────────────────────────────────────
+  try {
+    await openWin(page, base, ADMIN, 140); await clickNew(page);
+    const tc = await opts(page, 'c_taxcategory_id');
+    const mine = [];
+    for (const o of tc) { if (!o.v) continue; const c = await one(page, 'SELECT AD_Client_ID FROM C_TaxCategory WHERE C_TaxCategory_ID=' + Number(o.v)); if (Number(c) === CID) mine.push(o.t); }
+    const rows = Number(await one(page, 'SELECT COUNT(*) FROM C_TaxCategory WHERE AD_Client_ID=' + CID));
+    step('S12', mine.length ? 'V' : 'G', 'a product can take a tax category of the new company',
+      'C_TaxCategory(rows for client)=' + rows + ' pickerOptions=' + tc.filter(o => o.v).map(o => o.t).join('|') + ' ofThisTenant=' + mine.length);
+  } catch (e) { step('S12', 'I', 'product tax category', 'harness: ' + e.message); }
+
+  // ── S13 payment terms ────────────────────────────────────────────────────────────────────────────────────────
+  try {
+    const pt = Number(await one(page, 'SELECT COUNT(*) FROM C_PaymentTerm WHERE AD_Client_ID=' + CID));
+    step('S13', pt >= 1 ? 'V' : 'G', 'the new company has a payment term (MSetup.java:1418 inserts one)', 'C_PaymentTerm=' + pt);
+  } catch (e) { step('S13', 'I', 'payment term', 'harness: ' + e.message); }
+
+  // ── S14 + S15 sales order in the NEW company ─────────────────────────────────────────────────────────────────
+  try {
+    await openWin(page, base, ADMIN, 143); await clickNew(page);
+    const bp = (await opts(page, 'c_bpartner_id')).filter(o => o.v);
+    const byClient = {};
+    for (const o of bp) { const c = await one(page, 'SELECT AD_Client_ID FROM C_BPartner WHERE C_BPartner_ID=' + Number(o.v)); byClient[c] = (byClient[c] || 0) + 1; }
+    const foreign = Object.keys(byClient).filter(c => Number(c) !== 0 && Number(c) !== CID).reduce((a, c) => a + byClient[c], 0);
+    step('S14', bp.length ? (foreign === 0 ? 'V' : 'G') : 'I', 'pickers offer only this company\'s (and shared) records',
+      'BP picker n=' + bp.length + ' byClient=' + JSON.stringify(byClient) + ' foreign=' + foreign + ' (iDempiere: role access SQL on every lookup)');
+    const dt = (await opts(page, 'c_doctypetarget_id')).filter(o => o.v);
+    step('S15', dt.length ? 'V' : 'G', 'a sales order can be typed in the new company (needs a sales doc type)',
+      'targetDocTypeOptions=' + dt.length + ' ' + last(0, /§VALRULE col=c_doctypetarget_id/).slice(0, 160));
+  } catch (e) { step('S14', 'I', 'SO in new company', 'harness: ' + e.message); }
+
+  // ── S16..S21 order-to-cash in the demo company (GardenWorld) ─────────────────────────────────────────────────
+  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price) {
+    const r = {};
+    await openWin(page, base, 'GardenAdmin', win); await clickNew(page);
+    await setSel(page, 'c_bpartner_id', bpId); await page.waitForTimeout(300);
+    const dt = (await opts(page, 'c_doctypetarget_id')).find(o => dtRe.test(o.t));
+    if (dt) await setSel(page, 'c_doctypetarget_id', dt.v);
+    let n0 = PAGELOG.length; await save(page);
+    r.hdr = last(n0, /§CRUD validate key=c_order /); r.hdrPersist = last(n0, /§CRUD-PERSIST key=c_order /);
+    r.id = Number((/§CRUD-CREATE-SEL table=c_order id=(-?\d+)/.exec(last(n0, /§CRUD-CREATE-SEL table=c_order/)) || [])[1]);
+    await page.click('#idmp-tabstrip >> text=' + lineTab); await page.waitForTimeout(900);
+    await clickNew(page);
+    n0 = PAGELOG.length;
+    await setSel(page, 'm_product_id', prod); await fillBlur(page, 'qtyentered', qty);
+    r.callout = last(n0, /§CRUD-CALLOUT table=c_orderline col=m_product_id/);
+    r.autoFilled = await page.evaluate(() => { const g = c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return e ? e.value : null; };
+      return { priceentered: g('priceentered'), c_uom_id: g('c_uom_id'), c_tax_id: g('c_tax_id') }; });
+    const uom = (await opts(page, 'c_uom_id')).find(o => /^Each/.test(o.t)); const tax = (await opts(page, 'c_tax_id')).find(o => /^Standard \(104\)/.test(o.t));
+    if (uom) await setSel(page, 'c_uom_id', uom.v); if (tax) await setSel(page, 'c_tax_id', tax.v);
+    await fillBlur(page, 'priceentered', price);
+    await page.locator('#idmp-inline-mount input[data-col="priceactual"]').first().fill(String(price)).catch(() => {});
+    n0 = PAGELOG.length; await save(page);
+    r.line = last(n0, /§CRUD validate key=c_orderline/);
+    await page.click('#idmp-tabstrip .idmp-adtab >> nth=0'); await page.waitForTimeout(900);
+    await page.evaluate((i) => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find(x => Number(x.getAttribute('data-ad-record')) === i); if (tr) tr.click(); }, r.id);
+    await page.waitForTimeout(900);
+    r.actions = await page.$$eval('[data-doc-action]', e => e.map(x => x.getAttribute('data-doc-action')));
+    n0 = PAGELOG.length;
+    await page.click('[data-doc-action="CO"]').catch(() => {}); await page.waitForTimeout(2600);
+    r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/);
+    return r;
+  }
+  let SO = null;
+  try {
+    SO = await newOrder(143, 118, /^Standard Order/, 'Order Line', 123, 2, 61.75);
+    step('S16', /verb=create ok/.test(SO.hdr) && SO.hdrPersist && SO.id ? 'V' : 'G', 'type a sales order header (demo company)', SO.hdr.slice(0, 80) + ' id=' + SO.id);
+    step('S17', /derived=\{\}/.test(SO.callout) ? 'G' : (SO.callout ? 'V' : 'I'), 'choosing the product fills price / UOM / tax on a NEW order\'s line',
+      SO.callout.slice(0, 200) + ' autoFilled=' + JSON.stringify(SO.autoFilled));
+    step('S18', /verb=create ok/.test(SO.line) ? 'V' : 'G', 'the line saves once UOM, tax and price are typed', SO.line.slice(0, 160));
+    step('S19', /to=CO verifyChain=ok/.test(SO.co) ? 'V' : 'G', 'Complete the order (signed)', 'actions=[' + SO.actions.join(',') + '] ' + SO.co.slice(0, 200));
+    step('S20', /not in bundle → status-only/.test(SO.fan) ? 'G' : (/§SO-FANOUT/.test(SO.fan) ? 'V' : 'I'),
+      'completing a NEW order generates its shipment / invoice / journal', SO.fan.slice(0, 200));
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&window=143', { waitUntil: 'load' }); await page.waitForTimeout(2000);
+    const tip = await tipOf(page, 'c_order', SO.id);
+    step('S21', tip === 'CO' ? 'V' : 'G', 'the completed order survives a reload', 'readTip(c_order,' + SO.id + ')=' + tip);
+  } catch (e) { step('S16', 'I', 'O2C demo', 'harness: ' + e.message); }
+
+  // ── S22 purchase order (demo company) ────────────────────────────────────────────────────────────────────────
+  try {
+    const PO = await newOrder(181, 114, /^Purchase Order/, 'PO Line', 124, 5, 40);
+    step('S22', /verb=create ok/.test(PO.hdr) && /verb=create ok/.test(PO.line) && /to=CO verifyChain=ok/.test(PO.co) ? 'V' : 'G',
+      'type + complete a purchase order (demo company)', 'hdr=' + PO.hdr.slice(0, 50) + ' line=' + PO.line.slice(0, 50) + ' ' + PO.co.slice(0, 120) + ' fanout=' + PO.fan.slice(0, 90));
+  } catch (e) { step('S22', 'I', 'PO demo', 'harness: ' + e.message); }
+
+  // ── S23 posting preview on a seeded invoice ─────────────────────────────────────────────────────────────────
+  try {
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&window=167', { waitUntil: 'load' }); await page.waitForTimeout(1500);
+    const n0 = PAGELOG.length;
+    await page.evaluate(() => { const b = document.querySelector('.idmp-posted-btn'); if (b) b.click(); }); await page.waitForTimeout(1500);
+    const pv = last(n0, /§PREVIEW-LIVE/);
+    step('S23', /balanced=true/.test(pv) && /coverage=complete/.test(pv) ? 'V' : (pv ? 'G' : 'I'), 'see the journal an invoice posts (Posted button)', pv.slice(0, 200));
+  } catch (e) { step('S23', 'I', 'posting preview', 'harness: ' + e.message); }
+
+  // ── S24 trial balance — judged against an INDEPENDENT oracle: TrialBalance.java:161 (C_AcctSchema_ID=param) +
+  //    :400 (Fact_Acct WHERE AD_Client_ID=<login client>), re-derived here as one GROUP BY over the same fact_acct.
+  try {
+    const n0 = PAGELOG.length;
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&process=310', { waitUntil: 'load' }); await page.waitForTimeout(2200);
+    const open = last(n0, /§AD-PROC-LIVE open proc=310/);
+    const asId = await one(page, 'SELECT C_AcctSchema_ID FROM C_AcctSchema WHERE AD_Client_ID=11 ORDER BY C_AcctSchema_ID LIMIT 1');
+    const paramTag = await page.$eval('[data-proc-param="C_AcctSchema_ID"]', e => e.tagName + (e.type ? ':' + e.type : '')).catch(() => 'absent');
+    await page.fill('[data-proc-param="C_AcctSchema_ID"]', String(asId)).catch(() => {});
+    await page.click('button[data-proc-run]').catch(() => {});
+    await page.waitForTimeout(2500);
+    const disp = last(n0, /§AD-PROC-LIVE proc=310 /);
+    const shown = await page.evaluate(() => {
+      const t = document.querySelector('.idmp-procresult table'); if (!t) return null;
+      const rows = [...t.querySelectorAll('tr')].filter(tr => tr.querySelector('td')).map(tr => [...tr.cells].map(c => c.textContent.trim()));
+      const num = s => Number(String(s).replace(/,/g, '')) || 0;
+      return { n: rows.length, dr: rows.reduce((a, r) => a + num(r[2]), 0), cr: rows.reduce((a, r) => a + num(r[3]), 0) };
+    });
+    const orc = await q(page, 'SELECT COUNT(DISTINCT Account_ID), ROUND(SUM(AmtAcctDr),2), ROUND(SUM(AmtAcctCr),2) FROM Fact_Acct WHERE AD_Client_ID=11 AND C_AcctSchema_ID=' + Number(asId));
+    const o = Array.isArray(orc) && orc.length ? { n: orc[0][0], dr: orc[0][1], cr: orc[0][2] } : null;
+    const match = shown && o && shown.n === o.n && Math.abs(shown.dr - o.dr) < 0.005 && Math.abs(shown.cr - o.cr) < 0.005;
+    step('S24', !disp ? 'I' : (match ? 'V' : 'G'), 'Trial Balance = this company\'s facts in the chosen accounting schema (TrialBalance.java:161,400)',
+      open.slice(0, 60) + ' | ' + disp.slice(0, 90) + ' | shown=' + JSON.stringify(shown && { n: shown.n, dr: +shown.dr.toFixed(2), cr: +shown.cr.toFixed(2) }) +
+      ' oracle(client=11,schema=' + asId + ')=' + JSON.stringify(o));
+    step('S24b', /^SELECT/.test(paramTag) ? 'V' : 'G', 'the Accounting Schema parameter is a picker (AD_Reference 19 TableDir), not a raw-id text box',
+      'C_AcctSchema_ID param control=' + paramTag + ' (ad_process_para ref=19, no DefaultValue)');
+  } catch (e) { step('S24', 'I', 'trial balance', 'harness: ' + e.message); }
+
+  // ── S25 import ───────────────────────────────────────────────────────────────────────────────────────────────
+  try {
+    await page.evaluate(() => window.AboutDIY && window.AboutDIY.open()); await page.waitForTimeout(500);
+    await page.click('.adq-segb[data-tab="diy"]').catch(() => {}); await page.waitForTimeout(600);
+    const diy = await page.$eval('#adq-body', e => e.innerText).catch(() => '');
+    const agents = ['odoo_agent.zip', 'Odoo', 'iDempiere', 'SAP', 'Oracle', 'Dynamics'].filter(s => diy.indexOf(s) >= 0);
+    step('S25a', agents.length >= 3 ? 'V' : 'G', 'Help -> Run it yourself offers the data-in agents', 'found=[' + agents.join(',') + '] chars=' + diy.length);
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&window=172', { waitUntil: 'load' }); await page.waitForTimeout(1500);
+    const st = await status(page);
+    step('S25b', /not in curated seed|table-not-in-seed/.test(st + last(0, /§IDEMPIERE tab=.*I_BPartner/)) ? 'G' : 'V',
+      'the iDempiere-style Import Business Partner window can take rows', 'status="' + st + '"');
+  } catch (e) { step('S25a', 'I', 'import', 'harness: ' + e.message); }
+
+  // ── S26 backup ───────────────────────────────────────────────────────────────────────────────────────────────
+  try {
+    const has = await page.evaluate(() => !!(window.ErpPersist && window.ErpPersist.backup));
+    step('S26', has ? 'V' : 'G', 'a signed backup / restore of my company is offered on the ERP page',
+      'window.ErpPersist on idempiere.html=' + has + ' (erp_persist_ui.js is loaded only by glassbowl.html)');
+  } catch (e) { step('S26', 'I', 'backup', 'harness: ' + e.message); }
+
+  // ── verdict ──────────────────────────────────────────────────────────────────────────────────────────────────
+  const cnt = { V: 0, G: 0, I: 0 }; RES.forEach(r => cnt[r.verdict]++);
+  const drift = RES.filter(r => EXPECT[r.id] && EXPECT[r.id] !== r.verdict);
+  const missing = Object.keys(EXPECT).filter(k => !RES.some(r => r.id === k));
+  say('\n§W-ERP-FIRST-SETUP summary steps=' + RES.length + ' VERIFIED=' + cnt.V + ' GAP=' + cnt.G + ' INCONCLUSIVE=' + cnt.I +
+    ' pageErrors=' + ERRS.length + (ERRS.length ? ' first="' + ERRS[0].slice(0, 120) + '"' : ''));
+  drift.forEach(r => say('§FIRST-SETUP DRIFT step=' + r.id + ' expected=' + EXPECT[r.id] + ' got=' + r.verdict));
+  missing.forEach(k => say('§FIRST-SETUP DRIFT step=' + k + ' expected=' + EXPECT[k] + ' got=NOT-RUN'));
+  const ok = !drift.length && !missing.length;
+  say(ok ? '🟢 W-ERP-FIRST-SETUP PASS — every step matches the spec\'s pinned verdict (' + cnt.V + ' verified, ' + cnt.G + ' named gaps)'
+         : '🔴 W-ERP-FIRST-SETUP DRIFT — ' + (drift.length + missing.length) + ' step(s) differ from the spec; read the lines above');
+  fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n');
+  await browser.close(); server.close();
+  process.exit(ok ? 0 : 1);
+})().catch(e => { console.error('test error', e); try { fs.writeFileSync(LOGF, OUT.join('\n') + '\nHARNESS ERROR ' + e.stack + '\n'); } catch (_) {} server.close(); process.exit(2); });
