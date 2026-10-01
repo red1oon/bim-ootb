@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1534';
+const CACHE_VERSION = 'v1536';
+// v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
 // v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
 // v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
 // v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.

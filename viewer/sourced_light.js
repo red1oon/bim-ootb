@@ -104,7 +104,11 @@
     '  if ( uSLOrg.w > 0.5 ) { vec3 te = normalize( ( vi * vec4( - posView, 0.0 ) ).xyz );',
     '    for ( int s = 1; s <= 12; s ++ ) { ivec3 c = ivec3( floor( ( wp + te * ( 0.25 * float( s ) ) - uSLOrg.xyz ) / uSLParams.y ) );',
     '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) break;',
-    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }',
+    // §ZONE_EYE_SKIP_OPEN (red1 2026-10-02 HHS …878367234 patches): the walk now steps PAST open-to-sky cells (zone 0) — an atrium's roof
+    // well is not a room. MEASURED: the floor beside HHS's well took zone 0 from the walk, so the atrium's lamps (zone 57) skipped it:
+    // a dark band Lu 43-55 inside the room's own floor (72-75) with a hard step; &zoneeye=0 -> smooth 65-76, floor patchy 43.1 -> 36.7 %.
+    // A walk that meets only open cells falls back to the nearest-cell rule below (outdoor surfaces stay open). &zoneeyeopen=1 = old walk.
+    "      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u && ( ( t2.r & 0x3FFFu ) != 0u || uSLOrg.w > 1.5 ) ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }",
     '  if ( bt == 65535u ) {',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
@@ -1408,7 +1412,7 @@
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
-    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? 1 : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
+    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? (/[?&]zoneeyeopen=1/.test(location.search) ? 2 : 1) : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
