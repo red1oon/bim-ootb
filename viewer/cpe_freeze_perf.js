@@ -107,16 +107,19 @@
     return built;
   };
 
+  // §19.4 plain-English copy. The compiled flag (⚠/≈ in the name) moves to one "estimated" note; "Level 1 R3" prints as "Level 1 · room 3"
+  // (presentation only — the § lines keep the data name). Line 0 carries the count-up (pct is filled in per frame).
+  function roomLabel(n) { return String(n || '').replace(/^[⚠≈]\s*/, '').replace(/\s+R(\d+)$/, ' · room $1'); }
   function visualLines(b) {
     var L = [];
-    L.push('Rooms judged ' + b.rooms.length + (b.compiled ? ' (' + b.compiled + ' compiled — no IfcSpace in the model)' : ''));
-    L.push('Recognise-covered ' + b.recPct.toFixed(0) + '% of ' + b.area.toFixed(0) + ' m² floor (±' + Math.max(1, Math.ceil(b.marginMax)) + '%)');
-    L.push('Blind ' + b.blindM2.toFixed(1) + ' m² (outside the camera view)');
-    if (b.best) L.push('Best: ' + b.best.name + ' — ' + b.best.recPct.toFixed(0) + '% Recognise');
-    b.worst.forEach(function (r, i) { if (r.blindM2 > 0.05) L.push((i ? '       ' : 'Worst: ') + r.name + ' — ' + r.blindM2.toFixed(1) + ' m² blind'); });
-    L.push('DORI ' + b.dori.map(function (d) { return d[0] + ' ' + d[1].toFixed(1); }).join(' · ') + ' m');
-    L.push('1 × ' + CAM.name + ' (' + CAM.hDeg + '°×' + CAM.vDeg + '°, ' + CAM.px + ' px) per room, best ceiling corner');
-    L.push('IEC 62676-4 · room-box plan check, not exact rays');
+    L.push({ t: function (k) { return 'People recognisable over ' + Math.round(b.recPct * k) + '% of the floor'; }, w: 'People recognisable over ' + Math.round(b.recPct) + '% of the floor', big: true });
+    L.push({ t: 'Blind spots: ' + b.blindM2.toFixed(1) + ' m² no camera can see' });
+    L.push({ t: 'Rooms checked: ' + b.rooms.length + ' (' + b.area.toFixed(0) + ' m²)' + (b.compiled ? ', rooms estimated from the model' : '') });
+    if (b.best) L.push({ t: 'Best covered: ' + roomLabel(b.best.name) + ' — ' + b.best.recPct.toFixed(0) + '%' });
+    b.worst.slice(0, 2).forEach(function (r) { if (r.blindM2 > 0.05) L.push({ t: 'Hardest to cover: ' + roomLabel(r.name) + ' — ' + r.blindM2.toFixed(1) + ' m² unseen' }); });
+    var d = {}; b.dori.forEach(function (x) { d[x[0]] = x[1]; });
+    L.push({ t: 'Range: identify ' + d.I.toFixed(0) + ' m · recognise ' + d.R.toFixed(0) + ' m · observe ' + d.O.toFixed(0) + ' m · detect ' + d.D.toFixed(0) + ' m' });
+    L.push({ t: 'Camera: Paxton 10 mini bullet, ' + CAM.hDeg + '°×' + CAM.vDeg + '° · IEC 62676-4 · room-box plan check, ±' + Math.max(1, Math.ceil(b.marginMax)) + '%', dim: true });
     return L;
   }
 
@@ -130,12 +133,14 @@
     try {
       if (!built) { if (!A._freezePerfNoBuildLogged) { A._freezePerfNoBuildLogged = true; console.warn('§FREEZE_PERF_PANEL group=visual drawn=0 => INCONCLUSIVE reason=not-built'); } return null; }
       var fontPx = theme.bodyPx(h), titlePx = Math.round(fontPx * 1.15), rowH = Math.round(fontPx * 1.55), pad = Math.round(fontPx * 0.6);
-      var lines = visualLines(built), title = 'CCTV coverage · Security';
+      var lines = visualLines(built), title = 'Security cameras', sub = 'Where one CCTV camera per room can see';
+      var FA = A._freezeAnim, aPlate = FA ? FA.alpha(FA.sched.perfPlate) : 1, k = FA ? FA.countUp() : 1, subPx = Math.round(fontPx * 0.9);
+      var txt = function (l) { return typeof l.t === 'function' ? l.t(k) : l.t; };
       ctx.save();
       ctx.font = '600 ' + titlePx + 'px ' + theme.font; var tw = ctx.measureText(title).width;
-      ctx.font = '400 ' + fontPx + 'px ' + theme.font;
-      var mw = tw; lines.forEach(function (l) { mw = Math.max(mw, ctx.measureText(l).width); });
-      var bw = Math.round(mw + pad * 2), bh = Math.round(titlePx * 1.9 + lines.length * rowH + pad), m = Math.round(h * 0.028);
+      ctx.font = '400 ' + subPx + 'px ' + theme.font; tw = Math.max(tw, ctx.measureText(sub).width);
+      var mw = tw; lines.forEach(function (l) { ctx.font = (l.big ? '700 ' : '400 ') + fontPx + 'px ' + theme.font; mw = Math.max(mw, ctx.measureText(l.w || txt(l)).width); });
+      var bandH = Math.round(titlePx * 1.25 + subPx * 1.35 + pad), bw = Math.round(mw + pad * 2.5), bh = Math.round(bandH + pad * 0.6 + lines.length * rowH + pad), m = Math.round(h * 0.028);
       // candidates in the black: bottom-left, bottom-right, mid-left, mid-right — first one clear of every drawn rect
       var cands = [[m, h - m - bh], [w - m - bw, h - m - bh], [m, Math.round((h - bh) / 2)], [w - m - bw, Math.round((h - bh) / 2)]];
       var pick = null, ov = 0;
@@ -145,19 +150,27 @@
       }
       if (!pick) { pick = { x0: cands[0][0], y0: cands[0][1], x1: cands[0][0] + bw, y1: cands[0][1] + bh }; ov = taken.filter(function (t) { return overlaps(pick, t); }).length; }
       var rad = Math.round(Math.min(bw, bh) * 0.06), band = A._freezeBand && A._freezeBandsOn && A._freezeBandsOn();
+      ctx.globalAlpha *= aPlate;   // §FREEZE_ANIM: the plate + band fade in first, then the lines one by one
       theme.plate(ctx, pick.x0, pick.y0, bw, bh, rad);
-      if (band) A._freezeBand(ctx, pick.x0, pick.y0, bw, bh, rad, Math.round(titlePx * 1.75), 'security', fontPx, 'cctv');   // §FREEZE_BANDS — Security teal
-      ctx.fillStyle = band ? '#FFFFFF' : 'rgba(20,22,28,0.95)'; ctx.textBaseline = 'middle';
-      ctx.font = '600 ' + titlePx + 'px ' + theme.font; ctx.fillText(title, pick.x0 + pad, pick.y0 + Math.round(titlePx * 0.875));
-      ctx.fillStyle = 'rgba(20,22,28,0.95)';
-      ctx.font = '400 ' + fontPx + 'px ' + theme.font;
-      lines.forEach(function (l, i) { ctx.fillText(l, pick.x0 + pad, pick.y0 + Math.round(titlePx * 1.9) + i * rowH + rowH / 2); });
+      if (band) A._freezeBand(ctx, pick.x0, pick.y0, bw, bh, rad, bandH, 'security', fontPx, 'cctv');   // §FREEZE_BANDS — Security teal
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = band ? '#FFFFFF' : 'rgba(20,22,28,0.95)'; ctx.font = '700 ' + titlePx + 'px ' + theme.font; ctx.fillText(title, pick.x0 + pad, pick.y0 + Math.round(pad * 0.5 + titlePx * 0.6));
+      ctx.fillStyle = band ? 'rgba(255,255,255,0.9)' : 'rgba(20,22,28,0.72)'; ctx.font = '400 ' + subPx + 'px ' + theme.font; ctx.fillText(sub, pick.x0 + pad, pick.y0 + Math.round(pad * 0.5 + titlePx * 1.25 + subPx * 0.6));
+      var y0 = pick.y0 + bandH + Math.round(pad * 0.6);
+      lines.forEach(function (l, i) {
+        var la = FA ? FA.alpha(FA.sched.perfLine(i)) : 1, dx = Math.round((1 - la) * fontPx * 0.6);
+        ctx.save(); ctx.globalAlpha *= la;
+        ctx.fillStyle = l.dim ? 'rgba(20,22,28,0.72)' : 'rgba(20,22,28,0.95)';
+        ctx.font = (l.big ? '700 ' : '400 ') + fontPx + 'px ' + theme.font;
+        ctx.fillText(txt(l), pick.x0 + pad - dx, y0 + i * rowH + rowH / 2);
+        ctx.restore();
+      });
       ctx.restore();
       out.push(pick);
       if (!A._freezePerfWitnessed) {
         A._freezePerfWitnessed = true;
         var inFrame = pick.x0 >= 0 && pick.y0 >= 0 && pick.x1 <= w && pick.y1 <= h;
-        console.log('§FREEZE_PERF_PANEL group=visual drawn=1 rows=' + lines.length + ' minTextPx=' + fontPx + ' inFrame=' + (inFrame ? 1 : 0) +
+        console.log('§FREEZE_PERF_PANEL group=visual drawn=1 rows=' + lines.length + ' minTextPx=' + Math.min(fontPx, subPx) + ' inFrame=' + (inFrame ? 1 : 0) +
           ' overlaps=' + ov + ' box=' + [pick.x0, pick.y0, pick.x1, pick.y1].map(Math.round).join(',') + ' frame=' + w + 'x' + h +
           ' => ' + (!built.rooms.length ? 'INCONCLUSIVE reason=no-rooms' : (inFrame && !ov ? 'PASS' : 'FAIL')));
       }

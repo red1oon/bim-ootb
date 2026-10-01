@@ -2730,6 +2730,7 @@ function setupCpeLoadPath(A) {
     var K = stack.hopsUp.length;
     var revealed = Math.max(0, Math.min(K, Math.floor(stackElapsed) + 1));
     if (revealed === stack.revealedHops) return;
+    stack._rowT = stack._rowT || []; for (var _rk = (stack.revealedHops || 0); _rk < revealed; _rk++) stack._rowT[_rk] = (_lp && _lp.holdElapsed != null) ? _lp.holdElapsed : 0;   // §FREEZE_ANIM: when each row appeared
     stack.revealedHops = revealed;
     // §129.57 (2026-09-20) — bumped HERE, past the early return, so it counts only frames this
     // function genuinely changed something on. cinema_maxq.js's frame-reuse key reads it and
@@ -3205,6 +3206,7 @@ function setupCpeLoadPath(A) {
       if (holdCtl) { inWindow = !!holdCtl.inHold; elapsed = holdCtl.elapsedSec; }
       else if (frameHoldCtl) { inWindow = !!frameHoldCtl.inHold; elapsed = frameHoldCtl.elapsedSec; }
       else { inWindow = fSec >= _lp.holdStartSec && fSec < _lp.holdEndSec; elapsed = fSec - _lp.holdStartSec; }
+      _lp.holdElapsed = inWindow ? elapsed : null;   // §FREEZE_ANIM — the one clock every freeze panel's reveal reads (PERFORMANCE_AS_CLASH.md §19.4)
       // §129.24/§129.27 (2026-09-18, red1: "the background sky ground, building that needs to cut
       // out... separate from HUD overlays that fades off/on") — backdrop AND cut/whiten (below) are
       // both an instant step at the EXACT SAME moment (`inWindow`, arm/release) — the building's own
@@ -4133,6 +4135,31 @@ function setupCpeLoadPath(A) {
         ' whiteOnBand=' + c1.toFixed(2) + ' bandVsBlack=' + c2.toFixed(2) + ' => ' + (c1 >= 4.5 && c2 >= 3 ? 'PASS' : 'FAIL') + ' (WCAG AA text 4.5, marks 3)'); }
   }
   A._freezeBand = _freezeBand; A._freezeBandsOn = _freezeBandsOn;
+  // §FREEZE_ANIM (bim-compiler PERFORMANCE_AS_CLASH.md §19.4, red1 2026-10-01 "animated line by line reveal ... looks too static"): every freeze
+  // panel line fades + slides in on ONE clock, the hold's elapsed seconds (_lp.holdElapsed). The SAME schedule feeds the draw and
+  // A._freezeAnimKey (cinema_maxq.js §FRAME_REUSE key), so an animating frame is never reused and a settled one still is. &lpanim=0 = static.
+  var FREEZE_FADE = 0.35;
+  function _freezeAnimOn() { return !(typeof location !== 'undefined' && /[?&]lpanim=0/.test(location.search)); }
+  function _fa(t0) { var e = _lp && _lp.holdElapsed; if (e == null || !_freezeAnimOn()) return 1; return Math.max(0, Math.min(1, (e - t0) / FREEZE_FADE)); }
+  var FREEZE_SCHED = { cardLine: function (i) { return 0.15 + 0.25 * i; }, perfPlate: 0.8, perfLine: function (j) { return 1.2 + 0.5 * j; }, countUp: [1.2, 0.8] };
+  A._freezeAnim = { alpha: _fa, sched: FREEZE_SCHED, on: _freezeAnimOn, e: function () { return _lp ? _lp.holdElapsed : null; },
+    countUp: function () { var e = _lp && _lp.holdElapsed; if (e == null || !_freezeAnimOn()) return 1; var p = Math.max(0, Math.min(1, (e - FREEZE_SCHED.countUp[0]) / FREEZE_SCHED.countUp[1])); return 1 - Math.pow(1 - p, 3); } };
+  function _rowAlpha(stack, ri) { return _fa(stack && stack._rowT && stack._rowT[ri] != null ? stack._rowT[ri] : 0); }
+  var _faWit = { first: null, settled: null, prevKey: null, nonMono: 0, lastVals: null };
+  A._freezeAnimKey = function () {
+    if (!_lp || _lp.holdElapsed == null || !_freezeAnimOn()) return '-';
+    var v = [];   // fixed-length items first, so a growing row list never shifts their index (the monotone check compares by index)
+    for (var i = 0; i < 6; i++) v.push(_fa(FREEZE_SCHED.cardLine(i)));
+    if (A._freezePerfOn && (A._freezePerfOn.visual || A._freezePerfOn.audio)) { v.push(_fa(FREEZE_SCHED.perfPlate)); for (var j = 0; j < 12; j++) v.push(_fa(FREEZE_SCHED.perfLine(j))); v.push(A._freezeAnim.countUp()); }
+    [_lp.far, _lp].forEach(function (s) { if (s && s.hopsUp) for (var ri = 0; ri < (s.revealedHops || 0); ri++) v.push(_rowAlpha(s, ri)); });
+    var key = v.map(function (x) { return x.toFixed(3); }).join(','), e = _lp.holdElapsed, all1 = v.every(function (x) { return x >= 1; });
+    if (_faWit.first == null) _faWit.first = e;
+    if (_faWit.lastVals && _faWit.lastVals.length <= v.length) for (var q = 0; q < _faWit.lastVals.length; q++) if (v[q] < _faWit.lastVals[q] - 1e-9) _faWit.nonMono++;
+    _faWit.lastVals = v;
+    if (all1 && _faWit.settled == null) { _faWit.settled = e; _faWit.n = (_faWit.n || 0) + 1; console.log('§FREEZE_ANIM settle#' + _faWit.n + ' first=' + _faWit.first.toFixed(2) + ' settled=' + e.toFixed(2) + ' lines=' + v.length + ' nonMonotone=' + _faWit.nonMono + ' => ' + (_faWit.nonMono ? 'FAIL' : 'PASS') + ' (alphas never fade back)'); }
+    if (!all1) _faWit.settled = null;
+    return all1 ? 'settled' : key;
+  };
 
   function _drawStackInfoPanel(ctx, w, h, k, stack, stackName, yBottom, avoidRect) {
     if (!stack || !stack.hopsUp || !stack.hopsUp.length) return null;
@@ -4232,10 +4259,13 @@ function setupCpeLoadPath(A) {
         ctx.fillRect(x, rowY, panelW, rowH);
       }
       var hop = stack.hopsUp[ri];
+      var _ra = _rowAlpha(stack, ri), _rdx = Math.round((1 - _ra) * fontPx * 0.6);   // §FREEZE_ANIM: the row fades + slides in as its hop appears
+      ctx.save(); ctx.globalAlpha *= _ra;
       ctx.fillStyle = '#' + ('000000' + (hop.hex >>> 0).toString(16)).slice(-6);
-      ctx.fillRect(x + pad, rowY + (rowH - swatch) / 2, swatch, swatch);
+      ctx.fillRect(x + pad - _rdx, rowY + (rowH - swatch) / 2, swatch, swatch);
       ctx.fillStyle = FREEZE_INK_BODY;
-      ctx.fillText(rowsText[ri], x + pad * 2 + swatch, rowY + rowH / 2);
+      ctx.fillText(rowsText[ri], x + pad * 2 + swatch - _rdx, rowY + rowH / 2);
+      ctx.restore();
     }
     ctx.restore();
     if (A._hudLayoutRegister) A._hudLayoutRegister('loadpath.infopanel.' + stackName, x, y, panelW, panelH);
@@ -4528,9 +4558,12 @@ function setupCpeLoadPath(A) {
     ctx.font = '600 ' + layout.fontPx + 'px ' + FREEZE_F;   // §129.58 — must match _infoCardLayout's measuring font exactly (§129.39)
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     assembled.lines.forEach(function (l, i) {
-      var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad;
+      var _ca = _fa(FREEZE_SCHED.cardLine(i));   // §FREEZE_ANIM: card lines one by one
+      var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad - Math.round((1 - _ca) * layout.fontPx * 0.6);
+      ctx.save(); ctx.globalAlpha *= _ca;
       ctx.fillStyle = FREEZE_INK_BODY;   // §129.58 — was the one-off #14181d; the shared freeze ink now, same ladder as the panel
       ctx.fillText(l, lx, ly);
+      ctx.restore();
     });
     ctx.restore();
     if (A._hudLayoutRegister) A._hudLayoutRegister('loadpath.card', rect.x, rect.y, rect.w, rect.h);

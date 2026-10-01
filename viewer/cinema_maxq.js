@@ -4625,7 +4625,8 @@
             '|p' + (_rp ? _rp.x.toFixed(4) + ',' + _rp.y.toFixed(4) + ',' + _rp.z.toFixed(4) : '-') +
             '|t' + (_rt ? _rt.x.toFixed(4) + ',' + _rt.y.toFixed(4) + ',' + _rt.z.toFixed(4) : '-') +
             '|s' + ((A.sunCompassInfo && A.sunCompassInfo()) ? (+A.sunCompassInfo().elevation).toFixed(3) : '-') +
-            '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-');
+            '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-') +
+            '|a' + (A._freezeAnimKey ? A._freezeAnimKey() : '-');   // §FREEZE_ANIM: an animating panel frame is never reused
         }
         _prevVisualRev = (A._loadPathVisualRev || 0);
         var blob;
