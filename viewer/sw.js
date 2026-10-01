@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1543';
+const CACHE_VERSION = 'v1544';
+// v1544 (2026-10-02) merge of fix/sky-surface @f78a6579 (its v1532-v1536: §SKY_FIELD_FURNITURE REVERT key 21324567:90186, §LOCAL_EXPOSURE_BILATERAL, §FLOOR_F_SMOOTH opt-in, §ZONE_EYE_SKIP_OPEN, §DOME_GLOW) into fix/fast-bake v1543. light_zones 28, sourced_light 78, tools 73, gi_still 46.
 // v1543 (2026-10-02) §GI_FILM_CARRY: STALE only when the camera moved (frozen camera + identical pass is legitimate — HHS freeze false STALEs switched the bounce off). gi_still 45.
 // v1542 (2026-10-02) §FREEZE_PERF_ROOMS: CCTV panel counts logical rooms (room_guid, as room_graph.js:327), not boxes — HHS 100 boxes = 75 rooms. cpe_freeze_perf 5.
 // v1541 (2026-10-01) §FREEZE_ANIM line-by-line reveal on the hold clock (stack rows, info card, CCTV panel; reuse key carries it; &lpanim=0 static) + CCTV panel plain-English copy (§19.4). cpe_load_path 10, cpe_freeze_perf 4, cinema_maxq 27.
@@ -214,6 +215,11 @@ const CACHE_VERSION = 'v1543';
 // v1519 (2026-09-30) §FILM_GEOM_WHOLE gate on geometry (topout / storeys back / no hidden discs), §FILM_INHERIT_GATE logs first call, §SOURCED_OWN_COST timer. sourced_light 74, cinema_maxq 13.
 // v1518 (2026-09-30) §FILM_INHERIT: parity films stage SourcedLight (sky-view field) gated per frame on whole-building frames, portals retire under it; §FILM_FIELD_BY_BUILDING sidecar lookup by building (scene.js/main.js). effects 130, sky_portal 24, sourced_light 73, cinema_maxq 12, scene 68, main 52.
 // v1517/v1516 (2026-09-30) §FAST_BAKE FB1+FB2 sky-portal film classification (sky_portal.js 22-23).
+// sky-surface v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// sky-surface v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
+// sky-surface v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
+// sky-surface v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
+// sky-surface v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
 // v1531 (2026-10-01) §OBJECT_CONTACT: beams + members no longer occluders (red1 'some patchy' — blotches on ceilings between beams). contact_floor.js?v=4.
 // v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
 // v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.

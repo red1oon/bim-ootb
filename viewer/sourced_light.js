@@ -49,6 +49,7 @@
     '#if NUM_POINT_LIGHTS > 0', 'uniform vec4 uSLPZ[ ( NUM_POINT_LIGHTS + 3 ) / 4 ];', '#endif',
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
     // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
+    'uniform vec4 uSLFs;',   // §FLOOR_F_SMOOTH: x = on
     'float _slFZ = -1.0;',
     // the fragment's sky class, set with _slFZ: 1 = sees the sky (open cell / sky-lit covered cell / off grid), 0 = covered or unknown
     'float _slSky = 1.0;',
@@ -103,7 +104,11 @@
     '  if ( uSLOrg.w > 0.5 ) { vec3 te = normalize( ( vi * vec4( - posView, 0.0 ) ).xyz );',
     '    for ( int s = 1; s <= 12; s ++ ) { ivec3 c = ivec3( floor( ( wp + te * ( 0.25 * float( s ) ) - uSLOrg.xyz ) / uSLParams.y ) );',
     '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) break;',
-    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }',
+    // §ZONE_EYE_SKIP_OPEN (red1 2026-10-02 HHS …878367234 patches): the walk now steps PAST open-to-sky cells (zone 0) — an atrium's roof
+    // well is not a room. MEASURED: the floor beside HHS's well took zone 0 from the walk, so the atrium's lamps (zone 57) skipped it:
+    // a dark band Lu 43-55 inside the room's own floor (72-75) with a hard step; &zoneeye=0 -> smooth 65-76, floor patchy 43.1 -> 36.7 %.
+    // A walk that meets only open cells falls back to the nearest-cell rule below (outdoor surfaces stay open). &zoneeyeopen=1 = old walk.
+    "      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u && ( ( t2.r & 0x3FFFu ) != 0u || uSLOrg.w > 1.5 ) ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }",
     '  if ( bt == 65535u ) {',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
@@ -136,6 +141,19 @@
     '      if ( cv && own ) { uvec4 c4 = texelFetch( uSLCove, c, 0 ); if ( c4.r > 0u ) sc += w * slLog8( c4.r ) * slOctDec( c4.g | ( c4.b << 8u ) ); su += w * slLog8( c4.a ); } }',   // §COVE_LIGHT: both lobes, filtered
     '    if ( uSLSky.x > 0.5 ) { _slF = ( sw > 0.0 ) ? sf / sw : float( bg ) / 10000.0;',
     '      if ( gv ) _slGd = ( sw > 0.0 ) ? sg / sw : float( texelFetch( uSLGround, bcc, 0 ).r ) / 10000.0; }',
+    // §FLOOR_F_SMOOTH (red1 2026-10-02 HHS …878367234 "slight patches … if the formula can singularise lighting impact from outside and
+    // inside"; MEASURED: floor patchy 43 % with the field vs 0.3 % with &skyfield=0; 510 of 556 hard floor steps sit inside ONE zone with
+    // the same sky class: neighbour cells' F from the 41-direction lattice jumps under open roof wells). A floor point's real sky view is
+    // an integral over the whole opening above, so it varies smoothly along the floor: upward fragments average F (and Gd) over a
+    // 5 x 5 cell (2.5 m) horizontal neighbourhood at the trilinear layer, Gaussian sigma 1 cell, own-zone non-solid cells only (an
+    // open cell joins only an open fragment — no bright spill from a well into the covered floor beside it). &floorfsmooth=0 = off.
+    '    if ( uSLSky.x > 0.5 && uSLFs.x > 0.5 && wn.y > 0.7 ) { ivec3 cb = ivec3( floor( g + 0.5 ) ); float hw = 0.0, hf = 0.0, hg = 0.0;',
+    '      for ( int dz = -2; dz <= 2; dz ++ ) for ( int dx = -2; dx <= 2; dx ++ ) { ivec3 c = cb + ivec3( dx, 0, dz );',
+    '        if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
+    '        uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( tz != z ) continue;',
+    '        float wgt = exp( - float( dx * dx + dz * dz ) * 0.5 ); hw += wgt; hf += wgt * float( t2.g ) / 10000.0;',
+    '        if ( gv ) hg += wgt * float( texelFetch( uSLGround, c, 0 ).r ) / 10000.0; }',
+    '      if ( hw > 0.5 ) { _slF = hf / hw; if ( gv ) _slGd = hg / hw; } }',
     '    _slIrB = ( bl && sw > 0.0 ) ? sir / sw : vec3( -1.0 );',   // §ZERO Z18: blended IR (open texels count as IR 0: the outdoor side has no room IR)
     '    if ( cv && sw > 0.0 ) _slCove = max( 0.0, dot( wn, sc / sw ) ) + ( su / sw ) * max( 0.0, - wn.y );',   // Lambert on the eye-facing normal, both lobes; cell-varying, directional
     '  }',
@@ -301,6 +319,7 @@
   // §LAMP_CONTACT_SHADOW state: typed arrays shared by reference; the depth texture set per program like the AO texture
   var CSP = new Float32Array(4), CSM = new Float32Array(16), CSN = new Float32Array(2), csTex = null;
   // §FLOOR_CONTACT state (contact_floor.js builds the map; set at stage, pushed with every program like the zone texture)
+  var FSP = new Float32Array([1, 0, 0, 0]);   // §FLOOR_F_SMOOTH (x = on; &floorfsmooth=0 = off), set at stage
   var CFP = new Float32Array(4), CFG = new Float32Array(4), CFL = new Float32Array(16), cfTex = null, cfLast = null;
   var DFP = new Float32Array(4), DFO = new Float32Array(4), DFN = new Float32Array(4), dfTex = null, dDf = null, dfLast = null;   // §OBJECT_CONTACT
   function dfBuild(A) {
@@ -478,6 +497,7 @@
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
       U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo }; U.uSLAoTL = { value: dAo };
       U.uSLCs = { value: CSP }; U.uSLCsT = { value: dAo }; U.uSLCsP = { value: CSM }; U.uSLCsNF = { value: CSN };   // §LAMP_CONTACT_SHADOW
+      U.uSLFs = { value: FSP };   // §FLOOR_F_SMOOTH
       U.uSLCf = { value: CFP }; U.uSLCfG = { value: CFG }; U.uSLCfL = { value: CFL }; U.uSLCfT = { value: dAo };   // §FLOOR_CONTACT
       U.uSLDf = { value: DFP }; U.uSLDfO = { value: DFO }; U.uSLDfN = { value: DFN }; U.uSLDfT = { value: dDf };   // §OBJECT_CONTACT
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
@@ -939,6 +959,7 @@
     if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
     if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
+    if (U.uSLFs) U.uSLFs.value = FSP;   // §FLOOR_F_SMOOTH
     if (U.uSLDf) { U.uSLDf.value = DFP; U.uSLDfO.value = DFO; U.uSLDfN.value = DFN; U.uSLDfT.value = (active && DFP[0] > 0.5 && dfTex) ? dfTex : dDf; }   // §OBJECT_CONTACT
     if (U.uSLCf) { U.uSLCf.value = CFP; U.uSLCfG.value = CFG; U.uSLCfL.value = CFL; U.uSLCfT.value = (active && CFP[0] > 0.5 && cfTex) ? cfTex : dAo; }   // §FLOOR_CONTACT
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
@@ -1394,11 +1415,13 @@
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
-    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? 1 : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
+    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? (/[?&]zoneeyeopen=1/.test(location.search) ? 2 : 1) : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
     try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }
+    // default OFF (MEASURED 2026-10-02: HHS …878367234 floor patchy 42.3 -> 40.2 %, Clinic …728142544 4.6 -> 5.4 % — the HHS steps are not F)
+    FSP[0] = /[?&]floorfsmooth=1/.test(location.search) || A._stillFloorFSmooth === true ? 1 : 0; console.log('§FLOOR_F_SMOOTH ' + (FSP[0] ? 'on (upward fragments: F + Gd averaged over 5 x 5 own-zone cells, sigma 1 cell)' : 'off (default; &floorfsmooth=1 = on)'));
     try { cfBuild(A); } catch (eCF) { CFP[0] = 0; cfTex = null; console.warn('§FLOOR_CONTACT build failed: ' + eCF.message); }
     try { if (global.ContactFloor) dfBuild(A); else console.log('§OBJECT_CONTACT off (contact_floor.js not loaded)'); } catch (eDF) { DFP[0] = 0; dfTex = null; console.warn('§OBJECT_CONTACT build failed: ' + eDF.message); }
     try { irCoveApply(A); } catch (eCI) { console.warn('§COVE_IR failed: ' + eCI.message); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)

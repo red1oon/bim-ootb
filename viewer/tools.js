@@ -1331,11 +1331,11 @@ function setupTools(A) {
       sh.uniforms.uFixFace = A._fixFaceU;
       var v0 = sh.vertexShader, f0 = sh.fragmentShader;
       sh.vertexShader = v0
-        .replace('#include <common>', '#include <common>\nattribute float aFixFace;\n#ifdef USE_INSTANCING\nattribute float aFixInst;\n#endif\nvarying float vFixEmit;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float _ff = aFixFace; float _fi = 1.0;\n#ifdef USE_INSTANCING\n_fi = aFixInst;\n#endif\nvFixEmit = ( _ff <= 0.0 ) ? 1.0 : max( 0.0, _ff - 1.0 ) * _fi; }');
+        .replace('#include <common>', '#include <common>\nattribute float aFixFace;\n#ifdef USE_INSTANCING\nattribute float aFixInst;\n#endif\nvarying float vFixEmit;\nvarying float vFixDome;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float _ff = aFixFace; float _fi = 1.0;\n#ifdef USE_INSTANCING\n_fi = aFixInst;\n#endif\nvFixDome = ( _ff > 999.5 ) ? 1.0 : 0.0; if ( _ff > 999.5 ) _ff -= 1000.0;\nvFixEmit = ( _ff <= 0.0 ) ? 1.0 : max( 0.0, _ff - 1.0 ) * _fi; }');
       sh.fragmentShader = f0
-        .replace('#include <common>', '#include <common>\nuniform float uFixFace;\nvarying float vFixEmit;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif ( uFixFace > 1.5 ) totalEmissiveRadiance = vec3( 0.0 ); else if ( uFixFace > 0.5 ) totalEmissiveRadiance *= vFixEmit;');   // 2 = §METER_FIXFACE (meter pass only)
+        .replace('#include <common>', '#include <common>\nuniform float uFixFace;\nvarying float vFixEmit;\nvarying float vFixDome;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif ( uFixFace > 1.5 ) totalEmissiveRadiance = vec3( 0.0 ); else if ( uFixFace > 0.5 ) { totalEmissiveRadiance *= vFixEmit; if ( vFixDome > 0.5 ) totalEmissiveRadiance *= 0.55 + 0.45 * abs( dot( normalize( normal ), normalize( vViewPosition ) ) ); }');   // 2 = §METER_FIXFACE (meter pass only)
       if (sh.vertexShader.indexOf('vFixEmit =') < 0 || sh.fragmentShader.indexOf('*= vFixEmit') < 0) {
         console.warn('§FIXTURE_FACE_PATCH_MISS mat=' + (m.name || m.type) + ' vert=' + (sh.vertexShader.indexOf('vFixEmit =') >= 0) + ' frag=' + (sh.fragmentShader.indexOf('*= vFixEmit') >= 0) + ' (anchors not found — this material keeps whole-mesh emissive)');
       }
@@ -1365,6 +1365,12 @@ function setupTools(A) {
         if (hit) { faceTris++; mask[ia] = 1; mask[ib] = 1; mask[ic] = 1; }
       }
       out = faceTris > 0 ? { face: face, area: ff.faces[face].area, mask: mask, faceTris: faceTris, tris: nT } : null;
+      // §DOME_GLOW (red1 2026-10-02 via the Alt+C session: "the wall lamps need to smooth over or all proper lighted glowing but still
+      // retain its half sphere … confused to divide between its casing and light bulb"): on a ROUND fixture the axis rule above lights
+      // only the triangles within 45 deg of the face axis — a disc plus a jagged ring on a dome, the rest dark. A round fixture now emits
+      // from its WHOLE mesh (no casing/bulb guess), its flux spread over the dome (area = 2 x the face disc, a hemisphere's 2 pi r^2
+      // over pi r^2), and the shader keeps the dome readable by limb darkening (0.55 + 0.45 |n.v|, AUTHORED). &domeglow=0 = the axis rule.
+      if (out && ff.shape === 'round' && !/[?&]domeglow=0/.test(location.search)) { for (var dv = 0; dv < nV; dv++) mask[dv] = 1; out.dome = true; out.area = 2 * ff.faces[face].area; out.faceTris = nT; }
     }
     return (_fixFaceByHash[gh] = out);
   }
@@ -1412,12 +1418,12 @@ function setupTools(A) {
           var vs = gi.vertexStart, vc = gi.vertexCount;
           if (ff && vc !== ff.mask.length) { R.misaligned++; ff = null; }
           if (!ff) { for (v = 0; v < vc; v++) arr[vs + v] = 2; }
-          else { for (v = 0; v < vc; v++) arr[vs + v] = ff.mask[v] ? 1 + s : 1; }
+          else { var dk = ff.dome ? 1000 : 0; for (v = 0; v < vc; v++) arr[vs + v] = ff.mask[v] ? dk + 1 + s : 1; }
           R.byType.batched++; touched.add(attr); wrote++;
         } else if (o.isInstancedMesh) {
           if (!attr.__fixFilled) {   // the mask once per shared geometry
             attr.__fixFilled = true;
-            if (!ff || nVg !== ff.mask.length) { for (v = 0; v < nVg; v++) arr[v] = 2; } else { for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? 2 : 1; }
+            if (!ff || nVg !== ff.mask.length) { for (v = 0; v < nVg; v++) arr[v] = 2; } else { for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? (ff.dome ? 1002 : 2) : 1; }
             touched.add(attr);
           }
           var ia = G.getAttribute('aFixInst');
@@ -1426,13 +1432,13 @@ function setupTools(A) {
           R.byType.instanced++; wrote++;
         } else if (o.isMesh) {
           if (!ff || nVg !== ff.mask.length) { if (ff) R.misaligned++; ff = null; for (v = 0; v < nVg; v++) arr[v] = 2; }
-          else { for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? 1 + s : 1; }
+          else { var dk2 = ff.dome ? 1000 : 0; for (v = 0; v < nVg; v++) arr[v] = ff.mask[v] ? dk2 + 1 + s : 1; }
           R.byType.mesh++; touched.add(attr); wrote++;
         }
         if (ff && !sourced) R.unsourced++;
       });
       if (!wrote) return;
-      if (ff) { R.faceEmit++; if (ff.faceTris < ff.tris) R.housingDark++; R.byFace[ff.face]++; R.faceTris += ff.faceTris; R.tris += ff.tris; }
+      if (ff) { R.faceEmit++; if (ff.dome) R.dome = (R.dome || 0) + 1; if (ff.faceTris < ff.tris) R.housingDark++; R.byFace[ff.face]++; R.faceTris += ff.faceTris; R.tris += ff.tris; }
       else R.ambiguous++;
     });
     // §FIXTURE_FACE_NONLUM — MEASURED at the same HHS pose (GREEN 1): 515 of the 539 down-facing emissive pixels sat on elements
@@ -1480,7 +1486,7 @@ function setupTools(A) {
     A._fixFaceU.value = 1;
     if (A.markDirty) A.markDirty();
     R.ms = Math.round(performance.now() - t0);
-    var line = '§FIXTURE_FACE fixtures=' + R.fixtures + ' faceEmit=' + R.faceEmit + ' housingDark=' + R.housingDark + ' ambiguous(wholeMesh)=' + R.ambiguous +
+    var line = '§FIXTURE_FACE fixtures=' + R.fixtures + ' faceEmit=' + R.faceEmit + ' domeGlow(round, whole mesh, limb-darkened)=' + (R.dome || 0) + ' housingDark=' + R.housingDark + ' ambiguous(wholeMesh)=' + R.ambiguous +
       ' unsourced(0.3 kept)=' + R.unsourced + ' byFace=plan:' + R.byFace.plan + '/xy:' + R.byFace.xy + '/zy:' + R.byFace.zy +
       ' byType=batched:' + R.byType.batched + '/instanced:' + R.byType.instanced + '/mesh:' + R.byType.mesh + ' hashes=' + R.hashes +
       ' faceTris/tris=' + R.faceTris + '/' + R.tris + ' L(cd/m2) min/p50/max=' + _pq(R.L) + ' Phi(lm)=' + _pq(R.phi) + ' A_face(m2)=' + _pq(R.area) + ' s=' + _pq(R.s) +

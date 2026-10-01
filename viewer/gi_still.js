@@ -1027,12 +1027,39 @@
     for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * Bg[y * gw + Math.min(gw - 1, Math.max(0, x + k))]; tmp[y * gw + x] = a; }
     for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * tmp[Math.min(gh - 1, Math.max(0, y + k)) * gw + x]; Bg[y * gw + x] = a; }
     const srt = Array.from(Bg).sort((p, q) => p - q), med = srt[srt.length >> 1];
+    // §LOCAL_EXPOSURE_BILATERAL (red1 2026-10-02 "slight glow halo around objects such as the helicopter on Hospital's roof"): the plain
+    // Gaussian base above mixes a dark object with the bright sky beside it, so the sky next to it is lifted (glow) and the object's rim
+    // lowered — the classic local-tone-mapping halo. The base is now taken from a BILATERAL GRID (Chen, Paris & Durand 2007; the method
+    // Unreal Engine 5's Local Exposure uses): log2 Y is splatted into (x/8, y/8, log2 Y / BIN) cells, blurred in space (the same sigma 4
+    // cells) and in brightness (sigma RSIG bins), and each pixel reads it back at its OWN brightness, so only similarly bright
+    // neighbours set its base. BIN 0.5 EV, RSIG 2 bins (1 EV) are AUTHORED. &localexpgrid=0 = the plain Gaussian base (old).
+    let BL = null;
+    if (!/[?&]localexpgrid=0/.test(location.search)) {
+      let lo = Infinity, hi = -Infinity; for (let g = 0; g < Bg.length; g++) { if (!cnt[g]) continue; }
+      const L2 = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, v = Math.log2(0.2126 * lut[D[i]] + 0.7152 * lut[D[i + 1]] + 0.0722 * lut[D[i + 2]] + EPS); L2[y * w + x] = v; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const BIN = 0.5, RSIG = 2, RR = 4, nb = Math.max(1, Math.ceil((hi - lo) / BIN) + 1), NC = gw * gh * nb, gS = new Float32Array(NC), gC = new Float32Array(NC);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = L2[y * w + x], z = Math.min(nb - 1, Math.round((v - lo) / BIN)), c0 = (z * gh + ((y / G) | 0)) * gw + ((x / G) | 0); gS[c0] += v; gC[c0] += 1; }
+      const KR = []; let kr = 0; for (let k = -RR; k <= RR; k++) { const v = Math.exp(-k * k / (2 * RSIG * RSIG)); KR.push(v); kr += v; } for (let k = 0; k < KR.length; k++) KR[k] /= kr;
+      const blur = (A0, B0) => { // x, y (spatial K), z (range KR); A0 -> A0 via B0
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) { const r0 = (z * gh + y) * gw; for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * A0[r0 + Math.min(gw - 1, Math.max(0, x + k))]; B0[r0 + x] = a; } }
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * B0[(z * gh + Math.min(gh - 1, Math.max(0, y + k))) * gw + x]; A0[(z * gh + y) * gw + x] = a; }
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RR; k <= RR; k++) { const zz = z + k; if (zz < 0 || zz >= nb) continue; a += KR[k + RR] * A0[(zz * gh + y) * gw + x]; } B0[(z * gh + y) * gw + x] = a; }
+        A0.set(B0); };
+      const tB = new Float32Array(NC); blur(gS, tB); blur(gC, tB);
+      BL = { L2: L2, gS: gS, gC: gC, lo: lo, nb: nb, BIN: BIN };
+    }
+    // the bilateral base at pixel (x, y): trilinear in (gx, gy, own brightness bin); weight-normalised; no support -> the Gaussian base
+    const blBase = (x, y, gx, gy, x0, y0, fx, fy, b) => {
+      if (!BL) return b; const v = BL.L2[y * w + x], gz = Math.min(BL.nb - 1.001, Math.max(0, (v - BL.lo) / BL.BIN)), z0 = gz | 0, fz = gz - z0;
+      let S = 0, C = 0; for (let dz = 0; dz < 2; dz++) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const wt = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz), c0 = ((z0 + dz) * gh + (y0 + dy)) * gw + (x0 + dx); S += wt * BL.gS[c0]; C += wt * BL.gC[c0]; }
+      return C > 1e-3 ? S / C : b; };
     const wp = R._wpGrid, dList = []; let up = 0, dn = 0;
     const oe = v => v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
     for (let y = 0; y < h; y++) { const gy = Math.min(gh - 1.001, Math.max(0, y / G - 0.5)), y0 = gy | 0, fy = gy - y0;
       for (let x = 0; x < w; x++) { const gx = Math.min(gw - 1.001, Math.max(0, x / G - 0.5)), x0 = gx | 0, fx = gx - x0;
         const b = (Bg[y0 * gw + x0] * (1 - fx) + Bg[y0 * gw + x0 + 1] * fx) * (1 - fy) + (Bg[(y0 + 1) * gw + x0] * (1 - fx) + Bg[(y0 + 1) * gw + x0 + 1] * fx) * fy;
-        let dEV = Math.max(-CAP, Math.min(CAP, (c - 1) * (b - med)));
+        const bb = blBase(x, y, gx, gy, x0, y0, fx, fy, b);
+        let dEV = Math.max(-CAP, Math.min(CAP, (c - 1) * (bb - med)));
         if (wp) { const mx = Math.min(wp.mw - 1, Math.max(0, (x / wp.S) | 0)), my = Math.min(wp.mh - 1, Math.max(0, (y / wp.S) | 0)); const mv = wp.B[my * wp.mw + mx]; if (mv > 0) dEV *= Math.max(0, 1 - mv); }
         if ((x & 15) === 0 && (y & 15) === 0) dList.push(dEV);
         if (Math.abs(dEV) < 0.01) continue; if (dEV > 0) up++; else dn++;
@@ -1040,8 +1067,8 @@
         D[i] = Math.round(255 * Math.min(1, oe(lut[D[i]] * k))); D[i + 1] = Math.round(255 * Math.min(1, oe(lut[D[i + 1]] * k))); D[i + 2] = Math.round(255 * Math.min(1, oe(lut[D[i + 2]] * k))); } }
     octx.putImageData(F, 0, 0);
     dList.sort((p, q) => p - q); const pc = q => dList.length ? dList[Math.min(dList.length - 1, (q * dList.length) | 0)].toFixed(2) : '-';
-    R.localExposure = { c: c, cap: CAP, p5: +pc(0.05), p50: +pc(0.5), p95: +pc(0.95), liftedPct: +(100 * up / (w * h)).toFixed(1), loweredPct: +(100 * dn / (w * h)).toFixed(1) };
-    console.log('§LOCAL_EXPOSURE on c=' + c + ' cap=+-' + CAP + 'EV dEV p5/p50/p95=' + pc(0.05) + '/' + pc(0.5) + '/' + pc(0.95) + ' lifted=' + R.localExposure.liftedPct + '% lowered=' + R.localExposure.loweredPct + '% windowMask=' + (wp ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0));
+    R.localExposure = { bilateral: !!BL, bins: BL ? BL.nb : 0, c: c, cap: CAP, p5: +pc(0.05), p50: +pc(0.5), p95: +pc(0.95), liftedPct: +(100 * up / (w * h)).toFixed(1), loweredPct: +(100 * dn / (w * h)).toFixed(1) };
+    console.log('§LOCAL_EXPOSURE on base=' + (BL ? 'bilateral(' + BL.nb + ' bins x ' + BL.BIN + ' EV)' : 'gaussian') + ' c=' + c + ' cap=+-' + CAP + 'EV dEV p5/p50/p95=' + pc(0.05) + '/' + pc(0.5) + '/' + pc(0.95) + ' lifted=' + R.localExposure.liftedPct + '% lowered=' + R.localExposure.loweredPct + '% windowMask=' + (wp ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0));
   }
   function windowPull(A, octx, w, h, R) {
     const THREE = window.THREE, LZ = window.LightZones, LL = window.LightLaw, t0 = performance.now();
