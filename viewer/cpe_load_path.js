@@ -4568,6 +4568,12 @@ function setupCpeLoadPath(A) {
       // here, same frame as the ladders, so it draws/witnesses for whatever `_lp.hopsUp`/`_lp.
       // pickItem` is ACTUALLY drawn (fallback included), never `picked.near` from the arm block.
       _drawInfoCard(ctx, w, h, k, cardLayout);
+      // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — Audio/Visual panels in the black, clear of everything drawn above
+      if (A.freezePerfCompositeOntoCanvas && A._freezePerfOn && (A._freezePerfOn.visual || A._freezePerfOn.audio)) {
+        var _cr = cardLayout.rect, _taken = [nearPanelBox, farPanelBox, _cr ? { x0: _cr.x, y0: _cr.y, x1: _cr.x + _cr.w, y1: _cr.y + _cr.h } : null,
+          _stackScreenBox(_lp, w, h), _lp.far ? _stackScreenBox(_lp.far, w, h) : null].filter(Boolean);
+        A.freezePerfCompositeOntoCanvas(ctx, w, h, { plate: _freezePlateDraw, bodyPx: _freezeBodyPx, font: FREEZE_F }, _taken);
+      }
     } catch (e) { if (!A._loadPathDrawWarned) { A._loadPathDrawWarned = true; _err('DRAW', e); } }
   };
 

@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1534';
+const CACHE_VERSION = 'v1535';
+// v1535 (2026-10-01) §FREEZE_PERF_PANEL: new viewer/cpe_freeze_perf.js — Visual (CCTV coverage, best room) panel in the load-path freeze; Alt+C 'Visual' checkbox / --visual-panel. cpe_load_path 8, cpe_freeze_perf 1.
 // v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
 // v1533 (2026-10-01) merge of fix/sky-surface v1516-v1525 (MEP service colour, furniture in the sky field, lamp contact shadow off, local exposure, rated lamps) into fix/fast-bake v1532.
 // v1532 (2026-10-01) §INTERIOR_LIGHTS_ARC: interior lights off only with no ARC on screen (freeze / reveal hiding ARC), on otherwise. cinema_maxq 23.
@@ -913,7 +914,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
   'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
