@@ -899,6 +899,11 @@ function setupStreaming(A) {
   var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
   A._surfSubstance = function(n) {
     n = (n || '').toLowerCase(); if (!n) return '';
+    // §IFC_SURFACE_NAMES: an IfcMaterialLayerSet arrives as 'A | B | … | Z' in layer order — only the two FACE layers (first, last) are
+    // seen; a stud or insulation core is not the surface (Clinic: 'Plasterboard | Metal - Stud Layer | … | Plasterboard' is plaster).
+    // Framing / fill layers (stud, firring, loose insulation, air; an insulated PANEL is cladding, kept) are never the seen face of a one-sided lining ('Metal - Stud Layer |
+    // Plasterboard', 481 Clinic walls): skipped when choosing the faces, kept if they are all there is.
+    if (n.indexOf(' | ') >= 0) { var _ly0 = n.split(' | '), _lyF = _ly0.filter(function (x) { return !/stud|firring|air gap|air space/.test(x) && !(/insulat/.test(x) && !/panel/.test(x)); }), _ly = _lyF.length ? _lyF : _ly0, _f = A._surfSubstance(_ly[0]), _l = A._surfSubstance(_ly[_ly.length - 1]); return _f || _l; }
     if (/glass|glaz/.test(n)) return 'glass';
     if (/metal|steel|alumin|copper|silver|brass|bronze|iron|zinc|galvani|chrome/.test(n)) return 'metal';
     if (/plaster|gypsum|board|papan|skim|lepaan/.test(n)) return 'plaster';   // finished boards/renders before raw cement
