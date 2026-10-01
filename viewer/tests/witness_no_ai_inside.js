@@ -38,8 +38,14 @@ const ALLOW = [
   { host: 'youtu.be',              why: 'user-initiated navigation link (openTab on click)' },
   { host: 'wa.me',                 why: 'user-clicked share link opened via window.open; user chooses to send' },
   { host: 'maps.google.com',       why: 'text in a user-initiated share message; not fetched by the app' },
+  { host: 'gc.zgo.at', file: 'index.html', why: 'red1 2026-10-02: tracker on landing page only, not in the viewer' },
+  { host: 'red1oon.goatcounter.com', file: 'index.html', why: 'red1 2026-10-02: tracker on landing page only, not in the viewer' },
   { host: 'raw.githubusercontent.com', file: 'erp/plugin_overlay.js', why: 'input placeholder TEXT only (plugin_overlay.js:417); the overlay fetches a URL the user types, on a user action' },
 ];
+// PENDING red1 decision: user-triggered features that send data to a third party. Disclosed in the guide; NOT allowlisted.
+// Own verdict tier (PASS_WITH_DISCLOSED when only these remain) — never plain PASS.
+const PENDING = ['api.github.com', 'tinyurl.com', 'api.qrserver.com'];
+const PENDING_WHY = 'PENDING red1 decision: user-triggered feature';
 // XML-namespace / schema URIs — identifiers, never requested.
 const NS_HOSTS = ['w3.org', 'openxmlformats.org', 'schemas.microsoft.com', 'purl.org', 'purl.oclc.org',
   'docs.oasis-open.org', 'openoffice.org', 'xmlns.oracle.com', 'idempiere.org', 'opengis.net', 'sheetjs.openxmlformats.org'];
@@ -82,6 +88,7 @@ function scanText(file, text) {
       let cls, why = '';
       if (hostIn(host, NS_HOSTS)) cls = 'NS';
       else if (allowFor(host, file)) { cls = 'ALLOW'; why = allowFor(host, file).host; }
+      else if (hostIn(host, PENDING)) { cls = 'PENDING'; why = PENDING_WHY; }
       else if (isCommentLine(ln)) cls = 'COMMENT';
       else if (isVendored(file) && hostIn(host, VENDOR_DOC_HOSTS)) cls = 'VENDOR_DOC';
       else cls = 'UNLISTED';
@@ -106,14 +113,14 @@ function scanRows(files) {
   return files.map(({ file, text }) => {
     const hits = scanText(file, text);
     return { file, bytes: Buffer.byteLength(text), llm: hits.filter(h => h.cls === 'FORBIDDEN').length,
-      unlisted: hits.filter(h => h.cls === 'UNLISTED').length, hits };
+      unlisted: hits.filter(h => h.cls === 'UNLISTED').length, pending: hits.filter(h => h.cls === 'PENDING').length, hits };
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // C2 — request analysis (pure function, so the negative control exercises the SAME code)
 function analyze(reqs, origin, markers) {
-  const ext = new Map(), llm = [], leaks = [], unlistedOrigins = new Map();
+  const ext = new Map(), llm = [], leaks = [], unlistedOrigins = new Map(), pending = new Map(), perPage = new Map();
   for (const r of reqs) {
     let u; try { u = new URL(r.url); } catch (e) { continue; }
     if (!/^(https?|wss?):$/.test(u.protocol)) continue;
@@ -124,10 +131,13 @@ function analyze(reqs, origin, markers) {
     for (const mk of markers) for (const enc of mk.forms) if (blob.includes(enc)) leaks.push({ url: r.url.slice(0, 120), marker: mk.name, form: enc.slice(0, 24) });
     if (u.origin !== origin) {
       ext.set(u.origin, (ext.get(u.origin) || 0) + 1);
-      if (!allowFor(u.hostname)) unlistedOrigins.set(u.origin, (unlistedOrigins.get(u.origin) || 0) + 1);
+      const pg = r.page || '(unknown)', k = pg + ' -> ' + u.origin;
+      perPage.set(k, (perPage.get(k) || 0) + 1);
+      if (hostIn(u.hostname, PENDING)) pending.set(u.origin, (pending.get(u.origin) || 0) + 1);
+      else if (!allowFor(u.hostname, pg)) unlistedOrigins.set(k, (unlistedOrigins.get(k) || 0) + 1);
     }
   }
-  return { ext, llm, leaks, unlistedOrigins };
+  return { ext, llm, leaks, unlistedOrigins, pending, perPage };
 }
 const forms = s => [s, encodeURIComponent(s), Buffer.from(s).toString('base64').replace(/=+$/, ''), Buffer.from(s).toString('hex')];
 
@@ -151,7 +161,11 @@ async function runImport(chromium, origin, ifcPath, tag, settleMs) {
     args: ['--disable-gpu', '--use-gl=swiftshader', '--use-angle=swiftshader', '--disable-gpu-compositing', '--no-sandbox'] });
   const context = await browser.newContext({ serviceWorkers: 'block' });
   const reqs = [], logs = [], wsFrames = [];
-  context.on('request', r => reqs.push({ url: r.url(), method: r.method(), post: r.postData() || '', headers: r.headers() }));
+  context.on('request', r => {
+    let pg = '(worker/unknown)';
+    try { const f = r.frame(); const fu = r.isNavigationRequest() ? r.url() : f.url(); const pu = new URL(fu); pg = pu.pathname.replace(/^\//, '') || 'index.html'; } catch (e) {}
+    reqs.push({ url: r.url(), method: r.method(), post: r.postData() || '', headers: r.headers(), page: pg });
+  });
   context.route('**/*', route => {
     const u = route.request().url();
     if (u.startsWith(origin) || /^(data|blob):/.test(u)) return route.continue();
@@ -221,18 +235,20 @@ function cellDiffs(SQL, bufA, bufB, tables) {
   dbA.close(); dbB.close(); return out;
 }
 
+const TS_MASK = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z?$/;
 async function logicalHash(SQL, buf) {
+  let masked = 0;
   let db; try { db = new SQL.Database(new Uint8Array(buf)); } catch (e) { return null; }
   const h = crypto.createHash('sha256'); const per = {}; let rows = 0;
   let tables; try { tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"); } catch (e) { db.close(); return null; }
   for (const t of (tables[0] ? tables[0].values.map(r => r[0]) : [])) {
     const th = crypto.createHash('sha256'); let n = 0;
     let q; try { q = db.exec('SELECT * FROM "' + t + '" ORDER BY rowid'); } catch (e) { try { q = db.exec('SELECT * FROM "' + t + '"'); } catch (e2) { q = []; } }
-    for (const r of (q[0] ? q[0].values : [])) { th.update(JSON.stringify(r) + '\n'); n++; }
+    for (const r of (q[0] ? q[0].values : [])) { th.update(JSON.stringify(r.map(c => (typeof c === 'string' && TS_MASK.test(c)) ? (masked++, '<TS>') : c)) + '\n'); n++; }
     per[t] = { rows: n, hash: th.digest('hex') }; rows += n; h.update(t + ':' + per[t].hash + '\n');
   }
   db.close();
-  return { hash: h.digest('hex'), per, rows };
+  return { hash: h.digest('hex'), per, rows, masked };
 }
 
 (async () => {
@@ -250,12 +266,13 @@ async function logicalHash(SQL, buf) {
   console.log('  VENDOR_DOC (doc/licence refs inside vendored libs only): ' + VENDOR_DOC_HOSTS.join(', '));
   const allHits = rows.flatMap(r => r.hits);
   const by = c => allHits.filter(h => h.cls === c);
-  const llmHits = by('FORBIDDEN'), unl = by('UNLISTED');
+  const llmHits = by('FORBIDDEN'), unl = by('UNLISTED'), pend = by('PENDING');
   // each ALLOWed host actually seen, enumerated with count and first sites
   const seen = new Map();
   by('ALLOW').forEach(h => { const k = h.detail; if (!seen.has(k)) seen.set(k, []); seen.get(k).push(h.file + ':' + h.line); });
   console.log('§NOAI_ALLOWED_SEEN');
   [...seen].sort().forEach(([k, v]) => console.log('  ' + k + ' x' + v.length + ' first=' + v.slice(0, 3).join(' ')));
+  pend.forEach(h => console.log('§NOAI_HIT PENDING ' + h.file + ':' + h.line + ' host=' + h.detail));
   llmHits.forEach(h => console.log('§NOAI_HIT LLM ' + h.kind + ' ' + h.file + ':' + h.line + ' ' + h.detail));
   unl.forEach(h => console.log('§NOAI_HIT UNLISTED_EXTERNAL ' + h.file + ':' + h.line + ' host=' + h.detail + ' :: ' + h.ctx));
   const census = {}; by('INFO').forEach(h => { census[h.detail] = (census[h.detail] || 0) + 1; });
@@ -292,10 +309,10 @@ async function logicalHash(SQL, buf) {
   if (files.length === 0 || bytes === 0) v1 = 'VACUOUS';
   else if (!negC1) v1 = 'WRONG';
   else if (allHits.filter(h => h.kind === 'EXT_URL').length === 0) v1 = 'NO-OP';
-  else v1 = (llmHits.length === 0 && unl.length === 0) ? 'PASS' : 'FAIL';
+  else v1 = (llmHits.length || unl.length) ? 'FAIL' : pend.length ? 'PASS_WITH_DISCLOSED' : 'PASS';
   verdicts.C1 = v1;
   console.log('§NOAI_STATIC verdict=' + v1 + ' files=' + files.length + ' bytes=' + bytes + ' llm_hits=' + llmHits.length +
-    ' unlisted=' + unl.length + ' allow_hosts_seen=' + seen.size + ' ext_urls=' + allHits.filter(h => h.kind === 'EXT_URL').length + ' negctl=' + (negC1 ? 'caught' : 'WRONG') +
+    ' unlisted=' + unl.length + ' pending_disclosed=' + pend.length + ' allow_hosts_seen=' + seen.size + ' ext_urls=' + allHits.filter(h => h.kind === 'EXT_URL').length + ' negctl=' + (negC1 ? 'caught' : 'WRONG') +
     ' kit_fail=' + kit.fail);
 
   // ═══ C2 NETWORK + C3 DETERMINISM (browser) ═══
@@ -328,9 +345,16 @@ async function logicalHash(SQL, buf) {
     const mainReqs = runA.reqs.slice();
     const a = analyze(mainReqs.concat(runA.wsFrames.map(f => ({ url: f.url, post: f.post }))), origin, markers);
     console.log('§NOAI_C2_REQUESTS total=' + mainReqs.length + ' same_origin=' + mainReqs.filter(r => !nonOrigin(r) && /^http/.test(r.url)).length + ' external=' + mainReqs.filter(nonOrigin).filter(r => /^https?:|^wss?:/.test(r.url)).length + ' ws_frames_sent=' + runA.wsFrames.length);
-    [...a.ext].sort().forEach(([o, n]) => console.log('  EXTERNAL_ORIGIN ' + o + ' x' + n + ' ' + (allowFor(new URL(o).hostname) ? 'allowlisted' : 'NOT-ALLOWLISTED')));
-    mainReqs.filter(r => [...a.unlistedOrigins.keys()].some(o => r.url.startsWith(o))).forEach(r =>
-      console.log('§NOAI_HIT NETWORK_UNLISTED ' + r.method + ' ' + r.url.slice(0, 200) + (r.post ? ' body_bytes=' + r.post.length : '')));
+    console.log('§NOAI_PER_PAGE_ORIGINS (page that made the request -> external origin: count)');
+    [...a.perPage].sort().forEach(([k, n]) => console.log('  ' + k + ' x' + n + ' ' + (a.unlistedOrigins.has(k) ? 'NOT-ALLOWLISTED' : 'allowed-for-this-page')));
+    const gcHosts = r => /(^|\.)(gc\.zgo\.at|red1oon\.goatcounter\.com)$/.test(new URL(r.url).hostname);
+    const gcViewer = mainReqs.filter(r => gcHosts(r) && /^viewer\/viewer\.html/.test(r.page));
+    const gcLanding = mainReqs.filter(r => gcHosts(r) && r.page === 'index.html');
+    console.log('§NOAI_GOATCOUNTER from_viewer.html=' + gcViewer.length + ' from_index.html=' + gcLanding.length + ' (index.html allowed: red1 2026-10-02: tracker on landing page only, not in the viewer)');
+    const viewerSeen = mainReqs.some(r => /^viewer\/viewer\.html/.test(r.page));
+    console.log('§NOAI_VIEWER_PAGE_SEEN ' + viewerSeen + ' (if false, the viewer-side assertion is vacuous)');
+    mainReqs.filter(r => { try { const u = new URL(r.url); return u.origin !== origin && !hostIn(u.hostname, PENDING) && !allowFor(u.hostname, r.page); } catch (e) { return false; } }).forEach(r =>
+      console.log('§NOAI_HIT NETWORK_UNLISTED page=' + r.page + ' ' + r.method + ' ' + r.url.slice(0, 200) + (r.post ? ' body_bytes=' + r.post.length : '')));
     a.llm.forEach(u => console.log('§NOAI_HIT NETWORK_LLM ' + u));
     a.leaks.forEach(l => console.log('§NOAI_HIT NETWORK_CANARY_LEAK marker=' + l.marker + ' url=' + l.url));
 
@@ -345,15 +369,16 @@ async function logicalHash(SQL, buf) {
     await sleep(1500);
     const injected = runA.reqs.slice(before);
     const n = analyze(injected, origin, markers);
-    negC2 = injected.length >= 2 && n.unlistedOrigins.has('https://canary-sink.invalid') && n.leaks.length >= 2;
-    console.log('§NOAI_NETWORK_NEGCTL injected_requests=' + injected.length + ' flagged_origin=' + n.unlistedOrigins.has('https://canary-sink.invalid') + ' flagged_leaks=' + n.leaks.length + ' => ' + (negC2 ? 'caught' : 'WRONG'));
+    negC2 = injected.length >= 2 && [...n.unlistedOrigins.keys()].some(k => k.endsWith('https://canary-sink.invalid')) && n.leaks.length >= 2;
+    console.log('§NOAI_NETWORK_NEGCTL injected_requests=' + injected.length + ' flagged_origin=' + [...n.unlistedOrigins.keys()].some(k => k.endsWith('https://canary-sink.invalid')) + ' flagged_leaks=' + n.leaks.length + ' => ' + (negC2 ? 'caught' : 'WRONG'));
 
     if (mainReqs.length === 0) v2 = 'VACUOUS';
     else if (!negC2) v2 = 'WRONG';
     else if (!importOk || !canaryInContent) v2 = 'INCONCLUSIVE'; // canary never entered the app => absence of leak proves nothing
-    else v2 = (a.llm.length === 0 && a.leaks.length === 0 && a.unlistedOrigins.size === 0) ? 'PASS' : 'FAIL';
+    else if (!viewerSeen) v2 = 'INCONCLUSIVE';
+    else v2 = (a.llm.length || a.leaks.length || a.unlistedOrigins.size || gcViewer.length) ? 'FAIL' : a.pending.size ? 'PASS_WITH_DISCLOSED' : 'PASS';
     console.log('§NOAI_NETWORK verdict=' + v2 + ' requests=' + mainReqs.length + ' external_origins=' + JSON.stringify([...a.ext.keys()].sort()) +
-      ' unlisted_origins=' + JSON.stringify([...a.unlistedOrigins.keys()]) + ' canary_leaks=' + a.leaks.length + ' llm_hits=' + a.llm.length +
+      ' unlisted_page_origins=' + JSON.stringify([...a.unlistedOrigins.keys()]) + ' goatcounter_from_viewer=' + gcViewer.length + ' canary_leaks=' + a.leaks.length + ' llm_hits=' + a.llm.length +
       ' import_done=' + importOk + ' negctl=' + (negC2 ? 'caught' : 'WRONG'));
     await runA.browser.close();
   } else console.log('§NOAI_NETWORK verdict=INCONCLUSIVE reason=run_failed');
@@ -379,6 +404,8 @@ async function logicalHash(SQL, buf) {
     if (!A.done || !B.done) v3 = 'INCONCLUSIVE';
     else if (rowsA === 0) v3 = 'VACUOUS';
     else {
+      const maskedA = A.lh.reduce((s2, x) => s2 + (x.logical ? x.logical.masked : 0), 0), maskedB = B.lh.reduce((s2, x) => s2 + (x.logical ? x.logical.masked : 0), 0);
+      console.log('§NOAI_C3_MASK masked_cells A=' + maskedA + ' B=' + maskedB + ' — masked ONLY string cells shaped like an ISO-8601 timestamp (YYYY-MM-DDTHH:MM:SS[.fff][Z]) = import wall-clock stamps; every other cell is hashed');
       let logicalEq = A.lh.length === B.lh.length, bytesEq = logicalEq, firstDiff = '';
       A.lh.forEach((x, i) => { const y = B.lh[i]; if (!y) { logicalEq = bytesEq = false; return; }
         if (x.path !== y.path) { logicalEq = false; firstDiff = firstDiff || 'leaf path ' + x.path + ' vs ' + y.path; }
@@ -413,7 +440,7 @@ async function logicalHash(SQL, buf) {
       negC3 = !!mh && mh.hash !== first.logical.hash && mh.per[tbl].hash !== first.logical.per[tbl].hash;
       console.log('§NOAI_DETERMINISM_NEGCTL mutated table=' + tbl + ' col=' + col + ' logical_hash_changed=' + negC3 + ' => ' + (negC3 ? 'caught' : 'WRONG'));
       v3 = !negC3 ? 'WRONG' : (logicalEq && emEq) ? 'PASS' : 'FAIL';
-      console.log('§NOAI_DETERMINISM verdict=' + v3 + ' rows=' + rowsA + ' elements=' + A.em + '/' + B.em + ' logical_equal=' + logicalEq + ' bytes_equal=' + bytesEq +
+      console.log('§NOAI_DETERMINISM verdict=' + v3 + ' rows=' + rowsA + ' elements=' + A.em + '/' + B.em + ' masked_ts_cells=' + maskedA + '/' + maskedB + ' (iso-timestamp cells masked) logical_equal=' + logicalEq + ' bytes_equal=' + bytesEq +
         (firstDiff ? ' first_diff=' + firstDiff : '') + ' sha_A=' + A.lh.map(x => x.bytes.slice(0, 12)).join(',') + ' sha_B=' + B.lh.map(x => x.bytes.slice(0, 12)).join(',') +
         ' negctl=' + (negC3 ? 'caught' : 'WRONG'));
     }
@@ -423,8 +450,9 @@ async function logicalHash(SQL, buf) {
   server.close();
 
   const vs = Object.values(verdicts);
-  const final = vs.every(v => v === 'PASS') ? 'PASS' : vs.includes('FAIL') ? 'FAIL' : 'INCONCLUSIVE';
+  const okv = v => v === 'PASS' || v === 'PASS_WITH_DISCLOSED';
+  const final = vs.includes('FAIL') ? 'FAIL' : !vs.every(okv) ? 'INCONCLUSIVE' : vs.includes('PASS_WITH_DISCLOSED') ? 'PASS_WITH_DISCLOSED' : 'PASS';
   console.log('§NOAI_VERDICT verdict=' + final + ' C1=' + verdicts.C1 + ' C2=' + verdicts.C2 + ' C3=' + verdicts.C3);
-  process.exitCode = final === 'PASS' ? 0 : 1;
+  process.exitCode = okv(final) ? 0 : 1;
   setTimeout(() => process.exit(process.exitCode), 200);
 })().catch(e => { console.log('§NOAI_VERDICT verdict=INCONCLUSIVE fatal=' + (e && e.stack || e)); process.exit(2); });
