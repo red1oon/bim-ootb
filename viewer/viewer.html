@@ -1134,13 +1134,6 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 })();
 </script>
 <script>
-if(new URLSearchParams(location.search).has('ignore-me'))localStorage.setItem('goatcounter-ignore','t');
-if(new URLSearchParams(location.search).get('embedded')!=='true'){
-  var gc=document.createElement('script');gc.dataset.goatcounter='https://red1oon.goatcounter.com/count';
-  gc.async=true;gc.src='//gc.zgo.at/count.js';document.body.appendChild(gc);
-}
-</script>
-<script>
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js?v=538')
     .then(function(r){console.log('§SW_REG scope='+r.scope)})
