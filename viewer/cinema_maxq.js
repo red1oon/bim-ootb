@@ -1598,6 +1598,17 @@
   // ⚠ ONE THING THAT IS NOT SUPPRESSION: the Escape Route card occupies the bigStats slot for its
   // window, the same slot the tail/storey/measure cards already take turns in. One slot holds one
   // card; that is the chain's existing behaviour.
+  // §SPEED_AB S-A (bim-compiler prompts/ALTC_FOUNDATION.md §SPEED_AB): one encoder for both capture sites. Default WebP 0.92 (unchanged);
+  // &capfmt=jpeg (&capq=0.95) = JPEG. §CAPTURE_ENC logs the encode ms + bytes every frame on every arm, so the WebP cost is measured.
+  var _capFmt = /[?&]capfmt=jpeg/.test(location.search) ? 'image/jpeg' : 'image/webp';
+  var _capQ = (function () { var m = /[?&]capq=([0-9.]+)/.exec(location.search); return m ? +m[1] : (_capFmt === 'image/jpeg' ? 0.95 : 0.92); })();
+  var _capN = 0;
+  function _capEncode(c, idx) {
+    var t0 = performance.now();
+    return new Promise(function (res) { c.toBlob(function (b) {
+      console.log('§CAPTURE_ENC n=' + (_capN++) + (idx != null ? ' i=' + idx : '') + ' fmt=' + _capFmt.slice(6) + ' q=' + _capQ + ' ms=' + (performance.now() - t0).toFixed(1) + ' bytes=' + (b ? b.size : 'null'));
+      res(b); }, _capFmt, _capQ); });
+  }
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo, escCardInfo) {
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
@@ -1643,7 +1654,7 @@
         catch (eLTD) { console.warn('§LEDGER_TICKER_DRAW_ERR failed (burn-in): ' + (eLTD && eLTD.message)); }
       }
       if (_bIdx === 0 || _bIdx % 100 === 0) console.log('§DATUM_DECOUPLE_FRAME i=' + _bIdx + ' src=' + _bUrl);
-      return new Promise(function (res) { c.toBlob(res, 'image/webp', 0.92); });
+      return _capEncode(c, _bIdx);
     }
     // §129 DIAGNOSTIC (2026-09-17, red1: "not a single change is evident" — re-checking with real
     // frame reads, not another blind bake) — sample LIVE scene state at the EXACT instant this
@@ -2166,7 +2177,7 @@
       for (var _qi = 0; _qi < _qd.length; _qi += 4) { var _ql = 0.2126 * _qd[_qi] + 0.7152 * _qd[_qi + 1] + 0.0722 * _qd[_qi + 2]; _qs += _ql; if (_ql < _qmn) _qmn = _ql; if (_ql > _qmx) _qmx = _ql; if (_ql <= 15) _qdk++; if (_ql >= 250) _qcl++; }
       var _qn = _qd.length / 4; A._frameQa = { mean: _qs / _qn, min: _qmn, max: _qmx, dark: 100 * _qdk / _qn, clip: 100 * _qcl / _qn };
     } catch (eQa) { A._frameQa = { err: eQa.message }; }
-    return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
+    return _capEncode(c, null);
   }
 
   // §MAXQ_MP4 — mp4/H.264 stitch (preferred path). Spec: PHOTOREAL_STILL_RENDER.md §MAXQ_MP4 SPEC.

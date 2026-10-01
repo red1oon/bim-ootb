@@ -4870,7 +4870,12 @@ async function setupEffects(A, renderer, scene, camera) {
       return null;
     }
     var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // same rule as the still's meter()
-    var m = SL.meterRead(A, { mode: mode, quiet: true, camZone: 0 });
+    // §SPEED_AB S-B (ALTC_FOUNDATION.md §SPEED_AB): &metereach=N meters every Nth frame (and on a gate snap); between, the last reading is
+    // reused and exposure keeps easing toward it. Default N=1 = every frame (unchanged).
+    var _mEach = +((/[?&]metereach=(\d+)/.exec(location.search) || [])[1] || 1), _metered = 1;
+    var m;
+    if (_mEach > 1 && _fe.mLast && frameIdx % _mEach !== 0 && A._filmExpSnapAt !== frameIdx) { m = _fe.mLast; _metered = 0; }
+    else { m = SL.meterRead(A, { mode: mode, quiet: true, camZone: 0 }); if (m && m.L > 0) _fe.mLast = m; }
     if (!(m && m.L > 0)) {
       console.log('§FILM_EXPOSURE VACUOUS f=' + frameIdx + ' reason=no luminance read (pixels=' + (m ? m.pixels : '-') + ') exposure=' + R.toneMappingExposure.toFixed(4) + ' held');
       return null;
@@ -4881,7 +4886,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var exp = LL.exposureFromEv(a.ev, lp, LL.acesDiv(R, THREE));
     _fe.ev = a.ev; _fe.n++; R.toneMappingExposure = exp;
     A._meterLast = { exposure: exp, stops: Math.log2(exp / _fe.base), ev100: a.ev, Lcd: Lcd, targetEv100: tEv, film: true };
-    console.log('§FILM_EXPOSURE f=' + frameIdx + ' targetEV=' + tEv.toFixed(3) + ' EV=' + a.ev.toFixed(3) + ' exposure=' + exp.toFixed(5) + ' Lcd=' + Lcd.toFixed(1) +
+    console.log('§FILM_EXPOSURE f=' + frameIdx + ' metered=' + _metered + ' targetEV=' + tEv.toFixed(3) + ' EV=' + a.ev.toFixed(3) + ' exposure=' + exp.toFixed(5) + ' Lcd=' + Lcd.toFixed(1) +
       ' first=' + (a.first ? 1 : 0) + ' capped=' + (a.capped || '-') + ' dt=' + dt.toFixed(4) + ' mode=' + m.mode + ' skyPx=' + m.skyPx +
       ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
       ' tgt=[' + (A.controls && A.controls.target ? [A.controls.target.x, A.controls.target.y, A.controls.target.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']' +
