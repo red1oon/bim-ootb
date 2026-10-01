@@ -350,7 +350,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=12' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=13' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -533,7 +533,7 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=12');
+    var worker = _createWorker('viewer/import_worker.js?v=13');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
