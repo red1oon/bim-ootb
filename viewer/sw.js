@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1547';
+const CACHE_VERSION = 'v1548';
+// v1548 (2026-10-02) §CAPTURE_SPLIT: §CAPTURE_ENC carries compMs (HUD composite before encode); §CAPTURE_TAIL hashMs + idbMs per frame. Logging only. cinema_maxq 29.
 // v1547 (2026-10-02) merge of fix/sky-surface @436b85cc (§WIND_FLIP: flipped-winding geometries DoubleSide, patches geometry_wind_flip; light-field fp unchanged per Alt+S) into fix/fast-bake v1546. scene 71, wind_flip 1, still_fault 11, streaming 86.
 // v1546 (2026-10-02) §SPEED_AB S-B2 opt-in &meterprime=auto: film meter skips its prime render once primed, self-checking (new program or dummy binding -> full prime that frame); §METER_PRIME counts. sourced_light 79.
 // v1545 (2026-10-02) §SPEED_AB opt-in arms: &capfmt=jpeg (&capq) capture encoder + §CAPTURE_ENC timing on every arm; &metereach=N film meter every Nth frame (metered=0|1 in §FILM_EXPOSURE). Defaults unchanged. effects 135, cinema_maxq 28.

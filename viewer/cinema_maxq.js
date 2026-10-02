@@ -1606,10 +1606,11 @@
   function _capEncode(c, idx) {
     var t0 = performance.now();
     return new Promise(function (res) { c.toBlob(function (b) {
-      console.log('§CAPTURE_ENC n=' + (_capN++) + (idx != null ? ' i=' + idx : '') + ' fmt=' + _capFmt.slice(6) + ' q=' + _capQ + ' ms=' + (performance.now() - t0).toFixed(1) + ' bytes=' + (b ? b.size : 'null'));
+      console.log('§CAPTURE_ENC n=' + (_capN++) + (idx != null ? ' i=' + idx : '') + ' fmt=' + _capFmt.slice(6) + ' q=' + _capQ + ' ms=' + (performance.now() - t0).toFixed(1) + ' compMs=' + (window.APP && window.APP._capT0 ? (t0 - window.APP._capT0).toFixed(1) : '-') + ' bytes=' + (b ? b.size : 'null'));
       res(b); }, _capFmt, _capQ); });
   }
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo, escCardInfo) {
+    if (window.APP) window.APP._capT0 = performance.now();   // §CAPTURE_SPLIT: composite ms = this -> toBlob call
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     A._hudLayoutRects = [];   // §HUD_LAYOUT — fresh registry every frame, never carries a stale rect
@@ -4694,6 +4695,7 @@
         // LARGE_DB_BAKE.md §2 L4 — seam-equivalence witness: hash the ENCODED bytes of this frame,
         // keyed by its GLOBAL index in the full film (not this run's local i), so a K=1 bake and a
         // --frame-range slice of the same span can be diffed frame-for-frame without decoding video.
+        var _tailT0 = performance.now();   // §CAPTURE_SPLIT tail: hash + QA log + IDB write
         try {
           var _fhBuf = await blob.arrayBuffer();
           var _fhDig = await crypto.subtle.digest('SHA-256', _fhBuf);
@@ -4723,7 +4725,9 @@
         // permanently unusable once "closing" — reopening is cheap and the underlying stored data
         // (frames already put successfully) is untouched by the old handle dying.
         try {
+          var _idbT0 = performance.now();
           await _idbPut(db, i, blob);
+          console.log('§CAPTURE_TAIL i=' + (_frameRange ? _frameRange.a + i : i) + ' hashMs=' + (_idbT0 - _tailT0).toFixed(1) + ' idbMs=' + (performance.now() - _idbT0).toFixed(1));
         } catch (idbErr) {
           _idbLost = true;
           console.warn('§MAXQ_IDB_LOST i=' + i + ' ' + idbErr.message +
