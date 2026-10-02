@@ -364,6 +364,73 @@
     var args = Array.prototype.slice.call(arguments, 2);
     try { var st = b3.prepare(sql); return st.all.apply(st, args) || []; } catch (er) { return []; }
   }
+  // FS-6 (§FS2e) — the document header a line callout reads: the raw bundle row, else (a header created this
+  // session, synthetic id) the window context APP._winCtx = the folded parent row (idempiere.html _winCtxFor),
+  // accepted only when its own key IS this id (never a stale window). Returns lower-case fields + source.
+  function _fs6Header(b3, table, id) {
+    var dcol = table === 'c_invoice' ? 'dateinvoiced' : 'dateordered';
+    var cols = 'm_pricelist_id, ' + dcol + ' AS date, ad_org_id, ad_client_id, c_bpartner_location_id, issotrx, m_warehouse_id' +
+               (table === 'c_order' ? ', bill_location_id, deliveryviarule' : '');
+    var row = _q1(b3, 'SELECT ' + cols + ' FROM ' + table + ' WHERE ' + table + '_id=?', Number(id));
+    if (row) { row.source = 'bundle'; return row; }
+    var w = (global.APP && global.APP._winCtx) || null;
+    if (!w || String(w[table + '_id']) !== String(id)) return null;
+    return { m_pricelist_id: w.m_pricelist_id, date: w[dcol], ad_org_id: w.ad_org_id, ad_client_id: w.ad_client_id,
+             c_bpartner_location_id: w.c_bpartner_location_id, issotrx: w.issotrx, m_warehouse_id: w.m_warehouse_id,
+             bill_location_id: w.bill_location_id, deliveryviarule: w.deliveryviarule, source: 'window-ctx' };
+  }
+  // FS-6 — Tax.getProduct (Tax.java:475-560) + Tax.get (Tax.java:740-854), transcribed. Returns {taxId, rule, note}
+  // or {taxId:null, note} (iDempiere then leaves C_Tax_ID unset and raises a status event — CalloutOrder.java:981-984).
+  // NOT ported, named: country GROUPS (a tax carrying one is skipped and counted), postal taxes (the seed's C_Tax has
+  // no IsPostal column), MLocation(0)'s default-country fallback (a header without a location derives no tax).
+  function _fs6Tax(b3, pid, h) {
+    var n = function (v) { return Number(v) || 0; };
+    var shipLoc = n(h.c_bpartner_location_id), billLoc = n(h.bill_location_id) || shipLoc;          // CalloutOrder :946-967
+    if (!shipLoc) return { taxId: null, note: 'no C_BPartner_Location_ID on the header (CalloutOrder.tax :948 → amt only)' };
+    var isSO = String(h.issotrx || 'Y').toUpperCase() === 'Y';
+    var g = _q1(b3, 'SELECT p.c_taxcategory_id AS cat, o.c_location_id AS orgloc, il.c_location_id AS billto, b.istaxexempt AS soex, ' +
+                    'b.ispotaxexempt AS poex, w.c_location_id AS whloc, sl.c_location_id AS shipto FROM m_product p ' +
+                    'JOIN ad_orginfo o ON o.ad_org_id=? JOIN c_bpartner_location il ON il.c_bpartner_location_id=? ' +
+                    'JOIN c_bpartner b ON il.c_bpartner_id=b.c_bpartner_id LEFT JOIN m_warehouse w ON w.m_warehouse_id=? ' +
+                    'JOIN c_bpartner_location sl ON sl.c_bpartner_location_id=? WHERE p.m_product_id=?',
+                    n(h.ad_org_id), billLoc, n(h.m_warehouse_id), shipLoc, pid);
+    if (!g) return { taxId: null, note: 'TaxCriteriaNotFound (product/org-info/BP-location join empty, Tax.java:565-600)' };
+    if (String((isSO ? g.soex : g.poex) || 'N').toUpperCase() === 'Y') {                           // :520-524 getExemptTax
+      var ex = _q1(b3, "SELECT t.c_tax_id AS id FROM c_tax t JOIN ad_org o ON t.ad_client_id=o.ad_client_id " +
+                       "WHERE upper(t.istaxexempt)='Y' AND o.ad_org_id=? AND upper(t.isactive)='Y' ORDER BY t.rate DESC LIMIT 1", n(h.ad_org_id));
+      return ex ? { taxId: ex.id, rule: 'exempt' } : { taxId: null, note: 'TaxNoExemptFound' };
+    }
+    var billFrom = n(g.orgloc), billTo = n(g.billto);
+    if (!isSO) { var t0 = billFrom; billFrom = billTo; billTo = t0; }                                // :530-538
+    else if (String(h.deliveryviarule || '') === 'P') billTo = n(g.whloc);                          // :539-542
+    var loc = function (id) { return id ? (_q1(b3, 'SELECT c_country_id AS c, c_region_id AS r FROM c_location WHERE c_location_id=?', id) || null) : null; };
+    var lf = loc(billFrom), lt = loc(billTo);
+    if (!lf || !lt) return { taxId: null, note: 'bill-from/to location missing (MLocation(0) default-country fallback not ported)' };
+    var cli = (global.APP && global.APP.clientId != null) ? n(global.APP.clientId) : n(h.ad_client_id);
+    // MTax.getAll (MTax.java:78-82): own client, active, Postgres ORDER BY ... ASC → NULLS LAST, ValidFrom DESC.
+    var nl = function (c) { return '(' + c + ' IS NULL), ' + c; };
+    var taxes = _qAll(b3, "SELECT * FROM c_tax WHERE ad_client_id=? AND upper(isactive)='Y' ORDER BY " +
+                [nl('c_countrygroupfrom_id'), nl('c_country_id'), nl('c_region_id'), nl('c_countrygroupto_id'), nl('to_country_id'), nl('to_region_id')].join(', ') +
+                ', validfrom DESC', cli);
+    var lc = function (t) { var o = {}; for (var k in t) o[String(k).toLowerCase()] = t[k]; return o; };
+    var date = String(h.date || '').slice(0, 10) || new Date().toISOString().slice(0, 10), groups = 0;
+    var okType = function (t) { var s = String(t.sopotype || 'B'); return !(isSO && s === 'P') && !(!isSO && s === 'S'); };
+    for (var i = 0; i < taxes.length; i++) {
+      var t = lc(taxes[i]);
+      if (n(t.c_taxcategory_id) !== n(g.cat) || n(t.parent_tax_id) !== 0 || !okType(t)) continue;
+      if (n(t.c_countrygroupfrom_id) || n(t.c_countrygroupto_id)) { groups++; continue; }
+      if ((n(t.c_country_id) === n(lf.c) || !n(t.c_country_id)) && (n(t.c_region_id) === n(lf.r) || !n(t.c_region_id)) &&
+          (n(t.to_country_id) === n(lt.c) || !n(t.to_country_id)) && (n(t.to_region_id) === n(lt.r) || !n(t.to_region_id)) &&
+          String(t.validfrom || '').slice(0, 10) <= date)
+        return { taxId: t.c_tax_id, rule: 'match', note: 'cat=' + g.cat + ' from=' + lf.c + '/' + (lf.r || 0) + ' to=' + lt.c + '/' + (lt.r || 0) + (groups ? ' skippedCountryGroup=' + groups : '') };
+    }
+    for (var j = 0; j < taxes.length; j++) {                                                         // :829-842 default tax
+      var d = lc(taxes[j]);
+      if (String(d.isdefault || 'N').toUpperCase() !== 'Y' || n(d.parent_tax_id) !== 0 || !okType(d)) continue;
+      return { taxId: d.c_tax_id, rule: 'default', note: 'cat=' + g.cat };
+    }
+    return { taxId: null, note: 'TaxNotFound cat=' + g.cat };
+  }
   function _round(x, p) { var f = Math.pow(10, p == null ? 2 : p); return Math.round((Number(x) || 0) * f + (Number(x) < 0 ? -1e-9 : 1e-9)) / f; }
   function _day(v) { var t = Date.parse(String(v || '')); return isNaN(t) ? null : Math.floor(t / 86400000); }
   // MConversionRate.getRate (MConversionRate.java:229-280), transcribed including its ORDER BY.
@@ -845,9 +912,32 @@
           if (ordId) { sql = 'c_order o WHERE o.c_order_id=?'; key = ordId; }
           else if (invId) { sql = 'c_invoice o WHERE o.c_invoice_id=?'; key = invId; }
           if (!sql) return null;
-          var row = _q1(b3, 'SELECT pp.pricestd, pp.pricelist FROM ' + sql.replace(' WHERE', ' JOIN m_pricelist_version v ON v.m_pricelist_id=o.m_pricelist_id JOIN m_productprice pp ON pp.m_pricelist_version_id=v.m_pricelist_version_id AND pp.m_product_id=' + Number(pid) + ' WHERE'),
-                        key);
-          return row ? { priceStd: row.pricestd, priceList: row.pricelist } : null;
+          // FS-6 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2e — Witness: W-ERP-FIRST-SETUP S17): the header is
+          // the raw bundle row OR, for a header created this session, the window context (CalloutOrder.java:771,783
+          // read M_PriceList_ID / DateOrdered from the WINDOW). Version = newest ValidFrom <= the document date
+          // (CalloutOrder.java:783-797); prices + the product's UOM from M_ProductPrice (MProductPricing.java:190-210).
+          var h = _fs6Header(b3, ordId ? 'c_order' : 'c_invoice', key);
+          if (!h || !Number(h.m_pricelist_id)) return null;
+          var plv = _q1(b3, 'SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=? AND ' +
+                        "upper(COALESCE(isactive,'Y'))='Y' AND date(validfrom) <= date(?) ORDER BY validfrom DESC LIMIT 1",
+                        Number(h.m_pricelist_id), String(h.date || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+          if (!plv) return null;
+          var row = _q1(b3, 'SELECT pp.pricestd, pp.pricelist, pp.pricelimit, p.c_uom_id FROM m_productprice pp JOIN m_product p ' +
+                        'ON p.m_product_id=pp.m_product_id WHERE pp.m_product_id=? AND pp.m_pricelist_version_id=?', Number(pid), Number(plv.v));
+          console.log('§FS6-PRICE product=' + pid + ' header=' + h.source + ' pricelist=' + h.m_pricelist_id + ' date=' + h.date +
+            ' plv=' + plv.v + ' ' + (row ? 'std=' + row.pricestd + ' list=' + row.pricelist + ' limit=' + row.pricelimit + ' uom=' + row.c_uom_id : 'no-price-row'));
+          return row ? { priceStd: row.pricestd, priceList: row.pricelist, priceLimit: row.pricelimit, uomId: row.c_uom_id } : null;
+        },
+        // FS-6 — CalloutOrder.tax (:925-985) → Tax.get → Tax.getProduct (Tax.java:475-560) → Tax.get (Tax.java:740-854).
+        taxFor: function (pid, record) {
+          var r = record || {};
+          var ordId = Number(r.C_Order_ID || r.c_order_id || 0);
+          if (!ordId || !Number(pid)) return null;
+          var h = _fs6Header(b3, 'c_order', ordId);
+          var tx = h ? _fs6Tax(b3, Number(pid), h) : null;
+          console.log('§FS6-TAX product=' + pid + ' order=' + ordId + ' header=' + (h ? h.source : 'none') + ' org=' + (h && h.ad_org_id) +
+            ' shipLoc=' + (h && h.c_bpartner_location_id) + ' tax=' + (tx ? tx.taxId : null) + ' rule=' + (tx && tx.rule) + ' note="' + ((tx && tx.note) || '') + '"');
+          return tx;
         },
         // ══ §CALLOUT-CAMPAIGN accessors (§CC.3) — every one is a real join on the immutable bundle, the same
         // read-the-real-row shape bpShipDefaults/docTypeInfo already are. NOTHING here defaults or invents:
