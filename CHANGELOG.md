@@ -4,6 +4,21 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.71.0](https://github.com/red1oon/bim-ootb/compare/v1.70.1...v1.71.0) (2026-10-02)
+
+
+### ✨ Features
+
+* **history:** §THREADS step 1 — category/element threads on the Modeller dotline (read-only) ([#1807](https://github.com/red1oon/bim-ootb/issues/1807)) ([a363d71](https://github.com/red1oon/bim-ootb/commit/a363d711922b557eb2efb12bcb07495edda10e2e))
+* **history:** §THREADS step 1b — read-only category scrubber: 'Viewing: &lt;Cat&gt;', ‹ › step the thread, jump-to-view ([#1812](https://github.com/red1oon/bim-ootb/issues/1812)) ([7f2f05a](https://github.com/red1oon/bim-ootb/commit/7f2f05a70774c9184a713d227bc9bca159f280dd))
+* **modeller:** §GRID-SPAN-GATE — span colours on grid drag, Add one more (one gesture), column-derived grid on Move Grid ([#1803](https://github.com/red1oon/bim-ootb/issues/1803)) ([bda94cd](https://github.com/red1oon/bim-ootb/commit/bda94cd1a37de73b5b67276dc0ef940ee904d6bc))
+
+
+### 🐛 Fixes
+
+* **ask:** live split buildings get their cost table — separate &lt;db&gt;.qto.sql patch + loader ([#1816](https://github.com/red1oon/bim-ootb/issues/1816)) ([1513755](https://github.com/red1oon/bim-ootb/commit/1513755dbf2d2ad0200ae68f7027e92107902654))
+* **modeller:** §THREADS history bar gets an opaque backing (the §S8 Δ pin text showed through it) ([#1815](https://github.com/red1oon/bim-ootb/issues/1815)) ([9aea666](https://github.com/red1oon/bim-ootb/commit/9aea666ee461f9adadd00d2e4f1d15ed6813802c))
+
 ## [1.70.1](https://github.com/red1oon/bim-ootb/compare/v1.70.0...v1.70.1) (2026-09-30)
 
 
