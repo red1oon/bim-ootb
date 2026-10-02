@@ -155,14 +155,90 @@
     g4.push(create('c_acctschema_default', defRow));
     group('G4 acctschema', g4);
 
-    // ── G5 DOCTYPES (minimal sales spine: AR Invoice) ────────────────────────────────────────────────────────
-    var glCatId = id.next(), seqId = id.next(), dtAriId = id.next();
-    group('G5 doctypes', [
-      create('gl_category', { gl_category_id: glCatId, ad_client_id: clientId, name: 'Standard' }),
-      create('ad_sequence', { ad_sequence_id: seqId, ad_client_id: clientId, name: 'AR Invoice', startno: 1000 }),
-      create('c_doctype', { c_doctype_id: dtAriId, ad_client_id: clientId, name: 'AR Invoice',
-        docbasetype: 'ARI', gl_category_id: glCatId, docnosequence_id: seqId, issotrx: 'Y' })
-    ]);
+    // ── G5 GL CATEGORIES + DOCTYPES — FS-1 doctypes (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2c —
+    //    Witness: W-ERP-FIRST-SETUP S07/S15). The iDempiere MSetup set, as data, in MSetup's own order:
+    //    GL categories MSetup.java:696-707; doc types = the createDocType(...) calls MSetup.java:710-831. ───────
+    var g5 = [], glByKey = {}, dtByKey = {}, doctypes = {};
+    [ // [key, name, CategoryType, IsDefault]                                     MSetup.java:696-707
+      ['STD', 'Standard', 'M', 'Y'], ['NONE', 'None', 'D', 'N'], ['GL', 'Manual', 'M', 'N'],
+      ['ARI', 'AR Invoice', 'D', 'N'], ['ARR', 'AR Receipt', 'D', 'N'], ['MM', 'Material Management', 'D', 'N'],
+      ['API', 'AP Invoice', 'D', 'N'], ['APP', 'AP Payment', 'D', 'N'], ['CASH', 'Cash/Payments', 'D', 'N'],
+      ['MFG', 'Manufacturing', 'D', 'N'], ['DIST', 'Distribution', 'D', 'N'], ['PAY', 'Payroll', 'D', 'N']
+    ].forEach(function (c) {
+      var gid = glByKey[c[0]] = id.next();
+      g5.push(create('gl_category', { gl_category_id: gid, ad_client_id: clientId, name: c[1], categorytype: c[2], isdefault: c[3] }));
+    });
+    // [key, Name, PrintName (Msg.getElement → AD_Element Name / PO_Name; '' → defaults to Name), DocBaseType,
+    //  DocSubType, shipment key, invoice key, StartNo, GL key, isReturnTrx]                 MSetup.java:710-831
+    [
+      ['GLJ', 'GL Journal', 'Journal', 'GLJ', null, 0, 0, 1000, 'GL', false],
+      [0, 'GL Journal Batch', 'Journal Batch', 'GLJ', null, 0, 0, 100, 'GL', false],
+      ['I', 'AR Invoice', 'Invoice', 'ARI', null, 0, 0, 100000, 'ARI', false],
+      ['II', 'AR Invoice Indirect', 'Invoice', 'ARI', null, 0, 0, 150000, 'ARI', false],
+      ['IC', 'AR Credit Memo', 'Credit Memo', 'ARC', null, 0, 0, 170000, 'ARI', false],   // AD_Message absent: seed C_DocType 118 PrintName
+      [0, 'AP Invoice', 'Invoice', 'API', null, 0, 0, 0, 'API', false],
+      ['IPC', 'AP CreditMemo', 'Credit Memo', 'APC', null, 0, 0, 0, 'API', false],
+      [0, 'Match Invoice', 'Match Invoice', 'MXI', null, 0, 0, 390000, 'API', false],
+      [0, 'AR Receipt', 'Payment', 'ARR', null, 0, 0, 0, 'ARR', false],
+      [0, 'AP Payment', 'Payment', 'APP', null, 0, 0, 0, 'APP', false],
+      [0, 'Allocation', 'Allocation', 'CMA', null, 0, 0, 490000, 'CASH', false],
+      ['S', 'MM Shipment', 'Delivery Note', 'MMS', null, 0, 0, 500000, 'MM', false],
+      ['SI', 'MM Shipment Indirect', 'Delivery Note', 'MMS', null, 0, 0, 550000, 'MM', false],
+      ['VRM', 'MM Vendor Return', 'Vendor Return', 'MMS', null, 0, 0, 590000, 'MM', true],
+      [0, 'MM Receipt', 'Vendor Delivery', 'MMR', null, 0, 0, 0, 'MM', false],
+      ['RM', 'MM Customer Return', 'Customer Return', 'MMR', null, 0, 0, 570000, 'MM', true],
+      [0, 'Purchase Order', 'Purchase Order', 'POO', null, 0, 0, 800000, 'NONE', false],
+      [0, 'Match PO', 'Match PO', 'MXP', null, 0, 0, 890000, 'NONE', false],
+      [0, 'Purchase Requisition', 'Requisition', 'POR', null, 0, 0, 900000, 'NONE', false],
+      [0, 'Vendor Return Material', 'Vendor Return Material Authorization', 'POO', 'RM', 'VRM', 'IPC', 990000, 'MM', false],
+      [0, 'Bank Statement', '', 'CMB', null, 0, 0, 700000, 'CASH', false],   // MSetup asks element "C_BankStatemet_ID" (sic) → ''
+      [0, 'Cash Journal', 'Cash Journal', 'CMC', null, 0, 0, 750000, 'CASH', false],
+      [0, 'Material Movement', 'Inventory Move', 'MMM', null, 0, 0, 610000, 'MM', false],
+      [0, 'Physical Inventory', 'Phys.Inventory', 'MMI', 'PI', 0, 0, 620000, 'MM', false],
+      [0, 'Material Production', 'Production', 'MMP', null, 0, 0, 630000, 'MM', false],
+      [0, 'Project Issue', 'Project Issue', 'PJI', null, 0, 0, 640000, 'MM', false],
+      [0, 'Internal Use Inventory', 'Internal Use Inventory', 'MMI', 'IU', 0, 0, 650000, 'MM', false],
+      [0, 'Cost Adjustment', 'Cost Adjustment', 'MMI', 'CA', 0, 0, 660000, 'MM', false],
+      [0, 'Binding offer', 'Quotation', 'SOO', 'OB', 0, 0, 10000, 'NONE', false],
+      [0, 'Non binding offer', 'Proposal', 'SOO', 'ON', 0, 0, 20000, 'NONE', false],
+      [0, 'Prepay Order', 'Prepay Order', 'SOO', 'PR', 'S', 'I', 30000, 'NONE', false],
+      [0, 'Customer Return Material', 'Customer Return Material Authorization', 'SOO', 'RM', 'RM', 'IC', 30000, 'NONE', false],
+      [0, 'Standard Order', 'Order Confirmation', 'SOO', 'SO', 'S', 'I', 50000, 'NONE', false],
+      [0, 'Credit Order', 'Order Confirmation', 'SOO', 'WI', 'SI', 'I', 60000, 'NONE', false],
+      [0, 'Warehouse Order', 'Order Confirmation', 'SOO', 'WP', 'S', 'I', 70000, 'NONE', false],
+      [0, 'Manufacturing Order', 'Manufacturing Order', 'MOP', null, 0, 0, 80000, 'MFG', false],
+      [0, 'Manufacturing Cost Collector', 'Cost Collector', 'MCC', null, 0, 0, 81000, 'MFG', false],
+      [0, 'Maintenance Order', 'Maintenance Order', 'MOF', null, 0, 0, 86000, 'MFG', false],
+      [0, 'Quality Order', 'Quality Order', 'MQO', null, 0, 0, 87000, 'MFG', false],
+      [0, 'Distribution Order', 'Distribution Order', 'DOO', null, 0, 0, 88000, 'DIST', false],
+      [0, 'Payroll', 'Payroll', 'HRP', null, 0, 0, 90000, 'PAY', false],
+      [0, 'POS Order', 'Order Confirmation', 'SOO', 'WR', 'SI', 'II', 80000, 'NONE', false]
+    ].forEach(function (d) {
+      var name = d[1], base = d[3], sub = d[4], startNo = d[7], seq = null;
+      if (startNo !== 0) {                                   // createDocType :985-993 + MSequence.java:986-995,941-950
+        seq = id.next();
+        g5.push(create('ad_sequence', { ad_sequence_id: seq, ad_client_id: clientId, name: name, description: name,
+          startno: startNo, currentnext: startNo, currentnextsys: Math.floor(startNo / 10), incrementno: 1,
+          isautosequence: 'Y', istableid: 'N' }));
+      }
+      var dtId = id.next();
+      if (d[0]) dtByKey[d[0]] = dtId;
+      doctypes[name] = dtId;
+      var isSO = base === 'SOO' || base === 'MMS' || base.indexOf('AR') === 0;   // MDocType.setIsSOTrx :244-250
+      if (d[9]) isSO = !isSO;                                                       // isReturnTrx :1018-1019
+      var row = { c_doctype_id: dtId, ad_client_id: clientId, name: name, printname: d[2] || name,
+        docbasetype: base, issotrx: isSO ? 'Y' : 'N', gl_category_id: glByKey[d[8]],
+        isdocnocontrolled: seq ? 'Y' : 'N', isdefault: 'N',
+        // MDocType.beforeSave :340-348 (lists :310-320); Prepay keeps the X_ default 'N'
+        isautogenerateinout: /^(WR|WI|WP)$/.test(sub) ? 'Y' : 'N', isautogenerateinvoice: /^(WR|WI)$/.test(sub) ? 'Y' : 'N' };
+      if (seq) row.docnosequence_id = seq;
+      if (sub) { if (base === 'MMI') row.docsubtypeinv = sub; else row.docsubtypeso = sub; }   // :999-1007
+      if (d[5]) row.c_doctypeshipment_id = dtByKey[d[5]];
+      if (d[6]) row.c_doctypeinvoice_id = dtByKey[d[6]];
+      g5.push(create('c_doctype', row));
+    });
+    var dtAriId = doctypes['AR Invoice'];
+    group('G5 doctypes', g5);
 
     // ── G6 BASE OPS + default masters (each master emits its acct-mapping row from the schema default) ────────
     var whId = id.next(), locId = id.next(), plId = id.next(), plvId = id.next();
@@ -189,7 +265,7 @@
       groups: groups, tip: parent,
       refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
               acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
-              taxId: taxId, doctypeAriId: dtAriId, warehouseId: whId, periodId: periodId,
+              taxId: taxId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
   }

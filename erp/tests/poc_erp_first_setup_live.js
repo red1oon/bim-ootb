@@ -29,10 +29,11 @@ const server = http.createServer((req, res) => {
 });
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
-const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'G', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'G', S15: 'G', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
+  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'G', S15: 'V', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
+// FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 
 const OUT = [];
 const say = (s) => { OUT.push(s); console.log(s); };
@@ -156,8 +157,9 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const dbt = Array.isArray(dts) ? dts.map(r => r[0]) : [];
     const need = ['SOO', 'POO', 'MMS', 'MMR', 'ARI', 'API', 'ARR', 'APP', 'GLJ'];
     const missing = need.filter(x => dbt.indexOf(x) < 0);
-    step('S07', missing.length === 0 ? 'V' : 'G', 'document types for orders, shipments, receipts, invoices, payments, journals exist',
-      'docTypes=' + dbt.length + ' [' + dbt.join(',') + '] missing=[' + missing.join(',') + ']');
+    // BY VALUE: MSetup.java:710-831 makes exactly 42 doc types (spec §FS2c) — not "≥ 1", so a partial port fails.
+    step('S07', missing.length === 0 && dbt.length === 42 ? 'V' : 'G', 'document types for orders, shipments, receipts, invoices, payments, journals exist (MSetup: 42)',
+      'docTypes=' + dbt.length + ' (oracle 42) [' + dbt.join(',') + '] missing=[' + missing.join(',') + ']');
   } catch (e) { step('S03', 'I', 'create a new company', 'harness: ' + e.message); }
 
   // ── S08 + S10 own org offered; create a customer ──────────────────────────────────────────────────────────────
@@ -232,8 +234,13 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     step('S14', bp.length ? (foreign === 0 ? 'V' : 'G') : 'I', 'pickers offer only this company\'s (and shared) records',
       'BP picker n=' + bp.length + ' byClient=' + JSON.stringify(byClient) + ' foreign=' + foreign + ' (iDempiere: role access SQL on every lookup)');
     const dt = (await opts(page, 'c_doctypetarget_id')).filter(o => o.v);
-    step('S15', dt.length ? 'V' : 'G', 'a sales order can be typed in the new company (needs a sales doc type)',
-      'targetDocTypeOptions=' + dt.length + ' ' + last(0, /§VALRULE col=c_doctypetarget_id/).slice(0, 160));
+    // Independent oracle = val rule 133 re-run as SQL over THIS client's rows (IsSOTrx='Y' on the SO window).
+    const want = Number(await one(page, "SELECT COUNT(*) FROM C_DocType WHERE DocBaseType IN ('SOO','POO') AND IsSOTrx='Y' AND COALESCE(DocSubTypeSO,' ')<>'RM' AND IsActive='Y' AND AD_Client_ID=" + CID));
+    // NEGATIVE CONTROL: an offered doc type owned by ANOTHER client would make the count pass while being wrong.
+    let foreignDt = 0;
+    for (const o of dt) { const c = await one(page, 'SELECT AD_Client_ID FROM C_DocType WHERE C_DocType_ID=' + Number(o.v)); if (Number(c) !== CID) foreignDt++; }
+    step('S15', !want ? 'G' : (dt.length === want && foreignDt === 0 ? 'V' : 'G'), 'a sales order can be typed in the new company (needs a sales doc type)',
+      'targetDocTypeOptions=' + dt.length + ' oracle(valrule133 sql)=' + want + ' foreignClientOptions=' + foreignDt + ' [' + dt.map(o => o.t).join('|') + '] ' + last(0, /§VALRULE col=c_doctypetarget_id/).slice(0, 120));
   } catch (e) { step('S14', 'I', 'SO in new company', 'harness: ' + e.message); }
 
   // ── S16..S21 order-to-cash in the demo company (GardenWorld) ─────────────────────────────────────────────────
