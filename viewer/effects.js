@@ -6156,7 +6156,11 @@ async function setupEffects(A, renderer, scene, camera) {
     // A.updateSky), but a fast/cached accumulate can finish (and stop calling _reassertPhotoEnvMap
     // via step() below) before that 2s elapses — one extra guaranteed pass past the throttle
     // window, independent of whether the accumulate loop is still running.
-    setTimeout(function() { if (A._stillRefineActive) _reassertPhotoEnvMap(); }, 2200);
+    // §BAKE_LEAN L2 (&bakelean=1, films only): the env-map / glow safety timers below are armed ONCE per film, not once per frame (a film
+    // re-enters here every frame with the still kept active, so each frame used to add another 60 s interval: ~25 live at once).
+    var _leanArm = !(A._maxqActive && /[?&]bakelean=1/.test(location.search) && A._leanTimersArmed);
+    if (A._maxqActive && /[?&]bakelean=1/.test(location.search)) { if (!A._leanTimersArmed) console.log('§BAKE_LEAN timers armed once for this film'); A._leanTimersArmed = true; }
+    if (_leanArm) setTimeout(function() { if (A._stillRefineActive) _reassertPhotoEnvMap(); }, 2200);
     // §NIGHT_GLOW_REASSERT safety net: the per-frame reassert in step() below only runs while the
     // 16-sample accumulation RAF loop is active — that loop stops (by design, "freezes" the still)
     // long before a large building finishes streaming (confirmed this session: 20-30s+ under load,
@@ -6164,7 +6168,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // isn't enough on a slow-loading building — this repeats independently every 3s for up to a
     // minute, for as long as photo mode stays active (A._stillRefineActive, which per the
     // still-refine-freeze behavior stays true until a REAL interaction tears it down).
-    (function() {
+    if (_leanArm) (function() {
       var _tries = 0;
       var _glowInterval = setInterval(function() {
         _tries++;

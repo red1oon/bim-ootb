@@ -760,6 +760,7 @@
   // never reached the boundary check, nothing was logged, and the run reported hiddenPauses=0 while
   // having been hidden for 20 seconds. A pause that does not announce itself is the same silent
   // failure this whole section exists to kill — so the wait reports through the same bookkeeping.
+  function _leanPoll() { return /[?&]bakelean=1/.test(location.search) ? 5 : 100; }
   async function _waitFoldDone(timeoutMs, why) {
     var A = window.APP;
     var spentVisible = 0, last = performance.now();
@@ -767,7 +768,7 @@
       if (_isHidden()) { await _awaitVisible(why); last = performance.now(); }
       if (!A._stillRefineBusy) return true;
       if (spentVisible > timeoutMs) return false;
-      await _sleep(100);
+      await _sleep(_leanPoll());   // §BAKE_LEAN L1: &bakelean=1 polls every 5 ms (was 100: ~50 ms idle per frame)
       var now = performance.now();
       spentVisible += now - last;
       last = now;
