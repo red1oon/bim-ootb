@@ -503,7 +503,7 @@
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=2"></script>
+<script src="genesis.js?v=3"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -2472,7 +2472,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       // TrialBalance / FactAcctReset: the posted journal. fact_acct is NOT carried in ad_seed.db → the fold is an
       // honest empty statement (§-named seed scope, not engine scope).
-      fetchFacts: function () { return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct'); },
+      // FS2 FIX-B (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2b — Witness: W-ERP-FIRST-SETUP S24): the facts
+      // a report folds are THIS tenant's, in the CHOSEN schema — TrialBalance.java:400 `FROM Fact_Acct WHERE
+      // AD_Client_ID=<client>` + :161 `C_AcctSchema_ID=<param>` (mandatory). Unscoped, it added USD to EUR facts and
+      // folded every resident tenant's ledger into one (42 lines vs the 20 of GardenWorld/101), still balanced=true.
+      fetchFacts: function (info) {
+        var w = [], p = (info && info.params) || {};
+        if (_session && _session.client && _session.client.id != null) w.push('ad_client_id=' + Number(_session.client.id));
+        var as = p.C_AcctSchema_ID != null ? p.C_AcctSchema_ID : p.c_acctschema_id;
+        if (as != null && String(as).trim() !== '' && !isNaN(Number(as))) w.push('c_acctschema_id=' + Number(as));
+        console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
+        return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));
+      },
       fetchAccounts: function () {
         var m = {};
         _sqlRows('SELECT c_elementvalue_id, value, name, accounttype FROM c_elementvalue').forEach(function (r) {

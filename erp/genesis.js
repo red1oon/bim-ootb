@@ -95,14 +95,23 @@
       groups.push({ seq: groups.length + 1, label: label, ops: ops, parent: parent, tip: tip });
       parent = tip;
     }
-    function create(table, row) { return { op: 'CREATE', table: table, row: row }; }
+    // FIX-A (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2 — Witness: W-ERP-FIRST-SETUP S08/S09).
+    // Every setup row iDempiere writes carries AD_Org_ID; unless the model gives it an org it is 0 ('*'):
+    // MSetup.java:179 m_stdValues = AD_Client_ID + ",0,'Y',..." and bpg/bp/pc/tax/product/pl/plv.setAD_Org_ID(0)
+    // (MSetup.java:1173,1184,1215,1253,1263,1334,1349). A born row with NO org was dropped by every window's
+    // session clause AD_Org_ID IN (0,<org>) (idempiere.html:1836) — the tenant's own masters were invisible.
+    function create(table, row) {
+      if (row.ad_org_id === undefined) row.ad_org_id = 0;
+      return { op: 'CREATE', table: table, row: row };
+    }
 
     // ── G1 IDENTITY ─────────────────────────────────────────────────────────────────────────────────────────
     var clientId = id.next(), orgId = id.next();
     var roleAdminId = id.next(), roleUserId = id.next(), userId = id.next();
     group('G1 identity', [
       create('ad_client', { ad_client_id: clientId, name: clientName, value: clientName }),
-      create('ad_org', { ad_org_id: orgId, ad_client_id: clientId, name: clientName + ' HQ', value: 'HQ' }),
+      // FIX-A: MOrg.java:146 setIsSummary(false) — AD_Val_Rule 130 (AD_Org.IsSummary='N') hid a NULL.
+      create('ad_org', { ad_org_id: orgId, ad_client_id: clientId, name: clientName + ' HQ', value: 'HQ', issummary: 'N' }),
       create('ad_role', { ad_role_id: roleAdminId, ad_client_id: clientId, name: clientName + ' Admin', userlevel: '  C' }),
       create('ad_role', { ad_role_id: roleUserId, ad_client_id: clientId, name: clientName + ' User', userlevel: '   O' }),
       create('ad_user', { ad_user_id: userId, ad_client_id: clientId, name: adminUser }),
@@ -160,11 +169,13 @@
     var bpGroupId = id.next(), bpId = id.next(), pcatId = id.next(), prodId = id.next(), taxId = id.next();
     group('G6 base ops', [
       create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse' }),
-      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, value: 'Std' }),
+      // FIX-A: MLocator.java:290 setClientOrg(warehouse) — the locator takes its warehouse's org, not '*'.
+      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Std' }),
       create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, issotrx: 'Y' }),
       create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year }),
       create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, name: 'Standard' }),
-      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y' }),
+      // FIX-A: MBPartner.java:286 setInitialDefaults → setIsSummary(false) — AD_Val_Rule 230 hid a NULL.
+      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y', issummary: 'N' }),
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
       create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, name: 'Standard' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
