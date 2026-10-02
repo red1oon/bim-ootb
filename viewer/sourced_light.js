@@ -1542,11 +1542,22 @@
     var mats = new Set(), uB = new Map(), prog0 = R.info && R.info.programs ? R.info.programs.length : -1, prog1 = prog0, rebound = 0, dummyAt = 0, staged = 0;
     A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !mats.has(m)) { mats.add(m); var pp = R.properties.get(m); uB.set(m, pp && pp.uniforms); } }); });
     try { A.scene.background = null; A.scene.fog = null; R.toneMapping = THREE.NoToneMapping; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
-      if (!(opts && opts.noPrime)) { R.clear(true, true, true); R.render(A.scene, A.camera); prog1 = R.info && R.info.programs ? R.info.programs.length : -1;
-        mats.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== uB.get(m)) rebound++; if (push(A, m)) lastU.set(m, pp.uniforms); }); }
-      mats.forEach(function (m) { var U = R.properties.get(m).uniforms; if (U && U.uSLZone && active && tex) { staged++; if (U.uSLZone.value !== tex) dummyAt++; } });
+      // §SPEED_AB S-B2 (ALTC_FOUNDATION.md §SPEED_AB, opt-in &meterprime=auto, films only): skip the prime render once a film has primed;
+      // the single render is accepted only if it created no new program and no staged material reads the dummy texture — otherwise the
+      // full prime path runs on that same frame (self-checking; witness = EV identical to the always-prime control).
+      var autoP = A._maxqActive && /[?&]meterprime=auto/.test(location.search), skipP = autoP && !(opts && opts.noPrime) && A._meterPrimed;
+      var primeNow = function () { R.clear(true, true, true); R.render(A.scene, A.camera); prog1 = R.info && R.info.programs ? R.info.programs.length : -1;
+        mats.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== uB.get(m)) rebound++; if (push(A, m)) lastU.set(m, pp.uniforms); }); };
+      var dummyCount = function () { staged = 0; dummyAt = 0; mats.forEach(function (m) { var U = R.properties.get(m).uniforms; if (U && U.uSLZone && active && tex) { staged++; if (U.uSLZone.value !== tex) dummyAt++; } }); };
+      if (!(opts && opts.noPrime) && !skipP) primeNow();
+      dummyCount();
       var fr0 = R.info && R.info.render ? R.info.render.frame : -1;
       R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf);
+      if (skipP) { var progNow = R.info && R.info.programs ? R.info.programs.length : -1;
+        if (progNow !== prog0 || dummyAt > 0) { primeNow(); dummyCount(); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); A._meterPrimeForced = (A._meterPrimeForced || 0) + 1; }
+        else A._meterPrimeSkipped = (A._meterPrimeSkipped || 0) + 1;
+        var mpN = (A._meterPrimeForced || 0) + (A._meterPrimeSkipped || 0); if (mpN % 24 === 1) console.log('§METER_PRIME auto skipped=' + (A._meterPrimeSkipped || 0) + ' forced=' + (A._meterPrimeForced || 0) + ' (forced = new program or dummy binding seen)'); }
+      if (autoP) A._meterPrimed = true;
       var calls = R.info && R.info.render ? R.info.render.calls : -1, fr1 = R.info && R.info.render ? R.info.render.frame : -1; }
     finally { IRP[1] = irs; if (ffU && ffPrev != null) ffU.value = ffPrev; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
     // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so

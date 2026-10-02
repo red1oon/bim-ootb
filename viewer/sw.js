@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1545';
+const CACHE_VERSION = 'v1546';
+// v1546 (2026-10-02) §SPEED_AB S-B2 opt-in &meterprime=auto: film meter skips its prime render once primed, self-checking (new program or dummy binding -> full prime that frame); §METER_PRIME counts. sourced_light 79.
 // v1545 (2026-10-02) §SPEED_AB opt-in arms: &capfmt=jpeg (&capq) capture encoder + §CAPTURE_ENC timing on every arm; &metereach=N film meter every Nth frame (metered=0|1 in §FILM_EXPOSURE). Defaults unchanged. effects 135, cinema_maxq 28.
 // v1544 (2026-10-02) merge of fix/sky-surface @f78a6579 (its v1532-v1536: §SKY_FIELD_FURNITURE REVERT key 21324567:90186, §LOCAL_EXPOSURE_BILATERAL, §FLOOR_F_SMOOTH opt-in, §ZONE_EYE_SKIP_OPEN, §DOME_GLOW) into fix/fast-bake v1543. light_zones 28, sourced_light 78, tools 73, gi_still 46.
 // v1543 (2026-10-02) §GI_FILM_CARRY: STALE only when the camera moved (frozen camera + identical pass is legitimate — HHS freeze false STALEs switched the bounce off). gi_still 45.
