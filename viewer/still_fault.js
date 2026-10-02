@@ -174,6 +174,9 @@
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + '; ' + (specSmooth ? 'smooth' : 'binary') + ' march; glassOpen decided ' + out.glassReflOpen + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' csmUncovered=' + (out.csmUncovered == null ? 'n/a' : out.csmUncovered) + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
     if (fault) console.warn(line); else console.log(line);
+    // §WIND_FLIP (PHOTOREAL_STILL_RENDER.md "§WIND_FLIP — SPEC"): geometries with flipped-winding edges -> their buckets drawn DoubleSide
+    var ws = A._windStat; out.windFlip = ws ? { geos: ws.geos, flagged: ws.flagged, buckets: A._windBuckets || 0 } : null;
+    console.log('§WIND_FLIP ' + (ws ? 'on geos=' + ws.geos + ' flagged=' + ws.flagged + ' conflictEdges=' + ws.edges + ' ms=' + Math.round(ws.ms) + ' bucketsDoubled=' + (A._windBuckets || 0) + (ws.geos ? '' : ' VACUOUS (no geometry decoded)') : 'off (&windflip=0 / APP._windFlip=false)'));
     out.fault = fault; A._stillFaultLast = out; A._stillUnlitPts = unlitPts;   // §STILL_POSE_PNG copies it into the saved still
     return out;
   }
