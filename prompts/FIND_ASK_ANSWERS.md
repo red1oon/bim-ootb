@@ -259,6 +259,6 @@ open state, left alone.
   (#1816, `scene.js?v=65`). Live Terminal capture: `§PATCH_QTO Terminal_meta.db applied (166 statements)
   qto_cache rows=161`; "cost MEP" → exactly the 4 cost sentences; "Find 5D cost of materials for MEP" =
   **2,038,000** (62 rows, 9,733 elements) = `SUM(material_cost)` over the live `Terminal_extracted.db` MEP rows.
-  Docs page `AskFirstSteps` now carries the cost step (BIMCompiler #160 + safe deploy).
+  Docs page `AskFirstSteps` now carries the cost step (BIMCompiler #165 + safe deploy).
   - Side observation, NOT this lane: Terminal ARC vs MEP clashes read 114 live vs 107 on the local split
     files — consistent with the repo-vs-OCI `Terminal_meta.db.sql` transform drift noted in §K.1.
