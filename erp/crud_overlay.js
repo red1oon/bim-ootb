@@ -1252,6 +1252,15 @@
               // than hiding rows iDempiere does show. Named, never silent.
             }
             if (!vr && refWhere) where = ' WHERE (' + refWhere + ')';
+            // FS-5 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2d — Witness: W-ERP-FIRST-SETUP S14).
+            // Every iDempiere table lookup runs MRole.addAccessSQL (MLookupFactory.java:270,626,902), which ANDs
+            // getClientWhere(rw=false) (MRole.java:2120-2124): AD_Client_ID IN (0,<client>), or AD_Client_ID=0 for
+            // the System client (MRole.java:1110-1117). Org access (getOrgWhere, !isAccessAllOrgs) is NOT ported.
+            // The SAME clause narrows the offered SELECT and the admitted set (§P3.6: one set by construction).
+            var accCli = (global.APP && global.APP.clientId != null && String(global.APP.clientId) !== '') ? Number(global.APP.clientId) : null;
+            var acc = (accCli != null && !isNaN(accCli) && recHasCol(db, t, 'ad_client_id'))
+              ? (accCli === 0 ? 'ad_client_id=0' : 'ad_client_id IN (0,' + accCli + ')') : null;
+            if (acc) where = where ? where + ' AND (' + acc + ')' : ' WHERE (' + acc + ')';
             // §FKFOLD — query the TIP-FOLDED row set, so a row the user just created is offerable.
             var src = _fkFoldSource(db, t, pk);
             var res = [];
@@ -1269,11 +1278,20 @@
               try {
                 // the ADMITTED set must come from the SAME source as the OFFERED set, or §P3.6's
                 // "one set by construction" invariant breaks the moment a folded row is offered.
-                var ar = db.exec('SELECT ' + pk + ' FROM ' + src + ' WHERE (' + andRef(vr.sql) + ')'), am = {};
+                var ar = db.exec('SELECT ' + pk + ' FROM ' + src + ' WHERE (' + andRef(vr.sql) + ')' + (acc ? ' AND (' + acc + ')' : '')), am = {};
                 if (ar.length) ar[0].values.forEach(function (r) { am[String(r[0])] = 1; });
                 admitted = am;
               } catch (ea) {}
             } else if (noRows) admitted = {};                 // nothing is admitted while the lookup is not validated
+            else if (acc && where) {                          // FS-5: no val rule, but the access clause still bounds
+              try {                                           // what validateField may accept — same WHERE as offered
+                var ar2 = db.exec('SELECT ' + pk + ' FROM ' + src + where), am2 = {};
+                if (ar2.length) ar2[0].values.forEach(function (r) { am2[String(r[0])] = 1; });
+                admitted = am2;
+              } catch (ea2) {}
+            }
+            if (acc) console.log('§FK-ACCESS col=' + f.col + ' table=' + t + ' client=' + accCli + ' clause="' + acc + '" admitted=' +
+              (admitted ? Object.keys(admitted).length : 'n/a') + ' (MRole.addAccessSQL via MLookupFactory.java:270)');
             f.admitted = admitted;
             var rows = res.length ? res[0].values : [];
             // §P2/§P1 (§IMPL F5), PRESERVED and strengthened: a lookup ALWAYS offers an empty choice when the
