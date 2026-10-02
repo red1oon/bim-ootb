@@ -30,10 +30,11 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'G', S15: 'V', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
+// FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
 
 const OUT = [];
 const say = (s) => { OUT.push(s); console.log(s); };
@@ -231,8 +232,11 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const byClient = {};
     for (const o of bp) { const c = await one(page, 'SELECT AD_Client_ID FROM C_BPartner WHERE C_BPartner_ID=' + Number(o.v)); byClient[c] = (byClient[c] || 0) + 1; }
     const foreign = Object.keys(byClient).filter(c => Number(c) !== 0 && Number(c) !== CID).reduce((a, c) => a + byClient[c], 0);
-    step('S14', bp.length ? (foreign === 0 ? 'V' : 'G') : 'I', 'pickers offer only this company\'s (and shared) records',
-      'BP picker n=' + bp.length + ' byClient=' + JSON.stringify(byClient) + ' foreign=' + foreign + ' (iDempiere: role access SQL on every lookup)');
+    // NON-VACUOUS: the tenant's OWN setup BP must still be offered — a filter that empties the picker is not a pass.
+    const own = byClient[CID] || 0;
+    step('S14', bp.length ? (foreign === 0 && own >= 1 ? 'V' : 'G') : 'I', 'pickers offer only this company\'s (and shared) records',
+      'BP picker n=' + bp.length + ' byClient=' + JSON.stringify(byClient) + ' foreign=' + foreign + ' own=' + own +
+      ' (iDempiere: MRole.addAccessSQL on every lookup) ' + last(0, /§FK-ACCESS col=c_bpartner_id/).slice(0, 120));
     const dt = (await opts(page, 'c_doctypetarget_id')).filter(o => o.v);
     // Independent oracle = val rule 133 re-run as SQL over THIS client's rows (IsSOTrx='Y' on the SO window).
     const want = Number(await one(page, "SELECT COUNT(*) FROM C_DocType WHERE DocBaseType IN ('SOO','POO') AND IsSOTrx='Y' AND COALESCE(DocSubTypeSO,' ')<>'RM' AND IsActive='Y' AND AD_Client_ID=" + CID));

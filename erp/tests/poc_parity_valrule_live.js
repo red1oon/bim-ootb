@@ -85,8 +85,16 @@ const seedRule = (page, tab, col, ctx) => page.evaluate(({ tab, col, ctx }) => {
     return whole;
   });
   let admitted = null, err = null;
+  // FS-5 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2d): iDempiere ANDs the role's client clause onto every
+  // lookup (MLookupFactory.java:270 → MRole.addAccessSQL → getClientWhere(false), MRole.java:1110-1117,2120-2124),
+  // so the oracle carries it too, written out here independently: AD_Client_ID IN (0,<login client>).
+  // Measured effect at the time of the change (GardenAdmin, client 11): c_order.c_bpartner_id 42 → 24 (the 18
+  // removed were client 13's BPs); c_payment.c_order_id 2 → 1. Same clause, so offered == admitted still holds.
+  const cli = window.APP && window.APP.clientId != null ? Number(window.APP.clientId) : null;
+  const hasCli = (() => { try { return q('PRAGMA table_info(' + t + ')').some(r => String(r[1]).toLowerCase() === 'ad_client_id'); } catch (e) { return false; } })();
+  const acc = (cli != null && hasCli) ? (cli === 0 ? ' AND AD_Client_ID=0' : ' AND AD_Client_ID IN (0,' + cli + ')') : '';
   if (!unresolved.length) {
-    try { admitted = q('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + sub + ')').map(r => String(r[0])); }
+    try { admitted = q('SELECT ' + pk + ' FROM ' + t + ' WHERE (' + sub + ')' + acc).map(r => String(r[0])); }
     catch (e) { err = String(e && e.message); }
   }
   const all = (() => { try { return q('SELECT ' + pk + ' FROM ' + t).map(r => String(r[0])); } catch (e) { return []; } })();
