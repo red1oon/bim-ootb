@@ -1,0 +1,50 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-10-02T01:39:34.890Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-qto",
+    "sha": "1d16fe6ce765f94be0442cb26cc0c16229bab81c",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 2,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Terminal_meta.db",
+    "etag": "f6270727-0c77-45cf-af91-72a4958afde5",
+    "content-md5": "XtgMPqVHct5X+A4o5XmGfA==",
+    "size": "2440936",
+    "last-modified": "Fri, 28 Aug 2026 15:47:37 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/Terminal_meta.db.qto.sql",
+    "bytes": 44175,
+    "md5": "cecbb594f1ee67746dda0dad982274e7",
+    "md5_b64": "zsu1lPHuZ3Rt2g2tmCJ05w==",
+    "object": "buildings/patches/Terminal_meta.db.qto.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": false
+  },
+  "verification": {
+    "cmd": "python3 scripts/verify_qto_patch.py --gate-db \"$GATE_DB\" --src-url https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/buildings/Terminal_extracted.db --patch buildings/patches/Terminal_meta.db.qto.sql",
+    "exit": 0,
+    "tail": [
+      "§QTO_VERIFY source fetched https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/buildings/Terminal_extracted.db",
+      "§QTO_VERIFY rows src=161 patched=161 colsMatch=True rowsEqual=True",
+      "§QTO_VERIFY reapply rows=161 unchanged=True",
+      "§QTO_VERIFY sums material=16900593.0 labour=2082320.0 equipment=718343.0",
+      "§QTO_VERIFY PASS"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-10-02T01:39:39.392Z",
+    "etag": "c3702b4f-9cb0-4499-afb2-11281fd54551",
+    "verified": true
+  }
+}
