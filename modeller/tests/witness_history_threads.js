@@ -41,7 +41,9 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   let A = null, rowsA = null;
   for (const c of hosting) { rowsA = await Dr.moveByGizmo(t, c.fid, 0.4); if (rowsA && rowsA.length >= 2) { A = c; break; } }
   let B = null, rowsB = null;
-  for (const c of cands) { if (A && c.fid === A.fid) continue; rowsB = await Dr.moveByGizmo(t, c.fid, -0.3); if (rowsB && rowsB.length) { B = c; break; } }
+  await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(1000);
+  const candsB = await Dr.wallCandidates(t);   // re-read after Fit (the visible top-40 set moved with the camera); hosting walls first
+  for (const c of candsB.filter(c => c.riders.length).concat(candsB.filter(c => !c.riders.length))) { if (A && c.fid === A.fid) continue; rowsB = await Dr.moveByGizmo(t, c.fid, -0.3); if (rowsB && rowsB.length) { B = c; break; } }
   const walkLine = await Dr.walk(t, 'ELEC');
   const insId = await Dr.insertOne(t);
   console.log('  §THREADS edits wallA=' + (A && A.fid) + ' rows=' + JSON.stringify((rowsA || []).map(r => r.op_type + '#' + r.id + '(' + (r.p.induced || 'p' + r.p.parent) + ')')) +

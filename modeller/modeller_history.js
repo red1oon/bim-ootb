@@ -146,7 +146,8 @@
       ref: (opType === 'BUILDING_OPEN' && params && params.building) ? { building: params.building, db: params.db } : null,
       sigKey: 'op:' + opType + ':' + (opts.gid || opts.opId || '') };
     if (opts.opsum) entry.opsum = opts.opsum;              // §THREADS: per-row summary (category + target) of this node
-    if (opts.scoped) { entry.scoped = true; entry.revertOf = opts.revertOf; entry.label = opts.label || entry.label; }
+    if (opts.scoped) { entry.scoped = true; entry.revertOf = opts.revertOf; entry.label = opts.label || entry.label;
+      entry.scopedKind = opts.scopedKind; entry.scopeKey = opts.scopeKey; entry.members = opts.members; }
     HB.push(entry);
     if (!opts.readonly) _lastOp = entry;
   }
@@ -253,6 +254,7 @@
     skipKeyboard: true,
     defaultDepth: function () { return 'high'; },
     restore: _restore,
+    afterApply: function () { try { _lineMap(); if (HB.setScopeNote && !HB.getScope()) HB.setScopeNote(null); } catch (e) {} },   // §THREADS: re-derive reverted dots after a global undo/redo
     // §THREADS step 1: the categorize hook (the bar stays app-agnostic) + the dotline mounted above the slider row.
     categorize: categorize, elementOf: elementOf, elementLabel: elementLabel,
     mountHostId: 'hist-dots',
@@ -289,7 +291,8 @@
         var first = (opsArray && opsArray[0]) || {};
         var meta = _gestureMeta; _gestureMeta = null;      // §THREADS step 2: a scoped revert tags its own node
         _push(first.op_type || 'GEOM_MOVE', first.params, { gid: r && r.gid, opId: r && r.id, ids: (r && r.ids) || null,
-          opsum: _summarize(opsArray, r && r.ids), scoped: meta && meta.scoped, revertOf: meta && meta.revertOf, label: meta && meta.label });
+          opsum: _summarize(opsArray, r && r.ids), scoped: meta && meta.scoped, revertOf: meta && meta.revertOf, label: meta && meta.label,
+          scopedKind: meta && meta.kind, scopeKey: meta && meta.key, members: meta && meta.members });
       } catch (e) { console.warn('§MHIST_REC_ERR', e); }
       return r;
     };
@@ -342,6 +345,157 @@
     console.log('§MHIST_WRAP commit/commitGesture wrapped +deleteFeature (§MHIST-ROWS)');
   })();
 
+  // ── §THREADS step 2 — scoped undo/redo along the glowing thread (HISTORY_PARALLEL_TIMELINE §THREADS-IMPL) ──
+  // A scoped undo APPENDS the inverse of the thread's newest still-applied gesture through commitGesture (one gesture =
+  // one step, like `git revert`): no row is deleted, reordered or flag-flipped, so verifyChain stays ok. Only ops the fold
+  // composes additively are invertible that way (bonsai_kernel.js moveBy: MOVE/ROTATE summed, SCALE multiplied;
+  // cut_move.js netOverrides: CUT_MOVE summed, CUT_RESIZE multiplied) — anything else is REFUSED, never substituted.
+  // Before reverting, later gestures that depend on the target through a relation the code ALREADY records (R1–R5 in the
+  // spec) are listed; with any present the undo is refused with each one NAMED, and a Cascade action reverts them too.
+  var INV = {
+    GEOM_MOVE: function (p) { return Object.assign({}, p, { dx: -(+p.dx || 0), dy: -(+p.dy || 0), dz: -(+p.dz || 0) }); },
+    GEOM_CUT_MOVE: function (p) { return Object.assign({}, p, { dx: -(+p.dx || 0), dy: -(+p.dy || 0), dz: -(+p.dz || 0) }); },
+    GEOM_ROTATE: function (p) { return Object.assign({}, p, { drot: -(+p.drot || 0) }); },
+    GEOM_SCALE: function (p) { return Object.assign({}, p, { fx: 1 / (p.fx != null ? +p.fx : 1), fy: 1 / (p.fy != null ? +p.fy : 1), fz: 1 / (p.fz != null ? +p.fz : 1) }); },
+    GEOM_CUT_RESIZE: function (p) { return Object.assign({}, p, { fx: 1 / (p.fx != null ? +p.fx : 1), fy: 1 / (p.fy != null ? +p.fy : 1), fz: 1 / (p.fz != null ? +p.fz : 1) }); }
+  };
+  var _scopedBusy = false;
+  function _scopeKey(sc) { return sc ? sc.cat + '|' + (sc.el == null ? '' : sc.el) : ''; }
+  // Reverted-ness is DERIVED from the line (never a sticky flag): an entry is reverted while the applied scoped-undo nodes
+  // naming it outnumber the applied scoped-redo nodes naming it — so a GLOBAL Ctrl+Z of a revert node un-reverts it too.
+  function _lineMap() {
+    var m = {}, cnt = {}, info = HB.lineInfo ? HB.lineInfo() : [];
+    info.forEach(function (o, i) {
+      m[o.seq] = { applied: o.applied, idx: i, e: o.entry };
+      var e = o.entry; if (o.applied && e.scoped && e.members) e.members.forEach(function (sq) { cnt[sq] = (cnt[sq] || 0) + (e.scopedKind === 'redo' ? -1 : 1); });
+    });
+    info.forEach(function (o) { o.entry.threadReverted = (cnt[o.seq] || 0) > 0; });
+    return m;
+  }
+  function _rowsOf(e) {         // the signed rows this node committed, in commit order (read back from kernel_ops)
+    var ids = (e.ids && e.ids.length) ? e.ids : null;
+    if (!ids) return null;
+    return ids.map(function (id) { var r = _rowOf(id); return r ? { id: id, op_type: r.op_type, params: r.parameters } : null; });
+  }
+  function _invertible(e) {    // → null when invertible-by-append, else the reason
+    if (e.type === 'BUILDING_OPEN' || e.type === 'DISC_WALK' || e.type === 'MEP_REROUTE' || e.type === 'GEOM_DELETE') return 'type=' + e.type;
+    if ((e.onRows && e.onRows.length) || (e.offRows && e.offRows.length)) return 'a re-route rode this node (its rows are flag-owned)';
+    var rows = _rowsOf(e); if (!rows) return 'no recorded rows';
+    for (var i = 0; i < rows.length; i++) { if (!rows[i]) return 'row missing'; if (!INV[rows[i].op_type]) return 'type=' + rows[i].op_type; }
+    return null;
+  }
+  function _name(e) { var els = elementOf(e); return '"' + (e.label || e.type) + (els && els.length ? ' ' + els.map(elementLabel).join('+') : '') + '" (seq ' + e.seq + ')'; }
+  // R1–R5: which LATER, still-applied, not-reverted nodes lean on target T, through relations already recorded.
+  function dependentsOf(T) {
+    var out = [], lm = _lineMap(), Tels = {}, Tprim = {}, Trows = {}, untracked = 0;
+    (T.opsum || []).forEach(function (o) { var id = o.p != null ? o.p : o.id; if (id == null) return; Tels[id] = 1; if (!o.ind) Tprim[id] = 1; });
+    (T.ids || []).concat(T.rows || [], T.onRows || []).forEach(function (id) { Trows[id] = 1; });
+    var O = window.Bonsai && window.Bonsai.oplog, G = window.__arcGuidByFid || {}, F = window.__arcFidByGuid || {};
+    // R1 host/filling — the rel_fills_host edges SdgCascade.ridersFor reads (swXEdges.fills), both directions
+    var linked = {};
+    ((window.swXEdges && window.swXEdges.fills) || []).forEach(function (ed) {
+      var h = F[ed.host_guid], f = F[ed.filling_guid];
+      // from the user's OWN targets (a rider that moved inside T is still a filling of T's host — a later edit of it leans on T)
+      if (h != null && Tprim[h] && f != null) linked[f] = 'host/filling (rides ' + elementLabel(h) + ')';
+      if (f != null && Tprim[f] && h != null) linked[h] = 'host/filling (hosts ' + elementLabel(f) + ')';
+    });
+    // R2 cut — GEOM_CUT rows whose parent is a T element
+    var cutsOfT = {};
+    try { var cr = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_CUT' AND undone=0"); (cr.length ? cr[0].values : []).forEach(function (v) { var pp = JSON.parse(v[1] || '{}'); if (Tels[pp.parent]) cutsOfT[v[0]] = pp.parent; }); } catch (x) {}
+    var Tguids = {}; Object.keys(Tels).forEach(function (fid) { if (G[fid]) Tguids[G[fid]] = fid; });
+    Object.keys(lm).forEach(function (sq) {
+      var L = lm[sq].e; sq = +sq;
+      if (sq <= T.seq || !lm[sq].applied || L.scoped || L.threadReverted || L === T) return;
+      if (L.type === 'DISC_WALK') { untracked++; return; }
+      var why = null;
+      (L.opsum || []).forEach(function (o) {
+        if (why) return;
+        if (o.p != null && linked[o.p] && !Tprim[o.p]) why = 'R1 ' + linked[o.p];
+        else if ((o.t === 'GEOM_CUT_MOVE' || o.t === 'GEOM_CUT_RESIZE') && o.cut != null && cutsOfT[o.cut] != null) why = 'R2 cut #' + o.cut + ' of ' + elementLabel(cutsOfT[o.cut]);
+        else if (o.t === 'GEOM_CUT' && o.p != null && Tels[o.p]) why = 'R2 new cut in ' + elementLabel(o.p);
+        else if (o.ind && o.p != null && Tels[o.p]) why = 'R3 cascade rider (' + o.ind + ') on ' + elementLabel(o.p);
+        else if (o.t === 'GEOM_INSERT' && o.sp && o.id != null) {
+          var rr = _rowOf(o.id), sp = rr && rr.parameters && rr.parameters.spanSplit;
+          if (sp && (Tguids[sp.girder] || Tguids[sp.srcGuid])) why = 'R4 grid-span column add on ' + elementLabel(Tguids[sp.girder] || Tguids[sp.srcGuid]);
+        }
+      });
+      if (!why && L.offRows && L.offRows.some(function (id) { return Trows[id]; })) why = 'R5 MEP re-route superseded rows of the target';
+      if (why) out.push({ entry: L, why: why });
+    });
+    if (untracked) console.log('§THREAD_DEP_UNTRACKED kind=walk-vs-host n=' + untracked + ' target=' + _name(T) + ' (a walk\'s route is not linked to the walls it passed in the log — not a dependency rule)');
+    return out;
+  }
+  function _closure(T) {       // T + every dependent, transitively (a cascade must not strand a dependent's dependent)
+    var set = [T], seen = {}; seen[T.seq] = 1; var why = {};
+    for (var i = 0; i < set.length; i++) dependentsOf(set[i]).forEach(function (d) { if (!seen[d.entry.seq]) { seen[d.entry.seq] = 1; why[d.entry.seq] = d.why; set.push(d.entry); } });
+    return { members: set, why: why };
+  }
+  function _targetFor(sc) {    // newest applied, not-reverted, user-made node of the thread
+    var lm = _lineMap(), es = HB.threadEntries(sc.cat, sc.el);
+    for (var i = es.length - 1; i >= 0; i--) { var e = es[i], m = lm[e.seq]; if (m && m.applied && !e.scoped && !e.threadReverted) return e; }
+    return null;
+  }
+  async function _appendGesture(rows, meta) {
+    var O = window.Bonsai.oplog;
+    _gestureMeta = meta;
+    try { return await O.commitGesture(rows); } finally { _gestureMeta = null; }
+  }
+  async function scopedUndo(opts) {
+    opts = opts || {};
+    var sc = HB.getScope(); if (!sc) return { ok: false, reason: 'no-scope' };
+    if (_scopedBusy) return { ok: false, reason: 'busy' };
+    var T = _targetFor(sc);
+    if (!T) { console.log('§THREAD_UNDO nothing scope=' + sc.label); HB.setScopeNote && HB.setScopeNote('nothing left to undo here'); return { ok: false, reason: 'nothing' }; }
+    var bad = _invertible(T);
+    if (bad) { console.log('§THREAD_UNDO_REFUSE target=' + _name(T) + ' reason=not-invertible-by-append ' + bad); HB.setScopeNote('can\'t undo ' + (T.label || T.type) + ' alone (' + bad + ')'); return { ok: false, reason: 'not-invertible', detail: bad }; }
+    var cl;
+    if (window.__threadsSkipDepCheck) { console.log('§THREAD_DEPCHECK SKIPPED (falsifier window.__threadsSkipDepCheck)'); cl = { members: [T], why: {} }; }
+    else cl = _closure(T);
+    var deps = cl.members.slice(1);
+    if (deps.length && !opts.cascade) {
+      var names = deps.map(function (d) { return _name(d) + ' ← ' + cl.why[d.seq]; });
+      console.log('§THREAD_UNDO_REFUSE target=' + _name(T) + ' dependents=' + deps.length + ' [' + names.join(' | ') + ']');
+      HB.setScopeNote('blocked by ' + deps.map(function (d) { return (d.label || d.type) + (elementOf(d) ? ' ' + elementOf(d).map(elementLabel).join('+') : ''); }).join(', '),
+        [{ id: 'cascade', label: 'Undo all ' + (deps.length + 1), fn: function () { scopedUndo({ cascade: true }).then(function () { if (window.__mhistAfterScoped) window.__mhistAfterScoped(); }); } }]);
+      return { ok: false, reason: 'dependents', dependents: deps.map(function (d) { return { seq: d.seq, label: d.label, why: cl.why[d.seq] }; }) };
+    }
+    var bads = deps.map(function (d) { return { d: d, r: _invertible(d) }; }).filter(function (x) { return x.r; });
+    if (bads.length) { console.log('§THREAD_UNDO_REFUSE target=' + _name(T) + ' cascade-blocked ' + bads.map(function (x) { return _name(x.d) + ' (' + x.r + ')'; }).join(' | ')); HB.setScopeNote('can\'t cascade: ' + bads.map(function (x) { return x.d.label; }).join(', ')); return { ok: false, reason: 'cascade-not-invertible' }; }
+    // inverse rows: newest member first, each member's rows in reverse commit order
+    var members = cl.members.slice().sort(function (a, b) { return b.seq - a.seq; }), inv = [];
+    members.forEach(function (e) { var rows = _rowsOf(e); for (var i = rows.length - 1; i >= 0; i--) { var p = INV[rows[i].op_type](rows[i].params); p.scopedRevert = rows[i].id; inv.push({ op_type: rows[i].op_type, params: p }); } });
+    _scopedBusy = true;
+    try {
+      var lbl = '↶ ' + sc.label + ': ' + (T.label || T.type) + (deps.length ? ' +' + deps.length : '');
+      var r = await _appendGesture(inv, { scoped: true, revertOf: T.seq, label: lbl, kind: 'undo', key: _scopeKey(sc), members: members.map(function (e) { return e.seq; }) });
+      _lineMap(); HB.setScopeNote(null);
+      console.log('§THREAD_UNDO scope=' + sc.label + ' target=' + _name(T) + (deps.length ? ' cascade=[' + deps.map(_name).join(' | ') + ']' : '') +
+        ' appended gid=' + r.gid + ' rows=' + (r.ids || []).length + ' verify=' + r.verify + ' (append-only: no row deleted/reordered)');
+      return { ok: true, target: T.seq, cascade: deps.map(function (d) { return d.seq; }), gid: r.gid, ids: r.ids, verify: r.verify };
+    } finally { _scopedBusy = false; }
+  }
+  async function scopedRedo() {
+    var sc = HB.getScope(); if (!sc) return { ok: false, reason: 'no-scope' };
+    if (_scopedBusy) return { ok: false, reason: 'busy' };
+    // newest applied scoped-undo node of THIS scope whose target is still reverted → re-apply its members
+    var k = _scopeKey(sc), lm = _lineMap(), info = HB.lineInfo(), rec = null;
+    for (var i = info.length - 1; i >= 0 && !rec; i--) {
+      var u = info[i].entry; if (!info[i].applied || !u.scoped || u.scopedKind !== 'undo' || u.scopeKey !== k) continue;
+      if (lm[u.revertOf] && lm[u.revertOf].e.threadReverted) rec = { target: lm[u.revertOf].e, members: u.members.map(function (sq) { return lm[sq] && lm[sq].e; }).filter(Boolean) };
+    }
+    if (!rec) { console.log('§THREAD_REDO nothing scope=' + sc.label); return { ok: false, reason: 'nothing' }; }
+    var rows = [];
+    rec.members.slice().sort(function (a, b) { return a.seq - b.seq; }).forEach(function (e) { _rowsOf(e).forEach(function (rw) { var p = Object.assign({}, rw.params); p.scopedRedo = rw.id; rows.push({ op_type: rw.op_type, params: p }); }); });
+    _scopedBusy = true;
+    try {
+      var r = await _appendGesture(rows, { scoped: true, revertOf: rec.target.seq, label: '↷ ' + sc.label + ': ' + (rec.target.label || rec.target.type),
+        kind: 'redo', key: k, members: rec.members.map(function (e) { return e.seq; }) });
+      _lineMap(); HB.setScopeNote(null);
+      console.log('§THREAD_REDO scope=' + sc.label + ' target=' + _name(rec.target) + ' re-applied gid=' + r.gid + ' rows=' + (r.ids || []).length + ' verify=' + r.verify);
+      return { ok: true, target: rec.target.seq, gid: r.gid, ids: r.ids, verify: r.verify };
+    } finally { _scopedBusy = false; }
+  }
+
   // §THREADS step 1: the Modeller never mounted the shared dotline (only #hist-slider was visible) — mount it now.
   if (document.getElementById('hist-dots')) HB.open();
 
@@ -356,7 +510,8 @@
     open: HB.open, toggleOpen: HB.toggleOpen, list: HB.list,
     // §THREADS
     categorize: categorize, elementOf: elementOf, threads: HB.threads, threadEntries: HB.threadEntries,
-    getScope: HB.getScope, setScope: HB.setScope, clearScope: HB.clearScope, toggleThread: HB.toggleThread
+    getScope: HB.getScope, setScope: HB.setScope, clearScope: HB.clearScope, toggleThread: HB.toggleThread,
+    scopedActive: function () { return !!HB.getScope(); }, scopedUndo: scopedUndo, scopedRedo: scopedRedo, dependentsOf: dependentsOf
   };
   console.log('§MHIST_READY source=modeller profile=high ops=' + Object.keys(OP_TYPES).length);
 })();

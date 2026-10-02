@@ -693,6 +693,8 @@ window.HistoryBar = (function () {
     for (var i = 0; i < _stream.length; i++) { var cs = _catsOf(_stream[i]); for (var j = 0; j < cs.length; j++) (out[cs[j]] || (out[cs[j]] = [])).push(_stream[i].seq); }
     return out;
   }
+  // §THREADS step 2: the active line as {seq, applied} (no §-line — list() logs on every call). Read-only.
+  function lineInfo() { return _stream.map(function (e, i) { return { seq: e.seq, applied: i <= _cursor, entry: e }; }); }
   function threadEntries(cat, el) {
     return _stream.filter(function (e) { return _catsOf(e).indexOf(cat) >= 0 && (el == null || _elsOf(e).indexOf(el) >= 0); });
   }
@@ -740,6 +742,7 @@ window.HistoryBar = (function () {
     var idx = _stream.indexOf(e), applied = idx <= _cursor, isCur = idx === _viewCursor;
     var d = _dot(e, idx, applied, isCur);
     d.setAttribute('data-seq', e.seq); d.className = 'hist-thr-dot';
+    if (e.threadReverted) { d.style.opacity = '0.35'; d.title = (d.title || '') + ' — reverted along this thread'; d.setAttribute('data-reverted', '1'); }
     return d;
   }
   function _strip(cat, el, depth) {
@@ -849,7 +852,7 @@ window.HistoryBar = (function () {
     serialize: serialize, hydrate: hydrate, setTreeKey: setTreeKey,
     combineFromId: combineFromId,
     // ── §THREADS (HISTORY_PARALLEL_TIMELINE §THREADS-IMPL) — inert unless configure({categorize}) ──
-    threads: threads, threadEntries: threadEntries, toggleThread: toggleThread,
+    threads: threads, threadEntries: threadEntries, toggleThread: toggleThread, lineInfo: lineInfo,
     getScope: getScope, setScope: setScope, clearScope: clearScope, setScopeNote: setScopeNote
   };
 })();
