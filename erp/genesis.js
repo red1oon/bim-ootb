@@ -88,6 +88,7 @@
     var ccyPrec = input.currencyPrecision != null ? input.currencyPrecision : 2;
     var adminUser = input.adminUser || 'admin';
     var dateAcct = input.dateAcct || '2024-01-15';                          // explicit, not Date.now
+    var ccyIso = input.currencyIso || 'USD';                                 // FS-3: names the schema (MAcctSchema :262)
 
     var id = new IdGen(1000000), groups = [], parent = '0'.repeat(64);
     function group(label, ops) {
@@ -119,14 +120,25 @@
       create('ad_org_info', { ad_org_id: orgId, ad_client_id: clientId })
     ]);
 
-    // ── G2 CALENDAR + PERIOD ─────────────────────────────────────────────────────────────────────────────────
-    var calId = id.next(), yearId = id.next(), periodId = id.next(), year = dateAcct.slice(0, 4);
-    group('G2 calendar', [
+    // ── G2 CALENDAR + YEAR + 12 PERIODS — FS-2 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness:
+    //    W-ERP-FIRST-SETUP S06). MSetup.java:473-485 → MCalendar.createYear (MCalendar.java:193-202) → MYear of the
+    //    setup's year → createStdPeriods (MYear.java:209-283): month 0..11, name MMM-yy, 1st .. last day, PeriodNo
+    //    month+1 (MPeriod.java:564-574). The year comes from the explicit dateAcct input (genesis stays clock-free). ──
+    var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var calId = id.next(), yearId = id.next(), year = dateAcct.slice(0, 4), yy = year.slice(2), periodId = null;
+    var g2 = [
       create('c_calendar', { c_calendar_id: calId, ad_client_id: clientId, name: clientName + ' Calendar' }),
-      create('c_year', { c_year_id: yearId, c_calendar_id: calId, ad_client_id: clientId, fiscalyear: year }),
-      create('c_period', { c_period_id: periodId, c_year_id: yearId, ad_client_id: clientId,
-        name: 'Jan-' + year, startdate: year + '-01-01', enddate: year + '-12-31', periodtype: 'S' })
-    ]);
+      create('c_year', { c_year_id: yearId, c_calendar_id: calId, ad_client_id: clientId, fiscalyear: year })
+    ];
+    var leap = (Number(year) % 4 === 0 && Number(year) % 100 !== 0) || Number(year) % 400 === 0;
+    var DAYS = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for (var m = 0; m < 12; m++) {
+      var pid = id.next(), mm = (m < 9 ? '0' : '') + (m + 1);
+      if (dateAcct.slice(5, 7) === mm) periodId = pid;                      // refs.periodId = the period of dateAcct
+      g2.push(create('c_period', { c_period_id: pid, c_year_id: yearId, ad_client_id: clientId, name: MON[m] + '-' + yy,
+        periodno: m + 1, startdate: year + '-' + mm + '-01', enddate: year + '-' + mm + '-' + DAYS[m], periodtype: 'S' }));
+    }
+    group('G2 calendar', g2);
 
     // ── G3 CHART (fold iDempiere's full default CoA — the data-bearing step) ─────────────────────────────────
     var elementId = id.next(), coa = SEED.coa, evByValue = {};
@@ -140,7 +152,7 @@
 
     // ── G4 ACCTSCHEMA + default-account wiring (DERIVE: col -> validcombination -> elementvalue) ──────────────
     var asId = id.next();
-    var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/USD',
+    var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso,
       c_currency_id: ccyId, c_element_id: elementId })];
     var map = SEED.acctMap, vcByColumn = {};
     Object.keys(map).forEach(function (col) {
@@ -243,6 +255,7 @@
     // ── G6 BASE OPS + default masters (each master emits its acct-mapping row from the schema default) ────────
     var whId = id.next(), locId = id.next(), plId = id.next(), plvId = id.next();
     var bpGroupId = id.next(), bpId = id.next(), pcatId = id.next(), prodId = id.next(), taxId = id.next();
+    var taxCatId = id.next(), payTermId = id.next();                          // FS-4 (§FS2g)
     group('G6 base ops', [
       create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse' }),
       // FIX-A: MLocator.java:290 setClientOrg(warehouse) — the locator takes its warehouse's org, not '*'.
@@ -255,17 +268,23 @@
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
       create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, name: 'Standard' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
-      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product' }),
-      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9 }),
+      // FS-4: MSetup.java:1227-1236 one C_TaxCategory (no country input → Msg 'Standard'), IsDefault=Y; the setup tax is
+      // made IN it (:1251) and the product uses it (:1263-1275). Rate stays 9 (W-GENESIS-MINIMAL oracle; MSetup's is 0).
+      create('c_taxcategory', { c_taxcategory_id: taxCatId, ad_client_id: clientId, name: 'Standard', isdefault: 'Y' }),
+      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product', c_taxcategory_id: taxCatId }),
+      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9, c_taxcategory_id: taxCatId, isdefault: 'Y' }),
+      // FS-4: MSetup.java:1418-1426 — the 'Immediate' term, every day/discount 0, IsDefault=Y.
+      create('c_paymentterm', { c_paymentterm_id: payTermId, ad_client_id: clientId, value: 'Immediate', name: 'Immediate',
+        netdays: 0, gracedays: 0, discountdays: 0, discount: 0, discountdays2: 0, discount2: 0, isdefault: 'Y' }),
       create('c_tax_acct', { c_tax_id: taxId, c_acctschema_id: asId, ad_client_id: clientId, t_due_acct: vcByColumn['t_due_acct'] })
     ]);
 
     return {
-      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, adminUser: adminUser, dateAcct: dateAcct },
+      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, currencyIso: ccyIso, adminUser: adminUser, dateAcct: dateAcct },
       groups: groups, tip: parent,
       refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
               acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
-              taxId: taxId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
+              taxId: taxId, taxCategoryId: taxCatId, paymentTermId: payTermId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
   }

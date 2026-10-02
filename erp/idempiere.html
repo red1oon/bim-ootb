@@ -503,7 +503,7 @@
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=4"></script>
+<script src="genesis.js?v=5"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -620,7 +620,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=1"></script>
-<script src="crud_overlay.js?v=23"></script>
+<script src="crud_overlay.js?v=24"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
@@ -3220,8 +3220,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var name = document.createElement('input'); name.value = 'AcmeCo'; name.setAttribute('autocomplete', 'off');
     name.setAttribute('data-genesis-name', '1'); fName.appendChild(name); pane.appendChild(fName);
     var fCcy = el('div', 'fld'); fCcy.appendChild(el('label', null, 'Currency'));
-    var ccy = document.createElement('select'); var oc = el('option', null, 'USD — US Dollar'); oc.value = '100'; oc.setAttribute('data-prec', '2');
-    ccy.appendChild(oc); fCcy.appendChild(ccy); pane.appendChild(fCcy);
+    // FS-3 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness: W-ERP-FIRST-SETUP S04): any ACTIVE
+    // C_Currency is a valid setup currency (MSetup.java:542 new MAcctSchema(client, currency)); USD preselected.
+    var ccy = document.createElement('select'); ccy.setAttribute('data-genesis-currency', '1'); var nCcy = 0;
+    try {
+      var cr = db.exec("SELECT C_Currency_ID, ISO_Code, Description, StdPrecision FROM C_Currency WHERE IsActive='Y' ORDER BY ISO_Code");
+      (cr.length ? cr[0].values : []).forEach(function (v) {
+        var oc = el('option', null, v[1] + ' — ' + (v[2] || v[1])); oc.value = String(v[0]);
+        oc.setAttribute('data-prec', String(v[3] == null ? 2 : v[3])); oc.setAttribute('data-iso', String(v[1]));
+        if (Number(v[0]) === 100) oc.selected = true; ccy.appendChild(oc); nCcy++;
+      });
+    } catch (eC) {}
+    if (!nCcy) { var oc0 = el('option', null, 'USD — US Dollar'); oc0.value = '100'; oc0.setAttribute('data-prec', '2'); oc0.setAttribute('data-iso', 'USD'); ccy.appendChild(oc0); }
+    console.log('§GENESIS-WIZARD currencies=' + (nCcy || 1) + ' source=' + (nCcy ? "C_Currency IsActive='Y'" : 'fallback-USD'));
+    fCcy.appendChild(ccy); pane.appendChild(fCcy);
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
@@ -3235,8 +3247,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     run.addEventListener('click', function () {
       var opt = ccy.options[ccy.selectedIndex];
-      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value),
-        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: '2024-01-15' };
+      // FS-2: the setup year is TODAY's (MYear.java:110-115 reads the clock); genesis takes it as its explicit dateAcct.
+      var dNow = new Date(), today = dNow.getFullYear() + '-' + ('0' + (dNow.getMonth() + 1)).slice(-2) + '-' + ('0' + dNow.getDate()).slice(-2);
+      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
+        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
       run.disabled = true; run.textContent = 'Creating…';
       var born;
       try { born = window.Genesis.birthTenant(input); }
@@ -3248,7 +3262,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var invId = 9000001;
       var bundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
         seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
-          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
+          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: input.dateAcct, docstatus: 'CO' } },
           { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
           { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
         ] }]) };

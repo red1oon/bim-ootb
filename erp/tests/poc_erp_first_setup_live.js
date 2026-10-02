@@ -29,13 +29,15 @@ const server = http.createServer((req, res) => {
 });
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
-const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
+  S11: 'V', S11b: 'G', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
 // FS-6 (§FS2e) pinned S17 to V: CalloutOrder.product derives price/UOM/tax on a session-created order, by value.
+// FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
+// FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
 const OUT = [];
 const say = (s) => { OUT.push(s); console.log(s); };
@@ -137,6 +139,10 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     await page.waitForSelector('[data-genesis-create]', { timeout: 8000 });
     const ccy = await page.$$eval('.idmp-procpane select option', o => o.map(x => x.text));
     await page.fill('[data-genesis-name]', NAME); await page.fill('[data-genesis-admin]', ADMIN);
+    // FS-3: pick a NON-default currency so the run proves the choice is carried, not just listed.
+    const PICK = Number(await one(page, "SELECT C_Currency_ID FROM C_Currency WHERE ISO_Code='MYR' AND IsActive='Y'"));
+    await page.selectOption('[data-genesis-currency]', String(PICK)).catch(() => {});
+    const activeCcy = Number(await one(page, "SELECT COUNT(*) FROM C_Currency WHERE IsActive='Y'"));
     const n0 = PAGELOG.length;
     await page.click('[data-genesis-create]');
     await page.waitForSelector('[data-genesis-enter]', { timeout: 25000 });
@@ -147,13 +153,19 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const users = await page.$$eval('#idmp-login-users .nm', e => e.map(x => x.textContent.trim()));
     step('S03', CID >= 17 && users.indexOf(ADMIN) >= 0 ? 'V' : 'G', 'System -> Initial Tenant Setup -> name + admin -> a new, enterable company',
       'client=' + CID + ' ' + created + ' enterUsers=[' + users.join(',') + ']');
-    step('S04', ccy.length > 1 ? 'V' : 'G', 'the setup form lets the user pick the company currency', 'currencyOptions=' + ccy.length + ' [' + ccy.join(' | ') + ']');
+    const asCcy = Number(await one(page, 'SELECT C_Currency_ID FROM C_AcctSchema WHERE AD_Client_ID=' + CID));
+    const plCcy = Number(await one(page, 'SELECT C_Currency_ID FROM M_PriceList WHERE AD_Client_ID=' + CID));
+    step('S04', ccy.length > 1 && ccy.length === activeCcy && PICK > 0 && asCcy === PICK && plCcy === PICK ? 'V' : 'G', 'the setup form lets the user pick the company currency (and the pick is used)',
+      'currencyOptions=' + ccy.length + ' (oracle active C_Currency=' + activeCcy + ') picked=MYR(' + PICK + ') acctSchemaCcy=' + asCcy + ' priceListCcy=' + plCcy + ' first=[' + ccy.slice(0, 3).join(' | ') + ']');
     const coa = Number(await one(page, 'SELECT COUNT(*) FROM C_ElementValue WHERE AD_Client_ID=' + CID));
     step('S05', coa === 311 ? 'V' : (coa ? 'G' : 'I'), 'the new company has the iDempiere default chart of accounts', 'C_ElementValue=' + coa);
-    const per = await q(page, 'SELECT p.Name, p.StartDate, p.EndDate FROM C_Period p WHERE p.AD_Client_ID=' + CID);
+    const per = await q(page, 'SELECT p.Name, p.StartDate, p.EndDate FROM C_Period p WHERE p.AD_Client_ID=' + CID + ' ORDER BY p.StartDate');
     const yr = await one(page, 'SELECT FiscalYear FROM C_Year WHERE AD_Client_ID=' + CID);
     const thisYear = String(new Date().getFullYear());
-    step('S06', Array.isArray(per) && per.length === 12 && String(yr) === thisYear ? 'V' : 'G',
+    const yy = thisYear.slice(2);
+    const ends = Array.isArray(per) && per.length === 12 && per[0][0] === 'Jan-' + yy && per[0][1] === thisYear + '-01-01' && per[0][2] === thisYear + '-01-31' &&
+      per[11][0] === 'Dec-' + yy && per[11][1] === thisYear + '-12-01' && per[11][2] === thisYear + '-12-31';
+    step('S06', Array.isArray(per) && per.length === 12 && String(yr) === thisYear && ends ? 'V' : 'G',
       'a calendar with 12 monthly periods for the current year (MYear.java:250)', 'year=' + yr + ' (today ' + thisYear + ') periods=' + (Array.isArray(per) ? per.length : per) + ' ' + JSON.stringify(per).slice(0, 120));
     const dts = await q(page, 'SELECT DocBaseType FROM C_DocType WHERE AD_Client_ID=' + CID);
     const dbt = Array.isArray(dts) ? dts.map(r => r[0]) : [];
@@ -216,14 +228,18 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const mine = [];
     for (const o of tc) { if (!o.v) continue; const c = await one(page, 'SELECT AD_Client_ID FROM C_TaxCategory WHERE C_TaxCategory_ID=' + Number(o.v)); if (Number(c) === CID) mine.push(o.t); }
     const rows = Number(await one(page, 'SELECT COUNT(*) FROM C_TaxCategory WHERE AD_Client_ID=' + CID));
-    step('S12', mine.length ? 'V' : 'G', 'a product can take a tax category of the new company',
-      'C_TaxCategory(rows for client)=' + rows + ' pickerOptions=' + tc.filter(o => o.v).map(o => o.t).join('|') + ' ofThisTenant=' + mine.length);
+    const prodCat = Number(await one(page, 'SELECT C_TaxCategory_ID FROM M_Product WHERE AD_Client_ID=' + CID + ' ORDER BY M_Product_ID LIMIT 1'));
+    const ownCat = Number(await one(page, 'SELECT C_TaxCategory_ID FROM C_TaxCategory WHERE AD_Client_ID=' + CID + ' ORDER BY C_TaxCategory_ID LIMIT 1'));
+    step('S12', mine.length && rows === 1 && prodCat === ownCat && ownCat > 0 ? 'V' : 'G', 'a product can take a tax category of the new company (MSetup.java:1227-1275)',
+      'C_TaxCategory(rows for client)=' + rows + ' pickerOptions=' + tc.filter(o => o.v).map(o => o.t).join('|') + ' ofThisTenant=' + mine.length + ' setupProductCategory=' + prodCat + ' ownCategory=' + ownCat);
   } catch (e) { step('S12', 'I', 'product tax category', 'harness: ' + e.message); }
 
   // ── S13 payment terms ────────────────────────────────────────────────────────────────────────────────────────
   try {
     const pt = Number(await one(page, 'SELECT COUNT(*) FROM C_PaymentTerm WHERE AD_Client_ID=' + CID));
-    step('S13', pt >= 1 ? 'V' : 'G', 'the new company has a payment term (MSetup.java:1418 inserts one)', 'C_PaymentTerm=' + pt);
+    const ptRow = await q(page, 'SELECT Value, Name, NetDays, IsDefault FROM C_PaymentTerm WHERE AD_Client_ID=' + CID);
+    const ptOk = pt === 1 && Array.isArray(ptRow) && ptRow[0][0] === 'Immediate' && ptRow[0][1] === 'Immediate' && Number(ptRow[0][2]) === 0 && ptRow[0][3] === 'Y';
+    step('S13', ptOk ? 'V' : 'G', 'the new company has a payment term (MSetup.java:1418-1426 inserts Immediate)', 'C_PaymentTerm=' + pt + ' ' + JSON.stringify(ptRow));
   } catch (e) { step('S13', 'I', 'payment term', 'harness: ' + e.message); }
 
   // ── S14 + S15 sales order in the NEW company ─────────────────────────────────────────────────────────────────
@@ -282,7 +298,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     r.actions = await page.$$eval('[data-doc-action]', e => e.map(x => x.getAttribute('data-doc-action')));
     n0 = PAGELOG.length;
     await page.click('[data-doc-action="CO"]').catch(() => {}); await page.waitForTimeout(2600);
-    r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/);
+    r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/); r.fanout = last(n0, /§SO-FANOUT/);
     return r;
   }
   let SO = null;
@@ -316,8 +332,28 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       '} negControl(product ' + negProd + ')=' + JSON.stringify(dn) + ' autoFilled=' + JSON.stringify(SO.autoFilled) + ' ' + SO.fs6.slice(0, 160));
     step('S18', /verb=create ok/.test(SO.line) ? 'V' : 'G', 'the line saves once UOM, tax and price are typed', SO.line.slice(0, 160));
     step('S19', /to=CO verifyChain=ok/.test(SO.co) ? 'V' : 'G', 'Complete the order (signed)', 'actions=[' + SO.actions.join(',') + '] ' + SO.co.slice(0, 200));
-    step('S20', /not in bundle → status-only/.test(SO.fan) ? 'G' : (/§SO-FANOUT/.test(SO.fan) ? 'V' : 'I'),
-      'completing a NEW order generates its shipment / invoice / journal', SO.fan.slice(0, 200));
+    // S20 — two arms, both on orders typed THIS session (spec §FS2f). Expected doc counts come from the doc type
+    // row by SQL through MOrder.completeIt's rule (MOrder.java:2178,2198-2200,2254-2259), not from the code under test.
+    const fanOf = (line) => { const m = /policy\(io,inv\)=([YN]),([YN]).*engineOps=(\d+)/.exec(line || ''); return m ? { io: m[1], inv: m[2], ops: Number(m[3]) } : null; };
+    const expectFor = async (name) => {
+      const r = await q(page, "SELECT DocSubTypeSO, IsAutoGenerateInout, IsAutoGenerateInvoice FROM C_DocType WHERE AD_Client_ID=11 AND Name='" + name + "'");
+      if (!Array.isArray(r) || !r.length) return null;
+      const st = String(r[0][0] || ''), io = /^(WI|WP|WR)$/.test(st) || (st === 'PR' && r[0][1] === 'Y'), inv = /^(WR|WI)$/.test(st) || (st === 'PR' && r[0][2] === 'Y');
+      return { io: io ? 'Y' : 'N', inv: inv ? 'Y' : 'N', perDoc: 2 };   // 1 header + 1 line (each arm types ONE line)
+    };
+    const coOps = (line) => { const m = /ops=(\d+)/.exec(line || ''); return m ? Number(m[1]) : null; };
+    const eSO = await expectFor('Standard Order'), fSO = fanOf(SO.fanout);
+    // arm (a) NEGATIVE CONTROL: Standard Order must generate NOTHING (iDempiere: Generate Shipments/Invoices later)
+    const armA = !!(eSO && fSO && fSO.io === eSO.io && fSO.inv === eSO.inv && fSO.ops === 0 && coOps(SO.co) === 1);
+    const POS = await newOrder(143, 118, /^POS Order/, 'Order Line', 123, 1, 61.75);
+    const ePOS = await expectFor('POS Order'), fPOS = fanOf(POS.fanout);
+    const wantPOS = ePOS ? (ePOS.io === 'Y' ? ePOS.perDoc : 0) + (ePOS.inv === 'Y' ? ePOS.perDoc : 0) : null;
+    // arm (b): POS Order (WR) → shipment + invoice, and the signed group carries them: ops = 1 status + engine ops
+    const armB = !!(ePOS && fPOS && fPOS.io === ePOS.io && fPOS.inv === ePOS.inv && wantPOS > 0 && fPOS.ops === wantPOS && coOps(POS.co) === 1 + wantPOS);
+    step('S20', !fSO && !fPOS ? (/not in bundle|not found/.test(SO.fan) ? 'G' : 'I') : (armA && armB ? 'V' : 'G'),
+      'Complete on a NEW order runs iDempiere\'s completeIt fan-out (Standard Order: none; POS Order: shipment + invoice)',
+      'SO: expect=' + JSON.stringify(eSO) + ' got=' + JSON.stringify(fSO) + ' commitOps=' + coOps(SO.co) + ' | POS: expect=' + JSON.stringify(ePOS) + ' wantOps=' + wantPOS +
+      ' got=' + JSON.stringify(fPOS) + ' commitOps=' + coOps(POS.co) + ' | ' + (POS.fanout || SO.fan).slice(0, 140) + ' | ' + POS.fan.slice(0, 90));
     await page.goto(base + '/idempiere.html?login=GardenAdmin&window=143', { waitUntil: 'load' }); await page.waitForTimeout(2000);
     const tip = await tipOf(page, 'c_order', SO.id);
     step('S21', tip === 'CO' ? 'V' : 'G', 'the completed order survives a reload', 'readTip(c_order,' + SO.id + ')=' + tip);
