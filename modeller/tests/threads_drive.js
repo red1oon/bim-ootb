@@ -31,16 +31,20 @@ async function wallCandidates(t) {
 
 async function blurAll(pg) { await pg.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }); }
 
-// Real click on fid → true when it alone is selected.
+// Real click on fid → true when it alone is selected. Two attempts: the second after Fit (a previous selection-fly can leave
+// the camera where fid is occluded/off-screen — measured: B misses on every candidate after A's fly, 2 of 4 runs).
 async function clickSelect(t, fid) {
   const pg = t.pg;
-  let pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), fid);
-  if (!pt) { await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(900); pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), fid); }   // a previous fly left it off-screen
-  if (!pt) return false;
-  await pg.mouse.click(pt[0], pt[1]); await t.sleep(250);
-  const ss = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
-  if (ss.length === 1 && ss[0] === fid) { await t.flySettle(); return true; }
-  await t.flySettle(); await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(900);
+  for (let k = 0; k < 2; k++) {
+    if (k) { await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(1000); }
+    const pt = await pg.evaluate(f => window.__e2e.clickPointFor(f), fid);
+    if (!pt) continue;
+    await pg.mouse.click(pt[0], pt[1]); await t.sleep(250);
+    const ss = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
+    await t.flySettle();
+    if (ss.length === 1 && ss[0] === fid) return true;
+  }
+  await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(900);
   return false;
 }
 
@@ -94,20 +98,23 @@ async function walk(t, disc) {
 // Insert pill → first catalog leaf → real ground click a few metres off a real element. Returns the new row id.
 async function insertOne(t) {
   const pg = t.pg;
+  await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(1000); await t.flySettle();   // a selection-fly can leave no ground in view
   await pg.click('#b-insert'); await t.sleep(300);
   await pg.evaluate(() => { const leaf = document.querySelector('#ins-panel .ins-c[data-hash]'); if (leaf) leaf.click(); });
-  // ground points around the building's own bbox centre; take the first that projects onto the canvas itself
-  const cands = await pg.evaluate(() => {
-    const b = new window.THREE.Box3().setFromObject(window.Bonsai.group()); const c = new window.THREE.Vector3(); b.getCenter(c);
-    const out = []; [[3, 3], [-3, -3], [3, -3], [-3, 3], [5, 0], [-5, 0], [0, 5], [0, -5]].forEach(d => out.push([c.x + d[0], c.y + d[1], 0])); return out;
+  // a canvas pixel whose camera ray hits the ground plane z=0 in front of the camera (the plane the place handler
+  // intersects) — scanned over a grid of real canvas pixels, so it works from wherever the camera was left
+  const px = await pg.evaluate(() => {
+    const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(), T = window.THREE, rc = new T.Raycaster(), hit = new T.Vector3();
+    const plane = new T.Plane(new T.Vector3(0, 0, 1), 0);
+    for (const fy of [0.55, 0.65, 0.45, 0.75, 0.35]) for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+      const x = r.left + r.width * fx, y = r.top + r.height * fy, e = document.elementFromPoint(x, y);
+      if (!e || e !== cv) continue;
+      rc.setFromCamera(new T.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), window.A.camera);
+      if (rc.ray.intersectPlane(plane, hit) && hit.distanceTo(window.A.camera.position) < 200) return [x, y, 0];
+    }
+    return null;
   });
-  let px = null;
-  for (const w of cands) {
-    const p = await t.proj(w[0], w[1], w[2]);
-    const onCanvas = await pg.evaluate((x, y) => { const e = document.elementFromPoint(x, y); return !!e && e.tagName === 'CANVAS'; }, p[0], p[1]);
-    if (onCanvas && p[2] < 1) { px = p; break; }
-  }
-  if (!px) { console.log('  §THREADS-DRIVE insert no ground point on the canvas'); return null; }
+  if (!px) { console.log('  §THREADS-DRIVE insert no ground point on the canvas' + ' cam=' + JSON.stringify(await pg.evaluate(() => { const c = window.A.camera, b = new window.THREE.Box3().setFromObject(window.Bonsai.group()); return { p: c.position.toArray().map(v => +v.toFixed(2)), near: c.near, fov: c.fov, grp: [b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1))], stat: document.getElementById('stat').textContent, sel: Array.from(window.Bonsai._selSet || []) }; }))); return null; }
   const before = await pg.evaluate(() => window.Bonsai.oplog.db.exec('SELECT MAX(id) FROM kernel_ops')[0].values[0][0]);
   await pg.mouse.move(px[0], px[1]); await t.sleep(120);
   await pg.mouse.down(); await t.sleep(80); await pg.mouse.up(); await t.sleep(1400);

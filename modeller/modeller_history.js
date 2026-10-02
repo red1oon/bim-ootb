@@ -137,6 +137,17 @@
     return out.length ? out : null;
   }
   function elementLabel(id) { return _element(id).label; }
+  // §THREADS jump-to-view: a dot click / ‹ › step is READ-ONLY (history_bar _viewApply → restoreView, never the op-log).
+  // The Modeller had no restoreView, so its dots moved only the highlight. Now: select that moment's own target elements
+  // and frame them (selection + camera only — the model is not touched). Entries with no element (walk, open) frame nothing.
+  function restoreView(e) {
+    var B = window.Bonsai; if (!B || !B.selectMany) return;
+    var els = (elementOf(e) || []).filter(function (id) { return B.meshFor && B.meshFor(id); });
+    if (!els.length) { console.log('§THREAD_VIEW seq=' + (e ? e.seq : '-') + ' "' + (e ? e.label : 'start') + '" els=0 (nothing to frame)'); return; }
+    B.selectMany(els);
+    if (B.frameSelection) B.frameSelection();
+    console.log('§THREAD_VIEW seq=' + e.seq + ' "' + e.label + '" els=[' + els + '] selected+framed (read-only)');
+  }
 
   function _push(opType, params, opts) {
     opts = opts || {};
@@ -254,7 +265,7 @@
     defaultDepth: function () { return 'high'; },
     restore: _restore,
     // §THREADS step 1: the categorize hook (the bar stays app-agnostic) + the dotline mounted above the slider row.
-    categorize: categorize, elementOf: elementOf, elementLabel: elementLabel,
+    categorize: categorize, elementOf: elementOf, elementLabel: elementLabel, restoreView: restoreView,
     mountHostId: 'hist-dots',
     sharedKey: 'bim.docHistory',
     channel: 'bim_history',
