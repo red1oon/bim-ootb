@@ -156,6 +156,19 @@
   // FIRST pass of a press equals the LAST pass of the previous press only when the target was never redrawn — measured with the
   // __GI_STILL_INJECT_GEOM_DROP hook: first-vs-first differed (f97e833e vs ea011b79, the last pass of press 1 was what sat in the
   // target) while the composite was the stale paste (meanAbsDiff 55.27); first-vs-last is the comparison that catches it.
+  // §GI_FILM_8BIT: the 8-bit target's readback, unpadded to w*4 bytes per row; fingerprint on the same sampling as fingerprint()
+  async function readRT8(G) {
+    const rw = G.w, rh = G.h; let b = await G.renderer.readRenderTargetPixelsAsync(G.rt8, 0, 0, rw, rh);
+    if (!(b instanceof Uint8Array)) b = new Uint8Array(b.buffer || b);
+    if (b.length !== rw * rh * 4) { const stride = (b.length / 4 - rw) / (rh - 1);
+      if (!Number.isInteger(stride) || stride < rw) throw new Error('8-bit readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
+      const out = new Uint8Array(rw * rh * 4); for (let y = 0; y < rh; y++) out.set(b.subarray(y * stride * 4, y * stride * 4 + rw * 4), y * rw * 4); b = out; }
+    const u32 = new Uint32Array(b.buffer, b.byteOffset, b.length >> 2); let hh = 0x811c9dc5, clear = 0, np = 0;
+    for (let k = 0; k < u32.length; k += 61) { hh ^= u32[k]; hh = Math.imul(hh, 0x01000193) >>> 0; }
+    for (let k = 3; k < b.length; k += 28) { np++; if (b[k] < 5) clear++; }
+    G.fpLastRead = { hash: ('00000000' + hh.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+    return b;
+  }
   function fingerprint(acc) {
     const u32 = new Uint32Array(acc.buffer, acc.byteOffset, acc.length);
     let h = 0x811c9dc5, clear = 0, np = 0;
@@ -464,7 +477,7 @@
       // __GI_STILL_INJECT_GEOM_DROP is a TEST HOOK (like __GI_STILL_INJECT_READBACK_FLIP): it does what a WebGPU error does to a
       // pass — the command buffer is dropped, nothing is drawn, the render target keeps the previous pass. §GI_CARRY must catch it.
       if (!window.__GI_STILL_INJECT_GEOM_DROP) {
-        G.renderer.setRenderTarget(G.rt);
+        G.renderer.setRenderTarget(G.renderTo || G.rt);   // §GI_FILM_8BIT: films with &gi8=1 render into the 8-bit target
         if (G.pipeline.renderAsync) await G.pipeline.renderAsync(); else G.pipeline.render();
         G.renderer.setRenderTarget(null);
       }
@@ -1280,9 +1293,16 @@
       if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
       const fpBefore = G.fpLastRead || null;   // the last readback of this target (a previous frame, or the orientation passes after a build)
       const tGeom0 = performance.now();
-      await renderGeom(G);
+      // §GI_FILM_8BIT (ALTC_FOUNDATION §SPEED_PAR, opt-in &gi8=1): the pass output is already sRGB-encoded 0..1 (outputColorTransform), so
+      // an 8-bit target stores the same value the JS loop used to make from the float (x255, clamp) — the GPU does the conversion, the
+      // readback is 4 B/px instead of 16 and the per-pixel loop becomes two row copies + an alpha pass.
+      const gi8 = /[?&]gi8=1/.test(location.search);
+      if (gi8 && (!G.rt8 || G.rt8.width !== G.w || G.rt8.height !== G.h)) { if (G.rt8) G.rt8.dispose();
+        G.rt8 = new G.THREE.RenderTarget(G.w, G.h, { type: G.THREE.UnsignedByteType, format: G.THREE.RGBAFormat, depthBuffer: true }); console.log('§GI_FILM_8BIT target ' + G.w + 'x' + G.h + ' rgba8'); }
+      G.renderTo = gi8 ? G.rt8 : null;
+      try { await renderGeom(G); } finally { G.renderTo = null; }
       const tRead0 = performance.now();
-      const f = await readRT(G);
+      const f = gi8 ? await readRT8(G) : await readRT(G);
       // §GI_FILM_CARRY (2026-10-01, ALTC_FOUNDATION §RESUME 08:30 item 1, the 0733 "bottom 43% frozen from frame 1"): the still's
       // §GI_CARRY ported to films. build() replaces renderer.onError, so three.js's own "Uncaptured WebGPU" line never reaches the
       // log — a dropped geometry pass was silent here. Per frame: WebGPU errors since the last frame, and this pass's fingerprint
@@ -1321,7 +1341,7 @@
         if (errN > 0 || stale) {
           ctx.drawImage(film.entry, 0, 0, w, h);
           film.frames++; film.ms += performance.now() - t0;
-          try { G.rt.dispose(); G.renderer.dispose(); } catch (e) {}
+          try { G.rt.dispose(); if (G.rt8) G.rt8.dispose(); G.renderer.dispose(); } catch (e) {}
           film.G = null; film.oriented = false; film.errAt = null; film.staleLast = false; film.camKeyPrev = null;
           film.rebuilds = (film.rebuilds || 0) + 1;
           if (film.rebuilds > GI_FILM_MAX_REBUILDS) { film.off = true; console.warn('§GI_FILM_OFF reason=gpu-failures at f=' + film.frames + ' rebuilds=' + (film.rebuilds - 1) + ' — the rest of the film bakes without the bounce'); }
@@ -1332,7 +1352,12 @@
       const tLoop0 = performance.now();
       const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
       const d = img.data, fo = G.flipOut;
-      if (/[?&]gifast=1/.test(location.search)) {
+      if (gi8) {
+        const rowB = w * 4;
+        if (!fo) d.set(f); else for (let y = 0; y < h; y++) d.set(f.subarray((h - 1 - y) * rowB, (h - y) * rowB), y * rowB);
+        const aT = Math.round(GEOM_MASK_T * 255);
+        for (let k = 3; k < d.length; k += 4) d[k] = d[k] >= aT ? 255 : 0;   // the still's HARD mask, on the 8-bit alpha
+      } else if (/[?&]gifast=1/.test(location.search)) {
         // §GI_FILM_FAST (ALTC_FOUNDATION §SPEED_PAR): the same conversion without Math.max/min — img.data is a Uint8ClampedArray, which
         // clamps to 0..255 and rounds exactly as the clamped float did before; row offsets hoisted. Same bytes by construction.
         for (let y = 0; y < h; y++) { let s = (fo ? (h - 1 - y) : y) * w * 4, o = y * w * 4;
@@ -1354,7 +1379,7 @@
       film.pt = film.pt || { grab: 0, geom: 0, read: 0, loop: 0, comp: 0 };
       film.pt.grab += tGeom0 - t0; film.pt.geom += tRead0 - tGeom0; film.pt.read += tLoop0 - tRead0; film.pt.loop += tLoop1 - tLoop0; film.pt.comp += t0 + ms - tLoop1;
       if (film.frames % 24 === 0) { const P = film.pt, n = film.frames; console.log('§GI_FILM_PARTS f=' + n + ' meanMs grab=' + (P.grab / n).toFixed(1) + ' geom=' + (P.geom / n).toFixed(1) +
-        ' read=' + (P.read / n).toFixed(1) + ' loop=' + (P.loop / n).toFixed(1) + ' comp=' + (P.comp / n).toFixed(1) + (/[?&]gifast=1/.test(location.search) ? ' gifast=1' : '')); }
+        ' read=' + (P.read / n).toFixed(1) + ' loop=' + (P.loop / n).toFixed(1) + ' comp=' + (P.comp / n).toFixed(1) + (/[?&]gifast=1/.test(location.search) ? ' gifast=1' : '') + (gi8 ? ' gi8=1' : '')); }
       if (film.frames <= 2 || film.frames % 24 === 0) {
         let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
         for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
