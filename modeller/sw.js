@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v72';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v74';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -62,6 +62,7 @@ const PRECACHE_ASSETS = [
   'seed_trunk.js',
   'str_walker.js',
   'str_walker_bridge.js',
+  'grid_span_gate.js',
   'str_walker_outliner.js',
   'walker_confidence.js',
   'grid_kinematics.js',
