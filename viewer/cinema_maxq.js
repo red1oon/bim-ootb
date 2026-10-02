@@ -1605,6 +1605,9 @@
   var _capN = 0;
   function _capEncode(c, idx) {
     var t0 = performance.now();
+    var _cm = window.APP && window.APP._capMarks;
+    if (_cm && _cm.length) { _cm.push(['hud', t0]); var _ps = []; for (var _k = 1; _k < _cm.length; _k++) _ps.push(_cm[_k][0] + '=' + (_cm[_k][1] - _cm[_k - 1][1]).toFixed(1));
+      console.log('§CAPTURE_PARTS ' + _ps.join(' ') + ' (ms; hud = everything after the 3D draw: window pull, bounce composite, overlays)'); window.APP._capMarks = null; }
     return new Promise(function (res) { c.toBlob(function (b) {
       console.log('§CAPTURE_ENC n=' + (_capN++) + (idx != null ? ' i=' + idx : '') + ' fmt=' + _capFmt.slice(6) + ' q=' + _capQ + ' ms=' + (performance.now() - t0).toFixed(1) + ' compMs=' + (window.APP && window.APP._capT0 ? (t0 - window.APP._capT0).toFixed(1) : '-') + ' bytes=' + (b ? b.size : 'null'));
       res(b); }, _capFmt, _capQ); });
@@ -1666,7 +1669,9 @@
     if (A._loadPathHoldFrameActive && A._loadPathDiagSample) {
       try { A._loadPathDiagSample('pre-render'); } catch (eLPD2) { console.warn('§LOADPATH_DIAG_ERR ' + (eLPD2 && eLPD2.message)); }
     }
+    A._capMarks = [['start', A._capT0 || performance.now()]];   // §CAPTURE_PARTS
     if (A._composer) A._composer.render();
+    A._capMarks.push(['composer', performance.now()]);
     // §GI_CAPTURE_HOOK (worktree only, 2026-09-22) — opt-in seam for an alternative renderer to
     // supply THIS frame's 3D pixels. Absent hook = byte-identical to before (the else branch is the
     // original line, unchanged). Present hook = it draws into the same ctx at the same point, before
@@ -1687,6 +1692,7 @@
     } else {
       ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
     }
+    A._capMarks.push(['draw3d', performance.now()]);
     // §129 DIAGNOSTIC (2026-09-17) — GROUND TRUTH pixel readback, right after the 3D scene lands in
     // the 2D capture canvas, before any HUD/overlay draws touch it. Every prior check (apply-side
     // witnesses, the live pre-render state sample above) proves JS OBJECT STATE, never proves a
