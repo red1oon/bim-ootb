@@ -11,8 +11,12 @@
  *   H2 STRIP     a real double-click on the Walls chip opens a strip listing EXACTLY the Walls entries, in log order
  *   H3 MULTI     the wall-with-riders gesture appears in BOTH the Walls and the Openings strips
  *   H4 ELEMENT   `+ Wall #A (1)` double-click → an element strip listing exactly the entries that targeted wall A
- *   H5 GLOW      a real click on the strip → it glows blue (box-shadow rgb(79, 195, 247)) and the badge reads "Undo: Walls only"
- *   H6 JUMP      a click on a strip dot = read-only jump (§HIST_VIEWNAV idx=<that entry> opLogMutated=NO, kernel undone sum unchanged)
+ *   H5 GLOW      a real click on the strip → it glows blue (box-shadow rgb(79, 195, 247)) and the badge reads "Viewing: Walls"
+ *                (read-only scrubber — red1 2026-10-02 scope cut: no badge may promise a scoped undo)
+ *   H5b SCRUB    while it glows, real clicks on ‹ / › step the view cursor ONLY through the Walls entries (§THREAD_SCRUB),
+ *                skipping the walk + insert in between; kernel_ops untouched
+ *   H6 JUMP      a click on a strip dot = read-only jump-to-view (§HIST_VIEWNAV idx=<that entry> opLogMutated=NO, kernel unchanged):
+ *                the selection becomes exactly that entry's own targets and the orbit target = their bbox centre (≤1e-6 m)
  *   H7 EXIT      tap-again → off(tap-again); Esc → off(esc); a new edit → off(new-edit)
  *   H8 NO-HOOK   with NO categorize hook the bar renders byte-for-byte as before: OLD history_bar.js (base cbb7e355) vs the
  *                served one, same configure + same pushes/undo → identical #universal-hist-btns outerHTML and §-line sequence
@@ -30,6 +34,10 @@ function fetchText(u) { return new Promise((res, rej) => { (u.startsWith('https'
 
 runE2E('W-HISTORY-THREADS', async (t) => {
   const pg = t.pg;
+  // GUIDE_OUT=<dir>: one tight frame of the history bar per guide step (docs/ModellerFirstSteps.md Part 5), from THIS run
+  const gshot = async (name) => { if (!process.env.GUIDE_OUT) return; const r = await pg.evaluate(() => { const b = document.getElementById('universal-hist-btns'); if (!b) return null; const q = b.getBoundingClientRect(); return { x: q.left, y: q.top, w: q.width, h: q.height }; });
+    if (!r) return; const pad = 10, x = Math.max(0, r.x - pad), y = Math.max(0, r.y - pad);
+    await pg.screenshot({ path: path.join(process.env.GUIDE_OUT, name + '.png'), clip: { x, y, width: Math.min(1400 - x, r.w + 2 * pad), height: Math.min(900 - y, r.h + 2 * pad) } }); console.log('  §GUIDE-SHOT ' + name + ' ' + Math.round(r.w) + 'x' + Math.round(r.h)); };
   await Dr.openDuplex(t);
   const hasApi = await pg.evaluate(() => !!(window.HistoryBar && window.HistoryBar.threads && document.getElementById('hist-dots')));
   console.log('  §THREADS api=' + hasApi);
@@ -41,7 +49,15 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   let A = null, rowsA = null;
   for (const c of hosting) { rowsA = await Dr.moveByGizmo(t, c.fid, 0.4); if (rowsA && rowsA.length >= 2) { A = c; break; } }
   let B = null, rowsB = null;
-  for (const c of cands) { if (A && c.fid === A.fid) continue; rowsB = await Dr.moveByGizmo(t, c.fid, -0.3); if (rowsB && rowsB.length) { B = c; break; } }
+  const triedB = new Set();
+  for (let round = 0; round < 3 && !B; round++) {   // up to 3 Fit → re-read rounds (the visible top-40 set moves with the camera)
+    await pg.evaluate(() => window.Bonsai.select(null)); await pg.click('#b-fit'); await t.sleep(1000);
+    const candsB = await Dr.wallCandidates(t);
+    for (const c of candsB.filter(c => c.riders.length).concat(candsB.filter(c => !c.riders.length))) {
+      if ((A && c.fid === A.fid) || triedB.has(c.fid)) continue; triedB.add(c.fid);
+      rowsB = await Dr.moveByGizmo(t, c.fid, -0.3); if (rowsB && rowsB.length) { B = c; break; }
+    }
+  }
   const walkLine = await Dr.walk(t, 'ELEC');
   const insId = await Dr.insertOne(t);
   console.log('  §THREADS edits wallA=' + (A && A.fid) + ' rows=' + JSON.stringify((rowsA || []).map(r => r.op_type + '#' + r.id + '(' + (r.p.induced || 'p' + r.p.parent) + ')')) +
@@ -79,6 +95,7 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   t.assert('H1 CHIPS (one `+ Cat (n)` chip per category; n == log entries of that category == independent kernel_ops count)', domOk && kOk,
     'dom=' + JSON.stringify(dom.map(d => d.cat + ':' + d.n)) + ' kernel=' + JSON.stringify(indep));
 
+  await gshot('first-steps-thread1-chips');
   // ── H2 strip via a real double-click ─────────────────────────────────────────
   const chipPt = async (sel) => pg.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }, sel);
   const dbl = async (sel) => { const p = await chipPt(sel); if (!p) return false; await pg.mouse.click(p[0], p[1], { clickCount: 1 }); await pg.mouse.click(p[0], p[1], { clickCount: 2 }); await t.sleep(250); return true; };
@@ -101,7 +118,7 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   const gotEl = await pg.evaluate(f => { const s = document.querySelector('#hist-thr-strips .hist-thr-strip[data-thr-cat="Walls"][data-thr-el="' + f + '"]'); return s ? Array.from(s.querySelectorAll('.hist-thr-dot')).map(d => +d.getAttribute('data-seq')) : null; }, A.fid);
   const elChipText = await pg.evaluate(f => { const c = document.querySelector('.hist-thr-elchip[data-thr-el="' + f + '"]'); return c ? c.textContent : null; }, A.fid);
   t.assert('H4 ELEMENT (`' + elChipText + '` → strip of exactly the entries that targeted wall ' + A.fid + ')', !!gotEl && JSON.stringify(gotEl) === JSON.stringify(wantEl) && wantEl.length >= 1, JSON.stringify(gotEl) + ' want ' + JSON.stringify(wantEl));
-  await t.shot('threads-expanded');
+  await t.shot('threads-expanded'); await gshot('first-steps-thread2-strip');
 
   // ── H5 glow + badge (real click on the strip's label) ─────────────────────────
   const stripLabelPt = async () => pg.evaluate(() => { const s = document.querySelector('#hist-thr-strips .hist-thr-strip[data-thr-cat="Walls"]:not([data-thr-el]) span'); if (!s) return null; const r = s.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
@@ -110,8 +127,27 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   const glow = await pg.evaluate(() => { const s = document.querySelector('#hist-thr-strips .hist-thr-strip[data-thr-cat="Walls"]:not([data-thr-el])'), b = document.getElementById('hist-thr-badge');
     return { cls: s && s.className, shadow: s && getComputedStyle(s).boxShadow, badge: b && b.style.display !== 'none' ? b.textContent : null, scope: window.HistoryBar.getScope() }; });
   console.log('  §THREADS glow=' + JSON.stringify(glow) + ' app: ' + (t.slog.filter(l => /§THREAD_SCOPE on/.test(l)).slice(-1)[0] || 'none'));
-  t.assert('H5 GLOW (tap → strip glows blue + badge "Undo: Walls only")', !!glow.cls && /hist-thr-glow/.test(glow.cls) && /rgb\(79, 195, 247\)/.test(glow.shadow || '') && glow.badge === 'Undo: Walls only' && glow.scope && glow.scope.cat === 'Walls', glow.badge);
-  await t.shot('threads-glow');
+  t.assert('H5 GLOW (tap → strip glows blue + badge "Viewing: Walls")', !!glow.cls && /hist-thr-glow/.test(glow.cls) && /rgb\(79, 195, 247\)/.test(glow.shadow || '') && glow.badge === 'Viewing: Walls' && glow.scope && glow.scope.cat === 'Walls', glow.badge);
+  await t.shot('threads-glow'); await gshot('first-steps-thread3-glow');
+
+  // ── H5b category scrubber: ‹ › step along the Walls thread only ──────────────
+  const k0 = await pg.evaluate(() => window.Bonsai.oplog.db.exec('SELECT COALESCE(SUM(undone),0), COUNT(*) FROM kernel_ops')[0].values[0]);
+  const visited = [], nS = t.slog.length;
+  const clickBtn = async (id) => { await t.flySettle(); const p = await chipPt('#' + id); if (p) { const hit = await pg.evaluate((x, y) => { const e = document.elementFromPoint(x, y); return e ? (e.id || e.tagName) : 'none'; }, p[0], p[1]); if (hit !== id) console.log('  §THREADS click ' + id + ' covered by ' + hit); await pg.mouse.click(p[0], p[1]); await t.sleep(350); } };
+  for (let i = 0; i < wantW.length + 1; i++) { await clickBtn('hist-back'); if (i === 0) await gshot('first-steps-thread4-scrub'); }
+  for (let i = 0; i < wantW.length + 1; i++) { await clickBtn('hist-fwd'); }
+  t.slog.slice(nS).filter(l => /§HIST_VIEWNAV/.test(l)).forEach(l => visited.push(+((/idx=(-?\d+)/.exec(l) || [])[1])));
+  const scrubLines = t.slog.slice(nS).filter(l => /§THREAD_SCRUB/.test(l));
+  const k1 = await pg.evaluate(() => window.Bonsai.oplog.db.exec('SELECT COALESCE(SUM(undone),0), COUNT(*) FROM kernel_ops')[0].values[0]);
+  // line index = 1 + position in L (the line is [Opened Duplex, …every categorized entry in seq order])
+  const nLine = await pg.evaluate(() => window.HistoryBar.list().length);
+  const wIdx = L.map((e, i) => e.cats.includes('Walls') ? i + 1 : -1).filter(i => i >= 0);
+  const want = wIdx.slice().reverse().concat(wIdx.slice(1));
+  const onlyWalls = nLine === L.length + 1 && JSON.stringify(visited) === JSON.stringify(want);
+  const backOrder = true; const wLabels = wIdx;
+  console.log('  §THREADS scrub visited=' + JSON.stringify(visited) + ' wallsLabels=' + JSON.stringify(wLabels) + ' scrub=' + JSON.stringify(scrubLines.map(l => l.slice(13, 80))) + ' kernel ' + k0 + '→' + k1);
+  t.assert('H5b SCRUB (‹ › with the glow on visit ONLY the Walls entries, newest→oldest then back; walk/insert skipped; kernel untouched)',
+    onlyWalls && backOrder && scrubLines.length >= 2 && k0[0] === k1[0] && k0[1] === k1[1], JSON.stringify(visited));
 
   // ── H6 jump-to-view from a strip dot ─────────────────────────────────────────
   const und0 = await pg.evaluate(() => window.Bonsai.oplog.db.exec('SELECT COALESCE(SUM(undone),0), COUNT(*) FROM kernel_ops')[0].values[0]);
@@ -121,8 +157,16 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   if (dotPt) { await pg.mouse.click(dotPt[0], dotPt[1]); await t.sleep(400); }
   const nav = t.slog.slice(nNav).find(l => /§HIST_VIEWNAV/.test(l)) || '';
   const und1 = await pg.evaluate(() => window.Bonsai.oplog.db.exec('SELECT COALESCE(SUM(undone),0), COUNT(*) FROM kernel_ops')[0].values[0]);
-  const wantLbl = L.find(e => e.seq === target).label;
-  t.assert('H6 JUMP (strip dot = read-only jump: §HIST_VIEWNAV to that entry, opLogMutated=NO, kernel unchanged)', /opLogMutated=NO/.test(nav) && nav.indexOf('label="' + wantLbl + '"') >= 0 && und0[0] === und1[0] && und0[1] === und1[1], nav + ' undone ' + und0 + '→' + und1);
+  const wantLbl = L.find(e => e.seq === target).label, wantEls = L.find(e => e.seq === target).els || [];
+  await t.flySettle();
+  const view = await pg.evaluate(els => { const B = window.Bonsai, sel = Array.from(B._selSet || []).sort((a, b) => a - b), box = new window.THREE.Box3();
+    els.forEach(f => { const m = B.meshFor(f); if (m) box.union(new window.THREE.Box3().setFromObject(m)); }); const c = new window.THREE.Vector3(); box.getCenter(c);
+    const tg = window.A.controls.target; return { sel, d: Math.hypot(tg.x - c.x, tg.y - c.y, tg.z - c.z) }; }, wantEls);
+  const tv = t.slog.slice(nNav).find(l => /§THREAD_VIEW/.test(l)) || '';
+  console.log('  §THREADS jump ' + tv.slice(0, 160) + ' sel=' + JSON.stringify(view.sel) + ' want=' + JSON.stringify(wantEls) + ' |target−centre|=' + view.d.toExponential(2));
+  t.assert('H6 JUMP (strip dot = read-only jump-to-view: §HIST_VIEWNAV opLogMutated=NO, kernel unchanged, selection = the entry\'s targets, framed)',
+    /opLogMutated=NO/.test(nav) && nav.indexOf('label="' + wantLbl + '"') >= 0 && und0[0] === und1[0] && und0[1] === und1[1] &&
+    JSON.stringify(view.sel) === JSON.stringify(wantEls.slice().sort((a, b) => a - b)) && wantEls.length > 0 && view.d < 1e-6, nav + ' undone ' + und0 + '→' + und1);
 
   // ── H7 exits ─────────────────────────────────────────────────────────────────
   const offReason = () => (t.slog.filter(l => /§THREAD_SCOPE off/.test(l)).slice(-1)[0] || '').replace(/.*reason=/, '');
@@ -137,7 +181,7 @@ runE2E('W-HISTORY-THREADS', async (t) => {
   const newUrl = new URL('../common/history_bar.js', await pg.evaluate(() => location.href)).href;
   const newSrc = await fetchText(newUrl);
   const oldSrc = execSync('git show ' + BASE + ':common/history_bar.js', { cwd: path.join(__dirname, '..', '..') }).toString();
-  const runBar = async (src) => {
+  const runBar = async (src) => {   // (H8)
     const p2 = await pg.browser().newPage(); const lines = [];
     p2.on('console', m => { const x = m.text(); if (/^§/.test(x)) lines.push(x.replace(/ts=\d+/g, '')); });
     await p2.setContent('<!doctype html><html><head></head><body><div id="host"></div></body></html>');
