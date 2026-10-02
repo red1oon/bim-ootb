@@ -590,7 +590,7 @@
   function readProcess(db, ad_process_id) {
     var p = db.prepare('SELECT ad_process_id,value,name,classname,isreport,procedurename,jasperreport,ad_reportview_id FROM ad_process WHERE ad_process_id=?').get(ad_process_id);
     if (!p) throw new Error('no ad_process row for ' + ad_process_id);
-    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
+    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
     return {
       AD_Process_ID: p.ad_process_id, value: p.value, name: p.name,
       classname: p.classname || '', isReport: p.isreport === 'Y',
@@ -599,7 +599,8 @@
         return {
           name: r.name, columnName: r.columnname, mandatory: r.ismandatory === 'Y',
           ad_reference_id: r.ad_reference_id, type: refType(r.ad_reference_id),
-          isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno
+          isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno,
+          ad_val_rule_id: r.ad_val_rule_id   // FS-9: a TableDir param with a val rule keeps its text box (named)
         };
       })
     };
