@@ -1640,6 +1640,11 @@
     if (_bdW) for (var _bg in _bdW) {
       _bdRec(_bg).op = frontier[_bg] ? 'frontier' : (placed[_bg] ? 'placed' : 'pending');
     }
+    // §REVEAL_DOOR_LEAK (bim-compiler prompts/ALTC_FOUNDATION.md): this pass owns "is it built at the cursor"; whether its DISCIPLINE is shown is
+    // owned by the discipline filter (panels.js _applyDiscVisibility / app.hiddenDiscs). A single mesh is visible only when both say yes —
+    // before, this pass wrote visible=true every tick and undid the reveal round's once-per-slot hide (HHS: 17 IfcDoor meshes, §REVEAL_TRAP).
+    var _hd = (app.hiddenDiscs && app.hiddenDiscs.size) ? app.hiddenDiscs : null, _discKept = 0;
+    function _discShown(o) { if (_hd && o.userData.disc && _hd.has(o.userData.disc)) { _discKept++; return false; } return true; }
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
@@ -1672,7 +1677,7 @@
 
         // Visibility + highlighting
         if (isFrontier) {
-          obj.visible = true;
+          obj.visible = _discShown(obj);   // §REVEAL_DOOR_LEAK: built AND its discipline shown (the filter owns the second half)
           if (obj.isMesh) {
             _wbMat('FRONTIER', obj);
             var ft = frontier[g].t;
@@ -1682,7 +1687,7 @@
             applyHighlight(obj, fColor, 0.85, 0.4);
           }
         } else if (showReal) {
-          obj.visible = true;
+          obj.visible = _discShown(obj);   // §REVEAL_DOOR_LEAK
           if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
         } else {
           obj.visible = false;
@@ -1863,7 +1868,7 @@
     var _travMs = performance.now() - _perfT0;
     if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
       ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
-      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3) + (_hd ? ' discKept=' + _discKept + ' hiddenDiscs=[' + Array.from(_hd).join(',') + ']' : ''));
     // Diagnostic hook (harmless, cheap): last-traverse stats for perf verification without relying
     // on the throttled log. Read via window.__tmTrav in a probe.
     window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,

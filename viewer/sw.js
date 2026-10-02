@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1554';
+const CACHE_VERSION = 'v1555';
+// v1555 (2026-10-02) §REVEAL_DOOR_LEAK: renderAtTime writes a single mesh visible only if its discipline is not in hiddenDiscs (4D owns 'built', the discipline filter owns 'shown'); identical with nothing hidden. §PERF_TRAVERSE carries discKept. time_machine 80.
 // v1554 (2026-10-02) §REVEAL_TRAP opt-in &revealtrap=1: names the code that re-shows a mesh the reveal round hid (visible setter + stack, once per mesh) and names leaked meshes in §CPE_REVEAL_LEAK. Diagnostic only. effects 137.
 // v1553 (2026-10-02) §RENDER_INFO: draw calls + triangles of one jittered scene render (TAARenderPass) every 24th film capture. Logging only. cinema_maxq 32.
 // v1552 (2026-10-02) §GI_FILM_8BIT opt-in &gi8=1: film bounce pass renders into an rgba8 target (GPU does the x255 + clamp), 4 B/px readback, row copies + alpha mask instead of the per-pixel loop. gi_still 48.
