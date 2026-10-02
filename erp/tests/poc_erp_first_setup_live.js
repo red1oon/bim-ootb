@@ -30,11 +30,12 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'G', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
+// FS-6 (§FS2e) pinned S17 to V: CalloutOrder.product derives price/UOM/tax on a session-created order, by value.
 
 const OUT = [];
 const say = (s) => { OUT.push(s); console.log(s); };
@@ -248,7 +249,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   } catch (e) { step('S14', 'I', 'SO in new company', 'harness: ' + e.message); }
 
   // ── S16..S21 order-to-cash in the demo company (GardenWorld) ─────────────────────────────────────────────────
-  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price) {
+  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price, negProd) {
     const r = {};
     await openWin(page, base, 'GardenAdmin', win); await clickNew(page);
     await setSel(page, 'c_bpartner_id', bpId); await page.waitForTimeout(300);
@@ -259,8 +260,13 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     r.id = Number((/§CRUD-CREATE-SEL table=c_order id=(-?\d+)/.exec(last(n0, /§CRUD-CREATE-SEL table=c_order/)) || [])[1]);
     await page.click('#idmp-tabstrip >> text=' + lineTab); await page.waitForTimeout(900);
     await clickNew(page);
+    if (negProd) {   // NEGATIVE CONTROL first: a product with NO row in the price-list version must derive no price
+      n0 = PAGELOG.length; await setSel(page, 'm_product_id', negProd);
+      r.negCallout = last(n0, /§CRUD-CALLOUT table=c_orderline col=m_product_id/); r.negPrice = last(n0, /§FS6-PRICE/);
+    }
     n0 = PAGELOG.length;
     await setSel(page, 'm_product_id', prod); await fillBlur(page, 'qtyentered', qty);
+    r.fs6 = since(n0, /§FS6-(PRICE|TAX)/).join(' | ');
     r.callout = last(n0, /§CRUD-CALLOUT table=c_orderline col=m_product_id/);
     r.autoFilled = await page.evaluate(() => { const g = c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return e ? e.value : null; };
       return { priceentered: g('priceentered'), c_uom_id: g('c_uom_id'), c_tax_id: g('c_tax_id') }; });
@@ -281,10 +287,33 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   }
   let SO = null;
   try {
-    SO = await newOrder(143, 118, /^Standard Order/, 'Order Line', 123, 2, 61.75);
+    // ORACLE for S17, computed here by SQL, independent of crud_overlay's code path (spec §FS2e):
+    //   price = M_ProductPrice.PriceStd in the newest version (ValidFrom <= today) of BP 118's price list;
+    //   UOM   = M_Product.C_UOM_ID;  tax = Tax.get restated as ONE query (category, not a child, not PO-only,
+    //   from = AD_OrgInfo(org 11) location, to = DeliveryViaRule default 'P' → warehouse 103's location
+    //   (Tax.java:539-542), 0 = wildcard, ORDER BY NULLS LAST as Postgres), else the first IsDefault tax.
+    const plv = await one(page, "SELECT M_PriceList_Version_ID FROM M_PriceList_Version WHERE M_PriceList_ID=(SELECT M_PriceList_ID FROM C_BPartner WHERE C_BPartner_ID=118) AND date(ValidFrom)<=date('now') ORDER BY ValidFrom DESC LIMIT 1");
+    const negProd = await one(page, "SELECT M_Product_ID FROM M_Product WHERE AD_Client_ID=11 AND IsActive='Y' AND IsSummary='N' AND M_Product_ID NOT IN (SELECT M_Product_ID FROM M_ProductPrice WHERE M_PriceList_Version_ID=" + Number(plv) + ") ORDER BY M_Product_ID LIMIT 1");
+    SO = await newOrder(143, 118, /^Standard Order/, 'Order Line', 123, 2, 61.75, negProd);
     step('S16', /verb=create ok/.test(SO.hdr) && SO.hdrPersist && SO.id ? 'V' : 'G', 'type a sales order header (demo company)', SO.hdr.slice(0, 80) + ' id=' + SO.id);
-    step('S17', /derived=\{\}/.test(SO.callout) ? 'G' : (SO.callout ? 'V' : 'I'), 'choosing the product fills price / UOM / tax on a NEW order\'s line',
-      SO.callout.slice(0, 200) + ' autoFilled=' + JSON.stringify(SO.autoFilled));
+    const oPrice = Number(await one(page, 'SELECT PriceStd FROM M_ProductPrice WHERE M_Product_ID=123 AND M_PriceList_Version_ID=' + Number(plv)));
+    const oUom = Number(await one(page, 'SELECT C_UOM_ID FROM M_Product WHERE M_Product_ID=123'));
+    const lc = async (sql) => { const r = await q(page, sql); return Array.isArray(r) && r.length ? { c: Number(r[0][0]) || 0, r: Number(r[0][1]) || 0 } : null; };
+    const from = await lc('SELECT c.C_Country_ID, c.C_Region_ID FROM AD_OrgInfo oi JOIN C_Location c ON c.C_Location_ID=oi.C_Location_ID WHERE oi.AD_Org_ID=11');
+    const to = await lc('SELECT c.C_Country_ID, c.C_Region_ID FROM M_Warehouse w JOIN C_Location c ON c.C_Location_ID=w.C_Location_ID WHERE w.M_Warehouse_ID=103');
+    const ord = ' ORDER BY C_Country_ID IS NULL, C_Country_ID, C_Region_ID IS NULL, C_Region_ID, To_Country_ID IS NULL, To_Country_ID, To_Region_ID IS NULL, To_Region_ID, ValidFrom DESC LIMIT 1';
+    const taxBase = "FROM C_Tax WHERE AD_Client_ID=11 AND IsActive='Y' AND COALESCE(Parent_Tax_ID,0)=0 AND COALESCE(SOPOType,'B')<>'P'";
+    let oTax = (from && to) ? Number(await one(page, 'SELECT C_Tax_ID ' + taxBase + ' AND C_TaxCategory_ID=(SELECT C_TaxCategory_ID FROM M_Product WHERE M_Product_ID=123)' +
+      ' AND COALESCE(C_CountryGroupFrom_ID,0)=0 AND COALESCE(C_CountryGroupTo_ID,0)=0 AND COALESCE(C_Country_ID,0) IN (0,' + from.c + ') AND COALESCE(C_Region_ID,0) IN (0,' + from.r + ')' +
+      ' AND COALESCE(To_Country_ID,0) IN (0,' + to.c + ') AND COALESCE(To_Region_ID,0) IN (0,' + to.r + ") AND date(ValidFrom)<=date('now')" + ord)) : 0;
+    if (!oTax) oTax = Number(await one(page, 'SELECT C_Tax_ID ' + taxBase + " AND IsDefault='Y'" + ord));
+    const dj = (line) => { const m = /derived=(\{[^}]*\})/.exec(line || ''); try { return m ? JSON.parse(m[1]) : null; } catch (e) { return null; } };
+    const d = dj(SO.callout) || {}, dn = dj(SO.negCallout);
+    const okVal = d.PriceEntered === oPrice && d.C_UOM_ID === oUom && d.C_Tax_ID === oTax && oPrice > 0 && oUom > 0 && oTax > 0;
+    const okNeg = !!dn && dn.PriceEntered === undefined;      // no price row → no price, never a guess
+    step('S17', !SO.callout ? 'I' : (okVal && okNeg ? 'V' : 'G'), 'choosing the product fills price / UOM / tax on a NEW order\'s line (CalloutOrder.product + tax)',
+      'derived={PriceEntered:' + d.PriceEntered + ',C_UOM_ID:' + d.C_UOM_ID + ',C_Tax_ID:' + d.C_Tax_ID + '} oracle={price:' + oPrice + ' (plv ' + plv + '),uom:' + oUom + ',tax:' + oTax +
+      '} negControl(product ' + negProd + ')=' + JSON.stringify(dn) + ' autoFilled=' + JSON.stringify(SO.autoFilled) + ' ' + SO.fs6.slice(0, 160));
     step('S18', /verb=create ok/.test(SO.line) ? 'V' : 'G', 'the line saves once UOM, tax and price are typed', SO.line.slice(0, 160));
     step('S19', /to=CO verifyChain=ok/.test(SO.co) ? 'V' : 'G', 'Complete the order (signed)', 'actions=[' + SO.actions.join(',') + '] ' + SO.co.slice(0, 200));
     step('S20', /not in bundle → status-only/.test(SO.fan) ? 'G' : (/§SO-FANOUT/.test(SO.fan) ? 'V' : 'I'),

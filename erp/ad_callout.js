@@ -69,10 +69,22 @@
         var pp = ctx.productPrice ? ctx.productPrice(pid, r) : null;          // {priceStd, priceList} or null
         if (!pp) return { derived: {}, note: 'no price-list row for product ' + pid };
         var qty = num(r, qtyKeys);
-        return { derived: {
+        var d = {
           PriceEntered: round2(pp.priceStd), PriceActual: round2(pp.priceStd),
           PriceList: round2(pp.priceList), LineNetAmt: round2(pp.priceStd * qty)
-        } };
+        };
+        // FS-6 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2e): CalloutOrder.product also sets PriceLimit and
+        // C_UOM_ID = pp.getC_UOM_ID() (CalloutOrder.java:800-807), then chains tax() (:855 → :925-985). Derived ONLY
+        // when the host accessor supplies the value — a ctx without them (W-CALLOUT's) derives exactly as before.
+        if (pp.priceLimit != null) d.PriceLimit = round2(pp.priceLimit);
+        if (pp.uomId != null && Number(pp.uomId) > 0) d.C_UOM_ID = Number(pp.uomId);
+        var note;
+        if (typeof ctx.taxFor === 'function') {
+          var tx = ctx.taxFor(pid, r);
+          if (tx && tx.taxId != null) d.C_Tax_ID = Number(tx.taxId);
+          note = 'tax ' + (tx ? (tx.taxId != null ? tx.taxId + ' (' + tx.rule + ') ' : 'unset: ') + (tx.note || '') : 'unset: no header');
+        }
+        return note ? { derived: d, note: note } : { derived: d };
       };
     }
     registerHandler('org.compiere.model.CalloutOrder.amt',       amtHandler(['QtyOrdered', 'qtyordered', 'QtyEntered', 'qtyentered']));
