@@ -1825,7 +1825,37 @@ async function setupScene(A) {
     return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
   };
 
+  // §PATCH_QTO (prompts/FIND_ASK_ANSWERS.md §K.1) — the main <db>.sql patch is applied exactly as
+  // before; THEN an optional, separately-owned <db>.qto.sql (the building's own cost rows, copied from
+  // its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent: a missing main
+  // patch does not skip the cost patch, a missing cost patch changes nothing.
   A._applyPendingPatch = async function(buf, url) {
+    var out = await A._applyMainPatch(buf, url);
+    return A._applyQtoPatch(out, url);
+  };
+  A._applyQtoPatch = async function(buf, url) {
+    try {
+      var dir = url.slice(0, url.lastIndexOf('/') + 1);
+      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var qUrl = dir + 'patches/' + dbFile + '.qto.sql';
+      var r = await fetch(qUrl);
+      if (!r.ok) { console.log('§PATCH_QTO_NONE ' + dbFile + ' (' + r.status + ')'); return buf; }
+      var sql = await r.text();
+      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;
+      if (!SQLFactory) { console.warn('§PATCH_QTO_FAIL ' + url + ' — sql.js factory not loaded yet'); return buf; }
+      var pdb = new SQLFactory.Database(new Uint8Array(buf));
+      var _ch = A._runSqlChunked(pdb, sql);
+      var n = 0; try { n = pdb.exec('SELECT count(*) FROM qto_cache')[0].values[0][0]; } catch (e) { n = -1; }
+      var out = pdb.export().buffer;
+      pdb.close();
+      console.log('§PATCH_QTO ' + dbFile + ' applied (' + _ch.statements + ' statements) qto_cache rows=' + n + ' from ' + qUrl);
+      return out;
+    } catch (e) {
+      console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', e && e.message);
+      return buf;
+    }
+  };
+  A._applyMainPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
       var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
