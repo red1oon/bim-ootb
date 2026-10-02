@@ -439,7 +439,14 @@
             if (tcols['posted']     && !fkeys['posted'])     nr['posted']     = 'N';
             console.log('§STD-DEFAULTS create table=' + want + ' client=' + sd.clientId + ' org=' + sd.orgId + ' by=' + sd.actor + ' active=Y');
           }
-          nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
+          // FS-8 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2h — Witness: W-ERP-FIRST-SETUP S11b): the fold is
+          // IDEMPOTENT — a caller may pass an already-folded set as the base (idempiere.html's commit refold passes
+          // _records, which carries the earlier created rows); the CREATE then REPLACES that row in place instead of
+          // appending a duplicate. A base with no synthetic pks (every bundle SELECT) is unaffected.
+          nr[pkCol] = synth;
+          var prevRow = byId[String(synth)], prevAt = prevRow ? rows.indexOf(prevRow) : -1;
+          byId[String(synth)] = nr;
+          if (prevAt >= 0) rows[prevAt] = nr; else rows.push(nr);
           if (created.indexOf(synth) < 0) created.push(synth);
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
