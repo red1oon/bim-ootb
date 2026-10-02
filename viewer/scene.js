@@ -2022,7 +2022,16 @@ async function setupScene(A) {
   };
 
   // BLOB → Three.js BufferGeometry (optional precomputed normals BLOB)
-  A.blobToGeometry = function(vBlob, fBlob, nBlob) {
+  // §WIND_FLIP baked table (patch SQL geometry_wind_flip, rule-checked): hash -> flipped-edge count; null = absent / other rule
+  A._windTableGet = function() {
+    if (A._windTable !== undefined) return A._windTable; A._windTable = null;
+    try { var R = window.WindFlip && A.db && A.db.exec("SELECT geometry_hash, conflict_edges, rule FROM geometry_wind_flip");
+      if (R && R[0]) { var m = new Map(), ok = false; R[0].values.forEach(function (r) { if (r[0] === '__census__') ok = (r[2] === window.WindFlip.RULE); else m.set(r[0], r[1]); });
+        if (ok) A._windTable = m; console.log('§WIND_FLIP table ' + (ok ? 'used rows=' + m.size : 'IGNORED (rule mismatch or no census row)')); }
+    } catch (e) { /* no table: live count */ }
+    return A._windTable;
+  };
+  A.blobToGeometry = function(vBlob, fBlob, nBlob, knownFlip) {
     try {
       const vArr = new Float32Array(vBlob.buffer, vBlob.byteOffset, vBlob.byteLength / 4);
       const fArr = new Uint32Array(fBlob.buffer, fBlob.byteOffset, fBlob.byteLength / 4);
@@ -2050,6 +2059,17 @@ async function setupScene(A) {
         for (var _fi = 0; _fi < fArr.length; _fi++) _fIdx[_fi] = fArr[_fi];
       }
       geo.setIndex(new THREE.BufferAttribute(_fIdx, 1));
+      // §WIND_FLIP (bim-compiler PHOTOREAL_STILL_RENDER.md "§WIND_FLIP — SPEC", 2026-10-02): flipped-winding edges per geometry
+      // (rule in wind_flip.js). MEASURED: Clinic 748 / 3,126 FRONT_SIDE-class elements carry them (the 92 mm partitions: one face
+      // wound like the other -> culled from one side, the wall invisible; red1 …881490077), Hospital 3 / 37,249. streaming.js gives a
+      // bucket holding one DoubleSide. knownFlip = the baked geometry_wind_flip value (patch SQL) -> no live count.
+      if (A && A._windFlip !== false && !/[?&]windflip=0/.test(location.search)) {
+        A._windStat = A._windStat || { geos: 0, flagged: 0, edges: 0, ms: 0, baked: 0 };
+        var _wf;
+        if (knownFlip != null) { _wf = knownFlip; A._windStat.baked++; }
+        else if (window.WindFlip) { var _wt0 = performance.now(); _wf = window.WindFlip.count(positions, fArr); A._windStat.ms += performance.now() - _wt0; }
+        if (_wf != null) { geo.userData.windFlip = _wf; A._windStat.geos++; if (_wf) { A._windStat.flagged++; A._windStat.edges += _wf; } }
+      }
       if (nBlob && nBlob.byteLength >= 12) {
         // Precomputed normals — apply same Y↔Z swap as positions
         const nArr = new Float32Array(nBlob.buffer, nBlob.byteOffset, nBlob.byteLength / 4);

@@ -1382,11 +1382,15 @@ function setupStreaming(A) {
     IfcValve: 1, IfcWall: 1, IfcWallStandardCase: 1
   };
   A._frontSideClasses = FRONT_SIDE_CLASSES; // exposed for witness assertions, read-only
+  // §WIND_FLIP: true when any geometry of a bucket has flipped-winding edges (scene.js blobToGeometry counts them);
+  // counted per bucket for the §WIND_FLIP line. The flag reaches _getMaterial, which keeps DoubleSide for that bucket only.
+  A._windFlipAny = function(geos) { for (var i = 0; i < geos.length; i++) { var g = geos[i]; if (g && g.userData && g.userData.windFlip > 0) { A._windBuckets = (A._windBuckets || 0) + 1; return true; } } return false; };
 
   // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
   // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
   // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow) {
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow, windFlip) {
+    windFlip = !!(windFlip && ifcClass && FRONT_SIDE_CLASSES[ifcClass]);   // §WIND_FLIP: only a FrontSide class changes; others never fragment the cache
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -1659,7 +1663,8 @@ function setupStreaming(A) {
       + (noMepHue ? '|noMepHue' : '')
       + (surfRow ? '|surf=' + surfRow : '')
       + (A._metalPbrOff ? '|metalOld' : '')   // ### ALTS-ALL FIX 11 A/B switch (&metalpbr=0) — never served across arms
-      + (A._placeholderOff ? '|phOff' : '');   // §PLACEHOLDER_COLOUR red control (witness only) — never served a stale material   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
+      + (A._placeholderOff ? '|phOff' : '')
+      + (windFlip ? '|wf' : '');   // §WIND_FLIP: a bucket holding a flipped-winding geometry gets its own DoubleSide material   // §PLACEHOLDER_COLOUR red control (witness only) — never served a stale material   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
@@ -1758,7 +1763,7 @@ function setupStreaming(A) {
     // Pick integrity across the flip is witness-gated (witness_wall_side_light_floor.js S3).
     // Transparent path (a<1.0, above) already forced DoubleSide and is untouched.
     if (a >= 1.0) {
-      opts.side = (ifcClass && FRONT_SIDE_CLASSES[ifcClass]) ? THREE.FrontSide : THREE.DoubleSide;
+      opts.side = (ifcClass && FRONT_SIDE_CLASSES[ifcClass] && !windFlip) ? THREE.FrontSide : THREE.DoubleSide;   // §WIND_FLIP: a culled flipped face would make the element invisible from one side
     }
     // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
     // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
@@ -2402,7 +2407,7 @@ function setupStreaming(A) {
                     var ghash = row[0], vBlob = row[1], fBlob = row[2];
                     var nBlob = A._libHasNormals ? (row[3] || null) : null;
                     if (vBlob && fBlob) {
-                      var geo = A.blobToGeometry(vBlob, fBlob, nBlob);
+                      var _wt = A._windTableGet && A._windTableGet(), geo = A.blobToGeometry(vBlob, fBlob, nBlob, _wt ? (_wt.get(ghash) || 0) : null);   // §WIND_FLIP baked
                       if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
                     }
                   }
@@ -2452,7 +2457,7 @@ function setupStreaming(A) {
               const ghash = row[0], vBlob = row[1], fBlob = row[2];
               const nBlob = A._libHasNormals ? (row[3] || null) : null;
               if (vBlob && fBlob) {
-                const geo = A.blobToGeometry(vBlob, fBlob, nBlob);
+                const _wt = A._windTableGet && A._windTableGet(), geo = A.blobToGeometry(vBlob, fBlob, nBlob, _wt ? (_wt.get(ghash) || 0) : null);   // §WIND_FLIP baked
                 if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
               }
             }
@@ -2839,7 +2844,7 @@ function setupStreaming(A) {
         }
         if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
         else A._instMepUniform = (A._instMepUniform || 0) + 1;
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null, A._surfRowFor(elements));
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null, A._surfRowFor(elements), A._windFlipAny([geo]));
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -2908,7 +2913,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }), A._windFlipAny(items.map(function(it) { return it.geo; })));
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -3122,7 +3127,7 @@ function setupStreaming(A) {
         mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
         var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }));
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }), A._windFlipAny(items.map(function(it) { return it.geo; })));
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;

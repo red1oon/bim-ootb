@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1536';
+const CACHE_VERSION = 'v1546';
+// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=11.
 // v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
 // v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
 // v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
@@ -899,6 +901,7 @@ const PRECACHE_ASSETS = [
   'cpe_xr.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
+  'wind_flip.js',
   'scene.js',
   'streaming.js',
   'panels.js',
