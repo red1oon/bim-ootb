@@ -475,7 +475,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=11"></script>
+<script src="ad_process.js?v=12"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -3293,6 +3293,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
+  function _procTableDirSelect(pp, dflt) {
+    var tbl = String(pp.columnName).replace(/_ID$/i, ''), key = pp.columnName, sel = document.createElement('select');
+    var blank = el('option', null, ''); blank.value = ''; sel.appendChild(blank);
+    var ids = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower('" +
+      tbl.replace(/'/g, '') + "') AND c.IsIdentifier='Y' ORDER BY c.SeqNo").map(function (r) { return r.cn; }).filter(function (c) { return _colExists(tbl, c); });
+    if (!ids.length || !_tableExists(tbl)) { console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' skipped=no-table-or-identifier → text box kept'); return null; }
+    var disp = ids.map(function (c) { return "COALESCE(CAST(" + c + " AS TEXT),'')"; }).join(" || '_' || ");
+    var cli = (_session && _session.client) ? Number(_session.client.id) : null, acc = '';
+    if (cli != null && _colExists(tbl, 'AD_Client_ID')) acc = ' AND ' + (cli === 0 ? 'AD_Client_ID=0' : 'AD_Client_ID IN (0,' + cli + ')');
+    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY 2');
+    rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (dflt != null && String(dflt) === String(r.k)) o.selected = true; sel.appendChild(o); });
+    console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
+    return sel;
+  }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
@@ -3318,7 +3332,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         inp = document.createElement('select');
         ['', 'Y', 'N'].forEach(function (v) { var o = el('option', null, v || '—'); o.value = v; inp.appendChild(o); });
         inp.value = defaults[pp.columnName] === 'Y' || defaults[pp.columnName] === 'N' ? defaults[pp.columnName] : '';
-      } else {
+      } else if (Number(pp.ad_reference_id) === 19 && !(pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '')) {
+        // FS-9 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2i — Witness: W-ERP-FIRST-SETUP S24b). TableDir =
+        // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
+        // by SeqNo joined '_', ORDER BY display, + MRole.addAccessSQL's client clause (:902; the FS-5 clause).
+        inp = _procTableDirSelect(pp, defaults[pp.columnName]);
+      }
+      if (!inp) {
         inp = document.createElement('input');
         inp.type = pp.type === 'date' ? 'date' : (pp.type === 'integer' || pp.type === 'number') ? 'number' : 'text';
         inp.value = defaults[pp.columnName];

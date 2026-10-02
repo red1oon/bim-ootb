@@ -31,12 +31,13 @@ const server = http.createServer((req, res) => {
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
-  S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
+  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
 // FS-6 (§FS2e) pinned S17 to V: CalloutOrder.product derives price/UOM/tax on a session-created order, by value.
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
+// FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
@@ -387,7 +388,9 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const open = last(n0, /§AD-PROC-LIVE open proc=310/);
     const asId = await one(page, 'SELECT C_AcctSchema_ID FROM C_AcctSchema WHERE AD_Client_ID=11 ORDER BY C_AcctSchema_ID LIMIT 1');
     const paramTag = await page.$eval('[data-proc-param="C_AcctSchema_ID"]', e => e.tagName + (e.type ? ':' + e.type : '')).catch(() => 'absent');
-    await page.fill('[data-proc-param="C_AcctSchema_ID"]', String(asId)).catch(() => {});
+    const pOpts = /^SELECT/.test(paramTag) ? await page.$$eval('[data-proc-param="C_AcctSchema_ID"] option', o => o.map(x => x.value).filter(Boolean)) : [];
+    if (/^SELECT/.test(paramTag)) await page.selectOption('[data-proc-param="C_AcctSchema_ID"]', String(asId)).catch(() => {});
+    else await page.fill('[data-proc-param="C_AcctSchema_ID"]', String(asId)).catch(() => {});
     await page.click('button[data-proc-run]').catch(() => {});
     await page.waitForTimeout(2500);
     const disp = last(n0, /§AD-PROC-LIVE proc=310 /);
@@ -403,8 +406,12 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     step('S24', !disp ? 'I' : (match ? 'V' : 'G'), 'Trial Balance = this company\'s facts in the chosen accounting schema (TrialBalance.java:161,400)',
       open.slice(0, 60) + ' | ' + disp.slice(0, 90) + ' | shown=' + JSON.stringify(shown && { n: shown.n, dr: +shown.dr.toFixed(2), cr: +shown.cr.toFixed(2) }) +
       ' oracle(client=11,schema=' + asId + ')=' + JSON.stringify(o));
-    step('S24b', /^SELECT/.test(paramTag) ? 'V' : 'G', 'the Accounting Schema parameter is a picker (AD_Reference 19 TableDir), not a raw-id text box',
-      'C_AcctSchema_ID param control=' + paramTag + ' (ad_process_para ref=19, no DefaultValue)');
+    // Oracle: MLookupFactory TableDir + MRole client clause, as SQL; NEGATIVE CONTROL: no option of another client.
+    const wantN = Number(await one(page, "SELECT COUNT(*) FROM C_AcctSchema WHERE IsActive='Y' AND AD_Client_ID IN (0,11)"));
+    let foreignOpt = 0;
+    for (const v of pOpts) { const c = await one(page, 'SELECT AD_Client_ID FROM C_AcctSchema WHERE C_AcctSchema_ID=' + Number(v)); if (Number(c) !== 0 && Number(c) !== 11) foreignOpt++; }
+    step('S24b', /^SELECT/.test(paramTag) && pOpts.length === wantN && wantN > 0 && foreignOpt === 0 ? 'V' : 'G', 'the Accounting Schema parameter is a picker (AD_Reference 19 TableDir), not a raw-id text box',
+      'C_AcctSchema_ID param control=' + paramTag + ' options=' + pOpts.length + ' [' + pOpts.join(',') + '] oracle=' + wantN + ' foreignClientOptions=' + foreignOpt + ' ' + last(n0, /§PROC-PARAM-PICKER col=C_AcctSchema_ID/).slice(0, 120));
   } catch (e) { step('S24', 'I', 'trial balance', 'harness: ' + e.message); }
 
   // ── S25 import ───────────────────────────────────────────────────────────────────────────────────────────────
