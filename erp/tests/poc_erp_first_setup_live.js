@@ -30,13 +30,14 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
+  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
 // FS-6 (§FS2e) pinned S17 to V: CalloutOrder.product derives price/UOM/tax on a session-created order, by value.
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
+// FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
 const OUT = [];
@@ -176,6 +177,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       'docTypes=' + dbt.length + ' (oracle 42) [' + dbt.join(',') + '] missing=[' + missing.join(',') + ']');
   } catch (e) { step('S03', 'I', 'create a new company', 'harness: ' + e.message); }
 
+  let S11B = null;
   // ── S08 + S10 own org offered; create a customer ──────────────────────────────────────────────────────────────
   const HQ = CID ? await one(page, 'SELECT AD_Org_ID FROM AD_Org WHERE AD_Client_ID=' + CID + ' ORDER BY AD_Org_ID LIMIT 1') : null;
   async function createBP(kind, value, name) {
@@ -203,8 +205,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const dup = v.gridIds.filter((x, i, a) => a.indexOf(x) !== i);
     step('S11', /verb=create ok/.test(v.val) && v.per ? 'V' : 'G',
       'create a vendor in the new company', v.val.slice(0, 80) + ' persist=' + !!v.per + ' records ' + v.before + '->' + v.after + ' gridIds=[' + v.gridIds.join(',') + ']');
-    step('S11b', v.gridIds.length ? (dup.length ? 'G' : 'V') : 'I', 'right after a second New+Save, the list shows each record once',
-      'gridIds=[' + v.gridIds.join(',') + '] duplicates=[' + dup.join(',') + '] statusCount=' + v.after);
+    S11B = { gridIds: v.gridIds, dup, statusCount: v.after };   // judged in the S09 block against a fresh reload (the oracle)
   } catch (e) { step('S08', 'I', 'own org / customer', 'harness: ' + e.message); }
 
   // ── S09 setup defaults visible in their own windows (count AFTER S10/S11 minus the two we made) ──────────────
@@ -215,6 +216,9 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       await page.waitForTimeout(1300); seen[label] = recCount(await status(page));
     }
     await openWin(page, base, ADMIN, 123); seen.BPartner = recCount(await status(page));
+    if (S11B) step('S11b', S11B.gridIds.length ? (!S11B.dup.length && S11B.gridIds.length === seen.BPartner && S11B.statusCount === seen.BPartner ? 'V' : 'G') : 'I',
+      'right after a second New+Save, the list shows each record once (== what a reload shows)',
+      'gridIds=[' + S11B.gridIds.join(',') + '] duplicates=[' + S11B.dup.join(',') + '] statusCount=' + S11B.statusCount + ' reloadCount=' + seen.BPartner);
     const rowsBP = Number(await one(page, 'SELECT COUNT(*) FROM C_BPartner WHERE AD_Client_ID=' + CID));
     const allVisible = seen.PriceList >= 1 && seen.Calendar >= 1 && seen.BPartner >= rowsBP + 2;
     step('S09', allVisible ? 'V' : 'G', 'the masters setup created (BP, price list, calendar) show in their own windows',
