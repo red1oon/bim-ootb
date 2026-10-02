@@ -2243,25 +2243,53 @@
       console.log('§SO-COMPLETE fan-out gated: ' + (E ? 'bundle/id absent' : 'ERPEngine not mounted') + ' → status-only group (honest)');
       cb(null); return;
     }
+    // FS-7 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2f — Witness: W-ERP-FIRST-SETUP S20). The header and
+    // lines are read through CORE.listTip (bundle base + the signed sidecar's CRUD ops) — the read
+    // completeFanoutReceipt already uses — so an order typed THIS session reaches the fan-out instead of being
+    // gated as "not in bundle". Raw SELECT * keys are lower-cased (the engine reads lower-case fields).
     withBundle(function (db) {
-      var fanout = null;
-      try {
-        var or = db.exec('SELECT * FROM c_order WHERE c_order_id=' + Number(op.id) + ' LIMIT 1');
-        if (!or.length || !or[0].values.length) { console.log('§SO-COMPLETE fan-out gated: order ' + op.id + ' not in bundle → status-only'); cb(null); return; }
-        // lower-case every column key: the engine (completeOrder/buildDoc) reads lower-case fields, and the host
-        // bundle's SELECT * returns ORIGINAL-case columns (C_DocType_ID, IsSOTrx) — without this the doctype reads
-        // undefined → the fan-out wrongly gates as "no DOCPOLICY". glassbowl_data.db was lower-case so it hid this.
-        var order = {}; or[0].columns.forEach(function (c, i) { order[String(c).toLowerCase()] = or[0].values[0][i]; });
-        var lr = db.exec('SELECT c_orderline_id, m_product_id, qtyordered FROM c_orderline WHERE c_order_id=' + Number(op.id));
-        var lines = (lr.length ? lr[0].values : []).map(function (v) { return { c_orderline_id: v[0], m_product_id: v[1], qtyordered: v[2] }; });
-        var policy = CORE.docPolicyFor(STORE, order.c_doctype_id);
-        if (!policy) { console.log('§SO-COMPLETE fan-out gated: no DOCPOLICY for c_doctype_id=' + order.c_doctype_id + ' (extract gap — never defaulted to Y)'); cb(null); return; }
-        var ops = E.completeOrder(order, lines, policy).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
-        console.log('§SO-FANOUT order=' + op.id + ' doctype=' + order.c_doctype_id + ' policy(io,inv)=' + policy.isautogenerateinout + ',' + policy.isautogenerateinvoice +
-                    ' lines=' + lines.length + ' engineOps=' + ops.length + ' gl=gated(no c_ordertax in bundle + post_resolver not mounted — postings stay the proven headless lane, never faked)');
-        fanout = ops.length ? { ops: ops, glGate: 'no-order-side-acct/tax-linkage' } : null;
-      } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
-      cb(fanout);
+      var baseHdr = _rawRows(db, 'SELECT * FROM c_order WHERE c_order_id=' + Number(op.id));
+      var baseLines = _rawRows(db, 'SELECT * FROM c_orderline WHERE c_order_id=' + Number(op.id));
+      var run = function (sdb) {
+        var fanout = null;
+        try {
+          var hdrRows = baseHdr, lineRows = baseLines;
+          if (sdb) {
+            try { var f1 = CORE.listTip(sdb, 'c_order', 'c_order_id', baseHdr, null); hdrRows = (f1 && f1.rows) || baseHdr; } catch (e1) {}
+            try { var f2 = CORE.listTip(sdb, 'c_orderline', 'c_orderline_id', baseLines, null); lineRows = (f2 && f2.rows) || baseLines; } catch (e2) {}
+          }
+          var lcRow = function (r) { var o = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o[String(k).toLowerCase()] = r[k]; return o; };
+          var order = hdrRows.map(lcRow).filter(function (r) { return String(r.c_order_id) === String(op.id); })[0];
+          if (!order) { console.log('§SO-COMPLETE fan-out gated: order ' + op.id + ' not found (bundle+sidecar) → status-only'); cb(null); return; }
+          var lines = lineRows.map(lcRow).filter(function (r) { return String(r.c_order_id) === String(op.id); })
+            .map(function (r) { return { c_orderline_id: r.c_orderline_id, m_product_id: r.m_product_id, qtyordered: r.qtyordered }; });
+          // MOrder.prepareIt copies C_DocTypeTarget_ID into C_DocType_ID (MOrder.java:1619,1624; 0 = not yet set)
+          var tgt = Number(order.c_doctypetarget_id) > 0 ? order.c_doctypetarget_id : null;
+          var dtId = (tgt != null && (/^(DR|IP|IN)$/.test(String(op.from || 'DR')) || !(Number(order.c_doctype_id) > 0))) ? tgt : order.c_doctype_id;
+          var policy = CORE.docPolicyFor(STORE, dtId), psrc = 'docPolicy';
+          if (!policy) {
+            // A doc type minted at run time (a born tenant's, FS-1) cannot be in the static table: read the SAME
+            // flags from its own C_DocType row and apply MOrder.completeIt's rule — shipment when DocSubTypeSO is
+            // WI/WP/WR or (PR and IsAutoGenerateInout) (MOrder.java:2178, :2254-2259); invoice when WR/WI or
+            // (PR and IsAutoGenerateInvoice) (:2198-2200). No row → gated, never a defaulted 'Y'.
+            var dr = _rawRows(db, 'SELECT docsubtypeso, isautogenerateinout, isautogenerateinvoice FROM c_doctype WHERE c_doctype_id=' + Number(dtId))[0];
+            if (dr) {
+              var st = String(dr.docsubtypeso || ''), yi = String(dr.isautogenerateinout || 'N') === 'Y', yv = String(dr.isautogenerateinvoice || 'N') === 'Y';
+              policy = { isautogenerateinout: (/^(WI|WP|WR)$/.test(st) || (st === 'PR' && yi)) ? 'Y' : 'N',
+                         isautogenerateinvoice: (/^(WR|WI)$/.test(st) || (st === 'PR' && yv)) ? 'Y' : 'N', docsubtypeso: st || null };
+              psrc = 'c_doctype-row(MOrder rule)';
+            }
+          }
+          if (!policy) { console.log('§SO-COMPLETE fan-out gated: no DOCPOLICY for c_doctype_id=' + dtId + ' (extract gap — never defaulted to Y)'); cb(null); return; }
+          var ops = E.completeOrder(order, lines, policy).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          console.log('§SO-FANOUT order=' + op.id + ' doctype=' + dtId + ' policy(io,inv)=' + policy.isautogenerateinout + ',' + policy.isautogenerateinvoice +
+                      ' policySrc=' + psrc + ' header=' + (baseHdr.length ? 'bundle' : 'sidecar') + ' lines=' + lines.length + ' engineOps=' + ops.length +
+                      ' gl=gated(no c_ordertax in bundle + post_resolver not mounted — postings stay the proven headless lane, never faked)');
+          fanout = ops.length ? { ops: ops, glGate: 'no-order-side-acct/tax-linkage' } : null;
+        } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
+        cb(fanout);
+      };
+      if (typeof withSidecar === 'function') withSidecar(run); else run(null);
     });
   }
 

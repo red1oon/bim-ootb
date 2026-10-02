@@ -30,12 +30,13 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'G', S05: 'V', S06: 'G', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'G', S21: 'V',
+  S11: 'V', S11b: 'G', S12: 'G', S13: 'G', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'G', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
 // FS-6 (§FS2e) pinned S17 to V: CalloutOrder.product derives price/UOM/tax on a session-created order, by value.
+// FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 
 const OUT = [];
 const say = (s) => { OUT.push(s); console.log(s); };
@@ -282,7 +283,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     r.actions = await page.$$eval('[data-doc-action]', e => e.map(x => x.getAttribute('data-doc-action')));
     n0 = PAGELOG.length;
     await page.click('[data-doc-action="CO"]').catch(() => {}); await page.waitForTimeout(2600);
-    r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/);
+    r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/); r.fanout = last(n0, /§SO-FANOUT/);
     return r;
   }
   let SO = null;
@@ -316,8 +317,28 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       '} negControl(product ' + negProd + ')=' + JSON.stringify(dn) + ' autoFilled=' + JSON.stringify(SO.autoFilled) + ' ' + SO.fs6.slice(0, 160));
     step('S18', /verb=create ok/.test(SO.line) ? 'V' : 'G', 'the line saves once UOM, tax and price are typed', SO.line.slice(0, 160));
     step('S19', /to=CO verifyChain=ok/.test(SO.co) ? 'V' : 'G', 'Complete the order (signed)', 'actions=[' + SO.actions.join(',') + '] ' + SO.co.slice(0, 200));
-    step('S20', /not in bundle → status-only/.test(SO.fan) ? 'G' : (/§SO-FANOUT/.test(SO.fan) ? 'V' : 'I'),
-      'completing a NEW order generates its shipment / invoice / journal', SO.fan.slice(0, 200));
+    // S20 — two arms, both on orders typed THIS session (spec §FS2f). Expected doc counts come from the doc type
+    // row by SQL through MOrder.completeIt's rule (MOrder.java:2178,2198-2200,2254-2259), not from the code under test.
+    const fanOf = (line) => { const m = /policy\(io,inv\)=([YN]),([YN]).*engineOps=(\d+)/.exec(line || ''); return m ? { io: m[1], inv: m[2], ops: Number(m[3]) } : null; };
+    const expectFor = async (name) => {
+      const r = await q(page, "SELECT DocSubTypeSO, IsAutoGenerateInout, IsAutoGenerateInvoice FROM C_DocType WHERE AD_Client_ID=11 AND Name='" + name + "'");
+      if (!Array.isArray(r) || !r.length) return null;
+      const st = String(r[0][0] || ''), io = /^(WI|WP|WR)$/.test(st) || (st === 'PR' && r[0][1] === 'Y'), inv = /^(WR|WI)$/.test(st) || (st === 'PR' && r[0][2] === 'Y');
+      return { io: io ? 'Y' : 'N', inv: inv ? 'Y' : 'N', perDoc: 2 };   // 1 header + 1 line (each arm types ONE line)
+    };
+    const coOps = (line) => { const m = /ops=(\d+)/.exec(line || ''); return m ? Number(m[1]) : null; };
+    const eSO = await expectFor('Standard Order'), fSO = fanOf(SO.fanout);
+    // arm (a) NEGATIVE CONTROL: Standard Order must generate NOTHING (iDempiere: Generate Shipments/Invoices later)
+    const armA = !!(eSO && fSO && fSO.io === eSO.io && fSO.inv === eSO.inv && fSO.ops === 0 && coOps(SO.co) === 1);
+    const POS = await newOrder(143, 118, /^POS Order/, 'Order Line', 123, 1, 61.75);
+    const ePOS = await expectFor('POS Order'), fPOS = fanOf(POS.fanout);
+    const wantPOS = ePOS ? (ePOS.io === 'Y' ? ePOS.perDoc : 0) + (ePOS.inv === 'Y' ? ePOS.perDoc : 0) : null;
+    // arm (b): POS Order (WR) → shipment + invoice, and the signed group carries them: ops = 1 status + engine ops
+    const armB = !!(ePOS && fPOS && fPOS.io === ePOS.io && fPOS.inv === ePOS.inv && wantPOS > 0 && fPOS.ops === wantPOS && coOps(POS.co) === 1 + wantPOS);
+    step('S20', !fSO && !fPOS ? (/not in bundle|not found/.test(SO.fan) ? 'G' : 'I') : (armA && armB ? 'V' : 'G'),
+      'Complete on a NEW order runs iDempiere\'s completeIt fan-out (Standard Order: none; POS Order: shipment + invoice)',
+      'SO: expect=' + JSON.stringify(eSO) + ' got=' + JSON.stringify(fSO) + ' commitOps=' + coOps(SO.co) + ' | POS: expect=' + JSON.stringify(ePOS) + ' wantOps=' + wantPOS +
+      ' got=' + JSON.stringify(fPOS) + ' commitOps=' + coOps(POS.co) + ' | ' + (POS.fanout || SO.fan).slice(0, 140) + ' | ' + POS.fan.slice(0, 90));
     await page.goto(base + '/idempiere.html?login=GardenAdmin&window=143', { waitUntil: 'load' }); await page.waitForTimeout(2000);
     const tip = await tipOf(page, 'c_order', SO.id);
     step('S21', tip === 'CO' ? 'V' : 'G', 'the completed order survives a reload', 'readTip(c_order,' + SO.id + ')=' + tip);
