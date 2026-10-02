@@ -1671,6 +1671,9 @@
       try { A._loadPathDiagSample('pre-render'); } catch (eLPD2) { console.warn('§LOADPATH_DIAG_ERR ' + (eLPD2 && eLPD2.message)); }
     }
     A._capMarks = [['start', A._capT0 || performance.now()]];   // §CAPTURE_PARTS
+    // §RENDER_INFO: what ONE jittered scene render submitted (TAARenderPass records renderer.info after its scene render), every 24th capture
+    A._riN = (A._riN || 0) + 1; if (A._taaPass && A._taaPass.lastSceneCalls != null && A._riN % 24 === 1) { var _ri = A.renderer.info;
+      console.log('§RENDER_INFO capture=' + A._riN + ' sceneCalls=' + A._taaPass.lastSceneCalls + ' sceneTris=' + A._taaPass.lastSceneTris + ' geometries=' + (_ri.memory ? _ri.memory.geometries : '-') + ' textures=' + (_ri.memory ? _ri.memory.textures : '-') + ' programs=' + (_ri.programs ? _ri.programs.length : '-')); }
     if (A._composer) A._composer.render();
     A._capMarks.push(['composer', performance.now()]);
     // §GI_CAPTURE_HOOK (worktree only, 2026-09-22) — opt-in seam for an alternative renderer to

@@ -94,6 +94,7 @@ class TAARenderPass extends SSAARenderPass {
 				renderer.setClearColor( this.clearColor, this.clearAlpha );
 				renderer.clear();
 				renderer.render( this.scene, this.camera );
+				if ( renderer.info && renderer.info.render ) { this.lastSceneCalls = renderer.info.render.calls; this.lastSceneTris = renderer.info.render.triangles; }   // §RENDER_INFO
 
 				renderer.setRenderTarget( this._sampleRenderTarget );
 				if ( this.accumulateIndex === 0 ) {
