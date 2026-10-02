@@ -767,6 +767,7 @@
     // key, a failed read, or &giorient=measure measures again. Wrapped in try/catch: storage can be blocked.
     const orientKey = await (async () => { try { const d = renderer.backend && renderer.backend.device; const ai = (d && d.adapterInfo) || {};
       G.adapter = [ai.vendor, ai.architecture, ai.device, ai.description].join('|');   // §FAULT_GI S4: which GPU drew the bounce
+      if (!/[^|]/.test(G.adapter)) G.adapter = null;   // §FAULT_GI S4b (2026-10-03): all four fields empty on red1's 31 stills ('|||') -> report n/a, not a blank name
       return [ai.vendor, ai.architecture, ai.device, ai.description, navigator.userAgent].join('|'); } catch (e) { return navigator.userAgent; } })();
     let orientHit = null;
     try { const c = JSON.parse(localStorage.getItem('giOrientCache') || 'null'); if (c && c.key === orientKey && !/[?&]giorient=measure/.test(location.search)) orientHit = c; } catch (e) {}
@@ -1146,7 +1147,7 @@
     // tEXt chunk (keyword "bim-still-pose", PNG spec 11.3.4.3), inserted before IEND. Read back with e.g. `exiftool` or
     // python PIL (Image.open(f).text). No pixel changes.
     save.onclick = () => canvas.toBlob(async b => { let out = b;
-      try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
+      try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null, pressS: +secs, passes: passes }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
         else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
     const close = document.createElement('button');
