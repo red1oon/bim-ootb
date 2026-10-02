@@ -7128,12 +7128,14 @@ async function setupEffects(A, renderer, scene, camera) {
               .forEach(function (o) {
                 if (!o.visible || _ask[o.userData.disc]) return;
                 _leak[o.userData.disc] = (_leak[o.userData.disc] || 0) + 1;
+                if (/[?&]revealtrap=1/.test(location.search) && (_leak.__n = (_leak.__n || 0) + 1) <= 6) (_leak.__who = _leak.__who || []).push((o.userData.ifcClass || '-') + ':' + (o.name || '-') + ':' + (o.isBatchedMesh ? 'batched' : o.isInstancedMesh ? 'inst' : 'mesh') + (o.__revealTrap ? ':trapped' : ':untrapped'));
               });
           }
+          var _leakWho = _leak.__who; delete _leak.__who; delete _leak.__n;
           var _leakKeys = Object.keys(_leak);
           if (_leakKeys.length) {
             console.log('§CPE_REVEAL_LEAK tNorm=' + _nowT.toFixed(4) + ' slot=' + key +
-              ' asked=[' + shown.join(',') + '] LEAKED=' + JSON.stringify(_leak) +
+              ' asked=[' + shown.join(',') + '] LEAKED=' + JSON.stringify(_leak) + (_leakWho ? ' who=' + _leakWho.join('|') : '') +
               ' hiddenDiscs=[' + Array.from(A.hiddenDiscs).join(',') + ']' +
               ' => FAIL — a discipline the round did not ask for is visible. If hiddenDiscs STILL' +
               ' names it, the hide was undone downstream (batch restore / TM full pass); if it does' +
@@ -7153,6 +7155,22 @@ async function setupEffects(A, renderer, scene, camera) {
     } else {
       if (!A._cpeRevealSavedHidden) A._cpeRevealSavedHidden = new Set(A.hiddenDiscs);
       A.filterDiscs(shown);
+      // §REVEAL_TRAP (opt-in &revealtrap=1, diagnostic only): after the round hides its disciplines, every hidden mesh gets a `visible`
+      // setter that, when something sets it back to true while its discipline is still in hiddenDiscs, logs the mesh (name, IFC class, guid,
+      // type) and the call stack ONCE per mesh — names the code that undoes the hide (§CPE_REVEAL_LEAK says only THAT it was undone).
+      if (/[?&]revealtrap=1/.test(location.search) && typeof A.collectMeshes === 'function') { try {
+        A._revealTrapN = A._revealTrapN || 0;
+        A.collectMeshes(function (o) { return o.isMesh && o.userData && o.userData.disc && A.hiddenDiscs.has(o.userData.disc) && !o.visible && !o.__revealTrap; }).forEach(function (o) {
+          var v = o.visible; o.__revealTrap = true;
+          Object.defineProperty(o, 'visible', { configurable: true, enumerable: true, get: function () { return v; }, set: function (nv) {
+            if (nv && !v && A.hiddenDiscs && A.hiddenDiscs.has(o.userData.disc) && !o.__revealTrapLogged && A._revealTrapN < 40) {
+              o.__revealTrapLogged = true; A._revealTrapN++;
+              var st = String(new Error().stack || '').split('\n').slice(2, 8).map(function (l) { return l.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, ''); }).join(' <- ');
+              console.log('§REVEAL_TRAP #' + A._revealTrapN + ' disc=' + o.userData.disc + ' ifc=' + (o.userData.ifcClass || '-') + ' guid=' + (o.userData.guid || '-') +
+                ' name=' + (o.name || '-') + ' type=' + (o.isBatchedMesh ? 'batched' : o.isInstancedMesh ? 'instanced' : 'mesh') + ' parent=' + (o.parent ? (o.parent.name || o.parent.type) : '-') + ' stack=' + st); }
+            v = nv; } });
+        });
+      } catch (eRT) { console.warn('§REVEAL_TRAP failed: ' + eRT.message); } }
       // §CPE_REVEAL_HIDDEN (2026-09-19, red1: "Reveal round does not remove ARC to show only
       // Disciplines") — the round asked for [PLB,FP,ELEC,MEP] on Hospital and ARC was still solid
       // in the frame at 78 s. Nothing in any log said what filterDiscs actually hid, so the fault
