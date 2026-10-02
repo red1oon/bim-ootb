@@ -1279,7 +1279,9 @@
       G.colorCtx.clearRect(0, 0, w, h); G.colorCtx.drawImage(film.entry, 0, 0, w, h); G.colorTex.needsUpdate = true;
       if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
       const fpBefore = G.fpLastRead || null;   // the last readback of this target (a previous frame, or the orientation passes after a build)
+      const tGeom0 = performance.now();
       await renderGeom(G);
+      const tRead0 = performance.now();
       const f = await readRT(G);
       // §GI_FILM_CARRY (2026-10-01, ALTC_FOUNDATION §RESUME 08:30 item 1, the 0733 "bottom 43% frozen from frame 1"): the still's
       // §GI_CARRY ported to films. build() replaces renderer.onError, so three.js's own "Uncaptured WebGPU" line never reaches the
@@ -1327,18 +1329,32 @@
           return;
         }
       }
+      const tLoop0 = performance.now();
       const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
       const d = img.data, fo = G.flipOut;
+      if (/[?&]gifast=1/.test(location.search)) {
+        // §GI_FILM_FAST (ALTC_FOUNDATION §SPEED_PAR): the same conversion without Math.max/min — img.data is a Uint8ClampedArray, which
+        // clamps to 0..255 and rounds exactly as the clamped float did before; row offsets hoisted. Same bytes by construction.
+        for (let y = 0; y < h; y++) { let s = (fo ? (h - 1 - y) : y) * w * 4, o = y * w * 4;
+          for (let x = 0; x < w; x++, s += 4, o += 4) { d[o] = f[s] * 255; d[o + 1] = f[s + 1] * 255; d[o + 2] = f[s + 2] * 255; d[o + 3] = (f[s + 3] >= GEOM_MASK_T) ? 255 : 0; } }
+      } else
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const s = ((fo ? (h - 1 - y) : y) * w + x) * 4, o = (y * w + x) * 4, a = f[s + 3];
         d[o] = Math.max(0, Math.min(255, f[s] * 255)); d[o + 1] = Math.max(0, Math.min(255, f[s + 1] * 255)); d[o + 2] = Math.max(0, Math.min(255, f[s + 2] * 255));
         d[o + 3] = (a >= GEOM_MASK_T) ? 255 : 0;   // the still's HARD mask
       }
+      const tLoop1 = performance.now();
       if (!film.layer || film.layer.width !== w || film.layer.height !== h) { film.layer = document.createElement('canvas'); film.layer.width = w; film.layer.height = h; }
       film.layer.getContext('2d').putImageData(img, 0, 0);
       ctx.drawImage(film.entry, 0, 0, w, h);
       ctx.drawImage(film.layer, 0, 0, w, h);
       const ms = performance.now() - t0; film.frames++; film.ms += ms;
+      // §GI_FILM_PARTS: where the bounce frame's time goes (grab = WebGL frame into a 2D canvas + blank probe + colour upload; geom = WebGPU
+      // geometry/bounce pass; read = float readback 16 B/px; loop = float->byte JS loop; comp = putImageData + 2 drawImage).
+      film.pt = film.pt || { grab: 0, geom: 0, read: 0, loop: 0, comp: 0 };
+      film.pt.grab += tGeom0 - t0; film.pt.geom += tRead0 - tGeom0; film.pt.read += tLoop0 - tRead0; film.pt.loop += tLoop1 - tLoop0; film.pt.comp += t0 + ms - tLoop1;
+      if (film.frames % 24 === 0) { const P = film.pt, n = film.frames; console.log('§GI_FILM_PARTS f=' + n + ' meanMs grab=' + (P.grab / n).toFixed(1) + ' geom=' + (P.geom / n).toFixed(1) +
+        ' read=' + (P.read / n).toFixed(1) + ' loop=' + (P.loop / n).toFixed(1) + ' comp=' + (P.comp / n).toFixed(1) + (/[?&]gifast=1/.test(location.search) ? ' gifast=1' : '')); }
       if (film.frames <= 2 || film.frames % 24 === 0) {
         let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
         for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
