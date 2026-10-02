@@ -221,7 +221,7 @@ Sonnet, NO project context, told to read only the one .xlsx).
   - Infra note: the first Hospital save timed out at 15 min under load average 28 on 20 cores (other
     sessions' headless-Chrome runs) — retried with `LOAD_MS=2400000`, not a code fault.
 
-## §K ⛔ OPEN — live split-DB buildings carry no `qto_cache`, so cost sentences are greyed LIVE (found 2026-10-01)
+## §K ✅ CLOSED 2026-10-02 (bim-ootb #1816) — live split-DB buildings carry no `qto_cache`, so cost sentences are greyed LIVE (found 2026-10-01)
 Found while capturing `docs/AskFirstSteps.md` (bim-compiler) on the live site. The live viewer opens
 Hospital / Terminal in split mode (`§DB_SPLIT_DETECT` → `_meta.db` + `_geo.db`); `A.db` is the META db.
 - Live Terminal `A.db` tables (`§CENTRES_QUERY`): project_metadata, elements_meta, element_transforms,
@@ -254,3 +254,11 @@ open state, left alone.
   row + Σ material/labour/equipment).
 - **Witness (live):** the docs capture against the LIVE URL — "Find 5D cost of materials for MEP" on
   Terminal = OK, value = SUM(material_cost) over the live extracted DB's MEP rows.
+- **§K.1 DONE + witnessed LIVE (2026-10-02):** both `.qto.sql` uploaded via `oci_patch_gate.js` (`§GATE_VERDICT
+  PASS` → `UPLOAD_VERIFIED`; Terminal 161/161, Hospital 218/218 rows; re-apply unchanged). Loader merged
+  (#1816, `scene.js?v=65`). Live Terminal capture: `§PATCH_QTO Terminal_meta.db applied (166 statements)
+  qto_cache rows=161`; "cost MEP" → exactly the 4 cost sentences; "Find 5D cost of materials for MEP" =
+  **2,038,000** (62 rows, 9,733 elements) = `SUM(material_cost)` over the live `Terminal_extracted.db` MEP rows.
+  Docs page `AskFirstSteps` now carries the cost step (BIMCompiler #160 + safe deploy).
+  - Side observation, NOT this lane: Terminal ARC vs MEP clashes read 114 live vs 107 on the local split
+    files — consistent with the repo-vs-OCI `Terminal_meta.db.sql` transform drift noted in §K.1.
