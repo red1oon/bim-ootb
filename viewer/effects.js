@@ -6084,6 +6084,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // frame across two settings. A bake sets A._stillBudget; Alt+S leaves it null and gets 16/24.
     var _taaFrames = _stillBudget().taa;
     if (!A._maxqActive && window.GlassFresnel && window.GlassFresnel.capture) { try { window.GlassFresnel.capture(A); } catch (eGE) { console.warn('§GLASS_ENV failed: ' + eGE.message); } }   // §GLASS_ENV: staged scene, lights final
+    if (!A._maxqActive && window.GlassFresnel && window.GlassFresnel.planar) { try { window.GlassFresnel.planar(A); } catch (eGP) { console.warn('§GLASS_PLANAR failed: ' + eGP.message); } }   // §GLASS_PLANAR_REFL: per-plane mirror tiles after the cube
     // §METER one reading per still (### ALTS-ALL FIX 1): the ONE exposure reading, on the FINAL staged scene — after the lamp rebuild,
     // the ground reassert (§GROUND_COLOR_ORDER_FIX), torch, albedo and the glass env capture; SourcedLight.stage() only logged a §METER_DIAG.
     // §FIXTURE_FACE (Z25): the lamps were just reborn (ver bump above) — sync the lamp texture NOW (§LAMP_EN scales the I the

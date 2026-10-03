@@ -34,9 +34,13 @@
     memberCls.set(o.id, cls); return cls;
   }
   var swaps = [], r10Arr = new Map();
+  // §GLASS_PLANAR_REFL shared uniforms (every clone reads the same K planes; uGfK = 0 = today's cube path everywhere)
+  var PK_MAX = 6, PCOLS = 3, PROWS = 2, PLANE_TOL = 0.10, PLANE_COS = Math.cos(2 * Math.PI / 180);
+  var PU = { uGfK: { value: 0 }, uGfPl: { value: [] }, uGfTex: { value: [] }, uGfAtlas: { value: null } };
+  function ensurePU(THREE) { if (PU.uGfPl.value.length) return; for (var i = 0; i < PK_MAX; i++) { PU.uGfPl.value.push(new THREE.Vector4()); PU.uGfTex.value.push(new THREE.Matrix4()); } }
   function patchedClone(THREE, orig) {
     if (orig.userData.gfClone) return orig.userData.gfClone;
-    var c = orig.clone(); c.userData = { gfOf: orig.uuid };
+    ensurePU(THREE); var c = orig.clone(); c.userData = { gfOf: orig.uuid };
     var origKey = c.customProgramCacheKey;
     c.onBeforeCompile = function (sh) {
       sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', [
@@ -45,8 +49,20 @@
         '  float gfF = ' + F0.toFixed(3) + ' + ' + (1 - F0).toFixed(3) + ' * pow( 1.0 - gfNV, 5.0 );',
         '  gl_FragColor = vec4( totalDiffuse * ' + GLASS_BODY.toFixed(3) + ' + totalSpecular + totalEmissiveRadiance, max( gfF, ' + GLASS_BODY.toFixed(3) + ' ) );',
         '}'].join('\n'));
+      // §GLASS_PLANAR_REFL P3: on a mirrored plane the IBL radiance := the plane's mirror render (lit, blockers included, no sky gate)
+      sh.uniforms.uGfK = PU.uGfK; sh.uniforms.uGfPl = PU.uGfPl; sh.uniforms.uGfTex = PU.uGfTex; sh.uniforms.uGfAtlas = PU.uGfAtlas;
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform int uGfK; uniform vec4 uGfPl[ ' + PK_MAX + ' ]; uniform mat4 uGfTex[ ' + PK_MAX + ' ]; uniform sampler2D uGfAtlas;\nvoid main() {')
+        .replace('#include <lights_fragment_maps>', ['#include <lights_fragment_maps>',
+          '#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )',
+          '  for ( int gk = 0; gk < ' + PK_MAX + '; gk ++ ) { if ( gk >= uGfK ) break;',
+          '    if ( abs( dot( uGfPl[ gk ].xyz, geometryPosition ) + uGfPl[ gk ].w ) > ' + PLANE_TOL.toFixed(3) + ' ) continue;',
+          '    vec4 gq = uGfTex[ gk ] * vec4( geometryPosition, 1.0 ); if ( gq.w <= 0.0 ) continue; vec2 guv = gq.xy / gq.w;',
+          '    if ( any( lessThan( guv, vec2( 0.0 ) ) ) || any( greaterThan( guv, vec2( 1.0 ) ) ) ) continue;',
+          '    vec2 gt = vec2( float( gk - ( gk / ' + PCOLS + ' ) * ' + PCOLS + ' ), float( gk / ' + PCOLS + ' ) );',
+          '    radiance = texture2D( uGfAtlas, ( gt + clamp( guv, vec2( 0.002 ), vec2( 0.998 ) ) ) / vec2( ' + PCOLS + '.0, ' + PROWS + '.0 ) ).rgb; break; }',
+          '#endif'].join('\n'));
     };
-    c.customProgramCacheKey = function () { return 'glassFresnelClone'; };
+    c.customProgramCacheKey = function () { return 'glassFresnelClone2'; };
     c.blending = THREE.CustomBlending; c.blendSrc = THREE.OneFactor; c.blendDst = THREE.OneMinusSrcAlphaFactor;
     c.blendSrcAlpha = THREE.OneFactor; c.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
     c.depthWrite = false;   // clear glass must not hide what is behind it from later transparent draws
@@ -155,7 +171,142 @@
     console.log(line); return { clones: n, hidden: hidden.length, ms: Math.round(performance.now() - t0) };
   }
 
+  // ══ §GLASS_PLANAR_REFL (red1 2026-10-03 GO; spec v2 in bim-compiler prompts/PHOTOREAL_STILL_RENDER.md). §GLASS_ENV's cube is centred on
+  // the EYE, so a pane looks up its reflected direction from the wrong point (parallax): a wing beside the pane reads as the sky behind
+  // the eye, and slMirK then scales it down. A flat pane is a plane mirror: per plane, render the scene from the mirrored eye (oblique
+  // near plane at the glass) into one tile of an atlas; the clone shader reads its tile instead of the cube (P3 above). Alt+S only,
+  // after capture(); &planarrefl=0 = today; &planark=N (<= 6). §GLASS_REFL_TRUTH (&refltruth=1) checks the tiles against raycasts.
+  var atlasRT = null, distRT = null, mirCam = null, lastPlanes = [];
+  function planesOf(A, THREE) {
+    var cam = A.camera, C = cam.position, vp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+    var pa = new THREE.Vector4(), pb = new THREE.Vector4(), pc = new THREE.Vector4(), M = new THREE.Matrix4(), IM = new THREE.Matrix4();
+    var bins = new Map(), tris = 0, batchedSkipped = 0, batchedInst = 0, seen = new Set();
+    function proj(v, o) { o.set(v.x, v.y, v.z, 1).applyMatrix4(vp); return o.w > 1e-3; }
+    function tri(o, M) {
+      a.applyMatrix4(M); b.applyMatrix4(M); c.applyMatrix4(M); e1.subVectors(b, a); e2.subVectors(c, a); n.crossVectors(e1, e2); var area = n.length() / 2; if (area < 1e-6) return;
+      n.normalize(); if (n.dot(e1.subVectors(C, a)) < 0) n.negate(); var d = -n.dot(a); tris++;
+      var scr = 0; if (proj(a, pa) && proj(b, pb) && proj(c, pc)) { var ax = pa.x / pa.w, ay = pa.y / pa.w, bx = pb.x / pb.w, by = pb.y / pb.w, cx = pc.x / pc.w, cy = pc.y / pc.w;
+        if (Math.max(ax, bx, cx) > -1 && Math.min(ax, bx, cx) < 1 && Math.max(ay, by, cy) > -1 && Math.min(ay, by, cy) < 1) scr = Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) / 2; }
+      var key = Math.round(n.x * 60) + ',' + Math.round(n.y * 60) + ',' + Math.round(n.z * 60) + ',' + Math.round(d / PLANE_TOL), P = bins.get(key);
+      if (!P) { P = { n: [0, 0, 0], d: 0, w: 0, area: 0, scr: 0, tris: 0, dOut: Infinity }; bins.set(key, P); }
+      P.n[0] += n.x * area; P.n[1] += n.y * area; P.n[2] += n.z * area; P.d += d * area; P.w += area; P.area += area; P.scr += scr; P.tris++; if (d < P.dOut) P.dOut = d;   // n faces the eye: the smallest d = the pane's eye-side (outer) face
+    }
+    swaps.forEach(function (s) { var o = s[0]; if (seen.has(o)) return; seen.add(o); var g = o.geometry, pos = g && g.attributes && g.attributes.position; if (!pos) return;
+      if (o.isBatchedMesh) {   // per active+visible instance: its geometry's index range (BatchedMesh stores indices already offset by vertexStart)
+        if (!o.getGeometryRangeAt || !o._instanceInfo) { batchedSkipped++; return; } o.updateMatrixWorld(true); var rg = {}, idxB = g.index;
+        for (var bi = 0; bi < o._instanceInfo.length; bi++) { var inf = o._instanceInfo[bi]; if (!inf || inf.active === false || inf.visible === false) continue;
+          o.getMatrixAt(bi, IM); M.multiplyMatrices(o.matrixWorld, IM); o.getGeometryRangeAt(o.getGeometryIdAt(bi), rg); batchedInst++;
+          for (var bt = 0; bt + 2 < rg.count; bt += 3) { var j0 = rg.start + bt, b0 = idxB ? idxB.getX(j0) : j0, b1 = idxB ? idxB.getX(j0 + 1) : j0 + 1, b2 = idxB ? idxB.getX(j0 + 2) : j0 + 2;
+            a.fromBufferAttribute(pos, b0); b.fromBufferAttribute(pos, b1); c.fromBufferAttribute(pos, b2); tri(o, M); } }
+        return; }
+      var idx = g.index, nt = idx ? idx.count / 3 : pos.count / 3, inst = o.isInstancedMesh ? o.count : 1; o.updateMatrixWorld(true);
+      for (var ii = 0; ii < inst; ii++) { if (o.isInstancedMesh) { o.getMatrixAt(ii, IM); M.multiplyMatrices(o.matrixWorld, IM); } else M.copy(o.matrixWorld);
+        for (var t = 0; t < nt; t++) { var i0 = idx ? idx.getX(3 * t) : 3 * t, i1 = idx ? idx.getX(3 * t + 1) : 3 * t + 1, i2 = idx ? idx.getX(3 * t + 2) : 3 * t + 2;
+          a.fromBufferAttribute(pos, i0); b.fromBufferAttribute(pos, i1); c.fromBufferAttribute(pos, i2); tri(o, M); } } });
+    // merge neighbouring bins (a plane split across a quantisation edge) greedily, largest first
+    var list = Array.from(bins.values()).map(function (P) { var l = Math.hypot(P.n[0], P.n[1], P.n[2]) || 1; return { n: [P.n[0] / l, P.n[1] / l, P.n[2] / l], d: P.d / P.w, dOut: P.dOut, area: P.area, scr: P.scr, tris: P.tris }; });
+    list.sort(function (x, y) { return y.area - x.area; }); var out = [];
+    list.forEach(function (P) { for (var i = 0; i < out.length; i++) { var Q = out[i]; if (P.n[0] * Q.n[0] + P.n[1] * Q.n[1] + P.n[2] * Q.n[2] > PLANE_COS && Math.abs(P.d - Q.d) < PLANE_TOL) { Q.area += P.area; Q.scr += P.scr; Q.tris += P.tris; if (P.dOut < Q.dOut) Q.dOut = P.dOut; return; } } out.push(P); });
+    return { planes: out, tris: tris, batchedSkipped: batchedSkipped, batchedInst: batchedInst, meshes: seen.size };
+  }
+  // three Reflector construction + Lengyel oblique near plane; returns the world->uv texture matrix (bias x P x V)
+  function mirrorCam(THREE, cam, P) {
+    var N = new THREE.Vector3().fromArray(P.n), C = cam.position, dM = (P.dOut != null && isFinite(P.dOut)) ? P.dOut : P.d, X = N.clone().multiplyScalar(-dM - N.dot(C)).add(C);   // X = eye projected onto the plane
+    var R = new THREE.Matrix4().extractRotation(cam.matrixWorld), view = new THREE.Vector3().subVectors(X, C).reflect(N).negate().add(X);
+    var look = new THREE.Vector3(0, 0, -1).applyMatrix4(R).add(C), target = new THREE.Vector3().subVectors(X, look).reflect(N).negate().add(X);
+    if (!mirCam) mirCam = new THREE.PerspectiveCamera();
+    mirCam.position.copy(view); mirCam.up.set(0, 1, 0).applyMatrix4(R).reflect(N); mirCam.lookAt(target); mirCam.layers.mask = cam.layers.mask;
+    mirCam.near = cam.near; mirCam.far = cam.far; mirCam.updateMatrixWorld(true); mirCam.projectionMatrix.copy(cam.projectionMatrix);
+    var T = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1).multiply(mirCam.projectionMatrix).multiply(mirCam.matrixWorldInverse);
+    var pl = new THREE.Plane().setFromNormalAndCoplanarPoint(N, X).applyMatrix4(mirCam.matrixWorldInverse), cp = new THREE.Vector4(pl.normal.x, pl.normal.y, pl.normal.z, pl.constant), e = mirCam.projectionMatrix.elements;
+    var q = new THREE.Vector4((Math.sign(cp.x) + e[8]) / e[0], (Math.sign(cp.y) + e[9]) / e[5], -1, (1 + e[10]) / e[14]); cp.multiplyScalar(2 / cp.dot(q));
+    e[2] = cp.x; e[6] = cp.y; e[10] = cp.z + 1 - 0.003; e[14] = cp.w; mirCam.projectionMatrixInverse.copy(mirCam.projectionMatrix).invert();
+    return T;
+  }
+  function planar(A) {
+    var THREE = global.THREE; PU.uGfK.value = 0;
+    if (!THREE || !A || !A.renderer || !A.camera || !swaps.length) return null;
+    var mk = /[?&]planarrefl=([0-9.]+)/.exec(location.search); if (mk && !(parseFloat(mk[1]) > 0)) { console.log('§GLASS_PLANAR off (&planarrefl=0) — panes keep the eye-centred cube'); lastPlanes = []; if (/[?&]refltruth=1/.test(location.search)) { try { truth(A, THREE); } catch (eT0) { console.warn('§GLASS_REFL_TRUTH failed: ' + eT0.message); } } return null; }
+    var R = A.renderer, cam = A.camera, cap = R.capabilities || {};
+    if (cap.logarithmicDepthBuffer || cap.reversedDepthBuffer) { console.log('§GLASS_PLANAR off (log/reversed depth: oblique near plane not valid)'); return null; }
+    var t0 = performance.now(); ensurePU(THREE); cam.updateMatrixWorld(true);
+    var kk = /[?&]planark=([0-9]+)/.exec(location.search), K = Math.min(PK_MAX, kk ? parseInt(kk[1], 10) : PK_MAX);
+    var G = planesOf(A, THREE), cand = G.planes.filter(function (P) { return P.scr > 0; }).sort(function (x, y) { return y.scr - x.scr; }), use = cand.slice(0, K);
+    var db = R.getDrawingBufferSize(new THREE.Vector2()), th = Math.max(64, Math.round(db.y / 2)), tw = Math.max(64, Math.round(th * (cam.aspect || db.x / db.y)));
+    if (!atlasRT || atlasRT.width !== tw * PCOLS || atlasRT.height !== th * PROWS) { if (atlasRT) atlasRT.dispose(); atlasRT = new THREE.WebGLRenderTarget(tw * PCOLS, th * PROWS, { type: THREE.HalfFloatType, depthBuffer: true }); }
+    var hidden = []; A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
+    var prevRT = R.getRenderTarget(), props = R.properties, snap = function () { var m = new Map(); A.scene.traverse(function (o) { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (x) { if (x && !m.has(x)) { var pp = props.get(x); m.set(x, pp && pp.uniforms); } }); }); return m; };
+    var ms = [], passes = [], V = cam.matrixWorldInverse, VI = cam.matrixWorld, pv = new THREE.Vector4();
+    try { use.forEach(function (P, k) { var tk = performance.now(), T = mirrorCam(THREE, cam, P), col = k % PCOLS, row = Math.floor(k / PCOLS);
+        atlasRT.viewport.set(col * tw, row * th, tw, th); atlasRT.scissor.set(col * tw, row * th, tw, th); atlasRT.scissorTest = true;
+        var np = 0; for (np = 1; np <= 3; np++) { var s0 = snap(); R.setRenderTarget(atlasRT); R.clear(); R.render(A.scene, mirCam); var ch = 0; s0.forEach(function (u, x) { var pp = props.get(x); if (pp && pp.uniforms !== u) ch++; }); if (!ch) break; }
+        passes.push(Math.min(np, 3));
+        // view-space plane for the fragment test; view->uv for the lookup
+        var nW = new THREE.Vector3().fromArray(P.n), nV = nW.clone().transformDirection(V), pW = nW.clone().multiplyScalar(-P.d), pVv = pW.applyMatrix4(V);
+        PU.uGfPl.value[k].set(nV.x, nV.y, nV.z, -nV.dot(pVv)); PU.uGfTex.value[k].multiplyMatrices(T, VI);
+        P.T = T; P.mirPos = mirCam.position.clone(); P.proj = mirCam.projectionMatrix.clone(); P.view = mirCam.matrixWorldInverse.clone(); P.tile = [col, row];
+        ms.push(Math.round(performance.now() - tk)); }); }
+    finally { atlasRT.scissorTest = false; R.setRenderTarget(prevRT); hidden.forEach(function (o) { o.visible = true; }); }
+    PU.uGfAtlas.value = atlasRT.texture; PU.uGfK.value = use.length; lastPlanes = use; lastPlanes.tw = tw; lastPlanes.th = th;
+    if (A.markDirty) A.markDirty();
+    var top = use.map(function (P) { return '[n=' + P.n.map(function (v) { return v.toFixed(2); }).join(',') + ' d=' + P.d.toFixed(2) + ' dOut=' + P.dOut.toFixed(3) + ' scr=' + (P.scr / 4 * 100).toFixed(1) + '% tris=' + P.tris + ']'; }).join(' ');
+    var restScr = cand.slice(K).reduce(function (s, P) { return s + P.scr; }, 0);
+    console.log('§GLASS_PLANAR K=' + use.length + '/' + PK_MAX + ' planesTotal=' + G.planes.length + ' onScreen=' + cand.length + ' tris=' + G.tris + ' meshes=' + G.meshes + ' batchedSkipped=' + G.batchedSkipped + ' batchedInst=' + G.batchedInst +
+      ' tile=' + tw + 'x' + th + ' passes=[' + passes.join(',') + '] msPerMirror=[' + ms.join(',') + '] fallbackScreen=' + (restScr / 4 * 100).toFixed(1) + '% totalMs=' + Math.round(performance.now() - t0) + ' mirrored=' + top);
+    if (/[?&]refltruth=1/.test(location.search)) { try { truth(A, THREE, hidden); } catch (eT) { console.warn('§GLASS_REFL_TRUTH failed: ' + eT.message); } }
+    return { K: use.length, ms: Math.round(performance.now() - t0) };
+  }
+  // §GLASS_REFL_TRUTH: does the tile show what the reflected ray actually meets? 32x18 grid from the eye; glazing-clone hit -> reflected
+  // ray (scene raycast, glass skipped) -> hitDist; on a mirrored plane, the mirror distance render at that uv must be |eye-X| + hitDist (5 %).
+  function truth(A, THREE) {
+    var cam = A.camera, R = A.renderer, rc = new THREE.Raycaster(), all = [], opq = [];
+    A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || o === A._sky) return; all.push(o); var ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (!ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) opq.push(o); });   // the mirror pass draws unlit (Basic) props too, so the truth ray must meet them
+    var tw = lastPlanes.tw, th = lastPlanes.th, FAR = 2000;
+    var dm = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking }); dm.side = THREE.DoubleSide; var cc0 = R.getClearColor(new THREE.Color()), ca0 = R.getClearAlpha();
+    var glassSamples = 0, hitSamples = 0, onSlot = 0, agree = 0, edge = 0, off = {}, worst = [], px = new Float32Array(4), prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background;
+    var hide = []; A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (o === A._sky || ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) { o.visible = false; hide.push(o); } });
+    var rendered = -1;
+    try {
+      for (var gy = 0; gy < 18; gy++) for (var gx = 0; gx < 32; gx++) {
+        rc.setFromCamera(new THREE.Vector2((gx + 0.5) / 32 * 2 - 1, 1 - (gy + 0.5) / 18 * 2), cam); rc.far = Infinity;
+        hide.forEach(function (o) { o.visible = true; }); var h = rc.intersectObjects(all, false)[0]; hide.forEach(function (o) { o.visible = false; });
+        if (!h) continue; var ob = h.object, mm = Array.isArray(ob.material) ? (h.face && ob.material[h.face.materialIndex]) || ob.material[0] : ob.material;
+        if (!(mm && mm.userData && mm.userData.gfOf)) continue; glassSamples++;
+        var nW = h.face.normal.clone().transformDirection(ob.matrixWorld); if (nW.dot(rc.ray.direction) > 0) nW.negate();
+        var rd = rc.ray.direction.clone().reflect(nW), o0 = h.point.clone().addScaledVector(nW, 0.02); rc.set(o0, rd); rc.far = FAR;
+        var hr = rc.intersectObjects(opq, false)[0]; if (!hr) continue; hitSamples++;
+        var X = h.point, k = -1; for (var i = 0; i < lastPlanes.length; i++) { var P = lastPlanes[i]; if (Math.abs(P.n[0] * X.x + P.n[1] * X.y + P.n[2] * X.z + P.d) < PLANE_TOL && Math.abs(P.n[0] * nW.x + P.n[1] * nW.y + P.n[2] * nW.z) > PLANE_COS) { k = i; break; } }
+        if (k < 0) { var why = ob.isBatchedMesh ? 'batchedNotTopK' : 'notTopK'; off[why] = (off[why] || 0) + 1; continue; } var P2 = lastPlanes[k], q = new THREE.Vector4(X.x, X.y, X.z, 1).applyMatrix4(P2.T); var u = q.x / q.w, v = q.y / q.w; if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) { off.uvOut = (off.uvOut || 0) + 1; continue; } onSlot++;
+        if (!distRT || distRT.width !== tw || distRT.height !== th) { if (distRT) distRT.dispose(); distRT = new THREE.WebGLRenderTarget(tw, th, { type: THREE.FloatType, depthBuffer: true }); }
+        if (rendered !== k) { mirrorCam(THREE, cam, P2); A.scene.overrideMaterial = dm; A.scene.background = null;
+          R.setRenderTarget(distRT); R.setClearColor(0x000000, 1); R.clear(); R.render(A.scene, mirCam); rendered = k; }
+        var ix = Math.min(tw - 1, Math.floor(u * tw)), iy = Math.min(th - 1, Math.floor(v * th)); R.readRenderTargetPixels(distRT, ix, iy, 1, 1, px);
+        // BasicDepthPacking writes 1 - fragCoordZ: back to NDC, then through the (oblique) inverse projection to the mirrored eye's space
+        var pe = new THREE.Vector4(2 * (ix + 0.5) / tw - 1, 2 * (iy + 0.5) / th - 1, 2 * (1 - px[0]) - 1, 1).applyMatrix4(mirCam.projectionMatrixInverse);
+        var got = px[0] <= 0 ? Infinity : Math.hypot(pe.x / pe.w, pe.y / pe.w, pe.z / pe.w), want = cam.position.distanceTo(X) + hr.distance, err = Math.abs(got - want) / want;
+        if (err <= 0.05) agree++; else {
+          // a miss within one texel of an agreeing texel = a depth edge at half resolution (sampling), not a wrong mirror
+          var nb = false, pb = new Float32Array(4); for (var dy = -1; dy <= 1 && !nb; dy++) for (var dx = -1; dx <= 1 && !nb; dx++) { var jx = ix + dx, jy = iy + dy; if (jx < 0 || jy < 0 || jx >= tw || jy >= th || (!dx && !dy)) continue;
+            R.readRenderTargetPixels(distRT, jx, jy, 1, 1, pb); if (pb[0] <= 0) continue; var pn = new THREE.Vector4(2 * (jx + 0.5) / tw - 1, 2 * (jy + 0.5) / th - 1, 2 * (1 - pb[0]) - 1, 1).applyMatrix4(mirCam.projectionMatrixInverse);
+            if (Math.abs(Math.hypot(pn.x / pn.w, pn.y / pn.w, pn.z / pn.w) - want) / want <= 0.05) nb = true; }
+          if (!nb && got < want) {   // diag: what the mirror pass drew nearer than the truth ray's hit — every drawable whose world box the reflected segment crosses
+            var seg = new THREE.Ray(o0, rd), bb = new THREE.Box3(), cands = []; A.scene.traverse(function (oo) { if (!oo.visible || (!oo.isMesh && !oo.isPoints && !oo.isLine && !oo.isSprite)) return; if (oo.geometry && !oo.geometry.boundingBox && oo.geometry.computeBoundingBox) oo.geometry.computeBoundingBox();
+              if (oo.isInstancedMesh || oo.isBatchedMesh) { if (oo.computeBoundingBox) { try { oo.computeBoundingBox(); bb.copy(oo.boundingBox).applyMatrix4(oo.matrixWorld); } catch (eBB) { return; } } else return; } else if (oo.geometry && oo.geometry.boundingBox) bb.copy(oo.geometry.boundingBox).applyMatrix4(oo.matrixWorld); else return;
+              var hp = seg.intersectBox(bb, new THREE.Vector3()); if (hp && hp.distanceTo(o0) < got * 1.05 - cam.position.distanceTo(X)) cands.push(oo.type + ':' + ((oo.userData && oo.userData.ifcClass) || oo.name || '?') + (hide.indexOf(oo) >= 0 ? '(hidden)' : '') + (opq.indexOf(oo) < 0 ? '(notInTruth)' : '') + '@' + hp.distanceTo(o0).toFixed(1)); });
+            console.log('§GLASS_REFL_TRUTH_MISS [' + gx + ',' + gy + '] got=' + got.toFixed(2) + ' want=' + want.toFixed(2) + ' eyeToGlass=' + cam.position.distanceTo(X).toFixed(2) + ' boxesCrossed=' + cands.slice(0, 12).join(' ')); }
+          if (nb) edge++; if (worst.length < 6) worst.push('[' + gx + ',' + gy + ' got ' + (isFinite(got) ? got.toFixed(2) : 'sky') + ' want ' + want.toFixed(2) + (nb ? ' edge' : '') + ' obj=' + (hr.object.userData && hr.object.userData.ifcClass || hr.object.type) + ']'); }
+      }
+    } finally { A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; R.setClearColor(cc0, ca0); R.setRenderTarget(prevRT); hide.forEach(function (o) { o.visible = true; }); dm.dispose(); }
+    var verdict = onSlot === 0 ? 'INCONCLUSIVE (no mirrored sample)' : (agree === onSlot ? 'PASS' : (agree + edge === onSlot ? 'PASS (misses only at half-res depth edges)' : 'FAIL'));
+    console.log('§GLASS_REFL_TRUTH ' + verdict + ' glassSamples=' + glassSamples + ' hitSamples=' + hitSamples + ' onSlot=' + onSlot + ' depthAgree=' + agree + '/' + onSlot + ' missAtDepthEdge=' + edge + ' offSlot=' + JSON.stringify(off) + (worst.length ? ' worst=' + worst.join('') : '') + ' K=' + lastPlanes.length);
+  }
+
   function unstage(A) {
+    PU.uGfK.value = 0;   // §GLASS_PLANAR_REFL: nav / films never read a stale mirror
     if (!swaps.length) return;
     swaps.forEach(function (s) { s[0].material = s[1]; });
     console.log('§GLASS_FRESNEL restored meshes=' + swaps.length + ' (stock materials back; clones kept for the next still)');
@@ -163,5 +314,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { capture: capture, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
+  global.GlassFresnel = { capture: capture, planar: planar, planarState: function () { return { K: PU.uGfK.value, planes: lastPlanes }; }, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);
