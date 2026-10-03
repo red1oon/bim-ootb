@@ -2372,6 +2372,147 @@
     cb(null);
   }
 
+  // ══ FS-15 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2m — Witness: W-ERP-FIRST-SETUP S20b) ═══════════════════
+  function _fs15Today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function _fs15Std() {
+    var A = global.APP || {};
+    return (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null;
+  }
+  // MTax.calculateTax(amt, isTaxIncluded, scale) — rate% of the base, or the included part, HALF_UP to the scale.
+  function _fs15Tax(base, rate, incl, prec) {
+    if (!Number(rate)) return 0;
+    return incl ? _round(base - base / (1 + Number(rate) / 100), prec) : _round(base * Number(rate) / 100, prec);
+  }
+  function _fs15BuildDocs(db, order, olines, dtId, policy) {
+    var ops = [], docs = [], std = _fs15Std(), today = _fs15Today();
+    var dt = _rawRows(db, 'SELECT c_doctypeshipment_id, c_doctypeinvoice_id FROM c_doctype WHERE c_doctype_id=' + Number(dtId))[0] || {};
+    var cur = _rawRows(db, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=' + Number(order.c_currency_id))[0];
+    var prec = cur ? Number(cur.stdprecision) : 2;
+    var pl = _rawRows(db, 'SELECT istaxincluded FROM m_pricelist WHERE m_pricelist_id=' + Number(order.m_pricelist_id))[0] || {};
+    var incl = String(pl.istaxincluded || 'N') === 'Y';
+    function mk(table, fields) { ops.push({ op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', id: null, fields: fields, cas: null, stdDefaults: std }); return ops.length - 1; }
+    function qtyOf(l) { var q = Number(l.qtyordered); if (!q) q = Number(l.qtyentered); return q || 0; }
+    var org = order.ad_org_id, shipLineIdx = {}, note = [];
+    if (policy.isautogenerateinout === 'Y') {
+      if (!Number(dt.c_doctypeshipment_id)) note.push('no C_DocTypeShipment_ID');
+      // new MInOut(order, C_DocTypeShipment_ID, today) — MInOut.java setOrder/setBPartner/warehouse; Complete → CO
+      var h = mk('m_inout', { ad_org_id: org, c_order_id: order.c_order_id, c_doctype_id: dt.c_doctypeshipment_id || null, issotrx: order.issotrx || 'Y',
+        movementtype: String(order.issotrx || 'Y') === 'Y' ? 'C-' : 'V+', c_bpartner_id: order.c_bpartner_id, c_bpartner_location_id: order.c_bpartner_location_id,
+        ad_user_id: order.ad_user_id || null, m_warehouse_id: order.m_warehouse_id, movementdate: today, dateacct: today, dateordered: order.dateordered || null,
+        poreference: order.poreference || null, salesrep_id: order.salesrep_id || null, deliveryrule: order.deliveryrule || null, deliveryviarule: order.deliveryviarule || null,
+        freightcostrule: order.freightcostrule || null, priorityrule: order.priorityrule || null, docstatus: 'CO', docaction: 'CL', processed: 'Y', posted: 'N' });
+      docs.push({ table: 'm_inout', idx: h });
+      var locr = _rawRows(db, 'SELECT m_locator_id FROM m_locator WHERE m_warehouse_id=' + Number(order.m_warehouse_id) + " ORDER BY CASE WHEN isdefault='Y' THEN 0 ELSE 1 END, m_locator_id")[0];
+      olines.forEach(function (l, i) {     // MInOutLine.setOrderLine — product, UOM, the warehouse's default locator, qty
+        shipLineIdx[l.c_orderline_id] = mk('m_inoutline', { m_inout_id: { __opRef: h }, ad_org_id: org, line: (i + 1) * 10, c_orderline_id: l.c_orderline_id,
+          m_product_id: l.m_product_id, c_uom_id: l.c_uom_id, m_locator_id: locr ? locr.m_locator_id : null, movementqty: qtyOf(l), qtyentered: Number(l.qtyentered) || qtyOf(l), isinvoiced: policy.isautogenerateinvoice === 'Y' ? 'Y' : 'N' });
+      });
+    }
+    if (policy.isautogenerateinvoice === 'Y') {
+      if (!Number(dt.c_doctypeinvoice_id)) note.push('no C_DocTypeInvoice_ID');
+      var lnSum = 0, byTax = {}, iLines = [];
+      olines.forEach(function (l, i) {     // MInvoiceLine.setShipLine/setOrderLine — prices + tax from the order line
+        var q = qtyOf(l), pa = Number(l.priceactual) || Number(l.priceentered) || 0, net = _round(q * pa, prec);
+        lnSum += net; if (l.c_tax_id != null) byTax[l.c_tax_id] = (byTax[l.c_tax_id] || 0) + net;
+        iLines.push({ l: l, i: i, q: q, pa: pa, net: net });
+      });
+      var taxRows = Object.keys(byTax).map(function (tid) {
+        var t = _rawRows(db, 'SELECT rate FROM c_tax WHERE c_tax_id=' + Number(tid))[0];
+        return { c_tax_id: Number(tid), base: _round(byTax[tid], prec), amt: _fs15Tax(byTax[tid], t ? t.rate : 0, incl, prec) };
+      });
+      var taxSum = taxRows.reduce(function (a, t) { return a + t.amt; }, 0);
+      // new MInvoice(order, C_DocTypeInvoice_ID, today) — MInvoice.java:484-510 (Bill_* side of the order)
+      var ih = mk('c_invoice', { ad_org_id: org, c_order_id: order.c_order_id, c_doctype_id: dt.c_doctypeinvoice_id || null, c_doctypetarget_id: dt.c_doctypeinvoice_id || null,
+        issotrx: order.issotrx || 'Y', c_bpartner_id: order.bill_bpartner_id || order.c_bpartner_id, c_bpartner_location_id: order.bill_location_id || order.c_bpartner_location_id,
+        ad_user_id: order.bill_user_id || null, salesrep_id: order.salesrep_id || null, m_pricelist_id: order.m_pricelist_id, c_currency_id: order.c_currency_id,
+        istaxincluded: incl ? 'Y' : 'N', paymentrule: order.paymentrule || null, c_paymentterm_id: order.c_paymentterm_id || null, poreference: order.poreference || null,
+        dateordered: order.dateordered || null, dateinvoiced: today, dateacct: today, totallines: _round(lnSum, prec), grandtotal: _round(lnSum + (incl ? 0 : taxSum), prec),
+        docstatus: 'CO', docaction: 'CL', processed: 'Y', posted: 'N', ispaid: 'N', ispayschedulevalid: 'N' });
+      docs.push({ table: 'c_invoice', idx: ih });
+      iLines.forEach(function (x) {
+        var f = { c_invoice_id: { __opRef: ih }, ad_org_id: org, line: (x.i + 1) * 10, c_orderline_id: x.l.c_orderline_id, m_product_id: x.l.m_product_id,
+          c_uom_id: x.l.c_uom_id, qtyentered: Number(x.l.qtyentered) || x.q, qtyinvoiced: x.q, priceentered: Number(x.l.priceentered) || x.pa, priceactual: x.pa,
+          pricelist: Number(x.l.pricelist) || 0, pricelimit: Number(x.l.pricelimit) || 0, c_tax_id: x.l.c_tax_id, linenetamt: x.net };
+        if (shipLineIdx[x.l.c_orderline_id] != null) f.m_inoutline_id = { __opRef: shipLineIdx[x.l.c_orderline_id] };
+        mk('c_invoiceline', f);
+      });
+      taxRows.forEach(function (t) {        // MInvoice.calculateTaxTotal → MInvoiceTax per tax
+        mk('c_invoicetax', { c_invoice_id: { __opRef: ih }, ad_org_id: org, c_tax_id: t.c_tax_id, taxbaseamt: t.base, taxamt: t.amt, istaxincluded: incl ? 'Y' : 'N' });
+      });
+    }
+    return { ops: ops, docs: docs, note: note.join(',') };
+  }
+  // Doc.post for the documents a Complete created — Doc_Invoice (ARI: DR Receivable GrandTotal / CR Revenue LineNetAmt per line /
+  // CR Tax Due TaxAmt) and Doc_InOut (customer shipment: DR COGS / CR Asset = qty × current cost; Doc_InOut.java:198-320 —
+  // zero cost on a stocked product → "No Costs for" and the document stays unposted). Accounts via the oracle-proved
+  // PostResolver tokens. One signed group: the fact_acct rows + Posted='Y' on each posted document.
+  function _fs15PostDocs(docIds) {
+    var R = global.PostResolver;
+    withBundle(function (db) { withSidecar(function (sdb) {
+      var facade = { prepare: function (sql) { return {
+        get: function (params) { var st = db.prepare(sql); try { if (params != null) st.bind(Array.isArray(params) ? params : (typeof params === 'object' ? Object.keys(params).reduce(function (o, k) { o['@' + k] = params[k]; return o; }, {}) : [params])); if (!st.step()) return undefined; var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; } finally { st.free(); } },
+        all: function (params) { var st = db.prepare(sql), out = []; try { if (params != null) st.bind(Array.isArray(params) ? params : [params]); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } return out; } finally { st.free(); } } }; } };
+      var tip = function (table, id) {
+        var base = _rawRows(db, 'SELECT * FROM ' + table + ' WHERE 0');
+        var f = CORE.listTip(sdb, table, table + '_id', base, null);
+        return ((f && f.rows) || []).map(function (r) { var o = {}; for (var k in r) o[k.toLowerCase()] = r[k]; return o; });
+      };
+      var cli = (global.APP && global.APP.clientId != null) ? Number(global.APP.clientId) : null;
+      var asRow = _rawRows(db, 'SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=' + Number(cli))[0];
+      var schema = asRow ? Number(asRow.a) : null;
+      var asCur = schema ? (_rawRows(db, 'SELECT c_currency_id, costingmethod FROM c_acctschema WHERE c_acctschema_id=' + schema)[0] || {}) : {};
+      var per = _rawRows(db, 'SELECT c_period_id FROM c_period WHERE ad_client_id=' + Number(cli) + " AND date('" + _fs15Today() + "') BETWEEN date(startdate) AND date(enddate) LIMIT 1")[0];
+      var factOps = [], std = _fs15Std();
+      docIds.forEach(function (dref) {
+        var acct = function (token, master) { var r = R ? R.resolve(facade, token, Number(master), schema) : null; return (r && r.acct != null && r.element) ? r.element : null; };
+        var lines = [], absent = [], why = null;
+        var add = function (el, dr, cr, extra) { lines.push(Object.assign({ account_id: el.id, value: el.value, dr: _round(dr, 2), cr: _round(cr, 2) }, extra || {})); };
+        if (!R || !schema) why = !R ? 'PostResolver absent' : 'no C_AcctSchema1_ID for client ' + cli;
+        var hdr = !why ? tip(dref.table).filter(function (r) { return String(r[dref.table + '_id']) === String(dref.id); })[0] : null;
+        if (!why && !hdr) why = 'document ' + dref.id + ' not in the tip';
+        if (!why && Number(hdr.c_currency_id || asCur.c_currency_id) !== Number(asCur.c_currency_id)) why = 'currency conversion of facts not ported';
+        var tableId = dref.table === 'c_invoice' ? 318 : 319, glcat = null;
+        if (!why) { var gc = _rawRows(db, 'SELECT gl_category_id FROM c_doctype WHERE c_doctype_id=' + Number(hdr.c_doctype_id))[0]; glcat = gc ? gc.gl_category_id : null; }
+        if (!why && dref.table === 'c_invoice') {
+          var ils = tip('c_invoiceline').filter(function (r) { return String(r.c_invoice_id) === String(dref.id); });
+          var its = tip('c_invoicetax').filter(function (r) { return String(r.c_invoice_id) === String(dref.id); });
+          var rc = acct('{BPartner.Receivable}', hdr.c_bpartner_id); if (rc) add(rc, Number(hdr.grandtotal), 0, { c_bpartner_id: hdr.c_bpartner_id }); else absent.push('{BPartner.Receivable}');
+          ils.forEach(function (l) { var rv = acct('{Product.Revenue}', l.m_product_id); if (rv) add(rv, 0, Number(l.linenetamt), { m_product_id: l.m_product_id, qty: -Number(l.qtyinvoiced), line_id: l.c_invoiceline_id }); else absent.push('{Product.Revenue}'); });
+          its.forEach(function (t) { if (!Number(t.taxamt)) return; var td = acct('{Tax.Due}', t.c_tax_id); if (td) add(td, 0, Number(t.taxamt), { c_tax_id: t.c_tax_id }); else absent.push('{Tax.Due}'); });
+        } else if (!why) {
+          var sls = tip('m_inoutline').filter(function (r) { return String(r.m_inout_id) === String(dref.id); });
+          sls.forEach(function (l) {
+            var pr = _rawRows(db, 'SELECT isstocked FROM m_product WHERE m_product_id=' + Number(l.m_product_id))[0] || {};
+            var c = _rawRows(db, 'SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id WHERE c.m_product_id=' + Number(l.m_product_id) +
+              ' AND c.c_acctschema_id=' + schema + " AND e.costelementtype='M' AND e.costingmethod='" + String(asCur.costingmethod || '') + "' AND c.ad_org_id=0 AND COALESCE(c.m_attributesetinstance_id,0)=0")[0];
+            var costs = _round(Number(c ? c.p : 0) * Number(l.movementqty), 2);
+            if (!costs) { if (String(pr.isstocked || 'Y') === 'Y') { why = 'No Costs for product ' + l.m_product_id + ' (costing method ' + asCur.costingmethod + ', Doc_InOut.java:244-258)'; } return; }
+            var cg = acct('{Product.Cogs}', l.m_product_id), as = acct('{Product.Asset}', l.m_product_id);
+            if (cg) add(cg, costs, 0, { m_product_id: l.m_product_id, qty: Number(l.movementqty), line_id: l.m_inoutline_id }); else absent.push('{Product.Cogs}');
+            if (as) add(as, 0, costs, { m_product_id: l.m_product_id, qty: -Number(l.movementqty), line_id: l.m_inoutline_id }); else absent.push('{Product.Asset}');
+          });
+        }
+        var sDr = _round(lines.reduce(function (a, x) { return a + x.dr; }, 0), 2), sCr = _round(lines.reduce(function (a, x) { return a + x.cr; }, 0), 2);
+        var ok = !why && !absent.length && lines.length && Math.abs(sDr - sCr) < 0.005;
+        console.log('§GL-POST table=' + dref.table + ' id=' + dref.id + ' schema=' + schema + ' lines=' + lines.length + ' dr=' + sDr + ' cr=' + sCr + ' balanced=' + (Math.abs(sDr - sCr) < 0.005) +
+          ' posted=' + (ok ? 'Y' : 'N') + (why ? ' reason="' + why + '"' : '') + (absent.length ? ' absent=' + absent.join(',') : '') +
+          ' facts=' + JSON.stringify(lines.map(function (x) { return [x.account_id, x.value, x.dr, x.cr]; })));
+        if (!ok) return;
+        lines.forEach(function (x) {
+          factOps.push({ op_type: 'CRUD_CREATE', key: 'fact_acct', table: 'fact_acct', verb: 'create', id: null, cas: null, stdDefaults: std,
+            fields: { ad_org_id: hdr.ad_org_id, c_acctschema_id: schema, account_id: x.account_id, c_period_id: per ? per.c_period_id : null, ad_table_id: tableId, record_id: dref.id,
+              line_id: x.line_id || null, gl_category_id: glcat, c_tax_id: x.c_tax_id || null, postingtype: 'A', c_currency_id: asCur.c_currency_id,
+              amtsourcedr: x.dr, amtsourcecr: x.cr, amtacctdr: x.dr, amtacctcr: x.cr, qty: x.qty != null ? x.qty : null, m_product_id: x.m_product_id || null,
+              c_bpartner_id: x.c_bpartner_id || hdr.c_bpartner_id || null, description: (hdr.documentno || '') + ' #' + dref.id } });
+        });
+        factOps.push({ op_type: 'CRUD_UPDATE', key: dref.table, table: dref.table, verb: 'update', id: dref.id, changes: { posted: { old: 'N', new: 'Y' } } });
+      });
+      if (!factOps.length) { console.log('§GL-POST group skipped (nothing postable)'); return; }
+      applyOpGroup(factOps.map(function (o) { return o.op_type === 'CRUD_UPDATE' ? { op_type: o.op_type, key: o.key, table: o.table, verb: o.verb, id: o.id, changes: o.changes } : o; }), function (res) {
+        console.log('§GL-POST-COMMIT ops=' + factOps.length + ' committed=' + !!(res && res.committed) + ' gid=' + (res && res.gid) + ' verifyChain=' + (res && res.verifyOk ? 'ok' : 'FAIL'));
+      });
+    }); });
+  }
   function completeFanoutOrder(op, cb) {
     var E = (typeof global.ERPEngine !== 'undefined') ? global.ERPEngine : null;
     if (!E || typeof E.completeOrder !== 'function' || typeof withBundle !== 'function' || op.id == null) {
@@ -2417,10 +2558,15 @@
           }
           if (!policy) { console.log('§SO-COMPLETE fan-out gated: no DOCPOLICY for c_doctype_id=' + dtId + ' (extract gap — never defaulted to Y)'); cb(null); return; }
           var ops = E.completeOrder(order, lines, policy).filter(function (o) { return o.op_type !== 'SET_STATUS'; });
+          // FS-15 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2m — Witness: W-ERP-FIRST-SETUP S20/S20b): the engine
+          // DECIDES (its skeleton op count stays `engineOps`); the documents themselves are BUILT here as CRUD_CREATE rows
+          // (MInOut(order)/MInvoice(order) + setShipLine/setOrderLine + calculateTaxTotal) so every window can read them.
+          var fullLines = lineRows.map(lcRow).filter(function (r) { return String(r.c_order_id) === String(op.id); });
+          var built = ops.length ? _fs15BuildDocs(db, order, fullLines, dtId, policy) : null;
           console.log('§SO-FANOUT order=' + op.id + ' doctype=' + dtId + ' policy(io,inv)=' + policy.isautogenerateinout + ',' + policy.isautogenerateinvoice +
                       ' policySrc=' + psrc + ' header=' + (baseHdr.length ? 'bundle' : 'sidecar') + ' lines=' + lines.length + ' engineOps=' + ops.length +
-                      ' gl=gated(no c_ordertax in bundle + post_resolver not mounted — postings stay the proven headless lane, never faked)');
-          fanout = ops.length ? { ops: ops, glGate: 'no-order-side-acct/tax-linkage' } : null;
+                      ' crudOps=' + (built ? built.ops.length : 0) + (built && built.note ? ' note="' + built.note + '"' : '') + ' gl=post-after-commit');
+          fanout = built && built.ops.length ? { ops: built.ops, docs: built.docs, glGate: 'post-after-commit' } : (ops.length ? { ops: ops, glGate: 'skeleton' } : null);
         } catch (er) { console.log('§SO-COMPLETE fan-out error ' + (er && er.message) + ' → status-only group'); fanout = null; }
         cb(fanout);
       };
@@ -2550,6 +2696,7 @@
         if (!gate.ok) { _gateReject(op, gate); done(); return; }
       completeFanout(op, function (fanout) {
       _serializeCommit(function () {                            // EXCLUSIVE: no interleaved async seal (batch-safe, same-tab)
+        if (fanout && fanout.docs) fanout.ops = _resolveOpRefs(freshDb, fanout.ops);   // FS-15: line → header FK = the header op's synthetic pk
         var groupOps = CORE.buildDocActionGroup(op, fanout);   // PURE assembly: engine consequences + SET_STATUS last
         return Promise.resolve(K.commitGroup(freshDb, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD process commitGroup not-committed reason=' + (res && res.reason || '?')); dryProcess(op); return; }
@@ -2565,7 +2712,12 @@
               if (fanout && fanout.ops) {
                 var nShip = 0, nInv = 0;
                 fanout.ops.forEach(function (o) { if (o.op_type === 'CREATE_DOCUMENT') { if (o.table === 'M_InOut') nShip++; else if (o.table === 'C_Invoice') nInv++; } });
-                console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=gated sealed=Y gid=' + res.gid);
+                if (fanout.docs) fanout.ops.forEach(function (o) { if (o.op_type === 'CRUD_CREATE' && !(o.fields && (o.fields.m_inout_id || o.fields.c_invoice_id))) { if (o.table === 'm_inout') nShip++; else if (o.table === 'c_invoice') nInv++; } });
+                console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=' + (fanout.docs ? 'post-after-commit' : 'gated') + ' sealed=Y gid=' + res.gid);
+                // FS-15: the Accounting Processor run (Doc.post) for exactly the documents this Complete created — queued
+                // behind this commit on the same serial chain; GardenWorld AD_Client.IsPostImmediate='N' (posted async).
+                if (fanout.docs) { var docIds = fanout.docs.map(function (d) { return { table: d.table, id: -Number(res.ids[d.idx]), d: d }; });
+                  setTimeout(function () { _fs15PostDocs(docIds); }, 0); }
               }
               console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
               setDocStatus(op.key, op.to, op.outcome, op.unmet);

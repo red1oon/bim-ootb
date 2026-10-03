@@ -30,7 +30,7 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
-  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
+  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-15 (§FS2m) pinned S20b to V: the POS order's invoice + shipment are readable and posted; facts == oracle.
 // FS-14 (§FS2l) pinned S24c to V: Aging buckets == the re-derived oracle at two statement dates; vacuity control INCONCLUSIVE.
 // FS-13 (§FS2k) pinned S10b to V: the Location editor commits a C_Location; the customer's order header then saves.
 // FS-12 (§FS2j) pinned S15b to V: a NEW tenant's order prices its line from the setup price list and completes.
@@ -459,11 +460,51 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const ePOS = await expectFor('POS Order'), fPOS = fanOf(POS.fanout);
     const wantPOS = ePOS ? (ePOS.io === 'Y' ? ePOS.perDoc : 0) + (ePOS.inv === 'Y' ? ePOS.perDoc : 0) : null;
     // arm (b): POS Order (WR) → shipment + invoice, and the signed group carries them: ops = 1 status + engine ops
-    const armB = !!(ePOS && fPOS && fPOS.io === ePOS.io && fPOS.inv === ePOS.inv && wantPOS > 0 && fPOS.ops === wantPOS && coOps(POS.co) === 1 + wantPOS);
+    // FS-15 (§FS2m): the commit now carries the BUILT documents: per doc 1 header + 1 line, + 1 C_InvoiceTax for the one
+    // tax of the one line typed → crudOps = wantPOS + (inv ? 1 : 0); the engine's decision count (engineOps) is unchanged.
+    const crudOf = (line) => { const m = /crudOps=(\d+)/.exec(line || ''); return m ? Number(m[1]) : null; };
+    const wantCrud = ePOS ? wantPOS + (ePOS.inv === 'Y' ? 1 : 0) : null;
+    const armB = !!(ePOS && fPOS && fPOS.io === ePOS.io && fPOS.inv === ePOS.inv && wantPOS > 0 && fPOS.ops === wantPOS && crudOf(POS.fanout) === wantCrud && coOps(POS.co) === 1 + wantCrud);
     step('S20', !fSO && !fPOS ? (/not in bundle|not found/.test(SO.fan) ? 'G' : 'I') : (armA && armB ? 'V' : 'G'),
       'Complete on a NEW order runs iDempiere\'s completeIt fan-out (Standard Order: none; POS Order: shipment + invoice)',
       'SO: expect=' + JSON.stringify(eSO) + ' got=' + JSON.stringify(fSO) + ' commitOps=' + coOps(SO.co) + ' | POS: expect=' + JSON.stringify(ePOS) + ' wantOps=' + wantPOS +
       ' got=' + JSON.stringify(fPOS) + ' commitOps=' + coOps(POS.co) + ' | ' + (POS.fanout || SO.fan).slice(0, 140) + ' | ' + POS.fan.slice(0, 90));
+    // ── S20b (FS-15 §FS2m) the POS order's new invoice + shipment are readable documents and are posted — BY VALUE against an
+    //    oracle computed here by SQL: accounts from the acct tables Doc_* reads (C_BP_Customer_Acct, M_Product_Acct, C_Tax_Acct →
+    //    C_ValidCombination.Account_ID), amounts from the typed qty × price, the tax rate, and M_Cost (schema costing method).
+    try {
+      for (let i = 0; i < 30 && !since(0, /§GL-POST-COMMIT/).length; i++) await page.waitForTimeout(300);
+      const glLines = since(0, /§GL-POST /), glCommit = last(0, /§GL-POST-COMMIT/);
+      const inv = glLines.map(l => /table=c_invoice id=(-?\d+)/.exec(l)).filter(Boolean).map(m => Number(m[1])).pop();
+      const shp = glLines.map(l => /table=m_inout id=(-?\d+)/.exec(l)).filter(Boolean).map(m => Number(m[1])).pop();
+      const ih = inv ? await tipRow('c_invoice', inv) : null, sh = shp ? await tipRow('m_inout', shp) : null;
+      const facts = await page.evaluate(() => { const c = window.__crud; const sdb = c.kernelDb(); const r = c.core.listTip(sdb, 'fact_acct', 'fact_acct_id', [], null); return (r && r.rows) || []; });
+      const fx = (tbl, id) => facts.filter(f => Number(f.ad_table_id) === tbl && Number(f.record_id) === id).map(f => [Number(f.account_id), Number(f.amtacctdr), Number(f.amtacctcr)]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const vc = async (sql) => Number(await one(page, 'SELECT vc.Account_ID FROM C_ValidCombination vc WHERE vc.C_ValidCombination_ID=(' + sql + ')'));
+      const AS = 101, price = 61.75, qty = 1;
+      const rate = Number(await one(page, 'SELECT Rate FROM C_Tax WHERE C_Tax_ID=104')), tax = Math.round(price * qty * rate) / 100;
+      const aRcv = await vc('SELECT C_Receivable_Acct FROM C_BP_Customer_Acct WHERE C_BPartner_ID=118 AND C_AcctSchema_ID=' + AS);
+      const aRev = await vc('SELECT P_Revenue_Acct FROM M_Product_Acct WHERE M_Product_ID=123 AND C_AcctSchema_ID=' + AS);
+      const aCogs = await vc('SELECT P_Cogs_Acct FROM M_Product_Acct WHERE M_Product_ID=123 AND C_AcctSchema_ID=' + AS);
+      const aAsset = await vc('SELECT P_Asset_Acct FROM M_Product_Acct WHERE M_Product_ID=123 AND C_AcctSchema_ID=' + AS);
+      const aTax = await vc('SELECT T_Due_Acct FROM C_Tax_Acct WHERE C_Tax_ID=104 AND C_AcctSchema_ID=' + AS);
+      const cost = Number(await one(page, "SELECT c.CurrentCostPrice FROM M_Cost c JOIN M_CostElement e ON e.M_CostElement_ID=c.M_CostElement_ID WHERE c.M_Product_ID=123 AND c.C_AcctSchema_ID=" + AS +
+        " AND e.CostElementType='M' AND e.CostingMethod=(SELECT CostingMethod FROM C_AcctSchema WHERE C_AcctSchema_ID=" + AS + ") AND c.AD_Org_ID=0"));
+      const gt = Math.round((price * qty + tax) * 100) / 100;
+      const oInv = [[aRcv, gt, 0], [aRev, 0, price * qty]].concat(tax ? [[aTax, 0, tax]] : []).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const oShp = [[aCogs, Math.round(cost * qty * 100) / 100, 0], [aAsset, 0, Math.round(cost * qty * 100) / 100]].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      const fInv = inv ? fx(318, inv) : [], fShp = shp ? fx(319, shp) : [];
+      const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      const bal = (f) => Math.abs(f.reduce((x, r) => x + r[1] - r[2], 0)) < 0.005;
+      const dtInv = Number(await one(page, "SELECT C_DocTypeInvoice_ID FROM C_DocType WHERE AD_Client_ID=11 AND Name='POS Order'"));
+      const readable = !!ih && Number(ih.c_bpartner_id) === 118 && Number(ih.c_doctype_id) === dtInv && Math.abs(Number(ih.grandtotal) - gt) < 0.005 && !!sh && Number(sh.c_bpartner_id) === 118;
+      const posted = ih && ih.posted === 'Y' && sh && sh.posted === 'Y';
+      say('§S20b-DETAIL inv=' + JSON.stringify(ih) + ' shp=' + JSON.stringify(sh) + ' factsInv=' + JSON.stringify(fInv) + ' oracleInv=' + JSON.stringify(oInv) + ' factsShp=' + JSON.stringify(fShp) + ' oracleShp=' + JSON.stringify(oShp) + ' cost=' + cost);
+      step('S20b', !inv && !shp ? 'G' : (readable && posted && fInv.length && fShp.length && eq(fInv, oInv) && eq(fShp, oShp) && bal(fInv) && bal(fShp) && cost > 0 ? 'V' : 'G'),
+        'the invoice + shipment Complete creates are readable documents and are posted (fact_acct == oracle, balanced)',
+        'invoice=' + inv + ' gt=' + (ih && ih.grandtotal) + ' posted=' + (ih && ih.posted) + ' facts=' + JSON.stringify(fInv) + ' oracle=' + JSON.stringify(oInv) +
+        ' | shipment=' + shp + ' posted=' + (sh && sh.posted) + ' facts=' + JSON.stringify(fShp) + ' oracle=' + JSON.stringify(oShp) + ' | ' + glCommit.slice(0, 90));
+    } catch (e) { step('S20b', 'I', 'posting of Complete-created docs', 'harness: ' + e.message); }
     await page.goto(base + '/idempiere.html?login=GardenAdmin&window=143', { waitUntil: 'load' }); await page.waitForTimeout(2000);
     const tip = await tipOf(page, 'c_order', SO.id);
     step('S21', tip === 'CO' ? 'V' : 'G', 'the completed order survives a reload', 'readTip(c_order,' + SO.id + ')=' + tip);
