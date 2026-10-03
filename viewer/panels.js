@@ -2355,7 +2355,7 @@ function setupPanels(A) {
       layout: 'rail'   // L-PATH position:fixed rail — viewer.html CSS declares the buttons fixed
     });
 
-    window.addEventListener('trl-ready', function() { _relabelPill(); if (_mainPill && _mainPill.build) _mainPill.build(); console.log('§TRL_PILL relabelled n=' + _actions.length); });
+    window.addEventListener('trl-ready', function() { _relabelPill(); if (_sched4dHas !== null) _syncSched4dTitle(_sched4dHas); if (_mainPill && _mainPill.build) _mainPill.build(); console.log('§TRL_PILL relabelled n=' + _actions.length); });   // S226 §R2c: the 4D pill's state-dependent title is re-resolved too (it was cached in the first language)
 
     // Expose for toggleDocPill restore + keyboard shortcut
     A._buildPill = _mainPill.build;
@@ -2367,7 +2367,9 @@ function setupPanels(A) {
     // live, without waiting on the (one-shot) gate poll below: called once right after that poll
     // resolves, and again the instant a tap generates a programme (panels.js's own fn, above), so
     // the tooltip never lies about which tap behaviour is currently wired.
+    var _sched4dHas = null;   // last state, so an in-place language switch (trl-ready) can re-resolve the title
     function _syncSched4dTitle(hasSchedule) {
+      _sched4dHas = !!hasSchedule;
       var acts = window._mainPillActions || [];
       for (var i = 0; i < acts.length; i++) {
         if (acts[i].id !== 'sched4d') continue;

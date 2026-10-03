@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_id_ID.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "Bagaimana-jika: mesin ERP belum siap",
   "wi_no_project": "Bagaimana-jika: belum ada proyek terlipat — dorong satu ke ERP dulu",
   "wi_project_n": "Proyek {id}",
-  "ui_downloading_pct": "Mengunduh {name}... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "Mengunduh {name}... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "Selisih biaya",
+  "info_cost_records": "· dari catatan",
+  "info_match_one": "kecocokan",
+  "info_match_many": "kecocokan",
+  "info_planned": "direncanakan",
+  "info_phase": "Fase",
+  "info_project": "Proyek",
+  "info_view_moment": "⏱ Lihat pada saat ini",
+  "info_4d_title": "Jendela konstruksi",
+  "info_4d_unassigned": "Belum ditugaskan ke tugas bertanggal di \"{name}\".",
+  "info_4d_sched_tip": "Jadwal asal jendela ini",
+  "info_4d_task": "Tugas",
+  "info_4d_window": "Jendela",
+  "info_4d_trade": "Bidang kerja",
+  "info_4d_float": "Float",
+  "info_4d_critical": "(jalur kritis)"
  }
 }

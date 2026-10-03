@@ -39,9 +39,17 @@
    * @param {string} guid - the picked element's guid.
    * @returns {boolean} true if a window was rendered, false on any honest no-op.
    */
+  // S226 §R2c.6 — strings through the AD_Message dictionary (English default = what this file printed before)
+  function _it(k, d, r) { return (typeof global._trl === 'function') ? global._trl(k, r || null, d) : d; }
+  var _last = null;   // last render args — re-rendered on an in-place language switch (trl-ready)
+  if (global.addEventListener) global.addEventListener('trl-ready', function (e) {
+    var box = typeof document !== 'undefined' && document.getElementById('info-4d');
+    if (e && e.detail && e.detail.inplace && _last && box && box.style.display === 'block') render(_last[0], _last[1]);
+  });
   function render(A, guid) {
     var box = document.getElementById('info-4d');
     if (!box) return false;
+    _last = [A, guid];
     box.style.display = 'none';
     var RD = global.ScheduleRead4D, SA = global.ScheduleAuthor;
     // module/db not ready — honest no-op, same guard style as find_erp_push.js's _ensureErpDb
@@ -57,14 +65,13 @@
     // in the browser (SA is already window.ScheduleAuthor there) and keeps this function witnessable
     // headlessly, where schedule_read_4d.js's own `global` is the module's exports object.
     try { win = RD.windowForGuid(A.db, guid, { scheduleAuthor: SA }); } catch (e) { win = null; }
-    var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">Construction window</div>';
+    var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">' + _it('info_4d_title', 'Construction window') + '</div>';
     if (!win) {
       // A schedule exists but this element has no dated task. windowForGuid already logged the exact
       // reason (guid_not_in_task/undated) via §4D_ON_ELEMENT_GATE; this line tells the USER why the
       // block is not showing dates, instead of rendering an empty box that looks broken. It already
       // names the schedule inline, so no separate provenance line is added on this branch.
-      html += '<div style="color:#888;font-size:11px">Not yet assigned to a dated task in "' +
-        (sched.name || sched.id) + '".</div>';
+      html += '<div style="color:#888;font-size:11px">' + _it('info_4d_unassigned', 'Not yet assigned to a dated task in "{name}".', { name: (sched.name || sched.id) }) + '</div>';
     } else {
       // §S7-INJECT HONESTY — provenance lives in schedules.name ('Default Programme (auto-generated)'
       // vs the wizard's 'Authored Schedule (4D template)'/'Authored Schedule…'), never in schedule_id
@@ -72,14 +79,14 @@
       // it right beside the real dates so a generated default can never be mistaken for the
       // project's committed programme just because this block also shows a normal-looking window.
       if (sched.name) {
-        html += '<div style="color:#888;font-size:10px;margin-bottom:2px" title="Which schedule this window comes from">' +
+        html += '<div style="color:#888;font-size:10px;margin-bottom:2px" title="' + _it('info_4d_sched_tip', 'Which schedule this window comes from') + '">' +
           sched.name + '</div>';
       }
-      var crit = win.isCritical ? ' <b style="color:#ff6b6b">(critical path)</b>' : '';
-      html += '<div><span class="label">Task</span>: <span class="value">' + win.name + '</span></div>';
-      html += '<div><span class="label">Window</span>: <span class="value">' + win.startDate + ' → ' + win.finishDate + crit + '</span></div>';
-      if (win.resource) html += '<div><span class="label">Trade</span>: <span class="value">' + win.resource + '</span></div>';
-      if (win.totalFloat != null && win.totalFloat !== '') html += '<div><span class="label">Float</span>: <span class="value">' + win.totalFloat + ' d</span></div>';
+      var crit = win.isCritical ? ' <b style="color:#ff6b6b">' + _it('info_4d_critical', '(critical path)') + '</b>' : '';
+      html += '<div><span class="label">' + _it('info_4d_task', 'Task') + '</span>: <span class="value">' + win.name + '</span></div>';
+      html += '<div><span class="label">' + _it('info_4d_window', 'Window') + '</span>: <span class="value">' + win.startDate + ' → ' + win.finishDate + crit + '</span></div>';
+      if (win.resource) html += '<div><span class="label">' + _it('info_4d_trade', 'Trade') + '</span>: <span class="value">' + win.resource + '</span></div>';
+      if (win.totalFloat != null && win.totalFloat !== '') html += '<div><span class="label">' + _it('info_4d_float', 'Float') + '</span>: <span class="value">' + win.totalFloat + ' d</span></div>';
     }
     box.innerHTML = html;
     box.style.display = 'block';

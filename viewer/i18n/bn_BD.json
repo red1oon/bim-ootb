@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bn_BD.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "হোয়াট-ইফ: ERP ইঞ্জিন প্রস্তুত নয়",
   "wi_no_project": "হোয়াট-ইফ: এখনও কোনো ফোল্ড করা প্রকল্প নেই — আগে একটি ERP-তে পাঠান",
   "wi_project_n": "প্রকল্প {id}",
-  "ui_downloading_pct": "{name} ডাউনলোড হচ্ছে... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "{name} ডাউনলোড হচ্ছে... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "খরচের পার্থক্য",
+  "info_cost_records": "· রেকর্ড থেকে",
+  "info_match_one": "মিল",
+  "info_match_many": "মিল",
+  "info_planned": "পরিকল্পিত",
+  "info_phase": "পর্যায়",
+  "info_project": "প্রকল্প",
+  "info_view_moment": "⏱ এই মুহূর্তে দেখুন",
+  "info_4d_title": "নির্মাণের সময়সীমা",
+  "info_4d_unassigned": "\"{name}\"-এ এখনও কোনো তারিখযুক্ত কাজে বরাদ্দ হয়নি।",
+  "info_4d_sched_tip": "এই সময়সীমা কোন সময়সূচি থেকে এসেছে",
+  "info_4d_task": "কাজ",
+  "info_4d_window": "সময়সীমা",
+  "info_4d_trade": "পেশা",
+  "info_4d_float": "ফ্লোট",
+  "info_4d_critical": "(ক্রিটিক্যাল পাথ)"
  }
 }

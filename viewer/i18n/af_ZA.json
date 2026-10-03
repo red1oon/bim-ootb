@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_af_ZA.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "Wat-as: ERP-enjin nie gereed nie",
   "wi_no_project": "Wat-as: nog geen gevoude projek nie — stoot eers een na ERP",
   "wi_project_n": "Projek {id}",
-  "ui_downloading_pct": "Laai {name} af... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "Laai {name} af... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "Kosteafwyking",
+  "info_cost_records": "· uit die rekords",
+  "info_match_one": "treffer",
+  "info_match_many": "treffers",
+  "info_planned": "beplan",
+  "info_phase": "Fase",
+  "info_project": "Projek",
+  "info_view_moment": "⏱ Kyk op hierdie oomblik",
+  "info_4d_title": "Konstruksievenster",
+  "info_4d_unassigned": "Nog nie aan ’n gedateerde taak in \"{name}\" toegeken nie.",
+  "info_4d_sched_tip": "Uit watter skedule hierdie venster kom",
+  "info_4d_task": "Taak",
+  "info_4d_window": "Venster",
+  "info_4d_trade": "Ambag",
+  "info_4d_float": "Speling",
+  "info_4d_critical": "(kritieke pad)"
  }
 }
