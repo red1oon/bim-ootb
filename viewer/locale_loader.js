@@ -15,6 +15,11 @@
   var _scripts = document.getElementsByTagName('script');
   var _thisScript = _scripts[_scripts.length - 1];
   var LOCALE_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'locales/';
+  // S226 §R2: LABELS come from viewer/i18n/<code>.json — BUILT (viewer/tools/build_trl.js) from the iDempiere-format
+  // sources viewer/i18n/ad_message_base.csv (AD_Message) ⋈ viewer/i18n/AD_Message_Trl_<lang>.xml. locales/<code>.js
+  // keeps only the COST data (currency, rate attribution, rates). Never edit the JSON — edit the XML and rebuild.
+  var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
+  var LOCALE_VERSION = 7; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js)
 
   // ── Locale mapping: navigator.language → locale file code ──
   var LOCALE_MAP = {
@@ -118,7 +123,6 @@
   // ── Fetch locale from OCI or localStorage cache ──
   function fetchLocale(code, callback) {
     // Check localStorage cache first
-    var LOCALE_VERSION = 6; // bump to invalidate cached locales
     var cacheKey = 'bim_ootb_locale_' + code;
     try {
       var cached = localStorage.getItem(cacheKey);
@@ -174,6 +178,47 @@
         callback(err2, null);
       });
     });
+  }
+
+  // ── S226 §R2: fetch the built label pack i18n/<code>.json (localStorage cache, then network) ──
+  // Resolves to {} when nothing can be loaded: the page then shows the English that is already in its markup /
+  // _trl() defaults — honestly, and W-VIEWER-I18N counts it as a leak. Logs one §TRL_LABELS line per load.
+  function fetchLabels(code, callback) {
+    var cacheKey = 'bim_ootb_trl_' + code;
+    function done(src, labels, extra) {
+      var keys = Object.keys(labels || {}).length;
+      console.log('§TRL_LABELS locale=' + code + ' keys=' + keys + ' src=' + src + (extra ? ' ' + extra : ''));
+      callback(labels || {});
+    }
+    try {
+      var cached = JSON.parse(localStorage.getItem(cacheKey));
+      if (cached && cached.labels && cached.v === LOCALE_VERSION && cached.ts && Date.now() - cached.ts < 7 * 24 * 60 * 60 * 1000) {
+        done('cached', cached.labels); return;
+      }
+    } catch(e) { /* cache miss */ }
+    if (window._STANDALONE) { done('standalone', {}); return; }
+    fetch(I18N_BASE + code + '.json').then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }).then(function(pack) {
+      var labels = (pack && pack.labels) || {};
+      try { localStorage.setItem(cacheKey, JSON.stringify({ labels: labels, ts: Date.now(), v: LOCALE_VERSION })); } catch(e) { /* storage full */ }
+      var b = pack && pack.built;
+      done('fetched', labels, b ? 'translated=' + b.translated + ' untranslated=' + b.untranslated : '');
+    }).catch(function(err) {
+      console.warn('§TRL_LABELS_FAIL locale=' + code + ' err=' + err.message);
+      done('fallback', {});
+    });
+  }
+
+  // ── S226 §R2: <html lang dir> follow the chosen locale (ar_SA is the one RTL script in AVAILABLE_LOCALES) ──
+  var HTML_LANG = { bl_BD: 'bn-Latn' };   // Banglish = Bengali in Latin script; every other code maps by its prefix
+  function applyLangDir(code) {
+    var html = document.documentElement; if (!html) return;
+    var lang = HTML_LANG[code] || code.split('_')[0];
+    var dir = code === 'ar_SA' ? 'rtl' : 'ltr';
+    html.setAttribute('lang', lang); html.setAttribute('dir', dir);
+    console.log('§TRL_LANGDIR locale=' + code + ' lang=' + lang + ' dir=' + dir);
   }
 
   // ── Apply URL param overrides (highest priority) ──
@@ -240,20 +285,22 @@
     if (!loc) return;
     var flag = isoToFlag(loc.iso);
     var toast = document.createElement('div');
+    toast.id = 'ootb-locale-toast';
     toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9999;' +
       'background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;' +
       'font-family:Segoe UI,sans-serif;backdrop-filter:blur(8px);border:1px solid rgba(79,195,247,0.3);' +
       'transition:opacity 0.5s;pointer-events:none';
-    toast.textContent = flag + ' ' + loc.name + ' \u2014 change in \u2699';
+    toast.textContent = flag + ' ' + loc.name + ' \u2014 ' + ((typeof _TRL !== 'undefined' && _TRL.ui_locale_toast_hint) || 'change in \u2699');
     document.body.appendChild(toast);
     setTimeout(function() { toast.style.opacity = '0'; }, 3000);
     setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3500);
   }
 
   // ── Template string helper: _TRL.ui_flew_to.replace('{name}', x) ──
-  // Exposed globally for convenience
-  window._trl = function(key, replacements) {
-    var s = (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : key;
+  // Exposed globally for convenience. S226 §R2: 3rd arg = the English default the page shows until the label pack
+  // has landed (never the raw key); W-VIEWER-I18N checks that default == ad_message_base.csv msgtext.
+  window._trl = function(key, replacements, dflt) {
+    var s = (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : (dflt != null ? dflt : key);
     if (replacements) {
       for (var k in replacements) {
         s = s.replace('{' + k + '}', replacements[k]);
@@ -306,6 +353,7 @@
         try {
           localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: loc.code }));
           localStorage.removeItem('bim_ootb_locale_' + currentLocale);
+          localStorage.removeItem('bim_ootb_trl_' + currentLocale);
         } catch(e) { /* ignore */ }
         // S226 §R1.2b — a ?lang= (e.g. from the ERP's Zoom Across) outranks the saved choice; rewrite it so the pick sticks
         try {
@@ -362,7 +410,18 @@
       var key = el.getAttribute('data-trl-placeholder');
       if (_TRL[key]) el.placeholder = _TRL[key];
     });
+    // S226 §R2: data-trl-html="key" → innerHTML (the few strings that carry inline markup, e.g. <br>)
+    document.querySelectorAll('[data-trl-html]').forEach(function(el) {
+      var key = el.getAttribute('data-trl-html');
+      if (_TRL[key]) el.innerHTML = _TRL[key];
+    });
+    // data-trl-tip="key" → data-tip attribute (landing Morpheus hover cards render CSS attr(data-tip))
+    document.querySelectorAll('[data-trl-tip]').forEach(function(el) {
+      var key = el.getAttribute('data-trl-tip');
+      if (_TRL[key]) el.setAttribute('data-tip', _TRL[key]);
+    });
   }
+  window._applyTrlToDOM = applyTrlToDOM;   // pages that build markup late can re-run it (hub cards, drawers)
 
   // §S8 (prompts/RATES_SOURCE_OF_TRUTH.md §5, 2026-09-30): the Modeller DISPLAYS an edit's cost Δ and must price it with the SAME rates the Viewer
   // prices with — which are the user's LOCALE rates (this file overrides the global RATES/LABOR_RATES on load: en_US IfcWall 48/M2 vs the CIDB 145).
@@ -383,7 +442,17 @@
     window._TRL = {};
   }
 
-  fetchLocale(localeCode, function(err, data) {
+  // S226 §R2: labels (i18n/<code>.json) and cost data (locales/<code>.js) load in parallel; _TRL is assembled once
+  // both have answered — labels first, then the cost pack (which no longer carries labels, so cost keys win only on
+  // cost keys), then URL overrides. One trl-ready for the page, as before.
+  applyLangDir(localeCode);
+  var _labels = null, _cost = null, _costErr = null, _pending = 2;
+  function _part() { if (--_pending === 0) _assemble(); }
+  fetchLabels(localeCode, function(labels) { _labels = labels; _part(); });
+  fetchLocale(localeCode, function(err, data) { _cost = data; _costErr = err; _part(); });
+  function _assemble() {
+    var data = _cost, labels = _labels;
+    if (labels) deepMerge(_TRL, labels);
     if (data) {
       deepMerge(_TRL, data);
       applyRateOverrides(data);
@@ -407,8 +476,9 @@
     }
 
     // Dispatch event for other scripts to know locale is ready
-    window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: localeCode } }));
-  });
+    window._TRL_READY = true;
+    window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: localeCode, labels: Object.keys(labels || {}).length, costErr: _costErr ? String(_costErr.message || _costErr) : null } }));
+  }
 
   // Expose for other modules
   window._TRL_LOADER = {

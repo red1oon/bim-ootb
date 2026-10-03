@@ -1,0 +1,1984 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--BIM OOTB Viewer — AD_Message_Trl ms_MY — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/ms_MY.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03) — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ms_MY" table="AD_Message">
+ <row id="1000000" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Frictionless BIM">BIM OOTB — Frictionless BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="MsgText" original="Discipline">Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000002" trl="Y">
+  <value column="MsgText" original="IFC Class">Kelas IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000003" trl="Y">
+  <value column="MsgText" original="Quantity">Kuantiti</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000004" trl="Y">
+  <value column="MsgText" original="UOM">UOM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000005" trl="Y">
+  <value column="MsgText" original="Description">Keterangan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000006" trl="Y">
+  <value column="MsgText" original="Storey">Tingkat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000007" trl="Y">
+  <value column="MsgText" original="Phase">Fasa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000008" trl="Y">
+  <value column="MsgText" original="Item">Item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000009" trl="Y">
+  <value column="MsgText" original="Material">Bahan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000010" trl="Y">
+  <value column="MsgText" original="Labour">Buruh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000011" trl="Y">
+  <value column="MsgText" original="Equipment">Peralatan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000012" trl="Y">
+  <value column="MsgText" original="Total">Jumlah</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000013" trl="Y">
+  <value column="MsgText" original="Unit Rate">Kadar Seunit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000014" trl="Y">
+  <value column="MsgText" original="Mat Rate">Harga Bahan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000015" trl="Y">
+  <value column="MsgText" original="Lab Rate">Kadar Buruh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000016" trl="Y">
+  <value column="MsgText" original="Rate/Day">Kadar/Hari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000017" trl="Y">
+  <value column="MsgText" original="Trade">Tred</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000018" trl="Y">
+  <value column="MsgText" original="Crew Size">Saiz Kumpulan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000019" trl="Y">
+  <value column="MsgText" original="Man-Days">Hari-Orang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000020" trl="Y">
+  <value column="MsgText" original="Duration (days)">Tempoh (hari)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000021" trl="Y">
+  <value column="MsgText" original="GRAND TOTAL">JUMLAH BESAR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000022" trl="Y">
+  <value column="MsgText" original="SUBTOTAL">JUMLAH KECIL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000023" trl="Y">
+  <value column="MsgText" original="WBS">WBS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000024" trl="Y">
+  <value column="MsgText" original="Task Name">Nama Tugas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000025" trl="Y">
+  <value column="MsgText" original="Productivity">Produktiviti</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000026" trl="Y">
+  <value column="MsgText" original="Gangs">Kumpulan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000027" trl="Y">
+  <value column="MsgText" original="Start Date">Tarikh Mula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000028" trl="Y">
+  <value column="MsgText" original="Finish Date">Tarikh Tamat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000029" trl="Y">
+  <value column="MsgText" original="Labor Resource">Sumber Buruh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000030" trl="Y">
+  <value column="MsgText" original="Status">Status</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000031" trl="Y">
+  <value column="MsgText" original="% Complete">% Siap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000032" trl="Y">
+  <value column="MsgText" original="Day Offset">Offset Hari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000033" trl="Y">
+  <value column="MsgText" original="Date">Tarikh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000034" trl="Y">
+  <value column="MsgText" original="Milestone">Batu Penanda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000035" trl="Y">
+  <value column="MsgText" original="Task">Tugas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000036" trl="Y">
+  <value column="MsgText" original="Task Count">Bilangan Tugas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000037" trl="Y">
+  <value column="MsgText" original="Total Days">Jumlah Hari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000038" trl="Y">
+  <value column="MsgText" original="Total Man-Days">Jumlah Hari-Orang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000039" trl="Y">
+  <value column="MsgText" original="Week">Minggu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000040" trl="Y">
+  <value column="MsgText" original="Cumulative %">Kumulatif %</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000041" trl="Y">
+  <value column="MsgText" original="5D — Cost by Discipline">5D — Kos Mengikut Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000042" trl="Y">
+  <value column="MsgText" original="Cost Components by Discipline">Komponen Kos Mengikut Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000043" trl="Y">
+  <value column="MsgText" original="Task Distribution by Phase">Taburan Tugas Mengikut Fasa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000044" trl="Y">
+  <value column="MsgText" original="Task Count by Discipline">Bilangan Tugas Mengikut Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000045" trl="Y">
+  <value column="MsgText" original="4D — Phase Duration (Total Days)">4D — Tempoh Fasa (Jumlah Hari)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000046" trl="Y">
+  <value column="MsgText" original="4D — Resource Workload (Man-Days by Phase)">4D — Beban Kerja Sumber (Hari-Pekerja Mengikut Fasa)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000047" trl="Y">
+  <value column="MsgText" original="4D — S-Curve Progress">4D — Keluk-S Kemajuan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000048" trl="Y">
+  <value column="MsgText" original="4D — Milestone Timeline">4D — Garis Masa Batu Penanda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000049" trl="Y">
+  <value column="MsgText" original="4D — Gantt Timeline (Strategic Tasks by Phase)">4D — Garis Masa Gantt (Tugas Strategik Mengikut Fasa)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000050" trl="Y">
+  <value column="MsgText" original="5D — Variation Order Impact">5D — Kesan Arahan Perubahan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000051" trl="Y">
+  <value column="MsgText" original="Cover Sheet">Muka Depan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000052" trl="Y">
+  <value column="MsgText" original="Executive Summary">Ringkasan Eksekutif</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000053" trl="Y">
+  <value column="MsgText" original="Material Summary">Ringkasan Bahan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000054" trl="Y">
+  <value column="MsgText" original="Labour Summary">Ringkasan Buruh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000055" trl="Y">
+  <value column="MsgText" original="Equipment Summary">Ringkasan Peralatan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000056" trl="Y">
+  <value column="MsgText" original="Detailed BOQ">BOQ Terperinci</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000057" trl="Y">
+  <value column="MsgText" original="Provisional Sums">Peruntukan Sementara</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000058" trl="Y">
+  <value column="MsgText" original="Construction Schedule">Jadual Pembinaan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000059" trl="Y">
+  <value column="MsgText" original="Project Summary">Ringkasan Projek</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000060" trl="Y">
+  <value column="MsgText" original="BIM 4D Dashboard">BIM 4D Papan Pemuka</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000061" trl="Y">
+  <value column="MsgText" original="COMPREHENSIVE BILL OF QUANTITIES">SENARAI KUANTITI KOMPREHENSIF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000062" trl="Y">
+  <value column="MsgText" original="COST BREAKDOWN METHODOLOGY">METODOLOGI PECAHAN KOS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000063" trl="Y">
+  <value column="MsgText" original="MATERIAL COST SUMMARY">RINGKASAN KOS BAHAN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000064" trl="Y">
+  <value column="MsgText" original="LABOUR COST SUMMARY">RINGKASAN KOS BURUH</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000065" trl="Y">
+  <value column="MsgText" original="EQUIPMENT COST SUMMARY">RINGKASAN KOS PERALATAN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000066" trl="Y">
+  <value column="MsgText" original="PROVISIONAL SUMS">PERUNTUKAN SEMENTARA</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000067" trl="Y">
+  <value column="MsgText" original="Phase Duration Analysis">Analisis Tempoh Fasa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000068" trl="Y">
+  <value column="MsgText" original="Resource Workload Analysis">Analisis Beban Kerja Sumber</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000069" trl="Y">
+  <value column="MsgText" original="S-Curve Progress">Kemajuan Keluk-S</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000070" trl="Y">
+  <value column="MsgText" original="Milestone Timeline">Garis Masa Batu Penanda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000071" trl="Y">
+  <value column="MsgText" original="Gantt Timeline (Strategic Tasks)">Garis Masa Gantt (Tugas Strategik)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000072" trl="Y">
+  <value column="MsgText" original="Not Started">Belum Dimulakan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000073" trl="Y">
+  <value column="MsgText" original="Frictionless BIM. Two DBs. One browser. Zero install.">BIM Tanpa Geseran. Dua DB. Satu Pelayar. Tanpa Pemasangan.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000074" trl="Y">
+  <value column="MsgText" original="Tools">Alatan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000075" trl="Y">
+  <value column="MsgText" original="Storeys">Tingkat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000076" trl="Y">
+  <value column="MsgText" original="Disciplines">Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000077" trl="Y">
+  <value column="MsgText" original="Filter...">Tapis...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000078" trl="Y">
+  <value column="MsgText" original="All Storeys">Semua Tingkat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000079" trl="Y">
+  <value column="MsgText" original="X-Ray">X-Ray</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000080" trl="Y">
+  <value column="MsgText" original="Screenshot">Tangkap Skrin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000081" trl="Y">
+  <value column="MsgText" original="Fullscreen">Skrin Penuh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000082" trl="Y">
+  <value column="MsgText" original="Light/Dark">Terang/Gelap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000083" trl="Y">
+  <value column="MsgText" original="Fly Around">Terbang Keliling</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000084" trl="Y">
+  <value column="MsgText" original="Walk Speed">Kelajuan Jalan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000085" trl="Y">
+  <value column="MsgText" original="4D/5D Export">Eksport 4D/5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000086" trl="Y">
+  <value column="MsgText" original="Issues">Isu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000087" trl="Y">
+  <value column="MsgText" original="Measure">Ukur</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000088" trl="Y">
+  <value column="MsgText" original="Section Cut">Keratan Rentas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000089" trl="Y">
+  <value column="MsgText" original="2D Plans">Pelan 2D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000090" trl="Y">
+  <value column="MsgText" original="Site Camera">Kamera Tapak</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000091" trl="Y">
+  <value column="MsgText" original="Walk Mode">Mod Jalan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000092" trl="Y">
+  <value column="MsgText" original="Voice Search">Carian Suara</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000093" trl="Y">
+  <value column="MsgText" original="Cancel">Batal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000094" trl="Y">
+  <value column="MsgText" original="Back">Kembali</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000095" trl="Y">
+  <value column="MsgText" original="Save">Simpan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000096" trl="Y">
+  <value column="MsgText" original="Undo">Buat Asal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000097" trl="Y">
+  <value column="MsgText" original="Retake">Ambil Semula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000098" trl="Y">
+  <value column="MsgText" original="Go">Pergi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000099" trl="Y">
+  <value column="MsgText" original="Clear">Padam</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000100" trl="Y">
+  <value column="MsgText" original="Clear All">Padam Semua</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000101" trl="Y">
+  <value column="MsgText" original="Export Excel">Eksport Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000102" trl="Y">
+  <value column="MsgText" original="Share → WhatsApp">Kongsi → WhatsApp</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000103" trl="Y">
+  <value column="MsgText" original="Show in 3D">Tunjuk dalam 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000104" trl="Y">
+  <value column="MsgText" original="Snag">Cacat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000105" trl="Y">
+  <value column="MsgText" original="Class">Kelas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000106" trl="Y">
+  <value column="MsgText" original="Name">Nama</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000107" trl="Y">
+  <value column="MsgText" original="GUID">GUID</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000108" trl="Y">
+  <value column="MsgText" original="Building">Bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000109" trl="Y">
+  <value column="MsgText" original="GPS">GPS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000110" trl="Y">
+  <value column="MsgText" original="Compass">Kompas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000111" trl="Y">
+  <value column="MsgText" original="Time">Masa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000112" trl="Y">
+  <value column="MsgText" original="Notes">Nota</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000113" trl="Y">
+  <value column="MsgText" original="Open">Buka</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000114" trl="Y">
+  <value column="MsgText" original="Buildings">Bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000115" trl="Y">
+  <value column="MsgText" original="Elements">Elemen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000116" trl="Y">
+  <value column="MsgText" original="Meshes">Mesh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000117" trl="Y">
+  <value column="MsgText" original="Streaming">Penstriman</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000118" trl="Y">
+  <value column="MsgText" original="Rendered">Dipapar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000119" trl="Y">
+  <value column="MsgText" original="Done">Siap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000120" trl="Y">
+  <value column="MsgText" original="Variance">Varians</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000121" trl="Y">
+  <value column="MsgText" original="Initializing...">Memulakan...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000122" trl="Y">
+  <value column="MsgText" original="Walk Mode">Mod Jalan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000123" trl="Y">
+  <value column="MsgText" original="Stand at the building entrance and tap SET to anchor your GPS position to the model.">Berdiri di pintu masuk bangunan dan ketik SET untuk menambat kedudukan GPS anda ke model.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000124" trl="Y">
+  <value column="MsgText" original="SET">TETAPKAN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000125" trl="Y">
+  <value column="MsgText" original="Walk Mode: No building data">Mod Jalan: Tiada data bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000126" trl="Y">
+  <value column="MsgText" original="Walk Mode: No GPS — orientation only">Mod Jalan: Tiada GPS — orientasi sahaja</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000127" trl="Y">
+  <value column="MsgText" original="Walk Mode stopped.">Mod Jalan dihentikan.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000128" trl="Y">
+  <value column="MsgText" original="Drive-Thru: Tap to walk, hold to glide">Pandu Lalu: Ketik untuk jalan, tekan lama untuk meluncur</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000129" trl="Y">
+  <value column="MsgText" original="Drive-Thru: {n} steps ({d}m)">Pandu Lalu: {n} langkah ({d}m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000130" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: {n} MEP elements behind {name}">X-Ray Dinding: {n} elemen MEP di belakang {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000131" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: No MEP elements found behind {name}">X-Ray Dinding: Tiada elemen MEP di belakang {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000132" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Site Inspection">BIM OOTB — Pemeriksaan Tapak</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000133" trl="Y">
+  <value column="MsgText" original="GPS: acquiring...">GPS: mencari...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000134" trl="Y">
+  <value column="MsgText" original="GPS: unavailable">GPS: tidak tersedia</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000135" trl="Y">
+  <value column="MsgText" original="GPS: not supported">GPS: tidak disokong</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000136" trl="Y">
+  <value column="MsgText" original="BIM Model View">Paparan Model BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000137" trl="Y">
+  <value column="MsgText" original="Bearing">Arah</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000138" trl="Y">
+  <value column="MsgText" original="Arrow">Anak Panah</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000139" trl="Y">
+  <value column="MsgText" original="Circle">Bulatan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000140" trl="Y">
+  <value column="MsgText" original="Draw">Lukis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000141" trl="Y">
+  <value column="MsgText" original="Text">Teks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000142" trl="Y">
+  <value column="MsgText" original="Reading file...">Membaca fail...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000143" trl="Y">
+  <value column="MsgText" original="Reading {fmt} file...">Membaca fail {fmt}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000144" trl="Y">
+  <value column="MsgText" original="Very large file ({n}MB) — may take a few minutes">Fail sangat besar ({n}MB) — mungkin mengambil beberapa minit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000145" trl="Y">
+  <value column="MsgText" original="Large file ({n}MB) — please wait...">Fail besar ({n}MB) — sila tunggu...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000146" trl="Y">
+  <value column="MsgText" original="Building databases...">Membina pangkalan data...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000147" trl="Y">
+  <value column="MsgText" original="Imported {n} elements">{n} elemen diimport</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000148" trl="Y">
+  <value column="MsgText" original="Imported {n} elements from {fmt}">{n} elemen diimport dari {fmt}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000149" trl="Y">
+  <value column="MsgText" original="CITY MODE — {n} buildings, {m} elements. Click a building to load.">MOD BANDAR — {n} bangunan, {m} elemen. Klik bangunan untuk muat.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000150" trl="Y">
+  <value column="MsgText" original="Flew to {name} ({n} elements)">Terbang ke {name} ({n} elemen)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000151" trl="Y">
+  <value column="MsgText" original="Downloading {name}...">Memuat turun {name}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000152" trl="Y">
+  <value column="MsgText" original="CLEARED — {n} meshes removed.">DIPADAM — {n} mesh dibuang.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000153" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — 0/{n} elements">PENSTRIMAN {name} — 0/{n} elemen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000154" trl="Y">
+  <value column="MsgText" original="Downloaded {name}. Streaming {bld}...">Dimuat turun {name}. Penstriman {bld}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000155" trl="Y">
+  <value column="MsgText" original="count doors, floor 1 walls, total cost, Find fire pump...">kira pintu, dinding tingkat 1, jumlah kos, Cari pam bomba...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000156" trl="Y">
+  <value column="MsgText" original="No speech detected — tap mic again">Tiada pertuturan dikesan — ketik mikrofon sekali lagi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000157" trl="Y">
+  <value column="MsgText" original="No match. Try: &quot;count doors&quot; or &quot;floor 1 walls&quot;">Tiada padanan. Cuba: "kira pintu" atau "dinding tingkat 1"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000158" trl="Y">
+  <value column="MsgText" original="No results for &quot;{q}&quot;">Tiada keputusan untuk "{q}"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000159" trl="Y">
+  <value column="MsgText" original="Details ({n})">Butiran ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000160" trl="Y">
+  <value column="MsgText" original="Issues">Isu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000161" trl="Y">
+  <value column="MsgText" original="Swipe to show panels">Leret untuk tunjuk panel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000162" trl="Y">
+  <value column="MsgText" original="Swipe to hide panels">Leret untuk sembunyi panel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000163" trl="Y">
+  <value column="MsgText" original="Section Cut">Keratan Rentas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000164" trl="Y">
+  <value column="MsgText" original="New element">Elemen baharu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000165" trl="Y">
+  <value column="MsgText" original="Existed">Sedia ada</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000166" trl="Y">
+  <value column="MsgText" original="— (demolished)">— (dirobohkan)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000167" trl="Y">
+  <value column="MsgText" original="Settings">Tetapan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000168" trl="Y">
+  <value column="MsgText" original="Language">Bahasa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000169" trl="Y">
+  <value column="MsgText" original="Currency">Mata Wang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000170" trl="Y">
+  <value column="MsgText" original="Rate Source">Sumber Kadar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000171" trl="Y">
+  <value column="MsgText" original="Reset to Defaults">Set Semula ke Asal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000172" trl="Y">
+  <value column="MsgText" original="Apply">Guna</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000173" trl="Y">
+  <value column="MsgText" original="Check for Updates">Semak Kemas Kini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000174" trl="Y">
+  <value column="MsgText" original="Downloaded {name}.ifc ({size} KB)">{name}.ifc dimuat turun ({size} KB)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000175" trl="Y">
+  <value column="MsgText" original="Please drop an .ifc file">Sila letakkan fail .ifc</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000176" trl="Y">
+  <value column="MsgText" original="Exporting IFC ({n} elements)...">Mengeksport IFC ({n} elemen)...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000177" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel...">Menjana Excel 4D...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000178" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel — preparing charts...">Menjana Excel 4D — menyediakan carta...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000179" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel...">Menjana Excel 5D...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000180" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel — preparing charts...">Menjana Excel 5D — menyediakan carta...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000181" trl="Y">
+  <value column="MsgText" original="Loading">Memuatkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000182" trl="Y">
+  <value column="MsgText" original="No data.">Tiada data.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000183" trl="Y">
+  <value column="MsgText" original="Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL">Tidak disokong: .{ext} — Diterima: IFC, DAE, OBJ, GLB, 3DS, FBX, STL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000184" trl="Y">
+  <value column="MsgText" original="Description">Keterangan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000185" trl="Y">
+  <value column="MsgText" original="Parameter">Parameter</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000186" trl="Y">
+  <value column="MsgText" original="Value">Nilai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000187" trl="Y">
+  <value column="MsgText" original="Saved {f} ({n} sheets)">{f} disimpan ({n} helaian)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000188" trl="Y">
+  <value column="MsgText" original="includes Variance Order">termasuk Perintah Variasi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000189" trl="Y">
+  <value column="MsgText" original="Search elements...">Cari elemen...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000190" trl="Y">
+  <value column="MsgText" original="All types">Semua jenis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000191" trl="Y">
+  <value column="MsgText" original="▶ Navigate">▶ Navigasi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000192" trl="Y">
+  <value column="MsgText" original="▶ Navigate to selected">▶ Navigasi ke pilihan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000193" trl="Y">
+  <value column="MsgText" original="{n} found">{n} dijumpai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000194" trl="Y">
+  <value column="MsgText" original="0 matches">0 dijumpai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000195" trl="Y">
+  <value column="MsgText" original="Did you mean:">Adakah anda bermaksud:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000196" trl="Y">
+  <value column="MsgText" original="No start position — cannot navigate">Tiada posisi permulaan — tidak dapat navigasi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000197" trl="Y">
+  <value column="MsgText" original="No path found">Laluan tidak ditemui</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000198" trl="Y">
+  <value column="MsgText" original="Arrived — walk freely or Find again">Tiba — berjalan bebas atau cari semula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000199" trl="Y">
+  <value column="MsgText" original="Watch Demo">Tonton Demo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000200" trl="Y">
+  <value column="MsgText" original="About">Perihal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000201" trl="Y">
+  <value column="MsgText" original="outofthebox">siapsedia</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000202" trl="Y">
+  <value column="MsgText" original="In 60 seconds, the way you BIM will never be the same.">Dalam 60 saat, cara anda BIM tidak akan sama lagi.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000203" trl="Y">
+  <value column="MsgText" original="Import">Import</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000204" trl="Y">
+  <value column="MsgText" original="View">Lihat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000205" trl="Y">
+  <value column="MsgText" original="Compare">Banding</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000206" trl="Y">
+  <value column="MsgText" original="Costed">Dikira</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000207" trl="Y">
+  <value column="MsgText" original="Done">Siap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000208" trl="Y">
+  <value column="MsgText" original="Drop IFC or 3D file here">Lepaskan fail IFC atau 3D di sini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000209" trl="Y">
+  <value column="MsgText" original="My Buildings">Bangunan Saya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000210" trl="Y">
+  <value column="MsgText" original="City Buildings">Bangunan Bandar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000211" trl="Y">
+  <value column="MsgText" original="Landmark Buildings">Bangunan Utama</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000212" trl="Y">
+  <value column="MsgText" original="Loading building manifest...">Memuatkan manifes bangunan...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000213" trl="Y">
+  <value column="MsgText" original="Created by">Dicipta oleh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000214" trl="Y">
+  <value column="MsgText" original="Live Stats">Statistik Langsung</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000215" trl="Y">
+  <value column="MsgText" original="COMPLETE THE CITY">LENGKAPKAN BANDAR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000216" trl="Y">
+  <value column="MsgText" original="buildings explored">bangunan diterokai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000217" trl="Y">
+  <value column="MsgText" original="CITY UNLOCKED">BANDAR DIBUKA</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000218" trl="Y">
+  <value column="MsgText" original="LAUNCH CITY 1M">LANCAR BANDAR 1M</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000219" trl="Y">
+  <value column="MsgText" original="Open 3D Viewer">Buka Pemapar 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000220" trl="Y">
+  <value column="MsgText" original="Open Tabs">Tab Terbuka</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000221" trl="Y">
+  <value column="MsgText" original="Theory">Teori</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000222" trl="Y">
+  <value column="MsgText" original="Practical">Praktikal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000223" trl="Y">
+  <value column="MsgText" original="Loading WebAssembly...">Memuatkan WebAssembly...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000224" trl="Y">
+  <value column="MsgText" original="Fetching {url}...">Mengambil {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000225" trl="Y">
+  <value column="MsgText" original="DB loaded ({size}MB). Querying...">DB dimuatkan ({size}MB). Membuat pertanyaan...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000226" trl="Y">
+  <value column="MsgText" original="Library loaded ({size}MB). Streaming nearest building...">Perpustakaan dimuatkan ({size}MB). Penstriman bangunan terdekat...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000227" trl="Y">
+  <value column="MsgText" original="Using main DB for geometry. Streaming...">Menggunakan DB utama untuk geometri. Penstriman...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000228" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — {i}/{n} elements">PENSTRIMAN {name} — {i}/{n} elemen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000229" trl="Y">
+  <value column="MsgText" original="DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.">SELESAI — {name} {n} elemen ({g} kumpulan). {b} bangunan dipaparkan.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000230" trl="Y">
+  <value column="MsgText" original="{name} — DONE">{name} — SELESAI</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000231" trl="Y">
+  <value column="MsgText" original="Cleared. Search and click a building to stream.">Dipadam. Cari dan klik bangunan untuk distrim.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000232" trl="Y">
+  <value column="MsgText" original="2D Plans">Pelan 2D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000233" trl="Y">
+  <value column="MsgText" original="Layers">Lapisan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000234" trl="Y">
+  <value column="MsgText" original="Fit">Sesuai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000235" trl="Y">
+  <value column="MsgText" original="Generate">Jana</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000236" trl="Y">
+  <value column="MsgText" original="Export DXF">Eksport DXF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000237" trl="Y">
+  <value column="MsgText" original="Drop DXF file here">Lepaskan fail DXF di sini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000238" trl="Y">
+  <value column="MsgText" original="Entities: ">Entiti: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000239" trl="Y">
+  <value column="MsgText" original="Layers: ">Lapisan: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000240" trl="Y">
+  <value column="MsgText" original="Class: ">Kelas: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000241" trl="Y">
+  <value column="MsgText" original="Name: ">Nama: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000242" trl="Y">
+  <value column="MsgText" original="Storey: ">Tingkat: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000243" trl="Y">
+  <value column="MsgText" original="— select sheet —">— pilih helaian —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000244" trl="Y">
+  <value column="MsgText" original="— storey —">— tingkat —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000245" trl="Y">
+  <value column="MsgText" original="Floor Plan">Pelan Lantai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000246" trl="Y">
+  <value column="MsgText" original="Front Elev">Pandangan Hadapan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000247" trl="Y">
+  <value column="MsgText" original="Rear Elev">Pandangan Belakang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000248" trl="Y">
+  <value column="MsgText" original="Left Elev">Pandangan Kiri</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000249" trl="Y">
+  <value column="MsgText" original="Right Elev">Pandangan Kanan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000250" trl="Y">
+  <value column="MsgText" original="Loading {url}...">Memuatkan {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000251" trl="Y">
+  <value column="MsgText" original="Loaded: {n} entities, {l} layers">Dimuatkan: {n} entiti, {l} lapisan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000252" trl="Y">
+  <value column="MsgText" original="Generating {mode}...">Menjana {mode}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000253" trl="Y">
+  <value column="MsgText" original="Generated: {n} entities, {l} layers ({ms}ms)">Dijana: {n} entiti, {l} lapisan ({ms}ms)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000254" trl="Y">
+  <value column="MsgText" original="Loading databases...">Memuatkan pangkalan data...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000255" trl="Y">
+  <value column="MsgText" original="DBs loaded — generating...">DB dimuatkan — menjana...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000256" trl="Y">
+  <value column="MsgText" original="No DB loaded — add ?db= to URL">Tiada DB — tambah ?db=</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000257" trl="Y">
+  <value column="MsgText" original="Drop a .dxf file">Lepaskan fail .dxf</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000258" trl="Y">
+  <value column="MsgText" original="Nothing to export">Tiada yang perlu dieksport</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000259" trl="Y">
+  <value column="MsgText" original="2D views are desktop-only">Paparan 2D untuk desktop sahaja</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000260" trl="Y">
+  <value column="MsgText" original="Close Measure first">Tutup Ukur dahulu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000261" trl="Y">
+  <value column="MsgText" original="Back online">Kembali dalam talian</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000262" trl="Y">
+  <value column="MsgText" original="Offline mode — cached buildings still available">Mod luar talian — bangunan cache masih tersedia</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000263" trl="Y">
+  <value column="MsgText" original="Select a building first.">Pilih bangunan dahulu.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000264" trl="Y">
+  <value column="MsgText" original="4D/5D analytics opened for {name}">Analitik 4D/5D dibuka untuk {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000265" trl="Y">
+  <value column="MsgText" original="Screenshot saved to Downloads/">Tangkap skrin disimpan ke Muat Turun/</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000266" trl="Y">
+  <value column="MsgText" original="Spatial index ready">Indeks spatial sedia</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000267" trl="Y">
+  <value column="MsgText" original="Building spatial index…">Membina indeks spatial…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000268" trl="Y">
+  <value column="MsgText" original="Report already generating...">Laporan sedang dijana...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000269" trl="Y">
+  <value column="MsgText" original="Building report…">Membina laporan…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000270" trl="Y">
+  <value column="MsgText" original="No clashes — open matrix first">Tiada pertembungan — buka matriks dahulu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000271" trl="Y">
+  <value column="MsgText" original="Clash report opened in new tab">Laporan pertembungan dibuka dalam tab baharu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000272" trl="Y">
+  <value column="MsgText" original="No clash data — open matrix first">Tiada data pertembungan — buka matriks dahulu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000273" trl="Y">
+  <value column="MsgText" original="CSV export already in progress...">Eksport CSV sedang berjalan...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000274" trl="Y">
+  <value column="MsgText" original="CSV exported — {n} clashes">CSV dieksport — {n} pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000275" trl="Y">
+  <value column="MsgText" original="Exporting CSV… pair {i}/{n}">Mengeksport CSV… pasangan {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000276" trl="Y">
+  <value column="MsgText" original="No clash pairs to export">Tiada pasangan pertembungan untuk dieksport</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000277" trl="Y">
+  <value column="MsgText" original="Matrix needs 2+ disciplines (found: {d})">Matriks perlukan 2+ disiplin (dijumpai: {d})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000278" trl="Y">
+  <value column="MsgText" original="Close 2D view first">Tutup paparan 2D dahulu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000279" trl="Y">
+  <value column="MsgText" original="Click for dimensions. Right-click for Info">Klik untuk dimensi. Klik-kanan untuk Info</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000280" trl="Y">
+  <value column="MsgText" original="Tap for dimensions. Long-press for Info. Tap here to exit.">Ketik untuk dimensi. Tekan lama untuk Info. Ketik sini untuk keluar.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000281" trl="Y">
+  <value column="MsgText" original="Tap another spot for length, same spot for Area">Ketik tempat lain untuk panjang, tempat sama untuk Luas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000282" trl="Y">
+  <value column="MsgText" original="Clash snag shared">Snag pertembungan dikongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000283" trl="Y">
+  <value column="MsgText" original="Check Clash at Desktop..">Semak Pertembungan di Desktop..</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000284" trl="Y">
+  <value column="MsgText" original="Generating report… {done}/{total} pairs">Menjana laporan… {done}/{total} pasangan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000285" trl="Y">
+  <value column="MsgText" original="Counting {a} vs {b}… {i}/{n}">Mengira {a} vs {b}… {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000286" trl="Y">
+  <value column="MsgText" original="Fetching city index ({url})...">Mengambil indeks bandar ({url})...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000287" trl="Y">
+  <value column="MsgText" original="{name} already loaded ({n} elements)">{name} sudah dimuatkan ({n} elemen)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000288" trl="Y">
+  <value column="MsgText" original="Unknown building: {name}">Bangunan tidak dikenali: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000289" trl="Y">
+  <value column="MsgText" original="No streamable elements for {name}">Tiada elemen untuk distrim bagi {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000290" trl="Y">
+  <value column="MsgText" original="MEP BOQ Guide">Panduan BOQ MEP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000291" trl="Y">
+  <value column="MsgText" original="SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)&lt;br&gt;Pipes/ducts → length (m) · slabs → area (m²) · fittings → count&lt;br&gt;17 country rate templates from national publications&lt;br&gt;Section totals + labour trades + charts + reinstatement value&lt;br&gt;CSV (UTF-8 BOM) or shareable self-contained HTML">SMM2 §R–V · IFC→klasifikasi disiplin (PLB·ELEC·ACMV·FP)&lt;br&gt;Paip/salur → panjang (m) · papak → luas (m²) · kelengkapan → bilangan&lt;br&gt;17 templat kadar negara dari penerbitan rasmi&lt;br&gt;Jumlah seksyen + tred buruh + carta + nilai insurans&lt;br&gt;CSV (UTF-8 BOM) atau HTML kendiri boleh kongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000292" trl="Y">
+  <value column="MsgText" original="No DB for archetype: {name}">Tiada DB untuk arketip: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000293" trl="Y">
+  <value column="MsgText" original="Disposal Systems">Sistem Pelupusan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000294" trl="Y">
+  <value column="MsgText" original="Piped Supply Systems">Sistem Bekalan Paip</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000295" trl="Y">
+  <value column="MsgText" original="Mechanical Heating / Cooling">Pemanasan / Penyejukan Mekanikal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000296" trl="Y">
+  <value column="MsgText" original="Ventilation / Air Conditioning">Pengudaraan / Penyaman Udara</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000297" trl="Y">
+  <value column="MsgText" original="Electrical Supply / Power / Lighting">Bekalan Elektrik / Kuasa / Pencahayaan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000298" trl="Y">
+  <value column="MsgText" original="Communications / Security / Controls">Komunikasi / Keselamatan / Kawalan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000299" trl="Y">
+  <value column="MsgText" original="Mechanical / Electrical Services (General)">Perkhidmatan Mekanikal / Elektrik (Am)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000300" trl="Y">
+  <value column="MsgText" original="REINSTATEMENT VALUE">NILAI PENGEMBALIAN SEMULA</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000301" trl="Y">
+  <value column="MsgText" original="Contingency">Luar Jangka</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000302" trl="Y">
+  <value column="MsgText" original="INSURED VALUE">NILAI DIINSURANKAN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000303" trl="Y">
+  <value column="MsgText" original="MEP BOQ complete">BOQ MEP selesai</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000304" trl="Y">
+  <value column="MsgText" original="sections">seksyen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000305" trl="Y">
+  <value column="MsgText" original="Section">Seksyen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000306" trl="Y">
+  <value column="MsgText" original="Share Report">Kongsi Laporan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000307" trl="Y">
+  <value column="MsgText" original="No database specified. Open from 4D/5D Analytics page.">Tiada pangkalan data. Buka dari halaman Analitik 4D/5D.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000308" trl="Y">
+  <value column="MsgText" original="No elements found for building:">Tiada elemen dijumpai untuk bangunan:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000309" trl="Y">
+  <value column="MsgText" original="Red — you go in (sound on, then we load)">Merah — anda masuk (bunyi hidup, kemudian kami muatkan)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000310" trl="Y">
+  <value column="MsgText" original="Blue — nothing happens, nothing loads">Biru — tiada apa berlaku, tiada apa dimuatkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000311" trl="Y">
+  <value column="MsgText" original="&quot;You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe.&quot;">"Anda ambil pil biru — cerita tamat, anda terjaga di katil dan percaya apa sahaja yang anda mahu percaya."</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000312" trl="Y">
+  <value column="MsgText" original="← back">← kembali</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000313" trl="Y">
+  <value column="MsgText" original="choose your door">pilih pintu anda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000314" trl="Y">
+  <value column="MsgText" original="Site traffic stats (GoatCounter)">Statistik trafik laman (GoatCounter)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000315" trl="Y">
+  <value column="MsgText" original="BUILDINGS &amp; IFC">BANGUNAN &amp; IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000316" trl="Y">
+  <value column="MsgText" original="drop your own IFC, or open a ready building — opens in the viewer">lepaskan IFC anda sendiri, atau buka bangunan sedia ada — dibuka dalam pemapar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000317" trl="Y">
+  <value column="MsgText" original="Buildings / IFC">Bangunan / IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000318" trl="Y">
+  <value column="MsgText" original="BIM Modeller">Pemodel BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000319" trl="Y">
+  <value column="MsgText" original="ERP">ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000320" trl="Y">
+  <value column="MsgText" original="User Guide">Panduan Pengguna</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000321" trl="Y">
+  <value column="MsgText" original="Watch demo">Tonton demo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000322" trl="Y">
+  <value column="MsgText" original="Clear cache">Kosongkan cache</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000323" trl="Y">
+  <value column="MsgText" original="More">Lagi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000324" trl="Y">
+  <value column="MsgText" original="BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.">Pemodelan BIM (DAGeVu) adalah pengalaman desktop — buka pada skrin yang lebih besar.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000325" trl="Y">
+  <value column="MsgText" original="↓ Drop IFC / 3D files here — or tap to browse">↓ Lepaskan fail IFC / 3D di sini — atau ketik untuk melayari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000326" trl="Y">
+  <value column="MsgText" original="multiple discipline files merge into one building">beberapa fail disiplin digabungkan menjadi satu bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000327" trl="Y">
+  <value column="MsgText" original="Blank Viewer">Pemapar Kosong</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000328" trl="Y">
+  <value column="MsgText" original="Open your own .db file">Buka fail .db anda sendiri</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000329" trl="Y">
+  <value column="MsgText" original="loading building manifest…">memuatkan manifes bangunan…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000330" trl="Y">
+  <value column="MsgText" original="City buildings">Bangunan bandar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000331" trl="Y">
+  <value column="MsgText" original="Landmark buildings">Bangunan mercu tanda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000332" trl="Y">
+  <value column="MsgText" original="elements">elemen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000333" trl="Y">
+  <value column="MsgText" original="reload">muat semula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000334" trl="Y">
+  <value column="MsgText" original="No DB for {name}">Tiada DB untuk {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000335" trl="Y">
+  <value column="MsgText" original="Reset to the start screen?&#10;&#10;Clears the in-browser building data:&#10;  • cached buildings&#10;  • any IFC scene you dropped in (not saved to a .db file)&#10;and returns you to the red / blue choice.&#10;&#10;Keeps: the installed app + offline data, and any .db you saved yourself.">Tetapkan semula ke skrin mula?
+
+Memadam data bangunan dalam pelayar:
+  • bangunan dalam cache
+  • mana-mana adegan IFC yang anda lepaskan (tidak disimpan sebagai fail .db)
+dan membawa anda kembali ke pilihan merah / biru.
+
+Kekal: aplikasi yang dipasang + data luar talian, dan mana-mana .db yang anda simpan sendiri.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000336" trl="Y">
+  <value column="MsgText" original="Grid Bays">Ruang Grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000337" trl="Y">
+  <value column="MsgText" original="Share">Kongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000338" trl="Y">
+  <value column="MsgText" original="Min/Max">Min/Maks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000339" trl="Y">
+  <value column="MsgText" original="Menu">Menu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000340" trl="Y">
+  <value column="MsgText" original="Previous phase">Fasa sebelumnya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000341" trl="Y">
+  <value column="MsgText" original="Next phase">Fasa seterusnya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000342" trl="Y">
+  <value column="MsgText" original="Bookmark this cut position">Tanda kedudukan keratan ini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000343" trl="Y">
+  <value column="MsgText" original="Remove bookmark">Buang penanda</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000344" trl="Y">
+  <value column="MsgText" original="Update ready — tap to refresh">Kemas kini sedia — ketik untuk muat semula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000345" trl="Y">
+  <value column="MsgText" original="Report Bug">Lapor Pepijat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000346" trl="Y">
+  <value column="MsgText" original="Save Building">Simpan Bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000347" trl="Y">
+  <value column="MsgText" original="Open Building">Buka Bangunan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000348" trl="Y">
+  <value column="MsgText" original="Find / Navigate">Cari / Navigasi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000349" trl="Y">
+  <value column="MsgText" original="Role View">Paparan Peranan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000350" trl="Y">
+  <value column="MsgText" original="Help">Bantuan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000351" trl="Y">
+  <value column="MsgText" original="World History">Sejarah Dunia</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000352" trl="Y">
+  <value column="MsgText" original="Page History">Sejarah Halaman</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000353" trl="Y">
+  <value column="MsgText" original="Walk">Jalan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000354" trl="Y">
+  <value column="MsgText" original="Pick Walk">Laluan Kutipan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000355" trl="Y">
+  <value column="MsgText" original="Share">Kongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000356" trl="Y">
+  <value column="MsgText" original="Human-Asset">Manusia-Aset</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000357" trl="Y">
+  <value column="MsgText" original="Measure">Ukur</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000358" trl="Y">
+  <value column="MsgText" original="Clash Matrix">Matriks Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000359" trl="Y">
+  <value column="MsgText" original="Sanity">Semakan Waras</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000360" trl="Y">
+  <value column="MsgText" original="Egress">Laluan Keluar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000361" trl="Y">
+  <value column="MsgText" original="X-Ray / Bbox">X-Ray / Bbox</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000362" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">Kotak Sempadan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000363" trl="Y">
+  <value column="MsgText" original="Time Machine">Mesin Masa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000364" trl="Y">
+  <value column="MsgText" original="4D Window">Tetingkap 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000365" trl="Y">
+  <value column="MsgText" original="4D Window — tap to generate a programme">Tetingkap 4D — ketik untuk menjana jadual</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000366" trl="Y">
+  <value column="MsgText" original="Section Cut">Keratan Rentas</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000367" trl="Y">
+  <value column="MsgText" original="Background">Latar Belakang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000368" trl="Y">
+  <value column="MsgText" original="Night">Malam</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000369" trl="Y">
+  <value column="MsgText" original="Palette">Palet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000370" trl="Y">
+  <value column="MsgText" original="Shadow + Ground">Bayang + Tanah</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000371" trl="Y">
+  <value column="MsgText" original="Fly Tour">Lawatan Terbang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000372" trl="Y">
+  <value column="MsgText" original="Nav LOD (large bldgs)">LOD navigasi (bangunan besar)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000373" trl="Y">
+  <value column="MsgText" original="4D / 5D">4D / 5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000374" trl="Y">
+  <value column="MsgText" original="Issues">Isu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000375" trl="Y">
+  <value column="MsgText" original="Fullscreen">Skrin Penuh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000376" trl="Y">
+  <value column="MsgText" original="Precision (Fine)">Ketepatan (Halus)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000377" trl="Y">
+  <value column="MsgText" original="Reset Camera">Set Semula Kamera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000378" trl="Y">
+  <value column="MsgText" original="Auto-Pivot">Pangsi Auto</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000379" trl="Y">
+  <value column="MsgText" original="Home">Laman Utama</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000380" trl="Y">
+  <value column="MsgText" original="Sound FX">Kesan Bunyi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000381" trl="Y">
+  <value column="MsgText" original="Settings">Tetapan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000382" trl="Y">
+  <value column="MsgText" original="Navigate">Navigasi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000383" trl="Y">
+  <value column="MsgText" original="Inspect">Periksa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000384" trl="Y">
+  <value column="MsgText" original="Camera / View">Kamera / Paparan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000385" trl="Y">
+  <value column="MsgText" original="Plumber">Tukang Paip</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000386" trl="Y">
+  <value column="MsgText" original="Electrician">Juruelektrik</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000387" trl="Y">
+  <value column="MsgText" original="ACMV Tech">Juruteknik ACMV</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000388" trl="Y">
+  <value column="MsgText" original="Structural">Struktur</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000389" trl="Y">
+  <value column="MsgText" original="Cleaner">Pembersih</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000390" trl="Y">
+  <value column="MsgText" original="5D Rate Pack">Pek Kadar 5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000391" trl="Y">
+  <value column="MsgText" original="Cache Info">Maklumat Cache</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000392" trl="Y">
+  <value column="MsgText" original="Reset Pill Icons">Set Semula Ikon Pil</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000393" trl="Y">
+  <value column="MsgText" original="Defaults restored">Lalai dipulihkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000394" trl="Y">
+  <value column="MsgText" original="Shadow + Ground — cycle Off → Earth → Grass → Paved">Bayang + Tanah — kitaran Mati → Tanah → Rumput → Berturap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000395" trl="Y">
+  <value column="MsgText" original="None">Tiada</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000396" trl="Y">
+  <value column="MsgText" original="Grass">Rumput</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000397" trl="Y">
+  <value column="MsgText" original="Earth">Tanah</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000398" trl="Y">
+  <value column="MsgText" original="Paved">Berturap</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000399" trl="Y">
+  <value column="MsgText" original="Blank scene — press Ctrl+O (Open Building) to load a .db file">Adegan kosong — tekan Ctrl+O (Buka Bangunan) untuk memuatkan fail .db</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000400" trl="Y">
+  <value column="MsgText" original="change in ⚙">tukar di ⚙</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000401" trl="Y">
+  <value column="MsgText" original="History — across pages">Sejarah — merentas halaman</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000402" trl="Y">
+  <value column="MsgText" original="Whole">Keseluruhan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000403" trl="Y">
+  <value column="MsgText" original="This page">Halaman ini</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000404" trl="Y">
+  <value column="MsgText" original="Close">Tutup</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000405" trl="Y">
+  <value column="MsgText" original="Fine precision">Ketepatan halus</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000406" trl="Y">
+  <value column="MsgText" original="Reset camera">Set semula kamera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000407" trl="Y">
+  <value column="MsgText" original="Auto-pivot on scene centre">Pangsi auto pada pusat adegan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000408" trl="Y">
+  <value column="MsgText" original="Still Refine (Alt+S)">Perhalus Imej Pegun (Alt+S)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000409" trl="Y">
+  <value column="MsgText" original="Populate (Alt+P)">Isi Penghuni (Alt+P)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000410" trl="Y">
+  <value column="MsgText" original="MaxQ Movie (Alt+C — press again to cancel)">Filem MaxQ (Alt+C — tekan lagi untuk batal)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000411" trl="Y">
+  <value column="MsgText" original="Time Machine">Mesin Masa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000412" trl="Y">
+  <value column="MsgText" original="Find">Cari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000413" trl="Y">
+  <value column="MsgText" original="Share">Kongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000414" trl="Y">
+  <value column="MsgText" original="Help">Bantuan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000415" trl="Y">
+  <value column="MsgText" original="Clash Matrix">Matriks Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000416" trl="Y">
+  <value column="MsgText" original="Color Studio">Studio Warna</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000417" trl="Y">
+  <value column="MsgText" original="Night">Malam</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000418" trl="Y">
+  <value column="MsgText" original="Shadow">Bayang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000419" trl="Y">
+  <value column="MsgText" original="Background">Latar Belakang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000420" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">Kotak Sempadan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000421" trl="Y">
+  <value column="MsgText" original="Cinema Orbit">Orbit Sinema</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000422" trl="Y">
+  <value column="MsgText" original="Document">Dokumen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000423" trl="Y">
+  <value column="MsgText" original="Grid">Grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000424" trl="Y">
+  <value column="MsgText" original="Table">Jadual</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000425" trl="Y">
+  <value column="MsgText" original="Next Phase">Fasa Seterusnya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000426" trl="Y">
+  <value column="MsgText" original="Save Design">Simpan Reka Bentuk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000427" trl="Y">
+  <value column="MsgText" original="Open Design">Buka Reka Bentuk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000428" trl="Y">
+  <value column="MsgText" original="MEP Routes">Laluan MEP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000429" trl="Y">
+  <value column="MsgText" original="UBBL Compliance">Pematuhan UBBL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000430" trl="Y">
+  <value column="MsgText" original="Rosetta Stone">Batu Rosetta</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000431" trl="Y">
+  <value column="MsgText" original="Disciplines">Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000432" trl="Y">
+  <value column="MsgText" original="Sun intensity">Keamatan matahari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000433" trl="Y">
+  <value column="MsgText" original="Exposure">Pendedahan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000434" trl="Y">
+  <value column="MsgText" original="Ambient">Ambien</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000435" trl="Y">
+  <value column="MsgText" original="Hemisphere">Hemisfera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000436" trl="Y">
+  <value column="MsgText" original="All">Semua</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000437" trl="Y">
+  <value column="MsgText" original="Off">Mati</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000438" trl="Y">
+  <value column="MsgText" original="On — {n} fixtures">Hidup — {n} lampu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000439" trl="Y">
+  <value column="MsgText" original="Find">Cari</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000440" trl="Y">
+  <value column="MsgText" original="Ask">Tanya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000441" trl="Y">
+  <value column="MsgText" original="Save .xlsx">Simpan .xlsx</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000442" trl="Y">
+  <value column="MsgText" original="All Types">Semua Jenis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000443" trl="Y">
+  <value column="MsgText" original="View back">Paparan sebelumnya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000444" trl="Y">
+  <value column="MsgText" original="View forward">Paparan seterusnya</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000445" trl="Y">
+  <value column="MsgText" original="Expand">Kembangkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000446" trl="Y">
+  <value column="MsgText" original="Voice not supported">Suara tidak disokong</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000447" trl="Y">
+  <value column="MsgText" original="Loading Find…">Memuatkan Cari…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000448" trl="Y">
+  <value column="MsgText" original="Find failed to load">Cari gagal dimuatkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000449" trl="Y">
+  <value column="MsgText" original="Compiling GPU shaders — please wait...">Menyusun shader GPU — sila tunggu...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000450" trl="Y">
+  <value column="MsgText" original="GPU shaders compiled in {ms}ms — rendering">Shader GPU disusun dalam {ms}ms — memaparkan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000451" trl="Y">
+  <value column="MsgText" original="OFFLINE">LUAR TALIAN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000452" trl="Y">
+  <value column="MsgText" original="BIM OOTB — 4D/5D Analytics">BIM OOTB — Analitik 4D/5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000453" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Clash Coordination Report">BIM OOTB — Laporan Penyelarasan Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000454" trl="Y">
+  <value column="MsgText" original="BIM OOTB — MEP Bill of Quantities">BIM OOTB — Senarai Kuantiti MEP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000455" trl="Y">
+  <value column="MsgText" original="4D/5D Analytics">Analitik 4D/5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000456" trl="Y">
+  <value column="MsgText" original="5D — Cost Excel">5D — Excel Kos</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000457" trl="Y">
+  <value column="MsgText" original="4D — Schedule Excel">4D — Excel Jadual</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000458" trl="Y">
+  <value column="MsgText" original="MEP Bill of Quantities">Senarai Kuantiti MEP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000459" trl="Y">
+  <value column="MsgText" original="Copy shareable link">Salin pautan kongsi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000460" trl="Y">
+  <value column="MsgText" original="Change locale / currency">Tukar bahasa / mata wang</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000461" trl="Y">
+  <value column="MsgText" original="Change locale">Tukar bahasa</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000462" trl="Y">
+  <value column="MsgText" original="Loading...">Memuatkan...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000463" trl="Y">
+  <value column="MsgText" original="Requesting data from viewer...">Meminta data daripada pemapar...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000464" trl="Y">
+  <value column="MsgText" original="Waiting for DB to cache in main scene...">Menunggu DB dicache dalam adegan utama...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000465" trl="Y">
+  <value column="MsgText" original="Loading {url}...">Memuatkan {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000466" trl="Y">
+  <value column="MsgText" original="Site Resources">Sumber Tapak</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000467" trl="Y">
+  <value column="MsgText" original="5D — Bill of Quantities">5D — Senarai Kuantiti</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000468" trl="Y">
+  <value column="MsgText" original="Clash Coordination Report">Laporan Penyelarasan Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000469" trl="Y">
+  <value column="MsgText" original="Home">Laman Utama</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000470" trl="Y">
+  <value column="MsgText" original="Report Downloaded">Laporan Dimuat Turun</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000471" trl="Y">
+  <value column="MsgText" original="HTML file saved. Share via WhatsApp, Email, or any medium.&lt;br&gt;Recipient opens it in any browser — full charts, no setup needed.">Fail HTML disimpan. Kongsi melalui WhatsApp, e-mel atau apa-apa medium.&lt;br&gt;Penerima membukanya dalam mana-mana pelayar — carta penuh, tiada persediaan diperlukan.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000472" trl="Y">
+  <value column="MsgText" original="OK">OK</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000473" trl="Y">
+  <value column="MsgText" original="Total Clashes">Jumlah Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000474" trl="Y">
+  <value column="MsgText" original="Reviewed">Disemak</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000475" trl="Y">
+  <value column="MsgText" original="Resolved">Diselesaikan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000476" trl="Y">
+  <value column="MsgText" original="Accepted">Diterima</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000477" trl="Y">
+  <value column="MsgText" original="Total bbox overlaps detected across all discipline pairs">Jumlah pertindihan bbox yang dikesan merentas semua pasangan disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000478" trl="Y">
+  <value column="MsgText" original="Acknowledged clashes under investigation">Pertembungan yang diakui sedang disiasat</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000479" trl="Y">
+  <value column="MsgText" original="Clashes fixed in the model — ready for re-check">Pertembungan dibaiki dalam model — sedia untuk semakan semula</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000480" trl="Y">
+  <value column="MsgText" original="Risk accepted — no design change needed">Risiko diterima — tiada perubahan reka bentuk diperlukan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000481" trl="Y">
+  <value column="MsgText" original="By Discipline Pair">Mengikut Pasangan Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000482" trl="Y">
+  <value column="MsgText" original="Discipline Risk Profile">Profil Risiko Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000483" trl="Y">
+  <value column="MsgText" original="By Severity">Mengikut Keterukan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000484" trl="Y">
+  <value column="MsgText" original="By Status">Mengikut Status</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000485" trl="Y">
+  <value column="MsgText" original="Top Offenders — Fix These First">Punca Utama — Baiki Ini Dahulu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000486" trl="Y">
+  <value column="MsgText" original="By Element Class">Mengikut Kelas Elemen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000487" trl="Y">
+  <value column="MsgText" original="Discipline Matrix Summary">Ringkasan Matriks Disiplin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000488" trl="Y">
+  <value column="MsgText" original="Source">Sumber</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000489" trl="Y">
+  <value column="MsgText" original="Target">Sasaran</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000490" trl="Y">
+  <value column="MsgText" original="Tolerance">Toleransi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000491" trl="Y">
+  <value column="MsgText" original="Clashes">Pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000492" trl="Y">
+  <value column="MsgText" original="clashes">pertembungan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+</idempiereTrl>

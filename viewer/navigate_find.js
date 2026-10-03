@@ -491,11 +491,11 @@
           'border-radius:6px;padding:6px 10px;font-size:16px;cursor:pointer;backdrop-filter:blur(6px);' +
           'min-width:36px;text-align:center';
         _vhBack = document.createElement('button');
-        _vhBack.id = 'find-vh-back'; _vhBack.title = 'View back'; _vhBack.textContent = '↶';
+        _vhBack.id = 'find-vh-back'; _vhBack.title = _trl('ui_view_back', null, 'View back'); _vhBack.textContent = '↶';
         _vhBack.style.cssText = btnStyle;
         _vhBack.addEventListener('pointerup', function(e) { e.stopPropagation(); _vhBack_fn(); });
         _vhFwd = document.createElement('button');
-        _vhFwd.id = 'find-vh-fwd'; _vhFwd.title = 'View forward'; _vhFwd.textContent = '↷';
+        _vhFwd.id = 'find-vh-fwd'; _vhFwd.title = _trl('ui_view_forward', null, 'View forward'); _vhFwd.textContent = '↷';
         _vhFwd.style.cssText = btnStyle;
         _vhFwd.addEventListener('pointerup', function(e) { e.stopPropagation(); _vhFwd2(); });
         _vhMarks = document.createElement('div');
@@ -3961,7 +3961,7 @@
         var _leftPad = isParent ? 10 : (22 + level * 12);
         arrow.style.marginLeft = '-' + _leftPad + 'px';
         arrow.style.paddingLeft = _leftPad + 'px';
-        arrow.title = 'Expand';
+        arrow.title = _trl('ui_expand', null, 'Expand');
         arrow.addEventListener('pointerup', function(e) {
           e.stopPropagation();
           expanded = !expanded;
@@ -4186,7 +4186,7 @@
     } else if (elMicBtn) {
       elMicBtn.style.opacity = '0.4';
       elMicBtn.style.cursor = 'default';
-      elMicBtn.title = 'Voice not supported';
+      elMicBtn.title = _trl('ui_voice_unsupported', null, 'Voice not supported');
     }
     // S275: Mic icon bright blue to match navigate button
     if (elMicBtn) elMicBtn.style.color = '#4fc3f7';
@@ -4410,10 +4410,10 @@
         elStoreyBody.innerHTML = '';
         var stAll = document.createElement('div');
         stAll.className = 'find-acc-item' + (!savedStorey ? ' active' : '');
-        stAll.textContent = 'All Storeys';
+        stAll.textContent = _trl('ui_all_storeys', null, 'All Storeys');
         stAll.addEventListener('pointerup', function(e) {
           e.stopPropagation(); elStorey.value = ''; elStoreyRow.classList.remove('expanded');
-          elStoreyHdr.querySelector('.fa-label').textContent = 'All Storeys';
+          elStoreyHdr.querySelector('.fa-label').textContent = _trl('ui_all_storeys', null, 'All Storeys');
           populateDropdowns(); runSearch();
         });
         elStoreyBody.appendChild(stAll);
@@ -4489,10 +4489,10 @@
         elTypeBody.innerHTML = '';
         var tyAll = document.createElement('div');
         tyAll.className = 'find-acc-item' + (!savedType ? ' active' : '');
-        tyAll.textContent = 'All Types';
+        tyAll.textContent = _trl('ui_all_types', null, 'All Types');
         tyAll.addEventListener('pointerup', function(e) {
           e.stopPropagation(); elType.value = ''; elTypeRow.classList.remove('expanded');
-          elTypeHdr.querySelector('.fa-label').textContent = 'All Types';
+          elTypeHdr.querySelector('.fa-label').textContent = _trl('ui_all_types', null, 'All Types');
           populateDropdowns(); runSearch();
         });
         elTypeBody.appendChild(tyAll);

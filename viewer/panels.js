@@ -424,14 +424,14 @@ function setupPanels(A) {
       populateBtn.classList.toggle('active', !A._populateBusy && populateOn);
     }
 
-    var stillBtn = A.icon('aperture', { size: 18, title: 'Still Refine (Alt+S)', onClick: function() {
+    var stillBtn = A.icon('aperture', { size: 18, title: _trlD('ui_tt_still_refine', 'Still Refine (Alt+S)'), onClick: function() {
       if (typeof A.toggleStillRefineUI === 'function') A.toggleStillRefineUI();   // §STILL_STATUS_FIRST
       else if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
       _refreshCinemaRowIcons();
     }});
     cinemaRow.appendChild(stillBtn);
 
-    var populateBtn = A.icon('footprints', { size: 18, title: 'Populate (Alt+P)', onClick: function() {
+    var populateBtn = A.icon('footprints', { size: 18, title: _trlD('ui_tt_populate', 'Populate (Alt+P)'), onClick: function() {
       if (typeof A.togglePopulate === 'function') A.togglePopulate();
       _refreshCinemaRowIcons();
     }});
@@ -441,7 +441,7 @@ function setupPanels(A) {
     // ~8 min for the 24s clip). Click while running = cancel (start() toggles), so the icon
     // stays CLICKABLE during the cook — no pointerEvents lock like the old live-capture orbit.
     // Old A.startCinemaOrbit stays console-callable as the quick live-capture fallback.
-    var cinemaBtn = A.icon('video', { size: 18, title: 'MaxQ Movie (Alt+C — press again to cancel)', onClick: function() {
+    var cinemaBtn = A.icon('video', { size: 18, title: _trlD('ui_tt_maxq', 'MaxQ Movie (Alt+C — press again to cancel)'), onClick: function() {
       if (typeof A.startMaxQualityOrbit !== 'function') {
         if (typeof A.startCinemaOrbit === 'function' && !A._stillRefineActive) A.startCinemaOrbit();
         return;
@@ -803,6 +803,8 @@ function setupPanels(A) {
   // whole-building access. Tagging a cleaner to one system code would misrepresent their scope,
   // so the honest preset is discs:[] (no filter — sees everything), distinguished from the plain
   // "All" state only by its label/console role key, not by different scene visibility.
+  // S226 §R2 — labels resolve through the AD_Message dictionary (viewer/i18n); the English here is the in-code default.
+  function _trlD(key, dflt, repl) { return (typeof _trl === 'function') ? _trl(key, repl || null, dflt) : dflt; }
   var ROLE_PRESETS = [
     { key: 'plumber',     label: 'Plumber',     discs: ['PLB', 'FP'] },
     { key: 'electrician', label: 'Electrician', discs: ['ELEC'] },
@@ -824,7 +826,7 @@ function setupPanels(A) {
   };
 
   A._roleFilterLabel = function() {
-    return A._roleFilterIdx === -1 ? 'All' : ROLE_PRESETS[A._roleFilterIdx].label;
+    return A._roleFilterIdx === -1 ? _trlD('ui_all', 'All') : _trlD('role_' + ROLE_PRESETS[A._roleFilterIdx].key, ROLE_PRESETS[A._roleFilterIdx].label);
   };
 
   // §S280d: shared traversal for disc + storey combined visibility
@@ -1537,6 +1539,12 @@ function setupPanels(A) {
       { id: 'camview',    name: 'Camera / View',   icon: I.camera.svg,
         fn: function() { _camviewDrawer.toggle(); }, isActive: function() { return _camviewDrawer.isOpen(); } }
     ];
+    // S226 §R2 — pill names through the AD_Message dictionary: key = 'pill_' + id (lower-case, '-' → '_'), the English
+    // `name` above stays the in-code default (viewer/i18n/ad_message_base.csv msgtext). Labels land async on a cold
+    // cache, so the rail is re-labelled + rebuilt on trl-ready (same rebuild verb _syncSched4dTitle already uses).
+    function _pillKey(id) { return 'pill_' + String(id).toLowerCase().replace(/-/g, '_'); }
+    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.id), a._nameEn); }); }
+    _relabelPill();
 
     // ═══════════════════════════════════════════════════════════════════
     // PILL_DRAWER_REORGANIZATION.md §STEPS 3/5 — the drawer mechanism.
@@ -1644,7 +1652,7 @@ function setupPanels(A) {
       var row = document.createElement('div');
       row.id = 'drawer-row-shadow';
       row.className = 'bim-drawer-row';
-      row.title = 'Shadow + Ground — cycle Off → Earth → Grass → Paved';
+      row.title = _trlD('ui_tt_shadow_ground_cycle', 'Shadow + Ground — cycle Off → Earth → Grass → Paved');
 
       var cloudBtn = document.createElement('button');
       cloudBtn.id = 'shadow-ground-cloud-btn';
@@ -1664,7 +1672,7 @@ function setupPanels(A) {
         var box = document.createElement('span');
         box.id = 'shadow-ground-box-' + key;
         box.className = 'bim-drawer-swatch';
-        box.title = key.charAt(0).toUpperCase() + key.slice(1);
+        box.title = _trlD('ui_ground_' + key, key.charAt(0).toUpperCase() + key.slice(1));
         row.appendChild(box);
         _boxes[key] = box;
       });
@@ -1818,21 +1826,21 @@ function setupPanels(A) {
       _buildJsonHub(content);
 
       // ── §5D Rate Pack (BIM→Project TASK A, docs/BIMtoProject.md §A): pick the active cost pack ──
-      content.appendChild(_buildSection('5D Rate Pack', false, _rate5dBody));
+      content.appendChild(_buildSection(_trlD('ui_rate_pack_5d', '5D Rate Pack'), false, _rate5dBody));
 
       // ── §9 Cache Info: per-store size + clear (history-clear keeps the signed kernel) ──
-      content.appendChild(_buildSection('Cache Info', false, _cacheInfoBody));
+      content.appendChild(_buildSection(_trlD('ui_cache_info', 'Cache Info'), false, _cacheInfoBody));
 
       // ── Reset button (Pill Icons defaults) ──
       var resetBtn = document.createElement('button');
-      resetBtn.textContent = 'Reset Pill Icons';
+      resetBtn.textContent = _trlD('ui_reset_pill_icons', 'Reset Pill Icons');
       resetBtn.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
       resetBtn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
         if (!_mainPill) return;
         _mainPill.resetConfig();
         _renderPillEditor(pillBox);   // rebuild schema from fresh config
-        if (A.status) A.status.textContent = 'Defaults restored';
+        if (A.status) A.status.textContent = _trlD('ui_defaults_restored', 'Defaults restored');
       });
       content.appendChild(resetBtn);
 
@@ -2347,6 +2355,8 @@ function setupPanels(A) {
       layout: 'rail'   // L-PATH position:fixed rail — viewer.html CSS declares the buttons fixed
     });
 
+    window.addEventListener('trl-ready', function() { _relabelPill(); if (_mainPill && _mainPill.build) _mainPill.build(); console.log('§TRL_PILL relabelled n=' + _actions.length); });
+
     // Expose for toggleDocPill restore + keyboard shortcut
     A._buildPill = _mainPill.build;
     window._syncPillHighlights = _mainPill.sync;
@@ -2361,7 +2371,7 @@ function setupPanels(A) {
       var acts = window._mainPillActions || [];
       for (var i = 0; i < acts.length; i++) {
         if (acts[i].id !== 'sched4d') continue;
-        acts[i].title = hasSchedule ? '4D Window' : '4D Window — tap to generate a programme';
+        acts[i].title = hasSchedule ? _trlD('pill_sched4d', '4D Window') : _trlD('pill_sched4d_gen', '4D Window — tap to generate a programme');
       }
       if (A._buildPill) A._buildPill();
     }

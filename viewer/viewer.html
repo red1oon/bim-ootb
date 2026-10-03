@@ -494,7 +494,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
     <!-- §S280: Storey/Disc HUD removed — now in Find outliner -->
     <!-- S266: Grid bays accordion — shown only in Doc mode -->
     <div id="hud-gridbays-section" class="hud-accordion" style="display:none">
-      <b class="hud-accordion-header" onclick="togglePanel('gridbays-body');resetHudAutoCollapse()">Grid Bays</b>
+      <b class="hud-accordion-header" onclick="togglePanel('gridbays-body');resetHudAutoCollapse()" data-trl="ui_grid_bays">Grid Bays</b>
       <div id="gridbays-body" class="panel-body" style="font:11px monospace;color:#ccc;padding:2px 0"></div>
     </div>
     <button id="variance-btn" onclick="toggleVariance();event.stopPropagation()" style="display:none;margin-top:6px;width:100%;padding:6px;background:rgba(204,204,68,0.15);color:#cccc44;border:1px solid rgba(204,204,68,0.4);border-radius:4px;cursor:pointer;font-size:12px;font-weight:600">&#916; <span data-trl="ui_variance">Variance</span></button>
@@ -556,7 +556,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
   <div id="issue-detail-view">
     <button onclick="_issueBackToList()" style="align-self:flex-start;padding:4px 10px;background:#444;color:#fff;border:1px solid #666;border-radius:4px;cursor:pointer;font-size:11px">&larr; <span data-trl="ui_back">Back</span></button>
     <img id="issue-detail-img" src="">
-    <div class="detail-row" id="issue-d-link-row" style="display:none"><a id="issue-d-link" href="#" style="color:#4fc3f7;font-size:12px;font-weight:bold">-</a> <button id="issue-d-share" style="background:#333;color:#4fc3f7;border:1px solid #555;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:8px">Share</button></div>
+    <div class="detail-row" id="issue-d-link-row" style="display:none"><a id="issue-d-link" href="#" style="color:#4fc3f7;font-size:12px;font-weight:bold">-</a> <button id="issue-d-share" style="background:#333;color:#4fc3f7;border:1px solid #555;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;margin-left:8px" data-trl="ui_share">Share</button></div>
     <div class="detail-row"><span class="label" data-trl="ui_class">Class</span>: <span class="value" id="issue-d-class">-</span></div>
     <div class="detail-row"><span class="label" data-trl="ui_name">Name</span>: <span class="value" id="issue-d-name">-</span></div>
     <div class="detail-row"><span class="label" data-trl="ui_guid">GUID</span>: <span class="value" id="issue-d-guid" style="font-size:10px">-</span></div>
@@ -572,13 +572,13 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 </div>
 <!-- §S280: [] min/max replaces (-) toggle -->
 <button id="panel-toggle-btn" style="display:none">−</button>
-<button id="minmax-btn" onclick="toggleAllPanels()" title="Min/Max">
+<button id="minmax-btn" onclick="toggleAllPanels()" data-trl-title="ui_tt_minmax" title="Min/Max">
   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
 </button>
 <!-- §S280: Mobile bottom — single ⋯ trigger + scrollable pill. FLAT/horizontal kebab (moreHoriz) so OUR
      menu differs from Android Chrome's own vertical ⋮ system menu — matches erp.html (erp/icons.js moreHoriz). -->
 <div id="mobile-bar">
-  <button id="mobile-trigger" onclick="toggleMobilePill();event.stopPropagation()" title="Menu">
+  <button id="mobile-trigger" onclick="toggleMobilePill();event.stopPropagation()" data-trl-title="ui_tt_menu" title="Menu">
     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
   </button>
 </div>
@@ -587,10 +587,10 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <div id="doc-timeline" style="display:none;position:fixed;bottom:52px;left:10%;right:10%;z-index:11;
   background:rgba(10,10,30,0.6);border-radius:8px;padding:6px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)">
   <div style="display:flex;align-items:center;gap:8px">
-    <button id="tl-back" style="background:none;border:none;color:#4fc3f7;font-size:16px;cursor:pointer;padding:2px 6px" title="Previous phase">◀</button>
+    <button id="tl-back" style="background:none;border:none;color:#4fc3f7;font-size:16px;cursor:pointer;padding:2px 6px" data-trl-title="ui_tt_prev_phase" title="Previous phase">◀</button>
     <input id="tl-slider" type="range" min="0" max="1" value="0" step="1"
       style="flex:1;accent-color:#ff4444;height:6px;cursor:pointer">
-    <button id="tl-fwd" style="background:none;border:none;color:#4fc3f7;font-size:16px;cursor:pointer;padding:2px 6px" title="Next phase">▶</button>
+    <button id="tl-fwd" style="background:none;border:none;color:#4fc3f7;font-size:16px;cursor:pointer;padding:2px 6px" data-trl-title="ui_tt_next_phase" title="Next phase">▶</button>
     <span id="tl-label" style="color:#ccc;font:11px monospace;min-width:80px;text-align:right">0 / 0</span>
   </div>
 </div>
@@ -618,8 +618,8 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center">
     <span class="section-val" id="section-val">—</span>
-    <button id="bookmark-add-btn" onclick="addScissorsBookmark()" style="background:#2a4a2a;color:#8f8;border:1px solid #3a7a3a;border-radius:4px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1" title="Bookmark this cut position">&#x1F516;</button>
-    <button id="bookmark-del-btn" onclick="deleteScissorsBookmark()" style="background:#4a2a2a;color:#f88;border:1px solid #7a3a3a;border-radius:4px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1;display:none" title="Remove bookmark">&times;</button>
+    <button id="bookmark-add-btn" onclick="addScissorsBookmark()" style="background:#2a4a2a;color:#8f8;border:1px solid #3a7a3a;border-radius:4px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1" data-trl-title="ui_tt_bookmark_add" title="Bookmark this cut position">&#x1F516;</button>
+    <button id="bookmark-del-btn" onclick="deleteScissorsBookmark()" style="background:#4a2a2a;color:#f88;border:1px solid #7a3a3a;border-radius:4px;padding:2px 8px;font-size:14px;cursor:pointer;line-height:1;display:none" data-trl-title="ui_tt_bookmark_del" title="Remove bookmark">&times;</button>
   </div>
 </div>
 <script>
@@ -770,7 +770,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <button id="bg-btn" style="display:none"></button>
 <button id="shadow-btn" style="display:none"></button>
 <button id="night-btn" style="display:none"></button>
-<span class="section-val" id="night-val" style="display:none">Off</span>
+<span class="section-val" id="night-val" style="display:none" data-trl="ui_off">Off</span>
 
 <!-- Site Camera Overlay (mobile only) -->
 <div id="site-cam-overlay">
@@ -828,7 +828,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- Floating bug report button — appears when canvas idle, hides on camera move -->
 <div id="bug-fab" style="display:none !important"
   <img src="help.png" alt="Help" style="height:22px;vertical-align:middle">
-  <span style="color:#aaa;font-size:9px;margin-left:4px;vertical-align:middle">Report Bug</span>
+  <span style="color:#aaa;font-size:9px;margin-left:4px;vertical-align:middle" data-trl="ui_report_bug">Report Bug</span>
 </div>
 
 <!-- §S276: Import map for Three.js r184 WebGPU — includes WebGPURenderer + TSL + compat mode -->
@@ -955,7 +955,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="vo_approve.js?v=1"></script>
 <script src="proj_period.js?v=1"></script>
 <script src="proj_claim.js?v=1"></script>
-<script src="locale_loader.js?v=8"></script>
+<script src="locale_loader.js?v=9"></script>
 <script src="decoder.js?v=1"></script>
 <script src="nlp.js?v=6"></script>
 <script src="semantic_enrichment.js?v=1"></script>
@@ -1193,7 +1193,7 @@ if('serviceWorker' in navigator){
       'z-index:99999;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4);display:flex;' +
       'align-items:center;gap:10px;';
     var label = document.createElement('span');
-    label.textContent = 'Update ready — tap to refresh';
+    label.textContent = (typeof _trl === 'function') ? _trl('ui_update_ready', null, 'Update ready — tap to refresh') : 'Update ready — tap to refresh';
     var close = document.createElement('span');
     close.textContent = '✕';
     close.style.cssText = 'opacity:.6;padding:0 2px;';

@@ -1,0 +1,501 @@
+ad_message_id,value,msgtext,msgtype
+1000000,source_app,BIM OOTB — Frictionless BIM,I
+1000001,h_discipline,Discipline,I
+1000002,h_ifc_class,IFC Class,I
+1000003,h_quantity,Quantity,I
+1000004,h_uom,UOM,I
+1000005,h_description,Description,I
+1000006,h_storey,Storey,I
+1000007,h_phase,Phase,I
+1000008,h_item,Item,I
+1000009,h_material,Material,I
+1000010,h_labour,Labour,I
+1000011,h_equipment,Equipment,I
+1000012,h_total,Total,I
+1000013,h_unit_rate,Unit Rate,I
+1000014,h_mat_rate,Mat Rate,I
+1000015,h_lab_rate,Lab Rate,I
+1000016,h_rate_day,Rate/Day,I
+1000017,h_trade,Trade,I
+1000018,h_crew_size,Crew Size,I
+1000019,h_man_days,Man-Days,I
+1000020,h_duration,Duration (days),I
+1000021,h_grand_total,GRAND TOTAL,I
+1000022,h_subtotal,SUBTOTAL,I
+1000023,h_wbs,WBS,I
+1000024,h_task_name,Task Name,I
+1000025,h_productivity,Productivity,I
+1000026,h_gangs,Gangs,I
+1000027,h_start_date,Start Date,I
+1000028,h_finish_date,Finish Date,I
+1000029,h_labor_resource,Labor Resource,I
+1000030,h_status,Status,I
+1000031,h_pct_complete,% Complete,I
+1000032,h_day_offset,Day Offset,I
+1000033,h_date,Date,I
+1000034,h_milestone,Milestone,I
+1000035,h_task,Task,I
+1000036,h_task_count,Task Count,I
+1000037,h_total_days,Total Days,I
+1000038,h_total_man_days,Total Man-Days,I
+1000039,h_week,Week,I
+1000040,h_cumulative_pct,Cumulative %,I
+1000041,t_cost_by_disc,5D — Cost by Discipline,I
+1000042,t_cost_components,Cost Components by Discipline,I
+1000043,t_task_dist_phase,Task Distribution by Phase,I
+1000044,t_task_count_disc,Task Count by Discipline,I
+1000045,t_phase_duration,4D — Phase Duration (Total Days),I
+1000046,t_resource_workload,4D — Resource Workload (Man-Days by Phase),I
+1000047,t_s_curve,4D — S-Curve Progress,I
+1000048,t_milestone,4D — Milestone Timeline,I
+1000049,t_gantt,4D — Gantt Timeline (Strategic Tasks by Phase),I
+1000050,t_vo_impact,5D — Variation Order Impact,I
+1000051,s_cover,Cover Sheet,I
+1000052,s_exec_summary,Executive Summary,I
+1000053,s_material,Material Summary,I
+1000054,s_labour,Labour Summary,I
+1000055,s_equipment,Equipment Summary,I
+1000056,s_boq,Detailed BOQ,I
+1000057,s_prov,Provisional Sums,I
+1000058,s_schedule,Construction Schedule,I
+1000059,s_proj_summary,Project Summary,I
+1000060,s_dashboard,BIM 4D Dashboard,I
+1000061,t_comp_boq,COMPREHENSIVE BILL OF QUANTITIES,I
+1000062,t_cost_method,COST BREAKDOWN METHODOLOGY,I
+1000063,t_mat_summary,MATERIAL COST SUMMARY,I
+1000064,t_lab_summary,LABOUR COST SUMMARY,I
+1000065,t_equip_summary,EQUIPMENT COST SUMMARY,I
+1000066,t_prov_sums,PROVISIONAL SUMS,I
+1000067,t_phase_dur_analysis,Phase Duration Analysis,I
+1000068,t_resource_analysis,Resource Workload Analysis,I
+1000069,t_s_curve_progress,S-Curve Progress,I
+1000070,t_milestone_timeline,Milestone Timeline,I
+1000071,t_gantt_timeline,Gantt Timeline (Strategic Tasks),I
+1000072,not_started,Not Started,I
+1000073,tagline,Frictionless BIM. Two DBs. One browser. Zero install.,I
+1000074,ui_tools,Tools,I
+1000075,ui_storeys,Storeys,I
+1000076,ui_disciplines,Disciplines,I
+1000077,ui_filter,Filter...,I
+1000078,ui_all_storeys,All Storeys,I
+1000079,ui_tt_xray,X-Ray,I
+1000080,ui_tt_screenshot,Screenshot,I
+1000081,ui_tt_fullscreen,Fullscreen,I
+1000082,ui_tt_theme,Light/Dark,I
+1000083,ui_tt_fly,Fly Around,I
+1000084,ui_tt_walk_speed,Walk Speed,I
+1000085,ui_tt_export,4D/5D Export,I
+1000086,ui_tt_issues,Issues,I
+1000087,ui_tt_measure,Measure,I
+1000088,ui_tt_section,Section Cut,I
+1000089,ui_tt_2d,2D Plans,I
+1000090,ui_tt_sitecam,Site Camera,I
+1000091,ui_tt_walk,Walk Mode,I
+1000092,ui_tt_voice,Voice Search,I
+1000093,ui_cancel,Cancel,I
+1000094,ui_back,Back,I
+1000095,ui_save,Save,I
+1000096,ui_undo,Undo,I
+1000097,ui_retake,Retake,I
+1000098,ui_go,Go,I
+1000099,ui_clear,Clear,I
+1000100,ui_clear_all,Clear All,I
+1000101,ui_export_excel,Export Excel,I
+1000102,ui_share_whatsapp,Share → WhatsApp,I
+1000103,ui_show_3d,Show in 3D,I
+1000104,ui_snag,Snag,I
+1000105,ui_class,Class,I
+1000106,ui_name,Name,I
+1000107,ui_guid,GUID,I
+1000108,ui_building,Building,I
+1000109,ui_gps,GPS,I
+1000110,ui_compass,Compass,I
+1000111,ui_time,Time,I
+1000112,ui_notes,Notes,I
+1000113,ui_open,Open,I
+1000114,ui_buildings,Buildings,I
+1000115,ui_elements,Elements,I
+1000116,ui_meshes,Meshes,I
+1000117,ui_streaming,Streaming,I
+1000118,ui_rendered,Rendered,I
+1000119,ui_done,Done,I
+1000120,ui_variance,Variance,I
+1000121,ui_initializing,Initializing...,I
+1000122,ui_walk_title,Walk Mode,I
+1000123,ui_walk_instructions,Stand at the building entrance and tap SET to anchor your GPS position to the model.,I
+1000124,ui_walk_set,SET,I
+1000125,ui_walk_no_data,Walk Mode: No building data,I
+1000126,ui_walk_no_gps,Walk Mode: No GPS — orientation only,I
+1000127,ui_walk_stopped,Walk Mode stopped.,I
+1000128,ui_drivethru_hint,"Drive-Thru: Tap to walk, hold to glide",I
+1000129,ui_drivethru_status,Drive-Thru: {n} steps ({d}m),I
+1000130,ui_xray_found,Wall X-Ray: {n} MEP elements behind {name},I
+1000131,ui_xray_none,Wall X-Ray: No MEP elements found behind {name},I
+1000132,ui_sitecam_watermark,BIM OOTB — Site Inspection,I
+1000133,ui_gps_acquiring,GPS: acquiring...,I
+1000134,ui_gps_unavailable,GPS: unavailable,I
+1000135,ui_gps_unsupported,GPS: not supported,I
+1000136,ui_model_view,BIM Model View,I
+1000137,ui_bearing,Bearing,I
+1000138,ui_markup_arrow,Arrow,I
+1000139,ui_markup_circle,Circle,I
+1000140,ui_markup_draw,Draw,I
+1000141,ui_markup_text,Text,I
+1000142,ui_reading_file,Reading file...,I
+1000143,ui_reading_fmt,Reading {fmt} file...,I
+1000144,ui_large_file,Very large file ({n}MB) — may take a few minutes,I
+1000145,ui_med_file,Large file ({n}MB) — please wait...,I
+1000146,ui_building_dbs,Building databases...,I
+1000147,ui_imported,Imported {n} elements,I
+1000148,ui_imported_fmt,Imported {n} elements from {fmt},I
+1000149,ui_city_mode,"CITY MODE — {n} buildings, {m} elements. Click a building to load.",I
+1000150,ui_flew_to,Flew to {name} ({n} elements),I
+1000151,ui_downloading,Downloading {name}...,I
+1000152,ui_cleared,CLEARED — {n} meshes removed.,I
+1000153,ui_streaming_bld,STREAMING {name} — 0/{n} elements,I
+1000154,ui_downloaded_bld,Downloaded {name}. Streaming {bld}...,I
+1000155,ui_nlp_placeholder,"count doors, floor 1 walls, total cost, Find fire pump...",I
+1000156,ui_no_speech,No speech detected — tap mic again,I
+1000157,ui_no_match,"No match. Try: ""count doors"" or ""floor 1 walls""",I
+1000158,ui_no_results,"No results for ""{q}""",I
+1000159,ui_details,Details ({n}),I
+1000160,ui_issues_title,Issues,I
+1000161,ui_swipe_show,Swipe to show panels,I
+1000162,ui_swipe_hide,Swipe to hide panels,I
+1000163,ui_section_cut,Section Cut,I
+1000164,ui_vo_new,New element,I
+1000165,ui_vo_existed,Existed,I
+1000166,ui_vo_demolished,— (demolished),I
+1000167,ui_settings,Settings,I
+1000168,ui_language,Language,I
+1000169,ui_currency,Currency,I
+1000170,ui_rate_source_lbl,Rate Source,I
+1000171,ui_reset_defaults,Reset to Defaults,I
+1000172,ui_apply,Apply,I
+1000173,ui_check_updates,Check for Updates,I
+1000174,ui_downloaded_ifc,Downloaded {name}.ifc ({size} KB),I
+1000175,ui_drop_ifc,Please drop an .ifc file,I
+1000176,ui_exporting_ifc,Exporting IFC ({n} elements)...,I
+1000177,ui_gen_4d,Generating 4D Excel...,I
+1000178,ui_gen_4d_prep,Generating 4D Excel — preparing charts...,I
+1000179,ui_gen_5d,Generating 5D Excel...,I
+1000180,ui_gen_5d_prep,Generating 5D Excel — preparing charts...,I
+1000181,ui_loading,Loading,I
+1000182,ui_no_data,No data.,I
+1000183,ui_unsupported,"Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL",I
+1000184,ui_vo_description,Description,I
+1000185,ui_vo_parameter,Parameter,I
+1000186,ui_vo_value,Value,I
+1000187,ui_saved_excel,Saved {f} ({n} sheets),I
+1000188,ui_vo_label,includes Variance Order,I
+1000189,ui_find_placeholder,Search elements...,I
+1000190,ui_find_all_types,All types,I
+1000191,ui_find_navigate,▶ Navigate,I
+1000192,ui_find_navigate_sel,▶ Navigate to selected,I
+1000193,ui_find_matches,{n} found,I
+1000194,ui_find_no_matches,0 matches,I
+1000195,ui_find_did_you_mean,Did you mean:,I
+1000196,ui_find_no_start,No start position — cannot navigate,I
+1000197,ui_find_no_path,No path found,I
+1000198,ui_find_arrived,Arrived — walk freely or Find again,I
+1000199,landing_watch_demo,Watch Demo,I
+1000200,landing_about,About,I
+1000201,landing_ootb,outofthebox,I
+1000202,landing_headline,"In 60 seconds, the way you BIM will never be the same.",I
+1000203,landing_step_import,Import,I
+1000204,landing_step_view,View,I
+1000205,landing_step_compare,Compare,I
+1000206,landing_step_costed,Costed,I
+1000207,landing_step_done,Done,I
+1000208,landing_drop_ifc,Drop IFC or 3D file here,I
+1000209,landing_my_buildings,My Buildings,I
+1000210,landing_city,City Buildings,I
+1000211,landing_landmark,Landmark Buildings,I
+1000212,landing_loading,Loading building manifest...,I
+1000213,landing_created_by,Created by,I
+1000214,landing_live_stats,Live Stats,I
+1000215,landing_complete_city,COMPLETE THE CITY,I
+1000216,landing_buildings_explored,buildings explored,I
+1000217,landing_city_unlocked,CITY UNLOCKED,I
+1000218,landing_launch_city,LAUNCH CITY 1M,I
+1000219,landing_open_viewer,Open 3D Viewer,I
+1000220,landing_open_tabs,Open Tabs,I
+1000221,landing_theory,Theory,I
+1000222,landing_practical,Practical,I
+1000223,ui_status_wasm,Loading WebAssembly...,I
+1000224,ui_status_fetching,Fetching {url}...,I
+1000225,ui_status_db_loaded,DB loaded ({size}MB). Querying...,I
+1000226,ui_status_lib_loaded,Library loaded ({size}MB). Streaming nearest building...,I
+1000227,ui_status_geom,Using main DB for geometry. Streaming...,I
+1000228,ui_status_streaming,STREAMING {name} — {i}/{n} elements,I
+1000229,ui_status_done,DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.,I
+1000230,ui_active_done,{name} — DONE,I
+1000231,ui_status_search,Cleared. Search and click a building to stream.,I
+1000232,ui_2d_title,2D Plans,I
+1000233,ui_2d_layers,Layers,I
+1000234,ui_2d_fit,Fit,I
+1000235,ui_2d_generate,Generate,I
+1000236,ui_2d_export_dxf,Export DXF,I
+1000237,ui_2d_drop,Drop DXF file here,I
+1000238,ui_2d_entities_lbl,Entities: ,I
+1000239,ui_2d_layers_lbl,Layers: ,I
+1000240,ui_2d_class_lbl,Class: ,I
+1000241,ui_2d_name_lbl,Name: ,I
+1000242,ui_2d_storey_lbl,Storey: ,I
+1000243,ui_2d_select,— select sheet —,I
+1000244,ui_2d_storey_opt,— storey —,I
+1000245,ui_2d_floor_plan,Floor Plan,I
+1000246,ui_2d_front_elev,Front Elev,I
+1000247,ui_2d_rear_elev,Rear Elev,I
+1000248,ui_2d_left_elev,Left Elev,I
+1000249,ui_2d_right_elev,Right Elev,I
+1000250,ui_2d_loading,Loading {url}...,I
+1000251,ui_2d_loaded,"Loaded: {n} entities, {l} layers",I
+1000252,ui_2d_generating,Generating {mode}...,I
+1000253,ui_2d_generated,"Generated: {n} entities, {l} layers ({ms}ms)",I
+1000254,ui_2d_load_dbs,Loading databases...,I
+1000255,ui_2d_dbs_ready,DBs loaded — generating...,I
+1000256,ui_2d_no_db,No DB loaded — add ?db= to URL,I
+1000257,ui_2d_drop_file,Drop a .dxf file,I
+1000258,ui_2d_nothing_export,Nothing to export,I
+1000259,ui_2d_desktop_only,2D views are desktop-only,I
+1000260,ui_close_measure,Close Measure first,I
+1000261,ui_back_online,Back online,I
+1000262,ui_offline_mode,Offline mode — cached buildings still available,I
+1000263,ui_select_building,Select a building first.,I
+1000264,ui_analytics_opened,4D/5D analytics opened for {name},I
+1000265,ui_screenshot_saved,Screenshot saved to Downloads/,I
+1000266,ui_index_ready,Spatial index ready,I
+1000267,ui_building_index,Building spatial index…,I
+1000268,ui_report_busy,Report already generating...,I
+1000269,ui_building_report,Building report…,I
+1000270,ui_no_clashes,No clashes — open matrix first,I
+1000271,ui_report_opened,Clash report opened in new tab,I
+1000272,ui_no_clash_data,No clash data — open matrix first,I
+1000273,ui_csv_busy,CSV export already in progress...,I
+1000274,ui_csv_done,CSV exported — {n} clashes,I
+1000275,ui_exporting_csv,Exporting CSV… pair {i}/{n},I
+1000276,ui_no_clash_pairs,No clash pairs to export,I
+1000277,ui_matrix_need_discs,Matrix needs 2+ disciplines (found: {d}),I
+1000278,ui_close_2d,Close 2D view first,I
+1000279,ui_measure_hint,Click for dimensions. Right-click for Info,I
+1000280,ui_measure_hint_mobile,Tap for dimensions. Long-press for Info. Tap here to exit.,I
+1000281,ui_measure_tap,"Tap another spot for length, same spot for Area",I
+1000282,ui_clash_shared,Clash snag shared,I
+1000283,ui_clash_desktop,Check Clash at Desktop..,I
+1000284,ui_gen_report,Generating report… {done}/{total} pairs,I
+1000285,ui_counting_clashes,Counting {a} vs {b}… {i}/{n},I
+1000286,ui_fetching_city,Fetching city index ({url})...,I
+1000287,ui_already_loaded,{name} already loaded ({n} elements),I
+1000288,ui_unknown_building,Unknown building: {name},I
+1000289,ui_no_elements,No streamable elements for {name},I
+1000290,mep_guide_title,MEP BOQ Guide,I
+1000291,mep_guide_body,SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)<br>Pipes/ducts → length (m) · slabs → area (m²) · fittings → count<br>17 country rate templates from national publications<br>Section totals + labour trades + charts + reinstatement value<br>CSV (UTF-8 BOM) or shareable self-contained HTML,I
+1000292,ui_no_db_arch,No DB for archetype: {name},I
+1000293,mep_sec_R,Disposal Systems,I
+1000294,mep_sec_S,Piped Supply Systems,I
+1000295,mep_sec_T,Mechanical Heating / Cooling,I
+1000296,mep_sec_U,Ventilation / Air Conditioning,I
+1000297,mep_sec_V,Electrical Supply / Power / Lighting,I
+1000298,mep_sec_W,Communications / Security / Controls,I
+1000299,mep_sec_Y,Mechanical / Electrical Services (General),I
+1000300,mep_reinstatement,REINSTATEMENT VALUE,I
+1000301,mep_contingency,Contingency,I
+1000302,mep_insured,INSURED VALUE,I
+1000303,mep_complete,MEP BOQ complete,I
+1000304,mep_sections_lbl,sections,I
+1000305,mep_section_lbl,Section,I
+1000306,mep_share,Share Report,I
+1000307,ui_no_db_specified,No database specified. Open from 4D/5D Analytics page.,I
+1000308,ui_no_elements_bld,No elements found for building:,I
+1000309,landing_tip_red,"Red — you go in (sound on, then we load)",I
+1000310,landing_tip_blue,"Blue — nothing happens, nothing loads",I
+1000311,landing_blue_quote,"""You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe.""",I
+1000312,landing_back,← back,I
+1000313,landing_choose_door,choose your door,I
+1000314,landing_stats_title,Site traffic stats (GoatCounter),I
+1000315,landing_hub_title,BUILDINGS & IFC,I
+1000316,landing_hub_sub,"drop your own IFC, or open a ready building — opens in the viewer",I
+1000317,landing_launcher_gps,Buildings / IFC,I
+1000318,landing_launcher_bonsai,BIM Modeller,I
+1000319,landing_launcher_erp,ERP,I
+1000320,landing_launcher_doc,User Guide,I
+1000321,landing_launcher_watch,Watch demo,I
+1000322,landing_launcher_clear,Clear cache,I
+1000323,landing_more,More,I
+1000324,landing_mobile_note,BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.,I
+1000325,landing_drop_hint,↓ Drop IFC / 3D files here — or tap to browse,I
+1000326,landing_drop_sub,multiple discipline files merge into one building,I
+1000327,landing_blank_viewer,Blank Viewer,I
+1000328,landing_open_own_db,Open your own .db file,I
+1000329,landing_loading_manifest,loading building manifest…,I
+1000330,landing_city_buildings,City buildings,I
+1000331,landing_landmark_buildings,Landmark buildings,I
+1000332,landing_elements,elements,I
+1000333,landing_reload,reload,I
+1000334,landing_no_db_for,No DB for {name},E
+1000335,landing_clear_confirm,"Reset to the start screen?
+
+Clears the in-browser building data:
+  • cached buildings
+  • any IFC scene you dropped in (not saved to a .db file)
+and returns you to the red / blue choice.
+
+Keeps: the installed app + offline data, and any .db you saved yourself.",I
+1000336,ui_grid_bays,Grid Bays,I
+1000337,ui_share,Share,I
+1000338,ui_tt_minmax,Min/Max,I
+1000339,ui_tt_menu,Menu,I
+1000340,ui_tt_prev_phase,Previous phase,I
+1000341,ui_tt_next_phase,Next phase,I
+1000342,ui_tt_bookmark_add,Bookmark this cut position,I
+1000343,ui_tt_bookmark_del,Remove bookmark,I
+1000344,ui_update_ready,Update ready — tap to refresh,I
+1000345,ui_report_bug,Report Bug,I
+1000346,pill_save,Save Building,I
+1000347,pill_open,Open Building,I
+1000348,pill_find,Find / Navigate,I
+1000349,pill_rolefilter,Role View,I
+1000350,pill_help,Help,I
+1000351,pill_worldhist,World History,I
+1000352,pill_dochist,Page History,I
+1000353,pill_walk,Walk,I
+1000354,pill_whwalk,Pick Walk,I
+1000355,pill_share,Share,I
+1000356,pill_hbafm,Human-Asset,I
+1000357,pill_measure,Measure,I
+1000358,pill_clash,Clash Matrix,I
+1000359,pill_sanity,Sanity,I
+1000360,pill_egress,Egress,I
+1000361,pill_xray,X-Ray / Bbox,I
+1000362,pill_bbox,Bounding Boxes,I
+1000363,pill_tm,Time Machine,I
+1000364,pill_sched4d,4D Window,I
+1000365,pill_sched4d_gen,4D Window — tap to generate a programme,I
+1000366,pill_section,Section Cut,I
+1000367,pill_background,Background,I
+1000368,pill_night,Night,I
+1000369,pill_palette,Palette,I
+1000370,pill_shadow,Shadow + Ground,I
+1000371,pill_fly,Fly Tour,I
+1000372,pill_dlodnav,Nav LOD (large bldgs),I
+1000373,pill_report,4D / 5D,I
+1000374,pill_issues,Issues,I
+1000375,pill_fullscreen,Fullscreen,I
+1000376,pill_precision,Precision (Fine),I
+1000377,pill_cam_reset,Reset Camera,I
+1000378,pill_cam_pivot,Auto-Pivot,I
+1000379,pill_home,Home,I
+1000380,pill_audio,Sound FX,I
+1000381,pill_settings,Settings,I
+1000382,pill_navigate,Navigate,I
+1000383,pill_inspect,Inspect,I
+1000384,pill_camview,Camera / View,I
+1000385,role_plumber,Plumber,I
+1000386,role_electrician,Electrician,I
+1000387,role_acmv,ACMV Tech,I
+1000388,role_structural,Structural,I
+1000389,role_cleaner,Cleaner,I
+1000390,ui_rate_pack_5d,5D Rate Pack,I
+1000391,ui_cache_info,Cache Info,I
+1000392,ui_reset_pill_icons,Reset Pill Icons,I
+1000393,ui_defaults_restored,Defaults restored,I
+1000394,ui_tt_shadow_ground_cycle,Shadow + Ground — cycle Off → Earth → Grass → Paved,I
+1000395,ui_ground_none,None,I
+1000396,ui_ground_grass,Grass,I
+1000397,ui_ground_earth,Earth,I
+1000398,ui_ground_paved,Paved,I
+1000399,ui_blank_scene_hint,Blank scene — press Ctrl+O (Open Building) to load a .db file,I
+1000400,ui_locale_toast_hint,change in ⚙,I
+1000401,ui_hist_title,History — across pages,I
+1000402,ui_hist_whole,Whole,I
+1000403,ui_hist_this_page,This page,I
+1000404,ui_close,Close,I
+1000405,ui_tt_precision_fine,Fine precision,I
+1000406,ui_tt_reset_camera,Reset camera,I
+1000407,ui_tt_auto_pivot,Auto-pivot on scene centre,I
+1000408,ui_tt_still_refine,Still Refine (Alt+S),I
+1000409,ui_tt_populate,Populate (Alt+P),I
+1000410,ui_tt_maxq,MaxQ Movie (Alt+C — press again to cancel),I
+1000411,ui_tt_tm,Time Machine,I
+1000412,ui_tt_find,Find,I
+1000413,ui_tt_share,Share,I
+1000414,ui_tt_help,Help,I
+1000415,ui_tt_clash,Clash Matrix,I
+1000416,ui_tt_sunglass,Color Studio,I
+1000417,ui_tt_night,Night,I
+1000418,ui_tt_shadow,Shadow,I
+1000419,ui_tt_bg,Background,I
+1000420,ui_tt_bbox,Bounding Boxes,I
+1000421,ui_tt_cinema,Cinema Orbit,I
+1000422,ui_tt_doc,Document,I
+1000423,ui_tt_grid,Grid,I
+1000424,ui_tt_table,Table,I
+1000425,ui_tt_next,Next Phase,I
+1000426,ui_tt_save,Save Design,I
+1000427,ui_tt_open,Open Design,I
+1000428,ui_tt_mep,MEP Routes,I
+1000429,ui_tt_ubbl,UBBL Compliance,I
+1000430,ui_tt_rosetta,Rosetta Stone,I
+1000431,ui_tt_disc,Disciplines,I
+1000432,ui_sun,Sun intensity,I
+1000433,ui_exposure,Exposure,I
+1000434,ui_ambient,Ambient,I
+1000435,ui_hemisphere,Hemisphere,I
+1000436,ui_all,All,I
+1000437,ui_off,Off,I
+1000438,ui_night_on,On — {n} fixtures,I
+1000439,ui_find_tab_find,Find,I
+1000440,ui_find_tab_ask,Ask,I
+1000441,ui_save_xlsx,Save .xlsx,I
+1000442,ui_all_types,All Types,I
+1000443,ui_view_back,View back,I
+1000444,ui_view_forward,View forward,I
+1000445,ui_expand,Expand,I
+1000446,ui_voice_unsupported,Voice not supported,E
+1000447,ui_loading_find,Loading Find…,I
+1000448,ui_find_load_failed,Find failed to load,E
+1000449,ui_gpu_compiling,Compiling GPU shaders — please wait...,I
+1000450,ui_gpu_compiled,GPU shaders compiled in {ms}ms — rendering,I
+1000451,ui_offline_badge,OFFLINE,I
+1000452,title_boq,BIM OOTB — 4D/5D Analytics,I
+1000453,title_clash,BIM OOTB — Clash Coordination Report,I
+1000454,title_mep,BIM OOTB — MEP Bill of Quantities,I
+1000455,t_analytics_4d5d,4D/5D Analytics,I
+1000456,ui_tt_export_5d,5D — Cost Excel,I
+1000457,ui_tt_export_4d,4D — Schedule Excel,I
+1000458,ui_tt_mep_boq,MEP Bill of Quantities,I
+1000459,ui_tt_copy_link,Copy shareable link,I
+1000460,ui_tt_change_locale_cur,Change locale / currency,I
+1000461,ui_tt_change_locale,Change locale,I
+1000462,ui_loading_ellipsis,Loading...,I
+1000463,ui_requesting_viewer,Requesting data from viewer...,I
+1000464,ui_waiting_db_cache,Waiting for DB to cache in main scene...,I
+1000465,ui_loading_url,Loading {url}...,I
+1000466,t_site_resources,Site Resources,I
+1000467,t_boq_5d,5D — Bill of Quantities,I
+1000468,clash_report_title,Clash Coordination Report,I
+1000469,ui_tt_home,Home,I
+1000470,ui_report_downloaded,Report Downloaded,I
+1000471,ui_report_downloaded_body,"HTML file saved. Share via WhatsApp, Email, or any medium.<br>Recipient opens it in any browser — full charts, no setup needed.",I
+1000472,ui_ok,OK,I
+1000473,clash_total,Total Clashes,I
+1000474,clash_reviewed,Reviewed,I
+1000475,clash_resolved,Resolved,I
+1000476,clash_accepted,Accepted,I
+1000477,clash_tt_total,Total bbox overlaps detected across all discipline pairs,I
+1000478,clash_tt_reviewed,Acknowledged clashes under investigation,I
+1000479,clash_tt_resolved,Clashes fixed in the model — ready for re-check,I
+1000480,clash_tt_accepted,Risk accepted — no design change needed,I
+1000481,clash_by_pair,By Discipline Pair,I
+1000482,clash_risk_profile,Discipline Risk Profile,I
+1000483,clash_by_severity,By Severity,I
+1000484,clash_by_status,By Status,I
+1000485,clash_top_offenders,Top Offenders — Fix These First,I
+1000486,clash_by_class,By Element Class,I
+1000487,clash_matrix_summary,Discipline Matrix Summary,I
+1000488,clash_source,Source,I
+1000489,clash_target,Target,I
+1000490,clash_tolerance,Tolerance,I
+1000491,clash_clashes,Clashes,I
+1000492,clash_clashes_lbl,clashes,I

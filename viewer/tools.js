@@ -676,7 +676,7 @@ function setupTools(A) {
     A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
     A._restoreSunglass();
     if (tick === 0) {
-      document.getElementById('sunglass-val').textContent = 'Off';
+      document.getElementById('sunglass-val').textContent = (typeof _trl === 'function') ? _trl('ui_off', null, 'Off') : 'Off';
       console.log('[S200] §SUNGLASS off');
       return;
     }
@@ -1727,7 +1727,7 @@ function setupTools(A) {
       }
       btn.style.background = '#ff8c00';
       btn.style.color = '#000';
-      label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
+      label.textContent = (typeof _trl === 'function') ? _trl('ui_night_on', { n: A._nightFixtures.length }, 'On — {n} fixtures') : 'On — ' + A._nightFixtures.length + ' fixtures';
     } else {
       // §S277d: Restore fixture emissive glow
       if (A._nightGlowMats) {
@@ -1789,7 +1789,7 @@ function setupTools(A) {
       console.log('§NIGHT_MODE off');
       btn.style.background = '#1a1a3e';
       btn.style.color = '#aac';
-      label.textContent = 'Off';
+      label.textContent = (typeof _trl === 'function') ? _trl('ui_off', null, 'Off') : 'Off';
     }
     if (A.markDirty) A.markDirty();
   };
