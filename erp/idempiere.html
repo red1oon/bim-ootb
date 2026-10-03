@@ -1572,7 +1572,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tgl = btn('▦ Grid', 'Toggle Grid / Form', true, function () {
       _viewMode = _viewMode === 'grid' ? 'form' : 'grid';
       tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
-      renderBody();
+      renderBody(); renderToolbar(); refreshNavOnly();   // FS-19 (§FS2q): Save/Ignore enable from #idmp-inline-mount, which renderBody just (un)mounted; the redrawn toolbar's record counter is refilled
     });
     tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
     tgl.setAttribute('data-tb', 'toggle');
