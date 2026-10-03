@@ -2418,6 +2418,7 @@
   }
   // HUD callout that names the addressed item(s) — created lazily, sits above the TM panel.
   function _updatePinpoint(frontier) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var el = document.getElementById('tm-pinpoint');
     if (!el) {
       el = document.createElement('div');
@@ -2430,8 +2431,8 @@
     if (!_active || !frontier || !frontier.length) { el.style.display = 'none'; return; }
     var byPhase = {}; frontier.forEach(function (f) { byPhase[f.phase] = (byPhase[f.phase] || 0) + 1; });
     var ph = Object.keys(byPhase).sort(function (a, b) { return byPhase[b] - byPhase[a]; })[0];
-    el.innerHTML = '<span style="color:#4fc3f7">⊕ Now building</span> · ' + frontier.length + ' item' +
-      (frontier.length > 1 ? 's' : '') + ' · <b>' + ph + '</b>';
+    el.innerHTML = '<span style="color:#4fc3f7">' + _L('tm_now_building', '⊕ Now building') + '</span> · ' + frontier.length + ' ' +
+      (frontier.length > 1 ? _L('tm_items', 'items') : _L('tm_item', 'item')) + ' · <b>' + ph + '</b>';
     el.style.display = 'block';
   }
 
@@ -2834,6 +2835,7 @@
   }
 
   function updateStatus() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var pbar = document.getElementById('tm-progress-bar');
     var range = _projectEnd - _projectStart;
     if (pbar && range > 0) pbar.style.width = Math.round((_cursor - _projectStart) / range * 100) + '%';
@@ -2858,12 +2860,12 @@
     var bigCounter = document.getElementById('tm-big-counter');
     var d = new Date(_cursor);
     if (label) label.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    if (status) status.textContent = placed + ' placed | ' + (activeNames.join(', ') || 'idle');
+    if (status) status.textContent = _L('tm_status_placed', '{n} placed | {names}', { n: placed, names: activeNames.join(', ') || _L('tm_idle', 'idle') });
     if (bigCounter) {
       var elapsedMs = _cursor - _projectStart;
       var totalDays = Math.floor(elapsedMs / 86400000);
       var remainHrs = Math.floor((elapsedMs % 86400000) / 3600000);
-      bigCounter.textContent = 'DAY ' + totalDays + ' \u2502 HR ' + remainHrs;
+      bigCounter.textContent = _L('tm_mode_day', 'DAY') + ' ' + totalDays + ' \u2502 ' + _L('tm_mode_hr', 'HR') + ' ' + remainHrs;
     }
   }
 
@@ -2988,7 +2990,19 @@
   }
 
   // ── UI ──
+  // S226 §R2b (bim-compiler prompts/S226_localisation.md): the drawer's strings come from the iDempiere-format
+  // dictionary (viewer/i18n/ad_message_base.csv ⋈ AD_Message_Trl_<lang>.xml → i18n/<code>.json, read by
+  // locale_loader.js). `en` is the English shown today — byte-identical to the CSV msgtext (W-VIEWER-I18N 3b) — and
+  // is what the page shows until the label pack lands or when no loader is present (Node witnesses). Functions that
+  // witnesses SLICE out of this file and run alone in a vm sandbox cannot see this helper; they open with a local
+  // `var _L = (typeof _tmTrl === 'function') ? _tmTrl : <English fallback>` instead (same contract).
+  function _tmTrl(key, en, repl) {
+    if (typeof _trl === 'function') return _trl(key, repl || null, en);
+    var s = en; if (repl) for (var k in repl) s = s.replace('{' + k + '}', repl[k]);
+    return s;
+  }
   function buildPanel() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     _panel = document.createElement('div');
     _panel.id = 'time-machine-panel';
     _panel.style.cssText =
@@ -3001,9 +3015,9 @@
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
-        '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
-        '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
-        '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
+        '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" data-trl-title="tm_tt_sun" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
+        '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" data-trl-title="tm_tt_drone" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
+        '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_gantt" title="Gantt chart">&#x1F4CA;</button>' +
         // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
         // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
         // both constraint-aware). §TM_P6_FOLD (2026-08-24): the "later pass" that old comment
@@ -3013,22 +3027,21 @@
         // schedule_editor_ui.js are DELETED. The tab's one non-redundant surface — P6/MS Project
         // import/export + Diff-vs-Model — is folded into the #tm-p6-box section below, and #tm-editor
         // is repurposed as its toggle.
-        '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
-        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">&#8644; P6/MSP</button>' +
-        '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
-        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
-        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
-        '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
-        '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
+        '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_whatif" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
+        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" data-trl-title="tm_tt_p6" title="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">&#8644; P6/MSP</button>' +
+        '<button id="tm-dash" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_dash" title="Dashboard">&#x1F4CB;</button>' +
+        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" data-trl-title="tm_tt_var" title="Budget vs Actual variance">&#x2696;</button>' +
+        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" data-trl-title="tm_tt_lod" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
+        '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px"><span data-trl="tm_mode_day">DAY</span> 0 | <span data-trl="tm_mode_hr">HR</span> 0</span>' +
+        '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" data-trl-title="ui_close" title="Close">&#x2715;</button>' +
       '</div>' +
-      '<div id="tm-status" style="width:100%;text-align:center;font-size:13px;color:#ccc;padding:2px 0;min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-        '4D Construction Playback</div>' +
+      '<div id="tm-status" data-trl="tm_status_init" style="width:100%;text-align:center;font-size:13px;color:#ccc;padding:2px 0;min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">4D Construction Playback</div>' +
       '<div style="display:flex;gap:4px;align-items:center;width:100%">' +
         '<span id="tm-label" style="color:#4fc3f7;font-weight:bold;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>' +
         '<div style="display:flex;gap:3px">' +
-          '<button class="tm-mode" data-mode="DAY">DAY</button>' +
-          '<button class="tm-mode" data-mode="HR">HR</button>' +
-          '<button class="tm-mode" data-mode="MIN">MIN</button>' +
+          '<button class="tm-mode" data-mode="DAY" data-trl="tm_mode_day">DAY</button>' +
+          '<button class="tm-mode" data-mode="HR" data-trl="tm_mode_hr">HR</button>' +
+          '<button class="tm-mode" data-mode="MIN" data-trl="tm_mode_min">MIN</button>' +
         '</div>' +
       '</div>' +
       '<input id="tm-slider" type="range" min="0" max="100" value="50" style="width:100%;accent-color:#4fc3f7">' +
@@ -3036,14 +3049,14 @@
         '<div id="tm-progress-bar" style="height:100%;width:100%;background:#4fc3f7;transition:width 0.2s"></div>' +
       '</div>' +
       '<div style="display:flex;gap:3px;width:100%;height:30px">' +
-        '<button id="tm-start-btn" style="width:30px;font-size:14px" title="Jump to start">&#x25C0;&#x25C0;</button>' +
-        '<button id="tm-rev-btn" style="width:30px;font-size:14px" title="Deconstruct">&#x25C0;</button>' +
-        '<button id="tm-stop-btn" style="width:30px;font-size:14px" title="Stop">&#x25A0;</button>' +
-        '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
-        '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
-        '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
-        '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
-        '<button id="tm-reschedule-asap" style="flex:1;font-size:9px" title="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">&#x23EA; Pull Back</button>' +
+        '<button id="tm-start-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_jump_start" title="Jump to start">&#x25C0;&#x25C0;</button>' +
+        '<button id="tm-rev-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_deconstruct" title="Deconstruct">&#x25C0;</button>' +
+        '<button id="tm-stop-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_stop" title="Stop">&#x25A0;</button>' +
+        '<button id="tm-fwd-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_build" title="Build">&#x25B6;</button>' +
+        '<button id="tm-end-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_jump_end" title="Jump to end">&#x25B6;&#x25B6;</button>' +
+        '<button id="tm-undo" style="flex:1;font-size:9px" data-trl-title="tm_tt_undo_edit" title="Undo the last Gantt drag/resize">&#x21BA; <span data-trl="tm_undo_edit">Undo edit</span></button>' +
+        '<button id="tm-baseline" style="flex:1;font-size:9px" data-trl-title="tm_tt_set_baseline" title="Snapshot current dates as the baseline for schedule variance">&#x2691; <span data-trl="tm_set_baseline">Set Baseline</span></button>' +
+        '<button id="tm-reschedule-asap" style="flex:1;font-size:9px" data-trl-title="tm_tt_pull_back" title="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">&#x23EA; <span data-trl="tm_pull_back">Pull Back</span></button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
@@ -3055,7 +3068,7 @@
         // taller than the CSS 220px cap (a 22-storey building renders ~130 bars into that box).
         '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
           '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
-            'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+            'border-bottom:1px solid rgba(79,195,247,0.25)" data-trl-title="tm_tt_gantt_grip" title="Drag to resize the Gantt drawer"></div>' +
           // §GANTT_EDIT_LOCK (user ruling 2026-08-05, supersedes §GANTT_AUTHOR_ENTRY's button): no
           // button opens a side panel any more, native or otherwise — the drawer materializes its own
           // schedule automatically (see drawGanttMini's auto-generate call) the first time it has
@@ -3065,16 +3078,14 @@
           // not a generate trigger.
           '<div id="tm-gantt-lockbar" style="display:flex;align-items:center;gap:6px;padding:3px 6px;' +
             'font-size:10px;color:#8a97a5;border-bottom:1px solid rgba(79,195,247,0.15)">' +
-            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
-            'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
-            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span>' +
+            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" data-trl-title="tm_tt_locked" title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
+            '&#x1F512; <span data-trl="tm_locked">Locked</span></button><span id="tm-gantt-lockmsg" style="flex:1"></span>' +
             // §S75 — the legend for the float rail. The swatches are drawn as thin bars, the same
             // shape as the rail itself, so the mapping reads without a caption. Counts come from the
             // SAME annotate pass that paints the bars (never a second computation), and the whole
             // strip is emptied when CPM could not run rather than showing a stale or invented zero.
             '<span id="tm-gantt-cpmlegend" style="white-space:nowrap;color:#8a97a5"></span></div>' +
-          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" ' +
-            'title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" data-trl-title="tm_tt_ruler" title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
         '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
@@ -3094,17 +3105,17 @@
       // toggles it and lazy-loads foreign_schedule.js + schedule_diff.js on first open.
       '<div id="tm-p6-box" class="tm-drawer-bottom">' +
         '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 6px 2px">' +
-          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Import</span>' +
-          '<button id="tm-p6-import" style="font-size:10px" title="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">&#8681; P6/MSP file</button>' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em" data-trl="tm_import">Import</span>' +
+          '<button id="tm-p6-import" style="font-size:10px" data-trl-title="tm_tt_p6_file" title="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">&#8681; <span data-trl="tm_p6_file">P6/MSP file</span></button>' +
           '<input id="tm-p6-file" type="file" accept=".xer,.xml" style="display:none">' +
-          '<label style="font-size:10px;color:#8a97a5" title="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="tm-p6-autobind" type="checkbox" checked> auto-bind</label>' +
+          '<label style="font-size:10px;color:#8a97a5" data-trl-title="tm_tt_autobind" title="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="tm-p6-autobind" type="checkbox" checked> <span data-trl="tm_autobind">auto-bind</span></label>' +
           '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
-          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Export</span>' +
-          '<button id="tm-p6-export-msp" style="font-size:10px" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">&#8679; MSP</button>' +
-          '<button id="tm-p6-export-pmxml" style="font-size:10px" title="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">&#8679; PMXML</button>' +
-          '<button id="tm-p6-export-xer" style="font-size:10px" title="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">&#8679; XER</button>' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em" data-trl="tm_export">Export</span>' +
+          '<button id="tm-p6-export-msp" style="font-size:10px" data-trl-title="tm_tt_export_msp" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">&#8679; MSP</button>' +
+          '<button id="tm-p6-export-pmxml" style="font-size:10px" data-trl-title="tm_tt_export_pmxml" title="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">&#8679; PMXML</button>' +
+          '<button id="tm-p6-export-xer" style="font-size:10px" data-trl-title="tm_tt_export_xer" title="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">&#8679; XER</button>' +
           '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
-          '<button id="tm-p6-diff" style="font-size:10px" title="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">&#9878; Diff vs Model</button>' +
+          '<button id="tm-p6-diff" style="font-size:10px" data-trl-title="tm_tt_diff_model" title="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">&#9878; <span data-trl="tm_diff_model">Diff vs Model</span></button>' +
         '</div>' +
         '<div id="tm-p6-out" style="padding:2px 8px 6px;font-size:10px;color:#9fb0c6;line-height:1.5;max-height:64px;overflow-y:auto"></div>' +
       '</div>' +
@@ -3113,11 +3124,11 @@
           '<canvas id="tm-dash-time-pie" width="120" height="120" style="width:110px;height:110px"></canvas>' +
           '<canvas id="tm-dash-cost-pie" width="120" height="120" style="width:110px;height:110px"></canvas>' +
         '</div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin-bottom:4px">Phase Progress</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin-bottom:4px" data-trl="tm_phase_progress">Phase Progress</div>' +
         '<div id="tm-dash-phases"></div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">Site Resources</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px" data-trl="t_site_resources">Site Resources</div>' +
         '<div id="tm-dash-crews"></div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">S-Curve</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px" data-trl="tm_s_curve">S-Curve</div>' +
         '<canvas id="tm-dash-scurve" width="200" height="60" style="width:100%;height:60px"></canvas>' +
         '<div id="tm-dash-daycnt" style="font-size:10px;color:#999;margin-top:2px;text-align:center"></div>' +
       '</div>' +
@@ -3127,14 +3138,16 @@
       // screenshot showed: the props panel overlapping the storey labels and ruler with nowhere to
       // grow into. `_panel` is centered via left:50%/translateX(-50%), so a single edge handle grows
       // the box symmetrically for free — no left-edge math needed.
-      '<div id="tm-panel-resize-grip" title="Drag to resize the drawer" style="position:absolute;' +
+      '<div id="tm-panel-resize-grip" data-trl-title="tm_tt_panel_grip" title="Drag to resize the drawer" style="position:absolute;' +
         'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>' +
       // §TM_PANEL_RESIZE_H (2026-08-05, user: "make the lower border pullable expandable too, not
       // just the right border") — same edge-grip pattern as the width handle above, mirrored onto
       // the panel's bottom edge so both resizable dimensions are reachable the same way.
-      '<div id="tm-panel-resize-grip-b" title="Drag to resize the drawer" style="position:absolute;' +
+      '<div id="tm-panel-resize-grip-b" data-trl-title="tm_tt_panel_grip" title="Drag to resize the drawer" style="position:absolute;' +
         'left:0;right:0;bottom:-3px;height:8px;cursor:ns-resize;z-index:6"></div>';
     document.body.appendChild(_panel);
+    // S226 §R2b: the drawer is built after the loader's own pass may already have run — translate its subtree now.
+    if (typeof window._applyTrlToDOM === 'function') window._applyTrlToDOM();
     wirePanelResize();
     wirePanelResizeHeight();
 
@@ -3180,13 +3193,13 @@
       e.stopPropagation();
       if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
       else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
-      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'Author engine not loaded'; }
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = _L('tm_author_not_loaded', 'Author engine not loaded'); }
     });
     var _whatif = document.getElementById('tm-whatif');
     if (_whatif) _whatif.addEventListener('pointerup', function(e) {
       e.stopPropagation();
       if (window.WhatIfPanel) window.WhatIfPanel.open();
-      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'What-if engine not loaded'; }
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = _L('tm_whatif_not_loaded', 'What-if engine not loaded'); }
     });
     // §TM_P6_FOLD — repurposed #tm-editor: no longer opens a tab; toggles the in-panel P6/MSP
     // interop section (import/export/diff). Editing lives in the drawer itself (§GANTT_EDIT +
@@ -3438,8 +3451,8 @@
         var dayStart = Math.round((bar.startTs - _projectStart) / 86400000);
         var dayEnd = Math.round((bar.endTs - _projectStart) / 86400000);
         // \u00a7gate: source label so you can tell preset IFC 4D from generated fallback
-        var src = (bar.cap === bar.count) ? 'IFC 4D' : (bar.cap > 0 ? (bar.cap + '/' + bar.count + ' IFC 4D') : 'generated');
-        tip.textContent = bar.storey + ' \u2014 ' + bar.phase + ' (' + bar.count + ' el, Day ' + dayStart + '\u2013' + dayEnd + ', ' + src + ')';
+        var src = (bar.cap === bar.count) ? _L('tm_src_ifc4d', 'IFC 4D') : (bar.cap > 0 ? (bar.cap + '/' + bar.count + ' ' + _L('tm_src_ifc4d', 'IFC 4D')) : _L('tm_src_generated', 'generated'));
+        tip.textContent = _L('tm_bar_tip', '{storey} \u2014 {phase} ({n} el, Day {a}\u2013{b}, {src})', { storey: bar.storey, phase: bar.phase, n: bar.count, a: dayStart, b: dayEnd, src: src });
         tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
         // \u00a7gate: follow the pointer/touch Y so the tip stays visible when the Gantt is scrolled
         // (was pinned at top:4px \u2192 off-screen once scrolled down). Just above the tip; flip below near the top.
@@ -6094,16 +6107,17 @@
     return { EV: Math.round(EV), AC: Math.round(AC), CPI: CPI, CV: Math.round(EV - AC), BAC: BAC, EAC: EAC, VAC: BAC - EAC };
   }
   function drawVariance() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
     var head = document.getElementById('tm-var-head');
     if (!_twin) {                                          // records not fetched yet → load, then redraw
-      if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">Reading records…</div>';
+      if (head) head.innerHTML = '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b><div style="margin-top:2px;color:#888">' + _L('tm_reading_records', 'Reading records…') + '</div>';
       _loadTwin().then(function (t) { if (t && _varVisible) drawVariance(); });
       return;
     }
     var V = _computeVariance();
-    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">No project records for this model</div>'; return; }
+    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b><div style="margin-top:2px;color:#888">' + _L('tm_no_project_records', 'No project records for this model') + '</div>'; return; }
     var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
     var curIdx = _varPhaseUnderCursor(V);
     var SP = _computeScheduleProjection(V);                     // E3 — the projected-from-cost schedule slip (4D Δ)
@@ -6116,25 +6130,25 @@
     if (head) {
       head.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">' +
-          '<b style="color:#4fc3f7">Budget vs Actual</b>' +
-          '<span style="font-size:9px;color:#888">from records · ' + _twin.building + '</span>' +
+          '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b>' +
+          '<span style="font-size:9px;color:#888">' + _L('tm_from_records', 'from records') + ' · ' + _twin.building + '</span>' +
         '</div>' +
-        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
+        '<div style="margin-top:2px">' + _L('tm_cost', 'Cost') + ' <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
           '<b style="color:#ff6b6b" title="C_Project.CommittedAmt">' + _money(V.tA) + '</b> ' +
           '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
           (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
-        '<div style="color:#9fd6ff">Schedule ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
-          ' <span style="color:#888">(planned baseline)</span></div>' +
-        (SP ? '<div style="color:#ffb74d">Projected finish ' + fmtD(SP.projEnd) +
+        '<div style="color:#9fd6ff">' + _L('tm_schedule', 'Schedule') + ' ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
+          ' <span style="color:#888">' + _L('tm_planned_baseline', '(planned baseline)') + '</span></div>' +
+        (SP ? '<div style="color:#ffb74d">' + _L('tm_projected_finish', 'Projected finish') + ' ' + fmtD(SP.projEnd) +
           ' <span style="color:' + slipColor(SP.projSlipDays) + '">(' + slipTxt(SP.projSlipDays) + ')</span>' +
-          ' <span style="color:#888">projected from cost</span></div>' : '') +
+          ' <span style="color:#888">' + _L('tm_projected_from_cost', 'projected from cost') + '</span></div>' : '') +
         // S5(B) EVM — cursor-driven earned value: EV/AC + CPI + the at-completion forecast (EAC). Cost only,
         // from records (no independent SPI on this twin — see §HONESTY FINDING; schedule = the line above).
         (EVM ? '<div style="margin-top:2px;color:#cfe8ff">EV <b>' + _money(EVM.EV) + '</b> / AC <b>' + _money(EVM.AC) + '</b>' +
           ' · CPI <b style="color:' + (EVM.CPI >= 1 ? '#26a69a' : '#ff6b6b') + '">' + EVM.CPI.toFixed(2) + '</b>' +
-          ' · forecast <b title="EAC = BAC/CPI">' + _money(EVM.EAC) + '</b>' +
+          ' · ' + _L('tm_forecast', 'forecast') + ' <b title="EAC = BAC/CPI">' + _money(EVM.EAC) + '</b>' +
           ' <span style="color:' + (EVM.VAC >= 0 ? '#26a69a' : '#ff6b6b') + '">(' + (EVM.VAC >= 0 ? '+' : '') + _money(EVM.VAC) + ')</span>' +
-          ' <span style="font-size:9px;color:#888">cost · from records</span></div>' : '');
+          ' <span style="font-size:9px;color:#888">' + _L('tm_cost_from_records', 'cost · from records') + '</span></div>' : '');
     }
 
     // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
@@ -6184,7 +6198,7 @@
         var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost);
         var col = p.dCost > 0 ? '#ff6b6b' : '#26a69a';
         var sp = SP ? SP.phases[i] : null;                      // E3 — the per-phase projected schedule slip
-        var spTxt = sp ? ' <span style="color:' + slipColor(sp.slipDays) + '" title="projected from cost">' + slipTxt(sp.slipDays) + '</span>' : '';
+        var spTxt = sp ? ' <span style="color:' + slipColor(sp.slipDays) + '" title="' + _L('tm_projected_from_cost', 'projected from cost') + '">' + slipTxt(sp.slipDays) + '</span>' : '';
         html += '<div style="display:flex;justify-content:space-between;gap:6px' + (i === curIdx ? ';color:#fff;font-weight:bold' : '') + '">' +
           '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
           '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)' + spTxt + '</span></div>';
@@ -6410,6 +6424,7 @@
   // reason to exempt it from the lock). Uses the SAME axis math as ganttHit's dayPx so a drag of N
   // pixels always means the same N days everywhere in the drawer, ruler included.
   function wireGanttRulerShift() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var rc = document.getElementById('tm-gantt-ruler');
     if (!rc || rc._shiftWired) return;
     rc._shiftWired = true;
@@ -6419,7 +6434,7 @@
         console.log('§TM_RULER_SHIFT_REJECT reason=locked');
         var t0 = document.getElementById('tm-gantt-tip');
         if (t0) {
-          t0.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t0.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t0.style.display = 'block';
           setTimeout(function () { t0.style.display = 'none'; }, 2200);
         }
@@ -6437,7 +6452,7 @@
       dragDays = Math.round((e.clientX - startX) / Math.max(0.001, dayPx));
       var tip = document.getElementById('tm-gantt-tip');
       if (tip) {
-        tip.textContent = 'Shift whole schedule ' + (dragDays >= 0 ? '+' : '') + dragDays + 'd';
+        tip.textContent = _L('tm_shift_whole', 'Shift whole schedule {d}d', { d: (dragDays >= 0 ? '+' : '') + dragDays });
         tip.style.left = '4px'; tip.style.top = '20px'; tip.style.display = 'block';
       }
       e.preventDefault(); e.stopPropagation();
@@ -6710,6 +6725,7 @@
   // _tmCpmLegend(marks) — §S75. null/empty ⇒ the strip is cleared: a legend that keeps showing the
   // last building's counts after a bail is worse than no legend.
   function _tmCpmLegend(crit, slack, pf, minF, maxF) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var el = (typeof document !== 'undefined') && document.getElementById('tm-gantt-cpmlegend');
     if (!el) return;
     if (crit === null) { el.textContent = ''; el.removeAttribute('title'); return; }
@@ -6717,12 +6733,9 @@
       return '<span style="display:inline-block;width:12px;height:3px;background:' + c +
         ';vertical-align:middle;margin-right:3px"></span>';
     };
-    el.innerHTML = sw(CPM_COLOR_CRITICAL) + '<b style="color:#c9d3dd">' + crit + '</b> critical' +
-      '<span style="margin:0 5px">·</span>' + sw(CPM_COLOR_FLOAT) + '<b style="color:#c9d3dd">' + slack + '</b> with float';
-    el.title = 'Critical Path Method, recomputed after every edit. Red = zero total float: the task ' +
-      'cannot slip without moving the project end. Green = it has slack.\n' +
-      'Project duration ' + pf + 'd · total float ' + minF + '..' + maxF + 'd.\n' +
-      'CPM reads the dates the drag produced — it never changes one.';
+    el.innerHTML = sw(CPM_COLOR_CRITICAL) + '<b style="color:#c9d3dd">' + crit + '</b> ' + _L('tm_cpm_critical', 'critical') +
+      '<span style="margin:0 5px">·</span>' + sw(CPM_COLOR_FLOAT) + '<b style="color:#c9d3dd">' + slack + '</b> ' + _L('tm_cpm_with_float', 'with float');
+    el.title = _L('tm_tt_cpm', 'Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.\nProject duration {pf}d · total float {minF}..{maxF}d.\nCPM reads the dates the drag produced — it never changes one.', { pf: pf, minF: minF, maxF: maxF });
   }
 
   function _tmAnnotateCpm(schedId) {
@@ -6914,11 +6927,12 @@
     return out;
   }
   function _tmSayException(e) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var tip = document.getElementById('tm-gantt-tip');
     if (!tip) return;
-    var shortReason = (e && e.message) ? String(e.message).slice(0, 90) : 'unexpected error';
+    var shortReason = (e && e.message) ? String(e.message).slice(0, 90) : _L('tm_unexpected_error', 'unexpected error');
     _tmTipRestore(tip);
-    tip.textContent = 'Time Machine couldn\'t complete this edit — ' + shortReason;
+    tip.textContent = _L('tm_edit_exception', 'Time Machine couldn\'t complete this edit — {reason}', { reason: shortReason });
     var others = [];
     try { others = _tmVisibleOtherPanels(); } catch (e2) {}
     var hidden = false;
@@ -6930,7 +6944,7 @@
     }
     if (others.length) {
       var btn = document.createElement('button');
-      btn.textContent = 'Close other panels (' + others.length + ')';
+      btn.textContent = _L('tm_close_other_panels', 'Close other panels ({n})', { n: others.length });
       btn.style.cssText = 'display:block;margin-top:3px;font-size:10px;padding:1px 6px;cursor:pointer';
       btn.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
       btn.addEventListener('click', function (ev) {
@@ -6959,18 +6973,19 @@
   }
 
   function commitGanttDrag(bar, mode, deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('commitGanttDrag')) return;
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.moveTaskCascade) {
       console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL — same wording as setGanttBaseline/rescheduleGanttAsap's SA guard
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL — same wording as setGanttBaseline/rescheduleGanttAsap's SA guard
       return;
     }
     if (!bar.taskId) {
       // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
       console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
-      _tmSay('Not editable — no schedule task on this bar');   // §TM_SILENT_REFUSAL — same wording as wireGanttDrag's copy of this refusal
+      _tmSay(_L('tm_not_editable', 'Not editable — no schedule task on this bar'));   // §TM_SILENT_REFUSAL — same wording as wireGanttDrag's copy of this refusal
       return;
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -7004,7 +7019,7 @@
     var tbBar = tasksBefore[bar.taskId];
     if (!tbBar || !tbBar.start || !tbBar.finish) {
       console.log('§GANTT_DRAG_REJECT reason=no_real_task_snapshot task=' + bar.taskId);
-      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_edit_no_dates', 'Cannot edit — no real dates found for this task'));   // §TM_SILENT_REFUSAL
       return;
     }
     var realS0 = Date.parse(tbBar.start + 'T00:00:00Z'), realE0 = Date.parse(tbBar.finish + 'T00:00:00Z');
@@ -7026,14 +7041,14 @@
       // §TM_SILENT_REFUSAL — the CLAMPED case below always showed a tip; the outright-failure case
       // (bad_date / no_such_task / no_tasks / cycle from the engine verb) showed nothing at all.
       console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Rejected: ' + ((res && res.reason) || 'unknown'));   // same format as the props panel's Rejected: line
+      _tmSay(_L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }));   // same format as the props panel's Rejected: line
       return;
     }
     // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
     if (res.clamped) {
       var tip = document.getElementById('tm-gantt-tip');
       if (tip) {
-        tip.textContent = 'Blocked by ' + res.blockedBy + ' — clamped to ' + res.start;
+        tip.textContent = _L('tm_blocked_clamped', 'Blocked by {by} — clamped to {start}', { by: res.blockedBy, start: res.start });
         tip.style.display = 'block';
         setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
@@ -7111,12 +7126,13 @@
   // only) — undoLastGanttEdit's restore loop doesn't branch on it, so no other change was needed
   // there at all.
   function shiftGanttSchedule(deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('shiftGanttSchedule')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftSchedule) {
       console.log('§TM_RULER_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays) return;   // a click, not a drag — nothing to shift
@@ -7134,7 +7150,7 @@
     var res = SA.shiftSchedule(app.db, schedId, deltaDays);
     if (!res || !res.ok) {
       console.log('§TM_RULER_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Cannot shift — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL — same shape as "Cannot compress"
+      _tmSay(_L('tm_cannot_shift', 'Cannot shift — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL — same shape as "Cannot compress"
       return;
     }
 
@@ -7169,12 +7185,13 @@
   // restore loop doesn't care whether tasksBefore/opsBefore covers a cascade, the whole schedule,
   // or a selection, it just restores whatever's in there.
   function commitGanttGroupShift(taskIds, deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('commitGanttGroupShift')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftTasks) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays || !taskIds || !taskIds.length) return;
@@ -7193,7 +7210,7 @@
     var res = SA.shiftTasks(app.db, taskIds, deltaDays);
     if (!res || !res.ok) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Cannot move group — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL
       return;
     }
 
@@ -7228,6 +7245,7 @@
   // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
   // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
   function undoLastGanttEdit() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     // §TM_BAKE_LOCK (§S69) — an undo mutates the timeline exactly as much as the edit it reverses.
     if (_tmEditLocked('undoLastGanttEdit')) return;
     var app = A();
@@ -7239,7 +7257,7 @@
     }
     if (!_lastEdit || !app || !app.db) {
       console.log('§GANTT_EDIT_UNDO_REJECT reason=nothing_to_undo');
-      say('Nothing to undo');
+      say(_L('tm_nothing_to_undo', 'Nothing to undo'));
       return;
     }
     var edit = _lastEdit;
@@ -7271,7 +7289,7 @@
     db.run('COMMIT');
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
-    say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    say(_L('tm_undone', 'Undone: {mode} {task}', { mode: edit.mode, task: edit.taskId }));
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(edit.schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     _tmPersistEdit('undo');   // §S70 — the edit must survive a reload
@@ -7288,6 +7306,7 @@
   // SAME ScheduleAuthor.setBaseline verb gets called there too; this button does not become obsolete,
   // it becomes the "re-baseline for an approved change order" case named in the spec.
   function setGanttBaseline() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var tip = document.getElementById('tm-gantt-tip');
@@ -7298,12 +7317,12 @@
     }
     if (!app || !app.db || !SA || !SA.setBaseline) {
       console.log('§GANTT_SET_BASELINE_REJECT reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     var res = SA.setBaseline(app.db, schedId);
-    if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
-    say('Baseline set — ' + res.taskCount + ' tasks');
+    if (!res.ok) { say(_L('tm_no_baseline_yet', 'No schedule to baseline yet — generate a 4D schedule first')); return; }
+    say(_L('tm_baseline_set', 'Baseline set — {n} tasks', { n: res.taskCount }));
   }
 
   // ⏪ Pull Back — §GANTT_RESCHEDULE_ASAP. The EXPLICIT "reschedule as early as possible" action.
@@ -7314,6 +7333,7 @@
   // as every other edit path (lock → verb → retime → resync → annotate → persist → redraw); W-CPM-1
   // / W-PERS-1 / W-TBL-5 derive their caller lists from the source and hold this function to it.
   function rescheduleGanttAsap() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('rescheduleGanttAsap')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -7325,7 +7345,7 @@
     }
     if (!app || !app.db || !SA || !SA.rescheduleAsap) {
       console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     // (returns: true = committed, 'nothing' = zero float to close, undefined = refused — §S73's
     // convention, so the __tmRescheduleAsap probe hook reports what HAPPENED, not "I was called".)
@@ -7347,13 +7367,13 @@
     var res = SA.rescheduleAsap(app.db, schedId, {});
     if (!res || !res.ok) {
       console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      say('Cannot compress — ' + ((res && res.reason) || 'no schedule'));
+      say(_L('tm_cannot_compress', 'Cannot compress — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));
       return;
     }
     if (!res.moved.length) {
       // The verb wrote nothing (compression found zero float to close) — honest no-op, no retime,
       // no persist, no undo entry to clobber the user's real last edit.
-      say('Nothing to compress — schedule is already at earliest float');
+      say(_L('tm_nothing_to_compress', 'Nothing to compress — schedule is already at earliest float'));
       return 'nothing';
     }
 
@@ -7381,9 +7401,9 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
-    say('Compressed ' + res.moved.length + ' task' + (res.moved.length === 1 ? '' : 's') +
-      (res.daysCompressed > 0 ? ' — project finish moved up ' + res.daysCompressed + ' day' + (res.daysCompressed === 1 ? '' : 's')
-                              : ' — project finish unchanged (internal float closed)'));
+    say((res.moved.length === 1 ? _L('tm_compressed_one', 'Compressed 1 task') : _L('tm_compressed_many', 'Compressed {n} tasks', { n: res.moved.length })) + ' — ' +
+      (res.daysCompressed > 0 ? (res.daysCompressed === 1 ? _L('tm_finish_moved_one', 'project finish moved up 1 day') : _L('tm_finish_moved_many', 'project finish moved up {d} days', { d: res.daysCompressed }))
+                              : _L('tm_finish_unchanged', 'project finish unchanged (internal float closed)')));
     return true;
     } catch (e) { _tmEditExceptionRecover('rescheduleGanttAsap', e); }   // §TM_EDIT_EXCEPTION
   }
@@ -7423,6 +7443,7 @@
   }
 
   function generateGanttSchedule() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('generateGanttSchedule')) return;
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -7434,7 +7455,7 @@
     }
     if (!app || !app.db || !SA || !SA.materializeZones) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
     // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
@@ -7463,11 +7484,11 @@
     }
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
-      say('Could not generate a schedule'); return;
+      say(_L('tm_could_not_generate', 'Could not generate a schedule')); return;
     }
     console.log('§GANTT_AUTHOR_ENTRY native generate zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') +
       ' phases=' + (res.phases ? res.phases.length : 'n/a'));
-    say('Schedule generated — refreshing…');
+    say(_L('tm_schedule_generated', 'Schedule generated — refreshing…'));
     // Reuse the SAME refresh path applyTo4D() already uses for this exact situation (a fresh/edited
     // schedule needs the drawer's overlay re-run) — real, already-working machinery, not a second
     // lighter-weight refresh path whose correctness would need its own separate proof.
@@ -7477,6 +7498,7 @@
   }
 
   function wireGanttDrag() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var cv = document.getElementById('tm-gantt-canvas');
     if (!cv || cv._dragWired) return;
     cv._dragWired = true;
@@ -7501,7 +7523,7 @@
           '" phase="' + hit.bar.phase + '"');
         var t0 = document.getElementById('tm-gantt-tip');
         if (t0) {
-          t0.textContent = 'Not editable — no schedule task on this bar';
+          t0.textContent = _L('tm_not_editable', 'Not editable — no schedule task on this bar');
           t0.style.display = 'block';
           setTimeout(function () { t0.style.display = 'none'; }, 2200);
         }
@@ -7515,7 +7537,7 @@
         console.log('§GANTT_DRAG_REJECT reason=locked');
         var t1 = document.getElementById('tm-gantt-tip');
         if (t1) {
-          t1.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t1.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t1.style.display = 'block';
           setTimeout(function () { t1.style.display = 'none'; }, 2200);
         }
@@ -7553,7 +7575,7 @@
         if (days2 !== _groupDrag.days) { _groupDrag.days = days2; _groupDrag.moved = _groupDrag.moved || days2 !== 0; }
         var tip2 = document.getElementById('tm-gantt-tip');
         if (tip2 && _groupDrag.moved) {
-          tip2.textContent = 'Move ' + _groupDrag.taskIds.length + ' bars  ' + (days2 >= 0 ? '+' : '') + days2 + 'd';
+          tip2.textContent = _L('tm_move_bars', 'Move {n} bars  {d}d', { n: _groupDrag.taskIds.length, d: (days2 >= 0 ? '+' : '') + days2 });
           tip2.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
           tip2.style.top = Math.max(2, e.offsetY - 22) + 'px';
           tip2.style.display = 'block';
@@ -7566,7 +7588,7 @@
       if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
       var tip = document.getElementById('tm-gantt-tip');
       if (tip && _drag.moved) {
-        tip.textContent = (_drag.mode === 'move' ? 'Move ' : 'Resize ') + _drag.bar.phase + ' — ' +
+        tip.textContent = (_drag.mode === 'move' ? _L('tm_drag_move', 'Move') : _L('tm_drag_resize', 'Resize')) + ' ' + _drag.bar.phase + ' — ' +
           _drag.bar.storey + '  ' + (days >= 0 ? '+' : '') + days + 'd';
         tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
         tip.style.top = Math.max(2, e.offsetY - 22) + 'px';
@@ -7638,7 +7660,7 @@
         // pattern, and witness_gantt_edit_lock.js slices this function alone into its sandbox.
         var t2 = document.getElementById('tm-gantt-tip');
         if (t2) {
-          t2.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t2.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t2.style.display = 'block';
           setTimeout(function () { t2.style.display = 'none'; }, 2200);
         }
@@ -7651,23 +7673,24 @@
   // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
   // schedule is invalid, so the guard refuses rather than "fixing" it silently.
   function linkGanttBars(predBar, succBar) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('linkGanttBars')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     // §TM_SILENT_REFUSAL — this guard returns before the local say() below exists, so it uses the
     // module-scope _tmSay (the guard used to be the one refusal in this function with no tip).
-    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay('Not available'); return; }
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay(_L('tm_not_available', 'Not available')); return; }
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
     try {   // §TM_EDIT_EXCEPTION — cycle probe + addDependency verb through the final repaint
     if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
       console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
-      say('Refused — that link would create a cycle');
+      say(_L('tm_refused_cycle', 'Refused — that link would create a cycle'));
       return;
     }
     var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
     console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
       ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
-    say('Linked: ' + predBar.phase + ' — ' + predBar.storey + '  →  ' + succBar.phase + ' — ' + succBar.storey);
+    say(_L('tm_linked', 'Linked: {pred}  →  {succ}', { pred: predBar.phase + ' — ' + predBar.storey, succ: succBar.phase + ' — ' + succBar.storey }));
     // The new edge may make the successor illegal where it currently sits. Re-apply it through the
     // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
     // freshly-created violation on screen.
@@ -7702,7 +7725,7 @@
       // res.blockedBy is the engine's own extracted binding predecessor (schedule_author.js
       // _bindingPred) — never invented here.
       if (res && res.clamped) {
-        _tmSay('Linked, but ' + succBar.taskId + ' clamped to ' + res.start + ' — blocked by ' + res.blockedBy, 3400);
+        _tmSay(_L('tm_linked_clamped', 'Linked, but {task} clamped to {start} — blocked by {by}', { task: succBar.taskId, start: res.start, by: res.blockedBy }), 3400);
       }
     }
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
@@ -7716,6 +7739,7 @@
   // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
   // 1px arrow hit-target: same verbs, same C1/C2 checks, just a precise input surface).
   function openGanttProps(bar) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA) return;
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -7739,7 +7763,7 @@
       // Honest refusal, same shape as commitGanttDrag's no_real_task_snapshot: a panel that cannot
       // read the task's real dates must not offer to edit them with made-up ones.
       console.log('§GANTT_PROPS_REJECT reason=no_real_task_dates task=' + bar.taskId);
-      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_edit_no_dates', 'Cannot edit — no real dates found for this task'));   // §TM_SILENT_REFUSAL
       return;
     }
     var box = document.getElementById('tm-gantt-props') || (function () {
@@ -7755,30 +7779,30 @@
       .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
     var cpmInfo = bar.taskId ? _ganttCritical[bar.taskId] : null;   // §S68 — display only, never a date source
     var depHtml = deps.length ? deps.map(function (x, i) {
-      var dir = x.succId === bar.taskId ? '← after' : '→ before';
+      var dir = x.succId === bar.taskId ? _L('tm_dep_after', '← after') : _L('tm_dep_before', '→ before');
       var other = x.succId === bar.taskId ? x.predName : x.succName;
       return '<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0">' +
         '<span>' + dir + ' <b>' + other + '</b> <span style="color:#8a97a5">' + x.type +
         (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</span></span>' +
-        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">unlink</button></div>';
-    }).join('') : '<div style="color:#8a97a5">no dependencies</div>';
+        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">' + _L('tm_unlink', 'unlink') + '</button></div>';
+    }).join('') : '<div style="color:#8a97a5">' + _L('tm_no_dependencies', 'no dependencies') + '</div>';
     box.innerHTML =
       '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
-      '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      '<div style="color:#8a97a5;margin-bottom:6px">' + _L('tm_elements_count', '{n} elements · {task}', { n: bar.count, task: bar.taskId }) + '</div>' +
       // §GANTT_CPM_ANNOTATE (§S68) — read-only. Total float is the ONE number that tells you whether
       // a slip on this task moves the project end; the bar's red rail only says "zero float". Blank
       // when CPM could not run (cycle/thin table) rather than showing a made-up 0.
       (cpmInfo ? '<div style="margin-bottom:6px;color:' + (cpmInfo.critical ? '#e53935' : '#8a97a5') + '">' +
-        (cpmInfo.critical ? 'CRITICAL PATH · zero float' : 'Total float ' + cpmInfo.totalFloat + 'd') +
-        ' <span style="font-size:9px;color:#8a97a5">(CPM, dates unchanged)</span></div>' : '') +
-      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
+        (cpmInfo.critical ? _L('tm_critical_path', 'CRITICAL PATH · zero float') : _L('tm_total_float', 'Total float {n}d', { n: cpmInfo.totalFloat })) +
+        ' <span style="font-size:9px;color:#8a97a5">' + _L('tm_cpm_dates_unchanged', '(CPM, dates unchanged)') + '</span></div>' : '') +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">' + _L('tm_start', 'Start') +
         '<input id="tmp-s" type="date" value="' + realS + '" style="flex:1;font-size:11px"></div>' +
-      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">' + _L('tm_finish', 'Finish') +
         '<input id="tmp-f" type="date" value="' + realF + '" style="flex:1;font-size:11px"></div>' +
-      '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
+      '<div style="margin-bottom:4px;color:#8a97a5">' + _L('tm_dependencies', 'Dependencies') + '</div>' + depHtml +
       '<div style="display:flex;gap:6px;margin-top:8px">' +
-        '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
-        '<button id="tmp-close" style="font-size:11px">Close</button></div>' +
+        '<button id="tmp-apply" style="flex:1;font-size:11px">' + _L('tm_apply', 'Apply') + '</button>' +
+        '<button id="tmp-close" style="font-size:11px">' + _L('ui_close', 'Close') + '</button></div>' +
       '<div id="tmp-msg" style="color:#ff8c00;margin-top:4px;min-height:12px"></div>';
     box.style.display = 'block';
     console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
@@ -7818,9 +7842,9 @@
       var res = (s !== realS && f === realF && SA.moveTaskCascade)
         ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
         : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
-      if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
-      if (msg) msg.textContent = res.clamped ? ('Clamped to ' + res.start + ' by ' + res.blockedBy) :
-        ('Applied · ' + res.cascaded + ' successor(s) cascaded');
+      if (!res || !res.ok) { if (msg) msg.textContent = _L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }); return; }
+      if (msg) msg.textContent = res.clamped ? _L('tm_clamped_by', 'Clamped to {start} by {by}', { start: res.start, by: res.blockedBy }) :
+        _L('tm_applied_cascaded', 'Applied · {n} successor(s) cascaded', { n: res.cascaded });
       var byTask = {};
       for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
       retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
@@ -7866,6 +7890,7 @@
   }
 
   function toggleP6Drawer() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     _p6Visible = !_p6Visible;
     // Mobile: only one bottom drawer at a time (mirror the gantt/dash/var rule).
     if (_p6Visible && window.innerWidth < 600 && _ganttVisible) {
@@ -7882,7 +7907,7 @@
         console.log('§TM_P6_OPEN modules ready ForeignSchedule=' + !!window.ForeignSchedule +
           ' ScheduleDiff=' + !!window.ScheduleDiff);
       }).catch(function (e) {
-        _tmP6Say('Interop modules failed to load: ' + e.message);
+        _tmP6Say(_L('tm_interop_load_failed', 'Interop modules failed to load: {err}', { err: e.message }));
       });
     }
   }
@@ -7947,11 +7972,12 @@
   // cache + kernel_ops places invalidated, re-activate re-reads the adopted tasks). task_elements
   // stays empty unless auto-bind resolves tokens — binding is a separate, reviewable craft.
   function tmImportForeign(file) {
-    if (_tmEditLocked('tmImportForeign')) { _tmP6Say('Recording in progress — import refused'); return; }   // §TM_BAKE_LOCK (§S69)
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
+    if (_tmEditLocked('tmImportForeign')) { _tmP6Say(_L('tm_recording_import_refused', 'Recording in progress — import refused')); return; }   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
-    if (!FSx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
-    if (!app || !app.db) { _tmP6Say('No model open yet'); return; }
+    if (!FSx) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
+    if (!app || !app.db) { _tmP6Say(_L('tm_no_model_open', 'No model open yet')); return; }
     var rdr = new FileReader();
     rdr.onload = function () {
       try {
@@ -7966,24 +7992,22 @@
         var ab = document.getElementById('tm-p6-autobind'); var bindMsg = '';
         if (tokened && (!ab || ab.checked) && FSx.autoBind) {
           var r = FSx.autoBind(app.db, schedId);
-          bindMsg = ' Pre-bound ' + r.bound + ' elements across ' + r.perActivity.length +
-            ' activities by convention' +
-            (r.unresolved.length ? ' (' + r.unresolved.length + ' selector(s) matched nothing — review)' : '') + '.';
+          bindMsg = ' ' + _L('tm_prebound', 'Pre-bound {n} elements across {a} activities by convention', { n: r.bound, a: r.perActivity.length }) +
+            (r.unresolved.length ? ' ' + _L('tm_unresolved_selectors', '({n} selector(s) matched nothing — review)', { n: r.unresolved.length }) : '') + '.';
           console.log('§TM_AUTOBIND schedule=' + schedId + ' bound=' + r.bound +
             ' activities=' + r.perActivity.length + ' unresolved=' + r.unresolved.length);
         } else if (tokened) {
-          bindMsg = ' (' + tokened + ' activities carry a bind token — tick auto-bind to resolve.)';
+          bindMsg = ' ' + _L('tm_bind_hint', '({n} activities carry a bind token — tick auto-bind to resolve.)', { n: tokened });
         }
         invalidateGanttModel();
         _tmAnnotateCpm(schedId);        // §S68 — the Editor tab's ▶ CPM, automatic here
         _tmPersistEdit('import_p6');    // §S70 — an imported programme is a real edit, save it
         refoldSchedule();               // §TM-REFOLD — rebuild the 4D from the LIVE tasks table
-        _tmP6Say('Imported ' + det.format + ' "' + file.name + '" — ' + data._meta.summaryCount +
-          ' WBS / ' + data._meta.leafCount + ' activities / ' + data.taskSequences.length + ' links.' + bindMsg);
+        _tmP6Say(_L('tm_imported', 'Imported {format} "{file}" — {wbs} WBS / {acts} activities / {links} links.', { format: det.format, file: file.name, wbs: data._meta.summaryCount, acts: data._meta.leafCount, links: data.taskSequences.length }) + bindMsg);
         console.log('§TM_IMPORT_P6 file=' + file.name + ' format=' + det.format +
           ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount +
           ' activities=' + data._meta.leafCount + ' tokened=' + tokened);
-      } catch (e) { _tmP6Say('Import failed: ' + e.message); console.error('§TM_IMPORT_P6 ERROR', e); }
+      } catch (e) { _tmP6Say(_L('tm_import_failed', 'Import failed: {err}', { err: e.message })); console.error('§TM_IMPORT_P6 ERROR', e); }
     };
     rdr.readAsText(file);
   }
@@ -7992,11 +8016,12 @@
   // parseMSPDI (not invented): OutlineLevel-encoded hierarchy, Duration='PT{hours}H0M0S', LinkLag in
   // TENTHS OF A MINUTE, PredecessorLink/Type 0=FF/1=FS/2=SF/3=SS, 8h/day calendar (MinutesPerDay=480).
   function tmExportMSProject() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var predByTask = {};
     deps.forEach(function (d) { (predByTask[d.succId] = predByTask[d.succId] || []).push(d); });
@@ -8051,7 +8076,7 @@
 
     var fname = name + '_schedule.xml';
     _tmP6Download(xml.join(''), 'application/xml', fname);
-    _tmP6Say('Exported ' + rows.length + ' tasks / ' + deps.length + ' links to MS Project XML (' + fname + ').');
+    _tmP6Say(_L('tm_exported_msp', 'Exported {n} tasks / {m} links to MS Project XML ({file}).', { n: rows.length, m: deps.length, file: fname }));
     console.log('§TM_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + fname);
   }
 
@@ -8059,13 +8084,14 @@
   // ForeignSchedule.toPMXML/toXER are pure serializers (W-XER-ROUNDTRIP/W-PMXML-ROUNDTRIP prove
   // mismatch=0 re-parsing the writer's own output with our reader).
   function _tmExportP6(kind, writeFn, ext, mime, label) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
     var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
-    if (!FSx || !FSx[writeFn]) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
+    if (!FSx || !FSx[writeFn]) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var name = _tmP6BaseName(app);
     var out = FSx[writeFn](tree, deps, { hpd: 8, projectId: schedId, projectName: name });
@@ -8073,9 +8099,7 @@
     var fname = name + '_schedule.' + ext;
     _tmP6Download(out, mime, fname);
     var leafCount = 0; (function walk(ns) { (ns || []).forEach(function (n) { if (!n.isSummary) leafCount++; walk(n.children); }); })(tree);
-    _tmP6Say('Exported ' + leafCount + ' tasks / ' + deps.length + ' links to ' + label + ' (' + fname +
-      '). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, ' +
-      'baselines) are not carried — P6 itself drops most of these on cross-DB import.');
+    _tmP6Say(_L('tm_exported_p6', 'Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.', { n: leafCount, m: deps.length, label: label, file: fname }));
     console.log('§TM_EXPORT_' + kind + ' tasks=' + leafCount + ' links=' + deps.length + ' file=' + fname);
   }
   function tmExportPMXML() { _tmExportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
@@ -8087,37 +8111,36 @@
   // estimate is written to the throwaway SCH_DIFF_SHADOW schedule (non-destructive,
   // rebuild-on-every-call — schedule_diff.js's own convention).
   function tmDiffVsModel() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var DFx = (typeof window !== 'undefined') && window.ScheduleDiff;
-    if (!DFx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
-    if (!app || !app.db || !SA || !SA.activeSchedule) { _tmP6Say('No schedule loaded'); return; }
+    if (!DFx) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
+    if (!app || !app.db || !SA || !SA.activeSchedule) { _tmP6Say(_L('tm_no_schedule_loaded', 'No schedule loaded')); return; }
     var act = SA.activeSchedule(app.db);
     if (!act || !act.captured) {
-      _tmP6Say('Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.');
+      _tmP6Say(_L('tm_diff_needs_import', 'Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.'));
       return;
     }
-    _tmP6Say('Computing schedule diff…');
+    _tmP6Say(_L('tm_diff_computing', 'Computing schedule diff…'));
     setTimeout(function () {
       var res = DFx.computeScheduleDiff(app.db, null, { importedScheduleId: act.id, start: '2026-01-01' });
-      if (res.error) { _tmP6Say('Diff failed: ' + res.error); return; }
+      if (res.error) { _tmP6Say(_L('tm_diff_failed', 'Diff failed: {err}', { err: res.error })); return; }
       var lines = res.phases.map(function (r) {
         var icon = r.flag === 'optimistic' ? '⚡' : r.flag === 'slow' ? '🐢' : '✓';
-        return icon + ' ' + r.phase + ': theirs ' + r.theirDays + 'd vs ours ' + r.ourDays + 'd (' +
+        return icon + ' ' + r.phase + ': ' + _L('tm_diff_theirs_ours', 'theirs {a}d vs ours {b}d', { a: r.theirDays, b: r.ourDays }) + ' (' +
           (r.deltaPct > 0 ? '+' : '') + r.deltaPct + '%) — ' + r.flagMsg;
       });
-      if (res.unmatchedActivities.length) lines.push(res.unmatchedActivities.length +
-        ' activity(ies) unmatched — see console §4D_DIFF_UNMATCHED');
+      if (res.unmatchedActivities.length) lines.push(_L('tm_diff_unmatched', '{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED', { n: res.unmatchedActivities.length }));
       var out = document.getElementById('tm-p6-out');
       if (out) out.textContent = lines.join('   ');
-      _tmSay('4D Schedule Diff: ' + res.summary.matchedPhases + '/' + res.summary.ourPhases +
-        ' phases compared, ' + res.summary.matchedActivities + '/' + res.summary.theirActivities +
-        ' activities matched.');
+      _tmSay(_L('tm_diff_summary', '4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.', { a: res.summary.matchedPhases, b: res.summary.ourPhases, c: res.summary.matchedActivities, d: res.summary.theirActivities }));
       console.log('§TM_DIFF schedule=' + act.id + ' matchedPhases=' + res.summary.matchedPhases +
         ' matchedActivities=' + res.summary.matchedActivities + ' unmatched=' + res.summary.unmatchedActivities);
     }, 30);
   }
 
   function drawGanttMini() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     var canvas = document.getElementById('tm-gantt-canvas');
     var box = document.getElementById('tm-gantt-box');
@@ -8139,10 +8162,10 @@
         lockBtn.addEventListener('pointerup', function (e) {
           e.stopPropagation();
           function applyLockUi() {
-            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; ' + _L('tm_editing', 'Editing') : '&#x1F512; ' + _L('tm_locked', 'Locked');
             lockBtn.title = _ganttEditable
-              ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
-              : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+              ? _L('tm_tt_editing', 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.')
+              : _L('tm_tt_locked', 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.');
             console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
             // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
             // props panel alone is ~330px wide) — widen automatically rather than making the user find
@@ -8167,7 +8190,7 @@
             // (spec open-question 1) needs no edit-history tracing. Only THIS transition is gated
             // (spec Q2); unlock below never verifies.
             var lm = document.getElementById('tm-gantt-lockmsg');
-            if (lm) { lm.textContent = 'Verifying integrity…'; lm.style.color = ''; }
+            if (lm) { lm.textContent = _L('tm_verifying', 'Verifying integrity…'); lm.style.color = ''; }
             setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
               var v = verifyGanttIntegrity();
               if (!v.ok) {
@@ -8176,9 +8199,9 @@
                   ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
                 if (lm) {
                   var _breach = [];
-                  if (v.dFloating > 0) _breach.push('+' + v.dFloating + ' floating');
-                  if (v.dMidair > 0) _breach.push('+' + v.dMidair + ' hanging in midair');
-                  lm.textContent = '⚠ Integrity Breach: ' + _breach.join(' + ') + ' — press ↺ Undo edit (or fix), then lock again';
+                  if (v.dFloating > 0) _breach.push(_L('tm_breach_floating', '+{n} floating', { n: v.dFloating }));
+                  if (v.dMidair > 0) _breach.push(_L('tm_breach_midair', '+{n} hanging in midair', { n: v.dMidair }));
+                  lm.textContent = _L('tm_breach', '⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again', { list: _breach.join(' + ') });
                   lm.style.color = '#f66';
                 }
                 return;   // REFUSED — _ganttEditable stays true, nothing hidden
@@ -8198,7 +8221,7 @@
         });
       }
       var lockMsg = document.getElementById('tm-gantt-lockmsg');
-      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? 'No schedule available' : '');
+      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? _L('tm_no_schedule_available', 'No schedule available') : '');
       if (!editable && !_ganttAutoGenAttempted) {
         _ganttAutoGenAttempted = true;
         console.log('§GANTT_AUTO_GENERATE no editable bars — materializing a schedule natively');
@@ -8490,6 +8513,7 @@
   // ── Dashboard drawer ──
   var _dashLogTick = 0; // §S260d: throttle dashboard logs
   function drawDashboard() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     _dashLogTick++;
 
@@ -8645,7 +8669,7 @@
     for (var di = 0; di < _ops.length; di++) { if (_ops[di].end_ts <= _cursor) totalDone++; }
     var donePct = Math.round(totalDone / _ops.length * 100);
     var dc = document.getElementById('tm-dash-daycnt');
-    if (dc) dc.textContent = 'Day ' + curDay + ' / ' + totalDays + ' \u2014 ' + donePct + '% complete';
+    if (dc) dc.textContent = _L('tm_day_of_total', 'Day {c} / {t} \u2014 {p}% complete', { c: curDay, t: totalDays, p: donePct });
 
     // §S260e: Throttle — was spamming every tick during playback
     if (!drawDashboard._tick) drawDashboard._tick = 0;
@@ -9059,6 +9083,7 @@
   // per G-CPE-SOLE-OWNER ("only a real Play opens Time Machine"). Every other caller passes
   // nothing, so silent is falsy and behavior is byte-identical to before this flag existed.
   function activate(silent) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_active) return;
     _s4ActT0 = performance.now();
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
@@ -9103,7 +9128,7 @@
       setToolbarHighlight(true);
       _panel.style.display = 'flex';
       st = document.getElementById('tm-status');
-      if (st) st.textContent = 'Loading timeline...';
+      if (st) st.textContent = _L('tm_loading_timeline', 'Loading timeline...');
     }
 
     // §S260c: Try IDB cache first, then kernel_ops table, then full recompute
@@ -9114,6 +9139,7 @@
   }
 
   function _activateAsync(st, silent) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     return new Promise(function(resolve) {
     var app = A();
 
@@ -9232,7 +9258,7 @@
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
 
       if (!_placeOps.length) {
-        if (st) st.textContent = 'Setting up 4D construction timeline...';
+        if (st) st.textContent = _L('tm_setting_up', 'Setting up 4D construction timeline...');
         viewerStatus('Time Machine: generating construction schedule...');
         // §GANTT_SINGLE_LOAD (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD): a cold open used to run
         // injectGantt TWICE — pass 1 with no schedule (placeholder dates, task_id-less ops), then
@@ -9246,7 +9272,7 @@
         _materializeNativeSchedule(app);
         console.log('§S4_ACTIVATION_TIMING_MID afterMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
         if (!(await injectGantt())) {
-          if (st) st.textContent = 'No elements found in database';
+          if (st) st.textContent = _L('tm_no_elements_db', 'No elements found in database');
           viewerStatus('Time Machine: no elements found');
           console.log('§TIME_MACHINE no ops and no elements — nothing to show');
           resolve(false);
