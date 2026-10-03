@@ -397,8 +397,9 @@ async function inplace(browser, base) {
     window.ScheduleAuthor = window.ScheduleAuthor || {}; window.ScheduleAuthor.activeSchedule = () => ({ id: 'SCH', name: 'SCH' });
     const A = window.APP || {}; A.db = A.db || {}; return !!(window.Info4DPanel && window.Info4DPanel.render(A, 'g-witness'));
   });
-  // the camera flies in after the stream ends — wait until it holds still for 2 s before taking the reference
-  { let last = '', still = 0; for (let i = 0; i < 120 && still < 4; i++) { const c = (await sig()).cam; still = (c === last) ? still + 1 : 0; last = c; await page.waitForTimeout(500); } }
+  // the camera flies in after the stream ends — wait until it holds still for 4 s before taking the reference
+  // 4 s still: the fly-in can pause mid-flight (a 2 s window was fooled once)
+  { let last = '', still = 0; for (let i = 0; i < 160 && still < 8; i++) { const c = (await sig()).cam; still = (c === last) ? still + 1 : 0; last = c; await page.waitForTimeout(500); } }
   await page.evaluate(() => { window.__inplaceMark = 'm' + Math.random(); });
   const s0 = await sig(); const rendered = await stub(); navs = 0;
   say('  §TRL_INPLACE start building elements=' + s0.elements + ' cam=' + s0.cam + ' info4d=' + rendered);
@@ -438,6 +439,25 @@ async function inplace(browser, base) {
   const colC = await collectStrings(page); const jC = judge('es_ES', 'viewer-inplace', colC.strings); jC.leaks = jC.wiring.length + jC.gap.length; jC.total = jC.slots;
   await page.evaluate(() => { window.__TRL_SWITCH_NO_RETRANSLATE = false; });
   const wantFr = (XML.fr_FR.byValue.get('info_cost_title') || {}).text;
+  // (6b) the landing ⋯ rail's flag button opens a picker that STAYS open (the opening click was also closing it), and a
+  //      later click outside still closes it
+  {
+    const p2 = await ctx.newPage(); p2.on('console', m => PAGELOG.push('[rail] ' + m.text()));
+    await p2.goto(base + '/index.html', { waitUntil: 'load' });
+    await p2.waitForFunction(() => window._TRL_READY === true && typeof buildRail === 'function', null, { timeout: 30000 });
+    await p2.evaluate(() => { buildRail(); if (window._railWrap) _railWrap.style.display = 'flex'; });
+    const realClick = async (sel) => { const b = await p2.locator(sel).first().boundingBox(); if (!b) return false; await p2.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await p2.mouse.down(); await p2.mouse.up(); return true; };
+    if (!(await p2.locator('#pill-flag').first().isVisible().catch(() => false))) { await realClick('#erp-pill-trigger'); await p2.waitForTimeout(400); }
+    await p2.waitForSelector('#pill-flag', { state: 'visible', timeout: 10000 }).catch(() => {});
+    const bx = await p2.locator('#pill-flag').first().boundingBox();
+    if (bx) { await p2.mouse.move(bx.x + bx.width / 2, bx.y + bx.height / 2); await p2.mouse.down(); await p2.mouse.up(); }
+    await p2.waitForTimeout(700);
+    const openAfter = await p2.evaluate(() => !!document.querySelector('#ootb-flag-popup.active'));
+    await p2.mouse.click(30, 30); await p2.waitForTimeout(300);
+    const closedAfter = await p2.evaluate(() => !document.querySelector('#ootb-flag-popup.active'));
+    W(!!bx && openAfter && closedAfter, '(6b) landing ⋯ rail flag: real click → picker open after 700 ms=' + openAfter + ' · outside click closes it=' + closedAfter);
+    await p2.close();
+  }
   W(fixed === wantFr && jC.leaks > 0, '(6) control: once-built node re-translated by the dictionary pass (fr=' + JSON.stringify(fixed) + ') · with the pass disabled → §TRL_INPLACE_CONTROL leaks=' + jC.leaks + ' of ' + jC.total + ' expected>0');
   await ctx.close();
 }
