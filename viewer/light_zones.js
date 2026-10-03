@@ -63,7 +63,7 @@
           var gid, rng; try { gid = o.getGeometryIdAt(i); rng = o.getGeometryRangeAt(gid); } catch (e) { continue; }
           if (!rng) continue;
           var m = new THREE.Matrix4(); o.getMatrixAt(i, m); m.premultiply(o.matrixWorld);
-          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount, vs: rng.vertexStart, vc: rng.vertexCount, mats: mats, groups: null }); stats.batched++;
+          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount, vs: rng.vertexStart, vc: rng.vertexCount, mats: mats, groups: null, bm: o, gid: gid }); stats.batched++;
         }
         return;
       }
@@ -325,7 +325,11 @@
     // bounds from the boundary geometry (skyline props / ground excluded by construction)
     var box = new THREE.Box3(), tb = new THREE.Box3();
     var bsum = 0, idxN = 0, glN = 0, glO = 0, csum = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element; csum = §IR_COLOUR material colours)
-    draws.forEach(function (d) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox).applyMatrix4(d.matrix); box.union(tb);
+    // §ZONE_BOX_TRUE root fix (ALTC_FOUNDATION §1, 2026-10-03): a BatchedMesh draw is bounded by ITS slot's geometry
+    // (getBoundingBoxAt), not the whole batch geometry's box — that grew the grid 2-2.5x past the building (Hospital 141.7 x 50.2 x
+    // 168.9 m vs 101.8 x 39.5 x 119.3, LTU 245.5 x 25.0 x 162.5 vs 183.9 x 17.3 x 134.4) and made the box depend on how slots are
+    // batched (the W4 merge moved it). Plain/instanced meshes keep their own geometry box.
+    draws.forEach(function (d) { if (!(d.bm && d.bm.getBoundingBoxAt && d.bm.getBoundingBoxAt(d.gid, tb))) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox); } tb.applyMatrix4(d.matrix); box.union(tb);
       bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } else if (m && m.color) csum += m.color.r + 2 * m.color.g + 3 * m.color.b; }); });
     if (box.isEmpty()) { console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' VACUOUS no boundary geometry (guids=' + guids.size + ')'); return null; }
     // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
