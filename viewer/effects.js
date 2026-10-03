@@ -2777,6 +2777,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // capture sets uMirBoxMin/Max/CapPos from the zone grid around the camera); the cube is read toward that hit from the capture point.
         mm.userData.mirU = { uMirBoxMin: { value: new THREE.Vector3() }, uMirBoxMax: { value: new THREE.Vector3() }, uMirCapPos: { value: new THREE.Vector3() }, uMirBoxOn: { value: 0 } };
         mm.onBeforeCompile = function(sh) { var U = this.userData.mirU; for (var u in U) sh.uniforms[u] = U[u];
+          if (window.GlassFresnel && window.GlassFresnel.patchShader) window.GlassFresnel.patchShader(sh);   // §GLASS_PLANAR_REFL: a flat mirror reads its plane's mirror render (before the expansion below)
           sh.fragmentShader = sh.fragmentShader.replace('#include <envmap_physical_pars_fragment>', '#include <envmap_physical_pars_fragment>\n' +
             'uniform vec3 uMirBoxMin; uniform vec3 uMirBoxMax; uniform vec3 uMirCapPos; uniform float uMirBoxOn;\n' +
             'vec3 slMirBoxRad( vec3 posView, vec3 viewDir, vec3 normal, float roughness ) {\n#ifdef ENVMAP_TYPE_CUBE_UV\n' +
@@ -2785,7 +2786,7 @@ async function setupEffects(A, renderer, scene, camera) {
             '    float d = min( min( tf.x, tf.y ), tf.z ); if ( d > 0.0 ) r = normalize( wp + r * d - uMirCapPos ); }\n' +
             '  return textureCubeUV( envMap, envMapRotation * r, roughness ).rgb * envMapIntensity;\n#else\n  return vec3( 0.0 );\n#endif\n}\n')
             .replace('#include <lights_fragment_maps>', THREE.ShaderChunk.lights_fragment_maps.replace('getIBLRadiance( geometryViewDir, geometryNormal, material.roughness )', 'slMirBoxRad( geometryPosition, geometryViewDir, geometryNormal, material.roughness )')); };
-        mm.customProgramCacheKey = function() { return 'slMirrorBox'; }; }
+        mm.customProgramCacheKey = function() { return 'slMirrorBox2'; }; }
       _mirrorOwnSaved.push([o, o.material]); o.material = Array.isArray(o.material) ? o.material.map(function() { return mm; }) : mm; ok++; });
     A._mirrorOwnMats = mats;
     console.log('§MIRROR_OWN_MAT applied meshes=' + ok + ' materials=' + mats.length + ' colours=[' + Object.keys(byCol).join(' | ') + '] (IFC material_rgba, metal 1, rough 0.02, env = §GLASS_ENV capture, no sky gate)');

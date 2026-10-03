@@ -38,18 +38,10 @@
   var PK_MAX = 6, PCOLS = 3, PROWS = 2, PLANE_TOL = 0.10, PLANE_COS = Math.cos(2 * Math.PI / 180);
   var PU = { uGfK: { value: 0 }, uGfPl: { value: [] }, uGfTex: { value: [] }, uGfAtlas: { value: null } };
   function ensurePU(THREE) { if (PU.uGfPl.value.length) return; for (var i = 0; i < PK_MAX; i++) { PU.uGfPl.value.push(new THREE.Vector4()); PU.uGfTex.value.push(new THREE.Matrix4()); } }
-  function patchedClone(THREE, orig) {
-    if (orig.userData.gfClone) return orig.userData.gfClone;
-    ensurePU(THREE); var c = orig.clone(); c.userData = { gfOf: orig.uuid };
-    var origKey = c.customProgramCacheKey;
-    c.onBeforeCompile = function (sh) {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', [
-        '{',
-        '  float gfNV = clamp( abs( dot( normalize( normal ), normalize( vViewPosition ) ) ), 0.0, 1.0 );',
-        '  float gfF = ' + F0.toFixed(3) + ' + ' + (1 - F0).toFixed(3) + ' * pow( 1.0 - gfNV, 5.0 );',
-        '  gl_FragColor = vec4( totalDiffuse * ' + GLASS_BODY.toFixed(3) + ' + totalSpecular + totalEmissiveRadiance, max( gfF, ' + GLASS_BODY.toFixed(3) + ' ) );',
-        '}'].join('\n'));
-      // §GLASS_PLANAR_REFL P3: on a mirrored plane the IBL radiance := the plane's mirror render (lit, blockers included, no sky gate)
+  // §GLASS_PLANAR_REFL P3 (shared by the glazing clones and the §MIRROR_OWN_MAT mirrors): on a mirrored plane the IBL radiance := the plane's
+  // mirror render (lit, blockers included, no sky gate). Must run BEFORE any caller expands #include <lights_fragment_maps>.
+  function gfPatchShader(sh) {
+      if (global.THREE) ensurePU(global.THREE);
       sh.uniforms.uGfK = PU.uGfK; sh.uniforms.uGfPl = PU.uGfPl; sh.uniforms.uGfTex = PU.uGfTex; sh.uniforms.uGfAtlas = PU.uGfAtlas;
       sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform int uGfK; uniform vec4 uGfPl[ ' + PK_MAX + ' ]; uniform mat4 uGfTex[ ' + PK_MAX + ' ]; uniform sampler2D uGfAtlas;\nvoid main() {')
         .replace('#include <lights_fragment_maps>', ['#include <lights_fragment_maps>',
@@ -61,6 +53,19 @@
           '    vec2 gt = vec2( float( gk - ( gk / ' + PCOLS + ' ) * ' + PCOLS + ' ), float( gk / ' + PCOLS + ' ) );',
           '    radiance = texture2D( uGfAtlas, ( gt + clamp( guv, vec2( 0.002 ), vec2( 0.998 ) ) ) / vec2( ' + PCOLS + '.0, ' + PROWS + '.0 ) ).rgb; break; }',
           '#endif'].join('\n'));
+  }
+  function patchedClone(THREE, orig) {
+    if (orig.userData.gfClone) return orig.userData.gfClone;
+    ensurePU(THREE); var c = orig.clone(); c.userData = { gfOf: orig.uuid };
+    var origKey = c.customProgramCacheKey;
+    c.onBeforeCompile = function (sh) {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', [
+        '{',
+        '  float gfNV = clamp( abs( dot( normalize( normal ), normalize( vViewPosition ) ) ), 0.0, 1.0 );',
+        '  float gfF = ' + F0.toFixed(3) + ' + ' + (1 - F0).toFixed(3) + ' * pow( 1.0 - gfNV, 5.0 );',
+        '  gl_FragColor = vec4( totalDiffuse * ' + GLASS_BODY.toFixed(3) + ' + totalSpecular + totalEmissiveRadiance, max( gfF, ' + GLASS_BODY.toFixed(3) + ' ) );',
+        '}'].join('\n'));
+      gfPatchShader(sh);
     };
     c.customProgramCacheKey = function () { return 'glassFresnelClone2'; };
     c.blending = THREE.CustomBlending; c.blendSrc = THREE.OneFactor; c.blendDst = THREE.OneMinusSrcAlphaFactor;
@@ -181,7 +186,7 @@
     var cam = A.camera, C = cam.position, vp = new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
     var pa = new THREE.Vector4(), pb = new THREE.Vector4(), pc = new THREE.Vector4(), M = new THREE.Matrix4(), IM = new THREE.Matrix4();
-    var bins = new Map(), tris = 0, batchedSkipped = 0, batchedInst = 0, seen = new Set();
+    var bins = new Map(), tris = 0, batchedSkipped = 0, batchedInst = 0, mirrorMeshes = 0, seen = new Set();
     function proj(v, o) { o.set(v.x, v.y, v.z, 1).applyMatrix4(vp); return o.w > 1e-3; }
     function tri(o, M) {
       a.applyMatrix4(M); b.applyMatrix4(M); c.applyMatrix4(M); e1.subVectors(b, a); e2.subVectors(c, a); n.crossVectors(e1, e2); var area = n.length() / 2; if (area < 1e-6) return;
@@ -192,7 +197,8 @@
       if (!P) { P = { n: [0, 0, 0], d: 0, w: 0, area: 0, scr: 0, tris: 0, dOut: Infinity }; bins.set(key, P); }
       P.n[0] += n.x * area; P.n[1] += n.y * area; P.n[2] += n.z * area; P.d += d * area; P.w += area; P.area += area; P.scr += scr; P.tris++; if (d < P.dOut) P.dOut = d;   // n faces the eye: the smallest d = the pane's eye-side (outer) face
     }
-    swaps.forEach(function (s) { var o = s[0]; if (seen.has(o)) return; seen.add(o); var g = o.geometry, pos = g && g.attributes && g.attributes.position; if (!pos) return;
+    var src = swaps.map(function (s) { return s[0]; }); A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material]; if (ms.some(function (m) { return m && m.userData && m.userData.slMirror; })) { src.push(o); mirrorMeshes++; } });
+    src.forEach(function (o) { if (seen.has(o)) return; seen.add(o); var g = o.geometry, pos = g && g.attributes && g.attributes.position; if (!pos) return;
       if (o.isBatchedMesh) {   // per active+visible instance: its geometry's index range (BatchedMesh stores indices already offset by vertexStart)
         if (!o.getGeometryRangeAt || !o._instanceInfo) { batchedSkipped++; return; } o.updateMatrixWorld(true); var rg = {}, idxB = g.index;
         for (var bi = 0; bi < o._instanceInfo.length; bi++) { var inf = o._instanceInfo[bi]; if (!inf || inf.active === false || inf.visible === false) continue;
@@ -208,7 +214,7 @@
     var list = Array.from(bins.values()).map(function (P) { var l = Math.hypot(P.n[0], P.n[1], P.n[2]) || 1; return { n: [P.n[0] / l, P.n[1] / l, P.n[2] / l], d: P.d / P.w, dOut: P.dOut, area: P.area, scr: P.scr, tris: P.tris }; });
     list.sort(function (x, y) { return y.area - x.area; }); var out = [];
     list.forEach(function (P) { for (var i = 0; i < out.length; i++) { var Q = out[i]; if (P.n[0] * Q.n[0] + P.n[1] * Q.n[1] + P.n[2] * Q.n[2] > PLANE_COS && Math.abs(P.d - Q.d) < PLANE_TOL) { Q.area += P.area; Q.scr += P.scr; Q.tris += P.tris; if (P.dOut < Q.dOut) Q.dOut = P.dOut; return; } } out.push(P); });
-    return { planes: out, tris: tris, batchedSkipped: batchedSkipped, batchedInst: batchedInst, meshes: seen.size };
+    return { planes: out, tris: tris, batchedSkipped: batchedSkipped, batchedInst: batchedInst, mirrorMeshes: mirrorMeshes, meshes: seen.size };
   }
   // three Reflector construction + Lengyel oblique near plane; returns the world->uv texture matrix (bias x P x V)
   function mirrorCam(THREE, cam, P) {
@@ -226,7 +232,7 @@
   }
   function planar(A) {
     var THREE = global.THREE; PU.uGfK.value = 0;
-    if (!THREE || !A || !A.renderer || !A.camera || !swaps.length) return null;
+    if (!THREE || !A || !A.renderer || !A.camera || (!swaps.length && !(A._mirrorOwnMats && A._mirrorOwnMats.length))) return null;
     var mk = /[?&]planarrefl=([0-9.]+)/.exec(location.search); if (mk && !(parseFloat(mk[1]) > 0)) { console.log('§GLASS_PLANAR off (&planarrefl=0) — panes keep the eye-centred cube'); lastPlanes = []; if (/[?&]refltruth=1/.test(location.search)) { try { truth(A, THREE); } catch (eT0) { console.warn('§GLASS_REFL_TRUTH failed: ' + eT0.message); } } return null; }
     var R = A.renderer, cam = A.camera, cap = R.capabilities || {};
     if (cap.logarithmicDepthBuffer || cap.reversedDepthBuffer) { console.log('§GLASS_PLANAR off (log/reversed depth: oblique near plane not valid)'); return null; }
@@ -253,7 +259,7 @@
     if (A.markDirty) A.markDirty();
     var top = use.map(function (P) { return '[n=' + P.n.map(function (v) { return v.toFixed(2); }).join(',') + ' d=' + P.d.toFixed(2) + ' dOut=' + P.dOut.toFixed(3) + ' scr=' + (P.scr / 4 * 100).toFixed(1) + '% tris=' + P.tris + ']'; }).join(' ');
     var restScr = cand.slice(K).reduce(function (s, P) { return s + P.scr; }, 0);
-    console.log('§GLASS_PLANAR K=' + use.length + '/' + PK_MAX + ' planesTotal=' + G.planes.length + ' onScreen=' + cand.length + ' tris=' + G.tris + ' meshes=' + G.meshes + ' batchedSkipped=' + G.batchedSkipped + ' batchedInst=' + G.batchedInst +
+    console.log('§GLASS_PLANAR K=' + use.length + '/' + PK_MAX + ' planesTotal=' + G.planes.length + ' onScreen=' + cand.length + ' tris=' + G.tris + ' meshes=' + G.meshes + ' batchedSkipped=' + G.batchedSkipped + ' batchedInst=' + G.batchedInst + ' mirrorMeshes=' + G.mirrorMeshes +
       ' tile=' + tw + 'x' + th + ' passes=[' + passes.join(',') + '] msPerMirror=[' + ms.join(',') + '] fallbackScreen=' + (restScr / 4 * 100).toFixed(1) + '% totalMs=' + Math.round(performance.now() - t0) + ' mirrored=' + top);
     if (/[?&]refltruth=1/.test(location.search)) { try { truth(A, THREE, hidden); } catch (eT) { console.warn('§GLASS_REFL_TRUTH failed: ' + eT.message); } }
     return { K: use.length, ms: Math.round(performance.now() - t0) };
@@ -266,7 +272,7 @@
       if (!ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) opq.push(o); });   // the mirror pass draws unlit (Basic) props too, so the truth ray must meet them
     var tw = lastPlanes.tw, th = lastPlanes.th, FAR = 2000;
     var dm = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking }); dm.side = THREE.DoubleSide; var cc0 = R.getClearColor(new THREE.Color()), ca0 = R.getClearAlpha();
-    var glassSamples = 0, hitSamples = 0, onSlot = 0, agree = 0, edge = 0, off = {}, worst = [], px = new Float32Array(4), prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background;
+    var glassSamples = 0, mirrorSamples = 0, hitSamples = 0, onSlot = 0, agree = 0, edge = 0, off = {}, worst = [], px = new Float32Array(4), prevRT = R.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background;
     var hide = []; A.scene.traverse(function (o) { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; var ms = Array.isArray(o.material) ? o.material : [o.material];
       if (o === A._sky || ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) { o.visible = false; hide.push(o); } });
     var rendered = -1;
@@ -275,7 +281,7 @@
         rc.setFromCamera(new THREE.Vector2((gx + 0.5) / 32 * 2 - 1, 1 - (gy + 0.5) / 18 * 2), cam); rc.far = Infinity;
         hide.forEach(function (o) { o.visible = true; }); var h = rc.intersectObjects(all, false)[0]; hide.forEach(function (o) { o.visible = false; });
         if (!h) continue; var ob = h.object, mm = Array.isArray(ob.material) ? (h.face && ob.material[h.face.materialIndex]) || ob.material[0] : ob.material;
-        if (!(mm && mm.userData && mm.userData.gfOf)) continue; glassSamples++;
+        if (!(mm && mm.userData && (mm.userData.gfOf || mm.userData.slMirror))) continue; glassSamples++; if (mm.userData.slMirror) mirrorSamples++;
         var nW = h.face.normal.clone().transformDirection(ob.matrixWorld); if (nW.dot(rc.ray.direction) > 0) nW.negate();
         var rd = rc.ray.direction.clone().reflect(nW), o0 = h.point.clone().addScaledVector(nW, 0.02); rc.set(o0, rd); rc.far = FAR;
         var hr = rc.intersectObjects(opq, false)[0]; if (!hr) continue; hitSamples++;
@@ -302,7 +308,7 @@
       }
     } finally { A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; R.setClearColor(cc0, ca0); R.setRenderTarget(prevRT); hide.forEach(function (o) { o.visible = true; }); dm.dispose(); }
     var verdict = onSlot === 0 ? 'INCONCLUSIVE (no mirrored sample)' : (agree === onSlot ? 'PASS' : (agree + edge === onSlot ? 'PASS (misses only at half-res depth edges)' : 'FAIL'));
-    console.log('§GLASS_REFL_TRUTH ' + verdict + ' glassSamples=' + glassSamples + ' hitSamples=' + hitSamples + ' onSlot=' + onSlot + ' depthAgree=' + agree + '/' + onSlot + ' missAtDepthEdge=' + edge + ' offSlot=' + JSON.stringify(off) + (worst.length ? ' worst=' + worst.join('') : '') + ' K=' + lastPlanes.length);
+    console.log('§GLASS_REFL_TRUTH ' + verdict + ' glassSamples=' + glassSamples + ' (mirror ' + mirrorSamples + ') hitSamples=' + hitSamples + ' onSlot=' + onSlot + ' depthAgree=' + agree + '/' + onSlot + ' missAtDepthEdge=' + edge + ' offSlot=' + JSON.stringify(off) + (worst.length ? ' worst=' + worst.join('') : '') + ' K=' + lastPlanes.length);
   }
 
   function unstage(A) {
@@ -314,5 +320,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { capture: capture, planar: planar, planarState: function () { return { K: PU.uGfK.value, planes: lastPlanes }; }, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
+  global.GlassFresnel = { capture: capture, planar: planar, patchShader: gfPatchShader, planarState: function () { return { K: PU.uGfK.value, planes: lastPlanes }; }, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);

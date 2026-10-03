@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1562';
+const CACHE_VERSION = 'v1563';
+// v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
 // v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.
 // v1561 (2026-10-03) §GLASS_PLANAR_REFL: exterior panes on the K=6 largest on-screen glass planes reflect a per-plane mirror render (oblique near plane) instead of the eye-centred cube x sky gate; §GLASS_REFL_TRUTH witness (&refltruth=1); still_fault glassReflMirrored. glass_fresnel.js?v=13 effects.js?v=130 still_fault.js?v=14.
 // v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
