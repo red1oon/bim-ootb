@@ -415,7 +415,12 @@
       for (var jj = ny - 1; jj >= 0; jj--) { var ce = ii + jj * nx + kk * nxy, cv0 = zone[ce];
         if (cv0 === SOLID) { if (!capOn || capC[ce]) covered = true; else capSkip++; continue; }
         if (!covered) { if (jj < jg) { zone[ce] = SOLID; earth++; } else { zone[ce] = 1; openN++; } } } }
-    if (jg > 0) for (var kb = 0; kb < nz; kb++) for (var jb = 0; jb < Math.min(2, jg); jb++) for (var ib = 0; ib < nx; ib++) { var cb = ib + jb * nx + kb * nxy; if (zone[cb] !== SOLID) { zone[cb] = SOLID; earth++; } }
+    // §ZONE_FLOOR (ALTC_FOUNDATION §1, 2026-10-03): the 2 padding layers lie BELOW the lowest boundary geometry (the grid is the true
+    // box + 2 cells), so nothing can enclose them from below — a covered empty cell there is the under-slab void, never a room. They
+    // were filled only below the ground plane (min(2, jg)): HHS (ground -6.00 = its lowest geometry, jg 1) kept layer 1 empty =>
+    // zone 4, 8,056 cells / 1,023 m3 of fake indoor under the footprint. Now: below ground as before; above it, covered cells only
+    // (open air beside the building stays open). Witness: prompts/photoreal_probes/lightgrid/zonefloor.js (belowLowestGeometry = 0).
+    for (var kb = 0; kb < nz; kb++) for (var jb = 0; jb < Math.min(2, ny); jb++) for (var ib = 0; ib < nx; ib++) { var cb = ib + jb * nx + kb * nxy; if (zone[cb] !== SOLID && (jb < jg || zone[cb] === 0)) { zone[cb] = SOLID; earth++; } }
     // flood fill, 6-connected, over the covered empty cells (0); label 1 = open-to-sky is written as 0 at the end
     var q = new Int32Array(N), label = 1, sizes = [0, openN];
     function fill(seed, lab) {
