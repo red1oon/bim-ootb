@@ -2611,6 +2611,40 @@
       _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       return;
     }
+    // §ZONE_BOX_TRUE (ALTC_FOUNDATION §1, 2026-10-03, read-only, &zonebox=1): light_zones.js build() bounds a BatchedMesh slot by
+    // the WHOLE batch geometry's box (d.geo.boundingBox x slot matrix). Re-walk the same boundary population the same way ("built")
+    // beside each slot's own getBoundingBoxAt ("true") to size that error. Kept OUT of light_zones.js: its code hash is the zone
+    // cache key (SRC), so any edit there would invalidate every shipped .lightfield.bin sidecar. Class list = light_zones.js BOUNDARY.
+    if (/[?&]zonebox=1\b/.test(location.search)) try {
+      var _BND = ['IfcWall', 'IfcWallStandardCase', 'IfcSlab', 'IfcRoof', 'IfcCovering', 'IfcDoor', 'IfcWindow', 'IfcCurtainWall', 'IfcPlate'];
+      var _gs = new Set(); A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class IN ('" + _BND.join("','") + "')").forEach(function (r) { _gs.add(r[0]); });
+      var _bB = new THREE.Box3(), _bT = new THREE.Box3(), _sb = new THREE.Box3(), _m = new THREE.Matrix4(), _nb = 0, _nNo = 0, _nm = 0, _cls = new Set(_BND);
+      A.scene.traverse(function (o) {
+        if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.geometry) return;
+        if (o === A.ground || o === A._sky || (o.userData && (o.userData.skyPortal || o.userData.excludeFromShadow))) return;
+        o.updateMatrixWorld(); var g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        if (o.isBatchedMesh) {
+          var n = (typeof o.instanceCount === 'number') ? o.instanceCount : (o._instanceInfo ? o._instanceInfo.length : 0);
+          for (var i = 0; i < n; i++) { var gd = A.guidMap[o.id + '_' + i]; if (!gd || !_gs.has(gd)) continue;
+            var gid; try { gid = o.getGeometryIdAt(i); if (!o.getGeometryRangeAt(gid)) continue; } catch (e) { continue; }
+            o.getMatrixAt(i, _m); _m.premultiply(o.matrixWorld); _nb++;
+            _bB.union(_sb.copy(g.boundingBox).applyMatrix4(_m));
+            if (o.getBoundingBoxAt(gid, _sb)) _bT.union(_sb.applyMatrix4(_m)); else _nNo++; }
+          return; }
+        if (!_cls.has(o.userData && o.userData.ifcClass)) return;
+        var add = function (mw) { _sb.copy(g.boundingBox).applyMatrix4(mw); _bB.union(_sb); _bT.union(_sb); _nm++; };
+        if (o.isInstancedMesh) { for (var k = 0; k < o.count; k++) { o.getMatrixAt(k, _m); if (_m.elements[0] === 0 && _m.elements[5] === 0 && _m.elements[10] === 0) continue; _m.premultiply(o.matrixWorld); add(_m); } }
+        else add(o.matrixWorld);
+      });
+      var _r3 = function (b) { return b.isEmpty() ? 'EMPTY' : [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].map(function (v) { return v.toFixed(2); }).join(','); };
+      var _sB = _bB.getSize(new THREE.Vector3()), _sT = _bT.getSize(new THREE.Vector3()), _C = 0.5;   // CELL = light_zones.js CELL
+      var _xc = function (a, b) { return Math.ceil((a + _C * 4) / _C) - Math.ceil((b + _C * 4) / _C); };
+      var _Z = window.LightZones && window.LightZones.get && window.LightZones.get(), _fp = _Z && _Z.fp ? _Z.fp.split('|').slice(5, 11).join(',') : 'n/a';
+      console.log('§ZONE_BOX_TRUE bld=' + A.activeBuilding + ' built=' + _r3(_bB) + ' true=' + _r3(_bT) + ' storedFpBox=' + _fp +
+        ' growM=' + (_sB.x - _sT.x).toFixed(2) + ',' + (_sB.y - _sT.y).toFixed(2) + ',' + (_sB.z - _sT.z).toFixed(2) +
+        ' extraCells=' + _xc(_sB.x, _sT.x) + ',' + _xc(_sB.y, _sT.y) + ',' + _xc(_sB.z, _sT.z) + ' batchedSlots=' + _nb + ' meshDraws=' + _nm + ' noSlotBox=' + _nNo +
+        (_nb ? '' : ' VACUOUS no batched boundary slots'));
+    } catch (eZB) { console.warn('§ZONE_BOX_TRUE failed: ' + (eZB && eZB.message)); }
     // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
     // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
     // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
