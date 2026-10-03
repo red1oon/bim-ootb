@@ -806,6 +806,67 @@
   // structure, e.g. a row inside its own panel), but if it does not fully fit inside that parent's
   // own rect, that is `overflow`, a real defect (the real bake's own pie.ledger: 306px inside a
   // 173px panel) — checked in the witness below, never silently absorbed into "not an overlap".
+  // ══ W6 §F — ONE RECORD PER FILM FRAME (ALTC_FOUNDATION §1 SPEC W6, 2026-10-03) ═════════════════════════════════════════════
+  // A film frame used to print 32-38 lines (Hospital page log 27 MB), most of them the same decision repeated, and answering one
+  // question (were the lamps lit?) took four tags and a timeline. This owner reads the lines the layers already print, keeps the
+  // numbers that matter and prints ONE `§F` line per frame after its capture: phase ms (same boundaries as phases.py), renders
+  // (renderer.info.render.frame delta), scene calls/tris, exposure, lamp owner/lit, HUD boxes, luma, encode. It never changes what
+  // a layer decides. With &filmlog=compact the repeat lines it folds are printed ONCE per film (first occurrence) and then dropped;
+  // without it every line still prints (existing witnesses read them). Outside a film it is a pass-through.
+  var _FREC_FOLD = /^(?:\[[^\]]*\] )?§(STILL_REFINE|PHOTO_AO|LAMP_ZONE_PICK|SUN_ARC_FILL_PIN|SUN_ARC_STEP|PHOTO_SHADOW_FORCE_REASSERT|TRIPLANAR_PERF|STILL_OVERLAY_GUARD|PHOTO_STAGING|NIGHT_PL_INTENSITY_HEURISTIC|NIGHT_BUILDUP_GATE|LAMP_CAP_CHURN|FPS_MODE|SOURCED_LIGHT_BIND|FILM_EXPOSURE|FRAME_QA|CAPTURE_PARTS|CAPTURE_ENC|CAPTURE_TAIL|LAMP_EN|SOURCED_OWN_COST|WINDOW_PULL|FLYTHRU_DIM_DRAW|PERF_TRAVERSE)\b/;
+  var _frec = null;
+  function _filmRecInstall() {
+    if (window.__filmRecOrigLog) { _frec = { t: {}, seen: {}, folded: 0, emitted: 0, lastHashT: null, lastRenders: null, pend: null }; return; }
+    var orig = console.log; window.__filmRecOrigLog = orig;
+    _frec = { t: {}, seen: {}, folded: 0, emitted: 0, lastHashT: null, lastRenders: null, pend: null };
+    function f1(v) { return v == null ? '-' : (+v).toFixed(0); }
+    function emit() {
+      var R = _frec, P = R.pend; if (!P) return; R.pend = null;
+      var A = window.APP, T = R.t, ri = A && A.renderer && A.renderer.info && A.renderer.info.render;
+      var rNow = ri ? ri.frame : null, renders = (rNow != null && R.lastRenders != null) ? rNow - R.lastRenders : null;
+      R.lastRenders = rNow;
+      var ph = function (a, b) { return (a != null && b != null) ? (b - a) : null; };
+      var rects = (A && A._hudLayoutRects) || [], real = 0;
+      for (var k = 0; k < rects.length; k++) if (!(rects[k].w <= 1 && rects[k].h <= 1)) real++;
+      var c = A && A.camera ? A.camera.position : null, L = (A && A._frLamps) || {}, X = R.ex || {}, Q = R.qa || {}, E = R.enc || {};
+      orig.call(console, '§F i=' + P.i + ' total=' + f1(ph(R.lastHashT, P.t)) + ' setup=' + f1(ph(R.lastHashT, T.rs)) + ' light=' + f1(ph(T.rs, T.exp)) +
+        ' taa=' + f1(ph(T.exp, T.rd)) + ' ao=' + f1(ph(T.aos, T.aod)) + ' cap=' + f1(ph(T.aod, P.t)) + ' renders=' + (renders == null ? '-' : renders) +
+        ' calls=' + ((A && A._taaPass && A._taaPass.lastSceneCalls != null) ? A._taaPass.lastSceneCalls : '-') +
+        ' tris=' + ((A && A._taaPass && A._taaPass.lastSceneTris != null) ? (A._taaPass.lastSceneTris / 1e6).toFixed(2) + 'M' : '-') +
+        ' | EV=' + (X.ev || '-') + ' exp=' + (X.exp || '-') + ' Lcd=' + (X.lcd || '-') + ' metered=' + (X.met || '-') + ' capped=' + (X.cap || '-') + ' meterMs=' + (X.ms || '-') +
+        ' | lamps=' + (L.owner || '-') + ' dataLit=' + (L.data == null ? '-' : L.data) + ' poolLit=' + (L.pool == null ? '-' : L.pool) +
+        ' | hud=' + real + ' | luma=' + (Q.l || '-') + ' dark=' + (Q.d || '-') + ' clip=' + (Q.c || '-') + ' reused=' + (Q.r || '-') +
+        ' | encMs=' + (E.ms || '-') + ' compMs=' + (E.comp || '-') + ' bytes=' + (E.b || P.b || '-') +
+        ' cam=' + (c ? c.x.toFixed(2) + ',' + c.y.toFixed(2) + ',' + c.z.toFixed(2) : '-'));
+      R.emitted++; R.lastHashT = P.t; R.t = {}; R.ex = null; R.qa = null; R.enc = null;
+    }
+    console.log = function () {
+      var A = window.APP, s = (arguments.length && typeof arguments[0] === 'string') ? arguments[0] : null;
+      if (!s || !A || !A._maxqActive || !_frec || s.indexOf('§') < 0) return orig.apply(console, arguments);
+      var R = _frec, now = performance.now(), m;
+      if (s.indexOf('§STILL_REFINE start') >= 0) { if (R.t.rs == null) R.t.rs = now; }
+      else if (s.indexOf('§STILL_REFINE done') >= 0) R.t.rd = now;
+      else if (s.indexOf('§PHOTO_AO start') >= 0) R.t.aos = now;
+      else if (s.indexOf('§PHOTO_AO done') >= 0) R.t.aod = now;
+      else if ((m = /§FILM_EXPOSURE f=\d+ metered=(\d)\S* .*?\bEV=([\d.]+) exposure=([\d.]+) Lcd=([\d.]+).*?capped=(\S+).*\bms=([\d.]+)/.exec(s))) {
+        R.t.exp = now; R.ex = { met: m[1], ev: m[2], exp: m[3], lcd: (+m[4]).toFixed(0), cap: m[5], ms: (+m[6]).toFixed(0) }; }
+      else if ((m = /§FRAME_QA i=\d+ .*?lumaMean=([\d.]+).*?darkPct=([\d.]+) clipPct=([\d.]+) reused=(\d)/.exec(s))) R.qa = { l: m[1], d: m[2], c: m[3], r: m[4] };
+      else if ((m = /§CAPTURE_ENC .*?\bms=([\d.]+) compMs=([\d.]+) bytes=(\d+)/.exec(s))) R.enc = { ms: m[1], comp: m[2], b: m[3] };
+      var hm = /§FRAME_HASH i=(\d+) sha=\S+ bytes=(\d+)/.exec(s);
+      if (hm) { emit(); R.pend = { i: +hm[1], t: now, b: hm[2] }; }
+      var key = _FREC_FOLD.exec(s), pass = !A._filmLogCompact || !key || !R.seen[key[1]];
+      if (key) R.seen[key[1]] = 1;
+      if (pass) orig.apply(console, arguments); else R.folded++;
+      if (/§CAPTURE_TAIL i=/.test(s) || /§FRAME_REUSE_TOTAL/.test(s)) emit();
+    };
+  }
+  function _filmRecSummary() {
+    if (!_frec || !window.__filmRecOrigLog) return;
+    window.__filmRecOrigLog.call(console, _frec.emitted
+      ? '§F_SUMMARY frames=' + _frec.emitted + ' foldedLines=' + _frec.folded + ' compact=' + (window.APP && window.APP._filmLogCompact ? 1 : 0)
+      : '§F_SUMMARY INCONCLUSIVE — no §F record was emitted (no §FRAME_HASH seen)');
+  }
+
   function _hudLayoutRegisterImpl(name, x, y, w, h, parentName, truncated) {
     var A2 = window.APP;
     if (!A2._hudLayoutRects) A2._hudLayoutRects = [];
@@ -1607,7 +1668,7 @@
         ' held=' + held + ' visible=' + vis + ' inFrustum=' + inFrustum +
         ' frustumPct=' + pct(inFrustum, vis) + '%ofVisible' +
         ' instancedMeshes=' + instanced + ' instances=' + instancedCount +
-        ' lastRenderCalls=' + (inf ? inf.calls : 'n/a') + ' lastRenderTris=' + (inf ? inf.triangles : 'n/a') +
+        ' (W7: lastRenderCalls dropped — it read whichever render ran last; per-frame scene calls are in §F calls=)' +
         ' — frustumPct is the number that decides LARGE_DB_BAKE.md §8: high means the renderer is' +
         ' already submitting most of the model every frame and culling is worth building; low means' +
         ' it is culling well already and the cost is elsewhere.');
@@ -2055,6 +2116,7 @@
       _stackY = Math.max(_stackY, A.bigStatsLastBox.y + A.bigStatsLastBox.h + _gapY);
     }
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
+      A._resPanelFrames = (A._resPanelFrames || 0) + 1;   // W7: did a resource panel exist at all (pie/stats verdicts below)
       _drawUnlessHold('hud.pie', function (a) {
         try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }
         catch (eRp) {
@@ -2503,6 +2565,9 @@
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     A._lampsSum = null;   // W3(C) — fresh lamp census per film
+    A._resPanelFrames = 0;   // W7
+    A._filmLogCompact = /[?&]filmlog=compact\b/.test(location.search);   // W6
+    _filmRecInstall();   // W6 §F
     // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
     // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
     // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
@@ -4544,6 +4609,7 @@
         if (_lVer !== null && _lS.ver !== null && _lVer !== _lS.ver) _lS.setChanges++;
         _lS.ver = _lVer;
         var _lKey = _lOwner + '/' + _lData + '/' + _lPool + '/' + (_lVer == null ? '-' : _lVer);
+        A._frLamps = { owner: _lOwner, data: _lData, pool: _lPool };   // W6 §F
         if (_lS.key !== _lKey) {
           _lS.key = _lKey;
           console.log('§LAMPS f=' + i + ' owner=' + _lOwner + ' dataLit=' + _lData + '/' + _lDataN + ' poolLit=' + _lPool + '/' +
@@ -4921,6 +4987,12 @@
         ' — ' + (window.__noFrameReuse ? 'reuse OFF by flag (control run)'
           : (_frameReuseTotal > 0 ? 'each reused frame is the previous encoded blob, byte-identical by construction'
              : 'INCONCLUSIVE: nothing was reused — no load-path hold in this film, or the key moved every frame')));
+      _filmRecSummary();   // W6 — after §FRAME_REUSE_TOTAL, which flushed the last pending §F
+      // W7 — a requested draw-cost proxy that never boxed anything did nothing for the whole film; say so (Hospital 10-03: boxed=0
+      // on all 3,249 census lines; LTU: requested, gate never passed, no page line at all).
+      if (window.__dlodProxyBake) console.log(!window.__dlodProxyEngaged
+        ? '§DLOD_BAKE_PROXY_RESULT NO-OP — requested, but the large-building gate never engaged it'
+        : ('§DLOD_BAKE_PROXY_RESULT boxedMax=' + (window.__dlodBoxedMax || 0) + ((window.__dlodBoxedMax || 0) === 0 ? ' => NO-OP — engaged but boxed nothing on any frame' : ' => engaged')));
       try { if (A.loadPathDispose) A.loadPathDispose(); } catch (eLPd) {}
       try { if (A.ledgerTickerDispose) A.ledgerTickerDispose(); } catch (eLTd) {}
       // §ESCAPE_ROUTE_REVEAL — the forced restore. Runs unconditionally, NOT behind _escapeRoute:
@@ -4946,14 +5018,16 @@
       // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
       // showing today's. A bake where this equals framesDone means no day was ever staffed and the
       // whole panel was a hold: that is a schedule problem, not a HUD one, and must be visible.
-      console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
+      if (!A._resPanelFrames) console.log('§CPE_PIE_HOLD VACUOUS — no resource panel was drawn on any frame (no 4D crew data / panel off); nothing judged');
+      else console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
         (framesDone ? ' (' + Math.round((A._resHoldFrames || 0) / framesDone * 100) + '% of the film)' : '') +
         ((A._resHoldFrames || 0) === 0 ? ' — trades were active for every frame, the pie was never held'
           : ((A._resHoldFrames || 0) >= framesDone ? ' ⚠ NO frame had a live crew — the pie held throughout'
              : ' — pie holds the last real crew through the silent tail')));
       // §CPE_STATS_TAIL — how much of the film the Reveal round reclaimed. 0 on a bake whose plan
       // has no topout AND whose ops never freeze: that is the case where the dead tail stays dead.
-      console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
+      if (!A._resPanelFrames) console.log('§CPE_STATS_TAIL VACUOUS — no resource panel was drawn on any frame; nothing judged');
+      else console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
         (framesDone ? ' (' + Math.round((A._statTailFrames || 0) / framesDone * 100) + '% of the film)' : '') +
         ((A._statTailFrames || 0) === 0
           ? ' — the Reveal round never revolved: no topout on the plan and the ops never froze'

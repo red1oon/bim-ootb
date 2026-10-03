@@ -870,6 +870,7 @@
     // BECAUSE it is throttled: a sampled census that hides its own sampling rate is the same lie
     // in a smaller font — with them, the real per-frame rate is recoverable from one line.
     _dlodCensusPasses++;
+    if (typeof window !== 'undefined') window.__dlodBoxedMax = Math.max(window.__dlodBoxedMax || 0, boxed);   // W7: whole-film max, every pass
     var _nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     // `_dlodCensusAt === 0` = the very first pass: emit IMMEDIATELY rather than after a full
     // window. The question this tag exists to answer ("is the proxy engaged in this bake?") is
@@ -9340,7 +9341,7 @@
     // ONLY under the same large-building gate the button itself obeys — no new threshold, no new
     // behaviour, nothing changed for any interactive user or any bake that does not ask.
     if (_isLargeBuilding && typeof window !== 'undefined' && window.__dlodProxyBake) {
-      _dlodProxyOn = true;
+      _dlodProxyOn = true; window.__dlodProxyEngaged = true;   // W7: read by the film's end-of-bake NO-OP verdict
       console.log('§DLOD_BAKE_PROXY on — requested by the bake tap, large-building gate passed');
     }
     var _lodBtnGate = document.getElementById('tm-lod');
