@@ -771,7 +771,7 @@
     opts = opts || {};
     var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
     var forVerb = opts.forVerb || 'update';
-    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [];   // §P7/§P8 — witness seams, emitted once per fold
+    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [], spLog = [];   // §P7/§P8 — witness seams, emitted once per fold
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
@@ -832,6 +832,14 @@
       // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
       // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
       // "0" and "N" are NOT empty), which is exactly why an untouched New can be required-checked at all.
+      // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b) — stage 5 of
+      // GridField.getDefault's "123457" (GridField.java:98): the SYSTEM preference #ColumnName (:1001-1012 →
+      // Env.getPreference(ctx,win,col,true) = ctx "#"+col, Env.java:1072-1078), which Login.loadDefault
+      // (Login.java:701-734) filled with the client's IsDefault='Y' row of each table. The host supplies the map
+      // (ctx.sysPref, lower-case column → value); absent map → unchanged behaviour. Stage 4 (user P| prefs) not ported.
+      if (!Object.prototype.hasOwnProperty.call(spec, 'default') && ctx.sysPref && ctx.sysPref[spec.col] != null && String(ctx.sysPref[spec.col]) !== '') {
+        spec.default = ctx.sysPref[spec.col]; spec.defaultsource = 'syspref'; spLog.push(spec.col + '=' + spec.default);
+      }
       if (!Object.prototype.hasOwnProperty.call(spec, 'default')) {
         var dtd = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
         if (dtd != null) { spec.default = dtd; spec.defaultsource = 'datatype'; dtLog.push(spec.col + '=' + dtd); }
@@ -887,6 +895,8 @@
                   '] (GridField.defaultFromDatatype:1022-1051)');
       console.log('§GRIDFIELD-EXPR-DEFAULT key=' + (opts.key || '?') + ' resolved=' + exprLog.length + ' [' + exprLog.join(' · ') +
                   '] unresolved=' + unresolvedLog.length + ' [' + unresolvedLog.join(' · ') + '] (GridField.defaultFromExpression:875-913)');
+      if (opts.ctx && opts.ctx.sysPref) console.log('§GRIDFIELD-SYSPREF-DEFAULT key=' + (opts.key || '?') + ' n=' + spLog.length + ' [' + spLog.join(',') +
+                  '] (GridField stage 5 #ColumnName ← Login.loadDefault, FS-12)');
       console.log('§REFTABLE-FOLD key=' + (opts.key || '?') + ' resolved=' + refTblLog.length + ' [' + refTblLog.join(',') +
                   '] (MLookupFactory.getLookup_Table — DisplayType 18/30 targets that <col minus _id> gets wrong)');
     }
@@ -933,6 +943,9 @@
         });
         if (ad.refsource && ad.ref && o.type === 'fk' && String(o.ref || '') !== String(ad.ref)) o.ref = ad.ref;
         if (o.seq == null && ad.seq != null) o.seq = ad.seq;
+        // FS-12 (§FS2j): a curated pin with NO default of its own takes the fold's GridField stage-5 (#ColumnName)
+        // default — additive (no curated pin with a default changes); c_order.M_PriceList_ID is such a pin.
+        if (o.default == null && ad.defaultsource === 'syspref') { o.default = ad.default; o.defaultsource = 'syspref'; }
       }
       return o;
     });

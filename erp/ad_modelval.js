@@ -169,7 +169,11 @@
       ['MOrder.priceListDefault', function (ctx, info) {     // :1282-1290  IsSOPriceList=IsSOTrx ORDER BY IsDefault DESC
         var r = info.record;                                 //   (tie past IsDefault is unspecified in Java; pk-ordered here)
         if (!Number(r.m_pricelist_id)) {
-          var pl = db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id").get(r.issotrx === 'Y' ? 'Y' : 'N');
+          // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j): MOrder.java:1285-1286 is CLIENT-scoped
+          // (WHERE AD_Client_ID=? AND IsSOPriceList=? AND IsActive=?) — without it a tenant with no SO list borrowed another's.
+          var pl = Number(r.ad_client_id) > 0
+            ? db.prepare("SELECT m_pricelist_id FROM m_pricelist WHERE ad_client_id=? AND issopricelist=? AND isactive='Y' ORDER BY isdefault DESC, m_pricelist_id").get(Number(r.ad_client_id), ((info.derived && info.derived.issotrx) || r.issotrx) === 'Y' ? 'Y' : 'N')   // FS-12: the EFFECTIVE IsSOTrx (MOrder.java:1283 reads the field the hook above just derived)
+            : null;
           if (pl) d(info).m_pricelist_id = pl.m_pricelist_id;
         }
         return null;

@@ -30,7 +30,7 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
-  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
+  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-12 (§FS2j) pinned S15b to V: a NEW tenant's order prices its line from the setup price list and completes.
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
 const OUT = [];
@@ -139,7 +140,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     await page.evaluate(() => document.querySelectorAll('#idmp-tree .idmp-row:not(.leaf)').forEach(r => { if (!r.parentElement.classList.contains('open')) r.click(); }));
     await page.click("#idmp-tree .idmp-row.leaf:has(.nm:text-is('Initial Tenant Setup'))", { timeout: 6000 });
     await page.waitForSelector('[data-genesis-create]', { timeout: 8000 });
-    const ccy = await page.$$eval('.idmp-procpane select option', o => o.map(x => x.text));
+    const ccy = await page.$$eval('[data-genesis-currency] option', o => o.map(x => x.text));   // FS-12: the pane now also has a Country select
     await page.fill('[data-genesis-name]', NAME); await page.fill('[data-genesis-admin]', ADMIN);
     // FS-3: pick a NON-default currency so the run proves the choice is carried, not just listed.
     const PICK = Number(await one(page, "SELECT C_Currency_ID FROM C_Currency WHERE ISO_Code='MYR' AND IsActive='Y'"));
@@ -270,9 +271,10 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   } catch (e) { step('S14', 'I', 'SO in new company', 'harness: ' + e.message); }
 
   // ── S16..S21 order-to-cash in the demo company (GardenWorld) ─────────────────────────────────────────────────
-  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price, negProd) {
+  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price, negProd, login) {
     const r = {};
-    await openWin(page, base, 'GardenAdmin', win); await clickNew(page);
+    await openWin(page, base, login || 'GardenAdmin', win); await clickNew(page);
+    r.newPriceList = await page.$eval('#idmp-inline-mount [data-col="m_pricelist_id"]', e => e.value).catch(() => null);
     await setSel(page, 'c_bpartner_id', bpId); await page.waitForTimeout(300);
     const dt = (await opts(page, 'c_doctypetarget_id')).find(o => dtRe.test(o.t));
     if (dt) await setSel(page, 'c_doctypetarget_id', dt.v);
@@ -306,6 +308,52 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     r.co = last(n0, /§CRUD process committed key=c_order/); r.fan = last(n0, /§SO-COMPLETE|§SO-FANOUT/); r.fanout = last(n0, /§SO-FANOUT/);
     return r;
   }
+  // ── S15b a sales order in the NEW company prices its line and completes (FS-12, spec §FS2j) ────────────────────
+  //    ORACLE by SQL, independent of the page's code path: price list = the client's IsDefault one (Login.loadDefault →
+  //    GridField stage 5), version ValidFrom <= today → M_ProductPrice.PriceStd; UOM = M_Product.C_UOM_ID; tax = the
+  //    tenant's tax of the product's category whose from/to countries match (org location → warehouse location, the
+  //    DeliveryViaRule 'P' default, Tax.java:539-542), else its IsDefault tax. NEGATIVE CONTROL: the price list the line
+  //    priced from must belong to THIS client (a borrowed GardenWorld list would also give a number).
+  try {
+    const bpN = Number(await one(page, "SELECT C_BPartner_ID FROM C_BPartner WHERE AD_Client_ID=" + CID + " AND Name='Standard BP'"));
+    const prodN = Number(await one(page, 'SELECT M_Product_ID FROM M_Product WHERE AD_Client_ID=' + CID + ' ORDER BY M_Product_ID LIMIT 1'));
+    const plN = Number(await one(page, "SELECT M_PriceList_ID FROM M_PriceList WHERE IsDefault='Y' AND IsActive='Y' AND AD_Client_ID IN (0," + CID + ') ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, M_PriceList_ID LIMIT 1'));
+    const plvN = Number(await one(page, 'SELECT M_PriceList_Version_ID FROM M_PriceList_Version WHERE M_PriceList_ID=' + plN + " AND date(ValidFrom)<=date('now') ORDER BY ValidFrom DESC LIMIT 1"));
+    const oP = Number(await one(page, 'SELECT PriceStd FROM M_ProductPrice WHERE M_Product_ID=' + prodN + ' AND M_PriceList_Version_ID=' + plvN));
+    const oU = Number(await one(page, 'SELECT C_UOM_ID FROM M_Product WHERE M_Product_ID=' + prodN));
+    const cr = async (sql) => { const r = await q(page, sql); return Array.isArray(r) && r.length ? { c: Number(r[0][0]) || 0, r: Number(r[0][1]) || 0 } : null; };
+    const fromL = await cr('SELECT c.C_Country_ID, c.C_Region_ID FROM AD_OrgInfo oi JOIN C_Location c ON c.C_Location_ID=oi.C_Location_ID WHERE oi.AD_Org_ID=' + Number(HQ));
+    const toL = await cr('SELECT c.C_Country_ID, c.C_Region_ID FROM M_Warehouse w JOIN C_Location c ON c.C_Location_ID=w.C_Location_ID WHERE w.AD_Client_ID=' + CID + ' ORDER BY w.M_Warehouse_ID LIMIT 1');
+    const tb = "FROM C_Tax WHERE AD_Client_ID=" + CID + " AND IsActive='Y' AND COALESCE(Parent_Tax_ID,0)=0 AND COALESCE(SOPOType,'B')<>'P'";
+    const ordT = ' ORDER BY C_Country_ID IS NULL, C_Country_ID, C_Region_ID IS NULL, C_Region_ID, To_Country_ID IS NULL, To_Country_ID, To_Region_ID IS NULL, To_Region_ID, ValidFrom DESC LIMIT 1';
+    let oT = (fromL && toL) ? Number(await one(page, 'SELECT C_Tax_ID ' + tb + ' AND C_TaxCategory_ID=(SELECT C_TaxCategory_ID FROM M_Product WHERE M_Product_ID=' + prodN + ')' +
+      ' AND COALESCE(C_Country_ID,0) IN (0,' + fromL.c + ') AND COALESCE(C_Region_ID,0) IN (0,' + fromL.r + ') AND COALESCE(To_Country_ID,0) IN (0,' + toL.c + ') AND COALESCE(To_Region_ID,0) IN (0,' + toL.r + ')' +
+      " AND (ValidFrom IS NULL OR date(ValidFrom)<=date('now'))" + ordT)) : 0;
+    if (!oT) oT = Number(await one(page, 'SELECT C_Tax_ID ' + tb + " AND IsDefault='Y'" + ordT));
+    // iDempiere fact (spec §FS2j): MSetup's list is NOT a sales list (MPriceList.setInitialDefaults IsSOPriceList=N), so the
+    // SO window's validated lookup (val rule 271) drops the #M_PriceList_ID default (GridTable.dataNew → validateValueNoDirect)
+    // and the order has no price list. The user's step — as in iDempiere — is to tick "Sales Price list" on it once.
+    await openWin(page, base, ADMIN, 146);
+    await page.evaluate((i) => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find(x => Number(x.getAttribute('data-ad-record')) === i); if (tr) tr.click(); }, plN);
+    await page.waitForTimeout(900);
+    let n0 = PAGELOG.length;
+    await page.check('#idmp-inline-mount input[data-col="issopricelist"]').catch(() => {});
+    await page.waitForTimeout(300); await save(page);
+    const plUpd = last(n0, /§CRUD validate key=m_pricelist /), plPer = last(n0, /§CRUD-PERSIST key=m_pricelist /);
+    const NT = await newOrder(143, bpN, /^Standard Order/, 'Order Line', prodN, 2, oP || 1, null, ADMIN);
+    const djN = (line) => { const m = /derived=(\{[^}]*\})/.exec(line || ''); try { return m ? JSON.parse(m[1]) : null; } catch (e) { return null; } };
+    const dN = djN(NT.callout) || {};
+    const plUsed = Number((/§FS6-PRICE [^|]*pricelist=(\d+)/.exec(NT.fs6) || [])[1]);
+    const plCli = plUsed ? Number(await one(page, 'SELECT AD_Client_ID FROM M_PriceList WHERE M_PriceList_ID=' + plUsed)) : null;
+    const okN = oP > 0 && oU > 0 && oT > 0 && dN.PriceEntered === oP && dN.C_UOM_ID === oU && dN.C_Tax_ID === oT && plUsed === plN && plCli === CID;
+    const coN = /to=CO verifyChain=ok/.test(NT.co);
+    step('S15b', !CID || !bpN || !prodN ? 'I' : (okN && /verb=update ok/.test(plUpd) && /verb=create ok/.test(NT.hdr) && /verb=create ok/.test(NT.line) && coN ? 'V' : 'G'),
+      'a sales order in the NEW company prices its line (price/UOM/tax == oracle) and completes',
+      'markSalesList=' + plUpd.slice(0, 50) + ' persist=' + !!plPer + ' client=' + CID + ' bp=' + bpN + ' product=' + prodN + ' newRecordPriceList=' + NT.newPriceList + ' derived={PriceEntered:' + dN.PriceEntered + ',C_UOM_ID:' + dN.C_UOM_ID + ',C_Tax_ID:' + dN.C_Tax_ID +
+      '} oracle={pl:' + plN + ',plv:' + plvN + ',price:' + oP + ',uom:' + oU + ',tax:' + oT + '} pricedFrom(pl=' + plUsed + ',client=' + plCli + ') hdr=' + NT.hdr.slice(0, 60) +
+      ' line=' + NT.line.slice(0, 60) + ' ' + NT.co.slice(0, 120) + ' | ' + NT.fs6.slice(0, 200));
+  } catch (e) { step('S15b', 'I', 'SO in the new company', 'harness: ' + e.message); }
+
   let SO = null;
   try {
     // ORACLE for S17, computed here by SQL, independent of crud_overlay's code path (spec §FS2e):

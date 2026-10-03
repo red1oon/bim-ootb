@@ -1400,6 +1400,13 @@
               ' offered=' + rows.length + ' verdict=' + vr.verdict +
               (vr.unresolved && vr.unresolved.length ? ' unresolved=[' + vr.unresolved.join(',') + ']' : '') +
               ' ctx=' + JSON.stringify(vr.ctx || {}) + ' kept=' + (hasKeep ? keep : '(blank)'));
+            // FS-12 (§FS2j): a value the lookup does NOT contain is set to null — GridField.validateValue :1266-1278
+            // (a stage-5 #default such as a BP's M_PriceList_ID = the setup list, which val rule 'IsSOPriceList=Y' excludes).
+            if (!rows.length && !kEmpty && vr && vr.verdict === 'applied' && admitted && !admitted[String(keep)]) {
+              el.innerHTML = '<option value="" selected></option>';
+              console.log('§FK-INVALID-VALUE col=' + f.col + ' value=' + keep + ' admitted=0 → null (GridField.validateValue :1266-1278)');
+              return;
+            }
             if (!rows.length && !noRows) return;              // no data at all → leave the raw-value option as-is
             el.innerHTML = blankFk + rows.map(function (r) { return '<option value="' + esc(r[0]) + '"' + (String(r[0]) === String(keep) ? ' selected' : '') + '>' + esc(r[1] + ' (' + r[0] + ')') + '</option>'; }).join('');
           } catch (er) {}

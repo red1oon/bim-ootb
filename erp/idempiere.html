@@ -471,7 +471,7 @@
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
-<script src="ad_modelval.js?v=1"></script>
+<script src="ad_modelval.js?v=2"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -503,7 +503,7 @@
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
 <script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=5"></script>
+<script src="genesis.js?v=6"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -619,8 +619,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=2"></script>
-<script src="crud_overlay.js?v=24"></script>
+<script src="crud_core.js?v=3"></script>
+<script src="crud_overlay.js?v=25"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
@@ -3234,6 +3234,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!nCcy) { var oc0 = el('option', null, 'USD — US Dollar'); oc0.value = '100'; oc0.setAttribute('data-prec', '2'); oc0.setAttribute('data-iso', 'USD'); ccy.appendChild(oc0); }
     console.log('§GENESIS-WIZARD currencies=' + (nCcy || 1) + ' source=' + (nCcy ? "C_Currency IsActive='Y'" : 'fallback-USD'));
     fCcy.appendChild(ccy); pane.appendChild(fCcy);
+    // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j): process 53161 param C_Country_ID (mandatory), default
+    // = its SQL "MIN(C_Country_ID) … AD_Language='@#AD_Language@'" — the seed has no AD_Language table, so the same rule
+    // reads C_Country.AD_Language='en_US' (100 United States). The org / Standard BP / warehouse locations take it.
+    var fCty = el('div', 'fld'); fCty.appendChild(el('label', null, 'Country'));
+    var cty = document.createElement('select'); cty.setAttribute('data-genesis-country', '1'); var nCty = 0, ctyDef = null;
+    try {
+      var dq = db.exec("SELECT MIN(C_Country_ID) FROM C_Country WHERE AD_Language='en_US'"); ctyDef = dq.length ? dq[0].values[0][0] : null;
+      var cq = db.exec("SELECT C_Country_ID, Name, CountryCode FROM C_Country WHERE IsActive='Y' ORDER BY Name");
+      (cq.length ? cq[0].values : []).forEach(function (v) {
+        var o = el('option', null, v[1] + ' (' + v[2] + ')'); o.value = String(v[0]); if (Number(v[0]) === Number(ctyDef)) o.selected = true; cty.appendChild(o); nCty++;
+      });
+    } catch (eT) {}
+    console.log('§GENESIS-WIZARD countries=' + nCty + ' default=' + ctyDef + " (param 53161 C_Country_ID default SQL, AD_Language='en_US')");
+    fCty.appendChild(cty); pane.appendChild(fCty);
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
@@ -3251,6 +3265,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var dNow = new Date(), today = dNow.getFullYear() + '-' + ('0' + (dNow.getMonth() + 1)).slice(-2) + '-' + ('0' + dNow.getDate()).slice(-2);
       var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
         currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
+      if (cty.value) input.countryId = Number(cty.value);                    // FS-12
       run.disabled = true; run.textContent = 'Creating…';
       var born;
       try { born = window.Genesis.birthTenant(input); }
@@ -3884,6 +3899,40 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   fields (the renderer's getFields shape — reused, not re-derived) so hostCreate/Update/Delete's entryFor
   //   resolves for a non-curated table. forVerb shapes the readonly set (IsUpdateable='N' settable on New,
   //   display-only on Edit). Returns the registered spec (or null when the engine seam is absent).
+  // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b) — Login.loadDefault
+  //   (Login.java:659-670 + :701-734), ported: for every non-view table with a key column AND an active IsDefault
+  //   column, #<KeyColumn> = SELECT key WHERE IsDefault='Y' AND IsActive='Y' (+ the role's client clause
+  //   AD_Client_ID IN (0,<client>)) ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, key; C_DocType → #C_DocTypeTarget_ID;
+  //   AD_Window*/AD_PrintFormat*/AD_Workflow*/AD_StorageProvider/M_Locator* skipped (:703-708). Org access not ported.
+  //   Cached per client; one §LOGIN-DEFAULTS line. Returns { lower-case column: value }.
+  var _loginDefCache = {};
+  function _loginDefaults() {
+    var cli = (_session && _session.client) ? Number(_session.client.id) : null;
+    if (cli == null || !db) return null;
+    if (_loginDefCache[cli]) return _loginDefCache[cli];
+    var out = {}, n = 0;
+    try {
+      var r = db.exec("SELECT t.TableName, c.ColumnName FROM AD_Column c JOIN AD_Table t ON c.AD_Table_ID=t.AD_Table_ID " +
+        "WHERE c.IsKey='Y' AND t.IsActive='Y' AND t.IsView='N' AND EXISTS (SELECT 1 FROM AD_Column cc WHERE cc.ColumnName='IsDefault' " +
+        "AND cc.AD_Table_ID=t.AD_Table_ID AND cc.IsActive='Y')");
+      (r.length ? r[0].values : []).forEach(function (v) {
+        var tn = String(v[0]), kc = String(v[1]);
+        if (/^AD_Window|^AD_PrintFormat|^AD_Workflow|^M_Locator/.test(tn) || tn === 'AD_StorageProvider') return;
+        if (!_colExists(tn, kc) || !_colExists(tn, 'IsDefault')) return;
+        var hasCli = _colExists(tn, 'AD_Client_ID'), hasOrg = _colExists(tn, 'AD_Org_ID');
+        try {
+          var q = db.exec('SELECT ' + kc + ' FROM ' + tn + " WHERE IsDefault='Y' AND IsActive='Y'" + (hasCli ? ' AND AD_Client_ID IN (0,' + cli + ')' : '') +
+            ' ORDER BY ' + (hasCli ? 'AD_Client_ID DESC, ' : '') + (hasOrg ? 'AD_Org_ID DESC, ' : '') + kc + ' LIMIT 1');
+          var val = q.length && q[0].values.length ? q[0].values[0][0] : null;
+          if (val != null && String(val) !== '') { out[(tn === 'C_DocType' ? 'c_doctypetarget_id' : kc.toLowerCase())] = val; n++; }
+        } catch (eQ) {}
+      });
+    } catch (e) {}
+    _loginDefCache[cli] = out;
+    console.log('§LOGIN-DEFAULTS client=' + cli + ' n=' + n + ' m_pricelist_id=' + out.m_pricelist_id + ' c_paymentterm_id=' + out.c_paymentterm_id +
+      ' c_doctypetarget_id=' + out.c_doctypetarget_id + ' (Login.loadDefault :701-734)');
+    return out;
+  }
   function _foldCrudSpecForTab(tab, forVerb) {
     if (!tab || !tab.tableName || !window.__crud || !window.__crud.core ||
         typeof window.__crud.core.foldCrudSpec !== 'function' || typeof window.__crud.registerFolded !== 'function') return null;
@@ -3893,6 +3942,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
                 orgId: (_session && _session.org) ? _session.org.id : null,
                 today: (new Date()).toISOString().slice(0, 10) };
+    ctx.sysPref = _loginDefaults();                          // FS-12: GridField stage 5 (#ColumnName)
     // §P2.7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-REFLIST): a List column's option set
     //   is its AD_Reference_Value_ID's AD_Ref_List rows — resolved by the SAME ADParser.resolveReference the read
     //   view already uses (active rows, ordered per AD_Reference.IsOrderByValue). Handed to the pure fold as a resolver.
