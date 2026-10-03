@@ -752,9 +752,35 @@ const server = http.createServer((req, res) => {
   }
 
   // heap sampling (Log Mandate: numbers, on an interval, into the log)
+  // §CLI_BAKE_MEM (W5, ALTC_FOUNDATION §1, 2026-10-03): the CDP heap (0.3-1.4 GB) and performance.memory (2.0-2.6 GB) disagreed on
+  // the same minute and neither counts ArrayBuffers or VRAM. One sample now carries every instrument side by side: CDP JS heap,
+  // performance.memory, the whole Chrome process tree's RSS from /proc (what the OS actually holds) and nvidia-smi's GPU memory.
+  const _memRows = [];
+  function _chromeTreeRssMB() {
+    try {
+      const root = browser.process && browser.process() && browser.process().pid; if (!root) return null;
+      const kids = {}; let rssKB = 0;
+      for (const d of fs.readdirSync('/proc')) { if (!/^\d+$/.test(d)) continue;
+        try { const st = fs.readFileSync('/proc/' + d + '/stat', 'utf8'); const pp = +st.slice(st.lastIndexOf(')') + 2).split(' ')[1];
+              (kids[pp] = kids[pp] || []).push(+d); } catch (e) {} }
+      const q = [root];
+      while (q.length) { const pid = q.pop();
+        try { const m = /VmRSS:\s+(\d+)/.exec(fs.readFileSync('/proc/' + pid + '/status', 'utf8')); if (m) rssKB += +m[1]; } catch (e) {}
+        (kids[pid] || []).forEach(k => q.push(k)); }
+      return rssKB / 1024;
+    } catch (e) { return null; }
+  }
+  function _gpuUsedMB() {
+    try { return +execFileSync('nvidia-smi', ['--query-gpu=memory.used', '--format=csv,noheader,nounits'], { timeout: 5000 }).toString().trim().split('\n')[0]; }
+    catch (e) { return null; }
+  }
   const heapIv = setInterval(async () => {
     try { const m = await page.metrics(); S.heap.push(m.JSHeapUsedSize);
       logRaw(`[heap] usedMB=${(m.JSHeapUsedSize / 1048576).toFixed(1)} totalMB=${(m.JSHeapTotalSize / 1048576).toFixed(1)}`);
+      const pm = await page.evaluate(() => (performance.memory ? performance.memory.usedJSHeapSize : null)).catch(() => null);
+      const row = { cdp: m.JSHeapUsedSize / 1048576, perf: pm == null ? null : pm / 1048576, rss: _chromeTreeRssMB(), gpu: _gpuUsedMB() };
+      _memRows.push(row);
+      logRaw(`[mem] cdpHeapMB=${row.cdp.toFixed(0)} perfMemMB=${row.perf == null ? 'n/a' : row.perf.toFixed(0)} chromeRssMB=${row.rss == null ? 'n/a' : row.rss.toFixed(0)} gpuUsedMB=${row.gpu == null ? 'n/a' : row.gpu}`);
     } catch (e) {}
   }, 20000);
 
@@ -955,6 +981,12 @@ const server = http.createServer((req, res) => {
   }
   const heapMB = S.heap.map(x => x / 1048576);
   if (heapMB.length) log(`§CLI_BAKE_HEAP samples=${heapMB.length} minMB=${Math.min(...heapMB).toFixed(0)} maxMB=${Math.max(...heapMB).toFixed(0)} lastMB=${heapMB[heapMB.length - 1].toFixed(0)}`);
+  {
+    const mx = k => { const v = _memRows.map(r => r[k]).filter(x => x != null); return v.length ? Math.max(...v).toFixed(0) : 'n/a'; };
+    log(_memRows.length
+      ? `§CLI_BAKE_MEM samples=${_memRows.length} max cdpHeapMB=${mx('cdp')} perfMemMB=${mx('perf')} chromeRssMB=${mx('rss')} gpuUsedMB=${mx('gpu')} (chromeRss = sum over the process tree, shared pages counted per process = an upper bound; gpu = whole card, incl. other apps)`
+      : '§CLI_BAKE_MEM INCONCLUSIVE — no memory sample was taken (bake shorter than 20 s?)');
+  }
 
   // the file, examined numerically — a zero-byte "success" is the guarded failure
   let fileOk = false;
