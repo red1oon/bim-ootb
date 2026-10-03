@@ -397,8 +397,9 @@ async function inplace(browser, base) {
     window.ScheduleAuthor = window.ScheduleAuthor || {}; window.ScheduleAuthor.activeSchedule = () => ({ id: 'SCH', name: 'SCH' });
     const A = window.APP || {}; A.db = A.db || {}; return !!(window.Info4DPanel && window.Info4DPanel.render(A, 'g-witness'));
   });
-  // the camera flies in after the stream ends — wait until it holds still for 2 s before taking the reference
-  { let last = '', still = 0; for (let i = 0; i < 120 && still < 4; i++) { const c = (await sig()).cam; still = (c === last) ? still + 1 : 0; last = c; await page.waitForTimeout(500); } }
+  // the camera flies in after the stream ends — wait until it holds still for 4 s before taking the reference
+  // 4 s still: the fly-in can pause mid-flight (a 2 s window was fooled once)
+  { let last = '', still = 0; for (let i = 0; i < 160 && still < 8; i++) { const c = (await sig()).cam; still = (c === last) ? still + 1 : 0; last = c; await page.waitForTimeout(500); } }
   await page.evaluate(() => { window.__inplaceMark = 'm' + Math.random(); });
   const s0 = await sig(); const rendered = await stub(); navs = 0;
   say('  §TRL_INPLACE start building elements=' + s0.elements + ' cam=' + s0.cam + ' info4d=' + rendered);
