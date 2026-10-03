@@ -158,7 +158,7 @@
     if (_lang !== BASE) {
       var v = _ref(e.ref);
       if (v) { out = e.fmt ? e.fmt.replace('{}', v) : v; src = 'pack'; }
-      else if (e.machine && e.machine[_lang]) { out = e.machine[_lang]; src = 'machine'; }
+      else if (e.machine && e.machine[_lang]) { out = e.fmt ? e.fmt.replace('{}', e.machine[_lang]) : e.machine[_lang]; src = 'machine'; }   // same fmt as a pack hit ("Kernel-ERP — …")
     }
     _count('chrome', src !== 'none', src);
     if (args) out = out.replace(/\{(\d)\}/g, function (_, i) { return args[i] != null ? args[i] : ''; });
