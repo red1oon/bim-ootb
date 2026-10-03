@@ -1,0 +1,566 @@
+{
+ "_doc": "App chrome catalogue for idempiere.html (bim-compiler prompts/ERP_UI_LOCALES.md §L3). Resolution per key, per locale: (1) ref \"msg:<AD_Message.Value>\" / \"el:<AD_Element_ID>\" → that locale's iDempiere language pack (src=pack), wrapped by fmt; (2) else machine[locale] — translated for this app by Claude (Anthropic), NOT from any iDempiere pack (src=machine); (3) else en (src=none). en is the exact English the page shows today.",
+ "keys": {
+  "login.title": {
+   "en": "Kernel-ERP — Sign In",
+   "ref": "msg:Login",
+   "fmt": "Kernel-ERP — {}",
+   "machine": {
+    "fr_FR": "Connexion",
+    "es_ES": "Iniciar sesión",
+    "de_DE": "Anmelden",
+    "ar": "تسجيل الدخول",
+    "zh_CN": "登录",
+    "ja_JP": "ログイン",
+    "ms_MY": "Log Masuk",
+    "th_TH": "เข้าสู่ระบบ"
+   }
+  },
+  "login.sub": {
+   "en": "Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b>",
+   "machine": {
+    "fr_FR": "Démo hors ligne · <b>sélection</b> de l'identité et du contexte (sans mot de passe) — issue de <b>ad_seed.db</b>",
+    "es_ES": "Demo sin conexión · <b>selección</b> de identidad y contexto (sin contraseña) — tomado de <b>ad_seed.db</b>",
+    "de_DE": "Offline-Demo · <b>Auswahl</b> von Identität und Kontext (kein Passwort) — aus <b>ad_seed.db</b>",
+    "ar": "عرض تجريبي دون اتصال · <b>اختيار</b> الهوية والسياق (بدون كلمة مرور) — مأخوذ من <b>ad_seed.db</b>",
+    "zh_CN": "离线演示 · 身份与上下文<b>选择</b>（无需密码）— 来自 <b>ad_seed.db</b>",
+    "ja_JP": "オフラインデモ · ID とコンテキストの<b>選択</b>（パスワード不要）— <b>ad_seed.db</b> から",
+    "ms_MY": "Demo luar talian · <b>pemilihan</b> identiti &amp; konteks (tanpa kata laluan) — daripada <b>ad_seed.db</b>",
+    "th_TH": "เดโมออฟไลน์ · <b>เลือก</b>ตัวตนและบริบท (ไม่ต้องใช้รหัสผ่าน) — จาก <b>ad_seed.db</b>"
+   },
+   "html": true
+  },
+  "login.language": {
+   "en": "Language",
+   "ref": "el:109",
+   "machine": {
+    "fr_FR": "Langue",
+    "es_ES": "Idioma",
+    "de_DE": "Sprache",
+    "ar": "اللغة",
+    "zh_CN": "语言",
+    "ja_JP": "言語",
+    "ms_MY": "Bahasa",
+    "th_TH": "ภาษา"
+   }
+  },
+  "login.selectTenant": {
+   "en": "Select a tenant",
+   "machine": {
+    "fr_FR": "Sélectionnez une société",
+    "es_ES": "Seleccione una empresa",
+    "de_DE": "Mandant auswählen",
+    "ar": "اختر المستأجر",
+    "zh_CN": "选择租户",
+    "ja_JP": "テナントを選択",
+    "ms_MY": "Pilih penyewa",
+    "th_TH": "เลือกผู้เช่า"
+   }
+  },
+  "login.selectUser": {
+   "en": "Select a user",
+   "machine": {
+    "fr_FR": "Sélectionnez un utilisateur",
+    "es_ES": "Seleccione un usuario",
+    "de_DE": "Benutzer auswählen",
+    "ar": "اختر مستخدمًا",
+    "zh_CN": "选择用户",
+    "ja_JP": "ユーザーを選択",
+    "ms_MY": "Pilih pengguna",
+    "th_TH": "เลือกผู้ใช้"
+   }
+  },
+  "login.tenantsBack": {
+   "en": "‹ Tenants",
+   "machine": {
+    "fr_FR": "‹ Sociétés",
+    "es_ES": "‹ Empresas",
+    "de_DE": "‹ Mandanten",
+    "ar": "‹ المستأجرون",
+    "zh_CN": "‹ 租户",
+    "ja_JP": "‹ テナント",
+    "ms_MY": "‹ Penyewa",
+    "th_TH": "‹ ผู้เช่า"
+   }
+  },
+  "login.role": {
+   "en": "Role",
+   "ref": "el:123",
+   "machine": {
+    "fr_FR": "Rôle",
+    "es_ES": "Rol",
+    "de_DE": "Rolle",
+    "ar": "الدور",
+    "zh_CN": "角色",
+    "ja_JP": "ロール",
+    "ms_MY": "Peranan",
+    "th_TH": "บทบาท"
+   }
+  },
+  "login.client": {
+   "en": "Client",
+   "ref": "el:102",
+   "machine": {
+    "fr_FR": "Société",
+    "es_ES": "Empresa",
+    "de_DE": "Mandant",
+    "ar": "المستأجر",
+    "zh_CN": "租户",
+    "ja_JP": "テナント",
+    "ms_MY": "Penyewa",
+    "th_TH": "ผู้เช่า"
+   }
+  },
+  "login.org": {
+   "en": "Organisation",
+   "ref": "el:113",
+   "machine": {
+    "fr_FR": "Organisation",
+    "es_ES": "Organización",
+    "de_DE": "Organisation",
+    "ar": "المنظمة",
+    "zh_CN": "组织",
+    "ja_JP": "組織",
+    "ms_MY": "Organisasi",
+    "th_TH": "องค์กร"
+   }
+  },
+  "login.back": {
+   "en": "‹ Back",
+   "machine": {
+    "fr_FR": "‹ Retour",
+    "es_ES": "‹ Atrás",
+    "de_DE": "‹ Zurück",
+    "ar": "‹ رجوع",
+    "zh_CN": "‹ 返回",
+    "ja_JP": "‹ 戻る",
+    "ms_MY": "‹ Kembali",
+    "th_TH": "‹ ย้อนกลับ"
+   }
+  },
+  "login.ok": {
+   "en": "Log In ›",
+   "ref": "msg:Login",
+   "fmt": "{} ›",
+   "machine": {
+    "fr_FR": "Connexion",
+    "es_ES": "Iniciar sesión",
+    "de_DE": "Anmelden",
+    "ar": "تسجيل الدخول",
+    "zh_CN": "登录",
+    "ja_JP": "ログイン",
+    "ms_MY": "Log Masuk",
+    "th_TH": "เข้าสู่ระบบ"
+   }
+  },
+  "login.user1": {
+   "en": "user",
+   "machine": {
+    "fr_FR": "utilisateur",
+    "es_ES": "usuario",
+    "de_DE": "Benutzer",
+    "ar": "مستخدم",
+    "zh_CN": "个用户",
+    "ja_JP": "ユーザー",
+    "ms_MY": "pengguna",
+    "th_TH": "ผู้ใช้"
+   }
+  },
+  "login.userN": {
+   "en": "users",
+   "machine": {
+    "fr_FR": "utilisateurs",
+    "es_ES": "usuarios",
+    "de_DE": "Benutzer",
+    "ar": "مستخدمين",
+    "zh_CN": "个用户",
+    "ja_JP": "ユーザー",
+    "ms_MY": "pengguna",
+    "th_TH": "ผู้ใช้"
+   }
+  },
+  "login.noRoles": {
+   "en": "(no roles)",
+   "machine": {
+    "fr_FR": "(aucun rôle)",
+    "es_ES": "(sin roles)",
+    "de_DE": "(keine Rollen)",
+    "ar": "(بدون أدوار)",
+    "zh_CN": "（无角色）",
+    "ja_JP": "（ロールなし）",
+    "ms_MY": "(tiada peranan)",
+    "th_TH": "(ไม่มีบทบาท)"
+   }
+  },
+  "login.demoReady": {
+   "en": "demo · ready",
+   "machine": {
+    "fr_FR": "démo · prête",
+    "es_ES": "demo · lista",
+    "de_DE": "Demo · bereit",
+    "ar": "تجريبي · جاهز",
+    "zh_CN": "演示 · 就绪",
+    "ja_JP": "デモ · 準備完了",
+    "ms_MY": "demo · sedia",
+    "th_TH": "สาธิต · พร้อม"
+   }
+  },
+  "login.demoPoc": {
+   "en": "demo · PoC",
+   "machine": {
+    "fr_FR": "démo · PoC",
+    "es_ES": "demo · PoC",
+    "de_DE": "Demo · PoC",
+    "ar": "تجريبي · إثبات مفهوم",
+    "zh_CN": "演示 · 概念验证",
+    "ja_JP": "デモ · PoC",
+    "ms_MY": "demo · PoC",
+    "th_TH": "สาธิต · PoC"
+   }
+  },
+  "hdr.search": {
+   "en": "Search menu…",
+   "machine": {
+    "fr_FR": "Rechercher dans le menu…",
+    "es_ES": "Buscar en el menú…",
+    "de_DE": "Menü durchsuchen…",
+    "ar": "ابحث في القائمة…",
+    "zh_CN": "搜索菜单…",
+    "ja_JP": "メニューを検索…",
+    "ms_MY": "Cari menu…",
+    "th_TH": "ค้นหาเมนู…"
+   }
+  },
+  "hdr.filter": {
+   "en": "Filter menu…",
+   "machine": {
+    "fr_FR": "Filtrer le menu…",
+    "es_ES": "Filtrar menú…",
+    "de_DE": "Menü filtern…",
+    "ar": "تصفية القائمة…",
+    "zh_CN": "筛选菜单…",
+    "ja_JP": "メニューを絞り込み…",
+    "ms_MY": "Tapis menu…",
+    "th_TH": "กรองเมนู…"
+   }
+  },
+  "hdr.logout": {
+   "en": "Log out",
+   "ref": "msg:Logout",
+   "machine": {
+    "fr_FR": "Déconnexion",
+    "es_ES": "Cerrar sesión",
+    "de_DE": "Abmelden",
+    "ar": "تسجيل الخروج",
+    "zh_CN": "注销",
+    "ja_JP": "ログアウト",
+    "ms_MY": "Log Keluar",
+    "th_TH": "ออกจากระบบ"
+   }
+  },
+  "hdr.menu": {
+   "en": "Menu",
+   "ref": "msg:Menu",
+   "machine": {
+    "fr_FR": "Menu",
+    "es_ES": "Menú",
+    "de_DE": "Menü",
+    "ar": "القائمة",
+    "zh_CN": "菜单",
+    "ja_JP": "メニュー",
+    "ms_MY": "Menu",
+    "th_TH": "เมนู"
+   }
+  },
+  "main.placeholder": {
+   "en": "Select a menu item to open a window.",
+   "machine": {
+    "fr_FR": "Sélectionnez un élément du menu pour ouvrir une fenêtre.",
+    "es_ES": "Seleccione un elemento del menú para abrir una ventana.",
+    "de_DE": "Wählen Sie einen Menüeintrag, um ein Fenster zu öffnen.",
+    "ar": "اختر عنصرًا من القائمة لفتح نافذة.",
+    "zh_CN": "请选择菜单项以打开窗口。",
+    "ja_JP": "メニュー項目を選択してウィンドウを開きます。",
+    "ms_MY": "Pilih item menu untuk membuka tetingkap.",
+    "th_TH": "เลือกรายการเมนูเพื่อเปิดหน้าต่าง"
+   }
+  },
+  "tb.new": {
+   "en": "New",
+   "ref": "msg:New",
+   "machine": {
+    "fr_FR": "Nouveau",
+    "es_ES": "Nuevo",
+    "de_DE": "Neu",
+    "ar": "جديد",
+    "zh_CN": "新建",
+    "ja_JP": "新規",
+    "ms_MY": "Baru",
+    "th_TH": "ใหม่"
+   }
+  },
+  "tb.copy": {
+   "en": "Copy",
+   "ref": "msg:Copy",
+   "machine": {
+    "fr_FR": "Copier",
+    "es_ES": "Copiar",
+    "de_DE": "Kopieren",
+    "ar": "نسخ",
+    "zh_CN": "复制",
+    "ja_JP": "コピー",
+    "ms_MY": "Salin",
+    "th_TH": "คัดลอก"
+   }
+  },
+  "tb.save": {
+   "en": "Save",
+   "ref": "msg:Save",
+   "machine": {
+    "fr_FR": "Enregistrer",
+    "es_ES": "Guardar",
+    "de_DE": "Speichern",
+    "ar": "حفظ",
+    "zh_CN": "保存",
+    "ja_JP": "保存",
+    "ms_MY": "Simpan",
+    "th_TH": "บันทึก"
+   }
+  },
+  "tb.saveNew": {
+   "en": "Save & New",
+   "ref": "msg:SaveCreate",
+   "machine": {
+    "fr_FR": "Enregistrer et nouveau",
+    "es_ES": "Guardar y nuevo",
+    "de_DE": "Speichern und neu",
+    "ar": "حفظ وجديد",
+    "zh_CN": "保存并新建",
+    "ja_JP": "保存して新規",
+    "ms_MY": "Simpan & Baru",
+    "th_TH": "บันทึกและสร้างใหม่"
+   }
+  },
+  "tb.delete": {
+   "en": "Delete",
+   "ref": "msg:Delete",
+   "machine": {
+    "fr_FR": "Supprimer",
+    "es_ES": "Eliminar",
+    "de_DE": "Löschen",
+    "ar": "حذف",
+    "zh_CN": "删除",
+    "ja_JP": "削除",
+    "ms_MY": "Padam",
+    "th_TH": "ลบ"
+   }
+  },
+  "tb.ignore": {
+   "en": "Ignore",
+   "ref": "msg:Ignore",
+   "machine": {
+    "fr_FR": "Annuler les modifications",
+    "es_ES": "Deshacer cambios",
+    "de_DE": "Änderungen verwerfen",
+    "ar": "تراجع عن التغييرات",
+    "zh_CN": "撤销更改",
+    "ja_JP": "変更を元に戻す",
+    "ms_MY": "Buat asal perubahan",
+    "th_TH": "ยกเลิกการเปลี่ยนแปลง"
+   }
+  },
+  "tb.refresh": {
+   "en": "Refresh",
+   "ref": "msg:Refresh",
+   "machine": {
+    "fr_FR": "Actualiser",
+    "es_ES": "Actualizar",
+    "de_DE": "Aktualisieren",
+    "ar": "تحديث",
+    "zh_CN": "刷新",
+    "ja_JP": "再表示",
+    "ms_MY": "Muat semula",
+    "th_TH": "รีเฟรช"
+   }
+  },
+  "tb.process": {
+   "en": "Process",
+   "ref": "msg:Process",
+   "machine": {
+    "fr_FR": "Traiter",
+    "es_ES": "Procesar",
+    "de_DE": "Verarbeiten",
+    "ar": "معالجة",
+    "zh_CN": "处理",
+    "ja_JP": "処理",
+    "ms_MY": "Proses",
+    "th_TH": "ประมวลผล"
+   }
+  },
+  "tb.print": {
+   "en": "Print",
+   "ref": "msg:Print",
+   "machine": {
+    "fr_FR": "Imprimer",
+    "es_ES": "Imprimir",
+    "de_DE": "Drucken",
+    "ar": "طباعة",
+    "zh_CN": "打印",
+    "ja_JP": "印刷",
+    "ms_MY": "Cetak",
+    "th_TH": "พิมพ์"
+   }
+  },
+  "tb.zoom": {
+   "en": "Zoom",
+   "ref": "msg:ZoomAcross",
+   "machine": {
+    "fr_FR": "Zoom croisé",
+    "es_ES": "Zoom cruzado",
+    "de_DE": "Zoom übergreifend",
+    "ar": "تكبير عبر",
+    "zh_CN": "跨窗口查询",
+    "ja_JP": "ズームアクロス",
+    "ms_MY": "Zum Merentas",
+    "th_TH": "ซูมข้าม"
+   }
+  },
+  "tb.first": {
+   "en": "First record",
+   "ref": "msg:First",
+   "machine": {
+    "fr_FR": "Premier enregistrement",
+    "es_ES": "Primer registro",
+    "de_DE": "Erster Datensatz",
+    "ar": "السجل الأول",
+    "zh_CN": "第一条记录",
+    "ja_JP": "最初のレコード",
+    "ms_MY": "Rekod pertama",
+    "th_TH": "ระเบียนแรก"
+   }
+  },
+  "tb.prev": {
+   "en": "Previous record",
+   "ref": "msg:Previous",
+   "machine": {
+    "fr_FR": "Enregistrement précédent",
+    "es_ES": "Registro anterior",
+    "de_DE": "Vorheriger Datensatz",
+    "ar": "السجل السابق",
+    "zh_CN": "上一条记录",
+    "ja_JP": "前のレコード",
+    "ms_MY": "Rekod sebelumnya",
+    "th_TH": "ระเบียนก่อนหน้า"
+   }
+  },
+  "tb.next": {
+   "en": "Next record",
+   "ref": "msg:Next",
+   "machine": {
+    "fr_FR": "Enregistrement suivant",
+    "es_ES": "Registro siguiente",
+    "de_DE": "Nächster Datensatz",
+    "ar": "السجل التالي",
+    "zh_CN": "下一条记录",
+    "ja_JP": "次のレコード",
+    "ms_MY": "Rekod seterusnya",
+    "th_TH": "ระเบียนถัดไป"
+   }
+  },
+  "tb.last": {
+   "en": "Last record",
+   "ref": "msg:Last",
+   "machine": {
+    "fr_FR": "Dernier enregistrement",
+    "es_ES": "Último registro",
+    "de_DE": "Letzter Datensatz",
+    "ar": "السجل الأخير",
+    "zh_CN": "最后一条记录",
+    "ja_JP": "最後のレコード",
+    "ms_MY": "Rekod terakhir",
+    "th_TH": "ระเบียนสุดท้าย"
+   }
+  },
+  "tb.record": {
+   "en": "Record",
+   "ref": "msg:Record",
+   "machine": {
+    "fr_FR": "Enregistrement",
+    "es_ES": "Registro",
+    "de_DE": "Datensatz",
+    "ar": "سجل",
+    "zh_CN": "记录",
+    "ja_JP": "レコード",
+    "ms_MY": "Rekod",
+    "th_TH": "ระเบียน"
+   }
+  },
+  "tb.of": {
+   "en": "of",
+   "ref": "msg:of",
+   "machine": {
+    "fr_FR": "sur",
+    "es_ES": "de",
+    "de_DE": "von",
+    "ar": "من",
+    "zh_CN": "/",
+    "ja_JP": "/",
+    "ms_MY": "daripada",
+    "th_TH": "จาก"
+   }
+  },
+  "tb.records": {
+   "en": "records",
+   "ref": "msg:Records",
+   "machine": {
+    "fr_FR": "enregistrements",
+    "es_ES": "registros",
+    "de_DE": "Datensätze",
+    "ar": "سجلات",
+    "zh_CN": "条记录",
+    "ja_JP": "件",
+    "ms_MY": "rekod",
+    "th_TH": "ระเบียน"
+   }
+  },
+  "tb.grid": {
+   "en": "Grid",
+   "machine": {
+    "fr_FR": "Grille",
+    "es_ES": "Cuadrícula",
+    "de_DE": "Tabelle",
+    "ar": "شبكة",
+    "zh_CN": "表格",
+    "ja_JP": "グリッド",
+    "ms_MY": "Grid",
+    "th_TH": "ตาราง"
+   }
+  },
+  "tb.form": {
+   "en": "Form",
+   "machine": {
+    "fr_FR": "Formulaire",
+    "es_ES": "Formulario",
+    "de_DE": "Formular",
+    "ar": "نموذج",
+    "zh_CN": "表单",
+    "ja_JP": "フォーム",
+    "ms_MY": "Borang",
+    "th_TH": "แบบฟอร์ม"
+   }
+  },
+  "inline.unsaved": {
+   "en": "● unsaved",
+   "machine": {
+    "fr_FR": "● non enregistré",
+    "es_ES": "● sin guardar",
+    "de_DE": "● ungespeichert",
+    "ar": "● غير محفوظ",
+    "zh_CN": "● 未保存",
+    "ja_JP": "● 未保存",
+    "ms_MY": "● belum disimpan",
+    "th_TH": "● ยังไม่บันทึก"
+   }
+  }
+ }
+}
