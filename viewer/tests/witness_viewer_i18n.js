@@ -21,6 +21,13 @@
 //                     missing from the DOM cannot pass by absence. The real What-if popup (#whatif-panel) is opened via sql.js +
 //                     erp/ad_seed.db and judged too; when it cannot open that is PRINTED as not judged (§TRL_WHATIF open=no), never passed.
 //
+//  (6) IN PLACE      S226 §R2c (2026-10-04): on viewer.html WITH a real building (buildings/warehouse_gardenworld.db, 61 KB) the
+//                     language is switched IN PLACE through every locale (first switch via the REAL flag picker click, the rest
+//                     via _TRL_LOADER.setLocale): no navigation, the page marker / building element count / camera survive, and
+//                     the same leak counter runs after each switch (§TRL_INPLACE …). The Info panel's 4D block (info_4d_panel.js,
+//                     rendered from a stubbed schedule) must re-render in the new language. CONTROL: a once-built English
+//                     node + the dictionary re-translation pass disabled (window.__TRL_SWITCH_NO_RETRANSLATE) → leaks > 0.
+//                     `--only inplace` runs just (6).
 // No GPU: headless chromium with --disable-gpu (software GL). Pages are opened WITHOUT a building (?blank=1) — the strings
 // under test are the static chrome. Logs: viewer/tests/logs/witness_viewer_i18n.log (verdicts) + .page.log (every console line).
 // Run:  NODE_PATH=~/bim-ootb/node_modules node viewer/tests/witness_viewer_i18n.js [--locales de_DE,ar_SA] [--pages landing,viewer]
@@ -210,6 +217,8 @@ const find = (lines, re) => { for (let i = lines.length - 1; i >= 0; i--) if (re
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-gpu'] });   // software rendering ONLY — never the GPU
   say('§W-VIEWER-I18N start served=' + REPO + ' gpu=disabled locales=' + LOCALES.join(',') + ' pages=' + PAGES.map(p => p.id).join(','));
 
+  const ONLY = argOf('--only');
+  if (ONLY === 'inplace') { await inplace(browser, base); await browser.close(); server.close(); return finish([], true); }
   // ── (3) FORMAT — Python xml.etree as the independent oracle; the CSV is the truth for `original` ──────────────
   const py = cp.spawnSync('python3', ['-c', `
 import xml.etree.ElementTree as ET, glob, json, os, sys, csv
@@ -358,8 +367,89 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
     W(/src=fallback/.test(lab) && j.leaks > 0, '(4) control: de_DE with i18n/de_DE.json aborted → ' + lab.replace(/^\[[^\]]+\] /, '') + ' → §TRL_LEAK_CONTROL leaks=' + j.leaks + ' of ' + j.total + ' expected>0');
     await ctx.close(); void n0;
   }
+  await inplace(browser, base);
   await browser.close(); server.close();
+  finish(ROWS, false);
+})().catch(e => { say('§W-VIEWER-I18N CRASH ' + (e && e.stack || e)); fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n'); process.exit(2); });
 
+// ── (6) IN PLACE — S226 §R2c ───────────────────────────────────────────────────────────────────────────────────────
+const INPLACE = { judged: 0, switches: 0 };
+async function inplace(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } }); const page = await ctx.newPage();
+  page.on('console', m => PAGELOG.push('[inplace] ' + m.text()));
+  page.on('pageerror', e => { ERRS.push('inplace: ' + e); PAGELOG.push('[inplace] PAGEERR ' + e); });
+  page.on('dialog', async d => { await d.dismiss(); });
+  let navs = 0; page.on('framenavigated', f => { if (f === page.mainFrame()) navs++; });
+  await page.goto(base + '/index.html', { waitUntil: 'load' });
+  await page.evaluate((b) => { localStorage.setItem('mx_entered', '1'); localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: b })); }, T.BASE);
+  await page.goto(base + '/viewer/viewer.html?db=../buildings/warehouse_gardenworld.db', { waitUntil: 'load', timeout: 90000 });
+  await page.waitForFunction(() => window._TRL_READY === true, null, { timeout: 60000 }).catch(() => PAGELOG.push('[inplace] TIMEOUT trl-ready'));
+  await page.waitForFunction(() => window.APP && window.APP.streaming === false && !(window.APP._bboxPlaceholders || []).length && window.APP.guidMap && Object.keys(window.APP.guidMap).length > 0, null, { timeout: 120000 }).catch(() => PAGELOG.push('[inplace] TIMEOUT stream'));
+  await page.waitForFunction(() => Array.isArray(window._mainPillActions) && window._mainPillActions.length > 0, null, { timeout: 60000 }).catch(() => {});
+  await page.evaluate(() => { try { if (typeof toggleMobilePill === 'function') toggleMobilePill(); } catch (e) { /* */ } });
+  const sig = () => page.evaluate(() => {
+    const A = window.APP || {}; const c = A.camera && A.camera.position;
+    return { mark: window.__inplaceMark || null, elements: A.guidMap ? Object.keys(A.guidMap).length : -1, cam: c ? [c.x, c.y, c.z].map(v => Math.round(v * 1000) / 1000).join(',') : '' };
+  });
+  // the Info panel's 4D block from a stubbed schedule (real renderer: info_4d_panel.js); the building's own schedule is not the subject
+  const stub = () => page.evaluate(() => {
+    window.ScheduleRead4D = window.ScheduleRead4D || {}; window.ScheduleRead4D.windowForGuid = () => ({ name: 'T1', startDate: '2026-01-05', finishDate: '2026-02-06', isCritical: true, resource: 'MASON', totalFloat: 0, taskId: 1 });
+    window.ScheduleAuthor = window.ScheduleAuthor || {}; window.ScheduleAuthor.activeSchedule = () => ({ id: 'SCH', name: 'SCH' });
+    const A = window.APP || {}; A.db = A.db || {}; return !!(window.Info4DPanel && window.Info4DPanel.render(A, 'g-witness'));
+  });
+  // the camera flies in after the stream ends — wait until it holds still for 2 s before taking the reference
+  { let last = '', still = 0; for (let i = 0; i < 120 && still < 4; i++) { const c = (await sig()).cam; still = (c === last) ? still + 1 : 0; last = c; await page.waitForTimeout(500); } }
+  await page.evaluate(() => { window.__inplaceMark = 'm' + Math.random(); });
+  const s0 = await sig(); const rendered = await stub(); navs = 0;
+  say('  §TRL_INPLACE start building elements=' + s0.elements + ' cam=' + s0.cam + ' info4d=' + rendered);
+  const col0 = await collectStrings(page); const j0 = judge(T.BASE, 'viewer-inplace', col0.strings);
+  say('  §TRL_INPLACE baseline locale=' + T.BASE + ' slots=' + j0.slots + ' uncatalogued(data, not judged here)=' + j0.uncat.length + ' [' + j0.uncat.join(' · ') + ']');
+  const info4d = async () => page.evaluate(() => { const b = document.getElementById('info-4d'); return b && b.style.display === 'block' ? b.innerText.split('\n')[0] : null; });
+  const order = LOCALES.filter(l => l !== T.BASE).concat([T.BASE]);
+  let first = true, allOk = true;
+  for (const lang of order) {
+    const n0 = PAGELOG.length;
+    if (first) {   // the REAL picker click — the in-place path a user takes
+      await page.evaluate((code) => { window._TRL_LOADER.openFlagPicker(); const b = Array.from(document.querySelectorAll('#ootb-flag-popup button')).find(x => (x.title || '').endsWith('(' + code + ')')); if (b) b.click(); }, lang);
+      first = false;
+    } else await page.evaluate((code) => window._TRL_LOADER.setLocale(code), lang);
+    for (let i = 0; i < 100 && !linesSince(n0).some(l => l.includes('§TRL_SWITCH ') && l.includes(' to=' + lang + ' ')); i++) await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
+    const sw = find(linesSince(n0), /§TRL_SWITCH /).replace(/^\[[^\]]+\] /, '');
+    const s1 = await sig(); const col = await collectStrings(page); const j = judge(lang, 'viewer-inplace', col.strings);
+    const t4 = await info4d(); const want4 = lang === T.BASE ? 'Construction window' : ((XML[lang].byValue.get('info_4d_title') || {}).text || 'Construction window');
+    const same = s1.mark === s0.mark && s1.elements === s0.elements && s1.cam === s0.cam && navs === 0;
+    const wantLang = lang === 'bl_BD' ? 'bn-Latn' : lang.split('_')[0], wantDir = lang === 'ar_SA' ? 'rtl' : 'ltr';
+    j.leaks = j.wiring.length + j.gap.length; j.total = j.slots;   // uncatalogued on this building page = data (judged on the blank pages by (2))
+    const ok = !!sw && same && j.leaks === 0 && t4 === want4 && col.lang === wantLang && col.dir === wantDir;
+    if (!ok) allOk = false; INPLACE.switches++; INPLACE.judged += j.slots;
+    say('  §TRL_INPLACE locale=' + lang + ' ' + (sw || 'NO §TRL_SWITCH') + ' navs=' + navs + ' kept=' + (same ? 'yes' : 'NO ' + JSON.stringify(s1)) +
+      ' html=' + col.lang + '/' + col.dir + ' info4d=' + JSON.stringify(t4) + (t4 === want4 ? '' : ' WANT ' + JSON.stringify(want4)) +
+      ' leaks=' + j.leaks + ' of ' + j.total + (j.leaks ? ' [' + j.wiring.map(x => 'W:' + x).concat(j.gap.map(x => 'G:' + x), j.uncat.map(x => 'U:' + x)).slice(0, 12).join(' · ') + ']' : ''));
+  }
+  W(allOk && INPLACE.switches === order.length, '(6) in place through ' + INPLACE.switches + ' switches (first via the real picker): no navigation, building+camera+marker kept, Info 4D block re-rendered, 0 leaks each');
+  // CONTROL — a once-built English node; with the re-translation pass disabled it stays English → leak
+  const ctrlNode = () => page.evaluate(() => { let d = document.getElementById('__trl_ctrl'); if (!d) { d = document.createElement('div'); d.id = '__trl_ctrl'; d.style.cssText = 'position:fixed;left:0;top:0'; document.body.appendChild(d); } d.textContent = window._trl('info_cost_title', null, 'Cost variance'); return d.textContent; });
+  await ctrlNode();
+  await page.evaluate(() => window._TRL_LOADER.setLocale('fr_FR')); await page.waitForTimeout(300);
+  const fixed = await page.evaluate(() => document.getElementById('__trl_ctrl').textContent);
+  await page.evaluate((b) => window._TRL_LOADER.setLocale(b), T.BASE); await page.waitForTimeout(300); await ctrlNode();
+  await page.evaluate(() => { window.__TRL_SWITCH_NO_RETRANSLATE = true; return window._TRL_LOADER.setLocale('es_ES'); }); await page.waitForTimeout(300);
+  const colC = await collectStrings(page); const jC = judge('es_ES', 'viewer-inplace', colC.strings); jC.leaks = jC.wiring.length + jC.gap.length; jC.total = jC.slots;
+  await page.evaluate(() => { window.__TRL_SWITCH_NO_RETRANSLATE = false; });
+  const wantFr = (XML.fr_FR.byValue.get('info_cost_title') || {}).text;
+  W(fixed === wantFr && jC.leaks > 0, '(6) control: once-built node re-translated by the dictionary pass (fr=' + JSON.stringify(fixed) + ') · with the pass disabled → §TRL_INPLACE_CONTROL leaks=' + jC.leaks + ' of ' + jC.total + ' expected>0');
+  await ctx.close();
+}
+
+function finish(ROWS, onlyInplace) {
+  if (onlyInplace) {
+    const verdict = INPLACE.judged === 0 ? 'INCONCLUSIVE' : (fail ? 'FAIL' : 'PASS');
+    say('§W-VIEWER-I18N(inplace) ' + verdict + ' pass=' + pass + ' fail=' + fail + ' switches=' + INPLACE.switches + ' slots=' + INPLACE.judged + ' pageErrors=' + ERRS.length);
+    fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n');
+    say('logs: ' + LOGF + ' + ' + PAGELOGF);
+    process.exit(verdict === 'PASS' ? 0 : 1);
+  }
   // ── the Witness contract: rows, schema, invariants, redControl ───────────────────────────────────────────────────
   const judged = ROWS.filter(r => r.lang !== T.BASE);
   const erp9 = judged.filter(r => ERP9.includes(r.lang));
@@ -385,4 +475,4 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
   fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n');
   say('logs: ' + LOGF + ' + ' + PAGELOGF);
   process.exit(verdict === 'PASS' ? 0 : 1);
-})().catch(e => { say('§W-VIEWER-I18N CRASH ' + (e && e.stack || e)); fs.writeFileSync(LOGF, OUT.join('\n') + '\n'); fs.writeFileSync(PAGELOGF, PAGELOG.join('\n') + '\n'); process.exit(2); });
+}

@@ -6,9 +6,9 @@
    "ad_message_base.csv",
    "AD_Message_Trl_en_AU.xml"
   ],
-  "rows": 656,
+  "rows": 672,
   "translated": 10,
-  "untranslated": 646
+  "untranslated": 662
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "What-if: ERP engine not ready",
   "wi_no_project": "What-if: no folded project yet — push one to ERP first",
   "wi_project_n": "Project {id}",
-  "ui_downloading_pct": "Downloading {name}... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "Downloading {name}... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "Cost variance",
+  "info_cost_records": "· from records",
+  "info_match_one": "match",
+  "info_match_many": "matches",
+  "info_planned": "planned",
+  "info_phase": "Phase",
+  "info_project": "Project",
+  "info_view_moment": "⏱ View at this moment",
+  "info_4d_title": "Construction window",
+  "info_4d_unassigned": "Not yet assigned to a dated task in \"{name}\".",
+  "info_4d_sched_tip": "Which schedule this window comes from",
+  "info_4d_task": "Task",
+  "info_4d_window": "Window",
+  "info_4d_trade": "Trade",
+  "info_4d_float": "Float",
+  "info_4d_critical": "(critical path)"
  }
 }

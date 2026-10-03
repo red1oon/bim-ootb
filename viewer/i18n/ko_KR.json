@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ko_KR.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "What-if: ERP 엔진 준비 안 됨",
   "wi_no_project": "What-if: 아직 접힌 프로젝트 없음 — 먼저 ERP로 푸시하세요",
   "wi_project_n": "프로젝트 {id}",
-  "ui_downloading_pct": "{name} 다운로드 중... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "{name} 다운로드 중... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "원가 차이",
+  "info_cost_records": "· 기록 기준",
+  "info_match_one": "건 일치",
+  "info_match_many": "건 일치",
+  "info_planned": "계획",
+  "info_phase": "단계",
+  "info_project": "프로젝트",
+  "info_view_moment": "⏱ 이 시점에서 보기",
+  "info_4d_title": "시공 기간",
+  "info_4d_unassigned": "\"{name}\"의 날짜가 정해진 작업에 아직 배정되지 않았습니다.",
+  "info_4d_sched_tip": "이 기간이 나온 공정표",
+  "info_4d_task": "작업",
+  "info_4d_window": "기간",
+  "info_4d_trade": "공종",
+  "info_4d_float": "여유 시간",
+  "info_4d_critical": "(주공정)"
  }
 }

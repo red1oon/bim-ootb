@@ -360,6 +360,9 @@
           var u = new URL(location.href);
           if (u.searchParams.has('lang')) { u.searchParams.set('lang', loc.code); history.replaceState(null, '', u.toString()); }
         } catch(e) { /* ignore */ }
+        // S226 §R2c — pages that opted in (window.__TRL_INPLACE: landing + viewer) switch WITHOUT a reload (keeps the
+        // streamed building, camera and open panels); report pages still reload (their charts are built once at init)
+        if (window.__TRL_INPLACE) { popup.classList.remove('active'); setLocale(loc.code).then(function() { if (popup.parentNode) popup.parentNode.removeChild(popup); }); return; }
         location.reload();
       };
       popup.appendChild(btn);
@@ -432,6 +435,89 @@
     return;
   }
 
+  // ── S226 §R2c — in-place switch (Witness: W-VIEWER-LANG-INPLACE) ──
+  // Snapshots taken BEFORE the first locale is applied, so a switch starts from the same base the page booted with:
+  // _TRL's own defaults (boq_charts inline _TRL_DEFAULTS) and rates.js's RATES / LABOR_RATES / EQUIPMENT_RATES /
+  // RATES_DEFAULT. Objects are restored IN PLACE — other modules hold references to them.
+  function _clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+  function _restore(target, snap) {
+    if (!target || !snap) return;
+    Object.keys(target).forEach(function(k) { delete target[k]; });
+    Object.keys(snap).forEach(function(k) { target[k] = _clone(snap[k]); });
+  }
+  var _snap = null;
+  function _snapshot() {
+    _snap = {
+      trl: _clone(typeof _TRL !== 'undefined' ? _TRL : {}),
+      rates: typeof RATES !== 'undefined' ? _clone(RATES) : null,
+      labor: typeof LABOR_RATES !== 'undefined' ? _clone(LABOR_RATES) : null,
+      equip: typeof EQUIPMENT_RATES !== 'undefined' ? _clone(EQUIPMENT_RATES) : null,
+      rdef: typeof RATES_DEFAULT !== 'undefined' ? _clone(RATES_DEFAULT) : null
+    };
+  }
+  var _curCode = null, _curLabels = {};
+  // Text that modules rendered ONCE (via _trl at build time, no data-trl tag) is re-translated by the dictionary itself:
+  // every visible text node / title / placeholder whose whole trimmed value equals the OLD locale's label for a key
+  // becomes the NEW locale's label for that key. Exact whole-value matches only (never substrings), so data values are
+  // touched only if they are, character for character, a UI label.
+  function _retranslate(oldL, newL) {
+    var map = {}, n = 0;
+    Object.keys(newL).forEach(function(k) {
+      var o = oldL[k], v = newL[k];
+      if (typeof o === 'string' && typeof v === 'string' && o !== v && o.trim().length > 1 && !map[o.trim()]) map[o.trim()] = v;
+    });
+    if (!document.body || !Object.keys(map).length) return 0;
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), t;
+    while ((t = w.nextNode())) {
+      var raw = t.nodeValue, key = raw && raw.trim();
+      if (key && map[key] && !(t.parentNode && /^(SCRIPT|STYLE|TEXTAREA)$/.test(t.parentNode.nodeName))) {
+        t.nodeValue = raw.replace(key, map[key]); n++;
+      }
+    }
+    document.querySelectorAll('[title],[placeholder],[aria-label],[data-tip]').forEach(function(el) {
+      ['title', 'placeholder', 'aria-label', 'data-tip'].forEach(function(a) {
+        var v = el.getAttribute(a); if (v && map[v.trim()]) { el.setAttribute(a, map[v.trim()]); n++; }
+      });
+    });
+    return n;
+  }
+  function setLocale(code) {
+    var t0 = Date.now(), from = _curCode;
+    if (!AVAILABLE_LOCALES.some(function(l) { return l.code === code; })) { console.warn('§TRL_SWITCH unknown-locale ' + code); return Promise.resolve(null); }
+    return new Promise(function(resolve) {
+      var labels = null, cost = null, costErr = null, pending = 2;
+      function part() { if (--pending) return;
+        if (!_snap) _snapshot();
+        var oldLabels = _curLabels;
+        _restore(_TRL, _snap.trl);
+        if (labels) deepMerge(_TRL, labels);
+        if (_snap.rates) _restore(RATES, _snap.rates);
+        if (_snap.labor) _restore(LABOR_RATES, _snap.labor);
+        if (_snap.equip) _restore(EQUIPMENT_RATES, _snap.equip);
+        if (_snap.rdef && typeof RATES_DEFAULT !== 'undefined') RATES_DEFAULT = _clone(_snap.rdef);
+        if (cost) { deepMerge(_TRL, cost); applyRateOverrides(cost); }
+        applyUrlOverrides(_TRL);
+        applyLangDir(code);
+        var tagged = document.querySelectorAll('[data-trl],[data-trl-title],[data-trl-placeholder],[data-trl-html],[data-trl-tip]').length;
+        applyTrlToDOM();
+        var mapped = window.__TRL_SWITCH_NO_RETRANSLATE ? 0 : _retranslate(oldLabels, labels || {});   // the flag exists ONLY for W-VIEWER-I18N's (6) negative control
+        _curCode = code; _curLabels = labels || {};
+        try {
+          localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: code }));
+          var u = new URL(location.href);
+          if (u.searchParams.has('lang')) { u.searchParams.set('lang', code); history.replaceState(null, '', u.toString()); }
+        } catch(e) { /* ignore */ }
+        updateHeaderFlag();
+        window._TRL_READY = true;
+        window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: code, labels: Object.keys(_curLabels).length, inplace: true, costErr: costErr ? String(costErr.message || costErr) : null } }));
+        console.log('§TRL_SWITCH from=' + from + ' to=' + code + ' ms=' + (Date.now() - t0) + ' tagged=' + tagged + ' retranslated=' + mapped + ' cur=' + (_TRL.cur || '-'));
+        resolve({ from: from, to: code, ms: Date.now() - t0, tagged: tagged, retranslated: mapped });
+      }
+      fetchLabels(code, function(l) { labels = l; part(); });
+      fetchLocale(code, function(err, d) { cost = d; costErr = err; part(); });
+    });
+  }
+
   // ── Main init ──
   var localeCode = detectLocale();
 
@@ -452,6 +538,7 @@
   fetchLocale(localeCode, function(err, data) { _cost = data; _costErr = err; _part(); });
   function _assemble() {
     var data = _cost, labels = _labels;
+    _snapshot(); _curCode = localeCode; _curLabels = labels || {};
     if (labels) deepMerge(_TRL, labels);
     if (data) {
       deepMerge(_TRL, data);
@@ -485,7 +572,9 @@
     detectLocale: detectLocale,
     isoToFlag: isoToFlag,
     AVAILABLE_LOCALES: AVAILABLE_LOCALES,
-    openFlagPicker: toggleFlagPicker
+    openFlagPicker: toggleFlagPicker,
+    setLocale: setLocale,                                     // S226 §R2c — in place, no reload
+    current: function() { return _curCode; }
   };
 
 })();

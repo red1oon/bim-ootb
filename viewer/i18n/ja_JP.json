@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_ja_JP.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "What-if：ERP エンジンが未準備",
   "wi_no_project": "What-if：折り畳まれたプロジェクトがまだありません — 先に ERP へ送ってください",
   "wi_project_n": "プロジェクト {id}",
-  "ui_downloading_pct": "{name} をダウンロード中... {pct}%（{a}/{b}MB）"
+  "ui_downloading_pct": "{name} をダウンロード中... {pct}%（{a}/{b}MB）",
+  "info_cost_title": "コスト差異",
+  "info_cost_records": "· 記録より",
+  "info_match_one": "件一致",
+  "info_match_many": "件一致",
+  "info_planned": "計画",
+  "info_phase": "フェーズ",
+  "info_project": "プロジェクト",
+  "info_view_moment": "⏱ この時点で見る",
+  "info_4d_title": "施工期間",
+  "info_4d_unassigned": "「{name}」の日付付きタスクにまだ割り当てられていません。",
+  "info_4d_sched_tip": "この期間の出典となる工程表",
+  "info_4d_task": "タスク",
+  "info_4d_window": "期間",
+  "info_4d_trade": "職種",
+  "info_4d_float": "フロート",
+  "info_4d_critical": "（クリティカルパス）"
  }
 }

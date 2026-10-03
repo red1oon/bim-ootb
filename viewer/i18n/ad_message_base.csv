@@ -664,3 +664,19 @@ CPM reads the dates the drag produced — it never changes one.",I
 1000653,wi_no_project,What-if: no folded project yet — push one to ERP first,I
 1000654,wi_project_n,Project {id},I
 1000655,ui_downloading_pct,Downloading {name}... {pct}% ({a}/{b}MB),I
+1000656,info_cost_title,Cost variance,I
+1000657,info_cost_records,· from records,I
+1000658,info_match_one,match,I
+1000659,info_match_many,matches,I
+1000660,info_planned,planned,I
+1000661,info_phase,Phase,I
+1000662,info_project,Project,I
+1000663,info_view_moment,⏱ View at this moment,I
+1000664,info_4d_title,Construction window,I
+1000665,info_4d_unassigned,"Not yet assigned to a dated task in ""{name}"".",I
+1000666,info_4d_sched_tip,Which schedule this window comes from,I
+1000667,info_4d_task,Task,I
+1000668,info_4d_window,Window,I
+1000669,info_4d_trade,Trade,I
+1000670,info_4d_float,Float,I
+1000671,info_4d_critical,(critical path),I

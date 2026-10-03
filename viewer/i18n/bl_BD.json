@@ -6,8 +6,8 @@
    "ad_message_base.csv",
    "AD_Message_Trl_bl_BD.xml"
   ],
-  "rows": 656,
-  "translated": 656,
+  "rows": 672,
+  "translated": 672,
   "untranslated": 0
  },
  "labels": {
@@ -666,6 +666,22 @@
   "wi_erp_not_ready": "What-if: ERP engine prostut noy",
   "wi_no_project": "What-if: ekhono kono fold kora project nei — age ekta ERP-te pathan",
   "wi_project_n": "Project {id}",
-  "ui_downloading_pct": "{name} download hocche... {pct}% ({a}/{b}MB)"
+  "ui_downloading_pct": "{name} download hocche... {pct}% ({a}/{b}MB)",
+  "info_cost_title": "Khoroch-er parthokko",
+  "info_cost_records": "· record theke",
+  "info_match_one": "mil",
+  "info_match_many": "mil",
+  "info_planned": "porikolpito",
+  "info_phase": "Porjay",
+  "info_project": "Prokolpo",
+  "info_view_moment": "⏱ Ei muhurte dekhun",
+  "info_4d_title": "Nirman-er shomoyshima",
+  "info_4d_unassigned": "\"{name}\"-e ekhono kono tarikh-joukto kaje boraddo hoyni.",
+  "info_4d_sched_tip": "Ei shomoyshima kon schedule theke esheche",
+  "info_4d_task": "Kaj",
+  "info_4d_window": "Shomoyshima",
+  "info_4d_trade": "Pesha",
+  "info_4d_float": "Float",
+  "info_4d_critical": "(critical path)"
  }
 }
