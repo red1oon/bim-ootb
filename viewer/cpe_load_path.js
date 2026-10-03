@@ -4224,6 +4224,27 @@ function setupCpeLoadPath(A) {
         y < avoidRect.y + avoidRect.h && (y + panelH) > avoidRect.y) {
       y = Math.round(avoidRect.y + avoidRect.h + pad);
     }
+    // W2 (ALTC_FOUNDATION §1 round 6): the two steps above never looked at the rest of the HUD, so the stack-avoidance step put the
+    // near panel on stats-panel — which stays up through the hold — §HUD_OVERLAP_WORST f=211 1.00/1.00, 53x293 px (Hospital 1900:2000).
+    // Clear every SOLID box already registered this frame (the HUD row/column draw before this composite; alpha < 0.5 = fading, not
+    // judged by W2; the freeze's own loadpath.* boxes excluded): step right of the blocker when that still fits the frame and keeps off
+    // the stack, else below it. Bounded; a panel pushed out of frame is still caught by §LOADPATH_INFOPANEL inFrame.
+    var _hudSolid = (A._hudLayoutRects || []).filter(function (r) { return r.w > 1 && r.h > 1 && !(r.alpha < 0.5) && !/^loadpath\./.test(r.name); });
+    var _ovl = function (ax, ay, aw, ah, b) { return ax < b.x + b.w && ax + aw > b.x && ay < b.y + b.h && ay + ah > b.y; };
+    // Tested against the FULL reserved height (_stackInfoPanelMaxH, the panel grows upward as hops reveal) so the answer cannot change
+    // mid-hold and make the panel jump; a step down moves the whole reserved block.
+    var _maxH = Math.max(panelH, _stackInfoPanelMaxH(h, stack)), _yTop = y + panelH - _maxH, _moves = [];
+    for (var _it = 0; _it < 8; _it++) {
+      var _hit = null; for (var _hi = 0; _hi < _hudSolid.length; _hi++) if (_ovl(x, _yTop, panelW, _maxH, _hudSolid[_hi])) { _hit = _hudSolid[_hi]; break; }
+      if (!_hit) break;
+      var _xr = Math.round(_hit.x + _hit.w + pad);
+      var _rightOk = _xr + panelW <= w - w * 0.012 && !(stackBoxPx && _ovl(_xr, _yTop, panelW, _maxH, { x: stackBoxPx.x0, y: stackBoxPx.y0, w: stackBoxPx.x1 - stackBoxPx.x0, h: stackBoxPx.y1 - stackBoxPx.y0 }));
+      if (_rightOk) x = _xr; else _yTop = Math.round(_hit.y + _hit.h + pad);
+      _moves.push(_hit.name + (_rightOk ? '>right' : '>down'));
+    }
+    y = _yTop + _maxH - panelH;
+    if (_moves.length && !(stack._hudAvoidLogged)) { stack._hudAvoidLogged = true;
+      console.log('§LOADPATH_INFOPANEL_AVOID stack=' + stackName + ' moves=[' + _moves.join(',') + '] final=' + x + ',' + y + ' ' + panelW + 'x' + panelH + ' solidHud=' + _hudSolid.length); }
     var rr = Math.round(Math.min(panelH, panelW) * 0.09);
     // §129.21 amendment (2026-09-18, red1: "keep design theme consistent with other HUDs") — the
     // SAME frosted dark-glass plate every other panel (resource panel, path map, measure boxes)
