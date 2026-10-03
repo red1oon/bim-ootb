@@ -22,6 +22,9 @@
 //
 // Node-testable: the witness loads this in node with a localStorage shim + injected ts (no browser).
 (function (root) {
+  // S226 §R2 — Viewer pages resolve these labels through the AD_Message dictionary (viewer/locale_loader.js _trl);
+  // the ERP pages do not load that loader and show the English default. The English here == viewer/i18n/ad_message_base.csv.
+  function _wt(key, dflt) { return (typeof root._trl === 'function') ? root._trl(key, null, dflt) : dflt; }
   'use strict';
 
   var KEY = 'bim.docHistory';   // the ONE shared log (same key history_bar.js + landing already use)
@@ -300,11 +303,11 @@
     _panel.innerHTML =
       '<div id="whole-hist-card">' +
         '<div id="whole-hist-hd">' +
-          '<span class="title">History — across pages</span>' +
+          '<span class="title" data-trl="ui_hist_title">' + _wt('ui_hist_title', 'History — across pages') + '</span>' +
           '<div class="whole-seg" id="whole-seg">' +
-            '<button data-mode="whole">Whole</button><button data-mode="this">This page</button>' +
+            '<button data-mode="whole" data-trl="ui_hist_whole">' + _wt('ui_hist_whole', 'Whole') + '</button><button data-mode="this" data-trl="ui_hist_this_page">' + _wt('ui_hist_this_page', 'This page') + '</button>' +
           '</div>' +
-          '<button id="whole-hist-x" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
+          '<button id="whole-hist-x" data-trl-title="ui_close" title="' + _wt('ui_close', 'Close') + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
         '</div>' +
         '<div id="whole-hist-body"></div>' +
       '</div>';

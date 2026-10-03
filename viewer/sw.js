@@ -193,7 +193,7 @@
 // v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
 // v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
 // v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
-const CACHE_VERSION = 'v1460';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1461';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -843,6 +843,12 @@ const PRECACHE_ASSETS = [
   'rates.js',
   'analysis_sidecar.js',
   'locale_loader.js',
+  // S226 §R2 (2026-10-03): the 18 BUILT label packs (viewer/i18n/<code>.json ← ad_message_base.csv ⋈ AD_Message_Trl_<lang>.xml,
+  // build_trl.js). locale_loader.js (precached, above) fetches i18n/<code>.json + locales/<code>.js; precached so a
+  // picked language survives offline. ~20 KB each. The XML/CSV sources are NOT served to the page.
+  'i18n/en_MY.json', 'i18n/en_US.json', 'i18n/en_GB.json', 'i18n/en_AU.json', 'i18n/ms_MY.json', 'i18n/de_DE.json',
+  'i18n/fr_FR.json', 'i18n/es_ES.json', 'i18n/zh_CN.json', 'i18n/th_TH.json', 'i18n/ja_JP.json', 'i18n/ko_KR.json',
+  'i18n/ar_SA.json', 'i18n/pt_BR.json', 'i18n/id_ID.json', 'i18n/bn_BD.json', 'i18n/bl_BD.json', 'i18n/af_ZA.json',
   'decoder.js',
   'nlp.js',
   'semantic_enrichment.js',

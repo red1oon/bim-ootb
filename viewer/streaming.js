@@ -3398,7 +3398,7 @@ function setupStreaming(A) {
     // fail confusingly. A.openModelDb() (Ctrl+O / Open Building pill) navigates to viewer.html?db=import://…
     // once a file is picked — a fresh page load, so no re-entry guard is needed here.
     if (A.BLANK_MODE && !A.DB_URL) {
-      A.status.textContent = 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
+      A.status.textContent = (typeof _trl === 'function') ? _trl('ui_blank_scene_hint', null, 'Blank scene — press Ctrl+O (Open Building) to load a .db file') : 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
       console.log('§BLANK_MODE active=1 waiting_for_open=1');
       return;
     }

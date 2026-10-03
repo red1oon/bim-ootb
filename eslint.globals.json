@@ -83,6 +83,7 @@
   "XLSX": "readonly",
   "ZoneIndex": "readonly",
   "_TRL": "readonly",
+  "_trl": "readonly",
   "__dirname": "readonly",
   "__filename": "readonly",
   "_batchedMeshes": "readonly",

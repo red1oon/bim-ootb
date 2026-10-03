@@ -390,13 +390,13 @@
     bar.id = 'find-ask-switch';
     bar.style.cssText = 'display:flex;gap:6px;padding:4px 10px';
     var pill = 'flex:1;padding:4px 8px;font-size:11px;border-radius:12px;cursor:pointer;border:1px solid rgba(79,195,247,0.4);';
-    bar.innerHTML = '<button id="find-mode-find" style="' + pill + '">Find</button><button id="find-mode-ask" style="' + pill + '">Ask</button>';
+    bar.innerHTML = '<button id="find-mode-find" style="' + pill + '" data-trl="ui_find_tab_find">' + _trl('ui_find_tab_find', null, 'Find') + '</button><button id="find-mode-ask" style="' + pill + '" data-trl="ui_find_tab_ask">' + _trl('ui_find_tab_ask', null, 'Ask') + '</button>';
     var pane = document.createElement('div');
     pane.id = 'find-ask-pane'; pane.style.display = 'none';
     pane.innerHTML = '<div id="find-ask-catalog"></div>' +
       '<div style="display:flex;gap:6px;align-items:center;padding:4px 10px;border-top:1px solid rgba(255,255,255,0.08)"><span id="find-ask-count" style="flex:1;font-size:11px;opacity:0.7"></span>' +
-      '<button id="find-ask-save" style="padding:3px 10px;font-size:11px;border:1px solid rgba(76,175,80,0.5);border-radius:6px;background:rgba(76,175,80,0.15);color:#81c784;cursor:pointer">Save .xlsx</button>' +
-      '<button id="find-ask-clear" style="padding:3px 10px;font-size:11px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:rgba(255,255,255,0.06);color:#ccc;cursor:pointer">Clear</button></div>' +
+      '<button id="find-ask-save" style="padding:3px 10px;font-size:11px;border:1px solid rgba(76,175,80,0.5);border-radius:6px;background:rgba(76,175,80,0.15);color:#81c784;cursor:pointer" data-trl="ui_save_xlsx">' + _trl('ui_save_xlsx', null, 'Save .xlsx') + '</button>' +
+      '<button id="find-ask-clear" style="padding:3px 10px;font-size:11px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:rgba(255,255,255,0.06);color:#ccc;cursor:pointer" data-trl="ui_clear">' + _trl('ui_clear', null, 'Clear') + '</button></div>' +
       '<div id="find-ask-answers" style="max-height:40vh;overflow:auto"></div>';
     var searchBar = panel.querySelector('.find-search-bar');
     panel.insertBefore(bar, searchBar ? searchBar.nextSibling : panel.firstChild);
