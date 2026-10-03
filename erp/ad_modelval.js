@@ -121,7 +121,8 @@
       }],
       ['MOrder.bpLocationConsistency', function (ctx, info) {// :1239-1252  cleared (set null), not rejected
         var r = info.record;
-        if (Number(r.c_bpartner_location_id) > 0) {
+        // FS-13: a session-created row carries a NEGATIVE synthetic id (crud_core.listTip -opId) — "is set" is != 0, not > 0.
+        if (Number(r.c_bpartner_location_id)) {
           var loc = db.prepare('SELECT c_bpartner_id FROM c_bpartner_location WHERE c_bpartner_location_id=?').get(Number(r.c_bpartner_location_id));
           if (!loc || Number(loc.c_bpartner_id) !== Number(r.c_bpartner_id)) d(info).c_bpartner_location_id = null;
         }
@@ -141,7 +142,7 @@
         // payment-term / price-list parts of setBPartner ride the existing :1282/:1315 hooks below.
         var r = info.record, dd = d(info);
         var locNow = (dd.c_bpartner_location_id !== undefined) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
-        if (Number(locNow) > 0 || !(Number(r.c_bpartner_id) > 0)) return null;
+        if (Number(locNow) || !Number(r.c_bpartner_id)) return null;   // FS-13: synthetic (negative) ids count as set
         var bp = null;   // a slimmed bundle without c_bpartner.salesrep_id (bim-compiler's glassbowl_data.db fixture) → no BP sales rep: conservative, never invented
         try { bp = db.prepare('SELECT salesrep_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id)); } catch (eGap) { bp = null; }
         if (bp && Number(bp.salesrep_id) > 0 && !(Number(r.salesrep_id) > 0)) dd.salesrep_id = Number(bp.salesrep_id);
@@ -810,6 +811,41 @@
     return out;
   }
 
+  // FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b) — MBPartnerLocation.beforeSave
+  // (MBPartnerLocation.java:207-217): no C_Location_ID → reject; Name '.' (and not IsPreserveCustomName) → getBPLocName
+  // (:275-305) → makeUnique (:225-268): level 0 City; empty → + Address1, + Address2, + Region name; still empty / a clash
+  // with another location of the same BP → raise the level (1: City Address1, …, 4: + '#'+id). START_VALUE_BPLOCATION_NAME
+  // sysconfig not in the bundle → its default 0. The location row is read from the db the host hands in (the tip-shadowed
+  // bundle, crud_overlay FS-13), so a session-created C_Location is visible.
+  function installMBPartnerLocationSaveHooks(db) {
+    function d(info) { return (info.derived = info.derived || {}); }
+    var H = [
+      ['MBPartnerLocation.locationMandatory', function (ctx, info) { return Number(info.record.c_location_id) ? null : 'C_Location_ID mandatory (MBPartnerLocation.java:208-209)'; }],
+      ['MBPartnerLocation.nameFromAddress', function (ctx, info) {
+        var r = info.record;
+        if (String(r.name == null ? '.' : r.name) !== '.' || String(r.ispreservecustomname || 'N') === 'Y') return null;
+        var a = db.prepare('SELECT l.city, l.address1, l.address2, g.name AS region, l.c_location_id AS id FROM c_location l LEFT JOIN c_region g ON g.c_region_id=l.c_region_id WHERE l.c_location_id=?').get(Number(r.c_location_id));
+        if (!a) return null;
+        var others = (db.prepare('SELECT name FROM c_bpartner_location WHERE c_bpartner_id=? AND c_bpartner_location_id<>?').all(Number(r.c_bpartner_id), Number(r.c_bpartner_location_id || 0)) || []).map(function (o) { return o.name; });
+        function mk(level) {
+          var n = '';
+          if (level >= 0 || !n.length) { if (a.city) n = String(a.city); }
+          if (level >= 1 || !n.length) { if (a.address1) n += (n.length ? ' ' : '') + a.address1; }
+          if (level >= 2 || !n.length) { if (a.address2) n += (n.length ? ' ' : '') + a.address2; }
+          if (level >= 3 || !n.length) { if (a.region) n += (n.length ? ' ' : '') + a.region; }
+          if (level >= 4 || !n.length) n += '#' + (Number(r.c_bpartner_location_id) || a.id);
+          return n;
+        }
+        var lvl = 0, nm = mk(0);
+        while (others.indexOf(nm) >= 0 && lvl < 4) nm = mk(++lvl);
+        d(info).name = nm;
+        return null;
+      }]
+    ];
+    H.forEach(function (h) { registerValidator('C_BPartner_Location', 'BEFORE_SAVE', h[0], h[1]); });
+    return H.length;
+  }
+
   var API = {
     TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, registeredCount: registeredCount,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
@@ -819,7 +855,7 @@
     installMJournalSaveHooks: installMJournalSaveHooks, installMJournalBatchSaveHooks: installMJournalBatchSaveHooks,
     installMAllocationHdrSaveHooks: installMAllocationHdrSaveHooks, installMCashSaveHooks: installMCashSaveHooks,
     installMBankStatementSaveHooks: installMBankStatementSaveHooks, installMRMASaveHooks: installMRMASaveHooks,
-    installMRequisitionSaveHooks: installMRequisitionSaveHooks
+    installMRequisitionSaveHooks: installMRequisitionSaveHooks, installMBPartnerLocationSaveHooks: installMBPartnerLocationSaveHooks
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness
   if (typeof window !== 'undefined') window.AdModelVal = API;                   // browser

@@ -1146,12 +1146,106 @@
       return '<input class="cfi cfyn" type="checkbox" data-col="' + f.col + '" data-yesno="1"' + (on ? ' checked' : '') + (ys === '' ? ' data-unset="1"' : '') + ro + '>';
     }
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
+    if (f.type === 'location') return _locFieldHtml(f, v, ro);   // FS-13 — WLocationEditor
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
     if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
       var raw = v; v = normDateValue('date', v);
       console.log('§CRUD-DATE col=' + f.col + ' raw="' + raw + '" normalized="' + v + '" widget=date');
     }
     return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro + (f.readonly ? ' title="derived — read-only"' : '') + '>';
+  }
+  // ══ FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b) — the Location
+  // editor. iDempiere's WLocationEditor shows the address text and opens WLocationDialog (Address1..4, City, Postal,
+  // Country, Region when C_Country.HasRegion='Y'); OK SAVES the MLocation in its own transaction and sets the field to
+  // its C_Location_ID; the parent row is saved separately. Here: the id input stays the field ([data-col]); the address
+  // panel's controls carry data-loc (so gatherVals never reads them); OK commits ONE signed CRUD_CREATE c_location
+  // group (applyOpGroup) and sets the field to the new synthetic id. MLocation.beforeSave (MLocation.java:719-764)
+  // ported: AD_Org_ID=0; a region on a country without regions is cleared. NOT ported, named: C_City lookup and
+  // CityNotFound (the bundle carries no C_City table and no C_Country.IsAllowCitiesOutOfList column), address
+  // validation, the per-country DisplaySequence layout.
+  var LOC_FIELDS = ['address1', 'address2', 'address3', 'address4', 'city', 'postal'];
+  function _locFieldHtml(f, v, ro) {
+    var h = '<span class=cfloc data-loc-wrap="' + f.col + '"><input class=cfi type="text" data-col="' + f.col + '" data-loc-ref="1" value="' + esc(v) + '" readonly' + ro + ' style="width:7em">' +
+      ' <span class=cfloc-txt data-loc-txt="' + f.col + '"></span>' +
+      (f.readonly ? '' : ' <button type=button class=cfb data-loc-edit="' + f.col + '">Address…</button>') +
+      '<span class=cfloc-panel data-loc-for="' + f.col + '" style="display:none;flex-direction:column;gap:3px;margin-top:4px">';
+    LOC_FIELDS.forEach(function (k) {
+      h += '<span><span class=cfdim style="display:inline-block;width:6em">' + esc(k.charAt(0).toUpperCase() + k.slice(1)) + '</span><input class=cfi type="text" data-loc="' + k + '"></span>';
+    });
+    h += '<span><span class=cfdim style="display:inline-block;width:6em">Country</span><select class=cfi data-loc="c_country_id"></select></span>' +
+         '<span data-loc-regionrow style="display:none"><span class=cfdim style="display:inline-block;width:6em">Region</span><select class=cfi data-loc="c_region_id"></select></span>' +
+         '<span><button type=button class=cfb data-loc-ok="' + f.col + '">OK</button> <button type=button class=cfb data-loc-cancel="' + f.col + '">Cancel</button></span></span></span>';
+    return h;
+  }
+  function _locDefaultCountry(db) {          // MCountry.getDefault (MCountry.java:174-202): client language's country, else US 100
+    var cli = (global.APP && global.APP.clientId != null) ? Number(global.APP.clientId) : null, lang = null;
+    try { var r = db.exec('SELECT AD_Language FROM AD_Client WHERE AD_Client_ID=' + Number(cli)); lang = r.length && r[0].values.length ? r[0].values[0][0] : null; } catch (e) {}
+    var cc = String(lang || 'en_US').split('_')[1] || 'US';
+    try { var c = db.exec("SELECT C_Country_ID FROM C_Country WHERE CountryCode='" + cc.replace(/'/g, '') + "' ORDER BY C_Country_ID LIMIT 1");
+      if (c.length && c[0].values.length) return Number(c[0].values[0][0]); } catch (e2) {}
+    return 100;
+  }
+  function _locFillRegions(db, panel, countryId) {
+    var row = panel.querySelector('[data-loc-regionrow]'), sel = panel.querySelector('[data-loc="c_region_id"]');
+    var has = false;
+    try { var h = db.exec('SELECT HasRegion FROM C_Country WHERE C_Country_ID=' + Number(countryId)); has = h.length && String(h[0].values[0][0]) === 'Y'; } catch (e) {}
+    sel.innerHTML = '<option value=""></option>';
+    if (has) { try { var r = db.exec("SELECT C_Region_ID, Name FROM C_Region WHERE IsActive='Y' AND C_Country_ID=" + Number(countryId) + ' ORDER BY Name');
+      (r.length ? r[0].values : []).forEach(function (v) { sel.innerHTML += '<option value="' + esc(v[0]) + '">' + esc(v[1]) + '</option>'; }); } catch (e2) {} }
+    row.style.display = has ? '' : 'none';
+  }
+  function _locOpen(col, root) {
+    var panel = root.querySelector('[data-loc-for="' + col + '"]'); if (!panel) return;
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+    withBundle(function (db) {
+      var cs = panel.querySelector('[data-loc="c_country_id"]');
+      if (db && !cs.options.length) {
+        var def = _locDefaultCountry(db), n = 0;
+        try { var r = db.exec("SELECT C_Country_ID, Name, CountryCode FROM C_Country WHERE IsActive='Y' ORDER BY Name");
+          cs.innerHTML = (r.length ? r[0].values : []).map(function (v) { n++; return '<option value="' + esc(v[0]) + '"' + (Number(v[0]) === def ? ' selected' : '') + '>' + esc(v[1] + ' (' + v[2] + ')') + '</option>'; }).join(''); } catch (e) {}
+        cs.onchange = function () { _locFillRegions(db, panel, cs.value); };
+        _locFillRegions(db, panel, cs.value);
+        console.log('§LOC-EDITOR open col=' + col + ' countries=' + n + ' default=' + def + ' (MCountry.getDefault)');
+      }
+      panel.style.display = 'flex';
+    });
+  }
+  function _locOk(col, root) {
+    var panel = root.querySelector('[data-loc-for="' + col + '"]'), idEl = root.querySelector('[data-col="' + col + '"]');
+    if (!panel || !idEl) return;
+    var row = {}, any = false;
+    LOC_FIELDS.forEach(function (k) { var v = (panel.querySelector('[data-loc="' + k + '"]') || {}).value || ''; if (String(v).trim() !== '') { row[k] = String(v).trim(); any = true; } });
+    var cty = Number((panel.querySelector('[data-loc="c_country_id"]') || {}).value || 0), reg = Number((panel.querySelector('[data-loc="c_region_id"]') || {}).value || 0);
+    if (!cty) { toast('Location — choose a country'); return; }
+    row.c_country_id = cty;
+    var regionRowShown = panel.querySelector('[data-loc-regionrow]').style.display !== 'none';
+    if (reg && regionRowShown) row.c_region_id = reg;        // MLocation.beforeSave :724-729 — no region unless the country has regions
+    row.ad_org_id = 0;                                        // :721-722
+    var e = { key: 'c_location', fields: LOC_FIELDS.concat(['c_country_id', 'c_region_id', 'ad_org_id']).map(function (k) {
+      return { col: k, type: /_id$/.test(k) ? 'number' : 'string' }; }) };
+    var op = CORE.buildOp('create', e, row, null, { orgId: 0 });
+    applyOpGroup([op], function (res) {
+      if (!res || !res.committed || !res.ids || !res.ids.length) { console.log('§LOC-EDITOR create FAIL reason=' + (res && res.reason)); toast('Location not saved'); return; }
+      var newId = -Number(res.ids[0]);                         // crud_core.listTip: a CRUD_CREATE row's pk is -opId
+      _setVal(idEl, newId);
+      try { idEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (ev) {}
+      var txt = root.querySelector('[data-loc-txt="' + col + '"]');
+      if (txt) txt.textContent = [row.address1, row.city, row.postal].filter(Boolean).join(', ');
+      panel.style.display = 'none';
+      console.log('§LOC-EDITOR created id=' + newId + ' col=' + col + ' fields=' + JSON.stringify(row) + ' anyAddress=' + any + ' gid=' + res.gid + ' verifyChain=' + (res.verifyOk ? 'ok' : 'FAIL'));
+    });
+  }
+  if (global.document && !global.__locEditorBound) {
+    global.__locEditorBound = true;
+    global.document.addEventListener('click', function (ev) {
+      var t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+      var b = t.closest('[data-loc-edit],[data-loc-ok],[data-loc-cancel]'); if (!b) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var root = b.closest('[data-loc-wrap]') || global.document;
+      if (b.hasAttribute('data-loc-edit')) _locOpen(b.getAttribute('data-loc-edit'), root);
+      else if (b.hasAttribute('data-loc-ok')) _locOk(b.getAttribute('data-loc-ok'), root);
+      else { var p = root.querySelector('[data-loc-for]'); if (p) p.style.display = 'none'; }
+    }, true);
   }
   // ── §P3 AD_Val_Rule (ERP_IDEMPIERE_UX_PARITY.md §IMPL-P3 — Witness: W-PARITY-VALRULE) ────────────────────
   // _valRuleCtx — the @token@ context feed, and the ONLY new logic this item adds; the evaluator itself is the
@@ -1933,6 +2027,36 @@
     } catch (e) {}
     return ctx;
   }
+  // FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k) — _tipShadowOn: for each table the session has written,
+  // a TEMP table of the SAME name holding CORE.listTip's folded rows; SQLite resolves an unqualified name to `temp`
+  // first, so every read in the synchronous hook call sees the tip. _tipShadowOff drops them (main tables untouched).
+  // Same materialisation rules as _fkFoldSource (declared column types kept, case-insensitive column bind).
+  function _tipShadowOn(db, tables) {
+    var sdb = SIDE, done = [];
+    if (!db || !sdb || !CORE || typeof CORE.listTip !== 'function') return done;
+    tables.forEach(function (t) {
+      if (!_sidecarTouches(sdb, t)) return;
+      try {
+        var baseRes = db.exec('SELECT * FROM main.' + t);
+        var ti = db.exec('PRAGMA main.table_info(' + t + ')');
+        if (!ti.length || !ti[0].values.length) return;
+        var cols = ti[0].values.map(function (r) { return r[1]; });
+        var base = baseRes.length ? baseRes[0].values.map(function (v) { var o = {}; baseRes[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }) : [];
+        var folded = CORE.listTip(sdb, t, t + '_id', base, null), rows = (folded && folded.rows) || base;
+        db.run('DROP TABLE IF EXISTS temp.' + t);
+        db.run('CREATE TEMP TABLE ' + t + ' (' + ti[0].values.map(function (r) { return r[1] + ' ' + (r[2] || ''); }).join(',') + ')');
+        var st = db.prepare('INSERT INTO temp.' + t + ' (' + cols.join(',') + ') VALUES (' + cols.map(function () { return '?'; }).join(',') + ')');
+        rows.forEach(function (r) {
+          var lower = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) lower[String(k).toLowerCase()] = r[k];
+          try { st.run(cols.map(function (c) { var v = (r[c] !== undefined) ? r[c] : lower[String(c).toLowerCase()]; return v === undefined ? null : v; })); } catch (ei) {}
+        });
+        st.free(); done.push(t);
+        console.log('§MV-TIP-SHADOW table=' + t + ' base=' + base.length + ' tip=' + rows.length + ' created=' + ((folded && folded.created) || []).length);
+      } catch (e) { try { db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e2) {} console.log('§MV-TIP-SHADOW table=' + t + ' FAILED ' + ((e && e.message) || e) + ' → raw bundle'); }
+    });
+    return done;
+  }
+  function _tipShadowOff(db, done) { (done || []).forEach(function (t) { try { db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e) {} }); }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || typeof withBundle !== 'function') { cb(null); return; }
@@ -1949,7 +2073,11 @@
         // ctx = the session document defaults the beforeSave hooks read (iDempiere's Env #context): chiefly the
         //   default Warehouse, which MOrder.warehouseMandatory fills from ctx when the order carries none. NON-INVENT:
         //   the warehouse is the session org's own active warehouse (else the client's first), read from m_warehouse.
-        var v = MV.fireHooks('BEFORE_SAVE', info, _docCtx(b));
+        // FS-13 (§FS2k): the hooks read the TIP, not the raw bundle — MOrder.setBPartner (MOrder.java:752-774) must
+        // see a location the user just created. Session-written tables are shadowed for this call only.
+        var shadowed = _tipShadowOn(db, ['c_bpartner_location', 'c_location', 'ad_user', 'c_bpartner']);
+        var v;
+        try { v = MV.fireHooks('BEFORE_SAVE', info, _docCtx(b)); } finally { _tipShadowOff(db, shadowed); }
         out = { ok: v.ok, fired: v.fired, blocked: v.blocked, error: v.error, derived: info.derived || null };
       } catch (er) { console.log('§AD-MODELVAL-LIVE error ' + (er && er.message) + ' → hooks skipped'); out = null; }
       cb(out);
