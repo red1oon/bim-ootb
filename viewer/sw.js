@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1559';
+const CACHE_VERSION = 'v1560';
+// v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
+// sky-surface v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
 // v1559 (2026-10-03) W6 §F one record per film frame (phase ms, renders, calls/tris, exposure, lamps, HUD, luma, encode) + &filmlog=compact folds ~24 repeat tags to one line per film; W7 VACUOUS/NO-OP verdicts: §NIGHT_PL_INTENSITY_HEURISTIC on change + VACUOUS, §CPE_PIE_HOLD/§CPE_STATS_TAIL without a panel, §DLOD_BAKE_PROXY_RESULT, §FRAME_COST order-dependent calls dropped. cinema_maxq 35, tools 75, time_machine 81.
 // v1558 (2026-10-03) W4 film draw-call merge: A._consolidateBatched repaired to the flush contract (§WIND_FLIP material flag, _registerBatchSlot + bbox, slotGeo, only _batchMeta batches, DLOD-slotted kept, storey/disc maps filtered not wiped) and called once at film start under &consolidate=1. streaming 87, cinema_maxq 34.
 // v1557 (2026-10-03) W1 §CLI_BAKE_POSECHECK judged at the film time actually posed (pose tap +tF, __maxqPlanDurSec); W2 §HUD_OVERLAP alpha-aware (CROSSFADE apart, frame+alpha named, VACUOUS -> INCONCLUSIVE); W3 lamps: module-scope §115/§116 dedupe, film soft-cancel skips the nav pool rebuild, §INTERIOR_LIGHTS_WITNESS judges the owner (data|pool), §LAMPS + §LAMPS_SUMMARY. cinema_maxq 33, effects 138, tools 74.

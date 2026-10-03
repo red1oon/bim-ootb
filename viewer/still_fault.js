@@ -66,7 +66,7 @@
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.visible || !o.material) return;
       var ms = Array.isArray(o.material) ? o.material : [o.material];
       if (!ms.every(function (m) { return m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'; })) return;
-      ms.forEach(function (m) { if (seenMat.has(m)) return; seenMat.add(m); var T = (m.userData && m.userData.gfOf) ? 0.92 : 1 - m.opacity; if (T < 0.7) out.glassLow++; });
+      ms.forEach(function (m) { if (seenMat.has(m)) return; seenMat.add(m); var T = (m.userData && m.userData.gfOf) ? 0.92 : 1 - m.opacity; if (T < 0.7) { out.glassLow++; if ((out.glassLowWho = out.glassLowWho || []).length < 3) out.glassLowWho.push((o.name || o.type) + '/' + (m.name || m.uuid.slice(0, 8)) + ' T=' + T.toFixed(2) + ((o.userData && (o.userData.ifcClass || o.userData.ifc_class)) ? ' ' + (o.userData.ifcClass || o.userData.ifc_class) : '')); } });   // §FAULT_WHO (2026-10-03): name the material, not just count it
     });
     // element level (A.guidMap: "<object id>[_<instance>]" -> guid): which DB-see-through plates are drawn with a glass material
     var plateGlassDb = null, glassGuids = null, byObj = new Map(), drawnGlass = new Set(), drawnOpaque = new Set(), plateGlassMeshes = 0, plateOpaqueMeshes = 0;
@@ -156,7 +156,7 @@
         if (lit) continue;
         // S2 (2026-09-26): §IRC_MAX lights every zone with interreflection; a sample whose zone has IR > 0 is lit (flat, zone-mean),
         // not unlit — Hospital S2 pose: the 21 'unlit' ceiling samples displayed 70/255 (frame p10) with IR, 0 with &ir=0.
-        if (global.SourcedLight && global.SourcedLight.irZone && global.SourcedLight.irZone(zid) > 0) { out.irOnly++; if (N.y < -0.5) out.irOnlyCeil++; continue; }
+        if (global.SourcedLight && global.SourcedLight.irZone && global.SourcedLight.irZone(zid) > 0) { out.irOnly++; if (N.y < -0.5) out.irOnlyCeil++; (out.irOnlyZones = out.irOnlyZones || {})[zid] = (out.irOnlyZones[zid] || 0) + 1; continue; }   // §FAULT_WHO: which zones are bounce-only
         out.unlit++;
         if (N.y < -0.5) out.unlitCeil++;
         unlitPts.push({ gx: gx, gy: gy, p: [+P.x.toFixed(2), +P.y.toFixed(2), +P.z.toFixed(2)], n: [N.x, N.y, N.z], zone: zid });
@@ -176,6 +176,7 @@
     var line = '§FAULT ' + out.verdict + (out.verdict === 'INCONCLUSIVE' ? ' (samples=0: lighting not judged)' : '') + ' unlit=' + out.unlit + '/' + out.samples + ' unlitCeil=' + out.unlitCeil + ' irOnly=' + out.irOnly + ' (ceil ' + out.irOnlyCeil + ') fieldBad=' + out.fieldBad + ' lamps=' + out.lampsLit + '/' + out.lampsLoaded + ' (lit/loaded, cap ' + out.lampCap + ')' + ' capDropNear=' + out.capDropNear + ' extLightsDay=' + out.extLightsDay + ' torch=' + out.torch + ' (exempt)' +
       (camOutside ? ' (camOutside' + (sunUp ? ', day)' : ', night)') : ' (camInside)') + ' glassLow=' + out.glassLow + ' glassOpaque=' + out.glassOpaque + ' glassPlateLost=' + out.glassPlateLost + ' (see-through plates db=' + out.plates.glassDb + ' drawnGlass=' + out.plates.glassDrawn + ' drawnOpaque=' + out.plates.lost + ' notDrawn=' + out.plates.notDrawn + (out.plates.lostSample ? ' e.g. ' + out.plates.lostSample.join(',') : '') + ')' + ' glassReflDark=' + out.glassReflDark + '/' + out.glassReflSamples + ' (old sky-view gate: ' + out.glassReflDarkOldGate + '; ' + (specSmooth ? 'smooth' : 'binary') + ' march; glassOpen decided ' + out.glassReflOpen + ')' + ' glassStock=' + out.glassStock + ' (untagged ' + out.glassStockUntagged + ')' + ' portalsRetired=' + out.portalsRetired +
       ' expStep=' + out.expStep + ' csmUncovered=' + (out.csmUncovered == null ? 'n/a' : out.csmUncovered) + ' guard=' + out.guard + (out.lampListMean != null ? ' lampList mean/max=' + out.lampListMean + '/' + out.lampListMax + ' zonePass=' + out.lampPassMean : '') + ' ms=' + (performance.now() - t0).toFixed(1);
+    if (out.irOnlyZones || out.glassLowWho) { var zl = out.irOnlyZones ? Object.keys(out.irOnlyZones).map(function (z) { var nL = 0; lamps.forEach(function (l) { var sz = (l.userData && l.userData.sourcedZone) || 0; if (sz && sz < 65534 && (sz & (LZ.ZONE_MASK || 0x3FFF)) === +z) nL++; }); return z + ':' + out.irOnlyZones[z] + 'pts/' + nL + 'lamps'; }).join(',') : '-'; line += ' §FAULT_WHO irOnlyZones=' + zl + ' glassLowWho=' + (out.glassLowWho ? JSON.stringify(out.glassLowWho) : '-'); }
     if (fault) console.warn(line); else console.log(line);
     // §WIND_FLIP (PHOTOREAL_STILL_RENDER.md "§WIND_FLIP — SPEC"): geometries with flipped-winding edges -> their buckets drawn DoubleSide
     var ws = A._windStat; out.windFlip = ws ? { geos: ws.geos, flagged: ws.flagged, buckets: A._windBuckets || 0 } : null;
