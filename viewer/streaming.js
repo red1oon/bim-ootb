@@ -972,8 +972,10 @@ function setupStreaming(A) {
         get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
     });
     Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
-    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(arr.map(function(x) { return x.clone(); })); } });
-    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { arr.forEach(function(x) { if (x.dispose) x.dispose(); }); } });
+    // §R10-MAP-SHADOW (prompts/PHOTOREAL_STILL_RENDER.md, 2026-10-04): 'map' is forwarded above (the texture slot), which
+    // SHADOWS the array's own .map() — so clone/dispose call the Array.prototype methods directly. Witness: W-R10-CLONE.
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(Array.prototype.map.call(arr, function(x) { return x.clone(); })); } });
+    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { Array.prototype.forEach.call(arr, function(x) { if (x.dispose) x.dispose(); }); } });
     Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
     return arr;
   };
