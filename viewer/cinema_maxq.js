@@ -2568,15 +2568,6 @@
     A._resPanelFrames = 0;   // W7
     A._filmLogCompact = /[?&]filmlog=compact\b/.test(location.search);   // W6
     _filmRecInstall();   // W6 §F
-    // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
-    // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
-    // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
-    try {
-      if (/[?&]consolidate=1\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
-        A._filmConsolidated = true;
-        A._consolidateBatched();
-      }
-    } catch (eCons) { console.warn('§CONSOLIDATE_FAIL film start: ' + (eCons && eCons.message) + ' — film continues on the unmerged scene'); }
     // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
     // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
     // LARGE_DB_BAKE.md §2 L3 — the delivery budget (8/12) is the single biggest wall-time knob on a
@@ -2620,6 +2611,25 @@
       _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       return;
     }
+    // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
+    // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
+    // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
+    // Runs AFTER the stream-wait (a merge before it left late batches unmerged) and AFTER LightZones.build: light_zones.js
+    // build() bounds a BatchedMesh slot by the WHOLE batch geometry's box (d.geo.boundingBox x slot matrix), so 558 merged batches
+    // give a larger grid box than 5,999 small ones — the round-2 §ZONE_IDB_CACHE miss + luma max |d| 27. Building the zones first
+    // keeps the grid the unmerged scene's; build() then returns its cache after the merge while guidMap keeps its count.
+    try {
+      if (/[?&]consolidate=1\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
+        A._filmConsolidated = true;
+        var _lzc = window.LightZones, _zPre = null, _zPost = null;
+        if (_lzc && _lzc.build) { try { if (_lzc.prime) await _lzc.prime(A); } catch (eP) {} _zPre = _lzc.build(A); }
+        A._consolidateBatched();
+        if (_lzc && _lzc.build && _zPre) _zPost = _lzc.build(A);
+        var _zk = function (z) { return z ? z.nx + 'x' + z.ny + 'x' + z.nz + ':' + z.zones : 'none'; };
+        console.log('§CONSOLIDATE_ZONES ' + (!_zPre ? 'INCONCLUSIVE no zone grid before the merge' : _zPost === _zPre ? 'PASS grid kept' : 'WRONG grid rebuilt after the merge') +
+          ' before=' + _zk(_zPre) + ' after=' + _zk(_zPost));
+      }
+    } catch (eCons) { console.warn('§CONSOLIDATE_FAIL film start: ' + (eCons && eCons.message) + ' — film continues on the unmerged scene'); }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
     // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
     // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
