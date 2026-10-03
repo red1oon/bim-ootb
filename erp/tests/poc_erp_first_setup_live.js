@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
-  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'V', S26: 'G' };
+  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'V', S26: 'V' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-17 (§FS2o) pinned S26 to V: Backup → wipe → tampered copy rejected → Restore round-trips (ops, tip, BPs).
 // FS-16 (§FS2n) pinned S25b to V: CSV → loader → I_BPartner → ImportBPartner → BPs == the CSV.
 // FS-15 (§FS2m) pinned S20b to V: the POS order's invoice + shipment are readable and posted; facts == oracle.
 // FS-14 (§FS2l) pinned S24c to V: Aging buckets == the re-derived oracle at two statement dates; vacuity control INCONCLUSIVE.
@@ -681,10 +682,51 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   } catch (e) { step('S25a', 'I', 'import', 'harness: ' + e.message); }
 
   // ── S26 backup ───────────────────────────────────────────────────────────────────────────────────────────────
+  // FS-17 (§FS2o): Backup through the UI → the file's ops == the live kernel_ops; WIPE the sidecar (proven: 0 ops); a TAMPERED copy
+  //   is rejected and adopts nothing (negative control); Restore through the UI → same op count, same tip, same session BPs.
+  const sideState = () => page.evaluate(() => new Promise(res => { const c = window.__crud; if (!c || !c.withSidecar) return res(null);
+    c.withSidecar(async (db) => { if (!db) return res({ ops: 0, tip: null, bps: [] }); const n = db.exec('SELECT COUNT(*) FROM kernel_ops'); let tip = null;
+      try { const v = await window.KernelOps.verifyChain(db); tip = v && v.tip; } catch (e) {}
+      const r = c.core.listTip(db, 'c_bpartner', 'c_bpartner_id', [], null); res({ ops: n.length ? n[0].values[0][0] : 0, tip, bps: ((r && r.rows) || []).map(x => x.c_bpartner_id).sort() }); }); }));
+  const openDiy = async () => { await page.evaluate(() => window.AboutDIY && window.AboutDIY.open()); await page.waitForTimeout(400);
+    await page.click('.adq-segb[data-tab="diy"]').catch(() => {}); await page.waitForTimeout(600); };
   try {
+    await page.goto(base + '/idempiere.html?login=GardenAdmin', { waitUntil: 'load' }); await page.waitForTimeout(2500);
     const has = await page.evaluate(() => !!(window.ErpPersist && window.ErpPersist.backup));
-    step('S26', has ? 'V' : 'G', 'a signed backup / restore of my company is offered on the ERP page',
-      'window.ErpPersist on idempiere.html=' + has + ' (erp_persist_ui.js is loaded only by glassbowl.html)');
+    const S0 = await sideState();
+    await openDiy();
+    const mounted = await page.$$eval('[data-erp-backup] .persist-ctl', e => e.length).catch(() => 0);
+    let n0 = PAGELOG.length;
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('[data-erp-backup] .persist-btn')]);
+    const snapTxt = fs.readFileSync(await dl.path(), 'utf8'), snap = JSON.parse(snapTxt);
+    const bLine = last(n0, /§INTEG-WIRE-B backup/);
+    // WIPE — delete the sidecar store from a same-origin page with no ERP loaded, then prove it is empty.
+    await page.goto(base + '/manifest.json', { waitUntil: 'load' });
+    const wiped = await page.evaluate(() => new Promise(r => { const q = indexedDB.deleteDatabase('glassbowl_kernel_ops'); q.onsuccess = () => r('ok'); q.onerror = () => r('err'); q.onblocked = () => r('blocked'); }));
+    await page.goto(base + '/idempiere.html?login=GardenAdmin', { waitUntil: 'load' }); await page.waitForTimeout(2500);
+    const S1 = await sideState();
+    // NEGATIVE CONTROL — one op's parameters altered: restore must REJECT and adopt nothing.
+    const bad = JSON.parse(snapTxt); const k = bad.ops.findIndex(o => o.op_type === 'CRUD_CREATE');
+    if (k >= 0) { const prm = JSON.parse(bad.ops[k].parameters); prm.fields = Object.assign({}, prm.fields, { name: 'TAMPERED' }); bad.ops[k].parameters = JSON.stringify(prm); }
+    const neg = await page.evaluate((b) => window.ErpPersist.restore(b).then(r => ({ ok: r.ok, tipOk: r.tipOk, sigOk: r.sigOk, reason: r.reason })).catch(e => ({ err: e.message })), bad);
+    const S1b = await sideState();
+    await openDiy();
+    n0 = PAGELOG.length;
+    await page.setInputFiles('[data-erp-backup] .persist-ctl input[type=file]', { name: 'erp-backup.json', mimeType: 'application/json', buffer: Buffer.from(snapTxt) });
+    for (let i = 0; i < 40 && !since(n0, /§INTEG-WIRE-B restored|restore validate tipMatch=false/).length; i++) await page.waitForTimeout(250);
+    const rLine = last(n0, /§INTEG-WIRE-B restore validate/), restored = last(n0, /§INTEG-WIRE-B restored/);
+    const S2 = await sideState();
+    await page.waitForTimeout(800);                                             // let the restore's persist() land
+    await page.reload({ waitUntil: 'load' }); await page.waitForTimeout(2500);
+    const S3 = await sideState();                                               // the restored books survive a reload
+    const ok = S3 && S3.ops === S0.ops && S3.tip === S0.tip && JSON.stringify(S3.bps) === JSON.stringify(S0.bps) && has && mounted === 1 && snap.ops.length === S0.ops && snap.tip === S0.tip && S0.ops > 0 && wiped === 'ok' && S1.ops === 0 &&
+      neg && neg.ok === false && S1b.ops === 0 && /tipMatch=true sigValid=true/.test(rLine) && !!restored && S2.ops === S0.ops && S2.tip === S0.tip &&
+      JSON.stringify(S2.bps) === JSON.stringify(S0.bps) && S0.bps.length > 0;
+    say('§S26-DETAIL before=' + JSON.stringify({ ops: S0.ops, tip: S0.tip && S0.tip.slice(0, 12), bps: S0.bps.length }) + ' file={ops:' + snap.ops.length + ',tip:' + String(snap.tip).slice(0, 12) + ',fp:' + snap.fp + '} wipe=' + wiped +
+      ' afterWipe=' + S1.ops + ' tampered=' + JSON.stringify(neg) + ' afterTamper=' + S1b.ops + ' | ' + rLine.slice(0, 120) + ' | after=' + JSON.stringify({ ops: S2.ops, tip: S2.tip && S2.tip.slice(0, 12), bps: S2.bps.length }) + ' | afterReload=' + JSON.stringify(S3 && { ops: S3.ops, tip: S3.tip && S3.tip.slice(0, 12), bps: S3.bps.length }));
+    step('S26', ok ? 'V' : (has ? 'G' : 'G'), 'a signed backup / restore of my company is offered on the ERP page and round-trips',
+      'ErpPersist=' + has + ' control=' + mounted + ' backupOps=' + snap.ops.length + '/' + S0.ops + ' wipe→' + S1.ops + ' tamper=' + (neg && neg.ok === false ? 'REJECTED(' + (neg.tipOk === false ? 'tip' : 'sig') + ')' : JSON.stringify(neg)) +
+      ' restoreOps=' + S2.ops + ' reloadOps=' + (S3 && S3.ops) + ' tipEqual=' + (S2.tip === S0.tip) + ' bpsEqual=' + (JSON.stringify(S2.bps) === JSON.stringify(S0.bps)) + ' (' + S0.bps.length + ') ' + bLine.slice(0, 80));
   } catch (e) { step('S26', 'I', 'backup', 'harness: ' + e.message); }
 
   // ── verdict ──────────────────────────────────────────────────────────────────────────────────────────────────

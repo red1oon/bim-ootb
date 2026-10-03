@@ -3358,6 +3358,25 @@
                     foldBack: foldBackDocOp, foldForward: foldForwardDocOp,  // §A-GRAIL: fold via scrub
                     setStatus: setDocStatus, statusBar: function () { return statusBar; }, pulseProc: pulseProc,
                     kernelDb: function () { return SIDE; }, withSidecar: withSidecar,
+                    // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): erp_persist_ui.restore REPLACES the op-log
+                    // (ErpReplicaClient.replayAndVerify DELETEs + re-seals) and then calls __crud.persist() — which did not
+                    // exist, so a restore was lost on reload (poc_persist_wire W6, red on main). The append-only `ops` store is
+                    // rewritten ONCE here, after a user-confirmed, signature-verified restore — the only non-append write.
+                    persist: function () {
+                      var K = kernel();
+                      if (!K || !_IDB || !SIDE || typeof K.allRowsPlain !== 'function') return Promise.resolve(false);
+                      return new Promise(function (res) {
+                        try {
+                          var tx = _IDB.transaction(OPS_STORE, 'readwrite'); tx.objectStore(OPS_STORE).clear();
+                          tx.oncomplete = function () {
+                            var rows = K.allRowsPlain(SIDE);
+                            K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function () { console.log('§OPLOG-REPLACE ops=' + rows.length + ' (restore adopted → ops store rewritten once)'); res(true); })
+                              .catch(function (e) { console.warn('§OPLOG-REPLACE error', e && e.message); res(false); });
+                          };
+                          tx.onerror = function () { console.warn('§OPLOG-REPLACE clear error'); res(false); };
+                        } catch (e) { console.warn('§OPLOG-REPLACE error', e && e.message); res(false); }
+                      });
+                    },
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
                     changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
