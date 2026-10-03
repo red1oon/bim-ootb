@@ -5931,6 +5931,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       return null;
     }
+    // S226 §R1.1 (bim-compiler prompts/S226_localisation.md) — Witness: W-ZOOM-LANG. The ERP's UI language rides in
+    //   the Viewer URL as ?lang=; the Viewer's locale_loader resolves it through its own LOCALE_MAP (ar → ar_SA).
+    //   Only a CHOSEN language is passed: a Viewer locale also carries currency + rate book, so the ERP base (en_US)
+    //   must not override the Viewer user's own saved locale (e.g. en_MY / RM).
+    function _zoomLang() { var I = window.ErpI18n, l = I && I.lang; return (l && l !== I.BASE) ? '&lang=' + encodeURIComponent(l) : ''; }
     if (window.ZoomAcross) window.ZoomAcross.register({
       id: 'viewer', label: 'BIM Viewer',
       // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
@@ -5944,6 +5949,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
         if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
+        url += _zoomLang();                                          // S226 §R1.1 — the Viewer opens in the ERP's language
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
       }
@@ -5960,7 +5966,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (!sc || !sc.tm || !sc.bld) { status('No BIM model linked to this order'); console.log('§ZOOM-ACROSS no-scope id=timemachine'); return; }
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' +
-          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order);
+          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order) + _zoomLang();
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=timemachine bld=' + sc.bld + ' pporder=' + sc.tm.order + ' url=' + url);
       }
