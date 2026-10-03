@@ -2502,9 +2502,12 @@ function setupTools(A) {
           if (_im > _imMax) _imMax = _im;
           _imSum += _im;
         }
-        console.log('§NIGHT_PL_INTENSITY_HEURISTIC n=' + needed.length + ' min=' + _imMin.toFixed(2) +
+        // W7: print on CHANGE only, and say VACUOUS when every multiplier is the same (it then proves no variance at all —
+        // the line printed `min=1.00 max=1.00` 5,530 times in one Hospital film).
+        var _imLine = '§NIGHT_PL_INTENSITY_HEURISTIC n=' + needed.length + ' min=' + _imMin.toFixed(2) +
           ' max=' + _imMax.toFixed(2) + ' mean=' + (_imSum / needed.length).toFixed(3) +
-          ' (style convention, NOT extracted wattage/lumen data)');
+          ' (style convention, NOT extracted wattage/lumen data)' + (_imMin === _imMax ? ' VACUOUS — one multiplier for every fixture' : '');
+        if (_imLine !== A._imHeurLast) { A._imHeurLast = _imLine; console.log(_imLine); }
       }
     }
     // ══ §NIGHT_BAKE_POOL (2026-09-01, found by the first headless CLI bake — bim-compiler
