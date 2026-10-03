@@ -3406,10 +3406,16 @@ function setupStreaming(A) {
     var t0 = performance.now();
 
     // Count existing BatchedMesh — if already compact, skip
-    var oldBMs = [];
-    A.scene.traverse(function(obj) { if (obj.isBatchedMesh) oldBMs.push(obj); });
+    // W4 (ALTC_FOUNDATION §1, 2026-10-03): only the streaming batches (they carry _batchMeta) and never a DLOD-slotted one
+    // (its proxy machinery is keyed on the old mesh id) — any other feature's BatchedMesh is left exactly as it is.
+    var oldBMs = [], dlodKept = 0;
+    A.scene.traverse(function(obj) {
+      if (!obj.isBatchedMesh || !A._batchMeta[obj.id]) return;
+      if (A._dlodSlots && A._dlodSlots[obj.id]) { dlodKept++; return; }
+      oldBMs.push(obj);
+    });
     if (oldBMs.length <= 40) {
-      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' — already compact');
+      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' dlodKept=' + dlodKept + ' — already compact');
       return;
     }
 
@@ -3421,8 +3427,10 @@ function setupStreaming(A) {
       A.scene.remove(oldBMs[bi]);
       if (oldBMs[bi].dispose) oldBMs[bi].dispose();
     }
-    A._batchStoreyMap = {};
-    A._batchDiscMap = {};
+    // W4: drop only the merged meshes' entries — a kept (DLOD-slotted) batch keeps its storey/disc rows.
+    [A._batchStoreyMap, A._batchDiscMap].forEach(function (mp) {
+      for (var mk in mp) { mp[mk] = mp[mk].filter(function (e) { return !oldBMIds.has(e.mesh.id); }); if (!mp[mk].length) delete mp[mk]; }
+    });
     // Clean guidMap entries from old BMs
     for (var gk in A.guidMap) {
       if (gk.indexOf('_') > 0) {
@@ -3466,7 +3474,8 @@ function setupStreaming(A) {
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
         cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint, matName: matName });
+        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint, matName: matName,
+        bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });   // W4: same bbox the flush registers (streaming.js ~2499)
     }
 
     // Build consolidated BatchedMesh per bucket
@@ -3488,7 +3497,10 @@ function setupStreaming(A) {
       var parts = key.split('|');
       var rgbaKey = parts[2];
       var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName, undefined, A._surfRowFor(items));
+      // W4: same material contract as the batch flush (streaming.js ~2916) — incl. the §WIND_FLIP DoubleSide flag, which this
+      // stale copy dropped (a merged bucket holding a flipped-winding geometry would have gone FrontSide = invisible faces).
+      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName, undefined, A._surfRowFor(items),
+        A._windFlipAny(items.map(function (it) { return A.meshCache[it.hash]; })));
       var newBM;
       try {
         newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -3522,16 +3534,8 @@ function setupStreaming(A) {
         if (!A._storeyVisible(el.storey)) vis = false;
         if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
         if (!vis) newBM.setVisibleAt(slotId, false);
-
-        newMeta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass, slotId: slotId });
-        A.guidMap[newBM.id + '_' + slotId] = el.guid;
-
-        var sk = el.storey || '';
-        if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
-        A._batchStoreyMap[sk].push({ mesh: newBM, slotId: slotId });
-        var dk = el.disc || '';
-        if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
-        A._batchDiscMap[dk].push({ mesh: newBM, slotId: slotId });
+        (newBM.userData.slotGeo = newBM.userData.slotGeo || {})[slotId] = geo;   // W4: same as the flush (dlod_nav cross-fade ref)
+        newMeta.push(A._registerBatchSlot(newBM, el, slotId));   // W4: the shared contract, not a hand-rolled copy
       }
 
       A._batchMeta[newBM.id] = newMeta;

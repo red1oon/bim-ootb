@@ -2503,6 +2503,15 @@
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
     A._lampsSum = null;   // W3(C) — fresh lamp census per film
+    // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
+    // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
+    // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
+    try {
+      if (/[?&]consolidate=1\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
+        A._filmConsolidated = true;
+        A._consolidateBatched();
+      }
+    } catch (eCons) { console.warn('§CONSOLIDATE_FAIL film start: ' + (eCons && eCons.message) + ' — film continues on the unmerged scene'); }
     // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
     // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
     // LARGE_DB_BAKE.md §2 L3 — the delivery budget (8/12) is the single biggest wall-time knob on a
