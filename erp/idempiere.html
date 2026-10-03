@@ -475,7 +475,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=13"></script>
+<script src="ad_process.js?v=14"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -620,7 +620,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=4"></script>
-<script src="crud_overlay.js?v=27"></script>
+<script src="crud_overlay.js?v=28"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
@@ -2500,6 +2500,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
       // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
       query: function (sql) { return _sqlRows(sql); },
+      // FS-16 (§FS2n): the TIP of a table (bundle + this session's signed CRUD ops), keys lower-cased — ImportBPartner reads
+      // the staging rows the File Loader committed, and matches BPs / users / locations created in the session too.
+      tipRows: function (table) {
+        return _foldRowsSync(table, table + '_id', _sqlRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
+      },
+      stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
       today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
       clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
@@ -2869,6 +2875,98 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     return null;                                          // log.warning("Not found zoom table")
   }
+  // FS-16 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2n — Witness: W-ERP-FIRST-SETUP S25b) — Import File Loader
+  //   (VFileImport + ImpFormat): pick an AD_ImpFormat, load a file, preview, Save → ONE signed group of CRUD_CREATE rows on the
+  //   format's import table. parseFlexFormat (ImpFormat.java:467-538) and parseLine/updateDB (:370-460, :547-680) transcribed.
+  function _impParseField(line, formatType, sep, fieldNo) {
+    var QUOTE = '"', d = formatType === 'C' ? ',' : formatType === 'T' ? '\t' : formatType === 'U' ? String(sep || ',').charAt(0) : null;
+    if (d == null) throw new Error('ImpFormat.parseFlexFormat - unknown format: ' + formatType);
+    if (!line || fieldNo < 0) return '';
+    var pos = 0, len = line.length;
+    for (var field = 1; field <= fieldNo && pos < len; field++) {
+      var content = '';
+      if (line.charAt(pos) === d) { pos++; continue; }                      // two delimiters → empty field (the Java's own quirk)
+      if (line.charAt(pos) === QUOTE) {
+        pos++;
+        while (pos < len) {
+          if (line.charAt(pos) === QUOTE && pos + 1 < len && line.charAt(pos + 1) === QUOTE) { content += line.charAt(pos++); pos++; }
+          else if (line.charAt(pos) === QUOTE) { pos++; break; }
+          else content += line.charAt(pos++);
+        }
+        if (pos < len && line.charAt(pos) !== d) {} pos++;
+      } else { while (pos < len && line.charAt(pos) !== d) content += line.charAt(pos++); pos++; }
+      if (field === fieldNo) return content;
+    }
+    return '';
+  }
+  function _impParseLine(fmt, rows, line) {
+    var out = {};
+    rows.forEach(function (r) {
+      var col = String(r.columnname).toLowerCase(), info;
+      if (String(r.datatype) === 'C') info = r.constantvalue == null ? '' : String(r.constantvalue);
+      else if (String(fmt.formattype) === 'F') info = (Number(r.startno) > 0 && Number(r.endno) <= line.length) ? line.substring(Number(r.startno) - 1, Number(r.endno)) : '';
+      else info = _impParseField(line, String(fmt.formattype), fmt.separatorchar, Number(r.startno));
+      if (info == null) info = '';
+      if (String(r.datatype) === 'N') info = info === '' ? '' : String(Number(String(info).replace(r.decimalpoint && r.decimalpoint !== '.' ? r.decimalpoint : /(?!)/, '.')));
+      if (info === '') return;                                               // ignoreEmpty
+      if (out[col] != null && (String(r.datatype) === 'S' || String(r.datatype) === 'C')) out[col] = String(out[col]) + info;   // concat mechanic :382-395
+      else out[col] = info;
+    });
+    return out;
+  }
+  _registerForm('org.compiere.apps.form.VFileImport', function (form) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, form.name));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + form.ad_form_id + ' · ' + form.classname + ' · load a file into an import table with an Import Format; then run that table\'s Import process'));
+    var cli = (_session && _session.client) ? Number(_session.client.id) : 0;
+    var fmts = _sqlRows("SELECT f.ad_impformat_id, f.name, f.ad_table_id, f.formattype, f.separatorchar, t.tablename FROM ad_impformat f JOIN ad_table t ON t.ad_table_id=f.ad_table_id " +
+      "WHERE f.isactive='Y' AND f.ad_client_id IN (0," + cli + ') ORDER BY f.name');
+    var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Import Format'));
+    var fs = document.createElement('select'); fs.setAttribute('data-imp-format', '1');
+    fmts.forEach(function (f) { var o = el('option', null, f.name + ' → ' + f.tablename); o.value = String(f.ad_impformat_id); fs.appendChild(o); });
+    fld.appendChild(fs); fld.appendChild(el('label', null, 'File'));
+    var fi = document.createElement('input'); fi.type = 'file'; fi.setAttribute('data-imp-file', '1'); fld.appendChild(fi);
+    pane.appendChild(fld);
+    var info = el('div', 'msg'); pane.appendChild(info);
+    var prev = el('div', null); pane.appendChild(prev);
+    var actions = el('div', 'actions'); var save = el('button', 'run', 'Save'); save.setAttribute('data-imp-save', '1'); save.disabled = true;
+    actions.appendChild(save); pane.appendChild(actions);
+    var parsed = [], fmt = null;
+    function load(text) {
+      fmt = fmts.filter(function (f) { return String(f.ad_impformat_id) === fs.value; })[0];
+      var rows = fmt ? _sqlRows('SELECT r.seqno, r.name, c.columnname, r.startno, r.endno, r.datatype, r.dataformat, r.decimalpoint, r.constantvalue FROM ad_impformat_row r ' +
+        'JOIN ad_column c ON c.ad_column_id=r.ad_column_id WHERE r.ad_impformat_id=' + Number(fmt.ad_impformat_id) + " AND r.isactive='Y' ORDER BY r.seqno") : [];
+      var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim().length; });
+      parsed = lines.map(function (l) { return _impParseLine(fmt, rows, l); }).filter(function (o) { return Object.keys(o).length; });
+      prev.innerHTML = '';
+      var t = document.createElement('table'); t.setAttribute('data-imp-preview', '1');
+      var cols = rows.map(function (r) { return String(r.columnname).toLowerCase(); }).filter(function (c, i, a) { return a.indexOf(c) === i; });
+      var tr = el('tr'); cols.forEach(function (c) { tr.appendChild(el('th', null, c)); }); t.appendChild(tr);
+      parsed.forEach(function (o) { tr = el('tr'); cols.forEach(function (c) { tr.appendChild(el('td', null, o[c] == null ? '' : String(o[c]))); }); t.appendChild(tr); });
+      prev.appendChild(t);
+      info.textContent = lines.length + ' line(s) read · ' + parsed.length + ' record(s) to load into ' + (fmt ? fmt.tablename : '?');
+      save.disabled = !parsed.length || !fmt;
+      console.log('§IMPLOADER preview format=' + (fmt && fmt.ad_impformat_id) + ' table=' + (fmt && fmt.tablename) + ' lines=' + lines.length + ' records=' + parsed.length + ' formatRows=' + rows.length);
+    }
+    fi.addEventListener('change', function () { var f = fi.files && fi.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function () { load(rd.result); }; rd.readAsText(f); });
+    fs.addEventListener('change', function () { if (fi.files && fi.files[0]) fi.dispatchEvent(new Event('change')); });
+    save.addEventListener('click', function () {
+      if (!fmt || !parsed.length || !window.__crud || typeof window.__crud.applyOpGroup !== 'function') return;
+      var tn = String(fmt.tablename).toLowerCase(), A = window.APP || {};
+      var std = { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 };
+      var ops = parsed.map(function (o) {                                    // updateDB :640-672 — std fields + Processed/I_IsImported='N'
+        var f = {}; for (var k in o) f[k] = o[k]; f.isactive = 'Y'; f.processed = 'N'; f.i_isimported = 'N';
+        return { op_type: 'CRUD_CREATE', key: tn, table: tn, verb: 'create', id: null, fields: f, cas: null, stdDefaults: std };
+      });
+      save.disabled = true;
+      window.__crud.applyOpGroup(ops, function (res) {
+        info.textContent = res && res.committed ? ops.length + ' record(s) loaded into ' + fmt.tablename + ' (signed). Run its Import process next.' : 'Load failed: ' + (res && res.reason);
+        console.log('§IMPLOADER saved table=' + tn + ' rows=' + ops.length + ' committed=' + !!(res && res.committed) + ' gid=' + (res && res.gid) + ' verifyChain=' + (res && res.verifyOk ? 'ok' : 'FAIL'));
+      });
+    });
+    _showProcPane(pane);
+    console.log('§IMPLOADER mount form=' + form.ad_form_id + ' formats=' + fmts.length);
+  });
   _registerForm('org.compiere.apps.form.VTrxMaterial', function (form) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, form.name));
@@ -3413,10 +3511,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
   }
   function runProcess(proc, params, recordId) {
+    // FS-16 (§FS2n): hydrate the signed sidecar FIRST — a handler that reads the tip (ImportBPartner over the rows the File
+    //   Loader committed) must not run against a not-yet-hydrated sidecar (kernelDb() is null before hydration → base only).
+    var C = window.__crud;
+    if (C && typeof C.withSidecar === 'function' && typeof C.kernelDb === 'function' && !C.kernelDb()) { C.withSidecar(function () { _runProcessNow(proc, params, recordId); }); return; }
+    _runProcessNow(proc, params, recordId);
+  }
+  function _runProcessNow(proc, params, recordId) {
     var b = _b3(window.__idmpDb);
     var info = { AD_Process_ID: proc.AD_Process_ID, params: params };
     if (recordId != null) info.Record_ID = recordId;          // §GENPO-LIVE — record-scoped processes (getRecord_ID)
     var res = window.AdProcess.dispatch(b, info, _procCtx());
+    // FS-16 (§FS2n): a process whose doIt WRITES (ImportBPartner) returns its rows as one CRUD op group; iDempiere commits
+    //   inside doIt, so the host commits it now — ONE signed group (FKs by {__opRef}, resolved at commit).
+    if (res && res.ok && res.result && res.result.commitOps && res.result.commitOps.length && window.__crud && typeof window.__crud.applyOpGroup === 'function') {
+      var nOps = res.result.commitOps.length;
+      window.__crud.applyOpGroup(res.result.commitOps, function (cr) {
+        console.log('§PROC-COMMIT proc=' + res.ad_process_id + ' ops=' + nOps + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
+      });
+    }
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
       (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
