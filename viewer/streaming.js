@@ -3396,163 +3396,84 @@ function setupStreaming(A) {
     if (window.tmResweep) window.tmResweep();
   };
 
-  // §S260c: Consolidate fragmented BatchedMesh from progressive flushes into one set.
-  // Progressive flush creates N sets of BatchedMesh (one per 5000-element chunk).
-  // After streaming ends, this removes them and rebuilds ONE BatchedMesh per bucket
-  // from streamQueue + meshCache. r160 has no getGeometryIdAt, so we rebuild from source.
-  // LTU 122K: 26 flushes × 40 buckets = 1040 draw calls → consolidated to ~40.
+  // §S260c / W4 (ALTC_FOUNDATION §1, rewritten 2026-10-03): merge the progressive-flush BatchedMeshes into one per
+  // (material, storey, discipline). COPIES what is on screen — each slot's own source geometry (userData.slotGeo), its live matrix
+  // (getMatrixAt) and visibility (getVisibleAt), and the batch's own material object — instead of re-deriving from streamQueue.
+  // The re-derive version moved elements that had been placed after streaming (LTU clip: the boundary box grew from
+  // -119.6..125.9 to -137.4..174.0 in x, the §ZONE_IDB_CACHE fingerprint missed, zones were rebuilt and interiors came out up to 26
+  // luma brighter). A batch missing slotGeo for any slot, carrying DLOD slots, or without _batchMeta is left untouched.
+  // Caller removed from interactive streaming 2026-05-27 (b9b1a816: 9.9 s main-thread block on LTU); films call it once (cinema_maxq).
   A._consolidateBatched = function() {
-    if (!THREE.BatchedMesh) return;  // §S265: consolidation on all devices
-    var t0 = performance.now();
-
-    // Count existing BatchedMesh — if already compact, skip
-    // W4 (ALTC_FOUNDATION §1, 2026-10-03): only the streaming batches (they carry _batchMeta) and never a DLOD-slotted one
-    // (its proxy machinery is keyed on the old mesh id) — any other feature's BatchedMesh is left exactly as it is.
-    var oldBMs = [], dlodKept = 0;
+    if (!THREE.BatchedMesh) return;
+    var t0 = performance.now(), dlodKept = 0, noGeoKept = 0;
+    var oldBMs = [];
     A.scene.traverse(function(obj) {
       if (!obj.isBatchedMesh || !A._batchMeta[obj.id]) return;
       if (A._dlodSlots && A._dlodSlots[obj.id]) { dlodKept++; return; }
+      var meta = A._batchMeta[obj.id], sg = obj.userData.slotGeo;
+      for (var k = 0; k < meta.length; k++) if (!sg || !sg[meta[k].slotId]) { noGeoKept++; return; }
       oldBMs.push(obj);
     });
     if (oldBMs.length <= 40) {
-      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' dlodKept=' + dlodKept + ' — already compact');
+      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' — already compact');
       return;
     }
-
-    // Remove all old BatchedMesh + their metadata
-    var oldBMIds = new Set();
+    // 1. gather every slot from the batches that will be merged, keyed by the batch's material + storey + disc
+    var groups = {}, order = [], _m4 = new THREE.Matrix4();
     for (var bi = 0; bi < oldBMs.length; bi++) {
-      oldBMIds.add(oldBMs[bi].id);
-      delete A._batchMeta[oldBMs[bi].id];
-      A.scene.remove(oldBMs[bi]);
-      if (oldBMs[bi].dispose) oldBMs[bi].dispose();
+      var bm = oldBMs[bi], meta = A._batchMeta[bm.id], mat = bm.material;
+      var key = (mat && mat.uuid) + '|' + (bm.userData.storey || '') + '|' + (bm.userData.disc || '');
+      if (!groups[key]) { groups[key] = { mat: mat, storey: bm.userData.storey || '', disc: bm.userData.disc || '', items: [], from: [] }; order.push(key); }
+      var g = groups[key]; g.from.push(bm);
+      for (var mi = 0; mi < meta.length; mi++) {
+        var m = meta[mi], m4 = new THREE.Matrix4(); bm.getMatrixAt(m.slotId, m4);
+        var col = null; if (bm._colorsTexture && bm.getColorAt) { col = new THREE.Color(); try { bm.getColorAt(m.slotId, col); } catch (eC) { col = null; } }
+        g.items.push({ meta: m, geo: bm.userData.slotGeo[m.slotId], matrix: m4, visible: bm.getVisibleAt(m.slotId), color: col,
+          shadow: [bm.castShadow, bm.receiveShadow], order: bm.renderOrder, layers: bm.layers.mask });
+      }
     }
-    // W4: drop only the merged meshes' entries — a kept (DLOD-slotted) batch keeps its storey/disc rows.
+    // 2. drop the old batches and only THEIR registry rows
+    var oldBMIds = new Set(oldBMs.map(function (b) { return b.id; }));
     [A._batchStoreyMap, A._batchDiscMap].forEach(function (mp) {
       for (var mk in mp) { mp[mk] = mp[mk].filter(function (e) { return !oldBMIds.has(e.mesh.id); }); if (!mp[mk].length) delete mp[mk]; }
     });
-    // Clean guidMap entries from old BMs
-    for (var gk in A.guidMap) {
-      if (gk.indexOf('_') > 0) {
-        var prefix = parseInt(gk.split('_')[0], 10);
-        if (oldBMIds.has(prefix)) delete A.guidMap[gk];
-      }
-    }
-
-    // Build set of guids in InstancedMesh (6+ instances, stay untouched)
-    var instancedGuids = new Set();
-    for (var imId in A._instanceMeta) {
-      var imMeta = A._instanceMeta[imId];
-      for (var imi = 0; imi < imMeta.length; imi++) {
-        instancedGuids.add(imMeta[imi].guid);
-      }
-    }
-
-    // Rebuild buckets from streamQueue (the original source of truth)
-    var buckets = {};  // "storey|disc|rgba" → [{el, geo}, ...]
-    var _m4 = new THREE.Matrix4();
-    var _euler = new THREE.Euler();
-    var _quat = new THREE.Quaternion();
-    var _pos = new THREE.Vector3();
-    var _scale = new THREE.Vector3(1, 1, 1);
-
-    for (var qi = 0; qi < A.streamQueue.length; qi++) {
-      var row = A.streamQueue[qi];
-      var guid = row[0], hash = row[1], rgba = row[2], disc = row[3];
-      var cx = row[4], cy = row[5], cz = row[6];
-      var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
-      var storey = row[10] || '', ifcClass = row[11] || '';
-      var matVariant = A._elementVariant(ifcClass, row[12], row[16] || '');   // §ENTOURAGE / §PORCELAIN (Z20)
-      var mepHint = A._mepNameHint(row[12]);
-      var matName = row[16] || '';   // §CPE_MATERIAL_KEY
-      if (!hash || !A.meshCache[hash]) continue;
-      // Skip elements already in InstancedMesh
-      if (instancedGuids.has(guid)) continue;
-      if (A._r10Guids && A._r10Guids.has(guid)) continue;   // §SURFACE_R10 — a split opening never goes back into a batch
-
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (A._mepHueEligible(ifcClass, disc, rgba, matName) ? 'M' : '-') + '|' + (ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — see the batch key above
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
-        cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant, mepHint: mepHint, matName: matName,
-        bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });   // W4: same bbox the flush registers (streaming.js ~2499)
-    }
-
-    // Build consolidated BatchedMesh per bucket
-    var newDrawCalls = 0, totalElements = 0;
-    for (var key in buckets) {
-      var items = buckets[key];
-      if (items.length === 0) continue;
-
-      if (items.length === 0) continue;
-
-      var totalVerts = 0, totalIdx = 0;
-      for (var vi = 0; vi < items.length; vi++) {
-        var geo = A.meshCache[items[vi].hash];
-        var p = geo.attributes.position;
-        totalVerts += p ? p.count : 0;
-        totalIdx += geo.index ? geo.index.count : (p ? p.count : 0);
-      }
-
-      var parts = key.split('|');
-      var rgbaKey = parts[2];
-      var batchCls = items[0].ifcClass;
-      // W4: same material contract as the batch flush (streaming.js ~2916) — incl. the §WIND_FLIP DoubleSide flag, which this
-      // stale copy dropped (a merged bucket holding a flipped-winding geometry would have gone FrontSide = invisible faces).
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant, items[0].disc, items[0].mepHint, items[0].matName, undefined, A._surfRowFor(items),
-        A._windFlipAny(items.map(function (it) { return A.meshCache[it.hash]; })));
-      var newBM;
-      try {
-        newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
-      } catch(e) {
-        console.warn('§CONSOLIDATE_FAIL bucket=' + key + ' count=' + items.length + ' err=' + e.message);
-        continue;
-      }
-
-      newBM.frustumCulled = true;
-      newBM.userData.isBatched = true;
-      newBM.userData.storey = parts[0] === '_' ? '' : parts[0];
-      newBM.userData.disc = parts[1] === '_' ? '' : parts[1];
-      newBM.matrixAutoUpdate = false;
+    for (var gk in A.guidMap) { var us = gk.indexOf('_'); if (us > 0 && oldBMIds.has(parseInt(gk.slice(0, us), 10))) delete A.guidMap[gk]; }
+    oldBMs.forEach(function (b) { delete A._batchMeta[b.id]; A.scene.remove(b); if (b.dispose) b.dispose(); });
+    // 3. one BatchedMesh per group, same material object, same per-slot matrix / visibility, shared slot contract
+    var newDrawCalls = 0, totalElements = 0, failed = 0, mixedFlags = 0;
+    order.forEach(function (key) {
+      var g = groups[key], items = g.items, totalVerts = 0, totalIdx = 0;
+      items.forEach(function (it) { var p = it.geo.attributes.position; totalVerts += p ? p.count : 0; totalIdx += it.geo.index ? it.geo.index.count : (p ? p.count : 0); });
+      var nb;
+      try { nb = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, g.mat); }
+      catch (e) { failed++; console.warn('§CONSOLIDATE_FAIL bucket=' + key + ' count=' + items.length + ' err=' + e.message); return; }
+      var f0 = g.from[0];
+      nb.frustumCulled = true; nb.castShadow = f0.castShadow; nb.receiveShadow = f0.receiveShadow; nb.renderOrder = f0.renderOrder; nb.layers.mask = f0.layers.mask;
+      if (g.from.some(function (b) { return b.castShadow !== f0.castShadow || b.receiveShadow !== f0.receiveShadow || b.renderOrder !== f0.renderOrder || b.layers.mask !== f0.layers.mask; })) mixedFlags++;
+      nb.userData.isBatched = true; nb.userData.storey = g.storey; nb.userData.disc = g.disc; nb.matrixAutoUpdate = false;
       var newMeta = [];
-
-      for (var ji = 0; ji < items.length; ji++) {
-        var el = items[ji];
-        var geo = A.meshCache[el.hash];
+      items.forEach(function (it) {
         var slotId;
-        // §S276: r166+ requires addInstance() after addGeometry()
-        try { var geoId = newBM.addGeometry(geo); slotId = newBM.addInstance(geoId); } catch(e) { continue; }
-
-        var pos = A.ifc2three(el.cx, el.cy, el.cz);
-        _pos.set(pos.x, pos.y, pos.z);
-        _euler.set(el.rotX, el.rotZ, -el.rotY);
-        _quat.setFromEuler(_euler);
-        _m4.compose(_pos, _quat, _scale);
-        newBM.setMatrixAt(slotId, _m4);
-
-        var vis = true;
-        if (!A._storeyVisible(el.storey)) vis = false;
-        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
-        if (!vis) newBM.setVisibleAt(slotId, false);
-        (newBM.userData.slotGeo = newBM.userData.slotGeo || {})[slotId] = geo;   // W4: same as the flush (dlod_nav cross-fade ref)
-        newMeta.push(A._registerBatchSlot(newBM, el, slotId));   // W4: the shared contract, not a hand-rolled copy
-      }
-
-      A._batchMeta[newBM.id] = newMeta;
-      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: §CONSOLIDATE rebuilds meshes -> new slotIds
-      newBM.updateMatrix();
-      A.scene.add(newBM);
-      newDrawCalls++;
-      totalElements += items.length;
-    }
-
+        try { slotId = nb.addInstance(nb.addGeometry(it.geo)); } catch (e) { return; }
+        nb.setMatrixAt(slotId, it.matrix);
+        if (!it.visible) nb.setVisibleAt(slotId, false);
+        if (it.color) nb.setColorAt(slotId, it.color);   // a per-slot colour, if the batch carried any, is copied too
+        (nb.userData.slotGeo = nb.userData.slotGeo || {})[slotId] = it.geo;
+        var m = it.meta;
+        newMeta.push(A._registerBatchSlot(nb, { guid: m.guid, storey: m.storey, disc: m.disc, ifcClass: m.ifcClass, bx: m.bx, by: m.by, bz: m.bz }, slotId));
+      });
+      A._batchMeta[nb.id] = newMeta;
+      nb.updateMatrix();
+      A.scene.add(nb);
+      newDrawCalls++; totalElements += newMeta.length;
+    });
+    A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: new slot ids
     var ms = (performance.now() - t0).toFixed(0);
-    console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls +
-      ' elements=' + totalElements + ' ms=' + ms);
-    document.getElementById('s-meshes').textContent = newDrawCalls.toLocaleString() + ' draw calls';
+    console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls + ' elements=' + totalElements + ' failed=' + failed +
+      ' mixedFlagGroups=' + mixedFlags + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' ms=' + ms + ' (copied: slot geometry + live matrix + batch material)');
+    var sm = document.getElementById('s-meshes'); if (sm) sm.textContent = newDrawCalls.toLocaleString() + ' draw calls';
     if (A.markDirty) A.markDirty();
-    // §TM_STREAM_RESWEEP: see _flushInstanced — consolidation rebuilds BatchedMesh objects
-    // (new object identities), so this needs its own sweep even though nothing NEW streamed in.
+    // §TM_STREAM_RESWEEP: new object identities, so the Time Machine sweeps again even though nothing new streamed in.
     if (window.tmResweep) window.tmResweep();
   };
 
