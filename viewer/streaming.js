@@ -3405,11 +3405,14 @@ function setupStreaming(A) {
   // Caller removed from interactive streaming 2026-05-27 (b9b1a816: 9.9 s main-thread block on LTU); films call it once (cinema_maxq).
   A._consolidateBatched = function() {
     if (!THREE.BatchedMesh) return;
-    var t0 = performance.now(), dlodKept = 0, noGeoKept = 0;
+    var t0 = performance.now(), dlodKept = 0, noGeoKept = 0, transpKept = 0;
     var oldBMs = [];
     A.scene.traverse(function(obj) {
       if (!obj.isBatchedMesh || !A._batchMeta[obj.id]) return;
       if (A._dlodSlots && A._dlodSlots[obj.id]) { dlodKept++; return; }
+      // &consolidate=opaque (ALTC_FOUNDATION §1 round 3 W4 probe): leave transparent batches unmerged — splits a transparent draw-order
+      // cause of the merged-vs-unmerged luma residual from an opaque one (coplanar depth ties)
+      if (A._consolidateOpaqueOnly && obj.material && obj.material.transparent) { transpKept++; return; }
       var meta = A._batchMeta[obj.id], sg = obj.userData.slotGeo;
       for (var k = 0; k < meta.length; k++) if (!sg || !sg[meta[k].slotId]) { noGeoKept++; return; }
       oldBMs.push(obj);
@@ -3470,7 +3473,7 @@ function setupStreaming(A) {
     A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: new slot ids
     var ms = (performance.now() - t0).toFixed(0);
     console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls + ' elements=' + totalElements + ' failed=' + failed +
-      ' mixedFlagGroups=' + mixedFlags + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' ms=' + ms + ' (copied: slot geometry + live matrix + batch material)');
+      ' mixedFlagGroups=' + mixedFlags + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' transparentKept=' + transpKept + ' ms=' + ms + ' (copied: slot geometry + live matrix + batch material)');
     var sm = document.getElementById('s-meshes'); if (sm) sm.textContent = newDrawCalls.toLocaleString() + ' draw calls';
     if (A.markDirty) A.markDirty();
     // §TM_STREAM_RESWEEP: new object identities, so the Time Machine sweeps again even though nothing new streamed in.

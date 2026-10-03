@@ -2025,7 +2025,14 @@
     // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
     // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
     // absolute-assignment reason above.
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
+    // W2 (ALTC_FOUNDATION §1 round 3): the load-path card is drawn opaque at [30,30] from the arm frame (part of the frozen scene,
+    // §129.12/§129.29 — it must NOT fade with the HUD), while the path map in the same rect was still fading from alpha 1 =>
+    // §HUD_OVERLAP_WORST FAIL f=23 alpha 1.00/1.00 (Hospital 0049 film too). The map yields for exactly the card's window
+    // (A.loadPathCardOn = the composite's own gate); §129.8 item 4b already wants "no path map" during the hold.
+    var _cardOn = !!(A.loadPathCardOn && A.loadPathCardOn());
+    if (_cardOn && !A._pathmapYieldLogged) { A._pathmapYieldLogged = true; console.log('§HUD_PATHMAP_YIELD card on — path map not drawn while the load-path card holds its rect'); }
+    if (!_cardOn) A._pathmapYieldLogged = false;
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas && !_cardOn) {
       _drawUnlessHold('hud.pathmap', function (a) {
         try {
           A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, 0, _rowX);
@@ -2036,6 +2043,8 @@
       }, function () { return A.pathOverviewLastBox; });   // §129.55 B — the rect _rowAdvance already reads, now also registered
       _rowAdvance(A.pathOverviewLastBox);
     }
+    // the rows below keep their place while the map yields (a shifted day counter would land in the card's rect instead)
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas && _cardOn) _rowAdvance(A.pathOverviewLastBox);
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       // ROUND 13 item C — `a` passed as dayCounter's own `opacity` param (its `ctx.globalAlpha = op`
       // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
@@ -2653,8 +2662,8 @@
     // give a larger grid box than 5,999 small ones — the round-2 §ZONE_IDB_CACHE miss + luma max |d| 27. Building the zones first
     // keeps the grid the unmerged scene's; build() then returns its cache after the merge while guidMap keeps its count.
     try {
-      if (/[?&]consolidate=1\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
-        A._filmConsolidated = true;
+      if (/[?&]consolidate=(1|opaque)\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
+        A._filmConsolidated = true; A._consolidateOpaqueOnly = /[?&]consolidate=opaque\b/.test(location.search);
         var _lzc = window.LightZones, _zPre = null, _zPost = null;
         if (_lzc && _lzc.build) { try { if (_lzc.prime) await _lzc.prime(A); } catch (eP) {} _zPre = _lzc.build(A); }
         A._consolidateBatched();

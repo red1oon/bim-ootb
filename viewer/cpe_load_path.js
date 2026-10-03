@@ -4575,6 +4575,9 @@ function setupCpeLoadPath(A) {
     }
   }
   A._loadPathDrawInfoCard = _drawInfoCard;
+  // W2 (ALTC_FOUNDATION §1 round 3) — the card's on-screen window, read by cinema_maxq.js so the path map (same top-left rect)
+  // yields to it. Same gate as loadPathCompositeOntoCanvas below, so the two can never disagree.
+  A.loadPathCardOn = function () { return !!(_lp && _lp.ok && _lp.showLadder); };
 
   A.loadPathCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     try {
