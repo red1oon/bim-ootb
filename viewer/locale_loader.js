@@ -73,21 +73,32 @@
     // 1. URL param override
     var urlLang = params.get('lang');
     if (urlLang && AVAILABLE_LOCALES.some(function(l) { return l.code === urlLang; })) {
-      return urlLang;
+      return _detected('url', urlLang, urlLang);
+    }
+    // 1b. S226 §R1.2 — a ?lang= that is not an exact Viewer code (the ERP hands over 'ar') resolves through LOCALE_MAP
+    if (urlLang) {
+      var mapped = LOCALE_MAP[urlLang.replace('_', '-')] || LOCALE_MAP[urlLang.split(/[-_]/)[0]];
+      if (mapped) return _detected('url-mapped', urlLang, mapped);
     }
     // 2. localStorage saved config
     try {
       var saved = JSON.parse(localStorage.getItem('bim_ootb_config'));
-      if (saved && saved.locale) return saved.locale;
+      if (saved && saved.locale) return _detected('saved', urlLang, saved.locale);
     } catch(e) { /* ignore */ }
     // 3. Browser language
     var browserLang = navigator.language || navigator.userLanguage || 'en';
     // Try exact match first, then prefix
-    if (LOCALE_MAP[browserLang]) return LOCALE_MAP[browserLang];
+    if (LOCALE_MAP[browserLang]) return _detected('browser', urlLang, LOCALE_MAP[browserLang]);
     var prefix = browserLang.split('-')[0];
-    if (LOCALE_MAP[prefix]) return LOCALE_MAP[prefix];
+    if (LOCALE_MAP[prefix]) return _detected('browser', urlLang, LOCALE_MAP[prefix]);
     // 4. Fallback
-    return 'en_MY';
+    return _detected('fallback', urlLang, 'en_MY');
+  }
+  // §TRL_DETECT — once per page load (detectLocale is also called by the picker/flag button)
+  var _detectLogged = false;
+  function _detected(src, req, code) {
+    if (!_detectLogged) { _detectLogged = true; console.log('§TRL_DETECT src=' + src + ' req=' + (req || '-') + ' code=' + code); }
+    return code;
   }
 
   // ── Deep merge: locale over defaults ──
@@ -295,6 +306,11 @@
         try {
           localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: loc.code }));
           localStorage.removeItem('bim_ootb_locale_' + currentLocale);
+        } catch(e) { /* ignore */ }
+        // S226 §R1.2b — a ?lang= (e.g. from the ERP's Zoom Across) outranks the saved choice; rewrite it so the pick sticks
+        try {
+          var u = new URL(location.href);
+          if (u.searchParams.has('lang')) { u.searchParams.set('lang', loc.code); history.replaceState(null, '', u.toString()); }
         } catch(e) { /* ignore */ }
         location.reload();
       };
