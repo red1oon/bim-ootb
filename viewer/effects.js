@@ -10634,10 +10634,42 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_REPLAN_LAZY invalidated reason=' + (reason || 'manual'));
   };
 
+  // ══ §FLYAROUND_ARC (bim-compiler prompts/ALTC_FOUNDATION.md §1 SPEC 2026-10-04) — an ad-hoc slow fly-around between two
+  // camera poses A and B (three.js world, as viewer/share.js writes cam=/tgt=) around their targets, for a film with no beats.
+  // Built HERE so the bake and the CLI pose check (both call A.cinemaPathPlan) fly and verify the same poseAt.
+  function _arcPlan(durationSec, arc) {
+    var V = function (p) { return { x: +p[0], y: +p[1], z: +p[2] }; };
+    var cA = V(arc.a.cam), tA = V(arc.a.tgt), cB = V(arc.b.cam), tB = V(arc.b.tgt);
+    var cyl = function (c, t) { var dx = c.x - t.x, dz = c.z - t.z; return { r: Math.hypot(dx, dz), h: c.y - t.y, az: Math.atan2(dz, dx) }; };
+    var PA = cyl(cA, tA), PB = cyl(cB, tB), TAU = Math.PI * 2;
+    var d = PB.az - PA.az; d = ((d % TAU) + TAU) % TAU;                      // 0..2pi, counter-clockwise from A to B
+    if (arc.dir === 'cw' || (arc.dir !== 'ccw' && d > Math.PI)) d -= TAU;    // 'short' (default) = the smaller signed angle
+    var sg = d < 0 ? -1 : 1, ov = (isFinite(arc.overshootDeg) ? +arc.overshootDeg : 15) * Math.PI / 180;
+    var az0 = PA.az - sg * ov, az1 = PA.az + d + sg * ov, L = function (a, b, s) { return a + (b - a) * s; };
+    function at(t) {
+      var u = (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, t)))) / 2, az = L(az0, az1, u);
+      var s = d === 0 ? 0 : Math.max(0, Math.min(1, (az - PA.az) / d));
+      var tx = L(tA.x, tB.x, s), ty = L(tA.y, tB.y, s), tz = L(tA.z, tB.z, s), r = L(PA.r, PB.r, s), h = L(PA.h, PB.h, s);
+      return { x: tx + r * Math.cos(az), y: ty + h, z: tz + r * Math.sin(az), tx: tx, ty: ty, tz: tz };
+    }
+    var sweep = Math.abs(az1 - az0), uA = ov / sweep, uB = 1 - uA, tOf = function (u) { return Math.acos(1 - 2 * u) / Math.PI; };
+    var pA = at(tOf(uA)), pB = at(tOf(uB)), err = function (p, c) { return Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z); };
+    var eA = err(pA, cA), eB = err(pB, cB), n = Math.max(2, Math.round(durationSec * 24)), step = 0, q = at(0);
+    for (var i = 1; i < n; i++) { var p2 = at(i / (n - 1)); step = Math.max(step, err(p2, q)); q = p2; }
+    console.log('§FLYAROUND_ARC azA=' + (PA.az * 180 / Math.PI).toFixed(1) + ' azB=' + (PB.az * 180 / Math.PI).toFixed(1) + ' sweepDeg=' + (sweep * 180 / Math.PI).toFixed(1) +
+      ' dir=' + (sg < 0 ? 'cw' : 'ccw') + ' rA=' + PA.r.toFixed(2) + ' rB=' + PB.r.toFixed(2) + ' hA=' + PA.h.toFixed(2) + ' hB=' + PB.h.toFixed(2) +
+      ' sec=' + durationSec.toFixed(1) + ' errA=' + eA.toFixed(4) + 'm errB=' + eB.toFixed(4) + 'm maxStep24fps=' + step.toFixed(3) + 'm => ' + (eA < 0.01 && eB < 0.01 ? 'PASS' : 'FAIL'));
+    // naturalTotal = arc.sec: cinema_maxq.js's override probe adopts it as the film length (an explicit --frames still wins there)
+    return { poseAt: at, durationSec: durationSec, naturalTotal: (isFinite(arc.sec) && arc.sec > 0) ? +arc.sec : durationSec, arc: true,
+             beats: { dive: 0, spin: 0, out: 0, pullout: 0, flyback: 0, reveal: 0, rise: 0 },
+             reveal: { discs: [], pulloutSec: 0, roundSec: 0, tailSec: 0, riseSec: 0, qtyCost: {} },
+             storeyReveal: { on: false, windowFrac: 0 }, sec: {}, waypoints: [], pathLen: 0 };
+  }
   A.cinemaPathPlan = function(durationSec, ov) {
     // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
     // stored edit" — the G5 control path needs that distinction to be expressible.
     if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; }
+    if (ov && ov.arc && ov.arc.a && ov.arc.b) return _arcPlan(durationSec, ov.arc);
     if (!ov) return _cinemaPathPlan(durationSec);
     if (ov._camBasis) return _withCamBasis(ov._camBasis, function() {
       var o = {}; for (var q in ov) if (q !== '_camBasis') o[q] = ov[q];
