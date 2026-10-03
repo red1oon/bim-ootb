@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1564';
+const CACHE_VERSION = 'v1565';
+// v1565 (2026-10-04) A/B switches only, defaults unchanged: &csmlambda=<0..1> (cascade split; 1 = log, MEASURED HHS c0 tpp 3.51->1.60, SampleHouse 8.63->1.74) and &shadowwide=0. effects.js?v=133.
 // v1564 (2026-10-03) §SHADOW_WIDE_OTHER_CAMERA: mirror tiles + the §GLASS_ENV cube render with the sun box widened to the building union, cascades suspended (was: eye-fitted cascades -> sun speckle in mirrors). effects.js?v=132 shadow_cascade.js?v=2 glass_fresnel.js?v=15.
 // v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
 // v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.

@@ -3174,7 +3174,7 @@ async function setupEffects(A, renderer, scene, camera) {
   var _wideSaved = null;
   A._stillShadowWide = function(on) {
     var sc = A.sun && A.sun.shadow && A.sun.shadow.camera;
-    if (on) { if (_wideSaved || !sc || !_fitState || !_fitState.last || !_fitOn()) return false;
+    if (on) { if (_wideSaved || !sc || !_fitState || !_fitState.last || !_fitOn() || /[?&]shadowwide=0/.test(location.search)) return false;   // &shadowwide=0 = A/B
       var L = _fitState.last, env = L.env, M = 2, U = L.U, mz = A.sun.shadow.mapSize.width;
       _wideSaved = { l: sc.left, r: sc.right, b: sc.bottom, t: sc.top, nb: A.sun.shadow.normalBias, csm: !!(window.ShadowCascade && window.ShadowCascade.suspend && window.ShadowCascade.suspend()) };
       sc.left = Math.max(-env, U.x0 - M); sc.right = Math.min(env, U.x1 + M); sc.bottom = Math.max(-env, U.y0 - M); sc.top = Math.min(env, U.y1 + M);
@@ -3359,7 +3359,11 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   // PSSM practical split over [zMin, zMax] (Zhang et al. 2006): C_i = lambda zMin (zMax/zMin)^(i/m) + (1-lambda)(zMin + (zMax-zMin) i/m)
   function _csmSplits(zMin, zMax, m) {
-    var C = []; for (var i = 0; i <= m; i++) C.push(CSM_LAMBDA * zMin * Math.pow(zMax / zMin, i / m) + (1 - CSM_LAMBDA) * (zMin + (zMax - zMin) * i / m));
+    // §CSM_SPLIT_AB (2026-10-04): &csmlambda=<0..1> overrides CSM_LAMBDA for A/B (1 = pure log splits: every cascade the same far/near
+    // ratio, so texel-per-pixel is equal across cascades; MEASURED with 0.5: cascade 0 spans 4.9-22x and carries tpp 2.2-9.9 while
+    // cascades 1-3 stay <= 1 — the jagged edges). Default unchanged until red1 rules.
+    var _lm = /[?&]csmlambda=([0-9.]+)/.exec(location.search), LAM = _lm ? Math.max(0, Math.min(1, parseFloat(_lm[1]))) : CSM_LAMBDA;
+    var C = []; for (var i = 0; i <= m; i++) C.push(LAM * zMin * Math.pow(zMax / zMin, i / m) + (1 - LAM) * (zMin + (zMax - zMin) * i / m));
     return C;
   }
   // THE per-cascade fit (D5) — one function for the still and, later, the film (ALTC_FOUNDATION F2). slice = { a, b (view
@@ -3502,7 +3506,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' pixelAtSplit=' + f(cs, function(o) { return pix(o.near); }, 4) + ' H=' + Hpx + ' fov=' + cam.fov +
       ' c0texelIf[m2,m3,m4]=[' + ifM.map(function(o) { return o[0].used ? o[0].texel.toFixed(4) : 'NaN'; }).concat([cs[0].texel.toFixed(4)]).join(',') + ']' +
       ' tppIfM2=' + f(ifM[0], 'tpp', 2) + ' tppIfM3=' + f(ifM[1], 'tpp', 2) + ' texelIfM3=' + f(ifM[1], 'texel', 4) +
-      ' lambda=' + CSM_LAMBDA + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
+      ' lambda=' + ((/[?&]csmlambda=([0-9.]+)/.exec(location.search) || [0, CSM_LAMBDA])[1]) + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
     // §ZERO Z12 SUN_PENUMBRA (diagnostic, stills): today's PCF edge = (2R+1) texels per cascade; the sun's 0.53 deg disc gives
     // w = d x tan(0.53 deg). dMatch = the occluder->receiver distance at which they agree (nearer occluders: too soft; farther: too hard).
     if (!A._maxqActive && window.LightLaw && window.LightLaw.penumbra) { var _p1 = window.LightLaw.penumbra(1);
