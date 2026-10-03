@@ -139,6 +139,7 @@
       };
     }
     registerHandler('report:c_payment', voucherHandler('c_payment'), { kind: 'report', reportKey: 'c_payment' });
+    registerAging();                                                   // FS-14 (§FS2l)
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
     registerHandler('org.compiere.report.TrialBalance', function (ctx, info) {
@@ -669,6 +670,183 @@
     return { ok: missing.length === 0 && badType.length === 0, required: required, supplied: supplied, missing: missing, badType: badType };
   }
 
+  // ══ FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l — Witness: W-ERP-FIRST-SETUP S24c) — Aging ══════════
+  //   openItems(q, opts) = the RV_OpenItem view (live pg_get_viewdef, idempiere DB) over the bundle, with the PL/pgSQL it
+  //   calls transcribed: paymenttermduedate / paymenttermduedays (IsDueFixed branch included), invoiceopen (allocations ×
+  //   MultiplierAP, currency-converted; per pay schedule the allocations consume schedules in DueDate order), daysbetween.
+  //   agingFold(items, opts) = Aging.doIt (Aging.java:102-262) + MAging.add (MAging.java:157-235), bucket bounds verbatim.
+  //   q(sql) → array of lower-case-keyed rows. opts = { today:'YYYY-MM-DD', clientId, isSOTrx:'Y'|'N', bpartnerId, bpGroupId, orgId }.
+  function _agDay(v) { var s = String(v || '').slice(0, 10); var t = Date.parse(s + 'T00:00:00Z'); return isNaN(t) ? null : Math.floor(t / 86400000); }
+  function _agIso(d) { return new Date(d * 86400000).toISOString().slice(0, 10); }
+  function _agRound(x, p) { var f = Math.pow(10, p == null ? 2 : p); var v = Number(x) || 0; return Math.round(v * f + (v < 0 ? -1e-9 : 1e-9)) / f; }
+  function _agAddMonths(d, n) { var dt = new Date(d * 86400000); var y = dt.getUTCFullYear(), m = dt.getUTCMonth() + Number(n || 0), day = dt.getUTCDate();
+    var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(day, last)) / 86400000); }
+  function _agMonthStart(d) { var dt = new Date(d * 86400000); return Math.floor(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1) / 86400000); }
+  function _agMonthLastDay(d) { var dt = new Date(d * 86400000); return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).getUTCDate(); }
+  // paymenttermduedate(term, DocDate) → day number. IsDueFixed: FirstDay + (FixMonthDay-1) + FixMonthOffset months (+1 when the
+  // day-of-month offset > FixMonthCutoff); else TRUNC(DocDate) + NetDays.
+  function _agDueDate(pt, doc) {
+    if (!pt || doc == null) return doc;
+    if (String(pt.isduefixed || 'N') === 'Y') {
+      var first = _agMonthStart(doc), noDays = doc - first, due = first + (Number(pt.fixmonthday || 0) - 1);
+      due = _agAddMonths(due, Number(pt.fixmonthoffset || 0));
+      if (noDays > Number(pt.fixmonthcutoff || 0)) due = _agAddMonths(due, 1);
+      return due;
+    }
+    return doc + Number(pt.netdays || 0);
+  }
+  // paymenttermduedays(term, DocDate, PayDate) → PayDate - DueDate (the function's own IsDueFixed variant, transcribed).
+  function _agDueDays(pt, doc, pay) {
+    if (!pt || doc == null) return 0;
+    var due;
+    if (String(pt.isduefixed || 'N') === 'Y') {
+      var cal = doc, maxCut = _agMonthLastDay(cal), cut = Number(pt.fixmonthcutoff || 0), off = Number(pt.fixmonthoffset || 0), fmd = Number(pt.fixmonthday || 0);
+      cal = cut > maxCut ? _agMonthStart(cal) + maxCut - 1 : _agMonthStart(cal) + (cut - 1);
+      if (doc > cal) off = off + 1;
+      cal = _agAddMonths(cal, off);
+      var maxDay = _agMonthLastDay(cal);
+      due = (fmd > maxDay || (fmd >= 30 && maxDay > fmd)) ? _agMonthStart(cal) + (maxDay - 1) : _agMonthStart(cal) + (fmd - 1);
+    } else due = doc + Number(pt.netdays || 0);
+    return pay - due;
+  }
+  function _agRate(q, from, to, when) {                     // MConversionRate.getRate, same ORDER BY as crud_overlay _rate
+    if (!Number(from) || !Number(to) || Number(from) === Number(to)) return 1;
+    var r = q('SELECT multiplyrate FROM c_conversion_rate WHERE c_currency_id=' + Number(from) + ' AND c_currency_id_to=' + Number(to) +
+      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(validfrom) AND date(validto) AND upper(isactive)='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC LIMIT 1")[0];
+    return r && r.multiplyrate != null ? Number(r.multiplyrate) : null;
+  }
+  // invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) — the live function, transcribed.
+  function _agInvoiceOpen(q, inv, ipsId) {
+    var base = String(inv.docbasetype || ''), mulCM = base.charAt(2) === 'C' ? -1 : 1, mulAP = base.charAt(1) === 'P' ? -1 : 1;
+    var cur = Number(inv.c_currency_id || 0), pc = q('SELECT stdprecision FROM c_currency WHERE c_currency_id=' + cur)[0];
+    var prec = pc ? Number(pc.stdprecision) : 2, min = Math.pow(10, -prec);
+    var sched = String(inv.ispayschedulevalid || 'N') === 'Y'
+      ? q("SELECT c_invoicepayschedule_id, dueamt FROM c_invoicepayschedule WHERE c_invoice_id=" + Number(inv.c_invoice_id) + " AND isvalid='Y' ORDER BY duedate") : null;
+    var total = sched ? sched.reduce(function (a, s) { return a + Number(s.dueamt || 0) * mulCM; }, 0) : Number(inv.grandtotal || 0) * mulCM;
+    var paid = 0;
+    q("SELECT al.amount, al.discountamt, al.writeoffamt, a.c_currency_id, a.datetrx FROM c_allocationline al JOIN c_allocationhdr a ON a.c_allocationhdr_id=al.c_allocationhdr_id " +
+      "WHERE al.c_invoice_id=" + Number(inv.c_invoice_id) + " AND a.isactive='Y'").forEach(function (a) {
+      var t = (Number(a.amount || 0) + Number(a.discountamt || 0) + Number(a.writeoffamt || 0)) * mulAP;
+      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx); paid += rt == null ? t : t * rt;
+    });
+    var open;
+    if (Number(ipsId) > 0 && sched) {
+      var rem = paid; open = total - paid;
+      sched.forEach(function (s) {
+        if (Number(s.c_invoicepayschedule_id) === Number(ipsId)) { open = Number(s.dueamt) * mulCM - rem; if (Number(s.dueamt) - rem < 0) open = 0; }
+        else { rem = rem - Number(s.dueamt); if (rem < 0) rem = 0; }
+      });
+    } else open = total - paid;
+    if (open > -min && open < min) open = 0;
+    return _agRound(open, prec);
+  }
+  function openItems(q, opts) {
+    opts = opts || {};
+    var today = _agDay(opts.today), out = [];
+    var where = "i.docstatus IN ('CO','CL') AND i.ispaid='N'" + (opts.clientId != null ? ' AND i.ad_client_id IN (0,' + Number(opts.clientId) + ')' : '');
+    q('SELECT i.*, d.docbasetype FROM c_invoice i LEFT JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE ' + where + ' ORDER BY i.c_invoice_id').forEach(function (inv) {
+      var doc = _agDay(inv.dateinvoiced), cm = String(inv.docbasetype || '').charAt(2) === 'C' ? -1 : 1;
+      var common = { ad_org_id: inv.ad_org_id, ad_client_id: inv.ad_client_id, c_invoice_id: inv.c_invoice_id, c_bpartner_id: inv.c_bpartner_id,
+        issotrx: inv.issotrx, dateinvoiced: inv.dateinvoiced, c_currency_id: inv.c_currency_id, c_activity_id: inv.c_activity_id,
+        c_campaign_id: inv.c_campaign_id, c_project_id: inv.c_project_id };
+      if (String(inv.ispayschedulevalid || 'N') !== 'Y') {        // branch 1 — JOIN C_PaymentTerm (inner)
+        var pt = q('SELECT * FROM c_paymentterm WHERE c_paymentterm_id=' + Number(inv.c_paymentterm_id || 0))[0];
+        if (!pt) return;
+        var open = _agInvoiceOpen(q, inv, 0); if (open === 0) return;
+        var row = Object.assign({}, common, { c_invoicepayschedule_id: 0, netdays: Number(pt.netdays || 0), duedate: _agIso(_agDueDate(pt, doc)),
+          daysdue: _agDueDays(pt, doc, today), grandtotal: Number(inv.grandtotal || 0) * cm, openamt: open });
+        out.push(row);
+      } else {                                                       // branch 2 — one row per valid schedule
+        q("SELECT * FROM c_invoicepayschedule WHERE c_invoice_id=" + Number(inv.c_invoice_id) + " AND isvalid='Y' ORDER BY c_invoicepayschedule_id").forEach(function (s) {
+          var o = _agInvoiceOpen(q, inv, s.c_invoicepayschedule_id); if (o === 0) return;
+          var dd = _agDay(s.duedate);
+          out.push(Object.assign({}, common, { c_invoicepayschedule_id: s.c_invoicepayschedule_id, netdays: dd - doc, duedate: _agIso(dd),
+            daysdue: today - dd, grandtotal: Number(s.dueamt || 0), openamt: o }));
+        });
+      }
+    });
+    return out;
+  }
+  var AGING_BUCKETS = ['dueamt', 'due0', 'due0_7', 'due0_30', 'due1_7', 'due8_30', 'due31_60', 'due31_plus', 'due61_90', 'due61_plus', 'due91_plus',
+    'pastdueamt', 'pastdue1_7', 'pastdue1_30', 'pastdue8_30', 'pastdue31_60', 'pastdue31_plus', 'pastdue61_90', 'pastdue61_plus', 'pastdue91_plus'];
+  function agingFold(items, opts) {
+    opts = opts || {};
+    var off = opts.statementOffset || 0, list = !!opts.isListInvoices, rows = [], cur = null;
+    var sorted = items.slice().sort(function (a, b) { return (a.c_bpartner_id - b.c_bpartner_id) || (a.c_currency_id - b.c_currency_id) || (a.c_invoice_id - b.c_invoice_id); });
+    sorted.forEach(function (oi) {
+      var inv = list ? Number(oi.c_invoice_id) : 0, ips = list ? Number(oi.c_invoicepayschedule_id || 0) : 0;
+      if (!cur || cur.c_bpartner_id !== oi.c_bpartner_id || cur.c_currency_id !== oi.c_currency_id || cur.c_invoice_id !== inv || cur.c_invoicepayschedule_id !== ips) {
+        cur = { c_bpartner_id: oi.c_bpartner_id, c_currency_id: oi.c_currency_id, c_invoice_id: inv, c_invoicepayschedule_id: ips, c_bp_group_id: oi.c_bp_group_id,
+                ad_org_id: oi.ad_org_id, issotrx: oi.issotrx, duedate: oi.duedate, invoicedamt: 0, openamt: 0, daysdue: 0, _n: 0, _sum: 0 };
+        AGING_BUCKETS.forEach(function (b) { cur[b] = 0; });
+        rows.push(cur);
+      }
+      var daysDue = Number(oi.daysdue) + off, amt = Number(oi.openamt) || 0;
+      cur.invoicedamt += Number(oi.grandtotal) || 0; cur.openamt += amt;
+      cur._n++; cur._sum += daysDue; cur.daysdue = Math.trunc(cur._sum / cur._n);
+      if (String(cur.duedate) > String(oi.duedate)) cur.duedate = oi.duedate;
+      if (daysDue <= 0) {
+        cur.dueamt += amt;
+        if (daysDue === 0) cur.due0 += amt;
+        if (daysDue >= -7) cur.due0_7 += amt;
+        if (daysDue >= -30) cur.due0_30 += amt;
+        if (daysDue <= -1 && daysDue >= -7) cur.due1_7 += amt;
+        if (daysDue <= -8 && daysDue >= -30) cur.due8_30 += amt;
+        if (daysDue <= -31 && daysDue >= -60) cur.due31_60 += amt;
+        if (daysDue <= -31) cur.due31_plus += amt;
+        if (daysDue <= -61 && daysDue >= -90) cur.due61_90 += amt;
+        if (daysDue <= -61) cur.due61_plus += amt;
+        if (daysDue <= -91) cur.due91_plus += amt;
+      } else {
+        cur.pastdueamt += amt;
+        if (daysDue <= 7) cur.pastdue1_7 += amt;
+        if (daysDue <= 30) cur.pastdue1_30 += amt;
+        if (daysDue >= 8 && daysDue <= 30) cur.pastdue8_30 += amt;
+        if (daysDue >= 31 && daysDue <= 60) cur.pastdue31_60 += amt;
+        if (daysDue >= 31) cur.pastdue31_plus += amt;
+        if (daysDue >= 61 && daysDue <= 90) cur.pastdue61_90 += amt;
+        if (daysDue >= 61) cur.pastdue61_plus += amt;
+        if (daysDue >= 91) cur.pastdue91_plus += amt;
+      }
+    });
+    rows.forEach(function (r) { delete r._n; delete r._sum; ['invoicedamt', 'openamt'].concat(AGING_BUCKETS).forEach(function (k) { r[k] = _agRound(r[k], 2); }); });
+    return rows;
+  }
+  function registerAging() {
+    registerHandler('org.compiere.process.Aging', function (ctx, info) {
+      var p = (info && info.params) || {}, q = ctx.query;
+      if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
+      if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
+      if (Number(p.ConvertAmountsInCurrency_ID) > 0) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
+      var today = ctx.today || new Date().toISOString().slice(0, 10);
+      var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
+      var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
+      var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';
+      var bp = Number(p.C_BPartner_ID) > 0 ? Number(p.C_BPartner_ID) : 0, grp = Number(p.C_BP_Group_ID) > 0 ? Number(p.C_BP_Group_ID) : 0;
+      var org = Number(p.AD_Org_ID) > 0 ? Number(p.AD_Org_ID) : 0;
+      var items = openItems(q, { today: today, clientId: ctx.clientId });
+      var groups = {};
+      items = items.filter(function (oi) {
+        if (String(oi.issotrx) !== so) return false;
+        var g = groups[oi.c_bpartner_id]; if (g === undefined) { var r = q('SELECT c_bp_group_id FROM c_bpartner WHERE c_bpartner_id=' + Number(oi.c_bpartner_id))[0]; g = groups[oi.c_bpartner_id] = r ? r.c_bp_group_id : null; }
+        if (g === null) return false;                                     // INNER JOIN C_BPartner
+        oi.c_bp_group_id = g;
+        if (bp) return Number(oi.c_bpartner_id) === bp;
+        if (grp && Number(g) !== grp) return false;
+        if (org && Number(oi.ad_org_id) !== org) return false;
+        return true;
+      });
+      var rows = agingFold(items, { statementOffset: offset, isListInvoices: String(p.IsListInvoices || 'N') === 'Y' });
+      var tot = {}; ['invoicedamt', 'openamt'].concat(AGING_BUCKETS).forEach(function (k) { tot[k] = _agRound(rows.reduce(function (a, r) { return a + r[k]; }, 0), 2); });
+      var names = {}; rows.forEach(function (r) { if (names[r.c_bpartner_id] === undefined) { var n = q('SELECT name FROM c_bpartner WHERE c_bpartner_id=' + Number(r.c_bpartner_id))[0]; names[r.c_bpartner_id] = n ? n.name : String(r.c_bpartner_id); }
+        var c = q('SELECT iso_code FROM c_currency WHERE c_currency_id=' + Number(r.c_currency_id))[0]; r.bpname = names[r.c_bpartner_id]; r.iso = c ? c.iso_code : String(r.c_currency_id); });
+      if (typeof console !== 'undefined') console.log('§AGING stmt=' + stmt + ' offset=' + offset + ' isSOTrx=' + so + ' bp=' + bp + ' items=' + items.length + ' rows=' + rows.length +
+        ' open=' + tot.openamt + ' due=' + tot.dueamt + ' pastDue=' + tot.pastdueamt + ' totals=' + JSON.stringify(tot) + ' (Aging.java:102-262, MAging.add :157-235)');
+      return { ok: true, message: 'aging: ' + rows.length + ' row(s) from ' + items.length + ' open item(s) as of ' + stmt, rows: rows.length,
+               result: { aging: rows, totals: tot, statementDate: stmt, items: items.length } };
+    }, { kind: 'report' });
+  }
+
   // dispatch — the full spine: read → resolve classname → validate params → run handler → result.
   //   db   = better-sqlite3 handle on ad_full.db (for the AD rows)
   //   info = { AD_Process_ID, params:{columnName:value}, ...handler-specific (Record_ID etc.) }
@@ -772,7 +950,8 @@
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
-    refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE
+    refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
+    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

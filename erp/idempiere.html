@@ -475,7 +475,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=12"></script>
+<script src="ad_process.js?v=13"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -2484,6 +2484,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
         return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));
       },
+      // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
+      // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
+      query: function (sql) { return _sqlRows(sql); },
+      today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
+      clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
         var m = {};
         _sqlRows('SELECT c_elementvalue_id, value, name, accounttype FROM c_elementvalue').forEach(function (r) {
@@ -3480,6 +3485,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       else if (r.total != null) pane.appendChild(el('div', 'msg', 'Subtotal ' + r.subtotal + ' · Tax ' + r.tax + ' · Total ' + r.total));
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
+    }
+    // FS-14 (§FS2l) — the RV_T_Aging face: one row per (BPartner, Currency[, Invoice]) + a totals row.
+    if (!absent && r && r.aging) {
+      var at = document.createElement('table'); at.setAttribute('data-aging', '1');
+      var acols = [['bpname', 'Business Partner'], ['iso', 'Currency'], ['invoicedamt', 'Invoiced'], ['openamt', 'Open'], ['dueamt', 'Not yet due'],
+        ['pastdue1_7', 'Past due 1-7'], ['pastdue8_30', '8-30'], ['pastdue31_60', '31-60'], ['pastdue61_90', '61-90'], ['pastdue91_plus', '91+'], ['pastdueamt', 'Past due']];
+      var atr = el('tr'); acols.forEach(function (c, i) { atr.appendChild(el('th', i >= 2 ? 'r' : null, c[1])); }); at.appendChild(atr);
+      // totals per currency (amounts in different currencies are never added together); RV_T_Aging rows are per currency too.
+      var perCcy = {}, ccyOrder = [];
+      r.aging.forEach(function (row) { var k = row.iso; if (!perCcy[k]) { perCcy[k] = { bpname: 'Total ' + k, iso: k, _total: true }; ccyOrder.push(k); }
+        acols.slice(2).forEach(function (c) { perCcy[k][c[0]] = Math.round(((perCcy[k][c[0]] || 0) + (Number(row[c[0]]) || 0)) * 100) / 100; }); });
+      if (!ccyOrder.length) { perCcy[''] = { bpname: 'Total', iso: '', _total: true }; acols.slice(2).forEach(function (c) { perCcy[''][c[0]] = 0; }); ccyOrder.push(''); }
+      r.aging.concat(ccyOrder.map(function (k) { return perCcy[k]; })).forEach(function (row) {
+        atr = el('tr'); if (row._total) atr.setAttribute('data-aging-total', row.iso || '-');
+        acols.forEach(function (c, i) { var td = el('td', i >= 2 ? 'r' : null, row[c[0]] == null ? '' : String(row[c[0]])); td.setAttribute('data-k', c[0]); atr.appendChild(td); });
+        at.appendChild(atr);
+      });
+      pane.appendChild(at);
+      pane.appendChild(el('div', 'msg', 'Statement date ' + r.statementDate + ' · ' + r.items + ' open item(s)'));
     }
     // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
     // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
