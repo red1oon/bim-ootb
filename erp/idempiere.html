@@ -539,7 +539,7 @@
 <script src="ad_modelval_bridge.js?v=1"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (supersedes migrate_showme + the Install/Migrate
      pills). Mounted from the `showme` pill → AboutDIY.open(). icons.js + overlay_kit loaded above. -->
-<script src="../common/about_diy.js?v=1"></script>
+<script src="../common/about_diy.js?v=2"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
@@ -620,7 +620,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=4"></script>
-<script src="crud_overlay.js?v=28"></script>
+<script src="crud_overlay.js?v=29"></script>
+<!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
+<script src="erp_replica_client.js?v=1"></script>
+<script src="erp_persist_ui.js?v=2"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
