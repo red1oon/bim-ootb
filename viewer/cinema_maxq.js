@@ -829,7 +829,9 @@
         }
       }
     }
-    A2._hudLayoutRects.push({ name: name, x: x, y: y, w: w, h: h, parent: parentName || null, truncated: !!truncated });
+    // W2: the alpha this box was drawn at (set by _drawUnlessHold around its own register call; boxes drawn outside it are opaque = 1)
+    var _al = (A2._hudRegAlpha != null) ? A2._hudRegAlpha : 1;
+    A2._hudLayoutRects.push({ name: name, x: x, y: y, w: w, h: h, parent: parentName || null, truncated: !!truncated, alpha: _al });
   }
   // `h` (ROUND 13 item D, NEW param) — the frame height, needed to check `rowFontPx` against the
   // pre-Round-10 FORMULA (itself proportional to frame height, never a fixed pixel constant).
@@ -1023,6 +1025,13 @@
     // This runs on EVERY frame — the rects are already built for the sampler above, so it costs a
     // pairwise walk of ~15 boxes — and keeps only the WORST pair seen, printed once at the end.
     // Same exclusions as the witness: placeholders (w<=1 && h<=1) and declared parent/child.
+    // W2 (ALTC_FOUNDATION §1, 2026-10-03): a pair where either box is drawn at alpha < 0.5 is a CROSS-FADE (the load-path freeze fades
+    // the HUD out over 24 frames while its card appears in the same corner) — counted apart, never as an overlap. Every verdict names
+    // its frame and both alphas, and a film where no frame had two real boxes is INCONCLUSIVE, not PASS (LTU printed PASS on zero rects).
+    _hudOvFrame++;
+    var _real = 0;
+    for (var ri = 0; ri < rects.length; ri++) if (!(rects[ri].w <= 1 && rects[ri].h <= 1)) _real++;
+    if (_real >= 2) _hudOvFramesJudged++;
     for (var oi = 0; oi < rects.length; oi++) for (var oj = oi + 1; oj < rects.length; oj++) {
       var ra = rects[oi], rb = rects[oj];
       if ((ra.w <= 1 && ra.h <= 1) || (rb.w <= 1 && rb.h <= 1)) continue;
@@ -1038,24 +1047,37 @@
       var ox = Math.min(ra.x + ra.w, rb.x + rb.w) - Math.max(ra.x, rb.x);
       var oy = Math.min(ra.y + ra.h, rb.y + rb.h) - Math.max(ra.y, rb.y);
       if (ox <= 0 || oy <= 0) continue;
-      var area = ox * oy;
-      if (!_hudWorstOverlap || area > _hudWorstOverlap.area) {
-        _hudWorstOverlap = { a: ra.name, b: rb.name, ox: ox, oy: oy, area: area,
-                             ra: [ra.x, ra.y, ra.w, ra.h], rb: [rb.x, rb.y, rb.w, rb.h] };
+      var area = ox * oy, aA = (ra.alpha == null ? 1 : ra.alpha), aB = (rb.alpha == null ? 1 : rb.alpha);
+      var rec = { a: ra.name, b: rb.name, ox: ox, oy: oy, area: area, f: _hudOvFrame - 1, alA: aA, alB: aB,
+                  ra: [ra.x, ra.y, ra.w, ra.h], rb: [rb.x, rb.y, rb.w, rb.h] };
+      if (aA < 0.5 || aB < 0.5) {
+        _hudCrossfadeFrames[_hudOvFrame - 1] = 1;
+        if (!_hudWorstCrossfade || area > _hudWorstCrossfade.area) _hudWorstCrossfade = rec;
+        continue;
       }
+      if (!_hudWorstOverlap || area > _hudWorstOverlap.area) _hudWorstOverlap = rec;
     }
   }
-  var _hudWorstOverlap = null;
+  var _hudWorstOverlap = null, _hudWorstCrossfade = null, _hudCrossfadeFrames = {}, _hudOvFrame = 0, _hudOvFramesJudged = 0;   // W2
   function _hudLayoutStablePrintImpl() {
     // §HUD_OVERLAP_WORST — one line for the whole bake, naming the pair and the pixels. `none` here
     // is real coverage; `overlaps=0` on a single sampled frame never was.
+    if (_hudWorstCrossfade) {
+      var X = _hudWorstCrossfade;
+      console.log('§HUD_OVERLAP_CROSSFADE "' + X.a + '" x "' + X.b + '" overlap=' + X.ox + 'x' + X.oy + 'px frames=' +
+        Object.keys(_hudCrossfadeFrames).length + ' worstF=' + X.f + ' alpha=' + X.alA.toFixed(2) + '/' + X.alB.toFixed(2) +
+        ' — one box fading (< 0.5) while the other shows: a transition, not an overlap (W2)');
+    }
     if (_hudWorstOverlap) {
       var W = _hudWorstOverlap;
       console.log('§HUD_OVERLAP_WORST "' + W.a + '" x "' + W.b + '" overlap=' + W.ox + 'x' + W.oy +
-        'px area=' + W.area + ' rects=[' + W.ra.join(',') + '] [' + W.rb.join(',') +
-        '] => FAIL — two HUD boxes shared pixels on at least one frame');
+        'px area=' + W.area + ' f=' + W.f + ' alpha=' + W.alA.toFixed(2) + '/' + W.alB.toFixed(2) +
+        ' rects=[' + W.ra.join(',') + '] [' + W.rb.join(',') +
+        '] judgedFrames=' + _hudOvFramesJudged + '/' + _hudOvFrame + ' => FAIL — two solid HUD boxes shared pixels');
+    } else if (_hudOvFramesJudged === 0) {
+      console.log('§HUD_OVERLAP_WORST INCONCLUSIVE — no frame of ' + _hudOvFrame + ' had two real HUD boxes; nothing was judged (VACUOUS)');
     } else {
-      console.log('§HUD_OVERLAP_WORST none — checked EVERY frame, not a sample => PASS');
+      console.log('§HUD_OVERLAP_WORST none judgedFrames=' + _hudOvFramesJudged + '/' + _hudOvFrame + ' — checked every frame with >= 2 boxes => PASS');
     }
     function fmt(range) { return range ? '[' + range[0].toFixed(1) + ',' + range[1].toFixed(1) + ']' : '?'; }
     function stable(range) { return !range || range[0] === range[1]; }
@@ -1493,8 +1515,10 @@
       // other optional HUD read here keeps.
       var _rb = null;
       if (boxFn) { try { _rb = boxFn(); } catch (eRB) { _rb = null; } }
+      A2._hudRegAlpha = alpha;   // W2 — the overlap judge needs to know a fading box from a solid one
       if (_rb && _rb.w > 1 && _rb.h > 1) A2._hudLayoutRegister(name, _rb.x, _rb.y, _rb.w, _rb.h);
       else A2._hudLayoutRegister(name, 0, 0, 1, 1);
+      A2._hudRegAlpha = null;
     }
     // ROUND 13 item C — record the alpha THIS call actually used, per layer name, per frame (reset
     // every frame in _captureFrame alongside A._hudLayoutRects) — the real number the §LOADPATH_
@@ -2478,6 +2502,7 @@
     // not inherit the first one's pauses or its unconverged count and report someone else's health.
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    A._lampsSum = null;   // W3(C) — fresh lamp census per film
     // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
     // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
     // LARGE_DB_BAKE.md §2 L3 — the delivery budget (8/12) is the single biggest wall-time knob on a
@@ -2965,6 +2990,7 @@
         var _framesWas = nFrames;
         nFrames = Math.max(1, Math.round(_cpeRes.durationSec * fps));
         plan = A.cinemaPathPlan(nFrames / fps, _cpeRes.override);
+        window.__maxqPlanDurSec = nFrames / fps;   // W1 (ALTC_FOUNDATION §1): the duration this plan was built at, for the CLI pose check
         // §CPE_OK_CRASH (CINEMA_PATH_EDITOR.md) — this line used to read `override.waypoints.length`
         // and threw `undefined.length` on EVERY edited path: §CPE_BANDS changed the editor's override
         // to carry `bands` (3 bands → 6 waypoints, expanded inside effects.js), and this one consumer
@@ -3739,7 +3765,7 @@
         // runner records the REAL pose each frame and asserts it numerically against the stored
         // path (a bake that runs but ignores the passed path is the silent failure this catches).
         if (typeof window.__maxqPoseTap === 'function')
-          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz); } catch (ePT) {}
+          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz, _poseFilmT); } catch (ePT) {}   // W1: + the film time actually posed at (the load-path hold makes it non-linear in i)
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
         if (A._updateCamTorch) A._updateCamTorch(pose.tx, pose.ty, pose.tz);   // §CAM_TORCH film (§FILM_LAW Z17, L1b) — no-op unless staged
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
@@ -4492,8 +4518,31 @@
         // counted. This counts every interior emitter there is, from the live scene, and must read
         // zero on every frame after the last stick. It reads the PREVIOUS frame's writes, which is
         // what makes it independent of the gate's own arithmetic rather than a restatement of it.
+        // W3(C) 2026-10-03 — WHO OWNS THE LAMPS. Parity films light lamps on the DATA path (sourced_light lamp textures, tools.js
+        // _filmLD: A._lampData) and deliberately park the pool at 0, so a pool-only count read "0/122 lit" on films whose lamps were
+        // on (§LAMP_UNCAPPED on lit=122). Owner, data lamps lit, pool lit and every lamp-SET change (= a lamp popping in/out as the
+        // camera's 122-cap pick moves) are logged on change, plus one §LAMPS_SUMMARY at the end.
+        var _lOwner = (A._lampDataOn && A._lampData && A._lampData.lamps) ? 'data' : 'pool';
+        var _lData = 0, _lDataN = 0;
+        if (_lOwner === 'data') { _lDataN = A._lampData.lamps.length; for (var _ld = 0; _ld < _lDataN; _ld++) if (A._lampData.lamps[_ld].I > 0) _lData++; }
+        var _lPool = 0;
+        if (A._nightBakePool) for (var _lp2 = 0; _lp2 < A._nightBakePool.length; _lp2++) if (A._nightBakePool[_lp2].intensity > 0) _lPool++;
+        var _lS = A._lampsSum || (A._lampsSum = { frames: 0, data: 0, pool: 0, minLit: 1e9, maxLit: 0, setChanges: 0, ver: null, key: null });
+        _lS.frames++; _lS[_lOwner]++;
+        var _lLit = _lOwner === 'data' ? _lData : _lPool;
+        _lS.minLit = Math.min(_lS.minLit, _lLit); _lS.maxLit = Math.max(_lS.maxLit, _lLit);
+        var _lVer = _lOwner === 'data' ? A._lampData.ver : null;
+        if (_lVer !== null && _lS.ver !== null && _lVer !== _lS.ver) _lS.setChanges++;
+        _lS.ver = _lVer;
+        var _lKey = _lOwner + '/' + _lData + '/' + _lPool + '/' + (_lVer == null ? '-' : _lVer);
+        if (_lS.key !== _lKey) {
+          _lS.key = _lKey;
+          console.log('§LAMPS f=' + i + ' owner=' + _lOwner + ' dataLit=' + _lData + '/' + _lDataN + ' poolLit=' + _lPool + '/' +
+            ((A._nightBakePool && A._nightBakePool.length) || 0) + ' ver=' + (_lVer == null ? '-' : _lVer) +
+            ' gateOff=' + (A._interiorLightsOff ? 1 : 0));
+        }
         if (A._ilPastStick) {
-          var _wPool = 0, _wNav = 0;
+          var _wPool = 0, _wNav = 0, _wData = _lData, _wDataN = _lDataN;
           if (A._nightBakePool) for (var _wi = 0; _wi < A._nightBakePool.length; _wi++) {
             if (A._nightBakePool[_wi].intensity > 0) _wPool++;
           }
@@ -4508,10 +4557,10 @@
             var _gm = A._nightGlowMats[_ge].mat;
             if (_gm && _gm.emissiveIntensity > 0 && _gm.emissive && _gm.emissive.getHex() !== 0) _wEmis++;
           }
-          var _wKey = _wPool + '/' + _wNav + '/' + _wEmis;
+          var _wKey = _lOwner + '/' + _wData + '/' + _wPool + '/' + _wNav + '/' + _wEmis;
           if (A._ilWitnessKey !== _wKey) {
             A._ilWitnessKey = _wKey;
-            console.log('§INTERIOR_LIGHTS_WITNESS poolLit=' + _wPool + '/' +
+            console.log('§INTERIOR_LIGHTS_WITNESS owner=' + _lOwner + ' dataLit=' + _wData + '/' + _wDataN + ' poolLit=' + _wPool + '/' +
               ((A._nightBakePool && A._nightBakePool.length) || 0) + ' navLit=' + _wNav +
               ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
               ' => ' +
@@ -4534,7 +4583,8 @@
               // absent (denominator 0) is not judged, which is the VACUOUS case, not a pass.
               (!A._interiorLightsOff   // §INTERIOR_LIGHTS_ARC: expect lit whenever ARC is on screen, dark only when the gate is off
                 ? ((function () {
-                    var fam = [['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0],
+                    // W3(C): judge the family that OWNS the lamps — under the data path the pool is parked at 0 on purpose.
+                    var fam = [(_lOwner === 'data' ? ['data', _wData, _wDataN] : ['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0]),
                                ['nav', _wNav, (A._nightLightByPos && A._nightLightByPos.size) || 0],
                                ['emissiveMats', _wEmis, (A._nightGlowMats && A._nightGlowMats.length) || 0]];
                     var dark = fam.filter(function (f) { return f[2] > 0 && f[1] === 0; });
@@ -4549,7 +4599,7 @@
                     return 'PASS (past topout: every interior family that exists is lit — ' +
                       judged.map(function (f) { return f[0] + ' ' + f[1] + '/' + f[2]; }).join(', ') + ')';
                   })())
-                : ((_wPool + _wNav + _wEmis === 0)
+                : ((_wPool + _wNav + _wEmis + _wData === 0)
                     ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
                     : 'FAIL — something interior is still emitting. Each count prints over its own' +
                       ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));
@@ -4849,6 +4899,13 @@
       // anybody can check — and a reuse count of 0 on a film that HAS a load-path freeze is the
       // FAIL signal (the key is too fine, or the hold never armed), not a quiet non-event.
       if (_frameReuseRun > 0) { _frameReuseRuns++; }
+      // W3(C) — the lamp census for the whole film (per-change lines are §LAMPS).
+      (function () { var L = A._lampsSum;
+        if (!L || !L.frames) { console.log('§LAMPS_SUMMARY INCONCLUSIVE — no frame recorded a lamp state (VACUOUS)'); return; }
+        console.log('§LAMPS_SUMMARY frames=' + L.frames + ' owner data/pool=' + L.data + '/' + L.pool + ' lit min/max=' + L.minLit + '/' + L.maxLit +
+          ' dataSetChanges=' + L.setChanges + ' (each = the lit lamp SET changed between frames — the 122-cap pick following the camera)' +
+          (L.maxLit === 0 ? ' => FAIL — no lamp lit on any frame' : ''));
+        A._lampsSum = null; })();
       console.log('§FRAME_REUSE_TOTAL reused=' + _frameReuseTotal + '/' + framesDone +
         ' runs=' + _frameReuseRuns + ' rendered=' + (framesDone - _frameReuseTotal) +
         ' disabled=' + (window.__noFrameReuse ? 1 : 0) +

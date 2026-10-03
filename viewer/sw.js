@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1556';
+const CACHE_VERSION = 'v1557';
+// v1557 (2026-10-03) W1 §CLI_BAKE_POSECHECK judged at the film time actually posed (pose tap +tF, __maxqPlanDurSec); W2 §HUD_OVERLAP alpha-aware (CROSSFADE apart, frame+alpha named, VACUOUS -> INCONCLUSIVE); W3 lamps: module-scope §115/§116 dedupe, film soft-cancel skips the nav pool rebuild, §INTERIOR_LIGHTS_WITNESS judges the owner (data|pool), §LAMPS + §LAMPS_SUMMARY. cinema_maxq 33, effects 138, tools 74.
 // v1556 (2026-10-03) merge of fix/sky-surface @d3bb44a7 (Alt+S stills-only: §FAULT_VACUOUS INCONCLUSIVE on samples=0, §FAULT_GI empty adapter -> n/a, §STILL_PRESS_TIME pressS/passes in PNG pose). still_fault 12, gi_still 49.
 // v1555 (2026-10-02) §REVEAL_DOOR_LEAK: renderAtTime writes a single mesh visible only if its discipline is not in hiddenDiscs (4D owns 'built', the discipline filter owns 'shown'); identical with nothing hidden. §PERF_TRAVERSE carries discKept. time_machine 80.
 // v1554 (2026-10-02) §REVEAL_TRAP opt-in &revealtrap=1: names the code that re-shows a mesh the reveal round hid (visible setter + stack, once per mesh) and names leaked meshes in §CPE_REVEAL_LEAK. Diagnostic only. effects 137.

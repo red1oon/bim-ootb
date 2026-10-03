@@ -2267,6 +2267,7 @@ function setupTools(A) {
     pick.forEach(function(e, j) { L[e.i].__shadowLight = A._lampShadowLights[j] || null; });
     return L;
   };
+  var _sclLast = null, _ilOffLast = null;   // §115/§116 dedupe — module scope (W3(B))
   A._nightUpdateLights = function() {
     // §NIGHT_BAKE_POOL teardown — first update after a bake releases the frozen pool. Checked
     // BEFORE the _nightMode gate so a night-off session still cleans up.
@@ -2292,8 +2293,8 @@ function setupTools(A) {
     var visPos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
     var camPos = A.camera.position;
     var needed;
-    if (typeof _sclLast === 'undefined') var _sclLast = null;   // §115 dedupe
-    if (typeof _ilOffLast === 'undefined') var _ilOffLast = null;  // §116 dedupe
+    // W3(B) 2026-10-03: the §115/§116 dedupe state lives OUTSIDE this function now. As a `var` in here it was re-created
+    // (undefined -> null) on every call, so the dedupe never held: 5,530 identical §INTERIOR_LIGHTS_OFF lines in one Hospital film.
     // §NIGHT_STILL_BOOST_GATE_FIX (2026-08-08): A._nightStillBoost is set true ONCE at init and
     // never reset — it's a static "is the still-boost feature enabled" flag (effects.js reads it
     // the same way, correctly, to decide whether Alt+S is ALLOWED to raise the cap). Reading it
@@ -2467,7 +2468,7 @@ function setupTools(A) {
           ' (§116 — from beats.out to TOPOUT — §129.41 relights from there; supersedes the §115 per-storey cap)');
       }
       needed = [];
-    }
+    } else if (!A._interiorLightsOff) _ilOffLast = null;   // W3(B): a later off-span logs again
     if (needed && needed.length && A._storeyCutCeilY != null) {
       var _preCut = needed.length;
       needed = needed.filter(function (f) { return f.pos && f.pos.y <= A._storeyCutCeilY; });

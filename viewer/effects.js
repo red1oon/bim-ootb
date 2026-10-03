@@ -5760,7 +5760,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // user into their next orbit and the frame rate goes with it. Compares against the CURRENT nav
     // default (A._nightMaxLightsNav), not a stale literal, so §NIGHT_LIGHT_BUDGET_UP-style tuning
     // never silently breaks this reset.
-    if (A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
+    // W3(A) 2026-10-03: a FILM frame's soft cancel (keepStaging, A._maxqActive) skips this hand-back. The next frame's refine start
+    // re-raises the budget at once, so restoring nav here only rebuilt the pool every frame (§LAMP_CAP_CHURN 30->0->30, 12,307 lines
+    // in one LTU film) for a state no frame was ever rendered in. The film's own end (keepStaging false) still hands it back.
+    if (!(keepStaging && A._maxqActive) && A._nightMaxLights !== A._nightMaxLightsNav && typeof A._nightUpdateLights === 'function') {
       A._nightMaxLights = A._nightMaxLightsNav;
       A._nightNearFadeFloor = 0.3;
       A._nightPLScale = 1.0;   // §STAGED_PL_CUT — nav Night Mode back to full tuned intensity

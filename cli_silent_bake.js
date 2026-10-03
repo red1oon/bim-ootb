@@ -406,7 +406,7 @@ const server = http.createServer((req, res) => {
   // bare FRAME_REUSE carries the per-run detail behind FRAME_REUSE_TOTAL's single number.
   // `\b` keeps these distinct: STOREY_REVEAL_TINT does not swallow STOREY_REVEAL_TINT_SHARED_MATERIAL,
   // and FRAME_REUSE does not swallow FRAME_REUSE_TOTAL, because `_` is a word character.
-  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|FRAME_COST|CPE_REVEAL_HIDDEN|CPE_REVEAL_LEAK|INTERIOR_LIGHTS_BOUNDARY|INTERIOR_LIGHTS_WITNESS|INTERIOR_LIGHTS_ON|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT|FRAME_REUSE_TOTAL|FRAME_REUSE|DLOD_TM_CENSUS|STOREY_REVEAL_TINT_RESTORE|STOREY_REVEAL_TINT|STOREY_REVEAL_MODE|HR_COST_PERSISTED|HR_COST_AGREE|HR_COST|CREW_DEMAND|MAXQ_FRAME_DECODE_FAIL|MAXQ_FRAME_DECODE_SKIP|MAXQ_STITCH_FAILED|HUD_OVERLAP_WORST|PLACE_TABLE|PLACE_RESOLVED|RULE_TINT_CEASE|RULE_TINT_ENTER|FILM_LAYER|FINDINGS_CEASE_3D|FINDINGS_CEASE|ESCAPE_ROUTE_CASING|ESCAPE_ROUTE_ALTERNATES|ESCAPE_ROUTE_BUILD|ESCAPE_ROUTE_WINDOW|ESCAPE_ROUTE_POPULATION|ESCAPE_ROUTE_BREACH)\b/;
+  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|FRAME_COST|CPE_REVEAL_HIDDEN|CPE_REVEAL_LEAK|INTERIOR_LIGHTS_BOUNDARY|INTERIOR_LIGHTS_WITNESS|INTERIOR_LIGHTS_ON|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT|FRAME_REUSE_TOTAL|FRAME_REUSE|DLOD_TM_CENSUS|STOREY_REVEAL_TINT_RESTORE|STOREY_REVEAL_TINT|STOREY_REVEAL_MODE|HR_COST_PERSISTED|HR_COST_AGREE|HR_COST|CREW_DEMAND|MAXQ_FRAME_DECODE_FAIL|MAXQ_FRAME_DECODE_SKIP|MAXQ_STITCH_FAILED|HUD_OVERLAP_WORST|HUD_OVERLAP_CROSSFADE|LAMPS_SUMMARY|PLACE_TABLE|PLACE_RESOLVED|RULE_TINT_CEASE|RULE_TINT_ENTER|FILM_LAYER|FINDINGS_CEASE_3D|FINDINGS_CEASE|ESCAPE_ROUTE_CASING|ESCAPE_ROUTE_ALTERNATES|ESCAPE_ROUTE_BUILD|ESCAPE_ROUTE_WINDOW|ESCAPE_ROUTE_POPULATION|ESCAPE_ROUTE_BREACH)\b/;
   // §CLI_BAKE_LOAD_FATAL (2026-09-05) — a DB that cannot be fetched must abort NOW, not in 15 minutes.
   // MEASURED: a wrong/missing buildings/<name>.db logged `§INIT_ERROR … 404` at 2.7 s, then the load
   // predicate below (which can never become true without a DB) burned its full 900 s timeout and
@@ -465,8 +465,8 @@ const server = http.createServer((req, res) => {
   await page.evaluateOnNewDocument((flagsJson) => {
     window.__MAXQ_SILENT = true;                       // gates window.__maxqBake (dev-only)
     window.__maxqPoseLog = [];                          // §CLI_SILENT_BAKE item 4 — pose record
-    window.__maxqPoseTap = function(i, x, y, z, tx, ty, tz) {
-      window.__maxqPoseLog.push([i, x, y, z, tx, ty, tz, performance.now()]);
+    window.__maxqPoseTap = function(i, x, y, z, tx, ty, tz, tF) {
+      window.__maxqPoseLog.push([i, x, y, z, tx, ty, tz, performance.now(), tF == null ? null : tF]);   // [8] = film time posed at (W1)
     };
     window.__maxqDeliverBlob = async function(blob, name, type) {
       const buf = new Uint8Array(await blob.arrayBuffer());
@@ -913,22 +913,26 @@ const server = http.createServer((req, res) => {
     // (b) build the DERIVED plan (explicit null override): the flown track must DIFFER from it
     //     (a bake that silently ignored the passed path would match derived and fail here);
     // (c) the flown track must pass near every stored band anchor (ties to the DB rows themselves).
-    const chk = await page.evaluate((fpsUsed) => {
-      const A = window.APP, L = window.__maxqPoseLog, ov = window.__maxqResolvedOverride;
+    // W1 (ALTC_FOUNDATION §1, 2026-10-03): the old check posed frame i at i/(n-1), but the film clock is NOT linear in i — the
+    // load-path hold splices frames in and shifts every later frame (Hospital: tNorm 0.411 vs i/(n-1) 0.442 at f2196 -> a false
+    // "118 m MISMATCH" while every band anchor was passed at <= 0.04 m). Now each row carries the film time the camera was posed at
+    // ([8], from cinema_maxq's pose tap) and the plan is rebuilt at the bake's OWN duration (__maxqPlanDurSec). Position decides;
+    // the target is printed apart because the §57.5 gaze blend moves it on purpose. Rows without [8] (old page) -> INCONCLUSIVE.
+    const chk = await page.evaluate(() => {
+      const A = window.APP, L = window.__maxqPoseLog, ov = window.__maxqResolvedOverride, dur = window.__maxqPlanDurSec;
       if (!L || L.length < 2 || !ov) return { skip: 'no poses or no resolved override' };
-      if (ov.clip) return { skip: 'clip window set — t-mapping not identity, check by hand' };
+      if (!(dur > 0)) return { skip: 'no __maxqPlanDurSec (page predates W1)' };
+      if (L.some(r => r[8] == null)) return { skip: 'pose rows carry no film time (page predates W1)' };
       const cs = window.__maxqCamSave;
       A.camera.position.set(cs.px, cs.py, cs.pz); A.controls.target.set(cs.tx, cs.ty, cs.tz);
       A.camera.lookAt(cs.tx, cs.ty, cs.tz); A.camera.updateMatrixWorld(true); A.controls.update();
-      const n = L[L.length - 1][0] + 1;
-      const planOv = A.cinemaPathPlan(n / fpsUsed, ov);
-      const planDrv = A.cinemaPathPlan(n / fpsUsed, null);
-      let maxErr = 0, sumDrv = 0;
+      const planOv = A.cinemaPathPlan(dur, ov), planDrv = A.cinemaPathPlan(dur, null);
+      let maxPos = 0, maxPosF = -1, maxTgt = 0, sumDrv = 0;
       for (const r of L) {
-        const t = n > 1 ? r[0] / (n - 1) : 0;
-        const p = planOv.poseAt(t), d = planDrv.poseAt(t);
-        maxErr = Math.max(maxErr, Math.hypot(r[1] - p.x, r[2] - p.y, r[3] - p.z),
-                          Math.hypot(r[4] - p.tx, r[5] - p.ty, r[6] - p.tz));
+        const p = planOv.poseAt(r[8]), d = planDrv.poseAt(r[8]);
+        const ep = Math.hypot(r[1] - p.x, r[2] - p.y, r[3] - p.z);
+        if (ep > maxPos) { maxPos = ep; maxPosF = r[0]; }
+        maxTgt = Math.max(maxTgt, Math.hypot(r[4] - p.tx, r[5] - p.ty, r[6] - p.tz));
         sumDrv += Math.hypot(r[1] - d.x, r[2] - d.y, r[3] - d.z);
       }
       const bandDist = (ov.bands || []).map(b => {
@@ -936,13 +940,15 @@ const server = http.createServer((req, res) => {
         for (const r of L) m = Math.min(m, Math.hypot(r[1] - b.c.x, r[2] - b.c.y, r[3] - b.c.z));
         return +m.toFixed(2);
       });
-      return { n, maxErrM: +maxErr.toFixed(4), rmsVsDerivedM: +(sumDrv / L.length).toFixed(2), bandDist };
-    }, FPS || 15).catch(e => ({ skip: 'check threw: ' + e.message }));
+      return { n: L.length, dur: +dur.toFixed(2), maxErrM: +maxPos.toFixed(4), worstF: maxPosF, maxTgtM: +maxTgt.toFixed(3),
+               rmsVsDerivedM: +(sumDrv / L.length).toFixed(2), bandDist };
+    }).catch(e => ({ skip: 'check threw: ' + e.message }));
     if (chk.skip) log('§CLI_BAKE_POSECHECK INCONCLUSIVE ' + chk.skip);
     else {
       const pass = chk.maxErrM < 0.05;
       const differs = chk.rmsVsDerivedM > 1.0;
-      log(`§CLI_BAKE_POSECHECK frames=${chk.n} maxErrVsOverridePlanM=${chk.maxErrM} (${pass ? 'MATCH' : '⚠ MISMATCH'})` +
+      log(`§CLI_BAKE_POSECHECK frames=${chk.n} ref=filmT planDurSec=${chk.dur} maxPosErrVsOverridePlanM=${chk.maxErrM} worstF=${chk.worstF} (${pass ? 'MATCH' : '⚠ MISMATCH'})` +
+          ` maxTargetErrM=${chk.maxTgtM} (info: §57.5 gaze blend moves the target by design)` +
           ` meanDistVsDerivedPlanM=${chk.rmsVsDerivedM} (${differs ? 'differs — the stored path, not the derived one' : '⚠ INDISTINGUISHABLE from derived — inconclusive discriminator'})` +
           ` bandAnchorMinDistM=[${chk.bandDist.join(',')}]`);
     }
