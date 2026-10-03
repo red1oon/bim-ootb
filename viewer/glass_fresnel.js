@@ -135,9 +135,9 @@
     // clear it = NaN in the env; a second capture cleared it: 0). Rule: capture again while any scene material's uniforms object changed
     // during the capture (max 3 passes; a later press with every key bound = 1 pass, cost unchanged).
     var props = R.properties, snap = function () { var m = new Map(); A.scene.traverse(function (o) { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (x) { if (x && !m.has(x)) { var pp = props.get(x); m.set(x, pp && pp.uniforms); } }); }); return m; };
-    var passes = 0, rekeyed = [];
+    var passes = 0, rekeyed = [], csmOC = A._stillShadowWide ? A._stillShadowWide(true) : false;
     try { for (passes = 1; passes <= 3; passes++) { var s0 = snap(); capCam.update(R, A.scene); var ch = 0; s0.forEach(function (u, x) { var pp = props.get(x); if (pp && pp.uniforms !== u) ch++; }); rekeyed.push(ch); if (!ch) break; } }
-    finally { R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
+    finally { if (csmOC) A._stillShadowWide(false); R.setRenderTarget(prevRT); A.scene.remove(capCam); hidden.forEach(function (o) { o.visible = true; }); }
     if (passes > 3) passes = 3;
     // ### ALTS-ALL FIX 14 diagnostic: non-finite texels per face (HalfFloat: exponent bits all 1 = Inf/NaN), read after the passes
     var nf = [], capLum = 0, capN = 0; try { var n0 = CAP_SIZE, hb = new Uint16Array(n0 * n0 * 4), h2f = function (h) { var e = (h >> 10) & 31, m = h & 1023; return e === 31 ? NaN : (e ? (1 + m / 1024) * Math.pow(2, e - 15) : m / 1024 * Math.pow(2, -14)) * (h & 0x8000 ? -1 : 1); };
@@ -245,6 +245,7 @@
       if (ms.some(function (m) { return m && ((m.userData && (m.userData.gfOf || m.userData.slMirror)) || isGlass(m)); })) { o.visible = false; hidden.push(o); } });
     var prevRT = R.getRenderTarget(), props = R.properties, snap = function () { var m = new Map(); A.scene.traverse(function (o) { if (!o.material) return; (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (x) { if (x && !m.has(x)) { var pp = props.get(x); m.set(x, pp && pp.uniforms); } }); }); return m; };
     var ms = [], passes = [], V = cam.matrixWorldInverse, VI = cam.matrixWorld, pv = new THREE.Vector4();
+    var csmOP = A._stillShadowWide ? A._stillShadowWide(true) : false;
     try { use.forEach(function (P, k) { var tk = performance.now(), T = mirrorCam(THREE, cam, P), col = k % PCOLS, row = Math.floor(k / PCOLS);
         atlasRT.viewport.set(col * tw, row * th, tw, th); atlasRT.scissor.set(col * tw, row * th, tw, th); atlasRT.scissorTest = true;
         var np = 0; for (np = 1; np <= 3; np++) { var s0 = snap(); R.setRenderTarget(atlasRT); R.clear(); R.render(A.scene, mirCam); var ch = 0; s0.forEach(function (u, x) { var pp = props.get(x); if (pp && pp.uniforms !== u) ch++; }); if (!ch) break; }
@@ -254,13 +255,13 @@
         PU.uGfPl.value[k].set(nV.x, nV.y, nV.z, -nV.dot(pVv)); PU.uGfTex.value[k].multiplyMatrices(T, VI);
         P.T = T; P.mirPos = mirCam.position.clone(); P.proj = mirCam.projectionMatrix.clone(); P.view = mirCam.matrixWorldInverse.clone(); P.tile = [col, row];
         ms.push(Math.round(performance.now() - tk)); }); }
-    finally { atlasRT.scissorTest = false; R.setRenderTarget(prevRT); hidden.forEach(function (o) { o.visible = true; }); }
+    finally { if (csmOP) A._stillShadowWide(false); atlasRT.scissorTest = false; R.setRenderTarget(prevRT); hidden.forEach(function (o) { o.visible = true; }); }
     PU.uGfAtlas.value = atlasRT.texture; PU.uGfK.value = use.length; lastPlanes = use; lastPlanes.tw = tw; lastPlanes.th = th;
     if (A.markDirty) A.markDirty();
     var top = use.map(function (P) { return '[n=' + P.n.map(function (v) { return v.toFixed(2); }).join(',') + ' d=' + P.d.toFixed(2) + ' dOut=' + P.dOut.toFixed(3) + ' scr=' + (P.scr / 4 * 100).toFixed(1) + '% tris=' + P.tris + ']'; }).join(' ');
     var restScr = cand.slice(K).reduce(function (s, P) { return s + P.scr; }, 0);
     console.log('§GLASS_PLANAR K=' + use.length + '/' + PK_MAX + ' planesTotal=' + G.planes.length + ' onScreen=' + cand.length + ' tris=' + G.tris + ' meshes=' + G.meshes + ' batchedSkipped=' + G.batchedSkipped + ' batchedInst=' + G.batchedInst + ' mirrorMeshes=' + G.mirrorMeshes +
-      ' tile=' + tw + 'x' + th + ' passes=[' + passes.join(',') + '] msPerMirror=[' + ms.join(',') + '] fallbackScreen=' + (restScr / 4 * 100).toFixed(1) + '% totalMs=' + Math.round(performance.now() - t0) + ' mirrored=' + top);
+      ' tile=' + tw + 'x' + th + ' sunWide=' + (csmOP ? csmOP.w + 'x' + csmOP.h + 'm' : 'off') + ' passes=[' + passes.join(',') + '] msPerMirror=[' + ms.join(',') + '] fallbackScreen=' + (restScr / 4 * 100).toFixed(1) + '% totalMs=' + Math.round(performance.now() - t0) + ' mirrored=' + top);
     if (/[?&]refltruth=1/.test(location.search)) { try { truth(A, THREE, hidden); } catch (eT) { console.warn('§GLASS_REFL_TRUTH failed: ' + eT.message); } }
     return { K: use.length, ms: Math.round(performance.now() - t0) };
   }
@@ -320,5 +321,5 @@
     if (A.markDirty) A.markDirty();
   }
 
-  global.GlassFresnel = { capture: capture, planar: planar, patchShader: gfPatchShader, planarState: function () { return { K: PU.uGfK.value, planes: lastPlanes }; }, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
+  global.GlassFresnel = { capture: capture, planar: planar, patchShader: gfPatchShader, planarState: function () { return { K: PU.uGfK.value, planes: lastPlanes, atlas: atlasRT }; }, stage: stage, unstage: unstage, classOfMembers: function (A, o) { return classOfMembers(A, o); } };
 })(typeof window !== 'undefined' ? window : this);

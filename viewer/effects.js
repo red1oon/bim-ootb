@@ -3167,6 +3167,23 @@ async function setupEffects(A, renderer, scene, camera) {
     if (csmRun) { try { _stillCascadeApply(); } catch (eC) { console.warn('§STILL_SHADOW_CASCADE failed: ' + eC.message + ' — single map kept'); if (window.ShadowCascade) window.ShadowCascade.off(); } }
     return line;
   }
+  // §SHADOW_WIDE_OTHER_CAMERA (2026-10-03, MEASURED Clinic toilet: cascade boxes 1.5x2.1 .. 1.2x1.8 m fitted to the eye's 1.0-2.8 m view;
+  // the mirror shows the room BEHIND the eye = outside every box = "no cascade -> lit" = sun speckle on indoor walls, hfStd 9.1 vs
+  // 2.3 with &shadowcascade=0). A render from another camera (mirror tiles, the §GLASS_ENV cube) needs a map that holds what IT sees:
+  // the sun's box widens to this still's building ∪ kept-props union (the fit's own U, ±env), cascades suspended; restored after.
+  var _wideSaved = null;
+  A._stillShadowWide = function(on) {
+    var sc = A.sun && A.sun.shadow && A.sun.shadow.camera;
+    if (on) { if (_wideSaved || !sc || !_fitState || !_fitState.last || !_fitOn()) return false;
+      var L = _fitState.last, env = L.env, M = 2, U = L.U, mz = A.sun.shadow.mapSize.width;
+      _wideSaved = { l: sc.left, r: sc.right, b: sc.bottom, t: sc.top, nb: A.sun.shadow.normalBias, csm: !!(window.ShadowCascade && window.ShadowCascade.suspend && window.ShadowCascade.suspend()) };
+      sc.left = Math.max(-env, U.x0 - M); sc.right = Math.min(env, U.x1 + M); sc.bottom = Math.max(-env, U.y0 - M); sc.top = Math.min(env, U.y1 + M);
+      A.sun.shadow.normalBias = 2 * Math.max(sc.right - sc.left, sc.top - sc.bottom) / mz; sc.updateProjectionMatrix(); A.renderer.shadowMap.needsUpdate = true;
+      return { w: +(sc.right - sc.left).toFixed(1), h: +(sc.top - sc.bottom).toFixed(1) }; }
+    if (!_wideSaved) return false;
+    sc.left = _wideSaved.l; sc.right = _wideSaved.r; sc.bottom = _wideSaved.b; sc.top = _wideSaved.t; A.sun.shadow.normalBias = _wideSaved.nb; sc.updateProjectionMatrix();
+    if (_wideSaved.csm) window.ShadowCascade.resume(); _wideSaved = null; A.renderer.shadowMap.needsUpdate = true; return false;
+  };
   // ══ §STILL_SHADOW_EDGE (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_EDGE — SPEC"; watchdog red1-4b/red1-c6) ══
   // red1 on v1337: shadows "jagged and with a base gap". Alt+S only; films keep §STILL_SHADOW_FIT as is. &shadowedge=0 or
   // APP._stillShadowEdge=false = the v1337 values (A/B).
