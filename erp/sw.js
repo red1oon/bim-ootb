@@ -10,7 +10,10 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v808';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v809';   // bump on each deploy; per-change detail is the git commit message.
+// v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
+//   i18n/index.json precached; the 8 per-locale packs (i18n/<lang>.json, 117–349 KB) are fetched only when chosen and
+//   then served cache-first.
 // v793 (2026-09-15) §Phase E (PLUGIN_SYSTEM_LANE.md): ad_modelval_bridge.js bridges the real
 //   ad_modelvalidator AD table (3 rows: Libero MFG/Fixed Assets/Product Price) into the already-shipped
 //   plugin host — adding an ad_modelvalidator row is now the AD-native way to add a validator, install
@@ -76,6 +79,9 @@ const PRECACHE_ASSETS = [
   'ad_evaluator.js',
   'ad_graph.js',
   'ad_modelval.js',
+  'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
+  'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
+  'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage
   'ad_parser.js',
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   // 'ad_table_map.js' — REMOVED from the precache 2026-09-04 (E-14, prompts/AGENT_QUEUE.md §HYGIENE-E14).

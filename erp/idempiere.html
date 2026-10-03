@@ -25,10 +25,27 @@
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
   body {
-    font-family:'Segoe UI', Tahoma, system-ui, sans-serif; font-size:13px;
+    font-family:'Segoe UI', Tahoma, system-ui, sans-serif, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Noto Sans Thai', 'Leelawadee UI', 'Noto Sans CJK SC', 'Microsoft YaHei', 'PingFang SC'; font-size:13px;
     color:var(--idmp-text); background:var(--idmp-bg);
     display:flex; flex-direction:column; height:100vh; overflow:hidden;
   }
+  /* ── UI locales (bim-compiler prompts/ERP_UI_LOCALES.md §L5) — per-script font preference + RTL mirror ── */
+  :lang(ja) body, body:lang(ja) { font-family:'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Noto Sans CJK JP', system-ui, sans-serif; }
+  :lang(zh) body, body:lang(zh) { font-family:'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', system-ui, sans-serif; }
+  :lang(th) body, body:lang(th) { font-family:'Leelawadee UI', 'Noto Sans Thai', 'Tahoma', system-ui, sans-serif; }
+  :lang(ar) body, body:lang(ar) { font-family:'Segoe UI', 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Tahoma', system-ui, sans-serif; }
+  .idmp-lang-sel { height:26px; border-radius:4px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.12); color:#fff; font:inherit; font-size:12px; padding:0 4px; cursor:pointer; max-width:130px; }
+  .idmp-lang-sel option { color:#1c1c1c; background:#fff; }
+  .idmp-login-lang { display:flex; align-items:center; gap:8px; justify-content:flex-end; margin:0 0 4px; font-size:12px; color:var(--idmp-muted); }
+  .idmp-login-lang select { height:26px; border:1px solid var(--idmp-border); border-radius:4px; font:inherit; padding:0 4px; background:#fff; }
+  [dir=rtl] #idmp-menu { border-right:none; border-left:1px solid var(--idmp-border); }
+  [dir=rtl] .idmp-row { border-left:none; border-right:3px solid transparent; }
+  [dir=rtl] .idmp-row.leaf.active { border-right-color:var(--idmp-blue); }
+  [dir=rtl] .idmp-row .tw { transform:scaleX(-1); }
+  [dir=rtl] .idmp-login-user .tag { margin-left:0; margin-right:auto; }
+  [dir=rtl] .idmp-procresult th, [dir=rtl] .idmp-procresult td, [dir=rtl] .idmp-grid th, [dir=rtl] .idmp-grid td { text-align:right; }
+  [dir=rtl] .idmp-fld.mand .val, [dir=rtl] .idmp-procform .fld.mand input { border-left:none; border-right:3px solid #e0a800; }
+  @media (min-width:761px){ [dir=rtl] body.idmp-menu-collapsed #idmp-menu { transform:translateX(100%); border-left:none; } }
   /* ── Header bar ── */
   #idmp-header {
     flex:0 0 auto; height:46px; display:flex; align-items:center; gap:12px; padding:0 12px;
@@ -384,34 +401,35 @@
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
     <div class="idmp-login-mark"><img src="logo_glass.png?v=2" alt="" width="52" height="52"></div>
-    <div class="idmp-login-title">Kernel-ERP — Sign In</div>
-    <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
+    <div class="idmp-login-lang"><span data-i18n="login.language">Language</span><select id="idmp-login-lang" aria-label="Language"></select></div>
+    <div class="idmp-login-title" data-i18n="login.title">Kernel-ERP — Sign In</div>
+    <div class="idmp-login-sub" data-i18n-html="login.sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
          pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
          A duplicate card link was redundant once the pill existed (#206). -->
     <!-- Step 0 — TENANT SWITCHER (NEW_CLIENT_MGMT.md P3): only rendered when ≥2 installed tenants exist; a
          single-tenant seed skips straight to the user list (zero behaviour change). -->
     <div id="idmp-login-step0" style="display:none">
-      <div class="idmp-login-label">Select a tenant</div>
+      <div class="idmp-login-label" data-i18n="login.selectTenant">Select a tenant</div>
       <div id="idmp-login-clients" class="idmp-login-list"></div>
     </div>
     <div id="idmp-login-step1" style="display:none">
       <div class="idmp-login-label" id="idmp-login-step1-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
       <div class="idmp-login-actions" id="idmp-login-step1-actions" style="display:none">
-        <button id="idmp-login-tenants-back" class="ghost">&lsaquo; Tenants</button>
+        <button id="idmp-login-tenants-back" class="ghost" data-i18n="login.tenantsBack">&lsaquo; Tenants</button>
       </div>
     </div>
     <div id="idmp-login-step2" style="display:none">
-      <div class="idmp-login-label">Role</div>
+      <div class="idmp-login-label" data-i18n="login.role">Role</div>
       <select id="idmp-login-role"></select>
-      <div class="idmp-login-label">Client</div>
+      <div class="idmp-login-label" data-i18n="login.client">Client</div>
       <input id="idmp-login-client" readonly>
-      <div class="idmp-login-label">Organisation</div>
+      <div class="idmp-login-label" data-i18n="login.org">Organisation</div>
       <select id="idmp-login-org"></select>
       <div class="idmp-login-actions">
-        <button id="idmp-login-back" class="ghost">&lsaquo; Back</button>
-        <button id="idmp-login-ok" class="primary">Log In &rsaquo;</button>
+        <button id="idmp-login-back" class="ghost" data-i18n="login.back">&lsaquo; Back</button>
+        <button id="idmp-login-ok" class="primary" data-i18n="login.ok">Log In &rsaquo;</button>
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
@@ -433,23 +451,24 @@
 </div>
 
 <div id="idmp-header">
-  <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
+  <button id="idmp-burger" class="hbtns" title="Menu" data-i18n-title="hdr.menu">&#9776;</button>
   <span id="idmp-logo"><img src="logo_glass.png?v=2" alt="" width="36" height="36"></span>
   <span id="idmp-title">Kernel-ERP</span>
-  <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
+  <input id="idmp-search" type="search" placeholder="Search menu&hellip;" data-i18n-ph="hdr.search" autocomplete="off">
   <span class="spacer"></span>
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
     <!-- FUNDAMENTAL LAW (2026-06-18): the iDempiere surface is indistinguishable from real iDempiere — zero
          learning curve. The header keeps ONLY iDempiere-native bits (menu · logo · search · role/client ctx ·
          role-switch/logout). Non-iDempiere controls (Share, Home/engine-view, etc.) live in the pill rail. -->
-    <button id="idmp-switch-btn" title="Log out">&#8676;</button>
+    <select id="idmp-lang" class="idmp-lang-sel" title="Language" aria-label="Language"></select><!-- UI locale switch (ERP_UI_LOCALES.md §L4): in place, keeps session + open window + record -->
+    <button id="idmp-switch-btn" title="Log out" data-i18n-title="hdr.logout">&#8676;</button>
   </span>
 </div>
 
 <div id="idmp-body">
   <aside id="idmp-menu">
-    <div id="idmp-menu-head"><input id="idmp-menu-filter" type="search" placeholder="Filter menu&hellip;" autocomplete="off"></div>
+    <div id="idmp-menu-head"><input id="idmp-menu-filter" type="search" placeholder="Filter menu&hellip;" data-i18n-ph="hdr.filter" autocomplete="off"></div>
     <div id="idmp-tree"></div>
   </aside>
   <div id="idmp-menu-backdrop"></div>
@@ -458,7 +477,7 @@
     <div id="idmp-toolbar" style="display:none"></div>
     <div id="idmp-tabstrip" style="display:none"></div>
     <div id="idmp-content">
-      <div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
+      <div id="idmp-placeholder"><div class="big">&#128193;</div><span data-i18n="main.placeholder">Select a menu item to open a window.</span><br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
     </div>
     <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
@@ -466,6 +485,7 @@
 
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
+<script src="erp_i18n.js?v=1"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=24"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
@@ -716,6 +736,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
+  // _T — UI-locale string (erp_i18n.js chrome catalogue, ERP_UI_LOCALES.md §L3); English when the module/key is absent.
+  function _T(key, en, args) {
+    if (window.ErpI18n && ErpI18n.lang !== ErpI18n.BASE && ErpI18n.has(key)) return ErpI18n.t(key, args);   // English = the caller's literal, byte-identical
+    return args ? String(en).replace(/\{(\d)\}/g, function (_, i) { return args[i] != null ? args[i] : ''; }) : en;
+  }
+  // _Ttl — a TOOLTIP: English stays byte-identical to today's title (witnesses select on it, e.g. title^="New record");
+  //   another locale shows the translated label + the accelerator suffix.
+  function _Ttl(key, enTitle, suffix) {
+    if (!window.ErpI18n || ErpI18n.lang === ErpI18n.BASE || !ErpI18n.has(key)) return enTitle;
+    return ErpI18n.t(key) + (suffix || '');
+  }
 
   // ── IndexedDB cache (shares 'ad_seed_v18' with erp.html) ──
   function idbGet(key) {
@@ -962,6 +993,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (pending && pending.groups) { await installGenesis(pending); idbDel('genesis_pending'); }
       } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
     if (ADP && ADP.init) ADP.init(db);
+    // UI locale (ERP_UI_LOCALES.md §L4): bind the dictionary, load the chrome catalogue, wire both pickers, and come
+    // up in the persisted / ?lang= language BEFORE the login card renders (so the very first paint is in it).
+    if (window.ErpI18n) {
+      try {
+        ErpI18n.bindDb(db);
+        await ErpI18n.loadCatalogue();
+        ErpI18n.picker($('idmp-login-lang')); ErpI18n.picker($('idmp-lang'));
+        ErpI18n.onChange(_i18nRerender);
+        var _lang0 = ErpI18n.initial();
+        if (_lang0 !== ErpI18n.BASE) await ErpI18n.set(_lang0, { noPersist: true });
+        else ErpI18n.applyDom(document);
+      } catch (eI) { console.warn('§I18N boot-fail ' + eI.message); }
+    }
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
     // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
@@ -1040,7 +1084,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       return { key: k, id: s.client, name: s.name, file: s.file, poc: !!s.poc, demo: true }; })
       .filter(function (t) { return t.id != null && !resident[t.id]; });
   }
+  var _loginStepNow = null;   // which login step is on screen — the locale switch re-renders it in place (§L4)
   function loginStep0(tenants, demos) {
+    _loginStepNow = 0;
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step0').style.display = '';
@@ -1049,7 +1095,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var row = el('div', 'idmp-login-user');
       row.appendChild(el('span', 'av', (c.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', c.name));
-      row.appendChild(el('span', 'tag', c.users + (c.users === 1 ? ' user' : ' users') + ' · ' + c.id));
+      row.appendChild(el('span', 'tag', c.users + ' ' + (c.users === 1 ? _T('login.user1', 'user') : _T('login.userN', 'users')) + ' · ' + c.id));
       row.addEventListener('click', function () { _loginClient = c; loginStep1(); });
       // delete affordance — every resident tenant EXCEPT System(0)/GardenWorld(11), which are framework/seed.
       if (c.id !== 0 && c.id !== 11) {
@@ -1065,7 +1111,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var row = el('div', 'idmp-login-user idmp-login-demo');
       row.appendChild(el('span', 'av', (t.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', t.name));
-      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>demo · ' + (t.poc ? 'PoC' : 'ready');
+      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>' + (t.poc ? _T('login.demoPoc', 'demo · PoC') : _T('login.demoReady', 'demo · ready'));
       row.appendChild(tag);
       row.addEventListener('click', function () { _enterDemoTenant(t, row, tag); });
       host.appendChild(row);
@@ -1155,24 +1201,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
   }
   function loginStep1() {
+    _loginStepNow = 1;
     $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step1').style.display = '';
     // when a tenant was picked, scope the user list to it + offer a "‹ Tenants" back; else the full list (as before)
     var users = _loginClient ? SES.usersForClient(db, _loginClient.id) : SES.listUsers(db);
-    $('idmp-login-step1-label').textContent = _loginClient ? ('Select a user · ' + _loginClient.name) : 'Select a user';
+    $('idmp-login-step1-label').textContent = _loginClient ? (_T('login.selectUser', 'Select a user') + ' · ' + _loginClient.name) : _T('login.selectUser', 'Select a user');
     $('idmp-login-step1-actions').style.display = (_loginClient && SES.listClients(db).length >= 2) ? '' : 'none';
     var host = $('idmp-login-users'); host.innerHTML = '';
     users.forEach(function (u) {
       var row = el('div', 'idmp-login-user' + (u.hasRoles ? '' : ' disabled'));
       row.appendChild(el('span', 'av', (u.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', u.name));
-      if (!u.hasRoles) row.appendChild(el('span', 'tag', '(no roles)'));   // seed reality — named, not dropped
+      if (!u.hasRoles) row.appendChild(el('span', 'tag', _T('login.noRoles', '(no roles)')));   // seed reality — named, not dropped
       else row.addEventListener('click', function () { _loginUser = u; loginStep2(u); });
       host.appendChild(row);
     });
   }
   function loginStep2(u) {
+    _loginStepNow = 2;
     $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = '';
@@ -1222,7 +1270,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // a role change can revoke window access — close any open windows, reset to placeholder
     _openWins = {}; _activeWin = null; renderWinTabs();
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
+    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
     buildMenu();   // role-scoped
     console.log('§IDEMPIERE-LOGIN user=' + _session.user.name + ' roles=' + (_session.roles ? _session.roles.length : '?') +
       ' client=' + _session.client.name + '(' + _session.client.id + ')' +
@@ -1248,9 +1296,60 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§MOBILE-LANDING drawer=open reason=empty-landing innerW=' + window.innerWidth);
   }
 
+  // ── UI locale switch, IN PLACE (bim-compiler prompts/ERP_UI_LOCALES.md §L4 — W-ERP-I18N) ──
+  // Runs as an ErpI18n.onChange listener, i.e. inside ErpI18n.set() after the pack is loaded and <html lang/dir> is
+  // flipped. Nothing is reloaded and nobody is logged out: the session, the open windows, the active tab, the
+  // current record index and the grid/form mode are all kept. Only labels change:
+  //   static markup ([data-i18n*]) · the login step on screen · the menu tree (rebuilt from AD_Menu + _Trl) ·
+  //   every open window's window/tab/field names (relabelled in place on the same objects) · toolbar · tab strip ·
+  //   body (grid headers / form labels). A form with UNSAVED edits is not rebuilt (its typed values would be lost):
+  //   its labels are rewritten in place instead, and that is logged.
+  function _i18nRerender(code) {
+    ErpI18n.applyDom(document);
+    var loginOn = $('idmp-login') && $('idmp-login').style.display !== 'none';
+    if (loginOn && _loginStepNow === 0) loginStep0(SES.listClients(db), _demoTenants());
+    else if (loginOn && _loginStepNow === 1) loginStep1();
+    var body = 'none';
+    if (_session) {
+      // keep the menu tree exactly as the user left it: open folders, active leaf, scroll, filter text
+      var openIds = {}, activeId = null, tree = $('idmp-tree'), sc = tree ? tree.scrollTop : 0;
+      document.querySelectorAll('#idmp-tree .idmp-node.open > .idmp-row').forEach(function (r) { openIds[r.dataset.menuId] = 1; });
+      var act = document.querySelector('#idmp-tree .idmp-row.leaf.active'); if (act) activeId = act.dataset.menuId;
+      buildMenu();
+      document.querySelectorAll('#idmp-tree .idmp-node > .idmp-row').forEach(function (r) {
+        if (openIds[r.dataset.menuId]) { r.parentNode.classList.add('open'); var tw = r.querySelector('.tw'); if (tw) tw.textContent = '▾'; }
+        if (activeId != null && r.dataset.menuId === activeId) r.classList.add('active');
+      });
+      if (tree) tree.scrollTop = sc;
+      var mf = $('idmp-menu-filter'); if (mf && mf.value) applyFilter(mf.value);
+      Object.keys(_openWins).forEach(function (id) {
+        var o = _openWins[id]; ErpI18n.applyWindow(o.win); o.name = o.win.name;
+      });
+      renderWinTabs();
+      if (_activeWin != null && _openWins[_activeWin]) {
+        renderTabStrip();
+        if (_formNeedsSave()) {
+          var tab = _curTab(), byCol = {};
+          (tab && tab.fields || []).forEach(function (f) { byCol[String(f.columnName).toLowerCase()] = f.name; });
+          document.querySelectorAll('#idmp-inline-mount .cfrow').forEach(function (r) {
+            var lb = r.querySelector('.cfl'), nm = byCol[String(r.getAttribute('data-row') || '').toLowerCase()];
+            if (lb && nm && lb.firstChild && lb.firstChild.nodeType === 3) lb.firstChild.nodeValue = nm + ' ';
+          });
+          renderToolbar(); refreshNavOnly(); body = 'kept-dirty';
+        } else { renderToolbar(); renderBody(); body = _viewMode; }   // toolbar FIRST: renderBody→refreshForm fills its record nav
+      } else {
+        var ph = document.querySelector('#idmp-content > #idmp-placeholder');
+        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
+      }
+    }
+    console.log('§I18N-RERENDER lang=' + code + ' login=' + (loginOn ? 'step' + _loginStepNow : 'off') + ' session=' + (_session ? 'kept' : 'none') +
+      ' openWindows=' + Object.keys(_openWins).length + ' activeWin=' + _activeWin + ' tab=' + _activeTabIdx + ' rec=' + _recIdx + ' body=' + body);
+  }
+
   // ── Left menu tree (folded from AD_Menu) ──
   function buildMenu() {
     var roots = (ADP && ADP.getMenuTree) ? ADP.getMenuTree(db) : [];
+    if (window.ErpI18n) ErpI18n.applyMenuTree(roots);   // AD_Menu_Trl / central Window|Process|Form _Trl (§L1); English kept on node._en
     // Role-scope: prune W leaves the role can't open + P/R ∉ ad_process_access + X ∉ ad_form_access
     // + empty folders (docs §3b.1 + §AD-MENU-PRF-LIVE). Sets from buildContext (real grant rows).
     var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet, _session.procSet, _session.formSet) : { tree: roots, visible: 0, total: 0 };
@@ -1266,7 +1365,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var wrap = el('div', 'idmp-node');
     var isFolder = node.isSummary || (node.children && node.children.length);
     var row = el('div', 'idmp-row' + (isFolder ? '' : ' leaf'));
-    row.dataset.name = (node.name || '').toLowerCase();
+    row.dataset.name = ((node.name || '') + (node._en && node._en !== node.name ? ' ' + node._en : '')).toLowerCase();   // filter matches the shown AND the English name
+    row.dataset.menuId = node.id;
     var tw = el('span', 'tw', isFolder ? '▸' : '');
     var ic = el('span', 'ic', isFolder ? '📁' : _actionGlyph(node.action));
     var nm = el('span', 'nm', node.name || ('#' + node.id));
@@ -1280,7 +1380,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       row.addEventListener('click', function () { wrap.classList.toggle('open'); tw.textContent = wrap.classList.contains('open') ? '▾' : '▸'; });
     } else {
       leaves++;
-      if (node.action === 'W' && node.windowId) _winByName[(node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus
+      if (node.action === 'W' && node.windowId) _winByName[(node._en || node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus (English key, locale-proof)
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
@@ -1304,6 +1404,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!_openWins[windowId]) {
       var win = ADP.getWindow(db, windowId);
       if (!win) { status('Window ' + windowId + ' not found'); return; }
+      if (window.ErpI18n) ErpI18n.applyWindow(win);   // AD_Window/AD_Tab/AD_Field _Trl (§L1); English kept on ._en
       _openWins[windowId] = { win: win, name: name || win.name };
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
@@ -1358,7 +1459,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (windowId === _activeWin) {
       if (ids.length) openWindow(Number(ids[ids.length - 1]));
       else { _activeWin = null; renderWinTabs(); $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready'); _mobileSurfaceMenu(false); }
+        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready'); _mobileSurfaceMenu(false); }
     } else renderWinTabs();
   }
   function renderWinTabs() {
@@ -1403,7 +1504,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       tb.appendChild(b); return b;
     }
     function sep() { tb.appendChild(el('span', 'sep')); }
-    btn('⟲', 'Refresh', true, function () { renderActiveTab(); });
+    btn('⟲', _Ttl('tb.refresh', 'Refresh'), true, function () { renderActiveTab(); });
     sep();
     // ── iDempiere ADWindowToolbar verbs (New/Copy/Save/Save&New/Delete/Ignore) + Process ▶ — the classic
     //    chrome IS the CRUD surface (red-pill "just the pill" retired; these no longer live in the pill rail).
@@ -1417,14 +1518,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var rec = _records[_recIdx], hasRec = !!rec;
       var editable = _crudHas(tn) || typeof window.__crud.update === 'function';   // curated OR S2B AD-folded fallback
       var editing = !!document.getElementById('idmp-inline-mount');                // an inline New/Edit is open
-      btn(ic('plus', '✚') + 'New', 'New record (Alt+N)', editable, function () { _openCreate(); });
-      btn(ic('clipboard', '⧉') + 'Copy', 'Copy this record to a new one (Alt+C)', editable && hasRec, function () {
+      btn(ic('plus', '✚') + _T('tb.new', 'New'), _Ttl('tb.new', 'New record (Alt+N)', ' (Alt+N)'), editable, function () { _openCreate(); }).setAttribute('data-tb', 'new');
+      btn(ic('clipboard', '⧉') + _T('tb.copy', 'Copy'), _Ttl('tb.copy', 'Copy this record to a new one (Alt+C)', ' (Alt+C)'), editable && hasRec, function () {
         var id = recVal(rec, _keyCol(tab)); _startInlineNew(id); console.log('§TOOLBAR copy from=' + id); });
-      btn(ic('save', '💾') + 'Save', 'Save (Alt+S)', editing, function () { _formSave(); });
-      btn('Save & New', 'Save and start a new record (Alt+A)', editing, function () {
+      btn(ic('save', '💾') + _T('tb.save', 'Save'), _Ttl('tb.save', 'Save (Alt+S)', ' (Alt+S)'), editing, function () { _formSave(); });
+      btn(_T('tb.saveNew', 'Save & New'), _Ttl('tb.saveNew', 'Save and start a new record (Alt+A)', ' (Alt+A)'), editing, function () {
         var b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="savenew"]'); if (b) b.click(); else _formSave(); });
-      btn(ic('trash', '🗑') + 'Delete', 'Delete this record (Alt+D)', editable && hasRec, function () { _openDelete(); });
-      btn(ic('x', '↺') + 'Ignore', 'Ignore — discard unsaved edits (Alt+Z)', editing, function () {
+      btn(ic('trash', '🗑') + _T('tb.delete', 'Delete'), _Ttl('tb.delete', 'Delete this record (Alt+D)', ' (Alt+D)'), editable && hasRec, function () { _openDelete(); });
+      btn(ic('x', '↺') + _T('tb.ignore', 'Ignore'), _Ttl('tb.ignore', 'Ignore — discard unsaved edits (Alt+Z)', ' (Alt+Z)'), editing, function () {
         var b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="ignore"]'); if (b) b.click();
         else { status('Nothing to ignore'); } });
       // Process — iDempiere's GEAR (cog) button (verified vs iDempiere theme Process24.png). Always present,
@@ -1436,21 +1537,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
         : '⚙ ';
       // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
-      btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      btn(gear + _T('tb.process', 'Process'), _Ttl('tb.process', 'Process (Alt+O) — run the document/table process', ' (Alt+O)'), hasProc, function () { _showProcessChooser(); });
       // Print — iDempiere's btnPrint (Print24.png, Alt+P): print THIS document = fold its receipt from raw
       //   header+lines (window.__report.printRecord, PURE). Enabled only on a saved record of a PRINTABLE document
       //   kind (a header/line table in REPORT_MAP — orders/invoices/shipments/payments/…); iDempiere greys it the
       //   same way (enablePrint). DISTINCT from the ⋯ Reports pill (= Performance-Analysis financial statements menu).
       var rmap = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : null;
       var canPrint = !!(hasRec && tn && rmap && rmap[tn]);
-      btn(ic('printer', '🖨') + 'Print', 'Print this document (Alt+P)', canPrint, function () {
+      btn(ic('printer', '🖨') + _T('tb.print', 'Print'), _Ttl('tb.print', 'Print this document (Alt+P)', ' (Alt+P)'), canPrint, function () {
         var ok = window.__report.printRecord(tn, recVal(rec, _keyCol(tab)));
         console.log('§TOOLBAR print table=' + tn + ' rec=' + recVal(rec, _keyCol(tab)) + ' printable=' + ok);
       });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
-      btn(ic('search', '🔍') + 'Zoom', 'Zoom Across — windows that reference this record',
+      btn(ic('search', '🔍') + _T('tb.zoom', 'Zoom'), _Ttl('tb.zoom', 'Zoom Across — windows that reference this record'),
         hasRec, function () { _zoomAcross(tab, rec); });
       sep();
     })();
@@ -1458,22 +1559,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
     //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the
     //   old ✎ re-point that W-RING-LEAK guarded is now removed entirely — there is no ring affordance on this surface).
-    btn('◀◀', 'First record', true, function () { _dirtyGuard(function () { _recIdx = 0; refreshForm(); }); });
-    btn('◀', 'Previous record', true, function () { _dirtyGuard(function () { if (_recIdx > 0) _recIdx--; refreshForm(); }); });
+    btn('◀◀', _Ttl('tb.first', 'First record'), true, function () { _dirtyGuard(function () { _recIdx = 0; refreshForm(); }); });
+    btn('◀', _Ttl('tb.prev', 'Previous record'), true, function () { _dirtyGuard(function () { if (_recIdx > 0) _recIdx--; refreshForm(); }); });
     var navSpan = el('span', 'nav'); navSpan.id = 'idmp-recnav'; tb.appendChild(navSpan);
     // Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING — RECORD-INFO POPUP, W-RECINFO). The iDempiere "(i)" record-info
     // affordance at the rec/total indicator: who/when last touched this record, read from the immutable op-log
     // (CORE.recordInfo) + the row's own audit columns. Always-on (no AD_ChangeLog gate, unlike 🕒 Log).
     btn('ⓘ', 'Record info — who created / last updated this record', true, function () { _showRecordInfo(); });
-    btn('▶', 'Next record', true, function () { _dirtyGuard(function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); }); });
-    btn('▶▶', 'Last record', true, function () { _dirtyGuard(function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); }); });
+    btn('▶', _Ttl('tb.next', 'Next record'), true, function () { _dirtyGuard(function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); }); });
+    btn('▶▶', _Ttl('tb.last', 'Last record'), true, function () { _dirtyGuard(function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); }); });
     sep();
     var tgl = btn('▦ Grid', 'Toggle Grid / Form', true, function () {
       _viewMode = _viewMode === 'grid' ? 'form' : 'grid';
-      tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
+      tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
       renderBody();
     });
-    tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
+    tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
+    tgl.setAttribute('data-tb', 'toggle');
     // Task 2 — changelog affordance (iDempiere record-history icon): only for tables with AD_Table.IsChangeLog='Y'
     (function () {
       var tab = _curTab(); if (!tab || !tab.tableName) return;
@@ -2636,7 +2738,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
     _showProcPane(pane);
@@ -2759,7 +2861,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-match-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     function paintTo() {
       var opts = _matchToOptions(fromSel.value);
@@ -3001,7 +3103,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-trx-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     [orgSel, locSel, prdSel, mtSel].forEach(function (s) { s.addEventListener('change', run); });
     d1.addEventListener('change', run); d2.addEventListener('change', run);
@@ -3137,7 +3239,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3192,7 +3294,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     _showProcPane(pane);
 
@@ -3317,7 +3419,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, {}, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3395,7 +3497,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     var out = el('div', 'sub');
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     run.addEventListener('click', function () {
       var opt = ccy.options[ccy.selectedIndex];
@@ -3532,7 +3634,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel);
@@ -3796,7 +3898,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
@@ -3816,7 +3918,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       afterSaveCreate: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
       afterDiscardNew: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
       afterDelete: function () { _newMode = null; _viewMode = 'grid'; renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
-      onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); }
+      onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); },
+      // UI locale (ERP_UI_LOCALES.md §L1): a curated crud spec carries its own ENGLISH labels ("Price List (ID)"); in
+      //   another locale the field label is the AD field's translated name (same column, same tab). English: null →
+      //   the curated label stays byte-identical.
+      labelFor: function (col) {
+        if (!window.ErpI18n || ErpI18n.lang === ErpI18n.BASE) return null;
+        var t = _curTab(); if (!t || !t.fields) return null; col = String(col).toLowerCase();
+        for (var i = 0; i < t.fields.length; i++) if (String(t.fields[i].columnName).toLowerCase() === col) return t.fields[i].name !== t.fields[i]._en ? t.fields[i].name : null;
+        return null;
+      }
     };
   }
   // _startInlineNew — enter new-record mode (blank or cloned-from copyFromId) and render the inline create form.
@@ -3960,9 +4071,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       form.appendChild(fld);
     });
   }
+  function refreshNavOnly() {
+    var nav = $('idmp-recnav');
+    if (nav) nav.textContent = _records.length ? (_T('tb.record', 'Record') + ' ' + (_recIdx + 1) + ' ' + _T('tb.of', 'of') + ' ' + _records.length) : ('0 ' + _T('tb.records', 'records'));
+  }
   function refreshForm() {
     var nav = $('idmp-recnav');
-    if (nav) nav.textContent = _records.length ? ('Record ' + (_recIdx + 1) + ' of ' + _records.length) : '0 records';
+    if (nav) nav.textContent = _records.length ? (_T('tb.record', 'Record') + ' ' + (_recIdx + 1) + ' ' + _T('tb.of', 'of') + ' ' + _records.length) : ('0 ' + _T('tb.records', 'records'));
     if (_viewMode === 'form') { var tab = _curTab(); if (tab) { $('idmp-content').innerHTML = ''; $('idmp-content').appendChild(buildForm(tab)); } }
     var t = _curTab(); if (t) { _setSel(t); updateStatus(t); }
   }

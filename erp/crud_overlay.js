@@ -1736,16 +1736,18 @@
   //   New · Copy · Save · Save&New · Delete · Ignore · Refresh. NO Edit button (the form IS editable). On a
   //   create form Copy/Delete are absent (nothing saved yet to copy/delete); Save/Save&New/Ignore are dirty-gated.
   function _inlineVerbBar(verb, e) {
+    // UI locale (bim-compiler prompts/ERP_UI_LOCALES.md §L3): labels from the iDempiere AD_Message pack via ErpI18n.
+    var I = global.ErpI18n, T = function (k, en) { return (I && I.lang !== I.BASE && I.has(k)) ? I.t(k) : en; };   // English byte-identical
     var canU = CORE.verbEnabled(e, 'update'), canC = CORE.verbEnabled(e, 'create'), canD = CORE.verbEnabled(e, 'delete');
     var isCreate = verb === 'create', b = [];
-    if (canC)               b.push('<button class="ic-vb" data-v="new" title="New (Alt+N)">New</button>');
-    if (canC && !isCreate)  b.push('<button class="ic-vb" data-v="copy" title="Copy (Alt+C)">Copy</button>');
-    b.push('<button class="ic-vb ic-save" data-v="save" disabled title="Save (Alt+S)">Save</button>');
-    if (canC)               b.push('<button class="ic-vb" data-v="savenew" disabled title="Save &amp; New (Alt+A)">Save&amp;New</button>');
-    if (canD && !isCreate)  b.push('<button class="ic-vb ic-del" data-v="delete" title="Delete (Alt+D)">Delete</button>');
-    b.push('<button class="ic-vb" data-v="ignore" disabled title="Ignore — discard unsaved edits (Alt+Z)">Ignore</button>');
-    b.push('<button class="ic-vb" data-v="refresh" title="Refresh (Alt+E)">Refresh</button>');
-    return '<div class="ic-bar" role=toolbar>' + b.join('') + '<span class=ic-grow></span><span class=ic-dirty style="display:none">● unsaved</span></div>' +
+    if (canC)               b.push('<button class="ic-vb" data-v="new" title="' + esc(T('tb.new', 'New')) + ' (Alt+N)">' + esc(T('tb.new', 'New')) + '</button>');
+    if (canC && !isCreate)  b.push('<button class="ic-vb" data-v="copy" title="' + esc(T('tb.copy', 'Copy')) + ' (Alt+C)">' + esc(T('tb.copy', 'Copy')) + '</button>');
+    b.push('<button class="ic-vb ic-save" data-v="save" disabled title="' + esc(T('tb.save', 'Save')) + ' (Alt+S)">' + esc(T('tb.save', 'Save')) + '</button>');
+    if (canC)               b.push('<button class="ic-vb" data-v="savenew" disabled title="' + esc(T('tb.saveNew', 'Save & New')) + ' (Alt+A)">' + esc(T('tb.saveNew', 'Save&New')) + '</button>');
+    if (canD && !isCreate)  b.push('<button class="ic-vb ic-del" data-v="delete" title="' + esc(T('tb.delete', 'Delete')) + ' (Alt+D)">' + esc(T('tb.delete', 'Delete')) + '</button>');
+    b.push('<button class="ic-vb" data-v="ignore" disabled title="' + esc(T('tb.ignore', 'Ignore — discard unsaved edits')) + ' (Alt+Z)">' + esc(T('tb.ignore', 'Ignore')) + '</button>');
+    b.push('<button class="ic-vb" data-v="refresh" title="' + esc(T('tb.refresh', 'Refresh')) + ' (Alt+E)">' + esc(T('tb.refresh', 'Refresh')) + '</button>');
+    return '<div class="ic-bar" role=toolbar>' + b.join('') + '<span class=ic-grow></span><span class=ic-dirty style="display:none">' + esc(T('inline.unsaved', '● unsaved')) + '</span></div>' +
       (canU || isCreate ? '' : '<div class=ic-ro>This record is read-only per its dictionary.</div>');
   }
   function renderInline(verb, e, vals, orig, id, host, opts) {
@@ -1754,7 +1756,8 @@
     (e.fields || []).forEach(function (f) {
       // data-ad-table/data-ad-column keep the host contract (IdmpHost.locate / ShowMe / lens field-targeting,
       //   _adMatch is case-insensitive); data-col is the engine's own field handle.
-      h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(f.label || f.col) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
+      var lbl = (_inlineOpts && typeof _inlineOpts.labelFor === 'function' && _inlineOpts.labelFor(f.col)) || f.label || f.col;   // UI locale (ERP_UI_LOCALES.md)
+      h += '<label class=cfrow data-row="' + f.col + '" data-ad-table="' + esc(e.key) + '" data-ad-column="' + esc(f.col) + '"><span class=cfl>' + esc(lbl) + ' <i class=req data-req="' + f.col + '" style="display:none">*</i></span>' + fieldInput(f, vals[f.col]) + '<span class="cfe" data-col="' + f.col + '"></span></label>';
     });
     host.innerHTML = h; host.classList.add('idmp-inline-crud');
     populateRefs(e, orig);                                      // §P3 — see renderForm
