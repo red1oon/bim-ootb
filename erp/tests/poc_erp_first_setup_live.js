@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
-  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
+  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-14 (§FS2l) pinned S24c to V: Aging buckets == the re-derived oracle at two statement dates; vacuity control INCONCLUSIVE.
 // FS-13 (§FS2k) pinned S10b to V: the Location editor commits a C_Location; the customer's order header then saves.
 // FS-12 (§FS2j) pinned S15b to V: a NEW tenant's order prices its line from the setup price list and completes.
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
@@ -517,6 +518,62 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     step('S24b', /^SELECT/.test(paramTag) && pOpts.length === wantN && wantN > 0 && foreignOpt === 0 ? 'V' : 'G', 'the Accounting Schema parameter is a picker (AD_Reference 19 TableDir), not a raw-id text box',
       'C_AcctSchema_ID param control=' + paramTag + ' options=' + pOpts.length + ' [' + pOpts.join(',') + '] oracle=' + wantN + ' foreignClientOptions=' + foreignOpt + ' ' + last(n0, /§PROC-PARAM-PICKER col=C_AcctSchema_ID/).slice(0, 120));
   } catch (e) { step('S24', 'I', 'trial balance', 'harness: ' + e.message); }
+
+  // ── S24c Aging (AD_Process 238) — FS-14 spec §FS2l. ORACLE re-derived here from the bundle rows (not the page's code):
+  //    open SO invoices of client 11 (CO/CL, IsPaid=N): no pay schedule → open = GrandTotal×(CM?-1:1) − Σ allocations×(AP?-1:1),
+  //    due = DateInvoiced + NetDays (a fixed-due term in the population makes the oracle INCONCLUSIVE, never guessed);
+  //    pay-schedule invoices → one item per valid schedule, allocations consume schedules by DueDate; daysDue = statement − due;
+  //    buckets: ≤0 → Not yet due, 1-7, 8-30, 31-60, 61-90, ≥91 (MAging.add bounds). Two statement dates; vacuity control.
+  async function runAging(stmt, bp) {
+    const n0 = PAGELOG.length;
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&process=238', { waitUntil: 'load' }); await page.waitForTimeout(2000);
+    if (stmt) await page.fill('[data-proc-param="StatementDate"]', stmt).catch(() => {});
+    if (bp) await page.fill('[data-proc-param="C_BPartner_ID"]', String(bp)).catch(() => {});
+    await page.click('button[data-proc-run]').catch(() => {}); await page.waitForTimeout(1800);
+    // the page prints one total row PER CURRENCY; the oracle sums amounts only, so the judge adds the total rows up.
+    const shown = await page.evaluate(() => { const trs = [...document.querySelectorAll('table[data-aging] tr[data-aging-total]')]; if (!trs.length) return null;
+      const o = { totalRows: trs.length }; trs.forEach(tr => tr.querySelectorAll('td[data-k]').forEach(td => { const k = td.getAttribute('data-k'); if (k === 'bpname' || k === 'iso') return;
+        o[k] = Math.round(((o[k] || 0) + (Number(td.textContent) || 0)) * 100) / 100; })); return o; });
+    return { line: last(n0, /§AGING /), disp: last(n0, /§AD-PROC-LIVE proc=238 /), shown };
+  }
+  async function agingOracle(stmt, bpOnly) {
+    const day = (x) => Math.floor(Date.parse(String(x).slice(0, 10) + 'T00:00:00Z') / 86400000);
+    const td = new Date(), today = td.getFullYear() + '-' + ('0' + (td.getMonth() + 1)).slice(-2) + '-' + ('0' + td.getDate()).slice(-2);
+    const S = day(stmt || today), items = [];
+    const inv = await q(page, "SELECT i.C_Invoice_ID, i.GrandTotal, i.IsPayScheduleValid, i.DateInvoiced, t.NetDays, t.IsDueFixed, d.DocBaseType, i.C_BPartner_ID FROM C_Invoice i " +
+      "JOIN C_DocType d ON d.C_DocType_ID=i.C_DocType_ID LEFT JOIN C_PaymentTerm t ON t.C_PaymentTerm_ID=i.C_PaymentTerm_ID WHERE i.AD_Client_ID=11 AND i.IsSOTrx='Y' AND i.IsPaid='N' AND i.DocStatus IN ('CO','CL')" +
+      (bpOnly ? ' AND i.C_BPartner_ID=' + Number(bpOnly) : ''));
+    let fixed = 0;
+    for (const r of (Array.isArray(inv) ? inv : [])) {
+      const [id, gt, sched, dinv, net, fx, dbt] = r; const cm = String(dbt).charAt(2) === 'C' ? -1 : 1, ap = String(dbt).charAt(1) === 'P' ? -1 : 1;
+      const paid = Number(await one(page, "SELECT COALESCE(SUM((al.Amount+al.DiscountAmt+al.WriteOffAmt)),0) FROM C_AllocationLine al JOIN C_AllocationHdr a ON a.C_AllocationHdr_ID=al.C_AllocationHdr_ID WHERE a.IsActive='Y' AND al.C_Invoice_ID=" + id)) * ap;
+      if (sched !== 'Y') { if (fx === 'Y') fixed++; const open = Math.round((gt * cm - paid) * 100) / 100; if (open) items.push({ id, due: day(dinv) + Number(net || 0), open }); }
+      else { let rem = paid; const ss = await q(page, "SELECT C_InvoicePaySchedule_ID, DueAmt, DueDate FROM C_InvoicePaySchedule WHERE IsValid='Y' AND C_Invoice_ID=" + id + ' ORDER BY DueDate');
+        for (const [sid, amt, dd] of ss) { const o = Math.max(0, Math.round((amt * cm - rem) * 100) / 100); rem = Math.max(0, rem - amt); if (o) items.push({ id: id + '/' + sid, due: day(dd), open: o }); } }
+    }
+    const b = { openamt: 0, dueamt: 0, pastdue1_7: 0, pastdue8_30: 0, pastdue31_60: 0, pastdue61_90: 0, pastdue91_plus: 0, pastdueamt: 0 };
+    items.forEach(it => { const dd = S - it.due, a = it.open; b.openamt += a;
+      if (dd <= 0) b.dueamt += a; else { b.pastdueamt += a; if (dd <= 7) b.pastdue1_7 += a; else if (dd <= 30) b.pastdue8_30 += a; else if (dd <= 60) b.pastdue31_60 += a; else if (dd <= 90) b.pastdue61_90 += a; else b.pastdue91_plus += a; } });
+    Object.keys(b).forEach(k => { b[k] = Math.round(b[k] * 100) / 100; });
+    return { items: items.length, fixed, b, ids: items.map(x => x.id + ':' + (S - x.due)) };
+  }
+  const agingJudge = (shown, o) => !o || o.fixed ? 'I' : (o.items === 0 ? 'I' : (shown && Object.keys(o.b).every(k => Math.abs((shown[k] || 0) - o.b[k]) < 0.005) ? 'V' : 'G'));
+  try {
+    const A = await runAging(null, null), oA = await agingOracle(null);
+    const B = await runAging('2003-11-15', null), oB = await agingOracle('2003-11-15');
+    const bucketsB = Object.keys(oB.b).filter(k => k !== 'openamt' && k !== 'pastdueamt' && oB.b[k]).length;
+    // VACUITY CONTROL: a customer with no open invoice — the same judge MUST refuse to verify (INCONCLUSIVE).
+    const vbp = Number(await one(page, "SELECT C_BPartner_ID FROM C_BPartner WHERE AD_Client_ID=11 AND IsCustomer='Y' AND C_BPartner_ID NOT IN (SELECT C_BPartner_ID FROM C_Invoice WHERE IsPaid='N' AND AD_Client_ID=11) ORDER BY C_BPartner_ID LIMIT 1"));
+    const V = await runAging(null, vbp), oV = await agingOracle(null, vbp);
+    const vVerdict = agingJudge(V.shown, oV);
+    say('§AGING-VACUOUS bp=' + vbp + ' oracleItems=' + oV.items + ' shown=' + JSON.stringify(V.shown) + ' ' + V.line.slice(0, 90) + ' verdict=' + ({ V: 'VERIFIED', G: 'GAP', I: 'INCONCLUSIVE' })[vVerdict]);
+    const jA = agingJudge(A.shown, oA), jB = agingJudge(B.shown, oB);
+    say('§S24c-DETAIL today ' + A.line.slice(0, 300) + ' | stmt ' + B.line.slice(0, 300) + ' | oracleB=' + JSON.stringify(oB));
+    step('S24c', jA === 'V' && jB === 'V' && bucketsB >= 3 && vVerdict === 'I' ? 'V' : (A.disp && A.shown ? 'G' : (/dispatched=N/.test(A.disp) ? 'G' : 'I')),
+      'Aging (process 238) buckets the open invoices exactly as iDempiere does (two statement dates)',
+      'today: shown=' + JSON.stringify(A.shown) + ' oracle=' + JSON.stringify(oA.b) + ' items=' + oA.items + ' | 2003-11-15: shown=' + JSON.stringify(B.shown) + ' oracle=' + JSON.stringify(oB.b) +
+      ' bucketsWithMoney=' + bucketsB + ' items=[' + oB.ids.join(',') + '] | vacuous=' + vVerdict + ' | ' + A.disp.slice(0, 80));
+  } catch (e) { step('S24c', 'I', 'aging', 'harness: ' + e.message); }
 
   // ── S25 import ───────────────────────────────────────────────────────────────────────────────────────────────
   try {
