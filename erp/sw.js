@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v805';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v806';   // bump on each deploy; per-change detail is the git commit message.
 // v793 (2026-09-15) §Phase E (PLUGIN_SYSTEM_LANE.md): ad_modelval_bridge.js bridges the real
 //   ad_modelvalidator AD table (3 rows: Libero MFG/Fixed Assets/Product Price) into the already-shipped
 //   plugin host — adding an ad_modelvalidator row is now the AD-native way to add a validator, install

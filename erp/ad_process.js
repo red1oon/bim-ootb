@@ -140,6 +140,7 @@
     }
     registerHandler('report:c_payment', voucherHandler('c_payment'), { kind: 'report', reportKey: 'c_payment' });
     registerAging();                                                   // FS-14 (§FS2l)
+    registerImportBPartner();                                          // FS-16 (§FS2n)
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
     registerHandler('org.compiere.report.TrialBalance', function (ctx, info) {
@@ -847,6 +848,106 @@
     }, { kind: 'report' });
   }
 
+  // ══ FS-16 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2n — Witness: W-ERP-FIRST-SETUP S25b) — ImportBPartner ═══
+  //   ImportBPartner.doIt (ImportBPartner.java:92-605) over the TIP of i_bpartner (rows the File Loader committed this
+  //   session). Pure: returns { ops } — ONE signed group of CRUD ops (staging updates + C_BPartner / C_Location /
+  //   C_BPartner_Location / AD_User creates, FKs as {__opRef:i}); the host commits it. ctx.tipRows(table) → lower-case rows.
+  function importBPartner(ctx, p) {
+    var q = ctx.query, tip = ctx.tipRows, cli = Number(p.AD_Client_ID);
+    var ops = [], log = { inserted: 0, updated: 0, errors: 0, contacts: 0, locations: 0 };
+    var std = ctx.stdDefaults || null;
+    function mk(op) { if (op.op_type === 'CRUD_CREATE' && std && !op.stdDefaults) op.stdDefaults = std; ops.push(op); return ops.length - 1; }
+    function create(table, fields) { return mk({ op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', id: null, fields: fields, cas: null }); }
+    function update(table, id, changes) { var ch = {}; Object.keys(changes).forEach(function (k) { ch[k] = { old: null, new: changes[k] }; }); return mk({ op_type: 'CRUD_UPDATE', key: table, table: table, verb: 'update', id: id, changes: ch }); }
+    var nz = function (v) { return v != null && String(v) !== ''; };
+    var rows = tip('i_bpartner').filter(function (r) { return Number(r.ad_client_id) === cli && String(r.i_isimported || 'N') !== 'Y'; });
+    var bps = tip('c_bpartner').filter(function (b) { return Number(b.ad_client_id) === cli; });
+    var users = tip('ad_user'), bpls = tip('c_bpartner_location'), locs = tip('c_location');
+    var defGroup = (q("SELECT MAX(value) AS v FROM c_bp_group WHERE isdefault='Y' AND ad_client_id=" + cli)[0] || {}).v;
+    rows.forEach(function (r) {                                           // ****	Prepare / validate (the UPDATE statements)	****
+      r._err = [];
+      r.ad_org_id = r.ad_org_id == null ? 0 : r.ad_org_id; r.isactive = r.isactive || 'Y';
+      if (!nz(r.groupvalue) && !nz(r.c_bp_group_id)) r.groupvalue = defGroup;
+      if (!nz(r.c_bp_group_id)) { var g = q("SELECT c_bp_group_id AS id FROM c_bp_group WHERE value='" + String(r.groupvalue || '').replace(/'/g, "''") + "' AND ad_client_id=" + cli)[0]; r.c_bp_group_id = g ? g.id : null; }
+      if (!nz(r.c_bp_group_id)) r._err.push('ERR=Invalid Group, ');
+      if (!nz(r.c_country_id)) { var c = q("SELECT c_country_id AS id FROM c_country WHERE countrycode='" + String(r.countrycode || '').trim().replace(/'/g, "''") + "' AND ad_client_id IN (0," + cli + ')')[0]; r.c_country_id = c ? c.id : null; }
+      if (!nz(r.c_country_id) && (nz(r.city) || nz(r.address1))) r._err.push('ERR=Invalid Country, ');
+      if (!nz(r.regionname) && !nz(r.c_region_id) && nz(r.c_country_id)) { var rd = q("SELECT MAX(name) AS n FROM c_region WHERE isdefault='Y' AND c_country_id=" + Number(r.c_country_id) + ' AND ad_client_id IN (0,' + cli + ')')[0]; r.regionname = rd ? rd.n : null; }
+      if (!nz(r.c_region_id) && nz(r.regionname) && nz(r.c_country_id)) { var rg = q("SELECT c_region_id AS id FROM c_region WHERE name='" + String(r.regionname).replace(/'/g, "''") + "' AND c_country_id=" + Number(r.c_country_id) + ' AND ad_client_id IN (0,' + cli + ')')[0]; r.c_region_id = rg ? rg.id : null; }
+      if (!nz(r.c_region_id) && nz(r.c_country_id) && (q('SELECT hasregion AS h FROM c_country WHERE c_country_id=' + Number(r.c_country_id))[0] || {}).h === 'Y') r._err.push('ERR=Invalid Region, ');
+      if (nz(r.email)) { var ue = users.filter(function (u) { return u.email === r.email && Number(u.ad_client_id) === cli; })[0]; if (ue) { r.c_bpartner_id = ue.c_bpartner_id; r.ad_user_id = ue.ad_user_id; } }
+      if (!nz(r.c_bpartner_id) && nz(r.value)) { var bm = bps.filter(function (b) { return b.value === r.value; })[0]; if (bm) r.c_bpartner_id = bm.c_bpartner_id; }
+      if (nz(r.c_bpartner_id) && !nz(r.ad_user_id) && nz(r.contactname)) { var uc = users.filter(function (u) { return u.name === r.contactname && String(u.c_bpartner_id) === String(r.c_bpartner_id); })[0]; if (uc) r.ad_user_id = uc.ad_user_id; }
+      if (nz(r.c_bpartner_id) && !nz(r.c_bpartner_location_id)) {           // Existing Location ? Exact Match
+        var same = function (a, b) { return (a == null || a === '') ? (b == null || b === '') : String(a) === String(b); };
+        var hit = bpls.filter(function (bl) { if (String(bl.c_bpartner_id) !== String(r.c_bpartner_id)) return false; var l = locs.filter(function (x) { return String(x.c_location_id) === String(bl.c_location_id); })[0];
+          return l && same(r.address1, l.address1) && same(r.address2, l.address2) && same(r.city, l.city) && same(r.postal, l.postal) && same(r.c_region_id, l.c_region_id) && String(r.c_country_id) === String(l.c_country_id); })[0];
+        if (hit) r.c_bpartner_location_id = hit.c_bpartner_location_id;
+      }
+      if (!nz(r.value)) r._err.push('ERR=Value is mandatory, ');
+    });
+    var validateOnly = String(p.IsValidateOnly || 'N') === 'Y';
+    var good = rows.filter(function (r) { return !r._err.length; }).sort(function (a, b) { return String(a.value) < String(b.value) ? -1 : String(a.value) > String(b.value) ? 1 : Number(a.i_bpartner_id) - Number(b.i_bpartner_id); });
+    rows.filter(function (r) { return r._err.length; }).forEach(function (r) { log.errors++; update('i_bpartner', r.i_bpartner_id, { i_isimported: 'N', i_errormsg: ' ' + r._err.join('') }); });
+    if (!validateOnly) {
+      var oldValue = null, bpRef = null, bplRef = null;
+      good.forEach(function (r) {
+        var stg = {};
+        if (String(r.value) !== String(oldValue)) {
+          oldValue = r.value; bplRef = null;
+          if (!nz(r.c_bpartner_id)) {                                       // new MBPartner(impBP) MBPartner.java:310-335 + setInitialDefaults
+            var bf = { ad_org_id: r.ad_org_id, value: r.value || r.email || r.contactname, name: r.name || r.contactname || r.email, name2: r.name2 || null,
+              description: r.description || null, duns: r.duns || null, taxid: r.taxid || null, naics: r.naics || null, c_bp_group_id: r.c_bp_group_id,
+              iscustomer: 'Y', isprospect: 'Y', isvendor: 'N', isemployee: 'N', issummary: 'N', issalesrep: 'N', istaxexempt: 'N', ispotaxexempt: 'N', isonetime: 'N',
+              so_creditlimit: 0, so_creditused: 0, totalopenbalance: 0, socreditstatus: 'X' };
+            if (r.isvendor === 'Y') { bf.isvendor = 'Y'; bf.iscustomer = 'N'; }   // setTypeOfBPartner :619-632
+            if (r.isemployee === 'Y') { bf.isemployee = 'Y'; bf.iscustomer = 'N'; }
+            if (r.iscustomer === 'Y') bf.iscustomer = 'Y';
+            bpRef = { __opRef: create('c_bpartner', bf) }; log.inserted++;
+          } else {                                                          // Update existing BPartner
+            var ch = {}; if (nz(r.name)) { ch.name = r.name; ch.name2 = r.name2 || null; }
+            ['duns', 'taxid', 'naics', 'description'].forEach(function (k) { if (nz(r[k])) ch[k] = r[k]; });
+            if (nz(r.c_bp_group_id)) ch.c_bp_group_id = r.c_bp_group_id;
+            if (Object.keys(ch).length) update('c_bpartner', r.c_bpartner_id, ch);
+            bpRef = r.c_bpartner_id; log.updated++;
+          }
+          if (nz(r.c_bpartner_location_id)) bplRef = r.c_bpartner_location_id;   // update of an existing location: named, not ported
+          else if (nz(r.c_country_id) && nz(r.address1) && nz(r.city)) {
+            var li = create('c_location', { ad_org_id: 0, c_country_id: r.c_country_id, c_region_id: r.c_region_id || null, city: r.city, address1: r.address1,
+              address2: r.address2 || null, postal: r.postal || null, postal_add: r.postal_add || null });
+            bplRef = { __opRef: create('c_bpartner_location', { ad_org_id: r.ad_org_id, c_bpartner_id: bpRef, c_location_id: { __opRef: li },
+              name: String(r.city || r.address1),                                  // MBPartnerLocation.beforeSave '.' → makeUnique level 0 (City)
+              phone: r.phone || null, phone2: r.phone2 || null, fax: r.fax || null, isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y', ispreservecustomname: 'N' }) };
+            log.locations++;
+          }
+        }
+        stg.c_bpartner_id = bpRef;
+        if (bplRef != null) stg.c_bpartner_location_id = bplRef;
+        if (!nz(r.ad_user_id) && (nz(r.contactname) || nz(r.email))) {          // New Contact — new MUser(bp)
+          stg.ad_user_id = { __opRef: create('ad_user', { ad_org_id: r.ad_org_id, c_bpartner_id: bpRef, name: r.contactname || r.email, title: r.title || null,
+            description: r.contactdescription || null, comments: r.comments || null, phone: r.phone || null, phone2: r.phone2 || null, fax: r.fax || null,
+            email: r.email || null, birthday: r.birthday || null, c_bpartner_location_id: bplRef }) };
+          log.contacts++;
+        }
+        stg.i_isimported = 'Y'; stg.processed = 'Y'; stg.processing = 'N'; stg.i_errormsg = ' ';
+        update('i_bpartner', r.i_bpartner_id, stg);
+      });
+    }
+    return { ops: ops, log: log, staged: rows.length, validateOnly: validateOnly };
+  }
+  function registerImportBPartner() {
+    registerHandler('org.compiere.process.ImportBPartner', function (ctx, info) {
+      var p = (info && info.params) || {};
+      if (typeof ctx.query !== 'function' || typeof ctx.tipRows !== 'function') return { ok: false, message: 'ImportBPartner: no data accessor', rows: 0 };
+      if (!(Number(p.AD_Client_ID) >= 0) || p.AD_Client_ID == null || p.AD_Client_ID === '') return { ok: false, message: 'AD_Client_ID is mandatory', rows: 0 };
+      var r = importBPartner(ctx, p);
+      if (typeof console !== 'undefined') console.log('§IMPORT-BP client=' + p.AD_Client_ID + ' staged=' + r.staged + ' inserted=' + r.log.inserted + ' updated=' + r.log.updated +
+        ' locations=' + r.log.locations + ' contacts=' + r.log.contacts + ' errors=' + r.log.errors + ' ops=' + r.ops.length + (r.validateOnly ? ' validateOnly=Y' : '') + ' (ImportBPartner.java:92-605)');
+      return { ok: true, message: (r.validateOnly ? 'Validated: ' : '') + r.log.inserted + ' business partner(s) inserted, ' + r.log.updated + ' updated, ' + r.log.errors + ' error(s)',
+               rows: r.log.inserted + r.log.updated, result: { commitOps: r.ops, importLog: r.log, staged: r.staged } };
+    }, { kind: 'process' });
+  }
+
   // dispatch — the full spine: read → resolve classname → validate params → run handler → result.
   //   db   = better-sqlite3 handle on ad_full.db (for the AD rows)
   //   info = { AD_Process_ID, params:{columnName:value}, ...handler-specific (Record_ID etc.) }
@@ -951,7 +1052,7 @@
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
-    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS
+    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

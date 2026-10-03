@@ -31,7 +31,7 @@ const server = http.createServer((req, res) => {
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
-  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
+  S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'V', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
 // FS-5 (§FS2d) pinned S14 to V: FK pickers carry MRole.addAccessSQL's client clause (MLookupFactory.java:270).
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-16 (§FS2n) pinned S25b to V: CSV → loader → I_BPartner → ImportBPartner → BPs == the CSV.
 // FS-15 (§FS2m) pinned S20b to V: the POS order's invoice + shipment are readable and posted; facts == oracle.
 // FS-14 (§FS2l) pinned S24c to V: Aging buckets == the re-derived oracle at two statement dates; vacuity control INCONCLUSIVE.
 // FS-13 (§FS2k) pinned S10b to V: the Location editor commits a C_Location; the customer's order header then saves.
@@ -623,10 +624,60 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const diy = await page.$eval('#adq-body', e => e.innerText).catch(() => '');
     const agents = ['odoo_agent.zip', 'Odoo', 'iDempiere', 'SAP', 'Oracle', 'Dynamics'].filter(s => diy.indexOf(s) >= 0);
     step('S25a', agents.length >= 3 ? 'V' : 'G', 'Help -> Run it yourself offers the data-in agents', 'found=[' + agents.join(',') + '] chars=' + diy.length);
+    // S25b — FS-16 (§FS2n): CSV → Import File Loader (AD_Form 101, format "Example BPartner") → window 172 lists the staging
+    //   rows → process 194 ImportBPartner → business partners. ORACLE = the CSV itself, parsed here independently.
+    const CSV = ['IMP-001,Ali Ahmad,Jalan Satu 1,Los Angeles,CA,90001,555-0101', '"IMP-002, East","Siti Daud",Lorong Dua 2,Boston,MA,02101,555-0102',
+      'IMP-003,Tan Ah Kow,Jalan Tiga 3,Concord,NH,03301,555-0103'];
+    const csvSplit = (l) => { const out = []; let cur = '', qd = false; for (let i = 0; i < l.length; i++) { const ch = l[i];
+      if (qd) { if (ch === '"' && l[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') qd = false; else cur += ch; }
+      else if (ch === '"') qd = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; };
+    const WANT = CSV.map(l => { const f = csvSplit(l); return { value: f[0], contact: f[1], address1: f[2], city: f[3], region: f[4], postal: f[5] }; });
     await page.goto(base + '/idempiere.html?login=GardenAdmin&window=172', { waitUntil: 'load' }); await page.waitForTimeout(1500);
-    const st = await status(page);
-    step('S25b', /not in curated seed|table-not-in-seed/.test(st + last(0, /§IDEMPIERE tab=.*I_BPartner/)) ? 'G' : 'V',
-      'the iDempiere-style Import Business Partner window can take rows', 'status="' + st + '"');
+    const st0 = await status(page), before = recCount(st0);
+    let n0 = PAGELOG.length;
+    await page.goto(base + '/idempiere.html?login=GardenAdmin', { waitUntil: 'load' }); await page.waitForTimeout(1500);
+    await page.evaluate(() => document.querySelectorAll('#idmp-tree .idmp-row:not(.leaf)').forEach(r => { if (!r.parentElement.classList.contains('open')) r.click(); }));
+    await page.click("#idmp-tree .idmp-row.leaf:has(.nm:text-is('Import File Loader'))", { timeout: 6000 });
+    await page.waitForSelector('[data-imp-file]', { timeout: 8000 });
+    await page.selectOption('[data-imp-format]', { label: 'Example BPartner → I_BPartner' }).catch(() => {});
+    await page.setInputFiles('[data-imp-file]', { name: 'bp.csv', mimeType: 'text/csv', buffer: Buffer.from(CSV.join('\n') + '\n') });
+    await page.waitForTimeout(800);
+    const preview = last(n0, /§IMPLOADER preview/);
+    await page.click('[data-imp-save]'); await page.waitForTimeout(1800);
+    const saved = last(n0, /§IMPLOADER saved/);
+    await page.goto(base + '/idempiere.html?login=GardenAdmin&window=172', { waitUntil: 'load' }); await page.waitForTimeout(1500);
+    const after = recCount(await status(page));
+    n0 = PAGELOG.length;
+    const runImport = async () => {
+      const m0 = PAGELOG.length;
+      await page.goto(base + '/idempiere.html?login=GardenAdmin&process=194', { waitUntil: 'load' }); await page.waitForTimeout(2000);
+      await page.selectOption('[data-proc-param="AD_Client_ID"]', '11').catch(() => {});
+      await page.selectOption('[data-proc-param="IsValidateOnly"]', 'N').catch(() => {});
+      await page.click('button[data-proc-run]').catch(() => {}); await page.waitForTimeout(2500);
+      return { imp: last(m0, /§IMPORT-BP /), commit: last(m0, /§PROC-COMMIT proc=194/) };
+    };
+    const R1 = await runImport();
+    const bpsTip = await page.evaluate(() => { const c = window.__crud; const sdb = c.kernelDb(); const g = (t) => ((c.core.listTip(sdb, t, t + '_id', [], null) || {}).rows || []);
+      return { bp: g('c_bpartner'), bpl: g('c_bpartner_location'), loc: g('c_location'), usr: g('ad_user'), stg: g('i_bpartner') }; });
+    const regionId = {}; for (const w of WANT) regionId[w.region] = Number(await one(page, "SELECT C_Region_ID FROM C_Region WHERE C_Country_ID=100 AND Name='" + w.region + "'"));
+    const checks = WANT.map(w => {
+      const bp = bpsTip.bp.find(b => b.value === w.value);
+      const bpl = bp && bpsTip.bpl.find(x => String(x.c_bpartner_id) === String(bp.c_bpartner_id));
+      const loc = bpl && bpsTip.loc.find(x => String(x.c_location_id) === String(bpl.c_location_id));
+      const usr = bp && bpsTip.usr.find(x => String(x.c_bpartner_id) === String(bp.c_bpartner_id));
+      return !!(bp && bp.name === w.value && Number(bp.ad_client_id) === 11 && loc && loc.address1 === w.address1 && loc.city === w.city && loc.postal === w.postal &&
+        Number(loc.c_country_id) === 100 && Number(loc.c_region_id) === regionId[w.region] && usr && usr.name === w.contact);
+    });
+    const stgDone = bpsTip.stg.filter(r => r.i_isimported === 'Y' && WANT.some(w => w.value === r.value)).length;
+    const R2 = await runImport();                                             // NEGATIVE CONTROL: nothing left to import
+    const ins = (l) => Number((/inserted=(\d+)/.exec(l || '') || [])[1]), errs = (l) => Number((/errors=(\d+)/.exec(l || '') || [])[1]);
+    say('§S25b-DETAIL preview=' + preview.slice(0, 120) + ' | ' + saved.slice(0, 120) + ' | window172 ' + before + '->' + after + ' | run1 ' + R1.imp.slice(0, 160) + ' ' + R1.commit.slice(0, 90) +
+      ' | perRow=' + JSON.stringify(checks) + ' stagingImported=' + stgDone + ' | run2 ' + R2.imp.slice(0, 120));
+    step('S25b', /rows=3 committed=true/.test(saved) && after === (before || 0) + 3 && ins(R1.imp) === 3 && errs(R1.imp) === 0 && /committed=true/.test(R1.commit) &&
+      checks.every(Boolean) && stgDone === 3 && ins(R2.imp) === 0 ? 'V' : 'G',
+      'a CSV goes through the Import File Loader into Import Business Partner and becomes business partners',
+      'loaded=' + (/rows=(\d+)/.exec(saved) || [])[1] + ' window172 ' + before + '->' + after + ' import ' + R1.imp.slice(13, 120) + ' perRow=' + JSON.stringify(checks) +
+      ' stagingImported=' + stgDone + ' rerun inserted=' + ins(R2.imp));
   } catch (e) { step('S25a', 'I', 'import', 'harness: ' + e.message); }
 
   // ── S26 backup ───────────────────────────────────────────────────────────────────────────────────────────────

@@ -3021,13 +3021,28 @@
       var f = o && o.fields; if (!f) return false;
       for (var k in f) if (f.hasOwnProperty(k) && f[k] && typeof f[k] === 'object' && f[k].__opRef != null) return true;
       return false;
-    });
+    }) || ops.some(function (o) { var c = o && o.changes; if (!c) return false;      // FS-16: an UPDATE may point at a row this group creates
+      for (var k in c) if (c.hasOwnProperty(k) && c[k] && c[k].new && typeof c[k].new === 'object' && c[k].new.__opRef != null) return true; return false; });
     if (!hasRef) return ops;
     var nextId = null;
     try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) { nextId = null; }
     if (nextId == null) { console.warn('§CRUD-GROUP-OPREF cannot read kernel_ops MAX(id) — leaving refs unresolved'); return ops; }
     var resolved = 0, unresolved = 0;
     var out = ops.map(function (o) {
+      if (o && o.changes && !o.fields) {                                    // FS-16: CRUD_UPDATE changes[k].new = {__opRef}
+        var ch2 = {}, anyC = false;
+        for (var ck in o.changes) if (o.changes.hasOwnProperty(ck)) {
+          var cv = o.changes[ck];
+          if (cv && cv.new && typeof cv.new === 'object' && cv.new.__opRef != null) {
+            var ci = Number(cv.new.__opRef);
+            if (ci >= 0 && ci < ops.length) { ch2[ck] = { old: cv.old, new: -(nextId + ci) }; resolved++; anyC = true; continue; }
+            unresolved++;
+          }
+          ch2[ck] = cv;
+        }
+        if (!anyC) return o;
+        var cc = {}; for (var cp in o) if (o.hasOwnProperty(cp)) cc[cp] = o[cp]; cc.changes = ch2; return cc;
+      }
       if (!o || !o.fields) return o;
       var f2 = {}, any = false;
       for (var k in o.fields) if (o.fields.hasOwnProperty(k)) {
