@@ -29,7 +29,7 @@ const server = http.createServer((req, res) => {
 });
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
-const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V',
+const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S25a: 'V', S25b: 'G', S26: 'G' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-13 (§FS2k) pinned S10b to V: the Location editor commits a C_Location; the customer's order header then saves.
 // FS-12 (§FS2j) pinned S15b to V: a NEW tenant's order prices its line from the setup price list and completes.
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
@@ -226,6 +227,61 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     step('S09', allVisible ? 'V' : 'G', 'the masters setup created (BP, price list, calendar) show in their own windows',
       'gridRecords=' + JSON.stringify(seen) + ' setupBProws=' + rowsBP + ' (+2 made in S10/S11)');
   } catch (e) { step('S09', 'I', 'setup defaults visible', 'harness: ' + e.message); }
+
+  // ── S10b the customer gets an address (Location editor, FS-13 §FS2k) and can then be ordered for ─────────────────
+  //    BY VALUE: the C_Location the editor commits == the typed address; the BP location points at it and is named by
+  //    makeUnique level 0 (= City); the Sales Order header for that customer then persists with C_BPartner_Location_ID ==
+  //    that BP location. NEGATIVE CONTROL first: the same header BEFORE the address exists must be rejected.
+  const tipRow = (table, id) => page.evaluate(([t, i]) => {
+    const c = window.__crud; if (!c || !c.kernelDb || !c.core) return null; const sdb = c.kernelDb(); if (!sdb) return null;
+    const r = c.core.listTip(sdb, t, t + '_id', [], null); const row = ((r && r.rows) || []).find(x => String(x[t + '_id']) === String(i)); return row || null;
+  }, [table, id]);
+  async function soHeaderFor(bpId) {
+    await openWin(page, base, ADMIN, 143); await clickNew(page);
+    await setSel(page, 'c_bpartner_id', bpId).catch(() => {}); await page.waitForTimeout(300);
+    const dt = (await opts(page, 'c_doctypetarget_id')).find(o => /^Standard Order/.test(o.t)); if (dt) await setSel(page, 'c_doctypetarget_id', dt.v);
+    const n0 = PAGELOG.length; await save(page);
+    return { val: last(n0, /§CRUD validate key=c_order |§AD-MODELVAL-LIVE table=c_order verb=create verdict=REJECT/), per: last(n0, /§CRUD-PERSIST key=c_order /),
+      mv: last(n0, /§AD-MODELVAL-LIVE table=c_order verb=create/) };
+  }
+  try {
+    await openWin(page, base, ADMIN, 143); await clickNew(page);
+    const cust = (await opts(page, 'c_bpartner_id')).find(o => /^Acme Retail/.test(o.t));
+    const custId = cust ? cust.v : null;
+    const neg = custId ? await soHeaderFor(custId) : null;
+    await openWin(page, base, ADMIN, 123);
+    const clicked = await page.evaluate((i) => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find(x => String(x.getAttribute('data-ad-record')) === String(i)); if (tr) { tr.click(); return true; } return false; }, custId);
+    await page.waitForTimeout(900);
+    const selName = await page.$eval('#idmp-inline-mount [data-col="name"]', e => e.value).catch(() => null);
+    await page.click('#idmp-tabstrip >> text=Location'); await page.waitForTimeout(900);
+    await clickNew(page);
+    const ADDR = { address1: 'Jalan Ampang 1', city: 'Kuala Lumpur', postal: '50450' };
+    const MY = Number(await one(page, "SELECT C_Country_ID FROM C_Country WHERE CountryCode='MY'"));
+    await page.click('#idmp-inline-mount [data-loc-edit="c_location_id"]'); await page.waitForTimeout(500);
+    for (const k of Object.keys(ADDR)) await page.fill('#idmp-inline-mount [data-loc="' + k + '"]', ADDR[k]);
+    await page.selectOption('#idmp-inline-mount [data-loc="c_country_id"]', String(MY));
+    let n0 = PAGELOG.length;
+    await page.click('#idmp-inline-mount [data-loc-ok="c_location_id"]'); await page.waitForTimeout(1500);
+    const locLine = last(n0, /§LOC-EDITOR created/);
+    const locId = Number((/id=(-?\d+)/.exec(locLine) || [])[1]);
+    const locRow = locId ? await tipRow('c_location', locId) : null;
+    const locOk = !!locRow && locRow.address1 === ADDR.address1 && locRow.city === ADDR.city && locRow.postal === ADDR.postal && Number(locRow.c_country_id) === MY;
+    n0 = PAGELOG.length; await save(page);
+    const blVal = last(n0, /§CRUD validate key=c_bpartner_location /), blPer = last(n0, /§CRUD-PERSIST key=c_bpartner_location /);
+    const blId = Number((/§CRUD-CREATE-SEL table=c_bpartner_location id=(-?\d+)/.exec(last(n0, /§CRUD-CREATE-SEL table=c_bpartner_location/)) || [])[1]);
+    const blRow = blId ? await tipRow('c_bpartner_location', blId) : null;
+    const blOk = !!blRow && Number(blRow.c_location_id) === locId && String(blRow.c_bpartner_id) === String(custId) && blRow.name === ADDR.city;
+    const pos = custId ? await soHeaderFor(custId) : null;
+    const derivedLoc = Number((/"c_bpartner_location_id":(-?\d+)/.exec(pos ? pos.mv : '') || [])[1]);
+    const negOk = !!neg && !neg.per && /REJECT/.test(neg.val + neg.mv);
+    const posOk = !!pos && /verb=create ok/.test(pos.val) && !!pos.per && derivedLoc === blId;
+    say('§S10b-DETAIL clicked=' + clicked + ' selName=' + selName + ' bpLocRow=' + JSON.stringify(blRow) + ' locRow=' + JSON.stringify(locRow) + ' after=' + JSON.stringify(pos));
+    step('S10b', !custId ? 'I' : (locOk && /verb=create ok/.test(blVal) && blPer && blOk && negOk && posOk ? 'V' : 'G'),
+      'the customer gets an address (Location editor) and a sales order header for it then saves',
+      'cust=' + custId + ' before: ' + (neg ? (neg.val || neg.mv).slice(0, 110) : '-') + ' | ' + (locLine.slice(0, 160) || 'no §LOC-EDITOR line') + ' tipRow=' + JSON.stringify(locRow && { a1: locRow.address1, city: locRow.city, postal: locRow.postal, ctry: locRow.c_country_id }) +
+      ' | bpLoc ' + blVal.slice(0, 60) + ' persist=' + !!blPer + ' id=' + blId + ' row=' + JSON.stringify(blRow && { loc: blRow.c_location_id, bp: blRow.c_bpartner_id, name: blRow.name }) +
+      ' | after: ' + (pos ? pos.val.slice(0, 60) + ' persist=' + !!pos.per + ' c_bpartner_location_id=' + derivedLoc : '-'));
+  } catch (e) { step('S10b', 'I', 'customer address + order', 'harness: ' + e.message); }
 
   // ── S12 product needs a tax category of this tenant ────────────────────────────────────────────────────────────
   try {
