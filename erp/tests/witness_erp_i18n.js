@@ -76,7 +76,7 @@ function chromeOracle(lang, key) {   // → { text, src }
   const p = pk(lang); let v = null;
   if (e.ref) { const [k, a] = e.ref.split(':'); v = k === 'msg' ? (p.AD_Message_Trl[a] || null) : (trl(p, 'AD_Element', a) || [null])[0]; }
   if (v) return { text: e.fmt ? e.fmt.replace('{}', v) : v, src: 'pack' };
-  if (e.machine && e.machine[lang]) return { text: e.machine[lang], src: 'machine' };
+  if (e.machine && e.machine[lang]) return { text: e.fmt ? e.fmt.replace('{}', e.machine[lang]) : e.machine[lang], src: 'machine' };
   return { text: e.en, src: 'none' };
 }
 const strip = (h) => String(h).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
