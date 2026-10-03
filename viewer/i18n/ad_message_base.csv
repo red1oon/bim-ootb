@@ -499,3 +499,168 @@ Keeps: the installed app + offline data, and any .db you saved yourself.",I
 1000490,clash_tolerance,Tolerance,I
 1000491,clash_clashes,Clashes,I
 1000492,clash_clashes_lbl,clashes,I
+1000493,tm_tt_sun,Day/night cycle,I
+1000494,tm_tt_drone,Drone Pilot — cinematic camera,I
+1000495,tm_tt_gantt,Gantt chart,I
+1000496,tm_tt_whatif,"What-if: slip a phase, watch the chain re-fold in blue",I
+1000497,tm_tt_p6,"P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate",I
+1000498,tm_tt_dash,Dashboard,I
+1000499,tm_tt_var,Budget vs Actual variance,I
+1000500,tm_tt_lod,"Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.",I
+1000501,tm_status_init,4D Construction Playback,I
+1000502,tm_mode_day,DAY,I
+1000503,tm_mode_hr,HR,I
+1000504,tm_mode_min,MIN,I
+1000505,tm_tt_jump_start,Jump to start,I
+1000506,tm_tt_deconstruct,Deconstruct,I
+1000507,tm_tt_stop,Stop,I
+1000508,tm_tt_build,Build,I
+1000509,tm_tt_jump_end,Jump to end,I
+1000510,tm_undo_edit,Undo edit,I
+1000511,tm_tt_undo_edit,Undo the last Gantt drag/resize,I
+1000512,tm_set_baseline,Set Baseline,I
+1000513,tm_tt_set_baseline,Snapshot current dates as the baseline for schedule variance,I
+1000514,tm_pull_back,Pull Back,I
+1000515,tm_tt_pull_back,Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later),I
+1000516,tm_tt_gantt_grip,Drag to resize the Gantt drawer,I
+1000517,tm_locked,Locked,I
+1000518,tm_tt_locked,"Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.",I
+1000519,tm_editing,Editing,I
+1000520,tm_tt_editing,"Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.",I
+1000521,tm_tt_ruler,Drag to shift the whole project's start/finish (Editing must be unlocked),I
+1000522,tm_tt_panel_grip,Drag to resize the drawer,I
+1000523,tm_import,Import,I
+1000524,tm_export,Export,I
+1000525,tm_p6_file,P6/MSP file,I
+1000526,tm_tt_p6_file,"Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.",I
+1000527,tm_autobind,auto-bind,I
+1000528,tm_tt_autobind,"If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.",I
+1000529,tm_tt_export_msp,"Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.",I
+1000530,tm_tt_export_pmxml,"Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.",I
+1000531,tm_tt_export_xer,"Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.",I
+1000532,tm_diff_model,Diff vs Model,I
+1000533,tm_tt_diff_model,4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first),I
+1000534,tm_phase_progress,Phase Progress,I
+1000535,tm_s_curve,S-Curve,I
+1000536,tm_day_of_total,Day {c} / {t} — {p}% complete,I
+1000537,tm_status_placed,{n} placed | {names},I
+1000538,tm_idle,idle,I
+1000539,tm_author_not_loaded,Author engine not loaded,I
+1000540,tm_whatif_not_loaded,What-if engine not loaded,I
+1000541,tm_now_building,⊕ Now building,I
+1000542,tm_item,item,I
+1000543,tm_items,items,I
+1000544,tm_loading_timeline,Loading timeline...,I
+1000545,tm_setting_up,Setting up 4D construction timeline...,I
+1000546,tm_no_elements_db,No elements found in database,I
+1000547,tm_bar_tip,"{storey} — {phase} ({n} el, Day {a}–{b}, {src})",I
+1000548,tm_src_ifc4d,IFC 4D,I
+1000549,tm_src_generated,generated,I
+1000550,tm_locked_hint,Locked — click 🔒 Locked to enable editing,I
+1000551,tm_shift_whole,Shift whole schedule {d}d,I
+1000552,tm_edit_exception,Time Machine couldn't complete this edit — {reason},I
+1000553,tm_unexpected_error,unexpected error,I
+1000554,tm_close_other_panels,Close other panels ({n}),I
+1000555,tm_blocked_clamped,Blocked by {by} — clamped to {start},I
+1000556,tm_not_editable,Not editable — no schedule task on this bar,I
+1000557,tm_move_bars,Move {n} bars  {d}d,I
+1000558,tm_drag_move,Move,I
+1000559,tm_drag_resize,Resize,I
+1000560,tm_rejected,Rejected: {reason},I
+1000561,tm_unknown,unknown,I
+1000562,tm_clamped_by,Clamped to {start} by {by},I
+1000563,tm_applied_cascaded,Applied · {n} successor(s) cascaded,I
+1000564,tm_nothing_to_undo,Nothing to undo,I
+1000565,tm_undone,Undone: {mode} {task},I
+1000566,tm_no_baseline_yet,No schedule to baseline yet — generate a 4D schedule first,I
+1000567,tm_baseline_set,Baseline set — {n} tasks,I
+1000568,tm_not_available,Not available,I
+1000569,tm_cannot_compress,Cannot compress — {reason},I
+1000570,tm_no_schedule,no schedule,I
+1000571,tm_nothing_to_compress,Nothing to compress — schedule is already at earliest float,I
+1000572,tm_compressed_one,Compressed 1 task,I
+1000573,tm_compressed_many,Compressed {n} tasks,I
+1000574,tm_finish_moved_one,project finish moved up 1 day,I
+1000575,tm_finish_moved_many,project finish moved up {d} days,I
+1000576,tm_finish_unchanged,project finish unchanged (internal float closed),I
+1000577,tm_cannot_shift,Cannot shift — {reason},I
+1000578,tm_cannot_move_group,Cannot move group — {reason},I
+1000579,tm_cannot_edit_no_dates,Cannot edit — no real dates found for this task,I
+1000580,tm_could_not_generate,Could not generate a schedule,I
+1000581,tm_schedule_generated,Schedule generated — refreshing…,I
+1000582,tm_linked,Linked: {pred}  →  {succ},I
+1000583,tm_refused_cycle,Refused — that link would create a cycle,I
+1000584,tm_linked_clamped,"Linked, but {task} clamped to {start} — blocked by {by}",I
+1000585,tm_verifying,Verifying integrity…,I
+1000586,tm_breach,"⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again",I
+1000587,tm_breach_floating,+{n} floating,I
+1000588,tm_breach_midair,+{n} hanging in midair,I
+1000589,tm_no_schedule_available,No schedule available,I
+1000590,tm_cpm_critical,critical,I
+1000591,tm_cpm_with_float,with float,I
+1000592,tm_tt_cpm,"Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.
+Project duration {pf}d · total float {minF}..{maxF}d.
+CPM reads the dates the drag produced — it never changes one.",I
+1000593,tm_dep_after,← after,I
+1000594,tm_dep_before,→ before,I
+1000595,tm_unlink,unlink,I
+1000596,tm_no_dependencies,no dependencies,I
+1000597,tm_elements_count,{n} elements · {task},I
+1000598,tm_critical_path,CRITICAL PATH · zero float,I
+1000599,tm_total_float,Total float {n}d,I
+1000600,tm_cpm_dates_unchanged,"(CPM, dates unchanged)",I
+1000601,tm_start,Start,I
+1000602,tm_finish,Finish,I
+1000603,tm_dependencies,Dependencies,I
+1000604,tm_apply,Apply,I
+1000605,tm_budget_vs_actual,Budget vs Actual,I
+1000606,tm_reading_records,Reading records…,I
+1000607,tm_no_project_records,No project records for this model,I
+1000608,tm_from_records,from records,I
+1000609,tm_cost,Cost,I
+1000610,tm_schedule,Schedule,I
+1000611,tm_planned_baseline,(planned baseline),I
+1000612,tm_projected_finish,Projected finish,I
+1000613,tm_projected_from_cost,projected from cost,I
+1000614,tm_forecast,forecast,I
+1000615,tm_cost_from_records,cost · from records,I
+1000616,tm_recording_import_refused,Recording in progress — import refused,I
+1000617,tm_interop_not_loaded,Interop module not loaded — reopen the P6/MSP section,I
+1000618,tm_interop_load_failed,Interop modules failed to load: {err},I
+1000619,tm_no_model_open,No model open yet,I
+1000620,tm_imported,"Imported {format} ""{file}"" — {wbs} WBS / {acts} activities / {links} links.",I
+1000621,tm_prebound,Pre-bound {n} elements across {a} activities by convention,I
+1000622,tm_unresolved_selectors,({n} selector(s) matched nothing — review),I
+1000623,tm_bind_hint,({n} activities carry a bind token — tick auto-bind to resolve.),I
+1000624,tm_import_failed,Import failed: {err},I
+1000625,tm_no_schedule_export,No schedule to export,I
+1000626,tm_no_tasks_export,No tasks to export,I
+1000627,tm_exported_msp,Exported {n} tasks / {m} links to MS Project XML ({file}).,I
+1000628,tm_exported_p6,"Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.",I
+1000629,tm_no_schedule_loaded,No schedule loaded,I
+1000630,tm_diff_needs_import,Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.,I
+1000631,tm_diff_computing,Computing schedule diff…,I
+1000632,tm_diff_failed,Diff failed: {err},I
+1000633,tm_diff_theirs_ours,theirs {a}d vs ours {b}d,I
+1000634,tm_diff_unmatched,{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED,I
+1000635,tm_diff_summary,"4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.",I
+1000636,wi_title,What-if schedule,I
+1000637,wi_sub,"Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.",I
+1000638,wi_accept,Accept — re-baseline,I
+1000639,wi_discard,Discard,I
+1000640,wi_legend_official,Official (planned),I
+1000641,wi_legend_blue,What-if (blue ripple),I
+1000642,wi_finish,Finish:,I
+1000643,wi_bac,BAC:,I
+1000644,wi_unchanged_scope,(unchanged — same scope),I
+1000645,wi_pv_finish,PV @ finish:,I
+1000646,wi_tt_track,drag to slip · official {a}→{b},I
+1000647,wi_tt_track_blue,blue {a}→{b},I
+1000648,wi_tt_pull_in,pull in 7 days,I
+1000649,wi_tt_slip_out,slip out 7 days,I
+1000650,wi_accepted,What-if accepted — schedule re-baselined (finish +{d}d),I
+1000651,wi_discarded,What-if discarded — official schedule restored,I
+1000652,wi_erp_not_ready,What-if: ERP engine not ready,I
+1000653,wi_no_project,What-if: no folded project yet — push one to ERP first,I
+1000654,wi_project_n,Project {id},I
+1000655,ui_downloading_pct,Downloading {name}... {pct}% ({a}/{b}MB),I

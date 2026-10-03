@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl af_ZA — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/af_ZA.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03) — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl af_ZA — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/af_ZA.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="af_ZA" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -1979,6 +1979,660 @@ Bly behoue: die geïnstalleerde app + vanlyn-data, en enige .db wat jy self gest
  </row>
  <row id="1000492" trl="Y">
   <value column="MsgText" original="clashes">botsings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000493" trl="Y">
+  <value column="MsgText" original="Day/night cycle">Dag/nag-siklus</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000494" trl="Y">
+  <value column="MsgText" original="Drone Pilot — cinematic camera">Hommeltuigvlieënier — filmkamera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000495" trl="Y">
+  <value column="MsgText" original="Gantt chart">Gantt-kaart</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000496" trl="Y">
+  <value column="MsgText" original="What-if: slip a phase, watch the chain re-fold in blue">Wat-as: skuif ’n fase en kyk hoe die ketting in blou hervou</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000497" trl="Y">
+  <value column="MsgText" original="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">P6- / MS Project-koppeling — voer ’n Primavera .xer/.xml- of MS Project XML-program op hierdie model in, voer MSPDI/PMXML/XER uit, of gradeer ’n ingevoerde skedule teen die model om sy eie hoeveelheid- + tarieframing te sien</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000498" trl="Y">
+  <value column="MsgText" original="Dashboard">Paneelbord</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000499" trl="Y">
+  <value column="MsgText" original="Budget vs Actual variance">Begroting vs werklike afwyking</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000500" trl="Y">
+  <value column="MsgText" original="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.">Tekenkoste-plaasvervanger: omraam die reeds geboude elemente buite die kamerabeeld (slegs groot geboue). AF = vandag se lewering, onveranderd.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000501" trl="Y">
+  <value column="MsgText" original="4D Construction Playback">4D-konstruksieterugspeel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000502" trl="Y">
+  <value column="MsgText" original="DAY">DAG</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000503" trl="Y">
+  <value column="MsgText" original="HR">UUR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000504" trl="Y">
+  <value column="MsgText" original="MIN">MIN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000505" trl="Y">
+  <value column="MsgText" original="Jump to start">Spring na begin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000506" trl="Y">
+  <value column="MsgText" original="Deconstruct">Afbreek</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000507" trl="Y">
+  <value column="MsgText" original="Stop">Stop</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000508" trl="Y">
+  <value column="MsgText" original="Build">Bou</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000509" trl="Y">
+  <value column="MsgText" original="Jump to end">Spring na einde</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000510" trl="Y">
+  <value column="MsgText" original="Undo edit">Ontdoen wysiging</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000511" trl="Y">
+  <value column="MsgText" original="Undo the last Gantt drag/resize">Ontdoen die laaste Gantt-sleep/-grootteverandering</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000512" trl="Y">
+  <value column="MsgText" original="Set Baseline">Stel basislyn</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000513" trl="Y">
+  <value column="MsgText" original="Snapshot current dates as the baseline for schedule variance">Neem die huidige datums as basislyn vir skeduleafwyking</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000514" trl="Y">
+  <value column="MsgText" original="Pull Back">Trek terug</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000515" trl="Y">
+  <value column="MsgText" original="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">Trek elke taak terug na die vroegste begin wat sy voorgangers toelaat (slegs saampersing — skuif nooit ’n taak later nie)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000516" trl="Y">
+  <value column="MsgText" original="Drag to resize the Gantt drawer">Sleep om die Gantt-laai se grootte te verander</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000517" trl="Y">
+  <value column="MsgText" original="Locked">Gesluit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000518" trl="Y">
+  <value column="MsgText" original="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">Gesluit: sleep/grootteverandering/koppel gedeaktiveer, tydlyn skuif steeds regstreeks. Klik om redigering te ontsluit.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000519" trl="Y">
+  <value column="MsgText" original="Editing">Redigeer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000520" trl="Y">
+  <value column="MsgText" original="Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.">Redigeer: sleep om te skuif/grootte te verander, sleep na ’n ander balk om te koppel, dubbelklik vir getikte invoer. Klik om te sluit.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000521" trl="Y">
+  <value column="MsgText" original="Drag to shift the whole project's start/finish (Editing must be unlocked)">Sleep om die hele projek se begin/einde te skuif (Redigering moet ontsluit wees)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000522" trl="Y">
+  <value column="MsgText" original="Drag to resize the drawer">Sleep om die laai se grootte te verander</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000523" trl="Y">
+  <value column="MsgText" original="Import">Invoer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000524" trl="Y">
+  <value column="MsgText" original="Export">Uitvoer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000525" trl="Y">
+  <value column="MsgText" original="P6/MSP file">P6/MSP-lêer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000526" trl="Y">
+  <value column="MsgText" original="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">Voer ’n Primavera P6-program (.xer of .xml/PMXML) of MS Project XML (MSPDI) in — neem sy WBS, logika en datums op hierdie model oor. Die koppeling van take aan elemente bly ’n aparte, nasienbare stap.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000527" trl="Y">
+  <value column="MsgText" original="auto-bind">outo-koppel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000528" trl="Y">
+  <value column="MsgText" original="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.">As aktiwiteitsname ’n BIM-Bind-teken dra (@dissipline:IfcKlas[:verdieping]), word dit teen hierdie model opgelos en take word by invoer vooraf aan elemente gekoppel — ’n nasienbare eerste deurgang, nie ’n raaiskoot nie.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000529" trl="Y">
+  <value column="MsgText" original="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">Voer die huidige skedule (WBS, datums, afhanklikhede) as MS Project XML (MSPDI) uit — maak direk in Microsoft Project oop; kan ook hier weer ingevoer word.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000530" trl="Y">
+  <value column="MsgText" original="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Voer uit as Primavera P6 PMXML (APIBusinessObjects XML) — die formaat wat elke gedokumenteerde P6-uitvoerpad gebruik; kan ook hier weer ingevoer word. Sommige velde (WBS-kode, EPS-vlak aktiwiteitskodes, hulpbrontoewysings, globale kalenders, basislyne) word nie oorgedra nie — P6 self laat die meeste daarvan by kruis-DB-invoer val.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000531" trl="Y">
+  <value column="MsgText" original="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">Voer uit as Primavera XER — die ouer oortjie-geskeide P6-uitruilformaat, vir P6-installasies wat dit steeds bo PMXML verkies. Dieselfde bekende verliesvelde as PMXML.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000532" trl="Y">
+  <value column="MsgText" original="Diff vs Model">Verskil vs model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000533" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">4D-skeduleverskil — gradeer ’n INGEVOERDE P6/MSP-skedule per fase teen die model. Dit vergelyk hul tydsduur met ons eie raming uit werklike hoeveelhede + arbeidstarief (voer eers ’n lêer in)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000534" trl="Y">
+  <value column="MsgText" original="Phase Progress">Fasevordering</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000535" trl="Y">
+  <value column="MsgText" original="S-Curve">S-kromme</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000536" trl="Y">
+  <value column="MsgText" original="Day {c} / {t} — {p}% complete">Dag {c} / {t} — {p}% voltooi</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000537" trl="Y">
+  <value column="MsgText" original="{n} placed | {names}">{n} geplaas | {names}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000538" trl="Y">
+  <value column="MsgText" original="idle">ledig</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000539" trl="Y">
+  <value column="MsgText" original="Author engine not loaded">Outeur-enjin nie gelaai nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000540" trl="Y">
+  <value column="MsgText" original="What-if engine not loaded">Wat-as-enjin nie gelaai nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000541" trl="Y">
+  <value column="MsgText" original="⊕ Now building">⊕ Bou nou</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000542" trl="Y">
+  <value column="MsgText" original="item">item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000543" trl="Y">
+  <value column="MsgText" original="items">items</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000544" trl="Y">
+  <value column="MsgText" original="Loading timeline...">Laai tydlyn...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000545" trl="Y">
+  <value column="MsgText" original="Setting up 4D construction timeline...">Stel 4D-konstruksietydlyn op...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000546" trl="Y">
+  <value column="MsgText" original="No elements found in database">Geen elemente in databasis gevind nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000547" trl="Y">
+  <value column="MsgText" original="{storey} — {phase} ({n} el, Day {a}–{b}, {src})">{storey} — {phase} ({n} el, Dag {a}–{b}, {src})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000548" trl="Y">
+  <value column="MsgText" original="IFC 4D">IFC 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000549" trl="Y">
+  <value column="MsgText" original="generated">gegenereer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000550" trl="Y">
+  <value column="MsgText" original="Locked — click 🔒 Locked to enable editing">Gesluit — klik 🔒 Gesluit om redigering te aktiveer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000551" trl="Y">
+  <value column="MsgText" original="Shift whole schedule {d}d">Skuif hele skedule {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000552" trl="Y">
+  <value column="MsgText" original="Time Machine couldn't complete this edit — {reason}">Die Tydmasjien kon hierdie wysiging nie voltooi nie — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000553" trl="Y">
+  <value column="MsgText" original="unexpected error">onverwagte fout</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000554" trl="Y">
+  <value column="MsgText" original="Close other panels ({n})">Maak ander panele toe ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000555" trl="Y">
+  <value column="MsgText" original="Blocked by {by} — clamped to {start}">Geblokkeer deur {by} — beperk tot {start}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000556" trl="Y">
+  <value column="MsgText" original="Not editable — no schedule task on this bar">Nie redigeerbaar nie — geen skeduletaak op hierdie balk nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000557" trl="Y">
+  <value column="MsgText" original="Move {n} bars  {d}d">Skuif {n} balke  {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000558" trl="Y">
+  <value column="MsgText" original="Move">Skuif</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000559" trl="Y">
+  <value column="MsgText" original="Resize">Verander grootte</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000560" trl="Y">
+  <value column="MsgText" original="Rejected: {reason}">Verwerp: {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000561" trl="Y">
+  <value column="MsgText" original="unknown">onbekend</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000562" trl="Y">
+  <value column="MsgText" original="Clamped to {start} by {by}">Beperk tot {start} deur {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000563" trl="Y">
+  <value column="MsgText" original="Applied · {n} successor(s) cascaded">Toegepas · {n} opvolger(s) deurgevoer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000564" trl="Y">
+  <value column="MsgText" original="Nothing to undo">Niks om te ontdoen nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000565" trl="Y">
+  <value column="MsgText" original="Undone: {mode} {task}">Ontdoen: {mode} {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000566" trl="Y">
+  <value column="MsgText" original="No schedule to baseline yet — generate a 4D schedule first">Nog geen skedule vir ’n basislyn nie — genereer eers ’n 4D-skedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000567" trl="Y">
+  <value column="MsgText" original="Baseline set — {n} tasks">Basislyn gestel — {n} take</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000568" trl="Y">
+  <value column="MsgText" original="Not available">Nie beskikbaar nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000569" trl="Y">
+  <value column="MsgText" original="Cannot compress — {reason}">Kan nie saampers nie — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000570" trl="Y">
+  <value column="MsgText" original="no schedule">geen skedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000571" trl="Y">
+  <value column="MsgText" original="Nothing to compress — schedule is already at earliest float">Niks om saam te pers nie — skedule is reeds op vroegste speling</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000572" trl="Y">
+  <value column="MsgText" original="Compressed 1 task">1 taak saamgepers</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000573" trl="Y">
+  <value column="MsgText" original="Compressed {n} tasks">{n} take saamgepers</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000574" trl="Y">
+  <value column="MsgText" original="project finish moved up 1 day">projekeinde 1 dag vervroeg</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000575" trl="Y">
+  <value column="MsgText" original="project finish moved up {d} days">projekeinde {d} dae vervroeg</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000576" trl="Y">
+  <value column="MsgText" original="project finish unchanged (internal float closed)">projekeinde onveranderd (interne speling toegemaak)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000577" trl="Y">
+  <value column="MsgText" original="Cannot shift — {reason}">Kan nie skuif nie — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000578" trl="Y">
+  <value column="MsgText" original="Cannot move group — {reason}">Kan nie groep skuif nie — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000579" trl="Y">
+  <value column="MsgText" original="Cannot edit — no real dates found for this task">Kan nie redigeer nie — geen werklike datums vir hierdie taak gevind nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000580" trl="Y">
+  <value column="MsgText" original="Could not generate a schedule">Kon nie ’n skedule genereer nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000581" trl="Y">
+  <value column="MsgText" original="Schedule generated — refreshing…">Skedule gegenereer — verfris…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000582" trl="Y">
+  <value column="MsgText" original="Linked: {pred}  →  {succ}">Gekoppel: {pred}  →  {succ}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000583" trl="Y">
+  <value column="MsgText" original="Refused — that link would create a cycle">Geweier — daardie koppeling sou ’n siklus skep</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000584" trl="Y">
+  <value column="MsgText" original="Linked, but {task} clamped to {start} — blocked by {by}">Gekoppel, maar {task} beperk tot {start} — geblokkeer deur {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000585" trl="Y">
+  <value column="MsgText" original="Verifying integrity…">Verifieer integriteit…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000586" trl="Y">
+  <value column="MsgText" original="⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again">⚠ Integriteitsbreuk: {list} — druk ↺ Ontdoen wysiging (of herstel), sluit dan weer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000587" trl="Y">
+  <value column="MsgText" original="+{n} floating">+{n} swewend</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000588" trl="Y">
+  <value column="MsgText" original="+{n} hanging in midair">+{n} hang in die lug</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000589" trl="Y">
+  <value column="MsgText" original="No schedule available">Geen skedule beskikbaar nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000590" trl="Y">
+  <value column="MsgText" original="critical">krities</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000591" trl="Y">
+  <value column="MsgText" original="with float">met speling</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000592" trl="Y">
+  <value column="MsgText" original="Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.&#10;Project duration {pf}d · total float {minF}..{maxF}d.&#10;CPM reads the dates the drag produced — it never changes one.">Kritieke-padmetode, herbereken ná elke wysiging. Rooi = totale speling nul: die taak kan nie skuif sonder om die projekeinde te verskuif nie. Groen = dit het speling.
+Projekduur {pf}d · totale speling {minF}..{maxF}d.
+CPM lees die datums wat die sleep opgelewer het — dit verander nooit een nie.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000593" trl="Y">
+  <value column="MsgText" original="← after">← ná</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000594" trl="Y">
+  <value column="MsgText" original="→ before">→ voor</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000595" trl="Y">
+  <value column="MsgText" original="unlink">ontkoppel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000596" trl="Y">
+  <value column="MsgText" original="no dependencies">geen afhanklikhede</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000597" trl="Y">
+  <value column="MsgText" original="{n} elements · {task}">{n} elemente · {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000598" trl="Y">
+  <value column="MsgText" original="CRITICAL PATH · zero float">KRITIEKE PAD · speling nul</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000599" trl="Y">
+  <value column="MsgText" original="Total float {n}d">Totale speling {n}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000600" trl="Y">
+  <value column="MsgText" original="(CPM, dates unchanged)">(CPM, datums onveranderd)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000601" trl="Y">
+  <value column="MsgText" original="Start">Begin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000602" trl="Y">
+  <value column="MsgText" original="Finish">Einde</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000603" trl="Y">
+  <value column="MsgText" original="Dependencies">Afhanklikhede</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000604" trl="Y">
+  <value column="MsgText" original="Apply">Pas toe</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000605" trl="Y">
+  <value column="MsgText" original="Budget vs Actual">Begroting vs werklik</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000606" trl="Y">
+  <value column="MsgText" original="Reading records…">Lees rekords…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000607" trl="Y">
+  <value column="MsgText" original="No project records for this model">Geen projekrekords vir hierdie model nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000608" trl="Y">
+  <value column="MsgText" original="from records">uit rekords</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000609" trl="Y">
+  <value column="MsgText" original="Cost">Koste</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000610" trl="Y">
+  <value column="MsgText" original="Schedule">Skedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000611" trl="Y">
+  <value column="MsgText" original="(planned baseline)">(beplande basislyn)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000612" trl="Y">
+  <value column="MsgText" original="Projected finish">Geprojekteerde einde</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000613" trl="Y">
+  <value column="MsgText" original="projected from cost">geprojekteer uit koste</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000614" trl="Y">
+  <value column="MsgText" original="forecast">vooruitskatting</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000615" trl="Y">
+  <value column="MsgText" original="cost · from records">koste · uit rekords</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000616" trl="Y">
+  <value column="MsgText" original="Recording in progress — import refused">Opname aan die gang — invoer geweier</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000617" trl="Y">
+  <value column="MsgText" original="Interop module not loaded — reopen the P6/MSP section">Koppelingsmodule nie gelaai nie — maak die P6/MSP-afdeling weer oop</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000618" trl="Y">
+  <value column="MsgText" original="Interop modules failed to load: {err}">Koppelingsmodules kon nie laai nie: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000619" trl="Y">
+  <value column="MsgText" original="No model open yet">Nog geen model oop nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000620" trl="Y">
+  <value column="MsgText" original="Imported {format} &quot;{file}&quot; — {wbs} WBS / {acts} activities / {links} links.">{format} "{file}" ingevoer — {wbs} WBS / {acts} aktiwiteite / {links} skakels.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000621" trl="Y">
+  <value column="MsgText" original="Pre-bound {n} elements across {a} activities by convention">{n} elemente oor {a} aktiwiteite volgens konvensie vooraf gekoppel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000622" trl="Y">
+  <value column="MsgText" original="({n} selector(s) matched nothing — review)">({n} kieser(s) het niks gepas nie — hersien)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000623" trl="Y">
+  <value column="MsgText" original="({n} activities carry a bind token — tick auto-bind to resolve.)">({n} aktiwiteite dra ’n koppelteken — merk outo-koppel om dit op te los.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000624" trl="Y">
+  <value column="MsgText" original="Import failed: {err}">Invoer het misluk: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000625" trl="Y">
+  <value column="MsgText" original="No schedule to export">Geen skedule om uit te voer nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000626" trl="Y">
+  <value column="MsgText" original="No tasks to export">Geen take om uit te voer nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000627" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to MS Project XML ({file}).">{n} take / {m} skakels na MS Project XML uitgevoer ({file}).</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000628" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">{n} take / {m} skakels na {label} uitgevoer ({file}). Sommige velde (WBS-kode, EPS-vlak aktiwiteitskodes, hulpbrontoewysings, globale kalenders, basislyne) word nie oorgedra nie — P6 self laat die meeste daarvan by kruis-DB-invoer val.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000629" trl="Y">
+  <value column="MsgText" original="No schedule loaded">Geen skedule gelaai nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000630" trl="Y">
+  <value column="MsgText" original="Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.">Verskil vs model vergelyk ’n INGEVOERDE P6/MSP-skedule met ons raming uit werklike hoeveelhede — voer eers een in.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000631" trl="Y">
+  <value column="MsgText" original="Computing schedule diff…">Bereken skeduleverskil…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000632" trl="Y">
+  <value column="MsgText" original="Diff failed: {err}">Verskil het misluk: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000633" trl="Y">
+  <value column="MsgText" original="theirs {a}d vs ours {b}d">hulle {a}d vs ons {b}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000634" trl="Y">
+  <value column="MsgText" original="{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED">{n} aktiwiteit(e) nie gepas nie — sien konsole §4D_DIFF_UNMATCHED</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000635" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.">4D-skeduleverskil: {a}/{b} fases vergelyk, {c}/{d} aktiwiteite gepas.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000636" trl="Y">
+  <value column="MsgText" original="What-if schedule">Wat-as-skedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000637" trl="Y">
+  <value column="MsgText" original="Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.">Sleep ’n fasebalk om dit te skuif (of gebruik ± vir ±7d) → elke stroomaf-fase hervou in blou (einde-tot-begin). Aanvaar om te herbasislyn, Verwerp om te laat vaar.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000638" trl="Y">
+  <value column="MsgText" original="Accept — re-baseline">Aanvaar — herbasislyn</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000639" trl="Y">
+  <value column="MsgText" original="Discard">Verwerp</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000640" trl="Y">
+  <value column="MsgText" original="Official (planned)">Amptelik (beplan)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000641" trl="Y">
+  <value column="MsgText" original="What-if (blue ripple)">Wat-as (blou rimpeling)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000642" trl="Y">
+  <value column="MsgText" original="Finish:">Einde:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000643" trl="Y">
+  <value column="MsgText" original="BAC:">BAC:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000644" trl="Y">
+  <value column="MsgText" original="(unchanged — same scope)">(onveranderd — selfde omvang)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000645" trl="Y">
+  <value column="MsgText" original="PV @ finish:">PV by einde:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000646" trl="Y">
+  <value column="MsgText" original="drag to slip · official {a}→{b}">sleep om te skuif · amptelik {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000647" trl="Y">
+  <value column="MsgText" original="blue {a}→{b}">blou {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000648" trl="Y">
+  <value column="MsgText" original="pull in 7 days">trek 7 dae in</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000649" trl="Y">
+  <value column="MsgText" original="slip out 7 days">skuif 7 dae uit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000650" trl="Y">
+  <value column="MsgText" original="What-if accepted — schedule re-baselined (finish +{d}d)">Wat-as aanvaar — skedule herbasislyn (einde +{d}d)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000651" trl="Y">
+  <value column="MsgText" original="What-if discarded — official schedule restored">Wat-as verwerp — amptelike skedule herstel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000652" trl="Y">
+  <value column="MsgText" original="What-if: ERP engine not ready">Wat-as: ERP-enjin nie gereed nie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000653" trl="Y">
+  <value column="MsgText" original="What-if: no folded project yet — push one to ERP first">Wat-as: nog geen gevoude projek nie — stoot eers een na ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000654" trl="Y">
+  <value column="MsgText" original="Project {id}">Projek {id}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000655" trl="Y">
+  <value column="MsgText" original="Downloading {name}... {pct}% ({a}/{b}MB)">Laai {name} af... {pct}% ({a}/{b}MB)</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>

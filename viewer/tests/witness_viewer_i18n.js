@@ -16,6 +16,11 @@
 //                     leaks > 0. Proves (2) can fail.
 //  (5) INCONCLUSIVE   whenever 0 slots were judged or no locale ran. Exit code is not evidence — READ THE LOG.
 //
+//  (2b) DRAWER       S226 §R2b (2026-10-04): the Time Machine / Gantt / What-if / Pull Back / P6 drawer (#time-machine-panel) is
+//                     judged like every other surface and its population printed (§TRL_SCOPE … n=); n < 40 FAILS, so a drawer
+//                     missing from the DOM cannot pass by absence. The real What-if popup (#whatif-panel) is opened via sql.js +
+//                     erp/ad_seed.db and judged too; when it cannot open that is PRINTED as not judged (§TRL_WHATIF open=no), never passed.
+//
 // No GPU: headless chromium with --disable-gpu (software GL). Pages are opened WITHOUT a building (?blank=1) — the strings
 // under test are the static chrome. Logs: viewer/tests/logs/witness_viewer_i18n.log (verdicts) + .page.log (every console line).
 // Run:  NODE_PATH=~/bim-ootb/node_modules node viewer/tests/witness_viewer_i18n.js [--locales de_DE,ar_SA] [--pages landing,viewer]
@@ -64,19 +69,29 @@ const XML = {};                                              // lang -> { byValu
 T.LOCALES.filter(l => l !== T.BASE).forEach(lang => {
   const x = T.parseTrlXml(fs.readFileSync(T.xmlFile(lang), 'utf8'));
   const byValue = new Map(); x.rows.forEach(r => { const b = BY_ID.get(r.id); if (b) byValue.set(b.value, { trl: r.trl, text: r.text }); });
-  XML[lang] = { byValue, textSet: new Set(x.rows.filter(r => r.trl === 'Y').map(r => r.text)) };
+  XML[lang] = { byValue, textSet: new Set(x.rows.filter(r => r.trl === 'Y').map(r => r.text)),
+    tplPrefixes: Array.from(new Set(x.rows.filter(r => r.trl === 'Y' && r.text !== r.original).map(r => { const i = r.text.indexOf('{'); return i >= 4 ? r.text.slice(0, i) : ''; }).filter(Boolean))) };   // S226 §R2b
 });
 // English that is the same in every language by rule (S226 Translation Rules) — never a leak when it stays
 const ALLOW = new Set(('BIM OOTB ERP IFC BOQ MEP GPS GUID WBS UOM CSV DXF DAE OBJ GLB GLTF 3DS FBX STL HTML PDF QR LOD MaxQ DEV ARC STR PLB ACMV ' +
   'ELEC FP VENT HEAT SAN COOL VOID OK SET DB ID UBBL GardenWorld iDempiere DAGeVu Excel WhatsApp GoatCounter Ctrl Alt Shift Esc Caps Lock ' +
-  'mm cm km kg Hz RM USD EUR MYR SGD AUD GBP JPY CNY THB KRW BRL IDR BDT ZAR SAR X Y Z N S E W SMM2 HVAC PLB·ELEC·ACMV·FP IfcWall').split(' '));
+  'mm cm km kg Hz RM USD EUR MYR SGD AUD GBP JPY CNY THB KRW BRL IDR BDT ZAR SAR X Y Z N S E W SMM2 HVAC PLB·ELEC·ACMV·FP IfcWall ' +
+  'P6 MSP PMXML XER MSPDI EPS BAC PV').split(' '));   // S226 §R2b: the P6 / MS Project interchange acronyms on the TM drawer + EVM symbols on the What-if panel
 // English kept on purpose (not leaks): the NLP example chips — the query parser (nlp.js) understands English; translating the
 // examples would show users phrases the engine cannot run (the placeholder key ui_nlp_placeholder keeps them too).
 const ALLOW_STRINGS = new Set(['count doors', 'floor 1 walls', 'total cost', 'show structure', 'find fire doors']);
-// OUT OF SCOPE by the spec (S226 §R2.3): the Time Machine / Gantt / P6 drawer — a lane under active change. Its strings are
-// COUNTED and PRINTED (§TRL_OUT_OF_SCOPE), never judged as leaks. Root: #time-machine-panel (time_machine.js).
-const OUT_OF_SCOPE = '#time-machine-panel';
+// S226 §R2b (2026-10-04): the Time Machine / Gantt / What-if / Pull Back / P6 drawer is JUDGED like every other surface
+// (it was §TRL_OUT_OF_SCOPE n=53 under §R2.3). Its root is counted so a drawer that is not in the DOM cannot pass by absence:
+// §TRL_SCOPE page=viewer drawer=#time-machine-panel n=<strings>, FAIL when n < TM_MIN_STRINGS. The What-if popup
+// (#whatif-panel, whatif_panel.js) is opened for real when sql.js + erp/ad_seed.db are reachable — §TRL_WHATIF open=yes|no.
+const TM_DRAWER = '#time-machine-panel', TM_MIN_STRINGS = 40;
 const EN_TEXTS_DESC = Array.from(new Set(BASE.map(r => r.msgtext))).filter(t => t.length >= 3).sort((a, b) => b.length - a.length);   // every base msgtext, longest first, stripped from a string before the English heuristic
+// S226 §R2b — TEMPLATE SLOTS. A msgtext holding {placeholders} ('Compressed {n} tasks', 'drag to slip · official {a}→{b}') never
+// appears on screen verbatim; the screen shows it filled in. Its static PREFIX (text before the first '{', ≥ 4 chars) identifies
+// the family: a string starting with the English prefix is a SLOT, and for locale X it counts as translated only when it starts
+// with X's own template prefix (X's text ≠ English) or X affirms the same text — otherwise it is still the English = a leak.
+const tplPrefix = (s) => { const i = s.indexOf('{'); return i > 0 ? s.slice(0, i) : ''; };
+const EN_TPL = []; (() => { const m = new Map(); BASE.forEach(r => { const p = tplPrefix(r.msgtext); if (p.length >= 4 && !EN_BY_TEXT.has(p)) { if (!m.has(p)) m.set(p, []); m.get(p).push(r); } }); m.forEach((rows, prefix) => EN_TPL.push({ prefix, rows })); EN_TPL.sort((a, b) => b.prefix.length - a.prefix.length); })();
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 function englishLooking(s) {   // the heuristic used on the ENGLISH baseline only: a Latin word ≥3 letters that is not allow-listed
   if (ALLOW_STRINGS.has(norm(s))) return false;
@@ -93,9 +108,10 @@ async function collectStrings(page) {
       text = String(text || '').replace(/\s+/g, ' ').trim(); if (!text) return;
       const k = kind + '|' + text; if (seen.has(k)) return; seen.add(k);
       let hidden = false; try { const cs = el && el.nodeType === 1 ? getComputedStyle(el) : null; hidden = !!(cs && (cs.display === 'none' || cs.visibility === 'hidden')) || !!(el && el.closest && el.closest('[style*="display:none"],[style*="display: none"]')); } catch (e) { /* detached */ }
-      out.push({ kind, text, hidden, oos: !!(el && el.closest && el.closest('#time-machine-panel')), sel: el && el.nodeType === 1 ? (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '')) : '' });
+      out.push({ kind, text, hidden, tm: !!(el && el.closest && el.closest('#time-machine-panel')), wi: !!(el && el.closest && el.closest('#whatif-panel')), sel: el && el.nodeType === 1 ? (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '')) : '' });
     };
-    const skip = 'script,style,noscript,template,svg,canvas,#walk-log,#ootb-locale-toast,.hub-card .nm,#s-current-element,#load-elapsed,#tl-label,#section-val,#site-cam-time,#load-items';
+    const skip = 'script,style,noscript,template,svg,canvas,#walk-log,#ootb-locale-toast,.hub-card .nm,#s-current-element,#load-elapsed,#tl-label,#section-val,#site-cam-time,#load-items,' +
+      '#whatif-panel .wi-name,#whatif-panel h3 > span,#whatif-panel .wi-d';   // S226 §R2b: What-if phase names + project name are DB data (erp/ad_seed.db), the ±Nd steppers are numbers
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) { const n = walker.currentNode, p = n.parentElement; if (!p || p.closest(skip)) continue; push('text', n.textContent, p); }
     document.querySelectorAll('[title]').forEach(el => { if (!el.closest(skip)) push('title', el.getAttribute('title'), el); });
@@ -109,12 +125,14 @@ async function collectStrings(page) {
 
 // ── judge one page's strings for one locale ──────────────────────────────────────────────────────────────────────
 const BASELINE_UNCAT = {};   // page id -> Set(strings) found uncatalogued on the English run
+const WHATIF_OPEN = {};      // lang -> 'open' | reason the What-if popup could not be opened (S226 §R2b)
 function judge(lang, pageId, strings) {
-  const r = { slots: 0, wiring: [], gap: [], uncat: [], oos: [], translated: 0, total: 0 };
+  const r = { slots: 0, wiring: [], gap: [], uncat: [], tm: 0, wi: 0, translated: 0, total: 0 };
   const x = XML[lang];
   strings.forEach(s => {
     const t = s.text;
-    if (s.oos) { r.oos.push(t.slice(0, 40)); return; }
+    if (s.tm) r.tm++;   // S226 §R2b: counted (anti-vacuous), AND judged below like every other string
+    if (s.wi) r.wi++;
     const enRows = EN_BY_TEXT.get(t);
     if (enRows) {
       r.slots++;
@@ -128,6 +146,18 @@ function judge(lang, pageId, strings) {
       return;
     }
     if (lang !== T.BASE && x.textSet.has(t)) { r.slots++; r.translated++; return; }
+    const tpl = EN_TPL.find(p => t.startsWith(p.prefix));   // S226 §R2b template slot (English prefix)
+    if (tpl) {
+      r.slots++;
+      if (lang === T.BASE) return;
+      const rows = tpl.rows.map(b => x.byValue.get(b.value) || { trl: 'N', text: b.msgtext });
+      if (rows.some((row, i) => row.trl === 'Y' && (row.text === tpl.rows[i].msgtext || (tplPrefix(row.text).length > 0 && row.text !== tpl.rows[i].msgtext && t.startsWith(tplPrefix(row.text)))))) { r.translated++; return; }
+      if (/^en_/.test(lang) && rows.every((row, i) => row.text === tpl.rows[i].msgtext)) return;
+      if (rows.every(row => row.trl === 'N')) r.gap.push(t.slice(0, 50) + ' [' + tpl.rows.map(b => b.value).join('|') + ']');
+      else r.wiring.push(t.slice(0, 50) + ' [' + tpl.rows.map(b => b.value).join('|') + '] → ' + rows.find(row => row.trl === 'Y').text.slice(0, 40));
+      return;
+    }
+    if (lang !== T.BASE && x.tplPrefixes.some(p => t.startsWith(p))) { r.slots++; r.translated++; return; }   // a filled-in template in X's own words
     if (lang === T.BASE) { if (englishLooking(t)) r.uncat.push(t + (s.hidden ? ' (hidden)' : '') + ' <' + s.kind + (s.sel ? ' ' + s.sel : '') + '>'); return; }
     if (BASELINE_UNCAT[pageId] && BASELINE_UNCAT[pageId].has(t)) r.uncat.push(t + ' <' + s.kind + '>');
   });
@@ -155,6 +185,19 @@ async function openPage(page, base, pg, saved) {
     await page.waitForFunction(() => Array.isArray(window._mainPillActions) && window._mainPillActions.length > 0 && document.querySelectorAll('#mobile-pill button').length > 0, null, { timeout: 60000 }).catch(() => PAGELOG.push('TIMEOUT pill ' + pg.id));
     await page.evaluate(() => { try { if (typeof toggleMobilePill === 'function') toggleMobilePill(); } catch (e) { /* */ } });   // open the rail so the drawer titles exist
     await page.waitForTimeout(600);
+    // S226 §R2b: open the REAL What-if popup (whatif_panel.js) — it needs sql.js + the ERP seed (erp/ad_seed.db, C_Project
+    // 990000 'BIM: Hospital', 7 phases). ?blank=1 never initialises sql.js, so the witness does what streaming.js would.
+    const wi = await page.evaluate(async () => {
+      try {
+        if (!window.WhatIfPanel || !window.WhatIf) return 'no WhatIfPanel';
+        if (!window.SQL && typeof initSqlJs === 'function') window.SQL = await initSqlJs({ locateFile: f => 'lib/' + f });
+        if (!window.SQL) return 'no sql.js';
+        window.WhatIfPanel.open();
+        for (let i = 0; i < 300; i++) { if (document.querySelector('#whatif-panel .wi-row')) return 'open'; await new Promise(r => setTimeout(r, 100)); }
+        return 'timeout (status=' + ((window.APP || window.A || {}).status || {}).textContent + ')';
+      } catch (e) { return 'ERR ' + e.message; }
+    });
+    PAGELOG.push('WHATIF ' + wi); WHATIF_OPEN[page._tmLang || ''] = wi;
   }
   if (pg.id === 'boq' || pg.id === 'clash' || pg.id === 'mep') await page.waitForTimeout(1500);   // the no-DB message settles
   return linesSince(n0);
@@ -222,9 +265,11 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
       let m; const re1 = /data-trl="(\w+)"[^>]*>([^<'{]*)</g;
       while ((m = re1.exec(src))) { if (!m[2].trim() || m[1] === 'source_app') continue; /* source_app: brand placeholder differs on purpose (pre-existing) */ checked++; const want = byValue.get(m[1]); if (want == null) unknown.push(f + ':' + m[1]); else if (norm(dec(m[2])) !== norm(want)) mism.push(f + ':' + m[1] + ' page=' + JSON.stringify(norm(dec(m[2]))) + ' csv=' + JSON.stringify(want)); }
       const re2 = /data-trl-(title|tip)="(\w+)"[^>]*\s(?:title|data-tip)="([^"]*)"/g;
-      while ((m = re2.exec(src))) { checked++; const want = byValue.get(m[2]); if (want == null) unknown.push(f + ':' + m[2]); else if (norm(dec(m[3])) !== norm(want)) mism.push(f + ':' + m[2] + ' attr=' + JSON.stringify(m[3]) + ' csv=' + JSON.stringify(want)); }
+      const isJs = /\.js$/.test(f);   // S226 §R2b: markup built inside a JS string carries \' for an apostrophe
+      while ((m = re2.exec(src))) { checked++; const want = byValue.get(m[2]); const attr = isJs ? unjs(m[3]) : m[3]; if (want == null) unknown.push(f + ':' + m[2]); else if (norm(dec(attr)) !== norm(want)) mism.push(f + ':' + m[2] + ' attr=' + JSON.stringify(attr) + ' csv=' + JSON.stringify(want)); }
       // in-code defaults: _trl(k, repl, 'dflt') · _trlD(k, 'dflt') / _trlD(k, repl, 'dflt') · _lt(k, 'dflt') · clash_report _t(k, 'dflt')
-      const re3 = /\b(_trl|_trlD|_lt|_t)\(\s*'(\w+)'\s*,\s*(?:(?:null|\{[^}]*\})\s*,\s*)?'((?:[^'\\]|\\.)*)'/g;
+      // S226 §R2b: time_machine.js _tmTrl(k, 'dflt'[, repl]) + its sandbox-safe local _L(k, 'dflt'[, repl]) · whatif_panel.js _wiTrl(k, 'dflt'[, repl])
+      const re3 = /\b(_trl|_trlD|_lt|_t|_tmTrl|_L|_wiTrl)\(\s*'(\w+)'\s*,\s*(?:(?:null|\{[^}]*\})\s*,\s*)?'((?:[^'\\]|\\.)*)'/g;
       while ((m = re3.exec(src))) {
         if (m[1] === '_t' && f !== 'viewer/clash_report.html') continue;   // mep_report.html's older _t(k, fb) carries its own short fallbacks by design
         if (m[1] === '_trl' && !/,\s*(?:null|\{[^}]*\})\s*,\s*'/.test(m[0])) continue;   // 2-arg _trl(key, repl) — no default to check
@@ -238,7 +283,7 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
   const ROWS = [];
   for (const lang of LOCALES) {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-    const page = await ctx.newPage();
+    const page = await ctx.newPage(); page._tmLang = lang;
     page.on('console', m => PAGELOG.push('[' + lang + '] ' + m.text()));
     page.on('pageerror', e => { ERRS.push(lang + ': ' + e); PAGELOG.push('[' + lang + '] PAGEERR ' + e); });
     page.on('dialog', async d => { PAGELOG.push('[' + lang + '] DIALOG ' + d.message().slice(0, 80)); await d.dismiss(); });
@@ -271,7 +316,12 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
       if (col.toast != null) { const hint = lang === T.BASE ? 'change in ⚙' : ((XML[lang].byValue.get('ui_locale_toast_hint') || {}).text || 'change in ⚙'); const ok = col.toast.endsWith('— ' + hint); if (!ok) row.toastBad = (row.toastBad || 0) + 1; say('  §TRL_TOAST locale=' + lang + ' page=' + pg.id + ' text=' + JSON.stringify(col.toast) + (ok ? ' ok' : ' MISMATCH want-suffix=' + JSON.stringify(hint))); }
       const j = judge(lang, pg.id, col.strings);
       perPage.push(j); row.pages++; row.slots += j.slots; row.total += j.total; row.leaks += j.leaks; row.wiring += j.wiring.length; row.gap += j.gap.length; row.uncat += j.uncat.length;
-      if (lang === T.BASE) { say('  §TRL_UNCATALOGUED page=' + pg.id + ' n=' + j.uncat.length + (j.uncat.length ? ' [' + j.uncat.join(' · ') + ']' : '') + ' slots=' + j.slots); if (j.oos.length) say('  §TRL_OUT_OF_SCOPE page=' + pg.id + ' n=' + j.oos.length + ' container=' + OUT_OF_SCOPE + ' [' + j.oos.join(' · ') + ']'); }
+      if (pg.id === 'viewer') {   // S226 §R2b — the drawer and the What-if popup are judged; their populations are printed so a 0 cannot hide
+        const wiState = WHATIF_OPEN[lang] || 'not attempted';
+        say('  §TRL_SCOPE locale=' + lang + ' page=viewer drawer=' + TM_DRAWER + ' n=' + j.tm + ' whatif=#whatif-panel n=' + j.wi + ' open=' + (wiState === 'open' ? 'yes' : 'no (' + wiState + ')'));
+        row.tmStrings = (row.tmStrings || 0) + j.tm; row.wiStrings = (row.wiStrings || 0) + j.wi; row.wiOpen = wiState === 'open';
+      }
+      if (lang === T.BASE) say('  §TRL_UNCATALOGUED page=' + pg.id + ' n=' + j.uncat.length + (j.uncat.length ? ' [' + j.uncat.join(' · ') + ']' : '') + ' slots=' + j.slots);
       else say('  §TRL_LEAK locale=' + lang + ' page=' + pg.id + ' leaks=' + j.leaks + ' of ' + j.total + ' (translated=' + j.translated + ' wiring=' + j.wiring.length + ' gap=' + j.gap.length + ' uncat=' + j.uncat.length + ')' +
         (j.leaks ? ' [' + j.wiring.map(s => 'W:' + s).concat(j.gap.map(s => 'G:' + s), j.uncat.map(s => 'U:' + s)).join(' · ') + ']' : ''));
       // the confirm() popup on the landing page — a dialog string, judged by value
@@ -283,6 +333,11 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
     }
     row.carry = carryAll; row.errs = ERRS.filter(e => e.startsWith(lang + ':')).length;
     W(carryAll, '(1) ' + lang + ' carries through all ' + PAGES.length + ' pages (§TRL_DETECT src=saved, §TRL_LABELS, <html lang=' + row.htmlLang + ' dir=' + row.dir + '>)');
+    if (PAGES.some(p => p.id === 'viewer')) {   // (2b) S226 §R2b — the drawer was judged on a real population (not absent), the What-if popup too when it opened
+      W((row.tmStrings || 0) >= TM_MIN_STRINGS, '(2b) ' + lang + ' Time Machine drawer judged: ' + (row.tmStrings || 0) + ' strings inside ' + TM_DRAWER + ' (min ' + TM_MIN_STRINGS + '; was §TRL_OUT_OF_SCOPE n=53)');
+      if (row.wiOpen) W((row.wiStrings || 0) >= 8, '(2b) ' + lang + ' What-if popup judged: ' + (row.wiStrings || 0) + ' strings inside #whatif-panel');
+      else say('  §TRL_WHATIF locale=' + lang + ' open=no — popup NOT judged (' + (WHATIF_OPEN[lang] || 'not attempted') + ')');
+    }
     if (lang !== T.BASE) say('§TRL_LEAK locale=' + lang + ' leaks=' + row.leaks + ' of ' + row.total + ' wiring=' + row.wiring + ' gap=' + row.gap + ' uncat=' + row.uncat + ' pages=' + row.pages);
     else say('§TRL_BASELINE locale=' + lang + ' slots=' + row.slots + ' uncatalogued=' + row.uncat + ' pages=' + row.pages);
     ROWS.push(row);

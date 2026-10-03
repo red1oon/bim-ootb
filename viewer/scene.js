@@ -1652,7 +1652,8 @@ async function setupScene(A) {
         // §S-PROGRESS-META — clamp ≤100%: gzip/transfer-encoding makes Content-Length (compressed)
         // smaller than received (decompressed) bytes, so the raw ratio can exceed 1.0.
         const pct = Math.min(100, Math.round((received / contentLength) * 100));
-        if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
+        if (A.status) A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloading_pct||'Downloading {name}... {pct}% ({a}/{b}MB)')   // S226 §R2b
+          .replace('{name}',fileName).replace('{pct}',pct).replace('{a}',(received/1024/1024).toFixed(0)).replace('{b}',(contentLength/1024/1024).toFixed(0));
         // drive the visible bar during cachedFetch (meta.db phase), not just the status text
         var _sp = document.getElementById('s-progress');
         if (_sp) _sp.style.width = pct + '%';

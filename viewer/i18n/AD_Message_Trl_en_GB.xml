@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl en_GB — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/en_GB.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03) — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl en_GB — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/en_GB.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="en_GB" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -1979,6 +1979,660 @@ Keeps: the installed app + offline data, and any .db you saved yourself.</value>
  </row>
  <row id="1000492" trl="N">
   <value column="MsgText" original="clashes">clashes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000493" trl="N">
+  <value column="MsgText" original="Day/night cycle">Day/night cycle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000494" trl="N">
+  <value column="MsgText" original="Drone Pilot — cinematic camera">Drone Pilot — cinematic camera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000495" trl="N">
+  <value column="MsgText" original="Gantt chart">Gantt chart</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000496" trl="N">
+  <value column="MsgText" original="What-if: slip a phase, watch the chain re-fold in blue">What-if: slip a phase, watch the chain re-fold in blue</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000497" trl="N">
+  <value column="MsgText" original="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000498" trl="N">
+  <value column="MsgText" original="Dashboard">Dashboard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000499" trl="N">
+  <value column="MsgText" original="Budget vs Actual variance">Budget vs Actual variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000500" trl="N">
+  <value column="MsgText" original="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.">Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000501" trl="N">
+  <value column="MsgText" original="4D Construction Playback">4D Construction Playback</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000502" trl="N">
+  <value column="MsgText" original="DAY">DAY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000503" trl="N">
+  <value column="MsgText" original="HR">HR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000504" trl="N">
+  <value column="MsgText" original="MIN">MIN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000505" trl="N">
+  <value column="MsgText" original="Jump to start">Jump to start</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000506" trl="N">
+  <value column="MsgText" original="Deconstruct">Deconstruct</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000507" trl="N">
+  <value column="MsgText" original="Stop">Stop</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000508" trl="N">
+  <value column="MsgText" original="Build">Build</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000509" trl="N">
+  <value column="MsgText" original="Jump to end">Jump to end</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000510" trl="N">
+  <value column="MsgText" original="Undo edit">Undo edit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000511" trl="N">
+  <value column="MsgText" original="Undo the last Gantt drag/resize">Undo the last Gantt drag/resize</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000512" trl="N">
+  <value column="MsgText" original="Set Baseline">Set Baseline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000513" trl="N">
+  <value column="MsgText" original="Snapshot current dates as the baseline for schedule variance">Snapshot current dates as the baseline for schedule variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000514" trl="N">
+  <value column="MsgText" original="Pull Back">Pull Back</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000515" trl="N">
+  <value column="MsgText" original="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000516" trl="N">
+  <value column="MsgText" original="Drag to resize the Gantt drawer">Drag to resize the Gantt drawer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000517" trl="N">
+  <value column="MsgText" original="Locked">Locked</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000518" trl="N">
+  <value column="MsgText" original="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000519" trl="N">
+  <value column="MsgText" original="Editing">Editing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000520" trl="N">
+  <value column="MsgText" original="Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.">Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000521" trl="N">
+  <value column="MsgText" original="Drag to shift the whole project's start/finish (Editing must be unlocked)">Drag to shift the whole project's start/finish (Editing must be unlocked)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000522" trl="N">
+  <value column="MsgText" original="Drag to resize the drawer">Drag to resize the drawer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000523" trl="N">
+  <value column="MsgText" original="Import">Import</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000524" trl="N">
+  <value column="MsgText" original="Export">Export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000525" trl="N">
+  <value column="MsgText" original="P6/MSP file">P6/MSP file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000526" trl="N">
+  <value column="MsgText" original="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000527" trl="N">
+  <value column="MsgText" original="auto-bind">auto-bind</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000528" trl="N">
+  <value column="MsgText" original="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.">If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000529" trl="N">
+  <value column="MsgText" original="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000530" trl="N">
+  <value column="MsgText" original="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000531" trl="N">
+  <value column="MsgText" original="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000532" trl="N">
+  <value column="MsgText" original="Diff vs Model">Diff vs Model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000533" trl="N">
+  <value column="MsgText" original="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000534" trl="N">
+  <value column="MsgText" original="Phase Progress">Phase Progress</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000535" trl="N">
+  <value column="MsgText" original="S-Curve">S-Curve</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000536" trl="N">
+  <value column="MsgText" original="Day {c} / {t} — {p}% complete">Day {c} / {t} — {p}% complete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000537" trl="N">
+  <value column="MsgText" original="{n} placed | {names}">{n} placed | {names}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000538" trl="N">
+  <value column="MsgText" original="idle">idle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000539" trl="N">
+  <value column="MsgText" original="Author engine not loaded">Author engine not loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000540" trl="N">
+  <value column="MsgText" original="What-if engine not loaded">What-if engine not loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000541" trl="N">
+  <value column="MsgText" original="⊕ Now building">⊕ Now building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000542" trl="N">
+  <value column="MsgText" original="item">item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000543" trl="N">
+  <value column="MsgText" original="items">items</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000544" trl="N">
+  <value column="MsgText" original="Loading timeline...">Loading timeline...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000545" trl="N">
+  <value column="MsgText" original="Setting up 4D construction timeline...">Setting up 4D construction timeline...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000546" trl="N">
+  <value column="MsgText" original="No elements found in database">No elements found in database</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000547" trl="N">
+  <value column="MsgText" original="{storey} — {phase} ({n} el, Day {a}–{b}, {src})">{storey} — {phase} ({n} el, Day {a}–{b}, {src})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000548" trl="N">
+  <value column="MsgText" original="IFC 4D">IFC 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000549" trl="N">
+  <value column="MsgText" original="generated">generated</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000550" trl="N">
+  <value column="MsgText" original="Locked — click 🔒 Locked to enable editing">Locked — click 🔒 Locked to enable editing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000551" trl="N">
+  <value column="MsgText" original="Shift whole schedule {d}d">Shift whole schedule {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000552" trl="N">
+  <value column="MsgText" original="Time Machine couldn't complete this edit — {reason}">Time Machine couldn't complete this edit — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000553" trl="N">
+  <value column="MsgText" original="unexpected error">unexpected error</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000554" trl="N">
+  <value column="MsgText" original="Close other panels ({n})">Close other panels ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000555" trl="N">
+  <value column="MsgText" original="Blocked by {by} — clamped to {start}">Blocked by {by} — clamped to {start}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000556" trl="N">
+  <value column="MsgText" original="Not editable — no schedule task on this bar">Not editable — no schedule task on this bar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000557" trl="N">
+  <value column="MsgText" original="Move {n} bars  {d}d">Move {n} bars  {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000558" trl="N">
+  <value column="MsgText" original="Move">Move</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000559" trl="N">
+  <value column="MsgText" original="Resize">Resize</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000560" trl="N">
+  <value column="MsgText" original="Rejected: {reason}">Rejected: {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000561" trl="N">
+  <value column="MsgText" original="unknown">unknown</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000562" trl="N">
+  <value column="MsgText" original="Clamped to {start} by {by}">Clamped to {start} by {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000563" trl="N">
+  <value column="MsgText" original="Applied · {n} successor(s) cascaded">Applied · {n} successor(s) cascaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000564" trl="N">
+  <value column="MsgText" original="Nothing to undo">Nothing to undo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000565" trl="N">
+  <value column="MsgText" original="Undone: {mode} {task}">Undone: {mode} {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000566" trl="N">
+  <value column="MsgText" original="No schedule to baseline yet — generate a 4D schedule first">No schedule to baseline yet — generate a 4D schedule first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000567" trl="N">
+  <value column="MsgText" original="Baseline set — {n} tasks">Baseline set — {n} tasks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000568" trl="N">
+  <value column="MsgText" original="Not available">Not available</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000569" trl="N">
+  <value column="MsgText" original="Cannot compress — {reason}">Cannot compress — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000570" trl="N">
+  <value column="MsgText" original="no schedule">no schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000571" trl="N">
+  <value column="MsgText" original="Nothing to compress — schedule is already at earliest float">Nothing to compress — schedule is already at earliest float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000572" trl="N">
+  <value column="MsgText" original="Compressed 1 task">Compressed 1 task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000573" trl="N">
+  <value column="MsgText" original="Compressed {n} tasks">Compressed {n} tasks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000574" trl="N">
+  <value column="MsgText" original="project finish moved up 1 day">project finish moved up 1 day</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000575" trl="N">
+  <value column="MsgText" original="project finish moved up {d} days">project finish moved up {d} days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000576" trl="N">
+  <value column="MsgText" original="project finish unchanged (internal float closed)">project finish unchanged (internal float closed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000577" trl="N">
+  <value column="MsgText" original="Cannot shift — {reason}">Cannot shift — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000578" trl="N">
+  <value column="MsgText" original="Cannot move group — {reason}">Cannot move group — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000579" trl="N">
+  <value column="MsgText" original="Cannot edit — no real dates found for this task">Cannot edit — no real dates found for this task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000580" trl="N">
+  <value column="MsgText" original="Could not generate a schedule">Could not generate a schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000581" trl="N">
+  <value column="MsgText" original="Schedule generated — refreshing…">Schedule generated — refreshing…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000582" trl="N">
+  <value column="MsgText" original="Linked: {pred}  →  {succ}">Linked: {pred}  →  {succ}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000583" trl="N">
+  <value column="MsgText" original="Refused — that link would create a cycle">Refused — that link would create a cycle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000584" trl="N">
+  <value column="MsgText" original="Linked, but {task} clamped to {start} — blocked by {by}">Linked, but {task} clamped to {start} — blocked by {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000585" trl="N">
+  <value column="MsgText" original="Verifying integrity…">Verifying integrity…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000586" trl="N">
+  <value column="MsgText" original="⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again">⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000587" trl="N">
+  <value column="MsgText" original="+{n} floating">+{n} floating</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000588" trl="N">
+  <value column="MsgText" original="+{n} hanging in midair">+{n} hanging in midair</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000589" trl="N">
+  <value column="MsgText" original="No schedule available">No schedule available</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000590" trl="N">
+  <value column="MsgText" original="critical">critical</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000591" trl="N">
+  <value column="MsgText" original="with float">with float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000592" trl="N">
+  <value column="MsgText" original="Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.&#10;Project duration {pf}d · total float {minF}..{maxF}d.&#10;CPM reads the dates the drag produced — it never changes one.">Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.
+Project duration {pf}d · total float {minF}..{maxF}d.
+CPM reads the dates the drag produced — it never changes one.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000593" trl="N">
+  <value column="MsgText" original="← after">← after</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000594" trl="N">
+  <value column="MsgText" original="→ before">→ before</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000595" trl="N">
+  <value column="MsgText" original="unlink">unlink</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000596" trl="N">
+  <value column="MsgText" original="no dependencies">no dependencies</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000597" trl="N">
+  <value column="MsgText" original="{n} elements · {task}">{n} elements · {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000598" trl="N">
+  <value column="MsgText" original="CRITICAL PATH · zero float">CRITICAL PATH · zero float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000599" trl="N">
+  <value column="MsgText" original="Total float {n}d">Total float {n}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000600" trl="N">
+  <value column="MsgText" original="(CPM, dates unchanged)">(CPM, dates unchanged)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000601" trl="N">
+  <value column="MsgText" original="Start">Start</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000602" trl="N">
+  <value column="MsgText" original="Finish">Finish</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000603" trl="N">
+  <value column="MsgText" original="Dependencies">Dependencies</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000604" trl="N">
+  <value column="MsgText" original="Apply">Apply</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000605" trl="N">
+  <value column="MsgText" original="Budget vs Actual">Budget vs Actual</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000606" trl="N">
+  <value column="MsgText" original="Reading records…">Reading records…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000607" trl="N">
+  <value column="MsgText" original="No project records for this model">No project records for this model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000608" trl="N">
+  <value column="MsgText" original="from records">from records</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000609" trl="N">
+  <value column="MsgText" original="Cost">Cost</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000610" trl="N">
+  <value column="MsgText" original="Schedule">Schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000611" trl="N">
+  <value column="MsgText" original="(planned baseline)">(planned baseline)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000612" trl="N">
+  <value column="MsgText" original="Projected finish">Projected finish</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000613" trl="N">
+  <value column="MsgText" original="projected from cost">projected from cost</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000614" trl="N">
+  <value column="MsgText" original="forecast">forecast</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000615" trl="N">
+  <value column="MsgText" original="cost · from records">cost · from records</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000616" trl="N">
+  <value column="MsgText" original="Recording in progress — import refused">Recording in progress — import refused</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000617" trl="N">
+  <value column="MsgText" original="Interop module not loaded — reopen the P6/MSP section">Interop module not loaded — reopen the P6/MSP section</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000618" trl="N">
+  <value column="MsgText" original="Interop modules failed to load: {err}">Interop modules failed to load: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000619" trl="N">
+  <value column="MsgText" original="No model open yet">No model open yet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000620" trl="N">
+  <value column="MsgText" original="Imported {format} &quot;{file}&quot; — {wbs} WBS / {acts} activities / {links} links.">Imported {format} "{file}" — {wbs} WBS / {acts} activities / {links} links.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000621" trl="N">
+  <value column="MsgText" original="Pre-bound {n} elements across {a} activities by convention">Pre-bound {n} elements across {a} activities by convention</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000622" trl="N">
+  <value column="MsgText" original="({n} selector(s) matched nothing — review)">({n} selector(s) matched nothing — review)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000623" trl="N">
+  <value column="MsgText" original="({n} activities carry a bind token — tick auto-bind to resolve.)">({n} activities carry a bind token — tick auto-bind to resolve.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000624" trl="N">
+  <value column="MsgText" original="Import failed: {err}">Import failed: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000625" trl="N">
+  <value column="MsgText" original="No schedule to export">No schedule to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000626" trl="N">
+  <value column="MsgText" original="No tasks to export">No tasks to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000627" trl="N">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to MS Project XML ({file}).">Exported {n} tasks / {m} links to MS Project XML ({file}).</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000628" trl="N">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000629" trl="N">
+  <value column="MsgText" original="No schedule loaded">No schedule loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000630" trl="N">
+  <value column="MsgText" original="Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.">Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000631" trl="N">
+  <value column="MsgText" original="Computing schedule diff…">Computing schedule diff…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000632" trl="N">
+  <value column="MsgText" original="Diff failed: {err}">Diff failed: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000633" trl="N">
+  <value column="MsgText" original="theirs {a}d vs ours {b}d">theirs {a}d vs ours {b}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000634" trl="N">
+  <value column="MsgText" original="{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED">{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000635" trl="N">
+  <value column="MsgText" original="4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.">4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000636" trl="N">
+  <value column="MsgText" original="What-if schedule">What-if schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000637" trl="N">
+  <value column="MsgText" original="Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.">Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000638" trl="N">
+  <value column="MsgText" original="Accept — re-baseline">Accept — re-baseline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000639" trl="N">
+  <value column="MsgText" original="Discard">Discard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000640" trl="N">
+  <value column="MsgText" original="Official (planned)">Official (planned)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000641" trl="N">
+  <value column="MsgText" original="What-if (blue ripple)">What-if (blue ripple)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000642" trl="N">
+  <value column="MsgText" original="Finish:">Finish:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000643" trl="N">
+  <value column="MsgText" original="BAC:">BAC:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000644" trl="N">
+  <value column="MsgText" original="(unchanged — same scope)">(unchanged — same scope)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000645" trl="N">
+  <value column="MsgText" original="PV @ finish:">PV @ finish:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000646" trl="N">
+  <value column="MsgText" original="drag to slip · official {a}→{b}">drag to slip · official {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000647" trl="N">
+  <value column="MsgText" original="blue {a}→{b}">blue {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000648" trl="N">
+  <value column="MsgText" original="pull in 7 days">pull in 7 days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000649" trl="N">
+  <value column="MsgText" original="slip out 7 days">slip out 7 days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000650" trl="N">
+  <value column="MsgText" original="What-if accepted — schedule re-baselined (finish +{d}d)">What-if accepted — schedule re-baselined (finish +{d}d)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000651" trl="N">
+  <value column="MsgText" original="What-if discarded — official schedule restored">What-if discarded — official schedule restored</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000652" trl="N">
+  <value column="MsgText" original="What-if: ERP engine not ready">What-if: ERP engine not ready</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000653" trl="N">
+  <value column="MsgText" original="What-if: no folded project yet — push one to ERP first">What-if: no folded project yet — push one to ERP first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000654" trl="N">
+  <value column="MsgText" original="Project {id}">Project {id}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000655" trl="N">
+  <value column="MsgText" original="Downloading {name}... {pct}% ({a}/{b}MB)">Downloading {name}... {pct}% ({a}/{b}MB)</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>
