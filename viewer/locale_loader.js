@@ -311,6 +311,9 @@
 
   // ── Flag picker popup ──
   function toggleFlagPicker() {
+    // S226 §R2c: the click that OPENS the picker (e.g. the landing ⋯ rail's flag — PillBuilder fires on pointerup, the
+    // click follows) must not also count as the "outside click" that closes it — found by the Viewer trailer recorder.
+    window.__flagPickerOpenedAt = Date.now();
     var popup = document.getElementById('ootb-flag-popup');
     if (popup) { popup.classList.toggle('active'); return; }
 
@@ -375,6 +378,7 @@
 
     // Close on outside click
     document.addEventListener('click', function(e) {
+      if (Date.now() - (window.__flagPickerOpenedAt || 0) < 400) return;   // the opening click itself
       if (!popup.contains(e.target) && e.target.id !== 'header-flag-btn') {
         popup.classList.remove('active');
       }
