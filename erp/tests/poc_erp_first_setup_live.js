@@ -29,7 +29,7 @@ const server = http.createServer((req, res) => {
 });
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
-const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
+const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S05b: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
   S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'V', S26: 'V' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
@@ -39,6 +39,7 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S06: 'V', S07
 // FS-7 (§FS2f) pinned S20 to V: a session-typed order's Complete runs MOrder.completeIt's fan-out rule (two arms).
 // FS-9 (§FS2i) pinned S24b to V: a TableDir process parameter is a client-scoped picker.
 // FS-8 (§FS2h) pinned S11b to V: the commit refold is idempotent; the grid == a reload's count.
+// FS-18 (§FS2p) pinned S05b to V: a tenant from the user's CoA file; the file's chart + key map, a missing key refused.
 // FS-17 (§FS2o) pinned S26 to V: Backup → wipe → tampered copy rejected → Restore round-trips (ops, tip, BPs).
 // FS-16 (§FS2n) pinned S25b to V: CSV → loader → I_BPartner → ImportBPartner → BPs == the CSV.
 // FS-15 (§FS2m) pinned S20b to V: the POS order's invoice + shipment are readable and posted; facts == oracle.
@@ -728,6 +729,57 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       'ErpPersist=' + has + ' control=' + mounted + ' backupOps=' + snap.ops.length + '/' + S0.ops + ' wipe→' + S1.ops + ' tamper=' + (neg && neg.ok === false ? 'REJECTED(' + (neg.tipOk === false ? 'tip' : 'sig') + ')' : JSON.stringify(neg)) +
       ' restoreOps=' + S2.ops + ' reloadOps=' + (S3 && S3.ops) + ' tipEqual=' + (S2.tip === S0.tip) + ' bpsEqual=' + (JSON.stringify(S2.bps) === JSON.stringify(S0.bps)) + ' (' + S0.bps.length + ') ' + bLine.slice(0, 80));
   } catch (e) { step('S26', 'I', 'backup', 'harness: ' + e.message); }
+
+  // ── S05b own chart of accounts (FS-18, spec §FS2p) — a SECOND tenant from iDempiere's own AccountingUS.csv subset. ─────────
+  //    ORACLE from the file, parsed HERE (csv rows with a Default_Account): distinct Values = the chart; each required key →
+  //    that line's Value. NEGATIVE CONTROL first: the file minus its C_RECEIVABLE_ACCT line must be refused, creating nothing.
+  try {
+    const coaTxt = fs.readFileSync(path.join(__dirname, 'fixtures', 'coa_small_AccountingUS.csv'), 'utf8');
+    const csvRow = (l) => { const o = []; let c = '', q = false; for (let i = 0; i < l.length; i++) { const ch = l[i]; if (q) { if (ch === '"') q = false; else c += ch; } else if (ch === '"') q = true; else if (ch === ',') { o.push(c); c = ''; } else c += ch; } o.push(c); return o; };
+    const fileLines = coaTxt.split(/\r?\n/).filter(l => l.trim() && !l.startsWith('[')).map(csvRow).filter(r => (r[7] || '').trim());
+    const keyVal = {}; fileLines.forEach(r => { keyVal[r[7].trim().toUpperCase()] = r[0].trim(); });
+    const distinct = new Set(fileLines.map(r => r[0].trim())).size;
+    const reqKeys = await q(page, "SELECT upper(c.ColumnName), t.TableName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName IN ('C_AcctSchema_GL','C_AcctSchema_Default') AND c.AD_Reference_ID=25 AND c.IsActive='Y'");
+    const openWizard = async () => {
+      await page.goto(base + '/idempiere.html', { waitUntil: 'load' });
+      await page.waitForFunction(() => document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 20000 });
+      await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible', { timeout: 8000 });
+      await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible', { timeout: 8000 });
+      await page.click('#idmp-login-ok');
+      await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 10000 });
+      await page.evaluate(() => document.querySelectorAll('#idmp-tree .idmp-row:not(.leaf)').forEach(r => { if (!r.parentElement.classList.contains('open')) r.click(); }));
+      await page.click("#idmp-tree .idmp-row.leaf:has(.nm:text-is('Initial Tenant Setup'))", { timeout: 6000 });
+      await page.waitForSelector('[data-genesis-create]', { timeout: 8000 });
+    };
+    const bad = coaTxt.split(/\r?\n/).filter(l => !/"C_RECEIVABLE_ACCT"/.test(l)).join('\n');
+    await openWizard();
+    await page.fill('[data-genesis-name]', 'CoaBadCo'); await page.fill('[data-genesis-admin]', 'coabad');
+    await page.selectOption('[data-genesis-coa]', 'file');
+    await page.setInputFiles('[data-genesis-coafile]', { name: 'coa_bad.csv', mimeType: 'text/csv', buffer: Buffer.from(bad) }); await page.waitForTimeout(600);
+    await page.click('[data-genesis-create]'); await page.waitForTimeout(1500);
+    const badMsg = await page.$eval('[data-genesis-error]', e => e.textContent).catch(() => '');
+    const badClient = Number(await one(page, "SELECT COUNT(*) FROM AD_Client WHERE Name='CoaBadCo'"));
+    await openWizard();
+    await page.fill('[data-genesis-name]', 'CoaCo'); await page.fill('[data-genesis-admin]', 'coaowner');
+    await page.selectOption('[data-genesis-coa]', 'file');
+    let n0 = PAGELOG.length;
+    await page.setInputFiles('[data-genesis-coafile]', { name: 'coa_small_AccountingUS.csv', mimeType: 'text/csv', buffer: Buffer.from(coaTxt) }); await page.waitForTimeout(600);
+    await page.click('[data-genesis-create]');
+    await page.waitForSelector('[data-genesis-enter]', { timeout: 25000 });
+    const CID2 = Number(await one(page, "SELECT AD_Client_ID FROM AD_Client WHERE Name='CoaCo'"));
+    const evN = Number(await one(page, 'SELECT COUNT(*) FROM C_ElementValue WHERE AD_Client_ID=' + CID2));
+    let wrong = [], checked = 0;
+    for (const [k, tbl] of (Array.isArray(reqKeys) ? reqKeys : [])) {
+      const v = await one(page, 'SELECT ev.Value FROM ' + tbl + ' d JOIN C_ValidCombination vc ON vc.C_ValidCombination_ID=d.' + k + ' JOIN C_ElementValue ev ON ev.C_ElementValue_ID=vc.Account_ID WHERE d.AD_Client_ID=' + CID2);
+      checked++; if (String(v) !== String(keyVal[k])) wrong.push(k + ':' + v + '≠' + keyVal[k]);
+    }
+    say('§S05b-DETAIL ' + since(n0, /§GENESIS-COA/).join(' | ').slice(0, 300) + ' | wrongKeys=' + JSON.stringify(wrong.slice(0, 8)));
+    step('S05b', CID2 >= 17 && evN === distinct && distinct === 53 && checked === (reqKeys.length || -1) && checked > 0 && !wrong.length &&
+      /Account not defined: C_RECEIVABLE_ACCT/.test(badMsg) && badClient === 0 ? 'V' : 'G',
+      'Initial Tenant Setup can load your own chart of accounts file (iDempiere AccountingUS format)',
+      'client=' + CID2 + ' C_ElementValue=' + evN + ' (file distinct values ' + distinct + ', rows ' + fileLines.length + ') requiredKeys checked=' + checked + ' wrong=' + wrong.length +
+      ' | negative (no C_RECEIVABLE_ACCT): "' + String(badMsg).slice(0, 80) + '" clientsCreated=' + badClient);
+  } catch (e) { step('S05b', 'I', 'own chart of accounts', 'harness: ' + e.message); }
 
   // ── verdict ──────────────────────────────────────────────────────────────────────────────────────────────────
   const cnt = { V: 0, G: 0, I: 0 }; RES.forEach(r => cnt[r.verdict]++);
