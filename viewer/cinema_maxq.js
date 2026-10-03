@@ -1524,8 +1524,13 @@
     // chips cannot flash back on in the ~1.2 s gap between beats.rise and the escape window.
     return !!(A2._escRouteHudSuppress || A2._findingsHudSuppress);
   }
+  // W2 — the top row the load-path card covers, name -> its LastBox prop. A yielding member keeps its last drawn box as the
+  // row's reservation (nothing drawn), so the panels below do not ride up under the card on the arm frame.
+  var _HUD_ROW = { 'hud.pathmap': 'pathOverviewLastBox', 'daycounter': 'dayCounterLastBox', 'suncompass.clock': 'sunClockLastBox', 'suncompass.readout': 'sunReadoutLastBox' };
   function _drawUnlessHold(name, fn, boxFn) {
     var A2 = window.APP;
+    if (A2 && A2._hudRowYield && _HUD_ROW[name]) { A2[_HUD_ROW[name]] = (A2._hudRowKeep || {})[name] || null;
+      if (!A2._hudCompositeAlphaSample) A2._hudCompositeAlphaSample = {}; A2._hudCompositeAlphaSample[name] = 0; return; }
     // Suppressed overlays register a 1x1 placeholder exactly as an absent box does, so §HUD_LAYOUT
     // still has a row for them and _rowAdvance reads a zero-size box — the row collapses and the
     // card below gets the space, which is the point of ceding the frame.
@@ -1570,6 +1575,7 @@
     fn(alpha);
     if (A2) { A2._inHudFadeWrapper = false; A2._drawUnlessHoldCurrentName = null; }
     if (faded) ctx2.restore();
+    if (alpha > 0 && A2 && _HUD_ROW[name] && A2[_HUD_ROW[name]]) (A2._hudRowKeep = A2._hudRowKeep || {})[name] = A2[_HUD_ROW[name]];   // W2 row reservation
     if (alpha > 0 && A2 && A2._hudLayoutRegister) {
       // §129.55 A — the drawer's own published rect when it has one, read AFTER fn() so it is this
       // frame's, never a neighbour's. try/catch for the same never-kills-a-bake contract every
@@ -2025,14 +2031,17 @@
     // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
     // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
     // absolute-assignment reason above.
-    // W2 (ALTC_FOUNDATION §1 round 3): the load-path card is drawn opaque at [30,30] from the arm frame (part of the frozen scene,
-    // §129.12/§129.29 — it must NOT fade with the HUD), while the path map in the same rect was still fading from alpha 1 =>
-    // §HUD_OVERLAP_WORST FAIL f=23 alpha 1.00/1.00 (Hospital 0049 film too). The map yields for exactly the card's window
-    // (A.loadPathCardOn = the composite's own gate); §129.8 item 4b already wants "no path map" during the hold.
+    // W2 (ALTC_FOUNDATION §1 rounds 3-4): the load-path card is drawn opaque at [30,30] (~970 px wide) from the arm frame — part of
+    // the frozen scene, §129.12/§129.29, it must NOT fade with the HUD — AFTER this row, while the row's boxes are still at alpha 1
+    // on the first hold frame (_hudFadeT(0) = 0) => §HUD_OVERLAP_WORST FAIL f=23 1.00/1.00: hud.pathmap (round 3), then
+    // suncompass.readout once the map yielded (round 4). The whole top row yields for exactly the card's window
+    // (A.loadPathCardOn = the composite's own gate) and keeps its _rowAdvance, so nothing below moves; §129.8 item 4b already
+    // fades every row member out during the hold.
     var _cardOn = !!(A.loadPathCardOn && A.loadPathCardOn());
-    if (_cardOn && !A._pathmapYieldLogged) { A._pathmapYieldLogged = true; console.log('§HUD_PATHMAP_YIELD card on — path map not drawn while the load-path card holds its rect'); }
-    if (!_cardOn) A._pathmapYieldLogged = false;
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas && !_cardOn) {
+    A._hudRowYield = _cardOn;
+    if (_cardOn && !A._hudRowYieldLogged) { A._hudRowYieldLogged = true; console.log('§HUD_ROW_YIELD card on — top-row HUD (' + Object.keys(_HUD_ROW).join(',') + ') not drawn while the load-path card holds the row'); }
+    if (!_cardOn) A._hudRowYieldLogged = false;
+    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
       _drawUnlessHold('hud.pathmap', function (a) {
         try {
           A.pathOverviewCompositeOntoCanvas(ctx, w, h, ovInfo.ov, ovInfo.pose, a, ovInfo.pos, 0, _rowX);
@@ -2043,8 +2052,6 @@
       }, function () { return A.pathOverviewLastBox; });   // §129.55 B — the rect _rowAdvance already reads, now also registered
       _rowAdvance(A.pathOverviewLastBox);
     }
-    // the rows below keep their place while the map yields (a shifted day counter would land in the card's rect instead)
-    if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas && _cardOn) _rowAdvance(A.pathOverviewLastBox);
     if (dayInfo && dayInfo.pos !== 'off' && A.dayCounterCompositeOntoCanvas) {
       // ROUND 13 item C — `a` passed as dayCounter's own `opacity` param (its `ctx.globalAlpha = op`
       // is an absolute assignment from that param, was clobbering the ambient hold-fade alpha).
@@ -2081,6 +2088,7 @@
       }, function () { return A.sunReadoutLastBox; });   // §129.55 B
       _rowAdvance(A.sunReadoutLastBox);
     }
+    A._hudRowYield = false;   // W2 — the row ends here
     // Everything below the row — the pie panel, the storey card — starts under the TALLEST member,
     // not under a sum. An empty row (all four off) leaves _rowH at 0 and the column starts at the
     // margin exactly as it did before any of this existed.
