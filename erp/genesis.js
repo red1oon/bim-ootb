@@ -11,7 +11,7 @@
  *   fields) — NOT a stripped OUTPUT: G3 folds iDempiere's full default chart of accounts.
  *
  *   birthTenant(input) -> { input, groups:[{seq,label,ops:[{op:'CREATE',table,row}],parent,tip}], tip, refs }
- *     input = { clientName, currencyId, currencyPrecision, adminUser, dateAcct }
+ *     input = { clientName, currencyId, currencyPrecision, adminUser, dateAcct, countryId?, regionId?, city? }
  *     Each group's tip = sha256(parent.tip + JSON(ops)) — op-log = git-for-data (replay/branch/reverse).
  *   foldGenesis(groups, db) -> apply every CREATE op into `db` (better-sqlite3 OR sql.js facade); schema inferred.
  *   signHead(groups) -> ECDSA-sign the head tip (the signed genesis bundle). [async; webcrypto, node + browser]
@@ -89,6 +89,11 @@
     var adminUser = input.adminUser || 'admin';
     var dateAcct = input.dateAcct || '2024-01-15';                          // explicit, not Date.now
     var ccyIso = input.currencyIso || 'USD';                                 // FS-3: names the schema (MAcctSchema :262)
+    // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b): MSetup.createEntities
+    // takes the country (process 53161 param C_Country_ID, default = the en_US country 100). Headless callers that give
+    // none keep the pre-FS-12 tax-category name ('Standard'); a given country follows MSetup.java:1233.
+    var countryId = input.countryId != null ? Number(input.countryId) : 100;
+    var regionId = input.regionId != null ? Number(input.regionId) : null, city = input.city || null;
 
     var id = new IdGen(1000000), groups = [], parent = '0'.repeat(64);
     function group(label, ops) {
@@ -109,15 +114,24 @@
     // ── G1 IDENTITY ─────────────────────────────────────────────────────────────────────────────────────────
     var clientId = id.next(), orgId = id.next();
     var roleAdminId = id.next(), roleUserId = id.next(), userId = id.next();
+    var locOrgId = id.next();                                                 // FS-12: MSetup.java:1286-1292 org location
     group('G1 identity', [
       create('ad_client', { ad_client_id: clientId, name: clientName, value: clientName }),
       // FIX-A: MOrg.java:146 setIsSummary(false) — AD_Val_Rule 130 (AD_Org.IsSummary='N') hid a NULL.
       create('ad_org', { ad_org_id: orgId, ad_client_id: clientId, name: clientName + ' HQ', value: 'HQ', issummary: 'N' }),
-      create('ad_role', { ad_role_id: roleAdminId, ad_client_id: clientId, name: clientName + ' Admin', userlevel: '  C' }),
-      create('ad_role', { ad_role_id: roleUserId, ad_client_id: clientId, name: clientName + ' User', userlevel: '   O' }),
+      // FS-12: MSetup.java:258 admin = USERLEVEL_ClientPlusOrganization ' CO' (X_AD_Role.java:1336); the user role keeps
+      // MRole.setInitialDefaults USERLEVEL_Organization '  O' (MRole.java:339). Were '  C' / '   O' — not iDempiere values:
+      // ad_access.canView reads char 1 = C, char 2 = O, so '  C' could not write any Client+Org (AccessLevel 3) table
+      // (§CRUD-GATE … reason=wrong-accesslevel on M_PriceList update, measured).
+      create('ad_role', { ad_role_id: roleAdminId, ad_client_id: clientId, name: clientName + ' Admin', userlevel: ' CO' }),
+      create('ad_role', { ad_role_id: roleUserId, ad_client_id: clientId, name: clientName + ' User', userlevel: '  O' }),
       create('ad_user', { ad_user_id: userId, ad_client_id: clientId, name: adminUser }),
       create('ad_user_roles', { ad_user_id: userId, ad_role_id: roleAdminId, ad_client_id: clientId }),
-      create('ad_org_info', { ad_org_id: orgId, ad_client_id: clientId })
+      // FS-12: MSetup.java:1286-1292 — an MLocation(country, region, city) and UPDATE AD_OrgInfo SET C_Location_ID (Tax.get's bill-from).
+      // The row's table is AD_OrgInfo (MOrgInfo); it was emitted as 'ad_org_info', which no resident schema carries, so
+      // mergeGenesisInto skipped it (honest skip) — a born org had NO AD_OrgInfo row at all (Tax.get: TaxCriteriaNotFound).
+      create('c_location', { c_location_id: locOrgId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('ad_orginfo', { ad_org_id: orgId, ad_client_id: clientId, c_location_id: locOrgId })
     ]);
 
     // ── G2 CALENDAR + YEAR + 12 PERIODS — FS-2 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness:
@@ -256,34 +270,57 @@
     var whId = id.next(), locId = id.next(), plId = id.next(), plvId = id.next();
     var bpGroupId = id.next(), bpId = id.next(), pcatId = id.next(), prodId = id.next(), taxId = id.next();
     var taxCatId = id.next(), payTermId = id.next();                          // FS-4 (§FS2g)
+    var locBpId = id.next(), bpLocId = id.next(), locWhId = id.next(), dsId = id.next(), ppId = id.next();   // FS-12 (§FS2j)
+    var taxCatName = (input.countryId != null && countryId === 100) ? 'Sales Tax' : 'Standard';             // MSetup.java:1233
     group('G6 base ops', [
-      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse' }),
+      // FS-12: MSetup.java:1298-1303 — the warehouse gets its own MLocation.
+      create('c_location', { c_location_id: locWhId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse', c_location_id: locWhId }),
       // FIX-A: MLocator.java:290 setClientOrg(warehouse) — the locator takes its warehouse's org, not '*'.
       create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Std' }),
-      create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, issotrx: 'Y' }),
-      create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year }),
+      // FS-12: MSetup.java:1333-1353 — IsDefault=Y; MPriceList.setInitialDefaults :243-249 (IsSOPriceList=N — the setup
+      // list is NOT a sales list in iDempiere either; a Sales Order reaches it via Login.loadDefault #M_PriceList_ID);
+      // a DiscountSchema 'P'; the version's ValidFrom = today (MPriceListVersion.setName :177-187 — here the explicit
+      // dateAcct, which the wizard sets to today); MProductPrice(plv, product, 1, 1, 1) (:1355-1356).
+      create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, isdefault: 'Y',
+        issopricelist: 'N', enforcepricelimit: 'N', istaxincluded: 'N', priceprecision: 2 }),
+      create('m_discountschema', { m_discountschema_id: dsId, ad_client_id: clientId, name: 'Standard', discounttype: 'P' }),
+      create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year,
+        validfrom: dateAcct, m_discountschema_id: dsId }),
       create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, name: 'Standard' }),
       // FIX-A: MBPartner.java:286 setInitialDefaults → setIsSummary(false) — AD_Val_Rule 230 hid a NULL.
       create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y', issummary: 'N' }),
+      // FS-12: MSetup.java:1193-1198 — the Standard BP's location (X_C_BPartner_Location defaults Bill/Ship/PayFrom/RemitTo=Y,
+      // MBPartnerLocation.java:93 Name '.'); without it MOrder.beforeSave setBPartner rejects the order (MOrder.java:772-774).
+      create('c_location', { c_location_id: locBpId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('c_bpartner_location', { c_bpartner_location_id: bpLocId, c_bpartner_id: bpId, c_location_id: locBpId, ad_client_id: clientId,
+        name: '.', isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y' }),
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
       create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, name: 'Standard' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
       // FS-4: MSetup.java:1227-1236 one C_TaxCategory (no country input → Msg 'Standard'), IsDefault=Y; the setup tax is
       // made IN it (:1251) and the product uses it (:1263-1275). Rate stays 9 (W-GENESIS-MINIMAL oracle; MSetup's is 0).
-      create('c_taxcategory', { c_taxcategory_id: taxCatId, ad_client_id: clientId, name: 'Standard', isdefault: 'Y' }),
-      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product', c_taxcategory_id: taxCatId }),
+      create('c_taxcategory', { c_taxcategory_id: taxCatId, ad_client_id: clientId, name: taxCatName, isdefault: 'Y' }),
+      // FS-12: MSetup.java:1225,1263-1268 — Value=Name, C_UOM_ID=100 (EA); then its one price (1/1/1) in the setup version.
+      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product', value: 'Standard Product',
+        c_uom_id: 100, c_taxcategory_id: taxCatId,
+        // FS-12: X_M_Product defaults (IsSummary=N … AD_Val_Rule 231 'M_Product (Trx)' hid a NULL) + MProduct.java:257 ProductType 'I'.
+        issummary: 'N', issold: 'Y', ispurchased: 'Y', isstocked: 'Y', producttype: 'I' }),
+      create('m_productprice', { m_productprice_id: ppId, m_pricelist_version_id: plvId, m_product_id: prodId, ad_client_id: clientId,
+        pricelist: 1, pricestd: 1, pricelimit: 1 }),
       create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9, c_taxcategory_id: taxCatId, isdefault: 'Y' }),
       // FS-4: MSetup.java:1418-1426 — the 'Immediate' term, every day/discount 0, IsDefault=Y.
       create('c_paymentterm', { c_paymentterm_id: payTermId, ad_client_id: clientId, value: 'Immediate', name: 'Immediate',
-        netdays: 0, gracedays: 0, discountdays: 0, discount: 0, discountdays2: 0, discount2: 0, isdefault: 'Y' }),
+        netdays: 0, gracedays: 0, discountdays: 0, discount: 0, discountdays2: 0, discount2: 0, isdefault: 'Y',
+        paymenttermusage: 'B' }),   // FS-12: MSetup's SQL INSERT omits it → the column default 'B' (AD_Column.DefaultValue); AD_Ref_Table 53383/53384 filter on it
       create('c_tax_acct', { c_tax_id: taxId, c_acctschema_id: asId, ad_client_id: clientId, t_due_acct: vcByColumn['t_due_acct'] })
     ]);
 
     return {
-      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, currencyIso: ccyIso, adminUser: adminUser, dateAcct: dateAcct },
+      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, currencyIso: ccyIso, adminUser: adminUser, dateAcct: dateAcct, countryId: countryId },
       groups: groups, tip: parent,
       refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
-              acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
+              acctSchemaId: asId, bpartnerId: bpId, productId: prodId, priceListId: plId, priceListVersionId: plvId, bpLocationId: bpLocId,
               taxId: taxId, taxCategoryId: taxCatId, paymentTermId: payTermId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
