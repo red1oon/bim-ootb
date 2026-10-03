@@ -155,12 +155,23 @@
     group('G2 calendar', g2);
 
     // ── G3 CHART (fold iDempiere's full default CoA — the data-bearing step) ─────────────────────────────────
-    var elementId = id.next(), coa = SEED.coa, evByValue = {};
+    // FS-18 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2p — Witness: W-ERP-FIRST-SETUP S05b): input.coa = a parsed
+    // CoA file (parseCoA) → its distinct Values are the chart and its key map wires the defaults; every input.requiredKeys
+    // column the file does not define throws 'Account not defined: KEY' (MSetup.java:911-919) BEFORE any op exists.
+    var customCoa = input.coa && input.coa.accounts && input.coa.accounts.length ? input.coa : null;
+    if (customCoa) {
+      (input.requiredKeys || []).forEach(function (k) {
+        if (customCoa.keyToValue[String(k).toUpperCase()] == null) throw new Error('Account not defined: ' + String(k).toUpperCase());
+      });
+    }
+    var elementId = id.next(), coa = customCoa ? customCoa.accounts : SEED.coa, evByValue = {};
     var g3 = [create('c_element', { c_element_id: elementId, ad_client_id: clientId, name: 'Account', elementtype: 'A' })];
     coa.forEach(function (a) {
       var evId = id.next(); evByValue[a.value] = evId;
-      g3.push(create('c_elementvalue', { c_elementvalue_id: evId, c_element_id: elementId, ad_client_id: clientId,
-        value: a.value, name: a.name, accounttype: a.accounttype, accountsign: a.accountsign, issummary: 'N' }));
+      var row = { c_elementvalue_id: evId, c_element_id: elementId, ad_client_id: clientId,
+        value: a.value, name: a.name, accounttype: a.accounttype, accountsign: a.accountsign, issummary: a.issummary || 'N' };
+      if (customCoa) { row.description = a.description || null; row.isdoccontrolled = a.isdoccontrolled || 'N'; }
+      g3.push(create('c_elementvalue', row));
     });
     group('G3 chart', g3);
 
@@ -168,7 +179,17 @@
     var asId = id.next();
     var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso,
       c_currency_id: ccyId, c_element_id: elementId })];
-    var map = SEED.acctMap, vcByColumn = {};
+    var GLMAP = SEED.acctMapGL || {};                                       // FS-18: C_AcctSchema_GL's account columns
+    var map = {}, vcByColumn = {};
+    Object.keys(SEED.acctMap).forEach(function (c) { map[c] = SEED.acctMap[c]; });
+    Object.keys(GLMAP).forEach(function (c) { map[c] = GLMAP[c]; });
+    if (customCoa) {                                                         // FS-18: the file's key map (lower-case column → Value)
+      map = {};
+      Object.keys(customCoa.keyToValue).forEach(function (k) {
+        var col = k.toLowerCase();
+        if (SEED.acctMap[col] !== undefined || GLMAP[col] !== undefined || (input.requiredKeys || []).some(function (r) { return String(r).toLowerCase() === col; })) map[col] = customCoa.keyToValue[k];
+      });
+    }
     Object.keys(map).forEach(function (col) {
       var evId = evByValue[map[col]];
       if (evId == null) return;                                            // value not in CoA -> skip (honest)
@@ -176,9 +197,11 @@
       g4.push(create('c_validcombination', { c_validcombination_id: vcId, ad_client_id: clientId,
         c_acctschema_id: asId, account_id: evId }));
     });
-    var defRow = { c_acctschema_id: asId, ad_client_id: clientId };
-    Object.keys(vcByColumn).forEach(function (col) { defRow[col] = vcByColumn[col]; });
+    var defRow = { c_acctschema_id: asId, ad_client_id: clientId }, glRow = { c_acctschema_id: asId, ad_client_id: clientId }, nGl = 0;
+    Object.keys(vcByColumn).forEach(function (col) { if (GLMAP[col] !== undefined) { glRow[col] = vcByColumn[col]; nGl++; } else defRow[col] = vcByColumn[col]; });
     g4.push(create('c_acctschema_default', defRow));
+    // FS-18: MSetup.java:683 createAccountingRecord(C_AcctSchema_GL) — the GL row was never born (its 7 account columns were absent).
+    if (nGl) g4.push(create('c_acctschema_gl', glRow));
     group('G4 acctschema', g4);
 
     // ── G5 GL CATEGORIES + DOCTYPES — FS-1 doctypes (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2c —
@@ -324,6 +347,39 @@
               taxId: taxId, taxCategoryId: taxCatId, paymentTermId: payTermId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
+  }
+
+  // ── parseCoA — NaturalAccountMap.parseLine (NaturalAccountMap.java:118-260), transcribed. FS-18 (§FS2p). ────────────
+  //   Returns { accounts:[{value,name,description,accounttype,accountsign,isdoccontrolled,issummary}] (distinct Values, file order),
+  //             keyToValue:{KEY: value}, lines, skipped }. Pure; no DB.
+  function parseCoA(text) {
+    var accounts = [], byValue = {}, keyToValue = {}, lines = 0, skipped = 0;
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      if (!line.trim().length) return;
+      lines++;
+      // fields with ',' are enclosed in " — the enclosed parts get their ',' replaced by ' ' (StringTokenizer on '"')
+      var st = line.split('"').filter(function (x) { return x.length > 0; });   // StringTokenizer drops empty tokens
+      if (!st.length) { skipped++; return; }
+      var nl = st[0];
+      for (var i = 1; i < st.length; i += 2) { nl += st[i].replace(/,/g, ' '); if (i + 1 < st.length) nl += st[i + 1]; }
+      nl += ' ';
+      nl = nl.split(',,').join(', ,'); nl = nl.split(',,').join(', ,');
+      var t = nl.split(',').filter(function (x) { return x.length > 0; });
+      if (t.length < 9) { skipped++; return; }
+      var f = [];
+      for (var j = 0; j < 8 && j < t.length; j++) { var v = t[j].trim(); if (v.charAt(0) === '[' && v.charAt(v.length - 1) === ']') { skipped++; return; } f.push(v); }
+      var Value = f[0], Name = f[1], Description = f[2];
+      var AccountType = f[3] && f[3].length ? f[3].charAt(0) : 'E', AccountSign = f[4] && f[4].length ? f[4].charAt(0) : 'N';
+      var IsDoc = f[5] && f[5].length ? f[5].charAt(0) : 'N', IsSummary = f[6] && f[6].length ? f[6].charAt(0) : 'N', Key = f[7];
+      if (!Value && !Name) { skipped++; return; }
+      if (!Key) { skipped++; return; }                                       // Default Account blank → ignored
+      if (Key !== 'SUMMARY' && IsSummary !== 'N') { skipped++; return; }
+      var a = byValue[Value];
+      if (!a) { a = byValue[Value] = { value: Value, name: Name, description: Description || null, accounttype: AccountType, accountsign: AccountSign,
+        isdoccontrolled: IsDoc.toUpperCase() === 'Y' ? 'Y' : 'N', issummary: IsSummary.toUpperCase() === 'Y' ? 'Y' : 'N' }; accounts.push(a); }
+      keyToValue[Key.toUpperCase()] = Value;
+    });
+    return { accounts: accounts, keyToValue: keyToValue, lines: lines, skipped: skipped };
   }
 
   // ── foldGenesis — apply CREATE ops into a fresh tenant DB (schema inferred from row keys) ───────────────────
@@ -503,7 +559,7 @@
     return { tip: head, sig: await S.signTip(priv, head), pub: pub, verify: function (t, s) { return S.verifyTip(t, s, pub); } };
   }
 
-  var _api = { birthTenant: birthTenant, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
+  var _api = { birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
     rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
     grantFullAccess: grantFullAccess };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;

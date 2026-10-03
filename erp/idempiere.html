@@ -502,8 +502,8 @@
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=1"></script>
-<script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=6"></script>
+<script src="genesis_seed.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
+<script src="genesis.js?v=7"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -3370,7 +3370,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
-    pane.appendChild(el('div', 'sub', 'Chart of accounts: iDempiere default (311 accounts) — folded automatically.'));
+    // FS-18 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2p): process 53161 UseDefaultCoA / CoAFile — the default chart, or
+    //   the user's own file in iDempiere's AccountingUS.csv layout (NaturalAccountMap). Required default-account keys = every active
+    //   AD_Reference 25 (Account) column of C_AcctSchema_GL + C_AcctSchema_Default (MSetup.createAccountingRecord :877-900).
+    var fCoa = el('div', 'fld'); fCoa.appendChild(el('label', null, 'Chart of accounts'));
+    var coaSel = document.createElement('select'); coaSel.setAttribute('data-genesis-coa', '1');
+    [['default', 'iDempiere default (311 accounts)'], ['file', 'Load your own file (CSV, iDempiere AccountingUS format)']].forEach(function (o) {
+      var op = el('option', null, o[1]); op.value = o[0]; coaSel.appendChild(op); });
+    var coaFile = document.createElement('input'); coaFile.type = 'file'; coaFile.accept = '.csv,text/csv'; coaFile.setAttribute('data-genesis-coafile', '1'); coaFile.style.display = 'none';
+    var coaInfo = el('div', 'sub', ''); coaInfo.setAttribute('data-genesis-coainfo', '1');
+    var coaParsed = null;
+    coaSel.addEventListener('change', function () { coaFile.style.display = coaSel.value === 'file' ? '' : 'none'; });
+    coaFile.addEventListener('change', function () {
+      var f = coaFile.files && coaFile.files[0]; if (!f) return;
+      var rd = new FileReader(); rd.onload = function () {
+        coaParsed = window.Genesis.parseCoA(rd.result);
+        coaInfo.textContent = coaParsed.accounts.length + ' accounts, ' + Object.keys(coaParsed.keyToValue).length + ' default-account keys read from ' + f.name;
+        console.log('§GENESIS-COA parsed file=' + f.name + ' lines=' + coaParsed.lines + ' skipped=' + coaParsed.skipped + ' accounts=' + coaParsed.accounts.length + ' keys=' + Object.keys(coaParsed.keyToValue).length);
+      }; rd.readAsText(f);
+    });
+    fCoa.appendChild(coaSel); fCoa.appendChild(coaFile); fCoa.appendChild(coaInfo); pane.appendChild(fCoa);
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Create tenant'); run.setAttribute('data-genesis-create', '1');
     var cancel = el('button', null, 'Cancel');
@@ -3385,10 +3404,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
         currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
       if (cty.value) input.countryId = Number(cty.value);                    // FS-12
+      if (coaSel.value === 'file') {                                         // FS-18
+        if (!coaParsed) { out.textContent = 'Choose a chart of accounts file first.'; return; }
+        input.coa = coaParsed;
+        input.requiredKeys = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName IN " +
+          "('C_AcctSchema_GL','C_AcctSchema_Default') AND c.AD_Reference_ID=25 AND c.IsActive='Y'").map(function (r) { return String(r.cn).toUpperCase(); });
+        console.log('§GENESIS-COA use=file accounts=' + coaParsed.accounts.length + ' requiredKeys=' + input.requiredKeys.length);
+      }
       run.disabled = true; run.textContent = 'Creating…';
       var born;
       try { born = window.Genesis.birthTenant(input); }
-      catch (e) { out.textContent = 'Genesis failed: ' + e.message; run.disabled = false; run.textContent = 'Create tenant';
+      catch (e) { out.textContent = 'Genesis failed: ' + e.message; out.setAttribute('data-genesis-error', '1'); run.disabled = false; run.textContent = 'Create tenant';
         console.log('§W-GENESIS-SYSADMIN-LIVE create FAIL ' + e.message); return; }
       console.log('§W-GENESIS-SYSADMIN-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));
       // Append a G7 sample invoice (named cols → mergeGenesisInto column-intersects it) — same shape genesis.html
