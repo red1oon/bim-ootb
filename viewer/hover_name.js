@@ -68,6 +68,9 @@ function setupHoverName(A) {
     return null;
   }
 
+  // §MEASURE_ITEM: the same read-only resolver, shared so Measure does not grow a third copy of the chain.
+  A.guidForHit = _guidForHit;
+
   function _resolveMeshes() {
     var now = performance.now();
     if (_meshes && now - _meshT < _MESH_REFRESH_MS) return _meshes;

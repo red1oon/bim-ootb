@@ -712,48 +712,23 @@ function setupMeasure(A) {
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
       var meshColors = [0xff2222, 0x2266ff];  // §S277c: red A + blue B (was orange)
       hashRows.forEach(function(hr, hi) {
-        var geo = A.meshCache[hr[1]];
-        if (!geo) {
-          var gRows = A.dbQuery("SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?", [hr[1]]);
-          if (gRows.length && gRows[0][0] && gRows[0][1]) {
-            geo = A.blobToGeometry(gRows[0][0], gRows[0][1]);
-            if (geo) A.meshCache[hr[1]] = geo;
-          }
-        }
-        if (!geo) return;
-        var tRow = A.dbQuery("SELECT center_x, center_y, center_z, rotation_x, rotation_y, rotation_z FROM element_transforms WHERE guid = ?", [hr[0]]);
-        if (!tRow.length) return;
-        var pos = A.ifc2three(tRow[0][0], tRow[0][1], tRow[0][2]);
         var disc = hr[2] || '';
         var discColor = (A.DISC_COLORS && A.DISC_COLORS[disc]) || meshColors[hi];
-
         // Full unclipped mesh — discipline color, shows full pipe/slab length
-        var fullMat = new THREE.MeshPhongMaterial({
+        var fullMesh = A._elementOverlay(hr[0], new THREE.MeshPhongMaterial({
           color: discColor, transparent: true, opacity: 0.25,
           side: THREE.DoubleSide, depthWrite: false, flatShading: true
-        });
-        var fullMesh = new THREE.Mesh(geo.clone(), fullMat);
-        fullMesh.position.set(pos.x, pos.y, pos.z);
-        if (tRow[0][3] || tRow[0][4] || tRow[0][5]) {
-          fullMesh.rotation.set(tRow[0][3] || 0, tRow[0][5] || 0, -(tRow[0][4] || 0));
-        }
-        fullMesh.frustumCulled = false;
+        }));
+        if (!fullMesh) return;
         fullMesh.renderOrder = 996 + hi;
         A.measureGroup.add(fullMesh);
         A._clashHighlights.push(fullMesh);
-
         // Clipped mesh at overlap — bright red/blue, both always visible
-        var mat = new THREE.MeshBasicMaterial({
+        var mesh = A._elementOverlay(hr[0], new THREE.MeshBasicMaterial({
           color: meshColors[hi], transparent: true, opacity: 0.6,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
-        });
-        var mesh = new THREE.Mesh(geo.clone(), mat);
-        mesh.position.set(pos.x, pos.y, pos.z);
-        if (tRow[0][3] || tRow[0][4] || tRow[0][5]) {
-          mesh.rotation.set(tRow[0][3] || 0, tRow[0][5] || 0, -(tRow[0][4] || 0));
-        }
-        mesh.frustumCulled = false;
+        }));
         mesh.renderOrder = 998 + hi; // A=998, B=999 — both draw, B on top
         A.measureGroup.add(mesh);
         A._clashHighlights.push(mesh);
@@ -1319,6 +1294,7 @@ function setupMeasure(A) {
     if (!A.measureFirstPoint) {
       A.measureFirstPoint = point;
       A._measureFirstMesh = hitMesh;
+      A._measureFirstHit = hits[0];
       const markerGeo = new THREE.SphereGeometry(0.15, 8, 8);
       const markerMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7 });
       A.measureFirstMarker = new THREE.Mesh(markerGeo, markerMat);
@@ -1327,24 +1303,8 @@ function setupMeasure(A) {
       A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_measure_tap||'Tap another spot for length, same spot for Area';
       console.log('§MEASURE dot placed — tap same dot for area, or tap elsewhere for distance');
     } else if (point.distanceTo(A.measureFirstPoint) < 0.5) {
-      // Second tap on same spot → area of that element
-      var mesh = A._measureFirstMesh;
-      var area = A._meshArea(mesh);
-      var label = area.toFixed(2) + ' m²';
-      var cls = mesh.userData.ifcClass || '';
-      if (cls) label = cls.replace('Ifc', '') + ': ' + label;
-      A._highlightMesh(mesh, null, 0xff8c00);
-      // Fixed-position label at click point
-      var labelDiv = document.createElement('div');
-      labelDiv.className = 'measure-label';
-      labelDiv.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#cc6600;font-size:14px;font-weight:bold;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,140,0,0.6);pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif';
-      labelDiv.textContent = label;
-      labelDiv.style.left = Math.min(e.clientX + 10, window.innerWidth - 200) + 'px';
-      labelDiv.style.top = Math.min(Math.max(e.clientY - 30, 10), window.innerHeight - 50) + 'px';
-      document.body.appendChild(labelDiv);
-      A.measureLabels.push({ div: labelDiv, mid: null });
-      A.status.textContent = label;
-      console.log('§MEASURE_AREA ' + label + ' mesh=' + (mesh.userData.guid || mesh.id));
+      // Second tap on same spot → the element's size (§MEASURE_ITEM — same path as double-click)
+      A._measureItem(A._measureFirstHit || hits[0], e.clientX, e.clientY);
       // Remove the first-point marker
       if (A.measureFirstMarker) A.measureGroup.remove(A.measureFirstMarker);
       A.measureFirstPoint = null;
@@ -1394,6 +1354,106 @@ function setupMeasure(A) {
     // render loop or the blue dot won't paint until the NEXT click happens to wake it.
     if (A.markDirty) A.markDirty();
     return true;
+  };
+
+  // §MEASURE_ITEM (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Y) — ONE builder for "this element, drawn on its
+  // own": its geometry (meshCache, else the DB blob) at its DB placement, rotated as the renderer does. DB center is the
+  // vertex CENTROID and the stored vertices are centroid-relative, so the geometry sits at center with no offset.
+  // Used by the clash reveal (both overlays) and the Measure item highlight. Shares the cached geometry — never dispose it.
+  A._elementOverlay = function(guid, material) {
+    var r = A.dbQuery("SELECT i.geometry_hash, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z " +
+      "FROM element_instances i JOIN element_transforms t ON t.guid = i.guid WHERE i.guid = ?", [guid]);
+    if (!r.length || !r[0][0]) return null;
+    var hash = r[0][0], geo = A.meshCache[hash];
+    if (!geo) {
+      var gRows = A.dbQuery("SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?", [hash]);
+      if (gRows.length && gRows[0][0] && gRows[0][1]) { geo = A.blobToGeometry(gRows[0][0], gRows[0][1]); if (geo) A.meshCache[hash] = geo; }
+    }
+    if (!geo) return null;
+    var pos = A.ifc2three(r[0][1], r[0][2], r[0][3]);
+    var m = new THREE.Mesh(geo, material);
+    m.position.set(pos.x, pos.y, pos.z);
+    if (r[0][4] || r[0][5] || r[0][6]) m.rotation.set(r[0][4] || 0, r[0][6] || 0, -(r[0][5] || 0));
+    m.frustumCulled = false;
+    m.userData.guid = guid;
+    m.updateMatrixWorld(true);
+    return m;
+  };
+
+  // §MEASURE_ITEM — size of ONE element: highlight it, give its area and its extents along its OWN axes.
+  // Elements are drawn in shared batches, so the raycast's object is a batch; the element is resolved with the
+  // hover resolver (A.guidForHit) and measured on its own geometry. Plan extents along the element's own axes (tightest
+  // plan rectangle): longer = Length, shorter = Width. A curved element's rectangle gives the CHORD, so the label says
+  // "box" — not a centre-line length.
+  A._measureItem = function(hit, clientX, clientY) {
+    var guid = A.guidForHit ? A.guidForHit(hit) : null;
+    var target = guid ? A._elementOverlay(guid, new THREE.MeshBasicMaterial({
+      color: 0xff8c00, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthTest: false, depthWrite: false })) : null;
+    if (!target) {
+      // unbatched mesh with no guid (e.g. an imported mesh) — the old path, which is correct for a single mesh
+      var lone = hit.object, la = A._meshArea(lone);
+      A._highlightMesh(lone, la.toFixed(2) + ' m²', 0xff8c00);
+      console.log('§MEASURE_ITEM guid=none (single mesh) area=' + la.toFixed(3));
+      return null;
+    }
+    target.renderOrder = 997;
+    A.measureGroup.add(target);
+    var geo = target.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    var bb = geo.boundingBox, pos = geo.attributes.position, plan = [];
+    // The importer bakes each element's yaw into its vertices (rotation_* stay 0), so an axis-aligned box would give a
+    // diagonal kerb its world-axis extents. Own axes = the tightest plan rectangle at any angle (A.minAreaRect, shared
+    // with the lamp-shape test). Viewer frame is y-up: plan = (x, z), height = y extent.
+    for (var pi = 0; pi < pos.count; pi++) plan.push([pos.getX(pi), pos.getZ(pi)]);
+    var rect = A.minAreaRect ? A.minAreaRect(plan) : null;
+    var height = bb.max.y - bb.min.y, y0 = bb.min.y;
+    var planA, planB, cornerAt;
+    if (rect) {
+      planA = rect.w; planB = rect.d;
+      cornerAt = function(u, v) { return new THREE.Vector3(u * rect.ux - v * rect.uy, y0, u * rect.uy + v * rect.ux); };
+    } else {   // degenerate plan (a vertical sheet): fall back to the axis box
+      planA = bb.max.x - bb.min.x; planB = bb.max.z - bb.min.z;
+      cornerAt = function(u, v) { return new THREE.Vector3(u, y0, v); };
+      rect = { u0: bb.min.x, u1: bb.max.x, v0: bb.min.z, v1: bb.max.z };
+    }
+    var length = Math.max(planA, planB), width = Math.min(planA, planB);
+    var area = A._meshArea(target);
+    var cls = (A.dbQuery("SELECT ifc_class FROM elements_meta WHERE guid = ?", [guid])[0] || [''])[0] || '';
+    // three dimension lines on the rectangle's edges, in the element's frame (children inherit its rotation/position)
+    var lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true });
+    var c0 = cornerAt(rect.u0, rect.v0), edges = [
+      { a: c0, b: cornerAt(rect.u1, rect.v0), v: planA },
+      { a: c0, b: cornerAt(rect.u0, rect.v1), v: planB },
+      { a: c0, b: c0.clone().setY(bb.max.y), v: height }];
+    edges.forEach(function(e) {
+      var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([e.a, e.b]), lineMat);
+      ln.renderOrder = 999; target.add(ln);
+      var mid = target.localToWorld(e.a.clone().add(e.b).multiplyScalar(0.5));
+      var d = document.createElement('div');
+      d.className = 'measure-label';
+      d.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#fff;font-size:12px;padding:2px 6px;border-radius:4px;pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif;transform:translate(-50%,-50%)';
+      d.textContent = e.v.toFixed(2) + ' m';
+      document.body.appendChild(d);
+      A.measureLabels.push({ div: d, mid: mid });
+    });
+    var label = (cls ? cls.replace('Ifc', '') + ': ' : '') + 'L ' + length.toFixed(2) + ' × W ' + width.toFixed(2) +
+      ' × H ' + height.toFixed(2) + ' m (box) · ' + area.toFixed(2) + ' m²';
+    var labelDiv = document.createElement('div');
+    labelDiv.className = 'measure-label';
+    labelDiv.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#cc6600;font-size:14px;font-weight:bold;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,140,0,0.6);pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif';
+    labelDiv.textContent = label;
+    labelDiv.style.left = Math.min(clientX + 10, window.innerWidth - 260) + 'px';
+    labelDiv.style.top = Math.min(Math.max(clientY - 30, 10), window.innerHeight - 50) + 'px';
+    document.body.appendChild(labelDiv);
+    A.measureLabels.push({ div: labelDiv, mid: null });
+    A.status.textContent = label;
+    var out = { guid: guid, ifcClass: cls, length: length, width: width, height: height, planA: planA, planB: planB, area: area,
+      vertices: pos.count, ownAxes: !!(A.minAreaRect && rect.ux !== undefined) };
+    A._lastMeasureItem = out;
+    console.log('§MEASURE_ITEM guid=' + guid + ' class=' + cls + ' L=' + length.toFixed(3) + ' W=' + width.toFixed(3) +
+      ' H=' + height.toFixed(3) + ' area=' + area.toFixed(3) + ' verts=' + out.vertices + ' batch=' + !!(hit.object.isBatchedMesh || hit.object.isInstancedMesh));
+    if (A.markDirty) A.markDirty();
+    return out;
   };
 
   // ── Area from mesh geometry (world-space, cached by geometry UUID) ──
@@ -1473,21 +1533,21 @@ function setupMeasure(A) {
     if (!A.measureActive) return;
     // Cancel pending single-click
     if (A._measureClickTimer) { clearTimeout(A._measureClickTimer); A._measureClickTimer = null; }
-    A.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    A.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    // canvas bounds for NDC (S246b, same as _doMeasureClick) — window size is wrong when the canvas is not full-window
+    var canvas = A.renderer ? A.renderer.domElement : null;
+    var rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    A.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    A.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     A.raycaster.setFromCamera(A.mouse, A.camera);
     var meshes = [];
-    A.scene.traverse(function(obj) { if (obj.isMesh && obj !== A.ground && obj.visible) meshes.push(obj); });
+    A.scene.traverse(function(obj) { if (obj.isMesh && obj !== A.ground && obj.visible && obj.parent !== A.measureGroup) meshes.push(obj); });
     var hits = A.raycaster.intersectObjects(meshes, false);
-    if (!hits.length) return;
-    var mesh = hits[0].object;
-    var area = A._meshArea(mesh);
-    var label = area.toFixed(2) + ' m²';
-    var cls = mesh.userData.ifcClass || '';
-    if (cls) label = cls.replace('Ifc', '') + ': ' + label;
-    A._highlightMesh(mesh, label, 0xff8c00);
-    A.status.textContent = label;
-    console.log('§MEASURE_AREA ' + label + ' mesh=' + (mesh.userData.guid || mesh.id));
+    // same skip as the hover resolver (hover_name.js A.hoverGuidAt): a see-through element (ghosted, opacity < 0.3) in
+    // front of the target is not what the user is pointing at
+    var hit = null;
+    for (var hi = 0; hi < hits.length && !hit; hi++) if (!(hits[hi].object.material && hits[hi].object.material.opacity < 0.3)) hit = hits[hi];
+    if (!hit) return;
+    return A._measureItem(hit, e.clientX, e.clientY);
   };
 
   // ── Right-click: bounding box wireframe + info card ──
