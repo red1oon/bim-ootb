@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl en_US — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/en_US.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl en_US — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/en_US.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="en_US" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3021,6 +3021,446 @@ CPM reads the dates the drag produced — it never changes one.</value>
  </row>
  <row id="1000752" trl="N">
   <value column="MsgText" original="Synthesized — no audio files, default OFF">Synthesized — no audio files, default OFF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000753" trl="N">
+  <value column="MsgText" original="Iso">Iso</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000754" trl="N">
+  <value column="MsgText" original="Move Grid">Move Grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000755" trl="N">
+  <value column="MsgText" original="Drag Item">Drag Item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000756" trl="N">
+  <value column="MsgText" original="Sketch">Sketch</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000757" trl="N">
+  <value column="MsgText" original="Extrude">Extrude</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000758" trl="N">
+  <value column="MsgText" original="Axis">Axis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000759" trl="N">
+  <value column="MsgText" original="Cut">Cut</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000760" trl="N">
+  <value column="MsgText" original="Route">Route</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000761" trl="N">
+  <value column="MsgText" original="Sweep Run">Sweep Run</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000762" trl="N">
+  <value column="MsgText" original="Fillet">Fillet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000763" trl="N">
+  <value column="MsgText" original="Insert">Insert</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000764" trl="N">
+  <value column="MsgText" original="History">History</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000765" trl="N">
+  <value column="MsgText" original="Guide">Guide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000766" trl="N">
+  <value column="MsgText" original="Delete">Delete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000767" trl="N">
+  <value column="MsgText" original="Sound">Sound</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000768" trl="N">
+  <value column="MsgText" original="Connect">Connect</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000769" trl="N">
+  <value column="MsgText" original="Teams">Teams</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000770" trl="N">
+  <value column="MsgText" original="X-ray">X-ray</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000771" trl="N">
+  <value column="MsgText" original="history">history</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000772" trl="N">
+  <value column="MsgText" original="OUTLINER">OUTLINER</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000773" trl="N">
+  <value column="MsgText" original="BOM Tree">BOM Tree</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000774" trl="N">
+  <value column="MsgText" original="STR Walker">STR Walker</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000775" trl="N">
+  <value column="MsgText" original="Open a resident (▾) or local .db (🏗) to walk">Open a resident (▾) or local .db (🏗) to walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000776" trl="N">
+  <value column="MsgText" original="Walls">Walls</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000777" trl="N">
+  <value column="MsgText" original="Openings">Openings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000778" trl="N">
+  <value column="MsgText" original="Routes">Routes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000779" trl="N">
+  <value column="MsgText" original="Fillets">Fillets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000780" trl="N">
+  <value column="MsgText" original="Grid Moves">Grid Moves</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000781" trl="N">
+  <value column="MsgText" original="Arrays">Arrays</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000782" trl="N">
+  <value column="MsgText" original="Lofts">Lofts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000783" trl="N">
+  <value column="MsgText" original="Revolves">Revolves</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000784" trl="N">
+  <value column="MsgText" original="Shells">Shells</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000785" trl="N">
+  <value column="MsgText" original="Offsets">Offsets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000786" trl="N">
+  <value column="MsgText" original="Var. Fillets">Var. Fillets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000787" trl="N">
+  <value column="MsgText" original="Chamfers∠">Chamfers∠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000788" trl="N">
+  <value column="MsgText" original="Drafts">Drafts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000789" trl="N">
+  <value column="MsgText" original="Components">Components</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000790" trl="N">
+  <value column="MsgText" original="{n} features">{n} features</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000791" trl="N">
+  <value column="MsgText" original="Help — toolbar &amp; shortcuts">Help — toolbar &amp; shortcuts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000792" trl="N">
+  <value column="MsgText" original="Back to the Matrix">Back to the Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000793" trl="N">
+  <value column="MsgText" original="Open a building — load a resident or a local .db → walk + bom-graph">Open a building — load a resident or a local .db → walk + bom-graph</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000794" trl="N">
+  <value column="MsgText" original="Zoom to fit (F) — frames the selection, or all">Zoom to fit (F) — frames the selection, or all</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000795" trl="N">
+  <value column="MsgText" original="Cycle view: Iso / Top">Cycle view: Iso / Top</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000796" trl="N">
+  <value column="MsgText" original="Drag a gridline — attached walls recompose">Drag a gridline — attached walls recompose</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000797" trl="N">
+  <value column="MsgText" original="Move the selected object — drag an axis handle or nudge with arrow keys (M)">Move the selected object — drag an axis handle or nudge with arrow keys (M)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000798" trl="N">
+  <value column="MsgText" original="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)">Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000799" trl="N">
+  <value column="MsgText" original="Constraint intent the solver enforces on the sketch">Constraint intent the solver enforces on the sketch</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000800" trl="N">
+  <value column="MsgText" original="Sweep a profile along a route (MEP run)">Sweep a profile along a route (MEP run)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000801" trl="N">
+  <value column="MsgText" original="Round a selected solid's picked edges">Round a selected solid's picked edges</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000802" trl="N">
+  <value column="MsgText" original="Insert a library component (assemble, don't draw)">Insert a library component (assemble, don't draw)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000803" trl="N">
+  <value column="MsgText" original="Refine the selected component's level of detail (same signed row)">Refine the selected component's level of detail (same signed row)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000804" trl="N">
+  <value column="MsgText" original="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue">Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000805" trl="N">
+  <value column="MsgText" original="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)">Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000806" trl="N">
+  <value column="MsgText" original="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)">World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000807" trl="N">
+  <value column="MsgText" original="Modeller User Guide — how to Open, walk, edit &amp; export">Modeller User Guide — how to Open, walk, edit &amp; export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000808" trl="N">
+  <value column="MsgText" original="Delete selected (Del)">Delete selected (Del)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000809" trl="N">
+  <value column="MsgText" original="Authoring sound feedback">Authoring sound feedback</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000810" trl="N">
+  <value column="MsgText" original="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)">Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000811" trl="N">
+  <value column="MsgText" original="Teams — who's on this scene (presence &amp; activity). Click to enable.">Teams — who's on this scene (presence &amp; activity). Click to enable.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000812" trl="N">
+  <value column="MsgText" original="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours">X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000813" trl="N">
+  <value column="MsgText" original="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)">Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000814" trl="N">
+  <value column="MsgText" original="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)">Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000815" trl="N">
+  <value column="MsgText" original="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)">Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000816" trl="N">
+  <value column="MsgText" original="Wall height / extrude depth (m)">Wall height / extrude depth (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000817" trl="N">
+  <value column="MsgText" original="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style">Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000818" trl="N">
+  <value column="MsgText" original="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style">Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000819" trl="N">
+  <value column="MsgText" original="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle">Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000820" trl="N">
+  <value column="MsgText" original="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)">Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000821" trl="N">
+  <value column="MsgText" original="Sweep profile size w×h (m)">Sweep profile size w×h (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000822" trl="N">
+  <value column="MsgText" original="Fillet / chamfer radius (m)">Fillet / chamfer radius (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000823" trl="N">
+  <value column="MsgText" original="History — ‹ older · newer › (click a dot to jump · ←/→ when focused)">History — ‹ older · newer › (click a dot to jump · ←/→ when focused)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000824" trl="N">
+  <value column="MsgText" original="Older (←)">Older (←)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000825" trl="N">
+  <value column="MsgText" original="Newer (→)">Newer (→)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000826" trl="N">
+  <value column="MsgText" original="Collapse panel">Collapse panel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000827" trl="N">
+  <value column="MsgText" original="Collapse all — fold the tree to its top-level trunk">Collapse all — fold the tree to its top-level trunk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000828" trl="N">
+  <value column="MsgText" original="Adjacency lens — highlight a selected element’s abutting neighbours">Adjacency lens — highlight a selected element’s abutting neighbours</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000829" trl="N">
+  <value column="MsgText" original="double-click: collapse all">double-click: collapse all</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000830" trl="N">
+  <value column="MsgText" original="Toolbar">Toolbar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000831" trl="N">
+  <value column="MsgText" original="Show Outliner">Show Outliner</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000832" trl="N">
+  <value column="MsgText" original="🔍 find…">🔍 find…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000833" trl="N">
+  <value column="MsgText" original="TOOLBAR · PILL REGISTRY">TOOLBAR · PILL REGISTRY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000834" trl="N">
+  <value column="MsgText" original="KEYBOARD">KEYBOARD</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000835" trl="N">
+  <value column="MsgText" original="Redo">Redo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000836" trl="N">
+  <value column="MsgText" original="Cancel current mode">Cancel current mode</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000837" trl="N">
+  <value column="MsgText" original="Snap-to-geometry on/off (while moving)">Snap-to-geometry on/off (while moving)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000838" trl="N">
+  <value column="MsgText" original="Arm rotate ring (turn, in Move)">Arm rotate ring (turn, in Move)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000839" trl="N">
+  <value column="MsgText" original="Arm scale cubes (in Move)">Arm scale cubes (in Move)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000840" trl="N">
+  <value column="MsgText" original="OPEN A BUILDING">OPEN A BUILDING</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000841" trl="N">
+  <value column="MsgText" original="FROM IFC (ARC only)">FROM IFC (ARC only)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000842" trl="N">
+  <value column="MsgText" original="Open local .db / .ifc…">Open local .db / .ifc…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000843" trl="N">
+  <value column="MsgText" original="Not extracted — walk from duplex_rules.db">Not extracted — walk from duplex_rules.db</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000844" trl="N">
+  <value column="MsgText" original="▶▶ Walk ALL Services">▶▶ Walk ALL Services</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000845" trl="N">
+  <value column="MsgText" original="{n} services not extracted · x-ray reveal">{n} services not extracted · x-ray reveal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000846" trl="N">
+  <value column="MsgText" original="▶ walk">▶ walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000847" trl="N">
+  <value column="MsgText" original="{n} columns">{n} columns</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000848" trl="N">
+  <value column="MsgText" original="{n} girders">{n} girders</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000849" trl="N">
+  <value column="MsgText" original="RED {r} · ORANGE {o} · GREEN {g}">RED {r} · ORANGE {o} · GREEN {g}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000850" trl="N">
+  <value column="MsgText" original="Confidence {p}% mean">Confidence {p}% mean</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000851" trl="N">
+  <value column="MsgText" original="✓ all girders ≥80% (oracle-calibrated)">✓ all girders ≥80% (oracle-calibrated)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000852" trl="N">
+  <value column="MsgText" original="Building Parts">Building Parts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000853" trl="N">
+  <value column="MsgText" original="Route trunk · from entry (seed)">Route trunk · from entry (seed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000854" trl="N">
+  <value column="MsgText" original="walk a discipline first, then route its trunk">walk a discipline first, then route its trunk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000855" trl="N">
+  <value column="MsgText" original="{n} features 🔒 {h}">{n} features 🔒 {h}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000856" trl="N">
+  <value column="MsgText" original="Opened {name}">Opened {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000857" trl="N">
+  <value column="MsgText" original="hide in 3D">hide in 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000858" trl="N">
+  <value column="MsgText" original="Move this room — drag on canvas after grabbing">Move this room — drag on canvas after grabbing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000859" trl="N">
+  <value column="MsgText" original="Walk this discipline">Walk this discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000860" trl="N">
+  <value column="MsgText" original="Walk ALL services">Walk ALL services</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000861" trl="N">
+  <value column="MsgText" original="ERP ▸ Project Order">ERP ▸ Project Order</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000862" trl="N">
+  <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">Read / generate / open the ERP Project Order of the selected parts</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>
