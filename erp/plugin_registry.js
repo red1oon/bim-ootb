@@ -3,8 +3,8 @@
 // plugin_registry.js — the Fold Engine OSGi-like plugin host (W-PLUGIN). Implements
 //   prompts/PLUGIN_SYSTEM_LANE.md §Phase A. A `.foldbundle` is a single ES module that exports
 //   `{ manifest, activate, deactivate }`; this host loads it, runs its lifecycle, and lets it CONTRIBUTE
-//   into the FIVE existing extension points (ad_modelval / ad_callout / ad_process / post_resolver token
-//   map / kernel_ops) — it adds NO new ServiceRegistry abstraction (out of scope, see the lane card).
+//   into the SIX extension points (ad_modelval / ad_callout / ad_process / post_resolver token
+//   map / kernel_ops / model_layer DocAction) — it adds NO new ServiceRegistry abstraction (out of scope, see the lane card).
 //
 // SEPARATION CONTRACT (same as erp_engine.js §0.10): PURE host logic, no DB binding imported. The host
 //   injects everything stateful:
@@ -132,6 +132,9 @@
         callout:    host.callout    || null,   // ad_callout module  (registerHandler)
         process:    host.process    || null,   // ad_process module  (registerHandler w/ meta.kind)
         postTokens: host.postTokens || null,   // post_resolver token map (plain object) — contribute a token
+        // the 6th point (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 2): model_layer.js — a bundle brings its own
+        // DocAction class (registerDocAction) and model hooks (registerModel) for its tables; zero host code per table.
+        docAction:  host.docAction  || null,
         db:         host.db         || { query: function () { throw new Error('plugin ctx: no db host injected'); } },
         ops:        { append: appendOp }
       };

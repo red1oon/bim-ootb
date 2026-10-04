@@ -21,8 +21,13 @@
   'use strict';
 
   // iDempiere timing constants we model (ModelValidator TYPE_* + docValidate TIMING_*).
-  var TIMINGS = ['BEFORE_NEW', 'AFTER_NEW', 'BEFORE_SAVE', 'AFTER_SAVE', 'BEFORE_DELETE', 'AFTER_DELETE',
-                 'BEFORE_PREPARE', 'BEFORE_COMPLETE', 'AFTER_COMPLETE', 'BEFORE_VOID', 'AFTER_VOID'];
+  // The FULL iDempiere set (ModelValidator.java TYPE_* + TIMING_*), so model_layer.js (prompts/ERP_MODEL_LAYER.md
+  // §DESIGN 1) registers here instead of keeping a second registry. A hook may write through ctx.trx (model_layer
+  // Trx) — those writes land in the caller's signed op-group. BEFORE_SAVE/AFTER_SAVE stay as the NEW∪CHANGE alias.
+  var TIMINGS = ['BEFORE_NEW', 'AFTER_NEW', 'BEFORE_CHANGE', 'AFTER_CHANGE', 'BEFORE_SAVE', 'AFTER_SAVE', 'BEFORE_DELETE', 'AFTER_DELETE',
+                 'BEFORE_PREPARE', 'AFTER_PREPARE', 'BEFORE_COMPLETE', 'AFTER_COMPLETE', 'BEFORE_VOID', 'AFTER_VOID',
+                 'BEFORE_CLOSE', 'AFTER_CLOSE', 'BEFORE_REACTIVATE', 'AFTER_REACTIVATE', 'BEFORE_REVERSECORRECT',
+                 'AFTER_REVERSECORRECT', 'BEFORE_REVERSEACCRUAL', 'AFTER_REVERSEACCRUAL', 'BEFORE_POST', 'AFTER_POST'];
 
   // REGISTRY[table][timing] = [ {name, fn} ]  — fn(ctx, info) -> null | "error string" (iDempiere semantics).
   var REGISTRY = {};
