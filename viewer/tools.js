@@ -1237,8 +1237,11 @@ function setupTools(A) {
   var LAMP_ROUND_FILL_MIN = 0.70, LAMP_ROUND_FILL_MAX = 0.86, LAMP_ROUND_ASPECT_MAX = 1.25, LAMP_RECT_FILL_MIN = 0.93;
   var LAMP_BODY_SLICE = 0.25, LAMP_LINEAR_ASPECT = 2.0;   // §LAMP_SHAPE_FACE
   var _lampShapeByHash = {};
-  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
-  function _hullFill(pts) {
+  // §MIN_AREA_RECT — tightest rectangle at ANY angle around a 2-D point set: convex hull + rotating calipers.
+  // Shared by the lamp shape test (_hullFill, §LAMP_SHAPE_FACE) and Measure item size (measure.js §MEASURE_ITEM).
+  // Returns { w, d, ux, uy, u0, u1, v0, v1, hullArea }: w along unit axis (ux,uy), d along its normal (−uy,ux);
+  // u/v bounds in that frame. Sorts `pts` in place.
+  A.minAreaRect = function(pts) {
     if (pts.length < 3) return null;
     pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
     function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
@@ -1248,9 +1251,6 @@ function setupTools(A) {
     var hull = lo.slice(0, -1).concat(up.slice(0, -1)); if (hull.length < 3) return null;
     var area = 0; for (var h = 0; h < hull.length; h++) { var q = hull[h], r = hull[(h + 1) % hull.length]; area += q[0] * r[1] - r[0] * q[1]; }
     area = Math.abs(area) / 2;
-    // Tightest box at ANY angle (rotating calipers over the hull edges), not the axis-aligned one: Hospital's
-    // fixture meshes carry their yaw in the vertices, and a rotated rectangle in an axis box reads 0.5-0.9 fill,
-    // i.e. "round". A disc is 0.785 at every angle; a rectangle is 1.0 at every angle.
     var best = null;
     for (var e = 0; e < hull.length; e++) {
       var p0 = hull[e], p1 = hull[(e + 1) % hull.length], ex = p1[0] - p0[0], ey = p1[1] - p0[1], L = Math.hypot(ex, ey);
@@ -1259,10 +1259,20 @@ function setupTools(A) {
       for (var t = 0; t < hull.length; t++) { var u = hull[t][0] * ex + hull[t][1] * ey, v = -hull[t][0] * ey + hull[t][1] * ex;
         if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
       var w = u1 - u0, d = v1 - v0;
-      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d };
+      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d, ux: ex, uy: ey, u0: u0, u1: u1, v0: v0, v1: v1 };
     }
     if (!best) return null;
-    return { fill: area / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: area };
+    best.hullArea = area;
+    return best;
+  };
+  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
+  // Tightest box at ANY angle, not the axis-aligned one: Hospital's fixture meshes carry their yaw in the vertices,
+  // and a rotated rectangle in an axis box reads 0.5-0.9 fill, i.e. "round". A disc is 0.785 at every angle; a
+  // rectangle is 1.0 at every angle.
+  function _hullFill(pts) {
+    var best = A.minAreaRect(pts);
+    if (!best) return null;
+    return { fill: best.hullArea / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: best.hullArea };
   }
   // §LAMP_SHAPE_FACE (watcher go, 2026-09-24). Measured on HHS: "biggest face" picks the wrong face (a linear
   // pendant's side, a round downlight's side), so the rule is PLAN FIRST, then the elevations:
