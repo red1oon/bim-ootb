@@ -969,6 +969,17 @@
       };
     }
 
+    // §CP — a verbatim SvrProcess port runs inside ONE ModelLayer.Trx the host opens (ctx.runInTrx); its ops are the commit
+    if (classname && JAVA[classname] && typeof ctx.runInTrx === 'function') {
+      var jr = ctx.runInTrx(function (query, env) {
+        return runJava(query, env, { AD_Process_ID: proc.AD_Process_ID, className: classname, title: proc.name,
+          Record_ID: info.Record_ID || 0, Table_ID: info.Table_ID || 0, params: info.params || {} });
+      }) || { ok: false, summary: 'no transaction' , ops: [], logs: [] };
+      (jr.log || []).forEach(function (l) { if (typeof console !== 'undefined') console.log(l); });
+      return { ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname, kind: 'java', dispatched: true,
+        ok: !!jr.ok, reason: jr.ok ? 'ok' : 'process-error', validate: validate, rows: (jr.ops || []).length, message: jr.summary,
+        result: { commitOps: jr.ops || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError } };
+    }
     // Core.getProcess(className) == null branch (ProcessUtil:166-170): explicit absent-handler, NOT a no-op.
     if (!classname || !hasHandler(classname)) {
       return {
@@ -1037,6 +1048,181 @@
     return { byAccess: byAccess, byWorkflow: byWorkflow, union: union };
   }
 
+  // ══ JAVA PROCESS RUNTIME — SvrProcess ported (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — W-CP-PROC-ORACLE) ═══
+  // Each core AD_Process.Classname is a verbatim SvrProcess port in erp/processes/*.js, registered with defineProcess.
+  // It runs inside ONE ModelLayer.Trx (the Java trxName): reads are SQL over the host query (tip-shadowed) through the
+  // callout runtime's DB/PO (AdCallout.RUNTIME, bound to the Trx's query), writes go through ModelLayer.save/processIt,
+  // and trx.groupOps() is what the host commits as ONE signed group (__crud.applyOpGroup) — the Java commit.
+  //   SvrProcess.startProcess/process   ← org/compiere/process/SvrProcess.java:132-232, :238-330
+  //   ProcessInfoParameter               ← org/compiere/process/ProcessInfoParameter.java:126-275
+  //   ProcessInfoUtil.setParameterFromDB ← P_Number→BigDecimal, P_Date→Timestamp, P_String→String (AD_PInstance_Para)
+  var JAVA = {};
+  function _A() { return (typeof module !== 'undefined' && module.exports) ? require('./ad_callout.js') : global.AdCallout; }
+  function _ML() { return (typeof module !== 'undefined' && module.exports) ? require('./model_layer.js') : global.ModelLayer; }
+  function ProcessInfoParameter(name, p, pTo, info, infoTo) { this.n = name; this.p = p == null ? null : p; this.pt = pTo == null ? null : pTo; this.info = info || null; this.infoTo = infoTo || null; }
+  var PIP = ProcessInfoParameter.prototype;
+  PIP.getParameterName = function () { return this.n; };
+  PIP.getParameter = function () { return this.p; };
+  PIP.getParameter_To = function () { return this.pt; };
+  PIP.getInfo = function () { return this.info; }; PIP.getInfo_To = function () { return this.infoTo; };
+  function _asInt(v) { if (v == null) return 0; if (typeof v === 'number') return Math.trunc(v); var A = _A(); return Number(A.toBD(String(v)).setScale(0, A.RoundingMode.DOWN).toString()); }
+  function _asBool(v) { if (v == null) return false; if (typeof v === 'boolean') return v; return 'Y' === v; }
+  function _asTS(v) { var A = _A(); return v instanceof A.Timestamp ? v : null; }
+  function _asBD(v) { if (v == null) return null; var A = _A(); return v instanceof A.BigDecimal ? v : A.toBD(String(v)); }
+  PIP.getParameterAsInt = function () { return _asInt(this.p); }; PIP.getParameter_ToAsInt = function () { return _asInt(this.pt); };
+  PIP.getParameterAsBoolean = function () { return _asBool(this.p); }; PIP.getParameter_ToAsBoolean = function () { return _asBool(this.pt); };
+  PIP.getParameterAsTimestamp = function () { return _asTS(this.p); }; PIP.getParameter_ToAsTimestamp = function () { return _asTS(this.pt); };
+  PIP.getParameterAsString = function () { return this.p == null ? null : String(_A().stored(this.p)); };
+  PIP.getParameter_ToAsString = function () { return this.pt == null ? null : String(_A().stored(this.pt)); };
+  PIP.getParameterAsBigDecimal = function () { return _asBD(this.p); }; PIP.getParameter_ToAsBigDecimal = function () { return _asBD(this.pt); };
+  PIP.getParameterAsCSVInt = function () { return this.p == null ? null : String(this.p); };
+  PIP.getParameterAsIntArray = function () { return this.p == null ? [] : String(this.p).split(',').map(function (x) { return parseInt(x, 10); }); };
+  // typedParam — AD_PInstance_Para typing: numbers/IDs BigDecimal (P_Number), dates Timestamp (P_Date), else String
+  function typedParam(refId, v) {
+    if (v == null || v === '') return null;
+    var A = _A(), t = refType(refId);
+    if (t === 'integer' || t === 'number') return A.toBD(String(v));
+    if (t === 'date') return A.Timestamp.of(v);
+    if (t === 'yesno') return (v === true || v === 'Y') ? 'Y' : 'N';
+    return String(v);
+  }
+
+  function SvrProcess() { this.m_ctx = null; this.m_pi = null; this.m_trx = null; this.logs = []; }
+  // startProcess + process (SvrProcess.java:132-330): prepare → doIt; an exception's message is the summary; "@Error@" fails
+  SvrProcess.prototype.startProcess = function (ctx, pi, trx) {
+    this.m_ctx = ctx; this.m_pi = pi; this.m_trx = trx;
+    var msg = null, success = true, A = _A();
+    try { this.prepare(); msg = this.doIt(); }
+    catch (e) { msg = (e && e.message) || String(e); success = false; if (trx && trx.say) trx.say('§PROC-EXCEPTION ' + pi.className + ' ' + msg + (e && e.stack ? ' @' + String(e.stack).split('\n')[1] : '')); }
+    if (msg != null && String(msg).indexOf('@Error@') === 0) success = false;
+    msg = A.Msg.parseTranslation(ctx, msg == null ? '' : String(msg));
+    pi.summary = msg; pi.isError = !success;
+    return success;
+  };
+  SvrProcess.prototype.prepare = function () {};
+  SvrProcess.prototype.doIt = function () { throw new Error('doIt not implemented'); };
+  SvrProcess.prototype.getCtx = function () { return this.m_ctx; };
+  SvrProcess.prototype.getProcessInfo = function () { return this.m_pi; };
+  SvrProcess.prototype.getName = function () { return this.m_pi.title; };
+  SvrProcess.prototype.getAD_PInstance_ID = function () { return this.m_pi.AD_PInstance_ID || 0; };
+  SvrProcess.prototype.getTable_ID = function () { return this.m_pi.Table_ID || 0; };
+  SvrProcess.prototype.getRecord_ID = function () { return this.m_pi.Record_ID || 0; };
+  SvrProcess.prototype.getRecord_IDs = function () { return this.m_pi.Record_IDs || []; };
+  SvrProcess.prototype.getAD_User_ID = function () { return this.m_pi.AD_User_ID || _A().Env.getAD_User_ID(this.m_ctx); };
+  SvrProcess.prototype.getAD_Client_ID = function () { return this.m_pi.AD_Client_ID || _A().Env.getAD_Client_ID(this.m_ctx); };
+  SvrProcess.prototype.getParameter = function () { return this.m_pi.parameter || []; };
+  SvrProcess.prototype.get_TrxName = function () { return this.m_trx; };
+  SvrProcess.prototype.addLog = function (id, date, number, msg, tableId, recordId) {
+    if (arguments.length === 1) { msg = id; id = 0; date = null; number = null; }
+    this.logs.push({ id: id, date: date == null ? null : String(date), number: number == null ? null : String(number), msg: msg == null ? null : String(msg), tableId: tableId || 0, recordId: recordId || 0 });
+  };
+  SvrProcess.prototype.addBufferLog = SvrProcess.prototype.addLog;
+  SvrProcess.prototype.statusUpdate = function (m) { if (this.m_trx && this.m_trx.say) this.m_trx.say('§PROC-STATUS ' + m); };
+  SvrProcess.prototype.commitEx = function () {};     // one Trx = one signed group: the host commits at the end
+  SvrProcess.prototype.commit = function () {};
+  SvrProcess.prototype.rollback = function () { if (this.m_trx) { this.m_trx.ops = []; this.m_trx.pend = {}; } };
+
+  // ── DB writes inside a process (DB.executeUpdateEx / getIDsEx) — the Java's raw SQL writes, routed into the Trx as ops.
+  //   UPDATE t SET a=expr,… WHERE w  → SELECT key, expr AS a … FROM t WHERE w (params keep their order: SET first, WHERE next)
+  //   DELETE FROM t WHERE w          → SELECT key … → trx.del
+  //   INSERT INTO t (cols) SELECT …|VALUES (…) → the row(s) → trx.insert
+  //   Named limit: a later raw SELECT in the same process does not see these pending writes (Trx.get/find do).
+  function _splitTop(str) {
+    var out = [], depth = 0, q = false, cur = '';
+    for (var i = 0; i < str.length; i++) { var ch = str.charAt(i);
+      if (ch === "'") q = !q;
+      if (!q) { if (ch === '(') depth++; else if (ch === ')') depth--; else if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; } }
+      cur += ch; }
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
+  function processDB(trx) {
+    var A = _A(), base = A.RUNTIME.DB;
+    function keyOf(t) { return trx.idCol(t); }
+    function rowsOf(t, where, params) { return trx.q('SELECT * FROM ' + t + (where ? ' WHERE ' + where : ''), params || []); }
+    function plain(v) { return A.stored(v); }
+    var db = Object.create(base);
+    db.getIDsEx = db.getIDs = function (trxName, sql) { var a = Array.prototype.slice.call(arguments, 2); if (a.length === 1 && Array.isArray(a[0])) a = a[0];
+      return base.query(sql, a).map(function (r) { var k = Object.keys(r)[0]; return Math.trunc(Number(r[k])); }); };
+    // DB.executeUpdate (non-Ex) logs and returns -1 on an SQL error (U/DB.java executeUpdate catch → log.SEVERE, no throw)
+    db.executeUpdate = function (sql, params) {
+      try { return db.executeUpdateEx(sql, params); }
+      catch (e) { trx.say('§PROC-SQL-ERROR executeUpdate → -1: ' + ((e && e.message) || e) + ' :: ' + String(sql).replace(/\s+/g, ' ').slice(0, 160)); return -1; }
+    };
+    db.executeUpdateEx = function (sql, params) {
+      if (typeof params === 'string' || params === undefined) params = [];
+      if (!Array.isArray(params)) params = [params];
+      params = params.map(plain);
+      var m, S = String(sql).trim().replace(/\s+/g, ' ');
+      if ((m = /^UPDATE\s+([\w.]+)(?:\s+\w+)?\s+SET\s+(.*?)\s+WHERE\s+(.*)$/i.exec(S))) {
+        var t = m[1].toLowerCase(), sets = _splitTop(m[2]).map(function (x) { var i = x.indexOf('='); return { c: x.slice(0, i).trim().toLowerCase(), e: x.slice(i + 1).trim() }; });
+        var k = keyOf(t), rows = trx.q('SELECT ' + t + '.' + k + ' AS __k, ' + sets.map(function (x, i) { return '(' + x.e + ') AS __v' + i; }).join(', ') + ' FROM ' + t + ' WHERE ' + m[3], params);
+        rows.forEach(function (r) { var cur = trx.get(t, r.__k); if (!cur) return; var ch = {}; sets.forEach(function (x, i) { ch[x.c] = r['__v' + i]; }); trx.update(t, cur, ch); });
+        return rows.length;
+      }
+      if ((m = /^DELETE\s+FROM\s+([\w.]+)(?:\s+WHERE\s+(.*))?$/i.exec(S))) {
+        var t2 = m[1].toLowerCase(), k2 = keyOf(t2), rs = trx.q('SELECT ' + k2 + ' AS __k FROM ' + t2 + (m[2] ? ' WHERE ' + m[2] : ''), params);
+        rs.forEach(function (r) { var cur = trx.get(t2, r.__k); if (cur) trx.del(t2, cur); });
+        return rs.length;
+      }
+      if ((m = /^INSERT\s+INTO\s+([\w.]+)\s*\(([^)]*)\)\s*(VALUES\s*\((.*)\)|SELECT .*)$/i.exec(S))) {
+        var t3 = m[1].toLowerCase(), cols = m[2].split(',').map(function (c) { return c.trim().toLowerCase(); }), rs3;
+        if (/^VALUES/i.test(m[3])) rs3 = trx.q('SELECT ' + _splitTop(m[4]).map(function (e, i) { return '(' + e + ') AS __v' + i; }).join(', '), params);
+        else rs3 = trx.q(m[3], params).map(function (r) { var o = {}, ks = Object.keys(r); ks.forEach(function (kk, i) { o['__v' + i] = r[kk]; }); return o; });
+        rs3.forEach(function (r) { var f = {}; cols.forEach(function (c, i) { f[c] = r['__v' + i]; }); trx.insert(t3, f); });
+        return rs3.length;
+      }
+      trx.say('§PROC-UNPORTED-DEP executeUpdate SQL shape not translated: ' + S.slice(0, 160));
+      throw new Error('executeUpdate: unsupported SQL ' + S.slice(0, 80));
+    };
+    return db;
+  }
+  // PO_HELPERS — PO read/write inside the process Trx (PO.java get/set/save via ModelLayer.save; reads see this Trx's writes)
+  //   plain(v): a Java-typed value → the store's value (BigDecimal → Number via ML.N, Timestamp → 'yyyy-MM-dd HH:mm:ss', boolean → Y/N)
+  var PO_HELPERS = {
+    get A() { return _A(); }, get ML() { return _ML(); }, ProcessInfoParameter: ProcessInfoParameter,
+    plain: function (v) { var A = _A(); if (v instanceof A.BigDecimal) return _ML().N(v); if (v instanceof A.Timestamp) return v.toString(); if (typeof v === 'boolean') return v ? 'Y' : 'N'; return v; },
+    plainMap: function (m) { var o = {}; for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k)) o[k.toLowerCase()] = PO_HELPERS.plain(m[k]); return o; },
+    // get(trx, table, id) → Java-shaped getters over the Trx's live row (pending writes included); null if absent
+    get: function (trx, table, id) { var r = trx.get(String(table).toLowerCase(), id); return r ? _A().RUNTIME.PO.wrap(table, r) : null; },
+    find: function (trx, table, where, orderBy) { return trx.find(String(table).toLowerCase(), where || {}, orderBy).map(function (r) { return _A().RUNTIME.PO.wrap(table, r); }); },
+    // save(trx, table, poOrNull, changes) — PO.save: new when po is null; returns {ok,row,error}
+    save: function (trx, table, po, changes) { return _ML().save(trx, String(table).toLowerCase(), po ? (po.row || po) : null, PO_HELPERS.plainMap(changes || {})); },
+    remove: function (trx, table, po) { return _ML().remove(trx, String(table).toLowerCase(), po.row || po); },
+    newPO: function (trx, table, fields) { return _ML().newPO(trx, String(table).toLowerCase(), PO_HELPERS.plainMap(fields || {})); }
+  };
+  function defineProcess(classname, factory) {
+    var C = factory(SvrProcess, PO_HELPERS);
+    JAVA[classname] = C;
+    return C;
+  }
+  // runJava(query, env, pi) — ProcessUtil.startJavaProcess (ProcessUtil.java:145-205) inside one ModelLayer.Trx.
+  //   pi = { AD_Process_ID, className, title, Record_ID, Table_ID, AD_PInstance_ID, params:{name:{v,vTo}|v}, ctx(Ctx) }
+  var proc0db = null;
+  function runJava(query, env, pi) {
+    var A = _A(), ML = _ML(), C = JAVA[pi.className];
+    if (!C) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + pi.className };
+    var trx = new ML.Trx(query, env || {});
+    A.bind(function (sql, params) { return trx.q(sql, params); }, { now: env && env.nowMillis ? function () { return env.nowMillis; } : undefined, log: function (l) { trx.say(l); } });
+    var ctx = pi.ctx || A.loginContext({ client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date });
+    // ProcessInfoParameter[] from AD_Process_Para (SeqNo order) — the parameter types the UI's AD_PInstance_Para carry
+    var paras = [];
+    try { paras = query('SELECT columnname AS c, ad_reference_id AS r FROM ad_process_para WHERE ad_process_id=? AND isactive=? ORDER BY seqno', [pi.AD_Process_ID, 'Y']) || []; } catch (e) {}
+    var given = pi.params || {};
+    pi.parameter = [];
+    paras.forEach(function (pp) {
+      var k = Object.keys(given).filter(function (g) { return g.toLowerCase() === String(pp.c).toLowerCase(); })[0];
+      if (k === undefined) return;
+      var g = given[k], v = (g && typeof g === 'object' && !(g instanceof A.BigDecimal) && !(g instanceof A.Timestamp) && ('v' in g)) ? g : { v: g };
+      pi.parameter.push(new ProcessInfoParameter(pp.c, typedParam(pp.r, v.v), typedParam(pp.r, v.vTo), null, null));
+    });
+    proc0db = processDB(trx); A.RUNTIME.DB = proc0db;
+    var proc = new C();
+    var ok = proc.startProcess(ctx, pi, trx);
+    var ops = ok ? trx.groupOps() : [];
+    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, log: trx.log, trx: trx };
+  }
+
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
@@ -1052,7 +1238,8 @@
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
-    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner
+    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

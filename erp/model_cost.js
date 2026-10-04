@@ -511,9 +511,19 @@
     return bad === 0;
   }
 
+  // MCostDetail.processProduct(product, trxName) :992-1013 — the CostCreate overload: every schema, no DateAcct cut-off,
+  // ordered C_AcctSchema_ID, AD_Org_ID, M_AttributeSetInstance_ID, DateAcct, then the same ref-detail key as :1023-1049 above.
+  function processProductAll(trx, p) {
+    var list = trx.find('m_costdetail', { m_product_id: p.m_product_id, processed: 'N' });
+    list.sort(function (a, b) { return (Number(a.c_acctschema_id) - Number(b.c_acctschema_id)) || (Number(a.ad_org_id) - Number(b.ad_org_id)) || (Number(a.m_attributesetinstance_id) - Number(b.m_attributesetinstance_id)) || cmp(a.dateacct, b.dateacct) || seqCmp(a.m_costdetail_id, b.m_costdetail_id); });
+    var ok = 0, bad = 0; list.forEach(function (x) { if (cdProcess(trx, { row: x, isNew: false, changes: {} })) ok++; else bad++; });
+    trx.say('§MODEL-COST processProduct(all) product=' + p.m_product_id + ' OK=' + ok + ' Errors=' + bad);   // s_log.config :1011
+    return bad === 0;
+  }
+
   return { CM: CM, ce: ce_, costingMethod: costingMethod, costingLevel: costingLevel, costingPrecision: costingPrecision, getCostingMethods: getCostingMethods,
     getMaterialCostElement: getMaterialCostElement, getCost: getCost, getCostInfo: getCostInfo, getSeedCosts: getSeedCosts, getProductCosts: getProductCosts,
     getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment,
     getMatchInvoice: getMatchInvoice, createOrder: createOrder, createInvoice: createInvoice, createShipment: createShipment, createMatchInvoice: createMatchInvoice,
-    processProduct: processProduct, currencyConvert: currencyConvert };
+    processProduct: processProduct, processProductAll: processProductAll, currencyConvert: currencyConvert };
 });
