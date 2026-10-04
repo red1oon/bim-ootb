@@ -11,6 +11,8 @@
 //  (3) POPULATION slots judged per locale printed; < MIN_SLOTS FAILS (an empty Modeller cannot pass by absence).
 //  (4) IN PLACE   en_MY page → the REAL flag button (#header-flag-btn) → de_DE: no navigation, then leaks re-counted, then the
 //                 Help panel opened AFTER the switch must arrive translated (the MutationObserver path).
+//  (6) PICKER     S226 §R3a: with the picker open from the Modeller's right-edge flag button, EVERY flag button's rect is inside
+//                 the viewport and document.elementFromPoint at its centre is that button (a user can click each one).
 //  (5) CONTROL    de_DE with its i18n/de_DE.json ABORTED → the same counter must report leaks > 0 (proves (2) can fail).
 // INCONCLUSIVE when nothing was judged. CPU only (--disable-gpu). READ the log: viewer/tests/logs/witness_modeller_i18n.log
 // Run:  node viewer/tests/witness_modeller_i18n.js [--locales de_DE,ar_SA]
@@ -131,6 +133,12 @@ async function walk(page, plog) {   // the trailer's screens, real clicks
     await page.evaluate(() => { window.__mark = 'kept'; });
     await page.locator('#m-dots').click().catch(() => {}); await page.waitForTimeout(500);
     const n0 = plog.length; await page.locator('#header-flag-btn').click().catch(() => {}); await page.waitForSelector('#ootb-flag-popup.active', { timeout: 5000 }).catch(() => {});
+    const pk = await page.evaluate(() => { const vw = innerWidth, vh = innerHeight; const bs = Array.from(document.querySelectorAll('#ootb-flag-popup button'));
+      const bad = bs.filter(b => { const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return r.left < 0 || r.top < 0 || r.right > vw || r.bottom > vh || !(top && (top === b || b.contains(top))); }).map(b => b.title);
+      const pr = document.getElementById('ootb-flag-popup').getBoundingClientRect(); return { n: bs.length, bad, popup: [pr.left, pr.top, pr.right, pr.bottom].map(Math.round), vw, vh }; });
+    say('  §MDL_PICKER buttons=' + pk.n + ' popup=' + JSON.stringify(pk.popup) + ' viewport=' + pk.vw + 'x' + pk.vh + ' unreachable=' + pk.bad.length + (pk.bad.length ? ' [' + pk.bad.join(' · ') + ']' : ''));
+    if (pk.n === 0) { inc++; say('INCONCLUSIVE (6) picker: 0 flag buttons'); } else W(pk.bad.length === 0, '(6) every one of ' + pk.n + ' flags inside the viewport and clickable (unreachable=' + pk.bad.length + ')');
     await page.locator('#ootb-flag-popup button[title$="(de_DE)"]').click().catch(() => {});
     for (let i = 0; i < 50 && !plog.slice(n0).some(l => /§TRL_DICT_PAGE locale=de_DE/.test(l)); i++) await page.waitForTimeout(200);
     await page.waitForTimeout(800);

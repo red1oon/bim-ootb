@@ -310,12 +310,26 @@
   };
 
   // ── Flag picker popup ──
+  // S226 §R3a (found by the Modeller trailer recorder, 2026-10-04): the popup opens at the flag button's left edge — with the
+  // button at the right edge of the screen (the Modeller's toolbar rail) half the flags landed OFF-SCREEN (es_ES at x=1443 on a
+  // 1440 px window) and could not be clicked by anyone. Keep the whole grid inside the viewport (8 px margin); open ABOVE the
+  // button when there is no room below. Witness: W-MODELLER-I18N (6) every flag inside the viewport + hit-testable.
+  function _placeFlagPopup(popup) {
+    var vw = window.innerWidth, vh = window.innerHeight, M = 8, pr = popup.getBoundingClientRect();
+    if (!pr.width) return;
+    var anchor = document.getElementById('header-flag-btn'), ar = anchor ? anchor.getBoundingClientRect() : null;
+    var left = Math.max(M, Math.min(pr.left, vw - pr.width - M));
+    var top = pr.top;
+    if (top + pr.height > vh - M) top = ar ? ar.top - pr.height - 6 : vh - pr.height - M;
+    top = Math.max(M, Math.min(top, vh - pr.height - M));
+    popup.style.left = left + 'px'; popup.style.top = top + 'px'; popup.style.right = 'auto';
+  }
   function toggleFlagPicker() {
     // S226 §R2c: the click that OPENS the picker (e.g. the landing ⋯ rail's flag — PillBuilder fires on pointerup, the
     // click follows) must not also count as the "outside click" that closes it — found by the Viewer trailer recorder.
     window.__flagPickerOpenedAt = Date.now();
     var popup = document.getElementById('ootb-flag-popup');
-    if (popup) { popup.classList.toggle('active'); return; }
+    if (popup) { popup.classList.toggle('active'); if (popup.classList.contains('active')) _placeFlagPopup(popup); return; }
 
     // Position next to the header flag button
     var anchor = document.getElementById('header-flag-btn');
@@ -375,6 +389,7 @@
     var style = document.createElement('style');
     style.textContent = '#ootb-flag-popup.active{display:grid!important}';
     document.head.appendChild(style);
+    _placeFlagPopup(popup);
 
     // Close on outside click
     document.addEventListener('click', function(e) {
