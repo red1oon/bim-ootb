@@ -306,6 +306,20 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // initRateTemplate()/loadSequenceRules() (only mep_report.html/boq_charts.html do), so this hardcoded
 // copy, not the JSON, is what actually runs in the main viewer/Time Machine/Author wizard. Keep it in
 // sync with rates/sequence_rules.json's NAME_OVERRIDES (same convention as SEQUENCE_RULES above).
+// §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
+// consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
+// CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).
+// Phase names = rates/4D_template_civil.json phases. Order: secondary source (JKR road-works method statements).
+// resource = what IfcBuildingElementProxy gets today (MASON) → durations unchanged, NOT civil-calibrated.
+var SEQUENCE_CIVIL = {
+  EARTHWORK:{phase:'Earthworks',sequence:1,resource:'MASON'},
+  DRAINAGE:{phase:'Drainage',sequence:2,resource:'MASON'},
+  ROAD:{phase:'Pavement',sequence:3,resource:'MASON'},
+  FURNITURE:{phase:'Road Furniture',sequence:4,resource:'MASON'},
+  SIGNAGE:{phase:'Signage',sequence:5,resource:'MASON'},
+  LIGHTING:{phase:'Road Lighting',sequence:6,resource:'MASON'},
+  MARKING:{phase:'Road Marking',sequence:7,resource:'MASON'},
+};
 var SEQUENCE_NAME_OVERRIDES = [
   {
     id: 'glazed_curtainwall_facade',

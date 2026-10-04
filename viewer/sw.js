@@ -193,7 +193,7 @@
 // v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
 // v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
 // v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
-const CACHE_VERSION = 'v1472';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v1474';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -967,6 +967,7 @@ const PRECACHE_ASSETS = [
   // deriveZones path. _4dTemplateTried makes that one-shot, so ONE failed fetch drops the
   // canonical model for the whole session. Precached so the model of record always loads.
   'rates/4D_template.json',
+  'rates/4D_template_civil.json',   // §CIVIL_TEMPLATE (CIVIL_HIGHWAY_JELAPANG.md §Q)
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',

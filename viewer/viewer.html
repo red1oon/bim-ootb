@@ -940,7 +940,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wh_walk.js?v=8" onerror="console.warn('§LOAD_FAIL wh_walk.js — pick walk disabled')"></script>
 <!-- navigate.js lazy-loaded on demand by main.js A.loadNavigate() -->
 <script src="city.js?v=8"></script>
-<script src="rates.js?v=8"></script>
+<script src="rates.js?v=9"></script>
 <!-- BIM→Project Order (TASK C): BigDecimal must precede proj_fold (it reads global.BigDecimal at load) -->
 <script src="../erp/bigdecimal.js"></script>
 <script src="../erp/ad_docfsm.js"></script>
@@ -1030,7 +1030,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
 <script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="time_machine.js?v=80" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=81" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=4" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source
@@ -1044,7 +1044,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
      two call sites, never a second copy. -->
 <script src="info_4d_panel.js?v=2" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
-<script src="schedule_author.js?v=14" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=15" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
