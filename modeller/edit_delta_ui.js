@@ -7,7 +7,7 @@
 // Events come from two additive dispatchEvent lines in modeller.html (setHover -> 'dagevu:hover', setSelectionIds -> 'dagevu:select').
 (function () {
   'use strict';
-  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=8', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
+  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=12', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
   var _loading = null, _db = null, _dbBuf = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
 
   function _load(src) {
@@ -17,8 +17,10 @@
     if (window.EditDelta && window.ScheduleAuthor && window.BigDecimal && window.RATES) return Promise.resolve(true);
     if (!_loading) {
       var t0 = performance.now();
-      window.__TRL_NO_AUTORUN = true;   // locale_loader.js: expose the owners WITHOUT the Viewer's UI side effects (toast / DOM translate)
-      _loading = SRC.reduce(function (p, s) { return p.then(function () { return _load(s); }); }, Promise.resolve())
+      // S226 §R3: the Modeller now runs the FULL loader at boot (UI language) — reuse it; only a page without it lazy-loads the owners
+      var src = window._TRL_LOADER ? SRC.filter(function (u) { return u.indexOf('locale_loader.js') < 0; }) : SRC;
+      if (!window._TRL_LOADER) window.__TRL_NO_AUTORUN = true;   // locale_loader.js: expose the owners WITHOUT the Viewer's UI side effects (toast / DOM translate)
+      _loading = src.reduce(function (p, s) { return p.then(function () { return _load(s); }); }, Promise.resolve())
         // the price the Viewer uses IS the user's locale rate pack (locale_loader overrides RATES/LABOR_RATES) — apply it the same way, by the same owner
         .then(function () { return new Promise(function (res) { var L = window._TRL_LOADER, code = L.detectLocale(); L.fetchLocale(code, function (err, data) { if (data) { L.applyRateOverrides(data); window.__S8_LOCALE_CUR = data.cur || null; } console.log('§S8-LAZY locale=' + code + ' applied=' + !!data + ' IfcWallStandardCase.rate=' + (window.RATES.IfcWallStandardCase || {}).rate); res(); }); }); })
         .then(function () { console.log('§S8-LAZY modeller loaded viewer owners ms=' + (performance.now() - t0).toFixed(0)); return true; })

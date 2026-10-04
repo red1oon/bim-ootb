@@ -19,7 +19,7 @@
   // sources viewer/i18n/ad_message_base.csv (AD_Message) ⋈ viewer/i18n/AD_Message_Trl_<lang>.xml. locales/<code>.js
   // keeps only the COST data (currency, rate attribution, rates). Never edit the JSON — edit the XML and rebuild.
   var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
-  var LOCALE_VERSION = 7; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js)
+  var LOCALE_VERSION = 8; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows)
 
   // ── Locale mapping: navigator.language → locale file code ──
   var LOCALE_MAP = {
@@ -460,6 +460,82 @@
     };
   }
   var _curCode = null, _curLabels = {};
+
+  // ── S226 §R3 — DICTIONARY PAGE (opt-in window.__TRL_DICT_PAGE; the Modeller) — Witness: W-MODELLER-I18N ──
+  // A page whose chrome is built in many places (static markup AND later JS panels) is translated by the dictionary itself,
+  // not by per-element tags: every text node / title / placeholder / aria-label whose WHOLE trimmed value equals a base
+  // English msgtext (i18n/en_MY.json) shows the current locale's text. The English is remembered on the node (__trlEn) so a
+  // later switch maps from English again; a node the app rewrites (its value is no longer what we wrote) is re-read as new
+  // English. Nodes added later are handled by one MutationObserver, batched per animation frame. Exact matches only.
+  var _dict = { en: null, map: {}, tpl: [], obs: null, q: [], raf: 0, n: 0 };
+  var _DICT_ATTRS = ['title', 'placeholder', 'aria-label'];
+  function _dictBuild(labels) {
+    var m = {}, en = _dict.en || {};
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e === 'string' && e.trim().length > 1 && typeof v === 'string' && v && !m[e.trim()]) m[e.trim()] = v; });
+    _dict.map = m;
+    // templates: an English msgtext with {name} slots ('{n} features', 'Confidence {p}% mean') matches a WHOLE value of that shape;
+    // the captured values are put into the locale's own template by name (a locale may reorder them)
+    var tp = [];
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e !== 'string' || typeof v !== 'string' || !v || !/\{\w+\}/.test(e)) return;
+      var names = [], src = e.trim().split(/(\{\w+\})/).map(function(part) { var mm = part.match(/^\{(\w+)\}$/); if (mm) { names.push(mm[1]); return '(.+?)'; } return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('');
+      if (!names.length || src.replace(/\(\.\+\?\)/g, '').length < 3) return;   // a bare '{x}' would match anything
+      tp.push({ re: new RegExp('^' + src + '$'), names: names, to: v }); });
+    _dict.tpl = tp;
+    return Object.keys(m).length;
+  }
+  function _dictLookup(en) {
+    var v = _dict.map[en]; if (v != null) return v;
+    for (var i = 0; i < _dict.tpl.length; i++) { var t = _dict.tpl[i], mm = en.match(t.re); if (!mm) continue;
+      var out = t.to; t.names.forEach(function(n, j) { out = out.split('{' + n + '}').join(mm[j + 1]); }); return out; }
+    return null;
+  }
+  function _dictText(t) {
+    var raw = t.nodeValue, cur = raw && raw.trim(); if (!cur) return;
+    if (t.__trlOut !== cur) t.__trlEn = cur.replace(/\s+/g, ' ');   // new or rewritten by the app → its English, whitespace runs collapsed as the screen shows them ('222 features  🔒 …')
+    var v = _dictLookup(t.__trlEn); if (v == null || v === cur) return;
+    t.__trlOut = v; t.nodeValue = raw.replace(cur, v); _dict.n++;
+  }
+  function _dictAttr(el, a) {
+    var cur = el.getAttribute(a); if (!cur) return; cur = cur.trim();
+    var st = el.__trlA || (el.__trlA = {}), r = st[a] || (st[a] = {});
+    if (r.out !== cur) r.en = cur.replace(/\s+/g, ' ');
+    var v = _dictLookup(r.en); if (v == null || v === cur) return;
+    r.out = v; el.setAttribute(a, v); _dict.n++;
+  }
+  function _dictSkip(n) { return /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.nodeName); }
+  function _dictApply(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { if (root.parentNode && !_dictSkip(root.parentNode)) _dictText(root); return; }
+    if (root.nodeType !== 1 || _dictSkip(root)) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), t;
+    while ((t = w.nextNode())) { if (t.parentNode && !_dictSkip(t.parentNode)) _dictText(t); }
+    _DICT_ATTRS.forEach(function(a) { if (root.hasAttribute(a)) _dictAttr(root, a); });
+    root.querySelectorAll('[title],[placeholder],[aria-label]').forEach(function(el) { _DICT_ATTRS.forEach(function(a) { if (el.hasAttribute(a)) _dictAttr(el, a); }); });
+  }
+  function _dictFlush() { _dict.raf = 0; var q = _dict.q; _dict.q = []; q.forEach(_dictApply); }
+  function _dictObserve() {
+    if (_dict.obs || typeof MutationObserver === 'undefined' || !document.body) return;
+    _dict.obs = new MutationObserver(function(muts) {
+      muts.forEach(function(m) { if (m.type === 'childList') m.addedNodes.forEach(function(n) { _dict.q.push(n); }); else _dict.q.push(m.target); });
+      if (!_dict.raf && _dict.q.length) _dict.raf = requestAnimationFrame(_dictFlush);
+    });
+    _dict.obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: _DICT_ATTRS });
+  }
+  // (re)translate the whole page into `labels`; loads the English base once
+  function _dictPage(code, labels, done) {
+    var t0 = Date.now();
+    function go() {
+      var keys = _dictBuild(labels || {}); _dict.n = 0;
+      var run = function() { _dictApply(document.body); _dictObserve();
+        console.log('§TRL_DICT_PAGE locale=' + code + ' map=' + keys + ' tpl=' + _dict.tpl.length + ' applied=' + _dict.n + ' ms=' + (Date.now() - t0) + ' observer=' + !!_dict.obs);
+        if (done) done(_dict.n); };
+      if (document.body) run(); else document.addEventListener('DOMContentLoaded', run);
+    }
+    if (_dict.en) return go();
+    if (code === 'en_MY') { _dict.en = labels || {}; return go(); }
+    fetchLabels('en_MY', function(en) { _dict.en = en || {}; go(); });
+  }
+  window._TRL_DICT = { apply: _dictApply, size: function() { return Object.keys(_dict.map).length; } };   // witness + late builders
   // Text that modules rendered ONCE (via _trl at build time, no data-trl tag) is re-translated by the dictionary itself:
   // every visible text node / title / placeholder whose whole trimmed value equals the OLD locale's label for a key
   // becomes the NEW locale's label for that key. Exact whole-value matches only (never substrings), so data values are
@@ -504,7 +580,8 @@
         applyLangDir(code);
         var tagged = document.querySelectorAll('[data-trl],[data-trl-title],[data-trl-placeholder],[data-trl-html],[data-trl-tip]').length;
         applyTrlToDOM();
-        var mapped = window.__TRL_SWITCH_NO_RETRANSLATE ? 0 : _retranslate(oldLabels, labels || {});   // the flag exists ONLY for W-VIEWER-I18N's (6) negative control
+        var mapped = window.__TRL_SWITCH_NO_RETRANSLATE ? 0 : (window.__TRL_DICT_PAGE ? -1 : _retranslate(oldLabels, labels || {}));   // the flag exists ONLY for W-VIEWER-I18N's (6) negative control; S226 §R3: a dictionary page maps from its English instead
+        if (window.__TRL_DICT_PAGE && !window.__TRL_SWITCH_NO_RETRANSLATE) _dictPage(code, labels || {});
         _curCode = code; _curLabels = labels || {};
         try {
           localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: code }));
@@ -566,6 +643,8 @@
       } catch(e) { /* ignore */ }
     }
 
+    if (window.__TRL_DICT_PAGE) _dictPage(localeCode, labels || {});   // S226 §R3
+
     // Dispatch event for other scripts to know locale is ready
     window._TRL_READY = true;
     window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: localeCode, labels: Object.keys(labels || {}).length, costErr: _costErr ? String(_costErr.message || _costErr) : null } }));
@@ -578,6 +657,7 @@
     AVAILABLE_LOCALES: AVAILABLE_LOCALES,
     openFlagPicker: toggleFlagPicker,
     setLocale: setLocale,                                     // S226 §R2c — in place, no reload
+    fetchLocale: fetchLocale, applyRateOverrides: applyRateOverrides,   // S226 §R3 — the Modeller's lazy §S8 owner (edit_delta_ui.js) reuses the boot loader
     current: function() { return _curCode; }
   };
 
