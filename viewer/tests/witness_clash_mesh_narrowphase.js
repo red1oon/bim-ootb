@@ -128,7 +128,7 @@ function pageProbe() {
     }
     for (const rule of active) {
       const src = rule.source.discipline, tgt = rule.target.discipline, label = src + '|' + tgt;
-      rules._activeTolerance = rule.tolerance_m || 0.025;
+      rules._activeTolerance = A._clashTolerance ? A._clashTolerance(rule) : (rule.tolerance_m || 0.025);
       const savedPS = A._CLASH_PAGE_SIZE; A._CLASH_PAGE_SIZE = 1e9;
       let rows = []; const tB = performance.now();
       try { rows = A._queryClashesPairAll(rules, src, tgt); } finally { A._CLASH_PAGE_SIZE = savedPS; }
