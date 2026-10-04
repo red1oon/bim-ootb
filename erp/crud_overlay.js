@@ -386,7 +386,8 @@
     if (!el) { _co.extra[col] = v; return; }
     var sv = v == null ? '' : String(v);
     if (el.type === 'date') sv = sv.slice(0, 10);
-    if (el.tagName === 'SELECT' && sv !== '' && !Array.prototype.some.call(el.options, function (o) { return o.value === sv; })) {
+    var fd = _coField(col);
+    if (el.tagName === 'SELECT' && sv !== '' && !(fd && fd.admitted) && !Array.prototype.some.call(el.options, function (o) { return o.value === sv; })) {
       var o = document.createElement('option'); o.value = sv; o.textContent = sv; el.appendChild(o);
     }
     _setVal(el, sv);
@@ -400,6 +401,10 @@
   }
   // _coOpen — bind the open form to a GridTab. cc (host opts.calloutCtx()) = {AD_Tab_ID, tabNo, isSOTrx, parents:[{AD_Tab_ID, tabNo, row}]}
   function _coOpen(verb, e, vals, orig, opts) {
+    _coOpen0(verb, e, vals, orig, opts);
+    if (_co && verb === 'create') _coLookupReset(e, _coLookupCols(e, null));   // ZK editors get the New row's values the same way
+  }
+  function _coOpen0(verb, e, vals, orig, opts) {
     _co = null;
     var cc = (opts && typeof opts.calloutCtx === 'function') ? opts.calloutCtx() : null;
     _coDb(function (A) {
@@ -419,9 +424,28 @@
       if (orig) for (k in orig) row[k] = orig[k];
       for (k in vals) row[k] = vals[k];
       tab.load(row, verb === 'create');
-      _co = { tab: tab, e: e, extra: {}, set: [], verb: verb };
+      _co = { tab: tab, e: e, extra: {}, set: [], verb: verb, orig: orig };
       if (verb === 'create') { tab.dataNewCallouts(); console.log('§CALLOUT-NEW table=' + e.key + ' tab=' + tabId + ' fan fields=' + tab.getFieldCount() + ' set=[' + _co.set.join(',') + '] extra=' + JSON.stringify(_co.extra) + (tab.msgs.length ? ' msgs=' + JSON.stringify(tab.msgs) : '')); }
       else console.log('§CALLOUT-OPEN table=' + e.key + ' tab=' + tabId + ' fields=' + tab.getFieldCount() + ' verb=' + verb);
+    });
+  }
+  function _coField(col) { var lc = String(col).toLowerCase(); return _co && (_co.e.fields || []).filter(function (f) { return String(f.col).toLowerCase() === lc; })[0]; }
+  // _coLookupReset — WTableDirEditor.setValue (org.adempiere.ui.zk/WEB-INF/src/org/adempiere/webui/editor/WTableDirEditor.java,
+  //   setValue: `if (!isSelected(value)) { lookup.refresh(); … still not in list → setValue(null); fireValueChange(cur→null) }`):
+  //   a callout-set lookup value the REFRESHED (val-rule + access) list does not hold is cleared in the field AND in the row.
+  //   DisplayType ID is exempt (`gridField.getDisplayType() != DisplayType.ID`); our fk fields are lookups, never ID.
+  // every editable fk lookup on the form except the one the user just picked (its value came FROM the list)
+  function _coLookupCols(e, except) { return (e.fields || []).filter(function (f) { return f.type === 'fk' && !f.readonly && String(f.col).toLowerCase() !== String(except || '').toLowerCase(); }).map(function (f) { return f.col; }); }
+  function _coLookupReset(e, cols) {
+    if (!_co || !cols.length) return;
+    populateRefs(e, _co.orig, { valRuleOnly: true });          // lookup.refresh() with the context the cascade just set
+    cols.forEach(function (col) {
+      var f = _coField(col), v = _co.tab.getValue(col);
+      if (!f || f.type !== 'fk' || f.readonly || !f.admitted || v == null || v === '') return;
+      if (Object.prototype.hasOwnProperty.call(f.admitted, String(v))) return;
+      var el = _coEl(col); if (el) _setVal(el, '');
+      _coDb(function () { _co.tab.setValue(col, null); });
+      console.log('§CALLOUT-LOOKUP-RESET table=' + e.key + ' col=' + col + ' value=' + v + ' admitted=' + Object.keys(f.admitted).length + ' (WTableDirEditor.setValue: not in refreshed list → null)');
     });
   }
   // _coFieldChange — the user changed `col` in the form: GridTab.setValue (fires the callouts + the cascade)
@@ -434,6 +458,7 @@
       tab.setValue(col, v);
       console.log('§CALLOUT-CHANGE table=' + e.key + ' col=' + col + ' value=' + v + ' trace=[' + tab.trace.join(',') + '] set=[' + _co.set.join(',') + '] extra=' + JSON.stringify(_co.extra) + (tab.msgs.length ? ' msgs=' + JSON.stringify(tab.msgs) : ''));
     });
+    _coLookupReset(e, _coLookupCols(e, col));
     if (_co.set.length && typeof applyAdLogic === 'function') try { applyAdLogic(e); } catch (er) {}
   }
   // the save takes the GridTab's whole row: callout-set columns with no form field (GridTable.dataSave writes every column)
