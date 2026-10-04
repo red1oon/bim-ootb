@@ -147,6 +147,12 @@ async function setupScene(A) {
     if (bc && bc.envelope) env = bc.envelope;
     // Larger envelope = lighter fog (LTU 426m→0.0004, Castle 23m→0.003)
     scene.fog.density = Math.max(0.00015, Math.min(0.004, 1.5 / env));
+    // §FOG_LARGE_SITE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): past ~375 m the 1.5/env branch leaves the
+    // 0.004 cap and hides the model from its OWN framing distance (camera = 1.5 x env, streaming.js §CAMERA): at env
+    // 2114 m transmittance there is exp(-(1.5/env * 1.5 env)^2) = exp(-5.06) = 0.6%. For those sites only, size the fog
+    // so the model stays >= 50% visible from the framing distance: density = sqrt(ln 2) / (1.5 env). Every building
+    // that stays on the 0.004 cap (env < 375 m: Hospital, LTU, Terminal, Duplex) is unchanged.
+    if (1.5 / env < 0.004) scene.fog.density = Math.max(0.00015, Math.min(scene.fog.density, Math.sqrt(Math.LN2) / (1.5 * env)));
     console.log('§FOG_DENSITY env=' + env.toFixed(0) + 'm density=' + scene.fog.density.toFixed(5));
   };
   A.scene = scene;

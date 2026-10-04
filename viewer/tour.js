@@ -129,6 +129,12 @@ function setupTour(A) {
         console.log('[TOUR] §FLY_INJECT bld=' + (A.activeBuilding || '') +
           ' status=' + (res && res.status) + ' source=' + ((res && res.source) || 'none') +
           ' rooms=' + (res && res.rooms != null ? res.rooms : '-'));
+        // §TOUR_NO_ROOMS (CIVIL_HIGHWAY_JELAPANG.md §U): Fly Tour walks a ROOM graph. A model with none (a road)
+        // has nothing to tour — say so instead of hovering silently. Log + status only; flow unchanged.
+        if (res && res.rooms === 0) {
+          console.log('[TOUR] §TOUR_NO_ROOMS VACUOUS bld=' + (A.activeBuilding || '') + ' — Fly Tour needs rooms; this model has none');
+          A.status.textContent = 'Fly Tour flies room to room — this model has no rooms to tour.';
+        }
       }
       // §THIN-GRAPH-RECURE (2026-07-17, third independent live report): rooms can be present,
       // in-frame AND compiler-owned yet still route-thin — a stale weak compile persisted in
