@@ -1574,11 +1574,6 @@ function setupTools(A) {
           "WHERE m.discipline='LIGHTING' AND t.center_x IS NOT NULL");
         if (cr.length && cr[0].values.length) {
           var cLit = {}; A._nightFixtures.forEach(function(f) { if (f.guid) cLit[f.guid] = 1; });
-          var bots = cr[0].values.map(function(r) { return r[3] - (r[6] || 0) / 2; }).sort(function(a, b) { return a - b; });
-          var maxH = 0; cr[0].values.forEach(function(r) { if ((r[6] || 0) > maxH) maxH = r[6] || 0; });
-          var gapLo = null, gapHi = null, gapM = 0, buriedBelow = null;
-          for (var gi = 1; gi < bots.length; gi++) if (bots[gi] - bots[gi - 1] > gapM) { gapM = bots[gi] - bots[gi - 1]; gapLo = bots[gi - 1]; gapHi = bots[gi]; }
-          if (gapM > maxH && bots.filter(function(b) { return b <= gapLo; }).length < bots.length / 2) buriedBelow = (gapLo + gapHi) / 2;
           var cStray = 0, cLow = 0, cCols = 0, cHeads = 0, cMesh = 0, cBox = 0, cRot = 0, geoMemo = {};
           var headsOf = function(hash) {
             if (!hash) return null;
@@ -1600,7 +1595,6 @@ function setupTools(A) {
                   px /= pn2; py /= pn2;
                   var far = null, dMax = 0;
                   top.forEach(function(q) { var d = Math.hypot(q[0] - px, q[1] - py); if (d > dMax) { dMax = d; far = q; } });
-                  var mid = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
                   var heads = [];
                   if (dMax < 0.8) heads.push([px, py]);   // lantern on top of the column, no arm
                   else {
@@ -1614,18 +1608,28 @@ function setupTools(A) {
                       heads.push([hx / end.length, hy / end.length]);
                     });
                   }
-                  res = { mid: mid, topZ: mx[2], heads: heads };
+                  res = { botZ: mn[2], topZ: mx[2], heads: heads };
                 }
               }
             } catch (e) { res = null; }
             geoMemo[hash] = res;
             return res;
           };
+          var bottomOf = {}, cApprox = 0;
+          cr[0].values.forEach(function(r) {
+            var g0 = headsOf(r[8]);
+            if (g0) bottomOf[r[0]] = r[3] + g0.botZ; else { bottomOf[r[0]] = r[3] - (r[6] || 0) / 2; cApprox++; }
+          });
+          var bots = cr[0].values.map(function(r) { return bottomOf[r[0]]; }).sort(function(a, b) { return a - b; });
+          var maxH = 0; cr[0].values.forEach(function(r) { if ((r[6] || 0) > maxH) maxH = r[6] || 0; });
+          var gapLo = null, gapHi = null, gapM = 0, buriedBelow = null;
+          for (var gi = 1; gi < bots.length; gi++) if (bots[gi] - bots[gi - 1] > gapM) { gapM = bots[gi] - bots[gi - 1]; gapLo = bots[gi - 1]; gapHi = bots[gi]; }
+          if (gapM > maxH && bots.filter(function(b) { return b <= gapLo; }).length < bots.length / 2) buriedBelow = (gapLo + gapHi) / 2;
           cr[0].values.forEach(function(r) {
             var guid = r[0], cx = r[1], cy = r[2], cz = r[3], bz = r[6] || 0, rz = r[7] || 0;
             if (cLit[guid]) return;
             if (bz < CIVIL_COLUMN_MIN_M) { cLow++; return; }
-            if (buriedBelow !== null && cz - bz / 2 < buriedBelow) { cStray++; return; }
+            if (buriedBelow !== null && bottomOf[guid] < buriedBelow) { cStray++; return; }
             cCols++;
             var nm = 'civil lighting column';
             var g = headsOf(r[8]), pts;
@@ -1633,11 +1637,12 @@ function setupTools(A) {
               cMesh++;
               if (rz) cRot++;
               var cs = Math.cos(rz), sn = Math.sin(rz);
+              // DB center = the vertex CENTROID and the stored vertices are centroid-relative (import_worker
+              // "compute centroid → re-center at origin"), so world = center + R(local) — never center ± bbox/2.
               pts = g.heads.map(function(h) {
-                var lx = h[0] - g.mid[0], ly = h[1] - g.mid[1];
-                return [cx + lx * cs - ly * sn, cy + lx * sn + ly * cs, cz + (g.topZ - g.mid[2])];
+                return [cx + h[0] * cs - h[1] * sn, cy + h[0] * sn + h[1] * cs, cz + g.topZ];
               });
-            } else { cBox++; pts = [[cx, cy, cz + bz / 2]]; }
+            } else { cBox++; pts = [[cx, cy, cz + bz / 2]]; }   // no mesh: box top (centroid ± half-extent, approximate)
             pts.forEach(function(q, hi) {
               A._nightFixtures.push({ x: q[0], y: q[1], z: q[2], name: nm, h: 0.3, bw: 0, bd: 0, rz: rz,
                 guid: hi === 0 ? guid : null, ghash: null, civil: true });
@@ -1646,7 +1651,7 @@ function setupTools(A) {
           });
           console.log('§NIGHT_CIVIL_LAMPS lightingElements=' + cr[0].values.length + ' columns=' + cCols + ' heads=' + cHeads +
             ' fromMesh=' + cMesh + ' boxTopFallback=' + cBox + ' strayBuried=' + cStray + ' (largest bottom gap ' + gapM.toFixed(1) + 'm vs tallest ' + maxH.toFixed(1) + 'm → ' + (buriedBelow === null ? 'no split' : 'below z=' + buriedBelow.toFixed(1)) + ')' +
-            ' shorterThanColumn=' + cLow + ' rotated=' + cRot + (cRot ? '' : ' VACUOUS(rotation)'));
+            ' shorterThanColumn=' + cLow + ' bottomFromBoxApprox=' + cApprox + ' rotated=' + cRot + (cRot ? '' : ' VACUOUS(rotation)'));
           if (cHeads) source = (source === 'none' ? '' : source + '+') + 'civil-lighting(' + cCols + ' columns, ' + cHeads + ' heads)';
         }
       } catch (e) { console.warn('§NIGHT_CIVIL_LAMPS query failed', e); }
