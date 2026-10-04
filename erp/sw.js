@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v817';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v818';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -133,6 +133,41 @@ const PRECACHE_ASSETS = [
   'doc_poster.js',     // POSTING_PREVIEW_PANEL.md — per-doc GL derivation (UMD, window.DocPoster), == fact_acct(318)
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
   'ad_callout.js',
+  'processes/AcctSchemaCopyAcct.js',
+  'processes/AllocationReset.js',
+  'processes/BOMVerify.js',
+  'processes/BankStatementMatcher.js',
+  'processes/CommissionAPInvoice.js',
+  'processes/CopyFromBankStmt.js',
+  'processes/CopyFromInvoice.js',
+  'processes/CopyFromJournal.js',
+  'processes/CopyFromJournalDoc.js',
+  'processes/CopyFromOrder.js',
+  'processes/CopyProduct.js',
+  'processes/DunningRunCreate.js',
+  'processes/InOutCreateConfirm.js',
+  'processes/InOutCreateInvoice.js',
+  'processes/InventoryCountCreate.js',
+  'processes/InventoryCountUpdate.js',
+  'processes/InvoiceCreateInOut.js',
+  'processes/M_PriceList_Create.js',
+  'processes/MatchInvDelete.js',
+  'processes/MatchPODelete.js',
+  'processes/OrderLineCreateProduction.js',
+  'processes/OrderLineCreateShipment.js',
+  'processes/PackageCreate.js',
+  'processes/PaySelectionCheckReverse.js',
+  'processes/PaySelectionCreateCheck.js',
+  'processes/PaySelectionCreateFrom.js',
+  'processes/PaymentOnline.js',
+  'processes/ProductionCreate.js',
+  'processes/RMACreateOrder.js',
+  'processes/SalesOrderRateInquiryProcess.js',
+  'processes/YearCreatePeriods.js',
+  'processes/support_copy.js',
+  'processes/support_docgen.js',
+  'processes/support_pay.js',
+  'processes/support_stock_proc.js',
   'callouts/CalloutRMA.js',
   'callouts/CostAdjustmentLine.js',
   'callouts/InOutFreightCostRule.js',
