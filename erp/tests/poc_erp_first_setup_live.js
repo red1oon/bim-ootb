@@ -30,7 +30,7 @@ const server = http.createServer((req, res) => {
 
 // The spec's pinned verdicts (ERP_FIRST_SETUP_GUIDE.md §FS1 "Exp." column). V/G/I. Change ONLY with the spec.
 const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S05b: 'V', S06: 'V', S07: 'V', S08: 'G', S09: 'G', S10: 'V', S10b: 'V',
-  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
+  S11: 'V', S11b: 'V', S12: 'V', S13: 'V', S14: 'V', S15: 'V', S15b: 'V', S16: 'V', S16b: 'V', S16c: 'V', S17: 'V', S18: 'V', S19: 'V', S20: 'V', S20b: 'V', S21: 'V',
   S22: 'V', S23: 'V', S24: 'G', S24b: 'V', S24c: 'V', S25a: 'V', S25b: 'V', S26: 'V' };
 // FIX-A (§FS2) flips S08 + S09 to V. The witness reads which genesis it is judging from the served file itself.
 // FS-1 (§FS2c) pinned S07 + S15 to V: the born tenant carries MSetup's 42 doc types (MSetup.java:710-831).
@@ -46,6 +46,8 @@ const EXPECT = { S01: 'V', S02: 'V', S03: 'V', S04: 'V', S05: 'V', S05b: 'V', S0
 // FS-14 (§FS2l) pinned S24c to V: Aging buckets == the re-derived oracle at two statement dates; vacuity control INCONCLUSIVE.
 // FS-13 (§FS2k) pinned S10b to V: the Location editor commits a C_Location; the customer's order header then saves.
 // FS-12 (§FS2j) pinned S15b to V: a NEW tenant's order prices its line from the setup price list and completes.
+// §GT (ERP_IDEMPIERE_UX_PARITY.md §GT.3) pinned S16b + S16c to V: an unsaved header autosaves on the Line tab; the Line tab
+//   counts ONLY its order's rows (per-row c_order_id via the §GT-SNAP seam) — closes the scope-blind newOrder() path (§MD).
 // FS-2/3/4 (§FS2g) pinned S04, S06, S12, S13 to V: currency choice (MYR picked + asserted), 12 periods, tax category, payment term.
 
 const OUT = [];
@@ -332,17 +334,21 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
   } catch (e) { step('S14', 'I', 'SO in new company', 'harness: ' + e.message); }
 
   // ── S16..S21 order-to-cash in the demo company (GardenWorld) ─────────────────────────────────────────────────
-  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price, negProd, login) {
+  async function newOrder(win, bpId, dtRe, lineTab, prod, qty, price, negProd, login, autosave) {
     const r = {};
+    const gtSnap = () => page.evaluate(() => window.IdmpGridTab ? window.IdmpGridTab.snapshot() : null).catch(() => null);
     await openWin(page, base, login || 'GardenAdmin', win); await clickNew(page);
     r.newPriceList = await page.$eval('#idmp-inline-mount [data-col="m_pricelist_id"]', e => e.value).catch(() => null);
     await setSel(page, 'c_bpartner_id', bpId); await page.waitForTimeout(300);
     const dt = (await opts(page, 'c_doctypetarget_id')).find(o => dtRe.test(o.t));
     if (dt) await setSel(page, 'c_doctypetarget_id', dt.v);
-    let n0 = PAGELOG.length; await save(page);
+    let n0 = PAGELOG.length; if (!autosave) await save(page);
+    // §GT S16b: with autosave the header is NOT saved here — the Line-tab click must save it (AbstractADWindowContent.saveAndNavigate)
+    if (autosave) { await page.click('#idmp-tabstrip >> text=' + lineTab); await page.waitForTimeout(1600); r.autosave = last(n0, /§GT-NAV autosave table=C_Order verdict=/); }
     r.hdr = last(n0, /§CRUD validate key=c_order /); r.hdrPersist = last(n0, /§CRUD-PERSIST key=c_order /);
     r.id = Number((/§CRUD-CREATE-SEL table=c_order id=(-?\d+)/.exec(last(n0, /§CRUD-CREATE-SEL table=c_order/)) || [])[1]);
-    await page.click('#idmp-tabstrip >> text=' + lineTab); await page.waitForTimeout(900);
+    if (!autosave) { await page.click('#idmp-tabstrip >> text=' + lineTab); await page.waitForTimeout(900); }
+    r.snap0 = await gtSnap();   // §GT S16c: the Line tab of THIS order before its line — rows per parent, not a log line
     await clickNew(page);
     if (negProd) {   // NEGATIVE CONTROL first: a product with NO row in the price-list version must derive no price
       n0 = PAGELOG.length; await setSel(page, 'm_product_id', negProd);
@@ -360,6 +366,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     await page.locator('#idmp-inline-mount input[data-col="priceactual"]').first().fill(String(price)).catch(() => {});
     n0 = PAGELOG.length; await save(page);
     r.line = last(n0, /§CRUD validate key=c_orderline/);
+    await page.waitForTimeout(400); r.snap1 = await gtSnap();
     await page.click('#idmp-tabstrip .idmp-adtab >> nth=0'); await page.waitForTimeout(900);
     await page.evaluate((i) => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find(x => Number(x.getAttribute('data-ad-record')) === i); if (tr) tr.click(); }, r.id);
     await page.waitForTimeout(900);
@@ -459,7 +466,15 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     const eSO = await expectFor('Standard Order'), fSO = fanOf(SO.fanout);
     // arm (a) NEGATIVE CONTROL: Standard Order must generate NOTHING (iDempiere: Generate Shipments/Invoices later)
     const armA = !!(eSO && fSO && fSO.io === eSO.io && fSO.inv === eSO.inv && fSO.ops === 0 && coOps(SO.co) === 1);
-    const POS = await newOrder(143, 118, /^POS Order/, 'Order Line', 123, 1, 61.75);
+    const POS = await newOrder(143, 118, /^POS Order/, 'Order Line', 123, 1, 61.75, null, null, true);
+    // §GT S16b/S16c — the 2nd order of the session: header typed, NOT saved, Line tab clicked; then its Line tab counted per row
+    step('S16b', /verdict=saved/.test(POS.autosave || '') && /verb=create ok/.test(POS.hdr) && POS.id ? 'V' : 'G', 'an unsaved order header is saved when the user clicks the Line tab',
+      (POS.autosave || '(no §GT-NAV autosave line)').slice(0, 140) + ' hdr=' + POS.hdr.slice(0, 60) + ' id=' + POS.id);
+    const own = s => s ? s.rows.filter(x => String(x.link) === String(POS.id)).length : -1;
+    const okC = !!(POS.snap0 && POS.snap1 && SO && SO.id && POS.id !== SO.id && POS.snap0.rows.length === 0 && POS.snap1.rows.length === 1 && own(POS.snap1) === 1 && String(POS.snap1.linkValue) === String(POS.id));
+    step('S16c', !POS.snap0 || !POS.snap1 ? 'I' : (okC ? 'V' : 'G'), 'the Line tab shows only this order\'s lines (after another order got a line this session)',
+      'firstOrder=' + (SO && SO.id) + ' thisOrder=' + POS.id + ' before={rows:' + (POS.snap0 ? POS.snap0.rows.length : '?') + ',link:' + (POS.snap0 ? POS.snap0.linkColumn + '=' + POS.snap0.linkValue : '?') + '}' +
+      ' after={rows:' + (POS.snap1 ? POS.snap1.rows.length : '?') + ',own:' + own(POS.snap1) + ',ids:' + (POS.snap1 ? JSON.stringify(POS.snap1.rows.map(x => x.pk + '→' + x.link)) : '?') + '}');
     const ePOS = await expectFor('POS Order'), fPOS = fanOf(POS.fanout);
     const wantPOS = ePOS ? (ePOS.io === 'Y' ? ePOS.perDoc : 0) + (ePOS.inv === 'Y' ? ePOS.perDoc : 0) : null;
     // arm (b): POS Order (WR) → shipment + invoice, and the signed group carries them: ops = 1 status + engine ops
