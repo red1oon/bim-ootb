@@ -6910,7 +6910,15 @@ async function setupEffects(A, renderer, scene, camera) {
         }
       }
     } catch (e) {}
-    for (var i = 0; i < wp.length; i++) {
+    // §CPE_SEED_FEW (red1 2026-10-04, prompts/ALTC_FOUNDATION.md §1): at most THREE bands — first,
+    // middle, last waypoint — "stick to quite the original". One band PER waypoint was written for a
+    // three-waypoint plan; the room-graph route now has ~21, and 21 bands of 10% each (435 m on
+    // Terminal's 207 m walk) overlapped and zig-zagged the authored walk to 704 m. The tangent still
+    // reads the FULL route's neighbours, so each seeded band lies along the route it came from.
+    var idx = wp.length <= 3 ? wp.map(function(_, k) { return k; })
+                             : [0, Math.floor(wp.length / 2), wp.length - 1];
+    for (var j = 0; j < idx.length; j++) {
+      var i = idx[j];
       var a = wp[Math.max(0, i - 1)], b = wp[Math.min(wp.length - 1, i + 1)];
       var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
       var L = Math.hypot(dx, dy, dz);
@@ -6918,6 +6926,8 @@ async function setupEffects(A, renderer, scene, camera) {
       bands.push({ c: { x: wp[i].x, y: wp[i].y, z: wp[i].z },
                    d: { x: dx / L, y: dy / L, z: dz / L }, len: len });
     }
+    console.log('§CPE_SEED_FEW wp=' + wp.length + ' seeded=' + bands.length + ' idx=[' + idx.join(',') + ']' +
+      ' bandSum=' + (len * bands.length).toFixed(2) + 'm pathLen=' + (+pathLen || 0).toFixed(2) + 'm');
     return bands;
   }
   A.cinemaSeedBands = _cinemaSeedBands;
