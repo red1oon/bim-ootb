@@ -227,6 +227,25 @@
     return row;
   }
 
+  // ══ PO — a record handle (Java PO): pending changes over the live row; save() = PO.save through save() below
+  // (beforeSave → validators → saveNew/DocumentNo → afterSave), saveEx throws. A new handle starts from newPO (ctor defaults).
+  function PO(trx, table, row, fields) { this.trx = trx; this.table = String(table).toLowerCase(); this.row = row || null; this.ch = fields ? Object.assign({}, fields) : {}; this.p = {}; }
+  PO.prototype.get = function (c) { c = c.toLowerCase(); return Object.prototype.hasOwnProperty.call(this.ch, c) ? this.ch[c] : (this.row ? this.row[c] : null); };
+  PO.prototype.set = function (c, v) { this.ch[c.toLowerCase()] = v instanceof BigDecimal ? N(v) : v; return this; };
+  PO.prototype.id = function () { return this.row ? this.row[this.trx.idCol(this.table)] : null; };
+  PO.prototype.is_new = function () { return !this.row; };
+  PO.prototype.values = function () { return Object.assign({}, this.row || {}, this.ch); };
+  PO.prototype.save = function () {
+    var r = save(this.trx, this.table, this.row, this.ch);
+    if (!r.ok) { this.trx.say('§MODEL-PO save ' + this.table + ' refused: ' + r.error); this.error = r.error; return false; }
+    this.row = r.row; this.ch = {}; return true;
+  };
+  PO.prototype.saveEx = function () { if (!this.save()) throw new Error('SaveError ' + this.table + ': ' + this.error); return this; };
+  PO.prototype.load = function () { if (this.row) this.row = this.trx.get(this.table, this.id()) || this.row; return this; };
+  PO.prototype.deleteEx = function () { var r = remove(this.trx, this.table, this.row); if (!r.ok) throw new Error('DeleteError ' + this.table + ': ' + r.error); };
+  function po(trx, table, rowOrId) { if (rowOrId == null) return null; var r = typeof rowOrId === 'object' ? rowOrId : trx.get(table, rowOrId); return r ? new PO(trx, table, r) : null; }
+  function newRecord(trx, table, fields) { return new PO(trx, table, null, newPO(trx, table, fields || {})); }
+
   // ══ the model registry — ONE: ad_modelval.js. Model classes (afterSave etc.) + validators share it ══════════
   var MODEL = {};   // table -> { beforeSave(trx,row,isNew,old), afterSave(trx,row,isNew,old), afterDelete(trx,row) } — the M*.java overrides
   function registerModel(table, impl) { MODEL[table.toLowerCase()] = Object.assign(MODEL[table.toLowerCase()] || {}, impl); }
@@ -240,20 +259,52 @@
     table = table.toLowerCase();
     var isNew = row == null, M = MODEL[table] || {}, old = isNew ? null : Object.assign({}, row);
     var rec = isNew ? Object.assign({}, changes) : Object.assign({}, row, changes);
+    if (!isNew && !Object.keys(changes || {}).some(function (k) { var a = row[k], b = changes[k]; return !same(a, b) || (a == null) !== (b == null); })) return { ok: true, row: row };   // PO.save :2425 — !newRecord && !is_Changed() → true, no hooks
     if (M.beforeSave) { var e0 = M.beforeSave(trx, rec, isNew, old); if (e0) return { ok: false, error: e0 }; }
     var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, { recordOld: old }) || fire(trx, 'BEFORE_SAVE', table, rec, { recordOld: old });
     if (e1) return { ok: false, error: e1 };
     var live;
-    if (isNew) live = trx.insert(table, rec);
+    if (isNew) { saveNewNumbers(trx, table, rec); live = trx.insert(table, rec); }
     else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; live = trx.update(table, row, ch); }
     if (M.afterSave) { var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, live, { recordOld: old }) || fire(trx, 'AFTER_SAVE', table, live, { recordOld: old });
     if (e3) return { ok: false, error: e3 };
     return { ok: true, row: live };
   }
+  // PO.saveNew :3563-3605 — a new row's DocumentNo ('<…>' = a preview → empty) from C_DocTypeTarget_ID when the table has that
+  // column else C_DocType_ID (MSequence by doctype, may return null), else the table's DocumentNo_<Table> sequence; an empty
+  // Value likewise from the table sequence (not for M_AttributeInstance / AD_TableAttribute / AD_SysConfig / T_*).
+  var _cols = {}, _alloc = null;
+  function setDocNoAllocator(a) { _alloc = a; }
+  function columnsOf(trx, table) {
+    if (_cols[table]) return _cols[table];
+    var o = {}, tn = null;
+    try { trx.q("SELECT c.columnname AS c, t.tablename AS t, c.columnsql AS s FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table])
+      .forEach(function (r) { o[String(r.c).toLowerCase()] = { name: r.c, virtual: r.s != null && r.s !== '' }; tn = r.t; }); } catch (e) {}
+    o.__tableName = tn || table;
+    return (_cols[table] = o);
+  }
+  function saveNewNumbers(trx, table, rec) {
+    if (!_alloc || /^t_/.test(table)) return;
+    var cols = columnsOf(trx, table), tn = cols.__tableName;
+    if (cols.documentno) {
+      var value = rec.documentno == null ? null : String(rec.documentno);
+      if (value != null && /^<.*>$/.test(value)) value = null;
+      if (value == null || value.length === 0) {
+        var dtc = cols.c_doctypetarget_id ? 'c_doctypetarget_id' : cols.c_doctype_id ? 'c_doctype_id' : null;
+        if (dtc) value = _alloc.byDocType(trx, Number(rec[dtc] || 0), false, rec);
+        if (value == null) value = _alloc.byTable(trx, tn, rec);
+        rec.documentno = value;
+      }
+    }
+    if (!/^(m_attributeinstance|ad_tableattribute|ad_sysconfig)$/.test(table) && cols.value && !cols.value.virtual) {
+      if (rec.value == null || String(rec.value).length === 0) rec.value = _alloc.byTable(trx, tn, rec);
+    }
+  }
   function remove(trx, table, row) {
     table = table.toLowerCase();
     var M = MODEL[table] || {};
+    if (M.beforeDelete) { var e0 = M.beforeDelete(trx, row); if (e0) return { ok: false, error: e0 }; }   // PO.delete → beforeDelete (model) before the validators
     var e1 = fire(trx, 'BEFORE_DELETE', table, row); if (e1) return { ok: false, error: e1 };
     trx.del(table, row);
     if (M.afterDelete) { var e2 = M.afterDelete(trx, row); if (e2) return { ok: false, error: e2 }; }
@@ -286,10 +337,17 @@
         var ps = impl.prepareIt(trx, doc); setStatus(ps);
         if (ps !== 'IP') return { ok: false, status: ps, msg: trx._msg };
       }
+      var outer = trx._docsPost; trx._docsPost = [];                       // this document's IDocsPostProcess list
       var cs = impl.completeIt(trx, doc); setStatus(cs);
+      var docsPost = trx._docsPost; trx._docsPost = outer;
       var ok = cs === 'CO' || cs === 'IP' || cs === 'WP' || cs === 'WC';  // :330-333
-      // :349-372 MClient.isClientAccountingImmediate → postIt (env.postImmediate overrides; env.noPost = accounting queued)
-      if (ok && cs === 'CO' && !trx.env.noPost) { var P = typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : _poster; if (P) P(trx, table, trx.get(table, id)); }
+      if (ok && docsPost.length) docsPost.forEach(function (d) {          // :335-346 docafter.setProcessedOn("Processed") + saveEx
+        var r = trx.get(d.table, d.id); if (r && trx.env.nowMillis != null) save(trx, d.table, r, { processedon: trx.env.nowMillis + (trx._procSeq = (trx._procSeq || 0) + 1) / 1000 }   /* monotonic within the recorded clock (PO.setProcessedOn :1108-1138) */); });
+      // :349-372 MClient.isClientAccountingImmediate → postIt (env.postImmediate overrides; env.noPost = accounting queued), then each
+      // queued docafter whose OWN instance says Posted<>'Y' → DocumentEngine.postImmediate(…, force=true) = a repost
+      if (ok && cs === 'CO' && !trx.env.noPost) { var P = typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : _poster;
+        if (P) { P(trx, table, trx.get(table, id));
+          docsPost.forEach(function (d) { if (d.posted === 'Y') return; var r = trx.get(d.table, d.id); if (r) P(trx, d.table, r, { repost: true }); }); } }
       return { ok: ok, status: cs, msg: trx._msg };
     }
     var m = { AP: 'approveIt', RJ: 'rejectIt', VO: 'voidIt', CL: 'closeIt', RC: 'reverseCorrectIt', RA: 'reverseAccrualIt', RE: 'reActivateIt' }[action];
@@ -390,7 +448,7 @@
     return Object.assign({ ok: r.ok !== false, ops: ops, log: trx.log, trx: trx }, r, { ops: ops });
   }
 
-  return { setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, registerModel: registerModel, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, registerModel: registerModel, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });

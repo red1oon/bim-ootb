@@ -67,18 +67,157 @@
     return !!pc && pc.periodstatus === 'O';
   }
 
-  // ── MSequence.getDocumentNo (MSequence.java:330-560, simple AD_Sequence level) — bump INSIDE the Trx ──────────
-  function nextDocNo(trx, docTypeId, tableName, po) {
-    var seq = null, d = docTypeId ? dt(trx, docTypeId) : null;
-    if (d && nz(d.docnosequence_id)) seq = trx.get('ad_sequence', d.docnosequence_id);
-    if (!seq && tableName) seq = one(trx, 'ad_sequence', { name: 'DocumentNo_' + tableName, ad_client_id: trx.env.client, istableid: 'N' });
-    if (!seq) return null;
-    if (Y(seq.isstartnewyear) || Y(seq.isorglevelsequence)) { trx.say('§MODEL-SEQ seq=' + seq.ad_sequence_id + ' StartNewYear/OrgLevel → AD_Sequence_No not ported (named)'); }
-    var next = Number(seq.currentnext), inc = Number(seq.incrementno || 1);
-    trx.update('ad_sequence', seq, { currentnext: next + inc });
-    var pre = seq.prefix && !/@/.test(seq.prefix) ? seq.prefix : '', suf = seq.suffix && !/@/.test(seq.suffix) ? seq.suffix : '';
-    return pre + String(next) + suf;
+  // ══ MSequence — DocumentNo allocation, ported verbatim (model/MSequence.java). Every bump is a write through the Trx
+  // (CRUD_UPDATE of AD_Sequence / CRUD_CREATE|UPDATE of AD_Sequence_No) → it rides the document's own signed op-group.
+  // The FOR UPDATE row lock (:383-389) has no analogue in a single-writer op-group (named in §MODEL-SEQ when org/key level).
+  var KEY_CONTEXT_VARIABLE = '/K', NoYearNorMonth = '-', SEQUENCE_NO_KEY_SEPARATOR = '-';   // MSequence.java:64,70,72
+  function isEmpty(v, trim) { return v == null || (trim ? String(v).trim() : String(v)) === ''; }   // Util.isEmpty
+  // DefaultEvaluatee.get_ValueAsString (util/DefaultEvaluatee.java:150-340) over a PO row + the session context (env):
+  // <format> operator, '.' reference operator (X_ID.Column → the referenced row), ':' default, '#'/'$' globals.
+  function evalVar(trx, po, variableName) {
+    var format = '', f = variableName.indexOf('<');                                           // :160-164 format
+    if (f > 0 && /\>$/.test(variableName)) { format = variableName.slice(f + 1, -1); variableName = variableName.slice(0, f); }
+    var foreignColumn = ''; f = variableName.indexOf('.');                                    // :167-174 reference column
+    if (f > 0) { var t0 = variableName.slice(0, f); if (/.*[_]ID([:].+)?$/.test(t0)) { foreignColumn = variableName.slice(f + 1); variableName = t0; } }
+    var defaultValue = null, idx = variableName.indexOf(':');                                 // :177-182 default value
+    if (idx >= 0) { defaultValue = variableName.slice(idx + 1); variableName = variableName.slice(0, idx); }
+    var value = null, globalVariable = /^[#$]/.test(variableName);                           // Env.isGlobalVariable
+    if (po && !globalVariable) { var dv = po[variableName.toLowerCase()]; value = dv != null ? String(dv) : null; }   // :188-192 data provider
+    if (isEmpty(value) && globalVariable) {                                                   // :216-219 global context
+      var ctxName = variableName.slice(1), env = trx.env || {}, ctx = env.ctx || {};
+      value = ctx[ctxName] != null ? String(ctx[ctxName]) : ctxName === 'AD_Client_ID' ? (env.client != null ? String(env.client) : null)
+        : ctxName === 'AD_Org_ID' ? (env.org != null ? String(env.org) : null) : ctxName === 'AD_User_ID' ? (env.user != null ? String(env.user) : null)
+        : ctxName === 'Date' ? (env.date || null) : null;
+    }
+    if (isEmpty(value) && defaultValue != null) value = defaultValue;                         // :259-260
+    if (!isEmpty(value) && !isEmpty(foreignColumn) && /_ID$/.test(variableName)) {           // :270-301 reference(.) operator
+      var id = parseInt(value, 10);
+      if (id > 0) { var ft = variableName.slice(0, -3), fc = foreignColumn, ti = fc.indexOf('.');
+        if (ti > 0) { if (fc.slice(0, ti).toLowerCase() === ft.toLowerCase()) fc = fc.slice(ti + 1); else ft = null; }
+        if (ft) { var rr = null; try { rr = trx.get(ft.toLowerCase(), id); } catch (e) { rr = null; }
+          var cv = rr ? rr[fc.toLowerCase()] : null; value = cv == null ? '' : String(cv); } }
+    }
+    if (format && !isEmpty(value)) {                                                          // :303-340 format operator — dates (SimpleDateFormat subset)
+      if (/^\d{4}-\d{2}-\d{2}/.test(value)) value = sdf(format, value);
+      else trx.say('§MODEL-UNPORTED-DEP DefaultEvaluatee format "<' + format + '>" on non-date value (DecimalFormat/reference display) — value used raw');
+    }
+    return value;
   }
+  function sdf(pattern, ts) {                                                                 // java.text.SimpleDateFormat for yyyy/yy/MM/dd/HH/mm/ss
+    var s = String(ts); var m = { yyyy: s.slice(0, 4), yy: s.slice(2, 4), MM: s.slice(5, 7), dd: s.slice(8, 10), HH: s.slice(11, 13) || '00', mm: s.slice(14, 16) || '00', ss: s.slice(17, 19) || '00' };
+    return pattern.replace(/yyyy|yy|MM|dd|HH|mm|ss/g, function (k) { return m[k]; });
+  }
+  // Env.parseVariable(expression, po, trxName, keepUnparseable=false) — util/Env.java:2070-2131
+  function parseVariable(trx, expression, po) {
+    if (expression == null || expression.length === 0) return '';
+    var inStr = String(expression), out = '', i = inStr.indexOf('@');
+    while (i !== -1) {
+      out += inStr.slice(0, i); inStr = inStr.slice(i + 1);
+      var j = inStr.indexOf('@');
+      if (j < 0) return '';                                                                   // no second tag
+      if (j === 0) { out += '@'; inStr = inStr.slice(1); i = inStr.indexOf('@'); continue; }
+      var token = inStr.slice(0, j), value = evalVar(trx, po, token);
+      if (!isEmpty(value)) out += value;
+      inStr = inStr.slice(j + 1); i = inStr.indexOf('@');
+    }
+    return out + inStr;
+  }
+  // SequenceNoKeyParts.parseKeys (MSequence.java:1416-1458) — only the @…/K@ variables form the AD_Sequence_No key
+  function parseKeys(trx, input, po) {
+    if (input == null || input === '') return null;
+    var results = [], startIndex = 0;
+    while (true) {
+      var start = input.indexOf('@', startIndex); if (start === -1) break;
+      var end = input.indexOf('@', start + 1); if (end === -1) break;
+      var v = input.slice(start, end + 1), isKey = false;
+      if (v.slice(0, -1).endsWith(KEY_CONTEXT_VARIABLE)) { isKey = true; var k = v.lastIndexOf(KEY_CONTEXT_VARIABLE); v = v.slice(0, k) + v.slice(k + KEY_CONTEXT_VARIABLE.length); }
+      if (isKey) { var value = parseVariable(trx, v, po); if (!isEmpty(value, true)) results.push(value); }
+      startIndex = end + 1;
+    }
+    return results;
+  }
+  function seqUsePrefixAsKey(seq) { return !isEmpty(seq.prefix) && String(seq.prefix).indexOf(KEY_CONTEXT_VARIABLE + '@') >= 0; }   // :605-612
+  function seqUseSuffixAsKey(seq) { return !isEmpty(seq.suffix) && String(seq.suffix).indexOf(KEY_CONTEXT_VARIABLE + '@') >= 0; }   // :619-626
+  function seqIsSequenceNoLevel(seq) { return seqUsePrefixAsKey(seq) || seqUseSuffixAsKey(seq) || Y(seq.startnewyear) || Y(seq.isorglevelsequence); }   // :590-598
+  // java.text.DecimalFormat(pattern).format(int) — integer patterns: '0' = mandatory digit, '#' = optional, ',' = grouping
+  function decimalFormat(pattern, n) {
+    var p = String(pattern).split(';')[0], intPart = p.split('.')[0], digits = intPart.replace(/[^0#,]/g, '');
+    var pre = intPart.slice(0, intPart.search(/[0#,]/)), post = intPart.slice(intPart.search(/[0#,][^0#,]*$/) + 1);
+    var minInt = (digits.match(/0/g) || []).length, lastComma = digits.lastIndexOf(','), group = lastComma >= 0 ? digits.length - lastComma - 1 : 0;
+    var s = String(Math.abs(n)); while (s.length < minInt) s = '0' + s;
+    if (group > 0) { var g = []; for (var e = s.length; e > 0; e -= group) g.unshift(s.slice(Math.max(0, e - group), e)); s = g.join(','); }
+    return (n < 0 ? '-' : '') + pre.replace(/'/g, '') + s + post.replace(/'/g, '');
+  }
+  // MSequence.getDocumentNoFromSeq (MSequence.java:330-581)
+  function getDocumentNoFromSeq(trx, seq, po) {
+    var AD_Sequence_ID = seq.ad_sequence_id, isStartNewYear = Y(seq.startnewyear), isStartNewMonth = Y(seq.startnewmonth), dateColumn = seq.datecolumn;
+    var isUseOrgLevel = Y(seq.isorglevelsequence), orgColumn = seq.orgcolumn, startNo = Number(seq.startno || 0), incrementNo = Number(seq.incrementno || 1), decimalPattern = seq.decimalpattern;
+    var prefixValue = null, suffixValue = null, prefixKeys = null, suffixKeys = null;
+    if (!isEmpty(seq.prefix)) { prefixValue = parseVariable(trx, String(seq.prefix).split(KEY_CONTEXT_VARIABLE + '@').join('@'), po); prefixKeys = parseKeys(trx, seq.prefix, po); }   // :358-361
+    if (!isEmpty(seq.suffix)) { suffixValue = parseVariable(trx, String(seq.suffix).split(KEY_CONTEXT_VARIABLE + '@').join('@'), po); suffixKeys = parseKeys(trx, seq.suffix, po); }   // :362-365
+    var calendarYearMonth = NoYearNorMonth, docOrg_ID = 0, next = -1;
+    if (isStartNewYear) {                                                                     // :425-440
+      var fmt = isStartNewMonth ? 'yyyyMM' : 'yyyy';
+      var dval = (po && !isEmpty(dateColumn)) ? po[String(dateColumn).toLowerCase()] : null;
+      calendarYearMonth = sdf(fmt, (po && !isEmpty(dateColumn)) ? dval : (trx.env.date || ''));
+    }
+    if (isUseOrgLevel && po && !isEmpty(orgColumn)) docOrg_ID = Number(po[String(orgColumn).toLowerCase()] || 0);   // :442-449
+    // SequenceNoKeyParts.parseSequenceNoKey (MSequence.java:1500-1530)
+    function key() {
+      var k = '';
+      if (seqUsePrefixAsKey(seq) && prefixKeys) { k = prefixKeys.join(SEQUENCE_NO_KEY_SEPARATOR); }
+      if (isStartNewYear) { if (k.length) k += SEQUENCE_NO_KEY_SEPARATOR; k += calendarYearMonth; }
+      if (seqUseSuffixAsKey(seq) && suffixKeys) { if (k.length) k += SEQUENCE_NO_KEY_SEPARATOR; k += suffixKeys.join(SEQUENCE_NO_KEY_SEPARATOR); }
+      return k;
+    }
+    var keyed = isStartNewYear || seqUsePrefixAsKey(seq) || seqUseSuffixAsKey(seq);
+    if (seqIsSequenceNoLevel(seq)) {                                                          // :367-376 AD_Sequence_No level
+      var sOk = seq.isactive !== 'N' && !Y(seq.istableid) && seq.isautosequence !== 'N';      // :374-375 the join's s.IsActive/IsTableID/IsAutoSequence filter
+      var w = { ad_sequence_id: AD_Sequence_ID }; if (isUseOrgLevel) w.ad_org_id = docOrg_ID; if (keyed) w.sequencekey = key();
+      var y = sOk ? (trx.find('ad_sequence_no', w)[0] || null) : null;
+      if (y) { next = Number(y.currentnext); trx.update('ad_sequence_no', y, { currentnext: next + incrementNo }); }   // :486-512
+      else {                                                                                  // :523-534 create (CurrentNext = StartNo + IncrementNo), first number = StartNo
+        next = startNo;
+        trx.insert('ad_sequence_no', { ad_sequence_id: AD_Sequence_ID, ad_org_id: docOrg_ID, sequencekey: key(), currentnext: startNo + incrementNo });
+      }
+      trx.say('§MODEL-SEQ seq=' + AD_Sequence_ID + ' level=AD_Sequence_No org=' + docOrg_ID + ' key=' + (keyed ? key() : '') + ' next=' + next + ' (FOR UPDATE row lock: none in a single-writer op-group)');
+    } else {                                                                                  // :378-381 standard
+      if (seq.isactive === 'N' || Y(seq.istableid) || seq.isautosequence === 'N') { trx.say('§MODEL-SEQ (Sequence)- no record found - ' + AD_Sequence_ID); return null; }
+      next = Number(seq.currentnext);
+      trx.update('ad_sequence', seq, { currentnext: next + incrementNo });
+    }
+    if (next < 0) return null;
+    var doc = '';                                                                             // :551-561 create DocumentNo
+    if (!isEmpty(prefixValue, true)) doc += prefixValue;
+    doc += (decimalPattern != null && String(decimalPattern).length > 0) ? decimalFormat(decimalPattern, next) : String(next);
+    if (!isEmpty(suffixValue, true)) doc += suffixValue;
+    return doc;
+  }
+  // MSequence.getDocumentNo(C_DocType_ID, trxName, definite, po) — MSequence.java:674-708
+  function getDocumentNoByDocType(trx, C_DocType_ID, definite, po) {
+    if (!nz(C_DocType_ID)) { trx.say('§MODEL-SEQ C_DocType_ID=0'); return null; }
+    var d = dt(trx, C_DocType_ID);
+    if (d && !Y(d.isdocnocontrolled)) return null;
+    if (definite && !Y(d.isoverwriteseqoncomplete)) return null;
+    if (!d || !nz(d.docnosequence_id)) { trx.say('§MODEL-SEQ No Sequence for DocType - ' + C_DocType_ID); return null; }
+    if (definite && !nz(d.definitesequence_id)) return null;
+    var seq = trx.get('ad_sequence', definite ? d.definitesequence_id : d.docnosequence_id);
+    return seq ? getDocumentNoFromSeq(trx, seq, po) : null;
+  }
+  // MSequence.getDocumentNo(AD_Client_ID, TableName, trxName, po) — MSequence.java:306-323 → MSequence.get(ctx, TableName, false) :864
+  function getDocumentNoByTable(trx, tableName, po) {
+    var seq = trx.q("SELECT * FROM ad_sequence WHERE UPPER(name)=UPPER(?) AND istableid='N' AND ad_client_id=? ORDER BY ad_sequence_id", ['DocumentNo_' + tableName, trx.env.client])[0] || null;
+    if (seq) seq = trx.get('ad_sequence', seq.ad_sequence_id);
+    if (!seq) { trx.say('§MODEL-UNPORTED-DEP MSequence.createTableSequence (MSequence.java:314) — no DocumentNo_' + tableName + ' sequence for client ' + trx.env.client); return null; }
+    return getDocumentNoFromSeq(trx, seq, po);
+  }
+  // PO.saveNew :3563-3583 — the DocumentNo of a new row: from C_DocTypeTarget_ID (when the table has it) else C_DocType_ID, else the table sequence
+  function nextDocNo(trx, docTypeId, tableName, po) {
+    var v = docTypeId != null ? getDocumentNoByDocType(trx, docTypeId, false, po) : null;
+    if (v == null) v = getDocumentNoByTable(trx, tableName, po);
+    return v;
+  }
+  ML.setDocNoAllocator({ byDocType: getDocumentNoByDocType, byTable: getDocumentNoByTable });
 
   // ── MStorageOnHand.add :817-845 (+ addQtyOnHand :851-866: negative on-hand refused when WH.IsDisallowNegativeInv) ──
   function storageAdd(trx, locatorId, productId, asi, qty, dateMPolicy) {
@@ -178,7 +317,7 @@
   }
 
   return { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
-    precisionOf: precisionOf, tax: tax, calcTax: calcTax, periodOpen: periodOpen, nextDocNo: nextDocNo, storageAdd: storageAdd,
+    precisionOf: precisionOf, tax: tax, calcTax: calcTax, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
     creditStatus: creditStatus, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z };
 });

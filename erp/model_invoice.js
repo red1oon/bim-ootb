@@ -68,53 +68,39 @@
     afterDelete: function (trx, l) { var inv = trx.get('c_invoice', l.c_invoice_id); if (inv && !Y(inv.processed)) calculateInvoiceTaxTotal(trx, inv); return null; }
   });
 
-  // ══ MOrder.createInvoice :2497-2590 ═══════════════════════════════════════════════════════════════════════════
+  // ══ MOrder.createInvoice(dt, shipment, invoiceDate) :2497-2590 ════════════════════════════════════════════════════
   function createInvoice(trx, o, d, shipment, invoiceDate) {
-    var tgt = nz(d.c_doctypeinvoice_id) ? d.c_doctypeinvoice_id : null;
-    if (!tgt) { T.msg(trx, '@NotFound@ @C_DocTypeInvoice_ID@'); return null; }
-    var pl = trx.get('m_pricelist', o.m_pricelist_id) || {};
-    var h = ML.newPO(trx, 'c_invoice', Object.assign({ ad_org_id: o.ad_org_id, c_order_id: o.c_order_id, issotrx: o.issotrx,    // MInvoice(MOrder) ctor :484-510 ∘ setOrder
-      isdiscountprinted: o.isdiscountprinted, isselfservice: o.isselfservice, sendemail: o.sendemail, m_pricelist_id: o.m_pricelist_id,
-      istaxincluded: pl.istaxincluded || 'N', c_currency_id: o.c_currency_id, c_conversiontype_id: o.c_conversiontype_id, paymentrule: o.paymentrule,
-      c_paymentterm_id: o.c_paymentterm_id, poreference: o.poreference, description: o.description, dateordered: o.dateordered,
-      c_doctypetarget_id: tgt, c_doctype_id: 0, dateinvoiced: invoiceDate, dateacct: invoiceDate, salesrep_id: o.salesrep_id,
-      c_bpartner_id: o.bill_bpartner_id || o.c_bpartner_id, c_bpartner_location_id: o.bill_location_id || o.c_bpartner_location_id,
-      ad_user_id: o.bill_user_id, docstatus: 'DR', docaction: 'CO' }, copy(o, DIMS)));
-    h.documentno = T.nextDocNo(trx, tgt, 'C_Invoice', h);
-    var r = ML.save(trx, 'c_invoice', null, h); if (!r.ok) { T.msg(trx, 'Could not create Invoice: ' + r.error); return null; }
-    var inv = r.row;
-    if (shipment) {
-      if (o.invoicerule !== 'D') trx.update('c_order', o, { invoicerule: 'D' });             // :2510-2511
-      trx.find('m_inoutline', { m_inout_id: shipment.m_inout_id }, ['line']).forEach(function (sl) {
-        var ol = nz(sl.c_orderline_id) ? trx.get('c_orderline', sl.c_orderline_id) : null;
-        var same = !ol || String(ol.c_uom_id) === String(sl.c_uom_id);                      // MInOutLine.sameOrderLineUOM
-        var f = Object.assign({ c_invoice_id: inv.c_invoice_id, ad_org_id: inv.ad_org_id, m_inoutline_id: sl.m_inoutline_id, c_orderline_id: sl.c_orderline_id,   // setShipLine
-          m_rmaline_id: sl.m_rmaline_id, line: sl.line, isdescription: sl.isdescription, description: sl.description, m_product_id: sl.m_product_id,
-          c_uom_id: sl.c_uom_id, m_attributesetinstance_id: sl.m_attributesetinstance_id, c_charge_id: nz(sl.m_product_id) ? null : sl.c_charge_id,
-          qtyentered: same ? sl.qtyentered : sl.movementqty, qtyinvoiced: sl.movementqty, c_projectphase_id: sl.c_projectphase_id, c_projecttask_id: sl.c_projecttask_id }, copy(sl, DIMS));
-        if (ol) Object.assign(f, { s_resourceassignment_id: ol.s_resourceassignment_id, priceentered: same ? ol.priceentered : ol.priceactual, priceactual: ol.priceactual,
-          pricelimit: ol.pricelimit, pricelist: ol.pricelist, c_tax_id: ol.c_tax_id, linenetamt: ol.linenetamt });
-        var rr = ML.save(trx, 'c_invoiceline', null, ML.newPO(trx, 'c_invoiceline', f)); if (!rr.ok) { T.msg(trx, 'Could not create Invoice Line from Shipment Line'); inv = null; return; }
-        trx.update('m_inoutline', sl, { isinvoiced: 'Y' });
-      });
-      if (!inv) return null;
-    } else {
-      if (o.invoicerule !== 'I') trx.update('c_order', o, { invoicerule: 'I' });            // :2536-2537
-      trx.find('c_orderline', { c_order_id: o.c_order_id }, ['line']).forEach(function (ol) {
-        var qi = D(ol.qtyordered).subtract(D(ol.qtyinvoiced));
-        var qe = D(ol.qtyordered).compareTo(D(ol.qtyentered)) === 0 ? qi : qi.multiply(D(ol.qtyentered)).divide(D(ol.qtyordered), 12, HU);
-        ML.save(trx, 'c_invoiceline', null, ML.newPO(trx, 'c_invoiceline', Object.assign({ c_invoice_id: inv.c_invoice_id, ad_org_id: inv.ad_org_id,    // setOrderLine :286-323
-          c_orderline_id: ol.c_orderline_id, line: ol.line, isdescription: ol.isdescription, description: ol.description, c_charge_id: nz(ol.m_product_id) ? null : ol.c_charge_id,
-          m_product_id: ol.m_product_id, m_attributesetinstance_id: ol.m_attributesetinstance_id, s_resourceassignment_id: ol.s_resourceassignment_id, c_uom_id: ol.c_uom_id,
-          priceentered: ol.priceentered, priceactual: ol.priceactual, pricelimit: ol.pricelimit, pricelist: ol.pricelist, c_tax_id: ol.c_tax_id, linenetamt: ol.linenetamt,
-          rramt: ol.rramt, rrstartdate: ol.rrstartdate, qtyinvoiced: N(qi), qtyentered: N(qe) }, copy(ol, DIMS))));
-      });
+    var C = MO.ctorMod(), invoice = C.MInvoiceFromOrder(trx, trx.get('c_order', o.c_order_id), d.c_doctypeinvoice_id, invoiceDate);
+    if (!invoice.save()) { T.msg(trx, 'Could not create Invoice'); return null; }
+    if (shipment) {                                                                           // a Shipment is the base
+      if (o.invoicerule !== 'D') trx.update('c_order', o, { invoicerule: 'D' });
+      var sLines = trx.find('m_inoutline', { m_inout_id: shipment.m_inout_id }, ['line']);
+      for (var i = 0; i < sLines.length; i++) {
+        var sLine = sLines[i], iLine = C.MInvoiceLine(trx, invoice);
+        C.ilSetShipLine(trx, iLine, sLine);
+        C.ilSetQtyEntered(trx, iLine, C.sameOrderLineUOM(trx, sLine) ? sLine.qtyentered : sLine.movementqty);   // Qty = Delivered
+        C.ilSetQtyInvoiced(trx, iLine, sLine.movementqty);
+        if (!iLine.save()) { T.msg(trx, 'Could not create Invoice Line from Shipment Line'); return null; }
+        var sv = ML.save(trx, 'm_inoutline', trx.get('m_inoutline', sLine.m_inoutline_id), { isinvoiced: 'Y' }); if (!sv.ok) trx.say('§MODEL-WARN Could not update Shipment line: ' + sLine.m_inoutline_id);
+      }
+    } else {                                                                                   // Invoice from Order
+      if (o.invoicerule !== 'I') trx.update('c_order', o, { invoicerule: 'I' });
+      var oLines = trx.find('c_orderline', { c_order_id: o.c_order_id }, ['line']).filter(function (l) { return l.isactive !== 'N'; });
+      for (var j = 0; j < oLines.length; j++) {
+        var oLine = oLines[j], il = C.MInvoiceLine(trx, invoice);
+        C.ilSetOrderLine(trx, il, oLine);
+        C.ilSetQtyInvoiced(trx, il, D(oLine.qtyordered).subtract(D(oLine.qtyinvoiced)));   // Qty = Ordered - Invoiced
+        if (D(oLine.qtyordered).compareTo(D(oLine.qtyentered)) === 0) C.ilSetQtyEntered(trx, il, il.get('qtyinvoiced'));
+        else C.ilSetQtyEntered(trx, il, D(il.get('qtyinvoiced')).multiply(D(oLine.qtyentered)).divide(D(oLine.qtyordered), 12, HU));
+        if (!il.save()) { T.msg(trx, 'Could not create Invoice Line from Order Line'); return null; }
+      }
     }
-    if (trx.find('c_orderpayschedule', { c_order_id: o.c_order_id }).length) { T.msg(trx, 'copy C_OrderPaySchedule→C_InvoicePaySchedule (MOrder.java:2566) not ported — named'); return null; }
-    var res = ML.processIt(trx, 'c_invoice', inv.c_invoice_id, 'CO');
-    inv = trx.get('c_invoice', inv.c_invoice_id);
-    if (nz(inv.c_cashline_id)) trx.update('c_order', o, { c_cashline_id: inv.c_cashline_id });   // :2582
-    if (!res.ok || res.status !== 'CO') { T.msg(trx, '@C_Invoice_ID@: ' + (res.msg || res.status)); return null; }
+    if (trx.find('c_orderpayschedule', { c_order_id: o.c_order_id }).length) { T.msg(trx, 'copy C_OrderPaySchedule→C_InvoicePaySchedule (MOrder.java:2566) §MODEL-UNPORTED-DEP'); return null; }
+    var res = ML.processIt(trx, 'c_invoice', invoice.id(), 'CO');
+    if (!res.ok) throw new Error('FailedProcessingDocument - ' + (res.msg || res.status));
+    var inv = trx.get('c_invoice', invoice.id());
+    trx.update('c_order', trx.get('c_order', o.c_order_id), { c_cashline_id: nz(inv.c_cashline_id) ? inv.c_cashline_id : null });   // :2582 setC_CashLine_ID
+    if (inv.docstatus !== 'CO') { T.msg(trx, '@C_Invoice_ID@: ' + (res.msg || '')); return null; }
     return inv;
   }
   MO.MOrder._createInvoice = createInvoice;
@@ -251,7 +237,6 @@
   function createPayment(trx, f) {
     var d = T.dt(trx, f.c_doctype_id) || {};
     var row = ML.newPO(trx, 'c_payment', Object.assign({ isreceipt: Y(d.issotrx) ? 'Y' : 'N', docstatus: 'DR', docaction: 'CO' }, f));   // MPayment.beforeSave: IsReceipt ← doctype
-    row.documentno = T.nextDocNo(trx, f.c_doctype_id, 'C_Payment', row);
     var r = ML.save(trx, 'c_payment', null, row);
     return r.row;
   }
@@ -301,7 +286,6 @@
         description: 'Payment: ' + p.documentno + ' [1]', docstatus: 'DR', docaction: 'CO' });
       var adt = trx.q("SELECT c_doctype_id FROM c_doctype WHERE ad_client_id=? AND docbasetype='CMA' ORDER BY isdefault DESC, c_doctype_id", [trx.env.client])[0];
       if (adt && h.c_doctype_id == null) h.c_doctype_id = adt.c_doctype_id;
-      h.documentno = T.nextDocNo(trx, h.c_doctype_id, 'C_AllocationHdr', h);
       var hr = ML.save(trx, 'c_allocationhdr', null, h).row;
       var rc = Y(p.isreceipt);
       ML.save(trx, 'c_allocationline', null, ML.newPO(trx, 'c_allocationline', { c_allocationhdr_id: hr.c_allocationhdr_id, ad_org_id: hr.ad_org_id,
