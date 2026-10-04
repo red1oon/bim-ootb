@@ -133,6 +133,7 @@
   "display": {
     "max_visible": 20,
     "max_report": 200,
+    "hide_box_only_above": 1000,
     "dim_opacity": 0.1,
     "pulse_speed_s": 1.5
   }

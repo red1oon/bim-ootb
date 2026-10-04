@@ -79,8 +79,8 @@ function setupMeasure(A) {
     A._clashRulesLoading = true;
     // §S282c: route through loadJsonWithOverrides so Settings edits (json_clash_rules) apply.
     var clashLoader = (typeof window.loadJsonWithOverrides === 'function')
-      ? window.loadJsonWithOverrides('clash_rules.json?v=3', 'json_clash_rules')
-      : fetch('clash_rules.json?v=3').then(function(r) { return r.json(); });
+      ? window.loadJsonWithOverrides('clash_rules.json?v=4', 'json_clash_rules')
+      : fetch('clash_rules.json?v=4').then(function(r) { return r.json(); });
     clashLoader.then(function(j) {
       A._clashRules = j;
       A._clashRulesLoading = false;
@@ -504,6 +504,7 @@ function setupMeasure(A) {
       var tol = rules._activeTolerance || 0;
       var key = [discA, discB].sort().join('|') + '@' + tol.toFixed(3);
       A._cachedPairCounts[key] = total;
+      A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
       console.log('§CLASH_COUNT total=' + total + ' tol=' + (tol*1000).toFixed(0) + 'mm rtree=true cached=' + key);
       return;
     }
@@ -524,6 +525,7 @@ function setupMeasure(A) {
         if (!A._cachedPairCounts) A._cachedPairCounts = {};
         var key = [discA, discB].sort().join('|');
         A._cachedPairCounts[key] = total;
+        A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
         console.log('§CLASH_COUNT total=' + total + ' storeys=' + storeys.length + ' rtree=false cached=' + key);
         return;
       }
@@ -842,6 +844,7 @@ function setupMeasure(A) {
     A._loadClashStatuses();
     A._currentClashes = clashes;
     A._currentClashRules = rules;
+    A._clashPairBoxTotal = undefined; // §V.4: set by _countClashesAsync for THIS pair
     var display = rules.display || {};
     var dimOpacity = display.dim_opacity || 0.1;
     var maxVisible = display.max_visible || 20;
@@ -895,7 +898,7 @@ function setupMeasure(A) {
       // §MESH_NARROWPHASE: mesh-true count once row[9] verdicts exist (bbox-only rows are struck below)
       var nJudged = 0, nMeshTrue = 0;
       for (var qi = 0; qi < cc.length; qi++) { var qv = cc[qi][9]; if (qv && qv.verdict && qv.verdict !== 'UNKNOWN') { nJudged++; if (qv.verdict === 'CLASH') nMeshTrue++; } }
-      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px"></span>' +
+      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px">' + (typeof A._clashPairBoxTotal === 'number' ? 'Total: ' + A._clashPairBoxTotal : '') + '</span>' +
         (nJudged ? ' <span id="clash-mesh-true" style="color:#8fef8f;font-size:10px" title="triangle-exact verdict (clash_narrow.js)">mesh-true ' + nMeshTrue + '/' + nJudged + '</span>' : '') + '</span>';
       hdr += '<div style="display:flex;gap:8px;margin:2px 0;font-size:11px;color:#aaa">' +
         '<span>\u{1F7E1}' + sCounts['Reviewed'] + ' RVW</span>' +
@@ -904,10 +907,16 @@ function setupMeasure(A) {
       hdr += '<hr style="border:none;border-top:1px solid #555;margin:3px 0">';
 
       // Scrollable body
-      var shown = Math.min(cc.length, maxVisible);
-      var body = '';
-      for (var i = 0; i < shown; i++) {
+      // CIVIL_HIGHWAY_JELAPANG.md §V.4 — a pair with ≥ display.hide_box_only_above BOX hits lists only rows the
+      // mesh test has not ruled out (CLEAR = box-only is skipped, not struck through). Unjudged rows still show.
+      var hideAbove = (rules.display && rules.display.hide_box_only_above) || 0;
+      var hideBoxOnly = hideAbove > 0 && typeof A._clashPairBoxTotal === 'number' && A._clashPairBoxTotal >= hideAbove;
+      var body = '', shown = 0, hiddenBox = 0, more = 0;
+      for (var i = 0; i < cc.length; i++) {
         var c = cc[i];
+        if (hideBoxOnly && c[9] && c[9].verdict === 'CLEAR') { hiddenBox++; continue; }
+        if (shown >= maxVisible) { more++; continue; }
+        shown++;
         var clsA = (c[2] || '?').replace('Ifc', '').replace('StandardCase', '');
         var clsB = (c[3] || '?').replace('Ifc', '').replace('StandardCase', '');
         var overlap = (typeof c[8] === 'number') ? c[8] : 0;
@@ -934,9 +943,14 @@ function setupMeasure(A) {
           ' <b style="color:' + sev.color + '">' + overlap.toFixed(2) + 'm</b>' + nvTag +
           '</span>';
       }
-      if (cc.length > maxVisible) {
-        body += '<span style="color:#888;font-size:9px">+' + (cc.length - maxVisible) + ' more</span>';
+      if (more > 0) {
+        body += '<span style="color:#888;font-size:9px">+' + more + ' more</span>';
       }
+      if (hiddenBox > 0) {
+        body += '<span id="clash-boxonly-hidden" style="display:block;color:#888;font-size:9px">' + hiddenBox + ' box-only hidden (' +
+          A._clashPairBoxTotal + ' box hits \u2265 ' + hideAbove + ')</span>';
+      }
+      if (hideBoxOnly) console.log('§CLASH_BOXONLY_HIDE boxTotal=' + A._clashPairBoxTotal + ' limit=' + hideAbove + ' page=' + cc.length + ' hidden=' + hiddenBox + ' shown=' + shown + ' more=' + more);
       return { hdr: hdr, body: body };
     };
 
