@@ -59,12 +59,12 @@
 <script src="lib/exceljs.min.js"></script>
 <script src="lib/FileSaver.min.js"></script>
 <script src="lib/chart.umd.min.js"></script>
-<script src="rates.js?v=8"></script>
+<script src="rates.js?v=10"></script>
 <script src="analysis_sidecar.js?v=1"></script>
 <!-- §GANTT_EDIT/BOQ4D: read the REAL persisted schedule (tasks/task_elements/task_sequences)
      instead of recomputing a fourth private one. schedule_author.js supplies activeSchedule()
      (the single existing "which schedule is active" verb — not a fourth copy of it). -->
-<script src="schedule_author.js?v=7"></script>
+<script src="schedule_author.js?v=9"></script>
 <script src="schedule_read_4d.js?v=1"></script>
 <script src="export_5d.js?v=1"></script>
 <script src="export_4d.js?v=1"></script>
@@ -1158,12 +1158,30 @@ async function init() {
   }
 
   // Process data with unit-aware quantities
-  qtoData = []; discSummary = {};
+  qtoData = []; discSummary = {}; var civilUnpriced = 0;
   grandMaterial = 0; grandLabor = 0; grandEquip = 0; totalQty = 0;
   let qtoWarnCount = 0;
 
   for (const row of countRows[0].values) {
     const [disc, cls, storey, cnt, meshes] = row;
+    // §CIVIL_RATES (CIVIL_HIGHWAY_JELAPANG.md §R.2): a civil discipline prices by DISCIPLINE from the JKR SoR pack,
+    // never by ifc_class (all civil elements are IfcBuildingElementProxy → one RM-850 'Misc Element' line before).
+    const cr = (typeof CIVIL_RATES !== 'undefined' && disc && disc.charAt(0) !== '_') ? CIVIL_RATES[disc] : null;
+    if (cr) {
+      const lab = (typeof civilLabor === 'function' ? civilLabor(disc, cnt) : null) || { cost: 0, days: 0, crew: 0, trade: '', prod: 0 };
+      const priced = cr.rate != null;
+      const matTotal = priced ? Math.round(cr.rate * cnt * 100) / 100 : 0;
+      grandMaterial += matTotal; grandLabor += lab.cost; totalQty += cnt;
+      if (!priced) civilUnpriced = (civilUnpriced || 0) + 1;
+      qtoData.push({ disc, cls, storey, qty: cnt, cnt, meshes, matRate: priced ? cr.rate : 0, matTotal, unit: cr.qtyBasis,
+        laborDays: lab.days, laborCost: lab.cost, laborCrew: lab.crew, laborTrade: lab.trade,
+        equipCost: 0, equipDesc: '', equipDays: 0,
+        desc: cr.desc + (priced ? '' : ' — UNPRICED (JKR SoR 2023 pending)') + (cr.measure !== cr.qtyBasis ? ' [SoR measures ' + cr.measure + '; counted until mesh measure]' : ''),
+        smmSection: cr.sor_item || '', labor: lab, civil: true, priced });
+      if (!discSummary[disc]) discSummary[disc] = {qty:0, matTotal:0, laborCost:0, equipCost:0};
+      discSummary[disc].qty += cnt; discSummary[disc].matTotal += matTotal; discSummary[disc].laborCost += lab.cost;
+      continue;
+    }
     const mc = RATES[cls];
     const unit = mc ? mc.unit : 'EA';
     const key = disc + '|' + cls + '|' + storey;

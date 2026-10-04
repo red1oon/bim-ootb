@@ -1,0 +1,171 @@
+{
+  "meta": {
+    "id": "4d_template_civil",
+    "name": "Civil (linear works) 4D Programme Template",
+    "version": "0.3.0",
+    "what": "Phase skeleton for a CIVIL model — every element's discipline is a CIVIL_DISCS code (import_worker.js). Selected by time_machine.js only when ALL elements are civil; building models keep 4D_template.json untouched (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, NON-IMPACT rule).",
+    "order_source": "secondary — JKR road-works method statements quoting JKR Standard Specification for Road Works (JKR/SPJ/2008): earthworks -> drainage -> pavement -> finishing (furniture, signage, lighting, marking). Primary document not yet read.",
+    "durations": "NOT civil-calibrated: one §CIVIL_TRADES crew per phase, params copied from MASON (what the proxy class gets today) so per-element durations are unchanged; finishing phases now run in parallel. Replace with JKR SoR / CIDB labour output.",
+    "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim"
+  },
+  "placement": "logic",
+  "_placement_why": "Civil finishing trades (furniture, signage, lighting, marking) all follow pavement and work on different parts of the road at once; with 'logic' each phase starts when its declared predecessor finishes (schedule_author.js §CIVIL_PARALLEL) instead of after the previous phase in the list.",
+  "calendar": {
+    "_what": "The working calendar the programme is authored against. Named here because it was previously implicit: rates.js SHIFT_HOURS alone carried it, and nothing stated the week.",
+    "hours_per_shift": 24,
+    "days_per_week": 7,
+    "project_start": "2026-01-01",
+    "_hours_per_shift_why": "24 is the STANDING USER RULING recorded at rates.js SHIFT_HOURS (2026-08-13): 'our default, import and JSON setting can import as we align to standard model'. Carried forward verbatim, NOT changed here — this file only makes it visible and editable. A standard-model import sets 8.",
+    "_days_per_week_why": "7 matches what the engine actually does today (schedule_gate.js applies no week calendar; §CREW_DAY logs '24/7 calendar unchanged'). Stated so a 5-day working week becomes an edit rather than a rewrite.",
+    "_project_start_why": "§FUTURE-5A row B2 (2026-08-27 inventory, applied 2026-09-02, queue item B-3). The literal '2026-01-01' epoch schedule_author.js materializeZones/the §GANTT_SCHEDULE_STALE_REGEN self-heal path anchor a generated programme to when nothing else supplies a start. Extracted verbatim, not changed. NOT the same call site as the live UI's 'Generate Gantt' path (time_machine.js todayStart = new Date().toISOString().slice(0,10)) — that one is deliberately today's real date, out of this key's scope. 14 more '2026-01-01' sites exist in schedule_author_ui.js/schedule_diff.js/proj_control.js/proj_fold.js — outside this audit's scope (schedule_author.js/schedule_gate.js/time_machine.js scheduling call sites only), counted but not touched.",
+    "holidays": []
+  },
+  "duration_rule": {
+    "_what": "How an activity's duration is derived. THIS IS THE ANCHOR the chain was missing: before this, a task's length came from however long the geometry placement solve happened to span. The solve ORDERS elements; it does not PRICE the work.",
+    "basis": "work_content",
+    "divisor_scope": "per_trade",
+    "formula": "days = ceil( MAX over trades t of ( sum(installSecs of this activity's elements worked by t) / (hours_per_shift * 3600 * max_crews[t]) ) )",
+    "min_days": 1,
+    "_installSecs_source": "ScheduleAuthor._installSecs, from sequence_rules.json LABOR_RATES productivity. Same function the engine uses — never a second copy.",
+    "_max_crews_source": "sequence_rules.json LABOR_RATES[trade].max_crews. Present on all 10 trades.",
+    "_why_max_and_not_sum": "v1.0.0 wrote 'crews = sum of max_crews over the trades the activity's own elements actually use' and divided the activity's TOTAL seconds by it. That treats trades as FUNGIBLE — an electrician's seconds worked off by a plumber's crew. Work content is per trade: an activity is as long as its slowest trade, never the pooled average. MEASURED on HHS_Office_Federated (6839 elements, 24h shift, 2026-08-25): whole-programme sum-of-crews = 40.1 days, correct per-trade = 69.8 days — the sum form understates by 1.74x overall, and up to 3.00x on a single phase (MEP Rough-in / MEP Final: 3 trades, Sum(max_crews)=6, but no one trade has more than 2 crews). The file exists to end a duration contradiction; the sum form would have replaced it with a new one.",
+    "_same_bug_shipped_elsewhere": "schedule_author.js materializeZones' §ZONE_WINDOW_COVERS_WORK floor computes _wCrews as the SAME sum. Any fix here is not complete until that site divides per trade too.",
+    "_not_this": "NOT the elapsed span of the placement solve."
+  },
+  "capacity_rule": {
+    "_what": "The hard physical bound on ANY schedule derived from this template. Distinct from duration_rule: duration_rule prices one activity, capacity_rule constrains the whole programme at every instant.",
+    "rule": "at no instant may more than max_crews[t] elements of trade t be in progress, for every trade t",
+    "applies_to": "the FINAL emitted times, not only the times at first placement",
+    "_why_final_and_not_first": "MEASURED on HHS_Office_Federated (2026-08-25, A/B with the repair loop disabled): schedule_gate.js enforces the cap correctly inside claimCrew at placement — every trade sits exactly at or under its cap. The §DEQ_REPAIR sweep then moves elements forward to satisfy geometry gates by writing o.start/o.end DIRECTLY, without re-claiming a crew slot. Result: CARPENTER peaks at 8 simultaneous crews against max_crews=2, a 4.0x breach, while all 7 other trades stay legal. Disabling the repair loop returns CARPENTER to 2. The span is 46.9 days either way — the breach does not shorten the programme, it just makes it unbuildable.",
+    "_witness": "witness_4d_capacity_honoured.js — sweeps the emitted start/end times per trade and asserts peak concurrency <= max_crews.",
+    "_level_scan_max_days": 100000,
+    "_level_scan_max_days_why": "§FUTURE-5A row B6 (applied 2026-09-02, queue item B-3). instantiateTemplate's crew-levelling search guard (`while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++`) — how many days it will scan forward looking for a free crew slot before giving up. Extracted verbatim, not changed. ⚠ Separate finding #1 in §FUTURE-5A (NOT fixed here, PRIME-RULE-relevant but out of this refactor's scope): guard exhaustion is committed as if it were a successful placement, with no way to tell the two apart in `capacity_levelled`'s own report — moving the number does not touch that bug."
+  },
+  "phases": [
+    {
+      "id": "earthworks",
+      "name": "Earthworks",
+      "sequence": 1,
+      "trades": [
+        "CIVIL_EARTHWORKS"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_empty_ok": true,
+      "_empty_ok_why": "Civil 3D often exports the earthwork surface as a TIN that IFC export skips (JELAPANG_EARTHWORK.ifc: 0 elements) — absence is expected, still reported."
+    },
+    {
+      "id": "drainage",
+      "name": "Drainage",
+      "sequence": 2,
+      "trades": [
+        "CIVIL_DRAINAGE"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    },
+    {
+      "id": "pavement",
+      "name": "Pavement",
+      "sequence": 3,
+      "trades": [
+        "CIVIL_PAVING"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    },
+    {
+      "id": "road_furniture",
+      "name": "Road Furniture",
+      "sequence": 4,
+      "trades": [
+        "CIVIL_FURNITURE"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    },
+    {
+      "id": "signage",
+      "name": "Signage",
+      "sequence": 5,
+      "trades": [
+        "CIVIL_SIGNAGE"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    },
+    {
+      "id": "road_lighting",
+      "name": "Road Lighting",
+      "sequence": 6,
+      "trades": [
+        "CIVIL_LIGHTING"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    },
+    {
+      "id": "road_marking",
+      "name": "Road Marking",
+      "sequence": 7,
+      "trades": [
+        "CIVIL_MARKING"
+      ],
+      "replicate_per_level": false,
+      "scope": "building"
+    }
+  ],
+  "phase_bands": {
+    "_what": "A phase owns a CONTIGUOUS, NON-OVERLAPPING band of sequence_rules.json sequence numbers. Declared as a rule, not as a list, because the numbers themselves live in the lookup.",
+    "rule": "max(sequence of every class in phase[i]) < min(sequence of every class in phase[i+1])",
+    "_why": "v1.0.0 gated only that each phase's MINIMUM sequence increases. That cannot see a band INTERLEAVE — the exact defect §S65 #7 found and PR #1527 fixed (IfcRoof sat at sequence 8, inside Architecture, therefore after ALL of MEP Rough-in at 7). Under a min-only gate Architecture's min stays 5, the mins still increase, and the witness stays green while a roof is built after the ductwork it is supposed to cover. Bands MEASURED clean 2026-08-25: Substructure 1-1, Superstructure 2-4, Architecture 5-6, MEP Rough-in 7-7, MEP Final 9-9, Finishes 10-11."
+  },
+  "dependencies": {
+    "_what": "Civil logic (secondary source, see meta.order_source). Finishing trades all follow pavement and run in parallel.",
+    "within_level": [
+      {
+        "pred": "earthworks",
+        "succ": "drainage",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Drains are cut into the formed earthworks."
+      },
+      {
+        "pred": "drainage",
+        "succ": "pavement",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Cross drainage / culverts before pavement layers."
+      },
+      {
+        "pred": "pavement",
+        "succ": "road_furniture",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Finishing on completed pavement."
+      },
+      {
+        "pred": "pavement",
+        "succ": "signage",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Finishing on completed pavement."
+      },
+      {
+        "pred": "pavement",
+        "succ": "road_lighting",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Finishing on completed pavement."
+      },
+      {
+        "pred": "pavement",
+        "succ": "road_marking",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Marking on the final wearing course."
+      }
+    ],
+    "across_levels": []
+  }
+}

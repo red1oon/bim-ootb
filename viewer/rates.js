@@ -196,6 +196,19 @@ var LABOR_RATES = {
   // MUST be kept here, byte-identical to their sequence_rules.json mirror, or the JSON edit a
   // Settings-JSON-editor user makes is invisible on the default (non-overridden) path. See
   // sequence_rules.json LABOR_RATES for the full provenance comment on each.
+  // §CIVIL_TRADES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): one trade per civil discipline so civil
+  // phases stop sharing ONE crew (MASON) — finishing trades were serialized by capacity levelling. Params COPIED
+  // from MASON (rate_per_day 155, crew 3, max_crews 2, IfcBuildingElementProxy 15 — the values the proxy class
+  // gets today), so per-element durations are unchanged. NOT civil-calibrated: replace with JKR SoR 2023 /
+  // CIDB labour output when obtained. Listed AFTER every building trade and carrying only the proxy key, so
+  // getProductivity/calcLabor first-match for building classes is unchanged (NON-IMPACT rule).
+  CIVIL_EARTHWORKS: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Earthworks Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_DRAINAGE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Drainage Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_PAVING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Paving Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_FURNITURE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Furniture Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_SIGNAGE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Signage Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_LIGHTING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Lighting Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_MARKING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Marking Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
   _productivity_basis_secs: 28800,     // A1 — the 8h crew-day the productivity figures are quoted against
   _zero_minute_floor_secs: 120,        // B3 — the §TPL_ZERO_MINUTE no-data floor
   _default_max_crews_author: 1,        // B4 — pricing-side crew-cap fallback (schedule_gate.js keeps its own, different, 3)
@@ -306,6 +319,48 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // initRateTemplate()/loadSequenceRules() (only mep_report.html/boq_charts.html do), so this hardcoded
 // copy, not the JSON, is what actually runs in the main viewer/Time Machine/Author wizard. Keep it in
 // sync with rates/sequence_rules.json's NAME_OVERRIDES (same convention as SEQUENCE_RULES above).
+// §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
+// consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
+// CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).
+// Phase names = rates/4D_template_civil.json phases. Order: secondary source (JKR road-works method statements).
+// resource = one §CIVIL_TRADES crew per discipline (params copied from MASON) → durations per element unchanged, NOT civil-calibrated.
+var SEQUENCE_CIVIL = {
+  EARTHWORK:{phase:'Earthworks',sequence:1,resource:'CIVIL_EARTHWORKS'},
+  DRAINAGE:{phase:'Drainage',sequence:2,resource:'CIVIL_DRAINAGE'},
+  ROAD:{phase:'Pavement',sequence:3,resource:'CIVIL_PAVING'},
+  FURNITURE:{phase:'Road Furniture',sequence:4,resource:'CIVIL_FURNITURE'},
+  SIGNAGE:{phase:'Signage',sequence:5,resource:'CIVIL_SIGNAGE'},
+  LIGHTING:{phase:'Road Lighting',sequence:6,resource:'CIVIL_LIGHTING'},
+  MARKING:{phase:'Road Marking',sequence:7,resource:'CIVIL_MARKING'},
+};
+// §CIVIL_RATES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §R.2) — 5D line items for civil disciplines.
+// Rate source DECIDED: JKR "Jadual Kadar Kerja Kejuruteraan Awam dan Bangunan" 2023 (the schedule JKR projects
+// are estimated from; JELAPANG's own psets are JKR DAK templates). It is a purchased document (RM 20, Ministry of
+// Works procurement unit) — until a copy is in hand every `rate` is null and the line shows UNPRICED. Never type a
+// number in here without its SoR item no. `measure` = the unit the SoR prices in; quantities that need a true
+// mesh measure (curved road area, marking/drain length) are counted (EA) until that measure exists — a bbox
+// area of a curved 1.9 km slab is mostly empty space and is NOT used.
+// Consulted only for civil disciplines (boq_charts.html) → building 5D unchanged (NON-IMPACT rule).
+var CIVIL_RATES = {
+  _source: { doc: 'JKR Jadual Kadar Kerja Kejuruteraan Awam dan Bangunan 2023', status: 'pending', note: 'rates null until a copy of the SoR is obtained' },
+  EARTHWORK: { measure: 'M3', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Earthworks (cut / fill)', trade: 'CIVIL_EARTHWORKS' },
+  DRAINAGE:  { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Drains, culverts & structures', trade: 'CIVIL_DRAINAGE' },
+  ROAD:      { measure: 'M2', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road pavement', trade: 'CIVIL_PAVING' },
+  FURNITURE: { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road furniture', trade: 'CIVIL_FURNITURE' },
+  SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
+  LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
+  MARKING:   { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road marking', trade: 'CIVIL_MARKING' },
+};
+// civilLabor(disc, count) — labour for a civil line from its §CIVIL_TRADES crew, COUNT-based (same basis the 4D
+// civil phases use), so 5D labour and the 4D bars agree. null for non-civil disciplines.
+function civilLabor(disc, count) {
+  var cr = CIVIL_RATES[disc]; if (!cr || disc.charAt(0) === '_') return null;
+  var lr = LABOR_RATES[cr.trade]; if (!lr) return null;
+  var prod = (lr.productivity && lr.productivity.IfcBuildingElementProxy) || 0; if (!prod) return null;
+  var days = count / prod;
+  return { cost: Math.round(days * lr.crew_size * lr.rate_per_day), days: days, crew: lr.crew_size, trade: lr.trade, tradeKey: cr.trade, prod: prod };
+}
+
 var SEQUENCE_NAME_OVERRIDES = [
   {
     id: 'glazed_curtainwall_facade',

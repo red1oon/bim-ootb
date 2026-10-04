@@ -51,6 +51,33 @@
   // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
   // ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely
   // structural plates/members. Checked BEFORE matchRule, never replacing it — see rates/sequence_rules.json.
+  // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models.
+  // civilRuleFor(db, guid, table): the SEQUENCE_CIVIL row for this element's discipline, else null. One query
+  // per db (cached, keyed on the db object + element count); a building db has no civil discipline → empty map
+  // → every caller falls through to its unchanged name/class rule (NON-IMPACT rule). `table` defaults to the
+  // browser global; node harnesses that load rates.js in a vm pass it explicitly (absent → civil layer off).
+  var _civilCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function civilRuleFor(db, guid, table) {
+    table = table || global.SEQUENCE_CIVIL;
+    if (!table || !db || !guid) return null;
+    var c = _civilCache && _civilCache.get(db), n = -1;
+    try { var nr = db.exec('SELECT COUNT(*) FROM elements_meta'); n = nr.length ? nr[0].values[0][0] : -1; } catch (e) { return null; }
+    if (!c || c.n !== n || c.table !== table) {
+      var keys = Object.keys(table), map = {};
+      if (keys.length) {
+        try {
+          var r = db.exec('SELECT guid, discipline FROM elements_meta WHERE discipline IN (' + keys.map(function () { return '?'; }).join(',') + ')', keys);
+          if (r.length) r[0].values.forEach(function (row) { map[row[0]] = row[1]; });
+        } catch (e) { /* no discipline column → no civil layer */ }
+      }
+      c = { n: n, table: table, map: map, size: Object.keys(map).length };
+      if (_civilCache) _civilCache.set(db, c);
+      if (c.size) console.log('§CIVIL_PHASE map=' + c.size + ' of ' + n + ' elements carry a civil discipline');
+    }
+    if (!c.size) return null;
+    var d = c.map[guid];
+    return d ? (table[d] || null) : null;
+  }
   function matchNameOverride(cls, name, nameOverrides) {
     if (!name || !nameOverrides) return null;
     for (var i = 0; i < nameOverrides.length; i++) {
@@ -551,7 +578,7 @@
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
       // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
       var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
-      var ov = matchNameOverride(cls, name, nameOverrides);
+      var ov = civilRuleFor(db, guid, opts.civilRules) || matchNameOverride(cls, name, nameOverrides);   // §CIVIL_PHASE
       var rule = ov || matchRule(cls, rules, dflt);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
@@ -771,7 +798,11 @@
           return;                                   // chain BRIDGES: prevOnLevel is left untouched
         }
         var pr = priceCell(c);
-        var start = cursor;
+        // §CIVIL_PARALLEL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): a template declaring
+        // placement:'logic' starts each phase from its declared predecessor (the bridge below) instead of the
+        // within-level cursor, so phases that share a predecessor run in parallel. Only 4D_template_civil.json
+        // declares it; 4D_template.json does not → building placement byte-identical (NON-IMPACT rule).
+        var start = (T.placement === 'logic') ? 0 : cursor;
         // §TPL_LADDER_BRIDGE (2026-08-27) — the across_levels ladder MUST bridge past dropped
         // phases, exactly as the within_level chain already does.
         //
@@ -808,7 +839,7 @@
             var pp = byId[cur2]; if (!pp) break;
             for (d = li; d >= 0; d--) {
               b = taskAt[pp.name + '||' + levels[d]];
-              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d };
+              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d, task: b };
             }
           }
           return null;
@@ -856,8 +887,12 @@
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
-        if (prevOnLevel) {
-          edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
+        // §CIVIL_PARALLEL: under placement:'logic' the edge comes from the DECLARED predecessor's task (the
+        // bridge walk's hit), so siblings that share a predecessor are not chained to each other. Building
+        // templates never declare it → this branch is never taken for them.
+        var _edgePred = (T.placement === 'logic') ? ((_bridge && _bridge.task) || null) : prevOnLevel;
+        if (_edgePred) {
+          edges.push({ predId: _edgePred.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
         }
         // §PHASE_WATERMARK_FLOOR edge — see comment above.
@@ -1866,7 +1901,7 @@
     var phases = {};   // phaseName -> { name, seq, guids:[] }
     var nameOverridden = 0;
     elems.forEach(function (e) {
-      var ov = matchNameOverride(e.cls, e.name, nameOverrides);
+      var ov = civilRuleFor(db, e.guid, opts.civilRules) || matchNameOverride(e.cls, e.name, nameOverrides);   // §CIVIL_PHASE
       if (ov) nameOverridden++;
       var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
@@ -2131,7 +2166,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = matchRule(cls, rules, dflt);
+          var rule = civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt);   // §CIVIL_PHASE
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
@@ -3194,6 +3229,7 @@
     addTask: addTask,
     reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute,
+    civilRuleFor: civilRuleFor,
     persistDb: persistDb,
     openBuildingCache: openBuildingCache
   };
