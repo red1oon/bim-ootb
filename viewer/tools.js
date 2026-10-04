@@ -1000,31 +1000,43 @@ function setupTools(A) {
       A._shadowFollowEnv = _env;
       if (2 * _env / A.sun.shadow.mapSize.width > 0.25) {
         if (!A._shadowFollowFn) {
-          var _sfT = null;
-          A._shadowFollowFn = function () {
+          // §SHADOW_FOLLOW_THROTTLE (user 2026-10-05: lamp shadows "take long time to appear"): the first
+          // cut DEBOUNCED 150 ms after the last controls 'change' — OrbitControls damping keeps firing
+          // 'change' for the whole glide, so the refit waited for full stop. Now: refit immediately when
+          // shadows turn on, then at most every 250 ms while moving (+ one trailing refit), and skip a refit
+          // when the view barely moved (target shift < 10% of the box and size change < 20%) — each refit
+          // is a full shadow-map pass, so no needless re-renders.
+          var _sfT = null, _sfLast = 0, _sfPrev = null;
+          var _sfFit = function (force) {
+            if (!A._shadowOn || !A.sun.castShadow) return;
+            var tgt = A.controls.target, envF = A._shadowFollowEnv || 300;
+            var half = Math.min(envF, Math.max(40, A.camera.position.distanceTo(tgt) * 1.2));
+            if (!force && _sfPrev && tgt.distanceTo(_sfPrev.t) < 0.1 * _sfPrev.half &&
+                Math.abs(half - _sfPrev.half) < 0.2 * _sfPrev.half) return;
+            _sfPrev = { t: tgt.clone(), half: half };
+            var dir = A.sun.position.clone().sub(A.sun.target.position);
+            if (dir.lengthSq() < 1e-6) dir.set(0.8, 2, 0.6);
+            dir.normalize();
+            var dist = half * 2.24;
+            A.sun.target.position.copy(tgt); A.sun.target.updateMatrixWorld();
+            A.sun.position.copy(tgt).addScaledVector(dir, dist);
+            var sc = A.sun.shadow.camera;
+            sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+            sc.near = dist * 0.05; sc.far = dist * 4; sc.updateProjectionMatrix();
+            A.renderer.shadowMap.needsUpdate = true;
+            if (A.markDirty) A.markDirty();
+            console.log('§SHADOW_FOLLOW half=' + half.toFixed(0) + 'm texel=' + (2 * half / A.sun.shadow.mapSize.width).toFixed(3) + 'm env=' + envF + (force ? ' (immediate)' : ''));
+          };
+          A._shadowFollowFn = function (force) {
+            var now = performance.now();
+            if (force === true) { _sfLast = now; _sfFit(true); return; }
+            if (now - _sfLast >= 250) { _sfLast = now; _sfFit(false); }
             if (_sfT) clearTimeout(_sfT);
-            _sfT = setTimeout(function () {
-              _sfT = null;
-              if (!A._shadowOn || !A.sun.castShadow) return;
-              var tgt = A.controls.target, envF = A._shadowFollowEnv || 300;
-              var half = Math.min(envF, Math.max(40, A.camera.position.distanceTo(tgt) * 1.2));
-              var dir = A.sun.position.clone().sub(A.sun.target.position);
-              if (dir.lengthSq() < 1e-6) dir.set(0.8, 2, 0.6);
-              dir.normalize();
-              var dist = half * 2.24;
-              A.sun.target.position.copy(tgt); A.sun.target.updateMatrixWorld();
-              A.sun.position.copy(tgt).addScaledVector(dir, dist);
-              var sc = A.sun.shadow.camera;
-              sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
-              sc.near = dist * 0.05; sc.far = dist * 4; sc.updateProjectionMatrix();
-              A.renderer.shadowMap.needsUpdate = true;
-              if (A.markDirty) A.markDirty();
-              console.log('§SHADOW_FOLLOW half=' + half.toFixed(0) + 'm texel=' + (2 * half / A.sun.shadow.mapSize.width).toFixed(3) + 'm env=' + envF);
-            }, 150);
+            _sfT = setTimeout(function () { _sfT = null; _sfLast = performance.now(); _sfFit(false); }, 250);
           };
           A.controls.addEventListener('change', A._shadowFollowFn);
         }
-        A._shadowFollowFn();
+        A._shadowFollowFn(true);
       } else {
         console.log('§SHADOW_FOLLOW off env=' + _env + ' texel=' + (2 * _env / A.sun.shadow.mapSize.width).toFixed(3) + 'm (whole-site map is fine)');
       }
