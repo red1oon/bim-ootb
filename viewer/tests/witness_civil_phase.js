@@ -47,10 +47,21 @@ function phasesOf(SQL, file, civilOn) {
     globalThis.APP = { db: db };
     res = SA.materializeZones(db, sb.SEQUENCE_RULES, base);
   } finally { console.log = quiet; }
+  // the Gantt read model (schedule_read_4d.readTasks) over the tasks materializeZones just wrote — the panel's
+  // per-task resource column. Issue (user 2026-10-05): "only one resource in play" — it read the CLASS rule.
+  let readRes = null;
+  try {
+    const RD = require(path.join(V, 'schedule_read_4d.js'));
+    global.ScheduleAuthor = SA; if (civilOn) global.SEQUENCE_CIVIL = civ; else delete global.SEQUENCE_CIVIL;
+    const rt = RD.readTasks(db, { rules: sb.SEQUENCE_RULES, laborRates: sb.LABOR_RATES, quiet: true, scheduleAuthor: SA, civilRules: civilOn ? civ : undefined });
+    if (!rt) lines.push('§W_READTASKS null'); const list = (rt && (rt.tasks || rt)) || [];
+    if (process.env.DBG_RT) quiet('§DBG_RT type=' + (rt === null ? 'null' : Array.isArray(rt) ? 'array' : typeof rt) + ' keys=' + (rt && !Array.isArray(rt) ? Object.keys(rt).join(',') : '') + ' first=' + JSON.stringify(Array.isArray(list) ? list[0] : null).slice(0, 300));
+    readRes = {}; (Array.isArray(list) ? list : []).forEach(t => { (String(t.resource || '').split(',')).forEach(r => { if (r) readRes[r] = (readRes[r] || 0) + 1; }); });
+  } catch (e) { readRes = 'readTasks error ' + e.message; }
   const byPhase = {};
   els.forEach(e => { byPhase[e.phase] = (byPhase[e.phase] || 0) + 1; });
   const tasks = (res && res.tasks || []).map(t => ({ phase: t.phase, n: (t.guids || []).length, s: t.sDays, e: t.eDays }));
-  return { n, civilCount: c, allCivil, template: T.meta.id, byPhase, tasks,
+  return { n, civilCount: c, allCivil, template: T.meta.id, byPhase, tasks, readRes,
     log: lines.filter(l => /§(CIVIL_PHASE|TPL_ELEMENT_ORPHAN|TPL_PHASE_ABSENT|TPL_PHASE_COVERAGE)/.test(l)) };
 }
 
@@ -66,13 +77,16 @@ function phasesOf(SQL, file, civilOn) {
     console.log('§W_CIVIL_PHASE file=' + name + ' n=' + on.n + ' civil=' + on.civilCount + ' allCivil=' + on.allCivil + ' template=' + on.template +
       ' phases(civilOn)=' + JSON.stringify(on.byPhase) + ' phases(civilOff)=' + JSON.stringify(off.byPhase));
     console.log('  tasks(civilOn)=' + JSON.stringify(on.tasks));
+    console.log('  readTasks resources civilOn=' + JSON.stringify(on.readRes) + ' civilOff=' + JSON.stringify(off.readRes));
     if (on.n === 0) { console.log('  VERDICT INCONCLUSIVE (0 elements)'); continue; }
     if (on.allCivil) {
       const civilPhases = Object.keys(on.byPhase).length;
       console.log('  VERDICT ' + (civilPhases > 1 && !on.byPhase['Architecture Envelope'] ? 'PASS' : 'FAIL') +
         ' civil model splits into ' + civilPhases + ' discipline phases (was ' + Object.keys(off.byPhase).length + ')');
+      const nRes = (on.readRes && typeof on.readRes === 'object') ? Object.keys(on.readRes).length : 0;
+      console.log('  VERDICT ' + (nRes > 1 ? 'PASS' : nRes === 0 ? 'INCONCLUSIVE' : 'FAIL') + ' Gantt read model shows ' + nRes + ' resource(s) on the civil model');
     } else {
-      const same = JSON.stringify(on.byPhase) === JSON.stringify(off.byPhase) && JSON.stringify(on.tasks) === JSON.stringify(off.tasks);
+      const same = JSON.stringify(on.byPhase) === JSON.stringify(off.byPhase) && JSON.stringify(on.tasks) === JSON.stringify(off.tasks) && JSON.stringify(on.readRes) === JSON.stringify(off.readRes);
       console.log('  VERDICT ' + (same ? 'PASS' : 'FAIL') + ' non-civil model: phases+tasks identical with civil table ON vs OFF (civil elements=' + on.civilCount + ')');
     }
   }

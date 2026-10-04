@@ -8847,7 +8847,7 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 39;   // §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  var _GANTT_CACHE_VERSION = 40;   // §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
   // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from

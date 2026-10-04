@@ -50,6 +50,13 @@
   // buildScheduleFromOps() applies to kernel_ops, kept identical so a task's discipline does not
   // change meaning depending on which source the page happened to read.
   function discOfResource(res) {
+    // §CIVIL_TRADES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): a civil crew maps back to its civil
+    // discipline via SEQUENCE_CIVIL (one table). Building resources never start with CIVIL_ → unchanged.
+    if (res && res.indexOf('CIVIL_') === 0) {
+      var SC = (typeof window !== 'undefined' && window.SEQUENCE_CIVIL) || global.SEQUENCE_CIVIL || {};
+      for (var d in SC) if (SC[d] && SC[d].resource === res) return d;
+      return 'CIV';
+    }
     if (res === 'HVAC_TECH' || res === 'PLUMBER' || res === 'ELECTRICIAN') return 'MEP';
     if (res === 'STEEL_ERECTOR' || res === 'CONCRETE_GANG') return 'STR';
     return 'ARC';
@@ -129,7 +136,7 @@
       'SELECT te.task_id, te.guid, em.ifc_class, em.storey FROM task_elements te ' +
       'JOIN tasks t ON t.task_id = te.task_id LEFT JOIN elements_meta em ON em.guid = te.guid ' +
       'WHERE t.schedule_id=?', [sched.id]) || [];
-    var noMeta = 0;
+    var noMeta = 0, _civilSeen = false;
     erows.forEach(function (r) {
       var t = byId[r[0]]; if (!t) return;              // belongs to a summary/undated task
       t.guids.push(r[1]);
@@ -137,7 +144,12 @@
       if (!cls) { noMeta++; }
       else {
         t.classes[cls] = (t.classes[cls] || 0) + 1;
-        var rule = rules[cls];
+        // §CIVIL_PHASE: the civil discipline rule wins for civil elements (one owner, ScheduleAuthor.civilRuleFor);
+        // null for every building element → the class lookup below, unchanged.
+        var SAx = opts.scheduleAuthor || global.ScheduleAuthor;
+        var _cv = (SAx && SAx.civilRuleFor) ? SAx.civilRuleFor(db, r[1], opts.civilRules) : null;
+        if (_cv) _civilSeen = true;
+        var rule = _cv || rules[cls];
         if (rule) {
           if (rule.resource) t.resources[rule.resource] = 1;
           t.disciplines[discOfResource(rule.resource)] = 1;
@@ -175,6 +187,12 @@
     // the reader fall back to the majority phase of the task's own elements. Both are real; the
     // counts of each are logged so the split is visible rather than assumed.
     var fromName = 0, fromElements = 0, unphased = 0;
+    // §CIVIL_PHASE: civil phase names (SEQUENCE_CIVIL) are known phases ONLY when this schedule's elements carry a
+    // civil discipline — a building (even one with an imported task literally named "Drainage — X") is unchanged.
+    if (_civilSeen) {
+      var _SC = opts.civilRules || global.SEQUENCE_CIVIL || {};
+      for (var _cd in _SC) if (_SC[_cd] && _SC[_cd].phase) knownPhase[_SC[_cd].phase] = true;
+    }
     function identify(t) {
       var i = t.name.indexOf(' — ');
       if (i > 0) {
