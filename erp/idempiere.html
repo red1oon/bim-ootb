@@ -4110,7 +4110,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var w = _curWin(), tabs = (w && w.tabs) || [], ti = _activeTabIdx, t = tabs[ti]; if (!t) return null;
         var parents = [], want = (t.tabLevel || 0) - 1;
         for (var i = ti - 1; i >= 0 && want >= 0; i--) if ((tabs[i].tabLevel || 0) === want) { parents.unshift({ AD_Tab_ID: tabs[i].id, tabNo: i, row: _recByLevel[want] || {} }); want--; }
-        return { AD_Tab_ID: t.id, tabNo: ti, isSOTrx: _winIsSOTrx(), parents: parents };
+        // current: the record on screen when New is pressed — its values stay in the WINDOW context (GridTable.dataNew keeps W|col)
+        var cur = (_records && _recIdx != null && _recIdx >= 0) ? (_records[_recIdx] || null) : null;
+        return { AD_Tab_ID: t.id, tabNo: ti, isSOTrx: _winIsSOTrx(), parents: parents, current: cur };
       },
       onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); },
       // UI locale (ERP_UI_LOCALES.md §L1): a curated crud spec carries its own ENGLISH labels ("Price List (ID)"); in

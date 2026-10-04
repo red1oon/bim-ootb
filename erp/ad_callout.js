@@ -554,6 +554,9 @@
     this.fields.forEach(function (f) {
       var cn = f.getColumnName(), raw = r[cn.toLowerCase()], v;
       var dflt = inserting && (raw == null || String(raw) === '');
+      // GridTable.dataNew :2134-2137 "avoid getting default from previous row": the TAB-level key goes; the WINDOW-level one stays,
+      //   so @Col@ defaults read the record that was current when New was pressed (ZK opens a window on its newest row)
+      if (dflt && self.ctx && self.ctx.remove) self.ctx.remove(self.windowNo + '|' + self.tabNo + '|' + cn);
       if (dflt) { v = f.getDefault(); if (v != null) v = typed(f.getDisplayType(), v); }
       else v = typed(f.getDisplayType(), raw);
       f.m_oldValue = null; f.m_value = v; f.m_inserting = !!inserting; f.updateContext();
