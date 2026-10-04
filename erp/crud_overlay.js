@@ -426,6 +426,13 @@
       for (k in vals) row[k] = vals[k];
       tab.load(row, verb === 'create');
       _co = { tab: tab, e: e, extra: {}, set: [], verb: verb, orig: orig };
+      if (verb === 'create') {   // GridTable.dataNew :2129-2143 — every column the form left empty gets GridField.getDefault()
+        var given = {}; Object.keys(row).forEach(function (c) { if (row[c] != null && String(row[c]) !== '') given[String(c).toLowerCase()] = 1; });
+        var ds = tab.lastDefaults || {};                        // filled by tab.load(row, true) above
+        Object.keys(ds).forEach(function (c) { _coOnSet(c, ds[c]); });
+        _co.set = [];
+        console.log('§GRIDTAB-DEFAULTS table=' + e.key + ' tab=' + tabId + ' given=' + Object.keys(given).length + ' defaulted=' + Object.keys(ds).length + ' ' + JSON.stringify(ds).slice(0, 400));
+      }
       if (verb === 'create') { tab.dataNewCallouts(); console.log('§CALLOUT-NEW table=' + e.key + ' tab=' + tabId + ' fan fields=' + tab.getFieldCount() + ' set=[' + _co.set.join(',') + '] extra=' + JSON.stringify(_co.extra) + (tab.msgs.length ? ' msgs=' + JSON.stringify(tab.msgs) : '')); }
       else console.log('§CALLOUT-OPEN table=' + e.key + ' tab=' + tabId + ' fields=' + tab.getFieldCount() + ' verb=' + verb);
     });
@@ -440,9 +447,17 @@
   function _coLookupReset(e, cols) {
     if (!_co || !cols.length) return;
     populateRefs(e, _co.orig, { valRuleOnly: true });          // lookup.refresh() with the context the cascade just set
+    // a Search field (WSearchEditor) shows its value whatever the list holds (getDirect) — the refresh above must not blank it
+    (e.fields || []).forEach(function (f) {
+      var gf = _co.tab.getField(f.col); if (!gf || gf.getDisplayType() !== 30) return;
+      var v = gf.getValue(), el = _coEl(f.col); if (v == null || !el || el.tagName !== 'SELECT') return;
+      var sv = String(v); if (!Array.prototype.some.call(el.options, function (o) { return o.value === sv; })) { var o = document.createElement('option'); o.value = sv; o.textContent = sv; el.appendChild(o); }
+      _setVal(el, sv);
+    });
     cols.forEach(function (col) {
-      var f = _coField(col), v = _co.tab.getValue(col);
+      var f = _coField(col), v = _co.tab.getValue(col), gf = _co.tab.getField(col), dt = gf ? gf.getDisplayType() : null;
       if (!f || f.type !== 'fk' || f.readonly || !f.admitted || v == null || v === '') return;
+      if (dt !== 17 && dt !== 18 && dt !== 19) return;          // WTableDirEditor = combo lookups (List/Table/TableDir); Search uses WSearchEditor
       if (Object.prototype.hasOwnProperty.call(f.admitted, String(v))) return;
       var el = _coEl(col); if (el) _setVal(el, '');
       _coDb(function () { _co.tab.setValue(col, null); });
@@ -952,6 +967,11 @@
             // previously-shown value unmatched, so that third case must offer the blank too, never fall to row 1.
             var kEmpty = (keep === '' || keep == null);
             var hasKeep = !kEmpty && rows.some(function (r) { return String(r[0]) === String(keep); });
+            // an ADMITTED value past the picker's LIMIT 200 is still a valid value (MLookup holds the whole validated set) —
+            //   keep it offered and selected rather than blank it (GL_Journal C_Period_ID 200170 sorts after the first 200 periods)
+            if (!kEmpty && !hasKeep && admitted && Object.prototype.hasOwnProperty.call(admitted, String(keep))) {
+              try { var kr = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + src + ' WHERE ' + pk + '=' + Number(keep)); if (kr.length && kr[0].values.length) { rows = rows.concat(kr[0].values); hasKeep = true; } } catch (ek) {}
+            }
             var blankSel = (kEmpty || !hasKeep);
             var blankFk = (!f.required || blankSel) ? '<option value=""' + (blankSel ? ' selected' : '') + '></option>' : '';
             if (f.refsource) console.log('§REFTABLE col=' + f.col + ' src=' + f.refsource + ' table=' + t + ' key=' + pk +
