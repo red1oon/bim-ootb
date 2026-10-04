@@ -818,7 +818,74 @@ function setupTour(A) {
   };
 
   // S206: Cinematic building tour — nearest-neighbor choreography
+  // §CIVIL_ROUTE_TOUR (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S/§U) — the SAME Fly Tour, fed a road route
+  // instead of a room route (user: "using back Fly feature the timeline scrubber must also appear.. no new invention
+  // of Fly tour"; "the markers along the timeline can be the traffic stops"). Uses only existing actions: moveTo
+  // (start), flyPath (along the road), orbit fullCircle (rise → circle → descend to eye height) at each traffic
+  // signal, named so the scrubber labels them. GATE: the model has element_psets with 01_Component_Name=MAINLINE
+  // (civil imports only, §CIVIL_PSETS) — a building has no such table → null → the room tour below, unchanged.
+  A._civilRouteTour = function() {
+    var q = function (sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } };
+    var has = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'");
+    if (!has.length) return null;
+    var rows = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE p.name='01_Component_Name' AND p.value='MAINLINE'");
+    if (rows.length < 10) { console.log('[TOUR] §CIVIL_ROUTE skip mainline=' + rows.length + ' (need >= 10)'); return null; }
+    // order MAINLINE pieces along their principal axis, one median point per BIN_M (data-only path, no alignment in IFC2X3)
+    var n = rows.length, mx = 0, my = 0;
+    rows.forEach(function (r) { mx += r[0]; my += r[1]; }); mx /= n; my /= n;
+    var sxx = 0, syy = 0, sxy = 0;
+    rows.forEach(function (r) { var dx = r[0] - mx, dy = r[1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+    var ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(ang), uy = Math.sin(ang);
+    var BIN_M = 50, bins = {}, lo = Infinity;
+    rows.forEach(function (r) { var u = (r[0] - mx) * ux + (r[1] - my) * uy; if (u < lo) lo = u; });
+    rows.forEach(function (r) { var u = (r[0] - mx) * ux + (r[1] - my) * uy, k = Math.floor((u - lo) / BIN_M); (bins[k] || (bins[k] = [])).push(r); });
+    var med = function (a) { a = a.slice().sort(function (x, y) { return x - y; }); return a[Math.floor(a.length / 2)]; };
+    var ALT_M = 30;                       // presentation: drone height above the road surface (not data)
+    var keys = Object.keys(bins).map(Number).sort(function (a, b) { return a - b; });
+    var path = keys.map(function (k) { var b = bins[k]; var p = A.ifc2three(med(b.map(function (r) { return r[0]; })), med(b.map(function (r) { return r[1]; })), med(b.map(function (r) { return r[2]; })) + ALT_M); return { x: p.x, y: p.y, z: p.z }; });
+    var maxJump = 0;
+    for (var i = 1; i < path.length; i++) maxJump = Math.max(maxJump, Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z));
+    // traffic signals (pset label) → stops, clustered within 60 m, each mapped to its nearest path point
+    var sig = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE p.value LIKE 'TRAFFIC SIGNAL%' AND p.value NOT LIKE '%AHEAD%' GROUP BY t.guid");
+    var stops = [];
+    sig.forEach(function (r) {
+      var c = A.ifc2three(r[0], r[1], r[2]), hit = null;
+      stops.forEach(function (st) { if (Math.hypot(st.x - c.x, st.z - c.z) < 60) hit = st; });
+      if (hit) { hit.n++; hit.x += (c.x - hit.x) / hit.n; hit.z += (c.z - hit.z) / hit.n; hit.y = Math.min(hit.y, c.y); }
+      else stops.push({ x: c.x, y: c.y, z: c.z, n: 1 });
+    });
+    stops.forEach(function (st) { var bi = 0, bd = Infinity; path.forEach(function (p, j) { var d = Math.hypot(p.x - st.x, p.z - st.z); if (d < bd) { bd = d; bi = j; } }); st.at = bi; st.off = bd; });
+    stops.sort(function (a, b) { return a.at - b.at; });
+    var SPEED = 25;                       // presentation: m/s along the road (~90 km/h)
+    var seg = function (from, to, label) {
+      var pts = path.slice(from, to + 1); if (pts.length < 2) return null;
+      var len = 0; for (var k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y, pts[k].z - pts[k - 1].z);
+      var names = pts.map(function () { return ''; }); names[0] = label;
+      return { type: 'flyPath', points: pts, names: names, duration: Math.max(len / SPEED, 3) };
+    };
+    var actions = [{ type: 'moveTo', x: path[0].x, y: path[0].y, z: path[0].z, name: 'Start of highway' }];
+    var cur = 0;
+    stops.forEach(function (st, si) {
+      var f = seg(cur, Math.max(cur + 1, st.at), si === 0 ? 'Along the highway' : 'Continue');
+      if (f) actions.push(f);
+      actions.push({ type: 'orbit', cx: st.x, cy: st.y, cz: st.z, radius: 25, tiltDeg: 35, fullCircle: true, duration: 10,
+                     name: 'Traffic signal ' + (si + 1) + (st.n > 1 ? ' (' + st.n + ' columns)' : '') });
+      cur = Math.max(cur + 1, st.at);
+    });
+    var last = seg(cur, path.length - 1, stops.length ? 'Continue to end' : 'Along the highway');
+    if (last) actions.push(last);
+    actions.push({ type: 'pause', seconds: 1, name: 'End of highway' });
+    var plen = 0; for (var m2 = 1; m2 < path.length; m2++) plen += Math.hypot(path[m2].x - path[m2 - 1].x, path[m2].z - path[m2 - 1].z);
+    console.log('[TOUR] §CIVIL_ROUTE mainline=' + n + ' bins=' + path.length + ' binM=' + BIN_M + ' pathLen=' + plen.toFixed(0) + 'm maxStep=' + maxJump.toFixed(0) +
+      'm altM=' + ALT_M + ' speed=' + SPEED + 'm/s signals=' + sig.length + ' stops=' + stops.length +
+      ' stopOffsets=[' + stops.map(function (st) { return st.off.toFixed(0); }).join(',') + ']m actions=' + actions.length);
+    return actions;
+  };
+
   A.buildTour = function() {
+    try { var _civ = A._civilRouteTour(); if (_civ && _civ.length) return _civ; } catch (e) { console.warn('[TOUR] §CIVIL_ROUTE_ERR ' + e.message); }
     try { return A._buildTourInner(); } catch(e) {
       console.error('[TOUR] buildTour crashed:', e.message, e.stack);
       A.wlog('TOUR CRASH: ' + e.message);

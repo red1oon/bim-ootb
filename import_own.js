@@ -350,7 +350,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=13' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=14' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -533,7 +533,7 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=13');
+    var worker = _createWorker('viewer/import_worker.js?v=14');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
@@ -628,7 +628,7 @@ async function importMultiIFC(files) {
     ' names=' + Array.prototype.map.call(files, function (f) { return f.name; }).join(','));
   if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
 
-  var allElements = [], allGeometries = [], allTransforms = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;
+  var allElements = [], allGeometries = [], allTransforms = [], allPsets = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;   // §CIVIL_PSETS
   // §GEOREF_REBASE federation frame (ported from viewer/import.js fe535d5 — this landing-page
   // path builds its OWN worker calls and was missing the fix entirely): the first file that
   // computes a georef offset pins it for every subsequent file in this drop, so all disciplines
@@ -677,6 +677,7 @@ async function importMultiIFC(files) {
     allElements = allElements.concat(fr.result.elements);
     allGeometries = allGeometries.concat(fr.result.geometries);
     allTransforms = allTransforms.concat(fr.result.transforms);
+    if (fr.result.psets && fr.result.psets.length) allPsets = allPsets.concat(fr.result.psets);   // §CIVIL_PSETS
   });
 
   if (status) status.textContent = 'Building merged database (' + totalElements + ' elements)...';
@@ -687,7 +688,7 @@ async function importMultiIFC(files) {
       meta: { name: buildingName, filename: buildingName, elementCount: totalElements, geomCount: allGeometries.length,
               disciplines: allDiscs, storeys: Array.from(allStoreys).sort(),
               georefOffset: sessionGeorefOffset || [0, 0, 0], unitScale: sessionUnitScale },
-      elements: allElements, geometries: allGeometries, transforms: allTransforms,
+      elements: allElements, geometries: allGeometries, transforms: allTransforms, psets: allPsets,
     };
     var dbs = buildImportDBs(SQL, mergedData);
     var _recSplit = dbs.metaDb && dbs.geoDb;

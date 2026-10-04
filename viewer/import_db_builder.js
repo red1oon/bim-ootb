@@ -168,6 +168,18 @@ function buildImportDBs(SQL, data) {
   }
   console.log('[4D] §4D_TABLES schedules=' + _nSched + ' tasks=' + _nTask + ' sequences=' + _nSeq + ' taskElements=' + _nTE + ' calendars=' + _nCal);
 
+  // §CIVIL_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S P-1): property labels the worker read from civil
+  // discipline files. Table created ONLY when there are rows — a building import's DB gets no new table (NON-IMPACT).
+  if (data.psets && data.psets.length) {
+    db.run('CREATE TABLE IF NOT EXISTS element_psets (guid TEXT NOT NULL, pset TEXT, name TEXT NOT NULL, value TEXT)');
+    var stmtPs = db.prepare('INSERT INTO element_psets VALUES (?,?,?,?)');
+    for (var psi = 0; psi < data.psets.length; psi++) stmtPs.run(data.psets[psi]);
+    stmtPs.free();
+    db.run('CREATE INDEX IF NOT EXISTS idx_element_psets_name ON element_psets(name, value)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_element_psets_guid ON element_psets(guid)');
+    console.log('§CIVIL_PSETS_TABLE rows=' + data.psets.length);
+  }
+
   db.run('COMMIT');
 
   console.log('[S220] §DB_BUILD single_db: elements=' + data.elements.length + ' transforms=' + data.transforms.length + ' instances=' + data.geometries.length + ' geometries=' + data.geometries.length);

@@ -335,7 +335,7 @@ window.addEventListener('error', function(e){
   </div>
 </div>
 
-<script src="viewer/import_db_builder.js?v=4"></script>
+<script src="viewer/import_db_builder.js?v=5"></script>
 <!-- HISTORY_KNOB_DIAL.md: shared World-history module — landing's "W" feature (packager inlines this). -->
 <script src="common/whole_history.js?v=4"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (About link → AboutDIY.openAbout; DIY is a tab).
@@ -1956,7 +1956,7 @@ async function packageLandingPage() {
   try {
     // 1. Fetch external JS files that need inlining
     setStatus('Inlining scripts…');
-    var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=4').then(function(r) { return r.text(); });
+    var dbBuilderSrc = await fetch('viewer/import_db_builder.js?v=5').then(function(r) { return r.text(); });
     var localeSrc = await fetch('viewer/locale_loader.js?v=7').then(function(r) { return r.text(); });
     // HISTORY_KNOB_DIAL.md: the W feature's module lives in common/ — inline it so the offline package is
     // self-contained (a bare common/ ref would 404 from a saved single file).
