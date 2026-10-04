@@ -414,7 +414,7 @@
   function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
     var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
-    var created = [], hidden = [], updated = [], want = String(table || '').toLowerCase();
+    var created = [], hidden = [], hiddenBy = [], updated = [], want = String(table || '').toLowerCase();
     if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
     try {
       var _w = " FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC", r;
@@ -469,6 +469,9 @@
           if (created.indexOf(synth) < 0) created.push(synth);
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
+          // model_layer: a table with no single key (AD_Column.IsKey/IsParent composite — M_StorageOnHand, M_Cost …) is
+          // addressed by its <Table>_UU (p.idCol), the record identity PO.saveNew:3546 stamps.
+          if (!ex && p.idCol && p.id != null) { for (var xi = 0; xi < rows.length; xi++) { if (String(rows[xi][p.idCol]) === String(p.id)) { ex = rows[xi]; break; } } }
           if (ex) {
             if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
             // apply each change onto the EXISTING key case (the op keys lowercase via f.col, but a SELECT* bundle row
@@ -487,13 +490,14 @@
             if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['updatedby'] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
           }
         } else if (type === 'CRUD_DELETE') {
+          if (p.idCol && p.id != null) { hiddenBy.push([p.idCol, String(p.id)]); return; }   // composite-key row by its UU
           if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
         }
       });
     } catch (e) {}
     // apply tombstones last (a delete after a create on the same id still hides it).
     var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
-    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
+    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])] && !hiddenBy.some(function (h) { return String(r[h[0]]) === h[1]; }); });
     created = created.filter(function (c) { return !hideSet[String(c)]; });
     updated = updated.filter(function (u) { return !hideSet[String(u)]; });
     return { rows: rows, created: created, hidden: hidden, updated: updated };

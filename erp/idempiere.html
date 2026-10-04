@@ -491,7 +491,7 @@
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
-<script src="ad_modelval.js?v=3"></script>
+<script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -589,6 +589,15 @@
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
      Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
 <script src="erp_engine.js?v=1"></script>
+<!-- bim-compiler prompts/ERP_MODEL_LAYER.md — the MODEL layer: iDempiere PO + DocAction + DocumentEngine + AD_Workflow contract
+     (model_layer.js) and the ported trade-cycle classes registered into it. crud_overlay.completeFanout / save seams call
+     ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
+<script src="ad_workflow.js?v=1"></script>
+<script src="model_layer.js?v=1"></script>
+<script src="model_trade.js?v=1"></script>
+<script src="model_order.js?v=1"></script>
+<script src="model_invoice.js?v=1"></script>
+<script src="model_post.js?v=1"></script>
 <script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
@@ -640,8 +649,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=5"></script>
-<script src="crud_overlay.js?v=30"></script>
+<script src="crud_core.js?v=6"></script>
+<script src="crud_overlay.js?v=31"></script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
