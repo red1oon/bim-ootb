@@ -11,6 +11,9 @@
 //   MD-4/MD-8 is the new detail row linked to the header just saved (its link column == that header's exact id)?
 // Verdict per window: PASS | GAP | INCONCLUSIVE(reason). INCONCLUSIVE when it cannot be driven (window not in the role's menu,
 //   New disabled, header mandatory data the generic filler cannot supply) — counted, never PASS.
+// GT_NINJA=1 (§GT-NINJA, bim-compiler ERP_IDEMPIERE_UX_PARITY.md): the population is a header+lines module STAGED AT RUNTIME by ninja_stage.js
+//   (ninja_starter: AST_Asset → AST_Maintenance) INSIDE the page's own db, role access granted, re-login, opened from the MENU — then the SAME
+//   MD-1..MD-4 arms. Log: witness_ninja_gridtab_live.log. Proves the Ninja module gets master-detail with ZERO host code.
 // Run: NODE_PATH=~/bim-ootb/node_modules node erp/tests/witness_gridtab_live.js   (GT_ONLY=143,181 to limit; GT_WORKERS=4)
 'use strict';
 const os = require('os'), http = require('http'), fs = require('fs'), path = require('path');
@@ -18,7 +21,8 @@ const { chromium } = require(process.env.PW || (os.homedir() + '/bim-ootb/tests/
 const initSqlJs = require(process.env.SQLJS || (os.homedir() + '/bim-ootb/node_modules/sql.js'));
 const { Witness } = require('../../witness_kit/contract');
 const REPO = path.join(__dirname, '..', '..');
-const LOGF = path.join(__dirname, 'witness_gridtab_live.log'), PAGELOGF = path.join(__dirname, 'witness_gridtab_live.page.log');
+const NINJA = process.env.GT_NINJA === '1';
+const LOGF = path.join(__dirname, NINJA ? 'witness_ninja_gridtab_live.log' : 'witness_gridtab_live.log'), PAGELOGF = path.join(__dirname, NINJA ? 'witness_ninja_gridtab_live.page.log' : 'witness_gridtab_live.page.log');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream',
   '.png': 'image/png', '.css': 'text/css', '.wasm': 'application/wasm', '.zip': 'application/zip', '.sql': 'text/plain', '.svg': 'image/svg+xml' };
 const server = http.createServer((req, res) => {
@@ -48,6 +52,19 @@ const PAGELOG = [];
     const login = access(102, wid) ? 'GardenAdmin' : (access(0, wid) ? 'SuperUser' : null);
     POPW.push({ wid, wname, header: tabs[0][3], childIdx: ci, child: tabs[ci][1], childTable: tabs[ci][3], login });
   }
+  if (NINJA) {   // population = the starter module staged on a node copy of the seed (same deterministic slot the page will get)
+    POPW.length = 0;
+    const NM = require('../ninja_model.js'), NS = require('../ninja_stage.js'), NST = require('../ninja_starter.js');
+    const nr = NST.starterModelRows(), pm = NM.parseSheet(nr.model, { header: nr.header }), model = pm.model || pm;
+    const ndb = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(REPO, 'erp', 'ad_seed.db'))));
+    const _l = console.log; console.log = () => {}; NS.stageModels(ndb, model, 0); console.log = _l;
+    const nq = (s2, p2) => { const r = ndb.exec(s2, p2 || []); return r.length ? r[0].values : []; };
+    const hdrT = model.tables.find(t => !t.master), detT = model.tables.find(t => t.master === hdrT.name);
+    const wid = nq("SELECT AD_Window_ID FROM AD_Table WHERE TableName=?", [hdrT.name])[0][0];
+    const tabs = nq("SELECT t.AD_Tab_ID, t.Name, t.TabLevel, tb.TableName FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Window_ID=? AND t.IsActive='Y' ORDER BY t.SeqNo", [wid]);
+    POPW.push({ wid, wname: hdrT.name.replace(/_/g, ' '), header: tabs[0][3], childIdx: tabs.findIndex(t => t[3] === detT.name), child: tabs.find(t => t[3] === detT.name)[1], childTable: detT.name, login: 'GardenAdmin', ninja: { model: nr, menuText: hdrT.name.replace(/_/g, ' ') } });
+    say('§NINJA-GT-LIVE population window=' + wid + ' tabs=' + JSON.stringify(tabs.map(t => t[3] + '@L' + t[2])) + ' (staged on a node copy; the page stages its own)');
+  }
   const ONLY = process.env.GT_ONLY ? process.env.GT_ONLY.split(',').map(Number) : null;
   const WINS = ONLY ? POPW.filter(w => ONLY.includes(w.wid)) : POPW;
   say('§GT-LIVE population windows=' + WINS.length + ' (of ' + POPW.length + ' with a TabLevel-1 child under the header, tables in seed)');
@@ -64,8 +81,29 @@ const PAGELOG = [];
     if (!W.login) { r.reason = 'no role in the seed has access to this window'; return r; }
     let n0 = PL.length;
     for (let g = 0; g < 3; g++) {   // a navigation the page itself starts (SW / history) can abort goto — retry, never judge it
-      try { await page.goto('about:blank'); await page.goto(base + '?login=' + W.login + '&window=' + W.wid, { waitUntil: 'load' }); break; }
+      try { await page.goto('about:blank'); await page.goto(base + '?login=' + W.login + (W.ninja ? '' : '&window=' + W.wid), { waitUntil: 'load' }); break; }
       catch (e) { if (g === 2) throw e; await page.waitForTimeout(1500); }
+    }
+    if (W.ninja) {   // §GT-NINJA: stage the module INSIDE the page, grant the role the window, re-login (winSet is built at login), open from the MENU
+      try { await page.waitForFunction(() => window.__idmpDb && window.NinjaStage && window.NinjaModel, null, { timeout: 30000 }); } catch (e) { r.reason = 'page has no __idmpDb/NinjaStage'; return r; }
+      for (let w = 0; w < 60 && !since(n0, /^§IDEMPIERE-LOGIN user=/).length; w++) await page.waitForTimeout(250);
+      const st = await page.evaluate((nr) => {
+        const db = window.__idmpDb, pm = NinjaModel.parseSheet(nr.model, { header: nr.header }), model = pm.model || pm;
+        const c = NinjaStage.stageModels(db, model, 0);
+        const hdr = model.tables.find(t => !t.master).name;
+        const w = db.exec("SELECT AD_Window_ID FROM AD_Table WHERE TableName='" + hdr + "'")[0].values[0][0];
+        db.run("INSERT INTO AD_Window_Access (AD_Window_ID,AD_Role_ID,AD_Client_ID,AD_Org_ID,IsActive,IsReadWrite) VALUES (" + w + ",102,11,0,'Y','Y')");
+        return { counts: c, wid: w };
+      }, W.ninja.model);
+      PL.push('§NINJA-GT-LIVE staged-in-page window=' + st.wid + ' counts=' + JSON.stringify(st.counts));
+      if (st.wid !== W.wid) { r.verdict = 'GAP'; r.reason = 'page staged window ' + st.wid + ' != node-staged ' + W.wid + ' (staging not deterministic)'; return r; }
+      await page.evaluate(() => document.getElementById('idmp-login-ok').click());
+      let clicked = false;   // the menu is rebuilt by the re-login; leaves sit under collapsed nodes → click the row element itself
+      for (let w = 0; w < 60 && !clicked; w++) {
+        clicked = await page.evaluate((txt) => { const nm = [...document.querySelectorAll('#idmp-tree .idmp-row.leaf .nm')].find(e => e.textContent.trim() === txt); if (!nm) return false; nm.closest('.idmp-row').click(); return true; }, W.ninja.menuText);
+        if (!clicked) await page.waitForTimeout(250);
+      }
+      if (!clicked) { r.reason = 'Ninja menu leaf "' + W.ninja.menuText + '" not in the role-scoped menu'; return r; }
     }
     try { await page.waitForFunction(() => document.querySelector('#idmp-toolbar button[data-tb="new"]') && window.IdmpGridTab, null, { timeout: 30000 }); }
     catch (e) { const al = last(n0, /§IDEMPIERE-AUTOLOGIN user=/); r.reason = 'window not opened for the auto-login role (' + (al ? al.replace(/.*role=(\d+).*/, 'role $1') : 'no autologin') + '; ?login= takes the user\'s first role, this window is granted to role ' + (W.login === 'SuperUser' ? '0 only' : '?') + ')'; return r; }

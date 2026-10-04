@@ -89,7 +89,7 @@ const GT = require(path.join(__dirname, '..', 'ad_gridtab.js'));
     if (inPop) windowsInPop++;
   }
   // ── Ninja arm: a header+lines model staged at RUNTIME by erp/ninja_stage.js (the Red1 Ninja generator) gets the same
-  //    generic tab contract with zero extra code? (ninja_starter's AST_Asset → AST_Maintenance sample)
+  //    generic tab contract with zero extra code? (ninja_starter's AST_Asset → AST_Maintenance sample; §GT-NINJA: must now be isDetail=true)
   const NM = require(path.join(__dirname, '..', 'ninja_model.js')), NS = require(path.join(__dirname, '..', 'ninja_stage.js'));
   const NST = require(path.join(__dirname, '..', 'ninja_starter.js'));
   const nrows = NST.starterModelRows(); let ninja = { verdict: 'INCONCLUSIVE', reason: 'stage failed' };
@@ -102,7 +102,7 @@ const GT = require(path.join(__dirname, '..', 'ad_gridtab.js'));
     const tm = GT.open(db, ltabs, li);
     ninja = { window: lw[0], tabsInWindow: ltabs.length, tabLevel: tm.tabLevel, parentIndex: tm.parentIndex, isDetail: tm.isDetail, link: tm.linkColumn || '-', source: tm.linkSource };
     ninja.verdict = (tm.parentIndex >= 0 && tm.isDetail && tm.linkColumn) ? 'PASS' : 'INCONCLUSIVE';
-    if (ninja.verdict !== 'PASS') ninja.reason = 'ninja_stage.js stages the detail table as its OWN window (TabLevel 1, no TabLevel-0 tab before it) and writes no AD_Column.IsParent / AD_Tab.AD_Column_ID (ninja_stage.js:124-128,143-148) — GridTab.isDetail is false there in iDempiere too; parity needs the line tab inside the master window + IsParent on <Master>_ID';
+    if (ninja.verdict !== 'PASS') ninja.reason = 'ninja_stage.js must stage the detail as a TabLevel-1 tab in its master window with IsParent on <Master>_ID (§GT-NINJA) — got parentIndex=' + tm.parentIndex + ' isDetail=' + tm.isDetail;
   } catch (e) { ninja.reason = 'stage error: ' + e.message; }
   console.log = _log;
   console.log('§GT-CONTRACT-NINJA ' + JSON.stringify(ninja));
