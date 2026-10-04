@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl th_TH — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/th_TH.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl th_TH — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/th_TH.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="th_TH" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -3021,6 +3021,446 @@ CPM อ่านวันที่ที่เกิดจากการลา�
  </row>
  <row id="1000752" trl="Y">
   <value column="MsgText" original="Synthesized — no audio files, default OFF">สังเคราะห์ — ไม่มีไฟล์เสียง ปิดเป็นค่าเริ่มต้น</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000753" trl="Y">
+  <value column="MsgText" original="Iso">ไอโซ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000754" trl="Y">
+  <value column="MsgText" original="Move Grid">ย้ายกริด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000755" trl="Y">
+  <value column="MsgText" original="Drag Item">ลากชิ้นส่วน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000756" trl="Y">
+  <value column="MsgText" original="Sketch">สเก็ตช์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000757" trl="Y">
+  <value column="MsgText" original="Extrude">ดึงขึ้นรูป</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000758" trl="Y">
+  <value column="MsgText" original="Axis">แกน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000759" trl="Y">
+  <value column="MsgText" original="Cut">ตัด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000760" trl="Y">
+  <value column="MsgText" original="Route">เส้นทาง</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000761" trl="Y">
+  <value column="MsgText" original="Sweep Run">สวีปแนว</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000762" trl="Y">
+  <value column="MsgText" original="Fillet">ฟิลเล็ต</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000763" trl="Y">
+  <value column="MsgText" original="Insert">แทรก</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000764" trl="Y">
+  <value column="MsgText" original="History">ประวัติ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000765" trl="Y">
+  <value column="MsgText" original="Guide">คู่มือ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000766" trl="Y">
+  <value column="MsgText" original="Delete">ลบ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000767" trl="Y">
+  <value column="MsgText" original="Sound">เสียง</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000768" trl="Y">
+  <value column="MsgText" original="Connect">เชื่อมต่อ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000769" trl="Y">
+  <value column="MsgText" original="Teams">ทีม</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000770" trl="Y">
+  <value column="MsgText" original="X-ray">เอ็กซ์เรย์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000771" trl="Y">
+  <value column="MsgText" original="history">ประวัติ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000772" trl="Y">
+  <value column="MsgText" original="OUTLINER">เอาต์ไลเนอร์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000773" trl="Y">
+  <value column="MsgText" original="BOM Tree">ต้นไม้ BOM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000774" trl="Y">
+  <value column="MsgText" original="STR Walker">STR Walker</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000775" trl="Y">
+  <value column="MsgText" original="Open a resident (▾) or local .db (🏗) to walk">เปิดอาคารประจำ (▾) หรือ .db ในเครื่อง (🏗) เพื่อเดินสำรวจ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000776" trl="Y">
+  <value column="MsgText" original="Walls">ผนัง</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000777" trl="Y">
+  <value column="MsgText" original="Openings">ช่องเปิด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000778" trl="Y">
+  <value column="MsgText" original="Routes">เส้นทาง</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000779" trl="Y">
+  <value column="MsgText" original="Fillets">ฟิลเล็ต</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000780" trl="Y">
+  <value column="MsgText" original="Grid Moves">การย้ายกริด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000781" trl="Y">
+  <value column="MsgText" original="Arrays">อาร์เรย์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000782" trl="Y">
+  <value column="MsgText" original="Lofts">ลอฟต์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000783" trl="Y">
+  <value column="MsgText" original="Revolves">รีวอลฟ์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000784" trl="Y">
+  <value column="MsgText" original="Shells">เชลล์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000785" trl="Y">
+  <value column="MsgText" original="Offsets">ออฟเซ็ต</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000786" trl="Y">
+  <value column="MsgText" original="Var. Fillets">ฟิลเล็ตแปรผัน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000787" trl="Y">
+  <value column="MsgText" original="Chamfers∠">ลบมุม∠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000788" trl="Y">
+  <value column="MsgText" original="Drafts">เดราฟต์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000789" trl="Y">
+  <value column="MsgText" original="Components">คอมโพเนนต์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000790" trl="Y">
+  <value column="MsgText" original="{n} features">{n} ฟีเจอร์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000791" trl="Y">
+  <value column="MsgText" original="Help — toolbar &amp; shortcuts">ความช่วยเหลือ — แถบเครื่องมือและทางลัด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000792" trl="Y">
+  <value column="MsgText" original="Back to the Matrix">กลับไปที่ Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000793" trl="Y">
+  <value column="MsgText" original="Open a building — load a resident or a local .db → walk + bom-graph">เปิดอาคาร — โหลดอาคารประจำหรือ .db ในเครื่อง → เดินสำรวจ + bom-graph</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000794" trl="Y">
+  <value column="MsgText" original="Zoom to fit (F) — frames the selection, or all">ซูมให้พอดี (F) — จัดเฟรมสิ่งที่เลือก หรือทั้งหมด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000795" trl="Y">
+  <value column="MsgText" original="Cycle view: Iso / Top">สลับมุมมอง: ไอโซ / ด้านบน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000796" trl="Y">
+  <value column="MsgText" original="Drag a gridline — attached walls recompose">ลากเส้นกริด — ผนังที่ติดอยู่จะประกอบใหม่</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000797" trl="Y">
+  <value column="MsgText" original="Move the selected object — drag an axis handle or nudge with arrow keys (M)">ย้ายวัตถุที่เลือก — ลากที่จับแกนหรือเลื่อนเล็กน้อยด้วยปุ่มลูกศร (M)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000798" trl="Y">
+  <value column="MsgText" original="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)">ลากอุปกรณ์/ฟิตติ้งได้อย่างอิสระ — ควบคุมโดยตัวแก้ตำแหน่งจริง (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000799" trl="Y">
+  <value column="MsgText" original="Constraint intent the solver enforces on the sketch">เจตนาข้อจำกัดที่ตัวแก้ปัญหาบังคับใช้กับสเก็ตช์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000800" trl="Y">
+  <value column="MsgText" original="Sweep a profile along a route (MEP run)">กวาดโปรไฟล์ไปตามเส้นทาง (แนว MEP)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000801" trl="Y">
+  <value column="MsgText" original="Round a selected solid's picked edges">ทำมุมโค้งให้ขอบที่เลือกของโซลิดที่เลือก</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000802" trl="Y">
+  <value column="MsgText" original="Insert a library component (assemble, don't draw)">แทรกคอมโพเนนต์จากไลบรารี (ประกอบ ไม่ใช่วาด)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000803" trl="Y">
+  <value column="MsgText" original="Refine the selected component's level of detail (same signed row)">ปรับระดับรายละเอียดของคอมโพเนนต์ที่เลือกให้ละเอียดขึ้น (แถวที่ลงนามเดิม)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000804" trl="Y">
+  <value column="MsgText" original="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue">ส่งออก — .db เนทีฟ (ครบถ้วนสมบูรณ์: op-log ที่ลงนามแล้ว), IFC4 หรือประเด็น BCF 2.1</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000805" trl="Y">
+  <value column="MsgText" original="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)">บันทึก — ตรวจการชน + ซ่อมอัตโนมัติ แล้วเขียนสแนปช็อตฐานข้อมูลกายภาพ (บล็อกหากยังมีสีแดงค้าง)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000806" trl="Y">
+  <value column="MsgText" original="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)">ประวัติทั้งหมด: ไทม์ไลน์ข้ามหน้า (Viewer, iDempiere, Gravity, Modeller)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000807" trl="Y">
+  <value column="MsgText" original="Modeller User Guide — how to Open, walk, edit &amp; export">คู่มือผู้ใช้ Modeller — วิธีเปิด เดินสำรวจ แก้ไข และส่งออก</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000808" trl="Y">
+  <value column="MsgText" original="Delete selected (Del)">ลบที่เลือก (Del)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000809" trl="Y">
+  <value column="MsgText" original="Authoring sound feedback">เสียงตอบสนองระหว่างการสร้างงาน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000810" trl="Y">
+  <value column="MsgText" original="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)">เชื่อมต่อฉาก — แชร์สิ่งที่เลือก/ไทม์ไลน์กับ Viewer และ ERP (ต้องเลือกเปิดเอง; แต่ละหน้าจอยังแยกจากกัน)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000811" trl="Y">
+  <value column="MsgText" original="Teams — who's on this scene (presence &amp; activity). Click to enable.">ทีม — ใครอยู่ในฉากนี้ (สถานะออนไลน์และกิจกรรม) คลิกเพื่อเปิดใช้</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000812" trl="Y">
+  <value column="MsgText" original="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours">เปิดเผยแบบเอ็กซ์เรย์ (X) — โครงสร้างกลายเป็นกระจกให้ระบบ MEP ที่เดินแนวไว้เรืองผ่านด้วยสีของแต่ละสาขา</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000813" trl="Y">
+  <value column="MsgText" original="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)">ระยะเลื่อน/ขยับ (ม.) — ปุ่มลูกศรจะเลื่อนสิ่งที่เลือกตามค่านี้ (Shift ×10, Alt ÷10)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000814" trl="Y">
+  <value column="MsgText" original="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)">หมุนตามองศาที่พิมพ์ — Enter ยืนยัน GEOM_ROTATE ที่ลงนามหนึ่งรายการ (ก่อน §P6 ลากได้อย่างเดียว)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000815" trl="Y">
+  <value column="MsgText" original="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)">ปรับขนาดด้วยแกน+ตัวคูณที่พิมพ์ (x1.5, y2, z0.5) — Enter ยืนยัน GEOM_SCALE ที่ลงนามหนึ่งรายการ (เฉพาะคอมโพเนนต์เดียว เหมือนที่จับทรงลูกบาศก์)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000816" trl="Y">
+  <value column="MsgText" original="Wall height / extrude depth (m)">ความสูงผนัง / ความลึกการดึงขึ้นรูป (ม.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000817" trl="Y">
+  <value column="MsgText" original="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style">ความกว้างสเก็ตช์ (ม.) — Enter แก้สี่เหลี่ยมผืนผ้า/จัตุรัสทั้งรูปใหม่ เหมือนการลากหนึ่งมิติ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000818" trl="Y">
+  <value column="MsgText" original="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style">ความสูงสเก็ตช์ (ม.) — Enter แก้สี่เหลี่ยมผืนผ้า/จัตุรัสทั้งรูปใหม่ เหมือนการลากหนึ่งมิติ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000819" trl="Y">
+  <value column="MsgText" original="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle">มุมของสเก็ตช์ (°, ค่าเริ่มต้น 90) — Enter แก้เป็นสี่เหลี่ยมด้านขนานตามมุมที่พิมพ์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000820" trl="Y">
+  <value column="MsgText" original="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)">รัศมีวงกลม (ม.) — Enter กำหนดรัศมีที่แน่นอน (ยืนยันจุดศูนย์กลางที่ค้างอยู่ หรือแก้วงกลมล่าสุด)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000821" trl="Y">
+  <value column="MsgText" original="Sweep profile size w×h (m)">ขนาดโปรไฟล์สวีป กว้าง×สูง (ม.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000822" trl="Y">
+  <value column="MsgText" original="Fillet / chamfer radius (m)">รัศมีฟิลเล็ต / ลบมุม (ม.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000823" trl="Y">
+  <value column="MsgText" original="History — ‹ older · newer › (click a dot to jump · ←/→ when focused)">ประวัติ — ‹ เก่ากว่า · ใหม่กว่า › (คลิกจุดเพื่อข้าม · ←/→ เมื่อโฟกัส)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000824" trl="Y">
+  <value column="MsgText" original="Older (←)">เก่ากว่า (←)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000825" trl="Y">
+  <value column="MsgText" original="Newer (→)">ใหม่กว่า (→)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000826" trl="Y">
+  <value column="MsgText" original="Collapse panel">ย่อแผง</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000827" trl="Y">
+  <value column="MsgText" original="Collapse all — fold the tree to its top-level trunk">ย่อทั้งหมด — พับต้นไม้เหลือเพียงลำต้นระดับบนสุด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000828" trl="Y">
+  <value column="MsgText" original="Adjacency lens — highlight a selected element’s abutting neighbours">เลนส์ความติดกัน — ไฮไลต์องค์ประกอบข้างเคียงที่ชิดกับองค์ประกอบที่เลือก</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000829" trl="Y">
+  <value column="MsgText" original="double-click: collapse all">ดับเบิลคลิก: ย่อทั้งหมด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000830" trl="Y">
+  <value column="MsgText" original="Toolbar">แถบเครื่องมือ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000831" trl="Y">
+  <value column="MsgText" original="Show Outliner">แสดงเอาต์ไลเนอร์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000832" trl="Y">
+  <value column="MsgText" original="🔍 find…">🔍 ค้นหา…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000833" trl="Y">
+  <value column="MsgText" original="TOOLBAR · PILL REGISTRY">แถบเครื่องมือ · ทะเบียนปุ่ม</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000834" trl="Y">
+  <value column="MsgText" original="KEYBOARD">แป้นพิมพ์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000835" trl="Y">
+  <value column="MsgText" original="Redo">ทำซ้ำ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000836" trl="Y">
+  <value column="MsgText" original="Cancel current mode">ยกเลิกโหมดปัจจุบัน</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000837" trl="Y">
+  <value column="MsgText" original="Snap-to-geometry on/off (while moving)">สแนปเข้ากับเรขาคณิต เปิด/ปิด (ขณะย้าย)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000838" trl="Y">
+  <value column="MsgText" original="Arm rotate ring (turn, in Move)">เปิดวงแหวนหมุน (หมุน ในโหมดย้าย)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000839" trl="Y">
+  <value column="MsgText" original="Arm scale cubes (in Move)">เปิดลูกบาศก์ปรับขนาด (ในโหมดย้าย)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000840" trl="Y">
+  <value column="MsgText" original="OPEN A BUILDING">เปิดอาคาร</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000841" trl="Y">
+  <value column="MsgText" original="FROM IFC (ARC only)">จาก IFC (เฉพาะ ARC)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000842" trl="Y">
+  <value column="MsgText" original="Open local .db / .ifc…">เปิด .db / .ifc ในเครื่อง…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000843" trl="Y">
+  <value column="MsgText" original="Not extracted — walk from duplex_rules.db">ยังไม่ได้สกัด — เดินสำรวจจาก duplex_rules.db</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000844" trl="Y">
+  <value column="MsgText" original="▶▶ Walk ALL Services">▶▶ เดินสำรวจบริการทั้งหมด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000845" trl="Y">
+  <value column="MsgText" original="{n} services not extracted · x-ray reveal">{n} บริการยังไม่ได้สกัด · แสดงแบบเอ็กซ์เรย์</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000846" trl="Y">
+  <value column="MsgText" original="▶ walk">▶ เดินสำรวจ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000847" trl="Y">
+  <value column="MsgText" original="{n} columns">เสา {n} ต้น</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000848" trl="Y">
+  <value column="MsgText" original="{n} girders">คานใหญ่ {n} ตัว</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000849" trl="Y">
+  <value column="MsgText" original="RED {r} · ORANGE {o} · GREEN {g}">แดง {r} · ส้ม {o} · เขียว {g}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000850" trl="Y">
+  <value column="MsgText" original="Confidence {p}% mean">ความเชื่อมั่นเฉลี่ย {p}%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000851" trl="Y">
+  <value column="MsgText" original="✓ all girders ≥80% (oracle-calibrated)">✓ คานใหญ่ทั้งหมด ≥80% (ปรับเทียบกับออราเคิล)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000852" trl="Y">
+  <value column="MsgText" original="Building Parts">ส่วนประกอบอาคาร</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000853" trl="Y">
+  <value column="MsgText" original="Route trunk · from entry (seed)">แนวเส้นทางหลัก · จากทางเข้า (seed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000854" trl="Y">
+  <value column="MsgText" original="walk a discipline first, then route its trunk">เดินสำรวจสาขาก่อน แล้วจึงเดินแนวเส้นทางหลัก</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000855" trl="Y">
+  <value column="MsgText" original="{n} features 🔒 {h}">{n} ฟีเจอร์ 🔒 {h}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000856" trl="Y">
+  <value column="MsgText" original="Opened {name}">เปิด {name} แล้ว</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000857" trl="Y">
+  <value column="MsgText" original="hide in 3D">ซ่อนใน 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000858" trl="Y">
+  <value column="MsgText" original="Move this room — drag on canvas after grabbing">ย้ายห้องนี้ — จับแล้วลากบนแคนวาส</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000859" trl="Y">
+  <value column="MsgText" original="Walk this discipline">เดินสำรวจสาขานี้</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000860" trl="Y">
+  <value column="MsgText" original="Walk ALL services">เดินสำรวจบริการทั้งหมด</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000861" trl="Y">
+  <value column="MsgText" original="ERP ▸ Project Order">ERP ▸ ใบสั่งโครงการ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000862" trl="Y">
+  <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">อ่าน / สร้าง / เปิดใบสั่งโครงการ ERP ของชิ้นส่วนที่เลือก</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>
