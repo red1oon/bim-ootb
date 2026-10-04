@@ -2816,6 +2816,28 @@
     if (!mdb) return null;
     var cols = _getTableCols(table);
     if (!cols['documentno']) return null;
+    // ONE MSequence: the model layer's verbatim port (model_trade.js getDocumentNoFromSeq — org-level AD_Sequence_No,
+    // Prefix/Suffix/@vars@, DecimalPattern, StartNewYear), run through a Trx over the tip-shadowed bundle; its ops
+    // (AD_Sequence / AD_Sequence_No bump) ride the document's own signed group (prompts/ERP_MODEL_LAYER.md §CORE-DOCNO).
+    var ML = global.ModelLayer, MT = global.ModelTrade;
+    if (ML && MT && MT.getDocumentNoByDocType) {
+      var given = fields ? (fields['DocumentNo'] != null ? fields['DocumentNo'] : fields['documentno']) : null;
+      if (given != null && (/^<.*>$/.test(String(given)) || _previewIssued[String(given)])) given = null;   // PO.saveNew :3571-3572
+      if (given != null && String(given) !== '') return null;                                 // a manually entered number is kept
+      var sh = SIDE ? _tipShadowOn(mdb, ['ad_sequence', 'ad_sequence_no']) : [], v = null, ops = [];
+      try {
+        var trx = new ML.Trx(_modelQuery(mdb), _modelEnv()), rec = {};
+        Object.keys(fields || {}).forEach(function (k) { rec[k.toLowerCase()] = fields[k]; });
+        var mc = ML.columnsOf(trx, table), dtc = mc.c_doctypetarget_id ? 'c_doctypetarget_id' : mc.c_doctype_id ? 'c_doctype_id' : null;
+        if (dtc) v = MT.getDocumentNoByDocType(trx, Number(rec[dtc] || 0), false, rec);
+        if (v == null) v = MT.getDocumentNoByTable(trx, mc.__tableName || table, rec);
+        ops = trx.groupOps(); trx.log.forEach(function (l) { console.log(l); });
+      } catch (e) { console.log('§DOCNO model MSequence threw: ' + (e && e.message)); v = null; ops = []; }
+      finally { _tipShadowOff(mdb, sh); }
+      _lastSeqOp = ops.length ? ops : null;
+      console.log('§DOCNO table=' + table + ' docno=' + v + ' seqOps=' + ops.map(function (o) { return o.table + ':' + o.op_type; }).join('+') + ' via=ModelTrade.MSequence bump=in-group');
+      return v;
+    }
     try {
       var dtSeq = _docTypeSeqId(mdb, fields), seqName = 'DocumentNo_' + table;
       var r = dtSeq != null
@@ -2970,7 +2992,7 @@
         else if (op.op_type === 'CRUD_DELETE') { params.tombstone = true; params.reversible = true; }
         var groupOps = [{ op_type: op.op_type, op_uuid: op.op_uuid || null, params: params }];
         if (modelOps.length) _resolveOpRefs(db, [params].concat(modelOps)).slice(1).forEach(function (mo) { groupOps.push({ op_type: mo.op_type, op_uuid: null, params: mo }); });
-        if (op._seqOp) groupOps.push({ op_type: 'CRUD_UPDATE', op_uuid: null, params: op._seqOp });   // MSequence bump, same group (last: no op-index shift)
+        if (op._seqOp) [].concat(op._seqOp).forEach(function (so) { groupOps.push({ op_type: so.op_type || 'CRUD_UPDATE', op_uuid: null, params: so }); });   // MSequence bump(s), same group (last: no op-index shift)
         Promise.resolve(K.commitGroup(db, groupOps, _commitMeta())).then(function (res) {
           if (!res || res.committed !== true) { console.warn('§CRUD ' + op.op_type + ' commitGroup not-committed reason=' + (res && res.reason || '?')); dryCrud(op); done(); return; }
           // T7 fix 2 (W-T7-INC): hot-path verify is tip-cached incremental (first call of a session is full).
