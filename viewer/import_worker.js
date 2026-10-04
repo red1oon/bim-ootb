@@ -74,13 +74,22 @@ function properClassName(typeCode) {
 }
 
 var VALID_DISCS = ['ARC','STR','MEP','PLB','ACMV','ELEC','FP','VENT','HEAT','SAN','COOL','VOID','AIR','DUCT','HVAC','MECH','FIRE','SPR','GAS','LIFT','CONV','CIV','LAND','EXT','INT','CEIL','ROOF','SITE','DEMO'];
+// §CIVIL_DISC (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §B.2a): civil discipline files name
+// themselves by these words (JELAPANG_ROAD FURNITURE.ifc …) — verbatim from the file names. Only these
+// are also matched inside space-separated words: matching ALL codes there turned "IFC4 Demo Library.ifc"
+// into DEMO (demolition) — measured by the filename sweep, 464 names on disk.
+var CIVIL_DISCS = ['ROAD','FURNITURE','LIGHTING','DRAINAGE','SIGNAGE','MARKING','EARTHWORK'];
 
 function discFromFilename(fname) {
   // Extract discipline from filename: LTU_AHouse_HEAT.ifc → HEAT
   var stem = fname.replace(/\.ifc$/i, '');
   var parts = stem.split(/[_\-]/);
   for (var i = parts.length - 1; i >= 0; i--) {
-    if (VALID_DISCS.indexOf(parts[i].toUpperCase()) >= 0) return parts[i].toUpperCase();
+    var up = parts[i].toUpperCase();
+    if (VALID_DISCS.indexOf(up) >= 0 || CIVIL_DISCS.indexOf(up) >= 0) return up;
+    // §CIVIL_DISC: civil exports use spaces inside a part ("ROAD FURNITURE") — civil words only.
+    var words = up.split(/\s+/);
+    for (var w = words.length - 1; w >= 0; w--) if (CIVIL_DISCS.indexOf(words[w]) >= 0) return words[w];
   }
   return null;
 }
@@ -174,7 +183,7 @@ self.onmessage = async function(e) {
       self.postMessage({ type: 'error', message: 'Failed to parse IFC. Check schema version — supported: IFC2x3, IFC4, IFC4x3.' });
       return;
     }
-    // Unit scaling applied AFTER tessellation via heuristic (web-ifc is inconsistent)
+    // Units: web-ifc normalises geometry to metres itself (§UNITS v3 below) — no rescale step.
 
     // ── S252: Build expressID → {r,g,b,a} colour map ──────────────────────
     // web-ifc 0.0.77 returns white for IFC4 Revit files that use IFCINDEXEDCOLOURMAP.
@@ -663,20 +672,13 @@ self.onmessage = async function(e) {
 
     const storeys = [...new Set(renderableElements.map(e => e.storey))].sort();
 
-    // §UNITS v2 (2026-07-12, JKR georeferenced Revit series — see prompts/
-    // RESUME_ARCH_DISC_FILTER_STUCK_HIDDEN.md + RESUME_FLATTRANSFORMATION_POSITION_BUG.md):
-    // Discriminate units by model SPAN, never by absolute coordinate magnitude. The old
-    // `maxCoord > 500 ⇒ mm` test crushed georeferenced METER models (site at ~271km map
-    // easting, span 60m) x1/1000 — and it scaled centers+verts but NOT bbox_x/y/z, leaving
-    // every mm-import's bboxes 1000x too big (which is also what made the later bbox-ratio
-    // self-heal misfire into "geometry hell"). Rules:
-    //   span > 1500 in any axis (incl. element bbox extents) ⇒ mm model ⇒ scale centers,
-    //     verts AND bboxes by 0.001, together, once. (No real building spans 1.5km; a mm
-    //     building spans ≥ ~1500 even for a 1.5m shed.)
-    //   after unit normalisation, any axis whose coordinates sit > 10km from origin ⇒
-    //     georeferenced ⇒ REBASE that axis to a local origin (whole-metre offset, recorded
-    //     in project_metadata as georef_offset_*) — position is an offset problem, not a
-    //     unit problem, and float32 render/positions paths lose precision at map magnitude.
+    // §UNITS v3 (2026-10-04, CIVIL_HIGHWAY_JELAPANG.md §A): web-ifc (0.0.77) bakes the file's declared
+    // length unit into flatTransformation, so every element arrives HERE in metres — measured: a MILLI
+    // house 16.9 m, a MILLI hospital 101.5 m, a METRE highway 2050.4 m. The old v2 rule
+    // ("span > 1500 ⇒ mm ⇒ ×0.001") therefore never fired on a building and only fired on a genuinely
+    // >1.5 km metre model, crushing it 1000× (JELAPANG road: 2 km → 2 m). Removed — no rescale here.
+    //   Still: any axis whose coordinates sit > 10 km from origin ⇒ georeferenced ⇒ REBASE that axis
+    //   to a local origin (whole-metre offset, recorded in project_metadata as georef_offset_*).
     var autoScale = 1.0;
     var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
@@ -690,19 +692,6 @@ self.onmessage = async function(e) {
         _maxBbox = Math.max(_maxBbox, _t.bx || 0, _t.by || 0, _t.bz || 0);
       }
       var _span = Math.max(_maxC[0] - _minC[0], _maxC[1] - _minC[1], _maxC[2] - _minC[2], _maxBbox);
-      if (_span > 1500) {
-        autoScale = 0.001;
-        for (var ti = 0; ti < transforms.length; ti++) {
-          transforms[ti].cx *= 0.001; transforms[ti].cy *= 0.001; transforms[ti].cz *= 0.001;
-          transforms[ti].bx *= 0.001; transforms[ti].by *= 0.001; transforms[ti].bz *= 0.001;
-        }
-        for (var gi = 0; gi < geometries.length; gi++) {
-          var vBuf = new Float32Array(geometries[gi].vertices);
-          for (var vi = 0; vi < vBuf.length; vi++) vBuf[vi] *= 0.001;
-          geometries[gi].vertices = vBuf.buffer;
-        }
-        for (var _ax = 0; _ax < 3; _ax++) { _minC[_ax] *= 0.001; _maxC[_ax] *= 0.001; }
-      }
       var _computed = [0, 0, 0];
       for (var _ax = 0; _ax < 3; _ax++) {
         var _mid = (_minC[_ax] + _maxC[_ax]) / 2;
@@ -742,10 +731,9 @@ self.onmessage = async function(e) {
         }
         console.log('[S220] §GEOREF_REBASE offset=(' + georefOffset.join(',') + ') — georeferenced site rebased to local origin (offset kept in project_metadata)');
       }
-      console.log('[S220] §UNITS_V2 span=' + _span.toFixed(1) + ' autoScale=' + autoScale +
-        (autoScale !== 1.0 ? ' (mm→m, centers+verts+bboxes together)' : ' (already metres)'));
+      console.log('[S220] §UNITS_V3 span=' + _span.toFixed(1) + 'm autoScale=1 (web-ifc normalised to metres; no span rescale)');
     } else {
-      console.log('[S220] §UNITS_V2 span=n/a autoScale=1 (no transforms)');
+      console.log('[S220] §UNITS_V3 span=n/a autoScale=1 (no transforms) INCONCLUSIVE');
     }
 
     // §SITE_IDENTITY (2026-07-12): read this file's own IfcSite GlobalId + raw placement, scaled
@@ -1116,7 +1104,7 @@ self.onmessage = async function(e) {
         disciplines: discCounts,
         flowTermSplit: flowTermSplit, // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal was split by name
         storeys: storeys,
-        unitScale: autoScale,        // §UNITS_V2 — 0.001 when a mm-unit model was normalised to metres
+        unitScale: autoScale,        // §UNITS_V3 — always 1 (web-ifc delivers metres); kept for old-DB schema compat
         georefOffset: georefOffset,  // §GEOREF_REBASE — whole-metre site offset subtracted from centers
         appliedGeorefOffset: georefOffset, // alias, explicit name for §SITE_IDENTITY correction math
         siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any

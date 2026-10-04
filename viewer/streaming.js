@@ -3878,6 +3878,26 @@ function setupStreaming(A) {
       envW = xMax - xMin;
       envD = yMax - yMin;
       envH = zMax - zMin;
+      // §FRAME_ROBUST (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §I.3): a few stray elements
+      // (LTU PLB: 426 m vs a ~126 m core) push the camera ~3x too far. When strays are detached, frame
+      // on the 2nd–98th percentile of element centres. Strays stay loaded and visible.
+      const _cq = A.dbQuery(`SELECT center_x, center_y, center_z FROM element_transforms WHERE center_x IS NOT NULL`);
+      if (_cq.length >= 50) {
+        const _pct = (ax) => {
+          const v = _cq.map(r => r[ax]).sort((a, b) => a - b);
+          return v[Math.floor(v.length * 0.98)] - v[Math.floor(v.length * 0.02)];
+        };
+        const rW = _pct(0), rD = _pct(1), rH = _pct(2);
+        // Trim ONLY when the outer 2% are detached strays: full envelope > 2x the p2–98 envelope.
+        // Measured 2026-10-04 (ratio full/p2-98): LTU 426/126=3.4 (PLB strays) → trim; Hospital
+        // 151/85=1.8, Duplex 22/17=1.3, Terminal 69/60=1.15 → keep (real wings, not strays).
+        const _full = Math.max(envW, envD, envH), _core = Math.max(rW, rD, rH);
+        const _trim = _core > 0 && _full > 2 * _core;
+        console.log(`§FRAME_ROBUST n=${_cq.length} minmax=${envW.toFixed(0)}x${envD.toFixed(0)}x${envH.toFixed(0)}m p2-98=${rW.toFixed(0)}x${rD.toFixed(0)}x${rH.toFixed(0)}m ratio=${_core > 0 ? (_full / _core).toFixed(2) : 'n/a'} ${_trim ? 'TRIM (strays detached)' : 'KEEP min/max'}`);
+        if (_trim) { envW = rW; envD = rD; envH = Math.max(rH, 1); }
+      } else {
+        console.log(`§FRAME_ROBUST n=${_cq.length} <50 — min/max kept (too few elements for percentiles)`);
+      }
     }
     // If envelope is too small (re-centred DB), use sum of bbox spreads from buildingCentres
     if (envW < 1 && Object.keys(A.buildingCentres).length > 0) {
