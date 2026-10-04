@@ -822,16 +822,36 @@ function setupTour(A) {
   // instead of a room route (user: "using back Fly feature the timeline scrubber must also appear.. no new invention
   // of Fly tour"; "the markers along the timeline can be the traffic stops"). Uses only existing actions: moveTo
   // (start), flyPath (along the road), orbit fullCircle (rise → circle → descend to eye height) at each traffic
-  // signal, named so the scrubber labels them. GATE: the model has element_psets with 01_Component_Name=MAINLINE
+  // signal, named so the scrubber labels them. GATE: the model has element_psets matching civil_labels.json route_path
   // (civil imports only, §CIVIL_PSETS) — a building has no such table → null → the room tour below, unchanged.
+  A._civilLabels = null;   // civil_labels.json — loaded once, Settings overrides honoured (§S282c)
+  (window.loadJsonWithOverrides ? window.loadJsonWithOverrides('civil_labels.json?v=1', 'json_civil_labels')
+    : fetch('civil_labels.json?v=1').then(function (r) { return r.json(); }))
+    .then(function (j) { A._civilLabels = j || null; }).catch(function (e) { console.warn('[TOUR] §CIVIL_LABELS load failed: ' + e.message); });
   A._civilRouteTour = function() {
     var q = function (sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } };
-    var has = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'");
-    if (!has.length) return null;
-    var rows = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
-      "WHERE p.name='01_Component_Name' AND p.value='MAINLINE'");
-    if (rows.length < 10) { console.log('[TOUR] §CIVIL_ROUTE skip mainline=' + rows.length + ' (need >= 10)'); return null; }
-    // order MAINLINE pieces along their principal axis, one median point per BIN_M (data-only path, no alignment in IFC2X3)
+    var has = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'").length > 0;
+    // Which labels mean "the carriageway" and "a stop" is project data (civil_labels.json, editable in Settings),
+    // never written here. sqlEsc: the values are user-editable config.
+    var L = A._civilLabels || {}, sqlEsc = function (v) { return "'" + String(v).replace(/'/g, "''") + "'"; };
+    var pathConds = (L.route_path || []).filter(function (c) { return c && c.name && c.value != null; })
+      .map(function (c) { return '(p.name=' + sqlEsc(c.name) + ' AND p.value=' + sqlEsc(c.value) + ')'; });
+    var rows = has && pathConds.length ? q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE " + pathConds.join(' OR ') + " GROUP BY t.guid") : [];
+    var routeSrc = 'mainline';
+    // §CIVIL_ROUTE_LAZY (CIVIL_HIGHWAY_JELAPANG.md §X, user 2026-10-05: "behave as expected when imported fresh … or lazy
+    // when Fly tour is called"): a civil import saved before property labels existed (no element_psets, or no route_path
+    // label) still has its ROAD discipline from the file name — fly over every ROAD piece instead of dropping to the
+    // orbit fallback. ROAD is a civil-only discipline (import_worker CIVIL_DISCS) → a building never reaches this.
+    if (rows.length < 10) {
+      var road = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid " +
+        "WHERE m.discipline='ROAD' AND t.center_x IS NOT NULL");
+      if (road.length < 10) { console.log('[TOUR] §CIVIL_ROUTE skip mainline=' + rows.length + ' road=' + road.length + ' psets=' + has + ' (need >= 10)'); return null; }
+      console.log('[TOUR] §CIVIL_ROUTE_LAZY psets=' + has + ' labelsLoaded=' + !!A._civilLabels + ' mainline=' + rows.length + ' → road-discipline route over ' + road.length +
+        ' ROAD pieces (labels missing: re-import for the single-carriageway path + signal stops)');
+      rows = road; routeSrc = 'road-discipline';
+    }
+    // order the route pieces along their principal axis, one median point per BIN_M (data-only path, no alignment in IFC2X3)
     var n = rows.length, mx = 0, my = 0;
     rows.forEach(function (r) { mx += r[0]; my += r[1]; }); mx /= n; my /= n;
     var sxx = 0, syy = 0, sxy = 0;
@@ -847,8 +867,10 @@ function setupTour(A) {
     var maxJump = 0;
     for (var i = 1; i < path.length; i++) maxJump = Math.max(maxJump, Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z));
     // traffic signals (pset label) → stops, clustered within 60 m, each mapped to its nearest path point
-    var sig = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
-      "WHERE p.value LIKE 'TRAFFIC SIGNAL%' AND p.value NOT LIKE '%AHEAD%' GROUP BY t.guid");
+    var stopRule = (L.route_stops || []).filter(function (c) { return c && c.value_like; })[0] || null;
+    var sig = !has || !stopRule ? [] : q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE p.value LIKE " + sqlEsc(stopRule.value_like) + (stopRule.value_not_like ? " AND p.value NOT LIKE " + sqlEsc(stopRule.value_not_like) : '') + " GROUP BY t.guid");
+    var stopLabel = (stopRule && stopRule.label) || 'Stop';
     var stops = [];
     sig.forEach(function (r) {
       var c = A.ifc2three(r[0], r[1], r[2]), hit = null;
@@ -871,14 +893,14 @@ function setupTour(A) {
       var f = seg(cur, Math.max(cur + 1, st.at), si === 0 ? 'Along the highway' : 'Continue');
       if (f) actions.push(f);
       actions.push({ type: 'orbit', cx: st.x, cy: st.y, cz: st.z, radius: 25, tiltDeg: 35, fullCircle: true, duration: 10,
-                     name: 'Traffic signal ' + (si + 1) + (st.n > 1 ? ' (' + st.n + ' columns)' : '') });
+                     name: stopLabel + ' ' + (si + 1) + (st.n > 1 ? ' (' + st.n + ' columns)' : '') });
       cur = Math.max(cur + 1, st.at);
     });
     var last = seg(cur, path.length - 1, stops.length ? 'Continue to end' : 'Along the highway');
     if (last) actions.push(last);
     actions.push({ type: 'pause', seconds: 1, name: 'End of highway' });
     var plen = 0; for (var m2 = 1; m2 < path.length; m2++) plen += Math.hypot(path[m2].x - path[m2 - 1].x, path[m2].z - path[m2 - 1].z);
-    console.log('[TOUR] §CIVIL_ROUTE mainline=' + n + ' bins=' + path.length + ' binM=' + BIN_M + ' pathLen=' + plen.toFixed(0) + 'm maxStep=' + maxJump.toFixed(0) +
+    console.log('[TOUR] §CIVIL_ROUTE src=' + routeSrc + ' mainline=' + n + ' bins=' + path.length + ' binM=' + BIN_M + ' pathLen=' + plen.toFixed(0) + 'm maxStep=' + maxJump.toFixed(0) +
       'm altM=' + ALT_M + ' speed=' + SPEED + 'm/s signals=' + sig.length + ' stops=' + stops.length +
       ' stopOffsets=[' + stops.map(function (st) { return st.off.toFixed(0); }).join(',') + ']m actions=' + actions.length);
     return actions;
