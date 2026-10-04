@@ -377,6 +377,8 @@
       else if (spec.timing === 'BEFORE_SAVE') {   // PO.beforeSave derivations for a record the HOST will write: returns the derived columns, no ops
         var rec2 = {}; for (var k2 in spec.record) rec2[k2.toLowerCase()] = spec.record[k2];
         var M2 = MODEL[table] || {}, before = Object.assign({}, rec2);
+        // a NEW record from a window is `new MX(ctx,0)` first: the class's setInitialDefaults fill what the form left empty
+        if (spec.isNew && M2.initialDefaults) Object.keys(M2.initialDefaults).forEach(function (c) { if (rec2[c] == null || rec2[c] === '') rec2[c] = M2.initialDefaults[c]; });
         var e2 = M2.beforeSave ? M2.beforeSave(trx, rec2, !!spec.isNew, spec.old || null) : null;
         if (!e2) e2 = fire(trx, spec.isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec2, { recordOld: spec.old || null });
         var derived = {}; Object.keys(rec2).forEach(function (c) { if (String(rec2[c]) !== String(before[c])) derived[c] = rec2[c]; });

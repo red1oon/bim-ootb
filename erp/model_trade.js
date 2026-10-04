@@ -19,6 +19,9 @@
   function one(trx, t, w) { return trx.find(t, w)[0] || null; }
   function msg(trx, m) { trx._msg = m; return m; }
 
+  // Msg.getMsg(ctx, value) — the AD_Message text (shipped rows only for what the model writes); absent → the key itself
+  function msgText(trx, value) { try { var r = trx.q('SELECT msgtext FROM ad_message WHERE value=?', [value])[0]; return r ? r.msgtext : value; } catch (e) { return value; } }
+  function addDescription(trx, table, row, text) { trx.update(table, row, { description: row.description == null || row.description === '' ? text : row.description + ' | ' + text }); }   // MOrder/MOrderLine.addDescription :557-564/:632-639
   // ── reference reads (MDocType.get, MProduct.get, … — cached per Trx like the Java caches) ──────────────────
   function dt(trx, i) { return i ? trx.get('c_doctype', i) : null; }
   function product(trx, i) { return nz(i) ? trx.get('m_product', i) : null; }
@@ -127,18 +130,33 @@
     });
     return amt.setScale(precisionOf(trx, p.c_currency_id), HU);
   }
-  // MBPartner.setTotalOpenBalance :711-757 (base currency only — currencyBase = identity when invoice currency = schema currency)
+  // MConversionRate.getRate — client/org specific first, latest ValidFrom (conversion type: the document's, else the default)
+  function rate(trx, from, to, date, convType) {
+    if (String(from) === String(to)) return BigDecimal.ONE;
+    var ct = convType;
+    if (!nz(ct)) { var d = trx.q("SELECT c_conversiontype_id AS c FROM c_conversiontype WHERE isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0]; ct = d ? d.c : null; }
+    var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client])[0];
+    return r ? D(r.m) : null;
+  }
+  // currencyBase(amt, cur, date, client, org) (PG function) — into the client's accounting currency (AD_ClientInfo.C_AcctSchema1_ID)
+  function currencyBase(trx, amt, cur, date) {
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
+    if (!as || String(as.c_currency_id) === String(cur)) return D(amt);
+    var r = rate(trx, cur, as.c_currency_id, date, null);
+    return r ? D(amt).multiply(r).setScale(precisionOf(trx, as.c_currency_id), HU) : D(amt);
+  }
+  // MBPartner.setTotalOpenBalance :711-757 — SUM(currencyBase(invoiceOpen …)) / currencyBase(paymentAvailable …)
   function bpOpenBalance(trx, bpId) {
     var credit = Z, bal = Z;
     trx.find('c_invoice', { c_bpartner_id: bpId }).forEach(function (i) {
       if (i.ispaid !== 'N' || !/^(CO|CL)$/.test(i.docstatus || '')) return;
-      var o = invoiceOpen(trx, i), m = invMult(trx, i);
+      var o = currencyBase(trx, invoiceOpen(trx, i), i.c_currency_id, i.dateinvoiced), m = invMult(trx, i);
       if (i.issotrx === 'Y') credit = credit.add(o);
       bal = bal.add(o.multiply(D(m.ap)));
     });
     trx.find('c_payment', { c_bpartner_id: bpId }).forEach(function (p) {
       if (p.isallocated !== 'N' || nz(p.c_charge_id) || !/^(CO|CL)$/.test(p.docstatus || '')) return;
-      bal = bal.subtract(paymentAvailable(trx, p));
+      bal = bal.subtract(currencyBase(trx, paymentAvailable(trx, p), p.c_currency_id, p.datetrx));
     });
     return { so_creditused: credit, totalopenbalance: bal };
   }
@@ -159,7 +177,7 @@
     trx.update('c_bpartner', bp, ch);
   }
 
-  return { D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
+  return { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
     precisionOf: precisionOf, tax: tax, calcTax: calcTax, periodOpen: periodOpen, nextDocNo: nextDocNo, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
     creditStatus: creditStatus, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z };

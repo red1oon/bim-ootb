@@ -16,7 +16,7 @@ def lit(v):
     if isinstance(v, datetime.date): return "'" + v.strftime('%Y-%m-%d') + " 00:00:00'"
     return "'" + str(v).replace("'", "''").replace('\n', ' ') + "'"
 out = []; n = 0
-for t in ['m_inoutlinema', 'm_storagereservationlog', 'm_costdetail', 'm_costhistory', 'm_costqueue', 'ad_workflow', 'ad_wf_node', 'c_conversiontype', 'c_paymentallocate', 'c_orderlandedcost', 'c_orderpayschedule']:
+for t in ['ad_message', 'm_inoutlinema', 'm_storagereservationlog', 'm_costdetail', 'm_costhistory', 'm_costqueue', 'ad_workflow', 'ad_wf_node', 'c_conversiontype', 'c_paymentallocate', 'c_orderlandedcost', 'c_orderpayschedule']:
     out.append('CREATE TABLE IF NOT EXISTS %s (%s);' % (t, ', '.join('"%s" %s' % (c, aff(d)) for c, d in cols(t))))
 for c, d in cols('fact_acct'):
     if c in ('c_locfrom_id', 'c_locto_id', 'c_uom_id', 'ad_orgtrx_id', 'c_activity_id', 'c_campaign_id', 'c_project_id', 'c_salesregion_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id', 'm_warehouse_id'):
@@ -30,7 +30,17 @@ def rows(t, where):
 WF = "ad_workflow_id in (select ad_workflow_id from ad_process where ad_process_id in (select ad_process_id from ad_column where columnname='DocAction'))"
 rows('ad_workflow', WF); rows('ad_wf_node', WF)
 rows('ad_wf_nodenext', 'ad_wf_node_id in (select ad_wf_node_id from ad_wf_node where %s)' % WF)
+rows('ad_message', "value in ('Voided')")   # Msg.getMsg texts the model writes into documents (MOrder.voidIt)
 rows('c_conversiontype', 'true'); rows('m_costqueue', 'ad_client_id=11')
+# M_StorageOnHand / M_StorageReservation: the bundle carries a subset (reservation 2 of the reference's rows) captured earlier —
+# the model's MStorage*.add must start from the reference quantities. Insert missing rows by UU, re-sync quantities by UU.
+for t, qcols in (('m_storageonhand', ['qtyonhand']), ('m_storagereservation', ['qty'])):
+    cs = [c for c, _ in cols(t)]
+    cur.execute('select %s from %s where ad_client_id=11' % (', '.join('"%s"' % c for c in cs), t))
+    for r in cur.fetchall():
+        d = dict(zip(cs, r)); uu = d[t + '_uu']
+        out.append('INSERT INTO %s (%s) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM %s WHERE %s_uu=%s);' % (t, ', '.join('"%s"' % c for c in cs), ', '.join(lit(v) for v in r), t, t, lit(uu)))
+        out.append('UPDATE %s SET %s WHERE %s_uu=%s;' % (t, ', '.join('%s=%s' % (q, lit(d[q])) for q in qcols), t, lit(uu))); n += 2
 # the bundle's M_Cost rows were captured before the reference DB's cost history settled (e.g. product 130 Standard element:
 # bundle CurrentQty 0 vs 19) — re-sync the value columns by the row's own UU (idempotent UPDATE, no new rows)
 cur.execute("select m_cost_uu, currentcostprice, currentqty, cumulatedamt, cumulatedqty, futurecostprice from m_cost where ad_client_id=11 and m_cost_uu is not null")

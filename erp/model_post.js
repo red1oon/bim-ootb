@@ -42,14 +42,7 @@
     inTransit: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_intransit_acct', 'c_bankaccount_id', b, s); },
     unallocated: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_unallocatedcash_acct', 'c_bankaccount_id', b, s); }
   };
-  // MConversionRate.getRate (MConversionRate.java) — client/org specific first, latest ValidFrom
-  function rate(trx, from, to, date, convType) {
-    if (String(from) === String(to)) return BigDecimal.ONE;
-    var ct = convType;
-    if (!nz(ct)) { var d = trx.q("SELECT c_conversiontype_id AS c FROM c_conversiontype WHERE isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0]; ct = d ? d.c : null; }
-    var r = trx.q('SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND isactive=\'Y\' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC', [from, to, ct, date, date, trx.env.client])[0];
-    return r ? D(r.m) : null;
-  }
+  var rate = T.rate;   // MConversionRate.getRate — one implementation (model_trade.js)
   function periodId(trx, date) {
     var d = String(date || '').slice(0, 10);
     var p = trx.q("SELECT p.c_period_id AS id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN ad_clientinfo ci ON ci.c_calendar_id=y.c_calendar_id WHERE ci.ad_client_id=? AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [trx.env.client, d, d])[0];

@@ -185,6 +185,37 @@
       trx.update('c_order', o, { docaction: 'CL' });
       return 'CO';
     },
+    // MOrder.voidIt :2680-2760 — reversals of completed shipments/invoices (createReversals :2762, MInOut/MInvoice.reverseCorrectIt)
+    // are not ported: an order that HAS them is refused by name; an order without them voids exactly as iDempiere does.
+    voidIt: function (trx, o) {
+      var m = fire(trx, 'BEFORE_VOID', 'c_order', o); if (m) { T.msg(trx, m); return false; }
+      if (nz(o.link_order_id)) { var so = trx.get('c_order', o.link_order_id); if (so) trx.update('c_order', so, { link_order_id: null }); }
+      var live = trx.find('m_inout', { c_order_id: o.c_order_id }).concat(trx.find('c_invoice', { c_order_id: o.c_order_id })).filter(function (d) { return !/^(CL|RE|VO)$/.test(d.docstatus || ''); });
+      if (live.length) { T.msg(trx, 'createReversals (MOrder.java:2762 → reverseCorrectIt) not ported — ' + live.length + ' shipment/invoice to reverse; named'); return false; }
+      if (!Y(o.issotrx) && trx.find('m_matchpo', { c_orderline_id: null }).length) { /* deleteMatchPOCostDetail — P2P, named with the P2P lane */ }
+      var ls = lines(trx, o, ['m_product_id']), voided = T.msgText(trx, 'Voided');
+      ls.forEach(function (l) {
+        var old = D(l.qtyordered);
+        if (old.signum() !== 0) { T.addDescription(trx, 'c_orderline', l, voided + ' (' + old.toString() + ')'); trx.update('c_orderline', l, { qtyordered: 0, qtyentered: 0, linenetamt: 0 }); }   // setQty(0) = QtyEntered+QtyOrdered
+        if (nz(l.link_orderline_id)) { var sl = trx.get('c_orderline', l.link_orderline_id); if (sl) trx.update('c_orderline', sl, { link_orderline_id: null }); }
+      });
+      var prec = T.precisionOf(trx, o.c_currency_id), incl = Y((trx.get('m_pricelist', o.m_pricelist_id) || {}).istaxincluded);
+      trx.find('c_ordertax', { c_order_id: o.c_order_id }).forEach(function (ot) {           // tax.calculateTaxFromLines + save
+        var t = T.tax(trx, ot.c_tax_id), base = Z, amt = Z;
+        lines(trx, o).forEach(function (x) { if (String(x.c_tax_id) === String(ot.c_tax_id)) { base = base.add(D(x.linenetamt)); if (!Y(t.isdocumentlevel)) amt = amt.add(T.calcTax(trx, t, x.linenetamt, incl, prec)); } });
+        if (Y(t.isdocumentlevel)) amt = T.calcTax(trx, t, base, incl, prec);
+        trx.update('c_ordertax', ot, { taxamt: N(amt), taxbaseamt: N(incl ? base.subtract(amt) : base) });
+      });
+      T.addDescription(trx, 'c_order', o, voided);
+      if (!reserveStock(trx, trx.get('c_order', o.c_order_id), T.dt(trx, o.c_doctype_id), lines(trx, o, ['m_product_id']))) { T.msg(trx, 'Cannot unreserve Stock (void)'); return false; }
+      trx.find('fact_acct', { ad_table_id: 259, record_id: o.c_order_id }).forEach(function (f) { trx.del('fact_acct', f); });   // MFactAcct.deleteEx
+      trx.update('c_order', o, { posted: 'N' });
+      m = fire(trx, 'AFTER_VOID', 'c_order', o); if (m) { T.msg(trx, m); return false; }
+      trx.update('c_order', o, { totallines: 0, grandtotal: 0, docaction: '--' });
+      setProcessed(trx, o, 'Y');
+      trx.update('c_order', o, { docstatus: 'VO' });                                          // DocumentEngine.voidIt → STATUS_Voided
+      return true;
+    },
     approveIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'Y' }); return true; },
     rejectIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'N' }); return true; },
     getSummary: function (trx, o) { return (o.documentno || '') + ': Grand Total=' + o.grandtotal + (o.description ? ' - ' + o.description : ''); }   // :3099-3112
