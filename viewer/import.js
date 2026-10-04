@@ -281,7 +281,7 @@ function setupImport(A) {
     if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
 
     // Process each file sequentially — accumulate results
-    var allElements = [], allGeometries = [], allTransforms = [];
+    var allElements = [], allGeometries = [], allTransforms = [], allPsets = [];   // §CIVIL_PSETS
     var allDiscs = {}, allStoreys = new Set();
     var totalElements = 0;
     // §GEOREF_REBASE federation frame: the first file that computes a georef offset pins it
@@ -312,6 +312,7 @@ function setupImport(A) {
         allElements = allElements.concat(result.elements);
         allGeometries = allGeometries.concat(result.geometries);
         allTransforms = allTransforms.concat(result.transforms);
+        if (result.psets && result.psets.length) allPsets = allPsets.concat(result.psets);   // §CIVIL_PSETS
         totalElements += result.meta.elementCount;
         for (var d in result.meta.disciplines) {
           allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
@@ -348,6 +349,7 @@ function setupImport(A) {
         elements: allElements,
         geometries: allGeometries,
         transforms: allTransforms,
+        psets: allPsets,   // §CIVIL_PSETS
       };
       var dbs = buildImportDBs(SQL, mergedData);
 

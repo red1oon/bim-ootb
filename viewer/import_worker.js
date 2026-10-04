@@ -1094,6 +1094,49 @@ self.onmessage = async function(e) {
       console.log('§4D_NONE no scheduling data in this IFC');
     }
 
+    // §CIVIL_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S P-1 / §E.2): property labels for CIVIL
+    // discipline files only — a civil set carries its identity in psets (JKR DAK: 01_Component_Name MAINLINE /
+    // ROAD J2A…, 15_Name TRAFFIC SIGNAL, 16_Name + 17_Code sign codes, 02_Type + 03_Dimension drain sizes) while its
+    // element Name is a generic 'IfcBuildingElementProxy_<id>'. Building files are NOT read here (Revit sets carry
+    // dozens of props per element — that cost is a separate, measured decision) → building imports unchanged.
+    // One pass over IfcRelDefinesByProperties; property lines cached per pset; only non-empty single values kept.
+    var psets = [];
+    var _psDisc = discFromFilename(filename);
+    if (_psDisc && CIVIL_DISCS.indexOf(_psDisc) >= 0) {
+      var _psT0 = Date.now(), _psRels = 0, _psSets = 0, _guidOfId = {}, _psCache = {};
+      renderableElements.forEach(function (e) { _guidOfId[e.expressID] = e.guid; });
+      try {
+        var _rels = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES);
+        for (var _ri = 0; _ri < _rels.size(); _ri++) {
+          var _rel = ifcApi.GetLine(modelID, _rels.get(_ri)); _psRels++;
+          var _objs = (_rel.RelatedObjects || []).map(function (o) { return _guidOfId[o.value != null ? o.value : o]; }).filter(Boolean);
+          if (!_objs.length || !_rel.RelatingPropertyDefinition) continue;
+          var _pid = _rel.RelatingPropertyDefinition.value != null ? _rel.RelatingPropertyDefinition.value : _rel.RelatingPropertyDefinition;
+          var _vals = _psCache[_pid];
+          if (!_vals) {
+            _vals = [];
+            var _ps = ifcApi.GetLine(modelID, _pid);
+            if (_ps && _ps.HasProperties) {
+              _psSets++;
+              var _psName = (_ps.Name && _ps.Name.value) || '';
+              _ps.HasProperties.forEach(function (h) {
+                var _pr = ifcApi.GetLine(modelID, h.value != null ? h.value : h);
+                var _v = _pr && _pr.NominalValue && _pr.NominalValue.value;
+                if (_v == null) return;
+                _v = String(_v).trim();
+                if (!_v || _v === '-' || _v === '.') return;
+                _vals.push([_psName, (_pr.Name && _pr.Name.value) || '', _v]);
+              });
+            }
+            _psCache[_pid] = _vals;
+          }
+          for (var _oi = 0; _oi < _objs.length; _oi++) for (var _vi = 0; _vi < _vals.length; _vi++) psets.push([_objs[_oi], _vals[_vi][0], _vals[_vi][1], _vals[_vi][2]]);
+        }
+      } catch (psErr) { console.warn('§CIVIL_PSETS_ERR ' + psErr.message); }
+      console.log('§CIVIL_PSETS file=' + filename + ' disc=' + _psDisc + ' rels=' + _psRels + ' psets=' + _psSets +
+        ' values=' + psets.length + ' ms=' + (Date.now() - _psT0) + (psets.length ? '' : ' VACUOUS — no non-empty property values'));
+    }
+
     const result = {
       type: 'done',
       meta: {
@@ -1121,6 +1164,7 @@ self.onmessage = async function(e) {
       taskSequences: taskSequences,
       taskElements: taskElements,
       calendars: calendars,  // T1b §5.2 — thin work-calendar carrier
+      psets: psets,          // §CIVIL_PSETS — [guid, pset, name, value]; empty for non-civil files
     };
 
     // Transfer array buffers for zero-copy
