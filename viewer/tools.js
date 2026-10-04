@@ -992,6 +992,42 @@ function setupTools(A) {
       A.sun.shadow.bias = -0.0005;
       A.sun.shadow.camera.updateProjectionMatrix();
       console.log('§SHADOW_FRUSTUM env=' + _env + ' sunDist=' + _sunDist.toFixed(0) + ' near=' + (A.sun.shadow.camera.near).toFixed(0) + ' far=' + (A.sun.shadow.camera.far).toFixed(0));
+      // §SHADOW_FOLLOW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §P): one 2048² map over a whole large
+      // site is too coarse for thin casters — JELAPANG env 2114 m → 2.06 m/texel, so 0.2 m lamp poles cast
+      // nothing (and the depth range made bias ≈ metres). When the full-site texel exceeds 0.25 m
+      // (env > 256 m), fit the shadow box to the camera's neighbourhood instead and refit after each camera
+      // move, keeping the sun's current DIRECTION (TM sun-cycle keeps owning that). Buildings ≤ 256 m: unchanged.
+      A._shadowFollowEnv = _env;
+      if (2 * _env / A.sun.shadow.mapSize.width > 0.25) {
+        if (!A._shadowFollowFn) {
+          var _sfT = null;
+          A._shadowFollowFn = function () {
+            if (_sfT) clearTimeout(_sfT);
+            _sfT = setTimeout(function () {
+              _sfT = null;
+              if (!A._shadowOn || !A.sun.castShadow) return;
+              var tgt = A.controls.target, envF = A._shadowFollowEnv || 300;
+              var half = Math.min(envF, Math.max(40, A.camera.position.distanceTo(tgt) * 1.2));
+              var dir = A.sun.position.clone().sub(A.sun.target.position);
+              if (dir.lengthSq() < 1e-6) dir.set(0.8, 2, 0.6);
+              dir.normalize();
+              var dist = half * 2.24;
+              A.sun.target.position.copy(tgt); A.sun.target.updateMatrixWorld();
+              A.sun.position.copy(tgt).addScaledVector(dir, dist);
+              var sc = A.sun.shadow.camera;
+              sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+              sc.near = dist * 0.05; sc.far = dist * 4; sc.updateProjectionMatrix();
+              A.renderer.shadowMap.needsUpdate = true;
+              if (A.markDirty) A.markDirty();
+              console.log('§SHADOW_FOLLOW half=' + half.toFixed(0) + 'm texel=' + (2 * half / A.sun.shadow.mapSize.width).toFixed(3) + 'm env=' + envF);
+            }, 150);
+          };
+          A.controls.addEventListener('change', A._shadowFollowFn);
+        }
+        A._shadowFollowFn();
+      } else {
+        console.log('§SHADOW_FOLLOW off env=' + _env + ' texel=' + (2 * _env / A.sun.shadow.mapSize.width).toFixed(3) + 'm (whole-site map is fine)');
+      }
       // Show ground plane at building base
       if (A.ground) {
         A.ground.visible = true;
@@ -1019,6 +1055,7 @@ function setupTools(A) {
     }
     if (turningOff) {
       A.sun.castShadow = false;
+      if (A._shadowFollowFn) { A.controls.removeEventListener('change', A._shadowFollowFn); A._shadowFollowFn = null; }
       // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
       if (A._sky && !A._sunCycleActive) A._sky.visible = false;
       // §S277c: Disable SSAO with shadows
