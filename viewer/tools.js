@@ -1555,6 +1555,101 @@ function setupTools(A) {
           source = 'IFC';
         }
       } catch(e) {}
+      // §NIGHT_CIVIL_LAMPS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §W, user 2026-10-05: "Night lighting feature
+      // to consider road street/traffic lights"). A civil import names its elements 'IfcBuildingElementProxy_<id>', so
+      // the name vocabulary above finds nothing; its DISCIPLINE (from the file name, import_worker CIVIL_DISCS) says
+      // LIGHTING. Same owner, one more selector — gated on that civil-only discipline, so a building never enters here.
+      // The light sits at the LAMP HEAD read from the element's own mesh (top band, farthest from the pole = arm end;
+      // a double-arm column gives two heads), never the box centre (1.3–3.7 m off on JELAPANG's 4 m / 7.5 m arms).
+      // Rejected and counted: STRAYS — sort the bottoms of all LIGHTING elements; if the largest jump between consecutive
+      // bottoms is taller than the tallest of them, nothing standing on real ground explains it, so the SMALLER group
+      // below the jump is buried (export error). No datum, no tuned number: a road climbs gradually (JELAPANG 47→68 m —
+      // one ground height rejected 67 real poles there) and an isolated junction has no near neighbours to compare to.
+      // And boxes shorter than CIVIL_COLUMN_MIN_M (bases / junction boxes) — presentation rule, not data: a luminaire
+      // stands on a column. No project label (pset name/value) is read: discipline + geometry only.
+      try {
+        var CIVIL_COLUMN_MIN_M = 2.5;
+        var cr = A.db.exec("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_z, i.geometry_hash " +
+          "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid LEFT JOIN element_instances i ON i.guid=m.guid " +
+          "WHERE m.discipline='LIGHTING' AND t.center_x IS NOT NULL");
+        if (cr.length && cr[0].values.length) {
+          var cLit = {}; A._nightFixtures.forEach(function(f) { if (f.guid) cLit[f.guid] = 1; });
+          var bots = cr[0].values.map(function(r) { return r[3] - (r[6] || 0) / 2; }).sort(function(a, b) { return a - b; });
+          var maxH = 0; cr[0].values.forEach(function(r) { if ((r[6] || 0) > maxH) maxH = r[6] || 0; });
+          var gapLo = null, gapHi = null, gapM = 0, buriedBelow = null;
+          for (var gi = 1; gi < bots.length; gi++) if (bots[gi] - bots[gi - 1] > gapM) { gapM = bots[gi] - bots[gi - 1]; gapLo = bots[gi - 1]; gapHi = bots[gi]; }
+          if (gapM > maxH && bots.filter(function(b) { return b <= gapLo; }).length < bots.length / 2) buriedBelow = (gapLo + gapHi) / 2;
+          var cStray = 0, cLow = 0, cCols = 0, cHeads = 0, cMesh = 0, cBox = 0, cRot = 0, geoMemo = {};
+          var headsOf = function(hash) {
+            if (!hash) return null;
+            if (geoMemo[hash] !== undefined) return geoMemo[hash];
+            var res = null;
+            try {
+              var gr = A.db.exec("SELECT vertices FROM component_geometries WHERE geometry_hash='" + String(hash).replace(/'/g, "''") + "'");
+              var blob = gr.length && gr[0].values.length ? gr[0].values[0][0] : null;
+              if (blob && blob.byteLength >= 12) {
+                var v = new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + (blob.byteLength - blob.byteLength % 4)));
+                var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], k, j;
+                for (k = 0; k + 2 < v.length; k += 3) for (j = 0; j < 3; j++) { if (v[k + j] < mn[j]) mn[j] = v[k + j]; if (v[k + j] > mx[j]) mx[j] = v[k + j]; }
+                var px = 0, py = 0, pn2 = 0, top = [];
+                for (k = 0; k + 2 < v.length; k += 3) {
+                  if (v[k + 2] < mn[2] + 1) { px += v[k]; py += v[k + 1]; pn2++; }
+                  if (v[k + 2] > mx[2] - 0.5) top.push([v[k], v[k + 1]]);
+                }
+                if (pn2 && top.length) {
+                  px /= pn2; py /= pn2;
+                  var far = null, dMax = 0;
+                  top.forEach(function(q) { var d = Math.hypot(q[0] - px, q[1] - py); if (d > dMax) { dMax = d; far = q; } });
+                  var mid = [(mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2];
+                  var heads = [];
+                  if (dMax < 0.8) heads.push([px, py]);   // lantern on top of the column, no arm
+                  else {
+                    var ux = (far[0] - px) / dMax, uy = (far[1] - py) / dMax;
+                    [1, -1].forEach(function(sg) {
+                      var side = top.filter(function(q) { return sg * ((q[0] - px) * ux + (q[1] - py) * uy) > 0.8; });
+                      if (!side.length) return;
+                      var sMax = 0; side.forEach(function(q) { sMax = Math.max(sMax, Math.hypot(q[0] - px, q[1] - py)); });
+                      var end = side.filter(function(q) { return Math.hypot(q[0] - px, q[1] - py) > sMax - 0.5; });
+                      var hx = 0, hy = 0; end.forEach(function(q) { hx += q[0]; hy += q[1]; });
+                      heads.push([hx / end.length, hy / end.length]);
+                    });
+                  }
+                  res = { mid: mid, topZ: mx[2], heads: heads };
+                }
+              }
+            } catch (e) { res = null; }
+            geoMemo[hash] = res;
+            return res;
+          };
+          cr[0].values.forEach(function(r) {
+            var guid = r[0], cx = r[1], cy = r[2], cz = r[3], bz = r[6] || 0, rz = r[7] || 0;
+            if (cLit[guid]) return;
+            if (bz < CIVIL_COLUMN_MIN_M) { cLow++; return; }
+            if (buriedBelow !== null && cz - bz / 2 < buriedBelow) { cStray++; return; }
+            cCols++;
+            var nm = 'civil lighting column';
+            var g = headsOf(r[8]), pts;
+            if (g && g.heads.length) {
+              cMesh++;
+              if (rz) cRot++;
+              var cs = Math.cos(rz), sn = Math.sin(rz);
+              pts = g.heads.map(function(h) {
+                var lx = h[0] - g.mid[0], ly = h[1] - g.mid[1];
+                return [cx + lx * cs - ly * sn, cy + lx * sn + ly * cs, cz + (g.topZ - g.mid[2])];
+              });
+            } else { cBox++; pts = [[cx, cy, cz + bz / 2]]; }
+            pts.forEach(function(q, hi) {
+              A._nightFixtures.push({ x: q[0], y: q[1], z: q[2], name: nm, h: 0.3, bw: 0, bd: 0, rz: rz,
+                guid: hi === 0 ? guid : null, ghash: null, civil: true });
+              cHeads++;
+            });
+          });
+          console.log('§NIGHT_CIVIL_LAMPS lightingElements=' + cr[0].values.length + ' columns=' + cCols + ' heads=' + cHeads +
+            ' fromMesh=' + cMesh + ' boxTopFallback=' + cBox + ' strayBuried=' + cStray + ' (largest bottom gap ' + gapM.toFixed(1) + 'm vs tallest ' + maxH.toFixed(1) + 'm → ' + (buriedBelow === null ? 'no split' : 'below z=' + buriedBelow.toFixed(1)) + ')' +
+            ' shorterThanColumn=' + cLow + ' rotated=' + cRot + (cRot ? '' : ' VACUOUS(rotation)'));
+          if (cHeads) source = (source === 'none' ? '' : source + '+') + 'civil-lighting(' + cCols + ' columns, ' + cHeads + ' heads)';
+        }
+      } catch (e) { console.warn('§NIGHT_CIVIL_LAMPS query failed', e); }
       // §NIGHT_ROOM_FALLBACK (2026-08-07, user cascade: "1. fixtures on ceiling 2. any fixtures
       // 3. just per square empty per PL", refined same session after LTU corridors still read too
       // dark: "in rooms u can use flow terminal as been the only fixture around"). Uses REAL

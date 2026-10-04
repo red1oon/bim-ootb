@@ -2218,6 +2218,7 @@ function setupPanels(A) {
       { id: 'corporate',   label: 'Corporate / Branding', url: 'corporate.json',   storageKey: 'json_corporate' },
       { id: 'grid_rules',  label: 'Grid Rules',           url: 'grid_rules.json',  storageKey: 'json_grid_rules' },
       { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
+      { id: 'civil_labels', label: 'Civil Labels (road route / stops)', url: 'civil_labels.json', storageKey: 'json_civil_labels' },
       { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
         overrides: { color: { type: 'color' } } },
       { id: 'sfx',         label: 'Sound Effects',        url: 'sfx.json',         storageKey: 'json_sfx' },
