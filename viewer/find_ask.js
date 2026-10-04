@@ -72,7 +72,7 @@
       return (r.source.discipline === a && r.target.discipline === b) || (r.source.discipline === b && r.target.discipline === a);
     })[0];
     if (!rule) return _answer('clash_pair', q, 'INCONCLUSIVE', 'no rule for ' + a + '/' + b + ' in clash_rules.json', null, { sources: src });
-    rules._activeTolerance = rule.tolerance_m || 0.025;
+    rules._activeTolerance = A._clashTolerance ? A._clashTolerance(rule) : (rule.tolerance_m || 0.025);
     if (A._ensureClashIndexes) A._ensureClashIndexes();
     for (var i = 0; i < 120 && !A._clashRtreeReady; i++) await new Promise(function (r) { setTimeout(r, 250); });
     var rows = A._queryClashesPairAll(rules, a, b) || [];
