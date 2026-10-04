@@ -55,26 +55,41 @@ const server = http.createServer((req, res) => { try {
       const cols = {}; q("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='LIGHTING'")
         .forEach(r => { cols[r[0]] = r; });
       const civil = F.filter(f => f.civil);
-      // each head row's column = the guid on its first head; later heads of the same column carry guid null → pair by order
-      let lastCol = null, inBox = 0, nearTop = 0, belowGround = 0, offCentre = 0, worst = 0;
+      // ORACLE = what the RENDERER draws, not DB arithmetic (an earlier version of this witness shared the module's
+      // "center = box middle" assumption and passed while every head was 3.6 m low — DB center is the vertex CENTROID).
+      // World box of a column = its own geometry (meshCache[hash]) × the live scene matrix of its batch/instance slot.
+      const hashOf = {}; q("SELECT i.guid, i.geometry_hash FROM element_instances i JOIN elements_meta m ON m.guid=i.guid WHERE m.discipline='LIGHTING'").forEach(r => { hashOf[r[0]] = r[1]; });
+      const slotOf = {}; for (const id in (A._batchMeta || {})) (A._batchMeta[id] || []).forEach(e => { slotOf[e.guid] = { meshId: +id, idx: e.slotId }; });
+      const T = window.THREE, M = new T.Matrix4();
+      const worldBox = guid => {
+        const geo = A.meshCache && A.meshCache[hashOf[guid]]; if (!geo) return null;
+        let obj = null, idx = -1; const sl = slotOf[guid], ig = A._instanceGuids && A._instanceGuids[guid];
+        if (sl) { obj = A.scene.getObjectById(sl.meshId); idx = sl.idx; } else if (ig) { obj = A.scene.getObjectById(ig.meshId); idx = ig.instanceIndex; }
+        if (!obj || idx < 0 || !obj.getMatrixAt) return null;
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        obj.getMatrixAt(idx, M); obj.updateMatrixWorld(true);
+        return geo.boundingBox.clone().applyMatrix4(new T.Matrix4().multiplyMatrices(obj.matrixWorld, M));
+      };
+      let lastBox = null, lastCol = null, inBox = 0, nearTop = 0, judged = 0, unjudged = 0, offCentre = 0, worst = 0, worstTopErr = 0;
       civil.forEach(f => {
-        if (f.guid) lastCol = cols[f.guid];
-        const c = lastCol; if (!c) return;
-        const top = c[3] + c[6] / 2;
-        if (f.x >= c[1] - c[4] / 2 - 0.05 && f.x <= c[1] + c[4] / 2 + 0.05 && f.y >= c[2] - c[5] / 2 - 0.05 && f.y <= c[2] + c[5] / 2 + 0.05) inBox++;
-        if (Math.abs(f.z - top) <= 0.05) nearTop++;
-        if (typeof A.groundIfcZ === 'number' && c[3] - c[6] / 2 < A.groundIfcZ - 1) belowGround++;
-        const d = Math.hypot(f.x - c[1], f.y - c[2]); if (d > 0.5) offCentre++; worst = Math.max(worst, d);
+        if (f.guid) { lastCol = cols[f.guid]; lastBox = worldBox(f.guid); }
+        if (!lastBox) { unjudged++; return; }
+        judged++;
+        const h = A.ifc2three(f.x, f.y, f.z), e = 0.05;
+        const topErr = Math.abs(h.y - lastBox.max.y); worstTopErr = Math.max(worstTopErr, topErr);
+        if (topErr <= e) nearTop++;
+        if (h.x >= lastBox.min.x - e && h.x <= lastBox.max.x + e && h.z >= lastBox.min.z - e && h.z <= lastBox.max.z + e) inBox++;
+        const c = lastCol, d = c ? Math.hypot(f.x - c[1], f.y - c[2]) : 0; if (d > 0.5) offCentre++; worst = Math.max(worst, d);
       });
       // independent stray oracle (NOT the module's gap rule): a column is buried if its TOP is below the lowest bottom of
       // every non-LIGHTING element on the site. Tall columns (≥ 2.5 m, the module's column rule) not buried must ALL be lit
       // (over-rejection — a single ground datum rejected 67 on a climbing road; a neighbour rule rejected a real signal).
       const minOther = q("SELECT MIN(t.center_z - t.bbox_z/2) FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE m.discipline IS NOT 'LIGHTING'")[0][0];
       const litCol = {}; civil.forEach(f => { if (f.guid) litCol[f.guid] = 1; });
-      let tallUpper = 0, tallUpperLit = 0, lowerLit = 0, lower = 0;
-      Object.values(cols).forEach(c => { const top = c[3] + c[6] / 2; if (top < minOther) { lower++; if (litCol[c[0]]) lowerLit++; } else if (c[6] >= 2.5) { tallUpper++; if (litCol[c[0]]) tallUpperLit++; } });
-      const out = { minOtherBottom: +minOther.toFixed(1), buried: lower, lowerCluster: lower, lowerLit, tallUpper, tallUpperLit, source: A._nightFixtureSource || '', fixtures: F.length, civilHeads: civil.length, civilColumns: civil.filter(f => f.guid).length,
-        inBox, nearTop, belowGround, offCentre, maxHeadOffsetM: +worst.toFixed(2), groundZ: A.groundIfcZ,
+      let tallUpper = 0, tallUpperLit = 0, lowerLit = 0, lower = 0, noBox = 0;
+      Object.values(cols).forEach(c => { const wb = worldBox(c[0]); if (!wb) { noBox++; return; } const top = A.three2ifc(0, wb.max.y, 0).iz; if (top < minOther) { lower++; if (litCol[c[0]]) lowerLit++; } else if (c[6] >= 2.5) { tallUpper++; if (litCol[c[0]]) tallUpperLit++; } });
+      const out = { minOtherBottom: +minOther.toFixed(1), noBox, buried: lower, lowerCluster: lower, lowerLit, tallUpper, tallUpperLit, source: A._nightFixtureSource || '', fixtures: F.length, civilHeads: civil.length, civilColumns: civil.filter(f => f.guid).length,
+        inBox, nearTop, judged, unjudged, worstTopErrM: +worstTopErr.toFixed(3), offCentre, maxHeadOffsetM: +worst.toFixed(2), groundZ: A.groundIfcZ,
         signalsExpected: (function () { try { return q("SELECT COUNT(DISTINCT guid) FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'")[0][0]; } catch (e) { return -1; } })(), signals: (function () { const lit = {}; civil.forEach(f => { if (f.guid) lit[f.guid] = 1; }); let n = 0; try { q("SELECT DISTINCT guid FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'").forEach(r => { if (lit[r[0]]) n++; }); } catch (e) {} return n; })(), worldPositions: (A._nightFixtureWorldPositions() || []).length };
       A.toggleNightMode();
       return out;
@@ -95,10 +110,11 @@ const server = http.createServer((req, res) => { try {
     .population(() => [R])
     .schema({ type: 'object', required: ['source', 'fixtures', 'civilHeads', 'civilColumns', 'inBox', 'nearTop'] })
     .invariant('night: fixtures come from civil lighting (not the synthetic storey lamp)', rs => rs.every(r => /civil-lighting/.test(r.source) && r.civilHeads > 0 && !/ceiling-plant/.test(r.source)))
-    .invariant('night: every head sits at its column top (±5 cm)', rs => rs.every(r => r.nearTop === r.civilHeads))
-    .invariant('night: every head inside its column plan box', rs => rs.every(r => r.inBox === r.civilHeads))
+    .invariant('night: every head judged against the rendered column (no unjudged)', rs => rs.every(r => r.judged === r.civilHeads && r.unjudged === 0))
+    .invariant('night: every head at the RENDERED column top (±5 cm)', rs => rs.every(r => r.nearTop === r.civilHeads))
+    .invariant('night: every head inside the RENDERED column plan box', rs => rs.every(r => r.inBox === r.civilHeads))
     .invariant('night: heads are NOT the box centre (arm ends found: some head > 0.5 m off centre)', rs => rs.every(r => r.offCentre > 0))
-    .invariant('night: no buried stray (top below every other element) is lit', rs => rs.every(r => r.lowerCluster > 0 && r.lowerLit === 0))
+    .invariant('night: no buried stray (top below every other element) is lit', rs => rs.every(r => r.noBox === 0 && r.lowerCluster > 0 && r.lowerLit === 0))
     .invariant('night: every real column (tall, not buried) is lit — no over-rejection', rs => rs.every(r => r.tallUpper > 0 && r.tallUpperLit === r.tallUpper))
     .invariant('night: every traffic signal column is a light source', rs => rs.every(r => r.signals > 0 && r.signals === r.signalsExpected))
     .invariant('night: Alt+S world positions read the same list', rs => rs.every(r => r.worldPositions === r.fixtures))
