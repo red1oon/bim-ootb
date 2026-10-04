@@ -6,6 +6,7 @@
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.compiere.process.InventoryCountCreate', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function InventoryCountCreate() {
       SvrProcess.call(this); this.p_M_Inventory_ID = 0; this.m_inventory = null; this.p_M_Locator_ID = 0; this.p_LocatorValue = null; this.p_ProductValue = null;
       this.p_M_Product_Category_ID = 0; this.p_QtyRange = null; this.p_InventoryCountSetZero = false; this.p_DeleteOld = false; this.m_line = null; this.oldDateMPolicy = null;
@@ -35,7 +36,7 @@
       var inv = this.m_inventory.row;
       if (this.p_DeleteOld) {                                                         // :131-148
         var no1 = R.DB.executeUpdate("DELETE FROM M_InventoryLineMA WHERE EXISTS (SELECT * FROM M_InventoryLine l WHERE l.M_InventoryLine_ID=M_InventoryLineMA.M_InventoryLine_ID AND Processed='N' AND M_Inventory_ID=" + id + ')', []);
-        if (no1 < 0) S.dep(trx, 'M_InventoryLineMA absent from the bundle (DB.executeUpdate → -1, as Java on error)');
+        if (no1 < 0) MT.dep(trx, 'M_InventoryLineMA absent from the bundle (DB.executeUpdate → -1, as Java on error)');
         R.DB.executeUpdate("DELETE FROM M_InventoryLine WHERE Processed='N' AND M_Inventory_ID=" + id, []);
       }
       if (this.p_QtyRange != null && this.p_QtyRange === '=') {                      // :151-176 Create Null Storage records
@@ -44,7 +45,7 @@
           inv.m_warehouse_id + (this.p_M_Locator_ID !== 0 ? ' AND l.M_Locator_ID=' + this.p_M_Locator_ID : '') +
           " AND l.IsDefault='Y' AND p.IsActive='Y' AND p.IsStocked='Y' and p.ProductType='I' AND NOT EXISTS (SELECT * FROM M_StorageOnHand s INNER JOIN M_Locator sl ON (s.M_Locator_ID=sl.M_Locator_ID) WHERE sl.M_Warehouse_ID=l.M_Warehouse_ID AND s.M_Product_ID=p.M_Product_ID)";
         R.DB.executeUpdate(sql0, []);
-        S.dep(trx, 'InventoryCountCreate QtyRange "=": the loop below re-reads M_StorageOnHand but this runtime\'s raw SELECT does not see the rows this Trx just inserted (ad_process.js processDB named limit)');
+        MT.dep(trx, 'InventoryCountCreate QtyRange "=": the loop below re-reads M_StorageOnHand but this runtime\'s raw SELECT does not see the rows this Trx just inserted (ad_process.js processDB named limit)');
       }
       var sql = 'SELECT s.M_Product_ID, s.M_Locator_ID, s.M_AttributeSetInstance_ID, s.QtyOnHand, p.M_AttributeSet_ID ,s.DateMaterialPolicy, l.Value AS lvalue, p.Value AS pvalue FROM M_Product p INNER JOIN M_StorageOnHand s ON (s.M_Product_ID=p.M_Product_ID) INNER JOIN M_Locator l ON (s.M_Locator_ID=l.M_Locator_ID) WHERE l.M_Warehouse_ID=? ' +
         "AND p.IsActive='Y' AND p.IsStocked='Y' and p.ProductType='I'";                // :178-185
@@ -68,7 +69,7 @@
             (Number(b.qtyonhand) - Number(a.qtyonhand));
         });
         rows.forEach(function (r) {
-          var QtyOnHand = r.qtyonhand == null ? A.Env.ZERO : S.bd(r.qtyonhand), compare = QtyOnHand.compareTo(A.Env.ZERO), q = self.p_QtyRange;
+          var QtyOnHand = r.qtyonhand == null ? A.Env.ZERO : MT.bd(r.qtyonhand), compare = QtyOnHand.compareTo(A.Env.ZERO), q = self.p_QtyRange;
           if (q == null || (q === '>' && compare > 0) || (q === '<' && compare < 0) || (q === '=' && compare === 0) || (q === 'N' && compare !== 0))
             count += self.createInventoryLine(X, trx, Number(r.m_locator_id || 0), Number(r.m_product_id || 0), Number(r.m_attributesetinstance_id || 0), QtyOnHand, Number(r.m_attributeset_id || 0), r.datematerialpolicy);
         });
@@ -87,18 +88,18 @@
         if (QtyOnHand.signum() === 0) return 0;
         var old = this.oldDateMPolicy, sameDate = (dateMPolicy == null && old == null) || (dateMPolicy != null && String(dateMPolicy) === String(old)) || (old != null && String(old) === String(dateMPolicy));
         if (Number(cur.m_attributesetinstance_id || 0) === M_AttributeSetInstance_ID && sameDate) {
-          this.m_line = S.saveInventoryLine(X, trx, cur, { qtybook: S.bd(cur.qtybook).add(QtyOnHand), qtycount: S.bd(cur.qtycount).add(QtyOnHand) }, inv);
+          this.m_line = MT.saveInventoryLine(trx, cur, { qtybook: MT.bd(cur.qtybook).add(QtyOnHand), qtycount: MT.bd(cur.qtycount).add(QtyOnHand) }, inv);
           return 0;
         } else if (Number(cur.m_attributesetinstance_id || 0) !== 0) {
-          this.saveMA(X, trx, cur, Number(cur.m_attributesetinstance_id), S.bd(cur.qtybook), old);
+          this.saveMA(X, trx, cur, Number(cur.m_attributesetinstance_id), MT.bd(cur.qtybook), old);
         }
-        cur = S.saveInventoryLine(X, trx, cur, { m_attributesetinstance_id: 0, qtybook: S.bd(cur.qtybook).add(QtyOnHand), qtycount: S.bd(cur.qtycount).add(QtyOnHand) }, inv);
+        cur = MT.saveInventoryLine(trx, cur, { m_attributesetinstance_id: 0, qtybook: MT.bd(cur.qtybook).add(QtyOnHand), qtycount: MT.bd(cur.qtycount).add(QtyOnHand) }, inv);
         this.m_line = cur;
         this.saveMA(X, trx, cur, M_AttributeSetInstance_ID, QtyOnHand, dateMPolicy);
         return 0;
       }
       var line = null;
-      try { line = S.newInventoryLine(X, trx, inv, M_Locator_ID, M_Product_ID, M_AttributeSetInstance_ID, QtyOnHand, QtyOnHand); }   // :321-323
+      try { line = MT.newInventoryLine(trx, inv, M_Locator_ID, M_Product_ID, M_AttributeSetInstance_ID, QtyOnHand, QtyOnHand); }   // :321-323
       catch (e) { trx.say('§MODEL-PO save m_inventoryline refused: ' + ((e && e.message) || e)); }
       this.m_line = line;
       this.oldDateMPolicy = dateMPolicy;
@@ -108,7 +109,7 @@
     InventoryCountCreate.prototype.saveMA = function (X, trx, line, asi, qty, date) {
       var S = P.PSTK, inv = this.m_inventory.row;
       if (date == null) {
-        if (asi > 0) S.dep(trx, 'MStorageOnHand.getDateMaterialPolicy (M/MStorageOnHand.java) for MInventoryLineMA');
+        if (asi > 0) MT.dep(trx, 'MStorageOnHand.getDateMaterialPolicy (M/MStorageOnHand.java) for MInventoryLineMA');
         date = inv.movementdate;
       }
       try { S.create(X, trx, 'M_InventoryLineMA', { ad_client_id: line.ad_client_id, ad_org_id: line.ad_org_id, m_inventoryline_id: line.m_inventoryline_id, m_attributesetinstance_id: asi, movementqty: qty, datematerialpolicy: date, isautogenerated: 'Y' }); }

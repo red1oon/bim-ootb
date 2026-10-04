@@ -324,11 +324,17 @@
         r.isbackdate = day(r.dateacct) < today ? 'Y' : 'N';
       }
       h.row = trx.insert('m_costdetail', ML.newPO(trx, 'm_costdetail', r)); h.isNew = false;
-    } else trx.update('m_costdetail', h.row, h.changes || {});
-    h.changes = {};
+    } else {
+      // h.row was mutated by cdSet as the Java setters do; Trx.update must see the PRE-change row (its old values) or it records no change
+      // (§MODEL-COST-UPD: CostCreate re-processed details were never written — 'upd 2/0'). h.orig holds the pre-change value of each touched column.
+      var base = Object.assign({}, h.row, h.orig || {});
+      trx.update('m_costdetail', base, h.changes || {});
+      h.row = trx.get('m_costdetail', base.m_costdetail_id) || h.row;
+    }
+    h.changes = {}; h.orig = {};
     return true;
   }
-  function cdSet(h, col, v) { if (h.isNew) h.row[col] = v; else { h.changes = h.changes || {}; h.changes[col] = v; h.row[col] = v; } }
+  function cdSet(h, col, v) { if (h.isNew) h.row[col] = v; else { h.changes = h.changes || {}; h.orig = h.orig || {}; if (!(col in h.orig)) h.orig[col] = h.row[col]; h.changes[col] = v; h.row[col] = v; } }
   function cdSetAmtQty(h, col, v) { if (Y(h.row.processed)) throw new Error('Cannot change ' + col + ' - processed'); cdSet(h, col, N(v == null ? Z : v)); }   // setAmt/setQty :1162-1186
   // the shared body of createOrder :111-155 / createInvoice :206-250 / createShipment :303-351 / createMatchInvoice :678-722
   function createX(trx, kind, as, org, productId, asi, lineId, ceId, amt, qty, desc, isSO, dateAcct, refId) {

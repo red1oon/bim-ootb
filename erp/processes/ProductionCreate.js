@@ -8,6 +8,7 @@
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.compiere.process.ProductionCreate', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function ProductionCreate() { SvrProcess.call(this); this.p_M_Production_ID = 0; this.m_production = null; this.recreate = false; this.newQty = null; this.p_PP_Product_BOM_ID = 0; }
     ProductionCreate.prototype = Object.create(SvrProcess.prototype);
     ProductionCreate.prototype.prepare = function () {                               // :45-65
@@ -30,10 +31,10 @@
     ProductionCreate.prototype.createLines = function () {                           // :79-112
       var trx = this.get_TrxName(), S = P.PSTK, created = 0, p = this.m_production;
       if (!p.isUseProductionPlan()) {
-        S.dep(trx, 'ProductionCreate: MProduction.validateEndProduct / deleteLines / createLines (M/MProduction.java — manufacturing, not core)');
+        MT.dep(trx, 'ProductionCreate: MProduction.validateEndProduct / deleteLines / createLines (M/MProduction.java — manufacturing, not core)');
         if (!this.recreate && 'Y' === String(p.getIsCreated()).toUpperCase()) throw X.A.AdempiereException('Production already created.');
       } else {
-        S.dep(trx, 'ProductionCreate: M_ProductionPlan query + MProductionPlan.deleteLines/createLines (M_ProductionPlan absent from the bundle — manufacturing, not core)');
+        MT.dep(trx, 'ProductionCreate: M_ProductionPlan query + MProductionPlan.deleteLines/createLines (M_ProductionPlan absent from the bundle — manufacturing, not core)');
       }
       if (created === 0) return 'Failed to create production lines';                 // :107-108
       return created + ' production lines were created';

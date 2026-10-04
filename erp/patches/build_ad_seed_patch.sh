@@ -14,10 +14,23 @@ Q() { docker exec postgres psql -U adempiere -d idempiere -At -c "set search_pat
   echo "CREATE TABLE IF NOT EXISTS i_bpartner ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='i_bpartner'"), PRIMARY KEY (i_bpartner_id));"
   # §CP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP): C_DepositBatch / C_DepositBatchLine — read by CalloutBankStatement.depositBatch
   #   (CalloutBankStatement.java) and CalloutDepositBatch; the bundle shipped neither table, so the line callout failed "no such table".
-  for T in c_depositbatch c_depositbatchline; do
+  for T in c_depositbatch c_depositbatchline c_invoicebatch c_invoicebatchline; do   # + Invoice Batch (CalloutInvoiceBatch; C_InvoiceBatchLine.Line @SQL= default)
     echo "CREATE TABLE IF NOT EXISTS $T ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'"), PRIMARY KEY (${T}_id));"
   done
+  # §CP-OPEN 4a (prompts/ERP_IDEMPIERE_UX_PARITY.md): the DDL the CP process workers had to stub locally — M_ProductDownload (CopyProduct),
+  #   M_Substitute (CopyProduct; PK = the live m_substitute_pkey (m_product_id, substitute_id)), C_BankStatementMatcher (BankStatementMatcher),
+  #   C_OrderPaySchedule (shipped in build_model_patch.py's table list). Same live-schema extraction as i_bpartner above.
+  for T in "m_productdownload:m_productdownload_id" "m_substitute:m_product_id, substitute_id" "c_bankstatementmatcher:c_bankstatementmatcher_id"; do
+    TN="${T%%:*}"; PK="${T#*:}"
+    echo "CREATE TABLE IF NOT EXISTS $TN ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$TN'"), PRIMARY KEY ($PK));"
+  done
+  # §CP-OPEN (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP-NEW): what @SQL= column defaults read (GridField.defaultFromSQLExpression).
+  #   adempiere.dual = pg_get_viewdef → "SELECT 'X' AS dummy" (66 @SQL= defaults say FROM Dual); AD_SysConfig (client 0/11, active) for
+  #   adempiere.get_sysconfig (65 defaults) — DDL from the live schema, rows INSERT OR IGNORE on the pk.
+  echo "CREATE VIEW IF NOT EXISTS dual AS $(Q "select pg_get_viewdef('adempiere.dual')" | sed "s/::character varying//; s/;\s*$//");"
+  echo "CREATE TABLE IF NOT EXISTS ad_sysconfig ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='ad_sysconfig'"), PRIMARY KEY (ad_sysconfig_id));"
+  Q "select format('INSERT OR IGNORE INTO ad_sysconfig (ad_sysconfig_id,ad_client_id,ad_org_id,isactive,name,value,description,configurationlevel,entitytype,ad_sysconfig_uu) VALUES (%s,%s,%s,%L,%L,%L,%L,%L,%L,%L);', ad_sysconfig_id,ad_client_id,ad_org_id,isactive,name,value,description,configurationlevel,entitytype,ad_sysconfig_uu) from ad_sysconfig where ad_client_id in (0,11) and isactive='Y' order by ad_sysconfig_id"
   Q "select format('INSERT OR IGNORE INTO m_cost (ad_client_id,ad_org_id,m_product_id,m_costtype_id,c_acctschema_id,m_costelement_id,m_attributesetinstance_id,isactive,currentcostprice,currentqty,cumulatedamt,cumulatedqty,futurecostprice,percent,iscostfrozen,m_cost_uu) VALUES (%s,%s,%s,%s,%s,%s,%s,%L,%s,%s,%s,%s,%s,%s,%L,%L);', ad_client_id,ad_org_id,m_product_id,m_costtype_id,c_acctschema_id,m_costelement_id,m_attributesetinstance_id,isactive,currentcostprice,currentqty,cumulatedamt,cumulatedqty,coalesce(futurecostprice,0),coalesce(percent,0),iscostfrozen,m_cost_uu) from m_cost where ad_client_id=11 order by m_product_id,m_costelement_id,ad_org_id"
-  python3 "$(dirname "$0")/build_model_patch.py"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
+  python3 "$(dirname "$0")/build_model_patch.py" "$OUT"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
 } > "$OUT"
 echo "§AD-SEED-PATCH built $(grep -c '^INSERT' "$OUT") statements → $OUT"

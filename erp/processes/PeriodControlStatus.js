@@ -22,7 +22,7 @@
     };
     // doIt :79-139
     PeriodControlStatus.prototype.doIt = function () {
-      var A = X.A, R = A.RUNTIME, S = P.PSUP, trx = this.get_TrxName(), self = this;
+      var A = X.A, R = A.RUNTIME, S = (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade), trx = this.get_TrxName(), self = this;
       var hasUnposted = false, skipped = [];
       for (var i = 0; i < this.p_C_PeriodControl_IDs.length; i++) {
         var id = this.p_C_PeriodControl_IDs[i];

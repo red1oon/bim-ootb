@@ -9,6 +9,7 @@
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.adempiere.process.SalesOrderRateInquiryProcess', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function SalesOrderRateInquiryProcess() { SvrProcess.call(this); this.p_IsPriviledgedRate = false; }
     SalesOrderRateInquiryProcess.prototype = Object.create(SvrProcess.prototype);
     SalesOrderRateInquiryProcess.prototype.prepare = function () {                   // :64-77
@@ -42,7 +43,7 @@
         }
       }
       // :111-120 createShippingTransaction + st.processOnline() — the carrier call
-      S.dep(trx, 'SalesOrderRateInquiryProcess: MShippingTransaction.processOnline — external shipping carrier web service (ShippingUtil / IShipping client), not in the bundle');
+      MT.dep(trx, 'SalesOrderRateInquiryProcess: MShippingTransaction.processOnline — external shipping carrier web service (ShippingUtil / IShipping client), not in the bundle');
       this.m_pi.isError = true;                                                       // getProcessInfo().setError(true)
       this.addLog(0, null, null, 'Shipping rate inquiry needs the external carrier service (not available)');
       return '@Error@';                                                               // :176-184

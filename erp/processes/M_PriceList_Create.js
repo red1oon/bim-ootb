@@ -11,6 +11,7 @@
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.compiere.process.M_PriceList_Create', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function M_PriceList_Create() { SvrProcess.call(this); this.p_PriceList_Version_ID = 0; this.p_DeleteOld = false; this.m_plv = null; }
     M_PriceList_Create.prototype = Object.create(SvrProcess.prototype);
     M_PriceList_Create.prototype.prepare = function () {                            // :73-86
@@ -61,12 +62,12 @@
       else if ('S' === base) dd = num(std);
       else if ('X' === base) dd = num(limit);
       else if ('F' === base) calc = fix;
-      else if ('P' === base) { S.dep(trx, 'M_PriceList_Create.calculate base ProductCost :428-441 needs ProductCost.getProductCosts (costing engine) — costs treated as null'); calc = null; }
+      else if ('P' === base) { MT.dep(trx, 'M_PriceList_Create.calculate base ProductCost :428-441 needs ProductCost.getProductCosts (costing engine) — costs treated as null'); calc = null; }
       else throw new Error('Unknown Base=' + base);                                  // IllegalArgumentException
       if (calc == null) {                                                            // :444-452
         if (add.signum() !== 0) dd += num(add);
         if (discount.signum() !== 0) dd *= 1 - (num(discount) / 100.0);
-        calc = S.bdFromDouble(dd);                                                   // new BigDecimal(double) — the exact binary expansion
+        calc = MT.bdFromDouble(dd);                                                   // new BigDecimal(double) — the exact binary expansion
       }
       if ('C' === round) calc = calc.setScale(curPrecision, RMd.HALF_UP);            // :455-486
       else if ('D' === round) calc = calc.setScale(1, RMd.HALF_UP);
@@ -102,7 +103,7 @@
       }
       var baseId = this.m_plv.getM_Pricelist_Version_Base_ID() || 0;
       var pl = X.get(trx, 'M_PriceList', this.m_plv.getM_PriceList_ID());
-      var curPrecision = S.currencyStdPrecision(trx, pl.getC_Currency_ID());         // MPriceList.getStandardPrecision :356-364
+      var curPrecision = MT.currencyStdPrecision(trx, pl.getC_Currency_ID());         // MPriceList.getStandardPrecision :356-364
       var dsLines = trx.q('SELECT * FROM M_DiscountSchemaLine WHERE M_DiscountSchema_ID=? ORDER BY SeqNo,M_DiscountSchemaLine_ID', [this.m_plv.getM_DiscountSchema_ID()]);   // MDiscountSchema.getLines :222
       dsLines.forEach(function (row) {
         var dsLine = R.PO.wrap('M_DiscountSchemaLine', row);
@@ -149,10 +150,10 @@
         }
         // :327-352 Calculations — m_plv.getProductPrice(" AND EXISTS (SELECT * FROM T_Selection …)")
         trx.find('m_productprice', { m_pricelist_version_id: plvId }).filter(function (pp) { return selSet[Number(pp.m_product_id)]; }).forEach(function (price) {
-          var priceList = S.bd(price.pricelist), priceStd = S.bd(price.pricestd), priceLimit = S.bd(price.pricelimit), pid = Number(price.m_product_id);
-          var np = self.calculate(dsLine.getList_Base(), priceList, priceStd, priceLimit, S.bd(dsLine.getList_Fixed()), S.bd(dsLine.getList_AddAmt()), S.bd(dsLine.getList_Discount()), dsLine.getList_Rounding(), curPrecision, pid);
-          var ns = self.calculate(dsLine.getStd_Base(), priceList, priceStd, priceLimit, S.bd(dsLine.getStd_Fixed()), S.bd(dsLine.getStd_AddAmt()), S.bd(dsLine.getStd_Discount()), dsLine.getStd_Rounding(), curPrecision, pid);
-          var nl = self.calculate(dsLine.getLimit_Base(), priceList, priceStd, priceLimit, S.bd(dsLine.getLimit_Fixed()), S.bd(dsLine.getLimit_AddAmt()), S.bd(dsLine.getLimit_Discount()), dsLine.getLimit_Rounding(), curPrecision, pid);
+          var priceList = MT.bd(price.pricelist), priceStd = MT.bd(price.pricestd), priceLimit = MT.bd(price.pricelimit), pid = Number(price.m_product_id);
+          var np = self.calculate(dsLine.getList_Base(), priceList, priceStd, priceLimit, MT.bd(dsLine.getList_Fixed()), MT.bd(dsLine.getList_AddAmt()), MT.bd(dsLine.getList_Discount()), dsLine.getList_Rounding(), curPrecision, pid);
+          var ns = self.calculate(dsLine.getStd_Base(), priceList, priceStd, priceLimit, MT.bd(dsLine.getStd_Fixed()), MT.bd(dsLine.getStd_AddAmt()), MT.bd(dsLine.getStd_Discount()), dsLine.getStd_Rounding(), curPrecision, pid);
+          var nl = self.calculate(dsLine.getLimit_Base(), priceList, priceStd, priceLimit, MT.bd(dsLine.getLimit_Fixed()), MT.bd(dsLine.getLimit_AddAmt()), MT.bd(dsLine.getLimit_Discount()), dsLine.getLimit_Rounding(), curPrecision, pid);
           S.saveEx(X, trx, 'M_ProductPrice', price, { pricelist: np, pricestd: ns, pricelimit: nl });
         });
         self.addLog(message);                                                         // :354

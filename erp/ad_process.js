@@ -680,35 +680,13 @@
   function _agDay(v) { var s = String(v || '').slice(0, 10); var t = Date.parse(s + 'T00:00:00Z'); return isNaN(t) ? null : Math.floor(t / 86400000); }
   function _agIso(d) { return new Date(d * 86400000).toISOString().slice(0, 10); }
   function _agRound(x, p) { var f = Math.pow(10, p == null ? 2 : p); var v = Number(x) || 0; return Math.round(v * f + (v < 0 ? -1e-9 : 1e-9)) / f; }
-  function _agAddMonths(d, n) { var dt = new Date(d * 86400000); var y = dt.getUTCFullYear(), m = dt.getUTCMonth() + Number(n || 0), day = dt.getUTCDate();
-    var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return Math.floor(Date.UTC(y, m, Math.min(day, last)) / 86400000); }
-  function _agMonthStart(d) { var dt = new Date(d * 86400000); return Math.floor(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), 1) / 86400000); }
-  function _agMonthLastDay(d) { var dt = new Date(d * 86400000); return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).getUTCDate(); }
-  // paymenttermduedate(term, DocDate) → day number. IsDueFixed: FirstDay + (FixMonthDay-1) + FixMonthOffset months (+1 when the
-  // day-of-month offset > FixMonthCutoff); else TRUNC(DocDate) + NetDays.
-  function _agDueDate(pt, doc) {
-    if (!pt || doc == null) return doc;
-    if (String(pt.isduefixed || 'N') === 'Y') {
-      var first = _agMonthStart(doc), noDays = doc - first, due = first + (Number(pt.fixmonthday || 0) - 1);
-      due = _agAddMonths(due, Number(pt.fixmonthoffset || 0));
-      if (noDays > Number(pt.fixmonthcutoff || 0)) due = _agAddMonths(due, 1);
-      return due;
-    }
-    return doc + Number(pt.netdays || 0);
-  }
-  // paymenttermduedays(term, DocDate, PayDate) → PayDate - DueDate (the function's own IsDueFixed variant, transcribed).
-  function _agDueDays(pt, doc, pay) {
-    if (!pt || doc == null) return 0;
-    var due;
-    if (String(pt.isduefixed || 'N') === 'Y') {
-      var cal = doc, maxCut = _agMonthLastDay(cal), cut = Number(pt.fixmonthcutoff || 0), off = Number(pt.fixmonthoffset || 0), fmd = Number(pt.fixmonthday || 0);
-      cal = cut > maxCut ? _agMonthStart(cal) + maxCut - 1 : _agMonthStart(cal) + (cut - 1);
-      if (doc > cal) off = off + 1;
-      cal = _agAddMonths(cal, off);
-      var maxDay = _agMonthLastDay(cal);
-      due = (fmd > maxDay || (fmd >= 30 && maxDay > fmd)) ? _agMonthStart(cal) + (maxDay - 1) : _agMonthStart(cal) + (fmd - 1);
-    } else due = doc + Number(pt.netdays || 0);
-    return pay - due;
+  // paymentTermDueDate / paymentTermDueDays: ONE implementation — the PL/pgSQL ports in callouts/sqlfn.js (RUNTIME.M.SqlFn), run over the
+  // aging query's own db (A.bind for the call, previous binding restored). The former JS copies _agDueDate/_agDueDays are deleted.
+  function _agSqlFn(q, fn) {
+    var R = _A().RUNTIME, prevDB = R.DB, prevPO = R.PO;
+    _A().bind(function (sql, params) { return q(sql, params); });
+    try { var F = R.M && R.M.SqlFn; if (!F) throw new Error('Aging: callouts/sqlfn.js (paymenttermduedate/paymenttermduedays) not loaded'); return fn(F); }
+    finally { R.DB = prevDB; R.PO = prevPO; }
   }
   function _agRate(q, from, to, when) {                     // MConversionRate.getRate, same ORDER BY as crud_overlay _rate
     if (!Number(from) || !Number(to) || Number(from) === Number(to)) return 1;
@@ -754,8 +732,9 @@
         var pt = q('SELECT * FROM c_paymentterm WHERE c_paymentterm_id=' + Number(inv.c_paymentterm_id || 0))[0];
         if (!pt) return;
         var open = _agInvoiceOpen(q, inv, 0); if (open === 0) return;
-        var row = Object.assign({}, common, { c_invoicepayschedule_id: 0, netdays: Number(pt.netdays || 0), duedate: _agIso(_agDueDate(pt, doc)),
-          daysdue: _agDueDays(pt, doc, today), grandtotal: Number(inv.grandtotal || 0) * cm, openamt: open });
+        var due = _agSqlFn(q, function (F) { var ptid = pt.c_paymentterm_id; return { dd: String(F.paymenttermduedate(ptid, inv.dateinvoiced)).slice(0, 10), days: Number(F.paymenttermduedays(ptid, inv.dateinvoiced, _agIso(today))) }; });
+        var row = Object.assign({}, common, { c_invoicepayschedule_id: 0, netdays: Number(pt.netdays || 0), duedate: _agIso(_agDay(due.dd)),
+          daysdue: due.days, grandtotal: Number(inv.grandtotal || 0) * cm, openamt: open });
         out.push(row);
       } else {                                                       // branch 2 — one row per valid schedule
         q("SELECT * FROM c_invoicepayschedule WHERE c_invoice_id=" + Number(inv.c_invoice_id) + " AND isvalid='Y' ORDER BY c_invoicepayschedule_id").forEach(function (s) {
@@ -1136,6 +1115,16 @@
     if (cur.trim()) out.push(cur);
     return out;
   }
+  // index of the first match of re at paren-depth 0 outside quotes (-1 if none)
+  function _topIdx(str, re) {
+    var depth = 0, q = false;
+    for (var i = 0; i < str.length; i++) { var ch = str.charAt(i);
+      if (ch === "'") q = !q;
+      if (q) continue;
+      if (ch === '(') depth++; else if (ch === ')') depth--;
+      else if (depth === 0 && /\s/.test(ch) && re.test(str.slice(i, i + 12))) { var mm = re.exec(str.slice(i)); if (mm && mm.index === 0) return i; } }
+    return -1;
+  }
   function processDB(trx) {
     var A = _A(), base = A.RUNTIME.DB;
     function keyOf(t) { return trx.idCol(t); }
@@ -1145,23 +1134,48 @@
     db.getIDsEx = db.getIDs = function (trxName, sql) { var a = Array.prototype.slice.call(arguments, 2); if (a.length === 1 && Array.isArray(a[0])) a = a[0];
       return base.query(sql, a).map(function (r) { var k = Object.keys(r)[0]; return Math.trunc(Number(r[k])); }); };
     // DB.executeUpdate (non-Ex) logs and returns -1 on an SQL error (U/DB.java executeUpdate catch → log.SEVERE, no throw)
-    db.executeUpdate = function (sql, params) {
+    // DB.executeUpdate overloads (DB.java): (sql, trxName) · (sql, param, trxName) · (sql, Object[] params, ignoreError, trxName) · (sql, ignoreError, trxName).
+    //   A Trx object / String trxName / boolean ignoreError is never a bind parameter (pre-fix: FactAcctReset's (sql, trx) bound the Trx as ?).
+    function _updArgs(args) {
+      var rest = Array.prototype.slice.call(args, 1).filter(function (x) { return typeof x !== 'boolean' && !(x && typeof x === 'object' && typeof x.q === 'function' && !Array.isArray(x)); });
+      if (rest.length >= 2) return rest[0];                       // (sql, param, trxName)
+      return rest.length === 1 && typeof rest[0] !== 'string' ? rest[0] : undefined;   // single: Object[]/value is the params; a String is the trxName
+    }
+    db.executeUpdate = function (sql) {
+      var params = _updArgs(arguments);
       try { return db.executeUpdateEx(sql, params); }
       catch (e) { trx.say('§PROC-SQL-ERROR executeUpdate → -1: ' + ((e && e.message) || e) + ' :: ' + String(sql).replace(/\s+/g, ' ').slice(0, 160)); return -1; }
     };
-    db.executeUpdateEx = function (sql, params) {
-      if (typeof params === 'string' || params === undefined) params = [];
+    db.executeUpdateEx = function (sql) {
+      var params = _updArgs(arguments);
+      if (params === undefined || params === null) params = [];
       if (!Array.isArray(params)) params = [params];
       params = params.map(plain);
       var m, S = String(sql).trim().replace(/\s+/g, ' ');
-      if ((m = /^UPDATE\s+([\w.]+)(?:\s+\w+)?\s+SET\s+(.*?)\s+WHERE\s+(.*)$/i.exec(S))) {
-        var t = m[1].toLowerCase(), sets = _splitTop(m[2]).map(function (x) { var i = x.indexOf('='); return { c: x.slice(0, i).trim().toLowerCase(), e: x.slice(i + 1).trim() }; });
-        var k = keyOf(t), rows = trx.q('SELECT ' + t + '.' + k + ' AS __k, ' + sets.map(function (x, i) { return '(' + x.e + ') AS __v' + i; }).join(', ') + ' FROM ' + t + ' WHERE ' + m[3], params);
+      if ((m = /^UPDATE\s+([\w.]+)(?:\s+(?!SET\b)(\w+))?\s+SET\s+(.*)$/i.exec(S))) {
+        // UPDATE t [alias] SET assignments [WHERE w] — the WHERE is the one at paren-depth 0 (a subselect's own WHERE is not it).
+        //   assignment = col=expr | (c1,c2,…)=(SELECT e1,e2 FROM …) | (c1,c2)=(v1,v2)  → one scalar per column, so SQLite (no row-value SET) runs it.
+        var t = m[1].toLowerCase(), al = m[2] || t, wi = _topIdx(m[3], /\sWHERE\s/i), setS = wi < 0 ? m[3] : m[3].slice(0, wi), whereS = wi < 0 ? '' : m[3].slice(wi).replace(/^\s*WHERE\s+/i, '');
+        var sets = [], cur0 = 0, nq = function (z) { return (String(z).match(/\?/g) || []).length; }, take = function (n) { var r = params.slice(cur0, cur0 + n); cur0 += n; return r; };
+        _splitTop(setS).forEach(function (x) {
+          var i = x.indexOf('='), lhs = x.slice(0, i).trim(), rhs = x.slice(i + 1).trim();
+          if (lhs.charAt(0) === '(') {
+            var cs = lhs.slice(1, -1).split(',').map(function (c) { return c.trim().toLowerCase(); }), inner = rhs.replace(/^\(\s*/, '').replace(/\s*\)$/, ''), es;
+            if (/^SELECT\s/i.test(inner)) {
+              var fi = _topIdx(inner, /\sFROM\s/i), lst = _splitTop(inner.slice(6, fi < 0 ? inner.length : fi)), rest = fi < 0 ? '' : inner.slice(fi);
+              var lp = lst.map(function (e) { return take(nq(e)); }), rp = take(nq(rest));      // ?s in select-list order, then the FROM… part (repeated per column)
+              es = lst.map(function (e, j) { return { e: '(SELECT ' + e.trim() + rest + ')', ps: lp[j].concat(rp) }; });
+            } else es = _splitTop(inner).map(function (e) { return { e: e, ps: take(nq(e)) }; });
+            if (es.length !== cs.length) throw new Error('executeUpdate: row-value SET arity ' + cs.length + ' vs ' + es.length);
+            cs.forEach(function (c, j) { sets.push({ c: c, e: es[j].e.trim(), ps: es[j].ps }); });
+          } else sets.push({ c: lhs.toLowerCase(), e: rhs, ps: take(nq(rhs)) });
+        });
+        var k = keyOf(t), rows = trx.q('SELECT ' + al + '.' + k + ' AS __k, ' + sets.map(function (x, i) { return '(' + x.e + ') AS __v' + i; }).join(', ') + ' FROM ' + t + (al !== t ? ' ' + al : '') + (whereS ? ' WHERE ' + whereS : ''), [].concat.apply([], sets.map(function (x) { return x.ps; })).concat(params.slice(cur0)));
         rows.forEach(function (r) { var cur = trx.get(t, r.__k); if (!cur) return; var ch = {}; sets.forEach(function (x, i) { ch[x.c] = r['__v' + i]; }); trx.update(t, cur, ch); });
         return rows.length;
       }
-      if ((m = /^DELETE\s+FROM\s+([\w.]+)(?:\s+WHERE\s+(.*))?$/i.exec(S))) {
-        var t2 = m[1].toLowerCase(), k2 = keyOf(t2), rs = trx.q('SELECT ' + k2 + ' AS __k FROM ' + t2 + (m[2] ? ' WHERE ' + m[2] : ''), params);
+      if ((m = /^DELETE\s+FROM\s+([\w.]+)(?:\s+(?!WHERE\b)(\w+))?(?:\s+WHERE\s+(.*))?$/i.exec(S))) {
+        var t2 = m[1].toLowerCase(), k2 = keyOf(t2), a2 = m[2] || t2, rs = trx.q('SELECT ' + a2 + '.' + k2 + ' AS __k FROM ' + t2 + (m[2] ? ' ' + m[2] : '') + (m[3] ? ' WHERE ' + m[3] : ''), params);
         rs.forEach(function (r) { var cur = trx.get(t2, r.__k); if (cur) trx.del(t2, cur); });
         return rs.length;
       }
@@ -1208,14 +1222,27 @@
     // ProcessInfoParameter[] from AD_Process_Para (SeqNo order) — the parameter types the UI's AD_PInstance_Para carry
     var paras = [];
     try { paras = query('SELECT columnname AS c, ad_reference_id AS r FROM ad_process_para WHERE ad_process_id=? AND isactive=? ORDER BY seqno', [pi.AD_Process_ID, 'Y']) || []; } catch (e) {}
-    var given = pi.params || {};
+    // Java: SvrProcess.getParameter:582-589 → ProcessInfoUtil.setParameterFromDB:181-253 reads EVERY AD_PInstance_Para row the caller wrote
+    //   (declared or not — an undeclared one is a "Custom" parameter, MProcess/MProcessPara.validateUnknownParameter:443-457 only logs it),
+    //   plus a NULL entry for each declared AD_Process_Para not passed (the UNION :192-198). Typing: declared → by AD_Reference_ID;
+    //   undeclared → by the caller's type ({type:'date'|'num'|'int'|'str'} or the JS value), as P_Date/P_Number/P_String were written.
+    var given = pi.params || {}, seen = {}, decl = {};
+    paras.forEach(function (pp) { decl[String(pp.c).toLowerCase()] = pp; });
     pi.parameter = [];
-    paras.forEach(function (pp) {
-      var k = Object.keys(given).filter(function (g) { return g.toLowerCase() === String(pp.c).toLowerCase(); })[0];
-      if (k === undefined) return;
-      var g = given[k], v = (g && typeof g === 'object' && !(g instanceof A.BigDecimal) && !(g instanceof A.Timestamp) && ('v' in g)) ? g : { v: g };
-      pi.parameter.push(new ProcessInfoParameter(pp.c, typedParam(pp.r, v.v), typedParam(pp.r, v.vTo), null, null));
+    function wrap(g) { return (g && typeof g === 'object' && !(g instanceof A.BigDecimal) && !(g instanceof A.Timestamp) && ('v' in g)) ? g : { v: g }; }
+    function byType(t, v) {
+      if (v == null || v === '') return null;
+      if (t === 'date') return A.Timestamp.of(v);
+      if (t === 'num' || t === 'int' || (!t && typeof v === 'number')) return A.toBD(String(v));
+      return v;                                  // BigDecimal / Timestamp / String stay as given
+    }
+    Object.keys(given).forEach(function (k) {
+      var pp = decl[k.toLowerCase()], v = wrap(given[k]); seen[k.toLowerCase()] = 1;
+      if (pp) pi.parameter.push(new ProcessInfoParameter(pp.c, typedParam(pp.r, v.v), typedParam(pp.r, v.vTo), null, null));
+      else { A.RUNTIME.log('§PROC-CUSTOM-PARA ' + pi.className + ' ' + k + ' (not in AD_Process_Para; reaches the process as ProcessInfoUtil does)');
+        pi.parameter.push(new ProcessInfoParameter(k, byType(v.type, v.v), byType(v.type, v.vTo), null, null)); }
     });
+    paras.forEach(function (pp) { if (!seen[String(pp.c).toLowerCase()]) pi.parameter.push(new ProcessInfoParameter(pp.c, null, null, null, null)); });
     proc0db = processDB(trx); A.RUNTIME.DB = proc0db;
     var proc = new C();
     var ok = proc.startProcess(ctx, pi, trx);
@@ -1239,7 +1266,7 @@
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
     openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
-    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

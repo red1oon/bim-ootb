@@ -424,6 +424,7 @@
       var row = {}, k;
       if (orig) for (k in orig) row[k] = orig[k];
       for (k in vals) row[k] = vals[k];
+      if (verb === 'create' && cc && cc.current) { tab.load(cc.current, false); console.log('§GRIDTAB-NEW-FROM-CURRENT table=' + e.key + ' (window ctx carries the on-screen record, GridTable.dataNew :2134)'); }
       tab.load(row, verb === 'create');
       _co = { tab: tab, e: e, extra: {}, set: [], verb: verb, orig: orig };
       if (verb === 'create') {   // GridTable.dataNew :2129-2143 — every column the form left empty gets GridField.getDefault()

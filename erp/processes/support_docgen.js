@@ -1,6 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// processes/support_docgen.js — helpers the family-B (doc-from-doc) processes share. §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
+// processes/support_docgen.js — module ACCESSORS for the family-B (doc-from-doc) processes. §CP-OPEN 4b: every M-class body that lived here
+// (getLines, PO.saveEx, MDocType.docBaseType, MInvoice.isCreditMemo) moved to model_order.js / model_invoice.js — this file only wires names.
 // Registered on AdProcess.PSUP.docgen; resolved at call time (processes/ load alphabetically, this file last).
 (function (global) {
   'use strict';
@@ -11,15 +12,10 @@
   G.ctor = function () { return node ? require('../model_ctor') : global.ModelCtor; };
   G.T = function () { return node ? require('../model_trade') : global.ModelTrade; };
   G.ML = function () { return node ? require('../model_layer') : global.ModelLayer; };
-  // rows of `table` where col=id ordered like the Java getLines(false) (ORDER BY Line, no IsActive filter)
-  G.lines = function (trx, table, col, id) { return trx.find(table, (function (o) { o[col] = id; return o; })({}), ['line']); };
-  // PO.saveEx → AdempiereException with the PO's error (PO.java saveEx: throws AdempiereException(CLogger error))
-  G.saveEx = function (po) { if (!po.save()) throw new Error(po.error || 'SaveError'); return po; };
-  // MDocType.get(id).getDocBaseType()
-  G.docBaseType = function (trx, id) { var d = G.T().dt(trx, id); return d ? d.docbasetype : null; };
-  // MInvoice.isCreditMemo (MInvoice.java:1072-1077)
-  G.isCreditMemo = function (trx, inv) {
-    var id = inv.get('c_doctype_id'); if (!G.T().nz(id)) id = inv.get('c_doctypetarget_id');
-    var b = G.docBaseType(trx, id); return b === 'APC' || b === 'ARC';
-  };
+  G.MO = function () { return node ? require('../model_order') : global.ModelOrder; };
+  G.MI = function () { return node ? require('../model_invoice') : global.ModelInvoice; };
+  G.lines = function () { var o = G.MO(); return o.lines.apply(o, arguments); };
+  G.saveEx = function () { var o = G.MO(); return o.saveEx.apply(o, arguments); };
+  G.docBaseType = function () { var o = G.MI(); return o.docBaseType.apply(o, arguments); };
+  G.isCreditMemo = function () { var o = G.MI(); return o.isCreditMemo.apply(o, arguments); };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

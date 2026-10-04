@@ -58,6 +58,16 @@
     return (_keyCache[table] = cols);
   }
 
+  // is `col` an AD_Column.IsKey column of `table` (vs the IsParent fallback keyColsOf uses when a table has no IsKey column)
+  var _realKey = {};
+  function isRealKey(q, table, col) {
+    var k = table + '.' + col;
+    if (k in _realKey) return _realKey[k];
+    var r = false;
+    try { r = q("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND lower(c.columnname)=? AND c.iskey='Y' AND c.isactive='Y'", [table, col]).length > 0; } catch (e) { r = true; }
+    return (_realKey[k] = r);
+  }
+
   var _ddl = {};
   function ddlDefaults(trx, table) {
     if (_ddl[table]) return _ddl[table];
@@ -122,7 +132,11 @@
     var idc = this.idCol(table), row = {};
     for (var k in fields) if (Object.prototype.hasOwnProperty.call(fields, k)) row[k.toLowerCase()] = fields[k];
     var opIdx = this.ops.length, id = NEW + opIdx;
-    if (this.keyCols(table).length === 1) row[idc] = id;
+    // a key that is the dictionary's IsKey column gets the new-row placeholder (PO.saveNew assigns it); a table keyed only by its IsParent
+    // column (C_AcctSchema_GL / _Default: key = C_AcctSchema_ID) KEEPS the parent id the caller gave (§MODEL-INSERT-KEEPKEY) unless that identity is taken in this Trx.
+    var givenParent = this.keyCols(table).length === 1 && row[idc] != null && !isRealKey(this.q, table, idc) && !this._p(table)[String(row[idc])];
+    if (givenParent) { /* keep row[idc] */ }
+    else if (this.keyCols(table).length === 1) row[idc] = id;
     else { if (row[idc] == null) row[idc] = this.env.uuid ? this.env.uuid() : id; }
     // PO.saveNew omits null columns, so the physical column DEFAULT applies (data: ad_ddl_default, extracted from the
     // reference schema by erp/patches/build_ad_seed_patch.sh — never guessed).
@@ -152,7 +166,12 @@
     if (e.isNew) { Object.assign(this.ops[e.opIdx].fields, real); return e.row; }
     if (e.opIdx == null) { e.opIdx = this.ops.length; this.ops.push({ op_type: 'CRUD_UPDATE', key: table, table: table, verb: 'update', id: row[idc], idCol: idc === table + '_id' ? undefined : idc, changes: {} }); }
     var ch = this.ops[e.opIdx].changes;
-    Object.keys(real).forEach(function (col) { ch[col] = { old: e.orig[col] == null ? null : e.orig[col], new: real[col] }; });
+    Object.keys(real).forEach(function (col) {
+      // a column that returns to its pre-Trx value is no change at all: drop it from the op; an op left empty is dropped (§MODEL-TRX-NET)
+      if (same(e.orig[col], real[col]) && (e.orig[col] == null) === (real[col] == null)) delete ch[col];
+      else ch[col] = { old: e.orig[col] == null ? null : e.orig[col], new: real[col] };
+    });
+    if (!Object.keys(ch).length) { this.ops[e.opIdx] = null; e.opIdx = null; this.say('§MODEL-TRX-NET ' + table + ' ' + key + ' update nets to no-op — op dropped'); }
     return e.row;
   };
   Trx.prototype.del = function (table, row) {
@@ -193,30 +212,13 @@
   };
 
   // newPO(trx, table, fields) — `new X(ctx,0,trx)`: PO.setStandardDefaults (PO.java:1973-2001: Processed/Processing/
-  // Posted='N', IsActive='Y', client/org) + the generated X_ ctor defaults = AD_Column.DefaultValue literals ('Y'/'N',
-  // quoted text, numbers, @#Date@). Context/@SQL= defaults are NOT guessed — left null and counted (§MODEL-DEFAULTS).
-  var _defCache = {};
-  function adDefaults(trx, table) {
-    if (_defCache[table]) return _defCache[table];
-    var out = {};
-    try {
-      // the generated X_<Table>(ctx,0) ctor sets the AD default of MANDATORY columns only (X_*.java "if (ID == 0) { set… }")
-      trx.q("SELECT lower(c.columnname) AS c, c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y' AND c.ismandatory='Y' AND c.columnsql IS NULL AND c.defaultvalue IS NOT NULL", [table])
-        .forEach(function (r) { out[r.c] = String(r.d).trim(); });
-    } catch (e) {}
-    return (_defCache[table] = out);
-  }
+  // Posted='N' only where the table HAS the column, IsActive='Y', client/org). The generated X_<Table>(ctx,0) ctor bodies are
+  // COMMENTED OUT in this iDempiere (X_C_Order.java:43 `/** if (C_Order_ID == 0) {…} */`), so AD_Column.DefaultValue is NOT stamped here (that is
+  // GridTab.dataNew / getDefault, ad_callout.js); the M class ctor's setInitialDefaults come from MODEL[table].initialDefaults, and the physical column DEFAULTs
+  // (ad_ddl_default) apply at Trx.insert. (§MODEL-NEWPO-JAVA — deleted the AD-mandatory-default stamping that Java does not do.)
   function newPO(trx, table, fields) {
     table = table.toLowerCase();
-    var row = {}, defs = adDefaults(trx, table), env = trx.env;
-    Object.keys(defs).forEach(function (c) {
-      var v = defs[c], m;
-      if (/^'(.*)'$/.test(v)) row[c] = v.slice(1, -1);
-      else if (/^-?\d+(\.\d+)?$/.test(v)) row[c] = Number(v);
-      else if (/^@#Date@$/i.test(v) && env.date) row[c] = env.date;
-      else if ((m = /^@#(AD_Client_ID|AD_Org_ID)@$/i.exec(v))) row[c] = /client/i.test(m[1]) ? env.client : env.org;
-      else if (!/[@(]/.test(v) && !/^(SYSDATE|NOW|CURRENT_TIMESTAMP|-1)$/i.test(v)) row[c] = v;   // unquoted literal = text (TrxType 'S'); clock tokens stay with the host
-    });
+    var row = {}, env = trx.env;
     // the M class ctor's setInitialDefaults (registered as MODEL[table].initialDefaults — clock-valued ones are left to the caller)
     var M = MODEL[table]; if (M && M.initialDefaults) Object.keys(M.initialDefaults).forEach(function (c) { row[c] = M.initialDefaults[c]; });
     var cols0 = columnsOf(trx, table);   // only the columns the table has (C_InvoiceLine/C_InvoiceTax carry no Posted/Processing)
@@ -226,6 +228,25 @@
     if (env.org != null) row.ad_org_id = env.org;
     for (var k in fields) if (Object.prototype.hasOwnProperty.call(fields, k)) row[k.toLowerCase()] = fields[k];
     return row;
+  }
+
+  // ══ PO.copyValues(from, to, AD_Client_ID, AD_Org_ID) (PO.java:1431-1485) — every AD_Column of the table that is not virtual,
+  // key, UUID, standard (AD_Client/AD_Org/IsActive/Processing/Created*/Updated*; MColumn.java:277-291) and IsAllowCopy='Y'
+  var STD = /^(ad_client_id|ad_org_id|isactive|processing|created|createdby|updated|updatedby)$/, _cc = {};
+  function copyCols(trx, table) {
+    if (_cc[table]) return _cc[table];
+    var out = [];
+    trx.q("SELECT lower(c.columnname) AS c, c.iskey AS k, c.isallowcopy AS ac, c.columnsql AS s FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=? AND c.isactive='Y'", [table])
+      .forEach(function (r) {
+        if ((r.s != null && r.s !== '') || r.k === 'Y' || r.c === table + '_uu' || STD.test(r.c) || r.ac !== 'Y') return;
+        out.push(r.c);
+      });
+    return (_cc[table] = out);
+  }
+  function copyValues(trx, table, from, to, client, org) {
+    var f = from.row || from;
+    copyCols(trx, table).forEach(function (c) { if (Object.prototype.hasOwnProperty.call(f, c)) to.set(c, f[c]); });
+    to.set('ad_client_id', client); to.set('ad_org_id', org);
   }
 
   // ══ PO — a record handle (Java PO): pending changes over the live row; save() = PO.save through save() below
@@ -246,6 +267,9 @@
   PO.prototype.deleteEx = function () { var r = remove(this.trx, this.table, this.row); if (!r.ok) throw new Error('DeleteError ' + this.table + ': ' + r.error); };
   function po(trx, table, rowOrId) { if (rowOrId == null) return null; var r = typeof rowOrId === 'object' ? rowOrId : trx.get(table, rowOrId); return r ? new PO(trx, table, r) : null; }
   function newRecord(trx, table, fields) { return new PO(trx, table, null, newPO(trx, table, fields || {})); }
+
+  // PO.saveEx on a plain row + changes map: save(), THROWING AdempiereException(error) like Java saveEx (was processes/support_pay.js saveRow)
+  function saveEx(trx, table, row, changes) { var r = save(trx, table, row, changes); if (!r.ok) throw new Error(r.error || 'SaveError'); return r.row; }
 
   // ══ the model registry — ONE: ad_modelval.js. Model classes (afterSave etc.) + validators share it ══════════
   var MODEL = {};   // table -> { beforeSave(trx,row,isNew,old), afterSave(trx,row,isNew,old), afterDelete(trx,row) } — the M*.java overrides
@@ -449,7 +473,7 @@
     return Object.assign({ ok: r.ok !== false, ops: ops, log: trx.log, trx: trx }, r, { ops: ops });
   }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, registerModel: registerModel, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });
