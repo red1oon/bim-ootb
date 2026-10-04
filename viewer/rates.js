@@ -525,6 +525,8 @@ var WORK_PACKAGES = [
 var DISC_COLORS = {
   ARC:'#4488ff',STR:'#44cccc',MEP:'#44cc44',ELEC:'#cccc44',FP:'#cc8844',
   ACMV:'#cc4444',PLB:'#8844cc',HVAC:'#44aacc',SAN:'#aa44aa',VENT:'#88ccaa',
+  // §CIVIL_DISC (#1844) — civil discipline codes from file names; presentation colours only
+  ROAD:'#777777',FURNITURE:'#d9a441',LIGHTING:'#f2e85c',DRAINAGE:'#3d8fd1',SIGNAGE:'#e0503c',MARKING:'#f5f5f5',EARTHWORK:'#8b6b3e',
 };
 var PHASE_COLORS = {
   'Substructure':'#A5A5A5','Superstructure':'#4472C4','MEP Rough-in':'#70AD47',

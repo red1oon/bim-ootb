@@ -74,10 +74,21 @@ function setupTools(A) {
         if (zr.length && zr[0].values[0][0] != null) { _gLvl = zr[0].values[0][0]; _gSrc = 'GF-avg'; }
       }
 
-      // Step 4: Last resort — minimum z
+      // Step 4: Last resort — lowest element bottoms, stray-robust.
+      // §GROUND_ROBUST (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §M): only models with no slab /
+      // storey match reach here (roads, MEP-only). MIN(center_z) let a handful of strays set the plane:
+      // JELAPANG road bottoms 51–79 m, 16 lighting strays down to −18 m → plane at −11 m, road ~62 m
+      // above it. Take the 2nd percentile of element BOTTOMS instead (≥50 elements; else MIN as before).
       if (_gSrc === '?') {
-        zr = A.db.exec('SELECT MIN(center_z) FROM element_transforms');
-        if (zr.length && zr[0].values[0][0] != null) { _gLvl = zr[0].values[0][0]; _gSrc = 'min-z'; }
+        zr = A.db.exec('SELECT center_z - COALESCE(bbox_z, 0) / 2 FROM element_transforms WHERE center_z IS NOT NULL ORDER BY 1');
+        var _zb = (zr.length ? zr[0].values : []).map(function(r) { return r[0]; });
+        if (_zb.length >= 50) {
+          _gLvl = _zb[Math.floor(_zb.length * 0.02)]; _gSrc = 'p2-bottom';
+          console.log('§GROUND_ROBUST n=' + _zb.length + ' min=' + _zb[0].toFixed(2) + ' p2=' + _gLvl.toFixed(2) +
+            ' below_p2=' + _zb.filter(function(z) { return z < _gLvl; }).length + ' below_min+1m=' + _zb.filter(function(z) { return z < _zb[0] + 1; }).length);
+        } else if (_zb.length) {
+          _gLvl = _zb[0]; _gSrc = 'min-bottom';
+        }
       }
       var p = A.ifc2three(0, 0, _gLvl);
       A.ground.position.y = p.y;

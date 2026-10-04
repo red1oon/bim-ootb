@@ -629,6 +629,9 @@ function setupImport(A) {
       ARC: '#4488ff', STR: '#44cccc', MEP: '#44cc44',
       ELEC: '#cccc44', FP: '#cc8844', ACMV: '#cc4444',
       PLB: '#8844cc',
+      // §CIVIL_DISC (#1844) — same civil colours as rates.js DISC_COLORS
+      ROAD: '#777777', FURNITURE: '#d9a441', LIGHTING: '#f2e85c', DRAINAGE: '#3d8fd1',
+      SIGNAGE: '#e0503c', MARKING: '#f5f5f5', EARTHWORK: '#8b6b3e',
     };
 
     for (const item of imports) {
