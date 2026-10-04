@@ -3827,6 +3827,12 @@
     }
     return null;
   }
+  // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — discipline-keyed phase for civil models,
+  // delegated to the one owner (ScheduleAuthor.civilRuleFor). null for every building element (NON-IMPACT rule).
+  function _civilRule(db, guid) {
+    var SA = window.ScheduleAuthor;
+    return (SA && SA.civilRuleFor) ? SA.civilRuleFor(db, guid) : null;
+  }
   function _classifyRule(cls, name, rules, dflt, nameOverrides) {
     if (!cls) return dflt;
     var ov = _classifyNameOverride(cls, name, nameOverrides);
@@ -3972,7 +3978,7 @@
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
       var cx = row[6] || 0, cy = row[7] || 0, bx = row[8] || 0, by = row[9] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);
-      var rule = matchRule(cls, elName);
+      var rule = _civilRule(db, row[0]) || matchRule(cls, elName);   // §CIVIL_PHASE
       return {
         guid: row[0], cls: cls, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
@@ -4438,7 +4444,7 @@
       rr[0].values.forEach(function (row) {
         var guid = row[0], cls = row[1], nm = row[2] || '';
         if (!cls) return;
-        var ov = SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null;
+        var ov = _civilRule(db, guid) || (SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null);   // §CIVIL_PHASE
         if (ov) ovN++;
         var rule = ov || SA.matchRule(cls, SR, SD);
         var bx = row[3] || 0, by = row[4] || 0, bz = row[5] || 0;
@@ -4500,8 +4506,39 @@
   // and runs the legacy zone path byte-identically, so a fetch failure degrades to today's
   // behaviour instead of breaking generation.
   var _4dTemplate = null, _4dTemplateTried = false;
+  // §CIVIL_TEMPLATE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q): when EVERY element of the open model
+  // carries a civil discipline (SEQUENCE_CIVIL keys), the programme comes from rates/4D_template_civil.json.
+  // Any building element present → the building template, exactly as before (NON-IMPACT rule). The civil
+  // file is fetched only for an all-civil model; the choice is re-made per db so a later building reverts.
+  var _4dTemplateBase = null, _4dTemplateCivil = null, _4dTemplateDb = null;
+  function _allCivil(db) {
+    var keys = Object.keys(window.SEQUENCE_CIVIL || {});
+    if (!db || !keys.length) return false;
+    try {
+      var r = db.exec("SELECT COUNT(*), SUM(CASE WHEN discipline IN (" + keys.map(function () { return '?'; }).join(',') +
+        ") THEN 1 ELSE 0 END) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'", keys);
+      var n = r.length ? r[0].values[0][0] : 0, c = r.length ? (r[0].values[0][1] || 0) : 0;
+      return n > 0 && c === n;
+    } catch (e) { return false; }
+  }
+  async function _civilSwap() {
+    var app = A(), db = app && app.db;
+    if (_4dTemplateDb === db) return _4dTemplate;
+    _4dTemplateDb = db;
+    if (!_allCivil(db)) { _4dTemplate = _4dTemplateBase; try { window._4dTemplate = _4dTemplate; } catch (e) {} return _4dTemplate; }
+    if (!_4dTemplateCivil) {
+      try {
+        _4dTemplateCivil = await fetch('rates/4D_template_civil.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      } catch (e) { console.warn('§CIVIL_TEMPLATE_FAIL ' + e.message + ' — keeping the building template'); return _4dTemplate; }
+    }
+    _4dTemplate = _4dTemplateCivil;
+    try { window._4dTemplate = _4dTemplate; } catch (e) {}
+    console.log('§CIVIL_TEMPLATE loaded rates/4D_template_civil.json v' + ((_4dTemplate.meta && _4dTemplate.meta.version) || '?') +
+      ' phases=' + (_4dTemplate.phases || []).length + ' — every element is civil (order: ' + ((_4dTemplate.meta && _4dTemplate.meta.order_source) || '').split(' — ')[0] + ')');
+    return _4dTemplate;
+  }
   async function _load4DTemplate() {
-    if (_4dTemplateTried) return _4dTemplate;
+    if (_4dTemplateTried) return _civilSwap();
     _4dTemplateTried = true;
     var url = 'rates/4D_template.json';
     try {
@@ -4523,7 +4560,8 @@
       console.warn('§TPL_WIRED_FAIL ' + e.message +
         ' — falling back to the legacy deriveZones path (byte-identical to pre-2026-08-26)');
     }
-    return _4dTemplate;
+    _4dTemplateBase = _4dTemplate;
+    return _civilSwap();
   }
   // §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-GRAIN/§S7-INJECT-WHERE) — the "Generate programme" pill
   // action needs the SAME template this function fetches, and §S7-INJECT is explicit: "reuse that,
@@ -5061,7 +5099,7 @@
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
-      var ov = matchNameOverride(cls, elName);
+      var ov = _civilRule(db, row[0]) || matchNameOverride(cls, elName);   // §CIVIL_PHASE
       if (ov) nameOverrides++;
       var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
