@@ -4,7 +4,7 @@
 // (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-SUPPORT-ORACLE). Source of truth = the LIVE
 // definitions on the pilot DB (pg_get_functiondef, adempiere schema): bompricestd/list/limit, currencyrate,
 // currencyconvert, currencyround, currencybase, invoiceopen (+ the C_Invoice_v view it reads), invoicediscount,
-// paymenttermdiscount, nextbusinessday, getdate, trunc(date[,fmt]). NUMERIC math goes through BigDecimal and returns
+// paymenttermdiscount, paymenttermduedate, paymenttermduedays (incl. IsDueFixed), invoicewriteoff, nextbusinessday, getdate, trunc(date[,fmt]). NUMERIC math goes through BigDecimal and returns
 // TEXT (exact) — SQLite coerces it when SQL arithmetic touches it. Registered by the host on its sql.js db:
 //   AdCallout.RUNTIME.registerSqlFunctions(function (name, fn) { db.create_function(name, fn); })
 (function (global) {
@@ -206,6 +206,65 @@
       return F.paymenttermdiscount(v_Amount, i.cur, i.pt, i.di, p_PayDate);                          // note: passes p_PayDate, not v_PayDate (as the live body)
     } catch (e) { R.log('§SQLFN invoiceDiscount ' + ((e && e.message) || e)); return null; }        // EXCEPTION WHEN OTHERS → NULL
   };
+  // ── adempiere.add_months(timestamptz, numeric) = datetime + interval '1 month' * TRUNC(months): PG clamps the day to the month end
+  function addMonths(ts, n) {
+    var d = new Date(ts.getTime()), m = d.getUTCMonth() + Math.trunc(Number(n || 0)), y = d.getUTCFullYear();
+    var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    return new Timestamp(Date.UTC(y, m, Math.min(d.getUTCDate(), last), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()));
+  }
+  function monthStart(ts) { var d = new Date(ts.getTime()); return new Timestamp(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); }
+  function monthLastDay(ts) { var d = new Date(ts.getTime()); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); }
+  function plusDays(ts, n) { return new Timestamp(ts.getTime() + Number(n) * 86400000); }
+  // paymentTermDueDate(PaymentTerm_ID, DocDate) -- adempiere.paymenttermduedate (plpgsql, \sf on the idempiere DB)
+  F.paymenttermduedate = function (PaymentTerm_ID, DocDate) {
+    var doc = Timestamp.of(DocDate); if (doc == null) return null;                                   // TRUNC(NULL) = NULL
+    var DueDate = TimeUtil.getDay(doc);                                                                // DueDate := TRUNC(DocDate)
+    q('paymentTermDueDate', 'SELECT * FROM C_PaymentTerm WHERE C_PaymentTerm_ID = ?', [PaymentTerm_ID]).forEach(function (p) {
+      if (p.isduefixed === 'Y') {
+        var FirstDay = monthStart(doc);                                                                // TRUNC(DocDate,'MM')
+        var NoDays = Math.round((TimeUtil.getDay(doc).getTime() - FirstDay.getTime()) / 86400000);
+        DueDate = plusDays(FirstDay, Number(p.fixmonthday) - 1);                                       // starting on 1st
+        DueDate = addMonths(DueDate, p.fixmonthoffset);
+        if (NoDays > Number(p.fixmonthcutoff)) DueDate = addMonths(DueDate, 1);
+      } else DueDate = plusDays(TimeUtil.getDay(doc), Number(p.netdays));
+    });
+    return DueDate;
+  };
+  // paymentTermDueDays(PaymentTerm_ID, DocDate, PayDate) -- adempiere.paymenttermduedays (plpgsql, \sf), incl. the IsDueFixed branch
+  F.paymenttermduedays = function (PaymentTerm_ID, DocDate, PayDate) {
+    var doc = Timestamp.of(DocDate);
+    if ((PaymentTerm_ID != null && Number(PaymentTerm_ID) === 0) || doc == null) return 0;
+    var v_PayDate = Timestamp.of(PayDate) || nowTs(), DueDate = null;
+    q('paymentTermDueDays', 'SELECT * FROM C_PaymentTerm WHERE C_PaymentTerm_ID = ?', [PaymentTerm_ID]).forEach(function (p) {
+      if (p.isduefixed === 'Y') {
+        var calDueDate = TimeUtil.getDay(doc), MaxDayCut = monthLastDay(calDueDate), cut = Number(p.fixmonthcutoff), fmd = Number(p.fixmonthday);
+        if (cut > MaxDayCut) calDueDate = plusDays(monthStart(calDueDate), MaxDayCut - 1);              // last day of month
+        else calDueDate = plusDays(monthStart(calDueDate), cut - 1);                                    // set day FixMonthCutoff
+        var off = Number(p.fixmonthoffset);
+        if (doc.after(calDueDate)) off = off + 1;                                                       // DocDate (timestamp) > calDueDate
+        calDueDate = addMonths(calDueDate, off);
+        var MaxDay = monthLastDay(calDueDate);
+        if (fmd > MaxDay || (fmd >= 30 && MaxDay > fmd)) calDueDate = plusDays(monthStart(calDueDate), MaxDay - 1);   // 32 -> 28, 30 -> 31
+        else calDueDate = plusDays(monthStart(calDueDate), fmd - 1);
+        DueDate = calDueDate;
+      } else DueDate = plusDays(TimeUtil.getDay(doc), Number(p.netdays));
+    });
+    if (DueDate == null) return 0;
+    return Math.round((TimeUtil.getDay(v_PayDate).getTime() - DueDate.getTime()) / 86400000);        // EXTRACT(day FROM interval)
+  };
+  // invoiceWriteOff(C_Invoice_ID) -- adempiere.invoicewriteoff: 0 unless sysconfig PAYSELECTION_CUSTOM_INVOICEWRITEOFF_FUNCTION names a function
+  F.invoicewriteoff = function (p_C_Invoice_ID) {
+    var h = q('invoiceWriteOff', 'SELECT AD_Client_ID AS c FROM C_Invoice WHERE C_Invoice_ID=?', [p_C_Invoice_ID])[0];
+    var cl = h ? h.c : null;
+    var sc = q('invoiceWriteOff', "SELECT Value AS v FROM AD_SysConfig WHERE Name='PAYSELECTION_CUSTOM_INVOICEWRITEOFF_FUNCTION' AND AD_Client_ID IN (0,?) AND AD_Org_ID IN (0,0) AND IsActive='Y' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC LIMIT 1", [cl])[0];
+    var custom = sc && sc.v != null ? String(sc.v) : '';                                              // get_Sysconfig(name,'',client,0)
+    if (custom.length > 0) {                                                                          // EXECUTE 'SELECT '||custom||'('||id||')'
+      var f = F[custom.toLowerCase()];
+      if (typeof f === 'function') return D(f(p_C_Invoice_ID));
+      R.log('§SQLFN invoiceWriteOff custom function ' + custom + ' not ported'); return null;
+    }
+    return BD.ZERO;
+  };
   F.getdate = function () { return nowTs(); };                                                        // statement_timestamp()
   // trunc(datetime[, format]) — CAST(... AS DATE) / DATE_Trunc
   F.trunc = function (dt, fmt) {
@@ -222,7 +281,7 @@
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
-    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], nextbusinessday: [2], getdate: [0], trunc: [1, 2] };
+    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nextbusinessday: [2], getdate: [0], trunc: [1, 2] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
     switch (n) {

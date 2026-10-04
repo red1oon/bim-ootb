@@ -50,7 +50,8 @@ for uu, p_, q, ca, cq, fp in cur.fetchall():
 out.append('CREATE TABLE IF NOT EXISTS ad_ddl_default (tablename TEXT, columnname TEXT, defaultvalue TEXT);')
 T = ['c_order', 'c_orderline', 'c_ordertax', 'm_inout', 'm_inoutline', 'm_inoutlinema', 'm_transaction', 'm_storageonhand', 'm_storagereservation', 'm_storagereservationlog',
      'm_costdetail', 'm_cost', 'm_costhistory', 'm_costqueue', 'c_invoice', 'c_invoiceline', 'c_invoicetax', 'c_payment', 'c_allocationhdr', 'c_allocationline', 'fact_acct',
-     'ad_wf_process', 'ad_wf_activity', 'ad_wf_eventaudit', 'm_matchpo', 'm_matchinv']
+     'ad_wf_process', 'ad_wf_activity', 'ad_wf_eventaudit', 'm_matchpo', 'm_matchinv',
+     'c_bankstatementline', 'm_inventoryline', 'c_periodcontrol']   # + §CP-OPEN 4a: IsManual/EftAmt, QtyCsv/CurrentCostPrice/NewCostPrice (physical DEFAULTs)
 cur.execute("select table_name, column_name, column_default from information_schema.columns where table_schema='adempiere' and column_default is not null and table_name = any(%s) order by 1,2", (T,))
 for t, c, d in cur.fetchall():
     v = d.split('::')[0].strip()
@@ -58,5 +59,9 @@ for t, c, d in cur.fetchall():
     if v.startswith("'") and v.endswith("'"): v = v[1:-1]
     elif not re.match(r'^-?\d+(\.\d+)?$', v): continue
     out.append("INSERT INTO ad_ddl_default SELECT %s,%s,%s WHERE NOT EXISTS (SELECT 1 FROM ad_ddl_default WHERE tablename=%s AND columnname=%s);" % (lit(t), lit(c), lit(v), lit(t), lit(c))); n += 1
+# C_PeriodControl.PeriodStatus has NO physical DEFAULT; its default is AD_Column.DefaultValue ('N' = NeverOpened, MPeriodControl.java:67-70) -- extracted, same table
+cur.execute("select c.columnname, c.defaultvalue from ad_column c join ad_table t on t.ad_table_id=c.ad_table_id where t.tablename='C_PeriodControl' and c.columnname in ('PeriodStatus','PeriodAction') and c.defaultvalue is not null")
+for c, d in cur.fetchall():
+    out.append("INSERT INTO ad_ddl_default SELECT %s,%s,%s WHERE NOT EXISTS (SELECT 1 FROM ad_ddl_default WHERE tablename=%s AND columnname=%s);" % (lit('c_periodcontrol'), lit(c.lower()), lit(d), lit('c_periodcontrol'), lit(c.lower()))); n += 1
 print('\n'.join(out))
 print('§MODEL-PATCH statements=%d rows=%d' % (len(out), n), file=sys.stderr)

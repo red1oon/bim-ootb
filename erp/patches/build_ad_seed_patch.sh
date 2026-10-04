@@ -17,6 +17,13 @@ Q() { docker exec postgres psql -U adempiere -d idempiere -At -c "set search_pat
   for T in c_depositbatch c_depositbatchline; do
     echo "CREATE TABLE IF NOT EXISTS $T ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'"), PRIMARY KEY (${T}_id));"
   done
+  # §CP-OPEN 4a (prompts/ERP_IDEMPIERE_UX_PARITY.md): the DDL the CP process workers had to stub locally — M_ProductDownload (CopyProduct),
+  #   M_Substitute (CopyProduct; PK = the live m_substitute_pkey (m_product_id, substitute_id)), C_BankStatementMatcher (BankStatementMatcher),
+  #   C_OrderPaySchedule (shipped in build_model_patch.py's table list). Same live-schema extraction as i_bpartner above.
+  for T in "m_productdownload:m_productdownload_id" "m_substitute:m_product_id, substitute_id" "c_bankstatementmatcher:c_bankstatementmatcher_id"; do
+    TN="${T%%:*}"; PK="${T#*:}"
+    echo "CREATE TABLE IF NOT EXISTS $TN ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$TN'"), PRIMARY KEY ($PK));"
+  done
   Q "select format('INSERT OR IGNORE INTO m_cost (ad_client_id,ad_org_id,m_product_id,m_costtype_id,c_acctschema_id,m_costelement_id,m_attributesetinstance_id,isactive,currentcostprice,currentqty,cumulatedamt,cumulatedqty,futurecostprice,percent,iscostfrozen,m_cost_uu) VALUES (%s,%s,%s,%s,%s,%s,%s,%L,%s,%s,%s,%s,%s,%s,%L,%L);', ad_client_id,ad_org_id,m_product_id,m_costtype_id,c_acctschema_id,m_costelement_id,m_attributesetinstance_id,isactive,currentcostprice,currentqty,cumulatedamt,cumulatedqty,coalesce(futurecostprice,0),coalesce(percent,0),iscostfrozen,m_cost_uu) from m_cost where ad_client_id=11 order by m_product_id,m_costelement_id,ad_org_id"
   python3 "$(dirname "$0")/build_model_patch.py"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
 } > "$OUT"
