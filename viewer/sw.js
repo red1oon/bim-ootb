@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1560';
+const CACHE_VERSION = 'v1561';
+// v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
 // v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
 // sky-surface v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
 // v1559 (2026-10-03) W6 §F one record per film frame (phase ms, renders, calls/tris, exposure, lamps, HUD, luma, encode) + &filmlog=compact folds ~24 repeat tags to one line per film; W7 VACUOUS/NO-OP verdicts: §NIGHT_PL_INTENSITY_HEURISTIC on change + VACUOUS, §CPE_PIE_HOLD/§CPE_STATS_TAIL without a panel, §DLOD_BAKE_PROXY_RESULT, §FRAME_COST order-dependent calls dropped. cinema_maxq 35, tools 75, time_machine 81.

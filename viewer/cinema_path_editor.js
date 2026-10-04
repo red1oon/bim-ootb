@@ -456,6 +456,20 @@
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     return true;
   }
+  // §CPE_STICK_CLEAR (red1 2026-10-04, prompts/ALTC_FOUNDATION.md §1) — remove every middle band in
+  // ONE undo step; settle and stop stay (same rule as _removeStick).
+  function _clearSticks() {
+    if (!_state || _state.bands.length <= 2) return 0;
+    var k = _state.bands.length - 2;
+    _undoPush('clear ' + k + ' stick' + (k === 1 ? '' : 's'));
+    _state.bands = [_state.bands[0], _state.bands[_state.bands.length - 1]];
+    _state.held = null; _state.staged = false;
+    console.log('§CPE_STICK_CLEAR removed=' + k + ' remaining=' + _state.bands.length);
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return k;
+  }
   // §CPE_GHOST_PULL — a hose pull is removable exactly as a stick is. Before this existed a pull
   // could only be undone (Ctrl+Z, and only while it was still the newest edit); once buried under a
   // later edit it was permanent AND invisible. That is the whole "ghost" the user reported.
@@ -1325,7 +1339,9 @@
         head.appendChild(lbl);
         // §CPE_STICK: a spawned stick is removable; settle and stop are not (the dive lands on one
         // and the orbit stretches off the other — removing either would change what the beats mean).
-        if (b._stick && i > 0 && i < _state.bands.length - 1) {
+        // §CPE_STICK_CLEAR (red1 2026-10-04): EVERY middle band is removable, seeded or dropped —
+        // gating on `b._stick` left seeded middle bands with no way to delete them.
+        if (i > 0 && i < _state.bands.length - 1) {
           var del = document.createElement('button');
           del.textContent = '×';
           del.title = 'remove this stick';
@@ -1415,6 +1431,17 @@
         box.appendChild(row);
       })(i);
     }
+    // §CPE_STICK_CLEAR — one button for every middle band; disabled when only settle + stop remain.
+    var nMid = Math.max(0, _state.bands.length - 2);
+    var clr = document.createElement('button');
+    clr.id = 'cpe-stick-clear';
+    clr.textContent = nMid ? 'clear ' + nMid + ' stick' + (nMid === 1 ? '' : 's') : 'no sticks to clear';
+    clr.title = 'remove every middle stick (start and end stay) — Ctrl+Z brings them back';
+    clr.disabled = !nMid;
+    clr.style.cssText = 'margin:4px 12px;padding:1px 8px;font-size:10px;background:#2a2e34;border:1px solid #4a4f57;' +
+      'border-radius:3px;color:' + (nMid ? '#ddd' : '#666') + ';cursor:' + (nMid ? 'pointer' : 'default');
+    clr.addEventListener('click', function(e) { e.stopPropagation(); _clearSticks(); });
+    box.appendChild(clr);
     _renderHoseRows(box);
   }
 
