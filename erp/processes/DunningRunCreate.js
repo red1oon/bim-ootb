@@ -5,12 +5,13 @@
 // deleteEntries/getEntry (M/MDunningRun.java), MDunningRunEntry.setBPartner (:~120-200), MDunningRunLine setInvoice/setPayment/setFee/
 // beforeSave/updateEntry (M/MDunningRunLine.java), MDunningLevel.getPreviousLevels (:92-126). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // Named equivalences: the SQL functions daysBetween / paymentTermDueDays / paymentAvailable (PL/pgSQL, not registered in the witness engine) are
-// evaluated in JS from the same rows (paymentTermDueDays' IsDueFixed branch is §PROC-UNPORTED-DEP); the aliased/sub-select UPDATE in updateEntry runs as
+// evaluated in JS from the same rows (paymentTermDueDays is the callouts/sqlfn.js UDF); the aliased/sub-select UPDATE in updateEntry runs as
 // its computed result via trx.update.
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.compiere.process.DunningRunCreate', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function DunningRunCreate() {
       SvrProcess.call(this); this.p_IncludeInDispute = false; this.p_OnlySOTrx = false; this.p_IsAllCurrencies = false; this.p_SalesRep_ID = 0; this.p_C_Currency_ID = 0;
       this.p_C_BPartner_ID = 0; this.p_C_BP_Group_ID = 0; this.p_C_DunningRun_ID = 0; this.p_AD_Org_ID = 0; this.m_run = null;
@@ -104,7 +105,7 @@
     DunningRunCreate.prototype.updateEntry = function (entryId) {
       var trx = this.get_TrxName(), e = trx.get('c_dunningrunentry', entryId); if (!e) return;
       var lines = trx.find('c_dunningrunline', { c_dunningrunentry_id: entryId }), S = P.PSTK, A = X.A, sum = A.Env.ZERO, qty = 0;
-      lines.forEach(function (l) { sum = sum.add(S.bd(l.convertedamt)).add(S.bd(l.feeamt)).add(S.bd(l.interestamt)); if (l.c_invoice_id != null || l.c_payment_id != null) qty++; });
+      lines.forEach(function (l) { sum = sum.add(MT.bd(l.convertedamt)).add(MT.bd(l.feeamt)).add(MT.bd(l.interestamt)); if (l.c_invoice_id != null || l.c_payment_id != null) qty++; });
       trx.update('c_dunningrunentry', e, { amt: Number(sum.toString()), qty: qty });
     };
     // MConversionRate.convert(ctx, amt, from, to, client, org) — same currency is identity; else the currencyConvert function at the context date
@@ -112,17 +113,17 @@
       var A = X.A, trx = this.get_TrxName();
       if (amt == null || amt.signum() === 0 || from === to) return amt;
       var r = trx.q('SELECT currencyConvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(amt.toString()), from, to, trx.env.date, client, org])[0];
-      return r && r.v != null ? P.PSTK.bd(r.v) : null;
+      return r && r.v != null ? MT.bd(r.v) : null;
     };
     // MDunningRunLine.beforeSave :256-282 (unprocessed lines only here — see processed branch dep) + saveNew + afterSave updateEntry
     DunningRunCreate.prototype.saveLine = function (entryId, f, curFrom, curTo, existing) {
       var trx = this.get_TrxName(), S = P.PSTK, A = X.A, run = this.m_run;
       if (!Number(f.c_invoice_id || 0) && !Number(f.c_payment_id || 0)) { f.amt = 0; f.openamt = 0; }
-      var open = S.bd(f.openamt), conv = S.bd(f.convertedamt);
+      var open = MT.bd(f.openamt), conv = MT.bd(f.convertedamt);
       if (A.Env.ZERO.compareTo(open) === 0) f.convertedamt = 0;
       else if (A.Env.ZERO.compareTo(conv) === 0) { var c = this.convert(open, curFrom, curTo, run.ad_client_id, run.ad_org_id); f.convertedamt = c == null ? 0 : Number(c.toString()); }
-      f.totalamt = Number(S.bd(f.convertedamt).add(S.bd(f.feeamt)).add(S.bd(f.interestamt)).toString());
-      if (f.processed === 'Y') S.dep(trx, 'MDunningRunLine.beforeSave processed branch :262-279 (invoice dunning level) — not reached by DunningRunCreate');
+      f.totalamt = Number(MT.bd(f.convertedamt).add(MT.bd(f.feeamt)).add(MT.bd(f.interestamt)).toString());
+      if (f.processed === 'Y') MT.dep(trx, 'MDunningRunLine.beforeSave processed branch :262-279 (invoice dunning level) — not reached by DunningRunCreate');
       var r = existing ? X.save(trx, 'C_DunningRunLine', existing, f) : X.save(trx, 'C_DunningRunLine', null, X.newPO(trx, 'C_DunningRunLine', f));
       if (!r.ok) throw new Error('Cannot save MDunningRunLine');
       this.updateEntry(entryId);
@@ -131,20 +132,17 @@
     DunningRunCreate.prototype.saveEntry = function (entry) {
       var trx = this.get_TrxName(), S = P.PSTK, f = entry.row;
       if (!entry.isNew) return f;
-      var cols = S.cols(trx, 'C_DunningRunEntry'), row = X.newPO(trx, 'C_DunningRunEntry', f);
-      if (cols) ['processed', 'processing', 'posted'].forEach(function (c) { if (!cols[c] && !(c in f)) delete row[c]; });
+      var row = X.newPO(trx, 'C_DunningRunEntry', f);
       var r = X.save(trx, 'C_DunningRunEntry', null, row);
       if (!r.ok) throw new Error('Cannot save MDunningRunEntry');
       entry.row = r.row; entry.isNew = false; return r.row;
     };
-    // paymentTermDueDays(PaymentTerm_ID, DocDate, PayDate) — the non-fixed branch of the PL/pgSQL function (DueDate = TRUNC(DocDate)+NetDays)
+    // paymentTermDueDays(PaymentTerm_ID, DocDate, PayDate) — SQL function (DunningRunCreate.java:145), as Java calls it
     DunningRunCreate.prototype.paymentTermDueDays = function (termId, docDate, payDate) {
       var trx = this.get_TrxName();
       if (!termId || docDate == null) return 0;
-      var pay = payDate || trx.env.date, p = trx.q('SELECT * FROM C_PaymentTerm WHERE C_PaymentTerm_ID=?', [termId])[0];
-      if (!p) return 0;
-      if (p.isduefixed === 'Y') { P.PSTK.dep(trx, 'paymentTermDueDays IsDueFixed branch (PL/pgSQL) — days treated as 0'); return 0; }
-      return day(pay) - (day(docDate) + nzn(p.netdays));
+      var r = trx.q('SELECT paymentTermDueDays(?,?,?) AS v', [termId, docDate, payDate || trx.env.date])[0];   // the PL/pgSQL function incl. its IsDueFixed branch (callouts/sqlfn.js)
+      return r && r.v != null ? Number(r.v) : 0;
     };
     // addInvoices :148-299
     DunningRunCreate.prototype.addInvoices = function (level) {
@@ -172,7 +170,7 @@
         var rows = trx.q(sql, args);
         rows.forEach(function (r) {
           var keys = Object.keys(r), v = keys.map(function (k) { return r[k]; });
-          var C_Invoice_ID = Number(v[0]), C_Currency_ID = Number(v[1]), GrandTotal = S.bd(v[2]), Open = S.bd(v[3]);
+          var C_Invoice_ID = Number(v[0]), C_Currency_ID = Number(v[1]), GrandTotal = MT.bd(v[2]), Open = MT.bd(v[3]);
           var DaysDue = v[4] != null ? day(run.dunningdate) - day(v[4]) : self.paymentTermDueDays(Number(v[5] || 0), v[6], run.dunningdate);   // COALESCE(daysBetween(?,ips.DueDate), paymentTermDueDays(...))
           var IsInDispute = 'Y' === v[7], C_BPartner_ID = Number(v[8]), C_InvoicePaySchedule_ID = Number(v[9] || 0);
           if (!self.p_IncludeInDispute && IsInDispute) return;
@@ -220,9 +218,9 @@
       var ch = trx.q('SELECT MAX(PayAmt) AS m FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [payId])[0];
       if (ch && ch.m != null) return A.Env.ZERO;
       var p = trx.q('SELECT C_Currency_ID AS c, PayAmt AS a FROM C_Payment_v WHERE C_Payment_ID=?', [payId])[0];
-      var avail = S.bd(p.a), prec = S.currencyStdPrecision(trx, p.c), min = A.BigDecimal.fromString(prec > 0 ? '0.' + new Array(prec).join('0') + '1' : '1');   // 1/10^prec
+      var avail = MT.bd(p.a), prec = MT.currencyStdPrecision(trx, p.c), min = A.BigDecimal.fromString(prec > 0 ? '0.' + new Array(prec).join('0') + '1' : '1');   // 1/10^prec
       trx.q('SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, a.C_Currency_ID AS cur, a.DateTrx AS d FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Payment_ID=? AND a.IsActive=?', [payId, 'Y'])
-        .forEach(function (r) { var v = r.cur === p.c ? S.bd(r.amt) : S.bd(trx.q('SELECT currencyConvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(r.amt), r.cur, p.c, r.d, r.cl, r.org])[0].v); avail = avail.subtract(v); });
+        .forEach(function (r) { var v = r.cur === p.c ? MT.bd(r.amt) : MT.bd(trx.q('SELECT currencyConvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(r.amt), r.cur, p.c, r.d, r.cl, r.org])[0].v); avail = avail.subtract(v); });
       if (avail.compareTo(min.negate()) > 0 && avail.compareTo(min) < 0) avail = A.Env.ZERO;
       return avail.setScale(prec, A.RoundingMode.HALF_UP);
     };
@@ -243,7 +241,7 @@
       try {
         trx.q(sql, args).forEach(function (r) {
           var keys = Object.keys(r), v = keys.map(function (k) { return r[k]; });
-          var C_Payment_ID = Number(v[0]), C_Currency_ID = Number(v[1]), PayAmt = S.bd(v[2]).negate(), OpenAmt = self.paymentAvailable(C_Payment_ID).negate(), C_BPartner_ID = Number(v[4]);
+          var C_Payment_ID = Number(v[0]), C_Currency_ID = Number(v[1]), PayAmt = MT.bd(v[2]).negate(), OpenAmt = self.paymentAvailable(C_Payment_ID).negate(), C_BPartner_ID = Number(v[4]);
           if (A.Env.ZERO.compareTo(OpenAmt) === 0) return;
           if (self.createPaymentLine(C_Payment_ID, C_Currency_ID, PayAmt, OpenAmt, C_BPartner_ID, Number(level.c_dunninglevel_id))) count++;
         });
@@ -268,8 +266,8 @@
       // MDunningRun.getEntries(true, onlyInvoices) :111-118 adds an entry unless (onlyInvoices && it hasInvoices)
       if (level.isstatement === 'Y') entries = entries.filter(function (e) { return !self.hasInvoices(e); });
       entries.forEach(function (el) {
-        if (level.isshowalldue === 'Y' && level.isshownotdue === 'Y' && S.bd(el.amt).compareTo(A.Env.ZERO) < 0) return;
-        var fee = S.bd(level.feeamt), er = el;
+        if (level.isshowalldue === 'Y' && level.isshownotdue === 'Y' && MT.bd(el.amt).compareTo(A.Env.ZERO) < 0) return;
+        var fee = MT.bd(level.feeamt), er = el;
         var f = { ad_client_id: er.ad_client_id, ad_org_id: er.ad_org_id, c_dunningrunentry_id: er.c_dunningrunentry_id, amt: Number(fee.toString()), openamt: Number(fee.toString()), convertedamt: 0, feeamt: Number(fee.toString()), interestamt: 0, totalamt: 0, daysdue: 0, timesdunned: 0, isindispute: 'N', processed: 'N' };
         var cv = self.convert(fee, self.p_C_Currency_ID, Number(er.c_currency_id), er.ad_client_id, er.ad_org_id); f.convertedamt = cv == null ? 0 : Number(cv.toString());
         self.saveLine(er.c_dunningrunentry_id, f, self.p_C_Currency_ID, Number(er.c_currency_id));

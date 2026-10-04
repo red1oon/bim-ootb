@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // processes/CopyFromBankStmt.js — org.compiere.process.CopyFromBankStmt, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/CopyFromBankStmt.java). §CP — Witness: W-CP-PROC-ORACLE.
-// MBankStatementLine(statement) / setPayment / beforeSave / updateHeader live in support_copy.js (MBankStatementLine.java:100-287).
+// MBankStatementLine(statement) / setPayment / beforeSave / updateHeader live in model_trade.js (ModelTrade, moved §CP-OPEN 4b) (MBankStatementLine.java:100-287).
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -19,7 +19,7 @@
       }
     };
     CopyFromBankStmt.prototype.doIt = function () {                                    // :63-116
-      var A = X.A, trx = this.get_TrxName(), ctx = this.getCtx(), S = P.PSUP;
+      var A = X.A, trx = this.get_TrxName(), ctx = this.getCtx(), S = (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade);
       var To_C_BankStatement_ID = this.getRecord_ID();
       trx.say('§PROC-INFO CopyFromBankStmt From C_BankStatement_ID=' + this.m_C_BankStatement_ID + ' to ' + To_C_BankStatement_ID);   // :67
       if (To_C_BankStatement_ID === 0) throw new Error('Target C_BankStatement_ID == 0');       // :68-69

@@ -4,7 +4,7 @@
 // (org.adempiere.base.process/src/org/compiere/process/PaySelectionCreateFrom.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // SQL functions currencyConvertInvoice/invoiceOpen/invoiceDiscount/currencyConvert are the sqlfn.js/views.js UDFs; the view C_Invoice_v
 // is created by callouts/views.js (M.ensureView). invoiceWriteOff = the live PG function: sysconfig PAYSELECTION_CUSTOM_INVOICEWRITEOFF_FUNCTION
-// else 0 (pg_get_functiondef, 2026-10-04) — evaluated here as the literal 0, a custom function logs §PROC-UNPORTED-DEP.
+// else 0 (pg_get_functiondef) — invoiceWriteOff() is the callouts/sqlfn.js UDF, called in the SQL as Java does.
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -40,13 +40,11 @@
       var dueDate = this.p_DueDate == null ? payDate : String(this.p_DueDate.toString());                    // :133 p_DueDate = psel.getPayDate()
       var C_CurrencyTo_ID = R.DB.getSQLValue(null, 'SELECT C_Currency_ID FROM C_BankAccount WHERE C_BankAccount_ID=?', psel.c_bankaccount_id);   // MPaySelection.getC_Currency_ID :119-128
       R.M.ensureView('c_invoice_v');
-      var custom = ''; try { var cr = R.DB.query("SELECT Value AS v FROM AD_SysConfig WHERE Name='PAYSELECTION_CUSTOM_INVOICEWRITEOFF_FUNCTION' AND AD_Client_ID IN (0,?) AND IsActive='Y' ORDER BY AD_Client_ID DESC", [psel.ad_client_id])[0]; custom = cr && cr.v ? cr.v : ''; } catch (e) { custom = ''; }
-      if (custom.length > 0) R.unportedDep('invoiceWriteOff', 'PG custom function ' + custom + ' (§PROC-UNPORTED-DEP) — 0 used');
       var sql = 'SELECT C_Invoice_ID,' +
         ' currencyConvertInvoice(i.C_Invoice_ID,?,invoiceOpen(i.C_Invoice_ID, i.C_InvoicePaySchedule_ID), ?) AS PayAmt,' +
         ' currencyConvertInvoice(i.C_Invoice_ID,?,invoiceDiscount(i.C_Invoice_ID,?,i.C_InvoicePaySchedule_ID),?) AS DiscountAmt,' +
         ' PaymentRule, IsSOTrx, ' +
-        ' currencyConvert(0,i.C_Currency_ID, ?,?,i.C_ConversionType_ID,i.AD_Client_ID,i.AD_Org_ID) AS WriteOffAmt ' +
+        ' currencyConvert(invoiceWriteOff(i.C_Invoice_ID),i.C_Currency_ID, ?,?,i.C_ConversionType_ID,i.AD_Client_ID,i.AD_Org_ID) AS WriteOffAmt ' +
         'FROM C_Invoice_v i ';
       var w = 'WHERE ';
       w += 'D' === this.p_PaymentRule ? "i.IsSOTrx='Y'" : "i.IsSOTrx='N'";                                   // X_C_Order.PAYMENTRULE_DirectDebit
@@ -90,7 +88,7 @@
         if (C_Invoice_ID === 0 || ZERO.compareTo(PayAmt) === 0) continue;
         var DiscountAmt = D(rs.discountamt), WriteOffAmt = D(rs.writeoffamt), PaymentRule = rs.paymentrule, isSOTrx = 'Y' === rs.issotrx;
         lines++;
-        var pselLine = PAY.stripStdDefaults(trx, C.MPaySelectionLine(trx, psel, lines * 10, PaymentRule));   // phantom Posted/Processing columns stripped (see support_pay.js)
+        var pselLine = C.MPaySelectionLine(trx, psel, lines * 10, PaymentRule);
         C.pslSetInvoice(pselLine, C_Invoice_ID, isSOTrx, PayAmt, PayAmt.subtract(DiscountAmt).subtract(WriteOffAmt), DiscountAmt, WriteOffAmt);
         if (!pselLine.save()) throw new Error('Cannot save MPaySelectionLine');                                // IllegalStateException
       }

@@ -18,7 +18,7 @@
       }
     };
     CopyFromOrder.prototype.doIt = function () {                                                 // :60-74
-      var A = X.A, trx = this.get_TrxName(), S = P.PSUP;
+      var A = X.A, trx = this.get_TrxName(), S = (typeof module !== 'undefined' && module.exports ? require('../model_order') : global.ModelOrder);
       var To_ID = this.getRecord_ID();
       trx.say('§PROC-INFO CopyFromOrder From C_Order_ID=' + this.m_ID + ' to ' + To_ID);
       if (To_ID === 0) throw new Error('Target C_Order_ID == 0');

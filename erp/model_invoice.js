@@ -13,7 +13,7 @@
   var DIMS = ['ad_orgtrx_id', 'c_project_id', 'c_campaign_id', 'c_activity_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id'];
   function copy(src, cols) { var o = {}; cols.forEach(function (c) { if (src[c] != null) o[c] = src[c]; }); return o; }
   function invLines(trx, i) { return trx.find('c_invoiceline', { c_invoice_id: i.c_invoice_id }, ['line']).filter(function (l) { return l.isactive !== 'N'; }); }
-  function isCM(trx, i) { var d = T.dt(trx, i.c_doctype_id || i.c_doctypetarget_id); return d && String(d.docbasetype || '').charAt(2) === 'C'; }
+  function isCM(trx, i) { return PXI.isCreditMemo(trx, i); }   // MInvoice.isCreditMemo :1072-1077 — ONE copy (PXI, below)
 
   // ══ StandardTaxProvider.calculateInvoiceTaxTotal :166-238 ∘ MInvoiceTax.calculateTaxFromLines ═══════════════════
   function calculateInvoiceTaxTotal(trx, inv) {
@@ -348,6 +348,8 @@
   // setInitialDefaults: MInvoice.java:438-465, MInvoiceLine.java:150-162, MPayment.java:147-177
   ML.registerModel('c_invoice', { initialDefaults: { docstatus: 'DR', docaction: 'CO', paymentrule: 'P', chargeamt: 0, totallines: 0, grandtotal: 0, issotrx: 'Y', istaxincluded: 'N', isapproved: 'N',
     isdiscountprinted: 'N', ispaid: 'N', sendemail: 'N', isprinted: 'N', istransferred: 'N', isselfservice: 'N', ispayschedulevalid: 'N', isindispute: 'N' } });
+  // MInvoice.beforeSave :1190-1192 `if (getC_DocType_ID() == 0) setC_DocType_ID(0)` — stored as 0, not NULL (was masked by the AD-default stamping newPO no longer does)
+  ML.registerModel('c_invoice', { beforeSave: function (trx, inv) { if (!nz(inv.c_doctype_id)) inv.c_doctype_id = 0; return null; } });
   ML.registerModel('c_invoiceline', { initialDefaults: { isdescription: 'N', isprinted: 'Y', linenetamt: 0, priceentered: 0, priceactual: 0, pricelimit: 0, pricelist: 0, m_attributesetinstance_id: 0, taxamt: 0, qtyentered: 0, qtyinvoiced: 0 } });
   // MPayment.beforeSave :670-790 — the derivations (gates on processed edits / IBAN / FX override named in the log when hit)
   ML.registerModel('c_payment', { beforeSave: function (trx, p, isNew) {
@@ -394,6 +396,197 @@
   ML.registerDocAction('c_invoice', MInvoice);
   ML.registerDocAction('c_payment', MPayment);
   ML.registerDocAction('c_allocationhdr', MAllocationHdr);
-  return { MInvoice: MInvoice, MPayment: MPayment, MAllocationHdr: MAllocationHdr, createInvoice: createInvoice, calculateInvoiceTaxTotal: calculateInvoiceTaxTotal,
-           invTestAllocation: invTestAllocation, payTestAllocation: payTestAllocation, allocateIt: allocateIt };
+
+  // ══ process-lane M-class statics — MOVED here from processes/support_copy.js / support_pay.js / support_docgen.js / CommissionAPInvoice.js
+  // (one implementation per responsibility, §CP-OPEN 4b). nz() below is the numeric Java getXxx_ID() form.
+  var PXI = (function (MLo) {
+    var NODE = typeof module !== 'undefined' && module.exports, GL = typeof window !== 'undefined' ? window : globalThis;
+    function A() { return NODE ? require('./ad_callout.js') : GL.AdCallout; }
+    function R() { return A().RUNTIME; }
+    function ML() { return MLo; }
+    function CT() { return NODE ? require('./model_ctor') : GL.ModelCtor; }
+    function MM() { return NODE ? require('./model_match') : GL.ModelMatch; }   // MFactAcct.deleteEx lives in model_match.js (one copy)
+    function nz(v) { return v == null || v === '' ? 0 : Number(v); }
+    function Y(v) { return v === 'Y' || v === true; }
+    function bd(v) { if (v == null) return null; var a = A(); return v instanceof a.BigDecimal ? v : a.toBD(String(v)); }
+    function dayTS(v) { return v == null ? null : A().Timestamp.of(v); }
+    function say(trx, m) { if (trx && trx.say) trx.say(m); }
+    function HU() { return A().RoundingMode.HALF_UP; }
+    function fkNull(v) { return nz(v) < 1 ? null : v; }
+    function taxGet(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule) {
+      var M = R().M;
+      if (M.Core && typeof M.Core.getTaxLookup === 'function') return M.Core.getTaxLookup().get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
+      return M.Tax.get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
+    }
+    var S = { copyValues: MLo.copyValues };
+
+  // ══ MInvoiceLine.setTax :499-528 ═════════════════════════════════════════════════════════════════════════════
+  function ilSetTax(trx, ctx, line, inv) {
+    if (Y(line.get('isdescription'))) return true;                                               // :501
+    var wh = A().Env.getContextAsInt(ctx, '#M_Warehouse_ID'), rule = null, drop = -1;            // :504-516
+    if (nz(line.get('c_orderline_id')) > 0) { var ol = trx.get('c_orderline', line.get('c_orderline_id')), od = ol ? trx.get('c_order', ol.c_order_id) : null;
+      if (od) { rule = od.deliveryviarule == null ? null : od.deliveryviarule; drop = nz(od.dropship_location_id); } }
+    else if (nz(line.get('m_inoutline_id')) > 0) { var iol = trx.get('m_inoutline', line.get('m_inoutline_id')), io = iol ? trx.get('m_inout', iol.m_inout_id) : null; if (io) rule = io.deliveryviarule == null ? null : io.deliveryviarule; }
+    else if (nz(inv.c_order_id) > 0) { var o2 = trx.get('c_order', inv.c_order_id); if (o2) rule = o2.deliveryviarule == null ? null : o2.deliveryviarule; }
+    var dt = dayTS(inv.dateinvoiced), loc = nz(inv.c_bpartner_location_id);
+    var id = taxGet(ctx, nz(line.get('m_product_id')), nz(line.get('c_charge_id')), dt, dt, nz(line.get('ad_org_id')), wh, loc, loc, drop, Y(inv.issotrx), rule);   // :517-520
+    if (id === 0) { say(trx, '§MODEL-SEVERE MInvoiceLine.setTax No Tax found'); return false; }
+    line.set('c_tax_id', id); return true;
+  }
+
+
+  // MInvoiceLine.beforeSave :877-940 — the price part that decides whether the save is refused (setPrice :429-469, UnderLimitPrice :903-909)
+  function ilBeforeSaveChecks(trx, ctx, line, inv) {
+    if (Y(inv.processed)) return null;                                                                                  // parentComplete (isReversal not modelled: no reversal flag in the bundle)
+    var Mm = R().M, Env = A().Env;
+    if (nz(line.get('c_charge_id')) !== 0) { if (nz(line.get('m_product_id')) !== 0) line.set('m_product_id', null); return null; }   // :892-896
+    if (bd(line.get('priceactual')).compareTo(Env.ZERO) === 0 && bd(line.get('pricelist')).compareTo(Env.ZERO) === 0 && nz(line.get('m_product_id')) !== 0 && !Y(line.get('isdescription'))) {   // :898-901 setPrice()
+      var mpp = new Mm.MProductPricing();
+      mpp.setInvoiceLine({ getM_Product_ID: function () { return nz(line.get('m_product_id')); }, getC_Invoice_ID: function () { return nz(line.get('c_invoice_id')); },
+        getQtyInvoiced: function () { return bd(line.get('qtyinvoiced')); }, getQtyEntered: function () { return bd(line.get('qtyentered')); } }, trx);
+      mpp.setM_PriceList_ID(nz(inv.m_pricelist_id));
+      line.set('priceactual', mpp.getPriceStd()).set('pricelist', mpp.getPriceList()).set('pricelimit', mpp.getPriceLimit());
+      var qe = bd(line.get('qtyentered')), qi = bd(line.get('qtyinvoiced'));
+      if (qe.compareTo(qi) === 0) line.set('priceentered', line.get('priceactual')); else line.set('priceentered', bd(line.get('priceactual')).multiply(qi.divide(qe, 6, HU())));
+      if (nz(line.get('c_uom_id')) === 0) line.set('c_uom_id', mpp.getC_UOM_ID());
+    }
+    var pl = trx.get('m_pricelist', inv.m_pricelist_id), enforce = Y(inv.issotrx) && pl && Y(pl.enforcepricelimit);       // :903-905
+    if (enforce) { var role = trx.get('ad_role', Env.getAD_Role_ID(ctx)); if (role && Y(role.isoverwritepricelimit)) enforce = false; }
+    if (enforce && bd(line.get('pricelimit')).compareTo(Env.ZERO) !== 0 && bd(line.get('priceactual')).compareTo(bd(line.get('pricelimit'))) < 0) {   // :906-910
+      say(trx, '§MODEL-SEVERE MInvoiceLine.save UnderLimitPrice PriceEntered=' + line.get('priceentered') + ', PriceLimit=' + line.get('pricelimit')); return 'UnderLimitPrice';
+    }
+    return null;
+  }
+
+  // ══ MInvoice.copyLinesFrom(otherInvoice, counter, setOrder, copyClientOrg) (MInvoice.java:937-1013) ═════════════
+  S.MInvoice_copyLinesFrom = function (trx, ctx, to, other, counter, setOrder, copyClientOrg) {
+    if (Y(to.processed) || Y(to.posted) || other == null) return 0;                              // :951
+    var m = ML(), C = CT(), fromLines = trx.find('c_invoiceline', { c_invoice_id: other.c_invoice_id }, ['line', 'c_invoiceline_id']);   // getLines ORDER BY Line, C_InvoiceLine_ID :883
+    var count = 0;
+    for (var i = 0; i < fromLines.length; i++) {
+      var fl = fromLines[i], line = C.MInvoiceLine(trx, to);                                      // new MInvoiceLine(ctx,0,trx): setInitialDefaults :150-163 (+ parent ids overwritten below)
+      if (counter || !copyClientOrg) S.copyValues(trx, 'c_invoiceline', fl, line, to.ad_client_id, to.ad_org_id);   // :959-962
+      else S.copyValues(trx, 'c_invoiceline', fl, line, fl.ad_client_id, fl.ad_org_id);
+      line.set('c_invoice_id', to.c_invoice_id);                                                  // :963 (+ setInvoice :964 caches header fields)
+      if (!setOrder) line.set('c_orderline_id', null);                                            // :967-968
+      line.set('ref_invoiceline_id', null).set('m_inoutline_id', null).set('a_asset_id', null);   // :969-971
+      line.set('m_attributesetinstance_id', 0).set('s_resourceassignment_id', null);              // :972-973
+      if (String(nz(to.c_bpartner_id)) !== String(nz(other.c_bpartner_id))) ilSetTax(trx, ctx, line, to);   // :975-976
+      if (counter) {                                                                              // :978-994
+        line.set('ref_invoiceline_id', fkNull(fl.c_invoiceline_id));
+        if (nz(fl.c_orderline_id) !== 0) { var peer = trx.get('c_orderline', fl.c_orderline_id); if (peer && nz(peer.ref_orderline_id) !== 0) line.set('c_orderline_id', peer.ref_orderline_id); }
+        line.set('m_inoutline_id', null);
+        if (nz(fl.m_inoutline_id) !== 0) { var ip = trx.get('m_inoutline', fl.m_inoutline_id); if (ip && nz(ip.ref_inoutline_id) !== 0) line.set('m_inoutline_id', ip.ref_inoutline_id); }
+      }
+      line.set('processed', 'N');                                                                 // :996
+      var ierr = ilBeforeSaveChecks(trx, ctx, line, to);
+      if (!ierr && line.save()) count++;                                                          // :997-998
+      if (counter) {                                                                              // :1000-1004
+        var r2 = ML().save(trx, 'c_invoiceline', trx.get('c_invoiceline', fl.c_invoiceline_id), { ref_invoiceline_id: line.id() }); if (!r2.ok) throw new Error('SaveError c_invoiceline: ' + r2.error);
+      }
+      // line.copyLandedCostFrom(fromLine) :1007 (MInvoiceLine.java:1364-1383); line.allocateLandedCosts() :1008 (:1075-1085)
+      var lcs = [];
+      try { lcs = trx.find('c_landedcost', { c_invoiceline_id: fl.c_invoiceline_id }); } catch (e) { lcs = []; }
+      lcs.forEach(function (lc) {
+        var nlc = ML().newRecord(trx, 'c_landedcost', {});
+        S.copyValues(trx, 'c_landedcost', lc, nlc, lc.ad_client_id, lc.ad_org_id);
+        nlc.set('c_invoiceline_id', line.id()); nlc.save();
+      });
+      if (lcs.length > 0) say(trx, '§PROC-UNPORTED-DEP MInvoiceLine.allocateLandedCosts (MInvoiceLine.java:1075-1260) — ' + lcs.length + ' landed cost(s) copied, allocation not ported');
+      // allocateLandedCosts: DELETE FROM C_LandedCostAllocation WHERE C_InvoiceLine_ID=<new line> removes nothing for a line created in this Trx
+    }
+    if (fromLines.length !== count) say(trx, '§MODEL-SEVERE MInvoice.copyLinesFrom Line difference - From=' + fromLines.length + ' <> Saved=' + count);   // :1010
+    return count;
+  };
+
+  // MInvoice.isCreditMemo (MInvoice.java:1072-1077) — ONE copy (the older charAt(2) heuristic in isCM() was superseded by this exact DocBaseType test)
+  S.docBaseType = function (trx, id) { var d = T.dt(trx, id); return d ? d.docbasetype : null; };          // MDocType.get(id).getDocBaseType()
+  S.isCreditMemo = function (trx, inv) {
+    var g = function (c) { return inv && typeof inv.get === 'function' ? inv.get(c) : (inv ? inv[c] : null); };
+    var id = g('c_doctype_id'); if (!T.nz(id)) id = g('c_doctypetarget_id');
+    var b = S.docBaseType(trx, id); return b === 'APC' || b === 'ARC';
+  };
+  // new MInvoice(ctx, 0, trx) :438-465 — setInitialDefaults via MODEL.c_invoice.initialDefaults; DateInvoiced/DateAcct = today (the recorded clock)
+  S.MInvoice_new = function (trx) { var inv = MLo.newRecord(trx, 'c_invoice', {}); inv.set('dateinvoiced', trx.env.date).set('dateacct', trx.env.date); return inv; };
+  // MInvoiceLine.setTax(): the ONE port is ilSetTax above (:499-528); the process helper form
+  S.MInvoiceLine_setTax = function (trx, ctx, line, inv) { return ilSetTax(trx, ctx, line, inv); };
+  // MInvoiceLine.beforeSave :928-934 default UOM (MUOM.getDefault_UOM_ID :90-97) — the shared line hook only derives the UOM from a product
+  S.MInvoiceLine_defaultUOM = function (trx, ctx, line) {
+    if (!Number(line.get('c_uom_id') || 0)) { var du = trx.q('SELECT C_UOM_ID AS u FROM C_UOM WHERE AD_Client_ID IN (0,?) ORDER BY IsDefault DESC, AD_Client_ID DESC, C_UOM_ID', [A().Env.getAD_Client_ID(ctx)])[0]; if (du && Number(du.u) > 0) line.set('c_uom_id', Number(du.u)); }
+  };
+
+  // ══ MAllocationHdr / MAllocationLine delete + reverse (was processes/support_pay.js) ═══════════════════════════════
+  // ── MAllocationLine.processIt(reverse=true) — MAllocationLine.java:273-373 (does not update the line)
+  S.allocLineProcessIt = function (trx, line, reverse) {
+    var R_ = R(), invCh = {};
+    var C_Invoice_ID = line.c_invoice_id, C_Payment_ID = line.c_payment_id, C_CashLine_ID = line.c_cashline_id;
+    var invoice = nz(C_Invoice_ID) ? trx.get('c_invoice', C_Invoice_ID) : null;           // getInvoice()
+    // :288-310 Update Payment
+    if (nz(C_Payment_ID)) {
+      var payment = trx.get('c_payment', C_Payment_ID);
+      if (String(line.c_bpartner_id) !== String(payment.c_bpartner_id)) trx.say('§PROC-WARN AllocationLine C_BPartner_ID different - Invoice=' + line.c_bpartner_id + ' - Payment=' + payment.c_bpartner_id);
+      if (reverse) {
+        var cashbook = 'X' === payment.tendertype && !T.sysConfigBool('CASH_AS_PAYMENT', true, payment.ad_client_id);   // MPayment.isCashbookTrx :237-239
+        if (!cashbook) MLo.saveEx(trx, 'c_payment', payment, { isallocated: 'N' });
+      } else if (payTestAllocation(trx, payment)) { /* payment.testAllocation() already wrote the row */ }
+    }
+    // :313-345 Payment - Invoice
+    if (nz(C_Payment_ID) && invoice != null) {
+      if (reverse) invCh.c_payment_id = null;                                             // invoice.setC_Payment_ID(0)
+      else if (T.Y(invoice.ispaid)) invCh.c_payment_id = C_Payment_ID;
+      R_.DB.executeUpdate('UPDATE C_Order SET C_Payment_ID=' + (reverse ? 'NULL ' : '(SELECT C_Payment_ID FROM C_Invoice WHERE C_Invoice_ID=' + C_Invoice_ID + ') ') +
+        'WHERE C_Order.C_Order_ID = (SELECT i.C_Order_ID FROM C_Invoice i WHERE i.C_Invoice_ID=' + C_Invoice_ID + ')', []);
+    }
+    // :348-377 Cash - Invoice
+    if (nz(C_CashLine_ID) && invoice != null) {
+      if (reverse) invCh.c_cashline_id = null; else invCh.c_cashline_id = C_CashLine_ID;
+      R_.DB.executeUpdate('UPDATE C_Order SET C_CashLine_ID=' + (reverse ? 'NULL ' : '(SELECT C_CashLine_ID FROM C_Invoice WHERE C_Invoice_ID=' + C_Invoice_ID + ') ') +
+        'WHERE C_Order.C_Order_ID = (SELECT i.C_Order_ID FROM C_Invoice i WHERE i.C_Invoice_ID=' + C_Invoice_ID + ')', []);
+    }
+    // :380-385 Update Balance / Credit used — invoice.testAllocation() && invoice.save() (the in-memory setC_Payment_ID(0) is
+    // only persisted when IsPaid changed — Java quirk kept)
+    if (invoice != null) {
+      var inv = trx.get('c_invoice', invoice.c_invoice_id);
+      if (invTestAllocation(trx, inv, false)) MLo.saveEx(trx, 'c_invoice', trx.get('c_invoice', invoice.c_invoice_id), invCh);
+    }
+    return line.c_bpartner_id;
+  };
+  (function registerAllocationDelete() {
+    var M = MLo.MODEL, hdr = M.c_allocationhdr || {}, al = M.c_allocationline || {}, bps = {};
+    if (!hdr.beforeDelete) MLo.registerModel('c_allocationhdr', {
+      // MAllocationHdr.beforeDelete :319-349
+      beforeDelete: function (trx, h) {
+        if (T.Y(h.posted)) {
+          if (!T.periodOpen(trx, h.datetrx, 'CMA')) throw new Error('@PeriodClosed@');   // MPeriod.testPeriodOpen(DateTrx, CMA, Org)
+          trx.update('c_allocationhdr', h, { posted: 'N' });
+          MM().factDeleteEx(trx, trx.q("SELECT ad_table_id AS t FROM ad_table WHERE lower(tablename)='c_allocationhdr'")[0].t, h.c_allocationhdr_id);
+        }
+        MLo.saveEx(trx, 'c_allocationhdr', h, { isactive: 'N' });                           // setIsActive(false); saveEx()
+        var list = [];
+        trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']).forEach(function (line) {   // getLines(true)
+          if (list.indexOf(String(line.c_bpartner_id)) < 0) list.push(String(line.c_bpartner_id));
+          var r = MLo.remove(trx, 'c_allocationline', line);                                // line.deleteEx(true, trxName)
+          if (!r.ok) throw new Error('DeleteError c_allocationline: ' + r.error);
+        });
+        bps[h.c_allocationhdr_id] = list;
+        return null;
+      },
+      // MAllocationHdr.afterDelete :352-363
+      afterDelete: function (trx, h) {
+        (bps[h.c_allocationhdr_id] || []).forEach(function (bp) { T.setTotalOpenBalance(trx, bp); });
+        delete bps[h.c_allocationhdr_id];
+        return null;
+      }
+    });
+    if (!al.beforeDelete) MLo.registerModel('c_allocationline', {
+      // MAllocationLine.beforeDelete :234-240 — setIsActive(false) (in memory); processIt(true)
+      beforeDelete: function (trx, l) { S.allocLineProcessIt(trx, l, true); return null; }
+    });
+  })();
+
+    return S;
+  })(ML);
+
+  return Object.assign({}, PXI, { MInvoice: MInvoice, MPayment: MPayment, MAllocationHdr: MAllocationHdr, createInvoice: createInvoice, calculateInvoiceTaxTotal: calculateInvoiceTaxTotal,
+           invTestAllocation: invTestAllocation, payTestAllocation: payTestAllocation, allocateIt: allocateIt });
 });

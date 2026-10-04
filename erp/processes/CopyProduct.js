@@ -20,7 +20,7 @@
       }
     };
     CopyProduct.prototype.doIt = function () {                                         // :49-186
-      var A = X.A, trx = this.get_TrxName(), S = P.PSUP, from = this.m_copyFromId;
+      var A = X.A, trx = this.get_TrxName(), S = (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade), ML = (typeof module !== 'undefined' && module.exports ? require('../model_layer') : global.ModelLayer), from = this.m_copyFromId;
       var toMProductID = this.getRecord_ID();
       trx.say('§PROC-INFO CopyProduct From M_Product_ID=' + from + ' to ' + toMProductID);   // :52
       if (toMProductID === 0) throw new Error('Target M_Product_ID == 0');             // :53-54
@@ -35,7 +35,7 @@
       // Copy prices                                                                    :58-72
       var prices = list('m_productprice', { m_product_id: from });
       prices.forEach(function (src) {
-        var dst = S.newBare(trx, 'm_productprice');                                      // new MProductPrice(ctx, 0, trx)
+        var dst = ML.newRecord(trx, 'm_productprice', {});                                      // new MProductPrice(ctx, 0, trx)
         dst.set('m_product_id', toMProductID).set('m_pricelist_version_id', src.m_pricelist_version_id);
         S.MProductPrice_setPrices(trx, dst, src.pricelist, src.pricestd, src.pricelimit);   // priceDst.setPrices(...)
         dst.saveEx();
@@ -44,21 +44,21 @@
       // Copy substitutes ("M_Product_ID=? and NOT substitute_ID=?")                  :74-90
       var subs = list('m_substitute', { m_product_id: from }, function (r) { return String(r.substitute_id) !== String(toMProductID); });
       subs.forEach(function (src) {
-        var dst = S.newBare(trx, 'm_substitute');
+        var dst = ML.newRecord(trx, 'm_substitute', {});
         dst.set('m_product_id', toMProductID).set('substitute_id', src.substitute_id).set('name', src.name).set('description', src.description); dst.saveEx();
       });
       count += subs.length;
       // Copy related ("M_Product_ID=? and NOT relatedProduct_ID=?")                  :92-111
       var related = list('m_relatedproduct', { m_product_id: from }, function (r) { return String(r.relatedproduct_id) !== String(toMProductID); });
       related.forEach(function (src) {
-        var dst = S.newBare(trx, 'm_relatedproduct');
+        var dst = ML.newRecord(trx, 'm_relatedproduct', {});
         dst.set('m_product_id', toMProductID).set('relatedproduct_id', src.relatedproduct_id).set('relatedproducttype', src.relatedproducttype).set('name', src.name).set('description', src.description); dst.saveEx();
       });
       count += related.length;
       // Copy replenish                                                                :113-133
       var replenish = list('m_replenish', { m_product_id: from });
       replenish.forEach(function (src) {
-        var dst = S.newBare(trx, 'm_replenish');
+        var dst = ML.newRecord(trx, 'm_replenish', {});
         dst.set('m_product_id', toMProductID).set('m_warehouse_id', src.m_warehouse_id).set('m_warehousesource_id', fk(src.m_warehousesource_id)).set('replenishtype', src.replenishtype)
           .set('m_locator_id', fk(src.m_locator_id)).set('level_min', src.level_min).set('level_max', src.level_max); dst.saveEx();
       });
@@ -66,7 +66,7 @@
       // Copy business partner                                                         :135-160
       var bpList = list('c_bpartner_product', { m_product_id: from });
       bpList.forEach(function (src) {
-        var dst = S.newBare(trx, 'c_bpartner_product');
+        var dst = ML.newRecord(trx, 'c_bpartner_product', {});
         dst.set('c_bpartner_id', src.c_bpartner_id).set('description', src.description).set('ismanufacturer', src.ismanufacturer).set('m_product_id', toMProductID)
           .set('manufacturer', src.manufacturer).set('qualityrating', src.qualityrating).set('shelflifemindays', src.shelflifemindays).set('shelflifeminpct', src.shelflifeminpct)
           .set('vendorcategory', src.vendorcategory).set('vendorproductno', src.vendorproductno); dst.saveEx();
@@ -75,7 +75,7 @@
       // Copy download                                                                 :162-181
       var dlList = list('m_productdownload', { m_product_id: from });
       dlList.forEach(function (src) {
-        var dst = S.newBare(trx, 'm_productdownload');
+        var dst = ML.newRecord(trx, 'm_productdownload', {});
         dst.set('m_product_id', toMProductID).set('name', src.name).set('downloadurl', src.downloadurl); dst.saveEx();
       });
       count += dlList.length;

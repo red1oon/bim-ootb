@@ -15,7 +15,7 @@
   var DIMS = ['ad_orgtrx_id', 'c_project_id', 'c_campaign_id', 'c_activity_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id'];
 
   // ══ StandardTaxProvider.calculateOrderTaxTotal :38-110 ∘ MOrderTax.calculateTaxFromLines :312-372 ══════════════
-  function calculateOrderTaxTotal(trx, o) {
+  function calculateOrderTaxTotal(trx, o, lineLevel) {   // lineLevel: MOrderLine.afterSave/afterDelete → updateOrderTax (zero rows dropped); else the doc-level prepareIt path (saves every row)
     var prec = T.precisionOf(trx, o.c_currency_id), pl = trx.get('m_pricelist', o.m_pricelist_id) || {}, incl = Y(pl.istaxincluded);
     var ls = lines(trx, o), total = Z, seen = {}, keep = {};
     ls.forEach(function (l) {
@@ -27,6 +27,8 @@
       if (doc) amt = T.calcTax(trx, t, base, incl, prec);
       var vals = { taxamt: N(amt), taxbaseamt: N(incl ? base.subtract(amt) : base), istaxincluded: incl ? 'Y' : 'N' };
       var ot = T.one(trx, 'c_ordertax', { c_order_id: o.c_order_id, c_tax_id: l.c_tax_id });
+      // MOrderLine.updateOrderTax :1049-1062 (line level only) — `if (tax.getTaxAmt().signum() != 0) tax.save() else if (!tax.is_new()) tax.delete()`; the doc-level StandardTaxProvider.calculateOrderTaxTotal :54-58 saves every row (§MODEL-ORDERTAX-ZERO)
+      if (lineLevel && amt.signum() === 0) { if (ot) trx.del('c_ordertax', ot); return; }
       if (ot) trx.update('c_ordertax', ot, vals);
       else ot = trx.insert('c_ordertax', ML.newPO(trx, 'c_ordertax', Object.assign({ c_order_id: o.c_order_id, c_tax_id: l.c_tax_id, ad_org_id: o.ad_org_id }, vals)));
       keep[tid] = 1;
@@ -41,6 +43,9 @@
     trx.update('c_order', o, { totallines: N(total), grandtotal: N(grand) });
     return true;
   }
+
+  // MOrder.beforeSave :1202-1203 `if (getC_DocType_ID() == 0) setC_DocType_ID(0)` — stored as 0, not NULL
+  ML.registerModel('c_order', { beforeSave: function (trx, o) { if (!nz(o.c_doctype_id)) o.c_doctype_id = 0; return null; } });
 
   // ══ MOrderLine — beforeSave (LineNetAmt) + afterSave :967-985 → recalculateTax → updateHeaderTax :1070 ═════════
   ML.registerModel('c_orderline', {
@@ -66,11 +71,11 @@
     afterSave: function (trx, l, isNew, old) {
       var o = trx.get('c_order', l.c_order_id); if (!o || Y(o.processed)) return null;       // :971 parent processed → skip
       if (isNew || !old || String(old.c_tax_id) !== String(l.c_tax_id) || String(old.linenetamt) !== String(l.linenetamt)) {
-        calculateOrderTaxTotal(trx, o);                                                      // updateOrderTax + updateHeaderTax (StandardTaxProvider :113-163)
+        calculateOrderTaxTotal(trx, o, true);                                                // updateOrderTax + updateHeaderTax (StandardTaxProvider :113-163)
       }
       return null;
     },
-    afterDelete: function (trx, l) { var o = trx.get('c_order', l.c_order_id); if (o && !Y(o.processed)) calculateOrderTaxTotal(trx, o); return null; }
+    afterDelete: function (trx, l) { var o = trx.get('c_order', l.c_order_id); if (o && !Y(o.processed)) calculateOrderTaxTotal(trx, o, true); return null; }
   });
 
   // ══ MOrder.reserveStock :1925-2024 ════════════════════════════════════════════════════════════════════════════
@@ -398,5 +403,229 @@
   ML.registerModel('m_inout', { initialDefaults: { issotrx: 'N', deliveryrule: 'A', deliveryviarule: 'P', freightcostrule: 'I', docstatus: 'DR', docaction: 'CO', priorityrule: '5', nopackages: 0, isintransit: 'N', isprinted: 'N', sendemail: 'N', isindispute: 'N' } });
   ML.registerDocAction('c_order', MOrder);
   ML.registerDocAction('m_inout', MInOut);
-  return { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed };
+
+  // ══ process-lane M-class statics — MOVED here from processes/support_copy.js / RMACreateOrder.js / InOutCreateConfirm.js / support_docgen.js
+  // (one implementation per responsibility, §CP-OPEN 4b). Code is the process lane's verbatim port; nz() below is the numeric Java getXxx_ID() form.
+  var PXO = (function (MLo) {
+    var NODE = typeof module !== 'undefined' && module.exports, GL = typeof window !== 'undefined' ? window : globalThis;
+    function A() { return NODE ? require('./ad_callout.js') : GL.AdCallout; }
+    function R() { return A().RUNTIME; }
+    function ML() { return MLo; }
+    function nz(v) { return v == null || v === '' ? 0 : Number(v); }
+    function Y(v) { return v === 'Y' || v === true; }
+    function bd(v) { if (v == null) return null; var a = A(); return v instanceof a.BigDecimal ? v : a.toBD(String(v)); }
+    function HU() { return A().RoundingMode.HALF_UP; }
+    function ZERO() { return A().Env.ZERO; }
+    function say(trx, m) { if (trx && trx.say) trx.say(m); }
+    function fkNull(v) { return nz(v) < 1 ? null : v; }                    // X_*.setXxx_ID(int): `if (id < 1) set_Value(col, null)`
+    var S = { copyValues: MLo.copyValues };
+
+  function uomPrecision(trx, uomId) { var u = nz(uomId) ? trx.get('c_uom', uomId) : null; return u ? Number(u.stdprecision) : 0; }   // MUOM.getPrecision
+  function dayTS(v) { return v == null ? null : A().Timestamp.of(v); }
+  // Core.getTaxLookup().get(...) = Tax.get(...) (DefaultTaxLookup.java; ported callouts/tax.js)
+  function taxGet(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule) {
+    var M = R().M;
+    if (M.Core && typeof M.Core.getTaxLookup === 'function') return M.Core.getTaxLookup().get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
+    return M.Tax.get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
+  }
+
+  // ══ MOrderLine (MOrderLine.java) ═════════════════════════════════════════════════════════════════════════════
+  // setOrder :227-238
+  function olSetOrder(line, o) {
+    line.set('ad_client_id', o.ad_client_id).set('ad_org_id', o.ad_org_id);
+    line.set('c_bpartner_id', o.c_bpartner_id).set('c_bpartner_location_id', o.c_bpartner_location_id).set('m_warehouse_id', o.m_warehouse_id)
+      .set('dateordered', o.dateordered).set('datepromised', o.datepromised).set('c_currency_id', o.c_currency_id);
+  }
+  // setQtyEntered :724-732 — enforce entered-UOM precision
+  function olSetQtyEntered(trx, line, q) {
+    if (q != null && nz(line.get('c_uom_id')) !== 0) q = bd(q).setScale(uomPrecision(trx, line.get('c_uom_id')), HU());
+    line.set('qtyentered', q); return q;
+  }
+  // setQtyOrdered :738-747 — enforce product UOM precision (MProduct.getUOMPrecision)
+  function olSetQtyOrdered(trx, line, q) {
+    var p = nz(line.get('m_product_id')) ? trx.get('m_product', line.get('m_product_id')) : null;
+    if (q != null && p != null) q = bd(q).setScale(nz(p.c_uom_id) ? uomPrecision(trx, p.c_uom_id) : 0, HU());
+    line.set('qtyordered', q); return q;
+  }
+  // setTax :346-361
+  function olSetTax(trx, ctx, line, order) {
+    var ii = taxGet(ctx, nz(line.get('m_product_id')), nz(line.get('c_charge_id')), dayTS(line.get('dateordered')), dayTS(line.get('dateordered')),
+      nz(line.get('ad_org_id')), nz(line.get('m_warehouse_id')), nz(line.get('c_bpartner_location_id')), nz(line.get('c_bpartner_location_id')),
+      nz(order.dropship_location_id), Y(order.issotrx), order.deliveryviarule == null ? null : order.deliveryviarule);
+    if (ii === 0) { say(trx, '§MODEL-SEVERE MOrderLine.setTax No Tax found'); return false; }
+    line.set('c_tax_id', ii); return true;
+  }
+  // MOrderLine.getDescriptionStrippingCloseTag :1101-1110 — Pattern "( \\| )?Close \\(.*\\)" split + concat
+  function stripCloseTag(d) { return d == null ? d : String(d).replace(/( \| )?Close \(.*\)/g, ''); }
+
+
+  // MOrderLine.beforeSave :790-850 (the product-pricing part that decides whether the save is refused). A refused save is what PO.save returns false
+  // for (ProductNotOnPriceListException / UnderLimitPrice are logged by PO.save, not thrown to the caller).
+  function olPricingObj(line) {
+    return { getM_Product_ID: function () { return nz(line.get('m_product_id')); }, getC_Order_ID: function () { return nz(line.get('c_order_id')); },
+      getC_BPartner_ID: function () { return nz(line.get('c_bpartner_id')); }, getQtyOrdered: function () { return bd(line.get('qtyordered')); }, getDateOrdered: function () { return dayTS(line.get('dateordered')); } };
+  }
+  function olBeforeSavePricing(trx, ctx, line, order) {
+    var Mm = R().M, plId = nz(order.m_pricelist_id), Env = A().Env;
+    if (nz(line.get('c_charge_id')) !== 0 && nz(line.get('m_product_id')) !== 0) line.set('m_product_id', null);       // :816-817
+    if (nz(line.get('m_product_id')) === 0) { line.set('m_attributesetinstance_id', 0); return null; }                  // :819-820
+    if (Y(line.get('processed'))) return null;                                                                          // :821 else if (!isProcessed())
+    var mpp = null;
+    function getProductPricing() { mpp = new Mm.MProductPricing(); mpp.setOrderLine(olPricingObj(line), trx); mpp.setM_PriceList_ID(plId); mpp.calculatePrice(); return mpp; }   // :326-334
+    if (bd(line.get('priceactual')).compareTo(Env.ZERO) === 0 && bd(line.get('pricelist')).compareTo(Env.ZERO) === 0) {  // :824-826 setPrice() :290-322
+      if (plId === 0) throw new Error('PriceList unknown!');
+      getProductPricing();
+      line.set('priceactual', mpp.getPriceStd()).set('pricelist', mpp.getPriceList()).set('pricelimit', mpp.getPriceLimit());
+      var qe = bd(line.get('qtyentered')), qo = bd(line.get('qtyordered'));
+      if (qe.compareTo(qo) === 0) line.set('priceentered', line.get('priceactual'));
+      else line.set('priceentered', bd(line.get('priceactual')).multiply(qo.divide(qe, 12, HU())));
+      line.set('discount', mpp.getDiscount());
+      if (nz(line.get('c_uom_id')) === 0) line.set('c_uom_id', mpp.getC_UOM_ID());
+    }
+    if (mpp == null) getProductPricing();                                                                               // :827-828
+    var pl = trx.get('m_pricelist', order.m_pricelist_id), enforce = Y(order.issotrx) && pl && Y(pl.enforcepricelimit);   // :831-833
+    if (enforce) { var role = trx.get('ad_role', Env.getAD_Role_ID(ctx)); if (role && Y(role.isoverwritepricelimit)) enforce = false; }   // :834-835
+    if (enforce && bd(line.get('pricelimit')).compareTo(Env.ZERO) !== 0 && bd(line.get('priceactual')).compareTo(bd(line.get('pricelimit'))) < 0) {   // :836-840
+      say(trx, '§MODEL-SEVERE MOrderLine.save UnderLimitPrice PriceEntered=' + line.get('priceentered') + ', PriceLimit=' + line.get('pricelimit')); return 'UnderLimitPrice';
+    }
+    var dtId = nz(order.c_doctype_id) === 0 ? nz(order.c_doctypetarget_id) : nz(order.c_doctype_id);                   // :843 getParent().getDocTypeID()
+    var dt = trx.get('c_doctype', dtId);
+    if (!(dt && Y(dt.isnopricelistcheck)) && !mpp.isCalculated()) {                                                     // :846-849
+      say(trx, '§MODEL-SEVERE MOrderLine.save ProductNotOnPriceListException Line No:' + line.get('line') + ', Product: ' + nz(line.get('m_product_id')) + ', Price List: ' + plId);
+      return 'ProductNotOnPriceList';
+    }
+    return null;
+  }
+
+  // ══ MOrder.copyLinesFrom(otherOrder, counter, copyASI) (MOrder.java:795-851) ═════════════════════════════════
+  S.MOrder_copyLinesFrom = function (trx, ctx, to, other, counter, copyASI) {
+    if (Y(to.processed) || Y(to.posted) || other == null) return 0;                              // :797
+    var m = ML(), fromLines = trx.find('c_orderline', { c_order_id: other.c_order_id }, ['line']);   // getLines(false,null) ORDER BY Line :925-943
+    var count = 0, UC = R().M.MUOMConversion;
+    for (var i = 0; i < fromLines.length; i++) {
+      var fl = fromLines[i], line = ML().newRecord(trx, 'c_orderline', {});
+      // new MOrderLine(this) :185-193 = setInitialDefaults :158-176 + setC_Order_ID + setOrder
+      line.set('freightamt', 0).set('linenetamt', 0).set('priceentered', 0).set('priceactual', 0).set('pricelimit', 0).set('pricelist', 0)
+        .set('m_attributesetinstance_id', 0).set('qtyentered', 0).set('qtyordered', 0).set('qtydelivered', 0).set('qtyinvoiced', 0).set('qtyreserved', 0)
+        .set('isdescription', 'N').set('processed', 'N').set('line', 0);
+      line.set('c_order_id', to.c_order_id); olSetOrder(line, to);
+      S.copyValues(trx, 'c_orderline', fl, line, to.ad_client_id, to.ad_org_id);                  // :804
+      line.set('c_order_id', to.c_order_id);                                                      // :805
+      line.set('qtydelivered', 0).set('qtyinvoiced', 0).set('qtyreserved', 0).set('qtylostsales', 0);   // :807-810
+      var qe = olSetQtyEntered(trx, line, fl.qtyentered);                                         // :811
+      var ordered = UC.convertProductFrom(ctx, nz(line.get('m_product_id')), nz(line.get('c_uom_id')), qe == null ? null : qe);   // :812
+      olSetQtyOrdered(trx, line, ordered);                                                        // :813
+      line.set('datedelivered', null).set('dateinvoiced', null);                                  // :814-815
+      olSetOrder(line, to);                                                                       // :816 setOrder(this)
+      if (!counter && other.docstatus === 'CL') line.set('description', stripCloseTag(line.get('description')));   // :818-819
+      if (!copyASI) { line.set('m_attributesetinstance_id', 0).set('s_resourceassignment_id', null); }          // :822-826
+      line.set('ref_orderline_id', counter ? fkNull(fl.c_orderline_id) : null);                   // :827-830
+      line.set('link_orderline_id', null);                                                        // :833
+      if (String(nz(to.c_bpartner_id)) !== String(nz(other.c_bpartner_id))) olSetTax(trx, ctx, line, to);       // :835-836
+      line.set('processed', 'N');                                                                 // :839
+      var perr = olBeforeSavePricing(trx, ctx, line, to);                                         // PO.save → beforeSave :790-850
+      var ok = perr ? false : line.save(); if (ok) count++;                                        // :840-841
+      if (counter) {                                                                              // :843-847 cross link
+        var fresh = trx.get('c_orderline', fl.c_orderline_id);
+        var r2 = ML().save(trx, 'c_orderline', fresh, { ref_orderline_id: line.id() }); if (!r2.ok) throw new Error('SaveError c_orderline: ' + r2.error);
+      }
+    }
+    if (fromLines.length !== count) say(trx, '§MODEL-SEVERE MOrder.copyLinesFrom Line difference - From=' + fromLines.length + ' <> Saved=' + count);   // :849
+    return count;
+  };
+
+  // ── PO helpers the doc-from-doc processes share (was support_docgen.js)
+  // rows of `table` where col=id ordered like the Java getLines(false) (ORDER BY Line, no IsActive filter)
+  S.lines = function (trx, table, col, id) { return trx.find(table, (function (o) { o[col] = id; return o; })({}), ['line']); };
+  // PO.saveEx → AdempiereException with the PO's error (PO.java saveEx: throws AdempiereException(CLogger error))
+  S.saveEx = function (po) { if (!po.save()) throw new Error(po.error || 'SaveError'); return po; };
+
+  // ══ MOrder ctor + beforeSave (new record) — was inline in RMACreateOrder.js ═══════════════════════════════════
+  // new MOrder(ctx, 0, trx) :441-480
+  S.MOrder_new = function (trx) {
+    var o = MLo.newRecord(trx, 'c_order', {}), now = trx.env.date;
+    o.set('docstatus', 'DR').set('docaction', 'PR').set('deliveryrule', 'A').set('freightcostrule', 'I').set('invoicerule', 'I').set('paymentrule', 'P')
+      .set('priorityrule', '5').set('deliveryviarule', 'P').set('isdiscountprinted', 'N').set('isselected', 'N').set('istaxincluded', 'N').set('issotrx', 'Y')
+      .set('isdropship', 'N').set('sendemail', 'N').set('isapproved', 'N').set('isprinted', 'N').set('iscreditapproved', 'N').set('isdelivered', 'N')
+      .set('isinvoiced', 'N').set('istransferred', 'N').set('isselfservice', 'N').set('processed', 'N').set('processing', 'N').set('posted', 'N')
+      .set('dateacct', now).set('datepromised', now).set('dateordered', now).set('freightamt', 0).set('chargeamt', 0).set('totallines', 0).set('grandtotal', 0);
+    return o;
+  };
+  function sqlInt(trx, sql, args) { var r = trx.q(sql, args || [])[0]; if (!r) return -1; var v = r[Object.keys(r)[0]]; return v == null ? 0 : Number(v); }   // DB.getSQLValueEx (no row → -1, NULL → 0)
+  S.sqlInt = sqlInt;
+  // MOrder.beforeSave (new record) :1183-1300 — the parts that change a record built like RMACreateOrder builds it
+  S.MOrder_beforeSaveNew = function (trx, o, ctx) {
+    var Env = A().Env;
+    if (!nz(o.get('ad_org_id'))) { var co = Env.getAD_Org_ID(ctx); if (co !== 0) o.set('ad_org_id', co); }   // :1186-1194
+    if (!nz(o.get('c_doctype_id'))) o.set('c_doctype_id', 0);                                                  // :1202-1203
+    if (!nz(o.get('m_warehouse_id'))) { var ii = Env.getContextAsInt(ctx, '#M_Warehouse_ID'); if (ii !== 0) o.set('m_warehouse_id', ii); else throw new Error('@FillMandatory@ @M_Warehouse_ID@'); }   // :1206-1215
+    var bpFromLoc = 'SELECT C_BPartner_ID FROM C_BPartner_Location WHERE C_BPartner_Location_ID=?', bpFromUser = 'SELECT C_BPartner_ID FROM AD_User WHERE AD_User_ID=?';   // :1237-1238
+    if (Number(o.get('c_bpartner_location_id')) > 0 && sqlInt(trx, bpFromLoc, [o.get('c_bpartner_location_id')]) !== Number(o.get('c_bpartner_id'))) o.set('c_bpartner_location_id', null);   // :1240-1245
+    if (Number(o.get('ad_user_id') || 0) >= 0 && sqlInt(trx, bpFromUser, [o.get('ad_user_id') || 0]) !== Number(o.get('c_bpartner_id'))) o.set('ad_user_id', null);                           // :1246-1251
+    if (Number(o.get('bill_location_id')) > 0 && sqlInt(trx, bpFromLoc, [o.get('bill_location_id')]) !== Number(o.get('bill_bpartner_id'))) o.set('bill_location_id', null);               // :1254-1260
+    if (Number(o.get('bill_user_id') || 0) >= 0 && sqlInt(trx, bpFromUser, [o.get('bill_user_id') || 0]) !== Number(o.get('bill_bpartner_id'))) o.set('bill_user_id', null);                // :1261-1266
+    if (!nz(o.get('bill_bpartner_id'))) { o.set('bill_bpartner_id', o.get('c_bpartner_id')); o.set('bill_location_id', o.get('c_bpartner_location_id')); }   // :1272-1276
+    if (!nz(o.get('bill_location_id'))) o.set('bill_location_id', o.get('c_bpartner_location_id'));           // :1279-1280
+    if (!nz(o.get('c_currency_id'))) {                                                                          // :1295-1305
+      var cc = sqlInt(trx, 'SELECT C_Currency_ID FROM M_PriceList WHERE M_PriceList_ID=?', [o.get('m_pricelist_id')]);
+      o.set('c_currency_id', cc !== 0 && cc !== -1 ? cc : Env.getContextAsInt(ctx, '$C_Currency_ID'));
+    }
+  };
+  // new MOrderLine(order) :185-192 ∘ setInitialDefaults :159-179 ∘ setOrder :227-239
+  S.MOrderLine_new = function (trx, order) {
+    var l = MLo.newRecord(trx, 'c_orderline', {}), o = trx.get('c_order', order.id());
+    l.set('freightamt', 0).set('linenetamt', 0).set('priceentered', 0).set('priceactual', 0).set('pricelimit', 0).set('pricelist', 0).set('m_attributesetinstance_id', 0)
+      .set('qtyentered', 0).set('qtyordered', 0).set('qtydelivered', 0).set('qtyinvoiced', 0).set('qtyreserved', 0).set('isdescription', 'N').set('processed', 'N').set('line', 0);
+    l.set('c_order_id', o.c_order_id);
+    olSetOrder(l, o);
+    l.p.priceList = o.m_pricelist_id; l.p.isSOTrx = o.issotrx;                                 // setHeaderInfo :245-251
+    return l;
+  };
+  // MOrderLine.setPrice() :290-325 (+ getProductPricing :332-340; AbstractProductPricing.setOrderLine :98-117 inlined — the order is a pending row)
+  S.MOrderLine_setPrice = function (trx, l) {
+    var a = A(), D = T.D, M = R().M;
+    if (!T.nz(l.get('m_product_id'))) return;
+    if (!l.p.priceList) throw new Error('PriceList unknown!');
+    var pp = M.Core.getProductPricing();
+    pp.m_M_Product_ID = Number(l.get('m_product_id')); pp.m_isSOTrx = T.Y(l.p.isSOTrx);
+    pp.m_C_BPartner_ID = Number(l.get('c_bpartner_id') || 0);
+    var qty = D(l.get('qtyordered')); if (qty.signum() !== 0) pp.m_Qty = qty;
+    pp.m_PriceDate = a.Timestamp.of(l.get('dateordered')); pp.trxName = null; pp.checkVendorBreak();
+    pp.setM_PriceList_ID(l.p.priceList);
+    pp.calculatePrice();
+    l.set('priceactual', pp.getPriceStd()).set('pricelist', pp.getPriceList()).set('pricelimit', pp.getPriceLimit());
+    if (D(l.get('qtyentered')).compareTo(D(l.get('qtyordered'))) === 0) l.set('priceentered', l.get('priceactual'));
+    else l.set('priceentered', D(l.get('priceactual')).multiply(D(l.get('qtyordered')).divide(D(l.get('qtyentered')), 12, a.RoundingMode.HALF_UP)));
+    l.set('discount', pp.getDiscount());
+    if (!T.nz(l.get('c_uom_id'))) l.set('c_uom_id', pp.getC_UOM_ID());
+  };
+
+  // ══ MInOutConfirm.create(ship, confirmType, checkExisting) :64-93 — was inline in InOutCreateConfirm.js ═══════════
+  S.MInOutConfirm_create = function (trx, ship, confirmType, checkExisting) {
+    var D = T.D, N = T.N;
+    if (checkExisting) {
+      var confirmations = trx.find('m_inoutconfirm', { m_inout_id: ship.m_inout_id });      // ship.getConfirmations(false)
+      for (var i = 0; i < confirmations.length; i++) if (confirmations[i].confirmtype === confirmType) return confirmations[i];   // :72-76
+    }
+    var confirm = MLo.newRecord(trx, 'm_inoutconfirm', {});                          // new MInOutConfirm(ship, confirmType) :150-156
+    confirm.set('docaction', 'CO').set('docstatus', 'DR').set('isapproved', 'N').set('iscancelled', 'N').set('isindispute', 'N').set('processed', 'N');   // setInitialDefaults :125-131
+    confirm.set('ad_client_id', ship.ad_client_id).set('ad_org_id', ship.ad_org_id).set('m_inout_id', ship.m_inout_id).set('confirmtype', confirmType);
+    S.saveEx(confirm);                                                              // :81
+    var shipLines = S.lines(trx, 'm_inoutline', 'm_inout_id', ship.m_inout_id);     // :82
+    for (var j = 0; j < shipLines.length; j++) {                                    // :83-89
+      var sLine = shipLines[j], cLine = MLo.newRecord(trx, 'm_inoutlineconfirm', {});   // new MInOutLineConfirm(confirm) :89-94
+      cLine.set('differenceqty', 0).set('scrappedqty', 0).set('processed', 'N');    // setInitialDefaults :67-71
+      cLine.set('ad_client_id', confirm.get('ad_client_id')).set('ad_org_id', confirm.get('ad_org_id')).set('m_inoutconfirm_id', confirm.id());
+      cLine.set('m_inoutline_id', sLine.m_inoutline_id).set('targetqty', sLine.movementqty).set('confirmedqty', sLine.movementqty);   // setInOutLine :103-109
+      // beforeSave :194-208 — Difference = Target - Confirmed - Scrapped
+      cLine.set('differenceqty', N(D(cLine.get('targetqty')).subtract(D(cLine.get('confirmedqty'))).subtract(D(cLine.get('scrappedqty')))));
+      S.saveEx(cLine);
+    }
+    return trx.get('m_inoutconfirm', confirm.id());
+  };
+
+    return S;
+  })(ML);
+
+  return Object.assign({}, PXO, { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed });
 });

@@ -54,7 +54,7 @@
       }
       var PaymentRule = line.paymentrule;                                                                    // Create new
       if (this.p_PaymentRule != null) { if ('D' !== PaymentRule) PaymentRule = this.p_PaymentRule; }
-      var chk = PAY.stripStdDefaults(trx, C.MPaySelectionCheckFromLine(trx, line, PaymentRule));
+      var chk = C.MPaySelectionCheckFromLine(trx, line, PaymentRule);
       if (!C.pscIsValid(chk)) {
         var bp = trx.get('c_bpartner', chk.get('c_bpartner_id'));
         throw A.AdempiereException(A.Msg.parseTranslation(this.getCtx(), '@NotFound@ @C_BP_BankAccount@: ' + (bp ? bp.name : '')));   // AdempiereUserError

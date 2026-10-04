@@ -18,7 +18,7 @@
       }
     };
     CopyFromInvoice.prototype.doIt = function () {                                                 // :59-73
-      var A = X.A, trx = this.get_TrxName(), S = P.PSUP;
+      var A = X.A, trx = this.get_TrxName(), S = (typeof module !== 'undefined' && module.exports ? require('../model_invoice') : global.ModelInvoice);
       var To_ID = this.getRecord_ID();
       trx.say('§PROC-INFO CopyFromInvoice From C_Invoice_ID=' + this.m_ID + ' to ' + To_ID);
       if (To_ID === 0) throw new Error('Target C_Invoice_ID == 0');

@@ -8,6 +8,7 @@
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
   P.defineProcess('org.compiere.process.InventoryCountUpdate', function (SvrProcess, X) {
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;   // numbers / MInventoryLine / SimpleDateFormat statics live in model_trade.js (§CP-OPEN 4b)
     function InventoryCountUpdate() { SvrProcess.call(this); this.p_M_Inventory_ID = 0; this.p_InventoryCountSetZero = false; }
     InventoryCountUpdate.prototype = Object.create(SvrProcess.prototype);
     InventoryCountUpdate.prototype.prepare = function () {                         // :45-60
@@ -31,7 +32,7 @@
       var multiple = dup.length;
       // :92 MInventoryLineMA.deleteInventoryMA (M/MInventoryLineMA.java:88-94)
       var delMA = X.A.RUNTIME.DB.executeUpdate('DELETE FROM M_InventoryLineMA WHERE EXISTS (SELECT * FROM M_InventoryLine l WHERE l.M_InventoryLine_ID=M_InventoryLineMA.M_InventoryLine_ID AND M_Inventory_ID=' + id + ')', []);
-      if (delMA < 0) S.dep(trx, 'M_InventoryLineMA absent from the bundle (DB.executeUpdate → -1, as Java on error) — DeletedMA not counted');
+      if (delMA < 0) MT.dep(trx, 'M_InventoryLineMA absent from the bundle (DB.executeUpdate → -1, as Java on error) — DeletedMA not counted');
       // :96-120 per line with matching on-hand: QtyBook = QtyCount = SUM(QtyOnHand), Updated/UpdatedBy; then (Set Count to Zero) QtyCount=0 on every line.
       // The two UPDATEs are folded into one net trx.update per line (the Trx records old→new once; an in-between value that returns to the
       // original is not a change — what a committed Postgres row shows).

@@ -18,7 +18,7 @@
       }
     };
     CopyFromJournal.prototype.doIt = function () {                                                 // :60-74
-      var A = X.A, trx = this.get_TrxName(), S = P.PSUP;
+      var A = X.A, trx = this.get_TrxName(), S = (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade);
       var To_ID = this.getRecord_ID();
       trx.say('§PROC-INFO CopyFromJournal From GL_JournalBatch_ID=' + this.m_ID + ' to ' + To_ID);
       if (To_ID === 0) throw new Error('Target GL_JournalBatch_ID == 0');

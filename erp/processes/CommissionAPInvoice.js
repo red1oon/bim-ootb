@@ -17,7 +17,7 @@
     };
     function ctorMod() { return (typeof module !== 'undefined' && module.exports) ? require('../model_ctor.js') : global.ModelCtor; }
     CommissionAPInvoice.prototype.doIt = function () {                               // :69-128
-      var A = X.A, R = A.RUNTIME, ML = X.ML, trx = this.get_TrxName(), S = P.PSTK, C = ctorMod();
+      var A = X.A, R = A.RUNTIME, ML = X.ML, trx = this.get_TrxName(), S = P.PSTK, C = ctorMod(), MI = (typeof module !== 'undefined' && module.exports) ? require('../model_invoice.js') : global.ModelInvoice;
       var comRun = X.get(trx, 'C_CommissionRun', this.getRecord_ID());
       if (comRun == null || comRun.get_ID() === 0) throw new Error('CommissionAPInvoice - No Commission Run');
       if (A.Env.ZERO.compareTo(comRun.getGrandTotal()) === 0) throw new Error(A.Msg.parseTranslation(this.getCtx(), '@GrandTotal@ = 0'));
@@ -27,10 +27,7 @@
       var bp = trx.get('c_bpartner', com.getC_BPartner_ID());
       if (bp == null) throw new Error('CommissionAPInvoice - No BPartner');
       // Create Invoice — new MInvoice(ctx,0,trx) :438-465
-      var inv = ML.newRecord(trx, 'c_invoice', {});
-      inv.set('docstatus', 'DR').set('docaction', 'CO').set('paymentrule', 'P').set('dateinvoiced', trx.env.date).set('dateacct', trx.env.date).set('chargeamt', 0).set('totallines', 0).set('grandtotal', 0)
-        .set('issotrx', 'Y').set('istaxincluded', 'N').set('isapproved', 'N').set('isdiscountprinted', 'N').set('ispaid', 'N').set('sendemail', 'N').set('isprinted', 'N')
-        .set('istransferred', 'N').set('isselfservice', 'N').set('ispayschedulevalid', 'N').set('isindispute', 'N').set('posted', 'N').set('processed', 'N').set('processing', 'N');
+      var inv = MI.MInvoice_new(trx);
       inv.set('ad_client_id', com.getAD_Client_ID()).set('ad_org_id', com.getAD_Org_ID());      // setClientOrg
       C.invSetDocTypeTargetBase(trx, inv, 'API');                                        // setC_DocTypeTarget_ID(MDocType.DOCBASETYPE_APInvoice)
       C.invSetBPartner(trx, inv, bp);                                                    // setBPartner(bp)
@@ -44,16 +41,8 @@
       if (com.getC_Charge_ID() > 0) iLine.set('c_charge_id', com.getC_Charge_ID()); else iLine.set('m_product_id', com.getM_Product_ID());
       C.ilSetQty(trx, iLine, A.BigDecimal.of(1));                                         // setQty(1)
       iLine.set('priceentered', comRun.getGrandTotal()).set('priceactual', comRun.getGrandTotal());   // setPrice(BigDecimal)
-      // setTax() :499-528
-      var M = R.M, billDate = A.Timestamp.of(inv.get('dateinvoiced')), isSO = inv.get('issotrx') === 'Y', bpl = Number(inv.get('c_bpartner_location_id') || 0);
-      var taxId = M.Tax.get(this.getCtx(), Number(iLine.get('m_product_id') || 0), Number(iLine.get('c_charge_id') || 0), billDate, billDate, Number(iLine.get('ad_org_id') || 0),
-        A.Env.getContextAsInt(this.getCtx(), A.Env.M_WAREHOUSE_ID), bpl, bpl, -1, isSO, null, trx);
-      if (!taxId) throw new Error('CommissionAPInvoice - cannot save Invoice Line');     // setTax false → "No Tax found" (the Java ignores setTax's result; the save then fails on mandatory C_Tax_ID)
-      iLine.set('c_tax_id', taxId);
-      // MInvoiceLine.beforeSave :928-934 default UOM (MUOM.getDefault_UOM_ID :90-97) — the shared line hook only derives the UOM from a product
-      if (!Number(iLine.get('c_uom_id') || 0)) { var du = trx.q('SELECT C_UOM_ID AS u FROM C_UOM WHERE AD_Client_ID IN (0,?) ORDER BY IsDefault DESC, AD_Client_ID DESC, C_UOM_ID', [A.Env.getAD_Client_ID(this.getCtx())])[0]; if (du && Number(du.u) > 0) iLine.set('c_uom_id', Number(du.u)); }
-      var lc = S.cols(trx, 'C_InvoiceLine');                                            // PO.setStandardDefaults only where the column exists
-      if (lc) ['processed', 'processing', 'posted'].forEach(function (c) { if (!lc[c]) delete iLine.ch[c]; });
+      if (!MI.MInvoiceLine_setTax(trx, this.getCtx(), iLine, trx.get('c_invoice', inv.id()) || inv.values())) throw new Error('CommissionAPInvoice - cannot save Invoice Line');   // setTax() :499-528 (false → "No Tax found"; the Java ignores it, the save then fails on mandatory C_Tax_ID)
+      MI.MInvoiceLine_defaultUOM(trx, this.getCtx(), iLine);                             // MInvoiceLine.beforeSave :928-934
       if (!iLine.save()) throw new Error('CommissionAPInvoice - cannot save Invoice Line');
       var cr = trx.get('c_commissionrun', comRun.get_ID());
       S.saveEx(X, trx, 'C_CommissionRun', cr, { c_invoice_id: inv.id(), processed: true });   // :114-116

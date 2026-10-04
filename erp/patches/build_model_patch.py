@@ -48,10 +48,13 @@ cur.execute("select m_cost_uu, currentcostprice, currentqty, cumulatedamt, cumul
 for uu, p_, q, ca, cq, fp in cur.fetchall():
     out.append('UPDATE m_cost SET currentcostprice=%s, currentqty=%s, cumulatedamt=%s, cumulatedqty=%s, futurecostprice=%s WHERE m_cost_uu=%s;' % (lit(p_), lit(q), lit(ca), lit(cq), lit(fp), lit(uu))); n += 1
 out.append('CREATE TABLE IF NOT EXISTS ad_ddl_default (tablename TEXT, columnname TEXT, defaultvalue TEXT);')
-T = ['c_order', 'c_orderline', 'c_ordertax', 'm_inout', 'm_inoutline', 'm_inoutlinema', 'm_transaction', 'm_storageonhand', 'm_storagereservation', 'm_storagereservationlog',
-     'm_costdetail', 'm_cost', 'm_costhistory', 'm_costqueue', 'c_invoice', 'c_invoiceline', 'c_invoicetax', 'c_payment', 'c_allocationhdr', 'c_allocationline', 'fact_acct',
-     'ad_wf_process', 'ad_wf_activity', 'ad_wf_eventaudit', 'm_matchpo', 'm_matchinv',
-     'c_bankstatementline', 'm_inventoryline', 'c_periodcontrol']   # + §CP-OPEN 4a: IsManual/EftAmt, QtyCsv/CurrentCostPrice/NewCostPrice (physical DEFAULTs)
+# EVERY bundle table (AD-LAYER LAW rule 1/2: the dictionary decides, not a hand list) = the tables of ad_seed.db + those this patch
+#   creates. ModelLayer.newPO follows PO.setStandardDefaults (§CP-OPEN 4b), so an omitted column takes the DB DEFAULT as Postgres would.
+import sqlite3 as _sq, os as _os
+_seed = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', 'ad_seed.db')
+T = sorted(set(r[0].lower() for r in _sq.connect(_seed).execute("select name from sqlite_master where type='table'"))
+           | set(m.lower() for m in re.findall(r'CREATE TABLE IF NOT EXISTS (\w+)', '\n'.join(out)
+                 + (open(sys.argv[1]).read() if len(sys.argv) > 1 and _os.path.exists(sys.argv[1]) else ''))))   # + the shell half's tables (same run)
 cur.execute("select table_name, column_name, column_default from information_schema.columns where table_schema='adempiere' and column_default is not null and table_name = any(%s) order by 1,2", (T,))
 for t, c, d in cur.fetchall():
     v = d.split('::')[0].strip()
