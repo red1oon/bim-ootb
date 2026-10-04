@@ -28,6 +28,9 @@
 //                     rendered from a stubbed schedule) must re-render in the new language. CONTROL: a once-built English
 //                     node + the dictionary re-translation pass disabled (window.__TRL_SWITCH_NO_RETRANSLATE) → leaks > 0.
 //                     `--only inplace` runs just (6).
+//  (2c) HELP         S226 §R2d (2026-10-04): the Help palette (#cmd-palette, scene.js showCommandPalette — F1 / ?) is opened for real
+//                     on the viewer page and judged like every other surface; its population is printed (§TRL_SCOPE … help= n=)
+//                     and n < HELP_MIN_STRINGS FAILS, so an absent palette cannot pass.
 // No GPU: headless chromium with --disable-gpu (software GL). Pages are opened WITHOUT a building (?blank=1) — the strings
 // under test are the static chrome. Logs: viewer/tests/logs/witness_viewer_i18n.log (verdicts) + .page.log (every console line).
 // Run:  NODE_PATH=~/bim-ootb/node_modules node viewer/tests/witness_viewer_i18n.js [--locales de_DE,ar_SA] [--pages landing,viewer]
@@ -92,6 +95,7 @@ const ALLOW_STRINGS = new Set(['count doors', 'floor 1 walls', 'total cost', 'sh
 // §TRL_SCOPE page=viewer drawer=#time-machine-panel n=<strings>, FAIL when n < TM_MIN_STRINGS. The What-if popup
 // (#whatif-panel, whatif_panel.js) is opened for real when sql.js + erp/ad_seed.db are reachable — §TRL_WHATIF open=yes|no.
 const TM_DRAWER = '#time-machine-panel', TM_MIN_STRINGS = 40;
+const HELP_MIN_STRINGS = 10;   // S226 §R2d — the Help palette: 38 pill rows + keyboard rows + placeholder + tooltips
 const EN_TEXTS_DESC = Array.from(new Set(BASE.map(r => r.msgtext))).filter(t => t.length >= 3).sort((a, b) => b.length - a.length);   // every base msgtext, longest first, stripped from a string before the English heuristic
 // S226 §R2b — TEMPLATE SLOTS. A msgtext holding {placeholders} ('Compressed {n} tasks', 'drag to slip · official {a}→{b}') never
 // appears on screen verbatim; the screen shows it filled in. Its static PREFIX (text before the first '{', ≥ 4 chars) identifies
@@ -102,6 +106,7 @@ const EN_TPL = []; (() => { const m = new Map(); BASE.forEach(r => { const p = t
 const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 function englishLooking(s) {   // the heuristic used on the ENGLISH baseline only: a Latin word ≥3 letters that is not allow-listed
   if (ALLOW_STRINGS.has(norm(s))) return false;
+  if (/^(CTRL|ALT|SHIFT|CAPS LOCK|ESC|TAB|ENTER|SPACE|F\d{1,2})(\+\S+)?$/.test(norm(s))) return false;   // S226 §R2d: a key cap (Help palette <kbd>) — printed in English on the keyboard itself
   let rest = norm(s); EN_TEXTS_DESC.forEach(t => { if (rest.includes(t)) rest = rest.split(t).join(' '); });   // 'Night · n' → '· n'
   const toks = rest.match(/[A-Za-z][A-Za-z'’\-]*/g) || [];
   return toks.some(t => t.length >= 3 && !ALLOW.has(t) && !ALLOW.has(t.toUpperCase()) && !/^v\d+$/i.test(t) && !/^Ifc[A-Z]/.test(t));
@@ -115,7 +120,7 @@ async function collectStrings(page) {
       text = String(text || '').replace(/\s+/g, ' ').trim(); if (!text) return;
       const k = kind + '|' + text; if (seen.has(k)) return; seen.add(k);
       let hidden = false; try { const cs = el && el.nodeType === 1 ? getComputedStyle(el) : null; hidden = !!(cs && (cs.display === 'none' || cs.visibility === 'hidden')) || !!(el && el.closest && el.closest('[style*="display:none"],[style*="display: none"]')); } catch (e) { /* detached */ }
-      out.push({ kind, text, hidden, tm: !!(el && el.closest && el.closest('#time-machine-panel')), wi: !!(el && el.closest && el.closest('#whatif-panel')), sel: el && el.nodeType === 1 ? (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '')) : '' });
+      out.push({ kind, text, hidden, tm: !!(el && el.closest && el.closest('#time-machine-panel')), wi: !!(el && el.closest && el.closest('#whatif-panel')), hp: !!(el && el.closest && el.closest('#cmd-palette')), sel: el && el.nodeType === 1 ? (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '')) : '' });
     };
     const skip = 'script,style,noscript,template,svg,canvas,#walk-log,#ootb-locale-toast,.hub-card .nm,#s-current-element,#load-elapsed,#tl-label,#section-val,#site-cam-time,#load-items,' +
       '#whatif-panel .wi-name,#whatif-panel h3 > span,#whatif-panel .wi-d';   // S226 §R2b: What-if phase names + project name are DB data (erp/ad_seed.db), the ±Nd steppers are numbers
@@ -134,12 +139,13 @@ async function collectStrings(page) {
 const BASELINE_UNCAT = {};   // page id -> Set(strings) found uncatalogued on the English run
 const WHATIF_OPEN = {};      // lang -> 'open' | reason the What-if popup could not be opened (S226 §R2b)
 function judge(lang, pageId, strings) {
-  const r = { slots: 0, wiring: [], gap: [], uncat: [], tm: 0, wi: 0, translated: 0, total: 0 };
+  const r = { slots: 0, wiring: [], gap: [], uncat: [], tm: 0, wi: 0, hp: 0, translated: 0, total: 0 };
   const x = XML[lang];
   strings.forEach(s => {
     const t = s.text;
     if (s.tm) r.tm++;   // S226 §R2b: counted (anti-vacuous), AND judged below like every other string
     if (s.wi) r.wi++;
+    if (s.hp) r.hp++;
     const enRows = EN_BY_TEXT.get(t);
     if (enRows) {
       r.slots++;
@@ -205,6 +211,9 @@ async function openPage(page, base, pg, saved) {
       } catch (e) { return 'ERR ' + e.message; }
     });
     PAGELOG.push('WHATIF ' + wi); WHATIF_OPEN[page._tmLang || ''] = wi;
+    // S226 §R2d: open the REAL Help palette (it is rebuilt on every open, in the language current at that moment)
+    await page.evaluate(() => { if (!document.getElementById('cmd-palette') && typeof window.showCommandPalette === 'function') window.showCommandPalette(); });
+    await page.waitForTimeout(200);
   }
   if (pg.id === 'boq' || pg.id === 'clash' || pg.id === 'mep') await page.waitForTimeout(1500);   // the no-DB message settles
   return linesSince(n0);
@@ -278,7 +287,7 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
       while ((m = re2.exec(src))) { checked++; const want = byValue.get(m[2]); const attr = isJs ? unjs(m[3]) : m[3]; if (want == null) unknown.push(f + ':' + m[2]); else if (norm(dec(attr)) !== norm(want)) mism.push(f + ':' + m[2] + ' attr=' + JSON.stringify(attr) + ' csv=' + JSON.stringify(want)); }
       // in-code defaults: _trl(k, repl, 'dflt') · _trlD(k, 'dflt') / _trlD(k, repl, 'dflt') · _lt(k, 'dflt') · clash_report _t(k, 'dflt')
       // S226 §R2b: time_machine.js _tmTrl(k, 'dflt'[, repl]) + its sandbox-safe local _L(k, 'dflt'[, repl]) · whatif_panel.js _wiTrl(k, 'dflt'[, repl])
-      const re3 = /\b(_trl|_trlD|_lt|_t|_tmTrl|_L|_wiTrl)\(\s*'(\w+)'\s*,\s*(?:(?:null|\{[^}]*\})\s*,\s*)?'((?:[^'\\]|\\.)*)'/g;
+      const re3 = /\b(_trl|_trlD|_lt|_t|_tmTrl|_L|_wiTrl|_hT|_hA)\(\s*'(\w+)'\s*,\s*(?:(?:null|\{[^}]*\})\s*,\s*)?'((?:[^'\\]|\\.)*)'/g;
       while ((m = re3.exec(src))) {
         if (m[1] === '_t' && f !== 'viewer/clash_report.html') continue;   // mep_report.html's older _t(k, fb) carries its own short fallbacks by design
         if (m[1] === '_trl' && !/,\s*(?:null|\{[^}]*\})\s*,\s*'/.test(m[0])) continue;   // 2-arg _trl(key, repl) — no default to check
@@ -286,6 +295,18 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
       }
     });
     W(mism.length === 0 && unknown.length === 0, '(3b) static English / in-code defaults == CSV msgtext: checked=' + checked + (mism.length ? ' MISMATCH ' + mism.slice(0, 6).join(' | ') : '') + (unknown.length ? ' UNKNOWN-KEY ' + unknown.slice(0, 6).join(',') : ''));
+  }
+
+  // (3c) S226 §R2d — the Help palette's sub-rows are keyed by position ('pillc_<id>_<n>', panels.js _relabelPill): every child's
+  // English in the code must equal its CSV msgtext, so a reordered or edited child cannot show another row's translation.
+  {
+    const src = fs.readFileSync(path.join(VIEWER, 'panels.js'), 'utf8'); const byValue = new Map(BASE.map(r => [r.value, r.msgtext]));
+    const re = /\{ id: '([\w-]+)',/g; let m; const ids = []; while ((m = re.exec(src))) ids.push([m[1], m.index]);
+    let n = 0; const bad = [];
+    ids.forEach(([id, at], k) => { const seg = src.slice(at, k + 1 < ids.length ? ids[k + 1][1] : src.length); const c = seg.match(/children: \[(.*?)\] \}/s); if (!c) return;
+      [...c[1].matchAll(/\{ name: '((?:[^'\\]|\\.)*)'/g)].forEach((x, i) => { n++; const key = 'pillc_' + id.toLowerCase().replace(/-/g, '_') + '_' + (i + 1), en = x[1].replace(/\\'/g, "'");
+        if (byValue.get(key) !== en) bad.push(key + ' code=' + JSON.stringify(en.slice(0, 40)) + ' csv=' + JSON.stringify(String(byValue.get(key)).slice(0, 40))); }); });
+    W(n > 0 && bad.length === 0, '(3c) Help sub-rows: ' + n + ' children in panels.js, each English == CSV msgtext of pillc_<id>_<n>' + (bad.length ? ' MISMATCH ' + bad.slice(0, 5).join(' | ') : '') + (n ? '' : ' — INCONCLUSIVE (0 children parsed)'));
   }
 
   // ── (1)+(2) per locale ────────────────────────────────────────────────────────────────────────────────────────
@@ -327,8 +348,8 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
       perPage.push(j); row.pages++; row.slots += j.slots; row.total += j.total; row.leaks += j.leaks; row.wiring += j.wiring.length; row.gap += j.gap.length; row.uncat += j.uncat.length;
       if (pg.id === 'viewer') {   // S226 §R2b — the drawer and the What-if popup are judged; their populations are printed so a 0 cannot hide
         const wiState = WHATIF_OPEN[lang] || 'not attempted';
-        say('  §TRL_SCOPE locale=' + lang + ' page=viewer drawer=' + TM_DRAWER + ' n=' + j.tm + ' whatif=#whatif-panel n=' + j.wi + ' open=' + (wiState === 'open' ? 'yes' : 'no (' + wiState + ')'));
-        row.tmStrings = (row.tmStrings || 0) + j.tm; row.wiStrings = (row.wiStrings || 0) + j.wi; row.wiOpen = wiState === 'open';
+        say('  §TRL_SCOPE locale=' + lang + ' page=viewer drawer=' + TM_DRAWER + ' n=' + j.tm + ' whatif=#whatif-panel n=' + j.wi + ' open=' + (wiState === 'open' ? 'yes' : 'no (' + wiState + ')') + ' help=#cmd-palette n=' + j.hp);
+        row.hpStrings = (row.hpStrings || 0) + j.hp; row.tmStrings = (row.tmStrings || 0) + j.tm; row.wiStrings = (row.wiStrings || 0) + j.wi; row.wiOpen = wiState === 'open';
       }
       if (lang === T.BASE) say('  §TRL_UNCATALOGUED page=' + pg.id + ' n=' + j.uncat.length + (j.uncat.length ? ' [' + j.uncat.join(' · ') + ']' : '') + ' slots=' + j.slots);
       else say('  §TRL_LEAK locale=' + lang + ' page=' + pg.id + ' leaks=' + j.leaks + ' of ' + j.total + ' (translated=' + j.translated + ' wiring=' + j.wiring.length + ' gap=' + j.gap.length + ' uncat=' + j.uncat.length + ')' +
@@ -344,6 +365,7 @@ print(json.dumps(out))`, T.I18N], { encoding: 'utf8' });
     W(carryAll, '(1) ' + lang + ' carries through all ' + PAGES.length + ' pages (§TRL_DETECT src=saved, §TRL_LABELS, <html lang=' + row.htmlLang + ' dir=' + row.dir + '>)');
     if (PAGES.some(p => p.id === 'viewer')) {   // (2b) S226 §R2b — the drawer was judged on a real population (not absent), the What-if popup too when it opened
       W((row.tmStrings || 0) >= TM_MIN_STRINGS, '(2b) ' + lang + ' Time Machine drawer judged: ' + (row.tmStrings || 0) + ' strings inside ' + TM_DRAWER + ' (min ' + TM_MIN_STRINGS + '; was §TRL_OUT_OF_SCOPE n=53)');
+      W((row.hpStrings || 0) >= HELP_MIN_STRINGS, '(2c) ' + lang + ' Help palette judged: ' + (row.hpStrings || 0) + ' strings inside #cmd-palette (min ' + HELP_MIN_STRINGS + ')');
       if (row.wiOpen) W((row.wiStrings || 0) >= 8, '(2b) ' + lang + ' What-if popup judged: ' + (row.wiStrings || 0) + ' strings inside #whatif-panel');
       else say('  §TRL_WHATIF locale=' + lang + ' open=no — popup NOT judged (' + (WHATIF_OPEN[lang] || 'not attempted') + ')');
     }

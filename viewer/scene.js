@@ -2567,6 +2567,9 @@ async function setupScene(A) {
     var existing = document.getElementById('cmd-palette');
     if (existing) { existing.remove(); console.log('§KBD_HELP close'); return; }
     console.log('§KBD_HELP open');
+    // S226 §R2d: the palette's own strings through the dictionary — rebuilt on every open, so always in the current language
+    var _hT = function (k, en) { return (typeof _trl === 'function') ? _trl(k, null, en) : en; };
+    var _hA = function (k, en) { return String(_hT(k, en)).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); };   // into an attribute
 
     var pal = document.createElement('div');
     pal.id = 'cmd-palette';
@@ -2579,7 +2582,7 @@ async function setupScene(A) {
     // Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
     var _pwaInstalled = _isStandalone || window._pwaAccepted;
     var _badgeColor = _pwaInstalled ? '#4caf50' : '#4fc3f7';
-    var _badgeTitle = _pwaInstalled ? 'Installed \u2714' : 'Download \xB7 Run Offline';
+    var _badgeTitle = _pwaInstalled ? _hA('ui_cmd_installed', 'Installed \u2714') : _hA('ui_cmd_download_offline', 'Download · Run Offline');
     var _badgeIcon = _pwaInstalled
       ? '<polyline points="20 6 9 17 4 12"/>'  // checkmark
       : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
@@ -2598,14 +2601,14 @@ async function setupScene(A) {
     var html = '<div style="padding:6px 14px;color:#888;font-size:10px;border-bottom:1px solid #222;text-align:center">' +
       badgeHtml +
       '<div style="padding:10px 14px;border-bottom:1px solid #333">' +
-      '<input id="cmd-search" type="text" placeholder="Type a command..." ' +
+      '<input id="cmd-search" type="text" placeholder="' + _hA('ui_cmd_placeholder', 'Type a command...') + '" ' +
       'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;' +
       'padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div id="cmd-list" style="max-height:260px;overflow-y:auto;padding:4px 0"></div>' +
       '<div style="padding:8px 14px;border-top:1px solid #333;text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
-      '<span id="cmd-report" title="Report Bug" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
-      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="Viewer User Guide" ' +
+      '<span id="cmd-report" title="' + _hA('ui_report_bug', 'Report Bug') + '" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
+      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="' + _hA('ui_cmd_user_guide', 'Viewer User Guide') + '" ' +
       'style="color:#4fc3f7;line-height:0">' + _ic(ICONS.lightbulb.svg) + '</a></div>';
     pal.innerHTML = html;
     document.body.appendChild(pal);
@@ -2650,18 +2653,18 @@ async function setupScene(A) {
         });
       }
       // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
-      all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
-      all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
+      all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'),  icon: '', action: function() { _shortcuts['+'](); }, children: null });
+      all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function() { _shortcuts['-'](); }, children: null });
       // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
       // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
       // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
-      all.push({ seq: 'ALT+C', name: 'MaxQ Movie', icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
-      all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
       // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
       // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
-      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
+      if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });

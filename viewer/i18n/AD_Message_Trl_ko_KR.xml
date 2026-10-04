@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--BIM OOTB Viewer — AD_Message_Trl ko_KR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/ko_KR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--BIM OOTB Viewer — AD_Message_Trl ko_KR — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/ko_KR.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
 <!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
 <idempiereTrl language="ko_KR" table="AD_Message">
  <row id="1000000" trl="Y">
@@ -2697,6 +2697,330 @@ CPM은 드래그로 생긴 날짜를 읽기만 하며 날짜를 바꾸지 않습
  </row>
  <row id="1000671" trl="Y">
   <value column="MsgText" original="(critical path)">(주공정)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000672" trl="Y">
+  <value column="MsgText" original="Type a command...">명령 입력...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000673" trl="Y">
+  <value column="MsgText" original="Zoom In">확대</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000674" trl="Y">
+  <value column="MsgText" original="Zoom Out">축소</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000675" trl="Y">
+  <value column="MsgText" original="MaxQ Movie">MaxQ 영상</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000676" trl="Y">
+  <value column="MsgText" original="Populate (people + trees)">배치 (사람 + 나무)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000677" trl="Y">
+  <value column="MsgText" original="Hover Name">호버 이름</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000678" trl="Y">
+  <value column="MsgText" original="Installed ✔">설치됨 ✔</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000679" trl="Y">
+  <value column="MsgText" original="Download · Run Offline">다운로드 · 오프라인 실행</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000680" trl="Y">
+  <value column="MsgText" original="Viewer User Guide">뷰어 사용자 가이드</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000681" trl="Y">
+  <value column="MsgText" original="Save the open building to a .db file">열려 있는 건물을 .db 파일로 저장</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000682" trl="Y">
+  <value column="MsgText" original="Native Save As… dialog — pick name + folder">기본 다른 이름으로 저장… 대화상자 — 이름 + 폴더 선택</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000683" trl="Y">
+  <value column="MsgText" original="Re-openable with Open (Ctrl+O)">열기(Ctrl+O)로 다시 열 수 있음</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000684" trl="Y">
+  <value column="MsgText" original="Open a saved .db file">저장된 .db 파일 열기</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000685" trl="Y">
+  <value column="MsgText" original="Native Open… dialog">기본 열기… 대화상자</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000686" trl="Y">
+  <value column="MsgText" original="Replaces the current scene">현재 장면을 교체</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000687" trl="Y">
+  <value column="MsgText" original="Search by name/class">이름/클래스로 검색</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000688" trl="Y">
+  <value column="MsgText" original="Filter by storey/type">층/유형으로 필터</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000689" trl="Y">
+  <value column="MsgText" original="Voice search (mic)">음성 검색 (마이크)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000690" trl="Y">
+  <value column="MsgText" original="Navigate to element">요소로 이동</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000691" trl="Y">
+  <value column="MsgText" original="Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)">직종 프리셋 순환 (배관공/전기공/ACMV/구조/청소원)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000692" trl="Y">
+  <value column="MsgText" original="Filters the 3D scene + Outliner to that role's disciplines">3D 장면과 아웃라이너를 해당 역할의 공종으로 필터</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000693" trl="Y">
+  <value column="MsgText" original="Convenience filter only — not access control">편의용 필터일 뿐 — 접근 제어 아님</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000694" trl="Y">
+  <value column="MsgText" original="History across ALL pages — viewer, iDempiere, Gravity">모든 페이지의 기록 — 뷰어, iDempiere, Gravity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000695" trl="Y">
+  <value column="MsgText" original="Whole | This page toggle">전체 | 이 페이지 전환</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000696" trl="Y">
+  <value column="MsgText" original="Day strip — step back/forward by day">일 단위 막대 — 하루씩 뒤로/앞으로</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000697" trl="Y">
+  <value column="MsgText" original="Tap a card to jump to that building/doc">카드를 탭하면 해당 건물/문서로 이동</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000698" trl="Y">
+  <value column="MsgText" original="Long-press → clear (bomb), warns first">길게 누르기 → 지우기(폭탄), 먼저 경고</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000699" trl="Y">
+  <value column="MsgText" original="This page's own dot timeline">이 페이지 자체의 점 타임라인</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000700" trl="Y">
+  <value column="MsgText" original="Step back/forward through your edits">편집 내역을 뒤로/앞으로</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000701" trl="Y">
+  <value column="MsgText" original="Route over locators (walk order)">로케이터 경로 (보행 순서)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000702" trl="Y">
+  <value column="MsgText" original="Fly-to next bin, FIND-lens depth">다음 빈으로 이동, FIND 렌즈 깊이</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000703" trl="Y">
+  <value column="MsgText" original="Scan bin QR / type code">빈 QR 스캔 / 코드 입력</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000704" trl="Y">
+  <value column="MsgText" original="Signed pick group per bin">빈별 서명된 피킹 그룹</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000705" trl="Y">
+  <value column="MsgText" original="Operate-phase (7D) cockpit — one model, lenses each answering ONE question">운영 단계(7D) 콕핏 — 모델 하나, 렌즈마다 하나의 질문에 답함</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000706" trl="Y">
+  <value column="MsgText" original="Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard">점유(임대 상태 포함) · 재실 · 유닛 분류 · 자산/IoT · 대시보드</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000707" trl="Y">
+  <value column="MsgText" original="Wake-aware: only lenses with data in THIS building are enabled (others greyed)">웨이크 인식: 이 건물에 데이터가 있는 렌즈만 활성화 (나머지는 회색)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000708" trl="Y">
+  <value column="MsgText" original="All off one signed op-log; toggle a lens off restores the model">모두 하나의 서명된 작업 로그 기반; 렌즈를 끄면 모델 복원</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000709" trl="Y">
+  <value column="MsgText" original="Discipline pair grid">공종 쌍 격자</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000710" trl="Y">
+  <value column="MsgText" original="Tolerance 1–100mm">허용오차 1–100mm</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000711" trl="Y">
+  <value column="MsgText" original="Status: Review/Resolve/Accept">상태: 검토/해결/수용</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000712" trl="Y">
+  <value column="MsgText" original="HTML Report + CSV export">HTML 보고서 + CSV 내보내기</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000713" trl="Y">
+  <value column="MsgText" original="Floating Member (STR beams)">떠 있는 부재 (STR 보)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000714" trl="Y">
+  <value column="MsgText" original="Span/Depth (advisory)">스팬/깊이 (참고)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000715" trl="Y">
+  <value column="MsgText" original="Column Continuity">기둥 연속성</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000716" trl="Y">
+  <value column="MsgText" original="Isolated Room (no measured route out)">고립된 방 (측정된 탈출 경로 없음)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000717" trl="Y">
+  <value column="MsgText" original="Circulation Distance (to real exit, falls back to spine)">피난 거리 (실제 출구까지, 없으면 주동선으로 대체)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000718" trl="Y">
+  <value column="MsgText" original="Door Width (advisory)">문 폭 (참고)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000719" trl="Y">
+  <value column="MsgText" original="Gantt timeline">간트 타임라인</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000720" trl="Y">
+  <value column="MsgText" original="Author 4D schedule (✎)">4D 공정표 작성 (✎)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000721" trl="Y">
+  <value column="MsgText" original="What-if (slip a phase)">What-if (단계 밀기)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000722" trl="Y">
+  <value column="MsgText" original="Play / Pause sequence">시퀀스 재생 / 일시정지</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000723" trl="Y">
+  <value column="MsgText" original="Phase slider">단계 슬라이더</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000724" trl="Y">
+  <value column="MsgText" original="Share ?tm=play link">?tm=play 링크 공유</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000725" trl="Y">
+  <value column="MsgText" original="Task name + start→finish beside the picked element">선택한 요소 옆에 작업 이름 + 시작→종료</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000726" trl="Y">
+  <value column="MsgText" original="Trade + float, critical-path marker">직종 + 여유, 주공정 표시</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000727" trl="Y">
+  <value column="MsgText" original="One extra line on hover">호버 시 한 줄 추가</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000728" trl="Y">
+  <value column="MsgText" original="No schedule yet? Tap to generate one on the fly">아직 공정표가 없나요? 탭하면 즉시 생성</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000729" trl="Y">
+  <value column="MsgText" original="Y axis (vertical)">Y축 (수직)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000730" trl="Y">
+  <value column="MsgText" original="X axis (lateral)">X축 (가로)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000731" trl="Y">
+  <value column="MsgText" original="Z axis (depth)">Z축 (깊이)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000732" trl="Y">
+  <value column="MsgText" original="Slider 0–100%">슬라이더 0–100%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000733" trl="Y">
+  <value column="MsgText" original="Bookmarks">북마크</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000734" trl="Y">
+  <value column="MsgText" original="Ambience 0–100">분위기 0–100</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000735" trl="Y">
+  <value column="MsgText" original="Sun 0–5">태양 0–5</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000736" trl="Y">
+  <value column="MsgText" original="Exposure 0.1–3">노출 0.1–3</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000737" trl="Y">
+  <value column="MsgText" original="Ambient 0–2">주변광 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000738" trl="Y">
+  <value column="MsgText" original="Hemisphere 0–2">반구광 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000739" trl="Y">
+  <value column="MsgText" original="Night">야간</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000740" trl="Y">
+  <value column="MsgText" original="Shadow + Ground (cycle)">그림자 + 지면 (순환)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000741" trl="Y">
+  <value column="MsgText" original="Reverse background">배경 반전</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000742" trl="Y">
+  <value column="MsgText" original="Sound FX">효과음</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000743" trl="Y">
+  <value column="MsgText" original="Boxes far/off-screen elements while you fly/orbit">비행/궤도 이동 중 멀리 있거나 화면 밖인 요소를 상자로 표시</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000744" trl="Y">
+  <value column="MsgText" original="Real mesh within 50 m + in view">50 m 이내 + 시야 안은 실제 메시</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000745" trl="Y">
+  <value column="MsgText" original="Off during Time Machine, Find isolate, Cinema">타임머신, 찾기 격리, 시네마 중에는 꺼짐</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000746" trl="Y">
+  <value column="MsgText" original="Snag photo + annotation">스냅 사진 + 주석</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000747" trl="Y">
+  <value column="MsgText" original="Fly to clash deep-link">간섭 딥링크로 이동</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000748" trl="Y">
+  <value column="MsgText" original="Export Excel">Excel 내보내기</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000749" trl="Y">
+  <value column="MsgText" original="Time Machine: earcon per construction phase">타임머신: 시공 단계별 신호음</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000750" trl="Y">
+  <value column="MsgText" original="Fly Tour: positional waypoint cues">비행 투어: 위치 기반 웨이포인트 신호</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000751" trl="Y">
+  <value column="MsgText" original="UI: soft tap tick">UI: 부드러운 탭 소리</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000752" trl="Y">
+  <value column="MsgText" original="Synthesized — no audio files, default OFF">합성음 — 오디오 파일 없음, 기본값 꺼짐</value>
   <value column="MsgTip" original=""/>
  </row>
 </idempiereTrl>
