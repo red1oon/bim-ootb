@@ -15,6 +15,8 @@
 // Run:  node tests/poc_parity_fieldset_live.js   (cwd = bim-ootb/erp)
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
+// the pinned set is crud_ops.json's own `fields` list — one source; a hand copy here drifted when FK pins were removed (§CP-OPEN-1)
+const CURATED = t => (require(require('path').join(__dirname, '..', 'crud_ops.json'))[t].fields || []).map(f => f.col);
 const http = require('http'), fs = require('fs'), path = require('path');
 
 const ROOT = path.join(__dirname, '..');
@@ -32,9 +34,9 @@ const ok = (label, cond, extra) => { console.log('   ' + (cond ? '🟢' : '🔴'
 
 // the five tables: window → header/child tab, how to open an editor (New where create is permitted, else Edit)
 const CASES = [
-  { table: 'c_order',          window: 143, tab: 186, mode: 'new',  curated: ['documentno','c_bpartner_id','dateordered','grandtotal','description','m_pricelist_id','bill_bpartner_id','docstatus'] },
-  { table: 'm_inout',          window: 169, tab: 257, mode: 'new',  curated: ['documentno','movementdate','m_warehouse_id','c_bpartner_id','c_order_id','description','docstatus'] },
-  { table: 'c_invoice',        window: 167, tab: 263, mode: 'edit', curated: ['documentno','dateinvoiced','c_bpartner_id','c_order_id','grandtotal','description','docstatus'] },
+  { table: 'c_order',          window: 143, tab: 186, mode: 'new',  curated: CURATED('c_order') },
+  { table: 'm_inout',          window: 169, tab: 257, mode: 'new',  curated: CURATED('m_inout') },
+  { table: 'c_invoice',        window: 167, tab: 263, mode: 'edit', curated: CURATED('c_invoice') },
   { table: 'c_payment',        window: 195, tab: 330, mode: 'new',  curated: ['documentno','payamt','datetrx','docstatus'] },
   // §GT.6 (ERP_IDEMPIERE_UX_PARITY.md): AD_Tab 349 is IsReadOnly='Y', IsInsertRecord='N' — iDempiere offers no New there; the
   //   curated crud_ops verbs that used to allow it no longer decide editability. Judged as AD-read-only, not as an editor.
