@@ -277,11 +277,22 @@
     if (fmt === 'MM' || fmt === 'MONTH') return new Timestamp(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
     return TimeUtil.getDay(t);
   };
+  // nvl(a, b) — adempiere.nvl (text,text / numeric,integer / integer,numeric overloads, pg_get_functiondef 2026-10-05): RETURN COALESCE($1, $2).
+  //   Used by @SQL= column defaults, e.g. C_InvoiceLine.Line `SELECT NVL(MAX(Line),0)+10 …` (GridField.defaultFromSQLExpression).
+  F.nvl = function (a, b) { return a == null ? b : a; };
+  // get_sysconfig(name, default, client, org) — adempiere.get_sysconfig (pg_get_functiondef 2026-10-05): the most specific active
+  //   AD_SysConfig row (ORDER BY AD_Client_ID DESC, AD_Org_ID DESC LIMIT 1), else the default (NO_DATA_FOUND). 65 @SQL= defaults use it.
+  F.get_sysconfig = function (name, dflt, client, org) {
+    try {
+      var r = q('get_sysconfig', "SELECT Value AS v FROM AD_SysConfig WHERE Name=? AND AD_Client_ID IN (0, ?) AND AD_Org_ID IN (0, ?) AND IsActive='Y' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC LIMIT 1", [name, Number(client) || 0, Number(org) || 0])[0];
+      return r ? r.v : dflt;
+    } catch (e) { return dflt; }   // AD_SysConfig absent from an unpatched bundle → the function's NO_DATA_FOUND path
+  };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
-    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nextbusinessday: [2], getdate: [0], trunc: [1, 2] };
+    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], trunc: [1, 2] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
     switch (n) {
@@ -289,6 +300,7 @@
       case 1: return function (a) { return conv(fn(a)); };
       case 2: return function (a, b) { return conv(fn(a, b)); };
       case 3: return function (a, b, c) { return conv(fn(a, b, c)); };
+      case 4: return function (a, b, c, d) { return conv(fn(a, b, c, d)); };
       case 5: return function (a, b, c, d, e) { return conv(fn(a, b, c, d, e)); };
       case 6: return function (a, b, c, d, e, f) { return conv(fn(a, b, c, d, e, f)); };
       case 7: return function (a, b, c, d, e, f, g) { return conv(fn(a, b, c, d, e, f, g)); };

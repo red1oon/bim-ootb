@@ -448,7 +448,16 @@
   GridField.prototype.getDisplayType = function () { return this.vo.displayType; };
   GridField.prototype.getCallout = function () { return this.vo.Callout || ''; };
   GridField.prototype.isKey = function () { return !!this.vo.IsKey; };
-  GridField.prototype.isParentValue = function () { return !!this.vo.IsParent; };
+  // isParentValue (M/GridField.java isParentValue + isIndirectParentValue): never on tab 0 or a non-ID field; on a child tab, the
+  //   column linking it to a parent/ancestor tab (its link column = the ancestor's key, the §GT linkColumn convention)
+  GridField.prototype.isParentValue = function () {
+    if (this.m_parentValue != null) return this.m_parentValue;
+    var t = this.m_gridTab, cn = this.vo.ColumnName, r = false;
+    if (t && t.tabNo !== 0 && DT.isID(this.vo.displayType)) {
+      for (var p = t.parentTab; p && !r; p = p.parentTab) if (p.getKeyColumnName && p.getKeyColumnName() === cn) r = true;
+    }
+    return (this.m_parentValue = r);
+  };
   GridField.prototype.isAlwaysUpdateable = function () { return !!this.vo.IsAlwaysUpdateable; };
   GridField.prototype.isLookup = function () { return DT.isLookup(this.vo.displayType) || this.vo.displayType === DT.Location || this.vo.displayType === DT.Locator || this.vo.displayType === DT.Account || this.vo.displayType === DT.PAttribute; };
   GridField.prototype.getAD_Column_ID = function () { return this.vo.AD_Column_ID; };
@@ -544,7 +553,8 @@
   GridTab.prototype.isActive = function () { return this.getValueAsBoolean('IsActive'); };
   GridTab.prototype.getContext = function (name) { return Env.getContext(this.ctx, this.windowNo, this.tabNo, name); };
   // load(row, inserting) — GridTable.readData + setCurrentRow: every field takes the row's value (no callouts), ctx updated
-  GridTab.prototype.load = function (row, inserting) {
+  // opts.noDefaults: the row is ALREADY a complete New row (e.g. the oracle's afterNew) — mark inserting, do not re-default it
+  GridTab.prototype.load = function (row, inserting, opts) {
     var r = {}; for (var k in (row || {})) if (Object.prototype.hasOwnProperty.call(row, k)) r[String(k).toLowerCase()] = row[k];
     this.inserting = !!inserting;
     // inserting = GridTable.dataNew :2129-2143 — ONE pass in field order: a column the host gave keeps its value, every other
@@ -553,7 +563,7 @@
     var defs = this.lastDefaults = {}, self = this;
     this.fields.forEach(function (f) {
       var cn = f.getColumnName(), raw = r[cn.toLowerCase()], v;
-      var dflt = inserting && (raw == null || String(raw) === '');
+      var dflt = inserting && !(opts && opts.noDefaults) && (raw == null || String(raw) === '');
       // GridTable.dataNew :2134-2137 "avoid getting default from previous row": the TAB-level key goes; the WINDOW-level one stays,
       //   so @Col@ defaults read the record that was current when New was pressed (ZK opens a window on its newest row)
       if (dflt && self.ctx && self.ctx.remove) self.ctx.remove(self.windowNo + '|' + self.tabNo + '|' + cn);
