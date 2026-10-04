@@ -1100,7 +1100,10 @@
   // CORE.effectiveFlags (→ window.AdEvaluator). The record AND context = the form's own current field values, so
   // same-record @Col@ references resolve. visible=false→hide the row · readonly=true→disable · required=true→mark.
   function applyAdLogic(e) {
-    var rec = gatherVals(e), ctx = rec, flips = 0, withLogic = 0;
+    var rec = gatherVals(e), flips = 0, withLogic = 0;
+    var base = (_formCtx && _formCtx.verb === 'update' && _formCtx.baseline) || null;   // §GT.7: the record's own state (Processed/IsActive…)
+    if (base) { var m = {}, k; for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) m[k] = base[k]; for (k in rec) if (Object.prototype.hasOwnProperty.call(rec, k)) m[k] = rec[k]; rec = m; }
+    var ctx = rec;
     (e.fields || []).forEach(function (f) {
       var hasLogic = [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; });
       if (hasLogic) withLogic++;
@@ -1274,8 +1277,7 @@
     if (win) for (k in win) fill(String(k).toLowerCase(), win[k]);
     fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
     fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
-    // the per-window Sales/Purchase signal idempiere.html already extracts from the active AD_Tab's own
-    // WhereClause — reuse it, do NOT write a second reader (_docCtx owns this question).
+    // window context IsSOTrx = AD_Window.IsSOTrx (host sets APP._createIsSOTrx; _docCtx owns this question).
     if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') fill('issotrx', app._createIsSOTrx);
     var ctx = {};
     ((VR && VR.tokensIn(code)) || []).forEach(function (tok) {
@@ -1372,15 +1374,9 @@
         console.log('§CRUD-LIST col=' + f.col + ' cur="' + cur + '" options=' + lo.length + ' selected="' + (sel || (blank ? '(blank)' : '(first)')) + '"');
       } else if (f.type === 'fk' && typeof withBundle === 'function') {
         var keep = el.value;
-        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — a readonly fk (a child tab's
-        // locked parent-link column, e.g. C_OrderLine.C_Order_ID, or any other read-only fk) must KEEP its
-        // seeded/current value verbatim. The full LIST query below is scoped to the raw base table and can
-        // NEVER include a synthetic/overlay-only row (a freshly created parent, negative pk) — repopulating
-        // from it silently replaced a correct-but-unmatched value with whichever row sorted first (the
-        // actual root cause of the order-line-gets-a-stale-parent bug). Look up just THIS row's friendly
-        // label instead of the full list; if the pk isn't a real base row (synthetic), fall back to showing
-        // the raw value — correct, just not pretty, same degrade-gracefully convention used elsewhere.
-        if (f.readonly) {
+        // A read-only fk, or the child tab's parent LINK (§GT, _inlineSeed), keeps its value verbatim: the list below reads the
+        //   base table only and cannot hold a session-created parent (synthetic negative pk).
+        if (f.readonly || (_inlineSeed && _inlineSeed[f.col] != null && String(_inlineSeed[f.col]) === String(keep))) {
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
@@ -1439,11 +1435,13 @@
             // FS-5 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2d — Witness: W-ERP-FIRST-SETUP S14).
             // Every iDempiere table lookup runs MRole.addAccessSQL (MLookupFactory.java:270,626,902), which ANDs
             // getClientWhere(rw=false) (MRole.java:2120-2124): AD_Client_ID IN (0,<client>), or AD_Client_ID=0 for
-            // the System client (MRole.java:1110-1117). Org access (getOrgWhere, !isAccessAllOrgs) is NOT ported.
+            // the System client (MRole.java:1110-1117), and getOrgWhere(false) (MRole.java:1192-1230) = the host's role org list (§GT).
             // The SAME clause narrows the offered SELECT and the admitted set (§P3.6: one set by construction).
             var accCli = (global.APP && global.APP.clientId != null && String(global.APP.clientId) !== '') ? Number(global.APP.clientId) : null;
             var acc = (accCli != null && !isNaN(accCli) && recHasCol(db, t, 'ad_client_id'))
               ? (accCli === 0 ? 'ad_client_id=0' : 'ad_client_id IN (0,' + accCli + ')') : null;
+            var accOrg = global.APP && global.APP.roleOrgWhere;
+            if (accOrg && recHasCol(db, t, 'ad_org_id')) acc = acc ? acc + ' AND ' + accOrg : accOrg;
             if (acc) where = where ? where + ' AND (' + acc + ')' : ' WHERE (' + acc + ')';
             // §FKFOLD — query the TIP-FOLDED row set, so a row the user just created is offerable.
             var src = _fkFoldSource(db, t, pk);
@@ -1611,8 +1609,29 @@
   // M*.beforeSave ports (ad_modelval.js — C_DocTypeTarget/C_BPartner_Location/SalesRep/C_PaymentTerm/C_Currency/
   // M_Warehouse). With the full AD field set live (§P1) those columns are visible + mandatory, so the validator
   // must see what the engine derives — the validator itself is unchanged and still runs over EVERY field.
+  // §GT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §GT.2 — W-GRIDTAB-LIVE): saveInline(cb) — the host's
+  //   AbstractADWindowContent.onSave0 seam (Z :2927-2945): run the inline form's Save and report the OUTCOME, so a tab change /
+  //   record navigation can proceed only on success and stay put on a REJECT (the save error is already on the form).
+  //   cb({ ok, reason, error, op_type, createdId }) — createdId = the exact synthetic pk (-opId) listTip gives the new row.
+  var _saveWaiter = null, _saveWaiterT = null;
+  function _settleSave(res) {
+    var w = _saveWaiter; if (!w) return;
+    _saveWaiter = null; if (_saveWaiterT) { clearTimeout(_saveWaiterT); _saveWaiterT = null; }
+    console.log('§GT-SAVE result ok=' + !!res.ok + (res.reason ? ' reason=' + res.reason : '') + (res.createdId != null ? ' createdId=' + res.createdId : '') + (res.error ? ' error="' + String(res.error).slice(0, 120) + '"' : ''));
+    try { w(res); } catch (e) {}
+  }
+  function saveInline(cb) {
+    var b = _inlineHost ? _inlineHost.querySelector('.ic-vb[data-v="save"]') : null;
+    if (!b || !_formCtx) { cb({ ok: true, reason: 'no-open-form' }); return; }
+    if (_saveWaiter) _settleSave({ ok: false, reason: 'superseded' });
+    _saveWaiter = cb;
+    _saveWaiterT = setTimeout(function () { _settleSave({ ok: false, reason: 'timeout' }); }, 15000);
+    var v = _formCtx.verb, e = _formCtx.e, id = _formCtx.id;
+    saveForm(v, e, v === 'create' ? null : (_inlineBaseline || _formCtx.baseline), id);   // the SAME call the inline Save button makes
+  }
   function saveForm(verb, e, orig, id) {
     var vals = gatherVals(e);
+    if (verb === 'create' && _inlineHost && _inlineSeed) Object.keys(_inlineSeed).forEach(function (k) { if (vals[k] == null || vals[k] === '') vals[k] = _inlineSeed[k]; });
     Array.prototype.forEach.call(fhost.querySelectorAll('.cfe'), function (s) { s.textContent = ''; });
     var typedCols = Object.keys(vals).filter(function (c) { return vals[c] != null && String(vals[c]).trim() !== ''; });
     // §AD-MODELVAL-LIVE (UI_UNPARK_RESUME.md B-3) — fire the PROVEN beforeSave hook engine (ad_modelval.js,
@@ -1623,6 +1642,7 @@
         var s0 = fhost.querySelector('.cfe'); if (s0) s0.textContent = mv.blocked + ': ' + mv.error;
         toast('Save rejected — ' + mv.error);
         console.log('§AD-MODELVAL-LIVE table=' + e.key + ' verb=' + verb + ' hook=' + mv.blocked + ' verdict=REJECT error="' + mv.error + '"');
+        _settleSave({ ok: false, reason: 'modelval', error: mv.blocked + ': ' + mv.error });
         return;
       }
       var derivedCols = [], appliedCols = [];
@@ -1673,6 +1693,7 @@
       if (!res.ok) {
         res.errors.forEach(function (er) { var s = fhost.querySelector('.cfe[data-col="' + er.col + '"]'); if (s) s.textContent = er.why; });
         console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' REJECT errors=' + JSON.stringify(res.errors));
+        _settleSave({ ok: false, reason: 'validate', error: res.errors.map(function (er) { return er.col + ':' + er.why; }).join(', ') });
         return;
       }
       console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
@@ -1684,6 +1705,7 @@
         if (!sp.statusOp && (!sp.fieldOp || !Object.keys(sp.fieldOp.changes).length)) {
           console.log('§CRUD update key=' + e.key + ' no-op (0 changed columns) — nothing committed');
           toast('No changes — nothing to save');
+          _settleSave({ ok: true, reason: 'no-op' });
           if (_inlineHost) { _refreshInlineDirty(); return; }   // inline: keep the editor alive, just reset dirty
           closeForm(); return;
         }
@@ -1691,7 +1713,7 @@
           console.log('§CRUD-STATUS-SPLIT key=' + e.key + ' docstatus ' + (sp.statusOp.from || '?') + '→' + (sp.statusOp.to || '?') + ' lane=DOC_ACTION fieldCols=' + (sp.fieldOp ? Object.keys(sp.fieldOp.changes).join(',') : '(none)'));
           applyOp(sp.statusOp, e);
         }
-        if (sp.fieldOp) applyOp(sp.fieldOp, e);
+        if (sp.fieldOp) applyOp(sp.fieldOp, e); else _settleSave({ ok: true, reason: 'status-only' });
         closeForm({ saved: true }); return;        // Item 1: committed → draft cleared, no buffering
       }
       applyOp(op, e);
@@ -1841,8 +1863,10 @@
   // editInline / createInline / copyInline — host-callable inline mounts (the form view calls these instead of the
   //   modal). opts: {onDirty(d) [T3 host blocks Process], refresh() [re-mount from tip], onNew()/onCopy() [host swaps
   //   to a fresh/cloned create], afterSaveCreate()/afterDelete()/afterDiscardNew() [host leaves new-mode], onUnsupported()}.
+  // §GT: the new row's parent LINK (GridField.defaultFromParent) — set even when the link field is not displayed.
+  var _inlineSeed = null;
   function editInline(table, id, host, opts) {
-    opts = opts || {};
+    opts = opts || {}; _inlineSeed = null;
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
       if (!e) { console.log('§INPLACE-EDIT table=' + key + ' skipped (no crud spec)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
@@ -1859,16 +1883,13 @@
       if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-NEW table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
       var vals = CORE.defaultsFor(e, today());
       _seedDocNoPreview(e, vals);
-      // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22) — opts.seedVals lets the host
-      // (idempiere.html, for a child tab's locked parent-link column) inject a value defaultsFor() has no
-      // way to know — AD_Column.DefaultValue is empty for a parent-link FK by convention (it's set
-      // programmatically, never via a column default). Optional; every other caller is unaffected.
+      _inlineSeed = opts.seedVals || null;   // §GT: host-supplied parent link (child tab)
       if (opts.seedVals) { var _sk = Object.keys(opts.seedVals); for (var _si = 0; _si < _sk.length; _si++) vals[_sk[_si]] = opts.seedVals[_sk[_si]]; }
       renderInline('create', e, vals, null, null, host, opts);
     });
   }
   function copyInline(table, fromId, host, opts) {
-    opts = opts || {};
+    opts = opts || {}; _inlineSeed = opts.seedVals || null;
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
       if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-COPY table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
@@ -2797,6 +2818,7 @@
   // dryCrud — the E2 fallback for a CRUD verb (kernel/sql.js absent): log the op, drop a Z dot. The
   // change is NOT persisted (honest dry-run) — getRecord then shows the stale bundle row.
   function dryCrud(op) {
+    _settleSave({ ok: false, reason: 'dry-not-committed' });
     if (op.op_type === 'CRUD_CREATE')      console.log('§CRUD create key=' + op.key + ' (dry) op=CRUD_CREATE fields=' + JSON.stringify(op.fields) + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' cas=' + (op.cas || '-'));
     else if (op.op_type === 'CRUD_UPDATE') console.log('§CRUD update key=' + op.key + ' field=' + Object.keys(op.changes).join(',') + ' (dry) op=CRUD_UPDATE changes=' + JSON.stringify(op.changes));
     else if (op.op_type === 'CRUD_DELETE') console.log('§CRUD delete key=' + op.key + ' tombstone=Y reversible=Y (dry) op=CRUD_DELETE id=' + op.id);
@@ -2885,6 +2907,7 @@
   // _gateReject — surface a REJECT in the UI: a toast + NO history dot (the write never happened), and the
   // §-log line the witness asserts. Replaces the old silent dry fallback for an ownerGated denial.
   function _gateReject(op, gate) {
+    _settleSave({ ok: false, reason: 'gate', error: gate.reason });
     console.log('§CRUD-GATE key=' + op.key + ' ownerGated=' + (op.ownerGated ? 'Y' : 'N') + ' verdict=REJECT reason=' + gate.reason);
     var msg = gate.reason === 'owner' ? 'not the owner'
       : gate.reason === 'wrong-accesslevel' ? "access denied — outside your role's access level"
@@ -2979,8 +3002,12 @@
               toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
               // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
               // (AD_Field/AD_Window/AD_Tab → form/menu rebuilds = re-read the dictionary, not recompile).
+              // §GT: a CREATE carries its exact synthetic pk (-opId, crud_core listTip) so the host makes THAT row current
+              //   (GridTable.dataSave keeps the saved record current, M/GridTable.java:1848-1854) — no guessing.
+              var createdId = op.op_type === 'CRUD_CREATE' ? -Number(res.ids[0]) : null;
               try { global.dispatchEvent(new CustomEvent('overlay:committed',
-                { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id } })); } catch (ev) {}
+                { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id, createdId: createdId } })); } catch (ev) {}
+              _settleSave({ ok: true, op_type: op.op_type, createdId: createdId });
               done();
             });
           });
@@ -3341,6 +3368,7 @@
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
                     editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
+                    saveInline: saveInline,   // §GT (W-GRIDTAB-LIVE): onSave0 seam — Save the inline form, report ok/REJECT to the navigating host
                     ignoreInline: ignoreInline, inlineDirty: _inlineDirty, formNeedsSave: _inlineContentDirty,   // Leg 4 (W-DIRTY-GATE): content-aware "leaving loses real work?" seam
                     formValues: function () { return _formCtx ? gatherVals(_formCtx.e) : null; },   // §P2 (W-PARITY-REFLIST): read-only witness seam — the open form's values AS THE ENGINE READS THEM (Y/N for a Yes-No)
                     formEntry: function () { return _formCtx ? _formCtx.e : null; },              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only

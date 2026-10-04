@@ -36,7 +36,9 @@ const CASES = [
   { table: 'm_inout',          window: 169, tab: 257, mode: 'new',  curated: ['documentno','movementdate','m_warehouse_id','c_bpartner_id','c_order_id','description','docstatus'] },
   { table: 'c_invoice',        window: 167, tab: 263, mode: 'edit', curated: ['documentno','dateinvoiced','c_bpartner_id','c_order_id','grandtotal','description','docstatus'] },
   { table: 'c_payment',        window: 195, tab: 330, mode: 'new',  curated: ['documentno','payamt','datetrx','docstatus'] },
-  { table: 'c_allocationline', window: 205, tab: 349, mode: 'child-new', childTab: 'Allocation Line', curated: ['amount','c_invoice_id','c_payment_id','datetrx'] }
+  // §GT.6 (ERP_IDEMPIERE_UX_PARITY.md): AD_Tab 349 is IsReadOnly='Y', IsInsertRecord='N' — iDempiere offers no New there; the
+  //   curated crud_ops verbs that used to allow it no longer decide editability. Judged as AD-read-only, not as an editor.
+  { table: 'c_allocationline', window: 205, tab: 349, mode: 'child-readonly', childTab: 'Allocation Line', curated: ['amount','c_invoice_id','c_payment_id','datetrx'] }
 ];
 
 async function landed(page) {
@@ -114,6 +116,15 @@ function waiter(logs) {
     await landed(page);
     if (c.mode === 'new') await clickNew(page);
     else if (c.mode === 'edit') await openFirstRow(page);
+    else if (c.mode === 'child-readonly') {
+      await openFirstRow(page);
+      await page.click('#idmp-tabstrip >> text=' + c.childTab, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(900);
+      const sn = await page.evaluate(() => window.IdmpGridTab && window.IdmpGridTab.snapshot());
+      const newOn = await page.$eval('#idmp-toolbar button[title^="New record"]', b => !b.disabled).catch(() => null);
+      ok(c.table + ': AD tab ' + c.tab + ' IsReadOnly=Y / IsInsertRecord=N → New disabled, canInsert=false (GridTab.isInsertRecord)', newOn === false && !!sn && sn.canInsert === false, 'newEnabled=' + newOn + ' canInsert=' + (sn && sn.canInsert));
+      await page.close(); continue;
+    }
     else if (c.mode === 'child-new') {
       await openFirstRow(page);                                               // select a header record (parent for the child tab)
       await page.click('#idmp-tabstrip >> text=' + c.childTab, { timeout: 8000 }).catch(() => {});
