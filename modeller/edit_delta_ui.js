@@ -7,7 +7,7 @@
 // Events come from two additive dispatchEvent lines in modeller.html (setHover -> 'dagevu:hover', setSelectionIds -> 'dagevu:select').
 (function () {
   'use strict';
-  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=12', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
+  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=13', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
   var _loading = null, _db = null, _dbBuf = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
 
   function _load(src) {
