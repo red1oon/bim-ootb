@@ -2,12 +2,14 @@
   "meta": {
     "id": "4d_template_civil",
     "name": "Civil (linear works) 4D Programme Template",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "what": "Phase skeleton for a CIVIL model — every element's discipline is a CIVIL_DISCS code (import_worker.js). Selected by time_machine.js only when ALL elements are civil; building models keep 4D_template.json untouched (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, NON-IMPACT rule).",
     "order_source": "secondary — JKR road-works method statements quoting JKR Standard Specification for Road Works (JKR/SPJ/2008): earthworks -> drainage -> pavement -> finishing (furniture, signage, lighting, marking). Primary document not yet read.",
-    "durations": "NOT civil-calibrated: every civil phase uses the trade the proxy class gets today (MASON) so durations equal today's per-element calc. Replace when JKR rates/productivity are supplied.",
+    "durations": "NOT civil-calibrated: one §CIVIL_TRADES crew per phase, params copied from MASON (what the proxy class gets today) so per-element durations are unchanged; finishing phases now run in parallel. Replace with JKR SoR / CIDB labour output.",
     "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim"
   },
+  "placement": "logic",
+  "_placement_why": "Civil finishing trades (furniture, signage, lighting, marking) all follow pavement and work on different parts of the road at once; with 'logic' each phase starts when its declared predecessor finishes (schedule_author.js §CIVIL_PARALLEL) instead of after the previous phase in the list.",
   "calendar": {
     "_what": "The working calendar the programme is authored against. Named here because it was previously implicit: rates.js SHIFT_HOURS alone carried it, and nothing stated the week.",
     "hours_per_shift": 24,
@@ -45,7 +47,7 @@
       "name": "Earthworks",
       "sequence": 1,
       "trades": [
-        "MASON"
+        "CIVIL_EARTHWORKS"
       ],
       "replicate_per_level": false,
       "scope": "building",
@@ -57,7 +59,7 @@
       "name": "Drainage",
       "sequence": 2,
       "trades": [
-        "MASON"
+        "CIVIL_DRAINAGE"
       ],
       "replicate_per_level": false,
       "scope": "building"
@@ -67,7 +69,7 @@
       "name": "Pavement",
       "sequence": 3,
       "trades": [
-        "MASON"
+        "CIVIL_PAVING"
       ],
       "replicate_per_level": false,
       "scope": "building"
@@ -77,7 +79,7 @@
       "name": "Road Furniture",
       "sequence": 4,
       "trades": [
-        "MASON"
+        "CIVIL_FURNITURE"
       ],
       "replicate_per_level": false,
       "scope": "building"
@@ -87,7 +89,7 @@
       "name": "Signage",
       "sequence": 5,
       "trades": [
-        "MASON"
+        "CIVIL_SIGNAGE"
       ],
       "replicate_per_level": false,
       "scope": "building"
@@ -97,7 +99,7 @@
       "name": "Road Lighting",
       "sequence": 6,
       "trades": [
-        "MASON"
+        "CIVIL_LIGHTING"
       ],
       "replicate_per_level": false,
       "scope": "building"
@@ -107,7 +109,7 @@
       "name": "Road Marking",
       "sequence": 7,
       "trades": [
-        "MASON"
+        "CIVIL_MARKING"
       ],
       "replicate_per_level": false,
       "scope": "building"

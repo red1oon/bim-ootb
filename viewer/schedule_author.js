@@ -798,7 +798,11 @@
           return;                                   // chain BRIDGES: prevOnLevel is left untouched
         }
         var pr = priceCell(c);
-        var start = cursor;
+        // §CIVIL_PARALLEL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): a template declaring
+        // placement:'logic' starts each phase from its declared predecessor (the bridge below) instead of the
+        // within-level cursor, so phases that share a predecessor run in parallel. Only 4D_template_civil.json
+        // declares it; 4D_template.json does not → building placement byte-identical (NON-IMPACT rule).
+        var start = (T.placement === 'logic') ? 0 : cursor;
         // §TPL_LADDER_BRIDGE (2026-08-27) — the across_levels ladder MUST bridge past dropped
         // phases, exactly as the within_level chain already does.
         //
@@ -835,7 +839,7 @@
             var pp = byId[cur2]; if (!pp) break;
             for (d = li; d >= 0; d--) {
               b = taskAt[pp.name + '||' + levels[d]];
-              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d };
+              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d, task: b };
             }
           }
           return null;
@@ -883,8 +887,12 @@
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
-        if (prevOnLevel) {
-          edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
+        // §CIVIL_PARALLEL: under placement:'logic' the edge comes from the DECLARED predecessor's task (the
+        // bridge walk's hit), so siblings that share a predecessor are not chained to each other. Building
+        // templates never declare it → this branch is never taken for them.
+        var _edgePred = (T.placement === 'logic') ? ((_bridge && _bridge.task) || null) : prevOnLevel;
+        if (_edgePred) {
+          edges.push({ predId: _edgePred.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
         }
         // §PHASE_WATERMARK_FLOOR edge — see comment above.
