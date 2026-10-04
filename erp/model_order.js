@@ -239,46 +239,35 @@
     return null;
   }
 
-  // ══ MOrder.createShipment :2433-2490 ═════════════════════════════════════════════════════════════════════════
+  function ctorMod() { return (typeof module !== 'undefined' && module.exports) ? require('./model_ctor') : (typeof window !== 'undefined' ? window.ModelCtor : globalThis.ModelCtor); }
+  // ══ MOrder.createShipment(dt, movementDate) :2433-2490 ═════════════════════════════════════════════════════════
   function createShipment(trx, o, d, movementDate) {
-    var dtShip = nz(d.c_doctypeshipment_id) ? d.c_doctypeshipment_id : null;
-    if (!dtShip) { T.msg(trx, '@NotFound@ @C_DocTypeShipment_ID@'); return null; }
-    var sd = T.dt(trx, dtShip), so = Y(o.issotrx);
-    var mt = sd.docbasetype === 'MMS' ? (so ? 'C-' : 'V-') : sd.docbasetype === 'MMR' ? (so ? 'C+' : 'V+') : null;   // MInOut.setMovementType :1275-1287
-    var h = ML.newPO(trx, 'm_inout', Object.assign({ ad_org_id: o.ad_org_id, c_bpartner_id: o.c_bpartner_id, c_bpartner_location_id: o.c_bpartner_location_id,   // MInOut(MOrder) ctor
-      ad_user_id: o.ad_user_id, m_warehouse_id: o.m_warehouse_id, issotrx: o.issotrx, c_doctype_id: dtShip, movementtype: mt,
-      movementdate: movementDate, dateacct: movementDate, c_order_id: o.c_order_id, deliveryrule: o.deliveryrule, deliveryviarule: o.deliveryviarule,
-      m_shipper_id: o.m_shipper_id, freightcostrule: o.freightcostrule, freightamt: o.freightamt, salesrep_id: o.salesrep_id, c_charge_id: o.c_charge_id,
-      chargeamt: o.chargeamt, dateordered: o.dateordered, description: o.description, poreference: o.poreference, priorityrule: o.priorityrule,
-      isdropship: o.isdropship, dropship_bpartner_id: o.dropship_bpartner_id, dropship_location_id: o.dropship_location_id, dropship_user_id: o.dropship_user_id,
-      docstatus: 'DR', docaction: 'CO' }, copy(o, DIMS)));
-    h.documentno = T.nextDocNo(trx, dtShip, 'M_InOut', h);                                   // PO.saveNew :3149-3162
-    var r = ML.save(trx, 'm_inout', null, h); if (!r.ok) { T.msg(trx, 'Could not create Shipment: ' + r.error); return null; }
-    var ship = r.row;
-    lines(trx, o).forEach(function (ol) {
-      var mq = D(ol.qtyordered).subtract(D(ol.qtydelivered));
-      if (mq.signum() === 0 && Number(o.processedon)) return;                               // :2452-2455
-      var p = T.product(trx, ol.m_product_id), loc = 0;
-      if (p) {
-        // MStorageOnHand.getM_Locator_ID :~470 — highest priority locator with enough on hand, else the first
-        var cands = trx.q("SELECT s.m_locator_id AS l, s.qtyonhand AS q FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE l.m_warehouse_id=? AND s.m_product_id=? AND l.isactive='Y' ORDER BY l.priorityno DESC, s.qtyonhand DESC", [ol.m_warehouse_id, ol.m_product_id]);
-        for (var i = 0; i < cands.length; i++) { if (cands[i].q != null && mq.compareTo(D(cands[i].q)) <= 0) { loc = cands[i].l; break; } if (!loc) loc = -cands[i].l; }
-        loc = Math.abs(loc);
-        if (!loc) { var dl = trx.q("SELECT m_locator_id AS l FROM m_locator WHERE m_warehouse_id=? AND isactive='Y' ORDER BY CASE WHEN isdefault='Y' THEN 0 ELSE 1 END, m_locator_id", [ol.m_warehouse_id])[0]; loc = dl ? dl.l : null; }   // MWarehouse.getDefaultLocator
-      }
-      var qe = mq;
-      if (D(ol.qtyentered).compareTo(D(ol.qtyordered)) !== 0) qe = mq.multiply(D(ol.qtyentered)).divide(D(ol.qtyordered), 6, HU);
-      var sl = ML.newPO(trx, 'm_inoutline', Object.assign({ m_inout_id: ship.m_inout_id, ad_org_id: ship.ad_org_id, c_orderline_id: ol.c_orderline_id,   // setOrderLine (MInOutLine:~330)
-        line: ol.line, c_uom_id: ol.c_uom_id, m_product_id: p ? ol.m_product_id : null, m_attributesetinstance_id: p ? (ol.m_attributesetinstance_id || 0) : null,
-        m_locator_id: p && T.isItem(p) ? loc : null, c_charge_id: ol.c_charge_id, description: ol.description, isdescription: ol.isdescription,
-        movementqty: N(mq), qtyentered: N(qe), c_projectphase_id: ol.c_projectphase_id, c_projecttask_id: ol.c_projecttask_id }, copy(ol, DIMS)));
-      ML.save(trx, 'm_inoutline', null, sl);
-    });
-    var res = ML.processIt(trx, 'm_inout', ship.m_inout_id, 'CO');                           // :2480 shipment.processIt(Complete)
-    if (!res.ok || res.status !== 'CO') { T.msg(trx, '@M_InOut_ID@: ' + (res.msg || res.status)); return null; }
-    return trx.get('m_inout', ship.m_inout_id);
+    var C = ctorMod(), shipment = C.MInOutFromOrder(trx, trx.get('c_order', o.c_order_id), d.c_doctypeshipment_id, movementDate);
+    if (!shipment.save()) { T.msg(trx, 'Could not create Shipment'); return null; }
+    var oLines = trx.find('c_orderline', { c_order_id: o.c_order_id }, ['line']);            // getLines(true, null)
+    for (var i = 0; i < oLines.length; i++) {
+      var oLine = oLines[i], ioLine = C.MInOutLine(trx, shipment);
+      var MovementQty = D(oLine.qtyordered).subtract(D(oLine.qtydelivered));                // Qty = Ordered - Delivered
+      if (MovementQty.signum() === 0 && D(trx.get('c_order', o.c_order_id).processedon).signum() !== 0) continue;   // reactivated + completed again
+      var M_Locator_ID = C.storageLocator(trx, oLine.m_warehouse_id, oLine.m_product_id, Number(oLine.m_attributesetinstance_id || 0), MovementQty);
+      if (!M_Locator_ID) M_Locator_ID = C.defaultLocator(trx, oLine.m_warehouse_id);
+      C.ioSetOrderLine(trx, ioLine, oLine, M_Locator_ID, MovementQty);
+      C.ioSetQty(trx, ioLine, MovementQty);
+      if (D(oLine.qtyentered).compareTo(D(oLine.qtyordered)) !== 0) C.ioSetQtyEntered(trx, ioLine, MovementQty.multiply(D(oLine.qtyentered)).divide(D(oLine.qtyordered), 6, HU));
+      if (!ioLine.save()) { T.msg(trx, 'Could not create Shipment Line'); return null; }
+    }
+    var res = ML.processIt(trx, 'm_inout', shipment.id(), 'CO');
+    if (!res.ok) throw new Error('FailedProcessingDocument - ' + (res.msg || res.status));
+    var sh = trx.get('m_inout', shipment.id());
+    if (sh.docstatus !== 'CO') { T.msg(trx, '@M_InOut_ID@: ' + (res.msg || '')); return null; }
+    return sh;
   }
 
+  function matchMod() { return (typeof module !== 'undefined' && module.exports) ? require('./model_match') : (typeof window !== 'undefined' ? window.ModelMatch : globalThis.ModelMatch); }
+  function sameAsi(a, b) { return String(a.m_attributesetinstance_id || 0) === String(b.m_attributesetinstance_id || 0); }
+  // IDocsPostProcess (process/IDocsPostProcess.java): the PO instances a completion queues for posting after the document; each
+  // entry carries ITS OWN in-memory Posted flag (DocumentEngine.java:367 skips an entry whose instance says Posted=Y).
+  function addDocsPostProcess(trx, table, row) { (trx._docsPost = trx._docsPost || []).push({ table: table, id: row[table + '_id'], posted: row.posted }); }
   // ══ MInOut DocAction (prepareIt :1437-1590, completeIt :1630-2159) ════════════════════════════════════════════
   function ioLines(trx, io) { return trx.find('m_inoutline', { m_inout_id: io.m_inout_id }, ['line']).filter(function (l) { return l.isactive !== 'N'; }); }
   var MInOut = {
@@ -343,9 +332,36 @@
           trx.update('c_orderline', ol, { qtydelivered: N(so ? D(ol.qtydelivered).subtract(qty) : D(ol.qtydelivered).add(qty)), datedelivered: io.movementdate });
         }
         if (p && so && Y(p.iscreateasset) && D(sl.movementqty).signum() > 0) { T.msg(trx, 'Create Asset for SO (MInOut.java:2016) — non-core, named'); return 'IN'; }
-        if (!so && nz(sl.m_product_id) && nz(sl.c_orderline_id)) {                            // :2088-2108 PO matching (receipt side)
-          trx.insert('m_matchpo', ML.newPO(trx, 'm_matchpo', { ad_org_id: sl.ad_org_id, c_orderline_id: sl.c_orderline_id, m_inoutline_id: sl.m_inoutline_id,
-            m_product_id: sl.m_product_id, m_attributesetinstance_id: sl.m_attributesetinstance_id || 0, qty: sl.movementqty, datetrx: io.movementdate, dateacct: io.movementdate, processed: 'Y' }));
+        if (!so && nz(sl.m_product_id) && !trx._reversal) {                                    // :2047-2134 Matching
+          var MM = matchMod(), matchQty = D(sl.movementqty);
+          var iLine = trx.find('c_invoiceline', { m_inoutline_id: sl.m_inoutline_id }).sort(function (a, b) { return Number(a.c_invoiceline_id) - Number(b.c_invoiceline_id); })[0] || null;   // MInvoiceLine.getOfInOutLine
+          if (iLine && nz(iLine.m_product_id)) {                                                 // Invoice - Receipt Match
+            if (matchQty.compareTo(D(iLine.qtyinvoiced)) > 0) matchQty = D(iLine.qtyinvoiced);
+            if (!MM.miGet(trx, sl.m_inoutline_id, iLine.c_invoiceline_id).length) {
+              var inv = MM.newMatchInv(trx, iLine, io.movementdate, matchQty);
+              if (!sameAsi(sl, iLine)) { var r0 = ML.save(trx, 'c_invoiceline', iLine, { m_attributesetinstance_id: sl.m_attributesetinstance_id || 0 }); if (!r0.ok) throw new Error(r0.error); inv.set('m_attributesetinstance_id', sl.m_attributesetinstance_id || 0); }
+              if (!inv.save()) { T.msg(trx, 'Could not create Inv Matching'); return 'IN'; }
+              addDocsPostProcess(trx, 'm_matchinv', inv.row);
+            }
+          }
+          if (nz(sl.c_orderline_id)) {                                                           // Link to Order — Ship - PO
+            var po = MM.create(trx, null, trx.get('m_inoutline', sl.m_inoutline_id), io.movementdate, matchQty);
+            if (po) {
+              if (!po.save()) { T.msg(trx, 'Could not create PO Matching'); return 'IN'; }
+              if (!Y(po.get('posted'))) addDocsPostProcess(trx, 'm_matchpo', po.row);
+              MM.miGetInOut(trx, io.m_inout_id).forEach(function (mi) { addDocsPostProcess(trx, 'm_matchinv', mi); });
+            }
+            if (ol && !nz(ol.m_attributesetinstance_id) && D(sl.movementqty).compareTo(D(ol.qtyordered)) === 0 && nz(sl.m_attributesetinstance_id)) {   // Update PO with ASI [ 1876965 ]
+              var r1 = ML.save(trx, 'c_orderline', trx.get('c_orderline', ol.c_orderline_id), { m_attributesetinstance_id: sl.m_attributesetinstance_id }); if (!r1.ok) throw new Error(r1.error);
+            }
+          } else if (iLine && nz(iLine.c_orderline_id)) {                                       // No Order — PO(Inv) Matching
+            var po2 = MM.create(trx, iLine, trx.get('m_inoutline', sl.m_inoutline_id), io.movementdate, matchQty);
+            if (po2) { if (!po2.save()) { T.msg(trx, 'Could not create PO(Inv) Matching'); return 'IN'; } if (!Y(po2.get('posted'))) addDocsPostProcess(trx, 'm_matchpo', po2.row); }
+            var ol2 = trx.get('c_orderline', iLine.c_orderline_id);
+            if (ol2 && !nz(ol2.m_attributesetinstance_id) && D(sl.movementqty).compareTo(D(ol2.qtyordered)) === 0 && nz(sl.m_attributesetinstance_id)) {
+              var r2 = ML.save(trx, 'c_orderline', ol2, { m_attributesetinstance_id: sl.m_attributesetinstance_id }); if (!r2.ok) throw new Error(r2.error);
+            }
+          }
         }
       }
       m = fire(trx, 'AFTER_COMPLETE', 'm_inout', io); if (m) { T.msg(trx, m); return 'IN'; }
@@ -382,5 +398,5 @@
   ML.registerModel('m_inout', { initialDefaults: { issotrx: 'N', deliveryrule: 'A', deliveryviarule: 'P', freightcostrule: 'I', docstatus: 'DR', docaction: 'CO', priorityrule: '5', nopackages: 0, isintransit: 'N', isprinted: 'N', sendemail: 'N', isindispute: 'N' } });
   ML.registerDocAction('c_order', MOrder);
   ML.registerDocAction('m_inout', MInOut);
-  return { MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed };
+  return { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed };
 });

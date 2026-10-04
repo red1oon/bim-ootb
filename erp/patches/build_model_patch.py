@@ -16,7 +16,8 @@ def lit(v):
     if isinstance(v, datetime.date): return "'" + v.strftime('%Y-%m-%d') + " 00:00:00'"
     return "'" + str(v).replace("'", "''").replace('\n', ' ') + "'"
 out = []; n = 0
-for t in ['ad_message', 'm_inoutlinema', 'm_storagereservationlog', 'm_costdetail', 'm_costhistory', 'm_costqueue', 'ad_workflow', 'ad_wf_node', 'c_conversiontype', 'c_paymentallocate', 'c_orderlandedcost', 'c_orderpayschedule']:
+for t in ['ad_message', 'm_inoutlinema', 'm_storagereservationlog', 'm_costdetail', 'm_costhistory', 'm_costqueue', 'ad_workflow', 'ad_wf_node', 'c_conversiontype', 'c_paymentallocate', 'c_orderlandedcost', 'c_orderpayschedule',
+          'ad_sequence_no', 't_fact_acct_history', 'c_orderlandedcostallocation', 'ad_sysconfig', 'c_projectissue', 'm_production', 'm_productionline']:   # + core P2P/costing (ERP_MODEL_LAYER.md §CORE-P2P)
     out.append('CREATE TABLE IF NOT EXISTS %s (%s);' % (t, ', '.join('"%s" %s' % (c, aff(d)) for c, d in cols(t))))
 for c, d in cols('fact_acct'):
     if c in ('c_locfrom_id', 'c_locto_id', 'c_uom_id', 'ad_orgtrx_id', 'c_activity_id', 'c_campaign_id', 'c_project_id', 'c_salesregion_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id', 'm_warehouse_id'):
