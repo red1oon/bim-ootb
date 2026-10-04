@@ -386,8 +386,9 @@
     if (!el) { _co.extra[col] = v; return; }
     var sv = v == null ? '' : String(v);
     if (el.type === 'date') sv = sv.slice(0, 10);
-    var fd = _coField(col);
-    if (el.tagName === 'SELECT' && sv !== '' && !(fd && fd.admitted) && !Array.prototype.some.call(el.options, function (o) { return o.value === sv; })) {
+    // a value the current list lacks gets its option (the editor's getDirect re-append); _coLookupReset then refreshes the list and
+    //   clears it only if the REFRESHED list still excludes it — guarding here instead blanked valid dependent values (Bill_Location_ID)
+    if (el.tagName === 'SELECT' && sv !== '' && !Array.prototype.some.call(el.options, function (o) { return o.value === sv; })) {
       var o = document.createElement('option'); o.value = sv; o.textContent = sv; el.appendChild(o);
     }
     _setVal(el, sv);
