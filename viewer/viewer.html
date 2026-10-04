@@ -884,7 +884,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="cpe_path_overview.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_path_overview.js — path overview disabled')"></script>
 <script src="cpe_resource_panel.js?v=4" onerror="console.warn('§LOAD_FAIL cpe_resource_panel.js — resource panel disabled')"></script>
 <script src="cpe_storey_reveal.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_storey_reveal.js — storey highlight reveal disabled')"></script>
-<script src="cpe_load_path.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_load_path.js — §129.1 load path beat disabled')"></script>
+<script src="cpe_load_path.js?v=2" onerror="console.warn('§LOAD_FAIL cpe_load_path.js — §129.1 load path beat disabled')"></script>
 <script src="cpe_ledger_ticker.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_ledger_ticker.js — §129.2 ledger ticker beat disabled')"></script>
 <script src="cpe_escape_route.js?v=2" onerror="console.warn('§LOAD_FAIL cpe_escape_route.js — escape route reveal disabled')"></script>
 <script src="cpe_flythru_dims.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_flythru_dims.js — fly-through dimension markers disabled')"></script>
@@ -1030,7 +1030,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
 <script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="time_machine.js?v=81" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=82" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=4" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source
@@ -1038,7 +1038,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      lazy bundle) so a plain hover/pick can resolve it before Find has ever been opened. Order
      vs schedule_author.js does not matter — both are read via a lazy `global.X` lookup at CALL
      time, never at load time (see schedule_read_4d.js's own windowForGuid/readTasks). -->
-<script src="schedule_read_4d.js?v=1" onerror="console.warn('§LOAD_FAIL schedule_read_4d.js — 4D window lookup unavailable')"></script>
+<script src="schedule_read_4d.js?v=2" onerror="console.warn('§LOAD_FAIL schedule_read_4d.js — 4D window lookup unavailable')"></script>
 <!-- §S7-OPEN: the #info-4d RENDERER. Eager (not in APP.loadNavigate's lazy bundle) so a plain
      3D-canvas click via picking.js can render the construction window without the Find panel having
      been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
@@ -1101,7 +1101,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
-<script src="edit_delta.js?v=2" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
+<script src="edit_delta.js?v=3" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=1" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>
 <script src="main.js?v=50"></script>
 <!-- Styled tooltip bubbles for [data-trl-title] buttons — appended to body, not clipped by overflow:hidden -->

@@ -146,7 +146,7 @@ function setupCpeLoadPath(A) {
       var cz = r[4] || 0, bz = r[5] || 0, cx = r[6] || 0, cy = r[7] || 0, bx = r[8] || 0, by = r[9] || 0;
       var rule = SD || { phase: 'Architecture', sequence: 6, resource: null };
       if (SA) {
-        var ov = SA.matchNameOverride(cls, name, NO);
+        var ov = (SA.civilRuleFor && SA.civilRuleFor(A.db, r[0])) || SA.matchNameOverride(cls, name, NO);   // §CIVIL_PHASE
         rule = ov || SA.matchRule(cls, SR, SD);
       }
       return {

@@ -65,7 +65,7 @@
      instead of recomputing a fourth private one. schedule_author.js supplies activeSchedule()
      (the single existing "which schedule is active" verb — not a fourth copy of it). -->
 <script src="schedule_author.js?v=9"></script>
-<script src="schedule_read_4d.js?v=1"></script>
+<script src="schedule_read_4d.js?v=2"></script>
 <script src="export_5d.js?v=1"></script>
 <script src="export_4d.js?v=1"></script>
 
@@ -905,7 +905,9 @@ function buildScheduleFromOps(ops) {
     if (op.cls) g.classes.add(op.cls);
     if (op.resource) g.resources.add(op.resource);
     // Derive discipline from SEQUENCE_RULES
-    var rule = SEQUENCE_RULES[op.cls];
+    // §CIVIL_TRADES: a civil crew on the op (time_machine wrote it from the civil rule) names the discipline;
+    // building ops carry building resources → the class-rule path below, unchanged.
+    var rule = (op.resource && op.resource.indexOf('CIVIL_') === 0) ? { resource: op.resource } : SEQUENCE_RULES[op.cls];
     if (rule && rule.resource) {
       // §BOQ4D — one shared mapping (schedule_read_4d.js), so an authored task and a kernel_ops
       // task never disagree about what discipline the same resource belongs to.

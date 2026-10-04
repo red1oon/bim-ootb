@@ -65,7 +65,7 @@
   function classCtx(db, env) {
     if (_ctxCache && _ctxCache.has(db)) return _ctxCache.get(db);
     var SA = env.ScheduleAuthor;
-    var ctx = { frag: SA._classFragmentation(db, env.RATES), lin: SA._linearWeighting(db, env.RATES) };
+    var ctx = { frag: SA._classFragmentation(db, env.RATES), lin: SA._linearWeighting(db, env.RATES), db: db };
     if (_ctxCache) _ctxCache.set(db, ctx);
     return ctx;
   }
@@ -73,7 +73,9 @@
   // labour seconds for one element at these dims — the §I owner, fed exactly as schedule_author.js:552-569 feeds it.
   function _labour(rec, dims, ctx, env) {
     var SA = env.ScheduleAuthor;
-    var rule = SA.matchNameOverride(rec.cls, rec.name, env.SEQUENCE_NAME_OVERRIDES) || SA.matchRule(rec.cls, env.SEQUENCE_RULES, env.SEQUENCE_DEFAULT);
+    // §CIVIL_PHASE: civil elements take their civil crew (one owner); building elements → unchanged rule chain.
+    var rule = (SA.civilRuleFor && ctx.db && SA.civilRuleFor(ctx.db, rec.guid, env.SEQUENCE_CIVIL)) ||
+      SA.matchNameOverride(rec.cls, rec.name, env.SEQUENCE_NAME_OVERRIDES) || SA.matchRule(rec.cls, env.SEQUENCE_RULES, env.SEQUENCE_DEFAULT);
     var frag = ctx.frag.fragmented[rec.cls] ? true : false;
     var realQty = frag ? qtyOf('M2', dims) : null;
     var hasGeom = dims[0] > 0 || dims[1] > 0 || dims[2] > 0;
