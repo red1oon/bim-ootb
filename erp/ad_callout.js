@@ -547,8 +547,100 @@
   GridTab.prototype.load = function (row, inserting) {
     var r = {}; for (var k in (row || {})) if (Object.prototype.hasOwnProperty.call(row, k)) r[String(k).toLowerCase()] = row[k];
     this.inserting = !!inserting;
-    this.fields.forEach(function (f) { var v = typed(f.getDisplayType(), r[f.getColumnName().toLowerCase()]); f.m_oldValue = null; f.m_value = v; f.m_inserting = !!inserting; f.updateContext(); });
+    // inserting = GridTable.dataNew :2129-2143 — ONE pass in field order: a column the host gave keeps its value, every other
+    //   column takes GridField.getDefault() evaluated against the context AS IT STANDS (earlier fields already in it, the window's
+    //   own keys such as IsSOTrx not yet overwritten), then updateContext. A separate "load nulls, then default" pass wiped them.
+    var defs = this.lastDefaults = {}, self = this;
+    this.fields.forEach(function (f) {
+      var cn = f.getColumnName(), raw = r[cn.toLowerCase()], v;
+      var dflt = inserting && (raw == null || String(raw) === '');
+      if (dflt) { v = f.getDefault(); if (v != null) v = typed(f.getDisplayType(), v); }
+      else v = typed(f.getDisplayType(), raw);
+      f.m_oldValue = null; f.m_value = v; f.m_inserting = !!inserting; f.updateContext();
+      if (dflt && v != null && !self.validateValueNoDirect(f)) { f.m_value = null; f.updateContext(); }
+      if (dflt && f.m_value != null) defs[cn] = stored(f.m_value);
+    });
     return this;
+  };
+  // ── GridField.getDefault (M/GridField.java:627-1110), priority DEFAULT_PRIORITY_ORDER "123457" (:98):
+  //   1 special case · 2 @SQL= · 3 DefaultValue expression · 4 user preference · 5 system preference · 7 data type.
+  GridField.prototype.isIgnoreDefault = function () {                                   // :724-731
+    var dt = this.vo.displayType, cn = this.vo.ColumnName;
+    return this.vo.IsKey || dt === DT.RowID || dt === DT.Binary || dt === DT.Image || dt === DT.TextLong || cn === 'Created' || cn === 'Updated';
+  };
+  GridField.prototype.createDefault = function (value) {                                // :1065-1131
+    if (value == null || String(value).length === 0 || String(value).toUpperCase() === 'NULL') return null;
+    var cn = this.vo.ColumnName, dt = this.vo.displayType;
+    try {
+      if (/atedBy$/.test(cn) || (/_ID$/.test(cn) && DT.isID(dt))) {                    // defaults -1 => null
+        var ii = parseInt(String(value), 10); if (isNaN(ii) || String(ii) !== String(value).trim()) return 0;
+        return ii < 0 ? null : ii;
+      }
+      if (dt === DT.Integer) return parseInt(String(value), 10);
+      if (DT.isNumeric(dt)) return BD.fromString(String(value).trim());
+      if (DT.isDate(dt)) return Timestamp.of(value);
+      if (dt === DT.YesNo) return String(value) === 'Y';
+      return String(value);
+    } catch (e) { RUNTIME.log('§GRIDFIELD-DEFAULT ' + cn + ' createDefault failed: ' + (e && e.message)); return null; }
+  };
+  GridField.prototype.defaultForSpecialCase = function () {                             // :733-751
+    var vo = this.vo, t = this.m_gridTab, cn = vo.ColumnName;
+    if (this.isParentValue() && (vo.DefaultValue == null || vo.DefaultValue.length === 0))  // defaultFromParent :753-765
+      return this.createDefault(Env.getContext(t.ctx, t.windowNo, cn));
+    if (cn === 'IsActive') return true;                                                 // defaultForActiveField :767-775 ("Y")
+    var al = t.opts.accessLevel;                                                        // defaultForClientOrg :777-795 (GridTab.CTX_AccessLevel)
+    if (al === '4' && (cn === 'AD_Client_ID' || cn === 'AD_Org_ID')) return 0;         // ACCESSLEVEL_SystemOnly
+    if (al === '6' && cn === 'AD_Org_ID') return 0;                                     // ACCESSLEVEL_SystemPlusClient
+    return null;
+  };
+  GridField.prototype.defaultFromSQLExpression = function () {                          // :797-842
+    var dv = this.vo.DefaultValue, t = this.m_gridTab;
+    if (dv == null || dv.indexOf('@SQL=') !== 0) return null;
+    var sql = Env.parseContext(t.ctx, t.windowNo, undefined, dv.substring(5), false, false);
+    if (sql === '') { RUNTIME.log('§GRIDFIELD-DEFAULT (' + this.vo.ColumnName + ') - Default SQL variable parse failed: ' + dv); return null; }
+    var defStr = '';
+    try { var r = RUNTIME.DB.query(sql, [])[0]; if (r) { var k = Object.keys(r)[0]; defStr = r[k] == null ? '' : String(r[k]); } }
+    catch (e) { RUNTIME.log('§GRIDFIELD-DEFAULT (' + this.vo.ColumnName + ') ' + sql + ' — ' + (e && e.message)); }
+    return defStr.length > 0 ? this.createDefault(defStr) : null;
+  };
+  GridField.prototype.defaultFromExpression = function () {                             // :844-882
+    var dv = this.vo.DefaultValue, t = this.m_gridTab;
+    if (dv == null || dv === '' || dv.indexOf('@SQL=') === 0) return null;
+    var toks = dv.split(/[,;]/).filter(function (x) { return x.length > 0; });           // StringTokenizer(",;", false)
+    for (var i = 0; i < toks.length; i++) {
+      var defStr = toks[i].trim();
+      if (defStr === '@SysDate@') return new Timestamp(RUNTIME.now());
+      else if (defStr.indexOf('@') !== -1) defStr = Env.parseContext(t.ctx, t.windowNo, t.tabNo, defStr.trim(), false, false);
+      else if (defStr.indexOf("'") !== -1) defStr = defStr.replace(/'/g, ' ').trim();
+      if (defStr !== '') return this.createDefault(defStr);
+    }
+    return null;
+  };
+  GridField.prototype.defaultFromPreference = function (type) {                         // :987-1020 + Env.getPreference
+    var ctx = this.m_gridTab.ctx, cn = this.vo.ColumnName, w = this.m_gridTab.opts.AD_Window_ID || 0, v;
+    if (type === '4') { v = ctx.getProperty('P' + w + '|' + cn); if (v == null) v = ctx.getProperty('P|' + cn); }
+    else { v = ctx.getProperty('#' + cn); if (v == null) v = ctx.getProperty('$' + cn); if (v == null) v = ctx.getProperty('+' + cn); }
+    return (v == null || v === '') ? null : this.createDefault(String(v));
+  };
+  GridField.prototype.defaultFromDatatype = function () {                               // :1022-1051 (order is load-bearing)
+    var dt = this.vo.displayType, cn = this.vo.ColumnName;
+    if (dt === DT.Button && !/_ID$/.test(cn)) return 'N';
+    if (dt === DT.YesNo) return false;                                                  // "N"
+    if (/_ID$/.test(cn)) return null;
+    if (DT.isNumeric(dt)) return this.createDefault('0');
+    return null;
+  };
+  GridField.prototype.getDefault = function () {                                        // :627-722
+    if (this.isIgnoreDefault()) return null;
+    var seq = '123457', v = null;
+    for (var i = 0; i < seq.length; i++) {
+      var c = seq.charAt(i);
+      if (c === '3' && this.vo.DefaultValue != null && this.vo.DefaultValue.toUpperCase() === 'NULL') return null;   // IDEMPIERE-2678
+      v = c === '1' ? this.defaultForSpecialCase() : c === '2' ? this.defaultFromSQLExpression() : c === '3' ? this.defaultFromExpression()
+        : (c === '4' || c === '5') ? this.defaultFromPreference(c) : c === '7' ? this.defaultFromDatatype() : null;
+      if (v != null) return v;
+    }
+    return v;
   };
   // setValue :2849-2885 (+ GridTable.setValueAt :1387-1440 + ADTabpanel.dataStatusChanged :1692-1712)
   GridTab.prototype.setValue = function (field, value) {
@@ -612,6 +704,23 @@
         if (has) self.setValue(dep, currentValue);
       }
     });
+  };
+  // GridField.validateValueNoDirect (M/GridField.java:1133-1225), run by GridTable.dataNew on each default (:2140): a lookup value its
+  //   refreshed, validated list does not hold is cleared — keys/parents exempt, AD_Client_ID 0 exempt for System (IDEMPIERE-2781).
+  //   Search (not cached) is judged by getDirect = the row exists, no validation. Returns false when the value was rejected.
+  GridTab.prototype.validateValueNoDirect = function (field) {
+    var v = field.getValue();
+    if (v == null || String(v).length === 0) return true;
+    var dt = field.getDisplayType();
+    if (dt === DT.Search && field.vo.refTable) {
+      try { return RUNTIME.DB.query('SELECT 1 AS x FROM ' + field.vo.refTable + ' WHERE ' + field.vo.refKey + '=?', [v]).length > 0; } catch (e) { return true; }
+    }
+    if (!field.isLookup()) return true;
+    if (this.lookupContains(field, v)) return true;
+    if (field.isKey() || field.isParentValue()) return true;
+    if (field.getColumnName() === 'AD_Client_ID' && String(v) === '0' && Env.getAD_Client_ID(this.ctx) === 0) return true;
+    RUNTIME.log('§GRIDFIELD-VALIDATE ' + this.tableName + '.' + field.getColumnName() + '=' + v + ' not in validated lookup → null (GridField.validateValueNoDirect)');
+    return false;
   };
   GridTab.prototype.lookupContains = function (field, value) {
     if (this.opts.lookupContains) { var r = this.opts.lookupContains(this, field, value); if (r === true || r === false) return r; }
@@ -709,7 +818,7 @@
       'COALESCE(f.AD_Val_Rule_ID, c.AD_Val_Rule_ID) AS vr, c.Callout AS co, c.IsKey AS k, c.IsParent AS p, ' +
       "CASE WHEN f.IsAlwaysUpdateable='Y' OR c.IsAlwaysUpdateable='Y' THEN 'Y' ELSE 'N' END AS au, c.AD_Column_ID AS cid, " +
       'f.DisplayLogic AS dl, COALESCE(f.ReadOnlyLogic, c.ReadOnlyLogic) AS rl, COALESCE(f.MandatoryLogic, c.MandatoryLogic) AS ml, ' +
-      'COALESCE(f.IsMandatory, c.IsMandatory) AS mand, c.IsEncrypted AS enc, f.IsDisplayed AS disp, f.SeqNo AS seq ' +
+      'COALESCE(f.IsMandatory, c.IsMandatory) AS mand, c.IsEncrypted AS enc, f.IsDisplayed AS disp, f.SeqNo AS seq, COALESCE(f.DefaultValue, c.DefaultValue) AS dv ' +
       "FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=? AND f.IsActive='Y' AND c.IsActive='Y' " +
       'ORDER BY f.IsDisplayed DESC, f.SeqNo', [AD_Tab_ID]);
     var vrCache = {};
@@ -717,7 +826,7 @@
       var dt = Number(r.dt), vo = { ColumnName: r.cn, displayType: dt, AD_Reference_Value_ID: r.rv == null ? null : Number(r.rv),
         Callout: r.co || '', IsKey: r.k === 'Y', IsParent: r.p === 'Y', IsAlwaysUpdateable: r.au === 'Y', AD_Column_ID: Number(r.cid),
         DisplayLogic: r.dl || '', ReadOnlyLogic: r.rl || '', MandatoryLogic: r.ml || '', IsMandatory: r.mand === 'Y', IsEncrypted: r.enc === 'Y',
-        IsDisplayed: r.disp === 'Y', validation: '' };
+        IsDisplayed: r.disp === 'Y', DefaultValue: r.dv == null ? null : String(r.dv), validation: '' };
       if (r.vr != null) {
         if (!(r.vr in vrCache)) { var v = RUNTIME.DB.query('SELECT code FROM ad_val_rule WHERE ad_val_rule_id=?', [r.vr])[0]; vrCache[r.vr] = v ? (v.code || '') : ''; }
         vo.validation = vrCache[r.vr];
@@ -738,10 +847,11 @@
   }
   // openTab(AD_Tab_ID, opts) — a GridTab over the tab's dictionary fields (opts: ctx, windowNo, tabNo, parentTab, onSet, onError)
   function openTab(AD_Tab_ID, opts) {
-    var t = RUNTIME.DB.query('SELECT t.AD_Table_ID AS tid, tb.TableName AS tn, t.SeqNo AS seq FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Tab_ID=?', [AD_Tab_ID])[0];
+    var t = RUNTIME.DB.query('SELECT t.AD_Table_ID AS tid, tb.TableName AS tn, t.SeqNo AS seq, t.AD_Window_ID AS wid, tb.AccessLevel AS al FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Tab_ID=?', [AD_Tab_ID])[0];
     if (!t) return null;
     var o = {}; for (var k in (opts || {})) o[k] = opts[k];
     o.AD_Tab_ID = AD_Tab_ID; o.AD_Table_ID = Number(t.tid); o.tableName = t.tn; o.fields = fieldsFor(AD_Tab_ID);
+    o.AD_Window_ID = t.wid == null ? 0 : Number(t.wid); o.accessLevel = t.al == null ? '' : String(t.al);
     return new GridTab(o);
   }
 
