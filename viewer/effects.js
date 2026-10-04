@@ -6910,13 +6910,29 @@ async function setupEffects(A, renderer, scene, camera) {
         }
       }
     } catch (e) {}
-    // §CPE_SEED_FEW (red1 2026-10-04, prompts/ALTC_FOUNDATION.md §1): at most THREE bands — first,
-    // middle, last waypoint — "stick to quite the original". One band PER waypoint was written for a
-    // three-waypoint plan; the room-graph route now has ~21, and 21 bands of 10% each (435 m on
-    // Terminal's 207 m walk) overlapped and zig-zagged the authored walk to 704 m. The tangent still
-    // reads the FULL route's neighbours, so each seeded band lies along the route it came from.
-    var idx = wp.length <= 3 ? wp.map(function(_, k) { return k; })
-                             : [0, Math.floor(wp.length / 2), wp.length - 1];
+    // §CPE_SEED_FEW (red1 2026-10-04/05, prompts/ALTC_FOUNDATION.md §1): as many FULL-LENGTH bands as
+    // the 45% band budget allows (the same 0.45 = 3 x the 15% cap above: connectors keep >= 55% of
+    // the walk or the corner jerk returns), placed on the waypoints nearest EVEN arc spacing, ends
+    // fixed. One band PER waypoint was written for a three-waypoint plan; the room-graph route now
+    // has ~21, and 21 bands of 10% each (435 m on Terminal's 207 m walk) overlapped and zig-zagged
+    // the authored walk to 704 m. The tangent still reads the FULL route's neighbours, so each
+    // seeded band lies along the route it came from.
+    var BAND_BUDGET = 0.45;
+    var K = Math.max(2, Math.min(wp.length, Math.floor(BAND_BUDGET * (+pathLen || 0) / len + 1e-9)));
+    var cumW = [0];
+    for (var q = 1; q < wp.length; q++) {
+      cumW.push(cumW[q - 1] + Math.hypot(wp[q].x - wp[q - 1].x, wp[q].y - wp[q - 1].y, wp[q].z - wp[q - 1].z));
+    }
+    var LW = cumW[cumW.length - 1], idx = [0];
+    for (var kk = 1; kk < K - 1; kk++) {
+      var tgt = LW * kk / (K - 1), best = -1, bestD = Infinity;
+      for (var q2 = idx[idx.length - 1] + 1; q2 < wp.length - 1; q2++) {
+        var dd = Math.abs(cumW[q2] - tgt);
+        if (dd < bestD) { bestD = dd; best = q2; }
+      }
+      if (best > 0) idx.push(best);
+    }
+    if (wp.length - 1 > idx[idx.length - 1]) idx.push(wp.length - 1);
     for (var j = 0; j < idx.length; j++) {
       var i = idx[j];
       var a = wp[Math.max(0, i - 1)], b = wp[Math.min(wp.length - 1, i + 1)];
@@ -6926,7 +6942,8 @@ async function setupEffects(A, renderer, scene, camera) {
       bands.push({ c: { x: wp[i].x, y: wp[i].y, z: wp[i].z },
                    d: { x: dx / L, y: dy / L, z: dz / L }, len: len });
     }
-    console.log('§CPE_SEED_FEW wp=' + wp.length + ' seeded=' + bands.length + ' idx=[' + idx.join(',') + ']' +
+    console.log('§CPE_SEED_FEW wp=' + wp.length + ' budgetK=' + K + ' seeded=' + bands.length + ' idx=[' + idx.join(',') + ']' +
+      ' arcM=[' + idx.map(function(k) { return cumW[k].toFixed(1); }).join(',') + '] bandLen=' + len.toFixed(2) + 'm' +
       ' bandSum=' + (len * bands.length).toFixed(2) + 'm pathLen=' + (+pathLen || 0).toFixed(2) + 'm');
     return bands;
   }

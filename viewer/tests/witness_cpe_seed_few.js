@@ -25,14 +25,24 @@ function route(n, totalM) {
 }
 function plen(p) { var L = 0; for (var i = 1; i < p.length; i++) L += Math.hypot(p[i].x - p[i-1].x, p[i].y - p[i-1].y, p[i].z - p[i-1].z); return L; }
 
-[2, 3, 5, 21].forEach(function (n) {
-  var wp = route(n, 207), L = plen(wp), b = seed(wp, L);
+// Expected count = full-length bands that fit the 45% budget (>= 2, <= n). No overlap = consecutive band
+// centres at least one band length apart along the route.
+function cum(p) { var c = [0]; for (var i = 1; i < p.length; i++) c.push(c[i-1] + Math.hypot(p[i].x - p[i-1].x, p[i].y - p[i-1].y, p[i].z - p[i-1].z)); return c; }
+function idxOf(wp, c) { for (var i = 0; i < wp.length; i++) if (wp[i].x === c.x && wp[i].z === c.z) return i; return -1; }
+[[2, 207], [3, 207], [5, 207], [21, 207], [21, 29.8], [40, 600]].forEach(function (cs) {
+  var n = cs[0], wp = route(n, cs[1]), L = plen(wp), b = seed(wp, L), C = cum(wp);
+  var len = b[0].len, want = Math.max(2, Math.min(n, Math.floor(0.45 * L / len + 1e-9)));
   var sum = b.reduce(function (s, x) { return s + x.len; }, 0);
-  var midOk = n <= 3 || (b[1].c.x === wp[Math.floor(n / 2)].x && b[1].c.z === wp[Math.floor(n / 2)].z);
-  var ends = b[0].c.x === wp[0].x && b[0].c.z === wp[0].z && b[b.length - 1].c.x === wp[n - 1].x && b[b.length - 1].c.z === wp[n - 1].z;
-  gate('n=' + n, b.length === Math.min(3, n) && ends && midOk && sum <= 0.45 * L + 1e-9,
-    'seeded=' + b.length + ' ends=' + ends + ' mid=' + midOk + ' bandSum=' + sum.toFixed(2) + 'm cap=' + (0.45 * L).toFixed(2) + 'm');
+  var ix = b.map(function (x) { return idxOf(wp, x.c); });
+  var ends = ix[0] === 0 && ix[ix.length - 1] === n - 1;
+  var minGap = Infinity; for (var i = 1; i < ix.length; i++) minGap = Math.min(minGap, C[ix[i]] - C[ix[i-1]]);
+  var noOverlap = ix.length < 2 || minGap >= len - 1e-9;
+  gate('n=' + n + ' walk=' + cs[1] + 'm', (b.length === want || (b.length < want && b.length >= 2)) && ends && noOverlap && (sum <= 0.45 * L + 1e-9 || b.length === 2),
+    'seeded=' + b.length + ' budgetK=' + want + ' idx=[' + ix.join(',') + '] ends=' + ends + ' bandLen=' + len.toFixed(2) +
+    'm minGap=' + minGap.toFixed(2) + 'm bandSum=' + sum.toFixed(2) + 'm cap=' + (0.45 * L).toFixed(2) + 'm');
 });
+var t21 = seed(route(21, 207), 207);
+gate('terminal-count', t21.length === 4, 'Terminal-shaped 207 m / 21 wp -> ' + t21.length + ' sticks (red1 asked 4-5; 5 x 20.7 = 103.5 m > 93.15 m budget)');
 
 // NO-OP guard: the OLD rule (one band per waypoint, same length) on n=21 must break the invariant, or this witness
 // could not have seen the defect it claims to fix.
