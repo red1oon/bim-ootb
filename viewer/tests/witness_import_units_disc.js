@@ -5,6 +5,7 @@
 // as ARC. Runs the REAL viewer/import_worker.js in a vm sandbox (not a copy), web-ifc from node.
 // Usage: node witness_import_units_disc.js <file.ifc> [<file.ifc> ...]   — read the § lines.
 const fs = require('fs'), path = require('path'), vm = require('vm');
+const { Buffer } = require('buffer');
 const WEBIFC = process.env.WEBIFC_NODE || '/home/red1/bim-compiler/node_modules/web-ifc/web-ifc-api-node.js';
 const WebIFC = require(WEBIFC);
 const _init = WebIFC.IfcAPI.prototype.Init;
