@@ -3910,6 +3910,11 @@ function setupStreaming(A) {
     for (const bc of Object.values(A.buildingCentres)) {
       bc.envelope = envelope;
     }
+    // §FOG_AFTER_ENVELOPE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): the fog was sized at :3801, BEFORE
+    // the envelope existed, so it always read the 100 m default → density clamped at 0.004 (≈ nothing visible past
+    // ~500 m). JELAPANG (2114 m) flew at ~3 km inside a wall of fog. Re-size now the envelope is known. Any model
+    // under ~375 m still clamps to 0.004 — Hospital 151 / LTU 126 / Terminal 69 / Duplex 22 unchanged.
+    if (A._updateFogDensity) A._updateFogDensity();
     const dist = Math.max(80, envelope * 1.5);
     // Use buildingCentres for camera target (has IFC world coords via modelOffset)
     const firstBc = Object.values(A.buildingCentres)[0];
