@@ -680,3 +680,84 @@ CPM reads the dates the drag produced — it never changes one.",I
 1000669,info_4d_trade,Trade,I
 1000670,info_4d_float,Float,I
 1000671,info_4d_critical,(critical path),I
+1000672,ui_cmd_placeholder,Type a command...,I
+1000673,ui_cmd_zoom_in,Zoom In,I
+1000674,ui_cmd_zoom_out,Zoom Out,I
+1000675,ui_cmd_maxq,MaxQ Movie,I
+1000676,ui_cmd_populate,Populate (people + trees),I
+1000677,ui_cmd_hover_name,Hover Name,I
+1000678,ui_cmd_installed,Installed ✔,I
+1000679,ui_cmd_download_offline,Download · Run Offline,I
+1000680,ui_cmd_user_guide,Viewer User Guide,I
+1000681,pillc_save_1,Save the open building to a .db file,I
+1000682,pillc_save_2,Native Save As… dialog — pick name + folder,I
+1000683,pillc_save_3,Re-openable with Open (Ctrl+O),I
+1000684,pillc_open_1,Open a saved .db file,I
+1000685,pillc_open_2,Native Open… dialog,I
+1000686,pillc_open_3,Replaces the current scene,I
+1000687,pillc_find_1,Search by name/class,I
+1000688,pillc_find_2,Filter by storey/type,I
+1000689,pillc_find_3,Voice search (mic),I
+1000690,pillc_find_4,Navigate to element,I
+1000691,pillc_rolefilter_1,Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner),I
+1000692,pillc_rolefilter_2,Filters the 3D scene + Outliner to that role's disciplines,I
+1000693,pillc_rolefilter_3,Convenience filter only — not access control,I
+1000694,pillc_worldhist_1,"History across ALL pages — viewer, iDempiere, Gravity",I
+1000695,pillc_worldhist_2,Whole | This page toggle,I
+1000696,pillc_worldhist_3,Day strip — step back/forward by day,I
+1000697,pillc_worldhist_4,Tap a card to jump to that building/doc,I
+1000698,pillc_worldhist_5,"Long-press → clear (bomb), warns first",I
+1000699,pillc_dochist_1,This page's own dot timeline,I
+1000700,pillc_dochist_2,Step back/forward through your edits,I
+1000701,pillc_whwalk_1,Route over locators (walk order),I
+1000702,pillc_whwalk_2,"Fly-to next bin, FIND-lens depth",I
+1000703,pillc_whwalk_3,Scan bin QR / type code,I
+1000704,pillc_whwalk_4,Signed pick group per bin,I
+1000705,pillc_hbafm_1,"Operate-phase (7D) cockpit — one model, lenses each answering ONE question",I
+1000706,pillc_hbafm_2,Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard,I
+1000707,pillc_hbafm_3,Wake-aware: only lenses with data in THIS building are enabled (others greyed),I
+1000708,pillc_hbafm_4,All off one signed op-log; toggle a lens off restores the model,I
+1000709,pillc_clash_1,Discipline pair grid,I
+1000710,pillc_clash_2,Tolerance 1–100mm,I
+1000711,pillc_clash_3,Status: Review/Resolve/Accept,I
+1000712,pillc_clash_4,HTML Report + CSV export,I
+1000713,pillc_sanity_1,Floating Member (STR beams),I
+1000714,pillc_sanity_2,Span/Depth (advisory),I
+1000715,pillc_sanity_3,Column Continuity,I
+1000716,pillc_egress_1,Isolated Room (no measured route out),I
+1000717,pillc_egress_2,"Circulation Distance (to real exit, falls back to spine)",I
+1000718,pillc_egress_3,Door Width (advisory),I
+1000719,pillc_tm_1,Gantt timeline,I
+1000720,pillc_tm_2,Author 4D schedule (✎),I
+1000721,pillc_tm_3,What-if (slip a phase),I
+1000722,pillc_tm_4,Play / Pause sequence,I
+1000723,pillc_tm_5,Phase slider,I
+1000724,pillc_tm_6,Share ?tm=play link,I
+1000725,pillc_sched4d_1,Task name + start→finish beside the picked element,I
+1000726,pillc_sched4d_2,"Trade + float, critical-path marker",I
+1000727,pillc_sched4d_3,One extra line on hover,I
+1000728,pillc_sched4d_4,No schedule yet? Tap to generate one on the fly,I
+1000729,pillc_section_1,Y axis (vertical),I
+1000730,pillc_section_2,X axis (lateral),I
+1000731,pillc_section_3,Z axis (depth),I
+1000732,pillc_section_4,Slider 0–100%,I
+1000733,pillc_section_5,Bookmarks,I
+1000734,pillc_palette_1,Ambience 0–100,I
+1000735,pillc_palette_2,Sun 0–5,I
+1000736,pillc_palette_3,Exposure 0.1–3,I
+1000737,pillc_palette_4,Ambient 0–2,I
+1000738,pillc_palette_5,Hemisphere 0–2,I
+1000739,pillc_palette_6,Night,I
+1000740,pillc_palette_7,Shadow + Ground (cycle),I
+1000741,pillc_palette_8,Reverse background,I
+1000742,pillc_palette_9,Sound FX,I
+1000743,pillc_dlodnav_1,Boxes far/off-screen elements while you fly/orbit,I
+1000744,pillc_dlodnav_2,Real mesh within 50 m + in view,I
+1000745,pillc_dlodnav_3,"Off during Time Machine, Find isolate, Cinema",I
+1000746,pillc_issues_1,Snag photo + annotation,I
+1000747,pillc_issues_2,Fly to clash deep-link,I
+1000748,pillc_issues_3,Export Excel,I
+1000749,pillc_audio_1,Time Machine: earcon per construction phase,I
+1000750,pillc_audio_2,Fly Tour: positional waypoint cues,I
+1000751,pillc_audio_3,UI: soft tap tick,I
+1000752,pillc_audio_4,"Synthesized — no audio files, default OFF",I

@@ -1543,7 +1543,10 @@ function setupPanels(A) {
     // `name` above stays the in-code default (viewer/i18n/ad_message_base.csv msgtext). Labels land async on a cold
     // cache, so the rail is re-labelled + rebuilt on trl-ready (same rebuild verb _syncSched4dTitle already uses).
     function _pillKey(id) { return 'pill_' + String(id).toLowerCase().replace(/-/g, '_'); }
-    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.id), a._nameEn); }); }
+    // S226 §R2d: the Help palette's expandable sub-rows (children) too — key 'pillc_' + id + '_' + (index+1); W-VIEWER-I18N (3c)
+    // checks every child's English here == its CSV msgtext, so a reordered/edited child cannot silently show another row's text.
+    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.id), a._nameEn);
+      (a.children || []).forEach(function(c, i) { if (c._nameEn == null) c._nameEn = c.name; c.name = _trlD('pillc_' + String(a.id).toLowerCase().replace(/-/g, '_') + '_' + (i + 1), c._nameEn); }); }); }
     _relabelPill();
 
     // ═══════════════════════════════════════════════════════════════════
