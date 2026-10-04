@@ -79,8 +79,8 @@ function setupMeasure(A) {
     A._clashRulesLoading = true;
     // §S282c: route through loadJsonWithOverrides so Settings edits (json_clash_rules) apply.
     var clashLoader = (typeof window.loadJsonWithOverrides === 'function')
-      ? window.loadJsonWithOverrides('clash_rules.json?v=2', 'json_clash_rules')
-      : fetch('clash_rules.json?v=2').then(function(r) { return r.json(); });
+      ? window.loadJsonWithOverrides('clash_rules.json?v=3', 'json_clash_rules')
+      : fetch('clash_rules.json?v=3').then(function(r) { return r.json(); });
     clashLoader.then(function(j) {
       A._clashRules = j;
       A._clashRulesLoading = false;
@@ -190,12 +190,42 @@ function setupMeasure(A) {
   // _ensureClashIndexes() is called by _clashWhereParts() and openClashPanel() on demand.
 
   // Build the shared WHERE clause parts (also ensures indexes)
-  A._clashWhereParts = function(rules) {
-    A._ensureClashIndexes();
+  // CIVIL_HIGHWAY_JELAPANG.md §V.1 — ONE owner of the ignore set. A rule's `family` (default 'building')
+  // scopes its ignore_classes: a pair query unions only its own family's lists, so the building union
+  // (which drops IfcBuildingElementProxy) never reaches a civil pair, and building SQL is unchanged.
+  A._clashRuleFamily = function(r) { return (r && r.family) || 'building'; };
+  A._clashIgnoreSet = function(rules, discA, discB) {
+    var fam = null;
+    if (discA && discB) {
+      rules.clash_rules.forEach(function(r) {
+        if ((r.source.discipline === discA && r.target.discipline === discB) ||
+            (r.source.discipline === discB && r.target.discipline === discA)) fam = A._clashRuleFamily(r);
+      });
+    }
+    if (!fam) {
+      var present = {};
+      A.dbQuery("SELECT discipline FROM elements_meta WHERE discipline IS NOT NULL GROUP BY discipline")
+        .forEach(function(r) { present[r[0]] = 1; });
+      var anyBuilding = rules.clash_rules.some(function(r) {
+        return A._clashRuleFamily(r) === 'building' && present[r.source.discipline] && present[r.target.discipline];
+      });
+      var anyCivil = rules.clash_rules.some(function(r) {
+        return A._clashRuleFamily(r) === 'civil' && present[r.source.discipline] && present[r.target.discipline];
+      });
+      fam = (!anyBuilding && anyCivil) ? 'civil' : 'building';
+    }
     var ignoreSet = {};
     rules.clash_rules.forEach(function(r) {
+      if (A._clashRuleFamily(r) !== fam) return;
       (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
     });
+    return ignoreSet;
+  };
+  A._clashTolerance = function(rule) { return (rule && typeof rule.tolerance_m === 'number') ? rule.tolerance_m : 0.025; };
+
+  A._clashWhereParts = function(rules, discA, discB) {
+    A._ensureClashIndexes();
+    var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var ignoreWhere = Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',');
     return {
       ignoreClause: ignoreWhere ? ' AND ma.ifc_class NOT IN (' + ignoreWhere + ') AND mb.ifc_class NOT IN (' + ignoreWhere + ')' : '',
@@ -227,7 +257,7 @@ function setupMeasure(A) {
 
       if (A._clashRtreeReady) {
         // R-tree EXISTS: probe with PAGE_SIZE=1 — stops at first hit
-        var w = A._clashWhereParts(rules);
+        var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
         var savedPS = A._CLASH_PAGE_SIZE;
         A._CLASH_PAGE_SIZE = 1;
         var hits = A._queryClashesPairRtree(storey, rules, r.source.discipline, r.target.discipline, 0, w);
@@ -238,7 +268,7 @@ function setupMeasure(A) {
         console.log('§CLASH_EXISTS_RTREE ' + key + ' = ' + hasClash);
       } else {
         // Fallback: cross-join LIMIT 1
-        var w = A._clashWhereParts(rules);
+        var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
         var storeyClause = storey ? "ma.storey = '" + storey.replace(/'/g, "''") + "' AND mb.storey = ma.storey" : '1=1';
         var pairCond = "(ma.discipline = '" + r.source.discipline + "' AND mb.discipline = '" + r.target.discipline + "')" +
           " OR (ma.discipline = '" + r.target.discipline + "' AND mb.discipline = '" + r.source.discipline + "')";
@@ -262,7 +292,7 @@ function setupMeasure(A) {
   // Remaining storeys are stored in A._pendingClashStoreys for progressive async loading
   A._queryClashesPair = function(storey, rules, discA, discB, offset) {
     if (!A._hasBbox) return [];
-    var w = A._clashWhereParts(rules);
+    var w = A._clashWhereParts(rules, discA, discB);
     A._pendingClashStoreys = [];
     A._pendingClashArgs = null;
 
@@ -329,10 +359,7 @@ function setupMeasure(A) {
   // Each R-tree query is O(log N) so total is O(A * log N). Proven fast in production.
   A._queryClashesPairRtree = function(storey, rules, discA, discB, offset, w) {
     var t0 = performance.now();
-    var ignoreSet = {};
-    rules.clash_rules.forEach(function(r) {
-      (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
-    });
+    var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var storeyFilter = storey ? " AND m.storey = '" + storey.replace(/'/g, "''") + "'" : "";
     var ignoreFilter = Object.keys(ignoreSet).length ?
       " AND m.ifc_class NOT IN (" + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ")" : "";
@@ -397,7 +424,7 @@ function setupMeasure(A) {
         var overlap = Math.min(ox, oy, oz);
 
         // §S278: Filter by tolerance — only report clashes above the threshold
-        var tol = rules._activeTolerance || 0.025;
+        var tol = typeof rules._activeTolerance === 'number' ? rules._activeTolerance : 0.025;
         if (overlap < tol) continue;
 
         if (skip > 0) { skip--; continue; }
@@ -502,7 +529,7 @@ function setupMeasure(A) {
       }
       if (!A._clashRevealActive || !A._clashListDiv) return;
       var st = storeys[qi++];
-      var w = A._clashWhereParts(rules);
+      var w = A._clashWhereParts(rules, discA, discB);
       var stClause = "ma.storey = '" + st.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
       var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
         " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
@@ -530,7 +557,7 @@ function setupMeasure(A) {
       return A._queryClashesPairRtree(null, rules, discA, discB, 0, null);
     }
     // Fallback: storey-by-storey cross-join (R-tree not ready)
-    var w = A._clashWhereParts(rules);
+    var w = A._clashWhereParts(rules, discA, discB);
     var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
       " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
     var stA = {};

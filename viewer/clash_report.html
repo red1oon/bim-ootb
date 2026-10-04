@@ -120,12 +120,24 @@ function clashSeverity(overlap, rules) {
   return { level: 'clearance', color: sev.clearance.color, label: sev.clearance.label };
 }
 
-// ── R-tree clash counter (count only) ──
-function countClashesRtree(rules, discA, discB) {
-  var ignoreSet = {};
+// CIVIL_HIGHWAY_JELAPANG.md §V.1 — same rule as measure.js A._clashIgnoreSet (this page loads no viewer
+// scripts): a pair unions only the ignore_classes of its own rule family (default 'building').
+function ignoreSetFor(rules, discA, discB) {
+  var fam = 'building', ignoreSet = {};
   rules.clash_rules.forEach(function(r) {
+    if ((r.source.discipline === discA && r.target.discipline === discB) ||
+        (r.source.discipline === discB && r.target.discipline === discA)) fam = r.family || 'building';
+  });
+  rules.clash_rules.forEach(function(r) {
+    if ((r.family || 'building') !== fam) return;
     (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
   });
+  return ignoreSet;
+}
+
+// ── R-tree clash counter (count only) ──
+function countClashesRtree(rules, discA, discB) {
+  var ignoreSet = ignoreSetFor(rules, discA, discB);
   var ignoreFilter = Object.keys(ignoreSet).length ?
     ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
 
@@ -174,10 +186,7 @@ function countClashesRtree(rules, discA, discB) {
 
 // ── R-tree clash query (returns rows with details) ──
 function queryClashesRtree(rules, discA, discB, maxRows) {
-  var ignoreSet = {};
-  rules.clash_rules.forEach(function(r) {
-    (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
-  });
+  var ignoreSet = ignoreSetFor(rules, discA, discB);
   var ignoreFilter = Object.keys(ignoreSet).length ?
     ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
 
