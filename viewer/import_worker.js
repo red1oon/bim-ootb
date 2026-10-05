@@ -79,7 +79,8 @@ var VALID_DISCS = ['ARC','STR','MEP','PLB','ACMV','ELEC','FP','VENT','HEAT','SAN
 // themselves by these words (JELAPANG_ROAD FURNITURE.ifc …) — verbatim from the file names. Only these
 // are also matched inside space-separated words: matching ALL codes there turned "IFC4 Demo Library.ifc"
 // into DEMO (demolition) — measured by the filename sweep, 464 names on disk.
-var CIVIL_DISCS = ['ROAD','FURNITURE','LIGHTING','DRAINAGE','SIGNAGE','MARKING','EARTHWORK'];
+var CIVIL_DISCS = ['ROAD','FURNITURE','LIGHTING','DRAINAGE','SIGNAGE','MARKING','EARTHWORK',
+  'GEOTECH','GABION','CHAINAGE','ROW'];   // §PARTNER_DISCS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): the BIM partner's added files
 
 function discFromFilename(fname) {
   // Extract discipline from filename: LTU_AHouse_HEAT.ifc → HEAT

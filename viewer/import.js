@@ -643,6 +643,7 @@ function setupImport(A) {
       // §CIVIL_DISC (#1844) — same civil colours as rates.js DISC_COLORS
       ROAD: '#777777', FURNITURE: '#d9a441', LIGHTING: '#f2e85c', DRAINAGE: '#3d8fd1',
       SIGNAGE: '#e0503c', MARKING: '#f5f5f5', EARTHWORK: '#8b6b3e',
+      GEOTECH: '#a0522d', GABION: '#8f8f6e', CHAINAGE: '#ffd27a', ROW: '#d04fd0',   // §PARTNER_DISCS
     };
 
     for (const item of imports) {

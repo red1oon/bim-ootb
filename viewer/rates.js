@@ -209,6 +209,10 @@ var LABOR_RATES = {
   CIVIL_SIGNAGE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Signage Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
   CIVIL_LIGHTING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Lighting Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
   CIVIL_MARKING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Marking Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  // §PARTNER_DISCS (CIVIL_HIGHWAY_JELAPANG.md): the partner's added disciplines — same uncalibrated MASON copy as above
+  CIVIL_SURVEY: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Setting-out / Survey Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_GEOTECH: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Ground Treatment Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_GABION: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Gabion / Slope Protection Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
   _productivity_basis_secs: 28800,     // A1 — the 8h crew-day the productivity figures are quoted against
   _zero_minute_floor_secs: 120,        // B3 — the §TPL_ZERO_MINUTE no-data floor
   _default_max_crews_author: 1,        // B4 — pricing-side crew-cap fallback (schedule_gate.js keeps its own, different, 3)
@@ -350,6 +354,12 @@ var CIVIL_RATES = {
   SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
   LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
   MARKING:   { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road marking', trade: 'CIVIL_MARKING' },
+  // §PARTNER_DISCS: GEOTECH = piles / soil nails / horizontal drains / RC walls (EA until a true measure exists); GABION = mattress (M2)
+  GEOTECH:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Ground treatment (piles, soil nails, horizontal drains, RC walls)', trade: 'CIVIL_GEOTECH' },
+  GABION:    { measure: 'M2', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Gabion mattress (slope / scour protection)', trade: 'CIVIL_GABION' },
+  // setting-out references are never priced — listed so they cannot fall back to a building class rate ('Misc Element')
+  CHAINAGE:  { measure: 'NONE', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Chainage labels (setting-out reference, not priced)', trade: 'CIVIL_SURVEY' },
+  ROW:       { measure: 'NONE', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Right-of-way boundary (reference, not priced)', trade: 'CIVIL_SURVEY' },
 };
 // civilLabor(disc, count) — labour for a civil line from its §CIVIL_TRADES crew, COUNT-based (same basis the 4D
 // civil phases use), so 5D labour and the 4D bars agree. null for non-civil disciplines.
@@ -582,6 +592,7 @@ var DISC_COLORS = {
   ACMV:'#cc4444',PLB:'#8844cc',HVAC:'#44aacc',SAN:'#aa44aa',VENT:'#88ccaa',
   // §CIVIL_DISC (#1844) — civil discipline codes from file names; presentation colours only
   ROAD:'#777777',FURNITURE:'#d9a441',LIGHTING:'#f2e85c',DRAINAGE:'#3d8fd1',SIGNAGE:'#e0503c',MARKING:'#f5f5f5',EARTHWORK:'#8b6b3e',
+  GEOTECH:'#a0522d',GABION:'#8f8f6e',CHAINAGE:'#ffd27a',ROW:'#d04fd0',   // §PARTNER_DISCS
 };
 var PHASE_COLORS = {
   'Substructure':'#A5A5A5','Superstructure':'#4472C4','MEP Rough-in':'#70AD47',
