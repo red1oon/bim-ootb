@@ -1033,6 +1033,9 @@ async function setupScene(A) {
     'rel_contained_in_space', 'spatial_structure', 'tasks', 'task_elements', 'task_sequences',
     'schedules', 'bom_tree'];
   A._MERGE_GEO_TABLES = ['component_geometries', 'base_geometries'];
+  // §MERGE_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): guid-keyed tables with NO unique key — folded only for the guids
+  // NEW to the live DB (A._mergeNewGuids, taken before the fold). Was absent: every merge dropped element properties.
+  A._MERGE_GUID_ROW_TABLES = ['element_psets'];
 
   // ⚠ sql.js `exec` returns ONLY statements that produced rows, so `SELECT * … LIMIT 0` yields `[]`
   // and NOT a columns list — the first cut of this used that and silently merged nothing
@@ -1049,7 +1052,9 @@ async function setupScene(A) {
   // Clinic's does not). Insert on the INTERSECTION, driven by the DESTINATION's schema so the
   // destination schema never changes — which is also what keeps the once-probed, cached
   // A._libHasNormals (streaming.js:868) honest after a merge.
-  function _mergeTable(src, dst, table) {
+  // onlyGuids (optional Set): fold only rows whose `guid` is in it — for a table with NO unique key (element_psets), where
+  // INSERT OR IGNORE cannot dedupe and a re-merge would duplicate every row (§MERGE_PSETS).
+  function _mergeTable(src, dst, table, onlyGuids) {
     var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
     if (!sCols) return null;
     // §MERGE_CREATE 2026-08-30 — "fold only when the table exists on BOTH sides" silently threw away
@@ -1083,18 +1088,19 @@ async function setupScene(A) {
     try { before = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
     // Stream row-by-row rather than materialising the whole table first — component_geometries is
     // ~100MB of BLOBs on Clinic and 311MB-class on KUL070 (§SM-5 memory is the real ceiling).
-    var srcRows = 0, errs = 0;
+    var srcRows = 0, errs = 0, skipped = 0;
     try {
       var st = src.prepare('SELECT ' + q + ' FROM "' + table + '"');
       var ins = dst.prepare('INSERT OR IGNORE INTO "' + table + '" (' + q + ') VALUES (' +
         cols.map(function() { return '?'; }).join(',') + ')');
-      while (st.step()) { srcRows++; try { ins.run(st.get()); } catch (e2) { errs++; } }
+      var gi = onlyGuids ? cols.indexOf('guid') : -1;
+      while (st.step()) { srcRows++; var row = st.get(); if (gi >= 0 && !onlyGuids.has(row[gi])) { skipped++; continue; } try { ins.run(row); } catch (e2) { errs++; } }
       st.free(); ins.free();
     } catch (e) { console.warn('§MERGE_READ_FAIL table=' + table + ' ' + e.message); return null; }
     try { after = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
-    var added = after - before, dup = srcRows - added;
+    var added = after - before, dup = srcRows - added - (skipped || 0);
     console.log('§MERGE_ROWS table=' + table + ' src=' + srcRows + ' before=' + before +
-      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
+      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs + (onlyGuids ? ' skippedHeld=' + skipped : '') +
       ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
     return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
   }
@@ -1233,6 +1239,8 @@ async function setupScene(A) {
     var stats = {};
     _ensureBuildingCol(A.db, src);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
+    var _newSet = new Set(srcGuids);
+    A._MERGE_GUID_ROW_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t, _newSet); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
         var s = _mergeTable(src, A.libDb, t);
@@ -1355,6 +1363,8 @@ async function setupScene(A) {
     var stats = {};
     _ensureBuildingCol(A.db, srcMeta);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t); if (s) stats[t] = s; });
+    var _newSet = new Set(srcGuids);
+    A._MERGE_GUID_ROW_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t, _newSet); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
         var s = _mergeTable(srcGeo, A.libDb, t);
