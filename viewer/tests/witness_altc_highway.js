@@ -37,8 +37,14 @@ async function probe(b, url, tag) {
     const st = plan && plan.settle, s0 = R && R.path[0];
     const settleToStart = (st && s0) ? Math.hypot(st.x - s0.x, st.z - s0.z) : null;
     const el0 = APP._sunArcStep(0), el1 = APP._sunArcStep(1);
+    // §ALTC_ONEWAY: the SAME plan with Reveal ticked (road: seeded with its route, as the editor does; building: derived)
+    const ovR = civil && R ? { waypoints: R.path.map(p => ({ x: p.x, y: p.y, z: p.z })), reveal: true } : { reveal: true };
+    const pr = APP.cinemaPathPlan(60, ovR);
+    const rv = (pr && pr.reveal) || {};
     return { civil, wp: wp.length, routePts: R ? R.path.length : 0, wpMatch, settleToStart: settleToStart == null ? null : +settleToStart.toFixed(2),
-      el0: +(+el0).toFixed(1), el1: +(+el1).toFixed(1), naturalTotal: plan && plan.naturalTotal ? +plan.naturalTotal.toFixed(1) : null };
+      el0: +(+el0).toFixed(1), el1: +(+el1).toFixed(1), naturalTotal: plan && plan.naturalTotal ? +plan.naturalTotal.toFixed(1) : null,
+      revealTotal: pr && pr.naturalTotal ? +pr.naturalTotal.toFixed(1) : null, revealRound2Sec: rv.roundSec != null ? +(+rv.roundSec).toFixed(1) : null,
+      revealFlybackSec: rv.flybackSec != null ? +(+rv.flybackSec).toFixed(1) : null, revealTailSec: rv.tailSec != null ? +(+rv.tailSec).toFixed(1) : null };
   });
   r.lines = con.filter(l => /§ALTC_HIGHWAY/.test(l)).slice(0, 2);
   const pc = con.filter(l => /§CINEMA_PACING/.test(l)).pop() || ''; const wm = pc.match(/\(walk [0-9.]+m @([0-9.]+)m\/s/);
@@ -60,7 +66,9 @@ async function probe(b, url, tag) {
     ['road sun arc 15° → 6° (late afternoon → dusk)', road.el0 === 15 && road.el1 === 6],
     ['building not seeded with a road (no §ALTC_HIGHWAY line)', bld.civil === false && bld.lines.length === 0],
     ['building sun arc unchanged 55° → 6°', bld.el0 === 55 && bld.el1 === 6],
-    ['road film paced at the Fly speed (25 m/s) — natural length under 5 min, was 1243 s', road.walkMps === 25 && road.naturalTotal < 300],
+    ['road film cruise 35 m/s (§ALTC_ONEWAY) — was 2.3 m/s interior walk (1243 s)', road.walkMps === 35],
+    ['§ALTC_ONEWAY road film WITH Reveal under 3 min, one drive (round 2 + fly-back = 0, tail kept)', road.revealTotal < 180 && road.revealRound2Sec === 0 && road.revealFlybackSec === 0 && road.revealTailSec > 0],
+    ['building Reveal still flies its second lap (non-impact)', bld.revealRound2Sec > 0 && bld.revealFlybackSec > 0],
     ['building film pace unchanged (2.3 m/s interior walk)', bld.walkMps === 2.3],
   ];
   let fail = 0; checks.forEach(([n, v]) => { if (!v) fail++; log('  ' + (v ? 'PASS ' : 'FAIL ') + n); });

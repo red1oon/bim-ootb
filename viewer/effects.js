@@ -7739,6 +7739,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // tour's speed. Buildings: both constants unchanged.
     var _civilPace = !!(A.isCivilModel && A.isCivilModel());
     var _walkMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_WALK_MPS, _pullMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_PULLBACK_MPS;
+    var _diveMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_DIVE_MPS;   // §ALTC_ONEWAY: the road fly-in at the film's cruise too
     var arcBboxRaw = _buildingBBoxArc();
     var arcBbox = arcBboxRaw || _buildingBBoxIfc();
     var envelope = arcBbox ? Math.max(arcBbox.xMax - arcBbox.xMin, arcBbox.yMax - arcBbox.yMin, 50) : 100;
@@ -9074,9 +9075,13 @@ async function setupEffects(A, renderer, scene, camera) {
         // final 2s all-together — KEPT (see spec file's dated section for why the all-together slot
         // was kept rather than dropped: the user asked for it repeatedly elsewhere in this file's
         // own history, e.g. the ORIGIN ask and the Mechanism B pacing quote).
-        _revealPulloutSec = CINEMA_REVEAL_PULLOUT_SEC;
-        _revealFlybackSec = totalLen / _pullMps;
-        _revealRoundSec = totalLen / _walkMps;
+        // §ALTC_ONEWAY (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md 2g, user 2026-10-05: "one way where buildup then reveal
+        // same … below 3 mins and 3 hrs"): a road film is ONE drive — no pull-out, no fly-back, no second lap (zero-width
+        // tP=tF=tV=tO, the shipped reveal-off geometry). The disc-parade tail below stays (rise beat). Buildings unchanged.
+        _revealPulloutSec = _civilPace ? 0 : CINEMA_REVEAL_PULLOUT_SEC;
+        _revealFlybackSec = _civilPace ? 0 : totalLen / _pullMps;
+        _revealRoundSec = _civilPace ? 0 : totalLen / _walkMps;
+        if (_civilPace) console.log('§ALTC_ONEWAY reveal one-way (civil): pullout/flyback/round2 = 0, tail kept');
         _revealTailSec = 2 * _revealDiscs.length + 2;
         _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
         console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' flybackSec=' +
@@ -9098,7 +9103,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // not CONTENT (rate of change), so two equal-length equal-turning walks through empty and dense
       // areas billed identically. `out` below now carries the same `* (1 + (SWING-1)*busy)` factor
       // the dive uses, with busy = _walkBusy from _walkNoiseBuild above.
-      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
+      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / _diveMps * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       // §CPE_SPIN_WHIP — the angle ACTUALLY flown (no 180 cap), at the same rate every other turn in
       // the film is charged, times the same noise multiplier the dive and walk carry.
       // §CPE_SETTLE_HOLD (2026-08-04, corrected): no floor at all — real turn time plus whatever the
@@ -9389,7 +9394,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' + round2 ' + _natSec.reveal.toFixed(1) + ' + tail ' + _natSec.tail.toFixed(1) +
       ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
       '  (walk ' + totalLen.toFixed(1) + 'm @' + _walkMps + 'm/s, dive ' + diveDist.toFixed(1) +
-      'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + _pullMps +
+      'm @' + _diveMps + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + _pullMps +
       'm/s, dive raw ' + diveDist.toFixed(0) + 'm capped to envelope ' + _diveEff.toFixed(0) +
       'm, spin ' + _spinDeg.toFixed(0) + 'deg flown @' + CINEMA_TURN_DPS + 'deg/s x' +
       _spinBusyMult.toFixed(2) + ' busy)' +
@@ -10743,7 +10748,9 @@ async function setupEffects(A, renderer, scene, camera) {
   // orbit's elastic control point. Paced like Fly (25 m/s) via _walkMps/_pullMps in the plan. Without it the plan dives to the bbox centre of a
   // 2 km road and exits through a "facade" (effects.js §CINEMA_SPACE fallback) — no road at all. Explicit null (G5 control)
   // and any authored edit still win; buildings return null here → derived plan unchanged.
-  var CIVIL_FILM_SPEED = 25;   // presentation: m/s along the road — same as the Fly tour's SPEED
+  // §ALTC_ONEWAY (CIVIL_HIGHWAY_JELAPANG.md 2g): 25 → 35 m/s so the road film lands under 3 min (bake under ~3 h at the measured
+  // 2-3 s/frame). The noise law (CINEMA_PACE_SWING) still slows busy stretches — quiet straights cruise, junctions ease.
+  var CIVIL_FILM_SPEED = 35;   // presentation: m/s along the road (the Fly tour keeps its own 25, tour.js SPEED)
   function _civilFilmOv() {
     if (!(A.isCivilModel && A.isCivilModel()) || typeof A.civilRoutePath !== 'function') return null;
     if (A._civilFilmOvDb === A.db) return A._civilFilmOvC;   // route is per model — the plan is re-asked many times
