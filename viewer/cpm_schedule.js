@@ -235,7 +235,8 @@
     for (i = 0; i < n; i++) {
       var L = items[i].storey ? SG.collapsePhase(items[i].storey) : null;
       lvlOf[i] = L;
-      if (L) { var a = lvlAgg[L] || (lvlAgg[L] = { sum: 0, c: 0 }); a.sum += items[i].bz; a.c++; }
+      if (L) { var a = lvlAgg[L] || (lvlAgg[L] = { sum: 0, c: 0, sec: 0, sc: 0 }); a.sum += items[i].bz; a.c++;
+        if (typeof items[i].lvlSec === 'number') { a.sec += items[i].lvlSec; a.sc++; } }   // §CHAINAGE_LEVELS
     }
     var levels = Object.keys(lvlAgg).sort(function (a, b) { return lvlAgg[a].sum / lvlAgg[a].c - lvlAgg[b].sum / lvlAgg[b].c; });
 
@@ -246,7 +247,14 @@
     // (ascending), so federated pseudo-levels sharing one physical storey (Terminal's Kedai/Jalan/
     // Tanah cluster) collapse onto the SAME bandRank and are never chained to each other by E4.
     var bandOfLevel = {};
-    levels.forEach(function (L) { bandOfLevel[L] = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3); });
+    // §CHAINAGE_LEVELS (CIVIL_HIGHWAY_JELAPANG.md 2f): civil items carry a chainage section — the band key becomes
+    // (section, 3 m z-band) so the ladder climbs ALONG THE ROUTE first; same lexicographic key, one int. Buildings carry
+    // no lvlSec → the z-band key alone, unchanged.
+    var _cpmBySec = levels.some(function (L) { return lvlAgg[L].sc > 0; });
+    levels.forEach(function (L) {
+      var zb = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3);
+      bandOfLevel[L] = _cpmBySec ? (Math.round(lvlAgg[L].sc ? lvlAgg[L].sec / lvlAgg[L].sc : 0) * 100000 + zb + 50000) : zb;
+    });
     var bandValues = [];
     levels.forEach(function (L) { if (bandValues.indexOf(bandOfLevel[L]) < 0) bandValues.push(bandOfLevel[L]); });
     bandValues.sort(function (a, b) { return a - b; });
