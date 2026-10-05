@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1562';
+const CACHE_VERSION = 'v1565';
 // v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
 // v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
 // v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
@@ -241,6 +241,14 @@ const CACHE_VERSION = 'v1562';
 // sky-surface v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
 // sky-surface v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
 // v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=12.
+// v1565 (2026-10-04) A/B switches only, defaults unchanged: &csmlambda=<0..1> (cascade split; 1 = log, MEASURED HHS c0 tpp 3.51->1.60, SampleHouse 8.63->1.74) and &shadowwide=0. effects.js?v=133.
+// v1564 (2026-10-03) §SHADOW_WIDE_OTHER_CAMERA: mirror tiles + the §GLASS_ENV cube render with the sun box widened to the building union, cascades suspended (was: eye-fitted cascades -> sun speckle in mirrors). effects.js?v=132 shadow_cascade.js?v=2 glass_fresnel.js?v=15.
+// v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
+// v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.
+// v1561 (2026-10-03) §GLASS_PLANAR_REFL: exterior panes on the K=6 largest on-screen glass planes reflect a per-plane mirror render (oblique near plane) instead of the eye-centred cube x sky gate; §GLASS_REFL_TRUTH witness (&refltruth=1); still_fault glassReflMirrored. glass_fresnel.js?v=13 effects.js?v=130 still_fault.js?v=14.
+// v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
+// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=11.
 // v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
 // v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
 // v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.

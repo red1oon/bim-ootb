@@ -2778,6 +2778,7 @@ async function setupEffects(A, renderer, scene, camera) {
         // capture sets uMirBoxMin/Max/CapPos from the zone grid around the camera); the cube is read toward that hit from the capture point.
         mm.userData.mirU = { uMirBoxMin: { value: new THREE.Vector3() }, uMirBoxMax: { value: new THREE.Vector3() }, uMirCapPos: { value: new THREE.Vector3() }, uMirBoxOn: { value: 0 } };
         mm.onBeforeCompile = function(sh) { var U = this.userData.mirU; for (var u in U) sh.uniforms[u] = U[u];
+          if (window.GlassFresnel && window.GlassFresnel.patchShader) window.GlassFresnel.patchShader(sh);   // §GLASS_PLANAR_REFL: a flat mirror reads its plane's mirror render (before the expansion below)
           sh.fragmentShader = sh.fragmentShader.replace('#include <envmap_physical_pars_fragment>', '#include <envmap_physical_pars_fragment>\n' +
             'uniform vec3 uMirBoxMin; uniform vec3 uMirBoxMax; uniform vec3 uMirCapPos; uniform float uMirBoxOn;\n' +
             'vec3 slMirBoxRad( vec3 posView, vec3 viewDir, vec3 normal, float roughness ) {\n#ifdef ENVMAP_TYPE_CUBE_UV\n' +
@@ -2786,7 +2787,7 @@ async function setupEffects(A, renderer, scene, camera) {
             '    float d = min( min( tf.x, tf.y ), tf.z ); if ( d > 0.0 ) r = normalize( wp + r * d - uMirCapPos ); }\n' +
             '  return textureCubeUV( envMap, envMapRotation * r, roughness ).rgb * envMapIntensity;\n#else\n  return vec3( 0.0 );\n#endif\n}\n')
             .replace('#include <lights_fragment_maps>', THREE.ShaderChunk.lights_fragment_maps.replace('getIBLRadiance( geometryViewDir, geometryNormal, material.roughness )', 'slMirBoxRad( geometryPosition, geometryViewDir, geometryNormal, material.roughness )')); };
-        mm.customProgramCacheKey = function() { return 'slMirrorBox'; }; }
+        mm.customProgramCacheKey = function() { return 'slMirrorBox2'; }; }
       _mirrorOwnSaved.push([o, o.material]); o.material = Array.isArray(o.material) ? o.material.map(function() { return mm; }) : mm; ok++; });
     A._mirrorOwnMats = mats;
     console.log('§MIRROR_OWN_MAT applied meshes=' + ok + ' materials=' + mats.length + ' colours=[' + Object.keys(byCol).join(' | ') + '] (IFC material_rgba, metal 1, rough 0.02, env = §GLASS_ENV capture, no sky gate)');
@@ -3181,6 +3182,23 @@ async function setupEffects(A, renderer, scene, camera) {
     if (csmRun) { try { _stillCascadeApply(); } catch (eC) { console.warn('§STILL_SHADOW_CASCADE failed: ' + eC.message + ' — single map kept'); if (window.ShadowCascade) window.ShadowCascade.off(); } }
     return line;
   }
+  // §SHADOW_WIDE_OTHER_CAMERA (2026-10-03, MEASURED Clinic toilet: cascade boxes 1.5x2.1 .. 1.2x1.8 m fitted to the eye's 1.0-2.8 m view;
+  // the mirror shows the room BEHIND the eye = outside every box = "no cascade -> lit" = sun speckle on indoor walls, hfStd 9.1 vs
+  // 2.3 with &shadowcascade=0). A render from another camera (mirror tiles, the §GLASS_ENV cube) needs a map that holds what IT sees:
+  // the sun's box widens to this still's building ∪ kept-props union (the fit's own U, ±env), cascades suspended; restored after.
+  var _wideSaved = null;
+  A._stillShadowWide = function(on) {
+    var sc = A.sun && A.sun.shadow && A.sun.shadow.camera;
+    if (on) { if (_wideSaved || !sc || !_fitState || !_fitState.last || !_fitOn() || /[?&]shadowwide=0/.test(location.search)) return false;   // &shadowwide=0 = A/B
+      var L = _fitState.last, env = L.env, M = 2, U = L.U, mz = A.sun.shadow.mapSize.width;
+      _wideSaved = { l: sc.left, r: sc.right, b: sc.bottom, t: sc.top, nb: A.sun.shadow.normalBias, csm: !!(window.ShadowCascade && window.ShadowCascade.suspend && window.ShadowCascade.suspend()) };
+      sc.left = Math.max(-env, U.x0 - M); sc.right = Math.min(env, U.x1 + M); sc.bottom = Math.max(-env, U.y0 - M); sc.top = Math.min(env, U.y1 + M);
+      A.sun.shadow.normalBias = 2 * Math.max(sc.right - sc.left, sc.top - sc.bottom) / mz; sc.updateProjectionMatrix(); A.renderer.shadowMap.needsUpdate = true;
+      return { w: +(sc.right - sc.left).toFixed(1), h: +(sc.top - sc.bottom).toFixed(1) }; }
+    if (!_wideSaved) return false;
+    sc.left = _wideSaved.l; sc.right = _wideSaved.r; sc.bottom = _wideSaved.b; sc.top = _wideSaved.t; A.sun.shadow.normalBias = _wideSaved.nb; sc.updateProjectionMatrix();
+    if (_wideSaved.csm) window.ShadowCascade.resume(); _wideSaved = null; A.renderer.shadowMap.needsUpdate = true; return false;
+  };
   // ══ §STILL_SHADOW_EDGE (bim-compiler PHOTOREAL_STILL_RENDER.md "§STILL_SHADOW_EDGE — SPEC"; watchdog red1-4b/red1-c6) ══
   // red1 on v1337: shadows "jagged and with a base gap". Alt+S only; films keep §STILL_SHADOW_FIT as is. &shadowedge=0 or
   // APP._stillShadowEdge=false = the v1337 values (A/B).
@@ -3356,7 +3374,11 @@ async function setupEffects(A, renderer, scene, camera) {
   }
   // PSSM practical split over [zMin, zMax] (Zhang et al. 2006): C_i = lambda zMin (zMax/zMin)^(i/m) + (1-lambda)(zMin + (zMax-zMin) i/m)
   function _csmSplits(zMin, zMax, m) {
-    var C = []; for (var i = 0; i <= m; i++) C.push(CSM_LAMBDA * zMin * Math.pow(zMax / zMin, i / m) + (1 - CSM_LAMBDA) * (zMin + (zMax - zMin) * i / m));
+    // §CSM_SPLIT_AB (2026-10-04): &csmlambda=<0..1> overrides CSM_LAMBDA for A/B (1 = pure log splits: every cascade the same far/near
+    // ratio, so texel-per-pixel is equal across cascades; MEASURED with 0.5: cascade 0 spans 4.9-22x and carries tpp 2.2-9.9 while
+    // cascades 1-3 stay <= 1 — the jagged edges). Default unchanged until red1 rules.
+    var _lm = /[?&]csmlambda=([0-9.]+)/.exec(location.search), LAM = _lm ? Math.max(0, Math.min(1, parseFloat(_lm[1]))) : CSM_LAMBDA;
+    var C = []; for (var i = 0; i <= m; i++) C.push(LAM * zMin * Math.pow(zMax / zMin, i / m) + (1 - LAM) * (zMin + (zMax - zMin) * i / m));
     return C;
   }
   // THE per-cascade fit (D5) — one function for the still and, later, the film (ALTC_FOUNDATION F2). slice = { a, b (view
@@ -3499,7 +3521,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' pixelAtSplit=' + f(cs, function(o) { return pix(o.near); }, 4) + ' H=' + Hpx + ' fov=' + cam.fov +
       ' c0texelIf[m2,m3,m4]=[' + ifM.map(function(o) { return o[0].used ? o[0].texel.toFixed(4) : 'NaN'; }).concat([cs[0].texel.toFixed(4)]).join(',') + ']' +
       ' tppIfM2=' + f(ifM[0], 'tpp', 2) + ' tppIfM3=' + f(ifM[1], 'tpp', 2) + ' texelIfM3=' + f(ifM[1], 'texel', 4) +
-      ' lambda=' + CSM_LAMBDA + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
+      ' lambda=' + ((/[?&]csmlambda=([0-9.]+)/.exec(location.search) || [0, CSM_LAMBDA])[1]) + ' blend=' + CSM_BLEND + ' R=' + R + ' programs=' + ((A.renderer.info.programs || []).length) + ' ms=' + (performance.now() - t0).toFixed(1));
     // §ZERO Z12 SUN_PENUMBRA (diagnostic, stills): today's PCF edge = (2R+1) texels per cascade; the sun's 0.53 deg disc gives
     // w = d x tan(0.53 deg). dMatch = the occluder->receiver distance at which they agree (nearer occluders: too soft; farther: too hard).
     if (!A._maxqActive && window.LightLaw && window.LightLaw.penumbra) { var _p1 = window.LightLaw.penumbra(1);
@@ -6144,6 +6166,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // frame across two settings. A bake sets A._stillBudget; Alt+S leaves it null and gets 16/24.
     var _taaFrames = _stillBudget().taa;
     if (!A._maxqActive && window.GlassFresnel && window.GlassFresnel.capture) { try { window.GlassFresnel.capture(A); } catch (eGE) { console.warn('§GLASS_ENV failed: ' + eGE.message); } }   // §GLASS_ENV: staged scene, lights final
+    if (!A._maxqActive && window.GlassFresnel && window.GlassFresnel.planar) { try { window.GlassFresnel.planar(A); } catch (eGP) { console.warn('§GLASS_PLANAR failed: ' + eGP.message); } }   // §GLASS_PLANAR_REFL: per-plane mirror tiles after the cube
     // §METER one reading per still (### ALTS-ALL FIX 1): the ONE exposure reading, on the FINAL staged scene — after the lamp rebuild,
     // the ground reassert (§GROUND_COLOR_ORDER_FIX), torch, albedo and the glass env capture; SourcedLight.stage() only logged a §METER_DIAG.
     // §FIXTURE_FACE (Z25): the lamps were just reborn (ver bump above) — sync the lamp texture NOW (§LAMP_EN scales the I the

@@ -1002,8 +1002,12 @@
             if (m0.transparent && m0.opacity < 0.95) cls.behindGlass++; else if (m0.color && m0.color.getHex() === 0) cls.blackMat++; else cls.other++; });
           R.fault.hueCls = cls; } catch (eHC) { R.fault.hueCls = { error: String(eHC && eHC.message || eHC) }; } }
         R.fault.giAdapter = G.adapter || null;
-        const fl = '§FAULT_GI ' + (nh > 0 ? 'FAULT' : 'OK') + ' hueNoise=' + nh + (R.fault.hueCls ? ' hueCls=' + JSON.stringify(R.fault.hueCls) : '') + ' giAdapter=' + (R.fault.giAdapter || 'n/a') + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
-        if (nh > 0) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
+        // §FAULT_GI_BLANK (2026-10-03, LTU inside cam [-16.48,-0.26,-9.60]: underlay mean=0, dark 74-78 %, printed OK): the app frame fed to
+        // SSGI was empty (the underlay line's own reading: ~0 = empty buffer) -> the still is not a picture of the scene. FAULT, never OK.
+        R.fault.blankUnderlay = R.underMean != null && R.underMean < 1;
+        const bad = nh > 0 || R.fault.blankUnderlay;
+        const fl = '§FAULT_GI ' + (bad ? 'FAULT' : 'OK') + (R.fault.blankUnderlay ? ' blankUnderlay=1 (underlay mean ' + R.underMean + ')' : '') + ' hueNoise=' + nh + (R.fault.hueCls ? ' hueCls=' + JSON.stringify(R.fault.hueCls) : '') + ' giAdapter=' + (R.fault.giAdapter || 'n/a') + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
+        if (bad) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
       R.secs = +((performance.now() - t0) / 1000).toFixed(1);
       R.orient = G.orient || null;
       R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;
