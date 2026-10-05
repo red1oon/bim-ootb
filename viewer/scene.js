@@ -871,10 +871,25 @@ async function setupScene(A) {
   // Terminal/JKR/Clinic but 166.8 s for LTU_AHouse_extracted — a three-minute stall inside Ctrl+S.
   // Offline patch generation costs the user nothing and makes the raster a property of the building
   // rather than of whoever last saved it.
+  // §MESH_SLIM save: a civil model drops its stored normals (derived on load, fleet format) and compacts, so the
+  // saved file — and every reload/IDB copy of it — is light. Fleet / building DBs: isCivilModel() false → untouched.
+  function _meshSlim(db) {
+    if (!(A.isCivilModel && A.isCivilModel())) return;
+    try {
+      var r = db.exec("SELECT COUNT(*), COALESCE(SUM(LENGTH(normals)),0) FROM component_geometries WHERE normals IS NOT NULL");
+      var n = r.length ? r[0].values[0][0] : 0, b = r.length ? r[0].values[0][1] : 0;
+      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); return; }
+      var t0 = performance.now();
+      db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      db.run('VACUUM');
+      console.log('§MESH_SLIM_SAVE normalsDropped=' + n + ' bytes=' + b + ' ms=' + (performance.now() - t0).toFixed(0));
+    } catch (e) { console.warn('§MESH_SLIM_SAVE_ERR ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      _meshSlim(A.db);
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
       _writeSceneStateTable(A.db);
@@ -902,6 +917,7 @@ async function setupScene(A) {
       copied++;
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    _meshSlim(mono);
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
     _writeSceneStateTable(mono);

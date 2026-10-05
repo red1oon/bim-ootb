@@ -87,13 +87,22 @@ function buildImportDBs(SQL, data) {
 
   // Geometry BLOBs — same DB, keyed by geometry_hash (instanced, deduped)
   db.run('CREATE TABLE IF NOT EXISTS component_geometries (geometry_hash TEXT PRIMARY KEY, vertices BLOB, faces BLOB, normals BLOB, building TEXT)');
+  // §MESH_SLIM (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MESH_SLIM): a civil import stores NO normals — the fleet
+  // format; the viewer derives them (scene.js A.blobToGeometry → computeVertexNormals). Measured JELAPANG: normals 251 MB =
+  // 42 % of geometry, 99.95 % equal to their own face normal. Civil = any element discipline in window.SEQUENCE_CIVIL
+  // (rates.js); a page without rates.js keeps the old behaviour (normals written).
+  var _civ = (typeof window !== 'undefined' && window.SEQUENCE_CIVIL) || null, _slim = false;
+  if (_civ) for (var ci = 0; ci < data.elements.length && !_slim; ci++) if (_civ[data.elements[ci].discipline]) _slim = true;
+  var _nDrop = 0, _nBytes = 0;
   var stmtGeo = db.prepare('INSERT OR IGNORE INTO component_geometries VALUES (?,?,?,?,?)');
   for (var i = 0; i < data.geometries.length; i++) {
     var g = data.geometries[i];
+    if (_slim && g.normals) { _nDrop++; _nBytes += g.normals.byteLength; }
     stmtGeo.run([g.geomHash, new Uint8Array(g.vertices), new Uint8Array(g.indices),
-      g.normals ? new Uint8Array(g.normals) : null, buildingName]);
+      (g.normals && !_slim) ? new Uint8Array(g.normals) : null, buildingName]);
   }
   stmtGeo.free();
+  if (_slim) console.log('§MESH_SLIM_IMPORT civil=1 normalsDropped=' + _nDrop + ' bytes=' + _nBytes + ' (derived on load)');
 
   // §S267: bom_tree — IFC parent→child relationships (IfcRelVoids/Fills/Aggregates)
   if (data.bomTree && data.bomTree.length > 0) {
