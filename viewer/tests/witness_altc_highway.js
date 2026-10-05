@@ -23,7 +23,7 @@ const server = http.createServer((req, res) => { try {
 } catch (e) { res.writeHead(500); res.end(); } });
 async function probe(b, url, tag) {
   const p = await b.newPage(); const con = [];
-  p.on('console', m => { const t = m.text(); if (/§ALTC_HIGHWAY|§ALTC_V2|§SUN_ARC_STEP|§CINEMA_PACING/.test(t)) con.push(t); });
+  p.on('console', m => { const t = m.text(); if (/§ALTC_HIGHWAY|§ALTC_V2|§ALTC_V3|§SUN_ARC_STEP|§CINEMA_PACING/.test(t)) con.push(t); });
   await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 600000 });
   let ok = false;
   for (let i = 0; i < 900 && !ok; i++) { await new Promise(r => setTimeout(r, 1000)); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && Object.keys(APP.guidMap || {}).length && (!APP.isCivilModel || !APP.isCivilModel() || APP._civilLabels))); } catch (e) {} }
@@ -67,6 +67,8 @@ async function probe(b, url, tag) {
   r.lines = con.filter(l => /§ALTC_HIGHWAY/.test(l)).slice(0, 2); r.v2lines = con.filter(l => /§ALTC_V2/.test(l));
   const pc = con.filter(l => /§CINEMA_PACING/.test(l)).pop() || ''; const wm = pc.match(/\(walk [0-9.]+m @([0-9.]+)m\/s/);
   r.walkMps = wm ? +wm[1] : null; r.pacing = pc.slice(0, 200);
+  const dm = pc.match(/= dive ([0-9.]+)/); r.diveSec = dm ? +dm[1] : null;   // §ALTC_V3: the plan's own dive seconds
+  r.diveSecRaw = r.diveSec; if (/approach capped/.test(con.join('\n'))) r.diveSecRaw = -1;
   log('  [' + tag + '] ' + JSON.stringify(r)); await p.close(); return r;
 }
 (async () => {
@@ -93,6 +95,8 @@ async function probe(b, url, tag) {
     ['building orbit pivot not a junction (non-impact)', bld.revealPivotSrc !== 'civil-junction' && !bld.v2.a],
     ['building Reveal still flies its second lap (non-impact)', bld.revealRound2Sec > 0 && bld.revealFlybackSec > 0],
     ['building film pace unchanged (2.3 m/s interior walk)', bld.walkMps === 2.3],
+    ['§ALTC_V3 V3c road approach ≤ 8.3 s (280 m @ 35 m/s; v2 was 25.6 s)', road.diveSec != null && road.diveSec <= 8.3],
+    ['§ALTC_V3 building approach not capped (non-impact)', bld.diveSec != null && bld.diveSec === bld.diveSecRaw],
   ];
   let fail = 0; checks.forEach(([n, v]) => { if (!v) fail++; log('  ' + (v ? 'PASS ' : 'FAIL ') + n); });
   log('§WITNESS_ALTC_HIGHWAY ' + (fail ? 'FAIL ' : 'PASS ') + (checks.length - fail) + '/' + checks.length);
