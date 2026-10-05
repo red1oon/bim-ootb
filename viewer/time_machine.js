@@ -4619,7 +4619,7 @@
       var st = schedule[el.guid]; if (!st) return;
       items.push({ guid: el.guid, s: st.start, e: st.end, bz: el.base_z, tz: el.top_z,
         x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
-        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey,
+        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey, lvlSec: el.lvlSec, civil: el.civil, disc: el.disc,   // §CHAINAGE_LEVELS
         resource: el.resource });   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     if (!items.length) return null;
@@ -5089,6 +5089,27 @@
     // by median Z — deterministic, uses only already-extracted Z data, nothing invented — so the
     // Gantt grouping, the storey-band ranking above, and the roof-slab override below all see the
     // corrected storey with zero further code changes downstream.
+    // §CHAINAGE_LEVELS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md 2f/2g, user 2026-10-05: "make the buildup chainage";
+    // industry: road works are planned on time-chainage / line-of-balance charts, not storeys). On a CIVIL model the build
+    // ladder's LEVEL is the element's chainage section along the inferred route (tour.js app.civilRoutePath — the one owner,
+    // the route Fly and Alt+C use), not a storey height. Road elements get storey "CH nn" (their section); building elements
+    // (a merged bridge) keep their storeys, and every element carries lvlSec = its section, so the ladder owners
+    // (schedule_gate.deriveBandRanks, cpm_schedule bandRank) order by section first, then height. Buildings: no civil
+    // discipline → no route → no lvlSec → unchanged.
+    var _chainPts = null;
+    try {
+      if (app.isCivilModel && app.isCivilModel() && typeof app.civilRoutePath === 'function') {
+        var _CR = app.civilRoutePath();
+        if (_CR && _CR.path && _CR.path.length >= 2) _chainPts = _CR.path;
+      }
+    } catch (eCR) { console.warn('§CHAINAGE_LEVELS route failed: ' + eCR.message); }
+    function _secOf(cx, cy, cz) {
+      var p = app.ifc2three(cx, cy, cz), bi = 0, bd = Infinity;
+      for (var k = 0; k < _chainPts.length; k++) { var d = Math.hypot(_chainPts[k].x - p.x, _chainPts[k].z - p.z); if (d < bd) { bd = d; bi = k; } }
+      return bi;
+    }
+    var _chainCivil = 0, _chainKept = 0;
+
     var unknownReassigned = 0;
     function assignStoreyByZ(storey, cz) {
       // §ZONE_INDEX: the reassignment itself now lives in the shared index; the counter stays here
@@ -5104,8 +5125,12 @@
     var elements = r[0].values.map(function(row) {
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
-      var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
-      var ov = _civilRule(db, row[0]) || matchNameOverride(cls, elName);   // §CIVIL_PHASE
+      var _civ = _civilRule(db, row[0]);
+      var lvlSec;
+      if (_chainPts) lvlSec = _secOf(cx, cy, cz);   // §CHAINAGE_LEVELS
+      var storey = (_chainPts && _civ) ? ('CH ' + (lvlSec < 10 ? '0' : '') + lvlSec) : assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
+      if (_chainPts) { if (_civ) _chainCivil++; else _chainKept++; }
+      var ov = _civ || matchNameOverride(cls, elName);   // §CIVIL_PHASE
       if (ov) nameOverrides++;
       var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
@@ -5115,7 +5140,8 @@
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
         base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: Z geometry (base = underside, top = where it tops out)
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
-        seq: seq, phase: phase,
+        seq: seq, phase: phase, lvlSec: lvlSec,   // §CHAINAGE_LEVELS (undefined on a building)
+        civil: !!_civ, disc: row[4] || '',        // §CHAINAGE_E1 — same-discipline civil abutment is not support
         resource: rule.resource || '_DEFAULT',
         installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz),
         // §4D_NOGEO (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH): no transform row —
@@ -5126,6 +5152,8 @@
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     });
+    if (_chainPts) console.log('§CHAINAGE_LEVELS sections=' + _chainPts.length + ' civilByChainage=' + _chainCivil +
+      ' otherKeptStorey=' + _chainKept + ' (ladder = section first, then height — line of balance along the route)');
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
       NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
@@ -5365,7 +5393,7 @@
       return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
         bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
         cls: el.cls, seq: el.seq, phase: el.phase,
-        storey: el.storey,   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
+        storey: el.storey, lvlSec: el.lvlSec, civil: el.civil, disc: el.disc,   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired · §CHAINAGE_LEVELS
         resource: el.resource };   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     var _twStats = _displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
@@ -8853,7 +8881,7 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 40;   // §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  var _GANTT_CACHE_VERSION = 41;   // §CHAINAGE_LEVELS (2026-10-05, CIVIL_HIGHWAY_JELAPANG.md 2f) — a civil programme cached before chainage levels climbs by storey height (lamps first on a road+bridge merge); regenerate. Buildings regenerate once to an identical programme (no lvlSec). Previous: 40 §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
   // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
