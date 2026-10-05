@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => { try {
   const browser = await puppeteer.launch({ headless: true, userDataDir: profile, protocolTimeout: 30 * 60 * 1000, args: ['--no-sandbox', '--window-size=1300,840'].concat(gpuArgs) });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });
   const tagged = [];
-  page.on('console', m => { const t = m.text(); logStream.write('[con] ' + t + '\n'); if (/§(NIGHT_CIVIL_LAMPS|NIGHT_MODE|GROUND_Y|GROUND_ROBUST|CIVIL_ROUTE)/.test(t) || /START cinematic|No walk data/.test(t)) { tagged.push(t); console.log('  ' + t.slice(0, 320)); } });
+  page.on('console', m => { const t = m.text(); logStream.write('[con] ' + t + '\n'); if (/§(CIVIL_LAMP_GLOW|NIGHT_CIVIL_LAMPS|NIGHT_MODE|GROUND_Y|GROUND_ROBUST|CIVIL_ROUTE)/.test(t) || /START cinematic|No walk data/.test(t)) { tagged.push(t); console.log('  ' + t.slice(0, 320)); } });
   page.on('pageerror', e => logStream.write('[pageerror] ' + e.message + '\n'));
   const R = {};
   try {
@@ -103,6 +103,23 @@ const server = http.createServer((req, res) => { try {
       const out = { ...glow, minOtherBottom: +minOther.toFixed(1), noBox, buried: lower, lowerCluster: lower, lowerLit, tallUpper, tallUpperLit, source: A._nightFixtureSource || '', fixtures: F.length, civilHeads: civil.length, civilColumns: civil.filter(f => f.guid).length,
         inBox, nearTop, judged, unjudged, worstTopErrM: +worstTopErr.toFixed(3), offCentre, maxHeadOffsetM: +worst.toFixed(2), groundZ: A.groundIfcZ,
         signalsExpected: (function () { try { return q("SELECT COUNT(DISTINCT guid) FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'")[0][0]; } catch (e) { return -1; } })(), signals: (function () { const lit = {}; civil.forEach(f => { if (f.guid) lit[f.guid] = 1; }); let n = 0; try { q("SELECT DISTINCT guid FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'").forEach(r => { if (lit[r[0]]) n++; }); } catch (e) {} return n; })(), worldPositions: (A._nightFixtureWorldPositions() || []).length };
+      // §GLOW_DAY (CIVIL_HIGHWAY_JELAPANG.md §GLOW_DAY) — ISSUE: the glow squares float over the road in a DAYLIGHT film
+      // (the #1869 ghost). Drive the REAL per-frame owner A._filmParityStep with the sun placed at 30° then 2°, then the
+      // teardown reset; read the live Points.visible each time (not the module's log).
+      const gd = { dayVisible: null, duskVisible: null, resetVisible: null, roundMap: !!(gp && gp.material.map), parityRan: false };
+      if (gp && typeof A._filmParityStep === 'function') {
+        const sv = { mq: A._maxqActive, fp: A._filmParity, pos: A.sun.position.clone(), flag: A._stillWindowGlowOff };
+        const tgt = A.sun.target ? A.sun.target.position.clone() : new T.Vector3();
+        const putSun = deg => { const r = 500, a = T.MathUtils.degToRad(deg); A.sun.position.set(tgt.x + r * Math.cos(a), tgt.y + r * Math.sin(a), tgt.z); };
+        A._maxqActive = true; A._filmParity = true;
+        try {
+          putSun(30); const o1 = A._filmParityStep(0, 0.1, null); gd.parityRan = !!(o1 && o1.day === 1); gd.dayVisible = gp.visible;
+          putSun(2); A._filmParityStep(1, 0.2, null); gd.duskVisible = gp.visible;
+          putSun(30); A._filmParityStep(2, 0.3, null);
+          A._stillWindowGlowOff = false; A._civilGlowSync('teardown'); gd.resetVisible = gp.visible;
+        } finally { A._maxqActive = sv.mq; A._filmParity = sv.fp; A.sun.position.copy(sv.pos); A._stillWindowGlowOff = sv.flag; A._civilGlowSync('witness-restore'); }
+      }
+      out.glowDay = gd;
       A.toggleNightMode();
       return out;
     }));
@@ -131,9 +148,12 @@ const server = http.createServer((req, res) => { try {
     .invariant('night: every traffic signal column is a light source', rs => rs.every(r => r.signals > 0 && r.signals === r.signalsExpected))
     .invariant('night: every civil head has a glow point at its head (§CIVIL_LAMP_GLOW)', rs => rs.every(r => r.glowInScene && r.glowPts === r.civilHeads && r.glowAtHead === r.civilHeads))
     .invariant('night: civil heads throw more than an interior fixture (§CIVIL_LAMP_THROW median > 1)', rs => rs.every(r => r.throwMedian > 1))
+    .invariant('§GLOW_DAY: film frame at sun 30° (day) hides the road glow — no ghost squares', rs => rs.every(r => r.glowDay.parityRan && r.glowDay.dayVisible === false))
+    .invariant('§GLOW_DAY: film frame at sun 2° (dusk) shows it; teardown reset shows it', rs => rs.every(r => r.glowDay.duskVisible === true && r.glowDay.resetVisible === true))
+    .invariant('§GLOW_DAY: glow drawn with a round soft-dot map, not a bare square', rs => rs.every(r => r.glowDay.roundMap))
     .invariant('night: Alt+S world positions read the same list', rs => rs.every(r => r.worldPositions === r.fixtures))
     .invariant('lazy fly: no labels → road-discipline route logged, tour playing, scrubber visible', rs => rs.every(r => r.lazyLine && r.lazyWalk && r.lazyFirst === 'Start of highway' && r.lazyScrub))
-    .redControl(rs => rs.map(r => Object.assign(r, { nearTop: 0 })))
+    .redControl(rs => rs.map(r => Object.assign(r, { nearTop: 0, glowDay: Object.assign({}, r.glowDay, { dayVisible: true }) })))
     .run();
   logStream.end();
 })();

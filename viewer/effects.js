@@ -4567,6 +4567,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A._stillCamInsideNow = _gIn.inside;   // §STILL_SHADOW_FIT reads it (props only when outside)
       if (_gDay) {
         A._stillWindowGlowOff = true;
+        if (A._civilGlowSync) A._civilGlowSync('still');   // §GLOW_DAY
         // §STILL_LAMPS_OUTSIDE (red1 2026-09-24: seen through the glass, interiors look drab — "no light source falls
         // thru and internal are not playing their role"). &lampsout=1 keeps the lamps on for an outside daylight still
         // so interiors seen through windows are lit. Default 1 since red1 picked it 2026-09-26 ("good to have them on and bright
@@ -4833,6 +4834,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var lampsOut = _stillDial('_stillLampsOut', 'lampsout', 1, 1) > 0;   // §STILL_LAMPS_OUTSIDE default 1 (red1 2026-09-26), same as the still
       var lampsOff = day && inside === false && !lampsOut;
       A._stillWindowGlowOff = day; A._stillLampsOff = lampsOff;
+      if (A._civilGlowSync) A._civilGlowSync('film');   // §GLOW_DAY
       A._nightGlowMats.forEach(function(g) {
         if (!g.mat) return;
         var want = g.win ? (day ? 0 : g.glowEI) : (lampsOff ? 0 : g.glowEI);
@@ -4958,6 +4960,7 @@ async function setupEffects(A, renderer, scene, camera) {
     if (A._stillWindowGlowOff) {
       var _lampsWereOff = !!A._stillLampsOff;
       A._stillWindowGlowOff = false; A._stillLampsOff = false;
+      if (A._civilGlowSync) A._civilGlowSync('teardown');   // §GLOW_DAY
       var _gr = 0, _lr = 0;
       (A._nightGlowMats || []).forEach(function(g) {
         if (!g.mat) return;

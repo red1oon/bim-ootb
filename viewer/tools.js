@@ -2032,15 +2032,35 @@ function setupTools(A) {
     var g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    var m = new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, transparent: true,
+    // §GLOW_DAY: a soft round dot (radial sprite), not the bare 6 px square that read as a "ghost" by day.
+    if (!A._civilGlowDotTex) {
+      var cv = document.createElement('canvas'); cv.width = cv.height = 32;
+      var cx = cv.getContext('2d'), gr = cx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      cx.fillStyle = gr; cx.fillRect(0, 0, 32, 32);
+      A._civilGlowDotTex = new THREE.CanvasTexture(cv);
+    }
+    var m = new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, transparent: true, map: A._civilGlowDotTex,
       opacity: 0.95, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
     A._civilGlowPts = new THREE.Points(g, m);
     A._civilGlowPts.renderOrder = 5;
     A._civilGlowPts.userData.civilLampGlow = true;
+    A._civilGlowPts.visible = !A._stillWindowGlowOff;   // §GLOW_DAY: built during a daylight still/film → born hidden
     A.scene.add(A._civilGlowPts);
     var mh = pos.map(function(p) { return p.__intensityMult; }).sort(function(a, b) { return a - b; });
     console.log('§CIVIL_LAMP_GLOW heads=' + pos.length + ' sizePx=6 throwMult min=' + mh[0].toFixed(2) +
       ' median=' + mh[mh.length >> 1].toFixed(2) + ' max=' + mh[mh.length - 1].toFixed(2));
+    if (A.markDirty) A.markDirty();
+  };
+  // §GLOW_DAY (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §GLOW_DAY): the civil glow follows the ONE daylight flag
+  // A._stillWindowGlowOff (effects.js owns it: Alt+S still sets it, film parity rewrites it per frame, teardown resets it).
+  // Called right after each of those writes. No civil heads → no _civilGlowPts → no-op on every building.
+  A._civilGlowSync = function(src) {
+    var p = A._civilGlowPts; if (!p) return;
+    var want = !A._stillWindowGlowOff;
+    if (p.visible === want) return;
+    p.visible = want;
+    console.log('§CIVIL_LAMP_GLOW_DAY visible=' + (want ? 1 : 0) + ' src=' + src + ' heads=' + p.geometry.getAttribute('position').count);
     if (A.markDirty) A.markDirty();
   };
   A.toggleNightMode = function() {
