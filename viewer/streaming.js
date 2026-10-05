@@ -812,8 +812,38 @@ function setupStreaming(A) {
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i], bx = +r[6] || 0, by = +r[7] || 0, bz = +r[8] || 0;
       if (!(bz < Math.min(bx, by) && Math.max(bx, by) >= 0.1)) continue;
-      flat.push({ g: r[0], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
+      flat.push({ g: r[0], c: r[1], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
         y0: Math.floor(r[4] - by / 2), y1: Math.floor(r[4] + by / 2), zb: r[5] - bz / 2, zt: r[5] + bz / 2 });
+    }
+    // §ROOF_LAYER_BUDGET (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §LOAD): the 1 m grid costs the SUM of every
+    // flat element's plan area. Fleet max 381,732 cells (LTU_AHouse); a 2 km road site 13,416,479 (16.1 s on the main
+    // thread). Over budget → judge ONLY the classes the sole reader uses (_SURF_ENVELOPE, A._surfRowOf) and find cover
+    // through a 16 m bucket index with the SAME per-cell predicate. Measured identical membership for every envelope
+    // element on all 11 fleet DBs + JELAPANG (diff=0); under budget the path below is untouched.
+    var cellSum = 0;
+    for (var ci = 0; ci < flat.length; ci++) cellSum += (flat[ci].x1 - flat[ci].x0 + 1) * (flat[ci].y1 - flat[ci].y0 + 1);
+    if (cellSum > 2000000) {
+      var B = 16, bk = new Map();
+      flat.forEach(function(o, k) {
+        for (var i = Math.floor(o.x0 / B); i <= Math.floor(o.x1 / B); i++) for (var j = Math.floor(o.y0 / B); j <= Math.floor(o.y1 / B); j++) {
+          var c = i * 1048576 + j; var l = bk.get(c); if (!l) bk.set(c, l = []); l.push(k);
+        }
+      });
+      var judged = 0;
+      flat.forEach(function(e, k) {
+        if (!_SURF_ENVELOPE[e.c]) return;
+        judged++;
+        var cells = 0, covered = 0;
+        for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+          cells++; var l = bk.get(Math.floor(x / B) * 1048576 + Math.floor(y / B));
+          for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02 && o.x0 <= x && x <= o.x1 && o.y0 <= y && y <= o.y1) { covered++; break; } }
+        }
+        if (covered < 0.5 * cells) roof.add(e.g);
+      });
+      A._surfRoofGuids = roof;
+      console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size +
+        ' ms=' + (performance.now() - t0).toFixed(0) + ' path=bucket cells=' + cellSum + ' budget=2000000 judged=' + judged + ' (envelope classes only)');
+      return;
     }
     flat.forEach(function(e, k) { for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) { var c = x + ',' + y; var l = grid.get(c); if (!l) grid.set(c, l = []); l.push(k); } });
     flat.forEach(function(e, k) {
@@ -825,7 +855,7 @@ function setupStreaming(A) {
       if (covered < 0.5 * cells) roof.add(e.g);
     });
     A._surfRoofGuids = roof;
-    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0));
+    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0) + ' path=grid cells=' + cellSum);
   };
   A._surfRowOf = function(el) {
     if (A._alphaOf(el.rgba) < 1.0) return 'R9';
@@ -2127,7 +2157,7 @@ function setupStreaming(A) {
               var _mcN = Object.keys(_mcOwn).length, _mcC = Object.keys(A.buildingCentres).length;
               var _mcPend = (A._mergePending || []).filter(function(n) { return !A.buildingsRendered.has(n); }).length;
               // §FB.4: a witness that can say WRONG — fewer buildings drawn than the DB holds, nothing queued.
-              var _mcVerdict = _mcN >= _mcC ? 'COMPLETE' : (_mcPend > 0 ? 'DRAINING' : 'INCOMPLETE');
+              var _mcVerdict = _mcN >= _mcC ? 'COMPLETE' : ((_mcPend > 0 || A.streaming) ? 'DRAINING' : 'INCOMPLETE');  // drain shifts the queue BEFORE the next building streams
               console.log('§MERGE_CONTRACT buildings=' + _mcN +
                 ' rendered=' + JSON.stringify(_mcOwn) +
                 ' centres=' + _mcC + ' pending=' + _mcPend + ' verdict=' + _mcVerdict);
