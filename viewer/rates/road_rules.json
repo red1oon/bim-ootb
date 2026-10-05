@@ -1,0 +1,85 @@
+{
+  "_doc": "Road standards check (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MC). Every limit is read from the cited JKR document; page = printed page number. Read by viewer/road_check.js. Never type a limit here without its clause.",
+  "_sources": {
+    "ATJ_2A": { "title": "Arahan Teknik (Jalan) 2A/85 (Pindaan 2019) Manual on Traffic Control Devices: Standard Traffic Signs", "publisher": "Jabatan Kerja Raya Malaysia", "url": "http://epsmg.jkr.gov.my/images/8/81/ATJ_2A.85_P_2019-WM.pdf", "status": "primary" },
+    "ATJ_2B": { "title": "Arahan Teknik (Jalan) 2B/85 (Pindaan 2019) Manual on Traffic Control Devices: Standard Traffic Signs Application", "publisher": "Jabatan Kerja Raya Malaysia", "url": "http://epsmg.jkr.gov.my/images/6/6b/4._ATJ2B.85(Pindaan_2019)_internal_used_17122019.pdf", "status": "primary" },
+    "ATJ_2D": { "title": "Arahan Teknik (Jalan) 2D/85 (Pindaan 2019) Manual on Traffic Control Devices: Road Marking and Delineation", "publisher": "Jabatan Kerja Raya Malaysia", "url": "http://epsmg.jkr.gov.my/images/9/99/Atj_2d-ori_-_wm.pdf", "status": "primary" }
+  },
+
+  "_area_type_note": "Not in the model data. ATJ 2B §1.3 sets 1.8 m (rural roadside; warning/regulatory signs on expressways or divided roads) and 2.2 m (urban/business/residential). Change to \"urban\" when the road is urban. The report prints which one ran.",
+  "area_type": "rural",
+
+  "selectors": {
+    "_note": "Which data the rules read. Project template field names live here, not in code.",
+    "road_discipline": "ROAD",
+    "sign_discipline": "SIGNAGE",
+    "sign_code_pset": "17_Code",
+    "sign_name_pset": "16_Name",
+    "component_pset": "01_Component_Name",
+    "stud_component": "ROAD STUD",
+    "obstruction_marker_codes": ["WD. 24a", "WD. 24b"],
+    "chevron_delineator_codes": ["WD. 39a", "WD. 39b"]
+  },
+
+  "measurement": {
+    "_note": "Geometry method settings — OURS, not from any standard. Printed in the report as assumptions.",
+    "slice_step_m": 0.05,
+    "face_cover_factor": 1.5,
+    "face_cover_margin_m": 0.05,
+    "road_search_m": 10,
+    "road_top_band_m": 0.5,
+    "secondary_sign_plan_m": 0.3,
+    "stud_link_factor": 2,
+    "spacing_tolerance_m": 0.5
+  },
+
+  "road_rules": [
+    { "name": "sign_mounting_height", "label": "Sign mounting height",
+      "clause": "ATJ 2B/85 (Pindaan 2019) §1.3, p.3", "verb": "shall", "severity": "CRITICAL",
+      "limits_m": { "rural": 1.8, "urban": 2.2, "secondary": 1.5 },
+      "text": "Traffic signs erected at the roadside in rural areas shall be mounted at a height not less than 1.8 m above the level of the roadway edge, measured from the bottom of the sign. In urban ... not less than 2.2 m. ... a secondary sign ... mounted below a major sign ... not less than 1.5 m." },
+
+    { "name": "obstruction_marker_height", "label": "Obstruction marker height",
+      "clause": "ATJ 2B/85 (Pindaan 2019) §2.4.2, p.24", "verb": "should", "severity": "WARNING",
+      "limit_m": 1.2,
+      "text": "When erected, this marker should have vertical clearance of 1.2 m above the level of the roadway edge, measured from the bottom of the marker." },
+
+    { "name": "sign_lateral_clearance", "label": "Sign lateral clearance",
+      "clause": "ATJ 2B/85 (Pindaan 2019) §1.4, p.3; chevrons §2.3.4, p.23", "verb": "should", "severity": "WARNING",
+      "limit_m": 0.6, "chevron_recommended_m": 1.8,
+      "text": "Traffic signs should not be placed less than 0.6 m from the edge of road shoulder, or if none, 3.6 m from the edge of the travelled way. ... [Chevron delineator] a lateral clearance of 1.8m is recommendable.",
+      "caveat": "Measured to the nearest ROAD-file solid. Whether that solid's edge is the shoulder edge, a kerb or the travelled way is not in the data; the 0.6 m shoulder case is applied." },
+
+    { "name": "chevron_spacing", "label": "Chevron delineator spacing",
+      "clause": "ATJ 2B/85 (Pindaan 2019) §2.3.4, p.23", "verb": "shall", "severity": "WARNING",
+      "spacing_m": 6,
+      "text": "The Chevron Delineator signs, when used, shall be erected on the outside of a curve, laterally 6 m apart from each other, in line with and at right angles to, approaching traffic.",
+      "caveat": "Nearest other chevron delineator; tolerance from measurement.spacing_tolerance_m (ours)." },
+
+    { "name": "rrpm_spacing", "label": "Road stud (RRPM) spacing",
+      "clause": "ATJ 2D/85 (Pindaan 2019) Table 4.2, p.59", "verb": "table", "severity": "WARNING",
+      "rows": [
+        { "application": "Centre / lane / no-passing / edge lines, median of divided road — on curves", "spacing_m": 12 },
+        { "application": "Centre / lane / no-passing / edge lines, median of divided road — on straight", "spacing_m": 24 },
+        { "application": "Traffic islands, medians, etc.", "min_m": 4, "max_m": 12 }
+      ],
+      "caveat": "Which application a stud group serves is not in the data; a group is flagged only when its spacing matches no row." }
+  ],
+
+  "atj2a_codes": {
+    "_note": "Sign codes found as headings in the ATJ 2A/85 (Pindaan 2019) text (pdftotext -layout), value = text line. Codes absent here may still be in the document as images, or in ATJ 2C (guide signs) — absence is 'not verified', never a finding.",
+    "RP. 1": 928, "RP. 2a": 967, "RP. 2b": 1024, "RP. 3": 7539, "RP. 4": 1123, "RP. 5": 1155, "RP. 6a": 1222, "RP. 6b": 1281,
+    "RP. 7": 1318, "RP. 8": 1417, "RP. 8a": 7591, "RP. 8d": 7603, "RP. 8g": 7628, "RP. 9a(i)": 1578, "RP. 9b": 1666, "RP. 9b(i)": 7654,
+    "RP. 10": 1760, "RP. 11": 1798, "RP. 12": 1860, "RP. 13": 1892, "RP. 14": 1962, "RP. 15": 1978, "RP. 16": 2042, "RP. 17": 2068, "RP. 18": 2134,
+    "RM. 1": 2219, "RM. 1(i)": 7762, "RM. 1(iv)": 7774, "RM. 2": 2382, "RM. 2(ii)": 7806, "RM. 2(v)": 7819, "RM. 3": 2587, "RM. 4": 2683,
+    "RM. 4(i)": 7832, "RM. 5": 2764, "RM. 6": 2854, "RM. 7": 2924, "RM. 8": 2988, "RM. 9": 3029, "RM. 10": 3067, "RM. 11": 3160,
+    "WD. 1": 3253, "WD. 2": 3277, "WD. 3": 3360, "WD. 4": 3395, "WD. 5": 3459, "WD. 6": 3527, "WD. 7": 3573, "WD. 8": 3589, "WD. 9": 3664,
+    "WD. 10": 3694, "WD. 11": 3737, "WD. 12": 3803, "WD. 13": 3817, "WD. 14": 3858, "WD. 15": 3902, "WD. 16": 3932, "WD. 17": 3956,
+    "WD. 18": 3991, "WD. 19": 4029, "WD. 20": 4104, "WD. 22": 4172, "WD. 23": 4198, "WD. 24a": 4247, "WD. 24b": 4247, "WD. 25": 4335,
+    "WD. 26": 4379, "WD. 27a": 4464, "WD. 27b": 4494, "WD. 27c": 4556, "WD. 27d": 4573, "WD. 27e": 4592, "WD. 28a": 4660, "WD. 29": 4745,
+    "WD. 30a": 4792, "WD. 30b": 4792, "WD. 31": 4882, "WD. 32": 4909, "WD. 33": 5021, "WD. 34": 5040, "WD. 35": 5099, "WD. 36": 5120,
+    "WD. 37": 5192, "WD. 38a": 5227, "WD. 38b": 8180, "WD. 39a": 5399, "WD. 39b": 5399, "WD. 40a": 5471, "WD. 40b": 5471, "WD. 41": 5531,
+    "WD. 42": 5577, "WD. 43": 5621, "WD. 44": 5674, "WD. 45a": 5715, "WD. 45b": 5781, "WD. 46a": 5813, "WD. 46b": 5887, "WD. 46c": 5922,
+    "WD. 47": 5987, "WD. 48": 6032, "WD. 49": 6093, "WD. 50": 6123, "WD. 51": 6192
+  }
+}
