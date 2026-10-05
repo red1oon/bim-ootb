@@ -23,8 +23,8 @@ function setupTools(A) {
       // BUILDING rules: a bridge merged into a road has a "Level 1" slab at 56.58 m that buried 1,394 road pieces
       // under the Night/Shadow ground plane; Step 4 over all elements = 43.46 m, below the road (p2 51.74).
       // Fleet: 0 civil-discipline rows in every buildings/*.db → gate false → Steps 1-3 unchanged.
-      if (typeof SEQUENCE_CIVIL !== 'undefined') {
-        var _cq = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(SEQUENCE_CIVIL).join("','") + "')");
+      if (window.SEQUENCE_CIVIL) {
+        var _cq = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')");
         var _cn = (_cq.length && _cq[0].values[0][0]) || 0;
         if (_cn > 0) { _gSrc = 'civil'; console.log('§GROUND_CIVIL civilRows=' + _cn + ' → p2-bottom over all elements (building slab steps skipped)'); }
       }
