@@ -6885,6 +6885,8 @@ async function setupEffects(A, renderer, scene, camera) {
   // §REVEAL_SHELL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §REVEAL_SHELL): the ONE owner of what the reveal hides as the
   // "shell". A building's shell is its architecture + structure; a road's shell is also its pavement (ROAD) — with only ARC/STR
   // hidden, a road's ghost round hid the bridge and nothing along the road. Gate: A.isCivilModel(); buildings unchanged.
+  // §ALTC_V2 V6: one owner for "the reveal plays inside the drive" (road films) — the editor's duration estimate reads it.
+  A.cpeRevealInDrive = function() { return typeof A.isCivilModel === 'function' && A.isCivilModel(); };
   A.cpeRevealShellDiscs = function() {
     var civil = typeof A.isCivilModel === 'function' && A.isCivilModel();
     return civil ? ['ARC', 'STR', 'ROAD'] : ['ARC', 'STR'];
@@ -6966,6 +6968,17 @@ async function setupEffects(A, renderer, scene, camera) {
   //   rise proper (remainder of b.reveal..b.rise) — null: ARC/STR solid again, normal room titles.
   A.cpeRevealVisualAt = function(plan, tNorm) {
     var b = plan && plan.beats, rv = plan && plan.reveal;
+    // §ALTC_V2 V6 (CIVIL_HIGHWAY_JELAPANG.md §ALTC_V2): a road film's parade plays INSIDE the drive's second half — n slots
+    // of one discipline + one all-together slot, equal shares of [a, b], the shell (A.cpeRevealShellDiscs) hidden throughout.
+    if (b && rv && rv.inDrive && rv.discs && rv.discs.length) {
+      var _ia = rv.inDrive.a, _ib = rv.inDrive.b;
+      if (!(_ib > _ia) || tNorm <= _ia || tNorm >= _ib) return null;
+      var _in = rv.discs.length, _per = (_ib - _ia) / (_in + 1), _ix = Math.floor((tNorm - _ia) / _per);
+      if (_ix >= _in) return { phase: 'tail-all', discs: rv.discs.slice() };
+      var _slotSec = (tNorm - _ia - _ix * _per) * (plan.durationSec || 0);
+      return { phase: 'tail-one', discs: [rv.discs[_ix]],
+               visDiscs: (_slotSec < CPE_REVEAL_FADE_SEC && _ix > 0) ? [rv.discs[_ix - 1], rv.discs[_ix]] : [rv.discs[_ix]] };
+    }
     if (!b || !rv || !rv.discs || !rv.discs.length || !(b.reveal > b.out)) return null;
     if (tNorm <= b.out) return null;
     var tP = (b.pullout != null && b.pullout > b.out) ? b.pullout : b.out;
@@ -7739,6 +7752,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // tour's speed. Buildings: both constants unchanged.
     var _civilPace = !!(A.isCivilModel && A.isCivilModel());
     var _walkMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_WALK_MPS, _pullMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_PULLBACK_MPS;
+    var _diveMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_DIVE_MPS;   // §ALTC_ONEWAY: the road fly-in at the film's cruise too
     var arcBboxRaw = _buildingBBoxArc();
     var arcBbox = arcBboxRaw || _buildingBBoxIfc();
     var envelope = arcBbox ? Math.max(arcBbox.xMax - arcBbox.xMin, arcBbox.yMax - arcBbox.yMin, 50) : 100;
@@ -8185,6 +8199,19 @@ async function setupEffects(A, renderer, scene, camera) {
       cpeOrbitDY = exitOuter.y - derivedOuter.y;
       console.log('§CINEMA_PATH_EDIT authored waypoints=' + outWp.length + ' (derived route replaced)' +
         ' orbitScale=' + cpeOrbitScale.toFixed(3) + ' orbitDY=' + cpeOrbitDY.toFixed(2) + 'm');
+    }
+    // §ALTC_V2 V4 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_V2): a road film's only orbit is a close-up at the
+    // junction the drive ENDS at — pivot = that junction's signal-head centroid, radius = its own r (orbitRadius below) —
+    // not the whole-site ARC bbox centre. Junctions come from the route (tour.js §CIVIL_ROUTE_JUNCTION). Buildings: no-op.
+    var _civJ = null;
+    if (_civilPace) {
+      var _cfo = _civilFilmOv(), _js = (_cfo && _cfo.junctions) || [], _jd = Infinity;
+      _js.forEach(function(j) { var d = Math.hypot(j.x - exitOuter.x, j.z - exitOuter.z); if (d < _jd) { _jd = d; _civJ = j; } });
+      if (_civJ) {
+        pivot = { x: _civJ.x, y: _civJ.y, z: _civJ.z }; pivotSrc = 'civil-junction';
+        cpeOrbitScale = 1; cpeOrbitDY = 0;
+        console.log('§ALTC_V2 orbit pivot=junction heads=' + _civJ.n + ' r=' + _civJ.r.toFixed(1) + 'm driveEndToJunction=' + _jd.toFixed(1) + 'm');
+      } else console.log('§ALTC_V2 orbit pivot=site (no junction on the route) VACUOUS');
     }
     // ══ §CINEMA_PATH_EDITOR_MODEL items 5-7: the waypoints are CONTROL points, not corners. The
     // flown curve CUTS INSIDE every corner (user: "yes cut inside"), so a sharp corner is not a
@@ -8679,6 +8706,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // swallowing what the user dragged.
     var orbitRadiusWant = fillDistance * cpeOrbitScale;
     var orbitRadius = Math.max(radiusMin, Math.min(radiusMax, orbitRadiusWant));
+    if (_civJ) orbitRadius = _civJ.r;   // §ALTC_V2 V4: the junction's own radius (heads' spread + 15 m), a close-up
     if (cpeOrbitScale !== 1 || cpeOrbitDY !== 0)
       console.log('§CINEMA_ORBIT_ELASTIC scale=' + cpeOrbitScale.toFixed(3) +
         ' requested=' + orbitRadiusWant.toFixed(1) + ' granted=' + orbitRadius.toFixed(1) +
@@ -9074,10 +9102,14 @@ async function setupEffects(A, renderer, scene, camera) {
         // final 2s all-together — KEPT (see spec file's dated section for why the all-together slot
         // was kept rather than dropped: the user asked for it repeatedly elsewhere in this file's
         // own history, e.g. the ORIGIN ask and the Mechanism B pacing quote).
-        _revealPulloutSec = CINEMA_REVEAL_PULLOUT_SEC;
-        _revealFlybackSec = totalLen / _pullMps;
-        _revealRoundSec = totalLen / _walkMps;
-        _revealTailSec = 2 * _revealDiscs.length + 2;
+        // §ALTC_ONEWAY (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md 2g, user 2026-10-05: "one way where buildup then reveal
+        // same … below 3 mins and 3 hrs"): a road film is ONE drive — no pull-out, no fly-back, no second lap (zero-width
+        // tP=tF=tV=tO, the shipped reveal-off geometry). The disc-parade tail below stays (rise beat). Buildings unchanged.
+        _revealPulloutSec = _civilPace ? 0 : CINEMA_REVEAL_PULLOUT_SEC;
+        _revealFlybackSec = _civilPace ? 0 : totalLen / _pullMps;
+        _revealRoundSec = _civilPace ? 0 : totalLen / _walkMps;
+        if (_civilPace) console.log('§ALTC_ONEWAY reveal one-way (civil): pullout/flyback/round2 = 0, tail kept');
+        _revealTailSec = _civilPace ? 0 : 2 * _revealDiscs.length + 2;   // §ALTC_V2 V6: the road's parade plays IN the drive
         _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
         console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' flybackSec=' +
           _revealFlybackSec.toFixed(1) + ' round2Sec=' + _revealRoundSec.toFixed(1) + ' tailSec=' +
@@ -9098,7 +9130,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // not CONTENT (rate of change), so two equal-length equal-turning walks through empty and dense
       // areas billed identically. `out` below now carries the same `* (1 + (SWING-1)*busy)` factor
       // the dive uses, with busy = _walkBusy from _walkNoiseBuild above.
-      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / CINEMA_DIVE_MPS * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
+      dive:  Math.max(CINEMA_DIVE_MIN_SEC, _diveEff / _diveMps * (1 + (CINEMA_PACE_SWING - 1) * _diveBusy)),
       // §CPE_SPIN_WHIP — the angle ACTUALLY flown (no 180 cap), at the same rate every other turn in
       // the film is charged, times the same noise multiplier the dive and walk carry.
       // §CPE_SETTLE_HOLD (2026-08-04, corrected): no floor at all — real turn time plus whatever the
@@ -9199,6 +9231,7 @@ async function setupEffects(A, renderer, scene, camera) {
     var _riseGrown = null, _riseKept = null, _stealSec = 0;
     try {
       var _rl = (typeof A.storeyRevealList === 'function' && A.storeyRevealList()) || [];
+      if (_civilPace && _rl.length) { console.log('§ALTC_V2 storey pull-back growth skipped (road film: the bridge storeys are not the subject) storeys=' + _rl.length); _rl = []; }
       if (_rl.length && durationSec > 0) {
         var _cn = _rl.map(function (x) { return x.n || 0; }).filter(function (x) { return x > 0; }).sort(function (a, b) { return a - b; });
         var _cm = _cn.length ? (_cn.length % 2 ? _cn[(_cn.length - 1) / 2] : (_cn[_cn.length / 2 - 1] + _cn[_cn.length / 2]) / 2) : 0;
@@ -9389,7 +9422,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' + round2 ' + _natSec.reveal.toFixed(1) + ' + tail ' + _natSec.tail.toFixed(1) +
       ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
       '  (walk ' + totalLen.toFixed(1) + 'm @' + _walkMps + 'm/s, dive ' + diveDist.toFixed(1) +
-      'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + _pullMps +
+      'm @' + _diveMps + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + _pullMps +
       'm/s, dive raw ' + diveDist.toFixed(0) + 'm capped to envelope ' + _diveEff.toFixed(0) +
       'm, spin ' + _spinDeg.toFixed(0) + 'deg flown @' + CINEMA_TURN_DPS + 'deg/s x' +
       _spinBusyMult.toFixed(2) + ' busy)' +
@@ -10472,7 +10505,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' (fanRays=' + CINEMA_FAN_RAYS + ' spaceCands=' + spaceCands.length + ' exitCands=' + exitScored.length + ')');
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
-             pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit,
+             pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit, orbitRadius: orbitRadius,
              beats: { dive: tD, spin: tS, out: tO, pullout: tP, flyback: tF, reveal: tV, rise: tR },
              // §CPE_DISCIPLINE_REVEAL_PULLOUT — the pacing info A.cpeRevealVisualAt(plan, tNorm) and
              // A.cpeRevealCaptionAt(plan, tNorm) need to compute which visual phase/caption a given
@@ -10482,7 +10515,9 @@ async function setupEffects(A, renderer, scene, camera) {
              // inside the now-larger [tV,tR] span. `qtyCost` is the "good touch" nice-to-have (see
              // A.cpeRevealDiscQtyCost's own comment) — {} when the DB query is unavailable/failed.
              reveal: { discs: _revealDiscs, pulloutSec: _revealPulloutSec, roundSec: _revealRoundSec,
-                       tailSec: _revealTailSec, riseSec: _useSec.rise, qtyCost: _revealQtyCost },
+                       tailSec: _revealTailSec, riseSec: _useSec.rise, qtyCost: _revealQtyCost,
+                       // §ALTC_V2 V5/V6: road film — build-up tops out at the drive's midpoint, the parade fills [a, b]
+                       inDrive: (_civilPace && _revealDiscs.length) ? { a: _civilTopoutU(tS, tO), b: tO } : null },
              // §STOREY_HIGHLIGHT_REVEAL — arms the LAST `windowFrac` of the `pullback` beat, ending
              // exactly at plan.beats.rise (orbit start) — see §STOREY_REVEAL_WINDOW above for the
              // corrected math (this is NOT the orbit beat itself). cpe_storey_reveal.js's
@@ -10743,7 +10778,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // orbit's elastic control point. Paced like Fly (25 m/s) via _walkMps/_pullMps in the plan. Without it the plan dives to the bbox centre of a
   // 2 km road and exits through a "facade" (effects.js §CINEMA_SPACE fallback) — no road at all. Explicit null (G5 control)
   // and any authored edit still win; buildings return null here → derived plan unchanged.
-  var CIVIL_FILM_SPEED = 25;   // presentation: m/s along the road — same as the Fly tour's SPEED
+  // §ALTC_ONEWAY (CIVIL_HIGHWAY_JELAPANG.md 2g): 25 → 35 m/s so the road film lands under 3 min (bake under ~3 h at the measured
+  // 2-3 s/frame). The noise law (CINEMA_PACE_SWING) still slows busy stretches — quiet straights cruise, junctions ease.
+  var CIVIL_FILM_SPEED = 35;   // presentation: m/s along the road (the Fly tour keeps its own 25, tour.js SPEED)
+  // §ALTC_V2 V5: the road build-up tops out by the drive's midpoint AND before the film's half-way point (user 2026-10-05:
+  // "buildup finishes early before half way point.. the rest is discipline reveal") — whichever comes first, never before
+  // the drive starts. CIVIL_TOPOUT_MAX_U = the film's half-way point.
+  var CIVIL_TOPOUT_MAX_U = 0.5;
+  function _civilTopoutU(tS, tO) {
+    var mid = (tS + tO) / 2;
+    return (mid > CIVIL_TOPOUT_MAX_U && tS < CIVIL_TOPOUT_MAX_U) ? CIVIL_TOPOUT_MAX_U : mid;
+  }
   function _civilFilmOv() {
     if (!(A.isCivilModel && A.isCivilModel()) || typeof A.civilRoutePath !== 'function') return null;
     if (A._civilFilmOvDb === A.db) return A._civilFilmOvC;   // route is per model — the plan is re-asked many times
@@ -10752,7 +10797,14 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!R || !R.path || R.path.length < 2) { console.log('§ALTC_HIGHWAY VACUOUS — civil model but no route'); return null; }
     console.log('§ALTC_HIGHWAY route=' + R.src + ' waypoints=' + R.path.length + ' lenM=' + R.lenM.toFixed(0) +
       ' paceMps=' + CIVIL_FILM_SPEED + ' junctions=' + R.stops.length);
-    A._civilFilmOvC = { waypoints: R.path.map(function(p) { return { x: p.x, y: p.y, z: p.z }; }) };
+    // §ALTC_V2 V1: drive TOWARDS the junction with the most signal heads, so the film's only orbit (V4) closes on it.
+    var _big = null; (R.stops || []).forEach(function(j) { if (!_big || j.n > _big.n) _big = j; });
+    var _rev = !!(_big && _big.at < (R.path.length - 1) / 2);
+    var _pts = R.path.map(function(p) { return { x: p.x, y: p.y, z: p.z }; });
+    if (_rev) _pts.reverse();
+    console.log('§ALTC_V2 seed reversed=' + _rev + ' bigJunction heads=' + (_big ? _big.n : 0) + ' at=' + (_big ? _big.at : -1) + ' of ' + R.path.length);
+    A._civilFilmOvC = { waypoints: _pts,
+      junctions: (R.stops || []).map(function(j) { return { x: j.x, y: j.y, z: j.z, r: j.r, n: j.n }; }) };
     return A._civilFilmOvC;
   }
   A.cinemaPathPlan = function(durationSec, ov) {

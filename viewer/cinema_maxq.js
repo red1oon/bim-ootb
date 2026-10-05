@@ -208,6 +208,10 @@
   var BUILDUP_TOPOUT_FALLBACK_U = 0.92;  // ≈ the orbit boundary on measured plans (Hospital 0.929),
                                          // used only when a plan carries no beats (older cache).
   function _buildupTopoutU(plan) {
+    // §ALTC_V2 V5 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_V2): a road film tops out at the drive's midpoint —
+    // the second half of the drive is the discipline parade (plan.reveal.inDrive, set only for civil models).
+    if (plan && plan.reveal && plan.reveal.inDrive && plan.reveal.inDrive.a > 0 && plan.reveal.inDrive.a < 1)
+      return { u: plan.reveal.inDrive.a, src: 'plan.reveal.inDrive.a (road film: build-up by the drive midpoint)' };
     // §CPE_DISCIPLINE_REVEAL (2026-08-14, real defect found on a Hospital bake — user: "2nd round
     // seems to cut over way before the stop stick without finishing the full buildup"). The reveal
     // round exists to show off the FINISHED building; topping out at plan.beats.rise (orbit start,

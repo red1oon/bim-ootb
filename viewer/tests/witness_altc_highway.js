@@ -23,7 +23,7 @@ const server = http.createServer((req, res) => { try {
 } catch (e) { res.writeHead(500); res.end(); } });
 async function probe(b, url, tag) {
   const p = await b.newPage(); const con = [];
-  p.on('console', m => { const t = m.text(); if (/§ALTC_HIGHWAY|§SUN_ARC_STEP|§CINEMA_PACING/.test(t)) con.push(t); });
+  p.on('console', m => { const t = m.text(); if (/§ALTC_HIGHWAY|§ALTC_V2|§SUN_ARC_STEP|§CINEMA_PACING/.test(t)) con.push(t); });
   await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 600000 });
   let ok = false;
   for (let i = 0; i < 900 && !ok; i++) { await new Promise(r => setTimeout(r, 1000)); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && Object.keys(APP.guidMap || {}).length && (!APP.isCivilModel || !APP.isCivilModel() || APP._civilLabels))); } catch (e) {} }
@@ -33,14 +33,38 @@ async function probe(b, url, tag) {
     const plan = APP.cinemaPathPlan(60);
     const R = civil && APP.civilRoutePath ? APP.civilRoutePath() : null;
     const wp = (plan && plan.waypoints) || [];
-    let wpMatch = 0; if (R) wp.forEach((w, i) => { const q = R.path[i]; if (q && Math.hypot(w.x - q.x, w.y - q.y, w.z - q.z) < 0.01) wpMatch++; });
-    const st = plan && plan.settle, s0 = R && R.path[0];
+    // §ALTC_V2 V1: the seed drives TOWARDS the junction with the most signal heads — the route may be reversed
+    const big = R ? R.stops.reduce((m, j) => (!m || j.n > m.n ? j : m), null) : null;
+    const RP = R ? (big && big.at < (R.path.length - 1) / 2 ? R.path.slice().reverse() : R.path) : null;
+    let wpMatch = 0; if (RP) wp.forEach((w, i) => { const q = RP[i]; if (q && Math.hypot(w.x - q.x, w.y - q.y, w.z - q.z) < 0.01) wpMatch++; });
+    const st = plan && plan.settle, s0 = RP && RP[0];
     const settleToStart = (st && s0) ? Math.hypot(st.x - s0.x, st.z - s0.z) : null;
     const el0 = APP._sunArcStep(0), el1 = APP._sunArcStep(1);
+    // §ALTC_ONEWAY: the SAME plan with Reveal ticked (road: seeded with its route, as the editor does; building: derived)
+    const ovR = civil && RP ? { waypoints: RP.map(p => ({ x: p.x, y: p.y, z: p.z })), reveal: true } : { reveal: true };
+    const pr = APP.cinemaPathPlan(60, ovR);
+    const rv = (pr && pr.reveal) || {}, sec = (pr && pr.sec) || {}, bt = (pr && pr.beats) || {};
+    // §ALTC_V2 V4: orbit at the big junction; V5: build-up done at the drive midpoint; V6: parade only inside [a, b]
+    const v2 = {};
+    if (civil && big && pr) {
+      const last = RP[RP.length - 1];
+      v2.driveEndToBigM = +Math.hypot(last.x - big.x, last.z - big.z).toFixed(1); v2.bigR = +big.r.toFixed(1); v2.bigHeads = big.n;
+      v2.pivotSrc = pr.pivotSrc; v2.pivotToBigM = +Math.hypot(pr.pivot.x - big.x, pr.pivot.z - big.z).toFixed(2); v2.orbitR = pr.orbitRadius != null ? +pr.orbitRadius.toFixed(1) : null;
+    }
+    if (rv.inDrive) {
+      const a = rv.inDrive.a, z = rv.inDrive.b; v2.a = +a.toFixed(4); v2.b = +z.toFixed(4); v2.mid = +((bt.spin + bt.out) / 2).toFixed(4); v2.out = +bt.out.toFixed(4);
+      v2.buAtMid = APP.buildupTAt ? +APP.buildupTAt(a + 1e-6, pr).toFixed(4) : null; v2.buBefore = APP.buildupTAt ? +APP.buildupTAt(a - 0.01, pr).toFixed(4) : null;
+      let outside = 0, one = new Set(), all = 0;
+      for (let t = 0; t <= 1; t += 0.0005) { const ph = APP.cpeRevealVisualAt(pr, t); if (!ph) continue; if (t <= a || t >= z) outside++; if (ph.phase === 'tail-one') one.add(ph.discs[0]); if (ph.phase === 'tail-all') all++; }
+      v2.phaseOutside = outside; v2.onesSeen = one.size; v2.discs = rv.discs.length; v2.allSamples = all;
+    }
     return { civil, wp: wp.length, routePts: R ? R.path.length : 0, wpMatch, settleToStart: settleToStart == null ? null : +settleToStart.toFixed(2),
-      el0: +(+el0).toFixed(1), el1: +(+el1).toFixed(1), naturalTotal: plan && plan.naturalTotal ? +plan.naturalTotal.toFixed(1) : null };
+      el0: +(+el0).toFixed(1), el1: +(+el1).toFixed(1), naturalTotal: plan && plan.naturalTotal ? +plan.naturalTotal.toFixed(1) : null,
+      revealTotal: pr && pr.naturalTotal ? +pr.naturalTotal.toFixed(1) : null, revealRound2Sec: rv.roundSec != null ? +(+rv.roundSec).toFixed(1) : null,
+      revealFlybackSec: sec.flyback != null ? +(+sec.flyback).toFixed(1) : null, revealTailSec: rv.tailSec != null ? +(+rv.tailSec).toFixed(1) : null,
+      revealPivotSrc: pr && pr.pivotSrc, v2 };
   });
-  r.lines = con.filter(l => /§ALTC_HIGHWAY/.test(l)).slice(0, 2);
+  r.lines = con.filter(l => /§ALTC_HIGHWAY/.test(l)).slice(0, 2); r.v2lines = con.filter(l => /§ALTC_V2/.test(l));
   const pc = con.filter(l => /§CINEMA_PACING/.test(l)).pop() || ''; const wm = pc.match(/\(walk [0-9.]+m @([0-9.]+)m\/s/);
   r.walkMps = wm ? +wm[1] : null; r.pacing = pc.slice(0, 200);
   log('  [' + tag + '] ' + JSON.stringify(r)); await p.close(); return r;
@@ -60,7 +84,14 @@ async function probe(b, url, tag) {
     ['road sun arc 15° → 6° (late afternoon → dusk)', road.el0 === 15 && road.el1 === 6],
     ['building not seeded with a road (no §ALTC_HIGHWAY line)', bld.civil === false && bld.lines.length === 0],
     ['building sun arc unchanged 55° → 6°', bld.el0 === 55 && bld.el1 === 6],
-    ['road film paced at the Fly speed (25 m/s) — natural length under 5 min, was 1243 s', road.walkMps === 25 && road.naturalTotal < 300],
+    ['road film cruise 35 m/s (§ALTC_ONEWAY) — was 2.3 m/s interior walk (1243 s)', road.walkMps === 35],
+    ['§ALTC_V2 V3 road film WITH Reveal under 3 min, one drive (round 2 + fly-back + tail = 0)', road.revealTotal < 180 && road.revealRound2Sec === 0 && road.revealFlybackSec === 0 && road.revealTailSec === 0],
+    ['§ALTC_V2 V1 drive ends at the big junction (≤ its r)', road.v2.driveEndToBigM != null && road.v2.driveEndToBigM <= road.v2.bigR],
+    ['§ALTC_V2 V4 orbit pivot = big junction (≤ 1 m), radius = its r', road.v2.pivotSrc === 'civil-junction' && road.v2.pivotToBigM <= 1 && road.v2.orbitR === road.v2.bigR],
+    ['§ALTC_V2 V5 build-up complete by min(drive midpoint, film half-way), not before', road.v2.a === +Math.min(road.v2.mid, 0.5).toFixed(4) && road.v2.a <= 0.5 && road.v2.buAtMid === 1 && road.v2.buBefore < 1],
+    ['§ALTC_V2 V6 parade only inside the drive second half, every discipline + all-together shown', road.v2.b === road.v2.out && road.v2.phaseOutside === 0 && road.v2.onesSeen === road.v2.discs && road.v2.discs > 0 && road.v2.allSamples > 0],
+    ['building orbit pivot not a junction (non-impact)', bld.revealPivotSrc !== 'civil-junction' && !bld.v2.a],
+    ['building Reveal still flies its second lap (non-impact)', bld.revealRound2Sec > 0 && bld.revealFlybackSec > 0],
     ['building film pace unchanged (2.3 m/s interior walk)', bld.walkMps === 2.3],
   ];
   let fail = 0; checks.forEach(([n, v]) => { if (!v) fail++; log('  ' + (v ? 'PASS ' : 'FAIL ') + n); });
