@@ -1655,7 +1655,8 @@ function setupTools(A) {
             } else { cBox++; pts = [[cx, cy, cz + bz / 2]]; }   // no mesh: box top (centroid ± half-extent, approximate)
             pts.forEach(function(q, hi) {
               A._nightFixtures.push({ x: q[0], y: q[1], z: q[2], name: nm, h: 0.3, bw: 0, bd: 0, rz: rz,
-                guid: hi === 0 ? guid : null, ghash: null, civil: true });
+                guid: hi === 0 ? guid : null, ghash: null, civil: true,
+                mountH: Math.max(0, q[2] - bottomOf[guid]) });   // §CIVIL_LAMP_THROW — head height above its own column base
               cHeads++;
             });
           });
@@ -1753,6 +1754,35 @@ function setupTools(A) {
     return source;
   };
 
+  // §CIVIL_LAMP_GLOW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §NL step 1): only 30 nearest heads are point lights,
+  // so on a km road the other ~190 heads were invisible — "no street lamps get lighted". Every civil head gets a fixed
+  // screen-size point (sizeAttenuation off → reads at any distance), built ONCE per night-on, never restaged per frame
+  // (the §GLOW_LAYERS_OFF cost), colour <= 1 so the Alt+S bloom (threshold 1.2) never flares it. Depth-tested: a bridge
+  // deck hides the heads behind it. Civil heads only → buildings never take this path.
+  A._civilLampGlow = function(on) {
+    if (A._civilGlowPts) { A.scene.remove(A._civilGlowPts); A._civilGlowPts.geometry.dispose(); A._civilGlowPts.material.dispose(); A._civilGlowPts = null; }
+    if (!on) return;
+    var pos = (A._nightFixtureWorldPositions() || []).filter(function(p) { return p.__civil; });
+    if (!pos.length) { console.log('§CIVIL_LAMP_GLOW heads=0 VACUOUS (no civil heads)'); return; }
+    var arr = new Float32Array(pos.length * 3), col = new Float32Array(pos.length * 3), c = new THREE.Color();
+    pos.forEach(function(p, i) {
+      arr[3 * i] = p.x; arr[3 * i + 1] = p.y; arr[3 * i + 2] = p.z;
+      c.set(p.__color || 0xffe4b5); col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
+    });
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    var m = new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, transparent: true,
+      opacity: 0.95, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
+    A._civilGlowPts = new THREE.Points(g, m);
+    A._civilGlowPts.renderOrder = 5;
+    A._civilGlowPts.userData.civilLampGlow = true;
+    A.scene.add(A._civilGlowPts);
+    var mh = pos.map(function(p) { return p.__intensityMult; }).sort(function(a, b) { return a - b; });
+    console.log('§CIVIL_LAMP_GLOW heads=' + pos.length + ' sizePx=6 throwMult min=' + mh[0].toFixed(2) +
+      ' median=' + mh[mh.length >> 1].toFixed(2) + ' max=' + mh[mh.length - 1].toFixed(2));
+    if (A.markDirty) A.markDirty();
+  };
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
     var btn = document.getElementById('night-btn');
@@ -1854,6 +1884,7 @@ function setupTools(A) {
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
+      A._civilLampGlow(true);
       // §NIGHT_MEM_WITNESS (2026-08-08, moved AFTER _nightUpdateLights() — placing it before, as
       // the first version did, made nightLights read 0 on every toggle-on since the light Map
       // hadn't been populated yet. Real numbers now.
@@ -1956,6 +1987,7 @@ function setupTools(A) {
         ' matCacheKeys=' + Object.keys(A._matCache || {}).length +
         ' glowMatKeys=' + Object.keys(A._nightGlowMatKeys || {}).length +
         ' nightLights=' + (A._nightLightByPos ? A._nightLightByPos.size : 0));
+      A._civilLampGlow(false);
       console.log('§NIGHT_MODE off');
       btn.style.background = '#1a1a3e';
       btn.style.color = '#aac';
@@ -1981,6 +2013,13 @@ function setupTools(A) {
         // §NIGHT_PL_INTENSITY_HEURISTIC — style-convention multiplier by name-pattern, NOT real
         // photometric data (see A.nightLightIntensityMult for the full investigation/framing).
         p.__intensityMult = A.nightLightIntensityMult(f.name);
+        // §CIVIL_LAMP_THROW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §NL): NIGHT_LIGHT_INTENSITY was tuned on
+        // interiors (fixture ~3 m over the floor, one storey). Decay is 1 (E ∝ I/d), so a road head mounted mountH m up
+        // delivers 3/mountH of that at the carriageway — ~0.2 for JELAPANG's 10-15 m columns, i.e. unlit. Scale the
+        // civil head by mountH/3 so the pool under it matches an interior fixture's floor. Presentation only; civil
+        // fixtures exist only on models with a LIGHTING discipline (never a building).
+        p.__civil = !!f.civil;
+        if (f.civil && f.mountH > 3) p.__intensityMult *= f.mountH / 3;
         // Real fixture footprint + yaw (MODEL data bbox_x/bbox_y/rotation_z) — kept for the
         // §FIXTURE_EMISSIVE follow-up (emissive shapes for lamps with no emissive mesh).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;

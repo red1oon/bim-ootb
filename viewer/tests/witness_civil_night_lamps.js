@@ -93,7 +93,14 @@ const server = http.createServer((req, res) => { try {
       const litCol = {}; civil.forEach(f => { if (f.guid) litCol[f.guid] = 1; });
       let tallUpper = 0, tallUpperLit = 0, lowerLit = 0, lower = 0, noBox = 0;
       Object.values(cols).forEach(c => { const wb = worldBox(c[0]); if (!wb) { noBox++; return; } const top = A.three2ifc(0, wb.max.y, 0).iz; if (top < minOther) { lower++; if (litCol[c[0]]) lowerLit++; } else if (c[6] >= 2.5) { tallUpper++; if (litCol[c[0]]) tallUpperLit++; } });
-      const out = { minOtherBottom: +minOther.toFixed(1), noBox, buried: lower, lowerCluster: lower, lowerLit, tallUpper, tallUpperLit, source: A._nightFixtureSource || '', fixtures: F.length, civilHeads: civil.length, civilColumns: civil.filter(f => f.guid).length,
+      // §CIVIL_LAMP_GLOW / §CIVIL_LAMP_THROW (§NL step 1): every civil head has a glow point AT its head position, and the
+      // civil throw multiplier is > 1 (heads 10+ m up). Judged from the live Points object, not the module's log.
+      const gp = A._civilGlowPts, gpa = gp && gp.geometry.getAttribute('position');
+      const W = A._nightFixtureWorldPositions().filter(p => p.__civil);
+      let glowAtHead = 0; if (gpa) W.forEach((p, i) => { if (i < gpa.count && Math.hypot(gpa.getX(i) - p.x, gpa.getY(i) - p.y, gpa.getZ(i) - p.z) < 0.01) glowAtHead++; });
+      const tm = W.map(p => p.__intensityMult).sort((a, b) => a - b);
+      const glow = { glowPts: gpa ? gpa.count : 0, glowAtHead, glowInScene: !!(gp && gp.parent), throwMedian: tm.length ? +tm[tm.length >> 1].toFixed(2) : 0 };
+      const out = { ...glow, minOtherBottom: +minOther.toFixed(1), noBox, buried: lower, lowerCluster: lower, lowerLit, tallUpper, tallUpperLit, source: A._nightFixtureSource || '', fixtures: F.length, civilHeads: civil.length, civilColumns: civil.filter(f => f.guid).length,
         inBox, nearTop, judged, unjudged, worstTopErrM: +worstTopErr.toFixed(3), offCentre, maxHeadOffsetM: +worst.toFixed(2), groundZ: A.groundIfcZ,
         signalsExpected: (function () { try { return q("SELECT COUNT(DISTINCT guid) FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'")[0][0]; } catch (e) { return -1; } })(), signals: (function () { const lit = {}; civil.forEach(f => { if (f.guid) lit[f.guid] = 1; }); let n = 0; try { q("SELECT DISTINCT guid FROM element_psets WHERE value LIKE 'TRAFFIC SIGNAL%' AND value NOT LIKE '%AHEAD%'").forEach(r => { if (lit[r[0]]) n++; }); } catch (e) {} return n; })(), worldPositions: (A._nightFixtureWorldPositions() || []).length };
       A.toggleNightMode();
@@ -122,6 +129,8 @@ const server = http.createServer((req, res) => { try {
     .invariant('night: no buried stray (top below every other element) is lit', rs => rs.every(r => r.noBox === 0 && r.lowerCluster > 0 && r.lowerLit === 0))
     .invariant('night: every real column (tall, not buried) is lit — no over-rejection', rs => rs.every(r => r.tallUpper > 0 && r.tallUpperLit === r.tallUpper))
     .invariant('night: every traffic signal column is a light source', rs => rs.every(r => r.signals > 0 && r.signals === r.signalsExpected))
+    .invariant('night: every civil head has a glow point at its head (§CIVIL_LAMP_GLOW)', rs => rs.every(r => r.glowInScene && r.glowPts === r.civilHeads && r.glowAtHead === r.civilHeads))
+    .invariant('night: civil heads throw more than an interior fixture (§CIVIL_LAMP_THROW median > 1)', rs => rs.every(r => r.throwMedian > 1))
     .invariant('night: Alt+S world positions read the same list', rs => rs.every(r => r.worldPositions === r.fixtures))
     .invariant('lazy fly: no labels → road-discipline route logged, tour playing, scrubber visible', rs => rs.every(r => r.lazyLine && r.lazyWalk && r.lazyFirst === 'Start of highway' && r.lazyScrub))
     .redControl(rs => rs.map(r => Object.assign(r, { nearTop: 0 })))
