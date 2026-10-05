@@ -16,7 +16,7 @@ const fs = require('fs'), path = require('path'), http = require('http'), os = r
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const { Witness } = require('../../witness_kit/contract');
 const ROOT = path.resolve(process.env.ROOT || path.join(__dirname, '..', '..'));
-const BLD = process.env.BLD || 'JELAPANG_AFTER';
+const BLD = process.env.BLD || 'JELAPANG_AFTER';   // also run on Merged / Merged_psets (§ALTC_GROUND_CARDS)
 const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC');
 const GPU = process.env.GPU || 'sw';
 const PORT = +(process.env.PORT || 8579);
@@ -51,6 +51,7 @@ async function probe(browser, bld, dir) {
       for (let y = 0; y < 720; y++) for (let x = 0; x < 1280; x++) { if (!d[(y * 1280 + x) * 4 + 3]) continue; if (box && x >= box.x && x < box.x + box.w && y >= box.y && y < box.y + box.h) inside++; else outside++; } return { inside, outside }; };
     if (!rp) { A._hudLayoutRects = []; const b = A.roadPanelsCompositeOntoCanvas(ctx, 1280, 720, 0.3, 1); out.drawNone = painted(null); out.drawBox = b; return out; }
     out.w0 = rp.w0; out.w1 = rp.w1; out.median = rp.median; out.out = plan.beats.out;
+    out.groundRows = (A.dbQuery("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('GEOTECH','GABION')")[0] || [0])[0];   // §ALTC_GROUND_CARDS population
     out.slots = rp.slots.map(s => {
       const card = s.card, chk = [];
       const inList = card.guids.map(g => "'" + String(g).replace(/'/g, "''") + "'").join(',');
@@ -61,11 +62,26 @@ async function probe(browser, bld, dir) {
           (row.sub ? " AND a.guid IN (SELECT guid FROM element_psets WHERE name='03_Dimension' AND value='" + row.sub.replace(/'/g, "''") + "')" : " AND a.guid NOT IN (SELECT guid FROM element_psets WHERE name='03_Dimension')");
         else if (card.kind === 'signs') sql = "SELECT COUNT(DISTINCT a.guid) FROM element_psets a WHERE a.name='17_Code' AND a.value='" + row.key.replace(/'/g, "''") + "' AND a.guid IN (" + inList + ")" +
           (row.sub ? " AND a.guid IN (SELECT guid FROM element_psets WHERE name='16_Name' AND value='" + row.sub.replace(/'/g, "''") + "')" : " AND a.guid NOT IN (SELECT guid FROM element_psets WHERE name='16_Name')");
+        // §ALTC_GROUND_CARDS: ground rows by the file's own 15_Name (or, unnamed, by discipline); the earthworks row of the planned
+        // card; the outstanding card's counts — each re-derived here, independently of cpe_road_panels.js
+        else if (card.kind === 'ground' && row.key != null) sql = "SELECT COUNT(DISTINCT guid) FROM element_psets WHERE name='15_Name' AND value='" + String(row.key).replace(/'/g, "''") + "' AND guid IN (" + inList + ")";
+        else if (card.kind === 'ground' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta m WHERE m.discipline='" + row.disc + "' AND m.guid IN (" + inList + ")" +
+          (A.dbQuery("SELECT name FROM sqlite_master WHERE name='element_psets'").length ? " AND NOT EXISTS (SELECT 1 FROM element_psets p WHERE p.guid=m.guid AND p.name='15_Name')" : '');
+        else if (card.kind === 'planned' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta WHERE discipline='" + row.disc + "'";
+        else if (card.kind === 'outstanding') {
+          const CR = window.CIVIL_RATES || {}, pres = {}; A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline').forEach(x => { pres[x[0]] = x[1]; });
+          const work = Object.keys(CR).filter(d => pres[d] && CR[d].measure !== 'NONE');
+          const hasPs = A.dbQuery("SELECT name FROM sqlite_master WHERE name='element_psets'").length > 0;
+          const want = row.os === 'noProps' ? (A.dbQuery("SELECT COUNT(*) FROM elements_meta m WHERE m.discipline IN (" + work.map(d => "'" + d + "'").join(',') + ")" + (hasPs ? " AND m.guid NOT IN (SELECT guid FROM element_psets)" : ''))[0] || [null])[0]
+            : row.os === 'noRate' ? work.filter(d => CR[d].rate == null).length
+            : row.os === 'byCount' ? work.filter(d => ['M', 'M2', 'M3'].includes(CR[d].measure) && CR[d].qtyBasis === 'EA').length : null;
+          chk.push({ shown: row.value, sql: want }); return;
+        }
         if (sql) chk.push({ shown: row.value, sql: (A.dbQuery(sql)[0] || [null])[0] });
         else chk.push({ shown: row.value, planned: /^planned/.test(String(row.value)) });
       });
       if (card.kind === 'check') return { t0: s.t0, t1: s.t1, busy: s.busy, kind: card.kind, rows: card.rows.length, chk: [], check: { rule: card.rule, guid: card.guid, measured: card.measured, status: card.status, tag: card.rows[3].label } };
-      return { t0: s.t0, t1: s.t1, busy: s.busy, kind: card.kind, rows: card.rows.length, chk };
+      return { t0: s.t0, t1: s.t1, busy: s.busy, kind: card.kind, rows: card.rows.length, chk, banner: card.banner || null };
     });
     // §ALTC_CHECKS oracle: run road_check ITSELF (own adapter) + read the tracking list straight from rates/road_rules.json
     if (civil && window.RoadCheck) {
@@ -107,6 +123,8 @@ async function probe(browser, bld, dir) {
     .invariant('road: every slot quiet (busy ≤ the window median)', rs => rs.every(r => r.road.slots.every(s => s.busy <= +r.road.median.toFixed(3) + 1e-9)))
     .invariant('road: every number on every card = SQL count over its own guids; planned rows carry no number', rs => rs.every(r => r.road.slots.every(s => s.chk.every(c => (c.sql != null ? +c.shown === +c.sql : c.planned)))))
     .invariant('road §ALTC_CHECKS: ≥ 1 road-check card; its measured value = road_check row for that element; its tag = the rule\'s film_status in road_rules.json', rs => rs.every(r => { const cs = r.road.slots.filter(s => s.kind === 'check'); return cs.length > 0 && cs.every(s => { const o = (r.road.oracleRows[s.check.guid] || []).filter(x => x.rule === s.check.rule); return o.some(x => x.measured === s.check.measured) && s.check.status === r.road.statusOf[s.check.rule] && s.check.tag === (s.check.status === 'valid' ? 'VALID' : 'SPECULATIVE'); }); }))
+    .invariant('road §ALTC_GROUND_CARDS: a model with ground works shows ≥ 1 ground card (none without: VACUOUS-safe)', rs => rs.every(r => !r.road.groundRows || r.road.slots.some(s => s.kind === 'ground')))
+    .invariant('road §ALTC_GROUND_CARDS: at most ONE outstanding card, and it carries the red banner', rs => rs.every(r => { const os = r.road.slots.filter(s => s.kind === 'outstanding'); return os.length <= 1 && os.every(s => s.banner === 'red'); }))
     .invariant('road: card drawn at a slot mid paints only inside its rect, rect inside the frame', rs => rs.every(r => inFrame(r.road.box) && r.road.paintMid.inside > 0 && r.road.paintMid.outside === 0))
     .invariant('road: nothing drawn between slots or during the junction orbit', rs => rs.every(r => !r.road.gapBox && r.road.paintGap.outside === 0 && !r.road.orbitBox && r.road.paintOrbit.outside === 0))
     .invariant('building (Duplex): no panels built, nothing drawn', rs => rs.every(r => !r.bld.civil && !r.bld.built && !r.bld.drawBox && r.bld.drawNone.outside === 0))

@@ -1191,6 +1191,15 @@ function setupCpeLoadPath(A) {
     if (mesh.updateMatrixWorld) mesh.updateMatrixWorld(true);
     var local = new THREE.Matrix4();
     mesh.getMatrixAt(index, local);
+    // §WORLDBOX_DLOD (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): DLOD culls an off-screen instanced slot by writing a
+    // zero-scale matrix (dlod.js) and keeps the real one as _origMatrix. Reading the live matrix then gave a (0,0,0) box and a
+    // zero-scale Load Path clone (MEASURED: 25 lamp columns on a road + bridge merge). The placement is the saved one.
+    var im = mesh.isInstancedMesh && A._instanceMeta && A._instanceMeta[meshId];
+    if (im) {
+      var me = (im[index] && im[index].instanceIndex === index) ? im[index] : null;
+      if (!me) for (var j = 0; j < im.length; j++) if (im[j] && im[j].instanceIndex === index) { me = im[j]; break; }
+      if (me && me._dlodHid && me._origMatrix) { local.copy(me._origMatrix); A._worldBoxDlodRestored = (A._worldBoxDlodRestored || 0) + 1; }
+    }
     var world = local.clone().premultiply(mesh.matrixWorld);
     return { mesh: mesh, index: index, world: world };
   }
