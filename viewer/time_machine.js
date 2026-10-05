@@ -5393,6 +5393,18 @@
       }
       if (_rawHits > 0 && _rawHits >= 0.999 * (_rawHits + _rawMisses)) {
         _sched = _rawScheduleRemember.map;
+        // §S4_RAW_EPOCH (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §DAY_COUNTER_EPOCH): materializeZones anchors its raw schedule at
+        // time 0; computeSchedule here anchors at baseMs. Reused verbatim, every element NOT re-dated by a task window kept a 1970
+        // timestamp — measured on the road+bridge film: 5,674 uncovered road pieces at 1969-12-31 next to 4,739 task-dated bridge pieces
+        // → the day counter read 20,791 days. Rigid shift onto baseMs when the map is epoch-relative: order and durations untouched.
+        var _rMin = Infinity;
+        for (var _rk in _sched) if (_sched[_rk] && _sched[_rk].start < _rMin) _rMin = _sched[_rk].start;
+        if (isFinite(_rMin) && _rMin < 1e12 && baseMs > 1e12) {
+          var _rShift = baseMs - _rMin, _rSh = {};
+          for (var _rk2 in _sched) { var _rv = _sched[_rk2]; if (!_rv) continue; var _rc = {}; for (var _rf in _rv) _rc[_rf] = _rv[_rf]; _rc.start = _rv.start + _rShift; _rc.end = _rv.end + _rShift; _rSh[_rk2] = _rc; }
+          _sched = _rSh;
+          console.log('§S4_RAW_EPOCH shifted reused raw schedule onto baseMs by ' + (_rShift / 86400000).toFixed(1) + ' days (it was epoch-relative)');
+        }
         console.log('§S4_RAW_SCHEDULE_REUSE hits=' + _rawHits + ' misses=' + _rawMisses +
           ' — skipped a second computeSchedule call (materializeZones already computed this raw schedule)');
       }
