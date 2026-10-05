@@ -29,6 +29,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applica
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/viewer/viewer.html';
   const send = (buf) => { res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(buf); };
+  // The 5-building saved merge is served under its OWN path: at /buildings/Clinic_extracted.db the viewer (by design,
+  // streaming.js §6.9 split detection) opens the sibling Clinic_meta.db — ONE building, 16,114 elements — so phase B judged a
+  // file the viewer never loaded (B0 centres=1 vs 5, red on main too; 2026-10-06 instrument fix).
+  if (p === '/merged5/Clinic_merged5.db') {
+    return fs.readFile(CLINIC5, (e, b) => { if (e) { res.writeHead(404); res.end(); } else send(b); });
+  }
   if (p === '/jelapang/JELAPANG_AFTER.db' && JELAPANG) {
     return fs.readFile(JELAPANG, (e, b) => { if (e) { res.writeHead(404); res.end(); } else send(b); });
   }
@@ -71,6 +77,11 @@ function dbTruth(page) {
       active: A.activeBuilding,
       scope: A.sceneScopeBuilding ? A.sceneScopeBuilding() : '(no owner)',
       perBuilding: q('SELECT building, COUNT(*) FROM elements_meta GROUP BY building'),
+      // drawable = the streamer's own row rule (streaming.js streamBuilding: an instance with a geometry hash, a transform, not an
+      // IfcOpeningElement). Clinic_extracted.db holds 410 openings + 43 untransformed rows the viewer never draws by rule — B2
+      // compared registered elements with ALL rows and read 16,869 vs 17,322 (2026-10-06 instrument fix).
+      drawable: (q("SELECT COUNT(*) FROM elements_meta m JOIN element_instances i ON i.guid = m.guid JOIN element_transforms t ON t.guid = m.guid " +
+        "WHERE i.geometry_hash IS NOT NULL AND m.ifc_class != 'IfcOpeningElement'")[0] || [0])[0],
       allDiscs: q('SELECT DISTINCT discipline FROM elements_meta WHERE discipline IS NOT NULL ORDER BY 1').map(r => r[0]),
       activeDiscs: q("SELECT DISTINCT discipline FROM elements_meta WHERE discipline IS NOT NULL AND building = '" +
         String(A.activeBuilding || '').replace(/'/g, "''") + "' ORDER BY 1").map(r => r[0]),
@@ -149,8 +160,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     S('     [state] centres=' + t.centres.length + ' rendered=' + JSON.stringify(t.rendered) + ' perBuilding=' + JSON.stringify(t.perBuilding));
     verdict(t.centres.length === want, tag + '0 population: DB holds ' + want + ' buildings', 'centres=' + t.centres.length);
     verdict(ok && t.rendered.length === want, tag + '1 every building streamed (I1)', 'rendered=' + t.rendered.length + '/' + want);
-    const total = t.perBuilding.reduce((s, r) => s + r[1], 0);
-    verdict(t.guidMap === total, tag + '2 registered elements = DB elements', 'guidMap+merged=' + t.guidMap + ' db=' + total);
+    const total = t.drawable;
+    verdict(t.guidMap === total, tag + '2 registered elements = DB drawable elements', 'guidMap+merged=' + t.guidMap + ' drawable=' + total +
+      ' (all rows ' + t.perBuilding.reduce((s, r) => s + r[1], 0) + ')');
     const last = grep('§MERGE_CONTRACT').slice(-1)[0] || '';
     verdict(/verdict=COMPLETE/.test(last), tag + '3 §MERGE_CONTRACT verdict=COMPLETE', last.slice(0, 160));
     verdict(t.scope === '', tag + '4 scope owner = all buildings', 'scope="' + t.scope + '"');
@@ -160,7 +172,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       'find=' + parents.length + ' db=' + t.allDiscs.length + ' (active-building-only would be ' + t.activeDiscs.length + ')');
     await page.context().close();
   };
-  await reopen('B', '/buildings/Clinic_extracted.db', 5);
+  await reopen('B', '/merged5/Clinic_merged5.db', 5);
 
   // ══ C: LIVE merge with Find already open (I3) ══
   S('\n── C: Duplex + Find open, then Open→Merge Clinic (5 buildings) ──');

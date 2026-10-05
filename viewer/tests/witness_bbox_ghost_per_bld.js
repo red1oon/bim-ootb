@@ -15,11 +15,12 @@ const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const ROOT = path.resolve(process.env.ROOT || path.join(__dirname, '..', '..'));
 const CIVIL = process.env.CIVIL || path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC', 'Merged.db');
 const FLEET = process.env.FLEET || path.join(os.homedir(), 'bim-ootb', 'buildings', 'Clinic_extracted.db');
+const ONEBLD = process.env.ONEBLD;   // optional: the civil DB with every row under ONE building name (one-shot import shape)
 const GPU = process.env.GPU || 'sw', PORT = +(process.env.PORT || 8580);
 const LOG = process.env.LOG || '/tmp/witness_bbox_ghost_per_bld.log';
 const out = fs.createWriteStream(LOG, { flags: 'w' });
 function log(l) { out.write(l + '\n'); console.log(l); }
-const SERVE = { '/__civil.db': CIVIL, '/__fleet.db': FLEET };
+const SERVE = { '/__civil.db': CIVIL, '/__fleet.db': FLEET, '/__onebld.db': ONEBLD };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.sql': 'application/sql' };
 const server = http.createServer((req, res) => { try {
   const u = decodeURIComponent(req.url.split('?')[0]); let fp = SERVE[u] || path.join(ROOT, u.replace(/^\/+/, ''));
@@ -31,7 +32,9 @@ const server = http.createServer((req, res) => { try {
 const ENV = "(ifc_class GLOB 'IfcWall*' OR ifc_class GLOB 'IfcSlab*' OR ifc_class GLOB 'IfcRoof*' OR ifc_class GLOB 'IfcCurtainWall*' OR ifc_class GLOB 'IfcCovering*' OR ifc_class GLOB 'IfcPlate*')";
 const CIVIL_CODES = "('ROAD','FURNITURE','LIGHTING','DRAINAGE','SIGNAGE','MARKING','EARTHWORK','GEOTECH','GABION','CHAINAGE','ROW')";
 function oracle(db) {   // per building: n, env, civ (rows with a transform centre — same population the viewer reads)
-  const rows = execFileSync('sqlite3', ['-readonly', db, `SELECT COALESCE(m.building,''), COUNT(*), SUM(${ENV}), SUM(m.discipline IN ${CIVIL_CODES}) FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE t.center_x IS NOT NULL GROUP BY 1`]).toString().trim().split('\n').map(l => { const [b, n, e, c] = l.split('|'); return { b, n: +n, env: +e, civ: +c }; });
+  // group = 'civil' for every civil-discipline element, else its building (rule v2, ORDER-INDEPENDENCE: a one-shot import and
+  // two drops must draw the same boxes)
+  const rows = execFileSync('sqlite3', ['-readonly', db, `SELECT CASE WHEN m.discipline IN ${CIVIL_CODES} THEN '(civil)' ELSE COALESCE(m.building,'') END, COUNT(*), SUM(${ENV}), SUM(m.discipline IN ${CIVIL_CODES}) FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE t.center_x IS NOT NULL GROUP BY 1`]).toString().trim().split('\n').map(l => { const [b, n, e, c] = l.split('|'); return { b, n: +n, env: +e, civ: +c }; });
   const total = rows.reduce((s, r) => s + r.n, 0), envAll = rows.reduce((s, r) => s + r.env, 0);
   const sceneWide = (envAll === 0 || (envAll / total < 0.02 && envAll < 200)) ? total : envAll;   // main's rule
   const civB = rows.filter(r => r.civ > 0 && r.env === 0);
@@ -64,10 +67,12 @@ async function ghostCount(browser, url) {
     log('§BGP_ORACLE fleet ' + JSON.stringify(of));
     const nc = await ghostCount(browser, '/__civil.db'); log(`§BGP_CIVIL boxes=${nc} expect=${oc.perBld} (scene-wide rule would give ${oc.sceneWide})`);
     v.civil = !oc.civilBuildings.length ? 'INCONCLUSIVE no civil 0-envelope building' : nc === oc.perBld ? 'GREEN' : 'RED';
+    if (ONEBLD) { const o1 = oracle(ONEBLD); const n1 = await ghostCount(browser, '/__onebld.db');
+      log(`§BGP_ONEBLD boxes=${n1} expect=${o1.perBld} two-drop=${nc}`); v.onebld = (n1 === o1.perBld && n1 === nc) ? 'GREEN' : 'RED'; }
     const nf = await ghostCount(browser, '/__fleet.db'); log(`§BGP_FLEET boxes=${nf} expect=${of.sceneWide} (unchanged rule)`);
     v.fleet = of.civilBuildings.length ? 'INCONCLUSIVE fleet DB has civil rows' : nf === of.sceneWide ? 'GREEN' : 'RED';
   } catch (e) { log('§BGP_ERR ' + e.message); }
-  const all = ['civil', 'fleet'].map(k => k + '=' + (v[k] || 'INCONCLUSIVE'));
+  const all = ['civil', 'fleet'].concat(ONEBLD ? ['onebld'] : []).map(k => k + '=' + (v[k] || 'INCONCLUSIVE'));
   const verdict = all.every(s => s.endsWith('GREEN')) ? 'GREEN' : all.some(s => /RED/.test(s)) ? 'RED' : 'INCONCLUSIVE';
   log('§BGP_VERDICT ' + verdict + ' ' + all.join(' '));
   await browser.close(); server.close(); out.end(); process.exit(verdict === 'GREEN' ? 0 : verdict === 'RED' ? 1 : 2);
