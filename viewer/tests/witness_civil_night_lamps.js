@@ -84,7 +84,12 @@ const server = http.createServer((req, res) => { try {
       // independent stray oracle (NOT the module's gap rule): a column is buried if its TOP is below the lowest bottom of
       // every non-LIGHTING element on the site. Tall columns (≥ 2.5 m, the module's column rule) not buried must ALL be lit
       // (over-rejection — a single ground datum rejected 67 on a climbing road; a neighbour rule rejected a real signal).
-      const minOther = q("SELECT MIN(t.center_z - t.bbox_z/2) FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE m.discipline IS NOT 'LIGHTING'")[0][0];
+      // §FB (2026-10-05): "the site" = the building(s) that carry the LIGHTING. A merged bridge (piers to z −1.4 m) is a
+      // different model; its bottoms moved this floor below the road strays and turned 9 rejected strays into "real
+      // columns" (scope-blind oracle). One-building DBs: the IN-list is that building → value unchanged.
+      const hasBld = q("SELECT COUNT(*) FROM pragma_table_info('elements_meta') WHERE name='building'")[0][0] > 0;
+      const minOther = q("SELECT MIN(t.center_z - t.bbox_z/2) FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE m.discipline IS NOT 'LIGHTING'" +
+        (hasBld ? " AND m.building IN (SELECT DISTINCT building FROM elements_meta WHERE discipline='LIGHTING')" : ''))[0][0];
       const litCol = {}; civil.forEach(f => { if (f.guid) litCol[f.guid] = 1; });
       let tallUpper = 0, tallUpperLit = 0, lowerLit = 0, lower = 0, noBox = 0;
       Object.values(cols).forEach(c => { const wb = worldBox(c[0]); if (!wb) { noBox++; return; } const top = A.three2ifc(0, wb.max.y, 0).iz; if (top < minOther) { lower++; if (litCol[c[0]]) lowerLit++; } else if (c[6] >= 2.5) { tallUpper++; if (litCol[c[0]]) tallUpperLit++; } });

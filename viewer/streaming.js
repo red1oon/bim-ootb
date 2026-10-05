@@ -301,6 +301,23 @@ function setupStreaming(A) {
     return A._matNameCol;
   };
 
+  // §FB (prompts/CIVIL_HIGHWAY_JELAPANG.md §FB SPEC): ONE owner for "which building does a whole-scene
+  // reader (Find tree/search/isolate) scope to". A MERGED scene (>1 building, not City) is one model →
+  // '' = all buildings. Every other scene (all hub DBs are 1 building; City keeps per-building) → the
+  // active building, exactly as before.
+  var _sceneScopeLast = null;
+  A.sceneScopeBuilding = function() {
+    var n = Object.keys(A.buildingCentres || {}).length;
+    var merged = !A.CITY_URL && n > 1;
+    var out = merged ? '' : (A.activeBuilding || '');
+    var key = merged ? 'all:' + n : 'one:' + out;
+    if (key !== _sceneScopeLast) {
+      _sceneScopeLast = key;
+      console.log(merged ? '§SCENE_SCOPE all buildings=' + n : '§SCENE_SCOPE one bld=' + out);
+    }
+    return out;
+  };
+
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
     for (const [name, bc] of Object.entries(A.buildingCentres)) {
@@ -2107,9 +2124,14 @@ function setupStreaming(A) {
                 _mcSt.reset();
               }
               _mcSt.free();
-              console.log('§MERGE_CONTRACT buildings=' + Object.keys(_mcOwn).length +
+              var _mcN = Object.keys(_mcOwn).length, _mcC = Object.keys(A.buildingCentres).length;
+              var _mcPend = (A._mergePending || []).filter(function(n) { return !A.buildingsRendered.has(n); }).length;
+              // §FB.4: a witness that can say WRONG — fewer buildings drawn than the DB holds, nothing queued.
+              var _mcVerdict = _mcN >= _mcC ? 'COMPLETE' : (_mcPend > 0 ? 'DRAINING' : 'INCOMPLETE');
+              console.log('§MERGE_CONTRACT buildings=' + _mcN +
                 ' rendered=' + JSON.stringify(_mcOwn) +
-                ' centres=' + Object.keys(A.buildingCentres).length);
+                ' centres=' + _mcC + ' pending=' + _mcPend + ' verdict=' + _mcVerdict);
+              if (_mcVerdict === 'COMPLETE' && !A.CITY_URL && A._findRefreshTree) A._findRefreshTree('merge-complete');
             } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
           }
         }
@@ -3988,6 +4010,17 @@ function setupStreaming(A) {
       A.streamBuilding(hashParams.bld);
     } else {
       A.startStreaming();
+    }
+    // §FB.3: a saved MERGED DB holds >1 building but the line above streams ONE (camera-nearest). Queue
+    // the rest into the same drain a live merge uses (scene.js _mergeStreamNext, chained from the
+    // stream-complete hook) so reopening shows the whole merged scene. Gate: >1 building, not City.
+    if (!A.CITY_URL && Object.keys(A.buildingCentres).length > 1) {
+      var _openRest = Object.keys(A.buildingCentres).filter(function(n) {
+        return n !== A.activeBuilding && !(A.buildingsRendered && A.buildingsRendered.has(n));
+      });
+      A._mergePending = (A._mergePending || []).concat(_openRest);
+      console.log('§OPEN_ALL_BUILDINGS queued=' + _openRest.length + ' first=' + A.activeBuilding +
+        ' rest=' + JSON.stringify(_openRest));
     }
     console.log(`[S241] §BBOX_EARLY placeholders drawn before library fetch`);
 
