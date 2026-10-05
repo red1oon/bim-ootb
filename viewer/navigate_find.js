@@ -1607,17 +1607,22 @@
       // One building → this block is skipped and the scene-wide rule below runs exactly as before.
       // Gate (NON-IMPACT): only a CIVIL building (rows in a rates.js SEQUENCE_CIVIL discipline) with 0 envelope elements switches
       // to "all"; every other building keeps the scene-wide rule. Fleet: 0 civil rows → Clinic's 5 buildings unchanged.
-      var _civ = window.SEQUENCE_CIVIL || {};
+      // civil = every civil discipline code: rates.js CIVIL_RATES (includes the references CHAINAGE / ROW, which are civil but not
+      // scheduled work) ∪ SEQUENCE_CIVIL — the schedule list alone left 333 references boxed by their building's envelope rule.
+      var _civ = Object.assign({}, window.SEQUENCE_CIVIL || {}, window.CIVIL_RATES || {});
       var _blds = {};
-      for (var bi = 0; bi < rows.length; bi++) { var bn = rows[bi][8] || ''; var bs = _blds[bn] = _blds[bn] || { n: 0, env: 0, civ: 0 }; bs.n++; if (_isEnvelope(rows[bi][6])) bs.env++; if (_civ[rows[bi][7]]) bs.civ++; }
+      // v2 (ORDER-INDEPENDENCE, user 2026-10-06): the group is 'civil' for every civil-discipline element, else its building —
+      // a one-shot import (road + bridge under one name) and two drops (two names) must draw the same boxes.
+      var _grp = function (r) { return _civ[r[7]] ? '\u0000civil' : (r[8] || ''); };
+      for (var bi = 0; bi < rows.length; bi++) { var bn = _grp(rows[bi]); var bs = _blds[bn] = _blds[bn] || { n: 0, env: 0, civ: 0 }; bs.n++; if (_isEnvelope(rows[bi][6])) bs.env++; if (_civ[rows[bi][7]]) bs.civ++; }
       var _bldNames = Object.keys(_blds);
       var _civBld = _bldNames.filter(function(bn) { return _blds[bn].civ > 0 && _blds[bn].env === 0; });
       if (_bldNames.length > 1 && _civBld.length) {
         var _allBld = {}, _plan = [];
-        _bldNames.forEach(function(bn) { var bs = _blds[bn]; _allBld[bn] = _civBld.indexOf(bn) >= 0; _plan.push(bn + ':' + (_allBld[bn] ? 'all' : 'envelope') + ' ' + bs.env + '/' + bs.n); });
+        _bldNames.forEach(function(bn) { var bs = _blds[bn]; _allBld[bn] = _civBld.indexOf(bn) >= 0; _plan.push((bn === '\u0000civil' ? 'civil' : bn) + ':' + (_allBld[bn] ? 'all' : 'envelope') + ' ' + bs.env + '/' + bs.n); });
         byDisc = {};
         for (var pj = 0; pj < rows.length; pj++) {
-          var pr = rows[pj]; if (!_allBld[pr[8] || ''] && !_isEnvelope(pr[6])) continue;
+          var pr = rows[pj]; if (!_allBld[_grp(pr)] && !_isEnvelope(pr[6])) continue;
           var pd = pr[7] || '_'; (byDisc[pd] = byDisc[pd] || []).push(pr);
         }
         discs = Object.keys(byDisc); _envN = -1;   // decided per building — skip the scene-wide fallback
