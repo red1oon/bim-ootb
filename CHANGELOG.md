@@ -4,6 +4,45 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.72.0](https://github.com/red1oon/bim-ootb/compare/v1.71.0...v1.72.0) (2026-10-05)
+
+
+### ✨ Features
+
+* **4d/5d:** civil resource types (one crew per discipline, parallel finishing) + 5D civil line items priced from the JKR SoR pack (sw v1476) ([#1853](https://github.com/red1oon/bim-ootb/issues/1853)) ([dab5275](https://github.com/red1oon/bim-ootb/commit/dab52752b6b535ab18b2eaf800a06903d430c94f))
+* **4d:** Time Machine discipline breakdown for civil models — §CIVIL_PHASE + civil template (sw v1474) ([#1851](https://github.com/red1oon/bim-ootb/issues/1851)) ([15f2909](https://github.com/red1oon/bim-ootb/commit/15f2909add9c988a7c082cb4772e5b9dfb2cc081))
+* **civil:** clash pairs for civil models — family-scoped ignore set, 0-tolerance honoured (sw v1480) ([#1859](https://github.com/red1oon/bim-ootb/issues/1859)) ([c7c0f11](https://github.com/red1oon/bim-ootb/commit/c7c0f1172142192a981207fa972f6134a8ca1f55))
+* **civil:** night lamps at real lamp heads, Fly works on label-less imports, civil labels as config (sw v1482) ([#1862](https://github.com/red1oon/bim-ootb/issues/1862)) ([e5ace78](https://github.com/red1oon/bim-ootb/commit/e5ace781396958cbdd467b59ce4f6fceee7deb07))
+* **civil:** property labels for civil imports + Fly Tour flies the road, traffic signals as scrubber stops (sw v1479) ([#1858](https://github.com/red1oon/bim-ootb/issues/1858)) ([3076755](https://github.com/red1oon/bim-ootb/commit/3076755fa2f031b0b47f0c609a7dd61f018adbba))
+* **clash:** hide box-only rows when a pair has ≥1000 box hits (sw v1481) ([#1861](https://github.com/red1oon/bim-ootb/issues/1861)) ([2d26a3e](https://github.com/red1oon/bim-ootb/commit/2d26a3e5be4654e3ddd431fd049bfd2249b24ed7))
+* **measure:** double-click sizes the ELEMENT — highlight, area, and L×W×H along its own axes (sw v1485) ([#1865](https://github.com/red1oon/bim-ootb/issues/1865)) ([4e3fa0a](https://github.com/red1oon/bim-ootb/commit/4e3fa0a3c2127b361a05425de9eaaff8f28b33f3))
+* **viewer:** Alt+C highway mode — civil film drives the road at dusk with lamps on (sw v1492) ([#1872](https://github.com/red1oon/bim-ootb/issues/1872)) ([6693f3c](https://github.com/red1oon/bim-ootb/commit/6693f3cf0b56ea67ed5fb6bb220cff0a85f71ebe))
+* **viewer:** road lamps read at night — every head glows, lit heads throw to the carriageway (sw v1489) ([#1869](https://github.com/red1oon/bim-ootb/issues/1869)) ([fb01c6a](https://github.com/red1oon/bim-ootb/commit/fb01c6adf88ad0b9da532020c345ee6326b8e46a))
+
+
+### 🐛 Fixes
+
+* **4d:** civil crews reach every reader — Gantt read model, 5D ops grouping, load-path film, edit delta; regenerate stale civil programmes (sw v1477) ([#1854](https://github.com/red1oon/bim-ootb/issues/1854)) ([bfab470](https://github.com/red1oon/bim-ootb/commit/bfab47061793d52f788f507094ac0223f847a745))
+* **altc:** few deletable sticks on main — cherry-pick §CPE_SEED_FEW + §CPE_STICK_CLEAR from fix/fast-bake (sw v1493) ([#1873](https://github.com/red1oon/bim-ootb/issues/1873)) ([9c72741](https://github.com/red1oon/bim-ootb/commit/9c7274182018aa0506050b70709176bb24eafba9))
+* **alts:** §STILL_OVERLAY_NOGI Save PNG / Close overlay when the bounce can't run (phones, no WebGPU) (sw v1478) ([#1856](https://github.com/red1oon/bim-ootb/issues/1856)) ([889b705](https://github.com/red1oon/bim-ootb/commit/889b705ff2ba1c05f08104f6e5f97fe652b7145e))
+* **civil:** lamp heads are centroid-relative (DB center = vertex centroid, not box middle); witness judges against the renderer ([#1863](https://github.com/red1oon/bim-ootb/issues/1863)) ([f8c8e62](https://github.com/red1oon/bim-ootb/commit/f8c8e6219331d4062064c5b776c17c378cb3e6bf))
+* **import:** cache-bust import.js (v4-&gt;5) + hub import_own.js (v1-&gt;2) so browsers pick up the [#1844](https://github.com/red1oon/bim-ootb/issues/1844) importer (sw v1470) ([#1847](https://github.com/red1oon/bim-ootb/issues/1847)) ([9492d7e](https://github.com/red1oon/bim-ootb/commit/9492d7eeacb26529030225e208c92f0142d134ef))
+* **import:** civil/large models — real-size units, civil disciplines, robust framing (sw v1469) ([#1844](https://github.com/red1oon/bim-ootb/issues/1844)) ([011dd74](https://github.com/red1oon/bim-ootb/commit/011dd746f79014e6bd02639a9274230be1f59129))
+* **import:** progress shows on the viewer status line when importing from the viewer (sw v1484) ([#1864](https://github.com/red1oon/bim-ootb/issues/1864)) ([3d8d37d](https://github.com/red1oon/bim-ootb/commit/3d8d37d57f11020a26ce8e274bcdbad2c20beae5))
+* **viewer:** §SHADOW_FOLLOW — shadow box follows the camera on large sites so thin casters (lamp poles) shadow (sw v1472) ([#1850](https://github.com/red1oon/bim-ootb/issues/1850)) ([76068dd](https://github.com/red1oon/bim-ootb/commit/76068dd9f23a7ae8ae411e36cdb6c0ec4325a241))
+* **viewer:** §SHADOW_FOLLOW_THROTTLE — refit immediately on shadow-on, then every 250 ms while moving; skip tiny moves (sw v1475) ([#1852](https://github.com/red1oon/bim-ootb/issues/1852)) ([b21d2ab](https://github.com/red1oon/bim-ootb/commit/b21d2abde47ba238933b7dd29f1085ac6d55dc5e))
+* **viewer:** a merged scene is one model — reopen streams every building, Find lists all disciplines (sw v1486) ([#1866](https://github.com/red1oon/bim-ootb/issues/1866)) ([feee4a0](https://github.com/red1oon/bim-ootb/commit/feee4a05ce38a3414af8bc277bdb28bff7be3eb5))
+* **viewer:** civil Fly flies the road forward, junction to junction — no zig-zag, no shuttling (sw v1491) ([#1871](https://github.com/red1oon/bim-ootb/issues/1871)) ([c86bb11](https://github.com/red1oon/bim-ootb/commit/c86bb114816cfd210c8712cba30507d6c651ce37))
+* **viewer:** fog sized after the envelope + large-site fog keeps the model visible from its framing distance; Fly Tour says when there are no rooms (sw v1478) ([#1857](https://github.com/red1oon/bim-ootb/issues/1857)) ([f710a81](https://github.com/red1oon/bim-ootb/commit/f710a81a77ede967106facf76dea8ba345b54e03))
+* **viewer:** Night/Shadow ground plane no longer buries a road merged with a bridge (sw v1488) ([#1868](https://github.com/red1oon/bim-ootb/issues/1868)) ([0388d06](https://github.com/red1oon/bim-ootb/commit/0388d0633918f16e3b04114a3a166456ceb9e40d))
+* **viewer:** stray-robust ground for slab-less models (roads) + civil discipline colours (sw v1471) ([#1849](https://github.com/red1oon/bim-ootb/issues/1849)) ([f18c7a8](https://github.com/red1oon/bim-ootb/commit/f18c7a8a2b6962884246664815f74cc66df607ea))
+
+
+### ⚡ Performance
+
+* **viewer:** civil models stop storing/reading derivable normals — JELAPANG save 661 → 396 MB (sw v1490) ([#1870](https://github.com/red1oon/bim-ootb/issues/1870)) ([2a01315](https://github.com/red1oon/bim-ootb/commit/2a0131597fe28f4936d3f60d457b3d38212c27e8))
+* **viewer:** roof-layer pass 16 s → 33 ms on km-long sites, identical result; merge verdict DRAINING mid-load (sw v1487) ([#1867](https://github.com/red1oon/bim-ootb/issues/1867)) ([f7de3b2](https://github.com/red1oon/bim-ootb/commit/f7de3b267b1b34650a53009eaf77e9325d8594ae))
+
 ## [1.71.0](https://github.com/red1oon/bim-ootb/compare/v1.70.1...v1.71.0) (2026-10-02)
 
 
