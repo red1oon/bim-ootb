@@ -198,8 +198,10 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   }
 
   // ══ D (optional): the user's own file ══
-  if (JELAPANG) await reopen('D', '/jelapang/JELAPANG_AFTER.db', 2);
-  else S('\n── D: skipped (set JELAPANG=<path> to run on JELAPANG_AFTER.db) ──');
+  // a JELAPANG path that does not exist must not run phase D: it reopened nothing and reported D2/D4/D5 green on 0 elements
+  // (vacuous — the user's JELAPANG_AFTER.db was removed 2026-10-06; JELAPANG.db / Merged.db / CivilWorks.db are the same shape)
+  if (JELAPANG && fs.existsSync(JELAPANG)) await reopen('D', '/jelapang/JELAPANG_AFTER.db', 2);
+  else S('\n── D: INCONCLUSIVE — ' + (JELAPANG ? 'JELAPANG=' + JELAPANG + ' does not exist' : 'set JELAPANG=<road+bridge .db> to run') + ' (nothing judged) ──');
 
   S('\n' + (judged === 0 ? 'INCONCLUSIVE — nothing judged' : (fails === 0 ? '✅ PASS ' : '❌ FAIL ') + (judged - fails) + '/' + judged));
   save(); await browser.close(); server.close(); process.exit(fails ? 1 : 0);
