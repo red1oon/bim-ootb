@@ -32,9 +32,11 @@ function phasesOf(SQL, file, civilOn) {
   const civ = sb.__CIV;
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(file)));
   const keys = Object.keys(civ);
-  const r = db.exec("SELECT COUNT(*), SUM(CASE WHEN discipline IN (" + keys.map(() => '?').join(',') + ") THEN 1 ELSE 0 END) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'", keys);
+  // population + gate through their owners: ScheduleAuthor.scheduledWhere (§SCHEDULE_POPULATION) and time_machine.js _hasCivil
+  // (§MIXED_PROGRAMME: ANY civil row → the civil template; was EVERY element — a road + bridge got the building template)
+  const r = db.exec("SELECT COUNT(*), SUM(CASE WHEN discipline IN (" + keys.map(() => '?').join(',') + ") THEN 1 ELSE 0 END) FROM elements_meta WHERE " + SA.scheduledWhere('', sb.CIVIL_RATES), keys);
   const n = r[0].values[0][0], c = r[0].values[0][1] || 0;
-  const allCivil = civilOn && n > 0 && c === n;   // the same rule time_machine.js _allCivil applies
+  const allCivil = civilOn && n > 0 && c > 0;   // name kept for the report lines below: "civil programme selected"
   const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', allCivil ? '4D_template_civil.json' : '4D_template.json'), 'utf8'));
   const base = { start: '2026-01-01', laborRates: sb.LABOR_RATES, rates: sb.RATES, nameOverrides: sb.SEQUENCE_NAME_OVERRIDES,
     defaultRule: sb.SEQUENCE_DEFAULT, scheduleGate: SG, shiftHours: T.calendar.hours_per_shift, template: T, db: db,
@@ -60,8 +62,13 @@ function phasesOf(SQL, file, civilOn) {
   } catch (e) { readRes = 'readTasks error ' + e.message; }
   const byPhase = {};
   els.forEach(e => { byPhase[e.phase] = (byPhase[e.phase] || 0) + 1; });
+  // civil-discipline elements that landed in a NON-civil phase (the defect this witness exists for: "one building phase for a road")
+  const civPhaseNames = new Set(Object.values(civ).map(x => x.phase));
+  const discR = db.exec('SELECT guid, discipline FROM elements_meta'); const discOf = {};
+  if (discR.length) discR[0].values.forEach(x => { discOf[x[0]] = x[1]; });
+  let civilInBuildingPhase = 0; els.forEach(e => { if (civ[discOf[e.guid]] && !civPhaseNames.has(e.phase)) civilInBuildingPhase++; });
   const tasks = (res && res.tasks || []).map(t => ({ phase: t.phase, n: (t.guids || []).length, s: t.sDays, e: t.eDays }));
-  return { n, civilCount: c, allCivil, template: T.meta.id, byPhase, tasks, readRes,
+  return { n, civilCount: c, allCivil, template: T.meta.id, byPhase, tasks, readRes, civilInBuildingPhase,
     log: lines.filter(l => /§(CIVIL_PHASE|TPL_ELEMENT_ORPHAN|TPL_PHASE_ABSENT|TPL_PHASE_COVERAGE)/.test(l)) };
 }
 
@@ -81,8 +88,9 @@ function phasesOf(SQL, file, civilOn) {
     if (on.n === 0) { console.log('  VERDICT INCONCLUSIVE (0 elements)'); continue; }
     if (on.allCivil) {
       const civilPhases = Object.keys(on.byPhase).length;
-      console.log('  VERDICT ' + (civilPhases > 1 && !on.byPhase['Architecture Envelope'] ? 'PASS' : 'FAIL') +
-        ' civil model splits into ' + civilPhases + ' discipline phases (was ' + Object.keys(off.byPhase).length + ')');
+      // a merged road + bridge legitimately keeps the bridge's building phases (§MIXED_PROGRAMME) — judge the CIVIL elements only
+      console.log('  VERDICT ' + (civilPhases > 1 && on.civilInBuildingPhase === 0 ? 'PASS' : 'FAIL') +
+        ' civil model splits into ' + civilPhases + ' phases (was ' + Object.keys(off.byPhase).length + '); civil elements in a building phase=' + on.civilInBuildingPhase);
       const nRes = (on.readRes && typeof on.readRes === 'object') ? Object.keys(on.readRes).length : 0;
       console.log('  VERDICT ' + (nRes > 1 ? 'PASS' : nRes === 0 ? 'INCONCLUSIVE' : 'FAIL') + ' Gantt read model shows ' + nRes + ' resource(s) on the civil model');
     } else {
