@@ -346,6 +346,16 @@ function setupStreaming(A) {
 
   A.streamBuilding = function(nearest) {
     if (A.buildingsRendered.has(nearest)) { console.log('§DS_SKIP_RENDERED bld=' + nearest); return; }
+    // §MERGE_FOLD_TOPUP (CIVIL_HIGHWAY_JELAPANG.md §MERGED_DB): a merge folded new elements into a building that
+    // is ALREADY drawn (scene.js _mergeQueueTopUp). Stream only those guids — never redraw what is on screen.
+    var _topUp = A._mergeTopUp && A._mergeTopUp[nearest];
+    if (_topUp) delete A._mergeTopUp[nearest];
+    var _topUpRows = function(rows) {
+      if (!_topUp) return rows;
+      var kept = rows.filter(function(r) { return _topUp.has(r[0]); });
+      console.log('§MERGE_FOLD_TOPUP bld=' + nearest + ' rows=' + rows.length + ' kept=' + kept.length + ' folded=' + _topUp.size);
+      return kept;
+    };
     if (A.activeBuilding && A.streaming && A.streamIdx < A.streamQueue.length) {
       A.savedStreams[A.activeBuilding] = { queue: A.streamQueue, idx: A.streamIdx };
     }
@@ -396,7 +406,7 @@ function setupStreaming(A) {
               AND i.geometry_hash IS NOT NULL
               AND m.ifc_class != 'IfcOpeningElement'
           `);
-          var rows = (result && result.length > 0) ? result[0].values : [];
+          var rows = _topUpRows((result && result.length > 0) ? result[0].values : []);
           console.log(`§RANGE_STREAM_QUEUE bld=${nearest} elements=${rows.length} ms=${(performance.now() - _sqT0).toFixed(0)}`);
           if (!rows.length) {
             console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
@@ -448,7 +458,7 @@ function setupStreaming(A) {
       // bind list drops with it — every row IS this building by definition of the fallback.
       const _bldOk = A._hasBuildingCol(A.db);
       const matNameCol = A._hasMatNameCol(A.db) ? ', m.material_name' : ', NULL';
-      const rows = A.dbQuery(`
+      const rows = _topUpRows(A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
@@ -459,7 +469,7 @@ function setupStreaming(A) {
         WHERE ${_bldOk ? 'm.building = ?' : '1=1'}
           AND i.geometry_hash IS NOT NULL
           AND m.ifc_class != 'IfcOpeningElement'
-      `, _bldOk ? [nearest] : []);
+      `, _bldOk ? [nearest] : []));
       if (!rows.length) {
         console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
         return;

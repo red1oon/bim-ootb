@@ -1158,6 +1158,36 @@ async function setupScene(A) {
   }
 
   // Merge an opened .db into the LIVE scene instead of navigating. §SM-7.1.
+  // §MERGE_FOLD_TOPUP (CIVIL_HIGHWAY_JELAPANG.md §MERGED_DB): rows folded into a building name that is ALREADY drawn
+  // (the BIM partner's GEOTECH/CHAINAGE/... files carry the road's name "JELAPANG") left `added` empty → nothing streamed
+  // and the open Find tree kept its pre-merge counts. Queue those buildings for a guid-filtered top-up stream.
+  A._mergeNewGuids = function(guids) {
+    var out = [];
+    try {
+      var st = A.db.prepare('SELECT 1 FROM elements_meta WHERE guid = ?');
+      for (var i = 0; i < guids.length; i++) { st.bind([guids[i]]); if (!st.step()) out.push(guids[i]); st.reset(); }
+      st.free();
+    } catch (e) { return []; }
+    return out;
+  };
+  A._mergeQueueTopUp = function(srcGuids, before) {
+    var byBld = {};
+    try {
+      var st = A.db.prepare('SELECT building FROM elements_meta WHERE guid = ?');
+      for (var i = 0; i < srcGuids.length; i++) {
+        st.bind([srcGuids[i]]);
+        if (st.step()) { var b = st.get()[0]; if (before.indexOf(b) >= 0 && A.buildingsRendered && A.buildingsRendered.has(b)) (byBld[b] = byBld[b] || new Set()).add(srcGuids[i]); }
+        st.reset();
+      }
+      st.free();
+    } catch (e) { console.log('§MERGE_FOLD_TOPUP_FAIL ' + e.message); return []; }
+    var names = Object.keys(byBld);
+    A._mergeTopUp = A._mergeTopUp || {};
+    names.forEach(function(n) { A._mergeTopUp[n] = byBld[n]; A.buildingsRendered.delete(n); });
+    console.log('§MERGE_FOLD_TOPUP_QUEUE ' + JSON.stringify(names.map(function(n) { return n + ':' + byBld[n].size; })));
+    return names;
+  };
+
   A._mergeDbIntoScene = async function(fileName, bytes) {
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
     var SQL = A._SQL || A.citySQL || A._citySQL;
@@ -1173,6 +1203,9 @@ async function setupScene(A) {
       var br = src.exec('SELECT DISTINCT building FROM elements_meta');
       if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
     } catch (e) {}
+    var srcGuids = [];   // §MERGE_FOLD_TOPUP: which rows this merge brings (they may join an already-drawn building)
+    try { var gr = src.exec('SELECT guid FROM elements_meta'); if (gr && gr.length) srcGuids = gr[0].values.map(function(v) { return v[0]; }); } catch (e) {}
+    srcGuids = A._mergeNewGuids(srcGuids);   // only rows the live DB does not hold yet — a re-merge must never redraw
     console.log('§MERGE_START file=' + fileName + ' bytes=' + bytes.byteLength +
       ' srcBuildings=' + JSON.stringify(srcBlds) + ' sceneBuildings=' + JSON.stringify(before));
 
@@ -1263,7 +1296,8 @@ async function setupScene(A) {
     if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
 
     // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
-    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergePending = (A._mergePending || []).concat(added).concat(A._mergeQueueTopUp(srcGuids, before));
+    if (A._findRefreshTree) A._findRefreshTree('merge-fold');   // tree reads A.db, which already holds the folded rows
     A._mergeStreamNext();
     return true;
   };
@@ -1292,6 +1326,9 @@ async function setupScene(A) {
       var br = srcMeta.exec('SELECT DISTINCT building FROM elements_meta');
       if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
     } catch (e) {}
+    var srcGuids = [];   // §MERGE_FOLD_TOPUP: which rows this merge brings (they may join an already-drawn building)
+    try { var gr = srcMeta.exec('SELECT guid FROM elements_meta'); if (gr && gr.length) srcGuids = gr[0].values.map(function(v) { return v[0]; }); } catch (e) {}
+    srcGuids = A._mergeNewGuids(srcGuids);   // only rows the live DB does not hold yet — a re-merge must never redraw
     console.log('§MERGE_SPLIT_START file=' + fileName + ' metaBytes=' + metaBytes.byteLength +
       ' geoBytes=' + geoBytes.byteLength + ' srcBuildings=' + JSON.stringify(srcBlds) +
       ' sceneBuildings=' + JSON.stringify(before));
@@ -1377,7 +1414,8 @@ async function setupScene(A) {
       ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
     if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
 
-    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergePending = (A._mergePending || []).concat(added).concat(A._mergeQueueTopUp(srcGuids, before));
+    if (A._findRefreshTree) A._findRefreshTree('merge-fold');   // tree reads A.db, which already holds the folded rows
     A._mergeStreamNext();
     return true;
   };
