@@ -31,7 +31,10 @@ if (RED) {
 }
 const A = {};
 // eslint-disable-next-line no-new-func
-new Function('A', body)(A);
+// the function reads effects.js module constants (§57.4b) — declared from the SAME shipped file, not restated (2026-10-06 fix:
+// the bare slice threw 'ARCH_BULK_CUT_FRAC is not defined'). A.cpeRevealShellDiscs is the shipped one-liner, sliced the same way.
+const consts = ['ARCH_DROP_FADE_SEC', 'ARCH_BULK_CUT_FRAC'].map(n => { const m = src.match(new RegExp('var ' + n + '\\s*=\\s*([0-9.]+)')); return m ? 'var ' + n + ' = ' + m[1] + ';' : ''; }).join('\n');
+new Function('A', consts + '\n' + body)(A);
 if (typeof A.cpeRevealVisualAt !== 'function') { console.log('§W_ARCH_HOLD INCONCLUSIVE — slice did not define the function'); process.exit(2); }
 
 // ── a plan shaped like the real one (beats are normalized 0..1) ──────────────
