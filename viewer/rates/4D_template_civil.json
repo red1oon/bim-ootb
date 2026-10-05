@@ -2,11 +2,12 @@
   "meta": {
     "id": "4d_template_civil",
     "name": "Civil (linear works) 4D Programme Template",
-    "version": "0.3.0",
-    "what": "Phase skeleton for a CIVIL model — every element's discipline is a CIVIL_DISCS code (import_worker.js). Selected by time_machine.js only when ALL elements are civil; building models keep 4D_template.json untouched (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, NON-IMPACT rule).",
+    "version": "0.4.0",
+    "what": "Phase skeleton for a model carrying CIVIL disciplines (CIVIL_DISCS codes, import_worker.js). Selected by time_machine.js when ANY element is civil (§MIXED_PROGRAMME); a model with no civil row keeps 4D_template.json untouched (NON-IMPACT rule). Also declares the structure phases (copied verbatim from 4D_template.json) so a bridge merged into a road is scheduled in the same programme.",
     "order_source": "secondary — JKR road-works method statements quoting JKR Standard Specification for Road Works (JKR/SPJ/2008): earthworks -> drainage -> pavement -> finishing (furniture, signage, lighting, marking). Primary document not yet read.",
-    "durations": "NOT civil-calibrated: one §CIVIL_TRADES crew per phase, params copied from MASON (what the proxy class gets today) so per-element durations are unchanged; finishing phases now run in parallel. Replace with JKR SoR / CIDB labour output.",
-    "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim"
+    "durations": "NOT civil-calibrated: one §CIVIL_TRADES crew per phase, params copied from MASON (what the proxy class gets today) so per-element durations are unchanged; finishing phases now run in parallel. Replace with JKR SoR / CIDB labour output. Ground treatment / slope protection use the existing CIVIL_GEOTECH / CIVIL_GABION crews (rates.js, copied from MASON, uncalibrated); editable in the 4D rates panel.",
+    "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim",
+    "mixed_rule": "User ruling 2026-10-06 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MIXED_PROGRAMME): 'alongside — bridge built during earthworks and pavement'. Declared as substructure sharing earthworks' predecessor (ground_treatment): the engine places a phase at its predecessor's FINISH (schedule_author.js, FS only), so a shared predecessor is how 'starts together' is written."
   },
   "placement": "logic",
   "_placement_why": "Civil finishing trades (furniture, signage, lighting, marking) all follow pavement and work on different parts of the road at once; with 'logic' each phase starts when its declared predecessor finishes (schedule_author.js §CIVIL_PARALLEL) instead of after the previous phase in the list.",
@@ -43,6 +44,19 @@
   },
   "phases": [
     {
+      "id": "ground_treatment",
+      "name": "Ground Treatment",
+      "sequence": 1,
+      "trades": [
+        "CIVIL_GEOTECH"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_scope": "Piles under the embankment, soil nails, horizontal drains, RC retaining walls (partner file 02EW_GEOTECH). Before the embankment they carry.",
+      "_empty_ok": true,
+      "_empty_ok_why": "Road sets without a geotech file."
+    },
+    {
       "id": "earthworks",
       "name": "Earthworks",
       "sequence": 1,
@@ -63,6 +77,19 @@
       ],
       "replicate_per_level": false,
       "scope": "building"
+    },
+    {
+      "id": "slope_protection",
+      "name": "Slope Protection",
+      "sequence": 2,
+      "trades": [
+        "CIVIL_GABION"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_scope": "Gabion mattresses (300 mm) on the formed slopes, with the drainage.",
+      "_empty_ok": true,
+      "_empty_ok_why": "Road sets without gabions."
     },
     {
       "id": "pavement",
@@ -113,6 +140,115 @@
       ],
       "replicate_per_level": false,
       "scope": "building"
+    },
+    {
+      "id": "substructure",
+      "name": "Substructure",
+      "sequence": 1,
+      "trades": [
+        "CONCRETE_GANG"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_scope": "Ground-bearing work below the frame. Single occurrence per building — it does not repeat per storey.",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME"
+    },
+    {
+      "id": "superstructure",
+      "name": "Superstructure",
+      "sequence": 2,
+      "trades": [
+        "CONCRETE_GANG",
+        "STEEL_ERECTOR"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Frame and floor plates for one level.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure."
+    },
+    {
+      "id": "architecture_envelope",
+      "name": "Architecture Envelope",
+      "sequence": 5,
+      "trades": [
+        "CARPENTER",
+        "CONCRETE_GANG",
+        "MASON",
+        "ROOFER"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "The weather-tight skin for one level: walls, curtain walling, roof, windows, and the circulation structure (stairs/ramps) that is built with the frame.",
+      "_why_split": "v1.2.0 had ONE 'Architecture' phase scoped 'Envelope AND internal fabric'. Those two halves sit on OPPOSITE SIDES of MEP Rough-in — you make a level weather-tight BEFORE first fix, and you hang doors AFTER it — so no single ordering of that phase could be correct: whichever way it was placed, half of it was wrong. A phase that straddles another phase is not atomic, which is the BOM rule this file otherwise keeps (each level self-contained). Split 2026-08-26. NOTE the repo carried BOTH readings at once: templates/4D_phases.json (April) has IfcWall predecessors [IfcDuct, IfcPipe] — services first, walls close them in — while this file had envelope-before-services. The contradiction is what the split resolves.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure."
+    },
+    {
+      "id": "mep_rough_in",
+      "name": "MEP Rough-in",
+      "sequence": 7,
+      "trades": [
+        "ELECTRICIAN",
+        "HVAC_TECH",
+        "PLUMBER"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "First-fix services for one level, after that level is weather-tight.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure."
+    },
+    {
+      "id": "architecture_closeup",
+      "name": "Architecture Closeup",
+      "sequence": 8,
+      "trades": [
+        "CARPENTER"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Internal fabric closed up AFTER first fix: doors, and anything hung on or into a wall once the services inside it are in.",
+      "_band": "Sequence 8 was FREE — IfcRoof vacated it in PR #1527 (§S65 #7 moved roof 8 -> 6). So the split needs no renumbering of any other phase: bands stay contiguous and non-overlapping at Substructure 1, Superstructure 2-4, Architecture Envelope 5-6, MEP Rough-in 7, Architecture Closeup 8, MEP Final 9, Finishes 10-11.",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure.",
+      "_open": "ONLY IfcDoor moves here. IfcWall/IfcWallStandardCase stay in the envelope and that is the KNOWN AMBIGUITY: ifc_class cannot tell an external skin wall from an internal partition, and moving all walls on a class name is the same mistake as a load-bearing class whitelist (4D_BAR_MODEL.md §18 — a structural-class regex re-admitted 438 curtain-wall glazing panels as load-bearing). An internal partition genuinely belongs in closeup; the signal to separate it must be MEASURED (perimeter/adjacency), not read off the class. Reported, not guessed.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME"
+    },
+    {
+      "id": "mep_final",
+      "name": "MEP Final",
+      "sequence": 9,
+      "trades": [
+        "ELECTRICIAN",
+        "HVAC_TECH",
+        "PLUMBER"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Second-fix services and terminals for one level.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure."
+    },
+    {
+      "id": "finishes",
+      "name": "Finishes",
+      "sequence": 10,
+      "trades": [
+        "FINISHER"
+      ],
+      "replicate_per_level": true,
+      "scope": "level",
+      "_scope": "Coverings, furniture and final finishes for one level.",
+      "_from": "4D_template.json (structure phases, verbatim) — §MIXED_PROGRAMME",
+      "_empty_ok": true,
+      "_empty_ok_why": "All-civil road with no structure."
     }
   ],
   "phase_bands": {
@@ -124,11 +260,25 @@
     "_what": "Civil logic (secondary source, see meta.order_source). Finishing trades all follow pavement and run in parallel.",
     "within_level": [
       {
+        "pred": "ground_treatment",
+        "succ": "earthworks",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Piles and nails go in before the embankment they carry / retain."
+      },
+      {
         "pred": "earthworks",
         "succ": "drainage",
         "type": "FS",
         "lag_days": 0,
         "_why": "Drains are cut into the formed earthworks."
+      },
+      {
+        "pred": "earthworks",
+        "succ": "slope_protection",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Gabions are laid on the formed slopes, alongside the drainage."
       },
       {
         "pred": "drainage",
@@ -164,8 +314,122 @@
         "type": "FS",
         "lag_days": 0,
         "_why": "Marking on the final wearing course."
+      },
+      {
+        "pred": "ground_treatment",
+        "succ": "substructure",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "User ruling 2026-10-06: bridge built ALONGSIDE earthworks and pavement — same predecessor as earthworks, so they start together."
+      },
+      {
+        "pred": "substructure",
+        "succ": "superstructure",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Frame bears on the foundations.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "superstructure",
+        "succ": "architecture_envelope",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "The envelope needs the frame and slab of its own level.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "architecture_envelope",
+        "succ": "mep_rough_in",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "First fix follows weather-tight. Same precedence the 2026-08-25 IfcRoof 8->6 ruling encoded at class level; stated here as programme logic rather than a sequence number.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "mep_rough_in",
+        "succ": "architecture_closeup",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Close up only once the services inside the fabric are in. This edge is the whole reason for the split — under one 'Architecture' phase it could not be expressed at all.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "architecture_closeup",
+        "succ": "mep_final",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Second fix follows close-up.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "mep_final",
+        "succ": "finishes",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Finishes close up completed services.",
+        "_from": "4D_template.json"
       }
     ],
-    "across_levels": []
+    "across_levels": [
+      {
+        "pred": "superstructure",
+        "succ": "superstructure",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "A level's frame cannot start before the level below it is framed. The one constraint that is structural as well as logistical.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "architecture_envelope",
+        "succ": "architecture_envelope",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC: the envelope trades may not run ahead of themselves. The user's own report that produced that ruling was 'upper floors gets walled first'.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "architecture_closeup",
+        "succ": "architecture_closeup",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, same CARPENTER pool as the envelope's doors were in before the split.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "mep_rough_in",
+        "succ": "mep_rough_in",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC, and the measured binding case: without it PLUMBER runs 1.84x over cap across three simultaneous levels.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "mep_final",
+        "succ": "mep_final",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. Same trades as rough-in, same crew pool, same failure mode.",
+        "_from": "4D_template.json"
+      },
+      {
+        "pred": "finishes",
+        "succ": "finishes",
+        "type": "FS",
+        "lag_days": 0,
+        "level_offset": 1,
+        "_why": "§4D_BAND_MONOTONIC. One FINISHER pool for the building.",
+        "_from": "4D_template.json"
+      }
+    ],
+    "_edge_scope_rule": "An edge whose predecessor is a building-scope phase and whose successor is a level-scope phase attaches to the LOWEST level only; every level above takes its predecessor from the across_levels chain instead. An edge between two level-scope phases instantiates once per level. Without this rule an instantiator has to guess which level a single Substructure activity precedes.",
+    "_empty_phase_rule": "When a phase is dropped for empty population, its within-level edge is BRIDGED (pred of the dropped phase -> succ of the dropped phase), never left dangling, and the drop is REPORTED. Verified need: HHS_Office_Federated drops Substructure, which is the head of the chain — an unbridged drop leaves Superstructure with no predecessor.",
+    "_ladder_rule": "EVERY level-scope phase chains to ITSELF on the level below (FS+0, level_offset 1). This is the project's own §4D_BAND_MONOTONIC ruling — 'a trade may not run ahead of ITSELF on the floor below' — declared here as programme logic instead of living only inside the solver's gates. v1.1.0 declared the ladder for superstructure ALONE, and MEASURED on HHS_Office_Federated (2026-08-25, probe_4d_motion.js) that is NOT crew-legal: with levels otherwise free to run in parallel, MEP Rough-in on Levels 1/2/3 overlaps and PLUMBER peaks at 3.67 crews against a cap of 2 (1.84x), HVAC_TECH at 3.48 (1.74x). With the full ladder: ZERO breaches on every trade, and the programme costs 49 days against 41 — the 8 days that buy physical legality. Different trades still overlap ACROSS floors, which is what a trade train is; only a trade overtaking itself is forbidden.",
+    "_overlap": "USER RULING 2026-08-25: 'wont it be safer to avoid the hell — we make phases packed but sequential? User can then just drag them overlap if they want. As long it is editable.' Adopted. Every lag is 0 and every type is FS: phases are PACKED (no dead air, min_days 1) and STRICTLY SEQUENTIAL within a level, with the ladder above across levels. An overlap is then a deliberate EDIT a human drags in on the TM Gantt, never something a solver produced and nobody authorised.\n\nThis is not the expensive choice, which is why it is the safe one. MEASURED on HHS_Office_Federated (2026-08-25): the packed-sequential programme is 49 days against the current overlapping engine's 46.9 — +4%, two days, and it is crew-legal on every trade where the engine needed a repair pass to become so. The old fear that serialising costs a much longer film is not supported by the numbers on this building."
   }
 }

@@ -56,6 +56,18 @@
   // per db (cached, keyed on the db object + element count); a building db has no civil discipline → empty map
   // → every caller falls through to its unchanged name/class rule (NON-IMPACT rule). `table` defaults to the
   // browser global; node harnesses that load rates.js in a vm pass it explicitly (absent → civil layer off).
+  // §SCHEDULE_POPULATION (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MIXED_PROGRAMME) — ONE owner for "which elements are
+  // scheduled work". Was written inline 7× (schedule_author ×2, time_machine ×5). Not work: openings (voids), spaces (room volumes),
+  // and REFERENCE disciplines = rates.js CIVIL_RATES rows whose measure is 'NONE' (chainage labels, right-of-way: setting-out
+  // references, never built). `alias` = the elements_meta alias in the caller's SQL ('m' or '' for none). Fleet: no reference
+  // discipline rows → the predicate selects exactly the rows the old inline clause did. COALESCE: a NULL discipline stays in.
+  function scheduledWhere(alias, rates) {
+    var a = alias ? alias + '.' : '';
+    // node: `global` is module.exports, so the harness's rates.js globals are read from globalThis
+    var cr = rates || global.CIVIL_RATES || (typeof globalThis !== 'undefined' && globalThis.CIVIL_RATES) || {}, refs = Object.keys(cr).filter(function (d) { return cr[d] && cr[d].measure === 'NONE'; });
+    return a + "ifc_class != 'IfcOpeningElement' AND " + a + "ifc_class != 'IfcSpace'" +
+      (refs.length ? " AND COALESCE(" + a + "discipline,'') NOT IN (" + refs.map(function (d) { return "'" + String(d).replace(/'/g, "''") + "'"; }).join(',') + ')' : '');
+  }
   var _civilCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
   function civilRuleFor(db, guid, table) {
     table = table || global.SEQUENCE_CIVIL;
@@ -487,7 +499,7 @@
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
       "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
-      "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+      "WHERE " + scheduledWhere('m'));
     if (!r.length || !r[0].values.length) return [];
 
     // ══ §STOREY_DATUM (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3) ═════════════
@@ -1892,7 +1904,7 @@
     // materialize path that still read every row unfiltered. Same exclusion, same two classes, so a
     // blank-model default schedule can't invent labor for a room volume or a doorway either.
     var er = db.exec("SELECT guid, ifc_class, COALESCE(element_name,''), COALESCE(storey,'') FROM elements_meta " +
-      "WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
+      "WHERE " + scheduledWhere(''));
     if (er.length && er[0].values.length) {
       er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2], storey: r[3] }); });
     }
@@ -3233,6 +3245,7 @@
     persistDb: persistDb,
     openBuildingCache: openBuildingCache
   };
+  API.scheduledWhere = scheduledWhere;   // §SCHEDULE_POPULATION — time_machine.js reads the same owner
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;
