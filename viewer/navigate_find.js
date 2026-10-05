@@ -1572,7 +1572,8 @@
       // already in the DB, so this is INSTANT — no real-mesh merge, no EdgesGeometry (that was the Alt+X hang).
       var rows;
       try {
-        rows = A.dbQuery("SELECT t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, m.ifc_class, m.discipline" +
+        var _bCol = A._hasBuildingCol && A._hasBuildingCol(A.db) ? 'm.building' : "''";
+        rows = A.dbQuery("SELECT t.center_x,t.center_y,t.center_z, t.bbox_x,t.bbox_y,t.bbox_z, m.ifc_class, m.discipline, " + _bCol +
           " FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE t.center_x IS NOT NULL") || [];
       } catch (e) { console.log('[MG] §SHELL_GHOST_SKIP query ' + e.message); return null; }
       var byDisc = {};
@@ -1600,7 +1601,29 @@
       //   KUL070 9/25,033=0.04% → FALLBACK · Hospital 7.1% · JKR 12.1% · LTU 22.7% · Terminal 71.1% → unchanged.
       var _envN = 0;
       for (var k in byDisc) _envN += byDisc[k].length;
-      if (rows.length && (_envN === 0 || (_envN / rows.length < 0.02 && _envN < 200))) {
+      // §BBOX_GHOST_PER_BLD (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MERGED_DB, 2026-10-06): in a MERGED scene the
+      // shell-or-all decision is per building. Road + bridge: the bridge's 587 ARC envelope pieces are 2.9 % of 19,903, so
+      // the scene-wide test kept "envelope only" and the 15,164-element road (0 envelope classes) got no boxes at all.
+      // One building → this block is skipped and the scene-wide rule below runs exactly as before.
+      // Gate (NON-IMPACT): only a CIVIL building (rows in a rates.js SEQUENCE_CIVIL discipline) with 0 envelope elements switches
+      // to "all"; every other building keeps the scene-wide rule. Fleet: 0 civil rows → Clinic's 5 buildings unchanged.
+      var _civ = window.SEQUENCE_CIVIL || {};
+      var _blds = {};
+      for (var bi = 0; bi < rows.length; bi++) { var bn = rows[bi][8] || ''; var bs = _blds[bn] = _blds[bn] || { n: 0, env: 0, civ: 0 }; bs.n++; if (_isEnvelope(rows[bi][6])) bs.env++; if (_civ[rows[bi][7]]) bs.civ++; }
+      var _bldNames = Object.keys(_blds);
+      var _civBld = _bldNames.filter(function(bn) { return _blds[bn].civ > 0 && _blds[bn].env === 0; });
+      if (_bldNames.length > 1 && _civBld.length) {
+        var _allBld = {}, _plan = [];
+        _bldNames.forEach(function(bn) { var bs = _blds[bn]; _allBld[bn] = _civBld.indexOf(bn) >= 0; _plan.push(bn + ':' + (_allBld[bn] ? 'all' : 'envelope') + ' ' + bs.env + '/' + bs.n); });
+        byDisc = {};
+        for (var pj = 0; pj < rows.length; pj++) {
+          var pr = rows[pj]; if (!_allBld[pr[8] || ''] && !_isEnvelope(pr[6])) continue;
+          var pd = pr[7] || '_'; (byDisc[pd] = byDisc[pd] || []).push(pr);
+        }
+        discs = Object.keys(byDisc); _envN = -1;   // decided per building — skip the scene-wide fallback
+        console.log('[MG] §BBOX_GHOST_PER_BLD ' + _plan.join(' · '));
+      }
+      if (_envN >= 0 && rows.length && (_envN === 0 || (_envN / rows.length < 0.02 && _envN < 200))) {
         byDisc = {};
         for (var j = 0; j < rows.length; j++) {
           var r2 = rows[j], d2 = r2[7] || '_';
