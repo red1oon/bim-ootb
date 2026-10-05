@@ -4445,12 +4445,19 @@
           ? { name: _srRoom.storeyName, opacity: _srRoom.opacity } : _srStorey;
         var _srRoomRow = (_srRoom && _srRoom.roomName)
           ? { name: _srRoom.roomName, opacity: _srRoom.opacity } : _srRoom;
+        // §ALTC_V3_CHAINAGE_ROW (user 2026-10-06: "remove the term Jelapang from that HUD box on the right"): a road has no rooms, so the
+        // Room row fell back to the model name. A road film shows the camera's chainage along the drive instead (A.civilChainageAt).
+        var _civRowLabel = null;
+        if (A.civilChainageAt && A.camera) {
+          var _chM = A.civilChainageAt(A.camera.position.x, A.camera.position.z);
+          if (_chM != null) { _srRoomRow = { name: Math.round(_chM).toLocaleString('en-US') + ' m (inferred)', opacity: 1 }; _civRowLabel = 'Chainage'; }
+        }
         var _erCapRow = (_escRec && A.escapeRouteCaptionAt) ? A.escapeRouteCaptionAt(plan, _tnFilm) : null;
         // §STATUS_BOX owns the captions in a bake, so the escape caption goes in the Reveal row —
         // during its window the escape route IS the reveal, and it outranks the storey reveal for
         // the same reason it outranks it in the _titleInfo chain below. Without this the caption
         // would simply vanish with the duplicated lower-third bar deleted above.
-        var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, buildup: A.tmFrontierPhase || '',
+        var _statusSrc = { storey: _srStoreyRow, room: _srRoomRow, roomLabel: _civRowLabel, buildup: A.tmFrontierPhase || '',
                            reveal: _erCapRow || _srReveal };
         // §ESCAPE_ROUTE_REVEAL (merged) — the escape caption OUTRANKS reveal/storey while its
         // window is open, which is the precedence their own chain had. Everything else keeps
