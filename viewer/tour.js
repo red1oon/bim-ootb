@@ -864,6 +864,18 @@ function setupTour(A) {
     var ALT_M = 30;                       // presentation: drone height above the road surface (not data)
     var keys = Object.keys(bins).map(Number).sort(function (a, b) { return a - b; });
     var path = keys.map(function (k) { var b = bins[k]; var p = A.ifc2three(med(b.map(function (r) { return r[0]; })), med(b.map(function (r) { return r[1]; })), med(b.map(function (r) { return r[2]; })) + ALT_M); return { x: p.x, y: p.y, z: p.z }; });
+    // §CIVIL_ROUTE_SMOOTH (CIVIL_HIGHWAY_JELAPANG.md §FLY, user 2026-10-05: "the Fly is jerky … moves facing backwards"):
+    // a 50 m slice can hold pieces up to 128 m apart across the axis (curves, both carriageways), so the slice medians
+    // zig-zag — measured on JELAPANG: 16 heading changes > 30°, 3 > 90° (max 125°). A 3-point moving average of the
+    // medians: 0 > 30° (max 26°), still within 50 m (median 11 m) of a ROAD piece at the 30 m drone height. Ends keep 2 points.
+    var _turns = function (pp) { var t = 0; for (var j = 1; j < pp.length - 1; j++) { var ax = pp[j].x - pp[j - 1].x, az = pp[j].z - pp[j - 1].z, bx = pp[j + 1].x - pp[j].x, bz = pp[j + 1].z - pp[j].z, la = Math.hypot(ax, az), lb = Math.hypot(bx, bz); if (la > 1e-6 && lb > 1e-6 && (ax * bx + az * bz) / (la * lb) < Math.cos(Math.PI / 6)) t++; } return t; };
+    var _turnsRaw = _turns(path);
+    path = path.map(function (p0, j) {
+      var w = path.slice(Math.max(0, j - 1), j + 2), o = { x: 0, y: 0, z: 0 };
+      w.forEach(function (q) { o.x += q.x / w.length; o.y += q.y / w.length; o.z += q.z / w.length; });
+      return o;
+    });
+    console.log('[TOUR] §CIVIL_ROUTE_SMOOTH turnsOver30=' + _turnsRaw + ' → ' + _turns(path) + ' (3-point moving average of the slice medians)');
     var maxJump = 0;
     for (var i = 1; i < path.length; i++) maxJump = Math.max(maxJump, Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z));
     // traffic signals (pset label) → stops, clustered within 60 m, each mapped to its nearest path point
@@ -880,6 +892,24 @@ function setupTour(A) {
     });
     stops.forEach(function (st) { var bi = 0, bd = Infinity; path.forEach(function (p, j) { var d = Math.hypot(p.x - st.x, p.z - st.z); if (d < bd) { bd = d; bi = j; } }); st.at = bi; st.off = bd; });
     stops.sort(function (a, b) { return a.at - b.at; });
+    // §CIVIL_ROUTE_JUNCTION (user: "it should orbit from junction to junction, but instead it backs away and returns to the
+    // same"): one junction's signal heads sit up to ~85 m apart, so the 60 m clustering made 4 stops at route points 0-1 and
+    // the tour shuttled between them. Stops whose route position is within 2 slices (100 m along the road) are ONE junction:
+    // orbit its centroid, radius wide enough to hold every member. JELAPANG: 5 stops → 2 junctions (start, end).
+    var _stopsRaw = stops.length, junc = [];
+    stops.forEach(function (st) {
+      var j = junc.length ? junc[junc.length - 1] : null;
+      if (j && st.at - j.atMax <= 2) { j.m.push(st); j.atMax = st.at; } else junc.push({ m: [st], atMax: st.at });
+    });
+    stops = junc.map(function (j) {
+      var w = 0, o = { x: 0, y: Infinity, z: 0, n: 0 };
+      j.m.forEach(function (st) { o.x += st.x * st.n; o.z += st.z * st.n; o.n += st.n; o.y = Math.min(o.y, st.y); w += st.n; });
+      o.x /= w; o.z /= w; o.at = j.m[0].at; o.off = Math.min.apply(null, j.m.map(function (st) { return st.off; }));
+      o.r = Math.max(25, Math.max.apply(null, j.m.map(function (st) { return Math.hypot(st.x - o.x, st.z - o.z); })) + 15);
+      return o;
+    });
+    console.log('[TOUR] §CIVIL_ROUTE_JUNCTION stops=' + _stopsRaw + ' → junctions=' + stops.length + ' at=[' + stops.map(function (st) { return st.at; }).join(',') +
+      '] radiusM=[' + stops.map(function (st) { return st.r.toFixed(0); }).join(',') + ']');
     var SPEED = 25;                       // presentation: m/s along the road (~90 km/h)
     var seg = function (from, to, label) {
       var pts = path.slice(from, to + 1); if (pts.length < 2) return null;
@@ -890,11 +920,11 @@ function setupTour(A) {
     var actions = [{ type: 'moveTo', x: path[0].x, y: path[0].y, z: path[0].z, name: 'Start of highway' }];
     var cur = 0;
     stops.forEach(function (st, si) {
-      var f = seg(cur, Math.max(cur + 1, st.at), si === 0 ? 'Along the highway' : 'Continue');
-      if (f) actions.push(f);
-      actions.push({ type: 'orbit', cx: st.x, cy: st.y, cz: st.z, radius: 25, tiltDeg: 35, fullCircle: true, duration: 10,
+      // forward only: a junction at the current route point is orbited where we are — never a back-and-forth hop
+      if (st.at > cur) { var f = seg(cur, st.at, si === 0 ? 'Along the highway' : 'Continue'); if (f) actions.push(f); }
+      actions.push({ type: 'orbit', cx: st.x, cy: st.y, cz: st.z, radius: st.r, tiltDeg: 35, fullCircle: true, duration: 10,
                      name: stopLabel + ' ' + (si + 1) + (st.n > 1 ? ' (' + st.n + ' columns)' : '') });
-      cur = Math.max(cur + 1, st.at);
+      cur = Math.max(cur, st.at);
     });
     var last = seg(cur, path.length - 1, stops.length ? 'Continue to end' : 'Along the highway');
     if (last) actions.push(last);
