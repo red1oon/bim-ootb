@@ -2279,7 +2279,9 @@ function setupTools(A) {
       A._lampCapFarM = null;   // §LAMP_CAP_FADE — set only while the cap is cutting the in-view set
       // Default OFF (watchdog for red1, 2026-09-25: the approved ref4 hall is the list-order look; nearest read brighter and
       // harsher). &lampcap=nearest / APP._stillLampCapNearest=true turns it on for later comparison.
-      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search);
+      // §ALTC_HIGHWAY: a road has ~220 heads strung over km — list order would light the first 200 along the export, not
+      // the ones by the camera. Civil models take the nearest-first rule (same switch as &lampcap=nearest).
+      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search) || !!(A.isCivilModel && A.isCivilModel());
       // §SOURCED_LIGHT_CAP — with light zones (Alt+S), keep camera-zone lamps first, then lamps in zones the frame shows,
       // then the nearest. &lampcap=list keeps the old list order for red1's A/B.
       var _zoneCap = inView.length > _capN && A._sourcedCap && window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search);

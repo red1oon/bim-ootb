@@ -3845,7 +3845,10 @@
         // Two controls, both falsifiable: __ilForceOn defeats the gate outright (§118's own), and
         // __ilNoRelight restores §116's original "off to the end" so the relight can be proved to be
         // the thing that lit the windows, rather than assumed.
-        A._interiorLightsOff = A._ilPastStick &&
+        // §ALTC_HIGHWAY lamps: this window exists for INTERIOR fixtures seen from a camera climbing away outside. A road's
+        // lamps are the exterior scene itself — on for the whole film (user: "late evening with lamps on and hitting
+        // surface"). Civil only; buildings keep the window exactly.
+        A._interiorLightsOff = !(A.isCivilModel && A.isCivilModel()) && A._ilPastStick &&
           !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
           !(typeof window !== 'undefined' && window.__ilForceOn);
         // §117's witness runs just before capture (search §INTERIOR_LIGHTS_WITNESS), not here:
