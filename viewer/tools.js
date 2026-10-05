@@ -18,6 +18,16 @@ function setupTools(A) {
     if (!A.db || !A.ground) return;
     var _gLvl = 0, _gSrc = '?';
     try {
+      // §GROUND_CIVIL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §FB ground): a model holding civil disciplines
+      // (codes = rates.js SEQUENCE_CIVIL keys, the viewer's one civil list) takes Step 4 directly. Steps 1-3 are
+      // BUILDING rules: a bridge merged into a road has a "Level 1" slab at 56.58 m that buried 1,394 road pieces
+      // under the Night/Shadow ground plane; Step 4 over all elements = 43.46 m, below the road (p2 51.74).
+      // Fleet: 0 civil-discipline rows in every buildings/*.db → gate false → Steps 1-3 unchanged.
+      if (window.SEQUENCE_CIVIL) {
+        var _cq = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')");
+        var _cn = (_cq.length && _cq[0].values[0][0]) || 0;
+        if (_cn > 0) { _gSrc = 'civil'; console.log('§GROUND_CIVIL civilRows=' + _cn + ' → p2-bottom over all elements (building slab steps skipped)'); }
+      }
       // Step 1: Try storey name matching for ground floor slabs.
       // §GROUND_Y_LOWEST_GF (2026-07-17): among the largest few GF-named slabs, take the LOWEST,
       // not simply the largest-area one. A "ground floor" name can appear at multiple elevations
@@ -28,7 +38,7 @@ function setupTools(A) {
       // scoped to the storey-name filter; identical result for normal buildings (their GF plate is
       // both largest AND lowest), only differs — correctly — in the mixed-datum case.
       var gfNames = "('Ground Floor','Ground','First Floor','1st Floor','Level 0','Level 00','Level 1','GF','L0','L00','L1','00','0','1F','EG','Erdgeschoss','Storey 1','Plan 1','VÅN 1','VÅNING 1','1. OG','Rez-de-chaussée','RC','Planta Baja','PB','Piso 0','Begane grond','BG','GROUND FLOOR LEVEL','Ground Lev','Aras Tanah','u.etg')";
-      var zr = A.db.exec(
+      var zr = _gSrc !== '?' ? [] : A.db.exec(
         "SELECT t.center_z - t.bbox_z/2 AS bottom, t.bbox_x * t.bbox_y AS area, t.center_z, m.storey " +
         "FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
         "WHERE m.ifc_class='IfcSlab' AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.0 " +
@@ -79,7 +89,7 @@ function setupTools(A) {
       // storey match reach here (roads, MEP-only). MIN(center_z) let a handful of strays set the plane:
       // JELAPANG road bottoms 51–79 m, 16 lighting strays down to −18 m → plane at −11 m, road ~62 m
       // above it. Take the 2nd percentile of element BOTTOMS instead (≥50 elements; else MIN as before).
-      if (_gSrc === '?') {
+      if (_gSrc === '?' || _gSrc === 'civil') {
         zr = A.db.exec('SELECT center_z - COALESCE(bbox_z, 0) / 2 FROM element_transforms WHERE center_z IS NOT NULL ORDER BY 1');
         var _zb = (zr.length ? zr[0].values : []).map(function(r) { return r[0]; });
         if (_zb.length >= 50) {
