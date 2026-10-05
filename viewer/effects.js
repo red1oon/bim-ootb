@@ -8970,10 +8970,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // this). Radius uses `totalLen` (the walk's own travel, already computed) rather than the 240-
     // sample arc length _evenTurnBuild measures later — the same choice the dive already makes
     // (_diveNoiseBuild above uses ITS OWN straight-line travel, not a beat-later refinement of it).
-    var _wnkN = 32, _walkBusy = 0;
+    var _wnkN = 32, _walkBusy = 0, _walkBusyProbes = null;
     (function _walkNoiseBuild() {
-      var q, nz = [], nzC = [], nzMax = 0, rad = _noiseRadius(totalLen);
-      for (q = 0; q <= _wnkN; q++) nz.push(_densityAt(_outPos(q / _wnkN), rad));
+      var q, nz = [], nzC = [], nzMax = 0, rad = _noiseRadius(totalLen), _wpPos = [];
+      for (q = 0; q <= _wnkN; q++) { var _wp = _outPos(q / _wnkN); _wpPos.push({ x: _wp.x, z: _wp.z }); nz.push(_densityAt(_wp, rad)); }
       for (q = 0; q <= _wnkN; q++) {
         var lo = nz[Math.max(0, q - 1)], hi = nz[Math.min(_wnkN, q + 1)];
         nzC.push(Math.abs(hi - lo));
@@ -8984,6 +8984,8 @@ async function setupEffects(A, renderer, scene, camera) {
         for (q = 0; q < nzC.length; q++) sum += nzC[q];
         _walkBusy = (sum / nzC.length) / nzMax;
       }
+      // §ALTC_PANELS: the same probes, exported per position (0..1), so the road panels read THIS busyness, not a second one
+      _walkBusyProbes = { pos: _wpPos, v: nzC.map(function(c) { return nzMax > 0 ? c / nzMax : 0; }) };
       console.log('§CPE_NOISE_LAW beat=walk-budget src=bbox probes=' + (_wnkN + 1) +
         ' radius=' + rad.toFixed(1) + 'm elems=' + _densPoints().length +
         ' meanBusy=' + _walkBusy.toFixed(3) + ' maxChange=' + nzMax +
@@ -10505,7 +10507,7 @@ async function setupEffects(A, renderer, scene, camera) {
       ' (fanRays=' + CINEMA_FAN_RAYS + ' spaceCands=' + spaceCands.length + ' exitCands=' + exitScored.length + ')');
     return { base: base, envelope: envelope, arcOnly: !!arcBboxRaw, fillDistance: fillDistance,
              pushInRadius: pushInRadius, radiusMin: radiusMin, radiusMax: radiusMax,
-             pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit, orbitRadius: orbitRadius,
+             pivot: pivot, pivotSrc: pivotSrc, settle: settle, exit: chosenExit, orbitRadius: orbitRadius, walkBusy: _walkBusyProbes,
              beats: { dive: tD, spin: tS, out: tO, pullout: tP, flyback: tF, reveal: tV, rise: tR },
              // §CPE_DISCIPLINE_REVEAL_PULLOUT — the pacing info A.cpeRevealVisualAt(plan, tNorm) and
              // A.cpeRevealCaptionAt(plan, tNorm) need to compute which visual phase/caption a given

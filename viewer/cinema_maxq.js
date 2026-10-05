@@ -2192,6 +2192,14 @@
     // ROUND 16 item 2 — `_inLoadPathComposite` is true for the WHOLE call: load path is the one
     // overlay that keeps drawing unwrapped through the hold BY DESIGN (never `_drawUnlessHold`), so
     // its own draws must never count toward `unwrappedDraws`.
+    // §ALTC_PANELS — road data card (civil films only; draws nothing between its slots or when none were built). Through
+    // _drawUnlessHold so it fades with a freeze and registers its rect; before the load path so the ladder avoids it.
+    if (A.roadPanelsCompositeOntoCanvas && A._roadPanelTn != null) {
+      _drawUnlessHold('road.panels', function (a) {
+        try { A.roadPanelsCompositeOntoCanvas(ctx, w, h, A._roadPanelTn, a); }
+        catch (eRPC) { if (!A._roadPanelsWarned) { A._roadPanelsWarned = true; console.warn('§ROAD_PANELS_DRAW failed: ' + (eRPC && eRPC.message)); } }
+      }, function () { return A.roadPanelsLastBox; });
+    }
     if (A.loadPathCompositeOntoCanvas) {
       A._inLoadPathComposite = true;
       try { A.loadPathCompositeOntoCanvas(ctx, w, h, _fcFilmSec); }
@@ -3428,6 +3436,12 @@
         try { A.flythruCuesBuild(plan, _filmSecFull); }
         catch (eFC) { console.warn('§FLYTHRU_CUES_BUILD failed: ' + (eFC && eFC.message) + ' — cues disabled for this bake'); }
       }
+      // §ALTC_PANELS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_PANELS) — road data cards on quiet stretches of the
+      // drive. Civil models only (the builder logs VACUOUS and returns null on a building). Never allowed to kill a bake.
+      if (A.roadPanelsBuild) {
+        try { A.roadPanelsBuild(plan, _filmSecFull); }
+        catch (eRP) { console.warn('§ROAD_PANELS_BUILD failed: ' + (eRP && eRP.message) + ' — road panels disabled for this bake'); }
+      }
       // §129.6 item 1 (2026-09-15, after a real HHS bake showed a camera "resume jump"):
       // §LOADPATH_WINDOW_SHIFT is WITHDRAWN — pushing `_revealU` forward left `_tn`/`_tnFilm`
       // free to keep advancing during the hold (sun arc, buildup cursor, everything driven off
@@ -4020,6 +4034,7 @@
         // (_tFilm(_tn) === _tn when no clip is set).
         // (_tnFilm is computed at the top of this iteration — see §ESCAPE_ROUTE_CAMERA_EASE there.)
         if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(plan, _tnFilm);
+        A._roadPanelTn = _tnFilm;   // §ALTC_PANELS: the film fraction the composite pass draws this frame's road card at
         if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(plan, _tnFilm);   // §57.4-REAL-FADE
         // §STOREY_HIGHLIGHT_REVEAL — the storey tint, windowed to the LAST 5s of `pullback` (ending
         // at plan.beats.rise, the orbit's own start — NOT the orbit beat itself). Pure function of
@@ -5024,6 +5039,7 @@
       // §CPE_GHOST_GROUND: same contract, same exit — a ghosted ground left behind would follow the
       // user into normal navigation for the rest of the session.
       try { _ghostGroundRestore(); } catch (eGG) {}
+      try { if (A.roadPanelsDispose) A.roadPanelsDispose(); A._roadPanelTn = null; } catch (eRPD) {}   // §ALTC_PANELS
       // §CPE_DISCIPLINE_REVEAL: same contract — ARC/STR left hidden after a bake would follow the
       // user into normal navigation. plan=null is the explicit "force restore" signal.
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV) {}
@@ -5157,6 +5173,7 @@
       try { if (_bkState && window.tmRestoreDerivedOrder) { window.tmRestoreDerivedOrder(); _bkState = null; } } catch (e3) {}
       // §CPE_BUILDUP_ACTIVATE_POPS_PANEL: same restore on the THROW path — see the in-try comment above.
       try { if (window.tmDeactivateIfBakeOwned) window.tmDeactivateIfBakeOwned(); } catch (eTM2) {}
+      try { if (A.roadPanelsDispose) A.roadPanelsDispose(); A._roadPanelTn = null; } catch (eRPD2) {}   // §ALTC_PANELS (throw path)
       try { _ghostGroundRestore(); } catch (e4) {}
       try { if (A.cpeRevealApplyVisual) A.cpeRevealApplyVisual(null, 0); } catch (eRV2) {}
       try { if (A.cpeArchFadeApplyVisual) A.cpeArchFadeApplyVisual(null, 0); } catch (eRVf2) {}
