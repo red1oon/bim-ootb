@@ -3439,7 +3439,7 @@
       // §ALTC_PANELS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_PANELS) — road data cards on quiet stretches of the
       // drive. Civil models only (the builder logs VACUOUS and returns null on a building). Never allowed to kill a bake.
       if (A.roadPanelsBuild) {
-        try { A.roadPanelsBuild(plan, _filmSecFull); }
+        try { await A.roadPanelsBuild(plan, _filmSecFull); }   // §ALTC_CHECKS: async (loads road_rules.json, runs road_check once)
         catch (eRP) { console.warn('§ROAD_PANELS_BUILD failed: ' + (eRP && eRP.message) + ' — road panels disabled for this bake'); }
       }
       // §129.6 item 1 (2026-09-15, after a real HHS bake showed a camera "resume jump"):

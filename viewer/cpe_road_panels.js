@@ -6,7 +6,7 @@
 function setupCpeRoadPanels(A) {
   'use strict';
   var PANEL_SEC = 5, GAP_SEC = 2, STRETCH_M = 150;   // presentation: card on-screen time, spacing, half-width of a stretch
-  var KIND_ORDER = ['counts', 'drainage', 'signs', 'planned'];
+  var KIND_ORDER = ['counts', 'check', 'planned', 'drainage', 'signs'];   // §ALTC_CHECKS: 'check' = a road check as a worked formula
   var _rp = null;
 
   function _q(sql) { try { return (A.dbQuery && A.dbQuery(sql)) || []; } catch (e) { return []; } }
@@ -37,9 +37,40 @@ function setupCpeRoadPanels(A) {
     return wb.v[bi] || 0;
   }
 
-  // Build once per bake. Returns the slot list (also kept for the composite pass). filmSec = the film's delivered seconds.
+  // §ALTC_CHECKS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_CHECKS): road_check.js rows, run ONCE per bake, each
+  // shown as a worked formula with its rule's film_status (VALID / SPECULATIVE, the tracking list in rates/road_rules.json).
+  // RoadCheck reads row OBJECTS (sql.js getAsObject), A.dbQuery returns arrays → a small adapter over A.db.
+  var _checks = null;
+  function _objQuery(sql, params) {
+    var st = A.db.prepare(sql), out = [];
+    try { if (params && params.length) st.bind(params); while (st.step()) out.push(st.getAsObject()); } finally { st.free(); }
+    return out;
+  }
+  function _loadChecks() {
+    if (!window.RoadCheck || !A.db || typeof fetch !== 'function') { console.log('§ROAD_CHECK_FILM VACUOUS — road_check.js / db / fetch missing'); return Promise.resolve(null); }
+    return fetch('rates/road_rules.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (cfg) {
+      var t0 = performance.now(), res = window.RoadCheck.run(_objQuery, cfg, { log: function () {} }), R = {};
+      (cfg.road_rules || []).forEach(function (r) { R[r.name] = r; });
+      var byGuid = {}, nV = 0, nS = 0;
+      (res.rows || []).forEach(function (row) {
+        var rule = R[row.rule]; if (!rule || !row.guid) return;
+        var st = (rule.film_status && rule.film_status.status) || 'speculative';
+        if (st === 'valid') nV++; else nS++;
+        (byGuid[row.guid] = byGuid[row.guid] || []).push({ row: row, rule: rule, status: st });
+      });
+      console.log('§ROAD_CHECK_FILM rows=' + (res.rows || []).length + ' valid=' + nV + ' speculative=' + nS + ' ms=' + (performance.now() - t0).toFixed(0) +
+        ' statuses=[' + (cfg.road_rules || []).map(function (r) { return r.name + ':' + ((r.film_status && r.film_status.status) || '?'); }).join(',') + ']');
+      return byGuid;
+    }).catch(function (e) { console.warn('§ROAD_CHECK_FILM failed: ' + e.message); return null; });
+  }
+
+  // Build once per bake. Resolves to the slot list (also kept for the composite pass). filmSec = the film's delivered seconds.
   A.roadPanelsBuild = function (plan, filmSec) {
-    _rp = null;
+    _rp = null; _checks = null;
+    if (!(A.isCivilModel && A.isCivilModel())) return Promise.resolve(_buildSlots(plan, filmSec));
+    return _loadChecks().then(function (c) { _checks = c; return _buildSlots(plan, filmSec); });
+  };
+  function _buildSlots(plan, filmSec) {
     if (!(A.isCivilModel && A.isCivilModel())) { console.log('§ROAD_PANELS VACUOUS — not a civil model (buildings never build road panels)'); return null; }
     var b = plan && plan.beats, route = plan && plan.waypoints;
     if (!b || !route || route.length < 2 || typeof plan.poseAt !== 'function' || !(filmSec > 0)) { console.log('§ROAD_PANELS VACUOUS — no drive on the plan'); return null; }
@@ -85,7 +116,7 @@ function setupCpeRoadPanels(A) {
       's build-up drive) cardSec=' + PANEL_SEC + ' busyMedian=' + median.toFixed(3) + ' kinds=[' + slots.map(function (s) { return s.card.kind; }).join(',') +
       '] at=[' + slots.map(function (s) { return (s.t0 * filmSec).toFixed(1) + 's'; }).join(',') + '] routeLenM=' + ch.len.toFixed(0));
     return _rp;
-  };
+  }
 
   function _card(kind, inS, psets, lo, hi, plannedDone) {
     var head = 'CH ' + lo + '–' + hi + ' m (inferred)';
@@ -111,6 +142,21 @@ function setupCpeRoadPanels(A) {
       if (!r.length) return null;
       return { kind: kind, title: (kind === 'drainage' ? 'Drainage here — ' : 'Road signs here (JKR) — ') + head,
                rows: r.map(function (x) { return { label: x[0] + (x[1] ? ' · ' + x[1] : ''), value: +x[2], key: x[0], sub: x[1] }; }), guids: gs };
+    }
+    if (kind === 'check' && _checks) {
+      var hits = [];
+      inS.forEach(function (e) { (_checks[e.g] || []).forEach(function (c) { hits.push(c); }); });
+      if (!hits.length) return null;
+      hits.sort(function (a, b) { return (a.status === 'valid' ? 0 : 1) - (b.status === 'valid' ? 0 : 1); });
+      var h = hits[0], row = h.row, rule = h.rule, val = row.measured, lim = row.limit, unit = row.unit || '';
+      var meets = (typeof lim === 'number') ? (rule.name === 'chevron_spacing' ? Math.abs(val - lim) <= 0.5 : val >= lim) : false;
+      var tag = h.status === 'valid' ? 'VALID' : 'SPECULATIVE';
+      return { kind: kind, title: 'Road check — ' + rule.label, status: h.status, rule: rule.name, guid: row.guid, measured: val,
+        rows: [{ label: rule.formula || rule.name, value: val + ' ' + unit },
+               { label: rule.clause + ' (' + rule.verb + ')', value: (typeof lim === 'number' ? (rule.name === 'chevron_spacing' ? '= ' : '≥ ') + lim + ' ' + unit : String(lim) + ' ' + unit) },
+               { label: 'result', value: typeof lim === 'number' ? (meets ? 'meets' : 'outside the limit') : 'matches no table row' },
+               { label: tag, value: h.status === 'valid' ? 'method checked' : 'method under review' }],
+        guids: [row.guid] };
     }
     if (kind === 'planned' && !plannedDone) {
       return { kind: kind, title: 'Coming to this view — planned', rows: [
