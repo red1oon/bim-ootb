@@ -3969,7 +3969,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'"
+        "WHERE " + _scheduledWhere('m')
       );
     } catch (e) { return null; }
     if (!r.length || !r[0].values.length) return null;
@@ -4443,7 +4443,7 @@
         'SELECT m.guid, m.ifc_class, m.element_name, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
         'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+        "WHERE " + _scheduledWhere('m'));
       if (!rr || !rr.length) return null;
       var basis = SR._productivity_basis_secs || 28800;
       var days = {}, n = 0, ovN = 0;
@@ -4512,26 +4512,35 @@
   // and runs the legacy zone path byte-identically, so a fetch failure degrades to today's
   // behaviour instead of breaking generation.
   var _4dTemplate = null, _4dTemplateTried = false;
-  // §CIVIL_TEMPLATE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q): when EVERY element of the open model
-  // carries a civil discipline (SEQUENCE_CIVIL keys), the programme comes from rates/4D_template_civil.json.
-  // Any building element present → the building template, exactly as before (NON-IMPACT rule). The civil
-  // file is fetched only for an all-civil model; the choice is re-made per db so a later building reverts.
+  // §CIVIL_TEMPLATE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, §MIXED_PROGRAMME): when the open model carries ANY
+  // civil discipline (SEQUENCE_CIVIL keys), the programme comes from rates/4D_template_civil.json — which also declares the
+  // structure phases (a bridge merged into a road is built ALONGSIDE it, user ruling 2026-10-06). Was: EVERY element civil,
+  // so a road + bridge got the building template and no civil order at all. No civil row → the building template, exactly
+  // as before (NON-IMPACT rule: fleet DBs hold 0 civil rows). The choice is re-made per db so a later building reverts.
   var _4dTemplateBase = null, _4dTemplateCivil = null, _4dTemplateDb = null;
-  function _allCivil(db) {
+  // §SCHEDULE_POPULATION — the owner is ScheduleAuthor.scheduledWhere (schedule_author.js); this is its only caller-side
+  // fallback, for a page where schedule_author.js failed to load (§LOAD_FAIL) — the pre-owner clause, unchanged.
+  function _scheduledWhere(a) {
+    if (window.ScheduleAuthor && window.ScheduleAuthor.scheduledWhere) return window.ScheduleAuthor.scheduledWhere(a);
+    var p = a ? a + '.' : '';
+    return p + "ifc_class != 'IfcOpeningElement' AND " + p + "ifc_class != 'IfcSpace'";
+  }
+  function _hasCivil(db) {
     var keys = Object.keys(window.SEQUENCE_CIVIL || {});
     if (!db || !keys.length) return false;
     try {
       var r = db.exec("SELECT COUNT(*), SUM(CASE WHEN discipline IN (" + keys.map(function () { return '?'; }).join(',') +
-        ") THEN 1 ELSE 0 END) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'", keys);
+        ") THEN 1 ELSE 0 END) FROM elements_meta WHERE " + _scheduledWhere(''), keys);
       var n = r.length ? r[0].values[0][0] : 0, c = r.length ? (r[0].values[0][1] || 0) : 0;
-      return n > 0 && c === n;
+      console.log('§CIVIL_TEMPLATE_GATE scheduled=' + n + ' civil=' + c + ' → ' + (c > 0 ? (c === n ? 'civil' : 'civil+structures') : 'building'));
+      return c > 0;
     } catch (e) { return false; }
   }
   async function _civilSwap() {
     var app = A(), db = app && app.db;
     if (_4dTemplateDb === db) return _4dTemplate;
     _4dTemplateDb = db;
-    if (!_allCivil(db)) { _4dTemplate = _4dTemplateBase; try { window._4dTemplate = _4dTemplate; } catch (e) {} return _4dTemplate; }
+    if (!_hasCivil(db)) { _4dTemplate = _4dTemplateBase; try { window._4dTemplate = _4dTemplate; } catch (e) {} return _4dTemplate; }
     if (!_4dTemplateCivil) {
       try {
         _4dTemplateCivil = await fetch('rates/4D_template_civil.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
@@ -4540,7 +4549,7 @@
     _4dTemplate = _4dTemplateCivil;
     try { window._4dTemplate = _4dTemplate; } catch (e) {}
     console.log('§CIVIL_TEMPLATE loaded rates/4D_template_civil.json v' + ((_4dTemplate.meta && _4dTemplate.meta.version) || '?') +
-      ' phases=' + (_4dTemplate.phases || []).length + ' — every element is civil (order: ' + ((_4dTemplate.meta && _4dTemplate.meta.order_source) || '').split(' — ')[0] + ')');
+      ' phases=' + (_4dTemplate.phases || []).length + ' — model carries civil disciplines (order: ' + ((_4dTemplate.meta && _4dTemplate.meta.order_source) || '').split(' — ')[0] + ')');
     return _4dTemplate;
   }
   async function _load4DTemplate() {
@@ -5053,7 +5062,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace' " +
+        "WHERE " + _scheduledWhere('m') + " " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
@@ -10126,7 +10135,7 @@
         if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
       } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
       try {
-        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE " + _scheduledWhere(''));
         if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
       } catch (e) { total = 0; }
     }

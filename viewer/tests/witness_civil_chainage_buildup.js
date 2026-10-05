@@ -46,7 +46,11 @@ const server = http.createServer((req, res) => { try {
     const P = (A.civilDriveRoute && A.civilDriveRoute()) || A.civilRoutePath().path;
     const near = (x, z) => { let bi = 0, bd = Infinity; P.forEach((p, k) => { const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; bi = k; } }); return bi; };
     const secG = {};
-    const sec = (x, y, z, g) => { if (g in secG) return secG[g]; const wb = A._loadPathInstanceWorldBox ? A._loadPathInstanceWorldBox(g) : null;
+    // a zero-size box at the origin is a lookup MISS, not a position — the code's own rule (time_machine.js _secOf). Without
+    // it this instrument filed 25 lamp columns of Merged.db at the origin's route index (15) and reported them "before their
+    // pavement" while the schedule had filed them by centroid at CH 00 / CH 02 (2026-10-06, §CIVIL_GRAPH_GATE).
+    const sec = (x, y, z, g) => { if (g in secG) return secG[g]; let wb = A._loadPathInstanceWorldBox ? A._loadPathInstanceWorldBox(g) : null;
+      if (wb && wb.maxX - wb.minX <= 0 && wb.maxZ - wb.minZ <= 0 && wb.maxY - wb.minY <= 0) wb = null;
       let k; if (wb) k = Math.min(near(wb.minX, wb.minZ), near(wb.minX, wb.maxZ), near(wb.maxX, wb.minZ), near(wb.maxX, wb.maxZ)); else { const v = A.ifc2three(x, y, z); k = near(v.x, v.z); }
       return (secG[g] = k); };
     const S = {}; const all = [];

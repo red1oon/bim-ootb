@@ -329,8 +329,13 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // Phase names = rates/4D_template_civil.json phases. Order: secondary source (JKR road-works method statements).
 // resource = one §CIVIL_TRADES crew per discipline (params copied from MASON) → durations per element unchanged, NOT civil-calibrated.
 var SEQUENCE_CIVIL = {
+  // §MIXED_PROGRAMME (CIVIL_HIGHWAY_JELAPANG.md): the partner's ground treatment + gabions. Phase ORDER is declared in
+  // rates/4D_template_civil.json (ground_treatment → earthworks; slope_protection with drainage), not by these numbers;
+  // sequence 1 = rests on soil (schedule_gate ground exemption, seq === 1) like earthworks; existing ranks unchanged.
+  GEOTECH:{phase:'Ground Treatment',sequence:1,resource:'CIVIL_GEOTECH'},
   EARTHWORK:{phase:'Earthworks',sequence:1,resource:'CIVIL_EARTHWORKS'},
   DRAINAGE:{phase:'Drainage',sequence:2,resource:'CIVIL_DRAINAGE'},
+  GABION:{phase:'Slope Protection',sequence:2,resource:'CIVIL_GABION'},
   ROAD:{phase:'Pavement',sequence:3,resource:'CIVIL_PAVING'},
   FURNITURE:{phase:'Road Furniture',sequence:4,resource:'CIVIL_FURNITURE'},
   SIGNAGE:{phase:'Signage',sequence:5,resource:'CIVIL_SIGNAGE'},

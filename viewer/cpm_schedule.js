@@ -870,12 +870,17 @@
       var axis = LA.derive(db, items, { label: (opts && opts.label) || ('n' + items.length) });
       var des0 = designatedSupport(items, G);
       var filing = _cellFiling(items, axis, des0);
-      var path = filing.repr >= CELL_GATE_MARK ? 'CELL' : 'GRAPH';
+      // §CIVIL_GRAPH_GATE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): a road's location is its chainage section
+      // (item.lvlSec, §CHAINAGE_LEVELS), which only the graph engine reads (E3-civil + E4 line of balance). The cell path
+      // files by HEIGHT levels — measured on a road + bridge + ground works merge: lamps below the road's height band were
+      // placed before the pavement. Any item with a chainage section → graph. No building item carries lvlSec → unchanged.
+      var _chainN = 0; for (var _ci = 0; _ci < items.length; _ci++) if (typeof items[_ci].lvlSec === 'number') _chainN++;
+      var path = (_chainN > 0) ? 'GRAPH' : (filing.repr >= CELL_GATE_MARK ? 'CELL' : 'GRAPH');
       console.log('§CELL_GATE n=' + items.length + ' (whole scheduled population, §S46 discipline)' +
         ' E1edges=' + filing.e1Total + ' insideLT=' + filing.intra +
         ' representable=' + filing.representable + ' REFUSED=' + filing.refused +
         ' repr=' + (100 * filing.repr).toFixed(2) + '% mark=' + (100 * CELL_GATE_MARK) + '%' +
-        ' promoted=' + filing.promoted + ' path=' + path +
+        ' promoted=' + filing.promoted + ' path=' + path + (_chainN ? ' reason=chainage(' + _chainN + ' items carry a section)' : '') +
         ' [gate quantity: §S47b formula, level grain, designatedSupport unchanged — a rule, not a dictionary]');
       if (path === 'CELL') {
         var solC = solveCells(items, filing, opts);

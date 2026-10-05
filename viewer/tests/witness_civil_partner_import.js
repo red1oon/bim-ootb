@@ -16,5 +16,10 @@ ok('file names → codes (partner files mapped; bridge + building names unchange
 const R = {}; vm.createContext(R); vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8') + '\nthis.S=SEQUENCE_CIVIL;this.C=CIVIL_RATES;this.L=LABOR_RATES;this.D=DISC_COLORS;', R);
 const NEW = ['GEOTECH', 'GABION', 'CHAINAGE', 'ROW'];
 ok('each new code: crew + unpriced CIVIL_RATES line + colour', NEW.every(k => R.C[k] && R.C[k].rate === null && R.L[R.C[k].trade] && R.D[k]));
-ok('SEQUENCE_CIVIL unchanged here (7 road codes, EARTHWORK=1 … MARKING=7)', Object.keys(R.S).length === 7 && R.S.EARTHWORK.sequence === 1 && R.S.MARKING.sequence === 7);
+// §MIXED_PROGRAMME (2026-10-06) classified GEOTECH / GABION into phases; the original seven keep their ranks, and the references
+// (CHAINAGE / ROW) stay unclassified — they are excluded from the schedule by ScheduleAuthor.scheduledWhere, never phased.
+const ORIG = { EARTHWORK: 1, DRAINAGE: 2, ROAD: 3, FURNITURE: 4, SIGNAGE: 5, LIGHTING: 6, MARKING: 7 };
+ok('SEQUENCE_CIVIL: original 7 ranks unchanged, + GEOTECH/GABION only, references unphased',
+  Object.keys(ORIG).every(k => R.S[k] && R.S[k].sequence === ORIG[k]) && Object.keys(R.S).length === 9 &&
+  R.S.GEOTECH && R.S.GEOTECH.phase === 'Ground Treatment' && R.S.GABION && R.S.GABION.phase === 'Slope Protection' && !R.S.CHAINAGE && !R.S.ROW);
 const f = checks.filter(x => !x).length; console.log('§WITNESS_CIVIL_PARTNER_IMPORT ' + (f ? 'FAIL ' : 'PASS ') + (checks.length - f) + '/' + checks.length); process.exit(f ? 1 : 0);
