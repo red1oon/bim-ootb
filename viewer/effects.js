@@ -6882,9 +6882,17 @@ async function setupEffects(A, renderer, scene, camera) {
   // Outer-scope and A.-exposed (not nested inside _cinemaPathPlan) so BOTH the plan builder here AND
   // cinema_path_editor.js's own _naturalDuration() (the client-side seconds estimate that drives the
   // bake's frame count) read the exact same list — one implementation, not two kept in sync by hand.
+  // §REVEAL_SHELL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §REVEAL_SHELL): the ONE owner of what the reveal hides as the
+  // "shell". A building's shell is its architecture + structure; a road's shell is also its pavement (ROAD) — with only ARC/STR
+  // hidden, a road's ghost round hid the bridge and nothing along the road. Gate: A.isCivilModel(); buildings unchanged.
+  A.cpeRevealShellDiscs = function() {
+    var civil = typeof A.isCivilModel === 'function' && A.isCivilModel();
+    return civil ? ['ARC', 'STR', 'ROAD'] : ['ARC', 'STR'];
+  };
   A.cpeRevealDiscsPresent = function() {
-    var counts = {};
-    function bump(d) { if (d && d !== 'ARC' && d !== 'STR') counts[d] = (counts[d] || 0) + 1; }
+    var counts = {}, shell = {};
+    A.cpeRevealShellDiscs().forEach(function(d) { shell[d] = 1; });
+    function bump(d) { if (d && !shell[d]) counts[d] = (counts[d] || 0) + 1; }
     if (typeof A.collectMeshes === 'function') {
       A.collectMeshes(function(o) { return o.isMesh && o.userData && o.userData.disc; })
         .forEach(function(o) { bump(o.userData.disc); });
@@ -6980,7 +6988,7 @@ async function setupEffects(A, renderer, scene, camera) {
       var fadeFrac = (plan.durationSec > 0) ? ARCH_DROP_FADE_SEC / plan.durationSec : 0;
       var inArchFade = tNorm <= tF + fadeFrac * ARCH_BULK_CUT_FRAC;
       return { phase: 'ghost', discs: rv.discs.slice(),
-               visDiscs: inArchFade ? rv.discs.concat(['ARC', 'STR']) : rv.discs.slice() };
+               visDiscs: inArchFade ? rv.discs.concat(A.cpeRevealShellDiscs()) : rv.discs.slice() };
     }  // round 2
     if (!(b.rise > b.reveal)) return null;
     var riseSpanSec = (rv.riseSec || 0) + (rv.tailSec || 0);
@@ -7118,7 +7126,8 @@ async function setupEffects(A, renderer, scene, camera) {
     if (!inWindow) { if (_archFadeTouched.length) _archFadeRestore(); return; }
     if (!_archFadeTouched.length) {
       _archFadeMatMap = (typeof Map !== 'undefined') ? new Map() : null;
-      A.collectMeshes(function(o) { return o.isMesh && (o.userData.disc === 'ARC' || o.userData.disc === 'STR'); }).forEach(function(o) {
+      var _shellSet = {}; A.cpeRevealShellDiscs().forEach(function(d) { _shellSet[d] = 1; });
+      A.collectMeshes(function(o) { return o.isMesh && _shellSet[o.userData.disc]; }).forEach(function(o) {
         if (!o.material || Array.isArray(o.material) || !o.material.clone) return;
         var orig = o.material, cl = _archFadeMatMap ? _archFadeMatMap.get(orig) : null;
         if (!cl) { cl = orig.clone(); cl.transparent = true; if (_archFadeMatMap) _archFadeMatMap.set(orig, cl); }
@@ -9072,10 +9081,10 @@ async function setupEffects(A, renderer, scene, camera) {
         _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
         console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' flybackSec=' +
           _revealFlybackSec.toFixed(1) + ' round2Sec=' + _revealRoundSec.toFixed(1) + ' tailSec=' +
-          _revealTailSec.toFixed(1) + ' discs=[' + _revealDiscs.join(',') + '] totalSec=' +
+          _revealTailSec.toFixed(1) + ' discs=[' + _revealDiscs.join(',') + '] shell=[' + A.cpeRevealShellDiscs().join(',') + '] totalSec=' +
           (_revealPulloutSec + _revealFlybackSec + _revealRoundSec + _revealTailSec).toFixed(1));
       } else {
-        console.log('§CPE_REVEAL_ROUND skipped — no non-ARC/STR discipline present in this building');
+        console.log('§CPE_REVEAL_ROUND skipped — no discipline outside the shell [' + A.cpeRevealShellDiscs().join(',') + '] present in this building');
       }
     }
     var _natSec = {
