@@ -382,10 +382,15 @@
         if (key.slice(0, cut) === L && CIVIL_SEQ[key.slice(cut + 2)]) civ.push(key.slice(cut + 2));
       });
       if (civ.length < 2) return;
-      civ.sort(function (a, b) { return CIVIL_SEQ[a] - CIVIL_SEQ[b]; });
-      for (var p = 0; p + 1 < civ.length; p++) {
-        var m = milestone(L, civ[p]), succ = groups[L + '||' + civ[p + 1]];
-        for (var k = 0; k < succ.length; k++) addEdge(m, succ[k], FS, 3, 'e3');
+      // §PARTNER_DISCS D3: chain by SEQUENCE GROUP — every phase of group k completes before any phase of group k+1; phases sharing a
+      // sequence are parallel trades and never chain each other.
+      var bySeq = {}; civ.forEach(function (ph) { (bySeq[CIVIL_SEQ[ph]] = bySeq[CIVIL_SEQ[ph]] || []).push(ph); });
+      var seqs = Object.keys(bySeq).map(Number).sort(function (a, b) { return a - b; });
+      for (var p = 0; p + 1 < seqs.length; p++) {
+        bySeq[seqs[p]].forEach(function (ph) {
+          var m = milestone(L, ph);
+          bySeq[seqs[p + 1]].forEach(function (ph2) { var succ = groups[L + '||' + ph2]; for (var k = 0; k < succ.length; k++) addEdge(m, succ[k], FS, 3, 'e3'); });
+        });
       }
     });
     // E3 — discipline hammocks per level: Tier-1 chain, then Tier-2 after Tier-1 complete.

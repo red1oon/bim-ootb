@@ -117,6 +117,15 @@
       "ignore_classes": ["IfcOpeningElement"]
     },
     {
+      "name": "GEOTECH vs DRAINAGE",
+      "family": "civil",
+      "_why": "§PARTNER_DISCS: piles, soil nails and horizontal drains against the drains they may cross",
+      "source": { "discipline": "GEOTECH" },
+      "target": { "discipline": "DRAINAGE" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
       "name": "SIGNAGE vs LIGHTING",
       "family": "civil",
       "source": { "discipline": "SIGNAGE" },

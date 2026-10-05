@@ -2,11 +2,12 @@
   "meta": {
     "id": "4d_template_civil",
     "name": "Civil (linear works) 4D Programme Template",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "what": "Phase skeleton for a CIVIL model — every element's discipline is a CIVIL_DISCS code (import_worker.js). Selected by time_machine.js only when ALL elements are civil; building models keep 4D_template.json untouched (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, NON-IMPACT rule).",
     "order_source": "secondary — JKR road-works method statements quoting JKR Standard Specification for Road Works (JKR/SPJ/2008): earthworks -> drainage -> pavement -> finishing (furniture, signage, lighting, marking). Primary document not yet read.",
     "durations": "NOT civil-calibrated: one §CIVIL_TRADES crew per phase, params copied from MASON (what the proxy class gets today) so per-element durations are unchanged; finishing phases now run in parallel. Replace with JKR SoR / CIDB labour output.",
-    "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim"
+    "copied_from": "4D_template.json v1.2.0 — calendar, duration_rule, capacity_rule, phase_bands copied verbatim",
+    "partner_discs": "§PARTNER_DISCS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md, 2026-10-06): setting_out, ground_treatment, slope_protection added from the BIM partner files; template sequence = list order (distinct), rates.js SEQUENCE_CIVIL sequence = cpm rank (grouped)."
   },
   "placement": "logic",
   "_placement_why": "Civil finishing trades (furniture, signage, lighting, marking) all follow pavement and work on different parts of the road at once; with 'logic' each phase starts when its declared predecessor finishes (schedule_author.js §CIVIL_PARALLEL) instead of after the previous phase in the list.",
@@ -43,21 +44,45 @@
   },
   "phases": [
     {
+      "id": "setting_out",
+      "name": "Setting Out",
+      "sequence": 1,
+      "trades": [
+        "CIVIL_SURVEY"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_empty_ok": true,
+      "_empty_ok_why": "§PARTNER_DISCS: chainage labels / ROW boundary are setting-out references; a model without them is normal."
+    },
+    {
+      "id": "ground_treatment",
+      "name": "Ground Treatment",
+      "sequence": 2,
+      "trades": [
+        "CIVIL_GEOTECH"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_empty_ok": true,
+      "_empty_ok_why": "§PARTNER_DISCS: only projects with a GEOTECH file carry ground treatment."
+    },
+    {
       "id": "earthworks",
       "name": "Earthworks",
-      "sequence": 1,
+      "sequence": 3,
       "trades": [
         "CIVIL_EARTHWORKS"
       ],
       "replicate_per_level": false,
       "scope": "building",
       "_empty_ok": true,
-      "_empty_ok_why": "Civil 3D often exports the earthwork surface as a TIN that IFC export skips (JELAPANG_EARTHWORK.ifc: 0 elements) — absence is expected, still reported."
+      "_empty_ok_why": "The old export carried an empty TIN-only earthwork file; the partner re-export (2026-10-05) carries the earthworks body as one solid. Absence is still allowed and reported."
     },
     {
       "id": "drainage",
       "name": "Drainage",
-      "sequence": 2,
+      "sequence": 4,
       "trades": [
         "CIVIL_DRAINAGE"
       ],
@@ -65,9 +90,21 @@
       "scope": "building"
     },
     {
+      "id": "slope_protection",
+      "name": "Slope Protection",
+      "sequence": 5,
+      "trades": [
+        "CIVIL_GABION"
+      ],
+      "replicate_per_level": false,
+      "scope": "building",
+      "_empty_ok": true,
+      "_empty_ok_why": "§PARTNER_DISCS: gabion mattress where the design calls for it."
+    },
+    {
       "id": "pavement",
       "name": "Pavement",
-      "sequence": 3,
+      "sequence": 6,
       "trades": [
         "CIVIL_PAVING"
       ],
@@ -77,7 +114,7 @@
     {
       "id": "road_furniture",
       "name": "Road Furniture",
-      "sequence": 4,
+      "sequence": 7,
       "trades": [
         "CIVIL_FURNITURE"
       ],
@@ -87,7 +124,7 @@
     {
       "id": "signage",
       "name": "Signage",
-      "sequence": 5,
+      "sequence": 8,
       "trades": [
         "CIVIL_SIGNAGE"
       ],
@@ -97,7 +134,7 @@
     {
       "id": "road_lighting",
       "name": "Road Lighting",
-      "sequence": 6,
+      "sequence": 9,
       "trades": [
         "CIVIL_LIGHTING"
       ],
@@ -107,7 +144,7 @@
     {
       "id": "road_marking",
       "name": "Road Marking",
-      "sequence": 7,
+      "sequence": 10,
       "trades": [
         "CIVIL_MARKING"
       ],
@@ -123,6 +160,20 @@
   "dependencies": {
     "_what": "Civil logic (secondary source, see meta.order_source). Finishing trades all follow pavement and run in parallel.",
     "within_level": [
+      {
+        "pred": "setting_out",
+        "succ": "ground_treatment",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Set out the corridor (chainage, right-of-way) before any works."
+      },
+      {
+        "pred": "ground_treatment",
+        "succ": "earthworks",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Piles / soil nails carry the embankment — installed before the fill they support."
+      },
       {
         "pred": "earthworks",
         "succ": "drainage",
@@ -164,6 +215,20 @@
         "type": "FS",
         "lag_days": 0,
         "_why": "Marking on the final wearing course."
+      },
+      {
+        "pred": "earthworks",
+        "succ": "slope_protection",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Gabion mattress on the formed slopes / outlets."
+      },
+      {
+        "pred": "slope_protection",
+        "succ": "pavement",
+        "type": "FS",
+        "lag_days": 0,
+        "_why": "Slope protection in place before pavement works."
       }
     ],
     "across_levels": []
