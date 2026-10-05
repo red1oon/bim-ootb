@@ -4188,7 +4188,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // A/B comparison, not deleted — set `APP._photoDuskMood = true` before pressing Alt+S to get
     // the old forced-dusk sun + reddish sky drama + amber night-glow package back; leave it
     // false/unset (the default) for plain daylight. Toggle, re-press Alt+S, compare.
-    var _duskMood = !!A._photoDuskMood;
+    // §ALTS_HIGHWAY (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTS_HIGHWAY, user 2026-10-05: "late evening with lamps on
+    // and hitting surface … special treatment for outdoor CW roads"; "i mean alt-s first"): a civil model's still defaults to
+    // the existing dusk-mood package (6° sun, warm sky, lamps glowing) instead of the navigation daylight sun. An explicit
+    // APP._photoDuskMood (true/false) still wins — the A/B stays one line. Buildings: unset → false, unchanged.
+    var _duskMood = (A._photoDuskMood != null) ? !!A._photoDuskMood : !!(!A._maxqActive && A.isCivilModel && A.isCivilModel());   // stills only — a film's sun is §ALTC_HIGHWAY's arc
+    if (A._photoDuskMood == null && _duskMood) console.log('§ALTS_HIGHWAY duskMood=1 (civil default; APP._photoDuskMood=false for daylight)');
     // §PHOTO_SUN_SEPARATION_FIX (2026-08-16): a direct A.sun.position->sunPosition uniform sync
     // was attempted here to fix a sky/shadow mismatch, but shipped WITHOUT live verification and
     // caused a real regression (sky rendered fully black in production) — REVERTED. The mismatch
@@ -4199,7 +4204,12 @@ async function setupEffects(A, renderer, scene, camera) {
     // setFromSphericalCoords(1,...), not by normalizing A.sun.position — those may not be
     // equivalent depending on whether A.sun.position carries any offset beyond a pure direction).
     if (A._sky) { A._sky.visible = true; }
-    if (_duskMood && A.updateSky) { A.updateSky(PHOTO_SUN_ELEVATION, PHOTO_SUN_AZIMUTH); }
+    // §ALTS_HIGHWAY sun: a road still goes deeper into dusk than a building's 6° so the street lighting carries the picture
+    // (user 2026-10-05: "more towards dusk so that the street lighting can be more prominent"). 2° default, &duskelev= dial.
+    var _civilStill = _duskMood && A._photoDuskMood == null && !A._maxqActive && !!(A.isCivilModel && A.isCivilModel());
+    var _stillElev = _civilStill ? _stillDial('_stillDuskElev', 'duskelev', 2, 10) : PHOTO_SUN_ELEVATION;
+    if (_duskMood && A.updateSky) { A.updateSky(_stillElev, PHOTO_SUN_AZIMUTH); }
+    if (_civilStill) console.log('§ALTS_HIGHWAY sunElev=' + _stillElev + ' (civil still; &duskelev= to tune; buildings ' + PHOTO_SUN_ELEVATION + ')');
     // §PHOTO_SKY_DRAMA (user ask: "more dramatic sky... reddish clouds in the distance"): Preetham
     // (Sky.js) is a clear-sky atmospheric-scattering model — push turbidity/rayleigh/mie further
     // for the photoshoot only. Dusk-mood only — see §PHOTO_SUN_SEPARATION above.
@@ -4209,10 +4219,20 @@ async function setupEffects(A, renderer, scene, camera) {
         turbidity: _su['turbidity'].value, rayleigh: _su['rayleigh'].value,
         mieCoefficient: _su['mieCoefficient'].value, mieDirectionalG: _su['mieDirectionalG'].value
       };
+      if (_civilStill) {
+        // §ALTS_HIGHWAY sky (user: "some bluish sky and orange sunset hues"): clearer air than the building drama (turbidity
+        // 8 washes the zenith white) → deep blue overhead; Mie kept for the orange glow toward the low sun. Presentation.
+        _su['turbidity'].value = 4;
+        _su['rayleigh'].value = 2.5;
+        _su['mieCoefficient'].value = 0.010;
+        _su['mieDirectionalG'].value = 0.88;
+        console.log('§ALTS_HIGHWAY_SKY turbidity=4 rayleigh=2.5 mie=0.010 mieG=0.88 (civil still)');
+      } else {
       _su['turbidity'].value = 8;
       _su['rayleigh'].value = 3.2;
       _su['mieCoefficient'].value = 0.012;
       _su['mieDirectionalG'].value = 0.9;
+      }
     }
     // §PHOTO_SUN_REFLECTION fix 2: keep the lensflare's own brightness independent of the
     // photoshoot's exposure cut (see comment above PHOTO_SUN_ELEVATION).
