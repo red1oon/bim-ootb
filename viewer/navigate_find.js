@@ -633,9 +633,21 @@
       _pushView({ kind: 'axis', axis: mode, label: 'Axis: ' + mode, mode: 'axis' });
     }
 
+    // §FB.2: whole-scene readers scope through ONE owner (streaming.js A.sceneScopeBuilding) — a merged
+    // scene (>1 building, not City) is one model; everything else stays on A.activeBuilding as before.
+    function _scopeBld() { return A.sceneScopeBuilding ? A.sceneScopeBuilding() : (A.activeBuilding || ''); }
+    // §FB.4: rebuild an OPEN panel when a merge finishes streaming, so the merged disciplines appear
+    // without reopening. Closed panel → nothing (it rebuilds on open anyway).
+    A._findRefreshTree = function(why) {
+      if (panel.style.display !== 'block') { console.log('§FIND_REFRESH skip=closed why=' + why); return; }
+      populateDropdowns();
+      buildTree();
+      console.log('§FIND_REFRESH why=' + why + ' mode=' + _treeMode + ' scope="' + _scopeBld() + '"');
+    };
+
     function buildTree() {
       if (!elTree || !A.db) return;
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var filter = elName.value.trim().toLowerCase();
       elTree.innerHTML = '';
       try {
@@ -758,7 +770,7 @@
         console.log('[RP-T3] §LENS_PROBE_DEDUP_HIT age_ms=' + (_now - _probeCacheT).toFixed(1));
         return _probeCacheResult;
       }
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var room = false, material = false, phase = false;
       _roomHasVol = false;
       try {
@@ -3790,7 +3802,7 @@
       opts = opts || {};
       var set = new Set();
       if (!A.db) return set;
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var type = 'type' in opts ? opts.type : elType.value;
       var storey = 'storey' in opts ? opts.storey : elStorey.value;
       var disc = opts.disc || '';
@@ -3816,7 +3828,7 @@
       // visibility, never reframed the camera — reuse the SAME group-fit primitive _drillSelect/
       // focusElement already call, so an isolate on an off-screen target actually flies to it.
       var zoomed = _zoomToGroup(set);
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var total = 0;
       try {
         var tr = A.db.exec('SELECT COUNT(*) FROM elements_meta' + (bld ? ' WHERE building = ?' : ''), bld ? [bld] : []);
@@ -4370,7 +4382,7 @@
 
     function populateDropdowns() {
       if (!A.db) return;
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var name = elName.value.trim();
       var savedType = elType.value;
       var savedStorey = elStorey.value;
@@ -4529,7 +4541,7 @@
       elCount.textContent = '';
       if (!A.db) return;
 
-      var bld = A.activeBuilding || '';
+      var bld = _scopeBld();
       var type = elType.value;
       var storey = elStorey.value;
       var name = elName.value.trim();
