@@ -5099,14 +5099,32 @@
     var _chainPts = null;
     try {
       if (app.isCivilModel && app.isCivilModel() && typeof app.civilRoutePath === 'function') {
-        var _CR = app.civilRoutePath();
-        if (_CR && _CR.path && _CR.path.length >= 2) _chainPts = _CR.path;
+        // §CHAINAGE_V2: the film's DRIVE route (same points, drive direction) so the build runs the way the camera drives
+        var _DR = typeof app.civilDriveRoute === 'function' ? app.civilDriveRoute() : null;
+        if (_DR && _DR.length >= 2) _chainPts = _DR;
+        else { var _CR = app.civilRoutePath(); if (_CR && _CR.path && _CR.path.length >= 2) _chainPts = _CR.path; }
       }
     } catch (eCR) { console.warn('§CHAINAGE_LEVELS route failed: ' + eCR.message); }
-    function _secOf(cx, cy, cz) {
-      var p = app.ifc2three(cx, cy, cz), bi = 0, bd = Infinity;
-      for (var k = 0; k < _chainPts.length; k++) { var d = Math.hypot(_chainPts[k].x - p.x, _chainPts[k].z - p.z); if (d < bd) { bd = d; bi = k; } }
+    function _nearIdx(x, z) {
+      var bi = 0, bd = Infinity;
+      for (var k = 0; k < _chainPts.length; k++) { var d = Math.hypot(_chainPts[k].x - x, _chainPts[k].z - z); if (d < bd) { bd = d; bi = k; } }
       return bi;
+    }
+    // §CHAINAGE_V2 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_V2): an element's section = where it STARTS along
+    // the drive — the lowest route index over the 4 plan corners of its REAL drawn box (owner: cpe_load_path.js
+    // A._loadPathInstanceWorldBox). Filing by the vertex CENTROID put long drains / guardrails / curved road pieces in a later
+    // section than what they touch: MEASURED 2,265 of 10,078 support edges ran backwards against the route (drain→pavement 995).
+    // No drawn box (not streamed) → the centroid, counted in §CHAINAGE_LEVELS fromCentroid=.
+    var _chainFromBox = 0, _chainFromCentroid = 0;
+    function _secOf(guid, cx, cy, cz) {
+      var wb = (typeof app._loadPathInstanceWorldBox === 'function') ? app._loadPathInstanceWorldBox(guid) : null;
+      if (wb) {
+        _chainFromBox++;
+        return Math.min(_nearIdx(wb.minX, wb.minZ), _nearIdx(wb.minX, wb.maxZ), _nearIdx(wb.maxX, wb.minZ), _nearIdx(wb.maxX, wb.maxZ));
+      }
+      _chainFromCentroid++;
+      var p = app.ifc2three(cx, cy, cz);
+      return _nearIdx(p.x, p.z);
     }
     var _chainCivil = 0, _chainKept = 0;
 
@@ -5127,7 +5145,7 @@
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
       var _civ = _civilRule(db, row[0]);
       var lvlSec;
-      if (_chainPts) lvlSec = _secOf(cx, cy, cz);   // §CHAINAGE_LEVELS
+      if (_chainPts) lvlSec = _secOf(row[0], cx, cy, cz);   // §CHAINAGE_LEVELS / §CHAINAGE_V2
       var storey = (_chainPts && _civ) ? ('CH ' + (lvlSec < 10 ? '0' : '') + lvlSec) : assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
       if (_chainPts) { if (_civ) _chainCivil++; else _chainKept++; }
       var ov = _civ || matchNameOverride(cls, elName);   // §CIVIL_PHASE
@@ -5152,7 +5170,7 @@
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     });
-    if (_chainPts) console.log('§CHAINAGE_LEVELS sections=' + _chainPts.length + ' civilByChainage=' + _chainCivil +
+    if (_chainPts) console.log('§CHAINAGE_LEVELS sections=' + _chainPts.length + ' fromDrawnBox=' + _chainFromBox + ' fromCentroid=' + _chainFromCentroid + ' civilByChainage=' + _chainCivil +
       ' otherKeptStorey=' + _chainKept + ' (ladder = section first, then height — line of balance along the route)');
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
@@ -8881,7 +8899,7 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 41;   // §CHAINAGE_LEVELS (2026-10-05, CIVIL_HIGHWAY_JELAPANG.md 2f) — a civil programme cached before chainage levels climbs by storey height (lamps first on a road+bridge merge); regenerate. Buildings regenerate once to an identical programme (no lvlSec). Previous: 40 §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  var _GANTT_CACHE_VERSION = 41;   // §CHAINAGE_LEVELS + §CHAINAGE_V2 (2026-10-06, CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_V2) — a civil programme cached before chainage levels climbs by storey height (lamps first on a road+bridge merge); regenerate. Buildings regenerate once to an identical programme (no lvlSec). Previous: 40 §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
   // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from

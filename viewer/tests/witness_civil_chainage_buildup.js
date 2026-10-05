@@ -40,15 +40,22 @@ const server = http.createServer((req, res) => { try {
     const q = A.db.exec("SELECT k.output_guid, k.timestamp, k.parameters, m.discipline, t.center_x, t.center_y, t.center_z FROM kernel_ops k " +
       "JOIN elements_meta m ON m.guid = k.output_guid JOIN element_transforms t ON t.guid = k.output_guid WHERE k.op_type = 'ELEMENT_PLACE'");
     const rows = q.length ? q[0].values : [];
-    const R = A.civilRoutePath(), P = R.path;
-    const sec = (x, y, z) => { const v = A.ifc2three(x, y, z); let bi = 0, bd = Infinity; P.forEach((p, k) => { const d = Math.hypot(p.x - v.x, p.z - v.z); if (d < bd) { bd = d; bi = k; } }); return bi; };
+    // §CHAINAGE_V2: section = where the element STARTS along the DRIVE route (A.civilDriveRoute, the film's seed direction):
+    // the lowest route index over its drawn box's plan corners — the code's location rule; the ORDER is still judged from
+    // the written timestamps. Rank correlation is therefore expected POSITIVE (built in drive order).
+    const P = (A.civilDriveRoute && A.civilDriveRoute()) || A.civilRoutePath().path;
+    const near = (x, z) => { let bi = 0, bd = Infinity; P.forEach((p, k) => { const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; bi = k; } }); return bi; };
+    const secG = {};
+    const sec = (x, y, z, g) => { if (g in secG) return secG[g]; const wb = A._loadPathInstanceWorldBox ? A._loadPathInstanceWorldBox(g) : null;
+      let k; if (wb) k = Math.min(near(wb.minX, wb.minZ), near(wb.minX, wb.maxZ), near(wb.maxX, wb.minZ), near(wb.maxX, wb.maxZ)); else { const v = A.ifc2three(x, y, z); k = near(v.x, v.z); }
+      return (secG[g] = k); };
     const S = {}; const all = [];
-    rows.forEach(r => { const st = +r[1], pr = JSON.parse(r[2] || '{}'), en = +pr._end_ts || st, d = r[3], k = sec(r[4], r[5], r[6]);
+    rows.forEach(r => { const st = +r[1], pr = JSON.parse(r[2] || '{}'), en = +pr._end_ts || st, d = r[3], k = sec(r[4], r[5], r[6], r[0]);
       all.push({ st, d });
       const s = S[k] || (S[k] = { roadMin: Infinity, litMin: Infinity, litBeforeRoad: 0, lit: 0 });
       if (d === 'ROAD') s.roadMin = Math.min(s.roadMin, st);
       if (d === 'LIGHTING') { s.lit++; s.litMin = Math.min(s.litMin, st); } });
-    rows.forEach(r => { if (r[3] !== 'LIGHTING') return; const k = sec(r[4], r[5], r[6]); if (+r[1] < S[k].roadMin) S[k].litBeforeRoad++; });
+    rows.forEach(r => { if (r[3] !== 'LIGHTING') return; const k = sec(r[4], r[5], r[6], r[0]); if (+r[1] < S[k].roadMin) S[k].litBeforeRoad++; });
     let litBefore = 0, litTot = 0, judgedSecs = 0; const ser = [];
     Object.keys(S).forEach(k => { const s = S[k]; if (s.lit && isFinite(s.roadMin)) { judgedSecs++; litBefore += s.litBeforeRoad; litTot += s.lit; } if (isFinite(s.roadMin)) ser.push([+k, s.roadMin]); });
     // Spearman rank correlation, section index vs first-ROAD start
@@ -63,7 +70,7 @@ const server = http.createServer((req, res) => { try {
   log('  [state] ' + JSON.stringify(r));
   const checks = r.civil && r.placements ? [
     ['every judged section: no LIGHTING column starts before its pavement (ROAD) starts', r.judgedSecs > 0 && r.litBefore === 0],
-    ['sections build in route order (rank corr. of first-ROAD start vs chainage ≥ 0.8, either direction of travel)', r.rho != null && Math.abs(r.rho) >= 0.8],
+    ['sections build in DRIVE order (rank corr. of first-ROAD start vs drive section ≥ 0.8)', r.rho != null && r.rho >= 0.8],
     ['the first 2 % of placements contain no LIGHTING (lamps-first gone)', r.first2pctLighting === 0],
   ] : null;
   if (!checks) { log('§WITNESS_CIVIL_CHAINAGE INCONCLUSIVE — ' + (r.civil ? 'no placements written' : 'model not civil')); fs.writeFileSync(LOG, out.join('\n') + '\n'); await b.close(); server.close(); process.exit(2); }
