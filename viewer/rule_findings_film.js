@@ -288,6 +288,10 @@ function setupRuleFindingsFilm(A) {
       return Promise.resolve(_report);
     }
     if (typeof dbQuery !== 'function') return fail('INCONCLUSIVE', 'no dbQuery');
+    // §ALTC_LABELS L1 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_LABELS): the building rules (floating member,
+    // span/depth, egress) judge road pieces as building members — the trial road film showed "floating member 68". Off on a
+    // civil model; road checks (§MC road_check.js) join when its measurement faults are fixed.
+    if (A.isCivilModel && A.isCivilModel()) return fail('VACUOUS', 'road model: building structural/egress rules do not apply; road checks (§MC) not wired yet');
     // §70 — the storey-reveal window is NO LONGER consulted. Findings are world content for the whole
     // film (clash's model), so a plan without a storey-reveal lane is not a failure any more.
     if (typeof StructuralSanity === 'undefined' && typeof EgressSanity === 'undefined') {

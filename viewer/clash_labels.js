@@ -149,6 +149,17 @@ function setupClashLabels(A) {
       return r.name;
     }
 
+    // §ALTC_LABELS L3 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_LABELS): a road export carries every piece as
+    // IfcBuildingElementProxy ("Misc Element" in rates.js); its discipline (from the file name, §CIVIL_DISC) names the trade.
+    // Owner of the trade name: rates.js SEQUENCE_CIVIL[disc].phase. Building disciplines never match → null → rates.js name.
+    function civilNameFor(disc) {
+      var SC = window.SEQUENCE_CIVIL, e = (SC && disc) ? SC[disc] : null;
+      if (!e || !e.phase) return null;
+      if (!_nameLogged['civil:' + disc]) { _nameLogged['civil:' + disc] = 1; console.log('§CLASH_LABEL_NAME ' + disc + ' → "' + e.phase + '" source=SEQUENCE_CIVIL'); }
+      return e.phase;
+    }
+    A.clashLabels.civilNameFor = civilNameFor;
+
     // Sized off frame HEIGHT, exactly as the day counter is, so the label stays in proportion to the
     // HUD at every export size. Nothing here depends on the pair's distance — that is §P2.5 P5.
     function metrics(h) {
@@ -186,7 +197,7 @@ function setupClashLabels(A) {
       if (_pairsRef !== pairs || !_near || _near.length !== pairs.length) {
         _pairsRef = pairs; _near = new Uint8Array(pairs.length); _fade = new Float32Array(pairs.length); _lastFilmS = null; _names = null;
       }
-      if (!_names) _names = pairs.map(function (p) { return { a: nameFor(p.classA), b: nameFor(p.classB) }; });
+      if (!_names) _names = pairs.map(function (p) { return { a: civilNameFor(p.discA) || nameFor(p.classA), b: civilNameFor(p.discB) || nameFor(p.classB) }; });
       var fs = filmSeconds || 0;
       var dt = (_lastFilmS == null) ? FADE_S : Math.max(0, fs - _lastFilmS);
       _lastFilmS = fs;
