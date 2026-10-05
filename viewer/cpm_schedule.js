@@ -48,7 +48,7 @@
   // §CHAINAGE_V2: road trade name → its declared sequence, read from the owner (rates.js SEQUENCE_CIVIL). Empty when rates.js
   // is not loaded (node harnesses on buildings) → every rank/edge below is exactly as before.
   var CIVIL_SEQ = (function () {
-    var SC = (typeof global !== 'undefined' && global.SEQUENCE_CIVIL) || (typeof SEQUENCE_CIVIL !== 'undefined' ? SEQUENCE_CIVIL : null), m = {};
+    var SC = (typeof global !== 'undefined' && global.SEQUENCE_CIVIL) || null, m = {};
     if (SC) for (var d in SC) if (SC[d] && SC[d].phase) m[SC[d].phase] = SC[d].sequence;
     return m;
   })();
