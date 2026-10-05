@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Road Model Check</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- §MC_MOCKUP (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MC_MOCKUP): compliance mock-up report for road models, opened from the
+     4D/5D page in place of the MEP bill. Rows from road_check.js (JKR ATJ 2B/2D rules in rates/road_rules.json); every rule carries its
+     film_status VALID / SPECULATIVE from that same file. Read the log: §MC_REPORT. MOCK-UP: speculative rules are shown, tagged. -->
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a2e; color:#e0e0e0; font-family:Segoe UI,sans-serif; padding:20px; }
+  h1 { color:#4fc3f7; font-size:20px; margin-bottom:4px; }
+  .subtitle { color:#888; font-size:12px; margin-bottom:16px; }
+  .header-block { background:rgba(79,195,247,0.08); border:1px solid rgba(79,195,247,0.25); border-radius:8px; padding:16px 20px; margin-bottom:20px; max-width:1200px; }
+  .header-block .row { display:flex; justify-content:space-between; color:#ccc; font-size:13px; margin-bottom:2px; }
+  .header-block .row span { color:#fff; }
+  .stat-cards { display:flex; gap:12px; margin-bottom:20px; max-width:1200px; flex-wrap:wrap; }
+  .stat-card { background:rgba(255,255,255,0.05); border-radius:8px; padding:12px 16px; border:1px solid rgba(255,255,255,0.08); flex:1; min-width:180px; }
+  .stat-card .num { font-size:24px; font-weight:bold; }
+  .stat-card .lbl { font-size:12px; color:#ccc; margin-top:2px; }
+  .stat-card .clause { font-size:11px; color:#888; margin-top:4px; }
+  .tag { display:inline-block; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:3px; margin-top:6px; letter-spacing:.5px; }
+  .tag.valid { background:#1b5e20; color:#c8e6c9; }
+  .tag.speculative { background:#6d4c00; color:#ffe082; }
+  .section-block { max-width:1200px; margin-bottom:24px; }
+  .section-block h3 { color:#4fc3f7; font-size:14px; margin-bottom:6px; border-bottom:1px solid rgba(79,195,247,0.2); padding-bottom:4px; }
+  .formula { font-family:Consolas,monospace; font-size:12px; color:#ffd27a; margin:4px 0 2px; }
+  .why { font-size:11px; color:#aaa; margin-bottom:6px; }
+  table { border-collapse:collapse; width:100%; font-size:11px; margin-top:4px; }
+  th { background:rgba(79,195,247,0.15); color:#4fc3f7; text-align:left; padding:4px 8px; }
+  td { padding:3px 8px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  td.num { text-align:right; font-family:Consolas,monospace; }
+  td.bad { color:#ff8a80; } td.ok { color:#a5d6a7; }
+  .toolbar { position:fixed; top:16px; right:16px; z-index:10; display:flex; gap:8px; }
+  .toolbar button { background:#333; color:#fff; border:1px solid #555; border-radius:4px; padding:6px 12px; cursor:pointer; font-size:12px; }
+  .note { max-width:1200px; font-size:12px; color:#aaa; margin-bottom:16px; }
+  @media (max-width:800px) { .stat-cards { flex-direction:column; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="_csv()">&#128196; CSV</button>
+  <button onclick="if(history.length>1){history.back()}else{window.close()}">&#8592; Back</button>
+</div>
+<h1>Road Model Check — compliance mock-up</h1>
+<div class="subtitle" id="info">Loading...</div>
+<div id="report-content"></div>
+<script src="lib/sql-wasm.js"></script>
+<script src="road_check.js?v=1"></script>
+<script>
+var params = new URLSearchParams(location.search);
+var DB_URL = params.get('db') || '';
+var _rows = [];
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+async function fetchDbBuffer(url) {
+  var cacheDb = await new Promise(function(resolve) {
+    var req = indexedDB.open('bim_ootb_cache', 1);
+    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    req.onsuccess = function() { resolve(req.result); };
+    req.onerror = function() { resolve(null); };
+  });
+  if (cacheDb) {
+    try {
+      var cached = await new Promise(function(ok, fail) {
+        var tx = cacheDb.transaction('dbs', 'readonly');
+        var req = tx.objectStore('dbs').get(url);
+        req.onsuccess = function() { ok(req.result); };
+        req.onerror = function() { fail(); };
+      });
+      if (cached) return cached;
+    } catch(e) {}
+  }
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('DB fetch failed: ' + resp.status);
+  var buf = await resp.arrayBuffer();
+  if (cacheDb) {
+    try {
+      var tx = cacheDb.transaction('dbs', 'readwrite');
+      tx.objectStore('dbs').put(buf, url);
+    } catch(e) {}
+  }
+  return buf;
+}
+function _csv() {
+  var lines = ['rule,status,element,code,measured,limit,unit,clause'];
+  _rows.forEach(function (r) { lines.push([r.rule, r._status, r.name || r.guid, r.code || '', r.measured, r.limit, r.unit || '', r.clause].map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(',')); });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' })); a.download = 'road_model_check.csv'; a.click();
+}
+(async function () {
+  var t0 = performance.now();
+  var SQL = await initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
+  var buf = null; try { buf = await fetchDbBuffer(DB_URL); } catch (e) { buf = null; }
+  if (!buf) { document.getElementById('info').textContent = 'Load the model first — open it in the 3D viewer, then reopen this report.'; console.log('§MC_REPORT INCONCLUSIVE no db'); return; }
+  var db = new SQL.Database(new Uint8Array(buf));
+  var q = function (sql, p) { var st = db.prepare(sql), o = []; try { if (p && p.length) st.bind(p); while (st.step()) o.push(st.getAsObject()); } finally { st.free(); } return o; };
+  var cfg = await fetch('rates/road_rules.json').then(function (r) { return r.json(); });
+  var res = window.RoadCheck.run(q, cfg, { log: function (l) { console.log(l); } });
+  var R = {}; cfg.road_rules.forEach(function (r) { R[r.name] = r; });
+  _rows = (res.rows || []).map(function (r) { var ru = R[r.rule] || {}; r._status = (ru.film_status && ru.film_status.status) || 'speculative'; return r; });
+  var bld = (q("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1")[0] || {}).building || '';
+  var nV = 0, nS = 0; _rows.forEach(function (r) { if (r._status === 'valid') nV++; else nS++; });
+  document.getElementById('info').textContent = bld + ' · ' + _rows.length + ' checks · ' + nV + ' valid · ' + nS + ' speculative';
+  var h = '<div class="header-block">' +
+    '<div class="row">Standards <span>JKR Arahan Teknik (Jalan) 2B/85 + 2D/85 (Pindaan 2019)</span></div>' +
+    '<div class="row">Area type (assumed — not in the model) <span>' + esc(cfg.area_type) + '</span></div>' +
+    '<div class="row">Signs judged <span>' + ((res.signs || []).length) + '</span></div>' +
+    '<div class="row">Stud groups judged <span>' + ((res.studGroups || []).length) + '</span></div></div>' +
+    '<div class="note">MOCK-UP. Each rule shows its formula and its status: <b>VALID</b> = the measuring method is checked; <b>SPECULATIVE</b> = the method is under review, numbers are indicative. The status list lives in rates/road_rules.json (film_status) and changes only with a stated reason.</div>';
+  h += '<div class="stat-cards">';
+  cfg.road_rules.forEach(function (ru) {
+    var p = (res.populations || {})[ru.name] || {}, st = (ru.film_status && ru.film_status.status) || 'speculative';
+    h += '<div class="stat-card"><div class="num">' + (p.findings || 0) + ' / ' + (p.population || 0) + '</div><div class="lbl">' + esc(ru.label) + ' — outside / judged</div>' +
+      '<div class="clause">' + esc(ru.clause) + '</div><span class="tag ' + st + '">' + st.toUpperCase() + '</span></div>';
+  });
+  h += '</div>';
+  cfg.road_rules.forEach(function (ru) {
+    var rs = _rows.filter(function (r) { return r.rule === ru.name; }), st = (ru.film_status && ru.film_status.status) || 'speculative';
+    h += '<div class="section-block"><h3>' + esc(ru.label) + ' <span class="tag ' + st + '">' + st.toUpperCase() + '</span></h3>' +
+      '<div class="formula">' + esc(ru.formula || '') + '</div><div class="why">' + esc((ru.film_status && ru.film_status.why) || '') + '</div>' +
+      '<table><tr><th>Element</th><th>Code</th><th class="num">Measured</th><th>Limit</th><th>Result</th></tr>';
+    rs.slice(0, 12).forEach(function (r) {
+      var ok = (typeof r.limit === 'number') ? (r.rule === 'chevron_spacing' ? Math.abs(r.measured - r.limit) <= 0.5 : r.measured >= r.limit) : false;
+      h += '<tr><td>' + esc(r.name || r.guid) + '</td><td>' + esc(r.code || '') + '</td><td class="num">' + esc(r.measured) + ' ' + esc(r.unit || '') + '</td><td>' + esc(r.limit) + ' ' + esc(r.unit || '') + '</td><td class="' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'meets' : 'outside') + '</td></tr>';
+    });
+    if (rs.length > 12) h += '<tr><td colspan="5" style="color:#888">… ' + (rs.length - 12) + ' more (CSV has all)</td></tr>';
+    h += '</table></div>';
+  });
+  document.getElementById('report-content').innerHTML = h;
+  console.log('§MC_REPORT rows=' + _rows.length + ' valid=' + nV + ' speculative=' + nS + ' rules=' + cfg.road_rules.length + ' ms=' + (performance.now() - t0).toFixed(0));
+})();
+</script>
+</body>
+</html>

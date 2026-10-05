@@ -45,7 +45,7 @@
 <div class="toolbar">
   <button onclick="save5D()" data-trl-title="ui_tt_export_5d" title="5D — Cost Excel">&#128202; 5D</button>
   <button onclick="save4D()" data-trl-title="ui_tt_export_4d" title="4D — Schedule Excel">&#128197; 4D</button>
-  <button onclick="openMepReport()" data-trl-title="ui_tt_mep_boq" title="MEP Bill of Quantities">&#128295; MEP</button>
+  <button id="mep-btn" onclick="openMepReport()" data-trl-title="ui_tt_mep_boq" title="MEP Bill of Quantities">&#128295; MEP</button>
   <button onclick="toggleTheme()" data-trl-title="ui_tt_theme" title="Light/Dark">&#9788;</button>
   <button onclick="copyPageUrl(this)" data-trl-title="ui_tt_copy_link" title="Copy shareable link">&#128203;</button>
   <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" data-trl-title="ui_tt_change_locale_cur" title="Change locale / currency" style="font-size:20px">&#127760;</button>
@@ -1105,6 +1105,7 @@ async function init() {
     }
     db = new SQL.Database(new Uint8Array(buf));
     console.log('§DB_INIT loadMs=' + Math.round(performance.now() - _t0) + ' size=' + Math.round(buf.byteLength / 1024 / 1024) + 'MB');
+    _mcCheckRoad();   // §MC_MOCKUP
 
     // Determine building
     bldName = BLD;
@@ -2174,8 +2175,23 @@ function _verifyMaths(wb, label) {
 // ── Theme toggle ──
 let light = false;
 // §3.1: Open MEP BOQ report in new tab — passes same DB + rates params
+// §MC_MOCKUP (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MC_MOCKUP): a road model has no MEP bill — the same button opens the
+// road compliance mock-up (model_check_report.html). Gate: any rates.js SEQUENCE_CIVIL discipline in the model; buildings keep MEP.
+var _isRoadModel = false;
+function _mcCheckRoad() {
+  try {
+    if (!db || typeof SEQUENCE_CIVIL === 'undefined') return;
+    var ds = Object.keys(SEQUENCE_CIVIL).map(function (d) { return "'" + d + "'"; }).join(',');
+    var r = db.exec('SELECT COUNT(*) FROM elements_meta WHERE discipline IN (' + ds + ')');
+    _isRoadModel = !!(r.length && r[0].values[0][0] > 0);
+    var b = document.getElementById('mep-btn');
+    if (_isRoadModel && b) { b.innerHTML = '&#9989; Model Check'; b.title = 'Road compliance check (mock-up)'; b.removeAttribute('data-trl-title'); }
+    console.log('§MC_BUTTON road=' + _isRoadModel + ' → ' + (_isRoadModel ? 'Model Check' : 'MEP'));
+  } catch (e) { _isRoadModel = false; console.log('§MC_BUTTON road=false → MEP (check could not read the model: ' + e.message + ')'); }
+}
 function openMepReport() {
   var p = new URLSearchParams(location.search);
+  if (_isRoadModel) { window.open('model_check_report.html?db=' + encodeURIComponent(p.get('db') || DB_URL), '_blank'); return; }
   var mepUrl = 'mep_report.html?db=' + encodeURIComponent(p.get('db') || DB_URL);
   if (p.get('bld') || bldName) mepUrl += '&bld=' + encodeURIComponent(p.get('bld') || bldName);
   if (RATE_TEMPLATE_NAME) mepUrl += '&rates=' + encodeURIComponent(RATE_TEMPLATE_NAME);

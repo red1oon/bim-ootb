@@ -145,7 +145,10 @@
     // _workPacingArm() so an even-tempo film never even arms work pacing: arming logs a mode line
     // that would then describe a pacing that is not in force, which is exactly the kind of log that
     // costs a live debugging round-trip.
-    if (BUILDUP_EVEN_TEMPO) {
+    // §ALTC_V3: a road film advances by pieces COMPLETED (the k-th completion at t = k/N), not by calendar days — v2 measured
+    // all 5,674 road pieces placed by 4 s because the bridge's heavy structure owns most of the calendar.
+    var _civilWork = !!(window.APP && window.APP.isCivilModel && window.APP.isCivilModel());
+    if (BUILDUP_EVEN_TEMPO && !_civilWork) {
       // §CPE_BUILDUP_ONSET_BLEND — onsetU is the ONSET_BLEND_SEC window expressed as a tFilm
       // fraction of THIS film (so "10 seconds" means the same thing on a 30s and a 300s bake),
       // capped at half the film so a very short test/preview clip can't blend past its midpoint.
@@ -3188,6 +3191,9 @@
         // their stored override JSON, `__maxqBake`'s own merge never touches it) falls back to the
         // OLD `!!_measure` behaviour, so no bake made before today silently loses the feature.
         _loadPath = (_ov.loadPath !== undefined) ? !!_ov.loadPath : !!_measure;
+        // §ALTC_V3 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_V3, user 2026-10-06: "Remove the loadpath freeze path"):
+        // a road film never freezes on a load path (v2 measured 4 s of a still bridge diagram, picture change 0.1).
+        if (_loadPath && A.isCivilModel && A.isCivilModel()) { _loadPath = false; console.log('§ALTC_V3 load-path freeze off (road film)'); }
         // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19): Audio / Visual panels draw only inside the load-path freeze composite.
         A._freezePerfOn = { visual: !!_ov.visualPanel, audio: !!_ov.audioPanel };
         if ((_ov.visualPanel || _ov.audioPanel) && !_loadPath) console.log('§FREEZE_PERF_PANEL group=' + (_ov.visualPanel ? 'visual' : '') + (_ov.audioPanel ? (_ov.visualPanel ? '+' : '') + 'audio' : '') + ' skipped reason=load-path-off');

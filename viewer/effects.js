@@ -4360,8 +4360,13 @@ async function setupEffects(A, renderer, scene, camera) {
       // for the A/B the user asked for: APP._photoGroundAlbedoGain = 1.0 (default look) / 2.3 / 3.5,
       // then Alt+S again. See tools.js §GROUND_ALBEDO for why a gain and not more fill light.
       A._groundAlbedoGain = A._photoGroundAlbedoGain;
-      A._applyGroundTexture('earth');
-      if (A._setGroundColor) A._setGroundColor(0xd9c39a);  // bright warm sunlit-concrete tone
+      // §ALTC_V3_GRASS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_V3, user 2026-10-06: "a ground map that has vegetation"):
+      // a road runs through countryside — civil models take the shipped CC0 'grass' map (Poly Haven aerial_grass_rock, ground_config.json)
+      // under a neutral tint so its green reads; buildings keep 'earth' + the warm concrete tone.
+      var _civGround = !!(A.isCivilModel && A.isCivilModel());
+      A._applyGroundTexture(_civGround ? 'grass' : 'earth');
+      if (A._setGroundColor) A._setGroundColor(_civGround ? 0xe6ead8 : 0xd9c39a);  // civil: neutral (green shows) · building: warm sunlit-concrete
+      if (_civGround) console.log('§ALTC_V3_GRASS ground=grass tint=0xe6ead8 (road film)');
       console.log('§GROUND_ALBEDO gain=' + A._groundAlbedoGain.toFixed(2) + ' texAvgLum=' +
         GROUND_TEX_AVG_LUM.toFixed(3) + ' effAlbedo=' + (GROUND_TEX_AVG_LUM * A._groundAlbedoGain).toFixed(3) +
         ' color=' + (A.ground.material.color ? A.ground.material.color.r.toFixed(2) : 'n/a') +
@@ -8765,6 +8770,9 @@ async function setupEffects(A, renderer, scene, camera) {
       return deg;
     }
     var _diveEff = Math.min(diveDist, envelope);
+    // §ALTC_V3 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_V3): a road film's approach is a fast fly-in, not 25 s over a
+    // finished road (measured v2: picture change ~3.5 for 0-25 s, 0 pieces added) — its SECONDS are capped at CIVIL_DIVE_MAX_M of travel.
+    if (_civilPace && _diveEff > CIVIL_DIVE_MAX_M) { console.log('§ALTC_V3 approach capped ' + _diveEff.toFixed(0) + 'm → ' + CIVIL_DIVE_MAX_M + 'm of seconds'); _diveEff = CIVIL_DIVE_MAX_M; }
     // ══ §CPE_NOISE_LAW (user, 2026-07-27: "the speed of dive to the wp1 is still not using noise
     // ratio" / "it governs thrughout"). The noise ratio is not a walk feature — it is the film's
     // one pacing law, and until now Beat 3 was the only beat that obeyed it. Measured before this
@@ -10782,6 +10790,7 @@ async function setupEffects(A, renderer, scene, camera) {
   // and any authored edit still win; buildings return null here → derived plan unchanged.
   // §ALTC_ONEWAY (CIVIL_HIGHWAY_JELAPANG.md 2g): 25 → 35 m/s so the road film lands under 3 min (bake under ~3 h at the measured
   // 2-3 s/frame). The noise law (CINEMA_PACE_SWING) still slows busy stretches — quiet straights cruise, junctions ease.
+  var CIVIL_DIVE_MAX_M = 280;   // presentation: §ALTC_V3 road approach budget (280 m @ 35 m/s = 8 s)
   var CIVIL_FILM_SPEED = 35;   // presentation: m/s along the road (the Fly tour keeps its own 25, tour.js SPEED)
   // §ALTC_V2 V5: the road build-up tops out by the drive's midpoint AND before the film's half-way point (user 2026-10-05:
   // "buildup finishes early before half way point.. the rest is discipline reveal") — whichever comes first, never before
