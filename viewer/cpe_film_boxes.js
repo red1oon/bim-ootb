@@ -124,7 +124,7 @@ function setupCpeFilmBoxes(A) {
       return (v.opacity == null || v.opacity > 0) ? (v.name || '') : '';
     };
     return [ { label: 'Storey', text: pick(src.storey) },
-             { label: 'Room', text: pick(src.room) },
+             { label: src.roomLabel || 'Room', text: pick(src.room) },   // §ALTC_V3_CHAINAGE_ROW: a road film labels it 'Chainage'
              { label: 'Build-up', text: pick(src.buildup) },
              { label: 'Reveal', text: pick(src.reveal) } ];
   };

@@ -216,6 +216,15 @@ function setupCpeRoadPanels(A) {
     return A.roadPanelsLastBox;
   };
   A.roadPanelsSlots = function () { return _rp ? _rp.slots : null; };
+  // §ALTC_V3_CHAINAGE_ROW: ONE owner for "where along the drive is this point" on a road film (the status box's Chainage row reads it).
+  // Same projection the cards use, on the film's drive route (A.civilDriveRoute). Null on a building.
+  var _chainRouteRef = null, _chainFn = null;
+  A.civilChainageAt = function (x, z) {
+    if (!(A.isCivilModel && A.isCivilModel()) || typeof A.civilDriveRoute !== 'function') return null;
+    var r = A.civilDriveRoute(); if (!r || r.length < 2) return null;
+    if (_chainRouteRef !== r) { _chainRouteRef = r; _chainFn = _chainager(r); }
+    return _chainFn.at(x, z);
+  };
   A.roadPanelsDispose = function () { _rp = null; A.roadPanelsLastBox = null; };
 }
 if (typeof window !== 'undefined') window.setupCpeRoadPanels = setupCpeRoadPanels;

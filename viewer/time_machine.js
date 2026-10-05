@@ -5118,6 +5118,9 @@
     var _chainFromBox = 0, _chainFromCentroid = 0;
     function _secOf(guid, cx, cy, cz) {
       var wb = (typeof app._loadPathInstanceWorldBox === 'function') ? app._loadPathInstanceWorldBox(guid) : null;
+      // a zero-size box at the origin is a lookup miss, not a position (MEASURED: 1,485 bridge pieces read (0,0,0)-(0,0,0) while the
+      // DB places every one of them) → treat as no box, use the centroid
+      if (wb && wb.maxX - wb.minX <= 0 && wb.maxZ - wb.minZ <= 0 && wb.maxY - wb.minY <= 0) wb = null;
       if (wb) {
         _chainFromBox++;
         return Math.min(_nearIdx(wb.minX, wb.minZ), _nearIdx(wb.minX, wb.maxZ), _nearIdx(wb.maxX, wb.minZ), _nearIdx(wb.maxX, wb.maxZ));

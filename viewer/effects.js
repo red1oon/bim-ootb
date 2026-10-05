@@ -4178,6 +4178,11 @@ async function setupEffects(A, renderer, scene, camera) {
   // file already uses for A._camLight). Only disposed on a real building switch.
   var _roomProbeRT = null, _roomProbeCam = null, _roomProbeBuilding = null;
   function _buildRoomProbe() {
+    // §GHOST_PROBE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §GHOST_PROBE, user 2026-10-06: "still persist hovering above as a faint
+    // but exact mirror reflection"): the probe is an INTERIOR heuristic (35 % up the building bbox). On a 2.1 km road it sat at y=-5.0,
+    // inside the road's own height band (ROAD -7.6..20.6), capturing the model; 6 glossy materials (bridge deck slabs r=0.35, pipes
+    // r=0.30) then mirrored that capture. A road has no room: civil models keep glossy surfaces on the sky env map. Buildings unchanged.
+    if (A.isCivilModel && A.isCivilModel()) { if (_roomProbeRT) _disposeRoomProbe(); console.log('§MIRROR_ROOM_PROBE skipped (road model — no room; glossy materials reflect the sky)'); return; }
     var bbox = _buildingBBoxIfc();
     if (!bbox || !A.ifc2three || !A.renderer || !A.scene) return;
     if (_roomProbeRT && _roomProbeBuilding !== A.activeBuilding) _disposeRoomProbe();
