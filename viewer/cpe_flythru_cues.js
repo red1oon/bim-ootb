@@ -179,12 +179,14 @@ function setupCpeFlythruCues(A) {
     var envBox = dbExtToSceneBox(meas.ext);
     if (envBox && meas.ext) {
       var e = meas.ext;
+      // §ALTC_LABELS L2: a road is not a building — same numbers, neutral name on a civil model
+      var _envName = (A.isCivilModel && A.isCivilModel()) ? 'Site Envelope' : 'Building Envelope';
       _cues.push({ key: 'envelope', box: envBox,
-        label: 'Building Envelope — ' + n2(e.sx) + ' × ' + n2(e.sy) + ' × ' + n2(e.sz) + ' m' +
+        label: _envName + ' — ' + n2(e.sx) + ' × ' + n2(e.sy) + ' × ' + n2(e.sz) + ' m' +
                (meas.ground ? '  ·  Ground ' + n0(meas.ground) + ' m²' : ''),
         // X/Y/Z are spans -> arrowed lines. Ground area and volume are SCALARS with no span to
         // arrow (§20.11), so they go in the panel.
-        spanAxes: ['x', 'z', 'y'], title: 'Building Envelope',
+        spanAxes: ['x', 'z', 'y'], title: _envName,
         dims: meas.ground ? ['Ground  ' + n0(meas.ground) + ' m²',
                              'Envelope  ' + n0(meas.ground * e.sz) + ' m³'] : [] });
     } else { console.log('§FLYTHRU_CUE_DROP envelope — no DB extents or no A.ifc2three'); }
