@@ -45,6 +45,13 @@
   'use strict';
 
   var TIER1_ORDER = ['Substructure', 'Superstructure', 'Architecture'];
+  // §CHAINAGE_V2: road trade name → its declared sequence, read from the owner (rates.js SEQUENCE_CIVIL). Empty when rates.js
+  // is not loaded (node harnesses on buildings) → every rank/edge below is exactly as before.
+  var CIVIL_SEQ = (function () {
+    var SC = (typeof global !== 'undefined' && global.SEQUENCE_CIVIL) || null, m = {};
+    if (SC) for (var d in SC) if (SC[d] && SC[d].phase) m[SC[d].phase] = SC[d].sequence;
+    return m;
+  })();
   var SS = 0, FS = 1;
 
   // contactGraph(items) — same algorithm, same shipped ScheduleGate CELL/EPS/GAP constants as
@@ -235,7 +242,8 @@
     for (i = 0; i < n; i++) {
       var L = items[i].storey ? SG.collapsePhase(items[i].storey) : null;
       lvlOf[i] = L;
-      if (L) { var a = lvlAgg[L] || (lvlAgg[L] = { sum: 0, c: 0 }); a.sum += items[i].bz; a.c++; }
+      if (L) { var a = lvlAgg[L] || (lvlAgg[L] = { sum: 0, c: 0, sec: 0, sc: 0 }); a.sum += items[i].bz; a.c++;
+        if (typeof items[i].lvlSec === 'number') { a.sec += items[i].lvlSec; a.sc++; } }   // §CHAINAGE_LEVELS
     }
     var levels = Object.keys(lvlAgg).sort(function (a, b) { return lvlAgg[a].sum / lvlAgg[a].c - lvlAgg[b].sum / lvlAgg[b].c; });
 
@@ -246,7 +254,14 @@
     // (ascending), so federated pseudo-levels sharing one physical storey (Terminal's Kedai/Jalan/
     // Tanah cluster) collapse onto the SAME bandRank and are never chained to each other by E4.
     var bandOfLevel = {};
-    levels.forEach(function (L) { bandOfLevel[L] = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3); });
+    // §CHAINAGE_LEVELS (CIVIL_HIGHWAY_JELAPANG.md 2f): civil items carry a chainage section — the band key becomes
+    // (section, 3 m z-band) so the ladder climbs ALONG THE ROUTE first; same lexicographic key, one int. Buildings carry
+    // no lvlSec → the z-band key alone, unchanged.
+    var _cpmBySec = levels.some(function (L) { return lvlAgg[L].sc > 0; });
+    levels.forEach(function (L) {
+      var zb = Math.floor((lvlAgg[L].sum / lvlAgg[L].c) / 3);
+      bandOfLevel[L] = _cpmBySec ? (Math.round(lvlAgg[L].sc ? lvlAgg[L].sec / lvlAgg[L].sc : 0) * 100000 + zb + 50000) : zb;
+    });
     var bandValues = [];
     levels.forEach(function (L) { if (bandValues.indexOf(bandOfLevel[L]) < 0) bandValues.push(bandOfLevel[L]); });
     bandValues.sort(function (a, b) { return a - b; });
@@ -257,7 +272,9 @@
     // Tier-2 = 3. Every hammock gate points to a strictly LARGER key than its own. bandRank (not
     // per-name lvlRank) is the M1 straggler group-key so cross-ladder ancestry inside one physical
     // band stops manufacturing false stragglers.
-    function phaseRank(P) { var t = TIER1_ORDER.indexOf(P); return t >= 0 ? t : 3; }
+    // §CHAINAGE_V2 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_V2): road trades rank by their own declared
+    // sequence (rates.js SEQUENCE_CIVIL — the owner; 1..7 fits the ×8 key). Building phases never carry these names.
+    function phaseRank(P) { var t = TIER1_ORDER.indexOf(P); if (t >= 0) return t; return CIVIL_SEQ[P] || 3; }
     function groupKeyOf(i2) {
       if (!lvlOf[i2]) return -1;
       return bandRank[lvlOf[i2]] * 8 + phaseRank(items[i2].phase || '_UNPHASED');
@@ -353,6 +370,24 @@
       return id;
     }
 
+    // §CHAINAGE_V2 E3-civil — inside one chainage section the road trades follow their declared sequence (SEQUENCE_CIVIL:
+    // earthworks → drainage → pavement → furniture → signage → lighting → marking), the per-section half of a line of balance;
+    // E4 below is the other half (each trade section to section). Before this every civil phase was "Tier-2" with no Tier-1
+    // on the level, so a section's trades ran in parallel — MEASURED 46 lamp columns before their own section's pavement.
+    // Levels with no civil phase (every building) add nothing here.
+    levels.forEach(function (L) {
+      var civ = [];
+      Object.keys(groups).forEach(function (key) {
+        var cut = key.indexOf('||');
+        if (key.slice(0, cut) === L && CIVIL_SEQ[key.slice(cut + 2)]) civ.push(key.slice(cut + 2));
+      });
+      if (civ.length < 2) return;
+      civ.sort(function (a, b) { return CIVIL_SEQ[a] - CIVIL_SEQ[b]; });
+      for (var p = 0; p + 1 < civ.length; p++) {
+        var m = milestone(L, civ[p]), succ = groups[L + '||' + civ[p + 1]];
+        for (var k = 0; k < succ.length; k++) addEdge(m, succ[k], FS, 3, 'e3');
+      }
+    });
     // E3 — discipline hammocks per level: Tier-1 chain, then Tier-2 after Tier-1 complete.
     levels.forEach(function (L) {
       var present = TIER1_ORDER.filter(function (ph) { return groups[L + '||' + ph]; });
@@ -366,7 +401,7 @@
         var cut = key.indexOf('||');
         if (key.slice(0, cut) !== L) return;
         var ph = key.slice(cut + 2);
-        if (TIER1_ORDER.indexOf(ph) < 0) tier2.push(key);
+        if (TIER1_ORDER.indexOf(ph) < 0 && !CIVIL_SEQ[ph]) tier2.push(key);   // §CHAINAGE_V2: civil trades chain above
       });
       if (!tier2.length) return;
       var t1c = t1Complete(L);

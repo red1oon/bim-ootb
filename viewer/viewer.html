@@ -856,7 +856,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="qrcode.min.js?v=1" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="config.js?v=4" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=2" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="effects.js?v=145" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
+<script src="effects.js?v=146" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
 <script src="effects_gi_poc.js?v=3" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="lib/mp4_mux.js?v=1" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
 <script src="cinema_path_editor.js?v=22" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
@@ -1016,7 +1016,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="wizard_storeys.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_storeys.js')"></script>
 <script src="wizard_classify.js?v=1" onerror="console.warn('§LOAD_FAIL wizard_classify.js')"></script>
 <script src="precision_cam.js?v=8" onerror="console.warn('§LOAD_FAIL precision_cam.js')"></script>
-<script src="schedule_gate.js?v=3" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
+<script src="schedule_gate.js?v=4" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
 <!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
      gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
      window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
@@ -1024,7 +1024,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="lib/room_walker.js?v=3" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
 <script src="lib/level_deriver.js?v=1" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=1" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
-<script src="cpm_schedule.js?v=2" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<script src="cpm_schedule.js?v=3" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
 <!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
      Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
 <script src="gantt_model.js?v=1" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>
@@ -1035,7 +1035,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
 <script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="time_machine.js?v=83" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="time_machine.js?v=84" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=4" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source

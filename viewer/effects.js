@@ -10809,6 +10809,9 @@ async function setupEffects(A, renderer, scene, camera) {
       junctions: (R.stops || []).map(function(j) { return { x: j.x, y: j.y, z: j.z, r: j.r, n: j.n }; }) };
     return A._civilFilmOvC;
   }
+  // §CHAINAGE_V2: ONE owner for the road film's DRIVE route (seeded direction, §ALTC_V2 V1) — time_machine's chainage
+  // build order reads it so the build-up runs the same way the camera drives. Civil only; null on a building.
+  A.civilDriveRoute = function() { var o = _civilFilmOv(); return (o && o.waypoints) ? o.waypoints : null; };
   A.cinemaPathPlan = function(durationSec, ov) {
     // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
     // stored edit" — the G5 control path needs that distinction to be expressible.
