@@ -717,7 +717,8 @@
     var revealSec = 0;
     if (s.reveal) {
       var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
-      if (discs.length) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
+      // §ALTC_V2 V6: a road film's parade plays inside the drive — no extra seconds
+      if (discs.length && !(a.cpeRevealInDrive && a.cpeRevealInDrive())) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
     }
     return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
              total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
