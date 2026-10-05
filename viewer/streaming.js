@@ -1448,6 +1448,39 @@ function setupStreaming(A) {
   // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
   // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
   // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
+  A.CIVIL_EARTHWORK_OPACITY = 0.28;   // §CIVIL_REF_LOOK L1
+  // §CIVIL_REF_LOOK L2: right-of-way drawn as its outline (crease edges ≥ 30°) in the ROW discipline colour, once per guid.
+  // Same placement convention as measure.js (ifc2three position, rotation.set(rx, rz, −ry)).
+  A._civilRowOutline = function() {
+    if (!A.db || !A.scene || typeof THREE === 'undefined') return;
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z, i.geometry_hash" +
+        " FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid JOIN element_instances i ON i.guid = m.guid WHERE m.discipline = 'ROW'");
+    } catch (e) { return; }
+    if (!rows || !rows.length) return;
+    A._rowOutlines = A._rowOutlines || {};
+    var col = (window.DISC_COLORS && window.DISC_COLORS.ROW) || '#d04fd0', made = 0, segs = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]; if (A._rowOutlines[r[0]]) continue;
+      var geo = A.meshCache && A.meshCache[r[7]];
+      if (!geo) {
+        var g = A.dbQuery('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [r[7]]);
+        if (!g.length && A.libDb && A.libDb !== A.db) { try { var lr = A.libDb.exec('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [r[7]]); g = lr.length ? lr[0].values : []; } catch (e) {} }
+        if (g.length && g[0][0] && g[0][1] && A.blobToGeometry) geo = A.blobToGeometry(g[0][0], g[0][1]);
+      }
+      if (!geo) { console.log('§CIVIL_ROW_OUTLINE_SKIP guid=' + r[0] + ' no geometry'); continue; }
+      var eg = new THREE.EdgesGeometry(geo, 30);
+      var line = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: col }));
+      var p = A.ifc2three(r[1], r[2], r[3]);
+      line.position.set(p.x, p.y, p.z);
+      if (r[4] || r[5] || r[6]) line.rotation.set(r[4] || 0, r[6] || 0, -(r[5] || 0));
+      line.userData.civilRowOutline = r[0];
+      A.scene.add(line); A._rowOutlines[r[0]] = line; made++; segs += eg.attributes.position.count / 2;
+    }
+    if (made) { console.log('§CIVIL_ROW_OUTLINE made=' + made + ' segments=' + segs + ' colour=' + col); if (A.markDirty) A.markDirty(); }
+  };
+
   A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow, windFlip) {
     windFlip = !!(windFlip && ifcClass && FRONT_SIDE_CLASSES[ifcClass]);   // §WIND_FLIP: only a FrontSide class changes; others never fragment the cache
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
@@ -2172,6 +2205,19 @@ function setupStreaming(A) {
       };
       console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
+    // §CIVIL_REF_LOOK (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §CIVIL_REF_LOOK, user 2026-10-06 "not to obscure the
+    // main hiway"): the earthworks body is one 2.5 km × 2 km × 60 m solid that hides the road and the piles inside it →
+    // see-through earth colour; the right-of-way solid is a boundary, not built work → hidden here, drawn as an outline
+    // (A._civilRowOutline). Gate: discipline EARTHWORK / ROW only — no building carries either code.
+    if (discipline === 'EARTHWORK') {
+      var _ewc = window.DISC_COLORS && window.DISC_COLORS.EARTHWORK;
+      if (_ewc && mat.color) mat.color.set(_ewc);
+      a = A.CIVIL_EARTHWORK_OPACITY; mat.transparent = true; mat.opacity = a; mat.depthWrite = false; mat.side = THREE.DoubleSide;
+      if (!A._civilRefLookLogged) { A._civilRefLookLogged = 1; console.log('§CIVIL_REF_LOOK earthwork opacity=' + a + ' colour=' + _ewc + ' depthWrite=false'); }
+    } else if (discipline === 'ROW') {
+      mat.visible = false;
+      console.log('§CIVIL_REF_LOOK row solid hidden (outline drawn instead)');
+    }
     mat.userData.origOpacity = a;
     // §WALL_SIDE: record the RESOLVED side (before any x-ray override below). The old line
     // (`a < 1.0 ? DoubleSide : FrontSide`) claimed FrontSide for every opaque material while the
@@ -2320,6 +2366,7 @@ function setupStreaming(A) {
           // §SCENE_MERGE (§SM-7.1 step 7): same sequential drain for buildings folded in by
           // Open→Merge. A real merged package (Clinic = 5 discipline buildings) has N names and
           // streamBuilding() handles ONE, so it chains here exactly like City's queue above.
+          if (A._civilRowOutline) A._civilRowOutline();   // §CIVIL_REF_LOOK L2 — outline for any ROW element now streamed
           if (A._mergePending && A._mergePending.length && A._mergeStreamNext) A._mergeStreamNext();
           // §MERGE_CONTRACT (W-SCENE-MERGE): §CONTRACT_CHECK is scene-wide and building-blind, so
           // the merge needs its own per-building split of what is ACTUALLY registered for picking.
@@ -4204,6 +4251,8 @@ function setupStreaming(A) {
   A.clearStreamed = function() {
     // §6.8 DLOD — disable before clearing scene
     if (A.dlodDisable) A.dlodDisable('clear');
+    // §CIVIL_REF_LOOK L2 — ROW outlines are scene children outside the streamed meshes; drop them with the scene
+    if (A._rowOutlines) { for (var _rg in A._rowOutlines) { var _rl = A._rowOutlines[_rg]; if (_rl.parent) _rl.parent.remove(_rl); _rl.geometry.dispose(); _rl.material.dispose(); } A._rowOutlines = {}; }
     // Dispose active pick highlight
     if (window._pickHighlight) {
       const prev = window._pickHighlight;
