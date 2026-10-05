@@ -6,7 +6,9 @@
 function setupCpeRoadPanels(A) {
   'use strict';
   var PANEL_SEC = 5, GAP_SEC = 2, STRETCH_M = 150;   // presentation: card on-screen time, spacing, half-width of a stretch
-  var KIND_ORDER = ['counts', 'check', 'planned', 'drainage', 'signs'];   // §ALTC_CHECKS: 'check' = a road check as a worked formula
+  var KIND_ORDER = ['counts', 'ground', 'check', 'outstanding', 'planned', 'drainage', 'signs'];   // §ALTC_CHECKS: 'check' = a road check as a worked formula
+  // §ALTC_GROUND_CARDS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): 'ground' = the partner's ground works of the stretch by the
+  // file's own 15_Name; 'outstanding' = ONE red-banner card counting what the model does not carry yet (G3).
   var _rp = null;
 
   function _q(sql) { try { return (A.dbQuery && A.dbQuery(sql)) || []; } catch (e) { return []; } }
@@ -98,7 +100,7 @@ function setupCpeRoadPanels(A) {
     _q('SELECT m.guid, m.discipline, t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid')
       .forEach(function (r) { var p = A.ifc2three(r[2], r[3], r[4]); els.push({ g: r[0], d: r[1], c: ch.at(p.x, p.z) }); });
     var psets = _hasPsets();
-    var kindIx = 0, plannedDone = false, slots = [];
+    var kindIx = 0, plannedDone = false, osDone = false, slots = [];
     picked.forEach(function (c) {
       var mid = plan.poseAt(c.t0 + slotU / 2), cCam = ch.at(mid.x, mid.z);
       var lo = Math.max(0, cCam - STRETCH_M), hi = Math.min(ch.len, cCam + STRETCH_M);
@@ -106,8 +108,9 @@ function setupCpeRoadPanels(A) {
       var card = null, tries = 0;
       while (!card && tries < KIND_ORDER.length) {
         var kind = KIND_ORDER[kindIx % KIND_ORDER.length]; kindIx++; tries++;
-        card = _card(kind, inS, psets, lo, hi, plannedDone);
+        card = _card(kind, inS, psets, lo, hi, plannedDone, osDone);
         if (card && kind === 'planned') plannedDone = true;
+        if (card && kind === 'outstanding') osDone = true;
       }
       if (card) slots.push({ t0: c.t0, t1: c.t0 + slotU, busy: +c.busy.toFixed(3), chLo: Math.round(lo), chHi: Math.round(hi), card: card });
     });
@@ -118,7 +121,27 @@ function setupCpeRoadPanels(A) {
     return _rp;
   }
 
-  function _card(kind, inS, psets, lo, hi, plannedDone) {
+  // §ALTC_GROUND_CARDS G3 — counts of what the model lacks; each row a number its witness re-derives (no prose claim).
+  // Civil disciplines = rates.js CIVIL_RATES keys; references (measure 'NONE': chainage labels, right-of-way) carry no properties by
+  // nature and are not priced, so they are left out of every row.
+  function _outstandingRows(psets) {
+    var CR = window.CIVIL_RATES || {}, present = {};
+    _q('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline').forEach(function (r) { present[r[0]] = r[1]; });
+    var work = Object.keys(CR).filter(function (d) { return present[d] && CR[d] && CR[d].measure !== 'NONE'; });
+    if (!work.length) return [];
+    var inL = work.map(function (d) { return "'" + d + "'"; }).join(',');
+    var noProps = (_q('SELECT COUNT(*) FROM elements_meta m WHERE m.discipline IN (' + inL + ')' +
+      (psets ? ' AND NOT EXISTS (SELECT 1 FROM element_psets p WHERE p.guid = m.guid)' : ''))[0] || [0])[0];
+    var noRate = work.filter(function (d) { return CR[d].rate == null; }).length;
+    var byCount = work.filter(function (d) { return /^M[23]?$/.test(CR[d].measure) && CR[d].qtyBasis === 'EA'; }).length;
+    var rows = [];
+    if (noProps) rows.push({ label: 'Civil pieces with no properties', value: noProps, os: 'noProps' });
+    if (noRate) rows.push({ label: 'Disciplines with no rate (RM)', value: noRate, os: 'noRate' });
+    if (byCount) rows.push({ label: 'Disciplines timed by count, not by m / m² / m³', value: byCount, os: 'byCount' });
+    return rows;
+  }
+
+  function _card(kind, inS, psets, lo, hi, plannedDone, osDone) {
     var head = 'CH ' + lo + '–' + hi + ' m (inferred)';
     if (kind === 'counts') {
       if (!inS.length) return null;
@@ -158,9 +181,32 @@ function setupCpeRoadPanels(A) {
                { label: tag, value: h.status === 'valid' ? 'method checked' : 'method under review' }],
         guids: [row.guid] };
     }
+    if (kind === 'ground') {
+      var gw = inS.filter(function (e) { return e.d === 'GEOTECH' || e.d === 'GABION'; });
+      if (!gw.length) return null;
+      var gg = gw.map(function (e) { return e.g; }), named = {}, rowsG = [];
+      if (psets) {
+        var gl = gg.map(function (g) { return "'" + String(g).replace(/'/g, "''") + "'"; }).join(',');
+        _q("SELECT a.value, COUNT(DISTINCT a.guid), MIN(a.guid) FROM element_psets a WHERE a.name = '15_Name' AND a.guid IN (" + gl + ") " +
+           "GROUP BY a.value ORDER BY 2 DESC LIMIT 4").forEach(function (x) {
+          // the group's length as the file states it (22_DRIVEN_LENGTH "18m", 17_Length "12m SOIL NAILING …" → first word)
+          var len = _q("SELECT value FROM element_psets WHERE guid = '" + String(x[2]).replace(/'/g, "''") + "' AND name IN ('22_DRIVEN_LENGTH','17_Length') LIMIT 1");
+          rowsG.push({ label: x[0] + (len.length ? ' · ' + String(len[0][0]).split(' ')[0] : ''), value: +x[1], key: x[0] }); });
+        _q("SELECT DISTINCT guid FROM element_psets WHERE name = '15_Name' AND guid IN (" + gl + ")").forEach(function (x) { named[x[0]] = 1; });
+      }
+      var rest = {}; gw.forEach(function (e) { if (!named[e.g]) rest[e.d] = (rest[e.d] || 0) + 1; });
+      Object.keys(rest).forEach(function (d) { rowsG.push({ label: (A.cpeRevealDiscLabel ? A.cpeRevealDiscLabel(d) : d) + (psets && rowsG.length ? ' (other)' : ''), value: rest[d], disc: d, unnamed: true }); });
+      return { kind: kind, title: 'Ground works here — ' + head, rows: rowsG, guids: gg };
+    }
+    if (kind === 'outstanding' && !osDone) {
+      var osRows = _outstandingRows(psets);
+      if (!osRows.length) return null;
+      return { kind: kind, title: 'Outstanding — not in this model yet', banner: 'red', rows: osRows, guids: [] };
+    }
     if (kind === 'planned' && !plannedDone) {
       return { kind: kind, title: 'Coming to this view — planned', rows: [
-        { label: 'Terrain profile', value: 'planned — no earthwork surface in this model' },
+        (function () { var ew = (_q("SELECT COUNT(*) FROM elements_meta WHERE discipline = 'EARTHWORK'")[0] || [0])[0];   // G2: true only when none
+          return ew ? { label: 'Earthworks body (solids)', value: ew, disc: 'EARTHWORK' } : { label: 'Terrain profile', value: 'planned — no earthwork surface in this model' }; })(),
         { label: 'Weather', value: 'planned — no weather data' },
         { label: 'Traffic', value: 'planned — no traffic data' }], guids: [] };
     }
@@ -200,7 +246,10 @@ function setupCpeRoadPanels(A) {
     var r = Math.round(L.pad * 0.8);
     ctx.beginPath(); ctx.moveTo(L.x + r, L.y); ctx.arcTo(L.x + L.w, L.y, L.x + L.w, L.y + L.h, r); ctx.arcTo(L.x + L.w, L.y + L.h, L.x, L.y + L.h, r);
     ctx.arcTo(L.x, L.y + L.h, L.x, L.y, r); ctx.arcTo(L.x, L.y, L.x + L.w, L.y, r); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#ffd27a'; ctx.font = '600 ' + L.tPx + 'px sans-serif'; ctx.textBaseline = 'top';
+    if (c.banner === 'red') {   // §ALTC_GROUND_CARDS G3: the outstanding card's title sits on a red banner
+      ctx.fillStyle = '#c0392b'; ctx.fillRect(L.x, L.y, L.w, L.pad + L.tPx * 1.25);
+    }
+    ctx.fillStyle = c.banner === 'red' ? '#ffffff' : '#ffd27a'; ctx.font = '600 ' + L.tPx + 'px sans-serif'; ctx.textBaseline = 'top';
     ctx.fillText(c.title, L.x + L.pad, L.y + L.pad);
     ctx.font = L.bPx + 'px sans-serif';
     c.rows.forEach(function (row, i) {
