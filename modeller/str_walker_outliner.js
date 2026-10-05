@@ -258,7 +258,7 @@
     if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
-      s.src = '../viewer/import_db_builder.js?v=3';
+      s.src = '../viewer/import_db_builder.js?v=6';
       s.onload = function () { _ifcEngineLoaded = true; resolve(); };
       s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
       document.head.appendChild(s);

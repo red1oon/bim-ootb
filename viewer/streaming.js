@@ -318,6 +318,18 @@ function setupStreaming(A) {
     return out;
   };
 
+  // §MESH_SLIM: ONE owner for "is this a civil model" on the viewer side — any element discipline in rates.js
+  // SEQUENCE_CIVIL. Cached per A.db object. Fleet DBs: 0 civil rows → false.
+  A.isCivilModel = function() {
+    if (!A.db || !window.SEQUENCE_CIVIL) return false;
+    if (A._civilModelDb === A.db) return A._civilModel;
+    var n = 0;
+    try { var r = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')"); n = (r.length && r[0].values[0][0]) || 0; } catch (e) {}
+    A._civilModelDb = A.db; A._civilModel = n > 0;
+    console.log('§CIVIL_MODEL civilRows=' + n + ' → ' + A._civilModel);
+    return A._civilModel;
+  };
+
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
     for (const [name, bc] of Object.entries(A.buildingCentres)) {
@@ -2322,7 +2334,11 @@ function setupStreaming(A) {
         }
         console.log(`[S231] §NORMALS_PROBE libHasNormals=${A._libHasNormals}`);
       }
-      const cols = A._libHasNormals
+      // §MESH_SLIM: a civil model's stored normals are redundant (99.95 % = own face normal) — don't pull them out of
+      // the sql.js heap; blobToGeometry derives them exactly as for every fleet DB (which ships none).
+      const _useN = A._libHasNormals && !A.isCivilModel();
+      if (A._libHasNormals && !_useN && !A._meshSlimLoadLogged) { A._meshSlimLoadLogged = true; console.log('§MESH_SLIM_LOAD civil=1 storedNormals=ignored (derived)'); }
+      const cols = _useN
         ? 'geometry_hash, vertices, faces, normals'
         : 'geometry_hash, vertices, faces';
       // Fetch in chunks of 200 to avoid sql.js bind limit
@@ -2338,7 +2354,7 @@ function setupStreaming(A) {
             while (stmt.step()) {
               const row = stmt.get();
               const ghash = row[0], vBlob = row[1], fBlob = row[2];
-              const nBlob = A._libHasNormals ? (row[3] || null) : null;
+              const nBlob = _useN ? (row[3] || null) : null;
               if (vBlob && fBlob) {
                 const geo = A.blobToGeometry(vBlob, fBlob, nBlob);
                 if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
