@@ -193,5 +193,7 @@
   "updateAmbience": "readonly",
   "updateLighting": "readonly",
   "VideoEncoder": "readonly",
-  "VideoFrame": "readonly"
+  "VideoFrame": "readonly",
+  "IfcSurfaceNames": "readonly",
+  "LightLaw": "readonly"
 }
