@@ -913,12 +913,12 @@ function setupTour(A) {
     console.log('[TOUR] §CIVIL_ROUTE_JUNCTION stops=' + _stopsRaw + ' → junctions=' + stops.length + ' at=[' + stops.map(function (st) { return st.at; }).join(',') +
       '] radiusM=[' + stops.map(function (st) { return st.r.toFixed(0); }).join(',') + ']');
     var plen0 = 0; for (var m0 = 1; m0 < path.length; m0++) plen0 += Math.hypot(path[m0].x - path[m0 - 1].x, path[m0].z - path[m0 - 1].z);
-    return { path: path, stops: stops, stopLabel: stopLabel, src: routeSrc, n: n, sig: sig, maxJump: maxJump, altM: ALT_M, lenM: plen0 };
+    return { path: path, stops: stops, stopLabel: stopLabel, src: routeSrc, n: n, sig: sig, maxJump: maxJump, altM: ALT_M, binM: BIN_M, lenM: plen0 };
   };
   A._civilRouteTour = function() {
     var R = A.civilRoutePath();
     if (!R) return null;
-    var path = R.path, stops = R.stops, stopLabel = R.stopLabel, routeSrc = R.src, n = R.n, sig = R.sig, maxJump = R.maxJump, ALT_M = R.altM;
+    var path = R.path, stops = R.stops, stopLabel = R.stopLabel, routeSrc = R.src, n = R.n, sig = R.sig, maxJump = R.maxJump, ALT_M = R.altM, BIN_M = R.binM;
     var SPEED = 25;                       // presentation: m/s along the road (~90 km/h)
     var seg = function (from, to, label) {
       var pts = path.slice(from, to + 1); if (pts.length < 2) return null;
