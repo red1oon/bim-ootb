@@ -828,7 +828,9 @@ function setupTour(A) {
   (window.loadJsonWithOverrides ? window.loadJsonWithOverrides('civil_labels.json?v=1', 'json_civil_labels')
     : fetch('civil_labels.json?v=1').then(function (r) { return r.json(); }))
     .then(function (j) { A._civilLabels = j || null; }).catch(function (e) { console.warn('[TOUR] §CIVIL_LABELS load failed: ' + e.message); });
-  A._civilRouteTour = function() {
+  // §CIVIL_ROUTE_PATH — ONE owner of the road route (smoothed medians + junction stops), read by the Fly tour below AND the
+  // Alt+C film (effects.js A.cinemaPathPlan, §ALTC_HIGHWAY). null when the model has no civil route.
+  A.civilRoutePath = function() {
     var q = function (sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } };
     var has = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'").length > 0;
     // Which labels mean "the carriageway" and "a stop" is project data (civil_labels.json, editable in Settings),
@@ -910,6 +912,13 @@ function setupTour(A) {
     });
     console.log('[TOUR] §CIVIL_ROUTE_JUNCTION stops=' + _stopsRaw + ' → junctions=' + stops.length + ' at=[' + stops.map(function (st) { return st.at; }).join(',') +
       '] radiusM=[' + stops.map(function (st) { return st.r.toFixed(0); }).join(',') + ']');
+    var plen0 = 0; for (var m0 = 1; m0 < path.length; m0++) plen0 += Math.hypot(path[m0].x - path[m0 - 1].x, path[m0].z - path[m0 - 1].z);
+    return { path: path, stops: stops, stopLabel: stopLabel, src: routeSrc, n: n, sig: sig, maxJump: maxJump, altM: ALT_M, binM: BIN_M, lenM: plen0 };
+  };
+  A._civilRouteTour = function() {
+    var R = A.civilRoutePath();
+    if (!R) return null;
+    var path = R.path, stops = R.stops, stopLabel = R.stopLabel, routeSrc = R.src, n = R.n, sig = R.sig, maxJump = R.maxJump, ALT_M = R.altM, BIN_M = R.binM;
     var SPEED = 25;                       // presentation: m/s along the road (~90 km/h)
     var seg = function (from, to, label) {
       var pts = path.slice(from, to + 1); if (pts.length < 2) return null;

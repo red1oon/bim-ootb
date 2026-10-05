@@ -2520,8 +2520,14 @@ async function setupEffects(A, renderer, scene, camera) {
   // it is the post-topout ease WINDOW that §PL_TOPOUT_UNPIN (_plTopoutWant, the fixtures) reuses; the
   // sun's own arc no longer reads it.
   var TOPOUT_SNAP_EASE_U = 0.08;   // fraction of the whole film a post-topout ease takes (fixtures only)
+  // §ALTC_HIGHWAY sun (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_HIGHWAY, user 2026-10-05: "alt-c to give more
+  // realistic daytime (perhaps late evening) with lamps on and hitting surface … special treatment for outdoor CW roads"):
+  // a civil model's film runs late afternoon → dusk, 15° → the SAME tuned dusk end (6°), so every dusk-tuned constant still
+  // lands where it was tuned. Presentation value. Buildings: A.isCivilModel() false → the 55° → 6° arc, unchanged.
+  var CIVIL_SUN_ELEVATION_START = 15;
   function _sunElevationAt(tNorm) {
-    return PHOTO_SUN_ELEVATION_START + (PHOTO_SUN_ELEVATION_END - PHOTO_SUN_ELEVATION_START) * tNorm;
+    var _s = (A.isCivilModel && A.isCivilModel()) ? CIVIL_SUN_ELEVATION_START : PHOTO_SUN_ELEVATION_START;
+    return _s + (PHOTO_SUN_ELEVATION_END - _s) * tNorm;
   }
   // updateSky() repositions the sun/sky/fog/lensflare but does NOT touch the shadow map — it has no
   // reason to, every OTHER caller (Time Machine, plain nav) already re-renders continuously. A film
@@ -2579,7 +2585,7 @@ async function setupEffects(A, renderer, scene, camera) {
     // below cannot drift from the arc by re-deriving it (one elevation, two consumers).
     A._sunArcElevationDeg = _el;
     console.log('§SUN_ARC_STEP tNorm=' + tNorm.toFixed(3) + ' elevation=' + _el.toFixed(1) +
-      ' (start=' + PHOTO_SUN_ELEVATION_START + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
+      ' (start=' + ((A.isCivilModel && A.isCivilModel()) ? CIVIL_SUN_ELEVATION_START + ' civil' : PHOTO_SUN_ELEVATION_START) + ' end=' + PHOTO_SUN_ELEVATION_END + ')');
     return _el;
   }
   A._sunArcStep = _sunArcStep;
@@ -7139,6 +7145,11 @@ async function setupEffects(A, renderer, scene, camera) {
 
   function _cinemaPathPlan(durationSec) {
     var _planT0 = (typeof performance !== 'undefined') ? performance.now() : 0;
+    // §ALTC_HIGHWAY pace: CINEMA_WALK_MPS (2.3, interior walking) priced a 2.1 km road drive at ~920 s and the pull-back to
+    // a 2 km site's orbit at 6.5 m/s — a ~21-minute film (measured naturalTotal 1243 s). A road is driven/flown at the Fly
+    // tour's speed. Buildings: both constants unchanged.
+    var _civilPace = !!(A.isCivilModel && A.isCivilModel());
+    var _walkMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_WALK_MPS, _pullMps = _civilPace ? CIVIL_FILM_SPEED : CINEMA_PULLBACK_MPS;
     var arcBboxRaw = _buildingBBoxArc();
     var arcBbox = arcBboxRaw || _buildingBBoxIfc();
     var envelope = arcBbox ? Math.max(arcBbox.xMax - arcBbox.xMin, arcBbox.yMax - arcBbox.yMin, 50) : 100;
@@ -8475,8 +8486,8 @@ async function setupEffects(A, renderer, scene, camera) {
         // was kept rather than dropped: the user asked for it repeatedly elsewhere in this file's
         // own history, e.g. the ORIGIN ask and the Mechanism B pacing quote).
         _revealPulloutSec = CINEMA_REVEAL_PULLOUT_SEC;
-        _revealFlybackSec = totalLen / CINEMA_PULLBACK_MPS;
-        _revealRoundSec = totalLen / CINEMA_WALK_MPS;
+        _revealFlybackSec = totalLen / _pullMps;
+        _revealRoundSec = totalLen / _walkMps;
         _revealTailSec = 2 * _revealDiscs.length + 2;
         _revealQtyCost = A.cpeRevealDiscQtyCost ? A.cpeRevealDiscQtyCost(_revealDiscs) : {};
         console.log('§CPE_REVEAL_ROUND on pulloutSec=' + _revealPulloutSec.toFixed(1) + ' flybackSec=' +
@@ -8511,7 +8522,7 @@ async function setupEffects(A, renderer, scene, camera) {
       // §CPE_STICK_HOLD: `+ _holdTotal` sits OUTSIDE the multiplier on purpose — travel is priced by
       // the noise law, a typed hold is priced at face value. Amends §CINEMA_PATH_EDITOR_MODEL rule 9
       // ("constant speed"): speed is constant EXCEPT at authored holds, which is the point of them.
-      out:   (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS) *
+      out:   (totalLen / _walkMps + _walkTurnDegVal / CINEMA_TURN_DPS) *
              (1 + (CINEMA_PACE_SWING - 1) * _walkBusy) + _holdTotal,
       // §CPE_DISCIPLINE_REVEAL_PULLOUT: none of pullout/flyback/reveal(round2)/tail are ever part
       // of the user-typed total-seconds override system (no field for any of them in the panel) —
@@ -8520,7 +8531,7 @@ async function setupEffects(A, renderer, scene, camera) {
       flyback: _revealFlybackSec,       // §CPE_DISCIPLINE_REVEAL_FLYBACK: retrace back to the first stick
       reveal: _revealRoundSec,          // round 2's own seconds — the repeated forward lap only
       tail:   _revealTailSec,           // folded into `rise` below, not its own beat boundary
-      rise:  Math.max(0.5, _pullDist / CINEMA_PULLBACK_MPS),
+      rise:  Math.max(0.5, _pullDist / _pullMps),
       orbit: 360 / CINEMA_TURN_DPS
     };
     var _natTotal = _natSec.dive + _natSec.spin + _natSec.out + _natSec.pullout + _natSec.flyback +
@@ -8528,10 +8539,10 @@ async function setupEffects(A, renderer, scene, camera) {
     // Whitebox proof for §CPE_WALK_BUDGET_NOISE_BLIND — every term the formula reads, printed
     // together so a witness can recompute `out` from this line alone and compare against
     // _natSec.out, rather than trusting the arithmetic happened as claimed.
-    console.log('§CPE_WALK_BUDGET_NOISE_BLIND totalLen=' + totalLen.toFixed(2) + 'm walkMps=' + CINEMA_WALK_MPS +
+    console.log('§CPE_WALK_BUDGET_NOISE_BLIND totalLen=' + totalLen.toFixed(2) + 'm walkMps=' + _walkMps +
       ' turnDeg=' + _walkTurnDegVal.toFixed(1) + ' turnDps=' + CINEMA_TURN_DPS +
-      ' travelSec=' + (totalLen / CINEMA_WALK_MPS).toFixed(3) + ' turnSec=' + (_walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
-      ' rawSec=' + (totalLen / CINEMA_WALK_MPS + _walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
+      ' travelSec=' + (totalLen / _walkMps).toFixed(3) + ' turnSec=' + (_walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
+      ' rawSec=' + (totalLen / _walkMps + _walkTurnDegVal / CINEMA_TURN_DPS).toFixed(3) +
       ' busy=' + _walkBusy.toFixed(3) + ' swing=' + CINEMA_PACE_SWING +
       ' busyMult=' + (1 + (CINEMA_PACE_SWING - 1) * _walkBusy).toFixed(4) +
       ' outSec=' + _natSec.out.toFixed(3));
@@ -8788,8 +8799,8 @@ async function setupEffects(A, renderer, scene, camera) {
       ' + pullout ' + _natSec.pullout.toFixed(1) + ' + flyback ' + _natSec.flyback.toFixed(1) +
       ' + round2 ' + _natSec.reveal.toFixed(1) + ' + tail ' + _natSec.tail.toFixed(1) +
       ' + pullback ' + _natSec.rise.toFixed(1) + ' + orbit ' + _natSec.orbit.toFixed(1) +
-      '  (walk ' + totalLen.toFixed(1) + 'm @' + CINEMA_WALK_MPS + 'm/s, dive ' + diveDist.toFixed(1) +
-      'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + CINEMA_PULLBACK_MPS +
+      '  (walk ' + totalLen.toFixed(1) + 'm @' + _walkMps + 'm/s, dive ' + diveDist.toFixed(1) +
+      'm @' + CINEMA_DIVE_MPS + 'm/s, pullback ' + _pullDist.toFixed(1) + 'm @' + _pullMps +
       'm/s, dive raw ' + diveDist.toFixed(0) + 'm capped to envelope ' + _diveEff.toFixed(0) +
       'm, spin ' + _spinDeg.toFixed(0) + 'deg flown @' + CINEMA_TURN_DPS + 'deg/s x' +
       _spinBusyMult.toFixed(2) + ' busy)' +
@@ -10107,10 +10118,27 @@ async function setupEffects(A, renderer, scene, camera) {
     console.log('§CPE_REPLAN_LAZY invalidated reason=' + (reason || 'manual'));
   };
 
+  // §ALTC_HIGHWAY route: a civil model with no authored/stored path gets the ROAD as its waypoints (tour.js A.civilRoutePath —
+  // the same smoothed route Fly flies): Beats 1-2 settle on its first point, the walk-out drives it, the last point is the
+  // orbit's elastic control point. Paced like Fly (25 m/s) via _walkMps/_pullMps in the plan. Without it the plan dives to the bbox centre of a
+  // 2 km road and exits through a "facade" (effects.js §CINEMA_SPACE fallback) — no road at all. Explicit null (G5 control)
+  // and any authored edit still win; buildings return null here → derived plan unchanged.
+  var CIVIL_FILM_SPEED = 25;   // presentation: m/s along the road — same as the Fly tour's SPEED
+  function _civilFilmOv() {
+    if (!(A.isCivilModel && A.isCivilModel()) || typeof A.civilRoutePath !== 'function') return null;
+    if (A._civilFilmOvDb === A.db) return A._civilFilmOvC;   // route is per model — the plan is re-asked many times
+    A._civilFilmOvDb = A.db; A._civilFilmOvC = null;
+    var R = null; try { R = A.civilRoutePath(); } catch (e) { console.warn('§ALTC_HIGHWAY route failed: ' + e.message); }
+    if (!R || !R.path || R.path.length < 2) { console.log('§ALTC_HIGHWAY VACUOUS — civil model but no route'); return null; }
+    console.log('§ALTC_HIGHWAY route=' + R.src + ' waypoints=' + R.path.length + ' lenM=' + R.lenM.toFixed(0) +
+      ' paceMps=' + CIVIL_FILM_SPEED + ' junctions=' + R.stops.length);
+    A._civilFilmOvC = { waypoints: R.path.map(function(p) { return { x: p.x, y: p.y, z: p.z }; }) };
+    return A._civilFilmOvC;
+  }
   A.cinemaPathPlan = function(durationSec, ov) {
     // `undefined` means "use whatever is stored/staged"; an explicit null means "derived, ignore any
     // stored edit" — the G5 control path needs that distinction to be expressible.
-    if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; }
+    if (ov === undefined) { _cpeLoadFromDb(); ov = A._cinemaPathEdit || null; if (!ov) ov = _civilFilmOv(); }
     if (!ov) return _cinemaPathPlan(durationSec);
     if (ov._camBasis) return _withCamBasis(ov._camBasis, function() {
       var o = {}; for (var q in ov) if (q !== '_camBasis') o[q] = ov[q];
