@@ -28,6 +28,28 @@ function setupTools(A) {
         var _cn = (_cq.length && _cq[0].values[0][0]) || 0;
         if (_cn > 0) { _gSrc = 'civil'; console.log('§GROUND_CIVIL civilRows=' + _cn + ' → p2-bottom over all elements (building slab steps skipped)'); }
       }
+      // §CIVIL_REF_LOOK G1 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md, user 2026-10-06: "our new ground level will be
+      // using the new one. Old is default in lieu of such ground terrain IFC"): a civil model carrying an EARTHWORK terrain
+      // solid sets the plane at the earthworks' lowest TRUE vertex (center_z + local min z — center is the vertex centroid,
+      // so center − bbox/2 is off by ~1 m, §W.2). Only rotation_x/y = 0 (a Z-rotation keeps heights). No terrain → Step 4.
+      if (_gSrc === 'civil') {
+        try {
+          var _ew = A.db.exec("SELECT t.center_z, t.rotation_x, t.rotation_y, i.geometry_hash FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid" +
+            " JOIN element_instances i ON i.guid=m.guid WHERE m.discipline='EARTHWORK' AND i.geometry_hash IS NOT NULL");
+          var _ewRows = _ew.length ? _ew[0].values : [], _ewMin = Infinity, _ewN = 0;
+          for (var _ei = 0; _ei < _ewRows.length; _ei++) {
+            var _er = _ewRows[_ei]; if (_er[1] || _er[2]) continue;
+            var _gdb = A.db, _gr = _gdb.exec('SELECT vertices FROM component_geometries WHERE geometry_hash = ?', [_er[3]]);
+            if ((!_gr.length || !_gr[0].values.length) && A.libDb && A.libDb !== A.db) _gr = A.libDb.exec('SELECT vertices FROM component_geometries WHERE geometry_hash = ?', [_er[3]]);
+            var _blob = _gr.length && _gr[0].values.length ? _gr[0].values[0][0] : null;
+            if (!_blob || _blob.byteLength < 12) continue;
+            var _v = new Float32Array(_blob.buffer.slice(_blob.byteOffset, _blob.byteOffset + (_blob.byteLength - _blob.byteLength % 4)));
+            var _lz = Infinity; for (var _k = 2; _k < _v.length; _k += 3) if (_v[_k] < _lz) _lz = _v[_k];
+            if (isFinite(_lz)) { _ewMin = Math.min(_ewMin, _er[0] + _lz); _ewN++; }
+          }
+          if (_ewN) { _gLvl = _ewMin; _gSrc = 'earthwork-bottom'; console.log('§GROUND_EARTHWORK terrain=' + _ewN + ' bottom=' + _ewMin.toFixed(2) + ' (true mesh, replaces p2-bottom)'); }
+        } catch (eEw) { console.log('§GROUND_EARTHWORK_SKIP ' + eEw.message); }
+      }
       // Step 1: Try storey name matching for ground floor slabs.
       // §GROUND_Y_LOWEST_GF (2026-07-17): among the largest few GF-named slabs, take the LOWEST,
       // not simply the largest-area one. A "ground floor" name can appear at multiple elevations
