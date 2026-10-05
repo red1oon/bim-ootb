@@ -50,6 +50,13 @@ module.exports = [
     },
   },
   {
+    // viewer/tests/** are NODE CommonJS witness scripts (require, Buffer, process, top-level `return` after a VACUOUS
+    // verdict) — parse them as CommonJS with Node globals so the no-undef gate still checks them instead of failing on
+    // browser-only parsing. Added when the Alt+C/Alt+S lane (fix/fast-bake) was integrated, 2026-10-05.
+    files: ['viewer/tests/**/*.js'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } },
+  },
+  {
     // bonsai_kernel_worker.js is a MODULE Web Worker (ESM `import` of the occt kernel),
     // unlike the rest of viewer/ which are global-scope <script> files. Parse it as a module
     // so its import statements aren't a syntax error under the no-undef gate.

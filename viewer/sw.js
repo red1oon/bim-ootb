@@ -186,6 +186,161 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
+const CACHE_VERSION = 'v1566';
+// v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
+// v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
+// v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
+// sky-surface v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
+// v1559 (2026-10-03) W6 §F one record per film frame (phase ms, renders, calls/tris, exposure, lamps, HUD, luma, encode) + &filmlog=compact folds ~24 repeat tags to one line per film; W7 VACUOUS/NO-OP verdicts: §NIGHT_PL_INTENSITY_HEURISTIC on change + VACUOUS, §CPE_PIE_HOLD/§CPE_STATS_TAIL without a panel, §DLOD_BAKE_PROXY_RESULT, §FRAME_COST order-dependent calls dropped. cinema_maxq 35, tools 75, time_machine 81.
+// v1558 (2026-10-03) W4 film draw-call merge: A._consolidateBatched repaired to the flush contract (§WIND_FLIP material flag, _registerBatchSlot + bbox, slotGeo, only _batchMeta batches, DLOD-slotted kept, storey/disc maps filtered not wiped) and called once at film start under &consolidate=1. streaming 87, cinema_maxq 34.
+// v1557 (2026-10-03) W1 §CLI_BAKE_POSECHECK judged at the film time actually posed (pose tap +tF, __maxqPlanDurSec); W2 §HUD_OVERLAP alpha-aware (CROSSFADE apart, frame+alpha named, VACUOUS -> INCONCLUSIVE); W3 lamps: module-scope §115/§116 dedupe, film soft-cancel skips the nav pool rebuild, §INTERIOR_LIGHTS_WITNESS judges the owner (data|pool), §LAMPS + §LAMPS_SUMMARY. cinema_maxq 33, effects 138, tools 74.
+// v1556 (2026-10-03) merge of fix/sky-surface @d3bb44a7 (Alt+S stills-only: §FAULT_VACUOUS INCONCLUSIVE on samples=0, §FAULT_GI empty adapter -> n/a, §STILL_PRESS_TIME pressS/passes in PNG pose). still_fault 12, gi_still 49.
+// v1555 (2026-10-02) §REVEAL_DOOR_LEAK: renderAtTime writes a single mesh visible only if its discipline is not in hiddenDiscs (4D owns 'built', the discipline filter owns 'shown'); identical with nothing hidden. §PERF_TRAVERSE carries discKept. time_machine 80.
+// v1554 (2026-10-02) §REVEAL_TRAP opt-in &revealtrap=1: names the code that re-shows a mesh the reveal round hid (visible setter + stack, once per mesh) and names leaked meshes in §CPE_REVEAL_LEAK. Diagnostic only. effects 137.
+// v1553 (2026-10-02) §RENDER_INFO: draw calls + triangles of one jittered scene render (TAARenderPass) every 24th film capture. Logging only. cinema_maxq 32.
+// v1552 (2026-10-02) §GI_FILM_8BIT opt-in &gi8=1: film bounce pass renders into an rgba8 target (GPU does the x255 + clamp), 4 B/px readback, row copies + alpha mask instead of the per-pixel loop. gi_still 48.
+// v1551 (2026-10-02) §GI_FILM_PARTS timers (grab/geom/read/loop/comp per 24 frames) + opt-in &gifast=1 float->byte loop without Math.max/min (same bytes: Uint8ClampedArray clamps). gi_still 47.
+// v1550 (2026-10-02) §BAKE_LEAN opt-in &bakelean=1: L1 fold-done poll 5 ms (was 100), L2 env-map/glow safety timers armed once per film (were per frame). cinema_maxq 31, effects 136.
+// v1549 (2026-10-02) §CAPTURE_PARTS: per-frame split of _captureFrame (composer render / 3D draw incl. bounce hook / hud). Logging only. cinema_maxq 30.
+// v1548 (2026-10-02) §CAPTURE_SPLIT: §CAPTURE_ENC carries compMs (HUD composite before encode); §CAPTURE_TAIL hashMs + idbMs per frame. Logging only. cinema_maxq 29.
+// v1547 (2026-10-02) merge of fix/sky-surface @436b85cc (§WIND_FLIP: flipped-winding geometries DoubleSide, patches geometry_wind_flip; light-field fp unchanged per Alt+S) into fix/fast-bake v1546. scene 71, wind_flip 1, still_fault 11, streaming 86.
+// v1546 (2026-10-02) §SPEED_AB S-B2 opt-in &meterprime=auto: film meter skips its prime render once primed, self-checking (new program or dummy binding -> full prime that frame); §METER_PRIME counts. sourced_light 79.
+// v1545 (2026-10-02) §SPEED_AB opt-in arms: &capfmt=jpeg (&capq) capture encoder + §CAPTURE_ENC timing on every arm; &metereach=N film meter every Nth frame (metered=0|1 in §FILM_EXPOSURE). Defaults unchanged. effects 135, cinema_maxq 28.
+// v1544 (2026-10-02) merge of fix/sky-surface @f78a6579 (its v1532-v1536: §SKY_FIELD_FURNITURE REVERT key 21324567:90186, §LOCAL_EXPOSURE_BILATERAL, §FLOOR_F_SMOOTH opt-in, §ZONE_EYE_SKIP_OPEN, §DOME_GLOW) into fix/fast-bake v1543. light_zones 28, sourced_light 78, tools 73, gi_still 46.
+// v1543 (2026-10-02) §GI_FILM_CARRY: STALE only when the camera moved (frozen camera + identical pass is legitimate — HHS freeze false STALEs switched the bounce off). gi_still 45.
+// v1542 (2026-10-02) §FREEZE_PERF_ROOMS: CCTV panel counts logical rooms (room_guid, as room_graph.js:327), not boxes — HHS 100 boxes = 75 rooms. cpe_freeze_perf 5.
+// v1541 (2026-10-01) §FREEZE_ANIM line-by-line reveal on the hold clock (stack rows, info card, CCTV panel; reuse key carries it; &lpanim=0 static) + CCTV panel plain-English copy (§19.4). cpe_load_path 10, cpe_freeze_perf 4, cinema_maxq 27.
+// v1540 (2026-10-01) merge of feat/freeze-perf-panels (v1535-v1537: CCTV panel in the load-path freeze, §FREEZE_BANDS) into fix/fast-bake v1539.
+// v1539 (2026-10-01) §FILM_BLANK_FRAME (all-zero capture retried 0.5/2/5 s, else last good frame held; &blankframe=F:K test) + §FILM_GATE_EXPOSURE_SNAP (exposure jumps with the lighting-model switch; &gatesnap=0). effects 134, cinema_maxq 26.
+// v1538 (2026-10-01) merge of fix/sky-surface v1526-v1531 (IFC surface names, plaster texture, furniture polish, floor/object contact — stills) into fix/fast-bake v1534. sourced_light 77, contact_floor 4.
+// v1537 (2026-10-01) §FREEZE_PERF_PANEL wired through setupCpeFreezePerf(APP) (main.js replaced window.APP — the panel never reached the film). main 54, cpe_freeze_perf 3.
+// v1536 (2026-10-01) §FREEZE_BANDS: freeze panels get group-colour header bands + accent stripe (Structure blue, Security teal, Comfort violet; &lpbands=0 = old). cpe_load_path 9, cpe_freeze_perf 2.
+// v1535 (2026-10-01) §FREEZE_PERF_PANEL: new viewer/cpe_freeze_perf.js — Visual (CCTV coverage, best room) panel in the load-path freeze; Alt+C 'Visual' checkbox / --visual-panel. cpe_load_path 8, cpe_freeze_perf 1.
+// v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
+// v1533 (2026-10-01) merge of fix/sky-surface v1516-v1525 (MEP service colour, furniture in the sky field, lamp contact shadow off, local exposure, rated lamps) into fix/fast-bake v1532.
+// v1532 (2026-10-01) §INTERIOR_LIGHTS_ARC: interior lights off only with no ARC on screen (freeze / reveal hiding ARC), on otherwise. cinema_maxq 23.
+// v1531 (2026-10-01) §FILM_CAM_LIGHT eye light back in films (&filmcamlight=0 off); LightLaw ADAPT up 6 / down 4 EV/s (camera-like). effects 132, light_law 11.
+// v1530 (2026-10-01) §FILM_INHERIT items 1-4: §FILM_LAMP_DATA, §FILM_SHADOW_EDGE (per shot), §FILM_WINDOW_PULL (inside frames), §FILM_GLASS_ENV + mirrors (per shot); prebake writer keeps loaded parts. tools 71, sourced_light 75, effects 131, gi_still 42, cinema_maxq 22, scene 70.
+// v1529 (2026-10-01) §LOADPATH_STACK_ONLY: the freeze shows only the stack(s) + 2D info panel (building hidden, exposure held); &lpcontext=1 = old white cut-away. cpe_load_path 7, cinema_maxq 21.
+// v1528 (2026-10-01) §LOADPATH_VIEW_CULL: freeze pieces outside the fixed camera view skipped by the film camera (still cast shadows). cpe_load_path 6.
+// v1527 (2026-10-01) §LOADPATH_CLIP_SKIP: a clip without the freeze point inserts no freeze frames. cinema_maxq 20.
+// v1526 (2026-10-01) §FILM_GEOM_WHOLE: storey reveal counts as cut only inside its own window. cinema_maxq 19.
+// v1525 (2026-10-01) §FRAME_COST S5 film AO fold 12 -> 8 (measured at the floor), S4 load-path pixel diag on freeze frames only. cinema_maxq 18.
+// v1524 (2026-10-01) §PREBAKE: per-db patches/<db>.prebake.json — load-path shot (PB1) + window sides (PB2), key-checked, falls back to computing. scene 69, main 53, cpe_load_path 5, sky_portal 25.
+// v1523 (2026-10-01) freeze pan + rotation reuse key REMOVED (red1: original freeze had no drift checks). cpe_load_path 4, cinema_maxq 17.
+// v1522 (2026-10-01) freeze = hard freeze by default (&lppan opt-in), twins must sit inside the frozen frame. cpe_load_path 3, cinema_maxq 16 (reuse key carries the camera rotation).
+// v1521 (2026-10-01) §132 §LOADPATH_TWINS (same load path shown in several spots) + T4 out-and-back pan in the freeze; §LOADPATH_CLIP_CLOCK clip clock freezes through the hold. cpe_load_path 2, cinema_maxq 15.
+// v1520 (2026-10-01) §LOADPATH_HOLD_CAMDIR: camera position + view direction logged during the load-path freeze. cinema_maxq 14.
+// v1519 (2026-09-30) §FILM_GEOM_WHOLE gate on geometry (topout / storeys back / no hidden discs), §FILM_INHERIT_GATE logs first call, §SOURCED_OWN_COST timer. sourced_light 74, cinema_maxq 13.
+// v1518 (2026-09-30) §FILM_INHERIT: parity films stage SourcedLight (sky-view field) gated per frame on whole-building frames, portals retire under it; §FILM_FIELD_BY_BUILDING sidecar lookup by building (scene.js/main.js). effects 130, sky_portal 24, sourced_light 73, cinema_maxq 12, scene 68, main 52.
+// v1517/v1516 (2026-09-30) §FAST_BAKE FB1+FB2 sky-portal film classification (sky_portal.js 22-23).
+// sky-surface v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// sky-surface v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
+// sky-surface v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
+// sky-surface v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
+// sky-surface v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
+// sky-surface v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=12.
+// v1565 (2026-10-04) A/B switches only, defaults unchanged: &csmlambda=<0..1> (cascade split; 1 = log, MEASURED HHS c0 tpp 3.51->1.60, SampleHouse 8.63->1.74) and &shadowwide=0. effects.js?v=133.
+// v1564 (2026-10-03) §SHADOW_WIDE_OTHER_CAMERA: mirror tiles + the §GLASS_ENV cube render with the sun box widened to the building union, cascades suspended (was: eye-fitted cascades -> sun speckle in mirrors). effects.js?v=132 shadow_cascade.js?v=2 glass_fresnel.js?v=15.
+// v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
+// v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.
+// v1561 (2026-10-03) §GLASS_PLANAR_REFL: exterior panes on the K=6 largest on-screen glass planes reflect a per-plane mirror render (oblique near plane) instead of the eye-centred cube x sky gate; §GLASS_REFL_TRUTH witness (&refltruth=1); still_fault glassReflMirrored. glass_fresnel.js?v=13 effects.js?v=130 still_fault.js?v=14.
+// v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
+// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=11.
+// v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
+// v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
+// v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
+// v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
+// v1531 (2026-10-01) §OBJECT_CONTACT: beams + members no longer occluders (red1 'some patchy' — blotches on ceilings between beams). contact_floor.js?v=4.
+// v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
+// v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.
+// v1528 (2026-10-01) §FLOOR_CONTACT: new viewer/contact_floor.js — exact form-factor occlusion of furniture over upward floor fragments (lamps + diffuse irradiance; &floorcontact=0 off). sourced_light.js?v=73.
+// v1527 (2026-10-01) §WALL_TEXTURE (R5 plaster texture, contrast 1.05; &r5tex=0) + §FURNITURE_POLISH (roughness 0.35; &furnpolish=0|r). streaming.js?v=84 import.js?v=5.
+// v1526 (2026-10-01) §IFC_SURFACE_NAMES: new viewer/ifc_surface_names.js — IFC load keeps the authored surface-style / material names (elements_meta.material_name + element_surfaces), was NULL.
+// v1515 (2026-09-30) §MIRROR_OWN_MAT stills only (films skip the room capture). effects.js?v=129.
+// v1514 (2026-09-30) §STILL_RES_DEFAULT_1440: Alt+S default 1440p (measured +10..70 % press time, 4k fails the bounce). effects.js?v=128.
+// v1513 (2026-09-30) merge fix/case4-column (§CSM_READBACK_GLASS) into fix/sky-surface. effects.js?v=127.   // bump on each deploy; per-change detail is the git commit message.
+// v1512 (2026-09-30) §WINDOW_PULL: view-out pixels (glass then outside) re-rendered at the EV15 daylight exposure and blended. gi_still.js?v=37.
+// v1511 (2026-09-30) §SKY_FIELD_OPEN_ROOF: open cells under a roof/canopy get exact F + exact ground-view Gd (were 1). light_zones.js?v=27.
+// v1510 (2026-09-30) §BEAM_UNDER_SLAB: IfcBeam materials polygonOffset(1,4) — coplanar slab tops win the depth fight. streaming.js?v=83.
+// v1509 (2026-09-30) §GI_REDIST_DEFAULT_OFF (&giredist=1 = on) + §MIRROR_PARALLAX (box-projected mirror env from the zone grid).
+//   gi_still.js?v=36 effects.js?v=126 glass_fresnel.js?v=11.
+// v1508 (2026-09-30) §MIRROR_OWN_MAT: IFC mirrors get their own material at Alt+S (IFC colour, metal 1, rough 0.02, env = the §GLASS_ENV
+//   capture, no sky gate); the shared MEP material is no longer mirror-finished. sourced_light.js?v=72 effects.js?v=125 glass_fresnel.js?v=10.
+// v1507 (2026-09-30) §SKY_FIELD_SMOOTH: covered cells := same-zone 3x3x3 mean F (the lattice's 0.5 m tiles, Terminal hall wall);
+//   &skysmooth=0 = v1506. light_zones.js?v=26.
+// v1506 (2026-09-30) §SKY_FIELD_EXACT_OPEN: the exact-all pass keeps only OPEN cells under stairs/beams; covered cells back to the
+//   v1502 lattice + §SKY_FIELD_EXACT lower bound (Clinic: exact covered cells cost -0.5..-1 EV indoors). &skyexactcov=1 = v1505. light_zones.js?v=25.
+// v1507c4 (2026-09-30) §CSM_READBACK_GLASS: effects.js cascade depth readback leaves out objects with ANY glass group (R10 window
+// arrays were drawn solid, capping the readback at the room's glass -> the hall behind it sat in no cascade box -> unshadowed sun).
+// v1505 (2026-09-30) §FIELD_KEY_CODE: the field key hashes light_zones.js CODE (comments/whitespace stripped) — comment edits no longer
+//   stale every sidecar; §EXACT_WHEN_BAKED: the heavy exact sky pass runs only when forced (bake: APP._stillSkyExactAll = true /
+//   &skyexactall=1) or when the loaded record was built with it; imports / unbaked buildings get the fast field. light_zones.js?v=24.
+// v1504 (2026-09-29) §ZONE_EYE: a visible surface's room = first non-solid cell stepping back along the eye ray (12 x 0.25 m),
+//   else the nearest-cell rule (sourced_light.js slFragZone; &zoneeye=0). Clinic toilet strip 39-59 -> 57-72 (own floor 65-75);
+//   Terminal corner strip 68 -> 172 (wall 185), 0 darker. viewer.html sourced_light.js?v=71. light_zones.js untouched (sidecar keys valid).
+// v1503 (2026-09-29) §SKY_FIELD_EXACT_ALL: every cell a surface reads (covered cells within 2 of SOLID, cells beside an un-rasterised
+//   OCCLUDER, and OPEN cells under/beside one — HHS under-stair floor F 1 -> 0.003, truth 0.003) gets the exact CIE-overcast x cos sky
+//   integral over the shell soup's BVH with ONE fixed 256-direction set (no per-cell jitter), replacing the 41-direction lattice
+//   (raise AND lower; supersedes the lower-only §SKY_FIELD_EXACT). Build is heavy (Hospital 1.15M cells, 294M rays, ~33 min) and is
+//   meant to be BAKED (§LIGHT_FIELD_PATCH sidecars). &skyexactall=0 / APP._stillSkyExactAll=false = v1502's field. light_zones.js?v=23.
+// v1502 (2026-09-29) merge fix/light-field-db (v1498 §LIGHT_FIELD_DB) onto look v1501; viewer.html light_zones.js?v=22 (merged file).
+// v1501 (2026-09-29) §SKY_FIELD_EXACT: every lattice sky contribution of a read cell bounded by 8 exact sub-direction rays (lower
+//   only; Hospital hall bright+blocked 23 -> 0, +29 s build) + §GI_WAIT_BUDGET (bounce wait 120 s -> while active, 900 s cap, logged)
+//   + §STILL_OVERLAY_GUARD (Alt+S clears X-Ray / ghost shell). viewer.html light_zones.js?v=21, effects.js?v=123, gi_still.js?v=35.
+// v1498 §LIGHT_FIELD_DB: the Alt+S light field saved inside the building .db (light_zones.js primeDb/dbPack, scene.js
+//   _writeLightFieldTable, main.js primeDb at open); viewer.html light_zones.js?v=21, scene.js?v=66, main.js?v=51 in the SAME commit.
+// v1496 (2026-09-28) Z26 §GLASS_REFL_OPEN: exact-ray reflection openness per exterior glass cell side, built once with the field
+//   (light_zones.js, shares the shell pass BVH): 12 az x 25 el table in the pane frame, blocked = T x rho_hit x F_hit; the zone
+//   texture G of the glass cell = cell-table index + 1; slSpecKeep + specVis read it before the voxel march (Clinic clerestory panes
+//   black from outside: the 0.5 m voxel thickening of eave / roof edges blocked the mirror ray). &glassopen=0 = the march,
+//   &glassblock=0 = opaque hits read 0. §FAULT glassReflDark follows §SPEC_SMOOTH. viewer.html light_zones.js?v=20,
+//   sourced_light.js?v=67, still_fault.js?v=10 in the SAME commit.
+// v1495 (2026-09-28) merge fix/z25-fixture-face (v1492 §FIXTURE_FACE) onto look v1494 (§GROUND_DOOR_CHECK).
+// v1490 (2026-09-28) Z14/S4 carried state: §GI_CARRY + §GI_GPU_ERRORS in gi_still.js — a bounce pass dropped by a WebGPU error (OOM on a
+//   shared card) left the previous press's pixels in the kept render target and composited them onto the next still; now counted,
+//   fingerprinted per press, FAIL/STALE ends the press and releases the renderer. viewer.html gi_still.js?v=34 in the SAME commit.
+// v1478 (2026-09-27) fix/alts-all-3 = fix/alts-all-2 (v1477) + fix/colour-truth (v1476, §ZERO Z19-Z21) merged; ### ALTS-ALL FIX 10+ on top.
+//   viewer.html light_zones.js?v=19, sourced_light.js?v=62 in the SAME commit (both sides edited them).
+//   + ### ALTS-ALL FIX 11 (MEP trade hue before the name hint; pipes/ducts/steel metal 0 unless bare-metal named; pipe/duct envInt
+//   0.05 dropped) streaming.js?v=79; FIX 13 GI energy bound gi_still.js?v=32 + SourcedLight.irR sourced_light.js?v=63.
+//   + ### ALTS-ALL FIX 14 (first-press black glass): zero vertex normals repaired at Alt+S staging (A._repairDegenerateNormals, O(tri)),
+//   §GLASS_ENV prefiltered by an explicit PMREMGenerator + re-capture while materials re-key; streaming.js?v=81 effects.js?v=117 glass_fresnel.js?v=9.
+//   + ### ALTS-ALL FIX 16 (plenum sun leak): the cascade depth readback draws each mesh with ITS side (was DoubleSide: culled back faces
+//   pulled the SDSM boxes onto the camera, visible surfaces fell in no box); effects.js?v=118.
+//   + ### ALTS-ALL FIX 17: §PHOTO_PROPS skyline boxes drawn from the §PHOTO_VARIATION seed (was Math.random per press); &photoseed= witness pin; effects.js?v=119.
+// v1476 (2026-09-27) fix/colour-truth §ZERO Z19-Z21: coloured zone IR, porcelain finish, placeholder = STD_MAT / MEP-trade proxy hue.
+// v1477 (2026-09-27) ### ALTS-ALL FIX 9: gi_still glass skip also leaves out MULTI-MATERIAL objects with a glass group (Terminal R10
+//   window arrays were solid in the geometry pass -> opaque glass in Alt+S); glass-skip line per press. FIX 1(e): a §SOURCED_REBIND during
+//   the accumulation restarts it. viewer.html gi_still.js?v=31, sourced_light.js?v=61 in the SAME commit. (v1476 = fix/colour-truth.)
+// v1475 (2026-09-27) ### ALTS-ALL FIX 1: ONE §METER per still (SourcedLight.meterFinal on the final staged scene; stage() logs
+//   §METER_DIAG only); meterRead primes + pushes before the read (§METER_BIND: fresh-key uniforms carried the dummy zone texture);
+//   §SOURCED_REBIND counts re-keyed materials; §METER_BIND rendered/calls/bufHash. FIX 7: light_zones.js never persists/reuses a
+//   field whose shell pass was skipped (no BVH). viewer.html sourced_light.js?v=60, effects.js?v=116, light_zones.js?v=18 in the SAME commit.
+// v1474 (2026-09-27) §ALTS_ALL: fix/film-law-v2 + Z10 AO indirect + Z11 bounce albedo merged; Z8 radius-free shell rule
+//   (light_zones.js, &shellreach=2 = B1); Z18 &gridblend=1 (sourced_light.js, default off); remeter all-sky VACUOUS guard.
+//   §FRAME_QA per-frame luma line in cinema_maxq.js (bake release gate). Z18 §SPEC_SMOOTH (default on, &specsmooth=0): continuous
+//   §GLASS_SPEC_GATE mirror march. Still torch staged before the stage meter (no VACUOUS torch remeter). §METER_STATE isolation line.
+//   cli_silent_bake.js --url-query.
+//   viewer.html light_law.js?v=6, sourced_light.js?v=59, effects.js?v=115, gi_still.js?v=30, light_zones.js?v=17, cinema_maxq.js?v=11 in the SAME commit.
+// v1473 (2026-09-27) §FILM_LAW v2 on the Alt+S torch build: S1 film meter/adapt (LightLaw.ADAPT/adaptEv, acesDiv=1), S2 no film fill,
+//   S3 CAM_LIGHT off -> §CAM_TORCH in parity films (Z17 film part, L1b). viewer.html light_law.js?v=5, sourced_light.js?v=58,
+//   effects.js?v=114, cinema_maxq.js?v=10 in the SAME commit.
+// v1471 (2026-09-27) combined Alt+S: §METER_EV v3 (band 40/90, ACES pre-scale kept, emitters hidden) + lamp truth + LightLaw + Z9 + Z12.
+// v1466 (2026-09-27) §ZERO Z9 ALBEDO sRGB: Alt+S decodes flat IFC albedos sRGB->linear via LightLaw (restore on Esc).
+// v1469 (2026-09-27) §ZERO Z12: Alt+S hemi ground half = rho_g x (sun sinE + E_sky) via LightLaw; §SUN_PENUMBRA diagnostic (0.53 deg disc).
+//   viewer.html light_law.js?v=1->2, effects.js?v=109->110 in the SAME commit.
+// v1467 (2026-09-27) §ZERO Z10 AO_INDIRECT: Alt+S AO in world metres (LightLaw.AO) applied to the materials' indirect terms (aomap patch).
+//   viewer.html light_law.js?v=1->2, sourced_light.js?v=54->55, effects.js?v=109->110 in the SAME commit.
+// v1468 (2026-09-27) §ZERO Z11 BOUNCE: gi_still second AO 0 (stills), real receiver albedo (SourcedLight.albedoMap, readback mode 13).
+//   viewer.html sourced_light.js?v=54->55, gi_still.js?v=28->29 in the SAME commit.
+// v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
+//   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
+//   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.
+
 // v1452 (2026-09-30) §S8 EDIT→Δ: new viewer/edit_delta.js (one pure Δ function) + edit_delta_viewer.js (Connect 'identity' subscriber, P3);
 //   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
 // v1453 (2026-09-30) §S9 PROJECT ORDER READ: new viewer/proj_order_state.js (the ONE owner of the Project-Order read + Generate / delete&re-issue / VO);
@@ -193,7 +348,6 @@
 // v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
 // v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
 // v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
-const CACHE_VERSION = 'v1493';   // bump on each deploy; per-change detail is the git commit message.
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -801,6 +955,8 @@ const PRECACHE_ASSETS = [
   'light_zones.js',     // §LIGHT_ZONE: voxel light zones (Alt+S)
   'still_fault.js',     // §FAULT: per-press self-check line (Alt+S)
   'shadow_cascade.js',  // §STILL_SHADOW_CASCADE: Alt+S sun shadow from cascaded maps
+  'light_law.js',   // §LIGHT_LAW_MODULE: the photometric chain's values + formulas (one source for Alt+S, later Alt+C)
+  'contact_floor.js',   // §FLOOR_CONTACT: furniture occlusion map for upward floor fragments (form factor)
   'sourced_light.js',   // §SOURCED_LIGHT: zone-bound lamps/portals, no sourceless sky indoors
   'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
@@ -812,6 +968,7 @@ const PRECACHE_ASSETS = [
   'cpe_xr.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
+  'wind_flip.js',
   'scene.js',
   'streaming.js',
   'panels.js',
@@ -820,7 +977,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
   'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
@@ -868,6 +1025,7 @@ const PRECACHE_ASSETS = [
   'main.js',
   // Workers (fetched on demand by import/export flows)
   'import_worker.js',
+  'ifc_surface_names.js',   // §IFC_SURFACE_NAMES (importScripts'd by import_worker.js)
   'ifc_export_worker.js',
   'mesh_import_worker.js',
   // Grid + 2D modules

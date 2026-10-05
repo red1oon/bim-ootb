@@ -25,10 +25,16 @@
 set -uo pipefail
 
 DB="${1:-HHS_Office_Federated_silent}"
+# VALUES (2026-10-01, red1: "use the prepared silent scripts … where we pass in the values"). Env overrides, defaults unchanged:
+#   BAKE_W / BAKE_H / BAKE_FPS  size + rate (1920 / 1080 / 24)
+#   BAKE_EXTRA                  extra cli args, e.g. "--frame-range 1065:1200 --write-prebake"
+#   BAKE_TAG                    short label for the file name (e.g. mid_AFTER)
+#   BAKE_DAY                    day-counter corner override (tl|tr|...); unset = the path's saved setting
+BAKE_W="${BAKE_W:-1920}"; BAKE_H="${BAKE_H:-1080}"; BAKE_FPS="${BAKE_FPS:-24}"; BAKE_EXTRA="${BAKE_EXTRA:-}"; BAKE_TAG="${BAKE_TAG:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAMP="$(date +%Y-%m-%d_%H%M)"
 DEST_DIR="${BAKE_DEST_DIR:-$HOME/Downloads}"
-DEST="$DEST_DIR/${DB}_1920x1080_24fps_${STAMP}.mp4"
+DEST="$DEST_DIR/${DB}${BAKE_TAG:+_$BAKE_TAG}_${BAKE_W}x${BAKE_H}_${BAKE_FPS}fps_${STAMP}.mp4"
 SCRATCH="${TMPDIR:-/tmp}/bake_${DB}_${STAMP}.mp4"
 LOG="$ROOT/out/${DB}_hires_${STAMP}.log"
 
@@ -43,7 +49,7 @@ rm -rf /tmp/silent-bake-profile-* 2>/dev/null
 
 run() {
   {
-    echo "§BAKE_SCRIPT start $(date -Is) db=$DB dest=$DEST"
+    echo "§BAKE_SCRIPT start $(date -Is) db=$DB dest=$DEST size=${BAKE_W}x${BAKE_H} fps=$BAKE_FPS extra=[$BAKE_EXTRA]"
     echo "§BAKE_SCRIPT commit=$(git -C "$ROOT" rev-parse --short HEAD) branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
     # --gpu real, never sw: measured 0.86 s/frame against 107 s/frame on this box (RTX 4060).
     # A 1,970-frame film at sw would be over two days.
@@ -66,11 +72,17 @@ run() {
     # reveal round, so it no longer puts ARC back a frame after the reveal hides it.
     # Proven on a 2,068-frame Hospital low-res bake — ARC's 1,550 meshes stay hidden through
     # the round, §CPE_REVEAL_LEAK silent, windows relight past topout (emissiveMats 8/8).
-    node "$ROOT/cli_silent_bake.js" \
+    # §GI_FILM_CARRY C4 (2026-10-01): hold the shared GPU lock like the stills runs (shots.sh) do. Without it the 0733 bake ran beside an
+    # Alt+S stills batch on the same 8 GB card and its bounce renderer ran out of GPU memory (VK_ERROR_OUT_OF_DEVICE_MEMORY).
+    echo "§BAKE_SCRIPT gpu.lock wait start $(date -Is)"
+    # §BAKE_DAY_SAVED (2026-10-01, red1: "the Hospital label location option in saved setting of silent DB supposed to be top left"): --day was
+    # hard-coded `tr`, overriding the saved cinema_path.day_counter (Hospital_silent = tl on all 4 bands). Now the saved setting wins; BAKE_DAY=tl|tr|... forces.
+    echo "§BAKE_SCRIPT day=${BAKE_DAY:-saved}"
+    flock "${GPU_LOCK:-/tmp/claude-1000/gpu.lock}" node "$ROOT/cli_silent_bake.js" \
       --db "$DB" --out "$SCRATCH" \
-      --gpu real --width 1920 --height 1080 --fps 24 \
+      --gpu real --width "$BAKE_W" --height "$BAKE_H" --fps "$BAKE_FPS" $BAKE_EXTRA \
       --dlod-proxy --reveal \
-      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --escape-route --sun-compass --day tr
+      --buildup --label --measure --clash --load-path --ledger --cost --storey-reveal --escape-route --sun-compass ${BAKE_DAY:+--day $BAKE_DAY}
     echo "§BAKE_SCRIPT node exit=$?"
 
     # DELIVERY GATE — three independent checks, because any one of them alone has been fooled
@@ -124,7 +136,7 @@ run() {
 
 # setsid + nohup: outlives the terminal, the ssh session and the agent that started it.
 export -f run 2>/dev/null
-setsid nohup bash -c "$(declare -f run); DB='$DB' ROOT='$ROOT' SCRATCH='$SCRATCH' DEST='$DEST' LOG='$LOG' run" </dev/null >/dev/null 2>&1 &
+setsid nohup bash -c "$(declare -f run); DB='$DB' ROOT='$ROOT' SCRATCH='$SCRATCH' DEST='$DEST' LOG='$LOG' BAKE_W='$BAKE_W' BAKE_H='$BAKE_H' BAKE_FPS='$BAKE_FPS' BAKE_EXTRA='$BAKE_EXTRA' run" </dev/null >/dev/null 2>&1 &
 echo "bake detached (pid $!)"
 echo "  log  : $LOG"
 echo "  lands: $DEST"

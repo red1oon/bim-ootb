@@ -28,22 +28,31 @@
     SKY_DIRS.push({ dx: sdx, dz: sdz, mids: Object.keys(mids).map(function (k) { return mids[k]; }) }); }
   var cache = null;
 
-  function boundaryGuids(A) {
+  function boundaryGuids(A, classes) {
     var s = new Set();
-    try { A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class IN ('" + BOUNDARY.join("','") + "')").forEach(function (r) { s.add(r[0]); }); } catch (e) {}
+    try { A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class IN ('" + (classes || BOUNDARY).join("','") + "')").forEach(function (r) { s.add(r[0]); }); } catch (e) {}
     return s;
   }
+  // §SKY_SHELL_RAYS (B1 SPEC/HANDOFF "A", bim-compiler prompts/PHOTOREAL_STILL_RENDER.md 2026-09-27): classes that block the SKY
+  // without bounding a space (roof structure, columns, railings, stairs, proxies, footings). Never rasterised (they must not close a
+  // zone); their triangles join the boundary triangles the shell rays are cast against. MEASURED Terminal (terminal_before_fgeo.log):
+  // 15 cells under the glazed hall roof read lattice F 0.90 (glass T) where 64 rays against ARC+STR find 0.42-0.65 = the space frame.
+  // Occluders are taken from the ARC + STR disciplines only (= the witness fgeo.js's reference geometry: MEP/PLB/FP/ELEC proxies are
+  // indoor services — MEASURED Hospital occluder census: 10.16M tris all disciplines, 4.3M of them PLB/MEP/ELEC/FP proxies).
+  var OCC_DISC = { ARC: 1, STR: 1, '': 1, undefined: 1 };
+  var OCCLUDERS = ['IfcMember', 'IfcBeam', 'IfcColumn', 'IfcRailing', 'IfcStair', 'IfcStairFlight', 'IfcBuildingElementProxy', 'IfcFooting', 'IfcRamp', 'IfcRampFlight'];
 
   // Every boundary draw: { geo, matrix, start, count } in world space. Instanced/plain meshes carry ifcClass per mesh;
   // a BatchedMesh carries one element per instance (guidMap[bm.id + '_' + i]).
   // §SKY_VIEW_FIELD V3: glassy = sky_portal.js's glazing test; a draw carries its material(s) + groups so the rasteriser can
   // mark GLASS cells (hit only by glassy triangles) with their T = 1 - opacity
   function glassyMat(m) { return !!(m && m.transparent && m.opacity < 0.95 && !m.map && m.type !== 'MeshBasicMaterial'); }
-  function boundaryDraws(A, THREE, guids) {
-    var out = [], cls = new Set(BOUNDARY), stats = { mesh: 0, inst: 0, batched: 0, skippedHidden: 0 };
+  function boundaryDraws(A, THREE, guids, classes, discs) {
+    var out = [], cls = new Set(classes || BOUNDARY), stats = { mesh: 0, inst: 0, batched: 0, skippedHidden: 0, skippedDisc: 0 };
     A.scene.traverse(function (o) {
       if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.geometry) return;
       if (o === A.ground || o === A._sky || (o.userData && (o.userData.skyPortal || o.userData.excludeFromShadow))) return;
+      if (discs && !discs[o.userData ? o.userData.disc : undefined]) { stats.skippedDisc++; return; }
       o.updateMatrixWorld();
       var g = o.geometry, idx = g.index, full = idx ? idx.count : (g.attributes.position ? g.attributes.position.count : 0);
       var mats = Array.isArray(o.material) ? o.material : [o.material], groups = (g.groups && g.groups.length && mats.length > 1) ? g.groups : null;
@@ -54,7 +63,7 @@
           var gid, rng; try { gid = o.getGeometryIdAt(i); rng = o.getGeometryRangeAt(gid); } catch (e) { continue; }
           if (!rng) continue;
           var m = new THREE.Matrix4(); o.getMatrixAt(i, m); m.premultiply(o.matrixWorld);
-          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount, mats: mats, groups: null }); stats.batched++;
+          out.push({ geo: g, matrix: m, start: idx ? rng.indexStart : rng.vertexStart, count: idx ? rng.indexCount : rng.vertexCount, vs: rng.vertexStart, vc: rng.vertexCount, mats: mats, groups: null, bm: o, gid: gid }); stats.batched++;
         }
         return;
       }
@@ -131,14 +140,18 @@
   // opacities), and for the field part the IRC switch. prime(A) is awaited before staging; build()/field() stay synchronous.
   // &zonecache=0 skips it (no read, no write).
   var IDB_NAME = 'bim_ootb_lightzones', IDB_STORE = 'z', primed = null, saveTimer = 0;
-  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats'];
-  var SRC = (function () { var s = String(LZMOD), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
+  var KEYS = ['bld', 'n', 'nx', 'ny', 'nz', 'cell', 'zone', 'zones', 'sizes', 'zoneInfo', 'aperture', 'groundJ', 'glassT', 'glassCells', 'glassMats', 'stats', 'alb', 'glassIdx', 'glassAx'];   // alb: §IR_COLOUR (Z19); glassIdx/glassAx: §GLASS_REFL_OPEN (Z26)
+  // §FIELD_KEY_CODE (2026-09-30, red1 "impact and bloat ops"): the key hashes this file's CODE — comments and whitespace stripped —
+  // so a comment or layout edit no longer makes every baked sidecar / IndexedDB record stale (a real code change still does: safe).
+  var SRC = (function () { var s = String(LZMOD).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1').replace(/\s+/g, ''), h = 0x811c9dc5; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + s.length; })();
   function cacheOff() { return typeof indexedDB === 'undefined' || (typeof location !== 'undefined' && /[?&]zonecache=0/.test(location.search)); }
   function ircFlag(A) { return A._stillIrc === true || (typeof location !== 'undefined' && /[?&]irc=1/.test(location.search)); }
   function idb() { return new Promise(function (res, rej) { var rq; try { rq = indexedDB.open(IDB_NAME, 1); } catch (e) { return rej(e); }
     rq.onupgradeneeded = function () { rq.result.createObjectStore(IDB_STORE); }; rq.onsuccess = function () { res(rq.result); }; rq.onerror = function () { rej(rq.error); }; rq.onblocked = function () { rej(new Error('blocked')); }; }); }
   function prime(A) {
     if (cacheOff() || !A || !A.activeBuilding || (cache && cache.bld === A.activeBuilding) || (primed && primed.bld === A.activeBuilding)) return Promise.resolve(primed);
+    // §LIGHT_FIELD_DB S4: the .db's own row (primeDb, started at open by main.js) is awaited first; only without one is IndexedDB read
+    if (A.db && (!dbPrime || dbPrime.db !== A.db || dbPrime.p)) return primeDb(A).then(function (r) { return (r && primed === r) ? r : prime(A); });
     var bld = A.activeBuilding, t0 = performance.now();
     var rd = idb().then(function (db) { return new Promise(function (res) { var tx = db.transaction(IDB_STORE, 'readonly'), g = tx.objectStore(IDB_STORE).get(bld);
       g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; tx.oncomplete = tx.onabort = function () { db.close(); }; }); })
@@ -149,12 +162,15 @@
     // never hold Alt+S on a slow or blocked store: after 3 s staging builds as before
     return Promise.race([rd, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]);
   }
+  function shellSkipped(F) { var sh = F && F.shell; return (sh && !sh.on && /no BVH|failed/.test(sh.why || '')) ? sh.why : ''; }
   function scheduleSave() {
     if (cacheOff() || !cache || !cache.fp) return; clearTimeout(saveTimer); var Z = cache;
     saveTimer = setTimeout(function () { if (cache !== Z) return;
-      var t0 = performance.now(), rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: Z.field || null, when: new Date().toISOString() };
-      KEYS.forEach(function (k) { rec[k] = Z[k]; });
-      rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.aperture ? Z.aperture.byteLength : 0) + (Z.field ? Z.field.G.byteLength : 0) + (Z.field && Z.field.Gd ? Z.field.Gd.byteLength : 0)) / 1e6).toFixed(1);
+      // ### ALTS-ALL FIX 7 (GPU run 2026-09-27, p2): a field whose shell pass was WANTED but did not run (three-mesh-bvh CDN import
+      // failed -> 'no BVH', or the pass threw) is not the build's field — never persist it (the zone grid itself is still saved).
+      var shBad = shellSkipped(Z.field);
+      if (shBad) console.log('§ZONE_IDB_CACHE field NOT saved bld=' + Z.bld + ' (shell pass skipped: ' + shBad + ') — the next press rebuilds the field');
+      var t0 = performance.now(), rec = idbRecord(Z, shBad ? null : (Z.field || null));
       idb().then(function (db) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(rec, Z.bld);
         tx.oncomplete = function () { db.close(); console.log('§ZONE_IDB_CACHE saved bld=' + Z.bld + ' MB=' + rec.mb + ' field=' + (rec.field ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0)); };
         tx.onerror = tx.onabort = function () { db.close(); console.warn('§ZONE_IDB_CACHE save failed: ' + (tx.error && tx.error.message)); }; })
@@ -166,17 +182,141 @@
     console.log('§GLARE bld=' + A.activeBuilding + ' ' + (gfail ? 'FAIL' : 'PASS') + ' black_exterior=' + gl.blackExteriorFaces + ' junction_zone_flip=' + gl.junctionFlips + ' covered_open_side_black=' + gl.canopyCells +
       ' (exteriorFaces=' + gl.exteriorFaces + ' junctionTested=' + gl.junctionTested + ' rayLitCoveredCells=' + gl.rayLitCoveredCells + ' auditMs=' + gl.ms + ')');
   }
+  function logShell(bld, sh, how) {
+    console.log('§SKY_SHELL_RAYS bld=' + bld + ' cache=' + how + ' ' + (sh.on ? 'on' : sh.why) + ' shellCells=' + sh.cells + ' pretestSkipped=' + sh.pretestSkipped + ' recomputed=' + sh.recomputed + ' mc=' + sh.mc + ' rays=' + sh.rays +
+      ' usPerRay=' + sh.usPerRay + ' boundaryTris=' + sh.boundaryTris + ' occluderTris=' + sh.occluderTris + ' cull=' + sh.cull + ' occluderCulled=' + sh.occluderCulled + (sh.occluderSkipped ? ' occluderSkipped=' + sh.occluderSkipped : '') + ' glassTris=' + sh.glassTris +
+      ' soupMs=' + sh.soupMs + ' bvhMs=' + sh.bvhMs + ' selectMs=' + sh.selMs + ' passMs=' + sh.passMs + ' F mean=' + (sh.recomputed ? (sh.fSum / sh.recomputed).toFixed(4) : 0) + ' dF mean=' + sh.dMean + ' meanAbs=' + sh.dMeanAbs + ' lifted(>0.05)=' + sh.lifted + ' lowered(<-0.05)=' + sh.lowered +
+      ' maxLift=' + sh.maxLift + ' maxDrop=' + sh.maxDrop + (sh.on && !sh.recomputed ? ' INCONCLUSIVE (no shell cell recomputed)' : '') +
+      ' reach=' + (sh.reach || 'r2(pre-Z8 record)') + ' candidates=' + (sh.candidates != null ? sh.candidates : '?') + ' near2=' + (sh.near2 != null ? sh.near2 : '?') + ' airOnly=' + (sh.airOnly != null ? sh.airOnly : '?') +
+      ' recomputedAirOnly=' + (sh.recomputedAirOnly != null ? sh.recomputedAirOnly : '?') + ' airOnlyDMean=' + (sh.airOnlyDMean != null ? sh.airOnlyDMean : '?') + ' airOnlyLifted=' + (sh.airOnlyLifted != null ? sh.airOnlyLifted : '?') + (sh.airOnlySample && sh.airOnlySample.length ? ' airOnlySample=[' + sh.airOnlySample.join(',') + ']' : '') +
+      (sh.reach === 'air' && sh.on && !sh.airOnly ? ' Z8_NOOP (the air rule added no cell beyond the B1 radius)' : '') +
+      ' (shell = covered wall-side cells within 2 cells of open air' + (sh.reach === 'air' ? ' OR with an air-only lattice sky direction (§ZERO Z8, radius-free)' : ' (B1 rule, &shellreach=2)') + '; F = ' + sh.mc + ' CIE-cos rays vs boundary + occluder triangles; other cells keep the lattice)');
+  }
+  function logSkyExact(bld, s, how) {
+    var rays = s.rays1 + s.rays2;
+    console.log('§SKY_FIELD_EXACT bld=' + bld + ' cache=' + how + ' ' + (s.on ? 'on' : s.why) + (s.on && !s.pairs ? ' VACUOUS (no lattice contribution on a read cell)' : '') + ' readCells=' + s.readCells + ' pairs=' + s.pairs + (s.pairCapped ? ' CAPPED(+' + s.pairCapped + ' not recorded)' : '') +
+      ' skipShell=' + s.skipShell + ' belowMin(w vt<' + SX_MIN + ')=' + s.small + ' stand=' + s.stand + ' pairsLowered=' + s.pairsLowered + ' wouldRaise=' + s.wouldRaise + ' rays=' + rays + ' (stage1/2 ' + s.rays1 + '/' + s.rays2 + ') ms=' + s.ms + ' readMs=' + s.readMs +
+      ' usPerRay=' + (rays ? (s.ms * 1000 / rays).toFixed(2) : 0) + ' cellsLowered(>0.005)=' + s.lowered + ' meanDF=' + (s.lowered ? (-s.dSum / s.lowered).toFixed(4) : 0) + ' maxDrop=' + (-s.maxDrop).toFixed(4) +
+      ' (lattice contribution w vt bounded by w x mean exact T over 8 of the direction\'s 16 sub-directions; lower only)');
+  }
   function restore(A, r, THREE, t0) {
     cache = { dd: null, org: new THREE.Vector3(r.org[0], r.org[1], r.org[2]), fp: r.fp }; KEYS.forEach(function (k) { cache[k] = r[k]; });
+    cache.bld = A.activeBuilding;   // §LIGHT_FIELD_DB: a record read from the .db may carry the name it was saved under
     var ms = Math.round(performance.now() - t0);
     cache.stats = Object.assign({}, r.stats, { ms: ms, rasMs: 0, skyMs: 0, cached: 1, glare: Object.assign({}, r.stats.glare, { ms: 0 }) });
-    var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)), fMs = r.field ? r.field.ms : 0;
-    if (fOk) cache.field = Object.assign(r.field, { ms: 0, cached: 1 });
-    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
+    var fOk = !!(r.field && r.field.irc && r.field.irc.on === ircFlag(A)) && !shellSkipped(r.field), fMs = r.field ? r.field.ms : 0;   // ### ALTS-ALL FIX 7: a pre-fix record saved without its shell pass is rebuilt
+    if (r.field && shellSkipped(r.field)) console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored without the shell pass: ' + shellSkipped(r.field) + ') — rebuilding the field');
+    // §GLASS_REFL_OPEN: a record whose glass pass was skipped by &glassopen=0 is rebuilt once the switch is on again
+    if (fOk && glassOpenOn(A) && r.field.glassOpen && r.field.glassOpen.stats && /^not run \(&glassopen=0/.test(r.field.glassOpen.stats.why || '')) { fOk = false; console.log('§ZONE_IDB_CACHE field REJECTED bld=' + A.activeBuilding + ' (stored with the glass-open pass skipped by &glassopen=0) — rebuilding the field'); }
+    if (fOk) { cache.field = Object.assign(r.field, { ms: 0, cached: 1 }); if (r.field.shell) logShell(A.activeBuilding, r.field.shell, 'hit'); if (r.field.skyExact) logSkyExact(A.activeBuilding, r.field.skyExact, 'hit'); logSkySmooth(A.activeBuilding, r.field.skySmooth, 'hit'); if (r.field.skyExactAll) logSkyExactAll(A.activeBuilding, r.field.skyExactAll, 'hit'); else console.log('§SKY_SHELL_RAYS bld=' + A.activeBuilding + ' cache=hit record has no shell stats');
+      if (r.field.glassOpen && r.field.glassOpen.stats) logGlassOpen(A.activeBuilding, r.field.glassOpen, 'hit'); else console.log('§GLASS_REFL_OPEN bld=' + A.activeBuilding + ' cache=hit record has no glass-open data (the march stays for every cell)'); }   // §GLASS_REFL_OPEN (Z26)
+    console.log('§ZONE_IDB_CACHE hit bld=' + A.activeBuilding + ' src=' + (r.from || 'idb') + ' ms=' + ms + ' (build was ' + r.stats.ms + ' ms + audit ' + r.stats.glare.ms + ' ms) field=' + (fOk ? 'hit (was ' + fMs + ' ms)' : r.field ? 'irc-switch changed (rebuild)' : 'none') +
       ' ground=' + (fOk && r.field.Gd ? 'hit (was ' + (r.field.ground ? r.field.ground.ms : '?') + ' ms)' : 'none (built on demand)'));
     logBuilt(A);
     return cache;
   }
+
+  // the persisted record (IndexedDB and §LIGHT_FIELD_DB share it): KEYS + org + fp + field; transient members never enter it
+  function idbRecord(Z, field) {
+    var rec = { src: SRC, fp: Z.fp, org: [Z.org.x, Z.org.y, Z.org.z], field: field, when: new Date().toISOString() };
+    KEYS.forEach(function (k) { rec[k] = Z[k]; });
+    rec.mb = +((Z.zone.byteLength + Z.glassT.byteLength + (Z.alb ? Z.alb.byteLength : 0) + (Z.aperture ? Z.aperture.byteLength : 0) + (field ? field.G.byteLength : 0) + (field && field.Gd ? field.Gd.byteLength : 0)) / 1e6).toFixed(1);
+    return rec;
+  }
+
+  // ══ §LIGHT_FIELD_DB (red1 2026-09-29: "If it is only 11Mb, and can be recalled from database much faster then yes put it as part
+  // of the one time DB save. I can save the DB again as a silent_bake.db version to test it is working.") — the Alt+S light-zone
+  // field (zone grid + sky-view field + ground field + the Z26 §GLASS_REFL_OPEN glass table) persisted INSIDE the building .db the
+  // viewer saves (Ctrl+S) and restored on open, so nobody pays the build again (Hospital: ~16 s shell + ~67 s glass).
+  // SPEC
+  //  S1 TABLE light_field_cache(key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT), ONE row,
+  //     written by scene.js _writeLightFieldTable at the same choke point as staffage_instances / cinema_path / scene_state:
+  //     viewer-authored derived data travelling in the user's own file — CLAUDE.md "DB CHANGES = MIGRATION SCRIPT + SELF-HEAL
+  //     LOADER": no binary in git, the table is written by the save and read back by the loader below (primeDb).
+  //  S2 RECORD = the §ZONE_IDB_CACHE record itself (idbRecord: KEYS + org + fp + field), packed as ONE container: 'LFC1' magic,
+  //     u32 header length, a JSON header (every scalar / stats / zoneInfo / field stats + the typed-array manifest {path, type, n}),
+  //     then the typed arrays 8-byte aligned; gzip through the browser's CompressionStream. dayBuf/day0/dayG/dayZones/goMap/dd/
+  //     trace are transient and never stored (they are not in KEYS either).
+  //  S3 KEY = SRC (this file's code hash, the same key the IndexedDB record uses) AND fp (the boundary-geometry fingerprint, checked
+  //     in build() exactly as an IndexedDB record is; the leading building-name component of fp and the record's bld are rewritten
+  //     to the current A.activeBuilding so a file saved under another name still matches its own geometry). key !== SRC => stale:
+  //     ignored, the ordinary IndexedDB / rebuild path runs; both logged as §LIGHT_FIELD_DB restore|skip|stale key= bytes= ms=.
+  //  S4 OPEN: main.js calls LightZones.primeDb(A) once A.db is loaded (async, off the press path); prime(A) (awaited by the Alt+S
+  //     staging) joins the same promise. A db record fills `primed`, so the first press restores through the SAME restore() the
+  //     IndexedDB path uses: §ZONE_IDB_CACHE hit ... src=db, §SKY_SHELL_RAYS / §GLASS_REFL_OPEN cache=hit, §SKY_VIEW_FIELD cache=hit.
+  //  S5 SAVE: A.saveModelDb awaits LightZones.dbPack(A) (pack + gzip, ~1-2 s) and _exportBuildingDb writes the row from dbRecord().
+  //     Nothing in memory (no Alt+S this session, no IndexedDB record) => the row is SKIPPED and logged — a save never forces the
+  //     build. An existing row is carried only when its key is current, else dropped.
+  //  S6 MEMORY: a restore holds exactly what the IndexedDB restore holds (zone 2N, glassT N, alb 3N, aperture N, G 2N, Gd 2N bytes +
+  //     the glass table); the unpack copies each array out of the inflated buffer (no view keeps the whole buffer alive) and the
+  //     pack is released right after the write (no permanent second copy).
+  // WITNESS: witness_light_field_db.js (headless, GPU-locked) — build, save, reopen in a fresh profile, first press src=db + glass
+  //     cache=hit, §FAULT / §FAULT_GI identical to the built run, .db size delta, a stale key falls back to a rebuild.
+  var LFC_MAGIC = 0x3143464C, TA = { Uint8Array: Uint8Array, Uint16Array: Uint16Array, Uint32Array: Uint32Array, Int8Array: Int8Array, Int16Array: Int16Array, Int32Array: Int32Array, Float32Array: Float32Array, Float64Array: Float64Array };
+  var dbPrime = null, dbPackLast = null;   // dbPrime = { db: the A.db the read was made on, p: the in-flight promise (null once settled) }
+  function taName(a) { return (a && ArrayBuffer.isView(a) && !(a instanceof DataView) && TA[a.constructor.name]) ? a.constructor.name : null; }
+  function packRecord(rec) {
+    var arrays = [], man = [];
+    function walk(v, path) {
+      if (v == null) return v; var t = taName(v); if (t) { arrays.push(v); man.push({ p: path, t: t, n: v.length }); return { $a: man.length - 1 }; }
+      if (Array.isArray(v)) return v.map(function (e, i) { return walk(e, path + '.' + i); });
+      if (typeof v === 'object') { if (v instanceof Map || v instanceof Set) return undefined; var o = {}; Object.keys(v).forEach(function (k) { var w = walk(v[k], path + '.' + k); if (w !== undefined) o[k] = w; }); return o; }
+      return typeof v === 'function' ? undefined : v;
+    }
+    var body = walk(rec, ''), hdr = new TextEncoder().encode(JSON.stringify({ v: 1, arrays: man, rec: body })), hl = (hdr.length + 7) & ~7, tot = 8 + hl;
+    arrays.forEach(function (a) { tot += (a.byteLength + 7) & ~7; });
+    var out = new Uint8Array(tot), dv = new DataView(out.buffer); dv.setUint32(0, LFC_MAGIC, true); dv.setUint32(4, hdr.length, true); out.set(hdr, 8);
+    var off = 8 + hl; arrays.forEach(function (a) { out.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), off); off += (a.byteLength + 7) & ~7; });
+    return out;
+  }
+  function unpackRecord(raw) {
+    var dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength); if (dv.getUint32(0, true) !== LFC_MAGIC) throw new Error('bad magic');
+    var hn = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(raw.subarray(8, 8 + hn))), off = 8 + ((hn + 7) & ~7), arrays = [];
+    H.arrays.forEach(function (m) { var T = TA[m.t], bytes = m.n * T.BYTES_PER_ELEMENT; arrays.push(new T(raw.buffer.slice(raw.byteOffset + off, raw.byteOffset + off + bytes))); off += (bytes + 7) & ~7; });   // slice = an owned copy per array (S6)
+    function walk(v) { if (v == null) return v; if (Array.isArray(v)) return v.map(walk); if (typeof v === 'object') { if (typeof v.$a === 'number' && Object.keys(v).length === 1) return arrays[v.$a]; var o = {}; Object.keys(v).forEach(function (k) { o[k] = walk(v[k]); }); return o; } return v; }
+    return walk(H.rec);
+  }
+  function gzipU8(u8, mode) { var cs = new (mode === 'inflate' ? DecompressionStream : CompressionStream)('gzip'), w = cs.writable.getWriter(); w.write(u8).catch(function () {}); w.close().catch(function () {});
+    return new Response(cs.readable).arrayBuffer().then(function (b) { return new Uint8Array(b); }); }
+  function dbTable(A) { try { var r = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'"); return !!(r && r[0] && r[0].values.length); } catch (e) { return false; } }
+  // the loader (S4): read the row, check the key, inflate + unpack into `primed` — the same slot the IndexedDB prime fills
+  function primeDb(A) {
+    if (!A || !A.db || cacheOff()) { console.log('§LIGHT_FIELD_DB skip reason=' + (!A || !A.db ? 'no-db' : '&zonecache=0')); return Promise.resolve(null); }
+    if (dbPrime && dbPrime.db === A.db) return dbPrime.p || Promise.resolve(primed && primed.from === 'db' ? primed : null);   // one read per opened db
+    var t0 = performance.now(), me = { db: A.db, p: null }; dbPrime = me;
+    me.p = (function () {
+      var w = 0; return new Promise(function (res) { (function tick() { if (A.activeBuilding || w++ >= 40) return res(); setTimeout(tick, 250); })(); });   // activeBuilding lands early in the load; never block on it
+    })().then(function () {
+      if (!dbTable(A)) { console.log('§LIGHT_FIELD_DB skip reason=no-table bld=' + A.activeBuilding); return null; }
+      var rows = A.db.exec("SELECT key, bld, fp, bytes, raw_bytes, blob, created FROM light_field_cache LIMIT 1"), r = rows && rows[0] && rows[0].values[0];
+      if (!r) { console.log('§LIGHT_FIELD_DB skip reason=empty-table bld=' + A.activeBuilding); return null; }
+      var key = r[0], bld = r[1], blob = r[5];
+      if (key !== SRC) { console.log('§LIGHT_FIELD_DB stale key=' + key + ' now=' + SRC + ' bld=' + bld + ' bytes=' + r[3] + ' created=' + r[6] + ' ms=' + Math.round(performance.now() - t0) + ' — ignored, the IndexedDB / rebuild path runs'); return null; }
+      if (!blob || !blob.byteLength) { console.log('§LIGHT_FIELD_DB skip reason=empty-blob key=' + key); return null; }
+      return gzipU8(blob, 'inflate').then(function (raw) { var t1 = performance.now(), rec = unpackRecord(raw), t2 = performance.now();
+        rec.from = 'db'; rec.bld = A.activeBuilding; rec.fp = A.activeBuilding + rec.fp.slice(rec.fp.indexOf('|'));   // S3: the name component follows the open file
+        if (rec.field) rec.field.trace = null;
+        primed = rec;
+        console.log('§LIGHT_FIELD_DB restore key=' + key + ' bld=' + A.activeBuilding + (bld !== A.activeBuilding ? ' (saved as ' + bld + ')' : '') + ' bytes=' + blob.byteLength + ' raw=' + raw.byteLength + ' inflateMs=' + Math.round(t1 - t0) + ' unpackMs=' + Math.round(t2 - t1) + ' ms=' + Math.round(t2 - t0) +
+          ' field=' + (rec.field ? 1 : 0) + ' ground=' + (rec.field && rec.field.Gd ? 1 : 0) + ' glassOpen=' + (rec.field && rec.field.glassOpen ? rec.field.glassOpen.n : 0) + ' MB=' + rec.mb + ' created=' + r[6] + (typeof performance !== 'undefined' && performance.memory ? ' heapMB=' + Math.round(performance.memory.usedJSHeapSize / 1e6) : '') + ' (primed: the first Alt+S restores it after the geometry fingerprint check)');
+        return rec; });
+    }).catch(function (e) { console.warn('§LIGHT_FIELD_DB skip reason=error ' + (e && e.message)); return null; })
+      .then(function (r) { me.p = null; return r; });
+    return me.p;
+  }
+  // the writer side (S5): pack what this session holds; scene.js _writeLightFieldTable takes dbRecord() synchronously inside the export
+  function dbPack(A) {
+    dbPackLast = null; var t0 = performance.now(), Z = (cache && A && cache.bld === A.activeBuilding && cache.field) ? cache : null, rec = null, src = '';
+    if (Z) { var shBad = shellSkipped(Z.field); if (shBad) { console.log('§LIGHT_FIELD_DB pack skipped reason=field-without-shell (' + shBad + ')'); return Promise.resolve(null); } rec = idbRecord(Z, Z.field); src = 'built'; }
+    else if (primed && A && primed.bld === A.activeBuilding && primed.field) { rec = primed; src = primed.from || 'idb'; }
+    if (!rec) { console.log('§LIGHT_FIELD_DB pack skipped reason=' + (cache && cache.bld === (A && A.activeBuilding) ? 'no-field' : 'no-zone-grid') + ' (press Alt+S once, then save)'); return Promise.resolve(null); }
+    var raw; try { var keep = rec.field.trace; rec.field.trace = null; raw = packRecord(rec); rec.field.trace = keep; } catch (e) { console.warn('§LIGHT_FIELD_DB pack failed: ' + e.message); return Promise.resolve(null); }
+    var t1 = performance.now();
+    return gzipU8(raw, 'deflate').then(function (gz) { dbPackLast = { key: SRC, bld: rec.bld, fp: rec.fp, bytes: gz.byteLength, rawBytes: raw.byteLength, blob: gz, created: new Date().toISOString(), src: src, packMs: Math.round(t1 - t0), gzipMs: Math.round(performance.now() - t1) };
+      console.log('§LIGHT_FIELD_DB packed src=' + src + ' bld=' + rec.bld + ' raw=' + raw.byteLength + ' gz=' + gz.byteLength + ' ratio=' + (raw.byteLength / gz.byteLength).toFixed(1) + ' packMs=' + dbPackLast.packMs + ' gzipMs=' + dbPackLast.gzipMs); raw = null; return dbPackLast; })
+      .catch(function (e) { console.warn('§LIGHT_FIELD_DB gzip failed: ' + e.message); return null; });
+  }
+  function dbRecord(consume) { var p = dbPackLast; if (consume) dbPackLast = null; return p; }
 
   function build(A, opts) {
     var THREE = global.THREE; opts = opts || {};
@@ -184,11 +324,18 @@
     var t0 = performance.now(), guids = boundaryGuids(A), bd = boundaryDraws(A, THREE, guids), draws = bd.draws;
     // bounds from the boundary geometry (skyline props / ground excluded by construction)
     var box = new THREE.Box3(), tb = new THREE.Box3();
-    var bsum = 0, idxN = 0, glN = 0, glO = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element)
-    draws.forEach(function (d) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox).applyMatrix4(d.matrix); box.union(tb);
-      bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } }); });
+    var bsum = 0, idxN = 0, glN = 0, glO = 0, csum = 0;   // §ZONE_IDB_CACHE fingerprint parts (per-draw bounds sum catches a moved element; csum = §IR_COLOUR material colours)
+    // §ZONE_BOX_TRUE root fix (ALTC_FOUNDATION §1, 2026-10-03): a BatchedMesh draw is bounded by ITS slot's geometry
+    // (getBoundingBoxAt), not the whole batch geometry's box — that grew the grid 2-2.5x past the building (Hospital 141.7 x 50.2 x
+    // 168.9 m vs 101.8 x 39.5 x 119.3, LTU 245.5 x 25.0 x 162.5 vs 183.9 x 17.3 x 134.4) and made the box depend on how slots are
+    // batched (the W4 merge moved it). Plain/instanced meshes keep their own geometry box.
+    draws.forEach(function (d) { if (!(d.bm && d.bm.getBoundingBoxAt && d.bm.getBoundingBoxAt(d.gid, tb))) { if (!d.geo.boundingBox) d.geo.computeBoundingBox(); tb.copy(d.geo.boundingBox); } tb.applyMatrix4(d.matrix); box.union(tb);
+      bsum += tb.min.x + tb.min.y + tb.min.z + tb.max.x + tb.max.y + tb.max.z; idxN += d.count; d.mats.forEach(function (m) { if (glassyMat(m)) { glN++; glO += m.opacity; } else if (m && m.color) csum += m.color.r + 2 * m.color.g + 3 * m.color.b; }); });
     if (box.isEmpty()) { console.log('§LIGHT_ZONE bld=' + A.activeBuilding + ' VACUOUS no boundary geometry (guids=' + guids.size + ')'); return null; }
-    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO]
+    // &capcentre=0 / APP._stillCapCentre=false = the pre-attempt-1 rule (every SOLID cell roofs its column): B1 SPEC W3 A/B switch.
+    // capOn + shellOn enter the §ZONE_IDB_CACHE fingerprint so flipping either switch rebuilds rather than reusing the other arm.
+    var capOn = !(typeof location !== 'undefined' && /[?&]capcentre=0/.test(location.search)) && A._stillCapCentre !== false;
+    var fp = [A.activeBuilding, Object.keys(A.guidMap || {}).length, guids.size, draws.length, idxN, box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z, bsum, glN, glO, csum, 'cc' + (capOn ? 1 : 0), 'sh' + (shellOn(A) ? 1 : 0), 'sr' + shellReach(A), 'sx' + (skyExactOn(A) ? 1 : 0), 'sm' + (skySmoothOn(A) ? 1 : 0), 'sa' + (skyExactAllOn(A) ? saCount(A) + (saShellOn(A) ? 's' : '') + (skyExactCovOn(A) ? 'c' : '') + (skyOpenRoofOn(A) ? 'r' : '') : 0)]
       .map(function (v) { return typeof v === 'number' ? +v.toFixed(3) : v; }).join('|');
     if (primed && primed.bld === A.activeBuilding && !opts.force) { var pr = primed; primed = null;
       if (pr.fp === fp) return restore(A, pr, THREE, t0);
@@ -201,29 +348,58 @@
     // rasterise: sample each triangle on a barycentric grid no coarser than CELL/2 (conservative enough for 0.1 m walls)
     var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), tris = 0, samples = 0, step = CELL / 2;
     var tRas = performance.now(), glassT = new Uint8Array(N), gHits = new Uint8Array(N), oHits = new Uint8Array(N), glassMat = new Map();
+    // §ZONE_CAP_CENTRE (2026-09-27, red1 "black blotches" on the Hospital facade): capC[cell] = some triangle crosses the vertical line
+    // through the cell's column centre inside the cell. Only such a cell is a ROOF for the open-sky scan below; a cell made SOLID by a
+    // lip that only clips the column's edge (coping, fascia, window head) no longer covers the whole 0.5 m column under it.
+    var capC = new Uint8Array(N), capTris = 0;
+    // §IR_COLOUR (Z19): per SOLID cell, the mean linear albedo (mat.color = the shader's diffuseColor) of the OPAQUE boundary triangles
+    // over their uniform barycentric samples — sample count ~ area, so the mean is area-weighted by construction. Glass not counted.
+    // Uint16 sums of 8-bit colour over <= 255 samples per cell (255 x 255 fits) + a Uint8 count: 7 bytes/cell while rasterising.
+    var albAcc = N <= 60e6 ? new Uint16Array(N * 3) : null, albN = albAcc ? new Uint8Array(N) : null;
+    // §GLASS_REFL_OPEN (Z26): per glass cell the PANE AXIS (0 x / 1 y / 2 z = the dominant component of its glass triangles'
+    // normals, one vote per rasterised sample) — the reflection pass in field() walks that axis to each side's air cell
+    var gAx = new Map(), gax = 0;
     draws.forEach(function (d) {
       var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, gi = 0;
       for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
         var mat = d.mats[0];
         if (d.groups) { while (gi < d.groups.length - 1 && t >= d.groups[gi].start + d.groups[gi].count) gi++; mat = d.mats[d.groups[gi].materialIndex || 0]; }
-        var isG = glassyMat(mat), tq = isG ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0;
+        var isG = glassyMat(mat), tq = isG ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0, mc = (!isG && albAcc && mat && mat.color) ? mat.color : null;
         var i0 = ix ? ix.getX(t) : t, i1 = ix ? ix.getX(t + 1) : t + 1, i2 = ix ? ix.getX(t + 2) : t + 2;
         a.fromBufferAttribute(pos, i0).applyMatrix4(d.matrix); b.fromBufferAttribute(pos, i1).applyMatrix4(d.matrix); c.fromBufferAttribute(pos, i2).applyMatrix4(d.matrix);
         var L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.max(1, Math.ceil(L / step)); tris++;
         if (isG) { var gm = glassMat.get(mat); if (!gm) { gm = { name: mat.name || mat.uuid.slice(0, 8), opacity: mat.opacity, T: +(1 - mat.opacity).toFixed(3), m2: 0 }; glassMat.set(mat, gm); }
-          var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2; }
+          var cr = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)); gm.m2 += cr.length() / 2;
+          var crx = Math.abs(cr.x), cry = Math.abs(cr.y), crz = Math.abs(cr.z); gax = (crx >= cry && crx >= crz) ? 0 : (cry >= crz ? 1 : 2); }
+        // plan-view point-in-triangle over the column centres inside the triangle's XZ box (the test a mesh up-ray from the centre makes)
+        var d2 = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        if (Math.abs(d2) > 1e-9) { capTris++;
+          var i0c = Math.ceil((Math.min(a.x, b.x, c.x) - org.x) / CELL - 0.5), i1c = Math.floor((Math.max(a.x, b.x, c.x) - org.x) / CELL - 0.5),
+              k0c = Math.ceil((Math.min(a.z, b.z, c.z) - org.z) / CELL - 0.5), k1c = Math.floor((Math.max(a.z, b.z, c.z) - org.z) / CELL - 0.5);
+          for (var ic = Math.max(0, i0c); ic <= Math.min(nx - 1, i1c); ic++) for (var kc = Math.max(0, k0c); kc <= Math.min(nz - 1, k1c); kc++) {
+            var xc = org.x + (ic + 0.5) * CELL, zc = org.z + (kc + 0.5) * CELL, l1 = ((b.z - c.z) * (xc - c.x) + (c.x - b.x) * (zc - c.z)) / d2, l2 = ((c.z - a.z) * (xc - c.x) + (a.x - c.x) * (zc - c.z)) / d2, l3 = 1 - l1 - l2;
+            if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue; var yc = l1 * a.y + l2 * b.y + l3 * c.y, jc = Math.floor((yc - org.y) / CELL);
+            if (jc >= 0 && jc < ny) capC[ic + jc * nx + kc * nxy] = 1; } }
         for (var u = 0; u <= n; u++) for (var v = 0; v <= n - u; v++) {
           var w = n - u - v, x = (a.x * u + b.x * v + c.x * w) / n, y = (a.y * u + b.y * v + c.y * w) / n, z = (a.z * u + b.z * v + c.z * w) / n;
-          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; } else if (oHits[ci] < 255) oHits[ci]++; } samples++;
+          var ci = cellIdx(x, y, z); if (ci >= 0) { zone[ci] = SOLID; if (isG) { if (!glassT[ci] || tq < glassT[ci]) glassT[ci] = tq; if (gHits[ci] < 255) gHits[ci]++; var gv = gAx.get(ci); if (!gv) { gv = [0, 0, 0]; gAx.set(ci, gv); } gv[gax]++; } else if (oHits[ci] < 255) oHits[ci]++; if (mc && albN[ci] < 255) { var o3 = ci * 3; albAcc[o3] += Math.round(Math.min(1, mc.r) * 255); albAcc[o3 + 1] += Math.round(Math.min(1, mc.g) * 255); albAcc[o3 + 2] += Math.round(Math.min(1, mc.b) * 255); albN[ci]++; } } samples++;
         }
       }
     });
-    var rasMs = performance.now() - tRas, solid = 0, glassCells = 0;
+    var rasMs = performance.now() - tRas, solid = 0, glassCells = 0, alb = null, albCells = 0;
+    if (albAcc) { alb = new Uint8Array(N * 3); for (var ac = 0; ac < N; ac++) { var an = albN[ac]; if (!an) continue; albCells++;
+      for (var ch = 0; ch < 3; ch++) alb[ac * 3 + ch] = Math.max(1, Math.round(albAcc[ac * 3 + ch] / an)); } albAcc = albN = null; }   // 0,0,0 = no albedo; a real 0 stores 1
     // V3 (rev. after the Hospital smoke, see spec): the cell's MAJORITY surface decides — glass when its glassy samples
     // (the rasteriser's uniform barycentric samples ~ area) are at least its opaque ones. "Any opaque wins" shrank every
     // window opening by up to a cell per side (the fattened wall reveal around the pane): ADF cross-check Fwp/ADF 0.044.
     for (var gc = 0; gc < N; gc++) { if (glassT[gc] && oHits[gc] > gHits[gc]) glassT[gc] = 0; if (glassT[gc]) glassCells++; }
     gHits = oHits = null;
+    // §GLASS_REFL_OPEN: every cell that holds ANY glass sample (ascending) + its pane axis by the vote above. Not only the
+    // glass-majority cells: the Clinic clerestory's top / bottom rows are opaque-majority (the eave / roof triangles outnumber
+    // the pane's in the cell) yet the fragments there are the pane — the reflection table must exist for them too
+    var glassAny = Array.from(gAx.keys()).sort(function (p, q) { return p - q; }), glassIdx = Int32Array.from(glassAny), glassAx = new Uint8Array(glassAny.length), glassMaj = 0;
+    for (var gq = 0; gq < glassAny.length; gq++) { var gv2 = gAx.get(glassAny[gq]); glassAx[gq] = (gv2[0] >= gv2[1] && gv2[0] >= gv2[2]) ? 0 : (gv2[1] >= gv2[2] ? 1 : 2); if (glassT[glassAny[gq]]) glassMaj++; }
+    gAx = glassAny = null;
     for (var s0 = 0; s0 < N; s0++) if (zone[s0] === SOLID) solid++;
     // §ZONE_OPEN_SKY — one top-down scan per column: an empty cell with no SOLID above it is OPEN-TO-SKY (label 1 here,
     // written as 0 at the end); every other empty cell is COVERED (stays 0, labelled below). No closing radius, no
@@ -234,12 +410,17 @@
     // the bottom two layers below ground are solid so a basement zone keeps a floor.
     var gy = (A.ground && isFinite(A.ground.position.y)) ? A.ground.position.y : null, earth = 0, openN = 0;
     var jg = (gy == null) ? 0 : Math.min(ny, Math.max(0, Math.floor((gy - org.y) / CELL)));   // cells with j < jg lie below the ground plane
-    var tSky = performance.now();
+    var tSky = performance.now(), capSkip = 0, capCells = 0; for (var cc0 = 0; cc0 < N; cc0++) if (capC[cc0]) capCells++;
     for (var kk = 0; kk < nz; kk++) for (var ii = 0; ii < nx; ii++) { var covered = false;
       for (var jj = ny - 1; jj >= 0; jj--) { var ce = ii + jj * nx + kk * nxy, cv0 = zone[ce];
-        if (cv0 === SOLID) { covered = true; continue; }
+        if (cv0 === SOLID) { if (!capOn || capC[ce]) covered = true; else capSkip++; continue; }
         if (!covered) { if (jj < jg) { zone[ce] = SOLID; earth++; } else { zone[ce] = 1; openN++; } } } }
-    if (jg > 0) for (var kb = 0; kb < nz; kb++) for (var jb = 0; jb < Math.min(2, jg); jb++) for (var ib = 0; ib < nx; ib++) { var cb = ib + jb * nx + kb * nxy; if (zone[cb] !== SOLID) { zone[cb] = SOLID; earth++; } }
+    // §ZONE_FLOOR (ALTC_FOUNDATION §1, 2026-10-03): the 2 padding layers lie BELOW the lowest boundary geometry (the grid is the true
+    // box + 2 cells), so nothing can enclose them from below — a covered empty cell there is the under-slab void, never a room. They
+    // were filled only below the ground plane (min(2, jg)): HHS (ground -6.00 = its lowest geometry, jg 1) kept layer 1 empty =>
+    // zone 4, 8,056 cells / 1,023 m3 of fake indoor under the footprint. Now: below ground as before; above it, covered cells only
+    // (open air beside the building stays open). Witness: prompts/photoreal_probes/lightgrid/zonefloor.js (belowLowestGeometry = 0).
+    for (var kb = 0; kb < nz; kb++) for (var jb = 0; jb < Math.min(2, ny); jb++) for (var ib = 0; ib < nx; ib++) { var cb = ib + jb * nx + kb * nxy; if (zone[cb] !== SOLID && (jb < jg || zone[cb] === 0)) { zone[cb] = SOLID; earth++; } }
     // flood fill, 6-connected, over the covered empty cells (0); label 1 = open-to-sky is written as 0 at the end
     var q = new Int32Array(N), label = 1, sizes = [0, openN];
     function fill(seed, lab) {
@@ -313,11 +494,11 @@
     var hist = { lt2m3: 0, lt50m3: 0, lt500m3: 0, lt5000m3: 0, ge5000m3: 0 };
     zsizes.forEach(function (n) { var m3 = n * cv; if (m3 < 2) hist.lt2m3++; else if (m3 < 50) hist.lt50m3++; else if (m3 < 500) hist.lt500m3++; else if (m3 < 5000) hist.lt5000m3++; else hist.ge5000m3++; });
     cache = { dd: null, bld: A.activeBuilding, n: Object.keys(A.guidMap || {}).length, org: org, nx: nx, ny: ny, nz: nz, cell: CELL, zone: zone, zones: nzones, sizes: zsizes, zoneInfo: zoneInfo, aperture: aperture, groundJ: jg,
-      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()) };
-    cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
+      glassT: glassT, glassCells: glassCells, glassMats: Array.from(glassMat.values()), alb: alb, glassIdx: glassIdx, glassAx: glassAx };
+    cache.stats = { cells: N, MB: +(N * 2 / 1e6).toFixed(1), solid: solid, outsideCells: openN, openSkyCells: openN, capCentre: capOn ? 1 : 0, capCells: capCells, capSkipped: capSkip, capTris: capTris, soilCells: earth, indoorCells: indoor, zones: nzones, largestZoneM3: Math.round(largest * cv),
       largestShareOfIndoor: indoor ? +(largest / indoor).toFixed(3) : 0, hist: hist, zonesWithAperture: zonesWithAp, apertureM2: +(apTotUp + apTotSide).toFixed(1), apertureUpM2: +apTotUp.toFixed(1), apertureSideM2: +apTotSide.toFixed(1),
       apertureDownFaces: apDown, skyLitCells: skyLitN, skyRayCells: skyRay, skyDirs: SKY_DIRS.length, topApertureZones: topAp, tris: tris, samples: samples, draws: bd.stats, rasMs: Math.round(rasMs), skyMs: Math.round(skyMs), ms: Math.round(performance.now() - t0),
-      innerR: INNER_R, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
+      innerR: INNER_R, albCells: albCells, groundY: gy == null ? null : +gy.toFixed(2), earthCells: earth, grid: [nx, ny, nz], org: [org.x, org.y, org.z].map(function (v) { return +v.toFixed(1); }) };
     cache.stats.glare = audit(cache, surfaceInfo, cellSkyNew);
     cache.fp = fp; logBuilt(A); scheduleSave();
     return cache;
@@ -581,6 +762,94 @@
         ax.forEach(function (a) { ay.forEach(function (b) { az.forEach(function (c) { if ((a || b || c) && !(a === q[0] && b === -1 && c === q[1])) mids[a + ',' + b + ',' + c] = [a, b, c]; }); }); }); }
       return { dx: q[0], dz: q[1], u: U[i], w: W[i] / tot, dep: Math.asin(-U[i][1]) * 180 / Math.PI, mids: Object.keys(mids).map(function (k) { return mids[k]; }) }; });
     return out; })();
+  // §SKY_SHELL_RAYS switch (B1 SPEC): &skyshell=0 / APP._stillSkyShell=false = the pure lattice field
+  function shellOn(A) { return !!(A && A._stillSkyShell !== false && !(typeof location !== 'undefined' && /[?&]skyshell=0/.test(location.search))); }
+  // §SKY_FIELD_EXACT switch (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT — SPEC"): &skyexact=0 / APP._stillSkyExact=false = no bound
+  function skyExactOn(A) { return !!(A && A._stillSkyExact !== false && !(typeof location !== 'undefined' && /[?&]skyexact=0/.test(location.search))); }
+  // ══ §SKY_FIELD_EXACT_ALL (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT_ALL — SPEC", 2026-09-29). MEASURED: the stair-core
+  // smudge (Hospital …010578) = 41-direction lattice quadrature noise over AND under (truth E 0.008-0.015 smooth, lattice F 0-0.064
+  // patchy); the lower-only bound (§SKY_FIELD_EXACT) cannot reach it. Now the field is BAKED (§LIGHT_FIELD_PATCH), so every cell a surface
+  // READS gets F := the exact CIE-overcast x cos integral over the shell pass's soup/BVH (boundary + occluders, glass x T per pane), with
+  // ONE fixed direction set shared by all cells (neighbours integrate the same directions: residual error is smooth, not speckle).
+  // TARGETS: (a) covered READ cells (Chebyshev <= 2 from SOLID) not shell-recomputed; (b) covered cells within Chebyshev 2 of an OCCLUDER
+  // triangle (stairs / beams / columns are never rasterised, so their own faces read cells far from any SOLID); (c) OPEN cells (zone 0:
+  // the field forced F = 1) under or beside an occluder (HHS …1790662836953: 19 of 49 floor points under the stair flight read F = 1).
+  // Open cells beside boundary walls only (facades) are NOT targets: the renderer already weights the sky by the hemisphere factor w of
+  // the surface normal, and an exact horizontal integrand 0.25 m off a facade (~0.5) would count the wall's own half twice.
+  // ORIGIN: a cell centre inside an un-rasterised solid (column / beam / stair waist) is detected by the 6 axis rays (>= 2 opposite
+  // pairs closed within SA_IN m) and moved just past the nearest face along that axis (re-tested); unresolved -> keeps its old value.
+  // &skyexactall=0 / APP._stillSkyExactAll=false = today's field (enters the §ZONE_IDB_CACHE fingerprint). Supersedes §SKY_FIELD_EXACT.
+  // §EXACT_WHEN_BAKED (2026-09-30, red1 "impact and bloat ops"): the heavy exact pass (Hospital 33 min unbaked) runs only when FORCED
+  // (APP._stillSkyExactAll = true / &skyexactall=1 — the bake script) or when the loaded record for this building (sidecar / saved .db /
+  // IndexedDB) was itself built with it; otherwise (imports, unbaked buildings) the fast v1502 field. &skyexactall=0 / false = never.
+  function skyExactAllOn(A) { if (!A) return false; var q = typeof location !== 'undefined' ? location.search : '';
+    if (A._stillSkyExactAll === false || /[?&]skyexactall=0/.test(q)) return false; if (A._stillSkyExactAll === true || /[?&]skyexactall=1/.test(q)) return true;
+    var r = primed && primed.bld === A.activeBuilding ? primed : null; return !!(r && r.field && r.field.skyExactAll && r.field.skyExactAll.on); }
+  function skyExactAllWhy(A) { var q = typeof location !== 'undefined' ? location.search : ''; return (A && (A._stillSkyExactAll === false || /[?&]skyexactall=0/.test(q))) ? 'off (&skyexactall=0 / APP._stillSkyExactAll=false)' : 'off (no baked exact field for this building — imports / unbaked get the fast field; &skyexactall=1 / APP._stillSkyExactAll=true forces it)'; }
+  // direction count: fixed by measurement (APP._stillSkyExactAllN / &skyexactalln= are measurement switches, in the fingerprint)
+  function saCount(A) { var m = typeof location !== 'undefined' && /[?&]skyexactalln=(\d+)/.exec(location.search), n = (A && A._stillSkyExactAllN) || (m ? +m[1] : 0) || SA_N; var s = Math.max(4, Math.round(Math.sqrt(n))); return s * s; }
+  // measurement switch (off by default, in the fingerprint): &skyexactallshell=1 / APP._stillSkyExactAllShell = true also redoes the
+  // §SKY_SHELL_RAYS cells (64 per-cell seeded rays) with the fixed set. MEASURED Clinic: floor skyJump 10 -> 7, walls 12/3 -> 11/1 over/under
+  // (957 shell cells) — marginal, so the spec's rule (shell cells keep their shell value) stands.
+  // §SKY_FIELD_EXACT_OPEN (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT_OPEN — SPEC", red1 2026-09-30). MEASURED (Clinic, 5
+  // poses, walle truth): replacing COVERED cells lifts small F on many interior surfaces (floors over-read 110-163 px vs 3-10 lattice)
+  // and the +8.5-stop interior meter answers with -0.5..-1 EV (…713186729 exposure 42.8 -> 22.0). The pass keeps only its OPEN
+  // targets (F = 1 under stairs / beams); covered cells keep the lattice + the §SKY_FIELD_EXACT lower bound.
+  // &skyexactcov=1 / APP._stillSkyExactCov = true = the v1503 covered replacement (measurement; in the fingerprint).
+  // §SKY_FIELD_SMOOTH (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_SMOOTH — SPEC", 2026-09-30). MEASURED (Terminal hall wall
+  // …709239282): the lattice's 0.5 m cell steps = the "tiles" (Lf jumps 738, F steps 1229 vs 360 / 1039 with exact cells, which cost
+  // Clinic -0.5..-1 EV). Every COVERED cell := mean F over same-zone non-solid covered cells of its 3x3x3 block (open / solid / other
+  // zones excluded: nothing crosses a wall; open-cell exact values untouched). &skysmooth=0 / APP._stillSkySmooth=false = off (fingerprint).
+  // §SKY_FIELD_OPEN_ROOF (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_OPEN_ROOF — SPEC"): open cells under a roof / canopy (an opaque SOLID
+  // cell above within SA_OCC_UP) are exact targets too, and every open target gets an exact ground-view Gd (open cells default to F = Gd = 1).
+  function skyOpenRoofOn(A) { return !!(A && A._stillSkyOpenRoof !== false && !(typeof location !== 'undefined' && /[?&]skyopenroof=0/.test(location.search))); }
+  var GD_DIRS = null; function gdDirs() { if (GD_DIRS) return GD_DIRS; var S = 16, D = new Float32Array(S * S * 3), q = 0;   // cos-weighted about -y, stratified, golden-rotated rows
+    for (var a = 0; a < S; a++) { var r = Math.sqrt((a + 0.5) / S), rot = (a * 0.6180339887) % 1; for (var b = 0; b < S; b++) { var ph = 2 * Math.PI * (b + rot) / S; D[q++] = r * Math.cos(ph); D[q++] = -Math.sqrt(1 - r * r); D[q++] = r * Math.sin(ph); } }
+    return (GD_DIRS = D); }
+  function skySmoothOn(A) { return !!(A && A._stillSkySmooth !== false && !(typeof location !== 'undefined' && /[?&]skysmooth=0/.test(location.search))); }
+  function logSkySmooth(bld, s, how) { console.log('§SKY_FIELD_SMOOTH bld=' + bld + ' cache=' + how + ' ' + (!s ? 'absent (record built before §SKY_FIELD_SMOOTH)' : !s.on ? 'off (&skysmooth=0 / APP._stillSkySmooth=false)' :
+    'on cells=' + s.cells + (s.cells ? '' : ' VACUOUS') + ' meanAbsDF=' + s.meanAbs + ' maxDF=' + s.maxDF + ' sumF before/after=' + s.sum0 + '/' + s.sum1 + ' ratio=' + s.ratio + ' ms=' + s.ms)); }
+  function skyExactCovOn(A) { return !!(A && (A._stillSkyExactCov === true || (typeof location !== 'undefined' && /[?&]skyexactcov=1/.test(location.search)))); }
+  function saShellOn(A) { return !!(A && (A._stillSkyExactAllShell === true || (typeof location !== 'undefined' && /[?&]skyexactallshell=1/.test(location.search)))); }
+  var SA_N = 256, SA_IN = 0.3, SA_OCC_UP = 12, SA_DIRS = {};
+  function muCIE(u) { var m = Math.sqrt(u); for (var i = 0; i < 12; i++) { var f = (m * m / 2 + 2 * m * m * m / 3) * 6 / 7 - u, df = (m + 2 * m * m) * 6 / 7; m -= f / (df || 1e-6); if (m < 0) m = 0; if (m > 1) m = 1; } return m; }
+  // S x S directions stratified by the integrand (mu = sin elev from the CIE x cos CDF at stratum centres; azimuth strata rotated per
+  // elevation row by the golden ratio so no azimuth is shared by two rows): equal weights, F = mean T
+  function saDirs(n) { if (SA_DIRS[n]) return SA_DIRS[n]; var S = Math.round(Math.sqrt(n)), D = new Float32Array(S * S * 3), q = 0;
+    for (var a = 0; a < S; a++) { var mu = muCIE((a + 0.5) / S), r = Math.sqrt(Math.max(0, 1 - mu * mu)), rot = (a * 0.6180339887) % 1;
+      for (var b = 0; b < S; b++) { var ph = 2 * Math.PI * (b + rot) / S; D[q++] = r * Math.cos(ph); D[q++] = mu; D[q++] = r * Math.sin(ph); } }
+    return (SA_DIRS[n] = D); }
+  // the OCCLUDER triangles of the shell soup ([nOB, nO)) rasterised into the zone grid by sampling each triangle at <= half a cell
+  function saOccMask(soup, Z) {
+    var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, M = new Uint8Array(nx * ny * nz), O = soup.O, cl = Z.cell, ic = 1 / cl, ox = Z.org.x, oy = Z.org.y, oz = Z.org.z, n0 = soup.nOB, n1 = soup.nO, cnt = 0;
+    var mark = function (x, y, z) { var i = Math.floor((x - ox) * ic), j = Math.floor((y - oy) * ic), k = Math.floor((z - oz) * ic); if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return; var c = i + j * nx + k * nxy; if (!M[c]) { M[c] = 1; cnt++; } };
+    for (var t = n0; t < n1; t++) { var b = t * 9, ax = O[b], ay = O[b + 1], az = O[b + 2], ux = O[b + 3] - ax, uy = O[b + 4] - ay, uz = O[b + 5] - az, vx = O[b + 6] - ax, vy = O[b + 7] - ay, vz = O[b + 8] - az;
+      var L = Math.max(Math.sqrt(ux * ux + uy * uy + uz * uz), Math.sqrt(vx * vx + vy * vy + vz * vz), Math.sqrt((ux - vx) * (ux - vx) + (uy - vy) * (uy - vy) + (uz - vz) * (uz - vz))), n = Math.max(1, Math.ceil(L * 2 * ic));
+      for (var p = 0; p <= n; p++) for (var q = 0; q <= n - p; q++) { var u = p / n, v = q / n; mark(ax + u * ux + v * vx, ay + u * uy + v * vy, az + u * uz + v * vz); } }
+    return { M: M, cells: cnt, tris: n1 - n0 }; }
+  function logSkyExactAll(bld, s, how) {
+    console.log('§SKY_FIELD_EXACT_ALL bld=' + bld + ' cache=' + how + ' ' + (s.on ? 'on' : s.why) + (s.on && !s.cells ? ' VACUOUS (no target cell)' : '') + ' N=' + s.n + ' cells=' + s.cells + ' (readCovered ' + s.cRead + ' / shellRedone ' + (s.cShell || 0) + ' / nearOccluderCovered ' + s.cOccCov + ' / openUnderOccluder ' + s.cOpen + ') occluderTris=' + s.occTris + ' occluderCells=' + s.occCells +
+      ' rays=' + s.rays + ' insideRays=' + s.inRays + ' ms=' + s.ms + ' usPerRay=' + s.usPerRay + ' startedInside=' + s.inside + ' (nudged ' + s.nudged + ', unresolved ' + s.unresolved + ' kept old value)' +
+      ' covered: raised(>0.005)=' + s.raised + ' lowered(>0.005)=' + s.lowered + ' meanAbsDF=' + s.meanAbs + ' maxRaise=' + s.maxRaise + ' maxDrop=' + s.maxDrop + ' bentSkipped=' + s.bentSkipped +
+      ' open: openCellsRecomputed=' + s.cOpen + ' lowered(>0.005)=' + s.openLowered + ' meanF=' + s.openMeanF + ' (lattice value replaced; open cells beside boundary walls only keep F 1)' + ' §SKY_FIELD_OPEN_ROOF roofAdded=' + (s.roofAdded || 0) + ' gdExact=' + (s.gdN || 0) + ' gdMean=' + (s.gdN ? (s.gdSum / s.gdN).toFixed(4) : '-') + (s.cov === false ? ' covered=off (open-only §SKY_FIELD_EXACT_OPEN, read cells kept ' + s.covKept + '; &skyexactcov=1 replaces covered)' : s.cov ? ' covered=on (&skyexactcov=1)' : '')); }
+  // §SKY_FIELD_EXACT sub-directions: per FIELD_DIRS d, K = 16 fixed directions inside d's own quadrature cell (the plane-y=1 points,
+  // 0.05 step, that pick d as nearest — the same integrand cos x (1 + 2 sin elev) dOmega that makes w_d), stratified 4 x 4 by
+  // cumulative weight (x quartiles, then z quartiles inside each). Flat [ux,uy,uz] x 16 per d; stage 1 = SUB_S1 (one per x quartile).
+  var SUB_K = 16, SUB_S1 = [1, 7, 8, 14], SUB_S2 = [2, 4, 11, 13], SX_MIN = 0.005, FIELD_SUB = null;   // S2: stage-2 set (Latin square with S1: 8 of the 16); SX_MIN: w vt below it is not checked (the 16 lowest dirs sum to w 0.029)
+  function fieldSub() { if (FIELD_SUB) return FIELD_SUB; var nd = FIELD_DIRS.length, P = []; for (var d0 = 0; d0 < nd; d0++) P.push([]);
+    var st = 0.05; for (var x = -6 + st / 2; x < 6; x += st) for (var z = -6 + st / 2; z < 6; z += st) {
+      var r = Math.sqrt(x * x + 1 + z * z), ux = x / r, uy = 1 / r, uz = z / r, best = -2, bi = 0;
+      for (var i = 0; i < nd; i++) { var U = FIELD_DIRS[i].u, dd = ux * U[0] + uy * U[1] + uz * U[2]; if (dd > best) { best = dd; bi = i; } }
+      P[bi].push([x, z, uy * (1 + 2 * uy) / (r * r * r)]); }
+    var pick = function (arr, key, n) { arr.sort(function (a, b) { return a[key] - b[key]; }); var tot = 0; arr.forEach(function (p) { tot += p[2]; }); var out = [], acc = 0, q = 0;
+      for (var g = 0; g < n; g++) { var lo = g / n * tot, hi = (g + 1) / n * tot, grp = []; while (q < arr.length && acc + arr[q][2] <= hi + 1e-12) { grp.push(arr[q]); acc += arr[q][2]; q++; } if (!grp.length && q < arr.length) { grp.push(arr[q]); acc += arr[q][2]; q++; } out.push(grp); } return out; };
+    FIELD_SUB = new Float32Array(nd * SUB_K * 3);
+    for (var d = 0; d < nd; d++) { var gx = pick(P[d].slice(), 0, 4), k = 0;
+      gx.forEach(function (grp) { var gz = pick(grp, 1, 4); gz.forEach(function (g2) { var tw = 0, mx = 0, mz = 0; g2.forEach(function (p) { tw += p[2]; mx += p[0] * p[2]; mz += p[1] * p[2]; });
+        if (!g2.length) { mx = FIELD_DIRS[d].dx; mz = FIELD_DIRS[d].dz; tw = 1; } var px = mx / tw, pz = mz / tw, rr = Math.sqrt(px * px + 1 + pz * pz), o = (d * SUB_K + k) * 3; FIELD_SUB[o] = px / rr; FIELD_SUB[o + 1] = 1 / rr; FIELD_SUB[o + 2] = pz / rr; k++; }); }); }
+    return FIELD_SUB; }
+  // §ZERO Z8 switch: 'air' (default, radius-free rule) | 'r2' (&shellreach=2 / APP._stillShellReach = 2: the B1 rule exactly)
+  function shellReach(A) { return (A && (A._stillShellReach === 2 || A._stillShellReach === 'r2')) || (typeof location !== 'undefined' && /[?&]shellreach=2(?!\d)/.test(location.search)) ? 'r2' : 'air'; }
   function groundOn(A) { return !!(A && A._stillGroundView !== false && !(typeof location !== 'undefined' && /[?&]groundview=0/.test(location.search))); }
   // MODE (measured A/B, Hospital aerial 2026-09-26): 'escape' = the spec above (a ray ending on a solid contributes 0);
   // 'bounce' = a ray ending on a solid contributes the sky-view F of the last empty cell before it (the surface it hits is lit
@@ -615,7 +884,7 @@
         if (hit) vt = (bounce && !inG) ? FG[c] / 10000 : 0;
         val[c] = vt; if (zc !== SOLID && vt > 0) acc[c] += w * vt; } });
     var Gd = new Uint16Array(N), covered = 0, nonZero = 0, maxG = 0;
-    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { Gd[c2] = 10000; continue; } covered++; var g = Math.min(1, acc[c2]); if (g > maxG) maxG = g; if (g > 0) nonZero++; Gd[c2] = Math.round(g * 10000); }
+    var gdX = Z._gdExact || null; for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { Gd[c2] = (gdX && gdX.has(c2)) ? Math.round(Math.min(1, gdX.get(c2)) * 10000) : 10000; continue; } covered++; var g = Math.min(1, acc[c2]); if (g > maxG) maxG = g; if (g > 0) nonZero++; Gd[c2] = Math.round(g * 10000); }
     var vals = new Float32Array(covered), vi = 0;
     for (var c3 = 0; c3 < N; c3++) { var v3 = zone[c3]; if (v3 === SOLID || v3 === 0) continue; vals[vi++] = acc[c3]; }
     vals.sort(); val = acc = null;
@@ -628,6 +897,143 @@
       ' activeCells=' + nAct + ' coveredCells=' + covered + ' nonZero=' + nonZero + ' Gd p10/p50/p90/max=' + gs.p10 + '/' + gs.p50 + '/' + gs.p90 + '/' + gs.max + ' (open cells 1; a floor is SOLID, not ground)');
     return Z.field;
   }
+  // ══ §SKY_SHELL_RAYS soup (B1 SPEC/HANDOFF "A", 2026-09-27): world-space triangles of the boundary classes + OCCLUDERS, opaque apart
+  // from glass (T per triangle = sky_portal.js's glazing test, as the rasteriser). Built inside field() (not build()), so a field
+  // rebuilt over a zone grid restored from §ZONE_IDB_CACHE still gets it; freed as soon as the shell pass ends (never persisted).
+  // Budget (B1 HANDOFF): occluder classes dropped (boundary only, logged) above 6M triangles.
+  // keepOcc(x, y, z) (optional): an OCCLUDER triangle is kept when any vertex or its centroid lies off the grid, in a SOLID or OPEN
+  // cell, or in a covered cell whose lattice F > 0. Rationale: an occluder in a cell that sees no sky along any of the 41 lattice
+  // directions sits under opaque boundary, so a sky ray blocked by it is blocked by the boundary too (MEASURED cost without it,
+  // Hospital: 5.82M occluder tris, BVH 2.7 s + pass 6.4 s = staging +7 s). Witness of the cull: &shellcull=0 A/B, G diff on shell cells.
+  function shellSoup(A, THREE, keepOcc) {
+    var t0 = performance.now(), bd = boundaryDraws(A, THREE, boundaryGuids(A), BOUNDARY), od = boundaryDraws(A, THREE, boundaryGuids(A, OCCLUDERS), OCCLUDERS, OCC_DISC);
+    var cnt = function (L) { var n = 0; L.forEach(function (d) { n += Math.floor(d.count / 3); }); return n; }, nB = cnt(bd.draws), nOc = cnt(od.draws), occSkipped = 0;
+    if (nOc > 6e6) { occSkipped = nOc; nOc = 0; od = { draws: [], stats: od.stats }; }
+    var draws = bd.draws.concat(od.draws), O = new Float32Array((nB + nOc) * 9), op = 0, GL = [], GT = [], tmp = new Float32Array(0), nBD = bd.draws.length, culled = 0, V = [0, 0, 0];
+    var nOB = -1;   // §SKY_FIELD_EXACT_ALL: opaque triangles [nOB, nO) are the OCCLUDER classes (boundary draws come first)
+    draws.forEach(function (d, dI) { var isOcc = keepOcc && dI >= nBD; if (dI === nBD) nOB = (op / 9) | 0;
+      var pos = d.geo.attributes.position, ix = d.geo.index, e = d.matrix.elements, vs = d.vs != null ? d.vs : 0, vc = d.vc != null ? d.vc : pos.count, gi = 0;
+      if (tmp.length < vc * 3) tmp = new Float32Array(vc * 3 * 1.5 | 0);
+      for (var q = 0; q < vc; q++) { var x = pos.getX(vs + q), y = pos.getY(vs + q), z = pos.getZ(vs + q);
+        tmp[q * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; tmp[q * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; tmp[q * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14]; }
+      for (var t = d.start; t + 2 < d.start + d.count; t += 3) {
+        var mat = d.mats[0]; if (d.groups) { while (gi < d.groups.length - 1 && t >= d.groups[gi].start + d.groups[gi].count) gi++; mat = d.mats[d.groups[gi].materialIndex || 0]; }
+        var tq = glassyMat(mat) ? Math.max(1, Math.round((1 - mat.opacity) * 255)) : 0;
+        for (var r0 = 0; r0 < 3; r0++) { var vi0 = (ix ? ix.getX(t + r0) : t + r0) - vs; V[r0] = (vi0 < 0 || vi0 >= vc) ? -1 : vi0; }
+        if (isOcc) { var kp = false, cx = 0, cy = 0, cz = 0; for (var r1 = 0; r1 < 3 && !kp; r1++) { var b1 = V[r1] * 3; if (V[r1] < 0) continue; cx += tmp[b1] / 3; cy += tmp[b1 + 1] / 3; cz += tmp[b1 + 2] / 3; if (keepOcc(tmp[b1], tmp[b1 + 1], tmp[b1 + 2])) kp = true; }
+          if (!kp && !keepOcc(cx, cy, cz)) { culled++; continue; } }
+        for (var r = 0; r < 3; r++) { var vi = V[r], b3 = vi * 3;
+          if (tq) { if (vi < 0) GL.push(0, 0, 0); else GL.push(tmp[b3], tmp[b3 + 1], tmp[b3 + 2]); } else if (vi >= 0) { O[op++] = tmp[b3]; O[op++] = tmp[b3 + 1]; O[op++] = tmp[b3 + 2]; } else { O[op++] = 0; O[op++] = 0; O[op++] = 0; } }
+        if (tq) GT.push(tq); } });
+    if (nOB < 0) nOB = (op / 9) | 0;
+    return { O: O.subarray(0, op), nO: (op / 9) | 0, nOB: nOB, G: GL.length ? new Float32Array(GL) : null, GT: GT.length ? Uint8Array.from(GT) : null, nG: GT.length,
+      boundaryTris: nB, occluderTris: nOc, occluderCulled: culled, occluderSkipped: occSkipped, occluderDraws: od.stats, ms: Math.round(performance.now() - t0) };
+  }
+  // ══ §GLASS_REFL_OPEN (Z26, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "Z26 MEASURED / Z26 SPEC", 2026-09-28) ══
+  // MEASURED (Clinic ext still …495545980): 24 of 159 glass hits dark by the §GLASS_SPEC_GATE mirror-ray march — all vertical
+  // clerestory panes; the march met SOLID cells 0.25-2 m out where a real raycast along the same reflected ray is clear (the
+  // 0.5 m voxel thickening of eave / roof edges grazing the ray). A discarded first attempt (uncommitted rev. 1-3) added two
+  // facts: (a) choosing ONE outward side per cell by cell class took the room side for half the panes; (b) many reflected rays
+  // REALLY meet the next roof step 1-5 m out or terrain 130 m out — a real pane then reflects that lit surface, not black.
+  // MECHANISM: per glass cell, per SIDE whose first air cell along the pane axis (within 4 cells) is open-to-sky or sky-lit
+  // (a window's room side keeps the march), ONCE at field build over the shell pass's BVH (the same boundary + occluder
+  // triangles): a 12-azimuth x 25-elevation (7.5 deg) table of the reflection openness in the pane frame, from the pane's
+  // outer face (the nearest glass triangle on the probe from the air cell back to the glass cell, + 2 cm). Per ray:
+  //   no opaque hit           -> the T product through any other pane (1 = clear sky)
+  //   opaque hit, any range   -> T x rho_hit x F_hit: the blocker's own brightness relative to the sky it replaces (a diffuse
+  //                              surface of albedo rho under a sky it sees with cosine-weighted fraction F radiates rho F L_sky);
+  //                              rho = Z.alb of the hit cell (§IR_COLOUR, Z19; none -> R_BRE, counted), F = the last air cell's
+  //                              sky-view before the hit (open 1 / the field's acc)
+  //   &glassblock=0 / APP._stillGlassBlock=false = the spec's literal "opaque hit = 0" (bit7 of the sample marks a hit; a uniform)
+  // STORE: 8 bits per sample (bit7 hit, bits 0-6 value x 127), 300 bytes = 75 words = 19 RGBA32UI texels per side; a cell table
+  // (r = side+ slot texel, g = side- slot texel, 0xFFFFFFFF none, b = pane axis) at the head of the same 4096-wide texture; the
+  // zone texture's G of the glass cell (SOLID, so G is free there) = cell-table index + 1 (0 = none), written at staging only
+  // with the switch on (&glassopen=0 / APP._stillGlassOpen=false = the march for every cell). The shader (sourced_light.js
+  // slSpecKeep) and the CPU mirror (specVis -> glassOpenAt) read the fragment's own cell, then the cell half a cell behind the
+  // surface; on a match of the pane axis (the eye-facing normal's dominant axis) the side by the normal's sign; bilinear over
+  // (azimuth, elevation) of the reflected direction. Opaque surfaces (no cell entry) march as before.
+  // RAY BUDGET: GO_RAY_BUDGET rays per build; over it the pass samples every other elevation (level 1), then every other azimuth
+  // too (level 2) and interpolates the missing nodes — logged. Cached with the field (§ZONE_IDB_CACHE, SRC-keyed).
+  var GO_AZ = 12, GO_EL = 25, GO_W = 4096, GO_TEX = 19, GO_RAY_BUDGET = 3.5e6, GO_MAX_CELLS = 65535, GO_AIR_REACH = 8;
+  function glassOpenOn(A) { return !!(A && A._stillGlassOpen !== false && !(typeof location !== 'undefined' && /[?&]glassopen=0(?!\d)/.test(location.search))); }
+  function glassBlockOff(A) { return !!(A && (A._stillGlassBlock === false || (typeof location !== 'undefined' && /[?&]glassblock=0(?!\d)/.test(location.search)))); }
+  // sample (k, i) of the pane frame -> world direction: elevation -90 + 7.5 i; vertical pane (ax 0 / 2): azimuth -82.5 + 15 k
+  // from the outward normal in the horizontal plane (tangent = the other horizontal axis); horizontal pane (ax 1): compass 30 k
+  function goDir(ax, sg, k, i, o) { var e = (-90 + 7.5 * i) * Math.PI / 180, ce = Math.cos(e), se = Math.sin(e);
+    if (ax === 1) { var ph = k * Math.PI / 6; o[0] = ce * Math.cos(ph); o[1] = se; o[2] = ce * Math.sin(ph); }
+    else { var pv = (-82.5 + 15 * k) * Math.PI / 180, dn = ce * Math.cos(pv) * sg, tt = ce * Math.sin(pv); if (ax === 0) { o[0] = dn; o[1] = se; o[2] = tt; } else { o[0] = tt; o[1] = se; o[2] = dn; } } return o; }
+  // the table read for a reflected direction r (the shader's exact order): data = the texture words, base = the side slot's first
+  // word, sgn = the eye-facing normal's sign on the pane axis, blockOff = &glassblock=0
+  function goLookup(data, base, ax, sgn, blockOff, rx, ry, rz) {
+    var e = Math.asin(Math.max(-1, Math.min(1, ry))) * 180 / Math.PI, fAz, k0, k1;
+    if (ax === 1) { fAz = Math.atan2(rz, rx) * 6 / Math.PI; if (fAz < 0) fAz += 12; if (fAz >= 12) fAz -= 12; k0 = Math.floor(fAz) % 12; k1 = (k0 + 1) % 12; }
+    else { var dn = (ax === 0 ? rx : rz) * sgn, tt = ax === 0 ? rz : rx; fAz = Math.max(0, Math.min(11, (Math.atan2(tt, dn) * 180 / Math.PI + 90) / 15 - 0.5)); k0 = Math.floor(fAz); k1 = Math.min(k0 + 1, 11); }
+    var fEl = Math.max(0, Math.min(24, (e + 90) / 7.5)), i0 = Math.floor(fEl), i1 = Math.min(i0 + 1, 24), ta = fAz - k0, te = fEl - i0;
+    var S = function (k, i) { var v = k * GO_EL + i, b = (data[base + (v >> 2)] >>> ((v & 3) * 8)) & 255; return (blockOff && (b & 128)) ? 0 : (b & 127) / 127; };
+    var a0 = S(k0, i0) * (1 - te) + S(k0, i1) * te, a1 = S(k1, i0) * (1 - te) + S(k1, i1) * te; return a0 * (1 - ta) + a1 * ta; }
+  function glassOpenPass(Z, A, R) {
+    var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, idx = Z.glassIdx, axs = Z.glassAx, n = idx.length, cl = Z.cell, DIM = [nx, ny, nz], STR = [1, nx, nxy];
+    var st = { glassCells: n, glassMajority: Z.glassCells, cells: 0, sides: 0, sideOpen: 0, sideSkylit: 0, sideOffGrid: 0, farAir: 0, skippedInterior: 0, buried: 0, buriedKept: 0, buriedDropped: 0, capped: 0, refined: 0, rays: 0, clear: 0, throughGlass: 0, blocked: 0, noAlbedo: 0, sumVal: 0, sumBlk: 0, hitDist: [0, 0, 0, 0], level: 0, elStride: 1, azStride: 1, axis: [0, 0, 0], ms: 0 };
+    // pass 1: the sides to compute (per side: the first air cell within 4 cells along the pane axis is open-to-sky (3) or sky-lit (2))
+    var sides = [], cellIx = new Map();
+    for (var q = 0; q < n; q++) { var c = idx[q], ax = axs[q], ijk = [c % nx, ((c / nx) | 0) % ny, (c / nxy) | 0];
+      for (var s = 0; s < 2; s++) { var sg = s ? -1 : 1, air = -2, cls = 0;
+        // the first air cell along the pane axis within GO_AIR_REACH cells: the Clinic clerestory panes sit behind 5-8 grid-SOLID
+        // cells (the fattened eave / roof band the mirror march also met) before open air — a 4-cell reach left them to the march
+        for (var t = 1; t <= GO_AIR_REACH; t++) { var p = ijk[ax] + sg * t; if (p < 0 || p >= DIM[ax]) { air = -1; cls = 3; break; } var cc = c + sg * t * STR[ax], v = zone[cc]; if (v === SOLID) continue; air = cc; cls = v === 0 ? 3 : (v & SKY_BIT) ? 2 : 1; if (t > 4) st.farAir++; break; }
+        // BURIED (solid for the whole reach: the fattened sawtooth roof slope rising in front of a low Clinic pane is 4+ m of grid
+        // SOLID along +x): the exact rays decide — the side is computed and KEPT only if at least one ray reaches the sky
+        if (air === -2) { st.buried++; cls = 4; } else if (cls < 2) { st.skippedInterior++; continue; }
+        if (!cellIx.has(c)) { if (cellIx.size >= GO_MAX_CELLS) { st.capped++; continue; } cellIx.set(c, cellIx.size); st.axis[ax]++; }
+        if (cls === 3) { if (air < 0) st.sideOffGrid++; else st.sideOpen++; } else if (cls === 2) st.sideSkylit++;
+        sides.push({ c: c, ax: ax, sg: sg, air: air, ijk: ijk, buried: cls === 4 }); } }
+    st.cells = cellIx.size; st.sides = sides.length;
+    var per = [GO_AZ * GO_EL, GO_AZ * 13, 6 * 13], lvl = 0; while (lvl < 2 && sides.length * per[lvl] > GO_RAY_BUDGET) lvl++;
+    st.level = lvl; var elS = st.elStride = lvl >= 1 ? 2 : 1, azS = st.azStride = lvl >= 2 ? 2 : 1;
+    var nC = st.cells, OFF = Math.ceil(nC / GO_W) * GO_W, nTex = OFF + sides.length * GO_TEX, H = Math.max(1, Math.ceil(nTex / GO_W)), data = new Uint32Array(GO_W * H * 4);
+    var cells = new Int32Array(nC); cellIx.forEach(function (ci, c0) { cells[ci] = c0; data[ci * 4] = 0xFFFFFFFF; data[ci * 4 + 1] = 0xFFFFFFFF; });
+    var D = [0, 0, 0], samp = new Uint8Array(GO_AZ * GO_EL), mid = function (a, b) { return (a & b & 128) | Math.round(((a & 127) + (b & 127)) / 2); };
+    for (var si = 0; si < sides.length; si++) { var S = sides[si], ci2 = cellIx.get(S.c), tex = OFF + si * GO_TEX, ax2 = S.ax, sg2 = S.sg;
+      data[ci2 * 4 + (sg2 > 0 ? 0 : 1)] = tex; data[ci2 * 4 + 2] = ax2;
+      // the ray origin = the pane's outer face on this side: the first glass triangle from the glass cell centre OUTWARD along the
+      // pane axis (the face lies ahead of the centre, up to 1.5 cells: a pane rasterises 1-3 cells thick), else the nearest one
+      // INWARD within the cell (the face lies behind the centre), else the cell face; + 2 cm outward
+      var gx = Z.org.x + (S.ijk[0] + 0.5) * cl, gy = Z.org.y + (S.ijk[1] + 0.5) * cl, gz = Z.org.z + (S.ijk[2] + 0.5) * cl, nrm = [0, 0, 0], ox, oy, oz; nrm[ax2] = sg2;
+      var fh = R.glassFirst(gx, gy, gz, nrm[0], nrm[1], nrm[2], 1.5 * cl) || R.glassFirst(gx, gy, gz, -nrm[0], -nrm[1], -nrm[2], 0.75 * cl);
+      if (fh) { ox = fh.x + nrm[0] * 0.02; oy = fh.y + nrm[1] * 0.02; oz = fh.z + nrm[2] * 0.02; st.refined++; } else { ox = gx + nrm[0] * (0.5 * cl + 0.02); oy = gy + nrm[1] * (0.5 * cl + 0.02); oz = gz + nrm[2] * (0.5 * cl + 0.02); }
+      samp.fill(0); var anyClear = false;
+      for (var k = 0; k < GO_AZ; k += azS) for (var i = 0; i < GO_EL; i += elS) {
+        if (ax2 === 1 && ((sg2 > 0 && i < 12) || (sg2 < 0 && i > 12))) continue;   // a horizontal pane: only its outward half
+        goDir(ax2, sg2, k, i, D); st.rays++; var r = R.trace(ox, oy, oz, D[0], D[1], D[2]), val, hit = 0;
+        if (!r.hit) { val = r.T; st.clear++; anyClear = true; if (r.T < 0.999) st.throughGlass++; }
+        else { hit = 128; var B = R.blocker(r.hit, D); val = r.T * B.b; st.blocked++; st.sumBlk += B.b; if (B.noAlb) st.noAlbedo++; st.hitDist[r.hit.d < 2 ? 0 : r.hit.d < 10 ? 1 : r.hit.d < 60 ? 2 : 3]++; }
+        st.sumVal += val; samp[k * GO_EL + i] = hit | Math.round(Math.max(0, Math.min(1, val)) * 127); }
+      if (S.buried && !anyClear) { data[ci2 * 4 + (sg2 > 0 ? 0 : 1)] = 0xFFFFFFFF; st.buriedDropped++; continue; }   // no sky from a buried side: it was the room side, the march keeps it
+      if (S.buried) st.buriedKept++;
+      if (elS > 1) for (var k2 = 0; k2 < GO_AZ; k2 += azS) for (var i2 = 1; i2 < GO_EL; i2 += 2) samp[k2 * GO_EL + i2] = mid(samp[k2 * GO_EL + i2 - 1], samp[k2 * GO_EL + i2 + 1]);
+      if (azS > 1) for (var k3 = 1; k3 < GO_AZ; k3 += 2) { var ka = k3 - 1, kb = ax2 === 1 ? (k3 + 1) % GO_AZ : Math.min(k3 + 1, GO_AZ - 2); for (var i3 = 0; i3 < GO_EL; i3++) samp[k3 * GO_EL + i3] = mid(samp[ka * GO_EL + i3], samp[kb * GO_EL + i3]); }
+      var w0 = tex * 4; for (var w = 0; w < 75; w++) data[w0 + w] = (samp[w * 4] | (samp[w * 4 + 1] << 8) | (samp[w * 4 + 2] << 16) | (samp[w * 4 + 3] << 24)) >>> 0; }
+    st.ms = Math.round(performance.now() - t0); st.usPerRay = st.rays ? +(st.ms * 1000 / st.rays).toFixed(2) : 0; st.meanOpen = st.rays ? +(st.sumVal / st.rays).toFixed(3) : 0; st.meanBlk = st.blocked ? +(st.sumBlk / st.blocked).toFixed(3) : 0; st.texMB = +(data.byteLength / 1e6).toFixed(1);
+    delete st.sumVal; delete st.sumBlk;
+    return { n: nC, cells: cells, data: data, w: GO_W, h: H, sides: sides.length, stats: st };
+  }
+  function logGlassOpen(bld, go, how) { var s = go.stats;
+    var verdict = s.why ? s.why : !s.glassCells ? 'VACUOUS (no glass cell in the grid)' : !s.sides ? 'VACUOUS (no glass cell has an exterior side: nothing computed, the march stays everywhere)' : 'built';
+    console.log('§GLASS_REFL_OPEN bld=' + bld + ' cache=' + how + ' ' + verdict + ' glassCells(any/majority)=' + s.glassCells + '/' + (s.glassMajority != null ? s.glassMajority : '?') + ' cells=' + s.cells + ' sides=' + s.sides + ' (open/skylit/offgrid ' + (s.sideOpen || 0) + '/' + (s.sideSkylit || 0) + '/' + (s.sideOffGrid || 0) + ') airBeyond4Cells=' + (s.farAir || 0) + ' interiorSides(march)=' + (s.skippedInterior || 0) + ' buried(>' + GO_AIR_REACH + ' cells solid: kept/dropped)=' + (s.buried || 0) + ':' + (s.buriedKept || 0) + '/' + (s.buriedDropped || 0) + ' capped=' + (s.capped || 0) +
+      ' axis(x/y/z)=' + (s.axis ? s.axis.join('/') : '?') + ' refinedToPane=' + (s.refined || 0) + '/' + s.sides + ' level=' + (s.level || 0) + ' (el stride ' + (s.elStride || 1) + ', az stride ' + (s.azStride || 1) + ') rays=' + s.rays + ' usPerRay=' + (s.usPerRay || 0) + ' ms=' + s.ms +
+      ' clear=' + (s.clear || 0) + ' (throughGlass ' + (s.throughGlass || 0) + ') blocked=' + (s.blocked || 0) + ' hitDist(<2/<10/<60/far m)=' + (s.hitDist ? s.hitDist.join('/') : '?') + ' meanOpen=' + (s.meanOpen || 0) + ' meanBlockerTerm=' + (s.meanBlk || 0) + ' noAlbedo=' + (s.noAlbedo || 0) + ' noBlockerF=' + (s.noBlockerF || 0) + ' texMB=' + (s.texMB || 0) +
+      ' (exact rays vs the shell pass BVH from each exterior pane face, 12 az x 25 el per side; blocked = T x rho_hit x F_hit, &glassblock=0 = 0; &glassopen=0 = the voxel march for every cell)'); }
+  // CPU read of the stored value (the shader's order: the surface cell, then the cell half a cell behind it); n = the eye-facing
+  // normal (world), r = the reflected direction. null = no value (not a computed glass cell / axis mismatch / that side not computed) -> the march.
+  function glassOpenAt(Z, n, p, r) {
+    var go = Z.field && Z.field.glassOpen; if (!go || !go.n) return null;
+    if (!Z.goMap) { Z.goMap = new Map(); for (var i = 0; i < go.cells.length; i++) Z.goMap.set(go.cells[i], i); }
+    var an = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)], fax = (an[0] >= an[1] && an[0] >= an[2]) ? 0 : (an[1] >= an[2] ? 1 : 2), ns = fax === 0 ? n.x : fax === 1 ? n.y : n.z, hc = 0.5 * Z.cell, Dd = go.data;
+    for (var k = 0; k < 2; k++) { var c = k === 0 ? cellOf(Z, p.x, p.y, p.z) : cellOf(Z, p.x - n.x * hc, p.y - n.y * hc, p.z - n.z * hc); if (c < 0 || Z.zone[c] !== SOLID) continue;
+      var ci = Z.goMap.get(c); if (ci == null) continue; if (Dd[ci * 4 + 2] !== fax) continue; var sl = Dd[ci * 4 + (ns > 0 ? 0 : 1)]; if (sl === 0xFFFFFFFF) continue;
+      return goLookup(Dd, sl * 4, fax, ns > 0 ? 1 : -1, !!Z.glassBlockOff, r.x, r.y, r.z); }
+    return null;
+  }
   function field(A) {
     var Z = cache; if (!Z) return null;
     if (Z.field) { if (groundOn(A) && (!Z.field.Gd || !Z.field.ground || Z.field.ground.mode !== groundMode(A))) { groundBuild(A, Z); scheduleSave(); } return Z.field; }
@@ -639,7 +1045,58 @@
     var val = new Float32Array(N), acc = new Float32Array(N), zb = new Float64Array((Z.zones + 1) * 3), T = new Float32Array(256);
     for (var q = 0; q < 256; q++) T[q] = q / 255;
     for (var c1 = 0; c1 < N; c1++) if (zone[c1] === 0) val[c1] = 1;
-    FIELD_DIRS.forEach(function (d) {
+    // ══ §SKY_SHELL_RAYS (B1 SPEC + HANDOFF recommended fix "A", Fable 2026-09-27 — bim-compiler prompts/PHOTOREAL_STILL_RENDER.md;
+    // Witness W1-W6 there). MEASURED before (fgeo.js, covered cells beside a wall within 2 cells of open air, truth = 64 CIE-cos rays
+    // against the real ARC+STR meshes): exterior cells (truth > 0.2) within +-0.1 = 60% Hospital / 38% Clinic / 16% Terminal. Three
+    // causes, none fixable on the lattice: (a) BLIND directions past thin features fattened to a cell (Hospital 14/53 cells, F 0 vs
+    // 0.37), (b) the 41-direction QUADRATURE (median -0.06 / -0.06 / -0.12), (c) sky occluders outside the boundary classes (Terminal
+    // roof space frame: lattice 0.90 vs 0.42-0.65). FIX: for the SHELL cells (covered, non-solid, j >= groundJ, a lateral SOLID
+    // neighbour, an open cell within 2 cells laterally at dy 0..2 — the witness's own population) F is REPLACED by SHELL_MC seeded
+    // stratified rays of the field's own integrand (CIE overcast x cos zenith) against one BVH over the boundary + OCCLUDERS
+    // triangles (any hit = 0) and a glass BVH (x T per pane, one pane per 0.3 m gap as the witness). A 5-ray pre-test (zenith +
+    // the four axis 45 deg directions blocked on the lattice AND by an exact ray) keeps a truly-covered cell's lattice value.
+    // Deeper cells keep the lattice value (no re-propagation). Labels untouched. &skyshell=0 / APP._stillSkyShell=false = today.
+    var nd = FIELD_DIRS.length, THREE3 = global.THREE, shellWhy = shellOn(A) ? '' : 'off (&skyshell=0 / APP._stillSkyShell=false)';
+    if (!shellWhy && !(global._bvhReady && THREE3 && THREE3.BufferGeometry.prototype.computeBoundsTree)) shellWhy = 'no BVH (§BVH_INIT not applied)';
+    // §ZERO Z8 (bim-compiler PHOTOREAL_STILL_RENDER.md "### Z8 SPEC"): the B1 radius (open cell within SHELL_R = 2) is kept as ONE
+    // arm of the rule, not its limit. MEASURED (reach_r2_*_dist.log, look 808f578f): exterior cells under-read by > 0.1 at EVERY
+    // reach r = 3..8 and beyond (Hospital est. 3,340 cells, Terminal 5,752), so no radius is the right one. RULE (radius-free):
+    // a wall-side covered cell is SHELL when it is within 2 cells of open air (B1: catches the BLIND cells whose every lattice
+    // direction is fattened shut) OR the lattice's own sweep found at least one of the 41 directions reaching the sky through
+    // AIR only (vt === 1: no solid, no glass on the lattice path) — the cell is exterior-exposed however far the open column is.
+    // Cells that see sky only through glass (rooms behind windows) or not at all keep the lattice value. &shellreach=2 /
+    // APP._stillShellReach = 2 = the B1 rule exactly (A/B; enters the §ZONE_IDB_CACHE fingerprint).
+    var reachRule = shellReach(A), nCand = 0, candCells = null, isCand = null, candSlot = null, near2 = null, latS = null, latP = null, airV = null;
+    var nShell = 0, shellCells = null, shellOf = null, tSel = performance.now(), jg0 = Z.groundJ || 0, SHELL_R = 2, selStats = { rule: reachRule, candidates: 0, near2: 0, airOnly: 0 };
+    var fiD = function (x, z) { return FIELD_DIRS.findIndex(function (d) { return d.dx === x && d.dz === z; }); }, PRE = [fiD(0, 0), fiD(1, 0), fiD(-1, 0), fiD(0, 1), fiD(0, -1)], preOf = new Int8Array(nd).fill(-1);
+    PRE.forEach(function (d, q) { preOf[d] = q; });
+    if (shellOn(A)) {   // selection runs whenever the switch is on (logged even without a BVH, so a node witness can judge the rule)
+      isCand = new Uint8Array(N); var sl = [], nl = [];
+      for (var cs = 0; cs < N; cs++) { var vs0 = zone[cs]; if (vs0 === SOLID || (vs0 & ZONE_MASK) === 0) continue; var is = cs % nx, js = ((cs / nx) | 0) % ny, ks = (cs / nxy) | 0; if (js < jg0 || js + 1 >= ny) continue;
+        if (!((is > 0 && zone[cs - 1] === SOLID) || (is < nx - 1 && zone[cs + 1] === SOLID) || (ks > 0 && zone[cs - nxy] === SOLID) || (ks < nz - 1 && zone[cs + nxy] === SOLID))) continue;
+        var near = false; for (var dy = 0; dy <= SHELL_R && !near; dy++) for (var dxs = -SHELL_R; dxs <= SHELL_R && !near; dxs++) for (var dzs = -SHELL_R; dzs <= SHELL_R && !near; dzs++) {
+          var i2s = is + dxs, j2s = js + dy, k2s = ks + dzs; if (i2s < 0 || k2s < 0 || i2s >= nx || k2s >= nz || j2s >= ny) continue; var ts = zone[i2s + j2s * nx + k2s * nxy]; if (ts !== SOLID && (ts & ZONE_MASK) === 0) near = true; }
+        if (near || reachRule === 'air') { isCand[cs] = 1; sl.push(cs); nl.push(near ? 1 : 0); } }
+      nCand = sl.length; candCells = Int32Array.from(sl); near2 = Uint8Array.from(nl); sl = nl = null; candSlot = new Map(); for (var q2 = 0; q2 < nCand; q2++) candSlot.set(candCells[q2], q2);
+      latS = new Float64Array(nCand * 3); latP = new Float32Array(nCand * 5); airV = new Uint8Array(nCand);   // per candidate: lattice bent sum, the 5 pre-test dirs, the air flag
+      selStats.candidates = nCand; for (var q3 = 0; q3 < nCand; q3++) if (near2[q3]) selStats.near2++; }
+    if (!shellWhy && !nCand) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)';
+    var shellSelMs = Math.round(performance.now() - tSel);
+    // HHS_LEAK instrument (debug only, no behaviour change): APP._fieldTrace = [cell indices] -> Z.field.trace = per cell the
+    // lattice directions that contributed [di, vt, gmin(256 = no glass on the path)] — reads which direction leaks sky
+    // §SKY_FIELD_EXACT: READ cells (non-solid, covered, Chebyshev <= 2 from a SOLID cell: fieldRead's 2x2x2 texels around p + 0.5 cell x n)
+    // and the (cell, dir, vt) lattice contributions recorded during the sweep for them
+    var saOn = skyExactAllOn(A) && shellOn(A), sxOn = skyExactOn(A) && shellOn(A) && !(saOn && skyExactCovOn(A)), isRead = null, nRead = 0, PAIR_CAP = 16000000, pC = null, pD = null, pV = null, nPair = 0, pairCapped = 0, tRd = performance.now();
+    var rSlot = null, latB = null;   // §SKY_FIELD_EXACT_ALL: per READ cell slot + the lattice's bent-normal share (summed in the sweep, swapped for the exact rays' own)
+    if (sxOn || saOn) { var dl = new Uint8Array(N), dl2 = new Uint8Array(N); for (var cS = 0; cS < N; cS++) if (zone[cS] === SOLID) dl[cS] = 1;
+      var dil = function (src, dst, stride, len, idx) { for (var c9 = 0; c9 < N; c9++) { if (!src[c9]) continue; var p9 = idx(c9); for (var o9 = -2; o9 <= 2; o9++) { var q9 = p9 + o9; if (q9 >= 0 && q9 < len) dst[c9 + o9 * stride] = 1; } } };
+      dil(dl, dl2, 1, nx, function (c) { return c % nx; }); dl.fill(0); dil(dl2, dl, nx, ny, function (c) { return ((c / nx) | 0) % ny; }); dl2.fill(0); dil(dl, dl2, nxy, nz, function (c) { return (c / nxy) | 0; }); dl = null;
+      isRead = dl2; for (var cR = 0; cR < N; cR++) { var vR = zone[cR]; if (!isRead[cR]) continue; if (vR === SOLID || vR === 0) isRead[cR] = 0; else nRead++; }
+      if (sxOn) { pC = new Int32Array(1 << 20); pD = new Uint8Array(1 << 20); pV = new Float32Array(1 << 20); }
+      if (saOn) { rSlot = new Int32Array(N); latB = new Float32Array(nRead * 3); for (var cR2 = 0, sR = 0; cR2 < N; cR2++) rSlot[cR2] = isRead[cR2] ? sR++ : -1; } }
+    var readMs = Math.round(performance.now() - tRd);
+    var fTrace = (A && A._fieldTrace && A._fieldTrace.length) ? new Map(A._fieldTrace.map(function (c) { return [Array.isArray(c) ? cellOf(Z, c[0], c[1], c[2]) : c, []]; })) : null;   // cell indices or world points
+    FIELD_DIRS.forEach(function (d, di) {
       var dx = d.dx, dz = d.dz, off = dx + nx + dz * nxy, M = d.mids, nm = M.length, mo = new Int32Array(nm), mx = new Int32Array(nm), my = new Int32Array(nm), mz = new Int32Array(nm), w = d.w, ux = d.u[0], uy = d.u[1], uz = d.u[2];
       for (var m = 0; m < nm; m++) { mx[m] = M[m][0]; my[m] = M[m][1]; mz[m] = M[m][2]; mo[m] = M[m][0] + M[m][1] * nx + M[m][2] * nxy; }
       for (var a = 0; a < nAct; a++) { var c = act[a], i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0, ti = i + dx, tk = k + dz, vt;
@@ -651,7 +1108,154 @@
           // one pane = one T: the fattened glass layer spans 1-3 cells, so T is applied ONCE when a ray enters glass from air
           // (a segment that touches glass: target or mid cells), never between glass cells; a second pane after air counts again
           if (!inG && gmin < 256) vt *= T[gmin]; }
-        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; } } });
+        val[c] = vt; if (zc !== SOLID && vt > 0) { acc[c] += w * vt; var zz = (zc & ZONE_MASK) * 3; zb[zz] += w * vt * ux; zb[zz + 1] += w * vt * uy; zb[zz + 2] += w * vt * uz; if (fTrace && fTrace.has(c)) fTrace.get(c).push([di, +vt.toFixed(4), gmin, +(w * vt).toFixed(4)]);
+          if (latB && isRead[c]) { var rs0 = rSlot[c] * 3; latB[rs0] += w * vt * ux; latB[rs0 + 1] += w * vt * uy; latB[rs0 + 2] += w * vt * uz; }
+          if (pC && isRead[c]) { if (nPair === pC.length) { if (nPair >= PAIR_CAP) pairCapped++; else { var nC = new Int32Array(nPair * 2), nD = new Uint8Array(nPair * 2), nV = new Float32Array(nPair * 2); nC.set(pC); nD.set(pD); nV.set(pV); pC = nC; pD = nD; pV = nV; } }
+            if (nPair < pC.length) { pC[nPair] = c; pD[nPair] = di; pV[nPair] = vt; nPair++; } } }
+        if (isCand && isCand[c]) { var sq = candSlot.get(c); if (vt > 0 && zc !== SOLID) { latS[sq * 3] += w * vt * ux; latS[sq * 3 + 1] += w * vt * uy; latS[sq * 3 + 2] += w * vt * uz; }
+          if (preOf[di] >= 0) latP[sq * 5 + preOf[di]] = vt; if (vt === 1) airV[sq] = 1; } } });
+    // §ZERO Z8: the final shell = near2 OR (rule 'air' AND an air-only lattice direction)
+    if (nCand) { var fl2 = []; shellOf = []; for (var q4 = 0; q4 < nCand; q4++) { var inS = near2[q4] || (reachRule === 'air' && airV[q4]); if (inS) { fl2.push(candCells[q4]); shellOf.push(q4); if (!near2[q4]) selStats.airOnly++; } }
+      nShell = fl2.length; shellCells = Int32Array.from(fl2); shellOf = Int32Array.from(shellOf);
+      selStats.airOnlySample = []; for (var q6 = 0; q6 < nShell && selStats.airOnlySample.length < 6; q6++) if (!near2[shellOf[q6]]) selStats.airOnlySample.push(shellCells[q6]);
+      if (A && A._shellTrace) selStats.trace = { shell: Array.from(shellCells), airOnly: Array.from(shellCells).filter(function (c, q) { return !near2[shellOf[q]]; }) };   // node witness only
+      fl2 = null;
+      if (!shellWhy && !nShell) shellWhy = 'VACUOUS (no shell cells: no covered cell beside a wall near open air)'; }
+    var SHELL_MC = 64, shell = { on: !shellWhy, why: shellWhy, cells: nShell, reach: selStats.rule, candidates: selStats.candidates, near2: selStats.near2, airOnly: selStats.airOnly, airOnlySample: selStats.airOnlySample || [], trace: selStats.trace || null, recomputedAirOnly: 0, airOnlyDSum: 0, airOnlyLifted: 0, pretestSkipped: 0, recomputed: 0, rays: 0, lifted: 0, lowered: 0, dSum: 0, dAbsSum: 0, maxLift: 0, maxDrop: 0,
+      boundaryTris: 0, occluderTris: 0, occluderSkipped: 0, glassTris: 0, soupMs: 0, bvhMs: 0, passMs: 0, selMs: shellSelMs, mc: SHELL_MC, usPerRay: 0 };
+    var sxS = { on: sxOn && !shellWhy, why: !skyExactOn(A) ? 'off (&skyexact=0 / APP._stillSkyExact=false)' : (saOn && skyExactCovOn(A)) ? 'superseded (§SKY_FIELD_EXACT_ALL &skyexactcov=1: every read cell is replaced, not bounded)' : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', readCells: nRead, readMs: readMs, pairs: nPair, pairCapped: pairCapped, skipShell: 0, small: 0, rays1: 0, rays2: 0, stand: 0, pairsLowered: 0, wouldRaise: 0, lowered: 0, dSum: 0, maxDrop: 0, ms: 0 };
+    var saS = { on: saOn && !shellWhy, why: !skyExactAllOn(A) ? skyExactAllWhy(A) : shellWhy ? 'off (needs the shell BVH: ' + shellWhy + ')' : '', n: saOn ? saCount(A) : 0, cells: 0, cShell: 0, cRead: 0, cOccCov: 0, cOpen: 0, occTris: 0, occCells: 0, rays: 0, inRays: 0, ms: 0, usPerRay: 0, inside: 0, nudged: 0, unresolved: 0,
+      raised: 0, lowered: 0, meanAbs: 0, maxRaise: 0, maxDrop: 0, bentSkipped: 0, openLowered: 0, openMeanF: 0, cov: saOn && skyExactCovOn(A), covKept: 0 }, saTg = null;
+    // §GLASS_REFL_OPEN (Z26): the glass reflection pass shares the shell pass's BVH (built below), so it needs the shell pass on
+    var glassOpen = null, glassWhy = shellWhy ? 'not run (' + shellWhy + ')' : !glassOpenOn(A) ? 'not run (&glassopen=0 / APP._stillGlassOpen=false: the build is skipped too; a later press with the switch on rebuilds the field)' : !Z.glassIdx ? 'not run (grid record has no glass index)' : !Z.glassIdx.length ? 'VACUOUS (no glass cell in the grid)' : '';
+    if (!shellWhy) { var geoO = null, geoG = null; try {
+      // §SKY_FIELD_EXACT_ALL: the occluder cull is OFF (its rationale — an occluder in a cell with lattice F 0 is under opaque boundary —
+      // trusts the lattice the exact pass replaces; and the occluder cells are needed to pick the targets)
+      var cullOn = !saOn && A._stillShellCull !== false && !(typeof location !== 'undefined' && /[?&]shellcull=0/.test(location.search)), ogx = Z.org.x, ogy = Z.org.y, ogz = Z.org.z, icl = 1 / Z.cell;
+      var keepOcc = cullOn ? function (x, y, z) { var i = Math.floor((x - ogx) * icl), j = Math.floor((y - ogy) * icl), k = Math.floor((z - ogz) * icl); if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return true;
+        var cc = i + j * nx + k * nxy, v = zone[cc]; return v === SOLID || (v & ZONE_MASK) === 0 || acc[cc] > 0; } : null;
+      var soup = shellSoup(A, THREE3, keepOcc), occM = saOn ? saOccMask(soup, Z) : null; shell.cull = cullOn ? 1 : 0; shell.occluderCulled = soup.occluderCulled; shell.boundaryTris = soup.boundaryTris; shell.occluderTris = soup.occluderTris; shell.occluderSkipped = soup.occluderSkipped; shell.glassTris = soup.nG; shell.soupMs = soup.ms;
+      if (soup.occluderSkipped) console.warn('§SKY_SHELL_RAYS occluder classes skipped: ' + soup.occluderSkipped + ' triangles > 6M budget (boundary soup only)');
+      var tB = performance.now(); geoO = new THREE3.BufferGeometry(); geoO.setAttribute('position', new THREE3.BufferAttribute(soup.O, 3)); geoO.computeBoundsTree({ maxLeafTris: 8, indirect: true });
+      var GT = soup.GT; if (soup.nG) { geoG = new THREE3.BufferGeometry(); geoG.setAttribute('position', new THREE3.BufferAttribute(soup.G, 3)); geoG.computeBoundsTree({ maxLeafTris: 8, indirect: true }); }
+      soup = null; shell.bvhMs = Math.round(performance.now() - tB);
+      var bvhO = geoO.boundsTree, bvhG = geoG ? geoG.boundsTree : null, ray = new THREE3.Ray(), hitP = new THREE3.Vector3(), DS = THREE3.DoubleSide;
+      var ib = function (box) { return ray.intersectsBox(box) ? 1 : 0; }, it = function (tri) { return ray.intersectTriangle(tri.a, tri.b, tri.c, false, hitP) !== null; };   // shapecast: 1 = INTERSECTED; true = stop (any hit)
+      var byD = function (p, q) { return p.distance - q.distance; };
+      var exact = function (x, y, z, ux2, uy2, uz2) { ray.origin.set(x, y, z); ray.direction.set(ux2, uy2, uz2);
+        if (bvhO.shapecast({ intersectsBounds: ib, intersectsTriangle: it })) return 0;
+        if (!bvhG) return 1; var hs = bvhG.raycast(ray, DS); if (!hs.length) return 1; hs.sort(byD);
+        var v = 1, last = -1; for (var h = 0; h < hs.length; h++) { if (last < 0 || hs[h].distance - last > 0.3) v *= GT[hs[h].faceIndex] / 255; last = hs[h].distance + 0.01; } return v; };
+      // mu = sin(elevation) from a uniform u: pdf(mu) ~ mu (1 + 2 mu) (CIE overcast x cos zenith), CDF = (mu^2/2 + 2 mu^3/3) / (7/6), Newton
+      var muOf = function (u) { var m = Math.sqrt(u); for (var i8 = 0; i8 < 12; i8++) { var f = (m * m / 2 + 2 * m * m * m / 3) * 6 / 7 - u, df = (m + 2 * m * m) * 6 / 7; m -= f / (df || 1e-6); if (m < 0) m = 0; if (m > 1) m = 1; } return m; };
+      var S = Math.round(Math.sqrt(SHELL_MC)), nMC = S * S, tP = performance.now(), cl = Z.cell, ox = Z.org.x, oy = Z.org.y, oz = Z.org.z;
+      for (var s5 = 0; s5 < nShell; s5++) { var c5 = shellCells[s5], i5 = c5 % nx, j5 = ((c5 / nx) | 0) % ny, k5 = (c5 / nxy) | 0, x5 = ox + (i5 + 0.5) * cl, y5 = oy + (j5 + 0.5) * cl, z5 = oz + (k5 + 0.5) * cl, q5 = shellOf[s5], airOnly5 = !near2[q5];
+        var any = false; for (var p5 = 0; p5 < PRE.length && !any; p5++) { var pd = PRE[p5]; if (latP[q5 * 5 + p5] > 1e-6) any = true; else { shell.rays++; if (exact(x5, y5, z5, FIELD_DIRS[pd].u[0], FIELD_DIRS[pd].u[1], FIELD_DIRS[pd].u[2]) > 1e-6) any = true; } }
+        if (!any) { shell.pretestSkipped++; continue; }
+        var seed = ((Math.imul(c5, -1640531535) >>> 0) % 2147483646) + 1, rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+        var sum = 0, sx = 0, sy = 0, sz = 0;
+        for (var a5 = 0; a5 < S; a5++) for (var b5 = 0; b5 < S; b5++) { var mu = muOf((a5 + rnd()) / S), ph = 2 * Math.PI * (b5 + rnd()) / S, r5 = Math.sqrt(Math.max(0, 1 - mu * mu)), dx5 = r5 * Math.cos(ph), dz5 = r5 * Math.sin(ph);
+          var v5 = exact(x5, y5, z5, dx5, mu, dz5); shell.rays++; if (v5 > 0) { sum += v5; sx += v5 * dx5; sy += v5 * mu; sz += v5 * dz5; } }
+        var fNew = sum / nMC, fOld = acc[c5], zz5 = (zone[c5] & ZONE_MASK) * 3;
+        zb[zz5] -= latS[q5 * 3]; zb[zz5 + 1] -= latS[q5 * 3 + 1]; zb[zz5 + 2] -= latS[q5 * 3 + 2];   // the lattice's bent-normal share of this cell, summed during the sweep
+        zb[zz5] += sx / nMC; zb[zz5 + 1] += sy / nMC; zb[zz5 + 2] += sz / nMC; acc[c5] = fNew; shell.recomputed++; if (isRead) isRead[c5] = 0;   // §SKY_FIELD_EXACT: already exact
+        shell.fSum = (shell.fSum || 0) + fNew; var dF = fNew - fOld; shell.dSum += dF; shell.dAbsSum += Math.abs(dF); if (dF > 0.05) shell.lifted++; if (dF < -0.05) shell.lowered++; if (dF > shell.maxLift) shell.maxLift = dF; if (dF < shell.maxDrop) shell.maxDrop = dF;
+        if (airOnly5) { shell.recomputedAirOnly++; shell.airOnlyDSum += dF; if (dF > 0.05) shell.airOnlyLifted++; } }
+      shell.passMs = Math.round(performance.now() - tP); shell.usPerRay = shell.rays ? +(shell.passMs * 1000 / shell.rays).toFixed(2) : 0;
+      // §SKY_FIELD_EXACT_ALL pass (spec above saDirs): targets -> saTg (1 covered read, 3 covered near an occluder, 2 open under/beside one)
+      if (saOn && occM) { var saShell = saShellOn(A), saCov = skyExactCovOn(A), tA = performance.now(), OM = occM.M, M2 = new Uint8Array(N); saS.occTris = occM.tris; saS.occCells = occM.cells;
+        // occluder cells dilated by 2 in x and z (Chebyshev 2 in plan)
+        for (var cO = 0; cO < N; cO++) { if (!OM[cO]) continue; var iO = cO % nx, kO = (cO / nxy) | 0; for (var ddz = -2; ddz <= 2; ddz++) for (var ddx = -2; ddx <= 2; ddx++) { var i2 = iO + ddx, k2 = kO + ddz; if (i2 >= 0 && k2 >= 0 && i2 < nx && k2 < nz) M2[cO + ddx + ddz * nxy] = 1; } }
+        OM = occM = null; saTg = new Uint8Array(N);
+        var saRoof = skyOpenRoofOn(A), gTz = Z.glassT; saS.roofAdded = 0; Z._gdExact = null;
+        for (var kT = 0; kT < nz; kT++) for (var iT = 0; iT < nx; iT++) { var above = 1e9, sAbove = 1e9;   // j of the nearest plan-dilated occluder cell / opaque SOLID cell at or above
+          for (var jT = ny - 1; jT >= 0; jT--) { var cT = iT + jT * nx + kT * nxy; if (M2[cT]) above = jT; var vT = zone[cT]; if (vT === SOLID) { sAbove = jT; continue; }   // any SOLID above (a glass roof too: exact F = T x sky there, not 1)
+            var near = (above - jT) <= 2 || (jT >= 1 && M2[cT - nx]) || (jT >= 2 && M2[cT - 2 * nx]);
+            if (vT === 0) { if (near || (above - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; } else if (saRoof && (sAbove - jT) <= SA_OCC_UP) { saTg[cT] = 2; saS.cOpen++; saS.roofAdded++; } }
+            else if (!saCov) { if (isRead && isRead[cT]) saS.covKept++; }   // §SKY_FIELD_EXACT_OPEN: covered cells keep the lattice (+ lower bound)
+            else if (isRead && isRead[cT]) { saTg[cT] = 1; saS.cRead++; }
+            else if (saShell && rSlot && rSlot[cT] >= 0) { saTg[cT] = 4; saS.cShell++; }   // a shell-recomputed read cell, redone with the fixed set
+            else if (near && !(isRead && rSlot && rSlot[cT] >= 0)) { saTg[cT] = 3; saS.cOccCov++; } } }   // (a shell-recomputed read cell keeps its shell value)
+        M2 = null; saS.cells = saS.cRead + saS.cShell + saS.cOccCov + saS.cOpen;
+        var SD = saDirs(saS.n), nSD = SD.length / 3, hc = 0.5 * cl, AX = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], hd = [0, 0, 0, 0, 0, 0];
+        var hitD = function (x, y, z, e) { saS.inRays++; ray.origin.set(x, y, z); ray.direction.set(e[0], e[1], e[2]); var h = bvhO.raycastFirst(ray, DS, 0, SA_IN); return h ? h.distance : -1; };
+        var enclosed = function (x, y, z) { var pairs = 0; for (var e = 0; e < 6; e++) hd[e] = hitD(x, y, z, AX[e]); for (var e2 = 0; e2 < 6; e2 += 2) if (hd[e2] >= 0 && hd[e2 + 1] >= 0) pairs++; return pairs >= 2; };
+        var dAbs = 0, nCov = 0, oSum = 0;
+        for (var cA = 0; cA < N; cA++) { var tgA = saTg[cA]; if (!tgA) continue; var iA = cA % nx, jA = ((cA / nx) | 0) % ny, kA = (cA / nxy) | 0, xA = ox + (iA + 0.5) * cl, yA = oy + (jA + 0.5) * cl, zA = oz + (kA + 0.5) * cl;
+          if (enclosed(xA, yA, zA)) { saS.inside++; var ord = [0, 1, 2, 3, 4, 5].filter(function (e) { return hd[e] >= 0; }).sort(function (p, q) { return hd[p] - hd[q]; }).map(function (e) { return [e, hd[e]]; }), okN = false;
+            for (var oq = 0; oq < ord.length && !okN; oq++) { var eN = AX[ord[oq][0]], tN = ord[oq][1] + 0.03, xN = xA + eN[0] * tN, yN = yA + eN[1] * tN, zN = zA + eN[2] * tN; if (!enclosed(xN, yN, zN)) { xA = xN; yA = yN; zA = zN; okN = true; } }
+            if (!okN) { saS.unresolved++; saTg[cA] = 0; continue; } saS.nudged++; }
+          var sA = 0, bx = 0, by = 0, bz = 0;
+          for (var dA = 0; dA < nSD; dA++) { var qA = dA * 3, vA = exact(xA, yA, zA, SD[qA], SD[qA + 1], SD[qA + 2]); if (vA > 0) { sA += vA; bx += vA * SD[qA]; by += vA * SD[qA + 1]; bz += vA * SD[qA + 2]; } }
+          saS.rays += nSD; var fA = sA / nSD, oldA = tgA === 2 ? 1 : acc[cA], dFA = fA - oldA; acc[cA] = fA;
+          if (tgA === 2) { oSum += fA; if (dFA < -0.005) saS.openLowered++;
+            // §SKY_FIELD_OPEN_ROOF: exact ground-view escape (a ray escapes = leaves the grid / ends on a surface in an OPEN cell; glass x T)
+            var GDd = gdDirs(), nGD = GDd.length / 3, gE = 0;
+            for (var dG = 0; dG < nGD; dG++) { var qG = dG * 3; ray.origin.set(xA, yA, zA); ray.direction.set(GDd[qG], GDd[qG + 1], GDd[qG + 2]); var hG = bvhO.raycastFirst(ray, DS), farG = hG ? hG.distance : Infinity, esc = 1;
+              if (hG) { var cG = cellOf(Z, hG.point.x - GDd[qG] * 0.05, hG.point.y - GDd[qG + 1] * 0.05, hG.point.z - GDd[qG + 2] * 0.05); esc = (cG < 0 || zone[cG] === 0) ? 1 : 0; }
+              if (esc && bvhG) { var hsG = bvhG.raycast(ray, DS, 0, farG); if (hsG.length > 1) hsG.sort(byD); var lastG = -1; for (var hq = 0; hq < hsG.length; hq++) { if (hsG[hq].distance >= farG) break; if (lastG < 0 || hsG[hq].distance - lastG > 0.3) esc *= GT[hsG[hq].faceIndex] / 255; lastG = hsG[hq].distance + 0.01; } }
+              gE += esc; }
+            saS.rays += nGD; if (!Z._gdExact) Z._gdExact = new Map(); Z._gdExact.set(cA, gE / nGD); saS.gdSum = (saS.gdSum || 0) + gE / nGD; saS.gdN = (saS.gdN || 0) + 1;
+            continue; }
+          nCov++; dAbs += Math.abs(dFA); if (dFA > 0.005) saS.raised++; if (dFA < -0.005) saS.lowered++; if (dFA > saS.maxRaise) saS.maxRaise = dFA; if (dFA < saS.maxDrop) saS.maxDrop = dFA;
+          var zzA = (zone[cA] & ZONE_MASK) * 3;
+          if (tgA === 1 && rSlot[cA] >= 0) { var rb = rSlot[cA] * 3; zb[zzA] += bx / nSD - latB[rb]; zb[zzA + 1] += by / nSD - latB[rb + 1]; zb[zzA + 2] += bz / nSD - latB[rb + 2]; } else saS.bentSkipped++; }
+        saS.ms = Math.round(performance.now() - tA); saS.usPerRay = saS.rays ? +(saS.ms * 1000 / (saS.rays + saS.inRays)).toFixed(2) : 0; saS.meanAbs = nCov ? +(dAbs / nCov).toFixed(4) : 0; saS.openMeanF = saS.cOpen ? +(oSum / saS.cOpen).toFixed(4) : 0;
+        saS.maxRaise = +saS.maxRaise.toFixed(4); saS.maxDrop = +saS.maxDrop.toFixed(4); }
+      // §SKY_FIELD_EXACT (bim-compiler PHOTOREAL_STILL_RENDER.md "§SKY_FIELD_EXACT — SPEC"): per recorded (READ cell, dir) lattice
+      // contribution w vt -> min(w vt, w E), E = mean exact T over 8 of d's 16 sub-directions (stage 1: 4; all >= vt -> stands; w vt < SX_MIN unchecked). LOWER ONLY.
+      if (sxOn && nPair) { var tX = performance.now(), SUB = fieldSub(), drop = val; drop.fill(0);
+        for (var pp = 0; pp < nPair; pp++) { var cX = pC[pp]; if (!isRead[cX]) { sxS.skipShell++; continue; } var dX = pD[pp], vX = pV[pp]; if (FIELD_DIRS[dX].w * vX < SX_MIN) { sxS.small++; continue; } var iX = cX % nx, jX = ((cX / nx) | 0) % ny, kX = (cX / nxy) | 0;
+          var xX = ox + (iX + 0.5) * cl, yX = oy + (jX + 0.5) * cl, zX = oz + (kX + 0.5) * cl, b0 = dX * SUB_K * 3, ok1 = true, s1 = 0;
+          for (var q1 = 0; q1 < 4; q1++) { var o1 = b0 + SUB_S1[q1] * 3, e1 = exact(xX, yX, zX, SUB[o1], SUB[o1 + 1], SUB[o1 + 2]); sxS.rays1++; s1 += e1; if (e1 < vX - 0.02) ok1 = false; }
+          if (ok1) { sxS.stand++; continue; }
+          var sE = s1; for (var q2 = 0; q2 < 4; q2++) { var o2 = b0 + SUB_S2[q2] * 3; sE += exact(xX, yX, zX, SUB[o2], SUB[o2 + 1], SUB[o2 + 2]); sxS.rays2++; }
+          var E = sE / 8; if (E > vX + 0.05) sxS.wouldRaise++; if (E >= vX) continue;
+          var wX = FIELD_DIRS[dX].w, rm = wX * (vX - E), uX = FIELD_DIRS[dX].u, zzX = (zone[cX] & ZONE_MASK) * 3; acc[cX] -= rm; if (acc[cX] < 0) acc[cX] = 0; drop[cX] += rm; sxS.pairsLowered++;
+          zb[zzX] -= rm * uX[0]; zb[zzX + 1] -= rm * uX[1]; zb[zzX + 2] -= rm * uX[2]; }
+        for (var cY = 0; cY < N; cY++) { var dY = drop[cY]; if (dY > 0.005) { sxS.lowered++; sxS.dSum += dY; if (dY > sxS.maxDrop) sxS.maxDrop = dY; } }
+        sxS.ms = Math.round(performance.now() - tX); }
+      // §GLASS_REFL_OPEN (Z26): exact rays from each exterior pane face over the same BVH (its own try: a glass failure never flags the shell)
+      if (!glassWhy) try {
+        var goR = { trace: function (x, y, z, dx, dy, dz) { ray.origin.set(x, y, z); ray.direction.set(dx, dy, dz); var ho = bvhO.raycastFirst(ray, DS), far = ho ? ho.distance : Infinity, Tg = 1;
+            if (bvhG) { var hs = bvhG.raycast(ray, DS, 0, far); if (hs.length > 1) hs.sort(byD); var last = -1; for (var h = 0; h < hs.length; h++) { if (hs[h].distance >= far) break; if (last < 0 || hs[h].distance - last > 0.3) Tg *= GT[hs[h].faceIndex] / 255; last = hs[h].distance + 0.01; } }
+            return { T: Tg, hit: ho ? { x: ho.point.x, y: ho.point.y, z: ho.point.z, d: ho.distance } : null }; },
+          glassFirst: function (x, y, z, dx, dy, dz, dmax) { if (!bvhG) return null; ray.origin.set(x, y, z); ray.direction.set(dx, dy, dz); var hg = bvhG.raycastFirst(ray, DS, 0, dmax); return hg ? { x: hg.point.x, y: hg.point.y, z: hg.point.z } : null; },
+          // the blocker's brightness relative to the sky it replaces: rho (Z.alb of the hit cell, §IR_COLOUR) x F (the last air cell's sky-view before the hit: open 1 / the field's acc)
+          blocker: function (hp, dd) { var rho = -1, alb = Z.alb;
+            if (alb) { var cA = -1, cs1 = cellOf(Z, hp.x + dd[0] * 0.01, hp.y + dd[1] * 0.01, hp.z + dd[2] * 0.01), cs2 = cellOf(Z, hp.x - dd[0] * 0.01, hp.y - dd[1] * 0.01, hp.z - dd[2] * 0.01);
+              if (cs1 >= 0 && alb[cs1 * 3] + alb[cs1 * 3 + 1] + alb[cs1 * 3 + 2] > 0) cA = cs1; else if (cs2 >= 0 && alb[cs2 * 3] + alb[cs2 * 3 + 1] + alb[cs2 * 3 + 2] > 0) cA = cs2;
+              if (cA >= 0) rho = (0.2126 * alb[cA * 3] + 0.7152 * alb[cA * 3 + 1] + 0.0722 * alb[cA * 3 + 2]) / 255; }
+            var noAlb = rho < 0; if (noAlb) rho = R_BRE;
+            // the blocker's own sky-view = the F the renderer lights that surface with: the nearest non-solid cell around the hit
+            // on the ray's near side (3x3x3, then 5x5x5 — a ray grazing a fattened roof band has SOLID cells along itself for
+            // metres, so a walk back along the ray read 0 there): open 1, covered = the field's acc; none found -> 0
+            var Fh = -1, hc = cellOf(Z, hp.x - dd[0] * 0.01, hp.y - dd[1] * 0.01, hp.z - dd[2] * 0.01);
+            if (hc < 0) Fh = 1; else { var hi = hc % nx, hj = ((hc / nx) | 0) % ny, hk = (hc / nxy) | 0, bestD = Infinity;
+              for (var rad = 1; rad <= 2 && Fh < 0; rad++) for (var dz = -rad; dz <= rad; dz++) for (var dy = -rad; dy <= rad; dy++) for (var dx = -rad; dx <= rad; dx++) {
+                var ii = hi + dx, jj = hj + dy, kk = hk + dz; if (ii < 0 || jj < 0 || kk < 0 || ii >= nx || jj >= ny || kk >= nz) continue; var cq = ii + jj * nx + kk * nxy, vq = zone[cq]; if (vq === SOLID) continue;
+                var ex = Z.org.x + (ii + 0.5) * cl - hp.x, ey = Z.org.y + (jj + 0.5) * cl - hp.y, ez = Z.org.z + (kk + 0.5) * cl - hp.z; if (ex * dd[0] + ey * dd[1] + ez * dd[2] > 0) continue;   // beyond the blocker: its far side
+                var dq = ex * ex + ey * ey + ez * ez; if (dq < bestD) { bestD = dq; Fh = vq === 0 ? 1 : acc[cq]; } } }
+            if (Fh < 0) { Fh = 0; st_noF++; }
+            return { b: Math.min(1, rho * Fh), noAlb: noAlb }; } }, st_noF = 0;
+        glassOpen = glassOpenPass(Z, A, goR); glassOpen.stats.noBlockerF = st_noF;
+      } catch (eGo) { glassWhy = 'failed: ' + (eGo && eGo.message); console.warn('§GLASS_REFL_OPEN failed: ' + (eGo && eGo.stack)); }
+    } catch (eSh) { shell.on = false; shell.why = 'failed: ' + (eSh && eSh.message); console.warn('§SKY_SHELL_RAYS failed: ' + (eSh && eSh.stack)); }
+      try { if (geoO) { geoO.disposeBoundsTree(); geoO.dispose(); } if (geoG) { geoG.disposeBoundsTree(); geoG.dispose(); } } catch (eD) {} }
+    isCand = candSlot = candCells = near2 = latS = latP = airV = shellCells = shellOf = null;
+    shell.airOnlyDMean = shell.recomputedAirOnly ? +(shell.airOnlyDSum / shell.recomputedAirOnly).toFixed(4) : 0;
+    shell.dMean = shell.recomputed ? +(shell.dSum / shell.recomputed).toFixed(4) : 0; shell.dMeanAbs = shell.recomputed ? +(shell.dAbsSum / shell.recomputed).toFixed(4) : 0; shell.maxLift = +shell.maxLift.toFixed(3); shell.maxDrop = +shell.maxDrop.toFixed(3);
+    logShell(Z.bld, shell, 'built'); if (sxS.on && !shell.on) { sxS.on = false; sxS.why = 'off (shell pass failed: ' + shell.why + ')'; } pC = pD = pV = isRead = rSlot = latB = null; logSkyExact(Z.bld, sxS, 'built');
+    if (saS.on && !shell.on) { saS.on = false; saS.why = 'off (shell pass failed: ' + shell.why + ')'; } logSkyExactAll(Z.bld, saS, 'built');
+    // §SKY_FIELD_SMOOTH pass (spec above skySmoothOn): same-zone covered 3x3x3 mean, one pass, from a copy
+    var smS = { on: skySmoothOn(A), cells: 0, meanAbs: 0, maxDF: 0, sum0: 0, sum1: 0, ratio: 1, ms: 0 };
+    if (smS.on) { var tSm = performance.now(), src0 = Float32Array.from(acc), dAbsSm = 0, s0 = 0, s1 = 0;
+      for (var cM = 0; cM < N; cM++) { var vM = zone[cM]; if (vM === SOLID || vM === 0) continue; var zM = vM & ZONE_MASK, iM = cM % nx, jM = ((cM / nx) | 0) % ny, kM = (cM / nxy) | 0, sM = 0, nM = 0;
+        for (var dk = -1; dk <= 1; dk++) { var k2 = kM + dk; if (k2 < 0 || k2 >= nz) continue; for (var dj = -1; dj <= 1; dj++) { var j2 = jM + dj; if (j2 < 0 || j2 >= ny) continue; for (var di = -1; di <= 1; di++) { var i2 = iM + di; if (i2 < 0 || i2 >= nx) continue;
+          var cN = i2 + j2 * nx + k2 * nxy, vN = zone[cN]; if (vN === SOLID || vN === 0 || (vN & ZONE_MASK) !== zM) continue; sM += src0[cN]; nM++; } } }
+        var fM = nM ? sM / nM : src0[cM], dM = fM - src0[cM]; acc[cM] = fM; smS.cells++; dAbsSm += Math.abs(dM); if (Math.abs(dM) > smS.maxDF) smS.maxDF = Math.abs(dM); s0 += src0[cM]; s1 += fM; }
+      src0 = null; smS.meanAbs = smS.cells ? +(dAbsSm / smS.cells).toFixed(5) : 0; smS.maxDF = +smS.maxDF.toFixed(4); smS.sum0 = +s0.toFixed(1); smS.sum1 = +s1.toFixed(1); smS.ratio = s0 > 0 ? +(s1 / s0).toFixed(4) : 1; smS.ms = Math.round(performance.now() - tSm); }
+    logSkySmooth(Z.bld, smS, 'built');
     // V12 interreflected component per zone (flux balance, Sumpner; the relation BRE's ADF is derived from):
     // F_ir = R (mean working-plane F x floor m2) / (A_z (1 - R)), R = R_BRE, A_z = surfaceM2 + apertureM2; uniform over the zone
     var nzn = Z.zones, up = Math.floor(0.8 / Z.cell) * nx, fl = new Float64Array(nzn + 1), wpS = new Float64Array(nzn + 1), wpN = new Int32Array(nzn + 1), cf = Z.cell * Z.cell;
@@ -666,23 +1270,26 @@
     ircL.sort(function (x, y) { return x - y; });
     // G: F x 10000 in every non-solid cell (open = 10000)
     var G = new Uint16Array(N), maxF = 0, covered = 0, maxSC = 0;
-    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { G[c2] = 10000; continue; } covered++; var sc = acc[c2]; if (sc > maxSC) maxSC = sc;
+    // §SKY_FIELD_EXACT_ALL: an open target cell keeps its exact F (every other open cell = 1)
+    for (var c2 = 0; c2 < N; c2++) { var v2 = zone[c2]; if (v2 === SOLID) continue; if (v2 === 0) { G[c2] = (saTg && saTg[c2] === 2) ? Math.round(Math.min(1, acc[c2]) * 10000) : 10000; continue; } covered++; var sc = acc[c2]; if (sc > maxSC) maxSC = sc;
       var f = Math.min(1, sc + irc[v2 & ZONE_MASK]); if (f > maxF) maxF = f; G[c2] = Math.round(f * 10000); }
     val = acc = null;
     var minElev = FIELD_DIRS.reduce(function (m, d) { return Math.min(m, d.elev); }, 90);
+    if (!glassOpen) glassOpen = { n: 0, cells: new Int32Array(0), data: new Uint32Array(0), w: GO_W, h: 0, sides: 0, stats: { why: glassWhy || 'not run', glassCells: Z.glassIdx ? Z.glassIdx.length : 0, cells: 0, sides: 0, rays: 0, ms: 0 } };
+    logGlassOpen(Z.bld, glassOpen, 'built'); Z.goMap = null;
     Z.field = { G: G, maxF: maxF, maxSC: maxSC, ircZ: irc, ircAll: ircAll, irc: { on: ircOn, zones: ircL.length, median: ircL.length ? ircL[ircL.length >> 1] : 0, max: ircL.length ? ircL[ircL.length - 1] : 0 }, covered: covered, active: nAct, bent: zb, dirs: FIELD_DIRS.length, minElevDeg: minElev, ms: Math.round(performance.now() - t0),
-      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }) };
+      weights: FIELD_DIRS.map(function (d) { return +d.w.toFixed(4); }), shell: shell, skyExact: sxS, skyExactAll: saS, skySmooth: smS, glassOpen: glassOpen, trace: fTrace ? Array.from(fTrace.entries()) : null };
     if (groundOn(A)) groundBuild(A, Z);   // §GROUND_VIEW_FIELD: Gd beside G, same cache record
     scheduleSave();
     return Z.field;
   }
   // CPU mirror of the shader's filtered read (V5): p = surface point, nrm = eye-facing normal; returns { zone, F } where zone
   // is surfaceInfo's; outside (0 / off grid) F = 1; unknown (SOLID) F = null (the shader uses indoorSky there)
-  function skyField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.G : null); }
+  function skyField(p, nrm, blend) { return fieldRead(p, nrm, cache && cache.field ? cache.field.G : null, blend); }   // blend = §ZERO Z18 &gridblend=1 mirror
   // §GROUND_VIEW_FIELD CPU mirror of _slGd (same 8-texel filter, same zone rule, same order as the shader); F = null when
   // the ground field was not built (&groundview=0)
-  function groundField(p, nrm) { return fieldRead(p, nrm, cache && cache.field ? cache.field.Gd : null); }
-  function fieldRead(p, nrm, G) {
+  function groundField(p, nrm, blend) { return fieldRead(p, nrm, cache && cache.field ? cache.field.Gd : null, blend); }
+  function fieldRead(p, nrm, G, blend) {
     var Z = cache, si = surfaceInfo(p, nrm); if (!Z || !G) return { zone: si.zone, F: null, si: si };
     if (si.zone === -1) return { zone: si.zone, F: 1, si: si };   // off grid; open (0): filtered, every non-solid cell accepted
     if (si.zone === SOLID) return { zone: si.zone, F: null, si: si };
@@ -690,7 +1297,7 @@
     var bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, sw = 0, sf = 0;
     for (var o = 0; o < 8; o++) { var ox = o & 1, oy = (o >> 1) & 1, oz = (o >> 2) & 1, i = bx + ox, j = by + oy, k = bz + oz;
       if (i < 0 || j < 0 || k < 0 || i >= Z.nx || j >= Z.ny || k >= Z.nz) continue; var c = i + j * Z.nx + k * nxy, t = Z.zone[c]; if (t === SOLID) continue;
-      var tz = t & ZONE_MASK; if (si.zone !== 0 && tz !== si.zone && tz !== 0) continue;
+      var tz = t & ZONE_MASK; if (!blend && si.zone !== 0 && tz !== si.zone && tz !== 0) continue;   // §ZERO Z18: blend keeps other-zone texels (shader uSLSky.z)
       var w = (ox ? fx : 1 - fx) * (oy ? fy : 1 - fy) * (oz ? fz : 1 - fz); sw += w; sf += w * G[c] / 10000; }
     return { zone: si.zone, F: sw > 0 ? sf / sw : (si.cell >= 0 ? G[si.cell] / 10000 : 0), si: si };
   }
@@ -698,17 +1305,31 @@
   // §GLASS_SPEC_GATE CPU mirror (sourced_light.js slSpecKeep, same order): the reflection gate at surface point p seen from eye.
   // base = what slSkyKeep gives (sky-view F; unknown/solid 0 = indoorSky default); the mirror ray marched 0.25 m x 32 from
   // p + 0.25 n: off grid / OPEN -> 1, SOLID (after the first 1 m) -> base.
-  function specVis(p, nrm, eye) {
+  function specVis(p, nrm, eye, smooth) {   // smooth = §ZERO Z18 §SPEC_SMOOTH mirror (shader uSLSky.w)
     var Z = cache; if (!Z || !Z.field) return null;
     var vx = p.x - eye.x, vy = p.y - eye.y, vz = p.z - eye.z, vl = Math.sqrt(vx * vx + vy * vy + vz * vz) || 1; vx /= vl; vy /= vl; vz /= vl;
     var nx = nrm.x, ny = nrm.y, nz = nrm.z; if (nx * vx + ny * vy + nz * vz > 0) { nx = -nx; ny = -ny; nz = -nz; }
     var sf = skyField(p, { x: nx, y: ny, z: nz }), base = sf.F == null ? 0 : sf.F; if (base >= 0.999) return { base: base, spec: base };
     var d = vx * nx + vy * ny + vz * nz, rx = vx - 2 * d * nx, ry = vy - 2 * d * ny, rz = vz - 2 * d * nz, st = 0.5 * Z.cell, qx = p.x + nx * st, qy = p.y + ny * st, qz = p.z + nz * st;
+    // §GLASS_REFL_OPEN (Z26): a glass cell's stored reflection openness replaces the march (the shader's slSpecKeep, same order)
+    if (Z.glassOpenActive) { var go = glassOpenAt(Z, { x: nx, y: ny, z: nz }, p, { x: rx, y: ry, z: rz }); if (go != null) return { base: base, spec: base + (1 - base) * go, glassOpen: go }; }
+    if (smooth) { var P = 0, Tr = 1, cl2 = Z.cell, nxy2 = Z.nx * Z.ny;
+      for (var k2 = 0; k2 < 32; k2++) { var gx = (qx - Z.org.x) / cl2 - 0.5, gy = (qy - Z.org.y) / cl2 - 0.5, gz = (qz - Z.org.z) / cl2 - 0.5, bx = Math.floor(gx), by = Math.floor(gy), bz = Math.floor(gz), fx = gx - bx, fy = gy - by, fz = gz - bz, o = 0, so = 0;
+        for (var n = 0; n < 8; n++) { var dx = n & 1, dy = (n >> 1) & 1, dz = (n >> 2) & 1, i = bx + dx, j = by + dy, kk = bz + dz, w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz);
+          if (i < 0 || j < 0 || kk < 0 || i >= Z.nx || j >= Z.ny || kk >= Z.nz) { o += w; continue; } var tt = Z.zone[i + j * Z.nx + kk * nxy2];
+          if (tt === SOLID) { if (k2 >= 4) so += w; } else if ((tt & ZONE_MASK) === 0) o += w; }
+        P += Tr * o; Tr *= Math.max(0, 1 - o - so); if (Tr < 0.004) break; qx += rx * st; qy += ry * st; qz += rz * st; }
+      return { base: base, spec: base + (1 - base) * Math.min(1, P) }; }
     for (var k = 0; k < 32; k++) { var c = cellOf(Z, qx, qy, qz); if (c < 0) return { base: base, spec: 1 }; var t = Z.zone[c];
       if (t === SOLID) { if (k >= 4) return { base: base, spec: base }; } else if ((t & ZONE_MASK) === 0) return { base: base, spec: 1 };
       qx += rx * st; qy += ry * st; qz += rz * st; }
     return { base: base, spec: base };
   }
-  global.LightZones = { groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
-    SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL };
+  global.LightZones = { primeDb: primeDb, dbPack: dbPack, dbRecord: dbRecord, _packRecord: packRecord, _unpackRecord: unpackRecord,   // §LIGHT_FIELD_DB (S4 loader / S5 writer; _pack/_unpack = node round-trip test hooks)
+    glassOpenOn: glassOpenOn, glassBlockOff: glassBlockOff, glassOpenAt: glassOpenAt, goDir: goDir, goLookup: goLookup, GO_W: GO_W, GO_AZ: GO_AZ, GO_EL: GO_EL, GO_TEX: GO_TEX,
+    glassOpenActive: function (on, blockOff) { if (cache) { cache.glassOpenActive = !!on; cache.glassBlockOff = !!blockOff; } return !!(cache && cache.glassOpenActive); },   // §GLASS_REFL_OPEN: set at staging (the CPU mirror follows the shader's switches)
+    shellOn: shellOn, groundField: groundField, groundOn: groundOn, groundMode: groundMode, GROUND_DIRS: GROUND_DIRS, specVis: specVis, prime: prime, primed: function (A) { return !!(primed && A && primed.bld === A.activeBuilding); }, cacheKey: function () { return SRC; }, field: field, skyField: skyField, FIELD_DIRS: FIELD_DIRS, daylight: daylight, dayBase: dayBase, audit: audit, cellSky: cellSkyNew, skySweep: skySweep, openMask: openMask, bandPass3: bandPass3, OVER_VOID_M: OVER_VOID_M, lampInfo: lampInfo, bandPass: bandPass, band: band, leakPath: leakPath, build: build, at: at, atRaw: atRaw, skyAt: skyAt, surfaceInfo: surfaceInfo, atSurface: atSurface, atLamp: atLamp,
+    SOLID: SOLID, SKY_BIT: SKY_BIT, ZONE_MASK: ZONE_MASK, get: function () { return cache; }, CELL: CELL, shellReach: shellReach,
+    // §ZERO Z8 node witness hook: run the REAL field() over a caller-built zone grid (no THREE / no BVH: selection is judged, the ray pass is skipped)
+    _testField: function (A, Z) { cache = Z; Z.field = null; return field(A); } };
 })(typeof window !== 'undefined' ? window : this);

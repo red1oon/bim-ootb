@@ -49,6 +49,8 @@
 //                                                       -41% per frame, 1.72% of pixels changed.
 //                                                       OFF by default — verified on one 30s slice,
 //                                                       not yet on a full film. Read the film.
+//     [--visual-panel] [--audio-panel]                §FREEZE_PERF_PANEL: CCTV coverage / room acoustics panels in the
+//                                                       load-path freeze (need --load-path; audio not built yet)
 //     [--sun-compass] [--no-sun-compass]              true-north ground compass + sun path + day of
 //                                                       the year (§SUN_COMPASS, GEOREF_SUNPATH_COMPASS.md
 //                                                       §7). OFF by default; needs a site lat/long in
@@ -64,6 +66,8 @@
 //     [--progress-every-sec N] [--abort-land-min N]   progress cadence (30) / abort landing cap (10)
 //     [--still-budget taa,ao]                          override the 8/12 bake fold (LARGE_DB_BAKE.md
 //                                                       §2 L3); absent = unchanged default quality
+//     [--write-prebake]                               §PREBAKE: save this bake's computed setup (load-path shot, window sides) to buildings/patches/<db>.prebake.json
+//     [--url-query '&torch=0']                         raw viewer URL switches appended (off-switch arms)
 //     [--frame-range a:b]                              render frames a..b-1 of the FULL film,
 //                                                       frame-exact (LARGE_DB_BAKE.md §2 L4) — NOT
 //                                                       the same grid as --clip (§0), mutually exclusive
@@ -144,11 +148,18 @@ const TAP_FILE = arg('tap', null) ? path.resolve(arg('tap')) : null;
 const DLOD_PROXY = !!arg('dlod-proxy', false);
 // §FILM_PARITY (bim-compiler PHOTOREAL_STILL_RENDER.md) — the approved Alt+S look in the film. Page URL switches:
 //   --film-parity 0|1   (default 1)  0 = the pre-parity film, the CONTROL clip
-//   --film-fill restore|alts   (default restore = §FILM_FILL_RESTORE ambient 0.785, the look red1 approved; alts = ambient 0)
+//   --film-fill law|restore   (default law = §FILM_LAW S2: the Alt+S §STILL_BASE fill, ambient 0; 'alts' = same as law;
+//                              restore = the retired §FILM_FILL_RESTORE ambient 0.785 opt-in, back-compat only — &filmfill=restore)
+//   --film-exposure 0|1  (default 1) §FILM_LAW S1 per-frame meter + adaptation; 0 = fixed staging exposure (&filmexp=0, control)
 //   --bounce 0|1        (default 1)  the Alt+S bounce per frame (needs WebGPU + r186; stands down with §GI_FILM_OFF)
 const FILM_PARITY = String(arg('film-parity', '1')) !== '0';
-const FILM_FILL = String(arg('film-fill', 'restore'));
+const FILM_FILL = String(arg('film-fill', 'law'));
+const FILM_EXPOSURE = String(arg('film-exposure', '1')) !== '0';
 const FILM_BOUNCE = String(arg('bounce', '1')) !== '0';
+// §ALTS_ALL G6 (bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD"): --url-query '&torch=0' appends raw viewer URL switches
+// (the Alt+S/film off-switch arms: &torch=0, &srgbfix=0, &groundlaw=0, &gridblend=1 ...) so the bake release gate can A/B a film fix
+// against its off arm. Logged on §CLI_BAKE_FILM_PARITY; empty by default (no change to any existing bake).
+const URL_QUERY = String(arg('url-query', '') || '').replace(/^\?/, '').replace(/^([^&])/, '&$1');
 // §DATUM_DECOUPLE (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §53) — dev-only bisect instrument:
 //   --burnin-datum-src clean.mp4   skip the GPU render + every other overlay; load clean.mp4's own
 //                                   frames instead and draw ONLY the datum layer on top. Use the SAME
@@ -204,6 +215,9 @@ const _fEscapeRoute = triState('escape-route', 'no-escape-route');
 // It draws nothing at all on a building whose DB has no site latitude/longitude, and the bake log
 // says §SUN_COMPASS INCONCLUSIVE with the reason — read the log, do not infer from the video.
 const _fSunCompass = triState('sun-compass', 'no-sun-compass');
+// §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19) — Audio / Visual panels in the load-path freeze; draw only with --load-path.
+const _fVisualPanel = triState('visual-panel', 'no-visual-panel');
+const _fAudioPanel = triState('audio-panel', 'no-audio-panel');
 if (_fBuildup !== undefined) FLAGS.buildup = _fBuildup;
 if (_fLabel !== undefined) FLAGS.roomTitle = _fLabel;
 else if (_f4d5d !== undefined) FLAGS.roomTitle = _f4d5d;
@@ -216,6 +230,8 @@ if (_fLedger !== undefined) FLAGS.ledger = _fLedger;
 if (_fCost !== undefined) FLAGS.cost = _fCost;
 if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
+if (_fVisualPanel !== undefined) FLAGS.visualPanel = _fVisualPanel;
+if (_fAudioPanel !== undefined) FLAGS.audioPanel = _fAudioPanel;
 // §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
 // afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
 if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
@@ -390,7 +406,7 @@ const server = http.createServer((req, res) => {
   // bare FRAME_REUSE carries the per-run detail behind FRAME_REUSE_TOTAL's single number.
   // `\b` keeps these distinct: STOREY_REVEAL_TINT does not swallow STOREY_REVEAL_TINT_SHARED_MATERIAL,
   // and FRAME_REUSE does not swallow FRAME_REUSE_TOTAL, because `_` is a word character.
-  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|FRAME_COST|CPE_REVEAL_HIDDEN|CPE_REVEAL_LEAK|INTERIOR_LIGHTS_BOUNDARY|INTERIOR_LIGHTS_WITNESS|INTERIOR_LIGHTS_ON|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT|FRAME_REUSE_TOTAL|FRAME_REUSE|DLOD_TM_CENSUS|STOREY_REVEAL_TINT_RESTORE|STOREY_REVEAL_TINT|STOREY_REVEAL_MODE|HR_COST_PERSISTED|HR_COST_AGREE|HR_COST|CREW_DEMAND|MAXQ_FRAME_DECODE_FAIL|MAXQ_FRAME_DECODE_SKIP|MAXQ_STITCH_FAILED|HUD_OVERLAP_WORST|PLACE_TABLE|PLACE_RESOLVED|RULE_TINT_CEASE|RULE_TINT_ENTER|FILM_LAYER|FINDINGS_CEASE_3D|FINDINGS_CEASE|ESCAPE_ROUTE_CASING|ESCAPE_ROUTE_ALTERNATES|ESCAPE_ROUTE_BUILD|ESCAPE_ROUTE_WINDOW|ESCAPE_ROUTE_POPULATION|ESCAPE_ROUTE_BREACH)\b/;
+  const CLAIM_RX = /§(PHOTO_PREWARM|CPE_STATS_TAIL|CPE_PIE_HOLD|MAXQ_FRAME_BUDGET|MAXQ_MP4_FALLBACK|MAXQ_DONE|MAXQ_QUALITY|MAXQ_DELIVERED|CLI_BAKE_RESOLVED|MAXQ_OVERRIDE_IN|MAXQ_START|MAXQ_START_REVISED|FRAME_COST|CPE_REVEAL_HIDDEN|CPE_REVEAL_LEAK|INTERIOR_LIGHTS_BOUNDARY|INTERIOR_LIGHTS_WITNESS|INTERIOR_LIGHTS_ON|CPE_APPLIED|CINEMA_PATH_RESTORE|CPE_BUILDUP_TOPOUT|CPE_BUILDUP_SKIP|MAXQ_HDRI_RACE|MAXQ_STREAM_WAIT|CPE_REVEAL|SUN_COMPASS|SUN_COMPASS_HELD|SUN_PATH|SUN_CLOCK|SUN_ONE|SUN_ONE_ALL_DARK|SUN_DAY|LOADPATH_BUILD|LOADPATH_ARM|LOADPATH_HOLD|LOADPATH_FOCUS|LOADPATH_CARD|LOADPATH_INFOPANEL|LEDGER_TICKER_INIT|HUD_LAYOUT|HUD_LAYOUT_ARM|STOREY_ARCH_WITNESS|STOREY_LABEL_WITNESS|STOREY_CUT_RESTORE_WITNESS|STOREY_ARM_BASELINE|FLYTHRU_DATUM_BUILT|FRAME_REUSE_TOTAL|FRAME_REUSE|DLOD_TM_CENSUS|STOREY_REVEAL_TINT_RESTORE|STOREY_REVEAL_TINT|STOREY_REVEAL_MODE|HR_COST_PERSISTED|HR_COST_AGREE|HR_COST|CREW_DEMAND|MAXQ_FRAME_DECODE_FAIL|MAXQ_FRAME_DECODE_SKIP|MAXQ_STITCH_FAILED|HUD_OVERLAP_WORST|HUD_OVERLAP_CROSSFADE|CONSOLIDATE|CONSOLIDATE_SKIP|CONSOLIDATE_FAIL|LAMPS_SUMMARY|F_SUMMARY|DLOD_BAKE_PROXY_RESULT|PLACE_TABLE|PLACE_RESOLVED|RULE_TINT_CEASE|RULE_TINT_ENTER|FILM_LAYER|FINDINGS_CEASE_3D|FINDINGS_CEASE|ESCAPE_ROUTE_CASING|ESCAPE_ROUTE_ALTERNATES|ESCAPE_ROUTE_BUILD|ESCAPE_ROUTE_WINDOW|ESCAPE_ROUTE_POPULATION|ESCAPE_ROUTE_BREACH)\b/;
   // §CLI_BAKE_LOAD_FATAL (2026-09-05) — a DB that cannot be fetched must abort NOW, not in 15 minutes.
   // MEASURED: a wrong/missing buildings/<name>.db logged `§INIT_ERROR … 404` at 2.7 s, then the load
   // predicate below (which can never become true without a DB) burned its full 900 s timeout and
@@ -443,11 +459,14 @@ const server = http.createServer((req, res) => {
     sink.end(() => { log(`§CLI_BAKE_SINK end bytes=${sinkBytes}`); res(); });
   }));
 
+  // ### ALTS-ALL FIX 15 (F12): was THIS document served by a service worker? (a fresh --profile's first navigation is not: it comes
+  // from the network = this tree; its own SW install is what the purge then unregisters — not stale JS)
+  await page.evaluateOnNewDocument(() => { try { window.__swCtlAtLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) { window.__swCtlAtLoad = null; } });
   await page.evaluateOnNewDocument((flagsJson) => {
     window.__MAXQ_SILENT = true;                       // gates window.__maxqBake (dev-only)
     window.__maxqPoseLog = [];                          // §CLI_SILENT_BAKE item 4 — pose record
-    window.__maxqPoseTap = function(i, x, y, z, tx, ty, tz) {
-      window.__maxqPoseLog.push([i, x, y, z, tx, ty, tz, performance.now()]);
+    window.__maxqPoseTap = function(i, x, y, z, tx, ty, tz, tF) {
+      window.__maxqPoseLog.push([i, x, y, z, tx, ty, tz, performance.now(), tF == null ? null : tF]);   // [8] = film time posed at (W1)
     };
     window.__maxqDeliverBlob = async function(blob, name, type) {
       const buf = new Uint8Array(await blob.arrayBuffer());
@@ -477,8 +496,8 @@ const server = http.createServer((req, res) => {
 
   const dbUrl = DB.includes('/') ? DB : `/buildings/${DB}.db`;
   const url = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=${dbUrl}` +
-    (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'alts' || FILM_FILL === 'alt-s' ? '&filmfill=alts' : '') + (FILM_BOUNCE ? '' : '&filmbounce=0');
-  log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' bounce=' + (FILM_BOUNCE ? 1 : 0));
+    (FILM_PARITY ? '' : '&filmparity=0') + (FILM_FILL === 'restore' ? '&filmfill=restore' : '') + (FILM_EXPOSURE ? '' : '&filmexp=0') + (FILM_BOUNCE ? '' : '&filmbounce=0') + URL_QUERY;
+  log('§CLI_BAKE_FILM_PARITY parity=' + (FILM_PARITY ? 1 : 0) + ' fill=' + FILM_FILL + ' exposure=' + (FILM_EXPOSURE ? 'meter' : 'fixed') + ' bounce=' + (FILM_BOUNCE ? 1 : 0) + ' urlQuery=' + (URL_QUERY || '-'));
   log(`§CLI_BAKE_NAV ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
   // ⚠ §CLI_BAKE_SW_PURGE (2026-09-08, MEP_CLASH_REVEAL_MOVIE.md §43) — THE BAKE MUST NOT RUN STALE JS.
@@ -490,13 +509,13 @@ const server = http.createServer((req, res) => {
   // §STATUS_BOX / §MEASURE_BOX / §SLAB_BEAT_AREA at all — 8 minutes of GPU spent testing code that
   // was not in the film. Every witness_*.js already does exactly this; the bake runner never did.
   const _swPurge = await page.evaluate(async () => {
-    let regs = 0, ks = 0;
+    let regs = 0, ks = 0, urls = [];
     try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations();
-      regs = rs.length; for (const r of rs) await r.unregister(); } } catch (e) {}
+      regs = rs.length; for (const r of rs) { const w = r.active || r.waiting || r.installing; urls.push(w ? w.scriptURL.split('/').pop() : '?'); await r.unregister(); } } } catch (e) {}
     try { if (window.caches) { const k = await caches.keys(); ks = k.length; for (const n of k) await caches.delete(n); } } catch (e) {}
-    return { regs, ks };
+    return { regs, ks, ctl: window.__swCtlAtLoad === true ? 1 : (window.__swCtlAtLoad === false ? 0 : -1), urls };
   });
-  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} — reloading so the bake runs THIS build, not the precached one`);
+  log(`§CLI_BAKE_SW_PURGE unregistered=${_swPurge.regs} cachesDeleted=${_swPurge.ks} controllerAtLoad=${_swPurge.ctl} regs=[${_swPurge.urls.join(',')}] — reloading so the bake runs THIS build, not the precached one`);
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.renderer && window.APP.camera &&
     typeof window.APP.startMaxQualityOrbit === 'function' && typeof window.__maxqBake === 'function',
@@ -733,9 +752,35 @@ const server = http.createServer((req, res) => {
   }
 
   // heap sampling (Log Mandate: numbers, on an interval, into the log)
+  // §CLI_BAKE_MEM (W5, ALTC_FOUNDATION §1, 2026-10-03): the CDP heap (0.3-1.4 GB) and performance.memory (2.0-2.6 GB) disagreed on
+  // the same minute and neither counts ArrayBuffers or VRAM. One sample now carries every instrument side by side: CDP JS heap,
+  // performance.memory, the whole Chrome process tree's RSS from /proc (what the OS actually holds) and nvidia-smi's GPU memory.
+  const _memRows = [];
+  function _chromeTreeRssMB() {
+    try {
+      const root = browser.process && browser.process() && browser.process().pid; if (!root) return null;
+      const kids = {}; let rssKB = 0;
+      for (const d of fs.readdirSync('/proc')) { if (!/^\d+$/.test(d)) continue;
+        try { const st = fs.readFileSync('/proc/' + d + '/stat', 'utf8'); const pp = +st.slice(st.lastIndexOf(')') + 2).split(' ')[1];
+              (kids[pp] = kids[pp] || []).push(+d); } catch (e) {} }
+      const q = [root];
+      while (q.length) { const pid = q.pop();
+        try { const m = /VmRSS:\s+(\d+)/.exec(fs.readFileSync('/proc/' + pid + '/status', 'utf8')); if (m) rssKB += +m[1]; } catch (e) {}
+        (kids[pid] || []).forEach(k => q.push(k)); }
+      return rssKB / 1024;
+    } catch (e) { return null; }
+  }
+  function _gpuUsedMB() {
+    try { return +execFileSync('nvidia-smi', ['--query-gpu=memory.used', '--format=csv,noheader,nounits'], { timeout: 5000 }).toString().trim().split('\n')[0]; }
+    catch (e) { return null; }
+  }
   const heapIv = setInterval(async () => {
     try { const m = await page.metrics(); S.heap.push(m.JSHeapUsedSize);
       logRaw(`[heap] usedMB=${(m.JSHeapUsedSize / 1048576).toFixed(1)} totalMB=${(m.JSHeapTotalSize / 1048576).toFixed(1)}`);
+      const pm = await page.evaluate(() => (performance.memory ? performance.memory.usedJSHeapSize : null)).catch(() => null);
+      const row = { cdp: m.JSHeapUsedSize / 1048576, perf: pm == null ? null : pm / 1048576, rss: _chromeTreeRssMB(), gpu: _gpuUsedMB() };
+      _memRows.push(row);
+      logRaw(`[mem] cdpHeapMB=${row.cdp.toFixed(0)} perfMemMB=${row.perf == null ? 'n/a' : row.perf.toFixed(0)} chromeRssMB=${row.rss == null ? 'n/a' : row.rss.toFixed(0)} gpuUsedMB=${row.gpu == null ? 'n/a' : row.gpu}`);
     } catch (e) {}
   }, 20000);
 
@@ -894,22 +939,26 @@ const server = http.createServer((req, res) => {
     // (b) build the DERIVED plan (explicit null override): the flown track must DIFFER from it
     //     (a bake that silently ignored the passed path would match derived and fail here);
     // (c) the flown track must pass near every stored band anchor (ties to the DB rows themselves).
-    const chk = await page.evaluate((fpsUsed) => {
-      const A = window.APP, L = window.__maxqPoseLog, ov = window.__maxqResolvedOverride;
+    // W1 (ALTC_FOUNDATION §1, 2026-10-03): the old check posed frame i at i/(n-1), but the film clock is NOT linear in i — the
+    // load-path hold splices frames in and shifts every later frame (Hospital: tNorm 0.411 vs i/(n-1) 0.442 at f2196 -> a false
+    // "118 m MISMATCH" while every band anchor was passed at <= 0.04 m). Now each row carries the film time the camera was posed at
+    // ([8], from cinema_maxq's pose tap) and the plan is rebuilt at the bake's OWN duration (__maxqPlanDurSec). Position decides;
+    // the target is printed apart because the §57.5 gaze blend moves it on purpose. Rows without [8] (old page) -> INCONCLUSIVE.
+    const chk = await page.evaluate(() => {
+      const A = window.APP, L = window.__maxqPoseLog, ov = window.__maxqResolvedOverride, dur = window.__maxqPlanDurSec;
       if (!L || L.length < 2 || !ov) return { skip: 'no poses or no resolved override' };
-      if (ov.clip) return { skip: 'clip window set — t-mapping not identity, check by hand' };
+      if (!(dur > 0)) return { skip: 'no __maxqPlanDurSec (page predates W1)' };
+      if (L.some(r => r[8] == null)) return { skip: 'pose rows carry no film time (page predates W1)' };
       const cs = window.__maxqCamSave;
       A.camera.position.set(cs.px, cs.py, cs.pz); A.controls.target.set(cs.tx, cs.ty, cs.tz);
       A.camera.lookAt(cs.tx, cs.ty, cs.tz); A.camera.updateMatrixWorld(true); A.controls.update();
-      const n = L[L.length - 1][0] + 1;
-      const planOv = A.cinemaPathPlan(n / fpsUsed, ov);
-      const planDrv = A.cinemaPathPlan(n / fpsUsed, null);
-      let maxErr = 0, sumDrv = 0;
+      const planOv = A.cinemaPathPlan(dur, ov), planDrv = A.cinemaPathPlan(dur, null);
+      let maxPos = 0, maxPosF = -1, maxTgt = 0, sumDrv = 0;
       for (const r of L) {
-        const t = n > 1 ? r[0] / (n - 1) : 0;
-        const p = planOv.poseAt(t), d = planDrv.poseAt(t);
-        maxErr = Math.max(maxErr, Math.hypot(r[1] - p.x, r[2] - p.y, r[3] - p.z),
-                          Math.hypot(r[4] - p.tx, r[5] - p.ty, r[6] - p.tz));
+        const p = planOv.poseAt(r[8]), d = planDrv.poseAt(r[8]);
+        const ep = Math.hypot(r[1] - p.x, r[2] - p.y, r[3] - p.z);
+        if (ep > maxPos) { maxPos = ep; maxPosF = r[0]; }
+        maxTgt = Math.max(maxTgt, Math.hypot(r[4] - p.tx, r[5] - p.ty, r[6] - p.tz));
         sumDrv += Math.hypot(r[1] - d.x, r[2] - d.y, r[3] - d.z);
       }
       const bandDist = (ov.bands || []).map(b => {
@@ -917,19 +966,27 @@ const server = http.createServer((req, res) => {
         for (const r of L) m = Math.min(m, Math.hypot(r[1] - b.c.x, r[2] - b.c.y, r[3] - b.c.z));
         return +m.toFixed(2);
       });
-      return { n, maxErrM: +maxErr.toFixed(4), rmsVsDerivedM: +(sumDrv / L.length).toFixed(2), bandDist };
-    }, FPS || 15).catch(e => ({ skip: 'check threw: ' + e.message }));
+      return { n: L.length, dur: +dur.toFixed(2), maxErrM: +maxPos.toFixed(4), worstF: maxPosF, maxTgtM: +maxTgt.toFixed(3),
+               rmsVsDerivedM: +(sumDrv / L.length).toFixed(2), bandDist };
+    }).catch(e => ({ skip: 'check threw: ' + e.message }));
     if (chk.skip) log('§CLI_BAKE_POSECHECK INCONCLUSIVE ' + chk.skip);
     else {
       const pass = chk.maxErrM < 0.05;
       const differs = chk.rmsVsDerivedM > 1.0;
-      log(`§CLI_BAKE_POSECHECK frames=${chk.n} maxErrVsOverridePlanM=${chk.maxErrM} (${pass ? 'MATCH' : '⚠ MISMATCH'})` +
+      log(`§CLI_BAKE_POSECHECK frames=${chk.n} ref=filmT planDurSec=${chk.dur} maxPosErrVsOverridePlanM=${chk.maxErrM} worstF=${chk.worstF} (${pass ? 'MATCH' : '⚠ MISMATCH'})` +
+          ` maxTargetErrM=${chk.maxTgtM} (info: §57.5 gaze blend moves the target by design)` +
           ` meanDistVsDerivedPlanM=${chk.rmsVsDerivedM} (${differs ? 'differs — the stored path, not the derived one' : '⚠ INDISTINGUISHABLE from derived — inconclusive discriminator'})` +
           ` bandAnchorMinDistM=[${chk.bandDist.join(',')}]`);
     }
   }
   const heapMB = S.heap.map(x => x / 1048576);
   if (heapMB.length) log(`§CLI_BAKE_HEAP samples=${heapMB.length} minMB=${Math.min(...heapMB).toFixed(0)} maxMB=${Math.max(...heapMB).toFixed(0)} lastMB=${heapMB[heapMB.length - 1].toFixed(0)}`);
+  {
+    const mx = k => { const v = _memRows.map(r => r[k]).filter(x => x != null); return v.length ? Math.max(...v).toFixed(0) : 'n/a'; };
+    log(_memRows.length
+      ? `§CLI_BAKE_MEM samples=${_memRows.length} max cdpHeapMB=${mx('cdp')} perfMemMB=${mx('perf')} chromeRssMB=${mx('rss')} gpuUsedMB=${mx('gpu')} (chromeRss = sum over the process tree, shared pages counted per process = an upper bound; gpu = whole card, incl. other apps)`
+      : '§CLI_BAKE_MEM INCONCLUSIVE — no memory sample was taken (bake shorter than 20 s?)');
+  }
 
   // the file, examined numerically — a zero-byte "success" is the guarded failure
   let fileOk = false;
@@ -962,6 +1019,18 @@ const server = http.createServer((req, res) => {
       log(`§CLAIM_SUPPRESSED §${k} fired ${lines.length}x — ${lines.length - CLAIM_CAP - 1} identical-tag lines omitted, last one follows`);
       log('§CLAIM ' + lines[lines.length - 1].slice(0, 1400));
     }
+  }
+  // §PREBAKE (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): --write-prebake saves what THIS bake computed (load-path shot,
+  // window sides) to <root>/buildings/patches/<db>.prebake.json — the next bake of the same db reads it (scene.js A._loadPrebake).
+  // Only computed parts are written (a sidecar-sourced result is never re-recorded); nothing computed = no file touched.
+  if (has('write-prebake')) {
+    try {
+      const j = await page.evaluate(() => (window.APP && window.APP._prebakeRecord) ? window.APP._prebakeRecord() : null);
+      const dbFile = DB.includes('/') ? path.basename(DB) : DB + '.db';
+      const outPb = path.join(ROOT, 'buildings', 'patches', dbFile + '.prebake.json');
+      if (j) { fs.mkdirSync(path.dirname(outPb), { recursive: true }); fs.writeFileSync(outPb, j); log(`§PREBAKE_WRITE ${outPb} bytes=${Buffer.byteLength(j)} parts=${Object.keys(JSON.parse(j)).filter(k => k !== 'v' && k !== 'created').join(',')}`); }
+      else log('§PREBAKE_WRITE skipped (nothing computed this bake — already served from a sidecar, or the steps did not run)');
+    } catch (e) { log('§PREBAKE_WRITE failed ' + (e && e.message)); }
   }
   log(`§CLI_BAKE_WALL totalSec=${((Date.now() - t0) / 1000).toFixed(0)} aborted=${aborted || 'no'} fileOk=${fileOk}`);
 

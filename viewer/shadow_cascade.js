@@ -92,7 +92,12 @@
     CSM[0] = on ? 1 : 0; CSM[1] = used; CSM[2] = sunSlot; CSM[3] = blend;
     for (var i = 0; i < 4; i++) { IDX[i] = (slots[i] == null) ? -1 : slots[i]; NEAR[i] = near[i] || 0; FAR[i] = far[i] || 0; }
   }
+  // §SHADOW_WIDE_OTHER_CAMERA (2026-10-03): renders from another camera (mirror tiles, the §GLASS_ENV cube) see what the cascades were
+  // never fitted for; suspend() turns the cascade pick off (three's own lookup per light) and resume() puts it back exactly.
+  var held = null;
+  function suspend() { if (held || CSM[0] < 0.5) return false; held = { c: Array.from(CSM) }; CSM[0] = 0; return true; }
+  function resume() { if (!held) return; CSM[0] = held.c[0]; held = null; }
   function off() { CSM[0] = 0; CSM[1] = 0; CSM[2] = -1; for (var i = 0; i < 4; i++) { IDX[i] = -1; NEAR[i] = 0; FAR[i] = 0; } }
-  global.ShadowCascade = { install: install, installed: function () { return installed; }, set: set, off: off,
+  global.ShadowCascade = { install: install, installed: function () { return installed; }, set: set, off: off, suspend: suspend, resume: resume,
     state: function () { return { csm: Array.from(CSM), idx: Array.from(IDX), near: Array.from(NEAR), far: Array.from(FAR) }; } };
 })(typeof window !== 'undefined' ? window : this);

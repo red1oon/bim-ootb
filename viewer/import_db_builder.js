@@ -68,9 +68,19 @@ function buildImportDBs(SQL, data) {
   var stmtEl = db.prepare('INSERT OR IGNORE INTO elements_meta VALUES (?,?,?,?,?,?,?,?)');
   for (var i = 0; i < data.elements.length; i++) {
     var el = data.elements[i];
-    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, null, el.material, buildingName]);
+    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, el.matName || null, el.material, buildingName]);   // §IFC_SURFACE_NAMES: was null
   }
   stmtEl.free();
+  // §IFC_SURFACE_NAMES: one row per placed geometry (part) — the authored surface style + its colour + triangle count, so a door's
+  // 'Door - Frame' and 'Door - Panel' stay distinct facts even while the mesh is merged per element.
+  db.run('CREATE TABLE IF NOT EXISTS element_surfaces (guid TEXT, part INTEGER, style_name TEXT, rgba TEXT, tri_count INTEGER, PRIMARY KEY (guid, part))');
+  var stmtSf = db.prepare('INSERT OR IGNORE INTO element_surfaces VALUES (?,?,?,?,?)'), _sfN = 0;
+  for (var si = 0; si < data.elements.length; si++) {
+    var sp = data.elements[si].surfParts; if (!sp) continue;
+    for (var pi = 0; pi < sp.length; pi++) { stmtSf.run([data.elements[si].guid, pi, sp[pi].style, sp[pi].rgba, sp[pi].tris]); _sfN++; }
+  }
+  stmtSf.free();
+  console.log('§IFC_SURFACE_NAMES_DB element_surfaces rows=' + _sfN + ' material_name set=' + data.elements.filter(function (e) { return !!e.matName; }).length + '/' + data.elements.length);
 
   var stmtTr = db.prepare('INSERT OR IGNORE INTO element_transforms VALUES (?,?,?,?,?,?,?,?,?,?)');
   for (var i = 0; i < data.transforms.length; i++) {

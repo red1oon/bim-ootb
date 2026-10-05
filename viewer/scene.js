@@ -122,15 +122,16 @@ async function setupScene(A) {
   // §S260: shadow setup deferred entirely to toggleShadow() in tools.js
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const LLS = window.LightLaw.SCENE;   // §LIGHT_LAW_MODULE: scene source values + tone curve from light_law.js
+  renderer.toneMapping = window.LightLaw.toneConst(THREE);
   // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
   // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
   // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
   // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
   // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
   // how bloom, ember and the 48-light budget are all still-only.
-  renderer.toneMappingExposure = 0.45;
-  console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
+  renderer.toneMappingExposure = LLS.exposure;
+  console.log('§TONEMAPPING type=' + LLS.toneMapping + ' exposure=' + LLS.exposure);
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display
   // §S276: r184 uses physically-correct lights by default (useLegacyLights removed in r165).
@@ -206,17 +207,17 @@ async function setupScene(A) {
   // >= 0.55) binds first at k=0.491 — declared conflict, clamped at the floor: achieved
   // contrast 0.255. One k scales both lights jointly to preserve the colour balance; sun and
   // envMapIntensity untouched. Witness: witness_wall_side_light_floor.js (§WWSLF_DERIVE line).
-  const ambient = new THREE.AmbientLight(0xffffff, 0.386);
+  const ambient = new THREE.AmbientLight(LLS.ambient.color, LLS.ambient.intensity);
   scene.add(ambient);
   A.ambient = ambient;
 
-  const sun = new THREE.DirectionalLight(0xfff0dd, 4.4);
+  const sun = new THREE.DirectionalLight(LLS.sun.color, LLS.sun.intensity);
   sun.position.set(200, 400, 300);
   sun.castShadow = false;
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 0.617);
+  const hemi = new THREE.HemisphereLight(LLS.hemi.sky, LLS.hemi.ground, LLS.hemi.intensity);
   scene.add(hemi);
   A.hemi = hemi;
 
@@ -871,6 +872,27 @@ async function setupScene(A) {
   // Terminal/JKR/Clinic but 166.8 s for LTU_AHouse_extracted — a three-minute stall inside Ctrl+S.
   // Offline patch generation costs the user nothing and makes the raster a property of the building
   // rather than of whoever last saved it.
+  // §LIGHT_FIELD_DB (light_zones.js SPEC S1/S5, red1 2026-09-29 "put it as part of the one time DB save"): the Alt+S light-zone
+  // field (zone grid + sky field + ground field + the Z26 glass table), gzip-packed by LightZones.dbPack (awaited in saveModelDb,
+  // the export here is synchronous) — the same choke point and the same viewer-authored-derived-data pattern as the three tables
+  // above. No field in memory => skipped and logged, never built here (Hospital: 16 s shell + 67 s glass). A row carried in from
+  // the source file is kept only while its key (light_zones.js code hash) is current, else dropped: a stale row is never re-shipped.
+  function _writeLightFieldTable(db) {
+    var LZ = window.LightZones, rec = (LZ && LZ.dbRecord) ? LZ.dbRecord(true) : null, cur = (LZ && LZ.cacheKey) ? LZ.cacheKey() : null;
+    try {
+      if (!rec) {
+        var row = null; try { var r0 = db.exec("SELECT key, bytes FROM light_field_cache LIMIT 1"); row = r0 && r0[0] && r0[0].values[0]; } catch (eR) {}
+        if (row && row[0] === cur) { console.log('§LIGHT_FIELD_DB save kept existing row key=' + row[0] + ' bytes=' + row[1] + ' (nothing newer in memory)'); return; }
+        if (row) { db.run("DROP TABLE IF EXISTS light_field_cache"); console.log('§LIGHT_FIELD_DB save dropped stale row key=' + row[0] + ' now=' + cur); return; }
+        console.log('§LIGHT_FIELD_DB save skipped reason=no-field-in-memory (press Alt+S once before saving; the save never builds it)'); return;
+      }
+      db.run("DROP TABLE IF EXISTS light_field_cache");
+      db.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+      var stmt = db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)");
+      stmt.run([rec.key, rec.bld, rec.fp, rec.bytes, rec.rawBytes, rec.blob, rec.created]); stmt.free();
+      console.log('§LIGHT_FIELD_DB save key=' + rec.key + ' bld=' + rec.bld + ' bytes=' + rec.bytes + ' raw=' + rec.rawBytes + ' src=' + rec.src + ' packMs=' + rec.packMs + ' gzipMs=' + rec.gzipMs + ' created=' + rec.created);
+    } catch (e) { console.warn('§LIGHT_FIELD_DB_SAVE_FAIL ' + e.message); }
+  }
   // §MESH_SLIM save: a civil model drops its stored normals (derived on load, fleet format) and compacts, so the
   // saved file — and every reload/IDB copy of it — is light. Fleet / building DBs: isCivilModel() false → untouched.
   function _meshSlim(db) {
@@ -893,6 +915,7 @@ async function setupScene(A) {
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
       _writeSceneStateTable(A.db);
+      _writeLightFieldTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -921,6 +944,7 @@ async function setupScene(A) {
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
     _writeSceneStateTable(mono);
+    _writeLightFieldTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -930,6 +954,8 @@ async function setupScene(A) {
     if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
     var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
     var bytes;
+    // §LIGHT_FIELD_DB S5: pack + gzip the light field first (async, ~1-2 s on Hospital); _exportBuildingDb writes it synchronously
+    if (window.LightZones && window.LightZones.dbPack) { try { await window.LightZones.dbPack(A); } catch (eLF) { console.warn('§LIGHT_FIELD_DB pack failed: ' + eLF.message); } }
     try { bytes = A._exportBuildingDb(); }
     catch (e) { if (A.status) A.status.textContent = 'Save failed: ' + e.message; console.log('§SAVE_ERR ' + e.message); return; }
     if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
@@ -1848,6 +1874,81 @@ async function setupScene(A) {
     return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
   };
 
+  // §LIGHT_FIELD_PATCH (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-09-29 "can the initial glass data be injected into the DB
+  // ... so my own testing will be faster"): the §LIGHT_FIELD_DB row (light_field_cache: zone grid + sky / ground field + Z26 glass
+  // table, gzip) ships as an optional BINARY sidecar patches/<db>.lightfield.bin, baked headless per light-code version (its key is
+  // the light_zones.js hash; primeDb ignores a stale row). Format 'LFP1' + u32 header length + JSON header {key,bld,fp,bytes,
+  // raw_bytes,created} + the gzip blob, inserted with a prepared statement: derived data, not a hand-written SQL patch (a multi-MB
+  // hex literal is what the bundled sql-wasm cannot take, and SQLite || turns blobs into text). 404 = nothing to add (logged).
+  A._applyLightFieldPatch = async function(buf, dir, dbFile) {
+    var u = dir + 'patches/' + dbFile + '.lightfield.bin';
+    try { var r = await fetch(u); if (!r.ok) { console.log('§LIGHT_FIELD_PATCH none ' + dbFile + ' (' + r.status + ')'); return buf; }
+      var ab = await r.arrayBuffer(), dv = new DataView(ab), SQLF = A._SQL || window.SQL || window._SQL_CACHED;
+      if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' bad magic'); return buf; }
+      if (!SQLF) { console.warn('§LIGHT_FIELD_PATCH_FAIL sql.js factory not loaded'); return buf; }
+      var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
+      if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' blob ' + blob.byteLength + ' != header ' + H.bytes); return buf; }
+      var t0 = performance.now(), pdb = new SQLF.Database(new Uint8Array(buf));
+      pdb.run("DROP TABLE IF EXISTS light_field_cache"); pdb.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+      var st = pdb.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
+      var out = pdb.export().buffer; pdb.close();
+      console.log('§LIGHT_FIELD_PATCH applied ' + dbFile + ' key=' + H.key + ' bytes=' + H.bytes + ' raw=' + H.raw_bytes + ' created=' + H.created + ' ms=' + Math.round(performance.now() - t0) + ' from ' + u); return out;
+    } catch (e) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' — ' + (e && e.message)); return buf; }
+  };
+  // §FILM_FIELD_BY_BUILDING (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT"): a film opens its PATH db (HospitalAjaibPath.db,
+  // Hospital_silent.db) — that file name has no sidecar, the baked field is keyed on the building's own db (patches/Hospital_meta.db
+  // .lightfield.bin). §POC_BAKE measured §LIGHT_FIELD_PATCH none (404) + §LIGHT_FIELD_DB skip reason=no-table on the film. So, when the
+  // opened db has no light_field_cache row, look the sidecar up by BUILDING (A.activeBuilding) and put the row into the live A.db
+  // before LightZones.primeDb reads it. Same LFP1 container as _applyLightFieldPatch; light_zones.js still checks key (its code hash)
+  // and fp (geometry) — a sidecar for other geometry is rejected there and the build runs as before. light_zones.js is NOT edited
+  // (an edit re-keys every baked sidecar).
+  // §PREBAKE (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): pure-data setup results cached per db in
+  // patches/<db>.prebake.json (load-path shot PB1, window sides PB2). Loaded once, never blocks; each consumer checks its own key
+  // and falls back to computing. A._prebakeOut collects what this session COMPUTED (cli_silent_bake.js --write-prebake saves it).
+  A._prebakeFnv = function (str) { var h = 0x811c9dc5; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + str.length; };
+  A._prebake = null; A._prebakeOut = {};
+  A._loadPrebake = async function() {
+    var t0 = performance.now();
+    try {
+      if (/[?&]prebake=0/.test(location.search)) { console.log('§PREBAKE sidecar ignored (&prebake=0)'); return; }
+      var url = A.DB_URL || ''; if (!url) { console.log('§PREBAKE sidecar skip (no DB_URL)'); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0], u = dir + 'patches/' + own + '.prebake.json';
+      var r = await fetch(u); if (!r.ok) { console.log('§PREBAKE sidecar none ' + own + ' (' + r.status + ')'); return; }
+      var j = await r.json();
+      if (!j || j.v !== 1 || typeof j !== 'object') { console.warn('§PREBAKE sidecar bad format ' + u); return; }
+      A._prebake = j;
+      console.log('§PREBAKE sidecar loaded ' + own + ' parts=[' + Object.keys(j).filter(function (k) { return k !== 'v' && k !== 'created'; }).join(',') + '] created=' + j.created + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { A._prebake = null; console.warn('§PREBAKE sidecar failed ' + (e && e.message) + ' — computing as usual'); }
+  };
+  // merged with the loaded sidecar: parts served from it are kept, parts computed this session replace theirs (never drop a part)
+  A._prebakeRecord = function () { var o = { v: 1, created: new Date().toISOString() }, n = 0;
+    if (A._prebake) Object.keys(A._prebake).forEach(function (k) { if (k !== 'v' && k !== 'created') o[k] = A._prebake[k]; });
+    Object.keys(A._prebakeOut || {}).forEach(function (k) { o[k] = A._prebakeOut[k]; n++; }); return n ? JSON.stringify(o) : null; };
+  A._lightFieldByBuilding = async function() {
+    var t0 = performance.now();
+    try {
+      if (!A.db) return;
+      var has = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'");
+      if (has && has[0] && has[0].values.length) return;
+      for (var w = 0; !A.activeBuilding && w < 40; w++) await new Promise(function (r) { setTimeout(r, 250); });
+      var bld = A.activeBuilding, url = A.DB_URL || '';
+      if (!bld || !url) { console.log('§LIGHT_FIELD_BY_BUILDING skip bld=' + bld + ' url=' + (url ? 'yes' : 'none')); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var names = [bld + '_meta.db', bld + '_extracted.db'].filter(function (n) { return n !== own; });
+      for (var i = 0; i < names.length; i++) {
+        var u = dir + 'patches/' + names[i] + '.lightfield.bin', r = await fetch(u); if (!r.ok) continue;
+        var ab = await r.arrayBuffer(), dv = new DataView(ab);
+        if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_BY_BUILDING bad magic ' + u); continue; }
+        var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
+        if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_BY_BUILDING blob ' + blob.byteLength + ' != header ' + H.bytes); continue; }
+        A.db.run("CREATE TABLE IF NOT EXISTS light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+        var st = A.db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
+        console.log('§LIGHT_FIELD_BY_BUILDING found bld=' + bld + ' opened=' + own + ' sidecar=' + names[i] + ' key=' + H.key + ' bytes=' + H.bytes + ' ms=' + Math.round(performance.now() - t0) + ' (row put into the live db; LightZones.primeDb checks key + fp)');
+        return;
+      }
+      console.log('§LIGHT_FIELD_BY_BUILDING none bld=' + bld + ' opened=' + own + ' tried=' + names.join(',') + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { console.warn('§LIGHT_FIELD_BY_BUILDING failed ' + (e && e.message)); }
+  };
   // §PATCH_QTO (prompts/FIND_ASK_ANSWERS.md §K.1) — the main <db>.sql patch is applied exactly as
   // before; THEN an optional, separately-owned <db>.qto.sql (the building's own cost rows, copied from
   // its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent: a missing main
@@ -1886,7 +1987,7 @@ async function setupScene(A) {
       console.log('§DB_LOAD_STEP patch-fetch ' + patchUrl);
       var r = await fetch(patchUrl);
       console.log('§DB_LOAD_STEP patch-response status=' + r.status);
-      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return buf; }
+      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return A._applyLightFieldPatch(buf, dir, dbFile); }
       var sql = await r.text();
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
@@ -1895,7 +1996,7 @@ async function setupScene(A) {
       var out = pdb.export().buffer;
       pdb.close();
       console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${_ch.statements} statements, ${_ch.chunks} chunk(s)) from ${patchUrl}`);
-      return out;
+      return A._applyLightFieldPatch(out, dir, dbFile);
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
       return buf;
@@ -2028,7 +2129,16 @@ async function setupScene(A) {
   };
 
   // BLOB → Three.js BufferGeometry (optional precomputed normals BLOB)
-  A.blobToGeometry = function(vBlob, fBlob, nBlob) {
+  // §WIND_FLIP baked table (patch SQL geometry_wind_flip, rule-checked): hash -> flipped-edge count; null = absent / other rule
+  A._windTableGet = function() {
+    if (A._windTable !== undefined) return A._windTable; A._windTable = null;
+    try { var R = window.WindFlip && A.db && A.db.exec("SELECT geometry_hash, conflict_edges, rule FROM geometry_wind_flip");
+      if (R && R[0]) { var m = new Map(), ok = false; R[0].values.forEach(function (r) { if (r[0] === '__census__') ok = (r[2] === window.WindFlip.RULE); else m.set(r[0], r[1]); });
+        if (ok) A._windTable = m; console.log('§WIND_FLIP table ' + (ok ? 'used rows=' + m.size : 'IGNORED (rule mismatch or no census row)')); }
+    } catch (e) { /* no table: live count */ }
+    return A._windTable;
+  };
+  A.blobToGeometry = function(vBlob, fBlob, nBlob, knownFlip) {
     try {
       const vArr = new Float32Array(vBlob.buffer, vBlob.byteOffset, vBlob.byteLength / 4);
       const fArr = new Uint32Array(fBlob.buffer, fBlob.byteOffset, fBlob.byteLength / 4);
@@ -2056,6 +2166,17 @@ async function setupScene(A) {
         for (var _fi = 0; _fi < fArr.length; _fi++) _fIdx[_fi] = fArr[_fi];
       }
       geo.setIndex(new THREE.BufferAttribute(_fIdx, 1));
+      // §WIND_FLIP (bim-compiler PHOTOREAL_STILL_RENDER.md "§WIND_FLIP — SPEC", 2026-10-02): flipped-winding edges per geometry
+      // (rule in wind_flip.js). MEASURED: Clinic 748 / 3,126 FRONT_SIDE-class elements carry them (the 92 mm partitions: one face
+      // wound like the other -> culled from one side, the wall invisible; red1 …881490077), Hospital 3 / 37,249. streaming.js gives a
+      // bucket holding one DoubleSide. knownFlip = the baked geometry_wind_flip value (patch SQL) -> no live count.
+      if (A && A._windFlip !== false && !/[?&]windflip=0/.test(location.search)) {
+        A._windStat = A._windStat || { geos: 0, flagged: 0, edges: 0, ms: 0, baked: 0 };
+        var _wf;
+        if (knownFlip != null) { _wf = knownFlip; A._windStat.baked++; }
+        else if (window.WindFlip) { var _wt0 = performance.now(); _wf = window.WindFlip.count(positions, fArr); A._windStat.ms += performance.now() - _wt0; }
+        if (_wf != null) { geo.userData.windFlip = _wf; A._windStat.geos++; if (_wf) { A._windStat.flagged++; A._windStat.edges += _wf; } }
+      }
       if (nBlob && nBlob.byteLength >= 12) {
         // Precomputed normals — apply same Y↔Z swap as positions
         const nArr = new Float32Array(nBlob.buffer, nBlob.byteOffset, nBlob.byteLength / 4);

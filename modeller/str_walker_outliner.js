@@ -258,7 +258,7 @@
     if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
-      s.src = '../viewer/import_db_builder.js?v=6';
+      s.src = '../viewer/import_db_builder.js?v=7';
       s.onload = function () { _ifcEngineLoaded = true; resolve(); };
       s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
       document.head.appendChild(s);
@@ -289,7 +289,7 @@
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
     Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
       var arrayBuffer = r[0], wasmBytes = r[1];
-      var worker = new Worker(new URL('../viewer/import_worker.js?v=14', location.href).href);
+      var worker = new Worker(new URL('../viewer/import_worker.js?v=15', location.href).href);
       worker.onmessage = function (e) {
         var msg = e.data;
         if (msg.type === 'progress') { console.log(TAG + ' §IFC-OPEN-PROGRESS ' + msg.phase); return; }

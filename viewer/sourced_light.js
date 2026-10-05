@@ -9,6 +9,9 @@
 // uSLParams.x = 0 (nav, and every page until an Alt+S stages it) slPass() returns 1: the picture is unchanged.
 // &sourced=0 skips the install entirely (today's shaders, for red1's A/B).
 (function (global) {
+  // §LIGHT_LAW_MODULE: the chain's values + formulas (calibration, meter, cove levels) come from light_law.js (one source).
+  var LL = global.LightLaw;
+  if (!LL) console.warn('§LIGHT_LAW MISSING light_law.js not loaded before sourced_light.js — the calibrated terms will throw');
   var MAX_PL = 256, MAX_SL = 64, SOLID = 65535, OUTSIDE = 65534;   // OUTSIDE: a light (or fragment) off the building's zones
   var orig = null, linkFailed = false, glErrFirstFrame = false;
   var installed = false, active = false, prevOBR = null, tex = null, dummy = null, texKey = null, lastLog = '';
@@ -46,6 +49,7 @@
     '#if NUM_POINT_LIGHTS > 0', 'uniform vec4 uSLPZ[ ( NUM_POINT_LIGHTS + 3 ) / 4 ];', '#endif',
     '#if NUM_SPOT_LIGHTS > 0', 'uniform vec4 uSLSZ[ ( NUM_SPOT_LIGHTS + 3 ) / 4 ];', '#endif',
     // the fragment's zone, set ONCE by the line §SOURCED_LIGHT_LINK inserts into lights_fragment_begin; -1 = unknown (lit as today)
+    'uniform vec4 uSLFs;',   // §FLOOR_F_SMOOTH: x = on
     'float _slFZ = -1.0;',
     // the fragment's sky class, set with _slFZ: 1 = sees the sky (open cell / sky-lit covered cell / off grid), 0 = covered or unknown
     'float _slSky = 1.0;',
@@ -68,6 +72,9 @@
     'vec3 slOctDec( uint g ) { vec2 e = vec2( float( g & 255u ), float( ( g >> 8u ) & 255u ) ) / 255.0 * 2.0 - 1.0; vec3 v = vec3( e.x, 1.0 - abs( e.x ) - abs( e.y ), e.y );',
     '  float t = max( - v.y, 0.0 ); v.x += ( v.x >= 0.0 ) ? - t : t; v.z += ( v.z >= 0.0 ) ? - t : t; return normalize( v ); }',
     'vec3 _slWP = vec3( 0.0 );',
+    'uniform vec4 uSLIrP; uniform highp sampler2D uSLIr;',   // §IRC_MAX v2: per-zone interreflected irradiance (lamps + daylight), x = on, y = scale   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
+    'uniform vec4 uSLGOP; uniform highp usampler2D uSLGO;',   // §GLASS_REFL_OPEN (Z26): x = on, y = &glassblock=0 (a hit sample reads 0); the RGBA32UI cell-table + side-slot texture (light_zones.js glassOpenPass)
+    'vec3 _slIrB = vec3( -1.0 );',   // §ZERO Z18 &gridblend=1: the fragment's IR blended across zones by the field stencil (x < 0 = not blended: per-zone value)
     'float _slLN = -1.0; float _slLNP = 0.0;',   // §LAMP_UNCAPPED_COST readback: the fragment's list length / lamps passing the zone test
     // raw cell: -1 off grid, 65535 solid, 0 outside, 1.. zone
     'float slZoneAt( vec3 w ) {',
@@ -89,13 +96,27 @@
     '  ivec3 c0 = ivec3( floor( ( wp + wn * 0.25 - uSLOrg.xyz ) / uSLParams.y ) ); ivec3 dim = ivec3( uSLDim.xyz );',
     '  if ( any( lessThan( c0, ivec3( 0 ) ) ) || any( greaterThanEqual( c0, dim ) ) ) { _slSky = 1.0; return 65534.0; }',
     '  float best = 1e30; uint bt = 65535u; uint bg = 0u; ivec3 bcc = c0;',
+    // §ZONE_EYE (uSLOrg.w = 1; bim-compiler PHOTOREAL_STILL_RENDER.md "§ZONE_EYE — SPEC"): the room of a VISIBLE surface point is the
+    // room the eye ray reached it through — step back from wp toward the camera 0.25 m at a time (12 steps, 3 m: a view down past a 0.5 m-fattened partition stays solid for > 1.5 m, measured): the first
+    // non-solid cell wins. The eye ray cannot have crossed a partition to reach the point, so a floor strip beside a thin
+    // (0.5 m-fattened) partition keeps its own room instead of the nearest cell on the far side (Clinic toilet corner bands,
+    // TERMINAL_CORNER, Castle speckle). Nothing found in 1.5 m (grazing view along a wall) -> the nearest-cell rule below.
+    '  if ( uSLOrg.w > 0.5 ) { vec3 te = normalize( ( vi * vec4( - posView, 0.0 ) ).xyz );',
+    '    for ( int s = 1; s <= 12; s ++ ) { ivec3 c = ivec3( floor( ( wp + te * ( 0.25 * float( s ) ) - uSLOrg.xyz ) / uSLParams.y ) );',
+    '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) break;',
+    // §ZONE_EYE_SKIP_OPEN (red1 2026-10-02 HHS …878367234 patches): the walk now steps PAST open-to-sky cells (zone 0) — an atrium's roof
+    // well is not a room. MEASURED: the floor beside HHS's well took zone 0 from the walk, so the atrium's lamps (zone 57) skipped it:
+    // a dark band Lu 43-55 inside the room's own floor (72-75) with a hard step; &zoneeye=0 -> smooth 65-76, floor patchy 43.1 -> 36.7 %.
+    // A walk that meets only open cells falls back to the nearest-cell rule below (outdoor surfaces stay open). &zoneeyeopen=1 = old walk.
+    "      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u && ( ( t2.r & 0x3FFFu ) != 0u || uSLOrg.w > 1.5 ) ) { bt = t2.r; bg = t2.g; bcc = c; break; } } }",
+    '  if ( bt == 65535u ) {',
     '  for ( int dz = -1; dz <= 1; dz ++ ) { for ( int dy = -1; dy <= 1; dy ++ ) { for ( int dx = -1; dx <= 1; dx ++ ) {',
     '    ivec3 c = c0 + ivec3( dx, dy, dz );',
     '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; uint t = t2.r; if ( t == 65535u ) continue;',
     '    vec3 e = uSLOrg.xyz + ( vec3( c ) + 0.5 ) * uSLParams.y - wp; if ( dot( e, wn ) <= 0.0 ) continue;',
     '    float l = dot( e, e ); if ( l < best ) { best = l; bt = t; bg = t2.g; bcc = c; }',
-    '  } } }',
+    '  } } } }',
     '  if ( bt == 65535u ) { bt = 0u; bg = 0u; for ( int j = 1; j < 4096; j ++ ) { ivec3 c = c0 + ivec3( 0, j, 0 ); if ( c.y >= dim.y ) break;',
     '    uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r != 65535u ) { bt = t2.r; bg = t2.g; bcc = c; break; } if ( c.y == dim.y - 1 ) bt = 65535u; } }',
     '  if ( bt == 65535u ) { _slSky = 0.0; _slF = 0.0; _slGd = 0.0; return -1.0; }',
@@ -107,27 +128,81 @@
     // one solid cell still separates: the stencil reaches at most half a cell past the surface
     '  _slF = 1.0; _slCove = 0.0;',
     '  if ( uSLSky.x > 0.5 || uSLCoveP.w > 0.5 ) {',   // §COVE_LIGHT rides the same stencil (a cove without the sky field, &skyfield=0, still reads)
-    '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0, sg = 0.0; bool gv = uSLSky.y > 0.5; bool cv = uSLCoveP.w > 0.5; vec3 sc = vec3( 0.0 ); float su = 0.0;',
+    '    vec3 g = ( wp + wn * 0.5 * uSLParams.y - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float sw = 0.0, sf = 0.0, sg = 0.0; bool gv = uSLSky.y > 0.5; bool cv = uSLCoveP.w > 0.5; vec3 sc = vec3( 0.0 ); float su = 0.0; bool bl = uSLSky.z > 0.5 && uSLIrP.x > 0.5; vec3 sir = vec3( 0.0 );',
     '    for ( int o = 0; o < 8; o ++ ) { ivec3 d = ivec3( o & 1, ( o >> 1 ) & 1, ( o >> 2 ) & 1 ); ivec3 c = b + d;',
     '      if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
-    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( z != 0u && tz != z && tz != 0u ) continue;',
+    // §ZERO Z18 (&gridblend=1 = uSLSky.z; PHOTOREAL_STILL_RENDER.md Z18 + audit C causes 3/4): texels of ANOTHER zone are kept
+    // (SOLID still rejected) so F / Gd / IR blend continuously across a zone boundary instead of stepping on the 0.5 m cell outline;
+    // the cove stays own-zone (it fades to 0 across the half cell instead of leaking); IR is the same stencil over per-zone IR
+    '      uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; bool own = !( z != 0u && tz != z && tz != 0u ); if ( !own && uSLSky.z < 0.5 ) continue;',
     '      vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z; sw += w; sf += w * float( t2.g ) / 10000.0;',
+    '      if ( bl && tz != 0u ) { int zi = int( tz ); sir += w * texelFetch( uSLIr, ivec2( zi - ( zi / 4096 ) * 4096, zi / 4096 ), 0 ).rgb; }',
     '      if ( gv ) sg += w * float( texelFetch( uSLGround, c, 0 ).r ) / 10000.0;',   // §GROUND_VIEW_FIELD: the same stencil, same weights
-    '      if ( cv ) { uvec4 c4 = texelFetch( uSLCove, c, 0 ); if ( c4.r > 0u ) sc += w * slLog8( c4.r ) * slOctDec( c4.g | ( c4.b << 8u ) ); su += w * slLog8( c4.a ); } }',   // §COVE_LIGHT: both lobes, filtered
+    '      if ( cv && own ) { uvec4 c4 = texelFetch( uSLCove, c, 0 ); if ( c4.r > 0u ) sc += w * slLog8( c4.r ) * slOctDec( c4.g | ( c4.b << 8u ) ); su += w * slLog8( c4.a ); } }',   // §COVE_LIGHT: both lobes, filtered
     '    if ( uSLSky.x > 0.5 ) { _slF = ( sw > 0.0 ) ? sf / sw : float( bg ) / 10000.0;',
     '      if ( gv ) _slGd = ( sw > 0.0 ) ? sg / sw : float( texelFetch( uSLGround, bcc, 0 ).r ) / 10000.0; }',
+    // §FLOOR_F_SMOOTH (red1 2026-10-02 HHS …878367234 "slight patches … if the formula can singularise lighting impact from outside and
+    // inside"; MEASURED: floor patchy 43 % with the field vs 0.3 % with &skyfield=0; 510 of 556 hard floor steps sit inside ONE zone with
+    // the same sky class: neighbour cells' F from the 41-direction lattice jumps under open roof wells). A floor point's real sky view is
+    // an integral over the whole opening above, so it varies smoothly along the floor: upward fragments average F (and Gd) over a
+    // 5 x 5 cell (2.5 m) horizontal neighbourhood at the trilinear layer, Gaussian sigma 1 cell, own-zone non-solid cells only (an
+    // open cell joins only an open fragment — no bright spill from a well into the covered floor beside it). &floorfsmooth=0 = off.
+    '    if ( uSLSky.x > 0.5 && uSLFs.x > 0.5 && wn.y > 0.7 ) { ivec3 cb = ivec3( floor( g + 0.5 ) ); float hw = 0.0, hf = 0.0, hg = 0.0;',
+    '      for ( int dz = -2; dz <= 2; dz ++ ) for ( int dx = -2; dx <= 2; dx ++ ) { ivec3 c = cb + ivec3( dx, 0, dz );',
+    '        if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) continue;',
+    '        uvec2 t2 = texelFetch( uSLZone, c, 0 ).rg; if ( t2.r == 65535u ) continue; uint tz = t2.r & 0x3FFFu; if ( tz != z ) continue;',
+    '        float wgt = exp( - float( dx * dx + dz * dz ) * 0.5 ); hw += wgt; hf += wgt * float( t2.g ) / 10000.0;',
+    '        if ( gv ) hg += wgt * float( texelFetch( uSLGround, c, 0 ).r ) / 10000.0; }',
+    '      if ( hw > 0.5 ) { _slF = hf / hw; if ( gv ) _slGd = hg / hw; } }',
+    '    _slIrB = ( bl && sw > 0.0 ) ? sir / sw : vec3( -1.0 );',   // §ZERO Z18: blended IR (open texels count as IR 0: the outdoor side has no room IR)
     '    if ( cv && sw > 0.0 ) _slCove = max( 0.0, dot( wn, sc / sw ) ) + ( su / sw ) * max( 0.0, - wn.y );',   // Lambert on the eye-facing normal, both lobes; cell-varying, directional
     '  }',
     '  return ( z == 0u ) ? 65534.0 : float( z );',
     '}',
     // a bound light (lz >= 1, OUTSIDE included) reaches only fragments of its own zone; unbound (0) and unknown: as today.
     // posView/nView are kept for the call sites' sake; the zone is the once-computed _slFZ (§SOURCED_LIGHT_LINK)
+    // §LAMP_CONTACT_SHADOW (bim-compiler PHOTOREAL_STILL_RENDER.md): screen-space contact shadow toward the lamps' dominant direction,
+    // marched against the phase-1 depth. uSLCs = (on, length m, thickness m, steps); uSLCsP = projection; uSLCsNF = (near, far).
+    // §FLOOR_CONTACT (contact_floor.js): the share of a uniform overhead source the furniture above an upward-facing floor fragment
+    // hides (exact differential form factor, CPU-built per building). uSLCf = (on, levels, cell m, atlas rows); uSLCfG = (nx, nz,
+    // strength, band m above the level); uSLCfL[i] = (x0, z0, floor y, first row). Returns the visibility 1 - strength x occ.
+    'uniform vec4 uSLCf; uniform vec4 uSLCfG; uniform vec4 uSLCfL[ 4 ]; uniform sampler2D uSLCfT;',
+    // §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns …) in a box around the
+    // camera; uSLDf = (on, strength, voxel m, max distance m); uSLDfO = box origin (world); uSLDfN = voxel counts. Classic distance-field
+    // occlusion along the normal (5 samples, 6 .. 96 cm). Upward floor fragments take the smaller of the floor map and this.
+    'uniform vec4 uSLDf; uniform vec4 uSLDfO; uniform vec4 uSLDfN; uniform highp sampler3D uSLDfT;',
+    'float slDF( vec3 nw ) {',
+    '  if ( uSLDf.x < 0.5 ) return 1.0; vec3 box = uSLDfN.xyz * uSLDf.z; float occ = 0.0; float d = 0.06;',
+    '  for ( int i = 0; i < 5; i ++ ) { vec3 q = ( _slWP + nw * d - uSLDfO.xyz ) / box;',
+    '    if ( any( lessThan( q, vec3( 0.0 ) ) ) || any( greaterThan( q, vec3( 1.0 ) ) ) ) return 1.0;',
+    '    float sd = texture( uSLDfT, q ).r * uSLDf.w; occ += max( 0.0, d - sd ) / d; d *= 2.0; }',
+    '  return 1.0 - uSLDf.y * clamp( occ / 5.0, 0.0, 1.0 );',
+    '}',
+    'float slCF( vec3 nView ) {',
+    '  vec3 nw = normalize( ( vec4( nView, 0.0 ) * viewMatrix ).xyz ); float vo = slDF( nw );',
+    '  if ( uSLCf.x < 0.5 || nw.y < 0.7 ) return vo;',
+    '  for ( int i = 0; i < 4; i ++ ) { if ( float( i ) >= uSLCf.y ) break; vec4 L = uSLCfL[ i ]; float dy = _slWP.y - L.z;',
+    '    if ( dy < -0.05 || dy > uSLCfG.w ) continue; vec2 g = ( _slWP.xz - L.xy ) / uSLCf.z;',
+    '    if ( g.x < 0.0 || g.y < 0.0 || g.x >= uSLCfG.x || g.y >= uSLCfG.y ) continue;',
+    '    return min( vo, 1.0 - uSLCfG.z * texture2D( uSLCfT, vec2( g.x / uSLCfG.x, ( L.w + g.y ) / uSLCf.w ) ).r ); }',
+    '  return vo;',
+    '}',
+    'uniform vec4 uSLCs; uniform sampler2D uSLCsT; uniform mat4 uSLCsP; uniform vec2 uSLCsNF;',
+    'float slContact( vec3 p, vec3 n, vec3 d ) {',
+    '  vec3 o = p + n * 0.02; float occ = 0.0;',
+    '  for ( int i = 1; i <= 32; i ++ ) { if ( float( i ) > uSLCs.w ) break;',
+    '    vec3 q = o + d * ( uSLCs.y * float( i ) / uSLCs.w ); vec4 c = uSLCsP * vec4( q, 1.0 ); vec2 uv = c.xy / c.w * 0.5 + 0.5;',
+    '    if ( any( lessThan( uv, vec2( 0.0 ) ) ) || any( greaterThan( uv, vec2( 1.0 ) ) ) ) break;',
+    '    float dz = texture2D( uSLCsT, uv ).r; float sz = ( uSLCsNF.x * uSLCsNF.y ) / ( ( uSLCsNF.y - uSLCsNF.x ) * dz - uSLCsNF.y );',
+    '    float dd = sz - q.z; if ( dd > 0.01 && dd < uSLCs.z ) { occ = 1.0; break; } }',
+    '  return 1.0 - occ;',
+    '}',
     'float slPass( float lz, vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 || lz < 0.5 ) return 1.0;',
     '  return ( _slFZ < -0.5 || abs( _slFZ - lz ) < 0.5 ) ? 1.0 : 0.0;',
     '}',
     'float _slSpec = -1.0;',
-    'uniform vec4 uSLIrP; uniform highp sampler2D uSLIr;',   // §IRC_MAX v2: per-zone interreflected irradiance (lamps + daylight), x = on, y = scale   // §GLASS_SPEC_GATE readback: the reflection gate slSpecKeep returned
+    'uniform vec4 uSLAo; uniform sampler2D uSLAoT; uniform sampler2D uSLAoTL;',   // §AO_LAMPS_FURNITURE: uSLAoTL = the lamp-only AO (furniture-height radius); = uSLAoT when not built   // §ZERO Z10 AO_INDIRECT: x = on, zw = 1 / drawing-buffer size; uSLAoT = N8AO visibility (r)
     'float slSkyKeep( vec3 posView, vec3 nView ) {',
     '  if ( uSLParams.x < 0.5 ) return 1.0;',
     // sky only where the sampled cell sees it (_slSky, §ZONE_OPEN_SKY). Unknown (-1: a fully solid column above) is a building
@@ -154,12 +229,44 @@
     // surface; leaving the grid or reaching an OPEN cell = it sees the sky (1); a SOLID cell first = as before (slSkyKeep). The
     // first 1 m may cross the surface's own solid cells (a pane rasterises 1-3 cells thick). Indoors the mirror ray meets the
     // room's walls: unchanged. CPU mirror: LightZones.specVis.
+    // §GLASS_REFL_OPEN sample (k, i) of side slot tx: byte v = k * 25 + i of the slot's 75 words (19 texels, linear over the 4096-wide texture)
+    'float slGoVal( int tx, int k, int i ) { int v = k * 25 + i; int w = v >> 2; int t = tx + ( w >> 2 ); uvec4 q4 = texelFetch( uSLGO, ivec2( t & 4095, t >> 12 ), 0 ); uint u = ( ( w & 3 ) == 0 ) ? q4.r : ( ( ( w & 3 ) == 1 ) ? q4.g : ( ( ( w & 3 ) == 2 ) ? q4.b : q4.a ) );',
+    '  uint b = ( u >> uint( ( v & 3 ) * 8 ) ) & 255u; return ( uSLGOP.y > 0.5 && ( b & 128u ) != 0u ) ? 0.0 : float( b & 127u ) / 127.0; }',
     'float slSpecKeep( vec3 posView, vec3 nView, vec3 viewDir ) {',
     '  float base = slSkyKeep( posView, nView ); _slSpec = base;',
     '  if ( uSLParams.x < 0.5 || uSLSky.x < 0.5 || base >= 0.999 || _slFZ < -0.5 ) return base;',
     '  vec3 nf = ( dot( nView, viewDir ) < 0.0 ) ? - nView : nView;',
     '  vec3 rw = normalize( ( vec4( reflect( - viewDir, nf ), 0.0 ) * viewMatrix ).xyz ); vec3 nw = normalize( ( vec4( nf, 0.0 ) * viewMatrix ).xyz );',
     '  float st = 0.5 * uSLParams.y; vec3 q = _slWP + nw * st; ivec3 dim = ivec3( uSLDim.xyz );',
+    // §GLASS_REFL_OPEN (Z26, light_zones.js glassOpenPass): a computed glass cell's G texel = its cell-table index + 1 (SOLID
+    // cells carry no F there). Read the fragment's own cell, then the cell half a cell behind the surface; the cell table (b =
+    // pane axis, r / g = the side+ / side- slot texel, 0xFFFFFFFF = that side keeps the march) must match the eye-facing normal's
+    // dominant axis; then the side by the normal's sign. The slot = 12 azimuth x 25 elevation (7.5 deg) samples, 8 bits each
+    // (bit7 = an opaque hit; uSLGOP.y = &glassblock=0 reads those as 0), bilinear at the reflected direction's (azimuth, elevation)
+    // in the pane frame — exact against the geometry, built once per building. Opaque surfaces (no cell entry) march as before.
+    '  if ( uSLGOP.x > 0.5 ) { vec3 an = abs( nw ); int fax = ( an.x >= an.y && an.x >= an.z ) ? 0 : ( an.y >= an.z ? 1 : 2 ); float ns = ( fax == 0 ) ? nw.x : ( ( fax == 1 ) ? nw.y : nw.z );',
+    '    for ( int gk = 0; gk < 2; gk ++ ) { vec3 gp = ( gk == 0 ) ? _slWP : ( _slWP - nw * st ); ivec3 gc = ivec3( floor( ( gp - uSLOrg.xyz ) / uSLParams.y ) );',
+    '      if ( any( lessThan( gc, ivec3( 0 ) ) ) || any( greaterThanEqual( gc, dim ) ) ) continue; uvec2 tg = texelFetch( uSLZone, gc, 0 ).rg; if ( tg.r != 65535u || tg.g == 0u ) continue;',
+    '      int ci = int( tg.g ) - 1; uvec4 ct = texelFetch( uSLGO, ivec2( ci & 4095, ci >> 12 ), 0 ); if ( int( ct.b ) != fax ) continue; uint sl = ( ns > 0.0 ) ? ct.r : ct.g; if ( sl == 0xFFFFFFFFu ) continue; int tx = int( sl );',
+    '      float e = degrees( asin( clamp( rw.y, -1.0, 1.0 ) ) ); float fAz; int k0; int k1;',
+    '      if ( fax == 1 ) { fAz = degrees( atan( rw.z, rw.x ) ) / 30.0; if ( fAz < 0.0 ) fAz += 12.0; if ( fAz >= 12.0 ) fAz -= 12.0; k0 = int( floor( fAz ) ) % 12; k1 = ( k0 + 1 ) % 12; }',
+    '      else { float dn = ( ( fax == 0 ) ? rw.x : rw.z ) * sign( ns ); float tt = ( fax == 0 ) ? rw.z : rw.x; fAz = clamp( ( degrees( atan( tt, dn ) ) + 90.0 ) / 15.0 - 0.5, 0.0, 11.0 ); k0 = int( floor( fAz ) ); k1 = min( k0 + 1, 11 ); }',
+    '      float fEl = clamp( ( e + 90.0 ) / 7.5, 0.0, 24.0 ); int i0 = int( floor( fEl ) ); int i1 = min( i0 + 1, 24 ); float ta = fAz - float( k0 ); float te = fEl - float( i0 );',
+    '      float op = mix( mix( slGoVal( tx, k0, i0 ), slGoVal( tx, k0, i1 ), te ), mix( slGoVal( tx, k1, i0 ), slGoVal( tx, k1, i1 ), te ), ta );',
+    '      _slSpec = base + ( 1.0 - base ) * op; return _slSpec; } }',
+    // §ZERO Z18 §SPEC_SMOOTH (### Z18 DIAGNOSIS: the binary cell test of this march = the floor/duct teeth, ~0.2 m apart, x1.49):
+    // uSLSky.w = 1 (default; &specsmooth=0 = the binary march below) -> each sample reads the 8 texels around q with trilinear
+    // weights: o = weight of OPEN / off-grid texels, s = weight of SOLID texels (ignored for the first 4 samples, as the binary
+    // rule: a pane rasterises 1-3 cells thick). P += T x o (reaches the sky here), T x= 1 - o - s (continues). The gate is
+    // base + (1 - base) x P — continuous in the fragment position (trilinear weights are), = the binary result when every texel agrees.
+    "  if ( uSLSky.w > 0.5 ) { float P = 0.0, Tr = 1.0; vec3 dmf = vec3( dim );",
+    "    for ( int k = 0; k < 32; k ++ ) {",
+    "      vec3 g = ( q - uSLOrg.xyz ) / uSLParams.y - 0.5; ivec3 b = ivec3( floor( g ) ); vec3 f = g - vec3( b ); float o = 0.0, so = 0.0;",
+    "      for ( int n = 0; n < 8; n ++ ) { ivec3 d = ivec3( n & 1, ( n >> 1 ) & 1, ( n >> 2 ) & 1 ); ivec3 cc = b + d; vec3 wv = mix( vec3( 1.0 ) - f, f, vec3( d ) ); float w = wv.x * wv.y * wv.z;",
+    "        if ( any( lessThan( cc, ivec3( 0 ) ) ) || any( greaterThanEqual( cc, dim ) ) ) { o += w; continue; }",
+    "        uint tt = texelFetch( uSLZone, cc, 0 ).r; if ( tt == 65535u ) { if ( k >= 4 ) so += w; } else if ( ( tt & 0x3FFFu ) == 0u ) o += w; }",
+    "      P += Tr * o; Tr *= max( 0.0, 1.0 - o - so ); if ( Tr < 0.004 ) break; q += rw * st; }",
+    "    P = min( P, 1.0 ); _slSpec = base + ( 1.0 - base ) * P; return _slSpec; }",
     '  for ( int k = 0; k < 32; k ++ ) {',
     '    ivec3 c = ivec3( floor( ( q - uSLOrg.xyz ) / uSLParams.y ) );',
     '    if ( any( lessThan( c, ivec3( 0 ) ) ) || any( greaterThanEqual( c, dim ) ) ) { _slSpec = 1.0; return 1.0; }',
@@ -173,6 +280,7 @@
     // §IRC_MAX v2: the fragment's zone interreflected irradiance (4096 zones per texture row); staged zone fragments only
     'vec3 slIr() {',
     '  if ( uSLIrP.x < 0.5 || uSLParams.x < 0.5 || _slFZ < 0.5 || _slFZ > 65533.5 ) return vec3( 0.0 );',
+    '  if ( _slIrB.x >= 0.0 ) return _slIrB * uSLIrP.y;',   // §ZERO Z18 &gridblend=1
     '  int z = int( _slFZ + 0.5 ); return texelFetch( uSLIr, ivec2( z - ( z / 4096 ) * 4096, z / 4096 ), 0 ).rgb * uSLIrP.y;',
     '}',
     // §COVE_LIGHT: the cove irradiance of this fragment (colour in uSLCoveP.rgb, magnitudes already decoded); staged zone fragments only
@@ -184,18 +292,101 @@
     'float slPass( float lz, vec3 posView, vec3 nView ) { return 1.0; }',
     'float slSkyKeep( vec3 posView, vec3 nView ) { return 1.0; }',
     'vec3 slHemi( vec3 sky, vec3 ground, vec3 dir, vec3 posView, vec3 nView ) { return mix( ground, sky, 0.5 * dot( nView, dir ) + 0.5 ); }',   // three's own formula
-    '#endif', ''].join('\n');
+    '#endif',
+    // §MIRROR_OWN_MAT (bim-compiler PHOTOREAL_STILL_RENDER.md §MIRROR_OWN_MAT): a mirror's env IS the per-still room capture (staged light
+    // already in it), so its IBL radiance skips the sky-view gate; every other material keeps slSpecKeep
+    'float slMirK( vec3 posView, vec3 nView, vec3 viewDir ) {', '#ifdef SL_MIRROR', '  return 1.0;', '#else', '  return slSpecKeep( posView, nView, viewDir );', '#endif', '}', ''].join('\n');
   // §SOURCED_LIGHT_LINK: the one slFragZone call per fragment, before three's light loops (geometryPosition/geometryNormal
   // are declared at the top of lights_fragment_begin). Staged (x) or zone-debug (w) only: nav pays nothing.
   var ONCE = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
     '_slFZ = ( uSLParams.x > 0.5 || uSLParams.w > 0.5 ) ? slFragZone( geometryPosition, geometryNormal ) : -1.0;\n#endif\n';
 
+  // ══ §ZERO Z10 — AO = visibility of INDIRECT light (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z10 SPEC", option A) ══
+  // three's own aoMap maths (indirect diffuse x AO; Lagarde specular occlusion on indirect specular, STANDARD + envmap), fed by a
+  // screen-space AO texture (N8AO, world radius) instead of a UV map. Appended AFTER the original chunk (untouched), gated by
+  // uSLAo.x (0 everywhere except the still's second TAA phase), lit materials only. Direct light (RE_Direct) is never touched.
+  var AOP = new Float32Array(4), dAo = null, aoPatched = false;
+  AOP[1] = /[?&]aolamps=0/.test((typeof location !== 'undefined' && location.search) || '') ? 0 : 1;   // §AO_LAMPS A/B switch: y = AO on the lamps' direct light (&aolamps=0 = off; indirect AO unchanged)
+  var AO_BLOCK = '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
+    'if ( uSLAo.x > 0.5 ) {\n\tfloat _slAo = texture2D( uSLAoT, gl_FragCoord.xy * uSLAo.zw ).r;\n\treflectedLight.indirectDiffuse *= _slAo;\n' +
+    '\t#if defined( USE_ENVMAP ) && defined( STANDARD )\n\t\treflectedLight.indirectSpecular *= computeSpecularOcclusion( saturate( dot( geometryNormal, geometryViewDir ) ), _slAo, material.roughness );\n\t#endif\n' +
+    '}\n#endif\n';
+  function aoPatch(src) { return (typeof src === 'string' && src.indexOf('uSLAo') < 0) ? src + AO_BLOCK : src; }
+  // effects.js §AO_INDIRECT: bind the AO texture for the next composer renders (on) / release it (off). Uniform values only — no
+  // recompile. three CLONES a Texture uniform per program (UniformsUtils.clone), so the texture is set on every live material's
+  // program uniforms (renderer.properties), exactly like push() does for the zone textures; a program born later gets dAo (AO 1).
+  var aoTex = null;
+  // §LAMP_CONTACT_SHADOW state: typed arrays shared by reference; the depth texture set per program like the AO texture
+  var CSP = new Float32Array(4), CSM = new Float32Array(16), CSN = new Float32Array(2), csTex = null;
+  // §FLOOR_CONTACT state (contact_floor.js builds the map; set at stage, pushed with every program like the zone texture)
+  var FSP = new Float32Array([1, 0, 0, 0]);   // §FLOOR_F_SMOOTH (x = on; &floorfsmooth=0 = off), set at stage
+  var CFP = new Float32Array(4), CFG = new Float32Array(4), CFL = new Float32Array(16), cfTex = null, cfLast = null;
+  var DFP = new Float32Array(4), DFO = new Float32Array(4), DFN = new Float32Array(4), dfTex = null, dDf = null, dfLast = null;   // §OBJECT_CONTACT
+  function dfBuild(A) {
+    DFP[0] = 0; dfTex = null;
+    var q = location.search, m = /[?&]objcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillObjContact === 'number' ? A._stillObjContact : 0.5);   // 0.5: red1 v1529 'a bit too strong' (was 1)
+    if (!(str > 0)) { dfLast = { on: false, why: '&objcontact=0' }; console.log('§OBJECT_CONTACT off (&objcontact=0)'); return; }
+    if (A._maxqActive) { dfLast = { on: false, why: 'film' }; console.log('§OBJECT_CONTACT off (film: the distance field is built once around the staging camera — a moving film camera needs a per-shot rebuild, not built)'); return; }
+    var D = global.ContactFloor.buildSdf(A);
+    if (!D || !D.tex || !D.voxelsMarked) { dfLast = { on: false, why: 'no objects in the box', used: D && D.used }; console.log('§OBJECT_CONTACT off (no objects in the camera box: used ' + (D ? D.used : '?') + ')'); return; }
+    DFP[0] = 1; DFP[1] = Math.min(1, str); DFP[2] = D.vox; DFP[3] = D.dmax; DFO[0] = D.org[0]; DFO[1] = D.org[1]; DFO[2] = D.org[2]; DFN[0] = D.n[0]; DFN[1] = D.n[1]; DFN[2] = D.n[2]; dfTex = D.tex;
+    dfLast = { on: true, strength: DFP[1], elements: D.elements, used: D.used, culled: D.culled, tris: D.tris, capped: D.capped, voxelsMarked: D.voxelsMarked, mb: D.mb, ms: D.ms };
+    console.log('§OBJECT_CONTACT on strength=' + DFP[1] + ' box=' + D.n.join('x') + ' vox=' + D.vox + ' org=[' + D.org.map(function (v) { return v.toFixed(1); }) + '] objects=' + D.elements + ' drawsInBox=' + D.used + ' culled=' + D.culled +
+      ' tris=' + D.tris + (D.capped ? ' CAPPED' : '') + ' voxelsMarked=' + D.voxelsMarked + ' voxelsWithin50cm=' + D.voxelsNear50cm + ' gpuMB=' + D.mb + ' ms=' + D.ms);
+  }
+  function cfBuild(A) {
+    CFP[0] = 0; cfTex = null;
+    var q = location.search, m = /[?&]floorcontact=([0-9.]+)/.exec(q), str = m ? parseFloat(m[1]) : (typeof A._stillFloorContact === 'number' ? A._stillFloorContact : 1);
+    if (!(str > 0) || !global.ContactFloor) { cfLast = { on: false, why: !global.ContactFloor ? 'contact_floor.js not loaded' : '&floorcontact=0' }; console.log('§FLOOR_CONTACT off (' + cfLast.why + ')'); return; }
+    if (A._maxqActive) { cfLast = { on: false, why: 'film' }; console.log('§FLOOR_CONTACT off (film: built once around the staging camera — per-shot rebuild not built)'); return; }
+    var C = global.ContactFloor.build(A);
+    if (!C || !C.tex || !C.levels.length) { cfLast = { on: false, why: 'no furniture geometry', furniture: C && C.furniture, draws: C && C.draws }; console.log('§FLOOR_CONTACT off (no furniture geometry: classes ' + (C ? C.furniture : '?') + ' draws ' + (C ? C.draws : '?') + ')'); return; }
+    CFP[0] = 1; CFP[1] = C.levels.length; CFP[2] = C.cell; CFP[3] = C.H; CFG[0] = C.nx; CFG[1] = C.nz; CFG[2] = Math.min(1, str); CFG[3] = 0.15;
+    C.levels.forEach(function (L, i) { CFL[i * 4] = L.x0; CFL[i * 4 + 1] = L.z0; CFL[i * 4 + 2] = L.y; CFL[i * 4 + 3] = L.row0; });
+    cfTex = C.tex; cfLast = { on: true, strength: CFG[2], levels: C.levels.length, furniture: C.furniture, draws: C.draws, tris: C.tris, grid: C.nx + 'x' + C.nz, occTexels: C.occTexels, occMean: +C.occMean.toFixed(3), occMax: +C.occMax.toFixed(3), ms: C.ms };
+    console.log('§FLOOR_CONTACT on strength=' + CFG[2] + ' levels=' + C.levels.length + ' [' + C.levels.map(function (L) { return 'y' + L.y.toFixed(2) + ':' + L.elements; }).join(' ') + '] furniture=' + C.furniture + ' draws=' + C.draws + ' tris=' + C.tris +
+      ' grid=' + C.nx + 'x' + C.nz + ' cell=' + C.cell + ' radius=' + C.radius + ' occTexels=' + C.occTexels + ' occMean=' + C.occMean.toFixed(3) + ' occMax=' + C.occMax.toFixed(3) + (C.capped ? ' CAPPED ' + C.capped : '') + (C.droppedElements ? ' droppedElements=' + C.droppedElements : '') + ' ms=' + C.ms);
+  }
+  function csSet(A, depthTex, camera) {
+    if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
+    var q = location.search, dial = function (n, d) { var m = new RegExp('[?&]' + n + '=([0-9.]+)').exec(q); var v = m ? parseFloat(m[1]) : d; return isFinite(v) ? v : d; };
+    var on = !!depthTex && camera && camera.isPerspectiveCamera && (/[?&]contact=1/.test(q) || A._stillContact === true);   // OFF by default (red1 2026-10-01: hard, jagged patches under Terminal tables) until the soft version passes
+    CSP[0] = on ? 1 : 0; CSP[1] = Math.max(0.05, Math.min(2, dial('contactlen', 0.5))); CSP[2] = Math.max(0.02, Math.min(2, dial('contactthick', 0.5))); CSP[3] = 16;
+    if (camera) { CSM.set(camera.projectionMatrix.elements); CSN[0] = camera.near; CSN[1] = camera.far; }
+    csTex = on ? depthTex : null;
+    var n = 0, seen = new Set();
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+      if (!m || seen.has(m)) return; seen.add(m);
+      var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLCsT) return;
+      U.uSLCs.value = CSP; U.uSLCsT.value = csTex || dAo; U.uSLCsP.value = CSM; U.uSLCsNF.value = CSN; n++; }); });
+    console.log('§LAMP_CONTACT ' + (on ? 'on' : 'off') + ' len=' + CSP[1] + ' thick=' + CSP[2] + ' steps=' + CSP[3] + ' near=' + CSN[0] + ' far=' + CSN[1] + ' mats=' + n +
+      (on ? '' : ' (' + (!depthTex ? 'no depth' : 'default off; &contact=1 = on') + ')'));
+    return n;
+  }
+  function aoOn(on) { if (aoPatched && !linkFailed) AOP[0] = on ? 1 : 0; }   // the per-render gate (typed array shared by every program)
+  var aoTexL = null;   // §AO_LAMPS_FURNITURE
+  function aoSet(A, texture, on, w, h, textureL) {
+    if (!aoPatched || linkFailed || !A || !A.renderer) return -1;
+    AOP[0] = on ? 1 : 0; if (w > 0 && h > 0) { AOP[2] = 1 / w; AOP[3] = 1 / h; }
+    aoTexL = textureL || null;
+    aoTex = texture || null;   // bound whether or not x is on (x is flipped per render by aoOn); null = release to dAo
+    var n = 0, seen = new Set();
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+      if (!m || seen.has(m)) return; seen.add(m);
+      var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLAoT) return;
+      U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; n++; }); });
+    return n;
+  }
   function install(THREE) {
     if (installed) return;
     if (/[?&]sourced=0/.test(location.search)) { console.log('§SOURCED_LIGHT not installed (&sourced=0 — today\'s shaders)'); return; }
     if (!THREE || !THREE.ShaderChunk) { console.warn('§SOURCED_LIGHT install skipped: THREE.ShaderChunk missing'); return; }
     var C = THREE.ShaderChunk, ok = 0, fb = C.lights_fragment_begin;
-    orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment };
+    orig = { lights_fragment_begin: C.lights_fragment_begin, lights_fragment_maps: C.lights_fragment_maps, lights_pars_begin: C.lights_pars_begin, dithering_fragment: C.dithering_fragment, aomap_fragment: C.aomap_fragment };
+    // §ZERO Z10: &aoindirect=0 = today's chunk (the A/B switch); the still then runs the legacy composite
+    if (!/[?&]aoindirect=0/.test(location.search) && C.aomap_fragment && C.aomap_fragment.indexOf('reflectedLight.indirectDiffuse') >= 0) {
+      C.aomap_fragment = aoPatch(C.aomap_fragment); aoPatched = true;
+    }
     // §SOURCED_LIGHT_LINK: the once-per-fragment zone, before the point loop (must land, or slPass/slSkyKeep see -1 = as today)
     var d0 = 'IncidentLight directLight;';
     if (fb.indexOf(d0) >= 0) { fb = fb.replace(d0, d0 + ONCE); ok++; } else console.warn('§SOURCED_LIGHT_LINK anchor "IncidentLight directLight;" missing: zones inert');
@@ -212,7 +403,7 @@
         var blockEnd = le + '#pragma unroll_loop_end'.length;
         fb = fb.slice(0, ls) + '#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0\n\t' + fb.slice(ls, blockEnd) + '\n\t#else\n' +
           '\tfor ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {\n\t\tpointLight = pointLights[ i ];\n\t\tgetPointLightInfo( pointLight, geometryPosition, directLight );\n' +
-          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
+          '\t\tdirectLight.color *= slPass( uSLPZ[ i / 4 ][ i - ( i / 4 ) * 4 ], geometryPosition, geometryNormal ) * ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n\t\t' + reDirect + '\n\t}\n\t#endif' + fb.slice(blockEnd);
         console.log('§LAMP_LOOP dynamic (point lights: one loop body per program, not one per lamp; &lamploop=0 = unrolled)');
       } else console.warn('§LAMP_LOOP anchor missing — point-light loop stays unrolled');
     }
@@ -220,6 +411,10 @@
     // light (getPointLightInfo: direction, getDistanceAttenuation(d, range, decay); RE_Direct: the material's own BRDF) and
     // the same zone rule as slPass (unbound 0 / unknown fragment pass; else lamp zone == fragment zone). The lists are built
     // on the CPU per zone, so a lamp behind a wall is not even in the list. uSLLamp.x = 0 (nav, films, &lampdata=0): skipped.
+    // §AO_LAMPS (red1 2026-09-28 …555139481: "indoor objects do not cast shadows anymore" after Z10 made AO indirect-only): the ceiling
+    // lamps have no shadow maps. Many distributed ceiling luminaires act as one broad overhead source, and cosine-weighted hemisphere
+    // visibility (what AO measures) is exactly the visibility of a broad uniform source — so AO also multiplies the LAMPS' direct light
+    // (data path + pool loop). The sun and the torch keep their real shadow maps and are not AO'd. Same second-TAA gate (uSLAo.x).
     var sp = '#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )';
     if (fb.indexOf(sp) >= 0) {
       fb = fb.replace(sp, '#if defined( RE_Direct ) && ( defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON ) )\n' +
@@ -227,14 +422,21 @@
         '\tivec3 _cc = ivec3( floor( ( _slWP - uSLOrg.xyz ) / ( uSLParams.y * uSLLamp.z ) ) );\n' +
         '\tif ( all( greaterThanEqual( _cc, ivec3( 0 ) ) ) && all( lessThan( _cc, ivec3( uSLCluDim.xyz ) ) ) ) {\n' +
         '\t\tuvec2 _oc = texelFetch( uSLClu, _cc, 0 ).rg; uint _iw = uint( uSLLamp.w ); _slLN = float( _oc.y );\n' +
+        '\t\tfloat _slAoL = ( uSLAo.x > 0.5 && uSLAo.y > 0.5 ? texture2D( uSLAoTL, gl_FragCoord.xy * uSLAo.zw ).r : 1.0 );\n' +
+        '\t\tfloat _slCFv = slCF( geometryNormal );\n' +   // §FLOOR_CONTACT   // §AO_LAMPS (below)
+        '\t\tvec3 _slCD0 = reflectedLight.directDiffuse, _slCS0 = reflectedLight.directSpecular, _slCDir = vec3( 0.0 );\n' +   // §LAMP_CONTACT_SHADOW
         '\t\tfor ( uint _k = 0u; _k < _oc.y; _k ++ ) {\n' +
         '\t\t\tuint _g = _oc.x + _k; int _li = int( texelFetch( uSLLIdx, ivec2( int( _g % _iw ), int( _g / _iw ) ), 0 ).r );\n' +
         '\t\t\tvec4 _la = texelFetch( uSLLampT, ivec2( 0, _li ), 0 ); vec4 _lb = texelFetch( uSLLampT, ivec2( 1, _li ), 0 );\n' +
         '\t\t\tif ( !( _slFZ < -0.5 || _la.w < 0.5 || abs( _slFZ - _la.w ) < 0.5 ) ) continue; _slLNP += 1.0;\n' +
         '\t\t\tvec3 _lv = ( viewMatrix * vec4( _la.xyz, 1.0 ) ).xyz - geometryPosition; float _ld = length( _lv );\n' +
-        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ); directLight.visible = true;\n' +
+        '\t\t\tdirectLight.direction = _lv / max( _ld, 1e-6 ); directLight.color = _lb.rgb * getDistanceAttenuation( _ld, _lb.w, uSLLamp.y ) * _slAoL * _slCFv; directLight.visible = true;\n' +
         '\t\t\tRE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );\n' +
-        '\t\t}\n\t}\n}\n#endif\n' + sp);
+        '\t\t\t_slCDir += directLight.direction * dot( directLight.color, vec3( 0.2126, 0.7152, 0.0722 ) ) * max( dot( geometryNormal, directLight.direction ), 0.0 );\n' +
+        '\t\t}\n' +
+        '\t\tif ( uSLCs.x > 0.5 && uSLAo.x > 0.5 && dot( _slCDir, _slCDir ) > 1e-20 ) { float _slCf = slContact( geometryPosition, geometryNormal, normalize( _slCDir ) );\n' +
+        '\t\t\treflectedLight.directDiffuse = _slCD0 + ( reflectedLight.directDiffuse - _slCD0 ) * _slCf; reflectedLight.directSpecular = _slCS0 + ( reflectedLight.directSpecular - _slCS0 ) * _slCf; }\n' +
+        '\t}\n}\n#endif\n' + sp);
       ok++;
     } else console.warn('§LAMP_UNCAPPED anchor missing (spot section) — lamp data path inert, the pool path stays');
     var s0 = 'getSpotLightInfo( spotLight, geometryPosition, directLight );';
@@ -247,12 +449,16 @@
     if (fb.indexOf(h0) >= 0) { fb = fb.replace(h0, 'irradiance += slHemi( hemisphereLights[ i ].skyColor, hemisphereLights[ i ].groundColor, hemisphereLights[ i ].direction, geometryPosition, geometryNormal )'); ok++; }
     else console.warn('§GROUND_VIEW_FIELD anchor "getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal )" missing: hemi ungated');
     C.lights_fragment_begin = fb;
+    // §FLOOR_CONTACT: the diffuse irradiance (IR, cove, sky field / hemi, ambient) of an upward floor fragment under furniture
+    var fe = C.lights_fragment_end, e1 = 'RE_IndirectDiffuse( irradiance, geometryPosition';
+    if (fe && fe.indexOf(e1) >= 0) { C.lights_fragment_end = fe.replace(e1, 'RE_IndirectDiffuse( irradiance * slCF( geometryNormal ), geometryPosition'); ok++; }
+    else console.warn('§FLOOR_CONTACT anchor missing (lights_fragment_end RE_IndirectDiffuse) — floor contact on lamps only');
     // IBL (scene.environment) is sky light too: its diffuse irradiance and its reflections are gated indoors like the hemi.
     // The white-Lambert §METER cannot see IBL, so ungated it was amplified by the meter's +4-6 stops into a purple cast on
     // every weakly lamp-lit surface (Clinic corridor / Hospital café, 2026-09-25).
     var fm = C.lights_fragment_maps, e0 = 'iblIrradiance += getIBLIrradiance(', r0 = 'radiance += getIBLRadiance(';
     if (fm.indexOf(e0) >= 0) { fm = fm.replace(e0, 'iblIrradiance += slSkyKeep( geometryPosition, geometryNormal ) * getIBLIrradiance('); ok++; }
-    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slSpecKeep( geometryPosition, geometryNormal, geometryViewDir ) * getIBLRadiance('); ok++; }   // §GLASS_SPEC_GATE
+    if (fm.indexOf(r0) >= 0) { fm = fm.replace(r0, 'radiance += slMirK( geometryPosition, geometryNormal, geometryViewDir ) * getIBLRadiance('); ok++; }   // §GLASS_SPEC_GATE
     C.lights_fragment_maps = fm;
     // §SOURCED_LIGHT_ZONE_DEBUG (witness only): uSLParams.w = 1 writes the fragment's zone as the colour, after every other
     // output chunk (R = zone mod 256, G = zone / 256, B = 1 when unknown / 0.5 when the sky is kept / 0 sky off), so a
@@ -261,6 +467,7 @@
       C.dithering_fragment = C.dithering_fragment + '\n#if defined( STANDARD ) || defined( LAMBERT ) || defined( PHONG ) || defined( TOON )\n' +
         'if ( uSLParams.w > 0.5 && uSLParams.w < 1.5 ) { float _dz = _slFZ; float _uz = _dz < -0.5 ? 0.0 : _dz; gl_FragColor = vec4( mod( _uz, 256.0 ) / 255.0, floor( _uz / 256.0 ) / 255.0, _dz < -0.5 ? 1.0 : ( _slSky > 0.5 ? 0.5 : 0.0 ), 1.0 ); }\n' +   // _slFZ: the same slFragZone( - vViewPosition, normal ), computed once (§SOURCED_LIGHT_LINK)
         'if ( uSLParams.w > 11.5 && uSLParams.w < 12.5 ) { mat4 _vn = inverse( viewMatrix ); vec3 _nn = normalize( ( _vn * vec4( ( dot( normal, vViewPosition ) < 0.0 ) ? - normal : normal, 0.0 ) ).xyz ); gl_FragColor = vec4( _nn * 0.5 + 0.5, 1.0 ); }\n' +   // §COVE_LIGHT witness readback: eye-facing world normal
+        'else if ( uSLParams.w > 12.5 && uSLParams.w < 13.5 ) { gl_FragColor = vec4( material.diffuseColor, 0.75 ); }\n' +   // §ZERO Z11 albedo readback (float target): the diffuse albedo the fragment is shaded with, marker 0.75
         'else if ( uSLParams.w > 10.5 && uSLParams.w < 11.5 ) { gl_FragColor = vec4( _slCove * uSLCoveP.w, ( _slFZ > 0.5 && _slFZ < 65533.5 ) ? _slFZ : 0.0, 0.75, 1.0 ); }\n' +   // §COVE_LIGHT readback (float target): R = cove Lambert term (texel units), G = zone, B = 0.75 marker
         'else if ( uSLParams.w > 9.5 && uSLParams.w < 10.5 ) { gl_FragColor = vec4( _slGd, _slF, 0.75, 1.0 ); }\n' +   // §GROUND_VIEW_FIELD readback (float target): R = _slGd, G = _slF, B = 0.75 marker
         'else if ( uSLParams.w > 8.5 && uSLParams.w < 9.5 ) { gl_FragColor = vec4( slIr() * BRDF_Lambert( material.diffuseColor ), 0.75 ); }\n' +   // §IRC_MAX v2 readback: IR radiance (linear)
@@ -280,14 +487,24 @@
     // §LAMP_UNCAPPED dummies: every declared sampler must see a texture of its own kind (an integer sampler on a float unit is
     // GL_INVALID_OPERATION at draw time), same reason as `dummy` above
     dIr = lampTex2D(THREE, new Float32Array(4), 1, 1);   // §IRC_MAX v2 dummy
+    dGO = goTex2D(THREE, new Uint32Array(4), 1, 1);   // §GLASS_REFL_OPEN dummy (RGBA32UI: an integer sampler needs an integer texture on its unit)
     dCove = coveTex3D(THREE, new Uint8Array(4), 1, 1, 1);   // §COVE_LIGHT dummy (RGBA8UI: an integer sampler needs an integer texture on its unit)
     dLamp = lampTex2D(THREE, new Float32Array(8), 2, 1); dIdx = idxTex2D(THREE, new Uint16Array(1), 1, 1); dClu = cluTex3D(THREE, new Uint32Array(2), 1, 1, 1);
+    // §ZERO Z10: a 1x1 white AO (visibility 1) so the sampler always has a texture of its kind (aoSet swaps it per program).
+    dAo = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); dAo.needsUpdate = true;
+    dDf = new THREE.Data3DTexture(new Uint8Array([255]), 1, 1, 1); dDf.format = THREE.RedFormat; dDf.type = THREE.UnsignedByteType; dDf.needsUpdate = true;   // §OBJECT_CONTACT dummy (distance = max)
     ['standard', 'physical', 'lambert', 'phong', 'toon'].forEach(function (k) {
       var U = THREE.ShaderLib[k] && THREE.ShaderLib[k].uniforms; if (!U) return;
+      U.uSLAo = { value: AOP }; U.uSLAoT = { value: dAo }; U.uSLAoTL = { value: dAo };
+      U.uSLCs = { value: CSP }; U.uSLCsT = { value: dAo }; U.uSLCsP = { value: CSM }; U.uSLCsNF = { value: CSN };   // §LAMP_CONTACT_SHADOW
+      U.uSLFs = { value: FSP };   // §FLOOR_F_SMOOTH
+      U.uSLCf = { value: CFP }; U.uSLCfG = { value: CFG }; U.uSLCfL = { value: CFL }; U.uSLCfT = { value: dAo };   // §FLOOR_CONTACT
+      U.uSLDf = { value: DFP }; U.uSLDfO = { value: DFO }; U.uSLDfN = { value: DFN }; U.uSLDfT = { value: dDf };   // §OBJECT_CONTACT
       // typed arrays are shared by reference through UniformsUtils.clone (only Color/Vector/Matrix/Texture are cloned)
       U.uSLParams = { value: P }; U.uSLOrg = { value: ORG }; U.uSLDim = { value: DIM }; U.uSLSky = { value: SKY }; U.uSLZone = { value: dummy }; U.uSLGround = { value: dGround };
       U.uSLPZ = { value: PZ }; U.uSLSZ = { value: SZ };
       U.uSLIrP = { value: IRP }; U.uSLIr = { value: dIr };
+      U.uSLGOP = { value: GOP }; U.uSLGO = { value: dGO };   // §GLASS_REFL_OPEN
       U.uSLCoveP = { value: COVEP }; U.uSLCoveQ = { value: COVEQ }; U.uSLCove = { value: dCove };   // §COVE_LIGHT (RGBA8UI dummy)
       U.uSLLamp = { value: LAMP }; U.uSLCluDim = { value: CDIM }; U.uSLLampT = { value: dLamp }; U.uSLLIdx = { value: dIdx }; U.uSLClu = { value: dClu };
     });
@@ -306,6 +523,7 @@
       };
       A.renderer.debug.__slGuard = true;
     };
+    console.log('§AO_INDIRECT installed patch=' + (aoPatched ? 1 : 0) + (aoPatched ? '' : ' (&aoindirect=0 or anchor missing — the still keeps the legacy AO composite)'));
     console.log('§SOURCED_LIGHT installed patchedLines=' + ok + '/9 (zone-once, point, lamp-data, spot, ambient, hemi, env irradiance, env radiance, zone-debug) — inert until an Alt+S stages it');
   }
 
@@ -327,12 +545,16 @@
   var LAMP = new Float32Array(4), CDIM = new Float32Array(4), CLU = 4, IDX_W = 4096, lampTex = null, idxTex = null, cluTex = null, dLamp = null, dIdx = null, dClu = null;
   var lampVer = -1, lampListKey = null, lampLast = null, lampPushAll = false;
   function lampTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.FloatType); t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return t; }
+  // §GLASS_REFL_OPEN (Z26): the cell-table + side-slot texture, RGBA32UI, 4096 wide (light_zones.js glassOpenPass builds the words)
+  var GOP = new Float32Array(4), goTex = null, goKey = null, dGO = null;
+  function goTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RGBAIntegerFormat, THREE.UnsignedIntType); t.internalFormat = 'RGBA32UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   function idxTex2D(THREE, data, w, h) { var t = new THREE.DataTexture(data, w, h, THREE.RedIntegerFormat, THREE.UnsignedShortType); t.internalFormat = 'R16UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   function cluTex3D(THREE, data, w, h, d) { var t = new THREE.Data3DTexture(data, w, h, d); t.format = THREE.RGIntegerFormat; t.type = THREE.UnsignedIntType; t.internalFormat = 'RG32UI'; t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true; return t; }
   // effects.js asks before the lamps are born: the data path needs the patched chunks, this building's zones, and a still
   function lampWanted(A) {
     var LZ = global.LightZones, Z = LZ && LZ.get();
-    return !!(installed && !linkFailed && orig && Z && Z.bld === A.activeBuilding && !A._maxqActive && A._stillLampData !== false && !/[?&]lampdata=0/.test(location.search));
+    // §FILM_LAMP_DATA: parity films take the data path too (tools.js feeds it only on whole-building frames; the pool covers the rest)
+    return !!(installed && !linkFailed && orig && Z && Z.bld === A.activeBuilding && (!A._maxqActive || (A._filmParity && !/[?&]filminherit=0/.test(location.search))) && A._stillLampData !== false && !/[?&]lampdata=0/.test(location.search));
   }
   function lampZone(LZ, p) { var v = LZ.atLamp(p); return (v > 0 && v !== SOLID) ? v : ((v === 0 || v === -1) ? OUTSIDE : 0); }
   // BUILD — returns the stats (logged §LAMP_UNCAPPED); lists rebuilt only when the lamp SET changes, the lamp texture on every
@@ -341,12 +563,13 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(), D = A._lampData;
     if (!Z || !D || !A._lampDataOn) { LAMP[0] = 0; return null; }
     if (D.ver === lampVer && lampTex) return lampLast;
-    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (&lampen=0)'); }
+    if (!D.enDone) { D.enDone = true; if (enOn(A)) { try { D.en = enApply(A, Z, D); } catch (eEN) { console.warn('§LAMP_EN failed: ' + eEN.message + ' — lamps unscaled'); } } else console.log('§LAMP_EN off (default: lamps at rated output; &lampen=1 = EN 12464-1 scaling)'); }
     var t0 = performance.now(), L = D.lamps, n = L.length, R = D.range > 0 ? D.range : Z.cell * Math.max(Z.nx, Z.ny, Z.nz);
     if (n >= 65535) { console.warn('§LAMP_UNCAPPED FAIL lamps=' + n + ' >= 65535 (R16UI index) — pool path kept'); return lampFail(A, 'too many lamps'); }
     var ld = new Float32Array(Math.max(1, n) * 8), lz = new Uint16Array(n), ph = 0, lit = 0, sumI = 0, byZ = [0, 0, 0];
     for (var i = 0; i < n; i++) { var q = L[i], z = lampZone(LZ, q); lz[i] = z;
-      ld.set([q.x, q.y, q.z, z, q.r, q.g, q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
+      var sh = q.__shadowLight; if (sh) sh.color.setRGB(q.r, q.g, q.b);   // §LAMP_SHADOW_TOPK: a real shadowed PointLight carries this lamp (post-§LAMP_EN colour); the loop gets 0
+      ld.set([q.x, q.y, q.z, z, sh ? 0 : q.r, sh ? 0 : q.g, sh ? 0 : q.b, q.range > 0 ? q.range : 0], i * 8); ph += q.x * 1.3 + q.y * 1.7 + q.z * 1.9;
       if (q.I > 0) { lit++; sumI += q.I; } byZ[z === 0 ? 0 : (z === OUTSIDE ? 2 : 1)]++; }
     if (lampTex) lampTex.dispose(); lampTex = lampTex2D(THREE, ld, 2, Math.max(1, n));
     var key = Z.bld + ':' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ':' + n + ':' + R + ':' + ph.toFixed(3), tl = performance.now(), S = lampLast && lampLast.lists;
@@ -424,8 +647,31 @@
   // (zone cell faces against SOLID, <= IR_FACES per zone, even stride). Daylight: V12 irc_z (LightZones.field ircAll) x the hemi
   // sky irradiance. One RGBA32F texel per zone. &ir=0 = off.
   var irLampZ = null;   // per zone lamp-IR luminance (three units), §LUX_CHECK / §LAMP_EN
+  var irTotZ = null;    // per zone TOTAL IR luminance (lamp + day [+ cove]), §FAULT irOnly (S2: the unlit counter was IR-blind)
+  // §COVE_IR (red1 2026-09-26: "Yes as long it's not left in the dark"): the cove is direct light in its zone, so it enters the
+  // zone's interreflection like the lamps do: E_ir = R/(1-R) x the cove's direct E. The cove is sized so direct + IR = the
+  // zone's deficit (direct = deficit x (1-R), IR = deficit x R), so the level holds and floor-facing undersides / shaft bottoms,
+  // which no perimeter lobe reaches, get the bounced part. irBase = the lamp+day IR; irCoveApply adds coveLast.irAdd on top.
+  var irBase = null, irBaseTot = null, irW = 0, irH = 0, irCoveKey = null;
   var IRP = new Float32Array(4), irTex = null, dIr = null, irKey = null, irFaces = null, irLast = null, IR_FACES = 4000, IR_R = 0.5;
   function irOn(A) { return !(A._stillIr === false || /[?&]ir=0/.test(location.search)); }
+  // ══ §IR_COLOUR (Z19, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z19 SPEC", law L2): interreflected light carries the colour
+  // of the surfaces it left. Tint = the zone's area-weighted mean albedo / its luminance, renormalised so Y(IR) is unchanged — only
+  // chromaticity moves (R/(1-R) and every luminance reader untouched). &ircol=0 / APP._stillIrColour = false = the neutral IR.
+  function irColOn(A) { return !(A._stillIrColour === false || /[?&]ircol=0/.test(location.search)); }
+  function Y3(r, g, b) { return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+  function irTint(e, a) {   // e = [r,g,b] irradiance, a = [r,g,b] mean albedo (linear) -> tinted irradiance with Y(e)
+    var ya = a ? Y3(a[0], a[1], a[2]) : 0, ye = Y3(e[0], e[1], e[2]); if (!(ya > 0) || !(ye > 0)) return [e[0], e[1], e[2]];
+    var t = [e[0] * a[0] / ya, e[1] * a[1] / ya, e[2] * a[2] / ya], yt = Y3(t[0], t[1], t[2]); if (!(yt > 0)) return [e[0], e[1], e[2]];
+    var k = ye / yt; return [t[0] * k, t[1] * k, t[2] * k];
+  }
+  function zoneAlbedo(Z, f) {   // mean albedo of the SOLID cells behind a zone's sampled faces (equal 0.5 m faces = equal area)
+    if (!Z.alb || !f || !f.length) return null; var cl = Z.cell, nx = Z.nx, ny = Z.ny, nz = Z.nz, s0 = 0, s1 = 0, s2 = 0, n = 0;
+    for (var fi = 0; fi < f.length; fi += 6) { var i = Math.floor((f[fi] - f[fi + 3] * 0.51 * cl - Z.org.x) / cl), j = Math.floor((f[fi + 1] - f[fi + 4] * 0.51 * cl - Z.org.y) / cl), k = Math.floor((f[fi + 2] - f[fi + 5] * 0.51 * cl - Z.org.z) / cl);
+      if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) continue; var c = (i + j * nx + k * nx * ny) * 3, r = Z.alb[c], g = Z.alb[c + 1], b = Z.alb[c + 2];
+      if (!(r + g + b)) continue; s0 += r; s1 += g; s2 += b; n++; }
+    return n ? { a: [s0 / n / 255, s1 / n / 255, s2 / n / 255], n: n } : null;
+  }
   function irFacesOf(Z) {   // camera-free, per zone grid: sampled surface faces [x, y, z, nx, ny, nz] per zone
     if (irFaces && irFaces.Z === Z) return irFaces;
     var t0 = performance.now(), nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, N = nx * ny * nz, zone = Z.zone, cnt = new Int32Array(Z.zones + 1), D6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -443,10 +689,11 @@
     var THREE = global.THREE, LZ = global.LightZones, Z = LZ && LZ.get(); IRP[0] = 0;
     if (!Z || !irOn(A)) return null;
     var D = A._lampDataOn ? A._lampData : null, F = Z.field, hemi = A.hemi, hc = hemi ? [hemi.color.r * hemi.intensity, hemi.color.g * hemi.intensity, hemi.color.b * hemi.intensity] : [0, 0, 0];
-    var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0);
+    var key = (Z.bld + ':' + Z.zones) + '|' + (D ? D.ver + ':' + D.lamps.length : 'nolamps') + '|' + hc.map(function (v) { return v.toFixed(5); }).join(',') + '|' + (F ? 1 : 0) + '|col' + (irColOn(A) ? 1 : 0) + (Z.alb ? 'a' : '');   // §IR_COLOUR joins the key
     if (key === irKey && irTex) { IRP[0] = 1; return irLast; }   // IRP[1] (scale) is left alone: the meter zeroes it for its own render
     var t0 = performance.now(), fc = irFacesOf(Z), nzn = Z.zones, W = 4096, H = Math.ceil((nzn + 1) / W), buf = new Float32Array(W * H * 4), k2 = IR_R / (1 - IR_R);
-    var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0; irLampZ = new Float32Array(nzn + 1);   // §LAMP_EN reads the lamp part
+    var colOn = irColOn(A), ic0 = { zones: 0, coloured: 0, noAlb: 0, satSum: 0, satMax: 0, top: [] };   // §IR_COLOUR
+    var byZ = new Map(), unb = [], lampN = 0, zl = 0, zd = 0, maxL = 0, maxD = 0; irLampZ = new Float32Array(nzn + 1); irTotZ = new Float32Array(nzn + 1);   // §LAMP_EN reads the lamp part
     if (D) D.lamps.forEach(function (q) { if (!(q.I > 0)) return; lampN++; var z = lampZone(LZ, q); if (z === 0) unb.push(q); else if (z !== OUTSIDE) { var a = byZ.get(z); if (!a) byZ.set(z, a = []); a.push(q); } });
     var dec = D ? D.decay : 2;
     for (var z = 1; z <= nzn; z++) {
@@ -458,14 +705,24 @@
         er = k2 * er / nf; eg = k2 * eg / nf; eb = k2 * eb / nf; if (er + eg + eb > 0) zl++; irLampZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb; maxL = Math.max(maxL, (er + eg + eb) / 3); }
       var ic = F && F.ircAll ? F.ircAll[z] : 0;
       if (ic > 0) { zd++; maxD = Math.max(maxD, ic * (hc[0] + hc[1] + hc[2]) / 3); er += ic * hc[0]; eg += ic * hc[1]; eb += ic * hc[2]; }
-      buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1;
+      if (colOn && er + eg + eb > 0) { ic0.zones++; var za = zoneAlbedo(Z, f);   // §IR_COLOUR (Z19)
+        if (!za) ic0.noAlb++; else { var y0 = Y3(er, eg, eb), te = irTint([er, eg, eb], za.a); er = te[0]; eg = te[1]; eb = te[2]; ic0.coloured++;
+          var mxs = Math.max(er, eg, eb), sat = mxs > 0 ? (mxs - Math.min(er, eg, eb)) / mxs : 0; ic0.satSum += sat; ic0.satMax = Math.max(ic0.satMax, sat);
+          ic0.top.push({ z: z, faces: nf, a: za.a, y0: y0, y1: Y3(er, eg, eb), t: [er / (y0 || 1), eg / (y0 || 1), eb / (y0 || 1)] }); } }
+      buf[z * 4] = er; buf[z * 4 + 1] = eg; buf[z * 4 + 2] = eb; buf[z * 4 + 3] = 1; irTotZ[z] = 0.2126 * er + 0.7152 * eg + 0.0722 * eb;
     }
+    irBase = buf.slice(); irBaseTot = irTotZ.slice(); irW = W; irH = H; irCoveKey = null;   // §COVE_IR: irCoveApply re-adds the cove
     if (irTex) irTex.dispose(); irTex = lampTex2D(THREE, buf, W, H);
     try { A.renderer.initTexture(irTex); } catch (eI) { console.warn('§IRC_MAX upload failed: ' + eI.message); return null; }
     IRP[0] = 1; IRP[1] = 1; irKey = key; lampPushAll = true;
     irLast = { zones: nzn, zonesLamp: zl, zonesDay: zd, lamps: lampN, unbound: unb.length, maxLampE: +maxL.toFixed(5), maxDayE: +maxD.toFixed(5), hemi: hc.map(function (v) { return +v.toFixed(3); }), facesMs: fc.ms, ms: Math.round(performance.now() - t0) };
     console.log('§IRC_MAX build zones=' + nzn + ' withLampIR=' + zl + ' withDayIR=' + zd + ' lamps=' + lampN + ' (unbound ' + unb.length + ') maxE lamp/day=' + irLast.maxLampE + '/' + irLast.maxDayE +
       ' R=' + IR_R + ' facesPerZone<=' + IR_FACES + ' facesMs=' + fc.ms + ' ms=' + irLast.ms + ' (E_ir = R/(1-R) x mean direct E over the zone surfaces; day = V12 irc x hemi)');
+    irLast.colour = { on: colOn, zones: ic0.zones, coloured: ic0.coloured, noAlb: ic0.noAlb, meanSat: ic0.coloured ? +(ic0.satSum / ic0.coloured).toFixed(4) : 0, maxSat: +ic0.satMax.toFixed(4) };
+    console.log('§IR_COLOUR bld=' + Z.bld + ' ' + (!colOn ? 'off (neutral IR, &ircol=0)' : 'zones=' + ic0.zones + ' coloured=' + ic0.coloured + ' neutral(noAlb)=' + ic0.noAlb + ' meanSat=' + irLast.colour.meanSat + ' maxSat=' + irLast.colour.maxSat +
+      (!Z.alb ? ' VACUOUS — the zone grid carries no albedo (rasterised without §IR_COLOUR)' : ic0.coloured === 0 ? ' VACUOUS — no zone had an albedo' : ic0.satMax < 1e-4 ? ' NO-OP — every tint is neutral' : '')));
+    ic0.top.sort(function (x, y) { return y.faces - x.faces; }).slice(0, 3).forEach(function (q) { var r3 = function (v) { return v.map(function (x) { return x.toFixed(3); }).join(','); };
+      console.log('§IR_COLOUR_ZONE z=' + q.z + ' faces=' + q.faces + ' alb=' + r3(q.a) + ' tint=' + r3(q.t) + ' Y before/after=' + q.y0.toExponential(4) + '/' + q.y1.toExponential(4)); });
     return irLast;
   }
   // share of each pixel's linear radiance that is the IR term (for gi_still's max rule): two linear renders at w x h, rows top-down
@@ -481,6 +738,26 @@
       var v = Math.round(sh * 255); out[d] = v; out[d + 1] = v; out[d + 2] = v; out[d + 3] = 255; if (sh > 0) { n++; sum += sh; if (sh > 0.5) over++; } }
     var r = { data: out, pixels: n, meanShare: n ? +(sum / n).toFixed(3) : 0, shareOver50: over, ms: Math.round(performance.now() - t0) };
     console.log('§IRC_MAX share ' + w + 'x' + h + ' pixelsWithIR=' + n + ' meanShare=' + r.meanShare + ' pixelsIRover50%=' + over + ' ms=' + r.ms + ' (share = IR radiance / total, linear; applied to the tone-mapped app colour = approximation)');
+    return r;
+  }
+  // ══ §ZERO Z11 — the receiver ALBEDO for gi_still (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z11 SPEC" (b)) ══
+  // One app render with readback mode 13 (material.diffuseColor, linear, marker alpha 0.75) at the bounce size, the irShare row
+  // flip (canvas order), sRGB-encoded bytes (the canvas texture decodes them on sample). alpha 255 = real albedo; 0 = none (sky,
+  // unpatched material, or a transparent fragment blended over another — the marker no longer reads 0.75): gi keeps its estimate.
+  function oetf(c) { c = c < 0 ? 0 : (c > 1 ? 1 : c); return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+  function albedoEncode(F, w, h) {
+    var out = new Uint8ClampedArray(w * h * 4), n = 0, lum = 0;
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) { var s = (y * w + x) * 4, d = ((h - 1 - y) * w + x) * 4;
+      if (Math.abs(F[s + 3] - 0.75) < 1e-4) { out[d] = Math.round(255 * oetf(F[s])); out[d + 1] = Math.round(255 * oetf(F[s + 1])); out[d + 2] = Math.round(255 * oetf(F[s + 2])); out[d + 3] = 255;
+        n++; lum += 0.2126 * Math.min(1, F[s]) + 0.7152 * Math.min(1, F[s + 1]) + 0.0722 * Math.min(1, F[s + 2]); } }
+    return { data: out, real: n, meanAlbLum: n ? +(lum / n).toFixed(4) : 0 };
+  }
+  function albedoMap(A, w, h) {
+    var THREE = global.THREE, R = A && A.renderer; if (!installed || linkFailed || !R) return null;
+    var t0 = performance.now(), rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.FloatType, depthBuffer: true }), F = new Float32Array(w * h * 4), w0 = P[3], prev = R.getRenderTarget(), bg = A.scene.background;
+    try { A.scene.background = null; P[3] = 13; R.setRenderTarget(rt); R.clear(); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, w, h, F); }
+    finally { P[3] = w0; R.setRenderTarget(prev); A.scene.background = bg; rt.dispose(); }
+    var r = albedoEncode(F, w, h); r.ms = Math.round(performance.now() - t0);
     return r;
   }
   // ══ §LAMP_EN (red1 2026-09-26: "lamp strength should be commensurate with indoor space, a standard governs it"; "Set a standard
@@ -503,11 +780,14 @@
       .catch(function () { spaceUsesCache[bld] = null; console.log('§SPACE_USES bld=' + bld + ' none (fetch failed)'); return null; });
   }
   function enRowForUse(name) { for (var i = 0; i < EN_ROWS.length; i++) if (EN_ROWS[i][2] != null && EN_ROWS[i][0].test(name || '')) return [EN_ROWS[i][1], EN_ROWS[i][2]]; return null; }
-  function enOn(A) { return !(A._stillLampEn === false || /[?&]lampen=0/.test(location.search)); }
+  // §LAMPS_RATED_DEFAULT (red1 2026-10-01: "leave the lights on as normal practice when clients view property"): lamps run at their rated
+  // output by default; the EN 12464-1 target scaling is opt-in (&lampen=1 / APP._stillLampEn = true). HHS ground floor measured: EN scaling
+  // held lamps at ~13 % of rated (p50 0.13); rated lamps lift the metered luminance +13 % there.
+  function enOn(A) { return A._stillLampEn === true || /[?&]lampen=1/.test(location.search); }
   function enApply(A, Z, D) {
     var LZ = global.LightZones, t0 = performance.now(), vols = [];
     try { vols = A.allRoomVolumes ? (A.allRoomVolumes() || []) : []; } catch (eV) { vols = []; }
-    var sunI = A._stillCalibSunI, luxPer = sunI > 0 ? (A._stillCalibSunLux || 100000) / sunI : 0;
+    var sunI = A._stillCalibSunI, luxPer = sunI > 0 ? (A._stillCalibSunLux || LL.CALIB.sunLux) / sunI : 0;
     if (!vols.length || !(luxPer > 0)) { console.log('§LAMP_EN VACUOUS rooms=' + vols.length + ' luxPerUnit=' + luxPer + ' — lamps unscaled'); return null; }
     var L = D.lamps, n = L.length, room = new Int32Array(n).fill(-1), lzs = new Int32Array(n), dec = D.decay;
     for (var i = 0; i < n; i++) { lzs[i] = lampZone(LZ, L[i]); L[i].__r0 = L[i].r; L[i].__g0 = L[i].g; L[i].__b0 = L[i].b; L[i].__I0 = L[i].I; }
@@ -640,6 +920,30 @@
     if (A.renderer) A.renderer.shadowMap.needsUpdate = true;
     return n;
   }
+  // §GLASS_TONE_STILL (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md, red1 2026-10-01 "tone down glass in stills"): Alt+S only — every glassy
+  // material's IFC colour is pulled toward its own luminance, c -> L + k (c - L). k = 0.3 is an AUTHORED presentation choice (no source);
+  // &glasstone=k (0 = neutral, 1 = IFC colour). Restored at unstage. Films never stage (S2), so films are unaffected.
+  var glassTone = [];
+  function glassToneOn(A) {
+    glassToneOff(A, true);
+    var m0 = /[?&]glasstone=([0-9.]+)/.exec(location.search), k = typeof A._stillGlassTone === 'number' ? A._stillGlassTone : (m0 ? parseFloat(m0[1]) : 0.3);
+    k = Math.max(0, Math.min(1, isFinite(k) ? k : 0.3)); if (k >= 1) { console.log('§GLASS_TONE off (k=1)'); return 0; }
+    var seen = new Set(), s0 = 0, s1 = 0;
+    var sat = function (c) { var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b); return mx > 0 ? (mx - mn) / mx : 0; };
+    A.scene.traverse(function (o) { if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.material || (o.userData && o.userData.skyPortal)) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (!glassy(m) || !m.color || seen.has(m)) return; seen.add(m);
+        var c = m.color, L = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; glassTone.push([m, c.clone()]); s0 += sat(c);
+        c.setRGB(L + k * (c.r - L), L + k * (c.g - L), L + k * (c.b - L)); s1 += sat(c); }); });
+    var n = glassTone.length;
+    console.log('§GLASS_TONE mats=' + n + ' k=' + k + ' meanSat ' + (n ? (s0 / n).toFixed(3) : '-') + ' -> ' + (n ? (s1 / n).toFixed(3) : '-'));
+    return n;
+  }
+  function glassToneOff(A, quiet) {
+    if (!glassTone.length) return 0; var n = glassTone.length;
+    glassTone.forEach(function (r) { r[0].color.copy(r[1]); }); glassTone = [];
+    if (!quiet) console.log('§GLASS_TONE restored mats=' + n);
+    return n;
+  }
   function glassOff(A, quiet) {
     if (!glassSet.length) return 0; var n = glassSet.length;
     glassSet.forEach(function (r) { r[0].customDepthMaterial = r[1]; r[0].customDistanceMaterial = r[2]; }); glassSet = [];
@@ -652,7 +956,12 @@
     var Pp = A.renderer.properties.get(m), U = Pp && Pp.uniforms; if (!U || !U.uSLParams) return false;
     U.uSLParams.value = P; U.uSLOrg.value = ORG; U.uSLDim.value = DIM; if (U.uSLSky) U.uSLSky.value = SKY; U.uSLZone.value = (active && tex) ? tex : dummy; U.uSLPZ.value = PZ; U.uSLSZ.value = SZ;
     if (U.uSLGround) U.uSLGround.value = (active && gtex && SKY[1] > 0.5) ? gtex : dGround;
+    if (U.uSLAoT) { U.uSLAo.value = AOP; U.uSLAoT.value = aoTex || dAo; if (U.uSLAoTL) U.uSLAoTL.value = aoTexL || aoTex || dAo; }   // §ZERO Z10
     if (U.uSLIrP) { U.uSLIrP.value = IRP; U.uSLIr.value = (active && IRP[0] > 0.5 && irTex) ? irTex : dIr; }
+    if (U.uSLGOP) { U.uSLGOP.value = GOP; U.uSLGO.value = (active && GOP[0] > 0.5 && goTex) ? goTex : dGO; }   // §GLASS_REFL_OPEN
+    if (U.uSLFs) U.uSLFs.value = FSP;   // §FLOOR_F_SMOOTH
+    if (U.uSLDf) { U.uSLDf.value = DFP; U.uSLDfO.value = DFO; U.uSLDfN.value = DFN; U.uSLDfT.value = (active && DFP[0] > 0.5 && dfTex) ? dfTex : dDf; }   // §OBJECT_CONTACT
+    if (U.uSLCf) { U.uSLCf.value = CFP; U.uSLCfG.value = CFG; U.uSLCfL.value = CFL; U.uSLCfT.value = (active && CFP[0] > 0.5 && cfTex) ? cfTex : dAo; }   // §FLOOR_CONTACT
     if (U.uSLCoveP) { U.uSLCoveP.value = COVEP; U.uSLCoveQ.value = COVEQ; U.uSLCove.value = (active && COVEP[3] > 0.5 && coveTex) ? coveTex : dCove; }   // §COVE_LIGHT
     if (U.uSLLamp) { var lo = active && LAMP[0] > 0.5 && lampTex; U.uSLLamp.value = LAMP; U.uSLCluDim.value = CDIM; U.uSLLampT.value = lo ? lampTex : dLamp; U.uSLLIdx.value = lo ? idxTex : dIdx; U.uSLClu.value = lo ? cluTex : dClu; }
     return true;
@@ -669,7 +978,7 @@
     if (linkFailed || !orig) return; linkFailed = true;
     var C = global.THREE.ShaderChunk; Object.keys(orig).forEach(function (k) { C[k] = orig[k]; });
     try { unstage(A, true); } catch (e) {}
-    installed = false; P[0] = 0; LAMP[0] = 0;
+    installed = false; P[0] = 0; LAMP[0] = 0; AOP[0] = 0; aoPatched = false;
     if (A._lampDataOn) { A._lampDataOn = false; A._lampData = null; try { if (typeof A._nightUpdateLights === 'function') A._nightUpdateLights(); } catch (eF) {} }
     var n = 0; A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !m.__slRe) { m.__slRe = true; m.needsUpdate = true; n++; } }); });
     if (A.markDirty) A.markDirty();
@@ -744,12 +1053,35 @@
       zones[zi] = { z: zi, floorM2: floorN[zi] * cl * cl, wpCells: wpN[zi], Fwp: wpN[zi] ? wpF[zi] / wpN[zi] / 10000 : 0, Fmean: allN[zi] ? allF[zi] / allN[zi] / 10000 : 0, enclosed: info.apertureM2 === 0, samples: pick }; }
     return { zones: zones, uses: spaceUses(A, Z) };
   }
+  function specSmoothOn(A) { return !!(A && A._stillSpecSmooth !== false && !(typeof location !== 'undefined' && /[?&]specsmooth=0(?!\d)/.test(location.search))); }
+  function zoneEyeOn(A) { return !!(A && A._stillZoneEye !== false && !(typeof location !== 'undefined' && /[?&]zoneeye=0/.test(location.search))); }   // §ZONE_EYE switch
+  function gridBlendOn(A) { return !!(A && (A._stillGridBlend === true || (A._stillGridBlend !== false && typeof location !== 'undefined' && /[?&]gridblend=1(?!\d)/.test(location.search)))); }
   function stageField(A, Z) {
     var LZ = global.LightZones, SP = global.SkyPortal, t0 = performance.now();
-    if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; SKY[1] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
+    if (!fieldOn(A) || !LZ.field) { SKY[0] = 0; SKY[1] = 0; SKY[2] = 0; SKY[3] = 0; console.log('§SKY_VIEW_FIELD off (' + (A._maxqActive ? 'film' : '&skyfield=0 / APP._stillSkyField=false') + ') — binary SKY_BIT path'); return null; }
     var hit = !!Z.field, ghit = !!(Z.field && Z.field.Gd && Z.field.ground && Z.field.ground.mode === LZ.groundMode(A)), F = LZ.field(A), key = texKey, uploadMs = 0;
-    if (rgFieldKey !== key) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i]; var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; }
+    // §GLASS_REFL_OPEN (Z26): with the switch on, the G texel of every computed glass cell = its cell-table index + 1 and the slot
+    // texture is uploaded; &glassopen=0 re-uploads G without them (the voxel march for every cell). goKey tracks the switch per zone texture.
+    var GO = F.glassOpen, goOn = !!(LZ.glassOpenOn && LZ.glassOpenOn(A) && GO && GO.n && GO.data && GO.data.length), gk = key + '|go' + (goOn ? 1 : 0), goN = 0, goUp = 0;
+    if (rgFieldKey !== key || goKey !== gk) { if (!rg) { rg = zoneRG(Z); tex.image.data = rg; } for (var i = 0; i < F.G.length; i++) rg[i * 2 + 1] = F.G[i];
+      if (goOn) { var goC = GO.cells; for (var gi = 0; gi < goC.length; gi++) { rg[goC[gi] * 2 + 1] = gi + 1; goN++; } }
+      var tU = performance.now(); tex.needsUpdate = true; A.renderer.initTexture(tex); uploadMs = performance.now() - tU; rgFieldKey = key; goKey = gk; }
+    else if (goOn) goN = GO.cells.length;
+    if (goOn) { if (!goTex || goTex.userData.goKey !== key) { if (goTex) goTex.dispose(); goTex = goTex2D(global.THREE, GO.data, GO.w, GO.h); goTex.userData.goKey = key; var tGo = performance.now(); A.renderer.initTexture(goTex); goUp = performance.now() - tGo; }
+      GOP[0] = 1; GOP[1] = (LZ.glassBlockOff && LZ.glassBlockOff(A)) ? 1 : 0; }
+    else { GOP[0] = 0; GOP[1] = 0; }
+    if (LZ.glassOpenActive) LZ.glassOpenActive(goOn, GOP[1] > 0.5);
+    console.log('§GLASS_REFL_OPEN staged ' + (goOn ? 'on' : 'off') + ' cells=' + goN + ' sides=' + (goOn ? GO.sides : 0) + ' slotTex=' + (goOn ? GO.w + 'x' + GO.h + ' (' + (GO.data.byteLength / 1e6).toFixed(1) + ' MB) uploadMs=' + goUp.toFixed(0) : 'none') + ' blockedAsZero=' + (GOP[1] > 0.5 ? 1 : 0) +
+      (goOn ? '' : (LZ.glassOpenOn && !LZ.glassOpenOn(A)) ? ' (&glassopen=0 / APP._stillGlassOpen=false: the mirror-ray march for every cell)' : ' (no glass-open data on the field: ' + (GO && GO.stats ? (GO.stats.why || 'computed=0') : 'none') + ')') +
+      ' (G of a computed SOLID glass cell = cell-table index + 1; shader slSpecKeep + LightZones.specVis read the pane-frame table before the march; &glassblock=0 = opaque hits read 0)');
     SKY[0] = 1;
+    // §ZERO Z18 switch: &gridblend=1 / APP._stillGridBlend = true -> the field stencil blends across zones (F, Gd, IR); default OFF
+    // until the GPU diagnosis (### Z18 DIAGNOSIS) confirms the zone-grid cause
+    SKY[2] = gridBlendOn(A) ? 1 : 0;
+    // §ZERO Z18 §SPEC_SMOOTH (default ON; &specsmooth=0 / APP._stillSpecSmooth=false = the binary mirror-ray gate, the NO-OP arm)
+    SKY[3] = specSmoothOn(A) ? 1 : 0;
+    console.log('§SPEC_SMOOTH ' + (SKY[3] > 0.5 ? 'on' : 'off') + ' (&specsmooth=' + (SKY[3] > 0.5 ? 1 : 0) + ': §GLASS_SPEC_GATE mirror-ray march ' + (SKY[3] > 0.5 ? 'trilinear open/solid transmittance (continuous)' : 'binary cell test (teeth, ### Z18 DIAGNOSIS)') + ')');
+    console.log('§GRID_BLEND ' + (SKY[2] > 0.5 ? 'on' : 'off') + ' (&gridblend=' + (SKY[2] > 0.5 ? 1 : 0) + ': field stencil ' + (SKY[2] > 0.5 ? 'keeps other-zone texels for F/Gd/IR, cove own-zone, SOLID rejected' : 'own-zone + open texels only (today)') + '; IR ' + (IRP[0] > 0.5 ? 'per-fragment blend ' + (SKY[2] > 0.5 ? 'on' : 'off') : 'off (no IR staged yet at this point; blend follows IR when it is)') + ')');
     // §GROUND_VIEW_FIELD: Gd uploaded as its own R16UI texture (the array is light_zones' Gd itself: the CPU mirror + the IDB
     // record read the same bytes, no copy to drop); uSLSky.y tells the shader to split the hemi
     var gOn = !!(LZ.groundOn(A) && F.Gd), gUp = 0, gs = F.ground;
@@ -789,7 +1121,7 @@
   // Returns null when the sun is not calibrated (no lux scale).
   function luxRows(A, Z) {
     if (!fieldLast) return null;
-    var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || 100000;
+    var S = fieldLast.stats, LZ = global.LightZones, sunI = A._stillCalibSunI, sunLux = A._stillCalibSunLux || LL.CALIB.sunLux;
     if (!(sunI > 0)) return null;
     var luxPer = sunLux / sunI, h = A.hemi, am = A.ambient, EskyU = (h ? lum3(h.color) * h.intensity : 0) + (am ? lum3(am.color) * am.intensity : 0), EskyLux = EskyU * luxPer;
     var lamps = new Map(), lampSrc = 'point lights';
@@ -798,7 +1130,7 @@
     if (A._lampDataOn && A._lampData && LAMP[0] > 0.5) { lampSrc = 'lamp data'; A._lampData.lamps.forEach(function (q) { if (!(q.I > 0)) return; var z = lampZone(LZ, q); if (!(z > 0) || z === OUTSIDE) return;
         var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push({ position: { x: q.x, y: q.y, z: q.z }, color: { r: q.r, g: q.g, b: q.b }, intensity: 1, distance: q.range, decay: A._lampData.decay }); }); }
     else A.scene.traverse(function (l) { if (!l.isPointLight || !l.visible || !(l.intensity > 0) || l === A._camLight) return; var z = l.userData && l.userData.sourcedZone; if (!(z > 0)) return; var a = lamps.get(z); if (!a) { a = []; lamps.set(z, a); } a.push(l); });
-    var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], nzn = Z.zones, existing = new Float32Array(nzn + 1), en = new Array(nzn + 1), use = new Array(nzn + 1);
+    var nx = Z.nx, nxy = nx * Z.ny, cl = Z.cell, rows = [], nzn = Z.zones, existing = new Float32Array(nzn + 1), lampsN = new Uint16Array(nzn + 1), skyE = new Float32Array(nzn + 1), en = new Array(nzn + 1), use = new Array(nzn + 1);
     var att = function (d, cut, decay) { var f = 1 / Math.max(Math.pow(d, decay), 0.01); if (cut > 0) { var x = Math.max(0, Math.min(1, 1 - Math.pow(d / cut, 4))); f *= x * x; } return f; };
     for (var z = 1; z <= nzn; z++) { var r = S.zones[z], L = lamps.get(z) || [], El = 0, wp = !!(r && r.wpCells);
       if (wp && L.length && r.samples.length) { r.samples.forEach(function (c) { var px = Z.org.x + (c % nx + 0.5) * cl, py = Z.org.y + ((((c / nx) | 0) % Z.ny) + 0.5) * cl, pz = Z.org.z + (((c / nxy) | 0) + 0.5) * cl;
@@ -806,9 +1138,9 @@
         El = El / r.samples.length * luxPer; }
       var Eir = (irLampZ && IRP[0] > 0.5 && L.length) ? irLampZ[z] * luxPer : 0; El += Eir;   // EN maintained illuminance includes interreflection
       var u = S.uses.byZone.get(z), Es = (r ? (wp ? r.Fwp : r.Fmean) : 0) * EskyLux;
-      existing[z] = Es + El; en[z] = u ? u.en : null; use[z] = u ? u.use : null;
+      existing[z] = Es + El; lampsN[z] = Math.min(65535, L.length); skyE[z] = Es; en[z] = u ? u.en : null; use[z] = u ? u.use : null;
       if (wp) rows.push({ z: z, floorM2: r.floorM2, Fwp: r.Fwp, Esky: Es, Elamps: El, Ecove: 0, Etotal: Es + El, lamps: L.length, use: use[z], en: en[z] }); }
-    return { rows: rows, existing: existing, en: en, use: use, EskyLux: EskyLux, luxPer: luxPer, lampSrc: lampSrc, sunI: sunI, sunLux: sunLux, S: S };
+    return { rows: rows, existing: existing, lampsN: lampsN, skyE: skyE, en: en, use: use, EskyLux: EskyLux, luxPer: luxPer, lampSrc: lampSrc, sunI: sunI, sunLux: sunLux, S: S };
   }
   // §LUX_CHECK — per zone, lux on the working plane: sky + zone-bound lamps (+ IR) + the §COVE_LIGHT cove; verdict vs the EN row
   function luxCheck(A, Z) {
@@ -881,14 +1213,14 @@
   //    separate from the RG16UI zone texture so its reads and §ZONE_TEX_CPU_DROP stay untouched (the §GROUND_VIEW_FIELD pattern).
   //    Read through the same 8-texel stencil as _slF; the term is directional, varies cell to cell, is exactly 0 outside cove
   //    zones. Zero lights, zero program keys, two vec4 uniforms (colour + on, log range).
-  // 6. STRIP (spec: "a VISIBLE thin emissive strip"): one merged MeshBasicMaterial mesh per building, 0.04 m bars along the
-  //    emitter lines, colour 0xffe4b5 (tools.js NIGHT_AMBER), excludeFromShadow, Alt+S only (added in stage, removed in unstage;
+  // 6. NO STRIP (§COVE_NO_STRIP, red1 2026-09-27: "need not have the actual lighting element. That be inventing objects"):
+  //    only the glow along the wall-ceiling edges (the field above) is drawn, no fixture mesh. Alt+S only (set in stage, off in unstage;
   //    films never call stage). &cove=0 / APP._stillCove=false = off. Budget: a zone whose cells x emitters x steps exceed
   //    COVE_BUDGET is computed on a cell stride (2..4) and filled from the nearest computed cell (logged).
-  var COVEP = new Float32Array(4), COVEQ = new Float32Array(4), coveTex = null, dCove = null, coveKey = null, coveLast = null, coveMesh = null;
-  var TRIM_LUX_VOID = 100, COVE_UNKNOWN_LUX = 100, COVE_R = 15, COVE_MAX_EMIT = 512, COVE_BUDGET = 30e6, COVE_COLOUR = 0xffe4b5, COVE_TYPES = ['', 'room', 'void', 'crevice', 'shaft'];
-  // COVE_LEDGE: the UP lobe's strip height below the ceiling for the FIELD = one cell (0.5 m). The visible strip sits at the
-  // spec's 0.1 m, but a source 0.1 m under the ceiling lies ABOVE every cell centre of the 0.5 m lattice (the top layer's centres
+  var COVEP = new Float32Array(4), COVEQ = new Float32Array(4), coveTex = null, dCove = null, coveKey = null, coveLast = null;
+  var TRIM_LUX_VOID = LL.COVE.trimLuxVoid, COVE_UNKNOWN_LUX = LL.COVE.unknownLux, COVE_R = 15, COVE_MAX_EMIT = 512, COVE_BUDGET = 30e6, COVE_COLOUR = LL.COVE.color, COVE_TYPES = ['', 'room', 'void', 'crevice', 'shaft'];
+  // COVE_LEDGE: the UP lobe's strip height below the ceiling for the FIELD = one cell (0.5 m). The spec's 0.1 m
+  // does not resolve: a source 0.1 m under the ceiling lies ABOVE every cell centre of the 0.5 m lattice (the top layer's centres
   // are 0.25 m down), so its upward Lambert lobe reached no cell and every ceiling stayed black (measured: Hospital plenum pose
   // 22 % black with the down lobe alone). One cell is the smallest offset the grid resolves; stated, not tuned.
   var COVE_LEDGE = 0.5, COVE_LOG_RANGE = 12;   // log-8 codes span 2^12 = 4096:1 below the building's maximum
@@ -917,14 +1249,14 @@
     Z.coveT = { type: type, by: by, bb: bb, cells: cells, off: off, walk: walk, hmax: hmax, floorN: floorN, ms: Math.round(performance.now() - t0) };
     return Z.coveT;
   }
-  // emitters of one zone: e = [sx, sy(ceiling plane), sz, weight] x n (the field's sources), strip = [x, y, z, axis(0 along x, 1 along z)] (the visible bars)
+  // emitters of one zone: e = [sx, sy(ceiling plane), sz, weight] x n (the field's sources)
   function coveEmitters(Z, T, z) {
-    var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, cl = Z.cell, o = z * 6, bb = T.bb, cells = T.cells, thin = (bb[o + 4] - bb[o + 1] + 1) < 2, shaft = T.type[z] === 4, out = [], strip = [];
+    var nx = Z.nx, ny = Z.ny, nz = Z.nz, nxy = nx * ny, zone = Z.zone, cl = Z.cell, o = z * 6, bb = T.bb, cells = T.cells, thin = (bb[o + 4] - bb[o + 1] + 1) < 2, shaft = T.type[z] === 4, out = [];
     if (thin) {   // amendment d: one line along the long axis, mid-height — per long-axis slice the middle cell of the slice
       var alongX = (bb[o + 3] - bb[o]) >= (bb[o + 5] - bb[o + 2]), sl = new Map();
       for (var q = T.off[z]; q < T.off[z + 1]; q++) { var c = cells[q], i = c % nx, k = (c / nxy) | 0, a = alongX ? i : k, b = alongX ? k : i; var arr = sl.get(a); if (!arr) sl.set(a, arr = []); arr.push([b, c]); }
       sl.forEach(function (arr) { arr.sort(function (p, q2) { return p[0] - q2[0]; }); var c = arr[arr.length >> 1][1], i = c % nx, j = ((c / nx) | 0) % ny, k = (c / nxy) | 0;
-        var x = Z.org.x + (i + 0.5) * cl, zz = Z.org.z + (k + 0.5) * cl; out.push(x, Z.org.y + (j + 1) * cl, zz, 1); strip.push(x, Z.org.y + (j + 0.5) * cl, zz, alongX ? 0 : 1); });
+        var x = Z.org.x + (i + 0.5) * cl, zz = Z.org.z + (k + 0.5) * cl; out.push(x, Z.org.y + (j + 1) * cl, zz, 1); });
     } else {
       var jTop = bb[o + 4];
       for (var q2 = T.off[z]; q2 < T.off[z + 1]; q2++) { var c2 = cells[q2], i2 = c2 % nx, j2 = ((c2 / nx) | 0) % ny, k2 = (c2 / nxy) | 0;
@@ -932,12 +1264,11 @@
         var sxm = i2 === 0 || zone[c2 - 1] === SOLID, sxp = i2 === nx - 1 || zone[c2 + 1] === SOLID, szm = k2 === 0 || zone[c2 - nxy] === SOLID, szp = k2 === nz - 1 || zone[c2 + nxy] === SOLID;
         if (!(sxm || sxp || szm || szp)) continue;
         var x2 = Z.org.x + (i2 + 0.5) * cl + (sxm ? 0.15 : 0) - (sxp ? 0.15 : 0), z2 = Z.org.z + (k2 + 0.5) * cl + (szm ? 0.15 : 0) - (szp ? 0.15 : 0), yc = Z.org.y + (j2 + 1) * cl;
-        out.push(x2, yc, z2, 1);
-        if (sxm || sxp) strip.push(x2, yc - 0.1, z2, 1); if (szm || szp) strip.push(x2, yc - 0.1, z2, 0); }
+        out.push(x2, yc, z2, 1); }
     }
     var n = out.length / 4, s = 1;
     if (n > COVE_MAX_EMIT) { s = Math.ceil(n / COVE_MAX_EMIT); var o2 = []; for (var e = 0; e < n; e += s) o2.push(out[e * 4], out[e * 4 + 1], out[e * 4 + 2], s); out = o2; }
-    return { e: Float32Array.from(out), strip: strip, perimM: n * cl, n: n, stride: s };
+    return { e: Float32Array.from(out), perimM: n * cl, n: n, stride: s };
   }
   // per zone cell for unit output (weights in e): V = the down lobe's irradiance vector (ceiling patches at e), U = the up lobe
   // (the strip COVE_LEDGE under the ceiling emitting up, onto a downward-facing receiver at the cell centre); cells whose grid
@@ -964,18 +1295,32 @@
         if (f >= 0) { V[q3 * 3] = V[f * 3]; V[q3 * 3 + 1] = V[f * 3 + 1]; V[q3 * 3 + 2] = V[f * 3 + 2]; U[q3] = U[f]; } } }
     return work;
   }
+  function irCoveApply(A) {
+    if (!(IRP[0] > 0.5) || !irBase) return;
+    var add = (COVEP[3] > 0.5 && coveLast && coveLast.irAdd) ? coveLast.irAdd : null, k = irKey + '|' + (add ? coveKey : 'nocove');
+    if (k === irCoveKey) return;
+    var THREE = global.THREE, buf = irBase.slice(), tot = irBaseTot.slice(), nz = 0, mx = 0;
+    if (add) for (var z = 1; z < add.length && z < tot.length; z++) { var a = add[z]; if (!(a > 0)) continue; nz++; if (a > mx) mx = a;
+      buf[z * 4] += a * COVEP[0]; buf[z * 4 + 1] += a * COVEP[1]; buf[z * 4 + 2] += a * COVEP[2]; tot[z] += a; }
+    var t = lampTex2D(THREE, buf, irW, irH);
+    try { A.renderer.initTexture(t); } catch (eI) { t.dispose(); console.warn('§COVE_IR upload failed: ' + eI.message + ' — IR without the cove'); return; }
+    if (irTex) irTex.dispose(); irTex = t; irTotZ = tot; irCoveKey = k; lampPushAll = true;
+    console.log('§COVE_IR ' + (add ? 'on zones=' + nz + ' maxE=' + mx.toFixed(5) + ' (E_ir = R/(1-R) x cove direct, R=' + IR_R + '; direct = deficit x (1-R))' : 'off (IR = lamps + day only)'));
+  }
   function coveBuild(A, Z) {
     var THREE = global.THREE; COVEP[3] = 0;
     if (!coveOn(A)) { console.log('§COVE_LIGHT off (&cove=0 / APP._stillCove=false)'); coveLast = null; return null; }
     var X = luxRows(A, Z);
     if (!X) { console.log('§COVE_LIGHT VACUOUS no lux calibration (calibSunI=' + A._stillCalibSunI + ') — no zone judged'); coveLast = null; return null; }
     var D = A._lampDataOn ? A._lampData : null, key = texKey + '|' + (D ? D.ver : 'nolamps') + '|' + X.EskyLux.toFixed(3) + '|' + X.luxPer.toFixed(3) + '|' + (IRP[0] > 0.5 ? irKey : 'noir');
-    if (key === coveKey && coveTex) { COVEP[3] = 1; coveStrip(A); return coveLast; }
-    coveStripOff(A); if (coveLast && coveLast.geom) coveLast.geom.dispose();   // a rebuild (lamp set / level changed) replaces the strip too
+    if (key === coveKey && coveTex) { COVEP[3] = 1; return coveLast; }
     var t0 = performance.now(), T = coveTypes(Z), nzn = Z.zones, S = X.S, nx = Z.nx, nxy = nx * Z.ny, N = Z.zone.length, luxPer = X.luxPer;
-    var zones = new Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, strip = [], vs = [], fieldBuilt = 0;
-    var CF = Z.coveF || (Z.coveF = new Map());
+    var zones = new Array(nzn + 1), irAdd = new Float32Array(nzn + 1), wpE = new Float32Array(nzn + 1), qual = [], byQ = { room: 0, void: 0, crevice: 0, shaft: 0 }, defs = [], noEmit = 0, emitters = 0, perimM = 0, cellsN = 0, work = 0, strided = 0, vs = [], fieldBuilt = 0;
+    var CF = Z.coveF || (Z.coveF = new Map()), qLamp = 0, qSky = 0;   // §LIGHT_ONE_SCALE L1a: below-level zones left to their real sources
     for (var z = 1; z <= nzn; z++) { var t = T.type[z], lv = t === 1 ? (X.en[z] != null ? X.en[z] : COVE_UNKNOWN_LUX) : TRIM_LUX_VOID, ex = X.existing[z], df = Math.max(0, lv - ex);
+      // §LIGHT_ONE_SCALE L1a (red1 2026-09-27): the cove is the one added source, ONLY where the compartment has no real source —
+      // no zone-bound lamp and no sky reaching it (F x sky > 0). A lit compartment below its EN row keeps its real light only.
+      if (df > 0.5 && (X.lampsN[z] > 0 || X.skyE[z] > 0)) { if (X.lampsN[z] > 0) qLamp++; else qSky++; continue; }
       if (!(df > 0.5)) continue;
       // the unit-output field of a zone depends on the grid only: cached on the zone cache (Z.coveF) so a lamp-set change
       // (the §LAMP_EN ver bump in the first staged frame) re-scales and re-encodes without marching again
@@ -991,13 +1336,16 @@
       else if (F0 === null) { noEmit++; continue; }
       var E = F0.E, n = F0.n, st = F0.st, V = F0.V, U = F0.U, e1 = F0.e1, ns = F0.ns, calib = F0.calib; if (st > 1) strided++;
       if (!(ns > 0 && e1 > 0)) { noEmit++; continue; }
-      var scale = (df / luxPer) / (e1 / ns), sum = 0, sq = 0, nz0 = 0, mx = 0, upN = 0, upMx = 0;
+      var dfDir = irOn(A) && IRP[0] > 0.5 ? df * (1 - IR_R) : df;   // §COVE_IR: the rest arrives as the zone's IR (irAdd below)
+      irAdd[z] = df - dfDir > 0 ? (df - dfDir) / luxPer : 0;
+      var scale = (dfDir / luxPer) / (e1 / ns), sum = 0, sq = 0, nz0 = 0, mx = 0, upN = 0, upMx = 0;
       for (var q2 = 0; q2 < n; q2++) { var mv = scale * Math.sqrt(V[q2 * 3] * V[q2 * 3] + V[q2 * 3 + 1] * V[q2 * 3 + 1] + V[q2 * 3 + 2] * V[q2 * 3 + 2]); sum += mv; sq += mv * mv; if (mv > 0) nz0++; if (mv > mx) mx = mv; var uv = scale * U[q2]; if (uv > 0) upN++; if (uv > upMx) upMx = uv; }
       var mean = sum / n, cvv = mean > 0 ? Math.sqrt(Math.max(0, sq / n - mean * mean)) / mean : 0;
       wpE[z] = calib === 'wp' ? df : 0;   // the working-plane cove E (lux) the §LUX_CHECK rows add; zones without a plane report 0 there
-      qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n; for (var s0 = 0; s0 < E.strip.length; s0++) strip.push(E.strip[s0]);
-      zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
+      qual.push(z); byQ[COVE_TYPES[t]]++; defs.push(df); emitters += E.e.length / 4; perimM += E.perimM; cellsN += n;
+      zones[z] = { z: z, type: COVE_TYPES[t], existingE: +ex.toFixed(1), level: lv, deficit: +df.toFixed(1), coveE: +(calib === 'wp' ? df : mean * luxPer + irAdd[z] * luxPer).toFixed(1), coveIR: +(irAdd[z] * luxPer).toFixed(1), calib: calib, emitters: E.e.length / 4, perimeterM: +E.perimM.toFixed(1), cells: n, litCells: nz0, upCells: upN, cv: +cvv.toFixed(3), maxE: +(mx * luxPer).toFixed(1), maxUpE: +(upMx * luxPer).toFixed(1), stride: st, m3: Z.zoneInfo[z - 1].m3 };
       vs.push([z, V, scale, Math.max(mx, upMx), U]); }
+    console.log('§COVE_QUAL (L1a) qualified=' + qual.length + ' belowLevelWithLamps=' + qLamp + ' belowLevelWithSkyOnly=' + qSky + ' (left to their real sources; cove only where lamps = 0 and sky = 0)');
     var tf = performance.now(), maxAll = 0; vs.forEach(function (v) { if (v[3] > maxAll) maxAll = v[3]; });
     if (!qual.length || !(maxAll > 0)) { coveLast = { key: key, zones: null, wpE: wpE, qualified: 0 }; coveKey = key;
       console.log('§COVE_LIGHT VACUOUS bld=' + Z.bld + ' zones=' + nzn + ' qualified=0 (no zone below its level' + (noEmit ? '; ' + noEmit + ' below level but without a ceiling edge' : '') + ') types ' + JSON.stringify(T.by) + ' ms=' + Math.round(performance.now() - t0)); return coveLast; }
@@ -1018,32 +1366,25 @@
     var col = new THREE.Color(COVE_COLOUR), lum = 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b;
     COVEP[0] = col.r / lum; COVEP[1] = col.g / lum; COVEP[2] = col.b / lum; COVEP[3] = 1; COVEQ[0] = lnMin; COVEQ[1] = lnR; coveKey = key; lampPushAll = true;
     defs.sort(function (a, b) { return a - b; }); var pq = function (f) { return defs[Math.min(defs.length - 1, Math.floor(defs.length * f))].toFixed(0); };
-    coveLast = { key: key, zones: zones, wpE: wpE, qualified: qual.length, byType: byQ, strip: strip, geom: null, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
+    coveLast = { key: key, zones: zones, irAdd: irAdd, wpE: wpE, qualified: qual.length, byType: byQ, stats: { emitters: emitters, perimeterM: +perimM.toFixed(1), cells: cellsN, strided: strided, noEdge: noEmit, work: work, memMB: +(arr.byteLength / 1e6).toFixed(1), QC: QC, maxE: +(maxAll * luxPer).toFixed(1), buildMs: Math.round(tf - t0), texMs: Math.round(performance.now() - tf), typesMs: T.ms } };
     console.log('§COVE_LIGHT build bld=' + Z.bld + ' zones=' + nzn + ' types ' + JSON.stringify(T.by) + ' qualified=' + qual.length + ' byType ' + JSON.stringify(byQ) + ' deficit lx p10/p50/p90/max=' + pq(0.1) + '/' + pq(0.5) + '/' + pq(0.9) + '/' + defs[defs.length - 1].toFixed(0) +
       ' emitters=' + emitters + ' perimeterM=' + perimM.toFixed(1) + ' cells=' + cellsN + ' (strided zones ' + strided + ', below level but no ceiling edge ' + noEmit + ') fieldsMarched=' + fieldBuilt + ' (cached ' + (qual.length - fieldBuilt) + ') marchSteps=' + work + ' memMB=' + coveLast.stats.memMB + ' (RGBA8UI log-8, range 2^' + COVE_LOG_RANGE + ', maxE=' + coveLast.stats.maxE + ' lx) buildMs=' + coveLast.stats.buildMs + ' (types ' + T.ms + ') texMs=' + coveLast.stats.texMs + ' uploadMs=' + upMs.toFixed(0) +
       ' level: room=EN row | unknown use ' + COVE_UNKNOWN_LUX + ' lx (6.1.1 circulation) | void/crevice/shaft TRIM_LUX_VOID=' + TRIM_LUX_VOID + ' lx (EN 12464-1 circulation row via secondary summaries, primary not consulted) colour=0x' + COVE_COLOUR.toString(16) + ' R=' + COVE_R + 'm');
     console.log('§COVE_LIGHT NOFLAT ' + (outsideNZ === 0 && cvZero === 0 ? 'PASS' : 'FAIL') + ' texelsOutsideCoveZones=' + outsideNZ + ' coveZonesWithCv0=' + cvZero + '/' + (qual.length - cvVac) + ' judged (' + cvVac + ' zones of 1-2 cells not judged)' + (cvZero ? ' cv0 zones [' + cvZeroZ.slice(0, 5).map(function (z) { var r = zones[z]; return z + ':' + r.type + ':' + r.cells + 'cells:' + r.emitters + 'em'; }).join(' ') + ']' : '') + ' (cell-to-cell coefficient of variation of |V| per zone; directional term, never a flat fill)');
     var top = qual.slice().sort(function (a, b) { return zones[b].cells * zones[b].deficit - zones[a].cells * zones[a].deficit; }).slice(0, 8), cz = (A._sourcedCap && A._sourcedCap.camZone) || 0; if (cz && zones[cz] && top.indexOf(cz) < 0) top.push(cz);
     console.log('§COVE_LIGHT_ZONE [z:type:existingE+cove=level lx:emitters:perimM:cells:litCells/upCells:cv:calib:stride:m3] ' + top.map(function (z) { var r = zones[z]; return z + ':' + r.type + ':' + r.existingE + '+' + r.coveE + '=' + r.level + ':' + r.emitters + ':' + r.perimeterM + ':' + r.cells + ':' + r.litCells + '/' + r.upCells + ':' + r.cv + ':' + r.calib + ':' + r.stride + ':' + r.m3; }).join(' ') + (cz ? ' camZone=' + cz + (zones[cz] ? '' : ' (no cove: existingE=' + X.existing[cz].toFixed(1) + ' lx >= level)') : ''));
-    coveStrip(A);
     return coveLast;
   }
-  // the visible strip: one merged mesh of 0.04 m bars, half a cell long, along the emitter lines (built once per cove key)
-  function coveStrip(A) {
-    var THREE = global.THREE; if (!coveLast || !coveLast.strip || !coveLast.strip.length || coveMesh) return;
-    if (!coveLast.geom) { var s = coveLast.strip, nb = s.length / 4, pos = new Float32Array(nb * 8 * 3), idx = new Uint32Array(nb * 36), cl = (global.LightZones.get() || { cell: 0.5 }).cell, hl = cl / 2, hw = 0.02;
-      var BI = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0];
-      for (var b = 0; b < nb; b++) { var x = s[b * 4], y = s[b * 4 + 1], z = s[b * 4 + 2], ax = s[b * 4 + 3], dx = ax === 0 ? hl : hw, dz = ax === 1 ? hl : hw, o = b * 24;
-        var P8 = [[-dx, -hw, -dz], [dx, -hw, -dz], [dx, -hw, dz], [-dx, -hw, dz], [-dx, hw, -dz], [dx, hw, -dz], [dx, hw, dz], [-dx, hw, dz]];
-        for (var v = 0; v < 8; v++) { pos[o + v * 3] = x + P8[v][0]; pos[o + v * 3 + 1] = y + P8[v][1]; pos[o + v * 3 + 2] = z + P8[v][2]; }
-        for (var i = 0; i < 36; i++) idx[b * 36 + i] = b * 8 + BI[i]; }
-      var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeBoundingSphere(); coveLast.geom = g; coveLast.strip = null; }
-    coveMesh = new THREE.Mesh(coveLast.geom, new THREE.MeshBasicMaterial({ color: COVE_COLOUR, side: THREE.DoubleSide }));
-    coveMesh.name = 'cove_strip'; coveMesh.userData.excludeFromShadow = true; coveMesh.userData.coveStrip = true; coveMesh.castShadow = false; coveMesh.receiveShadow = false; coveMesh.frustumCulled = true; coveMesh.renderOrder = 1;
-    A.scene.add(coveMesh);
-    console.log('§COVE_LIGHT strip mesh bars=' + (coveLast.geom.index.count / 36) + ' tris=' + (coveLast.geom.index.count / 3) + ' colour=0x' + COVE_COLOUR.toString(16) + ' (MeshBasicMaterial, excludeFromShadow, Alt+S only)');
+  // a new A._lampData version (tools.js bumps it per _nightUpdateLights) -> lamp texture rebuilt (§LAMP_EN applied on the first
+  // build), IR + cove + cove-IR follow (a lamp change moves the deficit). The per-frame hook calls it; effects.js calls it once
+  // right after the still's lamps are born so §FIXTURE_FACE reads the EN-scaled I before the meter and the first TAA sample.
+  function lampSync(A) {
+    if (!(active && A._lampDataOn && A._lampData && A._lampData.ver !== lampVer)) return false;
+    try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
+    try { irBuild(A); coveBuild(A, global.LightZones.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); }
+    try { irCoveApply(A); } catch (eCI2) { console.warn('§COVE_IR failed: ' + eCI2.message); }
+    return true;
   }
-  function coveStripOff(A) { if (!coveMesh) return; A.scene.remove(coveMesh); coveMesh.material.dispose(); coveMesh = null; }
   function stage(A) {
     var THREE = global.THREE, LZ = global.LightZones;
     if (!installed || !THREE || !LZ || !A || !A.scene || !A.renderer) { console.log('§SOURCED_LIGHT skipped installed=' + installed + ' zones=' + !!LZ); return; }
@@ -1054,6 +1395,7 @@
     if (texKey !== key) {
       if (tex) tex.dispose(); rgFieldKey = null;
       if (gtex) { gtex.dispose(); gtex = null; } gKey = null;   // §GROUND_VIEW_FIELD: its texture follows the zone texture's key
+      if (goTex) { goTex.dispose(); goTex = null; } goKey = null; GOP[0] = 0;   // §GLASS_REFL_OPEN: same
       // §SOURCED_DAYLIGHT: RG16UI — R = zone | SKY_BIT (as before), G = the still's daylight fraction x 10000 (0 until daylight())
       rg = zoneRG(Z); rgKey = key;
       tex = new THREE.Data3DTexture(rg, Z.nx, Z.ny, Z.nz);
@@ -1069,35 +1411,51 @@
     // (Hospital 41 MB). Drop it; stageField rebuilds it from those two when the field must be written again, and a restored
     // WebGL context re-stages from scratch (texKey cleared below).
     if (rg && tex && (rgFieldKey === texKey || !SKY[0])) { rg = null; rgKey = null; tex.image.data = null; }
-    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; gKey = null; coveKey = null; }); }
+    if (!ctxHooked && A.renderer.domElement) { ctxHooked = true; A.renderer.domElement.addEventListener('webglcontextrestored', function () { texKey = null; rgFieldKey = null; gKey = null; goKey = null; coveKey = null; }); }
     var keep = dial(A, '_stillIndoorSky', 'indoorsky', 0, 0, 1);   // principle 1: indoors no flat ambient / hemi (0)
     console.log('§SOURCED_LIGHT_DIALS indoorSky=' + keep + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (&skyfield=0 = the binary SKY_BIT path)');
     P[0] = 1; P[1] = Z.cell; P[2] = keep; P[3] = 0;
-    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
+    ORG[0] = Z.org.x; ORG[1] = Z.org.y; ORG[2] = Z.org.z; ORG[3] = zoneEyeOn(A) ? (/[?&]zoneeyeopen=1/.test(location.search) ? 2 : 1) : 0; console.log('§ZONE_EYE ' + (ORG[3] > 0.5 ? 'on' : 'off (&zoneeye=0 / APP._stillZoneEye=false)') + ' (surface room = first non-solid cell stepping back along the eye ray, 12 x 0.25 m; else nearest-cell rule)'); DIM[0] = Z.nx; DIM[1] = Z.ny; DIM[2] = Z.nz;
     active = true;
     try { lampBuild(A); } catch (eLB) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB.message); lampFail(A, 'build threw'); }
     try { irBuild(A); } catch (eIR) { IRP[0] = 0; console.warn('§IRC_MAX build failed: ' + eIR.message); }
-    try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)
+    try { coveBuild(A, Z); } catch (eCV) { COVEP[3] = 0; coveLast = null; console.warn('§COVE_LIGHT build failed: ' + eCV.message + ' — cove off'); }
+    // default OFF (MEASURED 2026-10-02: HHS …878367234 floor patchy 42.3 -> 40.2 %, Clinic …728142544 4.6 -> 5.4 % — the HHS steps are not F)
+    FSP[0] = /[?&]floorfsmooth=1/.test(location.search) || A._stillFloorFSmooth === true ? 1 : 0; console.log('§FLOOR_F_SMOOTH ' + (FSP[0] ? 'on (upward fragments: F + Gd averaged over 5 x 5 own-zone cells, sigma 1 cell)' : 'off (default; &floorfsmooth=1 = on)'));
+    try { cfBuild(A); } catch (eCF) { CFP[0] = 0; cfTex = null; console.warn('§FLOOR_CONTACT build failed: ' + eCF.message); }
+    try { if (global.ContactFloor) dfBuild(A); else console.log('§OBJECT_CONTACT off (contact_floor.js not loaded)'); } catch (eDF) { DFP[0] = 0; dfTex = null; console.warn('§OBJECT_CONTACT build failed: ' + eDF.message); }
+    try { irCoveApply(A); } catch (eCI) { console.warn('§COVE_IR failed: ' + eCI.message); }   // §COVE_LIGHT: after lamps + IR (the deficit reads them), before the meter (it must see the cove)
     var set = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m) set.add(m); }); });
     var pushed = 0; set.forEach(function (m) { if (push(A, m)) pushed++; });
     var b = bindLights(A, A.camera);
     var gl = /[?&]glassshadow=1/.test(location.search) ? 0 : glassOn(A);   // &glassshadow=1 = glass casts as before (A/B)
+    try { glassToneOn(A); } catch (eGT) { console.warn('§GLASS_TONE failed: ' + eGT.message); }
     console.log('§SUN_GLASS_CASTERS fixed pureGlassMeshes=' + gl + ' (depth pass discards them: sun + portal shadows pass through glass)' + (gl ? '' : ' — &glassshadow=1 or none found'));
-    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0; ordCache = null;
+    prevOBR = A.scene.onBeforeRender; var progN = -2, pushes = 0, rebinds = 0, taaRestarts = 0; lastU = new WeakMap(); ordCache = null;
+    set.forEach(function (m) { var pp = A.renderer.properties.get(m); if (pp && pp.uniforms) lastU.set(m, pp.uniforms); });
+    var ownN = 0, ownMs = 0, ownBindMs = 0;   // §SOURCED_OWN_COST (§FILM_INHERIT cost hunt): CPU of this hook per render, logged every 240 renders
     var own = function (renderer, scene, camera) {
+      var _oT0 = performance.now();
       if (active) {
-        if (A._lampDataOn && A._lampData && A._lampData.ver !== lampVer) { try { lampBuild(A); } catch (eLB2) { console.warn('§LAMP_UNCAPPED build failed: ' + eLB2.message); lampFail(A, 'build threw'); }
-          try { irBuild(A); coveBuild(A, LZ.get()); } catch (eCV2) { COVEP[3] = 0; console.warn('§COVE_LIGHT rebuild failed: ' + eCV2.message); } }   // §COVE_LIGHT: a lamp change moves the deficit
-        else if (!A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
+        if (!lampSync(A) && !A._lampDataOn && LAMP[0] > 0.5) { LAMP[0] = 0; lampPushAll = true; }
         try { irBuild(A); } catch (eIR2) { IRP[0] = 0; }   // cheap when nothing changed (key compare)
-        var bb = bindLights(A, camera);
+        var _bT0 = performance.now(), bb = bindLights(A, camera); ownBindMs += performance.now() - _bT0;
         if (lampPushAll) { lampPushAll = false; progN = -3; }
         // re-push only when a program was built (a recompile clones fresh uniforms from ShaderLib; typed arrays stay shared)
         var np = (renderer && renderer.info && renderer.info.programs) ? renderer.info.programs.length : -1;
         if (np !== progN) { progN = np; var seen = new Set(); A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !seen.has(m)) { seen.add(m); push(A, m); } }); }); pushes++; }
+        // ### ALTS-ALL FIX 1 (c): a new program key served by an EXISTING GL program leaves programs.length unchanged but still swaps
+        // in a fresh (dummy-texture) uniforms object — re-push any staged material whose uniforms object changed since its last push.
+        // This hook runs before the draw, so the frame that created the key already drew with dummies: counted, not rescued.
+        var nRe = 0, reN = []; if (renderer === A.renderer && renderer.properties) set.forEach(function (m) { var pp = renderer.properties.get(m), U = pp && pp.uniforms; if (U && U.uSLParams && lastU.get(m) !== U) { push(A, m); if (lastU.has(m)) { nRe++; if (reN.length < 4) reN.push(m.type.replace('Mesh', '').replace('Material', '') + ':' + (m.name || '-').slice(0, 20) + (m.userData && m.userData.gfOf ? '(glass)' : '') + (m.userData && m.userData.triRow ? '(tri)' : '')); } lastU.set(m, U); } });
+        // ### ALTS-ALL FIX 1 (e): a rebind DURING the still's accumulation means the previous TAA sample drew those materials with the
+        // dummy zone texture — restart the accumulation (the refine loop's own §STILL_REFINE_RESTART mechanism), at most 3 times a press.
+        var taaR = 0; if (nRe && A._stillRefineActive && A._taaPass && A._taaPass.accumulate && A._taaPass.accumulateIndex > 0 && taaRestarts < 3) { A._taaPass.accumulateIndex = -1; taaRestarts++; taaR = 1; }
+        if (nRe) { rebinds++; console.log('§SOURCED_REBIND n=' + nRe + ' event=' + rebinds + (taaR ? ' taaRestart=' + taaRestarts : '') + ' e.g. [' + reN.join(' ') + '] (materials re-keyed since their last push: the previous frame drew them with the dummy zone texture)'); }
         var line = '§SOURCED_LIGHT_BIND points=' + bb.points + ' bound=' + bb.pointsBound + ' (litOutside=' + bb.litOutside + ') litUnbound=' + bb.litUnbound + ' spots=' + bb.spots + ' portalsBound=' + bb.spotsBound;
         if (line !== lastLog) { lastLog = line; console.log(line); }
       }
+      ownMs += performance.now() - _oT0; if (++ownN % 240 === 0) { console.log('§SOURCED_OWN_COST renders=' + ownN + ' meanMs=' + (ownMs / 240).toFixed(2) + ' bindMeanMs=' + (ownBindMs / 240).toFixed(2) + ' (CPU in the onBeforeRender hook per render; a film frame = ~20 renders)'); ownMs = 0; ownBindMs = 0; }
       if (prevOBR) prevOBR.apply(this, arguments);
     };
     own._sourced = true; A.scene.onBeforeRender = own;
@@ -1106,8 +1464,12 @@
       A.scene.onAfterRender = prevOAR || function () {}; if (prevOAR) prevOAR.apply(this, arguments); };
     // §METER — inside = the camera stands in a light zone (else effects.js's _stillCamInside answer, passed in A._stillCamInsideNow)
     var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow;
-    if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { A._meterLast = meter(A, inside); } catch (eM) { console.warn('§METER failed: ' + eM.message); } }
+    // ### ALTS-ALL FIX 1: a DIAGNOSTIC reading only (exposure untouched) — the ground, lamps and glass env are not final yet; the ONE
+    // reading is SourcedLight.meterFinal(A), called by effects.js on the final staged scene.
+    A._meterLast = null;
+    if (!/[?&]meter=0/.test(location.search) && A._stillMeter !== false) { try { meter(A, inside, 'diag'); } catch (eM) { console.warn('§METER_DIAG failed: ' + eM.message); } }
     else console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3));
+    try { LL.log(A, 'stage-diag'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
     try { luxCheck(A, Z); } catch (eL) { console.warn('§LUX_CHECK failed: ' + eL.message); }
     if (A.markDirty) A.markDirty();
     console.log('§SOURCED_LIGHT on zonesCache=' + (hit ? 'hit' : 'built') + ' zones=' + Z.zones + ' grid=' + Z.nx + 'x' + Z.ny + 'x' + Z.nz + ' cell=' + Z.cell +
@@ -1115,57 +1477,137 @@
       ' litUnbound=' + b.litUnbound + ' spots=' + b.spots + ' portalsBound=' + b.spotsBound + ' ms=' + (performance.now() - t0).toFixed(0));
   }
 
-  // ══ §METER — exposure follows the scene's own metered light indoors (watchdog ruling (A), 2026-09-25) ══
-  // Physically calibrated lamps (§SOURCED_LIGHT_CALIB) put an interior at 0.5-2% of the sunlit ground; a camera meters and
-  // opens up. The meter reads the SOURCED frame's INCIDENT light: one small float render with a white Lambert override
-  // (albedo 1, so L = E / pi — three's Lambert), sky / lamp glows / sprites / points / glass hidden; the log-average over
-  // the lit surfaces (Reinhard et al. 2002, "Photographic Tone Reproduction for Digital Images", eq. 1: exp(mean(log(delta
-  // + x)))) gives Ein. Reference Eout = the scene's own outdoor light on a horizontal surface (sun x sin(elevation) + sky).
-  // Albedo cancels: a surface of albedo rho displays ~ exposure * rho * E. PARTIAL adaptation (red1: "you won't see a
-  // washed room, just more lighted"): perceived brightness follows Stevens' power law B ~ L^0.33 (S. S. Stevens, "On the
-  // psychophysical law", Psychol. Rev. 64, 1957; brightness exponent 0.33), so an interior keeps (Ein/Eout)^0.33 of its
-  // ratio to outdoors: exposure = base * (Ein / Eout)^(0.33 - 1). Camera outside: base exactly. (A first cut compared
-  // albedo-weighted luminance with a 0.18 middle grey: white rooms metered 4x high and got no boost — replaced.)
-  var METER_W = 160, METER_H = 90, STEVENS = 0.33, METER_MAX_STOPS = 10, meterSaved = null, meterMat = null;
-  function meterRead(A, opts) {
-    var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [];
+  // ══ §METER — one exposure law for every camera (§METER_EV below; §LIGHT_ONE_SCALE L3, red1 2026-09-27) ══
+  // One small float render of the frame as the eye receives it (real materials, glass, emitters; sky pixels = the lighting's
+  // sky luminance), log-average luminance (Reinhard et al. 2002 eq. 1) over the histogram band -> EV100 -> exposure.
+  // (History: the Stevens 0.33 / CIECAM02-D incident-light rules and the inside-only branch are retired — audit top-1/2.)
+  var lastU = new WeakMap();   // ### ALTS-ALL FIX 1: material -> the uniforms object last pushed (own() + meterRead keep it)
+  var METER_W = LL.METER.W, METER_H = LL.METER.H, HIST_LO = LL.METER.histLo, HIST_HI = LL.METER.histHi, meterSaved = null;
+  // §METER_BANDS: the histogram bands the engines document (Unreal 70/95 docs range, Unreal 10/90 constructor, HDRP 40/90); every press
+  // logs the EV100 each band would give (same buffer), &meterband=lo,hi picks one for the exposure — the EV sanity check (ANSI: sunny
+  // exterior ~15, offices 7-8) decides the default from data, not taste.
+  var METER_BANDS = [[0.70, 0.95], [0.40, 0.90], [0.10, 0.90]];
+  // §METER_STATE (§ALTS_ALL, coordinator item 3: at the film's outside poses the lamp remeter reads EV 18.5 vs the stage meter 16.1 on
+  // the SAME pixels/skyPx — what the frame contains changed between the two meters). One line per meter with the scene state that
+  // can change between stage and remeter, exposure-independent: the ground (colour, gain, map, visible), sun (I, castShadow,
+  // shadow autoUpdate), visible light census by type (count / summed intensity), hemi, envMap intensity mean, hidden-by-meter count;
+  // plus, for OUTSIDE cameras, the band L re-read with the ground hidden (groundShare = 1 - L_noGround / L) so the harness can say
+  // WHICH term moved (ground / lamps / sun) instead of re-deriving it by hand.
+  function meterState(A, m, cam, tag) {
+    var cnt = { point: [0, 0], spot: [0, 0], dir: [0, 0], hemi: [0, 0], amb: [0, 0] }, envS = 0, envN = 0, seenM = new Set();
     A.scene.traverse(function (o) { if (!o.visible) return;
+      if (o.isLight) { var k = o.isPointLight ? 'point' : o.isSpotLight ? 'spot' : o.isDirectionalLight ? 'dir' : o.isHemisphereLight ? 'hemi' : o.isAmbientLight ? 'amb' : null; if (k) { cnt[k][0]++; cnt[k][1] += o.intensity; } }
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (mm) { if (mm && !seenM.has(mm) && mm.envMap) { seenM.add(mm); envS += mm.envMapIntensity || 0; envN++; } }); });
+    var g = A.ground, gm = g && g.material, gs = '';
+    if (gm) gs = 'ground=' + (gm.color ? gm.color.getHexString() : '-') + ' gain=' + (A._groundAlbedoGain != null ? (+A._groundAlbedoGain).toFixed(2) : '-') + ' map=' + (gm.map ? 1 : 0) + ' vis=' + (g.visible ? 1 : 0);
+    var line = '§METER_STATE tag=' + (tag || 'final') + ' camera=' + cam + ' ' + (gs || 'ground=none') + ' sunI=' + (A.sun ? A.sun.intensity.toFixed(3) : '-') + ' sunShadow=' + (A.sun ? (A.sun.castShadow ? 1 : 0) : '-') +
+      ' shadowAuto=' + (A.renderer.shadowMap ? (A.renderer.shadowMap.autoUpdate ? 1 : 0) + '/' + (A.renderer.shadowMap.needsUpdate ? 1 : 0) : '-') +
+      ' lights point=' + cnt.point[0] + '/' + cnt.point[1].toFixed(3) + ' spot=' + cnt.spot[0] + '/' + cnt.spot[1].toFixed(4) + ' dir=' + cnt.dir[0] + '/' + cnt.dir[1].toFixed(3) +
+      ' hemi=' + cnt.hemi[0] + '/' + cnt.hemi[1].toFixed(3) + ' amb=' + cnt.amb[0] + '/' + cnt.amb[1].toFixed(3) + ' envMats=' + envN + ' envMean=' + (envN ? (envS / envN).toFixed(3) : '-') +
+      ' hidden=' + m.hidden + ' hiddenKinds=' + (m.hiddenKinds || '-') + ' torchShadowMap=' + (A._camTorch && A._camTorch.parent ? (A._camTorch.shadow && A._camTorch.shadow.map ? 1 : 0) : '-') +
+      ' dummyAtRead=' + (m.dummyAtRead != null ? m.dummyAtRead : '-') + ' bandL=' + (m.L != null ? m.L.toExponential(3) : '-');
+    if (cam === 'outside' && g && g.visible && !A._meterIsolating) {
+      A._meterIsolating = true; g.visible = false; var m2 = null;
+      try { m2 = meterRead(A, { mode: m.mode, quiet: true, camZone: 0 }); } finally { g.visible = true; A._meterIsolating = false; }
+      if (m2 && m2.L > 0 && m.L > 0) line += ' noGroundL=' + m2.L.toExponential(3) + ' groundShare=' + (1 - m2.L / m.L).toFixed(3) + ' noGroundSkyPx=' + m2.skyPx;
+    }
+    return line;
+  }
+  function meterRead(A, opts) {
+    var THREE = global.THREE, R = A.renderer, t0 = performance.now(), hidden = [], hk = { sky: 0, sprite: 0, points: 0, line: 0, basic: 0, shader: 0 }, hn = [];
+    A.scene.traverse(function (o) { if (!o.visible) return;
+      // the meter reads what reaches the eye: real materials, glass and emitters stay; only screen sprites/points/lines (flare,
+      // markers) and the sky dome mesh (its shader is outside the lux calibration; its pixels take the lighting's sky luminance)
+      // §METER_EV v2: surfaces whose output is NOT in the lux calibration are hidden too — unlit MeshBasic / Shader emitters (lamp
+      // fixture glows, cove/sign meshes): their value 1.0 x luxPer read as ~22,700 cd/m2 and pulled the band up (witness 2026-09-27:
+      // median < 40 at 10 of 13 poses). Lit materials, glass and the sky luminance stay.
       var ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
-      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial || (m.transparent && m.opacity < 0.95); }));
-      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o); } });
+      var glow = o.isSprite || o.isPoints || o.isLine || o === A._sky || (ms && ms.length && ms.every(function (m) { return !m || m.isMeshBasicMaterial || m.isShaderMaterial; }));
+      if (glow && (o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isInstancedMesh || o.isBatchedMesh)) { o.visible = false; hidden.push(o);
+        var kk = o === A._sky ? 'sky' : o.isSprite ? 'sprite' : o.isPoints ? 'points' : o.isLine ? 'line' : (ms && ms.some(function (m) { return m && m.isShaderMaterial; })) ? 'shader' : 'basic'; hk[kk]++;
+        if ((kk === 'basic' || kk === 'shader') && hn.length < 4) hn.push((o.name || (ms && ms[0] && ms[0].name) || o.type).slice(0, 24)); } });
     var rt = new THREE.WebGLRenderTarget(METER_W, METER_H, { type: THREE.FloatType, depthBuffer: true });
-    if (!meterMat) meterMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevOv = A.scene.overrideMaterial, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
+    var prevRT = R.getRenderTarget(), prevBg = A.scene.background, prevFog = A.scene.fog, prevTM = R.toneMapping, cc = new THREE.Color(), ca = R.getClearAlpha(); R.getClearColor(cc);
     var buf = new Float32Array(METER_W * METER_H * 4);
-    // §IRC_MAX v2: the meter reads ALL the light a camera would see, the zone interreflection included (decided 2026-09-26: the
-    // physically consistent meter; red1 delegated: "darker is realistic"). Refs: Clinic corridor 77.7 -> 72.2, Hospital indoor
-    // 83.5 -> 72.3 composite mean. (Direct-only metering read 97.7 / 107.4.)
     var irs = IRP[1];
-    try { A.scene.background = null; A.scene.fog = null; A.scene.overrideMaterial = meterMat; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
-      // the override material is not in the scene, so the per-render push never reaches it: render once (builds its programs),
-      // push the zone texture + uniforms into each built program, render again (Clinic 2026-09-25: unpushed, the meter saw every
-      // fragment as OUTSIDE — hemi 0.728 of 0.728, lamps ~0)
-      R.clear(true, true, true); R.render(A.scene, A.camera); push(A, meterMat);
-      R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); }
-    finally { IRP[1] = irs; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; A.scene.overrideMaterial = prevOv; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    // §METER_FIXFACE (2026-09-29, red1 Clinic corridor still …628230228 "went dark"): §METER_EV v2 keeps light SOURCES out of the meter
+    // (the MeshBasic fixture glows were hidden). §FIXTURE_FACE turned those glows into calibrated emissive faces on lit materials, so the
+    // meter began reading every lamp face (4I/A_face, thousands of cd/m2): meter 117 cd/m2 at that pose, frame mean 22/255. The faces keep
+    // their emission in the picture; for the meter pass only their emission is 0 (uFixFace 2), i.e. the same rule as before Z25.
+    var ffU = A._fixFaceU, ffPrev = ffU ? ffU.value : null; if (ffU && ffPrev > 0.5) ffU.value = 2;
+    // §METER_BIND (### ALTS-ALL FIX 1): a render that needs a program key a material has not had before (new light / shadow count,
+    // or this meter's own variant: float target + NoToneMapping + fog null) gets a FRESH uniforms clone from ShaderLib (three r186
+    // getProgram) = the §SOURCED_LIGHT DUMMY textures (zone 0 everywhere -> nav hemi/ambient indoors, no IR/cove/lamp data), and
+    // push() only ever runs before a draw. So: prime once (creates every key this exact render needs), push every material, THEN read.
+    var mats = new Set(), uB = new Map(), prog0 = R.info && R.info.programs ? R.info.programs.length : -1, prog1 = prog0, rebound = 0, dummyAt = 0, staged = 0;
+    A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !mats.has(m)) { mats.add(m); var pp = R.properties.get(m); uB.set(m, pp && pp.uniforms); } }); });
+    try { A.scene.background = null; A.scene.fog = null; R.toneMapping = THREE.NoToneMapping; R.setClearColor(0x000000, 0); R.setRenderTarget(rt);
+      // §SPEED_AB S-B2 (ALTC_FOUNDATION.md §SPEED_AB, opt-in &meterprime=auto, films only): skip the prime render once a film has primed;
+      // the single render is accepted only if it created no new program and no staged material reads the dummy texture — otherwise the
+      // full prime path runs on that same frame (self-checking; witness = EV identical to the always-prime control).
+      var autoP = A._maxqActive && /[?&]meterprime=auto/.test(location.search), skipP = autoP && !(opts && opts.noPrime) && A._meterPrimed;
+      var primeNow = function () { R.clear(true, true, true); R.render(A.scene, A.camera); prog1 = R.info && R.info.programs ? R.info.programs.length : -1;
+        mats.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== uB.get(m)) rebound++; if (push(A, m)) lastU.set(m, pp.uniforms); }); };
+      var dummyCount = function () { staged = 0; dummyAt = 0; mats.forEach(function (m) { var U = R.properties.get(m).uniforms; if (U && U.uSLZone && active && tex) { staged++; if (U.uSLZone.value !== tex) dummyAt++; } }); };
+      if (!(opts && opts.noPrime) && !skipP) primeNow();
+      dummyCount();
+      var fr0 = R.info && R.info.render ? R.info.render.frame : -1;
+      R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf);
+      if (skipP) { var progNow = R.info && R.info.programs ? R.info.programs.length : -1;
+        if (progNow !== prog0 || dummyAt > 0) { primeNow(); dummyCount(); R.clear(true, true, true); R.render(A.scene, A.camera); R.readRenderTargetPixels(rt, 0, 0, METER_W, METER_H, buf); A._meterPrimeForced = (A._meterPrimeForced || 0) + 1; }
+        else A._meterPrimeSkipped = (A._meterPrimeSkipped || 0) + 1;
+        var mpN = (A._meterPrimeForced || 0) + (A._meterPrimeSkipped || 0); if (mpN % 24 === 1) console.log('§METER_PRIME auto skipped=' + (A._meterPrimeSkipped || 0) + ' forced=' + (A._meterPrimeForced || 0) + ' (forced = new program or dummy binding seen)'); }
+      if (autoP) A._meterPrimed = true;
+      var calls = R.info && R.info.render ? R.info.render.calls : -1, fr1 = R.info && R.info.render ? R.info.render.frame : -1; }
+    finally { IRP[1] = irs; if (ffU && ffPrev != null) ffU.value = ffPrev; R.setRenderTarget(prevRT); A.scene.background = prevBg; A.scene.fog = prevFog; R.toneMapping = prevTM; R.setClearColor(cc, ca); hidden.forEach(function (o) { o.visible = true; }); rt.dispose(); }
+    // sky pixels (nothing drawn, alpha < 0.5): the sky luminance the lighting itself uses — hemi sky irradiance E = pi L, so
+    // L = luminance(hemi.color) x hemi.intensity / pi (scene units; x luxPer = cd/m2). One sky, lit and seen alike (L1).
+    var skyPx = 0, Lsky = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity / Math.PI : 0;
+    for (var i1 = 0; i1 < METER_W * METER_H; i1++) if (buf[i1 * 4 + 3] < 0.5) { buf[i1 * 4] = buf[i1 * 4 + 1] = buf[i1 * 4 + 2] = Lsky; buf[i1 * 4 + 3] = 1; skyPx++; }
     // weights per pixel. 'avg' = every lit pixel alike. 'centre' = CENTRE-WEIGHTED, the default metering mode of real
     // cameras: 75% of the weight inside the centre circle, 25% over the rest; circle 8 mm (default) on a 36 x 24 mm frame
     // (Nikonians Wiki, "C-W (Center-Weighted) Metering"; Wikipedia "Nikon D3500": "75% of the 8mm circle in the center"),
     // i.e. a circle one third of the frame height across. 'zone' = only pixels whose surface is in the
     // camera's own light zone (world position from a second override render -> LightZones.at).
     var mode = opts && opts.mode || 'avg', wz = null;
-    if (mode === 'zone' && global.LightZones && global.LightZones.get()) wz = zoneMask(A, hidden, opts.camZone);
+    if ((mode === 'zone' || (opts && opts.roomOnly)) && global.LightZones && global.LightZones.get()) wz = zoneMask(A, hidden, opts.camZone);
+    // §METER_ROOM (red1 ruling 2, 2026-09-27: outside very bright through openings from an inside camera = WANTED; 2026-09-28 HHS room
+    // …553178231: 17.9 % near-black + 18.0 % clipped — the bright outside in the band pulled the room dark): an inside camera meters
+    // the surfaces of its OWN zone (the existing zone mask); openings/sky/exterior are left to clip. Falls back to the whole frame
+    // when the room covers < 5 % of the frame (logged).
+    var roomMask = null; if (opts && opts.roomOnly && wz) { var nz = 0; for (var iz = 0; iz < wz.length; iz++) if (wz[iz]) nz++; if (nz >= 0.05 * METER_W * METER_H) roomMask = wz; console.log('§METER_ROOM camZone=' + opts.camZone + ' roomPixels=' + nz + '/' + (METER_W * METER_H) + (roomMask ? ' metered=room' : ' metered=frame (room < 5 %)')); }
     var n = 0, sw = 0, sl = 0, delta = 1e-4, inC = 0, cx = METER_W / 2, cy = METER_H / 2, rC = METER_H / 6;
     for (var i2 = 0; i2 < METER_W * METER_H; i2++) { if (buf[i2 * 4 + 3] >= 0.5) { var px = i2 % METER_W, py = (i2 / METER_W) | 0; if ((px + 0.5 - cx) * (px + 0.5 - cx) + (py + 0.5 - cy) * (py + 0.5 - cy) <= rC * rC) inC++; } }
     var nLit = 0; for (var i3 = 0; i3 < METER_W * METER_H; i3++) if (buf[i3 * 4 + 3] >= 0.5) nLit++;
+    // §METER_HIST (spec PHOTOREAL_STILL_RENDER §METER_HIST; watchdog ruling 70/95): 'hist' = the log-average over the pixels whose
+    // luminance lies between the LOW and HIGH percentiles of the frame (Unreal Engine PostProcessSettings auto_exposure_low_percent
+    // "good values 70 .. 80", auto_exposure_high_percent "80 .. 95"; widest endorsed band). Excludes the dark floor of the frame
+    // that drags the plain log-average down (bimodal sun-patch frames: Clinic S1 pose, 31% sunlit / 69% dark).
+    var hLo = -Infinity, hHi = Infinity, hAll = null, bandLo = HIST_LO, bandHi = HIST_HI, bandsLog = '', bandsL = [];
+    var mb = /[?&]meterband=(\d+),(\d+)/.exec(location.search); if (mb) { bandLo = +mb[1] / 100; bandHi = +mb[2] / 100; }
+    if (mode === 'hist') { var ls = []; for (var i4 = 0; i4 < METER_W * METER_H; i4++) { if (buf[i4 * 4 + 3] < 0.5 || (roomMask && !roomMask[i4])) continue;
+        var L4 = 0.2126 * buf[i4 * 4] + 0.7152 * buf[i4 * 4 + 1] + 0.0722 * buf[i4 * 4 + 2]; if (isFinite(L4)) ls.push(Math.max(0, L4)); }
+      if (ls.length) { ls.sort(function (a, b) { return a - b; }); hLo = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandLo))]; hHi = ls[Math.min(ls.length - 1, Math.floor(ls.length * bandHi))];
+        var bandLA = function (lo, hi) { var a = Math.floor(ls.length * lo), b = Math.min(ls.length, Math.max(a + 1, Math.floor(ls.length * hi) + 1)), t = 0; for (var q = a; q < b; q++) t += Math.log(delta + ls[q]); return Math.exp(t / (b - a)); };
+        bandsL = METER_BANDS.map(function (bd) { return [bd[0], bd[1], bandLA(bd[0], bd[1])]; });
+        bandsLog = METER_BANDS.map(function (bd) { return Math.round(bd[0] * 100) + '/' + Math.round(bd[1] * 100) + ':' + bandLA(bd[0], bd[1]).toExponential(3); }).join(' ');
+        var sa = 0; for (var i5 = 0; i5 < ls.length; i5++) sa += Math.log(delta + ls[i5]); hAll = Math.exp(sa / ls.length); } }
     for (var i = 0; i < METER_W * METER_H; i++) {
       if (buf[i * 4 + 3] < 0.5) continue; var L = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2]; if (!isFinite(L)) continue;
       var w = 1;
       if (mode === 'centre') { var qx = i % METER_W, qy = (i / METER_W) | 0, inside = (qx + 0.5 - cx) * (qx + 0.5 - cx) + (qy + 0.5 - cy) * (qy + 0.5 - cy) <= rC * rC;
         w = inside ? 0.75 / Math.max(1, inC) : 0.25 / Math.max(1, nLit - inC); }
       else if (mode === 'zone') { w = wz ? (wz[i] ? 1 : 0) : 1; }
+      else if (mode === 'hist') { w = (L >= hLo && L <= hHi && (!roomMask || roomMask[i])) ? 1 : 0; }
       if (!w) continue; sl += w * Math.log(delta + Math.max(0, L)); sw += w; n++; }
-    return { Ein: sw ? Math.PI * Math.exp(sl / sw) : null, pixels: n, mode: mode, hidden: hidden.length, ms: performance.now() - t0 };   // white Lambert: E = pi * L
+    // §FILM_LAW: a film meters every frame and logs its own §FILM_EXPOSURE line — opts.quiet drops this one (the still never passes it).
+    if (mode === 'hist' && !(opts && opts.quiet)) console.log('§METER_HIST low%=' + Math.round(bandLo * 100) + ' high%=' + Math.round(bandHi * 100) + ' bandsL[' + bandsLog + ']' + ' bandL=' + (sw ? Math.exp(sl / sw).toExponential(3) : 'none') +
+      ' bandPixels=' + n + '/' + nLit + ' allLogAvg=' + (hAll != null ? hAll.toExponential(3) : 'none') + ' bandL=' + (+hLo).toExponential(2) + '..' + (+hHi).toExponential(2));
+    var bh = 0x811c9dc5, bu = new Uint32Array(buf.buffer); for (var ih = 0; ih < bu.length; ih++) { bh ^= bu[ih]; bh = Math.imul(bh, 16777619); }
+    var bind = 'rendered=' + (fr1 > fr0 ? 1 : 0) + ' calls=' + calls + ' bufHash=' + (bh >>> 0).toString(16) + ' programs=' + prog0 + '->' + prog1 + ' mats=' + mats.size + ' rebound=' + rebound + ' stagedLit=' + staged + ' dummyAtRead=' + dummyAt + (opts && opts.noPrime ? ' prime=off' : '');
+    if (!(opts && opts.quiet)) console.log('§METER_BIND ' + bind + ' (fresh-key uniforms carry the dummy zone texture; primed + pushed before the read)');
+    var hidK = Object.keys(hk).filter(function (k) { return hk[k]; }).map(function (k) { return k + ':' + hk[k]; }).join(',') + (hn.length ? '[' + hn.join('|').replace(/\s+/g, '_') + ']' : '');
+    return { L: sw ? Math.exp(sl / sw) : null, bandsLog: bandsLog, bandsL: bandsL, pixels: n, skyPx: skyPx, mode: mode, hidden: hidden.length, hiddenKinds: hidK, dummyAtRead: dummyAt, rebound: rebound, fixFaceMasked: !!(ffU && ffPrev > 0.5), ms: performance.now() - t0 };   // log-average luminance, scene units
   }
   // world position per meter pixel (override MeshBasicMaterial writing its world position into the float target), then the
   // light zone at 0.3 m toward the camera; returns a 0/1 mask of pixels in camZone.
@@ -1189,42 +1631,72 @@
     console.log('§METER zoneMask camZone=' + camZone + ' pixelsInZone=' + hit);
     return mask;
   }
-  function outdoorE(A) {
-    var sd = A.sun ? A.sun.position.clone().normalize() : null, sinE = sd ? Math.max(0, sd.y) : 0, sunI = A.sun ? A.sun.intensity : 0;
-    var skyL = A.hemi ? (0.2126 * A.hemi.color.r + 0.7152 * A.hemi.color.g + 0.0722 * A.hemi.color.b) * A.hemi.intensity : 0;
-    var E = sunI * sinE + skyL, note = '';
-    if (sinE <= 0.02) { E = sunI * Math.SQRT1_2 + skyL; note = ' (sun below horizon: reference = the same sun at 45 deg)'; }
-    return { E: E, sunI: sunI, sinE: sinE, skyL: skyL, note: note };
+  // §METER_EV (§LIGHT_ONE_SCALE L3; engine chain): EV100 = log2(Lavg x 100 / K), K = 12.5 (ISO 2720 reflected-light constant;
+  // Frostbite 2014, Filament, HDRP ColorUtils), Lavg = the histogram-trimmed log-average luminance in cd/m2; exposure =
+  // 1 / (1.2 x 2^EV100) (saturation-based, S = 100, q = 0.65; Frostbite Listing 28 / Filament / HDRP). Same rule for every
+  // camera, inside or out. Scene units -> cd/m2 by the one calibration luxPer = calibSunLux / calibSunI; three.js ACESFilmic
+  // multiplies exposure by 1/0.6, so that factor is taken back out. No base exposure, no compensation, no clamp.
+  // Replaces the CIECAM02-D rule (D is chromatic adaptation: §LIGHT_TRUTH_AUDIT top-1).
+  // §METER one reading per still (### ALTS-ALL FIX 1): tag 'diag' = SourcedLight.stage()'s early reading — logged as §METER_DIAG,
+  // exposure untouched; tag 'final' = the ONE reading, SourcedLight.meterFinal() on the final staged scene — sets the exposure.
+  function meter(A, inside, tag) {
+    var THREE = global.THREE, R = A.renderer, base = R.toneMappingExposure, cam = inside ? 'inside' : 'outside', diag = tag === 'diag';
+    var sunIc = A._stillCalibSunI, luxPer = LL.luxPer(A._stillCalibSunLux, sunIc);
+    if (!luxPer) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no lux calibration (calibSunI=' + sunIc + ') — exposure unchanged ' + base.toFixed(3)); return null; }
+    var mode = (/[?&]metermode=(avg|centre|zone|hist)/.exec(location.search) || [])[1] || A._stillMeterMode || 'hist';   // engines meter by histogram
+    var cz0 = (A._sourcedCap && A._sourcedCap.camZone) || 0, m = meterRead(A, { mode: mode, camZone: cz0, roomOnly: !!(inside && cz0 > 0 && !/[?&]meterroom=0/.test(location.search)) });
+    if (!(m.L > 0)) { console.log('§METER' + (diag ? '_DIAG' : '') + ' VACUOUS camera=' + cam + ' no luminance read — exposure unchanged ' + base.toFixed(3)); return null; }
+    var Lcd = m.L * luxPer, ev = LL.ev100(Lcd), aces = LL.acesDiv(R, THREE);
+    var exp = LL.exposureFromEv(ev, luxPer, aces), stops = Math.log2(exp / base);
+    if (!diag) { meterSaved = { exp: base }; R.toneMappingExposure = exp; }
+    var evBands = (m.bandsL || []).map(function (b) { return Math.round(b[0] * 100) + '/' + Math.round(b[1] * 100) + '=' + Math.log2(b[2] * luxPer * 100 / 12.5).toFixed(2); }).join(' ');
+    try { console.log(meterState(A, m, cam, diag ? 'diag' : 'final')); } catch (eMS) { console.warn('§METER_STATE failed: ' + eMS.message); }
+    console.log((diag ? '§METER_DIAG' : '§METER') + ' camera=' + cam + ' tag=' + (diag ? 'diag' : 'final') + ' mode=' + m.mode + (evBands ? ' EV100bands[' + evBands + ']' : '') + ' Lavg=' + Lcd.toFixed(1) + 'cd/m2 EV100=' + ev.toFixed(2) + ' exposure=' + exp.toFixed(4) +
+      ' (luxPer ' + luxPer.toFixed(1) + (aces !== 1 ? ' x ACES ' + aces : '') + ' / (1.2 x 2^EV))' + (diag ? ' NOT APPLIED (diagnostic; the one reading is tag=final)' : '') + ' vs base ' + base.toFixed(3) + ' = ' + stops.toFixed(2) + ' stops skyPx=' + m.skyPx + '/' + (METER_W * METER_H) + ' pixels=' + m.pixels + ' hidden=' + m.hidden + ' fixFaceMasked=' + (m.fixFaceMasked ? 1 : 0) + ' ms=' + m.ms.toFixed(0));
+    return { exposure: exp, stops: stops, ev100: ev, Lcd: Lcd, skyPx: m.skyPx, pixels: m.pixels, diag: diag };
   }
-  function meter(A, inside) {
-    var R = A.renderer, base = R.toneMappingExposure;
-    if (!inside) { console.log('§METER camera=outside exposure=' + base.toFixed(3) + ' stops=0 (base ' + base.toFixed(3) + ', unchanged outside)'); return null; }
-    var mode = (/[?&]metermode=(avg|centre|zone)/.exec(location.search) || [])[1] || A._stillMeterMode || 'avg';   // watchdog 2026-09-25: frame average by default (centre and zone each worse on one reference)
-    var m = meterRead(A, { mode: mode, camZone: (A._sourcedCap && A._sourcedCap.camZone) || 0 });
-    if (!m.Ein) { console.log('§METER camera=inside VACUOUS no lit surface pixels — exposure unchanged ' + base.toFixed(3)); return null; }
-    var o = outdoorE(A), ratio = m.Ein / o.E;
-    // §METER_ADAPT (red1 2026-09-26: "Make it a dynamic lever derived from such data"): the degree of adaptation is no longer the
-    // fixed Stevens 0.33 but CIECAM02's D (CIE 159:2004, eq. 7.4; F = 1.0 average surround): D = F [1 - (1/3.6) e^((-LA - 42) / 92)],
-    // LA = adapting luminance = 20% of the white luminance of the metered scene (CIECAM02 convention), white L = E / pi for the
-    // metered incident light E in lux (the §SOURCED_LIGHT_CALIB scale: calibSunLux / calibSunI lux per unit). exposure =
-    // base x ratio^(-D): D -> 1 full adaptation (bright interiors, EN-lit rooms), smaller in dim spaces. &adapt=stevens = old rule.
-    var sunIc = A._stillCalibSunI, luxPerU = sunIc > 0 ? (A._stillCalibSunLux || 100000) / sunIc : null, adapt = 'stevens', Dd = 1 - STEVENS, Elx = null, LA = null;
-    if (luxPerU && !/[?&]adapt=stevens/.test(location.search)) { Elx = m.Ein * luxPerU; LA = 0.2 * Elx / Math.PI; Dd = Math.max(0, Math.min(1, 1 - (1 / 3.6) * Math.exp((-LA - 42) / 92))); adapt = 'ciecam02'; }
-    var exp = base * Math.pow(ratio, -Dd), stops = Math.log2(exp / base);
-    if (stops < 0) { exp = base; stops = 0; } if (stops > METER_MAX_STOPS) { exp = base * Math.pow(2, METER_MAX_STOPS); stops = METER_MAX_STOPS; }
-    meterSaved = { exp: base }; R.toneMappingExposure = exp;
-    console.log('§METER camera=inside logAvgEin=' + m.Ein.toExponential(3) + ' Eout=' + o.E.toFixed(3) + ' (sun ' + o.sunI.toFixed(2) + ' x sinElev ' + o.sinE.toFixed(3) + ' + sky ' + o.skyL.toFixed(3) + ')' + o.note +
-      ' mode=' + m.mode + ' indoor/outdoor=' + ratio.toExponential(3) + ' adapt=' + adapt + ' D=' + Dd.toFixed(3) + (Elx != null ? ' Ein=' + Elx.toFixed(1) + 'lx LA=' + LA.toFixed(2) + 'cd/m2' : '') + ' exposure=' + exp.toFixed(3) + ' stops=' + stops.toFixed(2) + ' (base ' + base.toFixed(3) + ') pixels=' + m.pixels + '/' + (METER_W * METER_H) + ' hidden=' + m.hidden + ' ms=' + m.ms.toFixed(0));
-    return { exposure: exp, stops: stops, Ein: m.Ein, Eout: o.E };
+  // §METER final (### ALTS-ALL FIX 1, replaces the §METER_EV lamp remeter, audit #58): effects.js calls this ONCE per still, after the
+  // lamp rebuild, the ground reassert, torch, albedo and the glass env capture — the scene the still renders. Its reading is the only
+  // one that sets the exposure. The all-sky guard stays: an all-sky readback judged nothing -> exposure left at base, VACUOUS logged.
+  function meterFinal(A) {
+    if (!active) { console.log('§METER final skipped (sourced light not staged)'); return; }
+    if (/[?&]meter=0/.test(location.search) || A._stillMeter === false) { console.log('§METER off (&meter=0) exposure=' + A.renderer.toneMappingExposure.toFixed(3)); return; }
+    if (meterSaved) meterOff(A);
+    var inside = (A._sourcedCap && A._sourcedCap.camZone > 0) ? true : !!A._stillCamInsideNow, mr = null;
+    try { mr = meter(A, inside, 'final'); } catch (eM) { console.warn('§METER final failed: ' + eM.message); }
+    if (mr && mr.pixels > 0 && mr.skyPx >= mr.pixels && inside) {
+      console.log('§METER final VACUOUS all-sky readback inside (skyPx=' + mr.skyPx + '/' + mr.pixels + ') — exposure back to base, EV100 ' + mr.ev100.toFixed(2) + ' rejected'); meterOff(A); mr = null; }
+    A._meterLast = mr;
+    // ### ALTS-ALL FIX 1 (d): the still's accumulation frames render the scene into the composer's target WITH fog/background — a
+    // variant the meter (fog null) did not create; its first frame would draw re-keyed materials with the dummy zone texture
+    // (§SOURCED_REBIND events after the final meter, clinic smoke 2026-09-27: n=14,1,1). Prime that variant once and push.
+    try { var R = A.renderer, THREE = global.THREE, prt = new THREE.WebGLRenderTarget(64, 36, { type: THREE.HalfFloatType, depthBuffer: true }), pv = R.getRenderTarget(), pm = new Set(), pu = new Map(), nb = 0;
+      A.scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { if (m && !pm.has(m)) { pm.add(m); var pp = R.properties.get(m); pu.set(m, pp && pp.uniforms); } }); });
+      try { R.setRenderTarget(prt); R.render(A.scene, A.camera); } finally { R.setRenderTarget(pv); prt.dispose(); }
+      pm.forEach(function (m) { var pp = R.properties.get(m); if (pp && pp.uniforms && pp.uniforms !== pu.get(m)) nb++; if (push(A, m)) lastU.set(m, pp.uniforms); });
+      console.log('§METER_PRIME_APP rebound=' + nb + ' mats=' + pm.size + ' (the accumulation frames\' variant primed + pushed before §STILL_REFINE start)'); } catch (ePA) { console.warn('§METER_PRIME_APP failed: ' + ePA.message); }
+    try { LL.log(A, 'final'); } catch (eLL) { console.warn('§LIGHT_LAW log failed: ' + eLL.message); }   // §LIGHT_LAW_MODULE (log only)
   }
+  function remeter(A) { meterFinal(A); }   // back-compat name (no caller left in this tree)
   function meterOff(A) { if (meterSaved && A.renderer) { A.renderer.toneMappingExposure = meterSaved.exp; console.log('§METER off exposure=' + meterSaved.exp.toFixed(3)); } meterSaved = null; }
 
+  // §FILM_INHERIT per-frame gate (films only; effects.js A._filmParityStep): uSLParams.x on/off. P is the shared uniform array, so a
+  // change reaches every patched material on the next draw — no push, no recompile. Logged on every change.
+  var filmGateLast = null;
+  function filmGate(on, f) {
+    if (!active) return 'not-active';
+    var want = on ? 1 : 0;
+    if (P[0] !== want || filmGateLast === null) { P[0] = want; console.log('§FILM_INHERIT_GATE f=' + f + ' sourced=' + (want ? 'ON' : 'OFF') + ' skyField=' + (SKY[0] > 0.5 ? 'on' : 'off') + ' (' + (want ? 'whole building on screen' : 'build-up / storey cut: the film\'s previous model') + ')'); }
+    filmGateLast = want; return want ? 'on' : 'off';
+  }
   function unstage(A, quiet) {
     if (!quiet) A._sourcedCap = null;
-    glassOff(A, quiet); meterOff(A);
+    glassOff(A, quiet); glassToneOff(A, quiet); meterOff(A);
     if (!active) return;
     active = false; P[0] = 0; LAMP[0] = 0; lampVer = -1; IRP[0] = 0; irKey = null;
-    COVEP[3] = 0; coveStripOff(A);   // §COVE_LIGHT: the texture is kept for the next press (key compare), the strip leaves with the still
+    COVEP[3] = 0;   // §COVE_LIGHT: the texture is kept for the next press (key compare)
+    CFP[0] = 0;   // §FLOOR_CONTACT (the map stays cached in ContactFloor per building)
+    DFP[0] = 0;   // §OBJECT_CONTACT
     if (!quiet) { A._lampDataOn = false; A._lampData = null; }
     if (A.scene.onBeforeRender && A.scene.onBeforeRender._sourced) A.scene.onBeforeRender = prevOBR || function () {};
     prevOBR = null; lastLog = '';
@@ -1233,5 +1705,5 @@
     if (!quiet) console.log('§SOURCED_LIGHT off (uSLParams.x=0, zone texture kept for the next press)');
   }
 
-  global.SourcedLight = { coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, installed: function () { return installed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
+  global.SourcedLight = { floorContact: function () { return cfLast; }, objectContact: function () { return dfLast; }, irR: function () { return IR_R; }, irTint: irTint, zoneAlbedo: zoneAlbedo, coveStats: function () { return coveLast; }, coveOn: function () { return COVEP[3] > 0.5; }, primeSpaceUses: primeSpaceUses, irShare: irShare, albedoMap: albedoMap, albedoEncode: albedoEncode, irStats: function () { return IRP[0] > 0.5 ? irLast : null; }, irZone: function (z) { return (IRP[0] > 0.5 && irTotZ && z > 0 && z < irTotZ.length) ? irTotZ[z] : 0; }, lampCost: lampCost, lampsAt: lampsAt, lampWanted: lampWanted, lampSync: lampSync, lampStats: function () { return LAMP[0] > 0.5 ? lampLast : null; }, fieldOn: fieldOn, filmGate: filmGate, field: function () { return fieldLast; }, lux: function () { return luxLast; }, meterRead: meterRead, remeter: remeter, meterFinal: meterFinal, installed: function () { return installed; }, gridBlendOn: gridBlendOn, specSmoothOn: specSmoothOn, gridBlend: function () { return SKY[2] > 0.5; }, aoPatch: aoPatch, aoSet: aoSet, csSet: csSet, aoOn: aoOn, aoPatched: function () { return aoPatched && !linkFailed; }, debugZones: function (on) { P[3] = on === true ? 1 : (+on || 0); }, install: install, prepare: prepare, stage: stage, unstage: unstage, isActive: function () { return active; } };
 })(typeof window !== 'undefined' ? window : this);

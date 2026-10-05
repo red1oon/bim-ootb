@@ -25,6 +25,7 @@ try {
   console.log('[S220] §WORKER_SRC cdn unpkg');
 }
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
+try { importScripts('ifc_surface_names.js'); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL load ' + eSN.message); }   // §IFC_SURFACE_NAMES
 
 // Discipline classification (same as Python pipeline)
 const DISC_MAP = {
@@ -472,6 +473,8 @@ self.onmessage = async function(e) {
       IfcController: 1, IfcFlowInstrument: 1, IfcProtectiveDeviceTrippingUnit: 1 };
     var _skipCount = 0;
 
+    // §IFC_SURFACE_NAMES: authored finish names (IfcSurfaceStyle per part, IfcMaterial per element) — was dropped (material_name NULL)
+    var _sn = null; try { if (self.IfcSurfaceNames) _sn = IfcSurfaceNames.build(ifcApi, WebIFC, modelID); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL build ' + eSN.message); }
     for (const el of elements) {
       if (_SKIP_GEOM[el.ifcClass]) { _skipCount++; geomDone++; continue; }
       try {
@@ -500,6 +503,7 @@ self.onmessage = async function(e) {
             el._bboxZ = Math.max.apply(null, bzs) - Math.min.apply(null, bzs);
             if (geoCount > 1) continue; // skip box geometry, keep dimensions
           }
+          if (_sn) IfcSurfaceNames.addPart(_sn, el.expressID, geo.geometryExpressID, geo.color, idx.length / 3);   // §IFC_SURFACE_NAMES
           var m = geo.flatTransformation;
           var vc = verts.length / 6;
           // Transform vertices: web-ifc Y-up → IFC Z-up
@@ -640,6 +644,7 @@ self.onmessage = async function(e) {
         ' (no geometry → not a spatial element)');
     }
     const skipped = elements.length - geometries.length;
+    if (_sn) { try { for (const el of elements) { var _r = IfcSurfaceNames.resolve(_sn, el.expressID); el.matName = _r.matName; el.surfParts = _r.parts; } console.log(IfcSurfaceNames.statsLine(_sn, elements)); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL resolve ' + eSN.message); } }
     if (_skipCount) console.log('[S220] §GEOM_FAST_SKIP classes=' + Object.keys(_SKIP_GEOM).join(',') + ' count=' + _skipCount + ' (no GetFlatMesh call — saves OOM cycles)');
     console.log('[S220] §GEOM_SUMMARY elements=' + elements.length + ' renderable=' + renderableElements.length + ' ghosts=' + ghosts.length + ' materials=' + matCount);
 

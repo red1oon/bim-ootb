@@ -500,7 +500,9 @@
   // margin costs 75 ms/frame (1,164 vs 1,089); that is the deliberate price of the sample size.
   // Alt+S is UNTOUCHED: A._stillBudget is set only around the bake's frame loop and cleared on
   // every exit path, so a still keeps all 40 renders.
-  var MAXQ_STILL_BUDGET = { taa: 8, ao: 12 };
+  // §FRAME_COST S5 (2026-10-01, red1: "As seen before … there is no slightly grainier visual"): ao 12 -> 8. 8/8 is the MEASURED row
+  // above (RMS 0.37, AT THE FLOOR); 6 was never measured, so not taken. Saves 4 composer renders per frame (~0.2 s at 960x540).
+  var MAXQ_STILL_BUDGET = { taa: 8, ao: 8 };
   // §129.20 IDEA, NOT IMPLEMENTED (2026-09-18, red1: "during the freeze, can we save timings during
   // the bake by copying similar frames?") — genuinely worth investigating given the cost breakdown
   // just above: TAA+AO composer renders are ~85% of per-frame cost, and during a load-path hold
@@ -758,6 +760,7 @@
   // never reached the boundary check, nothing was logged, and the run reported hiddenPauses=0 while
   // having been hidden for 20 seconds. A pause that does not announce itself is the same silent
   // failure this whole section exists to kill — so the wait reports through the same bookkeeping.
+  function _leanPoll() { return /[?&]bakelean=1/.test(location.search) ? 5 : 100; }
   async function _waitFoldDone(timeoutMs, why) {
     var A = window.APP;
     var spentVisible = 0, last = performance.now();
@@ -765,7 +768,7 @@
       if (_isHidden()) { await _awaitVisible(why); last = performance.now(); }
       if (!A._stillRefineBusy) return true;
       if (spentVisible > timeoutMs) return false;
-      await _sleep(100);
+      await _sleep(_leanPoll());   // §BAKE_LEAN L1: &bakelean=1 polls every 5 ms (was 100: ~50 ms idle per frame)
       var now = performance.now();
       spentVisible += now - last;
       last = now;
@@ -803,6 +806,67 @@
   // structure, e.g. a row inside its own panel), but if it does not fully fit inside that parent's
   // own rect, that is `overflow`, a real defect (the real bake's own pie.ledger: 306px inside a
   // 173px panel) — checked in the witness below, never silently absorbed into "not an overlap".
+  // ══ W6 §F — ONE RECORD PER FILM FRAME (ALTC_FOUNDATION §1 SPEC W6, 2026-10-03) ═════════════════════════════════════════════
+  // A film frame used to print 32-38 lines (Hospital page log 27 MB), most of them the same decision repeated, and answering one
+  // question (were the lamps lit?) took four tags and a timeline. This owner reads the lines the layers already print, keeps the
+  // numbers that matter and prints ONE `§F` line per frame after its capture: phase ms (same boundaries as phases.py), renders
+  // (renderer.info.render.frame delta), scene calls/tris, exposure, lamp owner/lit, HUD boxes, luma, encode. It never changes what
+  // a layer decides. With &filmlog=compact the repeat lines it folds are printed ONCE per film (first occurrence) and then dropped;
+  // without it every line still prints (existing witnesses read them). Outside a film it is a pass-through.
+  var _FREC_FOLD = /^(?:\[[^\]]*\] )?§(STILL_REFINE|PHOTO_AO|LAMP_ZONE_PICK|SUN_ARC_FILL_PIN|SUN_ARC_STEP|PHOTO_SHADOW_FORCE_REASSERT|TRIPLANAR_PERF|STILL_OVERLAY_GUARD|PHOTO_STAGING|NIGHT_PL_INTENSITY_HEURISTIC|NIGHT_BUILDUP_GATE|LAMP_CAP_CHURN|FPS_MODE|SOURCED_LIGHT_BIND|FILM_EXPOSURE|FRAME_QA|CAPTURE_PARTS|CAPTURE_ENC|CAPTURE_TAIL|LAMP_EN|SOURCED_OWN_COST|WINDOW_PULL|FLYTHRU_DIM_DRAW|PERF_TRAVERSE)\b/;
+  var _frec = null;
+  function _filmRecInstall() {
+    if (window.__filmRecOrigLog) { _frec = { t: {}, seen: {}, folded: 0, emitted: 0, lastHashT: null, lastRenders: null, pend: null }; return; }
+    var orig = console.log; window.__filmRecOrigLog = orig;
+    _frec = { t: {}, seen: {}, folded: 0, emitted: 0, lastHashT: null, lastRenders: null, pend: null };
+    function f1(v) { return v == null ? '-' : (+v).toFixed(0); }
+    function emit() {
+      var R = _frec, P = R.pend; if (!P) return; R.pend = null;
+      var A = window.APP, T = R.t, ri = A && A.renderer && A.renderer.info && A.renderer.info.render;
+      var rNow = ri ? ri.frame : null, renders = (rNow != null && R.lastRenders != null) ? rNow - R.lastRenders : null;
+      R.lastRenders = rNow;
+      var ph = function (a, b) { return (a != null && b != null) ? (b - a) : null; };
+      var rects = (A && A._hudLayoutRects) || [], real = 0;
+      for (var k = 0; k < rects.length; k++) if (!(rects[k].w <= 1 && rects[k].h <= 1)) real++;
+      var c = A && A.camera ? A.camera.position : null, L = (A && A._frLamps) || {}, X = R.ex || {}, Q = R.qa || {}, E = R.enc || {};
+      orig.call(console, '§F i=' + P.i + ' total=' + f1(ph(R.lastHashT, P.t)) + ' setup=' + f1(ph(R.lastHashT, T.rs)) + ' light=' + f1(ph(T.rs, T.exp)) +
+        ' taa=' + f1(ph(T.exp, T.rd)) + ' ao=' + f1(ph(T.aos, T.aod)) + ' cap=' + f1(ph(T.aod, P.t)) + ' renders=' + (renders == null ? '-' : renders) +
+        ' calls=' + ((A && A._taaPass && A._taaPass.lastSceneCalls != null) ? A._taaPass.lastSceneCalls : '-') +
+        ' tris=' + ((A && A._taaPass && A._taaPass.lastSceneTris != null) ? (A._taaPass.lastSceneTris / 1e6).toFixed(2) + 'M' : '-') +
+        ' | EV=' + (X.ev || '-') + ' exp=' + (X.exp || '-') + ' Lcd=' + (X.lcd || '-') + ' metered=' + (X.met || '-') + ' capped=' + (X.cap || '-') + ' meterMs=' + (X.ms || '-') +
+        ' | lamps=' + (L.owner || '-') + ' dataLit=' + (L.data == null ? '-' : L.data) + ' poolLit=' + (L.pool == null ? '-' : L.pool) +
+        ' | hud=' + real + ' | luma=' + (Q.l || '-') + ' dark=' + (Q.d || '-') + ' clip=' + (Q.c || '-') + ' reused=' + (Q.r || '-') +
+        ' | encMs=' + (E.ms || '-') + ' compMs=' + (E.comp || '-') + ' bytes=' + (E.b || P.b || '-') +
+        ' cam=' + (c ? c.x.toFixed(2) + ',' + c.y.toFixed(2) + ',' + c.z.toFixed(2) : '-'));
+      R.emitted++; R.lastHashT = P.t; R.t = {}; R.ex = null; R.qa = null; R.enc = null;
+    }
+    console.log = function () {
+      var A = window.APP, s = (arguments.length && typeof arguments[0] === 'string') ? arguments[0] : null;
+      if (!s || !A || !A._maxqActive || !_frec || s.indexOf('§') < 0) return orig.apply(console, arguments);
+      var R = _frec, now = performance.now(), m;
+      if (s.indexOf('§STILL_REFINE start') >= 0) { if (R.t.rs == null) R.t.rs = now; }
+      else if (s.indexOf('§STILL_REFINE done') >= 0) R.t.rd = now;
+      else if (s.indexOf('§PHOTO_AO start') >= 0) R.t.aos = now;
+      else if (s.indexOf('§PHOTO_AO done') >= 0) R.t.aod = now;
+      else if ((m = /§FILM_EXPOSURE f=\d+ metered=(\d)\S* .*?\bEV=([\d.]+) exposure=([\d.]+) Lcd=([\d.]+).*?capped=(\S+).*\bms=([\d.]+)/.exec(s))) {
+        R.t.exp = now; R.ex = { met: m[1], ev: m[2], exp: m[3], lcd: (+m[4]).toFixed(0), cap: m[5], ms: (+m[6]).toFixed(0) }; }
+      else if ((m = /§FRAME_QA i=\d+ .*?lumaMean=([\d.]+).*?darkPct=([\d.]+) clipPct=([\d.]+) reused=(\d)/.exec(s))) R.qa = { l: m[1], d: m[2], c: m[3], r: m[4] };
+      else if ((m = /§CAPTURE_ENC .*?\bms=([\d.]+) compMs=([\d.]+) bytes=(\d+)/.exec(s))) R.enc = { ms: m[1], comp: m[2], b: m[3] };
+      var hm = /§FRAME_HASH i=(\d+) sha=\S+ bytes=(\d+)/.exec(s);
+      if (hm) { emit(); R.pend = { i: +hm[1], t: now, b: hm[2] }; }
+      var key = _FREC_FOLD.exec(s), pass = !A._filmLogCompact || !key || !R.seen[key[1]];
+      if (key) R.seen[key[1]] = 1;
+      if (pass) orig.apply(console, arguments); else R.folded++;
+      if (/§CAPTURE_TAIL i=/.test(s) || /§FRAME_REUSE_TOTAL/.test(s)) emit();
+    };
+  }
+  function _filmRecSummary() {
+    if (!_frec || !window.__filmRecOrigLog) return;
+    window.__filmRecOrigLog.call(console, _frec.emitted
+      ? '§F_SUMMARY frames=' + _frec.emitted + ' foldedLines=' + _frec.folded + ' compact=' + (window.APP && window.APP._filmLogCompact ? 1 : 0)
+      : '§F_SUMMARY INCONCLUSIVE — no §F record was emitted (no §FRAME_HASH seen)');
+  }
+
   function _hudLayoutRegisterImpl(name, x, y, w, h, parentName, truncated) {
     var A2 = window.APP;
     if (!A2._hudLayoutRects) A2._hudLayoutRects = [];
@@ -826,7 +890,9 @@
         }
       }
     }
-    A2._hudLayoutRects.push({ name: name, x: x, y: y, w: w, h: h, parent: parentName || null, truncated: !!truncated });
+    // W2: the alpha this box was drawn at (set by _drawUnlessHold around its own register call; boxes drawn outside it are opaque = 1)
+    var _al = (A2._hudRegAlpha != null) ? A2._hudRegAlpha : 1;
+    A2._hudLayoutRects.push({ name: name, x: x, y: y, w: w, h: h, parent: parentName || null, truncated: !!truncated, alpha: _al });
   }
   // `h` (ROUND 13 item D, NEW param) — the frame height, needed to check `rowFontPx` against the
   // pre-Round-10 FORMULA (itself proportional to frame height, never a fixed pixel constant).
@@ -1020,6 +1086,13 @@
     // This runs on EVERY frame — the rects are already built for the sampler above, so it costs a
     // pairwise walk of ~15 boxes — and keeps only the WORST pair seen, printed once at the end.
     // Same exclusions as the witness: placeholders (w<=1 && h<=1) and declared parent/child.
+    // W2 (ALTC_FOUNDATION §1, 2026-10-03): a pair where either box is drawn at alpha < 0.5 is a CROSS-FADE (the load-path freeze fades
+    // the HUD out over 24 frames while its card appears in the same corner) — counted apart, never as an overlap. Every verdict names
+    // its frame and both alphas, and a film where no frame had two real boxes is INCONCLUSIVE, not PASS (LTU printed PASS on zero rects).
+    _hudOvFrame++;
+    var _real = 0;
+    for (var ri = 0; ri < rects.length; ri++) if (!(rects[ri].w <= 1 && rects[ri].h <= 1)) _real++;
+    if (_real >= 2) _hudOvFramesJudged++;
     for (var oi = 0; oi < rects.length; oi++) for (var oj = oi + 1; oj < rects.length; oj++) {
       var ra = rects[oi], rb = rects[oj];
       if ((ra.w <= 1 && ra.h <= 1) || (rb.w <= 1 && rb.h <= 1)) continue;
@@ -1035,24 +1108,37 @@
       var ox = Math.min(ra.x + ra.w, rb.x + rb.w) - Math.max(ra.x, rb.x);
       var oy = Math.min(ra.y + ra.h, rb.y + rb.h) - Math.max(ra.y, rb.y);
       if (ox <= 0 || oy <= 0) continue;
-      var area = ox * oy;
-      if (!_hudWorstOverlap || area > _hudWorstOverlap.area) {
-        _hudWorstOverlap = { a: ra.name, b: rb.name, ox: ox, oy: oy, area: area,
-                             ra: [ra.x, ra.y, ra.w, ra.h], rb: [rb.x, rb.y, rb.w, rb.h] };
+      var area = ox * oy, aA = (ra.alpha == null ? 1 : ra.alpha), aB = (rb.alpha == null ? 1 : rb.alpha);
+      var rec = { a: ra.name, b: rb.name, ox: ox, oy: oy, area: area, f: _hudOvFrame - 1, alA: aA, alB: aB,
+                  ra: [ra.x, ra.y, ra.w, ra.h], rb: [rb.x, rb.y, rb.w, rb.h] };
+      if (aA < 0.5 || aB < 0.5) {
+        _hudCrossfadeFrames[_hudOvFrame - 1] = 1;
+        if (!_hudWorstCrossfade || area > _hudWorstCrossfade.area) _hudWorstCrossfade = rec;
+        continue;
       }
+      if (!_hudWorstOverlap || area > _hudWorstOverlap.area) _hudWorstOverlap = rec;
     }
   }
-  var _hudWorstOverlap = null;
+  var _hudWorstOverlap = null, _hudWorstCrossfade = null, _hudCrossfadeFrames = {}, _hudOvFrame = 0, _hudOvFramesJudged = 0;   // W2
   function _hudLayoutStablePrintImpl() {
     // §HUD_OVERLAP_WORST — one line for the whole bake, naming the pair and the pixels. `none` here
     // is real coverage; `overlaps=0` on a single sampled frame never was.
+    if (_hudWorstCrossfade) {
+      var X = _hudWorstCrossfade;
+      console.log('§HUD_OVERLAP_CROSSFADE "' + X.a + '" x "' + X.b + '" overlap=' + X.ox + 'x' + X.oy + 'px frames=' +
+        Object.keys(_hudCrossfadeFrames).length + ' worstF=' + X.f + ' alpha=' + X.alA.toFixed(2) + '/' + X.alB.toFixed(2) +
+        ' — one box fading (< 0.5) while the other shows: a transition, not an overlap (W2)');
+    }
     if (_hudWorstOverlap) {
       var W = _hudWorstOverlap;
       console.log('§HUD_OVERLAP_WORST "' + W.a + '" x "' + W.b + '" overlap=' + W.ox + 'x' + W.oy +
-        'px area=' + W.area + ' rects=[' + W.ra.join(',') + '] [' + W.rb.join(',') +
-        '] => FAIL — two HUD boxes shared pixels on at least one frame');
+        'px area=' + W.area + ' f=' + W.f + ' alpha=' + W.alA.toFixed(2) + '/' + W.alB.toFixed(2) +
+        ' rects=[' + W.ra.join(',') + '] [' + W.rb.join(',') +
+        '] judgedFrames=' + _hudOvFramesJudged + '/' + _hudOvFrame + ' => FAIL — two solid HUD boxes shared pixels');
+    } else if (_hudOvFramesJudged === 0) {
+      console.log('§HUD_OVERLAP_WORST INCONCLUSIVE — no frame of ' + _hudOvFrame + ' had two real HUD boxes; nothing was judged (VACUOUS)');
     } else {
-      console.log('§HUD_OVERLAP_WORST none — checked EVERY frame, not a sample => PASS');
+      console.log('§HUD_OVERLAP_WORST none judgedFrames=' + _hudOvFramesJudged + '/' + _hudOvFrame + ' — checked every frame with >= 2 boxes => PASS');
     }
     function fmt(range) { return range ? '[' + range[0].toFixed(1) + ',' + range[1].toFixed(1) + ']' : '?'; }
     function stable(range) { return !range || range[0] === range[1]; }
@@ -1438,8 +1524,13 @@
     // chips cannot flash back on in the ~1.2 s gap between beats.rise and the escape window.
     return !!(A2._escRouteHudSuppress || A2._findingsHudSuppress);
   }
+  // W2 — the top row the load-path card covers, name -> its LastBox prop. A yielding member keeps its last drawn box as the
+  // row's reservation (nothing drawn), so the panels below do not ride up under the card on the arm frame.
+  var _HUD_ROW = { 'hud.pathmap': 'pathOverviewLastBox', 'daycounter': 'dayCounterLastBox', 'suncompass.clock': 'sunClockLastBox', 'suncompass.readout': 'sunReadoutLastBox' };
   function _drawUnlessHold(name, fn, boxFn) {
     var A2 = window.APP;
+    if (A2 && A2._hudRowYield && _HUD_ROW[name]) { A2[_HUD_ROW[name]] = (A2._hudRowKeep || {})[name] || null;
+      if (!A2._hudCompositeAlphaSample) A2._hudCompositeAlphaSample = {}; A2._hudCompositeAlphaSample[name] = 0; return; }
     // Suppressed overlays register a 1x1 placeholder exactly as an absent box does, so §HUD_LAYOUT
     // still has a row for them and _rowAdvance reads a zero-size box — the row collapses and the
     // card below gets the space, which is the point of ceding the frame.
@@ -1484,14 +1575,17 @@
     fn(alpha);
     if (A2) { A2._inHudFadeWrapper = false; A2._drawUnlessHoldCurrentName = null; }
     if (faded) ctx2.restore();
+    if (alpha > 0 && A2 && _HUD_ROW[name] && A2[_HUD_ROW[name]]) (A2._hudRowKeep = A2._hudRowKeep || {})[name] = A2[_HUD_ROW[name]];   // W2 row reservation
     if (alpha > 0 && A2 && A2._hudLayoutRegister) {
       // §129.55 A — the drawer's own published rect when it has one, read AFTER fn() so it is this
       // frame's, never a neighbour's. try/catch for the same never-kills-a-bake contract every
       // other optional HUD read here keeps.
       var _rb = null;
       if (boxFn) { try { _rb = boxFn(); } catch (eRB) { _rb = null; } }
+      A2._hudRegAlpha = alpha;   // W2 — the overlap judge needs to know a fading box from a solid one
       if (_rb && _rb.w > 1 && _rb.h > 1) A2._hudLayoutRegister(name, _rb.x, _rb.y, _rb.w, _rb.h);
       else A2._hudLayoutRegister(name, 0, 0, 1, 1);
+      A2._hudRegAlpha = null;
     }
     // ROUND 13 item C — record the alpha THIS call actually used, per layer name, per frame (reset
     // every frame in _captureFrame alongside A._hudLayoutRects) — the real number the §LOADPATH_
@@ -1580,7 +1674,7 @@
         ' held=' + held + ' visible=' + vis + ' inFrustum=' + inFrustum +
         ' frustumPct=' + pct(inFrustum, vis) + '%ofVisible' +
         ' instancedMeshes=' + instanced + ' instances=' + instancedCount +
-        ' lastRenderCalls=' + (inf ? inf.calls : 'n/a') + ' lastRenderTris=' + (inf ? inf.triangles : 'n/a') +
+        ' (W7: lastRenderCalls dropped — it read whichever render ran last; per-frame scene calls are in §F calls=)' +
         ' — frustumPct is the number that decides LARGE_DB_BAKE.md §8: high means the renderer is' +
         ' already submitting most of the model every frame and culling is worth building; low means' +
         ' it is culling well already and the cost is elsewhere.');
@@ -1596,7 +1690,22 @@
   // ⚠ ONE THING THAT IS NOT SUPPRESSION: the Escape Route card occupies the bigStats slot for its
   // window, the same slot the tail/storey/measure cards already take turns in. One slot holds one
   // card; that is the chain's existing behaviour.
+  // §SPEED_AB S-A (bim-compiler prompts/ALTC_FOUNDATION.md §SPEED_AB): one encoder for both capture sites. Default WebP 0.92 (unchanged);
+  // &capfmt=jpeg (&capq=0.95) = JPEG. §CAPTURE_ENC logs the encode ms + bytes every frame on every arm, so the WebP cost is measured.
+  var _capFmt = /[?&]capfmt=jpeg/.test(location.search) ? 'image/jpeg' : 'image/webp';
+  var _capQ = (function () { var m = /[?&]capq=([0-9.]+)/.exec(location.search); return m ? +m[1] : (_capFmt === 'image/jpeg' ? 0.95 : 0.92); })();
+  var _capN = 0;
+  function _capEncode(c, idx) {
+    var t0 = performance.now();
+    var _cm = window.APP && window.APP._capMarks;
+    if (_cm && _cm.length) { _cm.push(['hud', t0]); var _ps = []; for (var _k = 1; _k < _cm.length; _k++) _ps.push(_cm[_k][0] + '=' + (_cm[_k][1] - _cm[_k - 1][1]).toFixed(1));
+      console.log('§CAPTURE_PARTS ' + _ps.join(' ') + ' (ms; hud = everything after the 3D draw: window pull, bounce composite, overlays)'); window.APP._capMarks = null; }
+    return new Promise(function (res) { c.toBlob(function (b) {
+      console.log('§CAPTURE_ENC n=' + (_capN++) + (idx != null ? ' i=' + idx : '') + ' fmt=' + _capFmt.slice(6) + ' q=' + _capQ + ' ms=' + (performance.now() - t0).toFixed(1) + ' compMs=' + (window.APP && window.APP._capT0 ? (t0 - window.APP._capT0).toFixed(1) : '-') + ' bytes=' + (b ? b.size : 'null'));
+      res(b); }, _capFmt, _capQ); });
+  }
   async function _captureFrame(w, h, titleInfo, dayInfo, ovInfo, resInfo, statInfo, lblInfo, statusSrc, escInfo, escCardInfo) {
+    if (window.APP) window.APP._capT0 = performance.now();   // §CAPTURE_SPLIT: composite ms = this -> toBlob call
     var _fcFilmSec = (window.APP && window.APP._flythruFilmSec) || 0;
     var A = window.APP;
     A._hudLayoutRects = [];   // §HUD_LAYOUT — fresh registry every frame, never carries a stale rect
@@ -1641,7 +1750,7 @@
         catch (eLTD) { console.warn('§LEDGER_TICKER_DRAW_ERR failed (burn-in): ' + (eLTD && eLTD.message)); }
       }
       if (_bIdx === 0 || _bIdx % 100 === 0) console.log('§DATUM_DECOUPLE_FRAME i=' + _bIdx + ' src=' + _bUrl);
-      return new Promise(function (res) { c.toBlob(res, 'image/webp', 0.92); });
+      return _capEncode(c, _bIdx);
     }
     // §129 DIAGNOSTIC (2026-09-17, red1: "not a single change is evident" — re-checking with real
     // frame reads, not another blind bake) — sample LIVE scene state at the EXACT instant this
@@ -1652,7 +1761,12 @@
     if (A._loadPathHoldFrameActive && A._loadPathDiagSample) {
       try { A._loadPathDiagSample('pre-render'); } catch (eLPD2) { console.warn('§LOADPATH_DIAG_ERR ' + (eLPD2 && eLPD2.message)); }
     }
+    A._capMarks = [['start', A._capT0 || performance.now()]];   // §CAPTURE_PARTS
+    // §RENDER_INFO: what ONE jittered scene render submitted (TAARenderPass records renderer.info after its scene render), every 24th capture
+    A._riN = (A._riN || 0) + 1; if (A._taaPass && A._taaPass.lastSceneCalls != null && A._riN % 24 === 1) { var _ri = A.renderer.info;
+      console.log('§RENDER_INFO capture=' + A._riN + ' sceneCalls=' + A._taaPass.lastSceneCalls + ' sceneTris=' + A._taaPass.lastSceneTris + ' geometries=' + (_ri.memory ? _ri.memory.geometries : '-') + ' textures=' + (_ri.memory ? _ri.memory.textures : '-') + ' programs=' + (_ri.programs ? _ri.programs.length : '-')); }
     if (A._composer) A._composer.render();
+    A._capMarks.push(['composer', performance.now()]);
     // §GI_CAPTURE_HOOK (worktree only, 2026-09-22) — opt-in seam for an alternative renderer to
     // supply THIS frame's 3D pixels. Absent hook = byte-identical to before (the else branch is the
     // original line, unchanged). Present hook = it draws into the same ctx at the same point, before
@@ -1666,20 +1780,32 @@
       try { await window.__giCaptureFrame(ctx, w, h); }
       catch (eGI) {
         if (!A._giCaptureErrLogged) { A._giCaptureErrLogged = true;
-          console.warn('§GI_CAPTURE_ERR ' + (eGI && eGI.message) + ' — reverting to the app renderer for the rest of this bake'); }
+          console.warn('§GI_CAPTURE_ERR ' + (eGI && eGI.message) + ' at ' + String(eGI && eGI.stack || '').split('\n').slice(1, 6).map(l => l.trim()).join(' | ') + ' — reverting to the app renderer for the rest of this bake'); }
         window.__giCaptureFrame = null;
         ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
       }
     } else {
       ctx.drawImage(A.renderer.domElement, 0, 0, w, h);
     }
+    A._capMarks.push(['draw3d', performance.now()]);
     // §129 DIAGNOSTIC (2026-09-17) — GROUND TRUTH pixel readback, right after the 3D scene lands in
     // the 2D capture canvas, before any HUD/overlay draws touch it. Every prior check (apply-side
     // witnesses, the live pre-render state sample above) proves JS OBJECT STATE, never proves a
     // PHOTON actually changed. This reads the real encoded pixels themselves, a 5x5 median sample at
     // 5 fixed fractional points across the frame (building-heavy regions in the sighted stills), on
     // hold frames only, so a real change (or its total absence) is undeniable either way.
-    try {
+    // §FILM_WINDOW_PULL (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT" item 3): the still's window pull, per frame, on the
+    // composited scene before any HUD — only while the new lighting is on (A._filmFieldOn) AND the camera stands inside a zone (its
+    // mask depends on where the camera looks, so it cannot be reused per shot). Outside frames pay one zone lookup and nothing else.
+    // &filmwindowpull=0 = off.
+    if (A._filmFieldOn && window.GiFilm && window.GiFilm.windowPull && window.LightZones && window.LightZones.atRaw && !/[?&]filmwindowpull=0/.test(location.search)) {
+      try { var _wpc = A.camera.position, _wpz = window.LightZones.atRaw({ x: _wpc.x, y: _wpc.y, z: _wpc.z });
+        if (_wpz !== 0 && _wpz !== -1) { var _wpR = {}; window.GiFilm.windowPull(A, ctx, w, h, _wpR); A._filmWinPullN = (A._filmWinPullN || 0) + (_wpR.windowPull ? 1 : 0); } }
+      catch (eWP) { if (!A._filmWinPullErr) { A._filmWinPullErr = true; console.warn('§FILM_WINDOW_PULL failed ' + (eWP && eWP.message)); } }
+    }
+    // §FRAME_COST S4 (2026-10-01): its own spec above says "on hold frames only" but it ran on EVERY frame (255 lines in a 255-frame
+    // clip, mid2.log) — 16 getImageData readbacks per frame on a canvas without willReadFrequently (Chrome's own warning in the log).
+    if (A._loadPathHoldFrameActive) try {
       var _pxPts = [[0.30, 0.55], [0.45, 0.65], [0.60, 0.45], [0.20, 0.75], [0.70, 0.70],
         [0.53, 0.87], [0.62, 0.92], [0.05, 0.42], [0.10, 0.50], [0.85, 0.60], [0.784, 0.77],
         [0.913, 0.031], [0.95, 0.08], [0.80, 0.15], [0.41, 0.21], [0.35, 0.12]];
@@ -1905,6 +2031,16 @@
     // §129.8 item 4b — it fades with everything else during the hold ("no path map/compass ... no
     // pie panel"), same `_drawUnlessHold` mechanism; `a` is passed as its own opacity param for the
     // absolute-assignment reason above.
+    // W2 (ALTC_FOUNDATION §1 rounds 3-4): the load-path card is drawn opaque at [30,30] (~970 px wide) from the arm frame — part of
+    // the frozen scene, §129.12/§129.29, it must NOT fade with the HUD — AFTER this row, while the row's boxes are still at alpha 1
+    // on the first hold frame (_hudFadeT(0) = 0) => §HUD_OVERLAP_WORST FAIL f=23 1.00/1.00: hud.pathmap (round 3), then
+    // suncompass.readout once the map yielded (round 4). The whole top row yields for exactly the card's window
+    // (A.loadPathCardOn = the composite's own gate) and keeps its _rowAdvance, so nothing below moves; §129.8 item 4b already
+    // fades every row member out during the hold.
+    var _cardOn = !!(A.loadPathCardOn && A.loadPathCardOn());
+    A._hudRowYield = _cardOn;
+    if (_cardOn && !A._hudRowYieldLogged) { A._hudRowYieldLogged = true; console.log('§HUD_ROW_YIELD card on — top-row HUD (' + Object.keys(_HUD_ROW).join(',') + ') not drawn while the load-path card holds the row'); }
+    if (!_cardOn) A._hudRowYieldLogged = false;
     if (ovInfo && ovInfo.ov && A.pathOverviewCompositeOntoCanvas) {
       _drawUnlessHold('hud.pathmap', function (a) {
         try {
@@ -1952,6 +2088,7 @@
       }, function () { return A.sunReadoutLastBox; });   // §129.55 B
       _rowAdvance(A.sunReadoutLastBox);
     }
+    A._hudRowYield = false;   // W2 — the row ends here
     // Everything below the row — the pie panel, the storey card — starts under the TALLEST member,
     // not under a sum. An empty row (all four off) leaves _rowH at 0 and the column starts at the
     // margin exactly as it did before any of this existed.
@@ -1996,6 +2133,7 @@
       _stackY = Math.max(_stackY, A.bigStatsLastBox.y + A.bigStatsLastBox.h + _gapY);
     }
     if (resInfo && resInfo.info && A.resourcePanelCompositeOntoCanvas) {
+      A._resPanelFrames = (A._resPanelFrames || 0) + 1;   // W7: did a resource panel exist at all (pie/stats verdicts below)
       _drawUnlessHold('hud.pie', function (a) {
         try { A.resourcePanelCompositeOntoCanvas(ctx, w, h, resInfo.info, a, resInfo.pos, _stackY); }
         catch (eRp) {
@@ -2142,7 +2280,18 @@
     // draws the same card through _drawUnlessHold('roster', ...) above, which is hold-aware and
     // registers `stats-panel` for §HUD_LAYOUT (§129.55). Keeping both would have composited the
     // card TWICE per frame. Their A._hudStackBottom stash just above IS kept — it is the new thing.
-    return new Promise(function(res) { c.toBlob(res, 'image/webp', 0.92); });
+    // §FRAME_QA (§ALTS_ALL G6 / §BAKE_RELEASE_GATE, bim-compiler PHOTOREAL_STILL_RENDER.md "### ALTS-ALL BUILD"): the luma of the
+    // EXACT canvas about to be encoded (scene + overlays), 64x36 box-downsampled — a black / white / NaN frame is visible in the log,
+    // not only by eye. Logged by the capture loop beside §FRAME_HASH (same global index). ~1 ms per frame.
+    // §FILM_BLANK_FRAME witness switch (&blankframe=F:K, test only): K captures starting at frame F come back all black, the way the
+    // 2026-10-01 out-of-memory blank did. K=1 proves the retry recovers; K>=4 proves the last-good hold.
+    if (window.__forceBlankLeft > 0) { window.__forceBlankLeft--; ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'copy'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h); ctx.restore(); }
+    try { var _qc = A.__frameQaCv || (A.__frameQaCv = document.createElement('canvas')); _qc.width = 64; _qc.height = 36;
+      var _qx = _qc.getContext('2d', { willReadFrequently: true }); _qx.drawImage(c, 0, 0, 64, 36); var _qd = _qx.getImageData(0, 0, 64, 36).data, _qs = 0, _qmn = 255, _qmx = 0, _qdk = 0, _qcl = 0;
+      for (var _qi = 0; _qi < _qd.length; _qi += 4) { var _ql = 0.2126 * _qd[_qi] + 0.7152 * _qd[_qi + 1] + 0.0722 * _qd[_qi + 2]; _qs += _ql; if (_ql < _qmn) _qmn = _ql; if (_ql > _qmx) _qmx = _ql; if (_ql <= 15) _qdk++; if (_ql >= 250) _qcl++; }
+      var _qn = _qd.length / 4; A._frameQa = { mean: _qs / _qn, min: _qmn, max: _qmx, dark: 100 * _qdk / _qn, clip: 100 * _qcl / _qn };
+    } catch (eQa) { A._frameQa = { err: eQa.message }; }
+    return _capEncode(c, null);
   }
 
   // §MAXQ_MP4 — mp4/H.264 stitch (preferred path). Spec: PHOTOREAL_STILL_RENDER.md §MAXQ_MP4 SPEC.
@@ -2432,6 +2581,10 @@
     // not inherit the first one's pauses or its unconverged count and report someone else's health.
     _hiddenMsTotal = 0; _hiddenPauses = 0; _unconverged = 0;
     A._maxqActive = true;   // mirror for the cinema icon's busy/done check (panels.js)
+    A._lampsSum = null;   // W3(C) — fresh lamp census per film
+    A._resPanelFrames = 0;   // W7
+    A._filmLogCompact = /[?&]filmlog=compact\b/.test(location.search);   // W6
+    _filmRecInstall();   // W6 §F
     // §MAXQ_FRAME_BUDGET — the bake's still fold, cheaper than Alt+S's. Cleared on every exit path
     // below (_bakeBudgetRelease), so a still after a bake is never quietly degraded.
     // LARGE_DB_BAKE.md §2 L3 — the delivery budget (8/12) is the single biggest wall-time knob on a
@@ -2475,6 +2628,59 @@
       _wakeRelease(); _dampRelease(); _bakeBudgetRelease();
       return;
     }
+    // §ZONE_BOX_TRUE (ALTC_FOUNDATION §1, 2026-10-03, read-only, &zonebox=1): light_zones.js build() bounds a BatchedMesh slot by
+    // the WHOLE batch geometry's box (d.geo.boundingBox x slot matrix). Re-walk the same boundary population the same way ("built")
+    // beside each slot's own getBoundingBoxAt ("true") to size that error. Kept OUT of light_zones.js: its code hash is the zone
+    // cache key (SRC), so any edit there would invalidate every shipped .lightfield.bin sidecar. Class list = light_zones.js BOUNDARY.
+    if (/[?&]zonebox=1\b/.test(location.search)) try {
+      var _BND = ['IfcWall', 'IfcWallStandardCase', 'IfcSlab', 'IfcRoof', 'IfcCovering', 'IfcDoor', 'IfcWindow', 'IfcCurtainWall', 'IfcPlate'];
+      var _gs = new Set(); A.dbQuery("SELECT guid FROM elements_meta WHERE ifc_class IN ('" + _BND.join("','") + "')").forEach(function (r) { _gs.add(r[0]); });
+      var _bB = new THREE.Box3(), _bT = new THREE.Box3(), _sb = new THREE.Box3(), _m = new THREE.Matrix4(), _nb = 0, _nNo = 0, _nm = 0, _cls = new Set(_BND);
+      A.scene.traverse(function (o) {
+        if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh) || !o.geometry) return;
+        if (o === A.ground || o === A._sky || (o.userData && (o.userData.skyPortal || o.userData.excludeFromShadow))) return;
+        o.updateMatrixWorld(); var g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+        if (o.isBatchedMesh) {
+          var n = (typeof o.instanceCount === 'number') ? o.instanceCount : (o._instanceInfo ? o._instanceInfo.length : 0);
+          for (var i = 0; i < n; i++) { var gd = A.guidMap[o.id + '_' + i]; if (!gd || !_gs.has(gd)) continue;
+            var gid; try { gid = o.getGeometryIdAt(i); if (!o.getGeometryRangeAt(gid)) continue; } catch (e) { continue; }
+            o.getMatrixAt(i, _m); _m.premultiply(o.matrixWorld); _nb++;
+            _bB.union(_sb.copy(g.boundingBox).applyMatrix4(_m));
+            if (o.getBoundingBoxAt(gid, _sb)) _bT.union(_sb.applyMatrix4(_m)); else _nNo++; }
+          return; }
+        if (!_cls.has(o.userData && o.userData.ifcClass)) return;
+        var add = function (mw) { _sb.copy(g.boundingBox).applyMatrix4(mw); _bB.union(_sb); _bT.union(_sb); _nm++; };
+        if (o.isInstancedMesh) { for (var k = 0; k < o.count; k++) { o.getMatrixAt(k, _m); if (_m.elements[0] === 0 && _m.elements[5] === 0 && _m.elements[10] === 0) continue; _m.premultiply(o.matrixWorld); add(_m); } }
+        else add(o.matrixWorld);
+      });
+      var _r3 = function (b) { return b.isEmpty() ? 'EMPTY' : [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].map(function (v) { return v.toFixed(2); }).join(','); };
+      var _sB = _bB.getSize(new THREE.Vector3()), _sT = _bT.getSize(new THREE.Vector3()), _C = 0.5;   // CELL = light_zones.js CELL
+      var _xc = function (a, b) { return Math.ceil((a + _C * 4) / _C) - Math.ceil((b + _C * 4) / _C); };
+      var _Z = window.LightZones && window.LightZones.get && window.LightZones.get(), _fp = _Z && _Z.fp ? _Z.fp.split('|').slice(5, 11).join(',') : 'n/a';
+      console.log('§ZONE_BOX_TRUE bld=' + A.activeBuilding + ' built=' + _r3(_bB) + ' true=' + _r3(_bT) + ' storedFpBox=' + _fp +
+        ' growM=' + (_sB.x - _sT.x).toFixed(2) + ',' + (_sB.y - _sT.y).toFixed(2) + ',' + (_sB.z - _sT.z).toFixed(2) +
+        ' extraCells=' + _xc(_sB.x, _sT.x) + ',' + _xc(_sB.y, _sT.y) + ',' + _xc(_sB.z, _sT.z) + ' batchedSlots=' + _nb + ' meshDraws=' + _nm + ' noSlotBox=' + _nNo +
+        (_nb ? '' : ' VACUOUS no batched boundary slots'));
+    } catch (eZB) { console.warn('§ZONE_BOX_TRUE failed: ' + (eZB && eZB.message)); }
+    // W4 (ALTC_FOUNDATION §1) — merge the progressive-flush batches into one BatchedMesh per bucket ONCE before frame 0. LTU-class
+    // models stream into ~6,000 batches (§GI_FILM_CENSUS batched=5999) and the film is CPU draw-call bound. Opt-in (&consolidate=1)
+    // until its witnesses pass; a film pays the one-off block that made it unusable in interactive navigation (9.9 s on LTU).
+    // Runs AFTER the stream-wait (a merge before it left late batches unmerged) and AFTER LightZones.build: light_zones.js
+    // build() bounds a BatchedMesh slot by the WHOLE batch geometry's box (d.geo.boundingBox x slot matrix), so 558 merged batches
+    // give a larger grid box than 5,999 small ones — the round-2 §ZONE_IDB_CACHE miss + luma max |d| 27. Building the zones first
+    // keeps the grid the unmerged scene's; build() then returns its cache after the merge while guidMap keeps its count.
+    try {
+      if (/[?&]consolidate=(1|opaque)\b/.test(location.search) && !A._filmConsolidated && typeof A._consolidateBatched === 'function') {
+        A._filmConsolidated = true; A._consolidateOpaqueOnly = /[?&]consolidate=opaque\b/.test(location.search);
+        var _lzc = window.LightZones, _zPre = null, _zPost = null;
+        if (_lzc && _lzc.build) { try { if (_lzc.prime) await _lzc.prime(A); } catch (eP) {} _zPre = _lzc.build(A); }
+        A._consolidateBatched();
+        if (_lzc && _lzc.build && _zPre) _zPost = _lzc.build(A);
+        var _zk = function (z) { return z ? z.nx + 'x' + z.ny + 'x' + z.nz + ':' + z.zones : 'none'; };
+        console.log('§CONSOLIDATE_ZONES ' + (!_zPre ? 'INCONCLUSIVE no zone grid before the merge' : _zPost === _zPre ? 'PASS grid kept' : 'WRONG grid rebuilt after the merge') +
+          ' before=' + _zk(_zPre) + ' after=' + _zk(_zPost));
+      }
+    } catch (eCons) { console.warn('§CONSOLIDATE_FAIL film start: ' + (eCons && eCons.message) + ' — film continues on the unmerged scene'); }
     // §CINEMA_PATH: fly the SAME orbit-path formula as the live-capture Cinema Orbit (push-in to
     // fill-frame → hold → band, sun-glint swoop, elliptical radius, pull-back flourish) — shared
     // plan from effects.js. Fallback: plain circle at current radius/height if the plan API is
@@ -2919,6 +3125,7 @@
         var _framesWas = nFrames;
         nFrames = Math.max(1, Math.round(_cpeRes.durationSec * fps));
         plan = A.cinemaPathPlan(nFrames / fps, _cpeRes.override);
+        window.__maxqPlanDurSec = nFrames / fps;   // W1 (ALTC_FOUNDATION §1): the duration this plan was built at, for the CLI pose check
         // §CPE_OK_CRASH (CINEMA_PATH_EDITOR.md) — this line used to read `override.waypoints.length`
         // and threw `undefined.length` on EVERY edited path: §CPE_BANDS changed the editor's override
         // to carry `bands` (3 bands → 6 waypoints, expanded inside effects.js), and this one consumer
@@ -2969,6 +3176,10 @@
         // their stored override JSON, `__maxqBake`'s own merge never touches it) falls back to the
         // OLD `!!_measure` behaviour, so no bake made before today silently loses the feature.
         _loadPath = (_ov.loadPath !== undefined) ? !!_ov.loadPath : !!_measure;
+        // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19): Audio / Visual panels draw only inside the load-path freeze composite.
+        A._freezePerfOn = { visual: !!_ov.visualPanel, audio: !!_ov.audioPanel };
+        if ((_ov.visualPanel || _ov.audioPanel) && !_loadPath) console.log('§FREEZE_PERF_PANEL group=' + (_ov.visualPanel ? 'visual' : '') + (_ov.audioPanel ? (_ov.visualPanel ? '+' : '') + 'audio' : '') + ' skipped reason=load-path-off');
+        if (_ov.audioPanel) console.log('§FREEZE_PERF_PANEL group=audio skipped reason=not-built (α table + §N reference witness first)');
         // §129.6 item 6b (2026-09-15) SUPERSEDES the original fold-under-measure: Cost/Ledger are now
         // rows of the pie-chart HUD (cpe_resource_panel.js), gated by the SAME toggle as the
         // "4D/5D" (--label/--4d5d) checkbox — NOT --measure. The load path 3D effect itself is
@@ -3222,6 +3433,7 @@
       // (red1: "I don't mind it adds few secs"), and `_tn` (below) is remapped so it holds constant
       // at the arm value for exactly those inserted frames, then resumes from that SAME value —
       // never shifting any OTHER beat's own boundary.
+      if (_loadPath && A._freezePerfOn && A._freezePerfOn.visual && A.freezePerfBuild) { try { A.freezePerfBuild(A.dbQuery); } catch (eFP) { console.warn('§FREEZE_PERF_BUILD failed: ' + (eFP && eFP.message)); } }   // §FREEZE_PERF_PANEL BUILD, once per bake
       if (_loadPath && A.loadPathBuild) {
         try {
           A.loadPathBuild(plan, _filmSecFull, _revealU, A.db, w, h, fps);   // §129.7 items 3+6 — real output px/fps
@@ -3246,6 +3458,13 @@
             _lpArmFrameTn = _lpGrid.armFrameTn;
             _lpArmTnMatch = Math.abs(_lpArmFrameTn - _lpArmTn) <= _lpGrid.step + 1e-9;
             A._loadPathArmFrameTn = _lpArmFrameTn; A._loadPathArmTnMatch = _lpArmTnMatch;
+            // §LOADPATH_CLIP_SKIP (2026-10-01, red1 clip 1065:1195): a clip that does not CONTAIN the freeze point got the 165 freeze
+            // frames spliced onto its last frame anyway (armTnMatch=false => FAIL, ~35 min of wrong freeze). Outside the clip = no freeze.
+            if (_frameRange && !_lpArmTnMatch) {
+              console.log('§LOADPATH_CLIP_SKIP armTn=' + _lpArmTn.toFixed(4) + ' clipTn=[' + (_frameRange.a / (_frameRange.total - 1)).toFixed(4) + ',' + (_frameRange.b / (_frameRange.total - 1)).toFixed(4) +
+                '] — the freeze point is outside this clip: no freeze frames inserted');
+              _lpFramesInserted = 0; _lpArmTnMatch = true; A._loadPathArmTnMatch = true;
+            }
             nFrames = _lpNFramesOriginal + _lpFramesInserted;
             console.log('§LOADPATH_HOLD_INSERT armTn=' + _lpArmTn.toFixed(4) + ' holdFrameStart=' + _lpHoldFrameStart +
               ' armFrameTn=' + _lpArmFrameTn.toFixed(6) + ' armTnMatch=' + _lpArmTnMatch +
@@ -3578,7 +3797,18 @@
         // maxStepElsewhere fields measure.
         var _lpHoldCtl = null, _tn;
         if (_frameRange) {
-          _tn = (_frameRange.a + i) / (_frameRange.total - 1);
+          // §LOADPATH_CLIP_CLOCK (red1 2026-10-01 on the Hospital mid clip: "it broke the momentum path … getting out of the freeze
+          // supposed to continue the full ARC return … straight cut to no ARC DISCs only"). MEASURED: a --frame-range clip ran the
+          // film clock THROUGH the 165 inserted hold frames (§FILM_GEOM_WHOLE f=250 tn=0.4653 on a clip whose range ends at 0.4516),
+          // so the whole post-freeze return was consumed during the freeze and the clip resumed inside the discipline round. A clip
+          // now freezes the clock exactly like the full film (branch below): hold frames pin _tn at the arm frame, later frames are
+          // shifted back by the inserted count.
+          var _iF = i;
+          if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze && i >= _lpHoldFrameStart) {
+            if (i < _lpHoldFrameStart + _lpFramesInserted) { _iF = _lpHoldFrameStart; _lpHoldCtl = { inHold: true, elapsedSec: (i - _lpHoldFrameStart) / fps }; }
+            else { _iF = i - _lpFramesInserted; _lpHoldCtl = { inHold: false, elapsedSec: null }; }
+          } else if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze) _lpHoldCtl = { inHold: false, elapsedSec: null };
+          _tn = (_frameRange.a + _iF) / (_frameRange.total - 1);
         } else if (_lpFramesInserted > 0 && !window.__lpNoClockFreeze && i >= _lpHoldFrameStart) {
           if (i < _lpHoldFrameStart + _lpFramesInserted) {
             _tn = _lpNFramesOriginal > 1 ? _lpHoldFrameStart / (_lpNFramesOriginal - 1) : 0;
@@ -3670,8 +3900,9 @@
         // runner records the REAL pose each frame and asserts it numerically against the stored
         // path (a bake that runs but ignores the passed path is the silent failure this catches).
         if (typeof window.__maxqPoseTap === 'function')
-          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz); } catch (ePT) {}
+          try { window.__maxqPoseTap(i, pose.x, pose.y, pose.z, pose.tx, pose.ty, pose.tz, _poseFilmT); } catch (ePT) {}   // W1: + the film time actually posed at (the load-path hold makes it non-linear in i)
         if (A._updateCamLight) A._updateCamLight(pose.tx, pose.ty, pose.tz);
+        if (A._updateCamTorch) A._updateCamTorch(pose.tx, pose.ty, pose.tz);   // §CAM_TORCH film (§FILM_LAW Z17, L1b) — no-op unless staged
         // §CPE_BUILDUP: the SECOND per-frame state advance (§MAXQ_TIME's whole premise — mode A moves
         // only the camera, this adds construction state). _tFilm keeps the cursor on the film's own
         // parameter, so a clip samples the middle of the buildup rather than restarting it.
@@ -3845,12 +4076,32 @@
         // Two controls, both falsifiable: __ilForceOn defeats the gate outright (§118's own), and
         // __ilNoRelight restores §116's original "off to the end" so the relight can be proved to be
         // the thing that lit the windows, rather than assumed.
-        // §ALTC_HIGHWAY lamps: this window exists for INTERIOR fixtures seen from a camera climbing away outside. A road's
-        // lamps are the exterior scene itself — on for the whole film (user: "late evening with lamps on and hitting
-        // surface"). Civil only; buildings keep the window exactly.
-        A._interiorLightsOff = !(A.isCivilModel && A.isCivilModel()) && A._ilPastStick &&
-          !(A._ilPastTopout && !(typeof window !== 'undefined' && window.__ilNoRelight)) &&
-          !(typeof window !== 'undefined' && window.__ilForceOn);
+        // §FILM_INHERIT: the Alt+S zone grid + sky field describe the FINISHED, uncut building (ALTC_SHOWSTOPPERS S3). Whole =
+        // (no build-up, or past its topout) AND (no storey reveal, or past plan.beats.rise where the storeys have returned) AND no
+        // discipline hidden by the reveal round (A.hiddenDiscs, set this frame by cpeRevealApplyVisual above). NOT the fixtures'
+        // relight clock (§129.47 beats.rise even without a storey reveal): geometry, not lamps, decides. effects.js reads it.
+        var _srOn = !!(plan && plan.storeyReveal && plan.storeyReveal.on);
+        var _geoTop = (_buildup && plan && plan.beats) ? _buildupTopoutU(plan).u : null;
+        var _geoWhy = (_buildup && !(_geoTop != null && _tnFilm >= _geoTop)) ? 'buildup' :
+          // storeys are cut only INSIDE the reveal's own window (rise - windowFrac, rise] — cpe_storey_reveal.js:635-637, same
+          // arithmetic; not called directly because storeyRevealVisualAt counts parade-wait frames as a side effect.
+          (_srOn && plan.beats && typeof plan.beats.rise === 'number' && plan.storeyReveal.windowFrac > 0 &&
+            _tnFilm > plan.beats.rise - plan.storeyReveal.windowFrac && _tnFilm <= plan.beats.rise) ? 'storey-reveal' :
+          (A.hiddenDiscs && A.hiddenDiscs.size) ? 'discs-hidden:' + Array.from(A.hiddenDiscs).join('+') : '';
+        A._filmGeomWhole = !_geoWhy;
+        if (_geoWhy !== A._filmGeomWhyLast) { A._filmGeomWhyLast = _geoWhy;
+          console.log('§FILM_GEOM_WHOLE f=' + i + ' tn=' + _tnFilm.toFixed(4) + ' whole=' + (_geoWhy ? 0 : 1) + (_geoWhy ? ' why=' + _geoWhy : '') +
+            ' topoutU=' + (_geoTop != null ? _geoTop.toFixed(4) : '-') + ' riseU=' + (plan && plan.beats && typeof plan.beats.rise === 'number' ? plan.beats.rise.toFixed(4) : '-') + ' storeyReveal=' + (_srOn ? 1 : 0)); }
+        // §INTERIOR_LIGHTS_ARC (red1 2026-10-01, correcting the reading of §116/§129.47: "It is only to be off during freeze, no ARC but
+        // to resume when ARC returns. Now this is in conflict with alt-s benefit. Bring it back on."): interior fixtures are OFF only on
+        // frames with no architecture on screen — the load-path freeze (this frame's _lpHoldCtl) or a reveal round hiding ARC
+        // (A.hiddenDiscs, set above by cpeRevealApplyVisual) — and ON whenever ARC is there. Replaces the film-time window
+        // [beats.out, beats.rise). __ilForceOn still defeats the gate (control).
+        var _ilNoArc = !!(_lpHoldCtl && _lpHoldCtl.inHold) || !!(A.hiddenDiscs && A.hiddenDiscs.has && A.hiddenDiscs.has('ARC'));
+        A._interiorLightsOff = _ilNoArc && !(typeof window !== 'undefined' && window.__ilForceOn);
+        if (A._interiorLightsOff !== A._ilArcOffLast) { A._ilArcOffLast = A._interiorLightsOff;
+          console.log('§INTERIOR_LIGHTS_ARC f=' + i + ' tn=' + _tnFilm.toFixed(4) + ' lights=' + (A._interiorLightsOff ? 'OFF' : 'ON') +
+            ' (' + (A._interiorLightsOff ? ((_lpHoldCtl && _lpHoldCtl.inHold) ? 'freeze' : 'ARC hidden by the reveal round') : 'ARC on screen') + ')'); }
         // §117's witness runs just before capture (search §INTERIOR_LIGHTS_WITNESS), not here:
         // sampled at this point it would read the PREVIOUS frame's lighting and report a phantom
         // FAIL on the first gated frame. Measured — that is exactly what the first version did.
@@ -4038,6 +4289,10 @@
         if (A._maxqActive && A._filmParity && !A._giFilmArmed && window.GiFilm) { A._giFilmArmed = true; window.GiFilm.arm(); }   // §GI_FILM — staging decided parity
         if (A._maxqActive && A._filmParity && A._filmParityStep) A._filmParityStep(i, _tnFilm, _filmFitSampler);
         if (A._maxqActive && A._sunArcFillPin) A._sunArcFillPin(_tnFilm, _revealU);
+        // §FILM_LAW S1 (bim-compiler ALTC_SHOWSTOPPERS.md §FILM_LAW; ALT+C R1): meter this frame (same §METER_EV chain as Alt+S)
+        // and ease the exposure toward it at the engine adaptation speeds, frame clock 1/fps. LAST light write before the fold.
+        // §LOADPATH_STACK_ONLY: exposure held through the freeze (a black frame with one stack would otherwise be metered up).
+        if (A._maxqActive && A._filmParity && !A._burninDatumDir && A._filmExposureStep && !(A._lpStackOnly && A._loadPathHoldFrameActive)) { try { A._filmExposureStep(i, fps); } catch (eFE) { console.warn('§FILM_EXPOSURE failed: ' + eFE.message); } }
         var ok = A._burninDatumDir ? true : await _waitFoldDone(30000, 'cook of frame ' + i + '/' + nFrames);
         if (!A._burninDatumDir) await _raf2('frame ' + i + ' capture');
         // §SHADOW_FRONTIER_AT_CAPTURE (2026-08-12) — the real answer, checked at the real moment:
@@ -4398,8 +4653,32 @@
         // counted. This counts every interior emitter there is, from the live scene, and must read
         // zero on every frame after the last stick. It reads the PREVIOUS frame's writes, which is
         // what makes it independent of the gate's own arithmetic rather than a restatement of it.
+        // W3(C) 2026-10-03 — WHO OWNS THE LAMPS. Parity films light lamps on the DATA path (sourced_light lamp textures, tools.js
+        // _filmLD: A._lampData) and deliberately park the pool at 0, so a pool-only count read "0/122 lit" on films whose lamps were
+        // on (§LAMP_UNCAPPED on lit=122). Owner, data lamps lit, pool lit and every lamp-SET change (= a lamp popping in/out as the
+        // camera's 122-cap pick moves) are logged on change, plus one §LAMPS_SUMMARY at the end.
+        var _lOwner = (A._lampDataOn && A._lampData && A._lampData.lamps) ? 'data' : 'pool';
+        var _lData = 0, _lDataN = 0;
+        if (_lOwner === 'data') { _lDataN = A._lampData.lamps.length; for (var _ld = 0; _ld < _lDataN; _ld++) if (A._lampData.lamps[_ld].I > 0) _lData++; }
+        var _lPool = 0;
+        if (A._nightBakePool) for (var _lp2 = 0; _lp2 < A._nightBakePool.length; _lp2++) if (A._nightBakePool[_lp2].intensity > 0) _lPool++;
+        var _lS = A._lampsSum || (A._lampsSum = { frames: 0, data: 0, pool: 0, minLit: 1e9, maxLit: 0, setChanges: 0, ver: null, key: null });
+        _lS.frames++; _lS[_lOwner]++;
+        var _lLit = _lOwner === 'data' ? _lData : _lPool;
+        _lS.minLit = Math.min(_lS.minLit, _lLit); _lS.maxLit = Math.max(_lS.maxLit, _lLit);
+        var _lVer = _lOwner === 'data' ? A._lampData.ver : null;
+        if (_lVer !== null && _lS.ver !== null && _lVer !== _lS.ver) _lS.setChanges++;
+        _lS.ver = _lVer;
+        var _lKey = _lOwner + '/' + _lData + '/' + _lPool + '/' + (_lVer == null ? '-' : _lVer);
+        A._frLamps = { owner: _lOwner, data: _lData, pool: _lPool };   // W6 §F
+        if (_lS.key !== _lKey) {
+          _lS.key = _lKey;
+          console.log('§LAMPS f=' + i + ' owner=' + _lOwner + ' dataLit=' + _lData + '/' + _lDataN + ' poolLit=' + _lPool + '/' +
+            ((A._nightBakePool && A._nightBakePool.length) || 0) + ' ver=' + (_lVer == null ? '-' : _lVer) +
+            ' gateOff=' + (A._interiorLightsOff ? 1 : 0));
+        }
         if (A._ilPastStick) {
-          var _wPool = 0, _wNav = 0;
+          var _wPool = 0, _wNav = 0, _wData = _lData, _wDataN = _lDataN;
           if (A._nightBakePool) for (var _wi = 0; _wi < A._nightBakePool.length; _wi++) {
             if (A._nightBakePool[_wi].intensity > 0) _wPool++;
           }
@@ -4414,10 +4693,10 @@
             var _gm = A._nightGlowMats[_ge].mat;
             if (_gm && _gm.emissiveIntensity > 0 && _gm.emissive && _gm.emissive.getHex() !== 0) _wEmis++;
           }
-          var _wKey = _wPool + '/' + _wNav + '/' + _wEmis;
+          var _wKey = _lOwner + '/' + _wData + '/' + _wPool + '/' + _wNav + '/' + _wEmis;
           if (A._ilWitnessKey !== _wKey) {
             A._ilWitnessKey = _wKey;
-            console.log('§INTERIOR_LIGHTS_WITNESS poolLit=' + _wPool + '/' +
+            console.log('§INTERIOR_LIGHTS_WITNESS owner=' + _lOwner + ' dataLit=' + _wData + '/' + _wDataN + ' poolLit=' + _wPool + '/' +
               ((A._nightBakePool && A._nightBakePool.length) || 0) + ' navLit=' + _wNav +
               ' emissiveMatsLit=' + _wEmis + '/' + ((A._nightGlowMats && A._nightGlowMats.length) || 0) +
               ' => ' +
@@ -4438,9 +4717,10 @@
               // A family with members and none lit is now a FAIL on its own, named. Each family
               // prints over its own denominator so a zero can still be told from an absent family:
               // absent (denominator 0) is not judged, which is the VACUOUS case, not a pass.
-              (A._ilPastTopout
+              (!A._interiorLightsOff   // §INTERIOR_LIGHTS_ARC: expect lit whenever ARC is on screen, dark only when the gate is off
                 ? ((function () {
-                    var fam = [['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0],
+                    // W3(C): judge the family that OWNS the lamps — under the data path the pool is parked at 0 on purpose.
+                    var fam = [(_lOwner === 'data' ? ['data', _wData, _wDataN] : ['pool', _wPool, (A._nightBakePool && A._nightBakePool.length) || 0]),
                                ['nav', _wNav, (A._nightLightByPos && A._nightLightByPos.size) || 0],
                                ['emissiveMats', _wEmis, (A._nightGlowMats && A._nightGlowMats.length) || 0]];
                     var dark = fam.filter(function (f) { return f[2] > 0 && f[1] === 0; });
@@ -4455,7 +4735,7 @@
                     return 'PASS (past topout: every interior family that exists is lit — ' +
                       judged.map(function (f) { return f[0] + ' ' + f[1] + '/' + f[2]; }).join(', ') + ')';
                   })())
-                : ((_wPool + _wNav + _wEmis === 0)
+                : ((_wPool + _wNav + _wEmis + _wData === 0)
                     ? 'PASS (between the last stick and topout, no interior emitter of any family is on)'
                     : 'FAIL — something interior is still emitting. Each count prints over its own' +
                       ' DENOMINATOR so a zero can be told apart from an absent family (a vacuous pass).')));
@@ -4557,7 +4837,8 @@
             '|p' + (_rp ? _rp.x.toFixed(4) + ',' + _rp.y.toFixed(4) + ',' + _rp.z.toFixed(4) : '-') +
             '|t' + (_rt ? _rt.x.toFixed(4) + ',' + _rt.y.toFixed(4) + ',' + _rt.z.toFixed(4) : '-') +
             '|s' + ((A.sunCompassInfo && A.sunCompassInfo()) ? (+A.sunCompassInfo().elevation).toFixed(3) : '-') +
-            '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-');
+            '|d' + (_dayInfo && _dayInfo.text != null ? String(_dayInfo.text) : '-') +
+            '|a' + (A._freezeAnimKey ? A._freezeAnimKey() : '-');   // §FREEZE_ANIM: an animating panel frame is never reused
         }
         _prevVisualRev = (A._loadPathVisualRev || 0);
         var blob;
@@ -4572,7 +4853,31 @@
             _frameReuseRun = 0;
           }
           if (typeof window.__maxqPreCaptureTap === 'function') { try { window.__maxqPreCaptureTap(i); } catch (ePC) {} }   // dev-only witness seam (--tap), like __maxqPoseTap
+          // §LOADPATH_HOLD_CAMDIR (red1 2026-10-01: "the cam still pivot or pan around" in the freeze): the camera AS CAPTURED, every
+          // 15th hold frame + the first and last — position and view direction, so a pan/pivot during the freeze is a number, not a look.
+          if (A._loadPathMidHoldThisFrame && A.camera && A.camera.getWorldDirection) { try {
+            A._lpCamDirN = (A._lpCamDirN || 0) + 1; var _cdv = A.camera.getWorldDirection(new THREE.Vector3());
+            if (A._lpCamDirN === 1 || A._lpCamDirN % 15 === 0) console.log('§LOADPATH_HOLD_CAMDIR n=' + A._lpCamDirN + ' i=' + i + ' pos=[' + A.camera.position.x.toFixed(2) + ',' + A.camera.position.y.toFixed(2) + ',' + A.camera.position.z.toFixed(2) + '] dir=[' + _cdv.x.toFixed(3) + ',' + _cdv.y.toFixed(3) + ',' + _cdv.z.toFixed(3) + '] yawDeg=' + (Math.atan2(_cdv.x, _cdv.z) * 180 / Math.PI).toFixed(2) + ' pitchDeg=' + (Math.asin(Math.max(-1, Math.min(1, _cdv.y))) * 180 / Math.PI).toFixed(2) + ' frameRange=' + (_frameRange ? 1 : 0));
+          } catch (eCD) {} }
+          { var _bfm = /[?&]blankframe=(\d+):(\d+)/.exec(location.search); if (_bfm && (_frameRange ? _frameRange.a + i : i) === +_bfm[1]) window.__forceBlankLeft = +_bfm[2]; }
           blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
+          // §FILM_BLANK_FRAME (2026-10-01, Hospital full bake frames 2325-2341: 16 captures came back ALL ZERO — lumaMax=0.0, HUD included,
+          // one hash — while §FILM_EXPOSURE metered a normal scene; GPU out-of-memory on the shared card at that minute). The capture canvas,
+          // not the render, went blank, and the only blank guard lived in the bounce path (off by then). A real film frame always carries
+          // light or HUD, so an all-zero capture is retried after a short wait (0.5 / 2 / 5 s); if it stays blank, the LAST GOOD frame is
+          // used instead of black (a held frame reads as a stutter, black reads as a cut). Logged every time.
+          if (A._frameQa && !A._frameQa.err && +A._frameQa.max === 0) {
+            var _bfOk = false, _bfWaits = [500, 2000, 5000];
+            for (var _bt = 0; _bt < _bfWaits.length && !_bfOk; _bt++) {
+              await new Promise(function (r) { setTimeout(r, _bfWaits[_bt]); });
+              blob = await _captureFrame(w, h, _titleInfo, _dayInfo, _ovInfo, _resInfo, _statInfo, _lblInfo, _statusSrc, _escInfo, _escCardInfo);
+              _bfOk = !!(A._frameQa && !A._frameQa.err && +A._frameQa.max > 0);
+              console.warn('§FILM_BLANK_FRAME i=' + (_frameRange ? _frameRange.a + i : i) + ' try=' + (_bt + 1) + ' waitMs=' + _bfWaits[_bt] + ' recovered=' + _bfOk + (_bfOk ? ' lumaMean=' + (+A._frameQa.mean).toFixed(1) : ''));
+            }
+            if (!_bfOk && A._lastGoodFrameBlob) { blob = A._lastGoodFrameBlob; A._blankHeld = (A._blankHeld || 0) + 1;
+              console.warn('§FILM_BLANK_FRAME i=' + (_frameRange ? _frameRange.a + i : i) + ' STILL BLANK after 3 tries -> held the last good frame (held so far ' + A._blankHeld + ')'); }
+          }
+          if (A._frameQa && +A._frameQa.max > 0) A._lastGoodFrameBlob = blob;
           _lastFrameKey = _reuseKey; _lastFrameBlob = blob;
         }
         // ROUND 13 item C — track whichever frame lands CLOSEST to the hold's own middle
@@ -4590,6 +4895,7 @@
         // LARGE_DB_BAKE.md §2 L4 — seam-equivalence witness: hash the ENCODED bytes of this frame,
         // keyed by its GLOBAL index in the full film (not this run's local i), so a K=1 bake and a
         // --frame-range slice of the same span can be diffed frame-for-frame without decoding video.
+        var _tailT0 = performance.now();   // §CAPTURE_SPLIT tail: hash + QA log + IDB write
         try {
           var _fhBuf = await blob.arrayBuffer();
           var _fhDig = await crypto.subtle.digest('SHA-256', _fhBuf);
@@ -4601,6 +4907,11 @@
           // compared later against the frame the stitcher names.
           console.log('§FRAME_HASH i=' + (_frameRange ? _frameRange.a + i : i) + ' sha=' + _fhHex +
             ' bytes=' + (blob && blob.size != null ? blob.size : 'n/a'));
+          // §FRAME_QA (every frame, qaEvery=1): the encoded canvas's luma; reused=1 = the §FRAME_REUSE path handed the previous blob
+          var _fq = A._frameQa || {}, _fqR = (_reuseKey !== null && _reuseKey === _lastFrameKey && blob === _lastFrameBlob && _frameReuseRun > 0);
+          console.log('§FRAME_QA i=' + (_frameRange ? _frameRange.a + i : i) + ' qaEvery=1 ' + (_fq.err ? 'ERR ' + _fq.err : 'lumaMean=' + (+_fq.mean).toFixed(2) + ' lumaMin=' + (+_fq.min).toFixed(1) +
+            ' lumaMax=' + (+_fq.max).toFixed(1) + ' darkPct=' + (+_fq.dark).toFixed(2) + ' clipPct=' + (+_fq.clip).toFixed(2)) + ' reused=' + (_fqR ? 1 : 0) +
+            ' cam=[' + (A.camera ? [A.camera.position.x, A.camera.position.y, A.camera.position.z].map(function(v) { return v.toFixed(3); }).join(',') : '-') + ']');
         } catch (eFh) { console.warn('§FRAME_HASH_ERR ' + eFh.message); }
         // §MAXQ_IDB_SALVAGE (2026-07-25, real user repro on Hospital AND HHS_Office — both mid-bake,
         // ~100+ frames in): a backgrounded/throttled tab can have Chrome force-close this run's IDB
@@ -4614,7 +4925,9 @@
         // permanently unusable once "closing" — reopening is cheap and the underlying stored data
         // (frames already put successfully) is untouched by the old handle dying.
         try {
+          var _idbT0 = performance.now();
           await _idbPut(db, i, blob);
+          console.log('§CAPTURE_TAIL i=' + (_frameRange ? _frameRange.a + i : i) + ' hashMs=' + (_idbT0 - _tailT0).toFixed(1) + ' idbMs=' + (performance.now() - _idbT0).toFixed(1));
         } catch (idbErr) {
           _idbLost = true;
           console.warn('§MAXQ_IDB_LOST i=' + i + ' ' + idbErr.message +
@@ -4726,6 +5039,13 @@
       // anybody can check — and a reuse count of 0 on a film that HAS a load-path freeze is the
       // FAIL signal (the key is too fine, or the hold never armed), not a quiet non-event.
       if (_frameReuseRun > 0) { _frameReuseRuns++; }
+      // W3(C) — the lamp census for the whole film (per-change lines are §LAMPS).
+      (function () { var L = A._lampsSum;
+        if (!L || !L.frames) { console.log('§LAMPS_SUMMARY INCONCLUSIVE — no frame recorded a lamp state (VACUOUS)'); return; }
+        console.log('§LAMPS_SUMMARY frames=' + L.frames + ' owner data/pool=' + L.data + '/' + L.pool + ' lit min/max=' + L.minLit + '/' + L.maxLit +
+          ' dataSetChanges=' + L.setChanges + ' (each = the lit lamp SET changed between frames — the 122-cap pick following the camera)' +
+          (L.maxLit === 0 ? ' => FAIL — no lamp lit on any frame' : ''));
+        A._lampsSum = null; })();
       console.log('§FRAME_REUSE_SANITY denied=' + _reuseSanityDenied + ' (hold frames rendered because a Sanity set was live)');
       console.log('§FRAME_REUSE_TOTAL reused=' + _frameReuseTotal + '/' + framesDone +
         ' runs=' + _frameReuseRuns + ' rendered=' + (framesDone - _frameReuseTotal) +
@@ -4733,6 +5053,12 @@
         ' — ' + (window.__noFrameReuse ? 'reuse OFF by flag (control run)'
           : (_frameReuseTotal > 0 ? 'each reused frame is the previous encoded blob, byte-identical by construction'
              : 'INCONCLUSIVE: nothing was reused — no load-path hold in this film, or the key moved every frame')));
+      _filmRecSummary();   // W6 — after §FRAME_REUSE_TOTAL, which flushed the last pending §F
+      // W7 — a requested draw-cost proxy that never boxed anything did nothing for the whole film; say so (Hospital 10-03: boxed=0
+      // on all 3,249 census lines; LTU: requested, gate never passed, no page line at all).
+      if (window.__dlodProxyBake) console.log(!window.__dlodProxyEngaged
+        ? '§DLOD_BAKE_PROXY_RESULT NO-OP — requested, but the large-building gate never engaged it'
+        : ('§DLOD_BAKE_PROXY_RESULT boxedMax=' + (window.__dlodBoxedMax || 0) + ((window.__dlodBoxedMax || 0) === 0 ? ' => NO-OP — engaged but boxed nothing on any frame' : ' => engaged')));
       try { if (A.loadPathDispose) A.loadPathDispose(); } catch (eLPd) {}
       try { if (A.ledgerTickerDispose) A.ledgerTickerDispose(); } catch (eLTd) {}
       // §ESCAPE_ROUTE_REVEAL — the forced restore. Runs unconditionally, NOT behind _escapeRoute:
@@ -4758,14 +5084,16 @@
       // §CPE_PIE_HOLD — say how much of the film the pie HELD a past composition rather than
       // showing today's. A bake where this equals framesDone means no day was ever staffed and the
       // whole panel was a hold: that is a schedule problem, not a HUD one, and must be visible.
-      console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
+      if (!A._resPanelFrames) console.log('§CPE_PIE_HOLD VACUOUS — no resource panel was drawn on any frame (no 4D crew data / panel off); nothing judged');
+      else console.log('§CPE_PIE_HOLD heldFrames=' + (A._resHoldFrames || 0) + '/' + framesDone +
         (framesDone ? ' (' + Math.round((A._resHoldFrames || 0) / framesDone * 100) + '% of the film)' : '') +
         ((A._resHoldFrames || 0) === 0 ? ' — trades were active for every frame, the pie was never held'
           : ((A._resHoldFrames || 0) >= framesDone ? ' ⚠ NO frame had a live crew — the pie held throughout'
              : ' — pie holds the last real crew through the silent tail')));
       // §CPE_STATS_TAIL — how much of the film the Reveal round reclaimed. 0 on a bake whose plan
       // has no topout AND whose ops never freeze: that is the case where the dead tail stays dead.
-      console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
+      if (!A._resPanelFrames) console.log('§CPE_STATS_TAIL VACUOUS — no resource panel was drawn on any frame; nothing judged');
+      else console.log('§CPE_STATS_TAIL revolvedFrames=' + (A._statTailFrames || 0) + '/' + framesDone +
         (framesDone ? ' (' + Math.round((A._statTailFrames || 0) / framesDone * 100) + '% of the film)' : '') +
         ((A._statTailFrames || 0) === 0
           ? ' — the Reveal round never revolved: no topout on the plan and the ops never froze'
@@ -4942,7 +5270,8 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute'].forEach(function(fk) {   // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
+            // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
@@ -4959,7 +5288,7 @@
           // census never printed. So no bake log could answer that question: you had to read the
           // command line, or look at frames. Every other flag here is reported; this one is now too.
           ' clash=' + (ov.clash ? 1 : 0) +
-          ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) +
+          ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) + ' visualPanel=' + (ov.visualPanel ? 1 : 0) + ' audioPanel=' + (ov.audioPanel ? 1 : 0) +
           ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
           ' loadPath=' + (ov.loadPath ? 1 : 0) + ' ledger=' + (ov.ledger ? 1 : 0) + ' cost=' + (ov.cost ? 1 : 0) +
           ' sunCompass=' + (ov.sunCompass ? 1 : 0) + ' sunDate=' + (ov.sunDate || '-'));

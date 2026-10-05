@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, window.setupCpeFreezePerf, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -205,7 +205,7 @@ async function initViewer() {
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
         'find_ask_grammar.js?v=1',
         'find_ask.js?v=4',
-        'navigate_find.js?v=62',
+        'navigate_find.js?v=63',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -1239,6 +1239,11 @@ async function initViewer() {
       } else {
         console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
       }
+      // §LIGHT_FIELD_DB (light_zones.js SPEC S4): read the saved Alt+S light field out of the .db now, off the press path, so the
+      // first Alt+S restores it (cache=hit src=db) instead of building it. Async; prime() at staging joins the same read.
+      // §FILM_FIELD_BY_BUILDING: a db without its own row first borrows the building's baked sidecar (scene.js), then primes.
+      if (APP._loadPrebake) APP._loadPrebake();   // §PREBAKE sidecar (async, never blocks; consumers check their own keys)
+      if (window.LightZones && window.LightZones.primeDb) { Promise.resolve(APP._lightFieldByBuilding ? APP._lightFieldByBuilding() : null).then(function () { try { window.LightZones.primeDb(APP); } catch (eLF) { console.warn('§LIGHT_FIELD_DB prime failed: ' + eLF.message); } }); }
     }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;

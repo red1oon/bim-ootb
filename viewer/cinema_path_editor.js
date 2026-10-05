@@ -761,6 +761,8 @@
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
       loadPath: !!s.loadPath,               // §129.31 — own checkbox now, was folded under Measure
+      visualPanel: !!s.visualPanel,         // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — draws only inside the load-path freeze
+      audioPanel: !!s.audioPanel,
       escapeRoute: !!s.escapeRoute,         // §ESCAPE_ROUTE_REVEAL
       sunCompass: !!s.sunCompass,           // §SUN_COMPASS
       sunDate: s.sunDate || '',             // §SUN_DAY
@@ -1057,6 +1059,11 @@
             // Icon null on purpose, same rule as the four above: no honest one exists in the set yet.
             { id: 'cpe-load-path', label: 'Load path freeze', icon: null,
               hint: 'camera holds on the structural chain from topout to ground — section-cut, cost + schedule per member, stack info panel' },
+            // §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19): panels in the load-path freeze's black space, ONLY with load path on.
+            { id: 'cpe-visual-panel', label: 'Visual (CCTV) in freeze', icon: null,
+              hint: 'with Load path freeze: CCTV coverage per room — best ceiling corner, blind m², best/worst room (IEC 62676-4 DORI, Paxton 103°×55°)' },
+            { id: 'cpe-audio-panel', label: 'Audio (RT) in freeze', icon: null,
+              hint: 'with Load path freeze: room reverberation (Sabine/Eyring) — not built yet' },
             // §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md). `I.route` is the
             // icon this UI ALREADY uses for a walked route (panels.js's Pick Walk entry), so reusing
             // it is consistency rather than a guess — the same rule the three icons above follow.
@@ -2457,7 +2464,7 @@
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
-                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath,
+                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath, visualPanel: !!ov.visualPanel, audioPanel: !!ov.audioPanel,
                     escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass },
       sunDate: ov.sunDate || '',
       bakeRes: ov.bakeRes || '',
@@ -2511,6 +2518,7 @@
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
      ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
      ['cpe-storey-reveal', !!_state.storeyReveal], ['cpe-load-path', !!_state.loadPath],
+     ['cpe-visual-panel', !!_state.visualPanel], ['cpe-audio-panel', !!_state.audioPanel],
      ['cpe-escape-route', !!_state.escapeRoute],
      ['cpe-sun-compass', !!_state.sunCompass]].forEach(function(p) {
       var el = document.getElementById(p[0]);
@@ -2542,6 +2550,7 @@
       // §129.31: restored the same lightweight way as storeyReveal just above — no origX baseline,
       // read live by cinema_maxq.js's own `_loadPath` line with no beat-boundary side effect.
       _state.loadPath = !!ps.checkboxes.loadPath;
+      _state.visualPanel = !!ps.checkboxes.visualPanel; _state.audioPanel = !!ps.checkboxes.audioPanel;   // §FREEZE_PERF_PANEL
       _state.escapeRoute = !!ps.checkboxes.escapeRoute;
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
@@ -3722,6 +3731,7 @@
                                 // existing saved path with no loadPath key falls back to Measure instead
                                 // of this default (cinema_maxq.js's own `_loadPath` line), never this
         escapeRoute: false,    // §ESCAPE_ROUTE_REVEAL — off by default, same reasoning again
+        visualPanel: false, audioPanel: false,   // §FREEZE_PERF_PANEL — off by default, same reasoning
         // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — off by default, same
         // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
         // silently change films the user has already signed off.
@@ -3931,6 +3941,11 @@
       });
       // §129.31 — like clash/measure above, a pure overlay flag off the existing topout hold point;
       // no beat boundary moves, so _markPreviewStale() is the whole handler.
+      ['visualPanel', 'cpe-visual-panel', 'audioPanel', 'cpe-audio-panel'].forEach(function (_k, _i, _a) {   // §FREEZE_PERF_PANEL
+        if (_i % 2) return; var _el = document.getElementById(_a[_i + 1]);
+        if (_el) _el.addEventListener('change', function (e) { _state[_k] = !!e.target.checked; _markPreviewStale();
+          console.log('§CPE_FREEZE_PERF checkbox ' + _k + '=' + (_state[_k] ? 'on' : 'off') + (_state.loadPath ? '' : ' (draws nothing until Load path freeze is on)')); });
+      });
       var _loadPathEl = document.getElementById('cpe-load-path');
       if (_loadPathEl) _loadPathEl.addEventListener('change', function(e) {
         _state.loadPath = !!e.target.checked;

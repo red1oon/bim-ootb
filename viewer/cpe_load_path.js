@@ -862,6 +862,7 @@ function setupCpeLoadPath(A) {
             var m = new THREE.Mesh(geo, cl);
             m.matrixAutoUpdate = false;
             m.matrix.copy(tmpMat);
+            try { if (obj.getBoundingBoxAt) { var _lb = obj.getBoundingBoxAt(geomId, new THREE.Box3()); if (_lb && !_lb.isEmpty()) m.userData._lpBox = _lb.applyMatrix4(tmpMat); } } catch (eBB) {}   // §LOADPATH_VIEW_CULL
             m.matrixWorldNeedsUpdate = true;
             m.frustumCulled = false;
             m.userData._loadPathClone = true;   // never a building element / never re-whitened / never in allElse
@@ -884,6 +885,7 @@ function setupCpeLoadPath(A) {
             var m2 = new THREE.Mesh(obj.geometry, cl);   // ONE shared geometry across all instances — no range extraction needed
             m2.matrixAutoUpdate = false;
             m2.matrix.copy(tmpMat);
+            try { if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox(); if (obj.geometry.boundingBox) m2.userData._lpBox = obj.geometry.boundingBox.clone().applyMatrix4(tmpMat); } catch (eBB2) {}   // §LOADPATH_VIEW_CULL
             m2.matrixWorldNeedsUpdate = true;
             m2.frustumCulled = false;
             m2.userData._loadPathClone = true;
@@ -897,10 +899,40 @@ function setupCpeLoadPath(A) {
     });
     return { containers: containers, elements: elements, elementsFailed: elementsFailed };
   }
+  // ══ §LOADPATH_VIEW_CULL (2026-10-01, red1: "It is a black screen mostly … can't it not occlude or avoid doing that?") ══
+  // The un-packed pieces above are frustumCulled=false (their geometry is the container's WHOLE shared buffer, so three.js's own
+  // bounds test would be meaningless), so every freeze render drew all ~63k of them: §FRAME_COST i=86 held=73797 inFrustum=18856.
+  // The freeze camera is fixed (hard freeze), so the in-view set is decided ONCE at arm from each piece's own world box. Off-view
+  // pieces move to LP_OFFVIEW_LAYER: the film camera (TAA / AO / bounce all render through it) skips them; every shadow-casting
+  // light's shadow camera enables that layer, so an off-screen piece still casts its shadow into the frame. No piece is removed;
+  // pieces without a box stay on layer 0 (drawn, as before). Restored with the clones.
+  var LP_OFFVIEW_LAYER = 29, _lpCullLights = [];
+  var _lpStackOnlyHidden = [];
+  function _unhideStackOnly() { var n = _lpStackOnlyHidden.length; _lpStackOnlyHidden.forEach(function (o) { o.visible = true; }); _lpStackOnlyHidden = []; A._lpStackOnly = false;
+    if (n) console.log('§LOADPATH_STACK_ONLY_RESTORE shown=' + n); return n; }
+  function _cullBatchedClonesToView() {
+    if (typeof THREE === 'undefined' || !A.camera || !_batchedClones.length) return null;
+    var t0 = performance.now(), cam = A.camera; cam.updateMatrixWorld();
+    var fr = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+    var inV = 0, off = 0, noBox = 0;
+    _batchedClones.forEach(function (m) {
+      var b = m.userData._lpBox;
+      if (!b) { noBox++; return; }
+      if (fr.intersectsBox(b)) { inV++; return; }
+      m.layers.set(LP_OFFVIEW_LAYER); off++;
+    });
+    _lpCullLights = [];
+    if (off) A.scene.traverse(function (o) { if (o.isLight && o.castShadow && o.shadow && o.shadow.camera && !o.shadow.camera.layers.isEnabled(LP_OFFVIEW_LAYER)) { o.shadow.camera.layers.enable(LP_OFFVIEW_LAYER); _lpCullLights.push(o); } });
+    var r = { pieces: _batchedClones.length, inView: inV, offView: off, noBox: noBox, shadowLights: _lpCullLights.length, ms: Math.round(performance.now() - t0) };
+    console.log('§LOADPATH_VIEW_CULL pieces=' + r.pieces + ' inView=' + inV + ' offView=' + off + ' noBox=' + noBox + ' shadowLightsSeeingThem=' + r.shadowLights + ' ms=' + r.ms +
+      ' (off-view pieces skipped by the film camera, still in every shadow map; &lpcull=0 = draw all as before)');
+    return r;
+  }
+  function _uncullLights() { _lpCullLights.forEach(function (o) { try { o.shadow.camera.layers.disable(LP_OFFVIEW_LAYER); } catch (e) {} }); _lpCullLights = []; }
   function _restoreBatchedElementClones() {
     var n = _batchedClones.length;
     _batchedClones.forEach(function (m) { A.scene.remove(m); m.geometry.dispose(); });
-    _batchedClones = [];
+    _batchedClones = []; _uncullLights();   // §LOADPATH_VIEW_CULL
     var nHidden = _batchedHidden.length;
     _batchedHidden.forEach(function (o) { o.visible = true; });
     _batchedHidden = [];
@@ -2367,8 +2399,41 @@ function setupCpeLoadPath(A) {
       // v8 HOLD-POINT SEARCH — building-only, independent of which candidate eventually wins.
       // ROUND 7 — `items`/`pick.valid` are passed so the search's own fallback criterion (no sample
       // reached 80%) can land on the sample where SOME candidate chain shows the most hops.
-      var buildingBox = _buildingWorldBBox(items);
-      var shot = _searchHoldPoint(plan, topoutU, filmSecFull, buildingBox, items, pick.valid);
+      // §PREBAKE PB1 (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): buildingBox + hold-point search + candidate ranking
+      // are pure data (path x geometry) — 155 s on Hospital_silent. Reused from patches/<db>.prebake.json when the key matches.
+      var _pbT0 = performance.now(), _pbKey = null, _pbRec = null, _pbWhy = '';
+      try {
+        var _pf = (typeof A._bakeCameraPoseAt === 'function') ? A._bakeCameraPoseAt : (plan && typeof plan.poseAt === 'function') ? plan.poseAt : null;
+        var _ps = _pf ? [0, 0.25, 0.5, 0.75, 1].map(function (t) { var p = _pf(t); return p ? [p.x, p.y, p.z, p.tx, p.ty, p.tz].map(function (v) { return (+v).toFixed(3); }).join(',') : '-'; }).join(';') : 'nopose';
+        var _bs = 0; items.forEach(function (it) { _bs += it.x0 + it.x1 + it.y0 + it.y1 + it.bz + it.tz; });
+        var _src = function (n) { var e = document.querySelector('script[src*="' + n + '"]'); return e ? e.getAttribute('src') : '-'; };
+        var _chainH = A._prebakeFnv ? A._prebakeFnv(pick.valid.map(function (c) { return c.idx + ':' + c.chain.join('.'); }).join('|')) : '-';
+        _pbKey = [_src('cpe_load_path.js'), _src('cinema_maxq.js'), items.length, _bs.toFixed(2), items[0].guid, items[items.length - 1].guid, _ps,
+          (+filmSecFull).toFixed(3), (+topoutU).toFixed(5), JSON.stringify(plan && plan.beats || null), A.camera ? A.camera.fov : '-', outW + 'x' + outH,
+          pick.valid.length, _chainH, window.__lpPickThinnest ? 'thin' : 'thick'].join('|');
+        if (A._prebakeFnv) _pbKey = A._prebakeFnv(_pbKey);
+        var _pr = A._prebake && A._prebake.loadPath;
+        if (!A._prebake) _pbWhy = 'no-sidecar';
+        else if (!_pr) _pbWhy = 'no-loadPath-part';
+        else if (_pr.key !== _pbKey) _pbWhy = 'key-mismatch';
+        else if (!_pr.cand || _pr.cand.length !== pick.valid.length) _pbWhy = 'candidate-count';
+        else if (!pick.valid[_pr.winPos] || items[pick.valid[_pr.winPos].idx].guid !== _pr.winGuid) _pbWhy = 'winner-guid';
+        else _pbRec = _pr;
+      } catch (ePB) { _pbRec = null; _pbWhy = 'error ' + (ePB && ePB.message); }
+      var _pbCheck = /[?&]prebakecheck=1/.test(location.search);
+      var buildingBox, shot, _pbResolved = null;
+      if (_pbRec) {
+        buildingBox = _pbRec.buildingBox; shot = _pbRec.shot;
+        pick.valid.forEach(function (c, k) { var r = _pbRec.cand[k]; c.visibleHops = r[0]; c.footprint = r[1]; c.minMemberPx = r[2]; c.memberPx = r[3]; });
+        var _w = pick.valid[_pbRec.winPos];
+        _pbResolved = { idx: _w.idx, chain: _w.chain, depth: _w.depth, visibleHops: _w.visibleHops, footprint: _w.footprint, minMemberPx: _w.minMemberPx, memberPx: _w.memberPx, rule: _pbRec.rule };
+        console.log('§PREBAKE loadPath src=sidecar key=' + _pbKey + ' shotTn=' + shot.tNorm.toFixed(4) + ' winner=' + _pbRec.winGuid + ' ms=' + Math.round(performance.now() - _pbT0));
+      }
+      if (!_pbRec || _pbCheck) {
+        buildingBox = _pbRec && !_pbCheck ? buildingBox : _buildingWorldBBox(items);
+        var _shotC = _searchHoldPoint(plan, topoutU, filmSecFull, buildingBox, items, pick.valid);
+        if (!_pbRec) shot = _shotC; else A._pbShotCheck = _shotC;
+      }
 
       // §129.7 item 3 — rank every MONOTONE-DESCENDING, >=1-visible-hop candidate by minMemberPx
       // DESC FIRST ("a thicker member or a nearer one both raise it"), then hops-in-the-shot, then
@@ -2413,7 +2478,25 @@ function setupCpeLoadPath(A) {
         });
         return { minMemberPx: memberPx.length ? Math.min.apply(null, memberPx) : 0, memberPx: memberPx };
       }
-      var resolved = _rankValid(items, pick.valid, visibleHopsOf, minMemberPxOf, !!window.__lpPickThinnest);
+      var resolved = _pbResolved;
+      if (!_pbResolved || _pbCheck) {
+        var _resC = _rankValid(items, pick.valid, visibleHopsOf, minMemberPxOf, !!window.__lpPickThinnest);
+        if (!_pbResolved) {
+          resolved = _resC;
+          try {   // record what was COMPUTED for --write-prebake (never a sidecar-sourced result)
+            if (A._prebakeOut && _pbKey) {
+              var _wp = pick.valid.findIndex(function (c) { return c.idx === resolved.idx; });
+              A._prebakeOut.loadPath = { key: _pbKey, buildingBox: buildingBox, shot: shot, winPos: _wp, winGuid: items[resolved.idx].guid, rule: resolved.rule,
+                cand: pick.valid.map(function (c) { return [c.visibleHops, c.footprint, c.minMemberPx, c.memberPx]; }) };
+            }
+          } catch (eRec) { console.warn('§PREBAKE loadPath record failed ' + (eRec && eRec.message)); }
+          console.log('§PREBAKE loadPath src=computed reason=' + _pbWhy + ' key=' + _pbKey + ' ms=' + Math.round(performance.now() - _pbT0));
+        } else {
+          var _sc = A._pbShotCheck, okT = _sc && Math.abs(_sc.tNorm - shot.tNorm) < 1e-9, okW = items[_resC.idx].guid === items[_pbResolved.idx].guid;
+          console.log('§PREBAKE_CHECK loadPath ' + (okT && okW ? 'PASS' : 'FAIL') + ' shotTn sidecar/computed=' + shot.tNorm.toFixed(6) + '/' + (_sc ? _sc.tNorm.toFixed(6) : '?') +
+            ' winner sidecar/computed=' + items[_pbResolved.idx].guid + '/' + items[_resC.idx].guid + ' — issue it proves: the cached hold point + pick equal a fresh computation');
+        }
+      }
       var pickItem = items[resolved.idx];
       // stackInFrame — informational only (never gates PICK/ranking since v9 item 7): the winning
       // chain's own union-bbox corner fraction at the hold point, unchanged v8 metric.
@@ -2590,10 +2673,64 @@ function setupCpeLoadPath(A) {
   // `mesh.visible` (opacity stays 1 always, see _buildChainClones); ghost mode animates
   // opacity/transparent/depthWrite exactly as §129.7's own v10 LOOK did. No-ops once fully revealed
   // (idempotent — safe to call every frame with a clamped `stackElapsed`).
+  // §132 §LOADPATH_TWINS — pick up to N chains with the near stack's SIGNATURE (hop sequence of IFC class @ storey, top-down), spaced
+  // >= TWIN_MIN_SEP m apart (IFC plan x/y of the chains' members) and in view of the arm camera widened for the pan (|ndc.x| <= 1.6).
+  // Clones are built here (their REAL world boxes decide the view test, never DB boxes — ROUND 5's rule); rejects are disposed at once.
+  var TWIN_MIN_SEP = 6, TWIN_NDC_X = 0.95, TWIN_NDC_Y = 0.95;   // inside the frozen frame (no pan by default)
+  function _twinsWanted() {
+    var m = /[?&]lptwins=(\d+)/.exec(location.search), v = m ? +m[1] : (typeof A._lpTwins === 'number' ? A._lpTwins : 3);
+    return Math.max(0, Math.min(8, v | 0));
+  }
+  function _sigOf(hopsUp) { return hopsUp.map(function (h) { return h.cls + '@' + h.storey; }).join('>'); }
+  function _planCentre(hopsUp) {
+    var x = 0, y = 0; hopsUp.forEach(function (h) { var it = _lp.items[h.idx]; x += (it.x0 + it.x1) / 2; y += (it.y0 + it.y1) / 2; });
+    return { x: x / hopsUp.length, y: y / hopsUp.length };
+  }
+  function _pickTwins() {
+    var want = _twinsWanted();
+    if (!want || !_lp || !_lp.hopsUp || !_lp.hopsUp.length || !_lp.validCandidates || !A.camera || typeof THREE === 'undefined') {
+      console.log('§LOADPATH_TWINS picked=0 reason=' + (!want ? 'off (&lptwins=0)' : 'no-near-or-camera')); return [];
+    }
+    var t0 = performance.now(), sig = _sigOf(_lp.hopsUp), nearIdx = _lp.pickItem ? _lp.items.indexOf(_lp.pickItem) : -1;
+    var taken = [_planCentre(_lp.hopsUp)]; if (_lp.far) taken.push(_planCentre(_lp.far.hopsUp));
+    var usedGuids = {}; _lp.hopsUp.forEach(function (h) { usedGuids[h.guid] = 1; }); if (_lp.far) _lp.far.hopsUp.forEach(function (h) { usedGuids[h.guid] = 1; });
+    var same = [];
+    _lp.validCandidates.forEach(function (c) {
+      if (c.idx === nearIdx || !c.chain || c.chain.length < 2) return;
+      var d = _chainDrawnInfo(c.chain); if (!d || !d.drawnIdx || d.drawnIdx.length !== _lp.hopsUp.length) return;
+      var up = d.drawnIdx.slice().reverse().map(function (i, k) { return { guid: _lp.items[i].guid, cls: _lp.items[i].cls, storey: _lp.items[i].storey, idx: i, k: k }; });
+      if (_sigOf(up) !== sig) return;
+      if (up.some(function (h) { return usedGuids[h.guid]; })) return;
+      var pc = _planCentre(up), n0 = taken[0];
+      same.push({ c: c, up: up, pc: pc, dNear: Math.hypot(pc.x - n0.x, pc.y - n0.y) });
+    });
+    same.sort(function (a, b) { return a.dNear - b.dNear; });   // nearest same-signature stacks first: most likely inside the pan
+    var out = [], rej = { spacing: 0, offView: 0, noClone: 0 }, ndcs = [], seps = [];
+    var cam = A.camera; cam.updateMatrixWorld(); var v = new THREE.Vector3();
+    for (var j = 0; j < same.length && out.length < want; j++) {
+      var s0 = same[j], sep = Math.min.apply(null, taken.map(function (t) { return Math.hypot(s0.pc.x - t.x, s0.pc.y - t.y); }));
+      if (sep < TWIN_MIN_SEP) { rej.spacing++; continue; }
+      s0.up.forEach(function (h, k) { h.hex = _hexForHop(k, s0.up.length); });
+      var n = _buildChainClones(s0.up); if (!n) { rej.noClone++; continue; }
+      var box = _chainWorldBBox(s0.up); if (!box) { _disposeChainClones(s0.up); rej.noClone++; continue; }
+      box.getCenter(v); v.project(cam);
+      if (!(v.z > -1 && v.z < 1 && Math.abs(v.x) <= TWIN_NDC_X && Math.abs(v.y) <= TWIN_NDC_Y)) { _disposeChainClones(s0.up); rej.offView++; continue; }
+      taken.push(s0.pc); s0.up.forEach(function (h) { usedGuids[h.guid] = 1; });
+      out.push({ name: 'twin' + (out.length + 1), pickItem: _lp.items[s0.c.idx], hopsUp: s0.up, chainBox: box, revealedHops: 0, stackOk: undefined, durSec: _lp.durSec, twin: true });
+      ndcs.push(v.x.toFixed(2)); seps.push(sep.toFixed(1));
+      _clonesWitness(s0.up, _lp.items[s0.c.idx], 'twin' + out.length);
+    }
+    console.log('§LOADPATH_TWINS sig=' + _lp.hopsUp.length + 'hops want=' + want + ' sameSig=' + same.length + ' picked=' + out.length +
+      ' guids=[' + out.map(function (t) { return t.pickItem.guid; }).join(',') + '] sepM=[' + seps.join(',') + '] ndcX=[' + ndcs.join(',') + ']' +
+      (out.length < want ? ' short reason=' + (same.length ? 'spacing:' + rej.spacing + ',offView:' + rej.offView + ',noClone:' + rej.noClone : 'no-same-signature') : '') +
+      ' ms=' + Math.round(performance.now() - t0) + ' (same load path as the near stack, rising with it; no panels/labels)');
+    return out;
+  }
   function _revealStackStep(stack, stackElapsed) {
     var K = stack.hopsUp.length;
     var revealed = Math.max(0, Math.min(K, Math.floor(stackElapsed) + 1));
     if (revealed === stack.revealedHops) return;
+    stack._rowT = stack._rowT || []; for (var _rk = (stack.revealedHops || 0); _rk < revealed; _rk++) stack._rowT[_rk] = (_lp && _lp.holdElapsed != null) ? _lp.holdElapsed : 0;   // §FREEZE_ANIM: when each row appeared
     stack.revealedHops = revealed;
     // §129.57 (2026-09-20) — bumped HERE, past the early return, so it counts only frames this
     // function genuinely changed something on. cinema_maxq.js's frame-reuse key reads it and
@@ -3069,6 +3206,7 @@ function setupCpeLoadPath(A) {
       if (holdCtl) { inWindow = !!holdCtl.inHold; elapsed = holdCtl.elapsedSec; }
       else if (frameHoldCtl) { inWindow = !!frameHoldCtl.inHold; elapsed = frameHoldCtl.elapsedSec; }
       else { inWindow = fSec >= _lp.holdStartSec && fSec < _lp.holdEndSec; elapsed = fSec - _lp.holdStartSec; }
+      _lp.holdElapsed = inWindow ? elapsed : null;   // §FREEZE_ANIM — the one clock every freeze panel's reveal reads (PERFORMANCE_AS_CLASH.md §19.4)
       // §129.24/§129.27 (2026-09-18, red1: "the background sky ground, building that needs to cut
       // out... separate from HUD overlays that fades off/on") — backdrop AND cut/whiten (below) are
       // both an instant step at the EXACT SAME moment (`inWindow`, arm/release) — the building's own
@@ -3232,6 +3370,8 @@ function setupCpeLoadPath(A) {
         // §129.8 item 1 — SHINE-THROUGH LOOK witness, once per arm: mode, and the ghost/clip/fade
         // fields this beat's own witnesses (§LOADPATH_VISIBLE) must all read 0/false for in shine
         // mode (FAIL if any survives — checked from real state, not the mode flag alone).
+        // §132 §LOADPATH_TWINS (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §132): the SAME load path elsewhere in the model.
+        try { _lp.twins = _pickTwins(); } catch (eTw) { _lp.twins = []; console.warn('§LOADPATH_TWINS_ERR ' + (eTw && eTw.message)); }
         var nClones = _buildChainClones(_lp.hopsUp);
         var nClonesFar = _lp.far ? _buildChainClones(_lp.far.hopsUp) : 0;
         _fetchHopScheduleCost(_lp.hopsUp);
@@ -3278,7 +3418,12 @@ function setupCpeLoadPath(A) {
           // side (everything but the stack, which is never in this population — see _applyWhiten's
           // own `_loadPathClone` exclusion) is cut away. `window.__lpNoSectionCut=1` kills it for an
           // A/B, same convention as every other control tap in this file.
-          sectionCut = (!window.__lpNoSectionCut && _lp.chainBox && camPos3) ? _placeSectionCutPlane(_lp.chainBox, camPos3) : null;
+          // §LOADPATH_STACK_ONLY (2026-10-01, red1: "it is supposed to identify the stack only and draw that only.. no context
+          // background other than the overlay info panel … Yes cut off that 13s stuff!"): the freeze hides the building instead of the
+          // white cut-away (which un-packed 63,059 pieces = ~13 s/frame). No cut plane, no whiten, no cap, no un-pack.
+          // &lpcontext=1 / APP._lpContext=true = the previous white cut-away look.
+          _lp.stackOnly = !/[?&]lpcontext=1/.test(location.search) && A._lpContext !== true;
+          sectionCut = (!_lp.stackOnly && !window.__lpNoSectionCut && _lp.chainBox && camPos3) ? _placeSectionCutPlane(_lp.chainBox, camPos3) : null;
           if (sectionCut && A.renderer) A.renderer.localClippingEnabled = true;
           // Exposed so `_visibleWitness` can tell "this beat's own intentional section-cut
           // population" apart from an unexpected/leftover clip plane elsewhere in the scene —
@@ -3293,7 +3438,18 @@ function setupCpeLoadPath(A) {
         // opposite order — _restoreWhiten() before _restoreGhost() — in _restore()/_forceRestore().
         // §129 OPEN ITEM — the section-cut plane (shine mode only) rides the SAME whiten pass: "the
         // cut surface and everything behind it get the concrete/white treatment" (red1's own words).
-        _lp.whitenResult = _applyWhiten(sectionCut ? sectionCut.plane : null);
+        if (_lp.stackOnly) {
+          _lp.whitenResult = { n: 0, stackOnly: true };
+          _lpStackOnlyHidden = [];
+          A.scene.traverse(function (o) {
+            if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh || o.isLine || o.isLineSegments || o.isPoints || o.isSprite)) return;
+            if (!o.visible || (o.userData && o.userData._loadPathClone)) return;
+            o.visible = false; _lpStackOnlyHidden.push(o);
+          });
+          A._lpStackOnly = true;
+          console.log('§LOADPATH_STACK_ONLY hidden=' + _lpStackOnlyHidden.length + ' stacks=' + (1 + (_lp.far ? 1 : 0) + (_lp.twins ? _lp.twins.length : 0)) +
+            ' (building + 3D overlays hidden for the freeze; stack clones + 2D info panel only; exposure held; &lpcontext=1 = white cut-away)');
+        } else _lp.whitenResult = _applyWhiten(sectionCut ? sectionCut.plane : null);
         // ROUND 16 item 3 — `backdropFaded` is now true in BOTH modes (_backdropApply's own gate on
         // `_lookGhost()` is removed); `ghosted`/`clipped` stay mode-specific (shine mode never
         // ghosts/clips the building itself, only the backdrop).
@@ -3310,7 +3466,7 @@ function setupCpeLoadPath(A) {
         // the right stencil wiring — never a pixel readback, per this project's own FUNDAMENTAL LAW).
         if (!_lookGhost()) {
           if (!sectionCut) {
-            console.log('§LOADPATH_CUT INCONCLUSIVE reason=' + (window.__lpNoSectionCut ? 'control-off' : 'no-chainbox-or-campos'));
+            console.log('§LOADPATH_CUT ' + (_lp.stackOnly ? 'OFF reason=stack-only (building hidden, nothing to cut)' : 'INCONCLUSIVE reason=' + (window.__lpNoSectionCut ? 'control-off' : 'no-chainbox-or-campos')));
           } else {
             var _cutMarginM = sectionCut.planeDepth - sectionCut.farDepth;
             var _cutClippedN = _whitenTouched.filter(function (t) {
@@ -3351,6 +3507,7 @@ function setupCpeLoadPath(A) {
             // (`batchedSkipped`) unchanged — this is an independent, additional pass, not a
             // replacement for it.
             _lp.batchUnpackResult = _buildBatchedElementClones();
+            if (!/[?&]lpcull=0/.test(location.search)) { try { _lp.viewCull = _cullBatchedClonesToView(); } catch (eVC) { console.warn('§LOADPATH_VIEW_CULL failed ' + (eVC && eVC.message) + ' — all pieces drawn as before'); } }
             var _bu = _lp.batchUnpackResult;
             console.log('§LOADPATH_BATCH_UNPACK containers=' + _bu.containers + ' elements=' + _bu.elements +
               ' elementsFailed=' + _bu.elementsFailed +
@@ -3463,6 +3620,8 @@ function setupCpeLoadPath(A) {
         var farDurSec = _lp.far ? _lp.far.durSec : 0;
         if (_lp.far) _revealStackStep(_lp.far, Math.min(elapsed, farDurSec));
         if (elapsed >= farDurSec) _revealStackStep(_lp, elapsed - farDurSec);
+        if (_lp.twins && _lp.twins.length && elapsed >= farDurSec) _lp.twins.forEach(function (tw) { _revealStackStep(tw, elapsed - farDurSec); });   // §132: rise WITH the near stack
+        if (_lp.twins && _lp.twins.length) { var _lagT = 0; _lp.twins.forEach(function (tw) { _lagT = Math.max(_lagT, Math.abs((tw.revealedHops || 0) - (_lp.revealedHops || 0))); }); _lp.twinMaxLag = Math.max(_lp.twinMaxLag || 0, _lagT); }
         if (!_lp.midFired && elapsed >= _lp.durSec / 2) {
           _lp.midFired = true;
           A._loadPathMidHoldThisFrame = true;   // §129.6 items 4/8 — cinema_maxq.js's own §HUD_LAYOUT/§LOADPATH_FOCUS trigger, same frame
@@ -3532,6 +3691,7 @@ function setupCpeLoadPath(A) {
   };
 
   function _restore(exitFSec) {
+    try { _unhideStackOnly(); } catch (eSO) { console.warn('§LOADPATH_STACK_ONLY_RESTORE failed ' + (eSO && eSO.message)); }
     // §129.4 PRIMAL LAW clause 4 — a witness must be able to say INCONCLUSIVE, not just PASS/FAIL,
     // when nothing was actually judged (no Time Machine cursor to compare against).
     var haveCursor = (typeof window.tmGetState === 'function') && _lp.cursorAtEntry != null;
@@ -3640,6 +3800,8 @@ function setupCpeLoadPath(A) {
         ' => ' + (_whitenVacuous ? 'INCONCLUSIVE reason=nothing-to-whiten' : (_whitenOk ? 'PASS' : 'FAIL')));
       materialsRestored += _restoreGhost();
       clonesReverted = _disposeChainClones(_lp.hopsUp) + (_lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0);
+      if (_lp.twins && _lp.twins.length) { var _twN = 0; _lp.twins.forEach(function (tw) { _twN += _disposeChainClones(tw.hopsUp); });
+        console.log('§LOADPATH_TWINS_SYNC twins=' + _lp.twins.length + ' maxLag=' + (_lp.twinMaxLag || 0) + ' clonesDisposed=' + _twN + ' (maxLag = hops a twin was ever ahead/behind the near stack; 0 = one load path shown N times)'); }
       try { if (typeof A._applyDiscVisibility === 'function') A._applyDiscVisibility(); } catch (e1) {}
       try { if (typeof window.tmSetCursor === 'function') window.__forceFull = true; } catch (e2) {}
     }
@@ -3656,6 +3818,7 @@ function setupCpeLoadPath(A) {
       ' planesLeft=0 clonesReverted=' + clonesReverted + '/' + clonesN + ' => ' + restoreVerdict);
   }
   function _forceRestore() {
+    try { _unhideStackOnly(); } catch (eSO2) {}
     A._loadPathVisualRev = (A._loadPathVisualRev || 0) + 1;   // §129.57 — the release changes everything back
     if (_lp && _lp.armed) { _restore(_lp.holdEndSec); return; }
     // Nothing armed — still clear any leftover touch state defensively (bake-abort safety).
@@ -3667,7 +3830,8 @@ function setupCpeLoadPath(A) {
       if (_lp && _lp.indoorAnnotHidden) { _lp.indoorAnnotHidden.forEach(function (o) { o.visible = true; }); _lp.indoorAnnotHidden = null; }
       _restoreWhiten();   // LIFO — before _restoreGhost(), same discipline as _restore() above
       var materialsRestored = _restoreGhost();
-      var clonesReverted = (_lp ? _disposeChainClones(_lp.hopsUp) : 0) + (_lp && _lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0);
+      var clonesReverted = (_lp ? _disposeChainClones(_lp.hopsUp) : 0) + (_lp && _lp.far ? _disposeChainClones(_lp.far.hopsUp) : 0) +
+        (_lp && _lp.twins ? _lp.twins.reduce(function (s, tw) { return s + _disposeChainClones(tw.hopsUp); }, 0) : 0);
       if (_lp) _lp.far = null;
       console.log('§LOADPATH_RESTORE materialsRestored=' + materialsRestored + '/' + materialsRestored +
         ' planesLeft=0 clonesReverted=' + clonesReverted + '/' + clonesReverted + ' => PASS (forced, nothing armed)');
@@ -3947,6 +4111,55 @@ function setupCpeLoadPath(A) {
   // place in the freeze still breaking that ruling. #0277bd is the project blue #4fc3f7 taken to a
   // weight that clears contrast against a light plate rather than a dark one.
   var FREEZE_INK_TOTALS = '#0277bd';
+  // §FREEZE_BANDS (2026-10-01, red1: "beef up the graphics of the load path black page info panels, with more striking color";
+  // picked "colour header bands" — white body kept for legibility, a solid group-colour title band + left accent stripe).
+  // One colour per GROUP (bim-compiler PERFORMANCE_AS_CLASH.md §13): Structure = the project blue (NOT amber — §61 ruled yellow
+  // out of the freeze), Security = teal, Comfort = violet. Measured WCAG contrast: white title on band 6.67 / 5.08 / 5.70 (>= 4.5),
+  // band against the black page 3.15 / 4.14 / 3.68 (>= 3 for marks). &lpbands=0 = the §129.58 look (control).
+  var FREEZE_BAND = { structure: '#0B5CAD', security: '#0E7C70', comfort: '#7C3AED' };
+  function _freezeBandsOn() { return !(typeof location !== 'undefined' && /[?&]lpbands=0/.test(location.search)); }
+  function _lum(hex) { return [1, 3, 5].map(function (i) { var v = parseInt(hex.slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); })
+    .reduce(function (s, v, i) { return s + v * [0.2126, 0.7152, 0.0722][i]; }, 0); }
+  function _contrast(a, b) { var x = _lum(a), y = _lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  var _freezeBandWitnessed = {};
+  function _freezeBand(ctx, x, y, bw, bh, rad, bandH, group, fontPx, name) {
+    var col = FREEZE_BAND[group]; if (!col) return;
+    var stripe = Math.max(3, Math.round(fontPx * 0.22));
+    ctx.save();
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, bw, bh, rad); ctx.clip(); }
+    ctx.fillStyle = col; ctx.fillRect(x, y, bw, bandH); ctx.fillRect(x, y + bandH, stripe, bh - bandH);
+    ctx.restore();
+    if (!_freezeBandWitnessed[name]) { _freezeBandWitnessed[name] = true;
+      var c1 = _contrast('#FFFFFF', col), c2 = _contrast(col, '#000000');
+      console.log('§FREEZE_BAND panel=' + name + ' group=' + group + ' color=' + col + ' bandPx=' + bandH + ' stripePx=' + stripe +
+        ' whiteOnBand=' + c1.toFixed(2) + ' bandVsBlack=' + c2.toFixed(2) + ' => ' + (c1 >= 4.5 && c2 >= 3 ? 'PASS' : 'FAIL') + ' (WCAG AA text 4.5, marks 3)'); }
+  }
+  A._freezeBand = _freezeBand; A._freezeBandsOn = _freezeBandsOn;
+  // §FREEZE_ANIM (bim-compiler PERFORMANCE_AS_CLASH.md §19.4, red1 2026-10-01 "animated line by line reveal ... looks too static"): every freeze
+  // panel line fades + slides in on ONE clock, the hold's elapsed seconds (_lp.holdElapsed). The SAME schedule feeds the draw and
+  // A._freezeAnimKey (cinema_maxq.js §FRAME_REUSE key), so an animating frame is never reused and a settled one still is. &lpanim=0 = static.
+  var FREEZE_FADE = 0.35;
+  function _freezeAnimOn() { return !(typeof location !== 'undefined' && /[?&]lpanim=0/.test(location.search)); }
+  function _fa(t0) { var e = _lp && _lp.holdElapsed; if (e == null || !_freezeAnimOn()) return 1; return Math.max(0, Math.min(1, (e - t0) / FREEZE_FADE)); }
+  var FREEZE_SCHED = { cardLine: function (i) { return 0.15 + 0.25 * i; }, perfPlate: 0.8, perfLine: function (j) { return 1.2 + 0.5 * j; }, countUp: [1.2, 0.8] };
+  A._freezeAnim = { alpha: _fa, sched: FREEZE_SCHED, on: _freezeAnimOn, e: function () { return _lp ? _lp.holdElapsed : null; },
+    countUp: function () { var e = _lp && _lp.holdElapsed; if (e == null || !_freezeAnimOn()) return 1; var p = Math.max(0, Math.min(1, (e - FREEZE_SCHED.countUp[0]) / FREEZE_SCHED.countUp[1])); return 1 - Math.pow(1 - p, 3); } };
+  function _rowAlpha(stack, ri) { return _fa(stack && stack._rowT && stack._rowT[ri] != null ? stack._rowT[ri] : 0); }
+  var _faWit = { first: null, settled: null, prevKey: null, nonMono: 0, lastVals: null };
+  A._freezeAnimKey = function () {
+    if (!_lp || _lp.holdElapsed == null || !_freezeAnimOn()) return '-';
+    var v = [];   // fixed-length items first, so a growing row list never shifts their index (the monotone check compares by index)
+    for (var i = 0; i < 6; i++) v.push(_fa(FREEZE_SCHED.cardLine(i)));
+    if (A._freezePerfOn && (A._freezePerfOn.visual || A._freezePerfOn.audio)) { v.push(_fa(FREEZE_SCHED.perfPlate)); for (var j = 0; j < 12; j++) v.push(_fa(FREEZE_SCHED.perfLine(j))); v.push(A._freezeAnim.countUp()); }
+    [_lp.far, _lp].forEach(function (s) { if (s && s.hopsUp) for (var ri = 0; ri < (s.revealedHops || 0); ri++) v.push(_rowAlpha(s, ri)); });
+    var key = v.map(function (x) { return x.toFixed(3); }).join(','), e = _lp.holdElapsed, all1 = v.every(function (x) { return x >= 1; });
+    if (_faWit.first == null) _faWit.first = e;
+    if (_faWit.lastVals && _faWit.lastVals.length <= v.length) for (var q = 0; q < _faWit.lastVals.length; q++) if (v[q] < _faWit.lastVals[q] - 1e-9) _faWit.nonMono++;
+    _faWit.lastVals = v;
+    if (all1 && _faWit.settled == null) { _faWit.settled = e; _faWit.n = (_faWit.n || 0) + 1; console.log('§FREEZE_ANIM settle#' + _faWit.n + ' first=' + _faWit.first.toFixed(2) + ' settled=' + e.toFixed(2) + ' lines=' + v.length + ' nonMonotone=' + _faWit.nonMono + ' => ' + (_faWit.nonMono ? 'FAIL' : 'PASS') + ' (alphas never fade back)'); }
+    if (!all1) _faWit.settled = null;
+    return all1 ? 'settled' : key;
+  };
 
   function _drawStackInfoPanel(ctx, w, h, k, stack, stackName, yBottom, avoidRect) {
     if (!stack || !stack.hopsUp || !stack.hopsUp.length) return null;
@@ -4011,6 +4224,27 @@ function setupCpeLoadPath(A) {
         y < avoidRect.y + avoidRect.h && (y + panelH) > avoidRect.y) {
       y = Math.round(avoidRect.y + avoidRect.h + pad);
     }
+    // W2 (ALTC_FOUNDATION §1 round 6): the two steps above never looked at the rest of the HUD, so the stack-avoidance step put the
+    // near panel on stats-panel — which stays up through the hold — §HUD_OVERLAP_WORST f=211 1.00/1.00, 53x293 px (Hospital 1900:2000).
+    // Clear every SOLID box already registered this frame (the HUD row/column draw before this composite; alpha < 0.5 = fading, not
+    // judged by W2; the freeze's own loadpath.* boxes excluded): step right of the blocker when that still fits the frame and keeps off
+    // the stack, else below it. Bounded; a panel pushed out of frame is still caught by §LOADPATH_INFOPANEL inFrame.
+    var _hudSolid = (A._hudLayoutRects || []).filter(function (r) { return r.w > 1 && r.h > 1 && !(r.alpha < 0.5) && !/^loadpath\./.test(r.name); });
+    var _ovl = function (ax, ay, aw, ah, b) { return ax < b.x + b.w && ax + aw > b.x && ay < b.y + b.h && ay + ah > b.y; };
+    // Tested against the FULL reserved height (_stackInfoPanelMaxH, the panel grows upward as hops reveal) so the answer cannot change
+    // mid-hold and make the panel jump; a step down moves the whole reserved block.
+    var _maxH = Math.max(panelH, _stackInfoPanelMaxH(h, stack)), _yTop = y + panelH - _maxH, _moves = [];
+    for (var _it = 0; _it < 8; _it++) {
+      var _hit = null; for (var _hi = 0; _hi < _hudSolid.length; _hi++) if (_ovl(x, _yTop, panelW, _maxH, _hudSolid[_hi])) { _hit = _hudSolid[_hi]; break; }
+      if (!_hit) break;
+      var _xr = Math.round(_hit.x + _hit.w + pad);
+      var _rightOk = _xr + panelW <= w - w * 0.012 && !(stackBoxPx && _ovl(_xr, _yTop, panelW, _maxH, { x: stackBoxPx.x0, y: stackBoxPx.y0, w: stackBoxPx.x1 - stackBoxPx.x0, h: stackBoxPx.y1 - stackBoxPx.y0 }));
+      if (_rightOk) x = _xr; else _yTop = Math.round(_hit.y + _hit.h + pad);
+      _moves.push(_hit.name + (_rightOk ? '>right' : '>down'));
+    }
+    y = _yTop + _maxH - panelH;
+    if (_moves.length && !(stack._hudAvoidLogged)) { stack._hudAvoidLogged = true;
+      console.log('§LOADPATH_INFOPANEL_AVOID stack=' + stackName + ' moves=[' + _moves.join(',') + '] final=' + x + ',' + y + ' ' + panelW + 'x' + panelH + ' solidHud=' + _hudSolid.length); }
     var rr = Math.round(Math.min(panelH, panelW) * 0.09);
     // §129.21 amendment (2026-09-18, red1: "keep design theme consistent with other HUDs") — the
     // SAME frosted dark-glass plate every other panel (resource panel, path map, measure boxes)
@@ -4023,16 +4257,18 @@ function setupCpeLoadPath(A) {
     // backdrop (§LOADPATH_BACKDROP allElseAtBlack=51/51), which is exactly why the card next to it
     // was already carrying a white slab of its own. Now they share one.
     _freezePlateDraw(ctx, x, y, panelW, panelH, rr);
+    var _band = _freezeBandsOn();   // §FREEZE_BANDS — the header IS the band (title + totals in white on Structure blue)
+    if (_band) _freezeBand(ctx, x, y, panelW, panelH, rr, headerH, 'structure', fontPx, 'stack.' + stackName);
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.font = '700 ' + headerFontPx + 'px ' + FREEZE_F;
-    ctx.fillStyle = FREEZE_INK_TITLE;
+    ctx.fillStyle = _band ? '#FFFFFF' : FREEZE_INK_TITLE;
     ctx.fillText(headerText, x + pad, y + headerH * 0.34);
     ctx.font = '700 ' + Math.round(headerFontPx * 0.86) + 'px ' + FREEZE_F;
-    ctx.fillStyle = FREEZE_INK_TOTALS;   // §61 — was rgba(255,215,0,0.95) gold; yellow is the one HUD ink red1 ruled out ("Replace yellow with blue is better contrast")
+    ctx.fillStyle = _band ? 'rgba(255,255,255,0.92)' : FREEZE_INK_TOTALS;   // §61 — was rgba(255,215,0,0.95) gold; yellow is the one HUD ink red1 ruled out ("Replace yellow with blue is better contrast")
     ctx.fillText(totalsText, x + pad, y + headerH * 0.72);
-    // Divider — a clean, professional break between the summary header and the itemised rows below.
-    ctx.fillStyle = FREEZE_INK_RULE;
-    ctx.fillRect(x + pad, y + headerH - divider, panelW - pad * 2, divider);
+    // Divider — a clean, professional break between the summary header and the itemised rows below (the band edge is the break when banded).
+    if (!_band) { ctx.fillStyle = FREEZE_INK_RULE;
+    ctx.fillRect(x + pad, y + headerH - divider, panelW - pad * 2, divider); }
     ctx.font = '600 ' + fontPx + 'px ' + FREEZE_F;
     // §129.23 — bottom-up: hop1 (ri=0) draws at the panel's OWN bottom-most row; each higher hop
     // stacks ABOVE it. `panelH` already reserves exactly `revealed` rows worth of space below the
@@ -4044,10 +4280,13 @@ function setupCpeLoadPath(A) {
         ctx.fillRect(x, rowY, panelW, rowH);
       }
       var hop = stack.hopsUp[ri];
+      var _ra = _rowAlpha(stack, ri), _rdx = Math.round((1 - _ra) * fontPx * 0.6);   // §FREEZE_ANIM: the row fades + slides in as its hop appears
+      ctx.save(); ctx.globalAlpha *= _ra;
       ctx.fillStyle = '#' + ('000000' + (hop.hex >>> 0).toString(16)).slice(-6);
-      ctx.fillRect(x + pad, rowY + (rowH - swatch) / 2, swatch, swatch);
+      ctx.fillRect(x + pad - _rdx, rowY + (rowH - swatch) / 2, swatch, swatch);
       ctx.fillStyle = FREEZE_INK_BODY;
-      ctx.fillText(rowsText[ri], x + pad * 2 + swatch, rowY + rowH / 2);
+      ctx.fillText(rowsText[ri], x + pad * 2 + swatch - _rdx, rowY + rowH / 2);
+      ctx.restore();
     }
     ctx.restore();
     if (A._hudLayoutRegister) A._hudLayoutRegister('loadpath.infopanel.' + stackName, x, y, panelW, panelH);
@@ -4326,6 +4565,7 @@ function setupCpeLoadPath(A) {
     // §129.58 — the same reversed plate the info panel now uses, so the two freeze boxes cannot
     // drift apart again. Was a bare opaque `rgba(255,255,255,1)` slab with no border.
     _freezePlateDraw(ctx, rect.x, rect.y, rect.w, rect.h, rr);
+    if (_freezeBandsOn()) _freezeBand(ctx, rect.x, rect.y, rect.w, rect.h, rr, Math.max(4, Math.round(layout.fontPx * 0.3)), 'structure', layout.fontPx, 'card');   // §FREEZE_BANDS: the card has no title row — a top strip + stripe
     // §129.39 (2026-09-19, red1 on a 1080p frame: "its text is still too small") — THIS FUNCTION
     // NEVER SET ctx.font. `_infoCardLayout` sets it, measures the lines with it, and then hands the
     // context back through its OWN ctx.restore() — so every fillText below ran at the canvas 2D
@@ -4339,9 +4579,12 @@ function setupCpeLoadPath(A) {
     ctx.font = '600 ' + layout.fontPx + 'px ' + FREEZE_F;   // §129.58 — must match _infoCardLayout's measuring font exactly (§129.39)
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     assembled.lines.forEach(function (l, i) {
-      var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad;
+      var _ca = _fa(FREEZE_SCHED.cardLine(i));   // §FREEZE_ANIM: card lines one by one
+      var ly = rect.y + pad + rowH * i + rowH / 2, lx = rect.x + pad - Math.round((1 - _ca) * layout.fontPx * 0.6);
+      ctx.save(); ctx.globalAlpha *= _ca;
       ctx.fillStyle = FREEZE_INK_BODY;   // §129.58 — was the one-off #14181d; the shared freeze ink now, same ladder as the panel
       ctx.fillText(l, lx, ly);
+      ctx.restore();
     });
     ctx.restore();
     if (A._hudLayoutRegister) A._hudLayoutRegister('loadpath.card', rect.x, rect.y, rect.w, rect.h);
@@ -4353,6 +4596,9 @@ function setupCpeLoadPath(A) {
     }
   }
   A._loadPathDrawInfoCard = _drawInfoCard;
+  // W2 (ALTC_FOUNDATION §1 round 3) — the card's on-screen window, read by cinema_maxq.js so the path map (same top-left rect)
+  // yields to it. Same gate as loadPathCompositeOntoCanvas below, so the two can never disagree.
+  A.loadPathCardOn = function () { return !!(_lp && _lp.ok && _lp.showLadder); };
 
   A.loadPathCompositeOntoCanvas = function (ctx, w, h, filmSec) {
     try {
@@ -4406,6 +4652,12 @@ function setupCpeLoadPath(A) {
       // here, same frame as the ladders, so it draws/witnesses for whatever `_lp.hopsUp`/`_lp.
       // pickItem` is ACTUALLY drawn (fallback included), never `picked.near` from the arm block.
       _drawInfoCard(ctx, w, h, k, cardLayout);
+      // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — Audio/Visual panels in the black, clear of everything drawn above
+      if (A.freezePerfCompositeOntoCanvas && A._freezePerfOn && (A._freezePerfOn.visual || A._freezePerfOn.audio)) {
+        var _cr = cardLayout.rect, _taken = [nearPanelBox, farPanelBox, _cr ? { x0: _cr.x, y0: _cr.y, x1: _cr.x + _cr.w, y1: _cr.y + _cr.h } : null,
+          _stackScreenBox(_lp, w, h), _lp.far ? _stackScreenBox(_lp.far, w, h) : null].filter(Boolean);
+        A.freezePerfCompositeOntoCanvas(ctx, w, h, { plate: _freezePlateDraw, bodyPx: _freezeBodyPx, font: FREEZE_F }, _taken);
+      }
     } catch (e) { if (!A._loadPathDrawWarned) { A._loadPathDrawWarned = true; _err('DRAW', e); } }
   };
 
