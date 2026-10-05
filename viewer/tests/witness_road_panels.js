@@ -38,13 +38,13 @@ async function probe(browser, bld, dir) {
   page.on('pageerror', e => logStream.write('[pageerror] ' + e.message + '\n'));
   await page.goto(`http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${bld}.db`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.activeBuilding && window.APP.buildingsRendered && window.APP.buildingsRendered.has(window.APP.activeBuilding) && !window.APP.streaming && (!window.APP.isCivilModel() || window.APP._civilLabels), { timeout: 1800000, polling: 1000 });
-  const r = await page.evaluate(() => {
+  const r = await page.evaluate(async () => {
     const A = window.APP, civil = A.isCivilModel();
     let ov = { reveal: true };
     if (civil) { const R = A.civilRoutePath(), big = R.stops.reduce((m, j) => (!m || j.n > m.n ? j : m), null);
       const P = big && big.at < (R.path.length - 1) / 2 ? R.path.slice().reverse() : R.path; ov = { waypoints: P.map(p => ({ x: p.x, y: p.y, z: p.z })), reveal: true }; }
     const plan = A.cinemaPathPlan(60, ov), filmSec = plan.naturalTotal;
-    const rp = A.roadPanelsBuild(plan, filmSec);
+    const rp = await A.roadPanelsBuild(plan, filmSec);
     const out = { civil, filmSec, built: !!rp };
     const c = document.createElement('canvas'); c.width = 1280; c.height = 720; const ctx = c.getContext('2d');
     const painted = (box) => { const d = ctx.getImageData(0, 0, 1280, 720).data; let inside = 0, outside = 0;
@@ -64,8 +64,16 @@ async function probe(browser, bld, dir) {
         if (sql) chk.push({ shown: row.value, sql: (A.dbQuery(sql)[0] || [null])[0] });
         else chk.push({ shown: row.value, planned: /^planned/.test(String(row.value)) });
       });
+      if (card.kind === 'check') return { t0: s.t0, t1: s.t1, busy: s.busy, kind: card.kind, rows: card.rows.length, chk: [], check: { rule: card.rule, guid: card.guid, measured: card.measured, status: card.status, tag: card.rows[3].label } };
       return { t0: s.t0, t1: s.t1, busy: s.busy, kind: card.kind, rows: card.rows.length, chk };
     });
+    // §ALTC_CHECKS oracle: run road_check ITSELF (own adapter) + read the tracking list straight from rates/road_rules.json
+    if (civil && window.RoadCheck) {
+      const cfg = await fetch('rates/road_rules.json').then(x => x.json());
+      const q = (sql, p) => { const st = A.db.prepare(sql), o = []; if (p && p.length) st.bind(p); while (st.step()) o.push(st.getAsObject()); st.free(); return o; };
+      const res = window.RoadCheck.run(q, cfg, {}); out.oracleRows = {}; (res.rows || []).forEach(rw => { (out.oracleRows[rw.guid] = out.oracleRows[rw.guid] || []).push({ rule: rw.rule, measured: rw.measured }); });
+      out.statusOf = {}; cfg.road_rules.forEach(rr => { out.statusOf[rr.name] = rr.film_status && rr.film_status.status; });
+    }
     const s0 = rp.slots[0];
     A._hudLayoutRects = []; ctx.clearRect(0, 0, 1280, 720);
     out.box = A.roadPanelsCompositeOntoCanvas(ctx, 1280, 720, (s0.t0 + s0.t1) / 2, 1); out.paintMid = painted(out.box);
@@ -98,6 +106,7 @@ async function probe(browser, bld, dir) {
     .invariant('road: every slot inside the build-up drive window (never the parade half or the orbit)', rs => rs.every(r => r.road.slots.every(s => s.t0 >= r.road.w0 && s.t1 <= r.road.w1 && s.t1 <= r.road.out)))
     .invariant('road: every slot quiet (busy ≤ the window median)', rs => rs.every(r => r.road.slots.every(s => s.busy <= +r.road.median.toFixed(3) + 1e-9)))
     .invariant('road: every number on every card = SQL count over its own guids; planned rows carry no number', rs => rs.every(r => r.road.slots.every(s => s.chk.every(c => (c.sql != null ? +c.shown === +c.sql : c.planned)))))
+    .invariant('road §ALTC_CHECKS: ≥ 1 road-check card; its measured value = road_check row for that element; its tag = the rule\'s film_status in road_rules.json', rs => rs.every(r => { const cs = r.road.slots.filter(s => s.kind === 'check'); return cs.length > 0 && cs.every(s => { const o = (r.road.oracleRows[s.check.guid] || []).filter(x => x.rule === s.check.rule); return o.some(x => x.measured === s.check.measured) && s.check.status === r.road.statusOf[s.check.rule] && s.check.tag === (s.check.status === 'valid' ? 'VALID' : 'SPECULATIVE'); }); }))
     .invariant('road: card drawn at a slot mid paints only inside its rect, rect inside the frame', rs => rs.every(r => inFrame(r.road.box) && r.road.paintMid.inside > 0 && r.road.paintMid.outside === 0))
     .invariant('road: nothing drawn between slots or during the junction orbit', rs => rs.every(r => !r.road.gapBox && r.road.paintGap.outside === 0 && !r.road.orbitBox && r.road.paintOrbit.outside === 0))
     .invariant('building (Duplex): no panels built, nothing drawn', rs => rs.every(r => !r.bld.civil && !r.bld.built && !r.bld.drawBox && r.bld.drawNone.outside === 0))
