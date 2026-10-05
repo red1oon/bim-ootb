@@ -37,7 +37,7 @@ function serve() { return new Promise(function (r) { var s = http.createServer(f
         var cmds = GM.computeCommands(lines[i].id, delta);
         var hit = cmds.find(function (c) { return gbf[c.featureId] != null; });   // prefer a SCALE (a true stretch) if present
         var scaleHit = cmds.find(function (c) { return gbf[c.featureId] != null && c.action === 'SCALE'; });
-        if (scaleHit || hit) { var pick = scaleHit || hit; return { id: lines[i].id, delta: delta, fid: pick.featureId, action: pick.action, n: cmds.length }; }
+        if (scaleHit || hit) { var pick = scaleHit || hit; return { id: lines[i].id, axis: lines[i].axis, pos: lines[i].pos, delta: delta, fid: pick.featureId, action: pick.action, n: cmds.length }; }
       }
     }
     return { id: null };
@@ -60,7 +60,16 @@ function serve() { return new Promise(function (r) { var s = http.createServer(f
 
   // force a clash: drag the same gridline by a LARGE delta so the recomposed wall drives into the building → RED
   var redBefore = logs.filter(function (l) { return /§GATE red=[1-9]/.test(l); }).length;
-  await page.evaluate(async function (p) { await window.__gridStretch(p.id, p.delta > 0 ? 8 : -8); }, plan);
+  // §NET-AUDIT (2026-09-26): 'into the building' = toward the building's centre along the gridline's axis, measured —
+  // not the sign of the small S2 drag. The old sign(plan.delta) pushed gx1 OUTWARD (+8 m, gate clean, S4 red); the
+  // measured inward direction gives the RED this claim is about.
+  var inward = await page.evaluate(function (p) {
+    var b = new window.THREE.Box3(); window.Bonsai.group().children.forEach(function (o) { if (o.isMesh) b.expandByObject(o); });
+    var c = p.axis === 'x' ? (b.min.x + b.max.x) / 2 : (b.min.y + b.max.y) / 2;
+    return { centre: c, sign: c >= p.pos ? 1 : -1 };
+  }, plan);
+  console.log('  §STRETCH-GATE S4 line ' + plan.id + ' axis=' + plan.axis + ' pos=' + plan.pos + ' buildingCentre=' + inward.centre.toFixed(3) + ' → Δ=' + (8 * inward.sign));
+  await page.evaluate(async function (a) { await window.__gridStretch(a.id, a.d); }, { id: plan.id, d: 8 * inward.sign });
   await page.waitForTimeout(500);
   var redLogged = logs.filter(function (l) { return /§GATE red=[1-9]/.test(l); }).length > redBefore;
   var gateMsg = await page.evaluate(function () { return window.__lastGate; });

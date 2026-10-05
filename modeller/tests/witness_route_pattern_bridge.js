@@ -50,6 +50,11 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   await pg.click('#b-open'); await sleep(200);
   await pg.click('#m-open-panel .mo-row[data-key="Duplex"]');
   await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
+  // Wait for the ARC seed to be COMMITTED (op-log > 0), as W-MEP-OPENPATH does. Walking before it lands races the
+  // seed's own re-fold, which drops the walk layer (MODELLER_MASTER trap "witnesses that read the op-log length early
+  // race the seed"; measured here 2026-09-26: tubes 1 at T+400, seed fold at T+589, layer gone, before.oplogLen=0).
+  await pg.waitForFunction(() => window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length > 0 && !!window.__arcFidByGuid,
+    { timeout: 60000, polling: 250 }).catch(() => {});
   await sleep(1500);
 
   // ── PREMISE: routeChains('PLB', bdb) is honestly 0 on this ARC-only building (measured, not assumed) ──
@@ -66,16 +71,21 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   // ── ENGINE SEAM: direct dwWalk (both WITHOUT and WITH the pattern bridge) for the byRule/anchor numbers ──
   const engine = await pg.evaluate(async () => {
     await window.rwInit(window.SQL, './');   // load mep_rw.db's ad_mep_pattern table (SAME lazy-init the BOM-drop flow uses)
-    const bdb1 = new window.SQL.Database(new Uint8Array(window.__dwBuf));
-    const noPattern = window.DiscWalker.dwWalk('PLB', bdb1, window.__dwName, { noPattern: true });
-    bdb1.close();
-    const bdb2 = new window.SQL.Database(new Uint8Array(window.__dwBuf));
-    const withPattern = window.DiscWalker.dwWalk('PLB', bdb2, window.__dwName);
-    bdb2.close();
-    // discipline-agnostic check: ELEC/ACMV have NO ad_mep_pattern rows — must honestly refuse, not silently 0
+    // §BRIDGE-RETARGET (SPEC_MEP_ROUTE_DISC.md): call dwWalk with the SAME opts the production walk passes first
+    // (modeller.html _discWalkOne: {schedule:true, geoDb}). Opts-less dwWalk is the legacy walk (32 placements, 0 routed),
+    // which is not what a user's Walk runs — that mismatch kept P3-P5 red since #846.
+    const geo = () => window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : undefined;
+    const bdb1 = new window.SQL.Database(new Uint8Array(window.__dwBuf)), g1 = geo();
+    const noPattern = window.DiscWalker.dwWalk('PLB', bdb1, window.__dwName, { schedule: true, geoDb: g1, noPattern: true });
+    bdb1.close(); if (g1) g1.close();
+    const bdb2 = new window.SQL.Database(new Uint8Array(window.__dwBuf)), g2 = geo();
+    const withPattern = window.DiscWalker.dwWalk('PLB', bdb2, window.__dwName, { schedule: true, geoDb: g2 });
+    bdb2.close(); if (g2) g2.close();
+    // coverage honesty: a discipline with NO ad_mep_pattern mapping (STR) must refuse by name; the mapped MEP
+    // disciplines (ACMV/ELEC/FP since §MEP-ROUTE-DISC) must not be refused for coverage.
     const bdb3 = new window.SQL.Database(new Uint8Array(window.__dwBuf));
-    const elecPattern = window.DiscWalker.routePattern('ELEC', bdb3, {});
-    const acmvPattern = window.DiscWalker.routePattern('ACMV', bdb3, {});
+    const cov = {};
+    ['STR', 'ACMV', 'ELEC', 'FP'].forEach(d => { const r = window.DiscWalker.routePattern(d, bdb3, {}); cov[d] = { refused: !!r.refused, reason: r.reason || null, segs: (r.segs || []).length }; });
     bdb3.close();
     return {
       noPatternSegs: noPattern.chainSegs.length,
@@ -84,8 +94,7 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
       anchorCounts: withPattern.patternBridge && withPattern.patternBridge.anchorCounts,
       seedGuid: withPattern.patternBridge && withPattern.patternBridge.seed && withPattern.patternBridge.seed.guid,
       riser: withPattern.patternBridge && withPattern.patternBridge.riser,
-      elecRefused: elecPattern.refused, elecReason: elecPattern.reason,
-      acmvRefused: acmvPattern.refused, acmvReason: acmvPattern.reason
+      cov: cov, geoDb: !!window.__dwGeoBuf
     };
   });
 
@@ -135,9 +144,10 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   chk('P3 BRIDGE flips 0→N via routewalker.js pattern engine', engine.withPatternSegs > 0, 'withPatternSegs=' + engine.withPatternSegs);
   chk('P4 CW+SP both produced segments (byRule)', engine.byRule && engine.byRule.filter(b => b.mode === 'CW' && b.segs > 0).length > 0 && engine.byRule.filter(b => b.mode === 'SP' && b.segs > 0).length > 0, JSON.stringify(engine.byRule));
   chk('P5 anchors are REAL (seed=door guid, riser=stair, junctions>0)', !!engine.seedGuid && !!engine.riser && engine.anchorCounts && engine.anchorCounts.junction > 0, JSON.stringify({ seedGuid: engine.seedGuid, riser: engine.riser, anchorCounts: engine.anchorCounts }));
-  chk('P6 DISCIPLINE-AGNOSTIC CHECK, measured: ELEC/ACMV honestly REFUSE (no ad_mep_pattern rows), not silent-0', engine.elecRefused === true && engine.acmvRefused === true, 'elec=' + engine.elecReason + ' acmv=' + engine.acmvReason);
+  const noCov = r => !!(r && r.refused && /no ad_mep_pattern coverage/.test(r.reason || ''));
+  chk('P6 COVERAGE HONESTY: unmapped STR refuses by name; mapped ACMV/ELEC/FP are not refused for coverage', noCov(engine.cov.STR) && !['ACMV', 'ELEC', 'FP'].some(d => noCov(engine.cov[d])), JSON.stringify(engine.cov));
   chk('P7 REAL PRODUCTION PATH renders the bridged chain (dwChain tubes)', completed && chainCommitted && after.chainTubes > 0, 'completed=' + completed + ' chainCommitted=' + chainCommitted + ' chainTubes=' + after.chainTubes);
-  chk('P8 COMMITTED (op-log grew, signed chain verifies)', after.oplogLen > before.oplogLen && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' verifyChain=' + chain);
+  chk('P8 COMMITTED (op-log grew from the seeded log, signed chain verifies)', before.oplogLen > 0 && after.oplogLen > before.oplogLen && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' verifyChain=' + chain);
   chk('P9 REVERSIBLE (undo clears PLB walk, cursor restored)', undo.instances === 0 && undo.cur === before.cur, JSON.stringify(undo));
   chk('P10 NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
 

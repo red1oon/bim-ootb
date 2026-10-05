@@ -141,11 +141,14 @@
   // Build guid -> RAW vertex blob (un-recentred: recentred positions + anchorOffset added back per vertex —
   // see real_geometry.js's own `recenter()` for why positions/anchorOffset are split that way; this undoes
   // the split to get the blob real_geometry.js's own header says the world formula operates on directly).
-  function _buildRealVerts(db, geoDb) {
+  // geoIndex (optional, §B1-ROW3): a RealGeometry.buildGeometryIndex(db, geoDb) result the caller already built for
+  // this SAME (building, geometry) pair — reused instead of rebuilt (it is a pure function of element_instances ×
+  // the geometry table; the ghost-compose / anchor-blind prep only touches element_transforms).
+  function _buildRealVerts(db, geoDb, geoIndex) {
     var RealGeometry = _getRealGeometry();
-    if (!RealGeometry || !RealGeometry.buildGeometryIndex) return null;
-    var idx;
-    try { idx = RealGeometry.buildGeometryIndex(db, geoDb); } catch (e) { return null; }
+    if (!geoIndex && (!RealGeometry || !RealGeometry.buildGeometryIndex)) return null;
+    var idx = geoIndex;
+    if (!idx) { try { idx = RealGeometry.buildGeometryIndex(db, geoDb); } catch (e) { return null; } }
     if (!idx || !idx.table) return null;
     var out = {};
     Object.keys(idx.byGuid).forEach(function (guid) {
@@ -179,9 +182,9 @@
   // Read the AABBs → [{guid, aabb}]. §REAL-AABB: prefer the TRUE world AABB from the real per-element
   // vertex blob (rotated by yaw + translated by center_xyz) when resolvable; fall back to the coarse
   // `element_transforms` bbox ± convention otherwise (today's original behaviour for that case, unchanged).
-  function _readBoxes(db, geoDb) {
+  function _readBoxes(db, geoDb, geoIndex) {
     var boxes = [];
-    var realVerts = _buildRealVerts(db, geoDb);
+    var realVerts = _buildRealVerts(db, geoDb, geoIndex);
     var place = _getPlace(), tiltedReal = 0;
     try {
       var r = db.exec("SELECT guid, center_x, center_y, center_z, bbox_x, bbox_y, bbox_z, rotation_x, rotation_y, rotation_z " +
@@ -194,9 +197,13 @@
         var aabb = null;
         if (raw && !tilted) aabb = _realAabb(raw, cx, cy, cz, rz || 0);
         else if (raw && place) aabb = _envelope(place(raw, { x: cx, y: cy, z: cz, rotX: rx || 0, rotY: ry || 0, rotZRad: rz || 0 }));
+        // §ROW7-TRUE-CENTRE: `real` says whether this box came from the element's own vertex blob (true) or
+        // from the coarse anchor-centred fallback (false). Additive — no derive* consumer reads it; it lets
+        // str_walker_bridge.js tell a true centre from an anchor and COUNT the fallbacks instead of hiding them.
+        var real = !!aabb;
         if (!aabb) aabb = [cx - bx / 2, cx + bx / 2, cy - by / 2, cy + by / 2, cz - bz / 2, cz + bz / 2];
         else if (tilted) tiltedReal++;
-        boxes.push({ guid: guid, aabb: aabb });
+        boxes.push({ guid: guid, aabb: aabb, real: real });
       });
     } catch (e) { /* no element_transforms / no bbox → no geometric edges (graceful) */ }
     _lastTiltedReal = tiltedReal;
@@ -219,13 +226,18 @@
     return b;
   }
   var _lastTiltedReal = 0;   // how many tilted elements the LAST _readBoxes() boxed via place() — for §XEDGE-GEO
+  // §B1-ROW3: opts.boxes (a _readBoxes result deriveAll read ONCE) → a shallow copy, so one family's in-place sort
+  // (deriveAdjacency's sweep) can never reorder what the next family iterates; absent → read as before.
+  function _boxesFor(db, opts) {
+    return opts.boxes ? opts.boxes.slice() : _readBoxes(db, opts.geoDb, opts.geoIndex);
+  }
 
   // §ABUTS — derive the `abuts` edge set from MEASURED face-touch over the bbox substrate.
   // Returns sorted unique edges: {a, b (guids, a<b), axis, gap_mm, contact_m2, provenance}.
   function deriveAdjacency(db, opts) {
     opts = opts || {};
     var tol = opts.tol != null ? opts.tol : TOL, minOv = opts.minOverlap != null ? opts.minOverlap : MIN_OVERLAP;
-    var boxes = _readBoxes(db, opts.geoDb);
+    var boxes = _boxesFor(db, opts);   // own copy — the sweep below sorts it in place
     // sweep-and-prune on X: sort by minX, keep an active window of boxes whose maxX still reaches the cursor.
     boxes.sort(function (p, q) { return p.aabb[0] - q.aabb[0]; });
     var edges = [], active = [];
@@ -269,7 +281,7 @@
   function deriveDatumsAnchored(db, opts) {
     opts = opts || {};
     var tol = opts.tol != null ? opts.tol : 0.05, minSupport = opts.minSupport != null ? opts.minSupport : 3;
-    var boxes = _readBoxes(db, opts.geoDb);
+    var boxes = _boxesFor(db, opts);
     var byGuid = {}; boxes.forEach(function (e) { byGuid[e.guid] = e.aabb; });
     var datums = [], anchored = [], datumId = 0;
     for (var ax = 0; ax < 3; ax++) {
@@ -310,7 +322,7 @@
     var byAxis = { 0: [], 1: [], 2: [] };
     (datums || []).forEach(function (d) { byAxis['XYZ'.indexOf(d.axis)].push([d.datum_id, d.coord]); });
     function nearest(arr, face) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var dd = Math.abs(arr[i][1] - face); if (dd < bd) { bd = dd; best = arr[i]; } } return best; }
-    var boxes = _readBoxes(db, opts.geoDb), spans = [];
+    var boxes = _boxesFor(db, opts), spans = [];
     boxes.forEach(function (e) {
       var b = e.aabb;
       for (var ax = 0; ax < 3; ax++) {
@@ -352,6 +364,9 @@
   // Derive/read the FULL SDG edge set in one call (the modeller stashes this on window.swXEdges on Open).
   // Geometric edges (abuts/anchored/spans) are JS-derived; recovered relations (fills/aggregates) are read.
   function deriveAll(db, opts) {
+    // §B1-ROW3: read the box substrate ONCE and hand it to all three geometric families (was 3 reads = 3 index builds).
+    opts = opts || {};
+    if (!opts.boxes) opts = Object.assign({}, opts, { boxes: _readBoxes(db, opts.geoDb, opts.geoIndex) });
     var da = deriveDatumsAnchored(db, opts);
     return {
       abuts: deriveAdjacency(db, opts),
@@ -365,6 +380,10 @@
   var API = { deriveAdjacency: deriveAdjacency, faceTouch: faceTouch, TOL: TOL, MIN_OVERLAP: MIN_OVERLAP,
     deriveDatumsAnchored: deriveDatumsAnchored, deriveSpans: deriveSpans,
     readFillsHost: readFillsHost, readAggregates: readAggregates, deriveAll: deriveAll,
+    // §ROW7-TRUE-CENTRE — the ONE box reader every derived family already uses, exported so the STR walker
+    // bridge reads the same true world boxes instead of re-deriving a transform ("never re-derive a transform
+    // you can read", MODELLER_MASTER §RESUME 2026-09-21). Returns [{ guid, aabb:[minX,maxX,minY,maxY,minZ,maxZ], real }].
+    readBoxes: _readBoxes,
     lastTiltedReal: function () { return _lastTiltedReal; } };
   window.CrossEdges = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

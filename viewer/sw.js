@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1565';
+const CACHE_VERSION = 'v1566';
 // v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
 // v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
 // v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
@@ -341,6 +341,13 @@ const CACHE_VERSION = 'v1565';
 //   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
 //   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.
 
+// v1452 (2026-09-30) §S8 EDIT→Δ: new viewer/edit_delta.js (one pure Δ function) + edit_delta_viewer.js (Connect 'identity' subscriber, P3);
+//   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
+// v1453 (2026-09-30) §S9 PROJECT ORDER READ: new viewer/proj_order_state.js (the ONE owner of the Project-Order read + Generate / delete&re-issue / VO);
+//   find_erp_push.js _ensureErpDb is OPFS-first (the diff.js VO precedent). viewer.html script tag + PRECACHE_ASSETS in the SAME commit.
+// v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
+// v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
+// v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
 // v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
 //   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
 //   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
@@ -993,6 +1000,12 @@ const PRECACHE_ASSETS = [
   'rates.js',
   'analysis_sidecar.js',
   'locale_loader.js',
+  // S226 §R2 (2026-10-03): the 18 BUILT label packs (viewer/i18n/<code>.json ← ad_message_base.csv ⋈ AD_Message_Trl_<lang>.xml,
+  // build_trl.js). locale_loader.js (precached, above) fetches i18n/<code>.json + locales/<code>.js; precached so a
+  // picked language survives offline. ~20 KB each. The XML/CSV sources are NOT served to the page.
+  'i18n/en_MY.json', 'i18n/en_US.json', 'i18n/en_GB.json', 'i18n/en_AU.json', 'i18n/ms_MY.json', 'i18n/de_DE.json',
+  'i18n/fr_FR.json', 'i18n/es_ES.json', 'i18n/zh_CN.json', 'i18n/th_TH.json', 'i18n/ja_JP.json', 'i18n/ko_KR.json',
+  'i18n/ar_SA.json', 'i18n/pt_BR.json', 'i18n/id_ID.json', 'i18n/bn_BD.json', 'i18n/bl_BD.json', 'i18n/af_ZA.json',
   'decoder.js',
   'nlp.js',
   'semantic_enrichment.js',
@@ -1062,6 +1075,9 @@ const PRECACHE_ASSETS = [
   // §S7-OPEN (v1176): the #info-4d renderer, extracted out of the lazy Find bundle so a plain
   // 3D-canvas pick can render it. KEEP BOTH on any precache conflict.
   'info_4d_panel.js',
+  'edit_delta.js',
+  'edit_delta_viewer.js',
+  'proj_order_state.js',
   // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
   // sched4d pill. KEEP BOTH on any precache conflict.
   // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without
@@ -1097,6 +1113,7 @@ const PRECACHE_ASSETS = [
   'lib/httpvfs.js',
   // Config files
   'clash_rules.json',
+  'civil_labels.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
@@ -1109,6 +1126,7 @@ const PRECACHE_ASSETS = [
   // deriveZones path. _4dTemplateTried makes that one-shot, so ONE failed fetch drops the
   // canonical model for the whole session. Precached so the model of record always loads.
   'rates/4D_template.json',
+  'rates/4D_template_civil.json',   // §CIVIL_TEMPLATE (CIVIL_HIGHWAY_JELAPANG.md §Q)
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',

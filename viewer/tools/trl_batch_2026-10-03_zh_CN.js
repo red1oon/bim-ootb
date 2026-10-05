@@ -1,0 +1,67 @@
+// zh_CN — machine translation (Claude, Anthropic, 2026-10-03), NOT from a published iDempiere pack. See trl_batch_2026-10-03.js.
+'use strict';
+module.exports = { zh_CN: {
+  // gap fills
+  ui_walk_set: '设定', ui_2d_entities_lbl: '实体：', ui_2d_layers_lbl: '图层：', ui_2d_class_lbl: '类别：', ui_2d_name_lbl: '名称：',
+  ui_index_ready: '空间索引就绪', ui_building_index: '正在构建空间索引…', ui_report_busy: '报告已在生成中...', ui_building_report: '正在生成报告…',
+  ui_no_clashes: '无碰撞 — 请先打开矩阵', ui_report_opened: '碰撞报告已在新标签页打开', ui_no_clash_data: '无碰撞数据 — 请先打开矩阵',
+  ui_csv_busy: 'CSV 导出已在进行中...', ui_csv_done: 'CSV 已导出 — {n} 处碰撞', ui_exporting_csv: '正在导出 CSV… 组合 {i}/{n}', ui_no_clash_pairs: '没有可导出的碰撞组合',
+  ui_matrix_need_discs: '矩阵需要 2 个以上专业（已找到：{d}）', ui_close_2d: '请先关闭 2D 视图', ui_clash_shared: '碰撞缺陷已分享',
+  ui_gen_report: '正在生成报告… {done}/{total} 组', ui_counting_clashes: '正在统计 {a} 与 {b}… {i}/{n}', ui_fetching_city: '正在获取城市索引（{url}）...',
+  ui_already_loaded: '{name} 已加载（{n} 个构件）', ui_unknown_building: '未知建筑：{name}', ui_no_elements: '{name} 没有可流式加载的构件', ui_no_db_arch: '原型没有数据库：{name}',
+  // landing
+  landing_tip_red: '红色 — 你进入（开启声音，然后加载）', landing_tip_blue: '蓝色 — 什么都不会发生，什么都不加载',
+  landing_blue_quote: '“你吃下蓝色药丸 — 故事结束，你在自己的床上醒来，相信你愿意相信的一切。”',
+  landing_back: '← 返回', landing_choose_door: '选择你的门', landing_stats_title: '站点流量统计（GoatCounter）',
+  landing_hub_title: '建筑与 IFC', landing_hub_sub: '拖入你自己的 IFC，或打开现成建筑 — 将在查看器中打开',
+  landing_launcher_gps: '建筑 / IFC', landing_launcher_bonsai: 'BIM 建模器', landing_launcher_erp: 'ERP', landing_launcher_doc: '用户指南',
+  landing_launcher_watch: '观看演示', landing_launcher_clear: '清除缓存', landing_more: '更多',
+  landing_mobile_note: 'BIM 建模（DAGeVu）面向桌面端 — 请在更大的屏幕上打开。',
+  landing_drop_hint: '↓ 将 IFC / 3D 文件拖到此处 — 或点击浏览', landing_drop_sub: '多个专业文件将合并为一栋建筑',
+  landing_blank_viewer: '空白查看器', landing_open_own_db: '打开你自己的 .db 文件', landing_loading_manifest: '正在加载建筑清单…',
+  landing_city_buildings: '城市建筑', landing_landmark_buildings: '地标建筑', landing_elements: '个构件', landing_reload: '重新加载',
+  landing_no_db_for: '{name} 没有数据库',
+  landing_clear_confirm: '重置到起始画面？\n\n将清除浏览器中的建筑数据：\n  • 已缓存的建筑\n  • 你拖入的任何 IFC 场景（未保存为 .db 文件）\n并返回红 / 蓝选择。\n\n保留：已安装的应用 + 离线数据，以及你自己保存的任何 .db。',
+  // viewer.html
+  ui_grid_bays: '轴网跨', ui_share: '分享', ui_tt_minmax: '最小/最大', ui_tt_menu: '菜单', ui_tt_prev_phase: '上一阶段', ui_tt_next_phase: '下一阶段',
+  ui_tt_bookmark_add: '收藏此剖切位置', ui_tt_bookmark_del: '删除书签', ui_update_ready: '更新已就绪 — 点击刷新', ui_report_bug: '报告错误',
+  // pill
+  pill_save: '保存建筑', pill_open: '打开建筑', pill_find: '查找 / 导航', pill_rolefilter: '角色视图', pill_help: '帮助',
+  pill_worldhist: '全局历史', pill_dochist: '页面历史', pill_walk: '行走', pill_whwalk: '拣货路线', pill_share: '分享', pill_hbafm: '人员-资产',
+  pill_measure: '测量', pill_clash: '碰撞矩阵', pill_sanity: '合理性检查', pill_egress: '疏散', pill_xray: 'X 光 / 包围盒', pill_bbox: '包围盒',
+  pill_tm: '时光机', pill_sched4d: '4D 窗口', pill_sched4d_gen: '4D 窗口 — 点击生成进度计划', pill_section: '剖切',
+  pill_background: '背景', pill_night: '夜间', pill_palette: '调色板', pill_shadow: '阴影 + 地面', pill_fly: '飞行巡览', pill_dlodnav: '导航 LOD（大型建筑）',
+  pill_report: '4D / 5D', pill_issues: '问题', pill_fullscreen: '全屏', pill_precision: '精细模式', pill_cam_reset: '重置相机', pill_cam_pivot: '自动枢轴',
+  pill_home: '主页', pill_audio: '音效', pill_settings: '设置', pill_navigate: '导航', pill_inspect: '检查', pill_camview: '相机 / 视图',
+  // roles, settings, ground
+  role_plumber: '水暖工', role_electrician: '电工', role_acmv: '空调技术员', role_structural: '结构', role_cleaner: '保洁',
+  ui_rate_pack_5d: '5D 费率包', ui_cache_info: '缓存信息', ui_reset_pill_icons: '重置工具条图标', ui_defaults_restored: '已恢复默认值',
+  ui_tt_shadow_ground_cycle: '阴影 + 地面 — 循环 关 → 泥土 → 草地 → 铺装', ui_ground_none: '无', ui_ground_grass: '草地', ui_ground_earth: '泥土', ui_ground_paved: '铺装',
+  ui_blank_scene_hint: '空白场景 — 按 Ctrl+O（打开建筑）加载 .db 文件', ui_locale_toast_hint: '在 ⚙ 中更改',
+  ui_hist_title: '历史 — 跨页面', ui_hist_whole: '全部', ui_hist_this_page: '本页', ui_close: '关闭',
+  ui_tt_precision_fine: '精细精度', ui_tt_reset_camera: '重置相机', ui_tt_auto_pivot: '以场景中心自动枢轴',
+  ui_tt_still_refine: '静帧精修（Alt+S）', ui_tt_populate: '填充人物（Alt+P）', ui_tt_maxq: 'MaxQ 影片（Alt+C — 再按一次取消）',
+  ui_tt_tm: '时光机', ui_tt_find: '查找', ui_tt_share: '分享', ui_tt_help: '帮助', ui_tt_clash: '碰撞矩阵', ui_tt_sunglass: '色彩工作室', ui_tt_night: '夜间',
+  ui_tt_shadow: '阴影', ui_tt_bg: '背景', ui_tt_bbox: '包围盒', ui_tt_cinema: '影院环绕', ui_tt_doc: '文档', ui_tt_grid: '轴网', ui_tt_table: '表格',
+  ui_tt_next: '下一阶段', ui_tt_save: '保存设计', ui_tt_open: '打开设计', ui_tt_mep: 'MEP 管线', ui_tt_ubbl: 'UBBL 合规', ui_tt_rosetta: '罗塞塔石碑',
+  ui_tt_disc: '专业', ui_sun: '太阳强度', ui_exposure: '曝光', ui_ambient: '环境光', ui_hemisphere: '半球光',
+  ui_all: '全部', ui_off: '关', ui_night_on: '开 — {n} 盏灯具',
+  // find / main
+  ui_find_tab_find: '查找', ui_find_tab_ask: '提问', ui_save_xlsx: '保存 .xlsx', ui_all_types: '所有类型', ui_view_back: '上一视图', ui_view_forward: '下一视图',
+  ui_expand: '展开', ui_voice_unsupported: '不支持语音', ui_loading_find: '正在加载查找…', ui_find_load_failed: '查找加载失败',
+  ui_gpu_compiling: '正在编译 GPU 着色器 — 请稍候...', ui_gpu_compiled: 'GPU 着色器编译完成，用时 {ms} 毫秒 — 渲染中', ui_offline_badge: '离线',
+  // reports
+  title_boq: 'BIM OOTB — 4D/5D 分析', title_clash: 'BIM OOTB — 碰撞协调报告', title_mep: 'BIM OOTB — MEP 工程量清单',
+  t_analytics_4d5d: '4D/5D 分析', ui_tt_export_5d: '5D — 成本 Excel', ui_tt_export_4d: '4D — 进度 Excel', ui_tt_mep_boq: 'MEP 工程量清单',
+  ui_tt_copy_link: '复制分享链接', ui_tt_change_locale_cur: '更改语言 / 货币', ui_tt_change_locale: '更改语言', ui_loading_ellipsis: '加载中...',
+  ui_requesting_viewer: '正在向查看器请求数据...', ui_waiting_db_cache: '等待数据库在主场景中缓存...', ui_loading_url: '正在加载 {url}...',
+  t_site_resources: '现场资源', t_boq_5d: '5D — 工程量清单',
+  clash_report_title: '碰撞协调报告', ui_tt_home: '主页', ui_report_downloaded: '报告已下载',
+  ui_report_downloaded_body: 'HTML 文件已保存。可通过 WhatsApp、电子邮件或任何方式分享。<br>接收者可在任意浏览器中打开 — 图表齐全，无需安装。',
+  ui_ok: '确定', clash_total: '碰撞总数', clash_reviewed: '已审查', clash_resolved: '已解决', clash_accepted: '已接受',
+  clash_tt_total: '所有专业组合中检测到的包围盒重叠总数', clash_tt_reviewed: '已确认、正在调查的碰撞',
+  clash_tt_resolved: '已在模型中修复的碰撞 — 可复查', clash_tt_accepted: '风险已接受 — 无需设计变更',
+  clash_by_pair: '按专业组合', clash_risk_profile: '专业风险概况', clash_by_severity: '按严重程度', clash_by_status: '按状态',
+  clash_top_offenders: '主要问题构件 — 优先处理', clash_by_class: '按构件类别', clash_matrix_summary: '专业矩阵汇总',
+  clash_source: '源', clash_target: '目标', clash_tolerance: '容差', clash_clashes: '碰撞', clash_clashes_lbl: '处碰撞'
+} };

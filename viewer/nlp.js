@@ -591,6 +591,8 @@ function setupNlp(A) {
     addHistory(text.trim());
     _origExec(text.trim());
   };
+  // FIND_ASK_ANSWERS.md §H — the Ask sentence grammar reads discipline synonyms from HERE (one owner)
+  A._nlpDiscMap = DISC_MAP;
   // Re-wire input handler
   input.removeEventListener('keydown', input._kd);
   input.addEventListener('keydown', e => {

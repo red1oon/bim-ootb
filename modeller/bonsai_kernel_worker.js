@@ -418,7 +418,20 @@ function buildSolids(kernel, ops, seedBoxes, seedLayers) {
       _stats.rebuilt++;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
       const ov = cutMoves.byCut[String(op.id)];
-      const vd = ov ? CutMove.applyOverrides(P.void, ov) : P.void;   // §CUT-MOVE/§CUT-RESIZE: the void at its net-overridden place
+      let vd = ov ? CutMove.applyOverrides(P.void, ov) : P.void;   // §CUT-MOVE/§CUT-RESIZE: the void at its net-overridden place
+      // §CUT-THROUGH (MODELLER_MASTER §SESSION 2026-09-30b — Witness: W-E2E-SLIDE-REAL E3): a void face FLUSH with the parent's
+      // bounding face (|Δ| < 0.1 mm — an authored IFC opening is exactly as deep as its wall; a door starts at the wall base)
+      // is pushed 1 cm OUTWARD before the boolean. The removed region INSIDE the parent is identical (the push is outside
+      // the parent's AABB); what it removes is the float32-vs-float64 skin a coplanar boolean leaves behind — measured on
+      // SampleHouse host #23: void y1 = −1.101418 vs host face −1.1014177 → a 0.3 µm skin closed every hole on that wall.
+      const pb = kernel.getBoundingBox(pe.shape, false), pmin = [pb.xmin, pb.ymin, pb.zmin], pmax = [pb.xmax, pb.ymax, pb.zmax];
+      const c1t = vd.c1.slice(), c2t = vd.c2.slice(); let pushed = 0;
+      for (let k = 0; k < 3; k++) {
+        const lo = Math.min(c1t[k], c2t[k]), hi = Math.max(c1t[k], c2t[k]), i1 = c1t[k] <= c2t[k] ? c1t : c2t, i2 = c1t[k] <= c2t[k] ? c2t : c1t;
+        if (Math.abs(lo - pmin[k]) < 1e-4) { i1[k] = Math.min(lo, pmin[k]) - 0.01; pushed++; }
+        if (Math.abs(hi - pmax[k]) < 1e-4) { i2[k] = Math.max(hi, pmax[k]) + 0.01; pushed++; }
+      }
+      if (pushed) { console.log('§CUT-THROUGH cut=' + op.id + ' parent=' + op.parent + ' flushFaces=' + pushed + ' (void pushed 1 cm past the parent face — no coplanar skin)'); vd = { c1: c1t, c2: c2t }; }
       const void_ = kernel.makeBoxFromCorners(v(vd.c1), v(vd.c2));
       const cut = kernel.cut(pe.shape, void_);
       kernel.release(void_);                          // local intermediate (parent is cached → NOT released)

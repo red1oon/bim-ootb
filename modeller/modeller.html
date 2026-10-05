@@ -31,6 +31,8 @@
   .toast.error { border-color: #7a2e2e; background: rgba(40,20,22,0.96); color: #f3c9c9; }
   .toast.ok { border-color: #2e6a3a; color: #c7e8cf; }
   .toast .ti { font-weight: 700; flex: 0 0 auto; }
+  .toast .toast-act { flex: 0 0 auto; margin-left: 4px; padding: 2px 10px; border-radius: 6px; border: 1px solid #8a6a2a;
+    background: #3a2c12; color: #f0d9a8; font: inherit; cursor: pointer; }
   #title { position: fixed; top: 12px; right: 14px; color: #4a5163; font-size: 11px; z-index: 10; letter-spacing: .08em; }
 
   /* ── Toolbar as a bottom-right WRAPPING pill rail (a new style): icon-only glass pills stack UP from the ⋯
@@ -169,6 +171,7 @@
   <button id="b-export" disabled title="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><span>Export</span></button>
   <button id="b-save" disabled title="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg><span>Save</span></button>
   <button id="b-worldhist" title="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="12" r="6.5"/><circle cx="14.5" cy="12" r="6.5"/></svg><span>History</span></button>
+  <button id="header-flag-btn" title="Language" onclick="window._TRL_LOADER &amp;&amp; window._TRL_LOADER.openFlagPicker()" style="font-size:16px;min-width:34px">🌐</button>
   <button id="b-guide" title="Modeller User Guide — how to Open, walk, edit & export"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Guide</span></button>
   <button id="b-del" disabled title="Delete selected (Del)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Z"/><path d="m18 9-6 6"/><path d="m12 9 6 6"/></svg><span>Delete</span></button>
   <button id="b-clear" disabled><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg><span>Clear</span></button>
@@ -199,6 +202,12 @@
   <input id="hist-slider" type="range" min="0" max="0" value="0" step="1" style="flex:1;accent-color:#4fc3f7" disabled>
   <span id="hist-label">0/0</span>
 </div>
+<!-- §THREADS (bim-compiler HISTORY_PARALLEL_TIMELINE §THREADS-IMPL + §THREADS-STEP1): host for the shared dotline
+     (common/history_bar.js) + its category chips `+ Walls (4)` / strips / "Viewing: Walls" badge. Only the bar takes pointer
+     events. z-index 9999: an open strip grows the bar upward into the §S8 Δ pin's box (edit_delta_ui.js, fixed bottom:122px,
+     z 9998) — measured by W-HISTORY-THREADS H5b: the pin covered ‹ › once a jump-to-view selected an element. -->
+<div id="hist-dots" style="position:fixed;bottom:58px;left:252px;right:10px;display:flex;align-items:flex-end;z-index:9999;pointer-events:none;font-family:ui-monospace,monospace"></div>
+<style>#hist-dots > *{pointer-events:auto}#hist-dots #universal-hist-btns{background:rgba(15,18,26,0.94);border-radius:8px;padding:3px 6px}</style>
 <div id="title">DAGeVu · MODELLER</div>
 <div id="stat">booting…</div>
 
@@ -206,14 +215,14 @@
 <!-- §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE — zero deps, loaded first; the
      module worker imports the SAME file (self.CutMove); bonsai_ifc / gridmove / itemdrag read window.CutMove at call time. -->
 <script src="cut_move.js?v=2" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
-<script src="bonsai_kernel.js?v=9" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
+<script src="bonsai_kernel.js?v=11" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
 <script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
 <script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=11" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
      "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
      history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
@@ -233,30 +242,30 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- §MODELLER-GIT-HISTORY (MODELLER_GIT_FAITHFUL_HISTORY.md Phase 2): the SAME git-faithful fork/undo/redo
      tree engine the Viewer runs (common/history_bar.js), reused — not a second branch mechanism. The
      adapter wraps Bonsai.oplog.commit/commitGesture so every real edit lands as one tree node. -->
-<script src="../common/history_bar.js?v=1" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
-<script src="modeller_history.js?v=4" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
+<script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
+<script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
 <script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="bonsai_ifc.js?v=3" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
-<script src="bonsai_grid.js?v=1" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
+<script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
 <script src="grid_kinematics.js" onerror="console.warn('§GRIDMOVE LOAD_FAIL grid_kinematics.js')"></script>
-<script src="bonsai_gridmove.js?v=3" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
+<script src="bonsai_gridmove.js?v=4" onerror="console.warn('§GRIDMOVE LOAD_FAIL bonsai_gridmove.js')"></script>
 <!-- Bonsai-faithful Outliner (the richer Find): Blender-style feature tree over the signed op-log. -->
-<script src="bonsai_outliner.js?v=14" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
+<script src="bonsai_outliner.js?v=15" onerror="console.warn('§OUTLINER LOAD_FAIL bonsai_outliner.js')"></script>
 <!-- BOM Tree composition facet (the ARC BOM editor): Open any extracted.db → seed an editable BOM tree; re-parent = signed op. -->
 <script src="bom_tree.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree.js')"></script>
 <script src="bom_tree_outliner.js?v=4" onerror="console.warn('§BOMTREE LOAD_FAIL bom_tree_outliner.js')"></script>
 <!-- Cross-edges: the typed SDG lateral edges (abuts/...) derived on-the-fly from the bbox substrate. -->
-<script src="cross_edges.js?v=3" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
+<script src="cross_edges.js?v=5" onerror="console.warn('§XEDGE LOAD_FAIL cross_edges.js')"></script>
 <!-- Real per-element geometry (component_geometries/base_geometries) — read+recentre, no THREE/DOM deps.
      Loaded BEFORE arc_editable.js (its factory takes window.RealGeometry as a dependency). -->
-<script src="real_geometry.js?v=1" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
-<script src="arc_editable.js?v=5" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
+<script src="real_geometry.js?v=2" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
+<script src="arc_editable.js?v=8" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
-<script src="sdg_gate.js?v=1" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
+<script src="sdg_gate.js?v=3" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §DAGEVU: relationship-edge engine (anchor-default hosted openings) — wraps sdg_cascade + sdg_gate above. -->
 <script src="dagevu_engine.js?v=1" onerror="console.warn('§DAGEVU LOAD_FAIL dagevu_engine.js')"></script>
 <!-- §SAVE-1/2 (MODELLER_SAVE_COMPLETEIT.md): Save = validated snapshot promotion. sdg_save.js = pure
@@ -266,20 +275,30 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="save_catalog.js?v=1" onerror="console.warn('§SAVE LOAD_FAIL save_catalog.js')"></script>
 <!-- STR Walker (STR_ROUTEWALKING_SPEC.md): STR is a WALKED discipline. Open an STR building → walk the structure
      (skeleton f(grid) + tessellated systems); a grid drag re-walks + surfaces a cited structural exception. -->
-<script src="str_walker.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
+<script src="str_walker.js?v=4" onerror="console.warn('§STRWALK LOAD_FAIL str_walker.js')"></script>
 <script src="walker_confidence.js?v=2" onerror="console.warn('§STRWALK LOAD_FAIL walker_confidence.js')"></script>
 <!-- §GEOMAP-WIRE (RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC): IFC→BOM classifier + bridge — AUDIT-ONLY channel
      (op substrate provably untouched, W-GEOMAP-WIRE W1). Load-failure tolerant: the ARC seed gates on
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=5" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="str_walker_outliner.js?v=15" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
+<script src="str_walker_bridge.js?v=9" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="grid_span_gate.js?v=1" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
+<script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
+<script src="str_walker_outliner.js?v=24" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=19" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=23" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
+<!-- §S8 (TM_4D5D_VARIANCE_LANE §S8): hover/click on an EDITED element shows its material-cost + labour Δ. Loads the Viewer-side owners LAZILY on first use. -->
+<!-- S226 §R3 (bim-compiler prompts/S226_localisation.md): the Modeller speaks the film languages — the SHARED loader + dictionary
+     (viewer/i18n), translating by exact English text (dictionary page) incl. panels built later; flag button #header-flag-btn. -->
+<script>window.__TRL_INPLACE = true; window.__TRL_DICT_PAGE = true;</script>
+<script src="../viewer/locale_loader.js?v=13"></script>
+<script src="edit_delta_ui.js?v=5" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
+<!-- §S9 (TM_4D5D_VARIANCE_LANE §S9): "ERP ▸ Project Order" for the selected parts. Lazy: the Viewer-side ERP owners load only when the button is clicked. -->
+<script src="proj_order_ui.js?v=5" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
@@ -290,14 +309,14 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      real_placement_resolver.js (loaded immediately above) as its up-front gate — both load AFTER their
      dependencies, and both are additive: neither modifies the grid, BOM or walker modules. -->
 <script src="bonsai_roommove.js?v=1" onerror="console.warn('§ROOMMOVE LOAD_FAIL bonsai_roommove.js')"></script>
-<script src="bonsai_itemdrag.js?v=3" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
+<script src="bonsai_itemdrag.js?v=4" onerror="console.warn('§ITEMDRAG LOAD_FAIL bonsai_itemdrag.js')"></script>
 <!-- RouteWalker (port of RouteWalker.java): routes MEP from real mep_rw.db recipes. rwRouteSegments→rwSweepOps
      bridge the routed runs to signed GEOM_SWEEP ops, so a dropped building's MEP folds into the op-log. -->
-<script src="routewalker.js?v=8" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
+<script src="routewalker.js?v=9" onerror="console.warn('§RW LOAD_FAIL routewalker.js')"></script>
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=8" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="disc_walker.js?v=11" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -360,7 +379,8 @@ const stat = document.getElementById('stat');
 // ~7s, click to dismiss, stack capped) that the status bar can't clobber. setStat auto-toasts any 'FAIL …' so all
 // 11 catch-block error paths surface without touching each one; the status bar still shows the terse line.
 let _toastStack = null;
-function toast(msg, kind) {
+function toast(msg, kind, opts) {
+  opts = opts || {};
   if (!_toastStack) { _toastStack = document.createElement('div'); _toastStack.id = 'toast-stack'; document.body.appendChild(_toastStack); }
   const t = document.createElement('div'); t.className = 'toast' + (kind ? ' ' + kind : '');
   const icon = kind === 'error' ? '⚠' : kind === 'ok' ? '✓' : 'ℹ';
@@ -371,7 +391,13 @@ function toast(msg, kind) {
   let done = false;
   const dismiss = () => { if (done) return; done = true; t.classList.remove('show'); setTimeout(() => t.remove(), 220); };
   t.addEventListener('click', dismiss);
-  setTimeout(dismiss, kind === 'error' ? 7000 : 4000);   // errors linger longer than info
+  // §ORANGE-ACCEPT: optional one-click action (e.g. Accept a suggestion); clicking the rest of the toast still dismisses (= ignore).
+  if (opts.action) {
+    const btn = document.createElement('button'); btn.className = 'toast-act'; btn.textContent = opts.action.label;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); opts.action.fn(); });
+    t.appendChild(btn);
+  }
+  setTimeout(dismiss, opts.ms || (kind === 'error' ? 7000 : 4000));   // errors linger longer than info
   while (_toastStack.children.length > 4) _toastStack.removeChild(_toastStack.firstChild);   // cap the stack
   console.log('§TOAST kind=' + (kind || 'info') + ' ' + msg);
   return t;
@@ -500,6 +526,7 @@ function fitView() {
   if (frameBox(box, VIEWS[_viewIdx].dir)) setStat((typeof selectedMesh !== 'undefined' && selectedMesh) ? 'framed selection' : 'framed all'); else setStat('nothing to frame');
 }
 bFit.onclick = () => fitView();
+window.Bonsai.frameSelection = fitView;   // §THREADS jump-to-view (modeller_history.js restoreView): frame the selection, camera only
 bView.onclick = () => {
   _viewIdx = (_viewIdx + 1) % VIEWS.length; const v = VIEWS[_viewIdx]; bView.querySelector('span').textContent = v.name;
   frameBox(_authoredBox() || new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(4, 3, 3)), v.dir); setStat('view: ' + v.name);
@@ -642,6 +669,37 @@ async function xrayReveal(on) {
   return { on: true, glass: glass, glow: glow, stackDepth: stackDepth, glassOpacity: glassOpacity };
 }
 window.__xrayReveal = xrayReveal;
+// ── §B1-ROW1 (pattern review row 1 — Witness: W-PATTERN-DECOR-REFOLD): ONE view-decoration registry. A re-fold
+// (bonsai_kernel.foldChainToScene) rebuilds every mesh with default material and visible=true, then announces
+// 'bonsai:refold'. Every piece of per-mesh VIEW state registers its re-apply here instead of hooking the event on its
+// own; one listener runs them all in registration order (x-ray, selection tint, eye/instance hide, find-box dim,
+// shadows — the source order of their definitions below). Before this, x-ray/tint/shadows each had their own listener
+// and eye-hide + dim had NONE, so after a history scrub the Outliner still said hidden/filtered while the scene did not.
+const _decor = [];
+window.Bonsai.decor = {
+  register(name, fn) { _decor.push({ name, fn }); },
+  names() { return _decor.map(d => d.name); },
+  reapply(src) {
+    const out = [];
+    _decor.forEach(d => { try { const r = d.fn(src); out.push(d.name + (r != null ? '=' + r : '')); } catch (e) { out.push(d.name + '!' + (e && e.message)); } });
+    console.log('§DECOR-REFOLD src=' + src + ' applied=[' + out.join(' ') + ']');
+    return out;
+  }
+};
+window.addEventListener('bonsai:refold', () => window.Bonsai.decor.reapply('refold'));
+// §XRAY-REFOLD (§NET-AUDIT 2026-09-27, W-XRAY-SC-LIVE root cause): a re-fold rebuilds every mesh with its default
+// material and the walked buckets are rebuilt by _redrawAllDiscWalks — nothing re-applied x-ray, so any commit/undo
+// (or a walk's late GEOM_SWEEP commits) while x-ray was ON left the building opaque with the button still lit.
+// Measured on SampleCastle: 4 ops + 3 refolds landed mid-x-ray → structureLeaked=3144, fixtures glowing 0/274.
+// Same choke point the selection tint and shadows use; deferred one tick so the bucket redraw has run too.
+let _xrayReapplyPending = false;
+function _xrayReapply(src) {
+  if (!_xrayOn || _xrayReapplyPending) return;
+  _xrayReapplyPending = true;
+  setTimeout(() => { _xrayReapplyPending = false; if (!_xrayOn) return;
+    xrayReveal(true).then(r => console.log('§XRAY-REFOLD reapplied src=' + src + ' glass=' + r.glass + ' glow=' + r.glow)); }, 0);
+}
+window.Bonsai.decor.register('xray', () => { _xrayReapply('refold'); return _xrayOn ? 'on' : 'off'; });   // §B1-ROW1 (was its own listener)
 const bXray = document.getElementById('b-xray');
 function paintXray() { if (bXray) bXray.classList.toggle('on', _xrayOn); }
 if (bXray) bXray.onclick = async () => {
@@ -764,6 +822,8 @@ if (window.Connect && bConnect) {
   // broadcast {tip,length} so connected surfaces RE-FOLD the shared store. Inbound → reload() (re-read the
   // signed log + re-fold), echo-guarded. The op-log persists to localStorage = the shared signed substrate.
   let _applyingRemoteId = false, _lastIdTip = null;
+  // §S8: featureId->guid for every feature carrying a live edit op (the seed rows carry no guid — the Modeller's own §ARC-1 bridge does). Additive payload field.
+  function _editedGuids() { try { const seen = new Set(), out = []; for (const o of window.Bonsai.oplog._geomOps()) { const p = o.parameters || {}; if (o.op_type === 'GEOM_MOVE' || o.op_type === 'GEOM_SCALE' || o.op_type === 'GEOM_ROTATE') { if (p.parent != null && !seen.has(p.parent)) { seen.add(p.parent); const g = (window.__arcGuidByFid || {})[p.parent]; if (g) out.push({ fid: p.parent, guid: g }); } } } return out; } catch (e) { return []; } }
   function _chainTip() { const O = window.Bonsai.oplog; const ops = (O && O.db) ? O._geomOps() : []; return ops.length ? ops[ops.length - 1].op_hash : null; }
   window.addEventListener('bonsai:oplog', () => {
     if (!window.Connect || !window.Connect.on || _applyingRemoteId) return;
@@ -773,7 +833,7 @@ if (window.Connect && bConnect) {
     // _emit() dispatches THIS event BEFORE it writes the shared store (_save). Defer the broadcast one tick so a
     // peer that reloads from the store reads the just-committed op, not the pre-commit bytes (the P3 race).
     const len = window.Bonsai.oplog.length;
-    setTimeout(() => { if (window.Connect && window.Connect.on) window.Connect.publish('identity', { tip: tip, length: len, surface: 'modeller' }); }, 0);
+    setTimeout(() => { if (window.Connect && window.Connect.on) window.Connect.publish('identity', { tip: tip, length: len, surface: 'modeller', edits: _editedGuids(), store: window.Bonsai.oplog._KEY }); }, 0);
   });
   window.Connect.subscribe('identity', async (id) => {
     if (!id || !window.Bonsai.oplog) return;
@@ -1075,7 +1135,7 @@ window.addEventListener('bonsai:oplog', () => { try { _paintSel(); } catch (e) {
 // 000000 while _selSet still held it. foldChainToScene now announces 'bonsai:refold' after the rebuilt
 // meshes land; repaint through _paintSel — the ONE existing tinting path, membership re-resolved by
 // featureId (meshes are NEW objects after a re-fold). Idempotent + cheap on the paths bonsai:oplog covers.
-window.addEventListener('bonsai:refold', () => { try { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); } catch (e) { } });
+window.Bonsai.decor.register('selTint', () => { if (selectedIds.size) console.log('§SEL-TINT-REFOLD repaint n=' + selectedIds.size); _paintSel(); return selectedIds.size; });   // §B1-ROW1 (was its own listener)
 // ── §ZOOM-SEL (MODELLER_ZOOM_TO_SELECTION.md — Witness: W-E2E-ZOOMSEL): port of the Viewer Find panel's
 // zoom-to-frame mechanism (viewer/navigate_find.js _lerpCam/_fitDistForBox/_zoomToBoxFill — the frustum-fit
 // variant, not the naive maxDim*factor one). Fires automatically on every real selection change via
@@ -1154,13 +1214,14 @@ function setSelectionIds(ids, primary) {
   selectedIds = new Set((ids || []).filter(x => x != null)); window.Bonsai._selSet = selectedIds;
   const g = window.Bonsai.group && window.Bonsai.group();
   selectedId = (primary != null && selectedIds.has(primary)) ? primary : (selectedIds.size ? Array.from(selectedIds).pop() : null);
-  selectedMesh = (selectedId != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === selectedId) : null;
+  selectedMesh = (selectedId != null && g) ? window.Bonsai.meshFor(selectedId) : null;
   _paintSel();
   bCut.disabled = selectedId == null;
   const bd = document.getElementById('b-del'); if (bd) bd.disabled = selectedId == null;   // Delete acts on the selection
   const bmv = document.getElementById('b-move'); if (bmv) bmv.disabled = selectedId == null;   // Move acts on the selection
   window.Bonsai._selId = selectedId;                       // mirror to Outliner so 3D pick highlights its row
   if (window.Bonsai.outliner) window.Bonsai.outliner.setActive(selectedId);   // restyle the active row only — no DB query / tree rebuild per pick
+  try { window.dispatchEvent(new CustomEvent('dagevu:select', { detail: { fid: selectedId } })); } catch (e) { }   // §S8 additive
   console.log('§MODELLER select featureId=' + selectedId + (selectedIds.size > 1 ? ' set=[' + Array.from(selectedIds).join(',') + '] n=' + selectedIds.size : ''));
   // §ZOOM-SEL: Find-panel-style automatic frame on every real selection change (click / marquee / Outliner
   // pick — every path funnels through here). Empty selection is a guarded no-op inside zoomToSelection.
@@ -1181,7 +1242,7 @@ function toggleSelect(mesh) {                             // shift-click: add/re
 }
 window.Bonsai.select = (fid) => {                 // witness/programmatic hook (REPLACE-select)
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   highlight(m || null); return selectedId;
 };
 window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids.length) ? fids[fids.length - 1] : null); return Array.from(selectedIds); };
@@ -1192,7 +1253,7 @@ window.Bonsai.selectMany = (fids) => { setSelectionIds(fids || [], (fids && fids
 // Visibility is a session LENS: a re-walk/re-fold that rebuilds meshes resets it (documented, spec §V1).
 window.Bonsai.setFeatureVisible = (fid, vis) => {
   const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return false;
-  const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false;
+  const m = window.Bonsai.meshFor(fid); if (!m) return false;
   m.visible = !!vis;
   const o = _selOutlines.get(fid); if (o) o.line.visible = m.visible;   // §V5: outline follows its mesh
   if (window.A && A.requestRender) A.requestRender();
@@ -1257,14 +1318,19 @@ window.Bonsai.isInstanceHidden = (im, i) => !!(im && im.userData && im.userData.
 // mesh at the SAME xyz (parameters._dw, _commitDiscWalk) which wins the raycast and fully covers the marker —
 // hiding only the instance changes ZERO pixels. The placement's fids are matched by _dw.disc + placement xyz
 // toFixed(4) (the exact rounding _commitDiscWalk wrote).
+// §I5b-TWIN-CZ (2026-09-30, W-E2E-INSTHIDE H1 RED on main 8311ba5f): since §LIVEWIRE a hash-carrying placement commits its
+// SEAT (centre − bz/2) in placement.z and keeps the centre in _dw.cz, while the rendered record's z IS the centre — so the
+// exact placement.z match found 0 twins for every LOD400 walk fixture and the eye hid only the instance, which changes
+// ZERO pixels (the twin draws over it). Match the centre field, falling back to placement.z for hash-less legacy ops.
 function _dwTwinFids(disc, rec) {
   const O = window.Bonsai.oplog; if (!O || !O._geomOps || rec.x == null) return [];
   const kx = (+rec.x).toFixed(4), ky = (+rec.y).toFixed(4), kz = (+rec.z).toFixed(4);
   const out = [];
   (O._geomOps() || []).forEach(o => {
     const pm = o.parameters;
-    if (pm && pm._dw && pm._dw.disc === disc && pm.placement &&
-        (+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+pm.placement.z).toFixed(4) === kz) out.push(o.id);
+    if (!(pm && pm._dw && pm._dw.disc === disc && pm.placement)) return;
+    const cz = pm._dw.cz != null ? pm._dw.cz : pm.placement.z;
+    if ((+pm.placement.x).toFixed(4) === kx && (+pm.placement.y).toFixed(4) === ky && (+cz).toFixed(4) === kz) out.push(o.id);
   });
   return out;
 }
@@ -1320,7 +1386,7 @@ window.Bonsai.setAllVisible = () => {                     // reset before determ
 // (materials are per-mesh MeshStandardMaterial — no shared-material bleed); a walked bucket dims whole-bucket
 // when NO leaf of its discipline matches (bucket granularity, same §DECISIONS-2 rule). null restores exactly
 // from the saved pre-dim snapshot. DIM (not hide) keeps spatial context and stays out of the raycaster's way.
-let _dimActive = false;
+let _dimActive = false, _dimLastSel = null;   // §B1-ROW1: last selection, re-applied after a re-fold
 function _dimMat(mat, keep) {
   if (!mat) return;
   if (!mat.userData._preDim) mat.userData._preDim = { t: mat.transparent, o: mat.opacity, dw: mat.depthWrite };
@@ -1343,11 +1409,18 @@ window.Bonsai.dimExcept = (sel) => {
     const keep = !sel || sel.discs.has(disc);
     _dimMat(o.material, keep); if (!keep) dimmed++;
   });
-  _dimActive = !!sel;
+  _dimActive = !!sel; _dimLastSel = sel || null;
   if (window.A && A.requestRender) A.requestRender();
   console.log('§MODELLER §OLFILTER-DIM ' + (sel ? ('dimmed=' + dimmed + ' keepFids=' + sel.fids.size + ' keepDiscs=' + sel.discs.size) : 'restored'));
   return dimmed;
 };
+// §B1-ROW1: eye-hide (+ §I5 instance-hide + disc-bucket hide) and the find-box dim follow the Outliner's state through a
+// re-fold. _applyHidden already resets-then-re-applies deterministically and never reveals an anchor (setAllVisible).
+window.Bonsai.decor.register('hidden', () => {
+  const O = window.Bonsai.outliner; if (!(O && O._hidden && Object.keys(O._hidden).length && O._applyHidden)) return 0;
+  return O._applyHidden();
+});
+window.Bonsai.decor.register('dim', () => (_dimActive && _dimLastSel) ? window.Bonsai.dimExcept(_dimLastSel) : 0);
 // ── §POLISH3 §V6 (Witness: W-E2E-SHADOWS): event-driven shadow flags + the PERF GUARD. Same doctrine as
 // DW_ALL_PROXY_THRESHOLD: above SHADOW_MAX_ELEMENTS total elements (authored meshes + walked instances) the
 // shadow pass auto-disables — Terminal-scale walks never pay a per-frame shadow render. Flags are applied on
@@ -1386,7 +1459,7 @@ window.addEventListener('bonsai:oplog', () => { try { _applyShadowFlags(); } cat
 // re-fold (history slider, x-ray restore, Connect timeline) rebuilds every mesh with castShadow/receiveShadow
 // FALSE and never fires bonsai:oplog — so the scene renders subtly unshadowed until the next commit. Re-apply
 // at the same 'bonsai:refold' choke point the selection repaint uses (event from foldChainToScene).
-window.addEventListener('bonsai:refold', () => { try { _applyShadowFlags(); } catch (e) { } });
+window.Bonsai.decor.register('shadow', () => _applyShadowFlags() ? 'on' : 'off');   // §B1-ROW1 (was its own listener)
 // ── Outliner→scene camera fly-to (2026-07-02, RESUME §3): click an Outliner row → besides the existing
 // select/highlight (window.Bonsai.select → setActive), smoothly orbit the camera in CLOSER, framed on that
 // element's own bbox centre — mirrors viewer/measure.js's _flyToClash/_animFly easing pattern (ease-in-out
@@ -1412,7 +1485,7 @@ function _frameTo(c, diag, tag) {                          // §Q2: shared camer
 }
 window.Bonsai.frameFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = g && g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const m = g && window.Bonsai.meshFor(fid);
   if (!m || !m.geometry) return false;
   m.geometry.computeBoundingBox();
   const bb = m.geometry.boundingBox;
@@ -1564,6 +1637,7 @@ function setHover(mesh) {
   _hoverMesh = mesh; _hoverId = hid;
   if (mesh && !selectedIds.has(hid)) _emis(mesh, 0x14324a);   // faint hover tint (< selection 0x2b5a8c)
   canvas.style.cursor = modeCursor() || (mesh ? 'pointer' : '');   // a mode owns the cursor; else hover shows pointer
+  try { window.dispatchEvent(new CustomEvent('dagevu:hover', { detail: { fid: hid } })); } catch (e) { }   // §S8 additive
   if (window.A && A.requestRender) A.requestRender();
 }
 canvas.addEventListener('pointermove', (e) => {
@@ -1580,7 +1654,7 @@ canvas.addEventListener('pointerleave', () => { if (_hoverId != null) setHover(n
 // selection emissive (setHover already skips them).
 window.Bonsai.hoverFeature = (fid) => {
   const g = window.Bonsai.group && window.Bonsai.group();
-  const m = (fid != null && g) ? g.children.find(o => o.isMesh && o.userData.featureId === fid) : null;
+  const m = (fid != null && g) ? window.Bonsai.meshFor(fid) : null;
   setHover(m || null);
   return !!m;
 };
@@ -1872,8 +1946,9 @@ function nearestGridline(x, y) {
 function gmPreviewLine(axis, coord) {
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; }
   const G = window.Bonsai.grid;
-  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], 0.03), new THREE.Vector3(coord, G.ys[G.ys.length - 1], 0.03)]
-                         : [new THREE.Vector3(G.xs[0], coord, 0.03), new THREE.Vector3(G.xs[G.xs.length - 1], coord, 0.03)];
+  const gz = (G.z || 0) + 0.03;   // §GRID-SPAN-GATE: a column-derived grid sits at the columns' foot, not z=0
+  const a = axis === 'x' ? [new THREE.Vector3(coord, G.ys[0], gz), new THREE.Vector3(coord, G.ys[G.ys.length - 1], gz)]
+                         : [new THREE.Vector3(G.xs[0], coord, gz), new THREE.Vector3(G.xs[G.xs.length - 1], coord, gz)];
   gmPreview = new THREE.Line(new THREE.BufferGeometry().setFromPoints(a), new THREE.LineBasicMaterial({ color: 0xffd24f }));
   scene.add(gmPreview);
 }
@@ -1897,7 +1972,7 @@ function gmTint(commands, riders, excludedFids, dagevu) {
   // instead of re-scanning g.children per command. Falls back to the old find() if no session is active (e.g.
   // called outside a real drag) — byte-identical result either way, just not re-derived every frame.
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const meshFor = (fid) => byFid ? byFid[fid] : g.children.find(o => o.isMesh && o.userData.featureId === fid);
+  const meshFor = (fid) => byFid ? byFid[fid] : window.Bonsai.meshFor(fid);
   gmClearTints(); let t = 0, s = 0, x = 0;
   commands.forEach(c => {
     const m = meshFor(c.featureId);
@@ -1928,8 +2003,175 @@ function gmTint(commands, riders, excludedFids, dagevu) {
   if (window.A && A.requestRender) A.requestRender();
   return { t, s, x, h, r };
 }
+// ═══ §GRID-SPAN-GATE (MODELLER_MASTER §GRID-SPAN-GATE SPEC 2026-10-02, row 38) ═══════════════════════════════════
+// While a gridline of a COLUMN-FRAMED building is dragged, every bay the drag widens/narrows is coloured
+// GREEN/ORANGE/RED by the EXISTING span rule (str_walker.js SW_SPAN_RULES via GridSpanGate.check — no new thresholds).
+// ORANGE hover = required preliminary depth; RED hover = the limit + "Add one more?". Release on RED opens the prompt:
+// Add one more = ONE gesture (drag + a column line at the bay midpoint, real column copies), Cancel = stop at the limit.
+const GSG_HEX = { GREEN: 0x1ea83c, ORANGE: 0xe08a00, RED: 0xd21e1e };
+let _gsg = null, _gsgStrips = null, _gsgTip = null, _gsgPrompt = null, _gsgLastSig = null;
+window.Bonsai.gridspan = { last: null, hover: null, prompt: null, refused: null, session: null };
+function gsgTipEl() {
+  if (_gsgTip) return _gsgTip;
+  const d = document.createElement('div'); d.id = 'gsg-tip';
+  d.style.cssText = 'position:fixed;z-index:60;max-width:320px;padding:8px 10px;border-radius:6px;font:12px/1.35 system-ui,sans-serif;color:#fff;display:none;pointer-events:none;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  document.body.appendChild(d); _gsgTip = d; return d;
+}
+function gsgClear() {
+  if (_gsgStrips) { scene.remove(_gsgStrips); _gsgStrips.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _gsgStrips = null; }
+  if (_gsgTip) { _gsgTip.style.display = 'none'; _gsgTip.innerHTML = ''; }
+  _gsgPrompt = null; _gsgLastSig = null;
+  const B = window.Bonsai.gridspan; B.last = null; B.hover = null; B.prompt = null;
+  if (window.A && A.requestRender) A.requestRender();
+}
+// One walker-identity -> one material read (names are the building's own data; unreadable => REFUSED, never guessed).
+function gsgMaterial() {
+  const key = window.__dwName || ''; if (_gsgMatCache && _gsgMatCache.key === key) return _gsgMatCache.v;
+  let v = null;
+  try { const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)); v = window.GridSpanGate.readMaterial(db); db.close(); }
+  catch (e) { v = { material: null, error: String(e && e.message || e) }; }
+  _gsgMatCache = { key, v };
+  console.log('§GRID-SPAN material=' + (v.material || 'unknown') + (v.material ? '' : ' refused') + ' beams rc=' + (v.beams ? v.beams.rc : '?') + ' steel=' + (v.beams ? v.beams.steel : '?') + ' unnamed=' + (v.beams ? v.beams.none : '?') + ' of ' + (v.beams ? v.beams.n : '?') + ' IfcBeam rows (all STR rows rc=' + v.rc + ' steel=' + v.steel + ' unnamed=' + v.none + ' of ' + v.n + ') mixed=' + v.mixed + ' · source ' + v.source);
+  return v;
+}
+let _gsgMatCache = null;
+function gsgBegin(gl) {
+  _gsg = null; gsgClear();
+  const GS = window.GridSpanGate; if (!GS || !window.swbGateInfo) return;
+  const info = window.swbGateInfo();
+  if (!info || info.system !== 'column-framed' || !info.base0) { console.log('§GRID-SPAN system=' + (info ? info.system : 'none') + ' skip — a wall-bearing grid has no beam span rule'); return; }
+  if (!window.Bonsai.grid._columnDerived) { console.log('§GRID-SPAN grid=authored skip — the span gate judges a COLUMN-derived grid only'); return; }
+  const m = window.Bonsai.gridmove._map && window.Bonsai.gridmove._map[gl.id]; if (!m) return;
+  const mi = gsgMaterial();
+  if (!mi.material) { window.Bonsai.gridspan.refused = 'material-unknown'; console.log('§GRID-SPAN material=unknown refused — no colour, no guess'); setStat('span gate: material unreadable from the building\'s own names — not coloured'); return; }
+  if (!GS.ruleFor(mi.material)) { window.Bonsai.gridspan.refused = 'rule-lookup'; console.log('§GRID-SPAN rule lookup FAILED for ' + mi.material + ' — refused, no colour'); return; }
+  window.Bonsai.gridspan.refused = null;
+  _gsg = { info, mat: mi.material, depth: info.section ? info.section.depth : null, axis: m.axis, index: m.index, gridId: gl.id, last: null };
+  window.Bonsai.gridspan.session = { gridId: gl.id, axis: m.axis, index: m.index, material: mi.material, depth: _gsg.depth };
+  console.log('§GRID-SPAN begin grid=' + gl.id + ' material=' + mi.material + ' measuredBeamDepth=' + (_gsg.depth != null ? _gsg.depth.toFixed(3) + 'm' : 'none') + ' rule=' + GS.ruleFor(mi.material).source.slice(0, 40));
+}
+function gsgPaint(pv) {
+  if (_gsgStrips) { scene.remove(_gsgStrips); _gsgStrips.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); _gsgStrips = null; }
+  const g = new THREE.Group(); g.name = 'GridSpanBays'; const th = _gsg.info.theta || 0;
+  const ext = Math.max(Math.abs(pv.lines.x[pv.lines.x.length - 1] - pv.lines.x[0]), Math.abs(pv.lines.y[pv.lines.y.length - 1] - pv.lines.y[0]));
+  const w = Math.max(1.0, ext * 0.016);
+  pv.pieces.forEach(pc => {
+    const len = pc.u1 - pc.u0, uc = (pc.u0 + pc.u1) / 2;
+    const lat = pc.spanAxis === 'x' ? [uc, pc.onPos] : [pc.onPos, uc];
+    const wc = window.swToWorld(lat[0], lat[1], th);
+    const geo = pc.spanAxis === 'x' ? new THREE.BoxGeometry(len, w, 0.04) : new THREE.BoxGeometry(w, len, 0.04);
+    const mat = new THREE.MeshBasicMaterial({ color: GSG_HEX[pc.signal], transparent: true, opacity: 0.85, depthTest: false });
+    const mesh = new THREE.Mesh(geo, mat); mesh.position.set(wc[0], wc[1], (window.Bonsai.grid.z || 0) + 0.06); mesh.rotation.z = th; mesh.renderOrder = 999;
+    mesh.userData = { gsg: true, signal: pc.signal, guid: pc.guid };
+    g.add(mesh);
+  });
+  scene.add(g); _gsgStrips = g;
+}
+function gsgShowTip(text, signal, cx, cy, buttons) {
+  const t = gsgTipEl(); t.style.background = signal === 'RED' ? '#b01818' : signal === 'ORANGE' ? '#b36b00' : '#14702a';
+  t.innerHTML = '<div id="gsg-text"></div>' + (buttons ? '<div style="margin-top:6px;display:flex;gap:8px"><button id="gsg-add" style="cursor:pointer;padding:4px 10px;border:0;border-radius:4px;background:#fff;color:#111;font-weight:600">Add one more</button><button id="gsg-cancel" style="cursor:pointer;padding:4px 10px;border:1px solid #fff;border-radius:4px;background:transparent;color:#fff">Cancel</button></div>' : '');
+  t.querySelector('#gsg-text').textContent = text;
+  t.style.pointerEvents = buttons ? 'auto' : 'none';
+  t.style.left = Math.min(window.innerWidth - 340, cx + 18) + 'px'; t.style.top = Math.min(window.innerHeight - 90, cy + 18) + 'px'; t.style.display = 'block';
+}
+function gsgUpdate(dg, hit, ev) {
+  if (!_gsg || _gsgPrompt) return;
+  const GS = window.GridSpanGate, O = window.Bonsai.oplog;
+  const pv = GS.preview(_gsg.info, O._geomOps(), O.cursor, _gsg.axis, _gsg.index, dg.delta, _gsg.mat, _gsg.depth);
+  _gsg.last = pv; window.Bonsai.gridspan.last = pv;
+  gsgPaint(pv);
+  const w = pv.worst;
+  if (!w) { if (_gsgTip) _gsgTip.style.display = 'none'; return; }
+  if (_gsgLastSig !== w.signal) { _gsgLastSig = w.signal; console.log('§GRID-SPAN step grid=' + _gsg.gridId + ' Δ=' + dg.delta.toFixed(3) + ' worst=' + w.signal + ' span=' + w.span.toFixed(3) + ' bays=' + pv.bays.length + ' pieces=' + pv.pieces.length + ' material=' + _gsg.mat); }
+  // HOVER: the pointer's coordinate along the drag axis (lattice frame) inside a non-green bay (±1 m: the grab is within snap tolerance of the line).
+  const p = window.swToFrame(hit.x, hit.y, _gsg.info.theta || 0), ha = _gsg.axis === 'x' ? p[0] : p[1];
+  let hov = null;
+  pv.bays.forEach(b => { if (b.signal === 'GREEN') return; const u0 = Math.min.apply(null, b.pieces.map(q => q.u0)), u1 = Math.max.apply(null, b.pieces.map(q => q.u1));
+    if (ha >= u0 - 1 && ha <= u1 + 1 && (!hov || GS.RANK[b.signal] > GS.RANK[hov.signal] || (GS.RANK[b.signal] === GS.RANK[hov.signal] && b.span > hov.span))) hov = b; });
+  if (!hov) { if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.hover = null; return; }
+  const pc = hov.pieces.reduce((a, q) => (RANKS(q) > RANKS(a) ? q : a), hov.pieces[0]);
+  window.Bonsai.gridspan.hover = { signal: hov.signal, text: pc.message, span: hov.span, requiredDepth: pc.requiredDepth, maxSpan: pc.maxSpan, material: _gsg.mat, a: hov.a, b: hov.b };
+  gsgShowTip(pc.message, hov.signal, ev.clientX, ev.clientY, false);
+}
+function RANKS(q) { return window.GridSpanGate.RANK[q.signal]; }
+// Release on RED: do NOT commit — open the prompt. Returns true when it took the release.
+function gsgIntercept(ev) {
+  if (!_gsg || !_gsg.last || !_gsg.last.worst || _gsg.last.worst.signal !== 'RED' || !_dragGrid) return false;
+  const GS = window.GridSpanGate, O = window.Bonsai.oplog, pv = _gsg.last, bay = pv.worst;
+  const clamp = GS.clampDelta(_gsg.info, O._geomOps(), O.cursor, _gsg.axis, _gsg.index, _dragGrid.delta, _gsg.mat, _gsg.depth);
+  _gsgPrompt = { gridId: _dragGrid.id, delta: _dragGrid.delta, pv, bay, clamp };
+  const msg = bay.pieces[0].message;
+  gsgShowTip(msg, 'RED', ev.clientX, ev.clientY, true);
+  window.Bonsai.gridspan.prompt = { open: true, gridId: _dragGrid.id, delta: _dragGrid.delta, clamp, bay: { a: bay.a, b: bay.b, n: bay.n, span: bay.span }, text: msg };
+  console.log('§GRID-SPAN prompt RED span=' + bay.span.toFixed(3) + ' limit=' + bay.pieces[0].maxSpan + ' ' + _gsg.mat + ' Δ=' + _dragGrid.delta.toFixed(3) + ' clampΔ=' + clamp.toFixed(3) + ' — Add one more / Cancel');
+  document.getElementById('gsg-add').onclick = () => gsgAddOne();
+  document.getElementById('gsg-cancel').onclick = () => gsgCancel();
+  setStat('span over the limit — Add one more? / Cancel (stops the drag at the limit)');
+  return true;
+}
+function gsgCancel() {
+  if (!_gsgPrompt) return;
+  const p = _gsgPrompt; _gsgPrompt = null; if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.prompt = null;
+  console.log('§GRID-SPAN cancel — drag stopped at the limit: Δ ' + p.delta.toFixed(3) + ' → ' + p.clamp.toFixed(3));
+  if (_dragGrid) { _dragGrid.delta = p.clamp; }
+  commitGridMove();
+}
+// The columns of "Add one more": one per girder of the bay, COPIES of the girder's FROM column (its own real mesh hash).
+function gsgBuildAdd(p) {
+  const GS = window.GridSpanGate, G = window.Bonsai.grid, O = window.Bonsai.oplog, info = _gsg.info, bay = p.bay, axis = _gsg.axis, th = info.theta || 0;
+  const lines = p.pv.lines[axis], posArr = (axis === 'x' ? G.xs : G.ys).slice(); posArr[_gsg.index] += p.delta;
+  const uMid = (lines[bay.a] + lines[bay.b]) / 2, posMid = (posArr[bay.a] + posArr[bay.b]) / 2;
+  let index = bay.b; for (let k = bay.a + 1; k <= bay.b; k++) { if (lines[k] > uMid) { index = k; break; } }
+  const id = 'ss-' + axis + bay.a + '-' + bay.b + '-' + O.length;
+  const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)), geo = window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+  const refuse = (why) => { try { db.close(); } catch (e) { } try { if (geo) geo.close(); } catch (e) { } return { refused: why }; };
+  if (!geo) return refuse('no geometry database is loaded for this building — a real column mesh cannot be resolved');
+  const gi = window.RealGeometry.buildGeometryIndex(db, geo), ops = [], regs = {}, copies = [];
+  for (const pc of bay.pieces) {
+    const src = pc.srcFrom; const hash = src ? gi.byGuid[src] : null;
+    if (!hash) return refuse('girder ' + pc.guid + ': its column has no geometry hash — no real column mesh to copy');
+    const got = regs[hash] || window.RealGeometry.resolveHashes(geo, [hash])[hash];
+    if (!got) return refuse('column hash ' + hash + ' does not resolve to a real mesh in the geometry database');
+    regs[hash] = got;
+    const wk = info.base0.walked.find(w => w.srcGuid === src), bb = info.colBbox[src];
+    if (!wk || !bb) return refuse('source column ' + src + ' is not in the walked frame');
+    const lat = pc.spanAxis === 'x' ? [uMid, pc.onPos] : [pc.onPos, uMid], wc = window.swToWorld(lat[0], lat[1], th);
+    let color = 0xbfbfbf; try { const r = db.exec("SELECT material_rgba FROM elements_meta WHERE guid='" + String(src).replace(/'/g, "''") + "'"); const c = r.length && String(r[0].values[0][0] || '').split(',').map(Number); if (c && c.length >= 3) color = (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255); } catch (e) { }
+    ops.push({ op_type: 'GEOM_INSERT', params: {
+      bbox: [-bb.bx / 2, bb.bx / 2, -bb.by / 2, bb.by / 2, -bb.bz / 2, bb.bz / 2], realGeomHash: hash,
+      placement: { x: +wc[0].toFixed(4), y: +wc[1].toFixed(4), z: +(wk.z - bb.bz / 2).toFixed(4), rot: +(th * 180 / Math.PI).toFixed(4) },
+      lod: '200', color, ifc_class: 'IfcColumn', provenance: 'derived:user-edit',
+      spanSplit: { id, axis, index, pos: posMid, u: uMid, girder: pc.guid, srcGuid: src },
+      _gsg: { srcGuid: src, hash, girder: pc.guid } } });
+    copies.push({ girder: pc.guid, srcGuid: src, hash });
+  }
+  try { db.close(); } catch (e) { } try { geo.close(); } catch (e) { }
+  window.Bonsai.library.registerRealGeometry(Object.keys(regs).map(h => ({ hash: h, v: regs[h].positions, f: regs[h].faces, bbox: regs[h].bbox, anchorOffset: [0, 0, 0] })));
+  return { ops, id, index, uMid, posMid, copies };
+}
+async function gsgAddOne() {
+  if (!_gsgPrompt) return;
+  const p = _gsgPrompt, built = gsgBuildAdd(p);
+  if (built.refused) {
+    console.log('§GRID-SPAN add refused: ' + built.refused); window.Bonsai.gridspan.refused = 'add:' + built.refused;
+    gsgShowTip('Cannot add a column here: ' + built.refused, 'RED', parseInt(_gsgTip.style.left, 10) || 0, parseInt(_gsgTip.style.top, 10) || 0, true); return;
+  }
+  console.log('§GRID-SPAN add one more: ' + built.ops.length + ' column(s) at ' + _gsg.axis + '-line index ' + built.index + ' (bay midpoint u=' + built.uMid.toFixed(3) + ') copies=' + built.copies.map(c => c.hash).filter((h, i, a) => a.indexOf(h) === i).join(',') + ' — ONE gesture with the drag');
+  window.Bonsai.gridspan.lastAdd = { id: built.id, n: built.ops.length, index: built.index, uMid: built.uMid, copies: built.copies, gridId: p.gridId, delta: p.delta };
+  _gsgPrompt = null; if (_gsgTip) _gsgTip.style.display = 'none'; window.Bonsai.gridspan.prompt = null;
+  _dragGrid.delta = p.delta;
+  await commitGridMove({ ops: built.ops });
+}
 function enterGridMove() {
+  // §GRID-SPAN-GATE: measured on a real Open (HospitalGarage) the authoring grid was still the default A–D×1–3 while the walker
+  // had measured a 17×29 column lattice. When the walker is column-framed and the grid is the UNTOUCHED default, lay the building's
+  // own lattice lines as the grid (a user/witness-authored grid is never replaced).
+  if (window.Bonsai.grid._isDefault && window.swbGridSpec) {
+    const spec = window.swbGridSpec();
+    if (spec) { window.Bonsai.grid.define(spec); console.log('§GRID-SPAN grid=column-derived xs=' + spec.xs.length + ' ys=' + spec.ys.length + ' (the walker\'s measured lattice; was the default A–D×1–3)'); }
+  }
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
+  GROUND.constant = -(window.Bonsai.grid.z || 0);   // §GRID-SPAN-GATE: the drag plane IS the grid's plane (0 for every authored grid — unchanged)
   gridMoving = true; _dragGrid = null; bGridMove.innerHTML = GM_CANCEL; controls.enabled = false; applyModeCursor();   // grab gridlines, not the camera
   // §GREEN-EXCLUDE: fresh empty opt-out set every session — seeded empty, scoped to THIS drag session only (not
   // persisted, not a per-user default — GRID_PREDRAG_GREENORANGE_PREVIEW.md explicitly defers that).
@@ -1937,6 +2179,7 @@ function enterGridMove() {
   setStat('move grid: hover a gridline, drag it — affected walls preview (blue=move, orange=stretch, ctrl+click wall=opt-out green, ctrl+click opening=anchor↔ride)');
 }
 function exitGridMove() {
+  GROUND.constant = 0;
   gridMoving = false; _dragGrid = null; bGridMove.innerHTML = GM_MOVE; controls.enabled = true; applyModeCursor();
   if (gmPreview) { scene.remove(gmPreview); gmPreview = null; } gmClearTints();
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.resetOverrides) window.Bonsai.gridmove.resetOverrides();   // §GREEN-EXCLUDE: end of session
@@ -1945,6 +2188,7 @@ function exitGridMove() {
   // rebuilds fresh off whatever the scene looks like now.
   if (window.Bonsai.gridmove && window.Bonsai.gridmove.endDragSession) window.Bonsai.gridmove.endDragSession();
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7
+  gsgClear(); _gsg = null;                                      // §GRID-SPAN-GATE: bay strips + tooltip + prompt
 }
 bGridMove.onclick = () => gridMoving ? exitGridMove() : enterGridMove();
 canvas.addEventListener('pointerdown', (e) => {
@@ -1991,10 +2235,12 @@ canvas.addEventListener('pointerdown', (e) => {
     // §SCALE_CHECK_FIX (Finding 1): gridline-grab = the drag session boundary — cache the attach-map engine +
     // mesh/box maps ONCE here so every pointermove frame below reuses them instead of rebuilding from scratch.
     if (window.Bonsai.gridmove && window.Bonsai.gridmove.beginDragSession) window.Bonsai.gridmove.beginDragSession(gl.axis, orthoAt);
+    try { gsgBegin(gl); } catch (err) { console.error('§GRID-SPAN begin failed ' + (err && err.message)); }   // §GRID-SPAN-GATE
   }
 });
 canvas.addEventListener('pointermove', (e) => {
   if (!gridMoving) return;
+  if (_gsgPrompt) return;   // §GRID-SPAN-GATE: the Add-one-more / Cancel prompt owns the drag until answered
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
@@ -2018,6 +2264,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (preview.dimLabel) lbl += ' · ' + preview.dimLabel;   // §DAGEVU: the engine's measured readout (wall w→w', held/ride/REFUSED) — the SAME string the status line carries
   } catch (err) { }
   if (typeof dimLabelShow === 'function') dimLabelShow(lbl, hit);   // §V7
+  try { gsgUpdate(_dragGrid, hit, e); } catch (err) { console.error('§GRID-SPAN update failed ' + (err && err.stack || err)); }   // §GRID-SPAN-GATE
 });
 // §DAGEVU: ONE status-line composer for the pointermove frame AND the mid-drag ctrl+click recompute (both print
 // the engine's dimLabel verbatim — never a second math path, per §V7's own rule).
@@ -2026,14 +2273,14 @@ function gmStatText(dg, r2, preview) {
     (r2.x ? ', ' + r2.x + ' excluded(green)' : '') + (r2.h ? ', ' + r2.h + ' held' : '') +
     (r2.r ? ', ' + r2.r + ' REFUSED(red)' : '') + (preview.dimLabel ? ' · ' + preview.dimLabel : '');
 }
-async function commitGridMove() {
+async function commitGridMove(extra) {
   if (typeof dimLabelHide === 'function') dimLabelHide();       // §V7 (also covers the FAIL path below)
   if (!_dragGrid || Math.abs(_dragGrid.delta || 0) < 0.05) { exitGridMove(); return; }
   const { id, delta } = _dragGrid;
   setStat('recomposing…');
   const _gateBefore = _gateBoxes();                            // §STRETCH-1: snapshot AABBs BEFORE the stretch (delta-honest gate)
   try {
-    const res = await window.Bonsai.gridmove.commit(id, delta);
+    const res = await window.Bonsai.gridmove.commit(id, delta, extra);
     // §STRETCH-1 (W-SDG-GATE): gate the STRETCH like a move — RED (a stretched wall now clashing, or a door fallen
     // out of its host) / ORANGE (clearance). The changed set = the engine's recompose commands' featureIds
     // PLUS §STRETCH-RIDE riders (RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE): a rider's
@@ -2048,8 +2295,9 @@ async function commitGridMove() {
     audioCue('commit'); exitGridMove(); syncHistory();
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
+window.__dg = () => _dragGrid;   // test hook (§GRID-SPAN-GATE witness reads the live drag delta)
 window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };   // test hook (§STRETCH-GATE smoke)
-canvas.addEventListener('pointerup', () => { if (gridMoving && _dragGrid) commitGridMove(); });
+canvas.addEventListener('pointerup', (e) => { if (gridMoving && _dragGrid) { if (!_gsgPrompt && gsgIntercept(e)) return; if (_gsgPrompt) return; commitGridMove(); } });   // §GRID-SPAN-GATE: a release on RED opens the prompt instead of committing
 
 // ── ROOM MOVE (whole-room drag) ───────────────────────────────────────────────────────────────────
 // Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.5 — Witness: W-ROOMMOVE-UI.
@@ -2148,7 +2396,7 @@ function idTint(fid, valid) {
   gmClearTints();
   const g = window.Bonsai.group && window.Bonsai.group();
   const byFid = window.Bonsai.gridmove && window.Bonsai.gridmove.meshByFid ? window.Bonsai.gridmove.meshByFid() : null;
-  const m = byFid ? byFid[fid] : (g && g.children.find(o => o.isMesh && o.userData.featureId === fid));
+  const m = byFid ? byFid[fid] : (g && window.Bonsai.meshFor(fid));
   if (m) _emis(m, valid ? 0x1ea83c : 0x8c1e1e);                    // green=valid / red=blocked (spec §3.3)
   if (window.A && A.requestRender) A.requestRender();
 }
@@ -2717,17 +2965,86 @@ function _gateRel() {
 // evaluate conformity on the just-committed edit; toast + emissive-highlight the offending pairs; return a status tag.
 window.__gateBoxes = _gateBoxes;   // test hook (mirrors window.__commitMove) — read live world AABBs, W-SAVE-COMPLETEIT E2E fixture engineering
 window.__gateRel = _gateRel;       // test hook — read the live abuts/hostOf relation (same)
+// Heal ops for healable ORANGE findings (SdgSave.healOp) PLUS a cascade ride for any REAL hosted fillings of the healed
+// target — mirrors commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without the
+// ride, healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real door left
+// behind). Shared by runSave's auto-heal and the edit-time Accept (§ORANGE-ACCEPT).
+function _healOps(healable) {
+  const healTargets = new Set(healable.map(f => f.a)), movedFids = new Set(healTargets), riderSeen = new Set(), ops = [];
+  healable.forEach(function (f) {
+    const op = window.SdgSave.healOp(f);
+    ops.push(op);
+    if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
+      const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
+      riders.forEach(function (rfid) {
+        if (riderSeen.has(rfid)) return; riderSeen.add(rfid); movedFids.add(rfid);
+        ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
+      });
+    }
+  });
+  return { ops, riderSeen, movedFids };
+}
+// §ORANGE-ACCEPT (SPEC_ORANGE_ACCEPT.md): apply the last edit's healable ORANGE suggestions as ONE signed gesture (one
+// Ctrl+Z), re-verify each pair, re-check the scene ONCE. One hop: anything new is reported, never applied. RED never.
+async function acceptOrange() {
+  const healable = (window.__gateOrange || []).slice();
+  window.__gateOrange = [];
+  if (!healable.length || !window.SdgSave) return { accepted: 0 };
+  const before = _gateBoxes();
+  const { ops, riderSeen, movedFids } = _healOps(healable);
+  await window.Bonsai.oplog.commitGesture(ops);
+  const after = _gateBoxes();
+  const closed = healable.map(f => window.SdgSave.reverifyGap(f, after, window.SdgGate.overlaps).closed);
+  const res = window.SdgGate.evaluate(before, after, Array.from(movedFids), _gateRel(), {});
+  console.log('§ORANGE-ACCEPT fixed=' + healable.length + ' riders=' + riderSeen.size + ' targets=' + healable.map(f => f.a).join(',') +
+    ' closed=' + JSON.stringify(closed) + ' red=' + res.red.length + ' orange=' + res.orange.length);
+  syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  if (res.red.length) toast('⛔ accepted ' + healable.length + ', but it caused ' + res.red.length + ' RED: ' + res.red.map(r => r.kind).join(', ') + ' — Ctrl+Z to take it back', 'error');
+  else toast('✓ accepted ' + healable.length + ' suggestion' + (healable.length > 1 ? 's' : '') + (res.orange.length ? ' (' + res.orange.length + ' new, not applied)' : ''), 'ok');
+  audioCue('commit');
+  return { accepted: healable.length, closed, red: res.red.length, orange: res.orange.length };
+}
+window.__acceptOrange = acceptOrange;   // test hook (mirrors window.__commitMove)
+async function revertRed(tok) {
+  const O = window.Bonsai.oplog, all = O._allGeom(), now = all.length + ':' + all.filter(o => !o.undone).length;
+  if (now !== tok) { console.log('§RED-REVERT reverted=false reason=changed-since tok=' + tok + ' now=' + now); toast('That edit is no longer the latest — use Ctrl+Z / the history bar', 'info'); return false; }
+  await doUndo();
+  console.log('§RED-REVERT reverted=true tok=' + tok + ' active=' + O._allGeom().filter(o => !o.undone).length);
+  return true;
+}
 function _runGate(before, moved) {
+  window.__gateOrange = [];                                   // §ORANGE-ACCEPT: suggestions belong to the edit just made only
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
   const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
   if (!res.red.length && !res.orange.length) return '';
+  if (window.SdgSave) window.__gateOrange = window.SdgSave.planHeal(res.orange).healable;
   console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
   const hot = new Set(); res.red.forEach(r => { hot.add(r.a); hot.add(r.b); }); res.orange.forEach(o => { hot.add(o.a); hot.add(o.b); });
   const hex = res.red.length ? 0x661010 : 0x5a3a10;          // RED vs ORANGE emissive flash on the offending meshes
   const g = window.Bonsai.group(); if (g) g.children.forEach(m => { if (m.isMesh && m.userData && hot.has(m.userData.featureId)) _emis(m, hex); });
-  if (res.red.length) toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error');
-  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info');
+  if (res.red.length) {
+    // §RED-REVERT (SPEC_RED_REVERT.md): one click = one Ctrl+Z of THIS edit — only while it is still the latest state.
+    const O = window.Bonsai.oplog, all = O._allGeom(), tok = all.length + ':' + all.filter(o => !o.undone).length;   // rows ever : active
+    toast('⛔ ' + res.red.length + ' conformity violation' + (res.red.length > 1 ? 's' : '') + ': ' + res.red.map(r => r.kind).join(', '), 'error',
+      { action: { label: 'Revert', fn: () => { revertRed(tok); } }, ms: 10000 });
+  }
+  else toast('⚠ ' + res.orange.length + ' suggestion' + (res.orange.length > 1 ? 's' : '') + ': ' + res.orange.map(o => o.kind).join(', ') + ' — accept or ignore', 'info',
+    window.__gateOrange.length ? { action: { label: 'Accept', fn: () => { acceptOrange(); } }, ms: 10000 } : {});
   return res.red.length ? ('⛔ ' + res.red.length + ' RED') : ('⚠ ' + res.orange.length + ' ORANGE');
+}
+// §ONE-GESTURE-ONE-UNDO (bim-compiler prompts/MODELLER_MASTER.md §SESSION 2026-09-30b — Witness: W-E2E-GESTURE-UNDO).
+// ONE user gesture (one Move-gizmo release / arrow nudge / rotate / scale) = ONE undo step = ONE redo step. The group
+// boundary lives in ONE place — bonsai_oplog.js commitGesture(): one signed 'gesture-grp-N' gid that O.undo()/O.redo() treat
+// as one LIFO step (§P8) and ModellerHistory records as ONE node. So a gesture that lands >1 row (every selected target,
+// plus every induced rider: hosted-by door/window rides) commits through it; a 1-row gesture keeps commit() unchanged.
+// Before: commitMove committed wall + riders as separate commit() calls — Duplex wall #110 196→199, one Ctrl+Z → 198, wall
+// still 0.417 m off, next Save refused (door-out). The item-drag slide (bonsai_itemdrag.js commit) already takes this path.
+async function _commitUserGesture(ops) {
+  const O = window.Bonsai.oplog;
+  if (ops.length === 1) return O.commit({ op_type: ops[0].op_type, parameters: ops[0].params }, {});
+  const r = await O.commitGesture(ops);
+  console.log('§ONE-GESTURE gid=' + r.gid + ' rows=' + (r.ids || []).length + ' ops=' + ops.map(o => o.op_type + '(' + (o.params.induced || 'p' + o.params.parent) + ')').join(',') + ' verify=' + r.verify + ' (one Ctrl+Z / one Ctrl+Y)');
+  return r;
 }
 async function commitMove(dx, dy, dz) {
   const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
@@ -2736,21 +3053,19 @@ async function commitMove(dx, dy, dz) {
   setStat(ids.length > 1 ? ('moving ' + ids.length + ' objects…') : 'moving…');
   try {
     let lastVerify = true;
-    for (const tid of ids) {                                   // group move = N signed GEOM_MOVE by the SAME delta
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz } }, {});
-      lastVerify = res.verify;
-      console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
-    }
     // §SDG-CASCADE (W-SDG-CASCADE-MODELLER): a moved HOST drags its hosted FILLINGS (door/window rides the wall),
     // resolved through the §ARC-1 featureId↔guid bridge over REAL rel_fills_host edges. Same delta = rigid ride
     // (rosetta-invertible). Directional + one-hop; deduped against the moved set so a co-selected door never double-moves.
     const riders = (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid)
       ? window.SdgCascade.ridersFor(ids, window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, new Set(ids))
       : [];
-    for (const rfid of riders) {
-      const rr = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: rfid, dx, dy, dz, induced: 'hosted-by' } }, {});
-      console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + rr.verify);
-    }
+    // group move = N signed GEOM_MOVE by the SAME delta + the riders — ONE gesture (§ONE-GESTURE-ONE-UNDO)
+    const gOps = ids.map(tid => ({ op_type: 'GEOM_MOVE', params: { parent: tid, dx, dy, dz } }))
+      .concat(riders.map(rfid => ({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx, dy, dz, induced: 'hosted-by' } })));
+    const res = await _commitUserGesture(gOps);
+    lastVerify = res.verify;
+    for (const tid of ids) console.log('§MOVE commit dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' parent=' + tid + ' verify=' + res.verify);
+    for (const rfid of riders) console.log('§SDG-CASCADE hosted-by rider=' + rfid + ' rides host-move dx=' + dx.toFixed(3) + ' dy=' + dy.toFixed(3) + ' dz=' + dz.toFixed(3) + ' verify=' + res.verify);
     if (riders.length) console.log('§SDG-CASCADE hosted-by hosts=' + ids.length + ' riders=' + riders.length);
     // §GATE-1 (W-SDG-GATE): the planner's gate — after the ride, CHECK what the edit BROKE. RED = hard violation
     // (wall clash / door out of its host), ORANGE = soft accept/ignore (tight clearance). REPORTS (does not revert);
@@ -2830,21 +3145,8 @@ async function runSave() {
     // commitMove()'s own SdgCascade.ridersFor block (a moved HOST drags its door/window riders). Without this,
     // healing a wall by translating it would silently manufacture a BRAND NEW door-out RED (the wall's real
     // door left behind), which would then re-block the very Save the heal was trying to unblock.
-    const healTargets = new Set(plan.healable.map(f => f.a));
-    healTargets.forEach(fid => healMovedFids.add(fid));
-    const riderSeen = new Set();
-    const ops = [];
-    plan.healable.forEach(function (f) {
-      const op = window.SdgSave.healOp(f);
-      ops.push(op);
-      if (window.SdgCascade && window.swXEdges && window.__arcGuidByFid && window.__arcFidByGuid) {
-        const riders = window.SdgCascade.ridersFor([f.a], window.__arcGuidByFid, window.__arcFidByGuid, window.swXEdges.fills, healTargets);
-        riders.forEach(function (rfid) {
-          if (riderSeen.has(rfid)) return; riderSeen.add(rfid); healMovedFids.add(rfid);
-          ops.push({ op_type: 'GEOM_MOVE', params: { parent: rfid, dx: op.params.dx, dy: op.params.dy, dz: op.params.dz, induced: 'sdg-autoheal-ride' } });
-        });
-      }
-    });
+    const { ops, riderSeen, movedFids } = _healOps(plan.healable);
+    movedFids.forEach(fid => healMovedFids.add(fid));
     await window.Bonsai.oplog.commitGesture(ops);               // ONE undo step for the whole auto-heal pass
     healedLog = plan.healable.map(function (f) { return { kind: f.kind, target: f.a, against: f.b, delta: f.proposedDelta }; });
     console.log('§SAVE_AUTOHEAL fixed=' + plan.healable.length + ' riders=' + riderSeen.size + ' targets=' + plan.healable.map(f => f.a).join(',') +
@@ -2934,17 +3236,18 @@ async function commitRotate(drot) {
     selMeshes().forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; cen[m.userData.featureId] = { x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2 }; });
     const rad = drot * Math.PI / 180, cs = Math.cos(rad), sn = Math.sin(rad);
     let v = true;
+    const gOps = [];                                          // §ONE-GESTURE-ONE-UNDO: every spin + orbit move = ONE gesture
     for (const tid of ids) {
-      const r1 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_ROTATE', parameters: { parent: tid, drot } }, {});
-      v = r1.verify;
+      gOps.push({ op_type: 'GEOM_ROTATE', params: { parent: tid, drot } });
       const C = cen[tid];
       if (G && C) {                                           // orbit this child's centre about G by the same yaw
         const ox = C.x - G.x, oy = C.y - G.y;
         const dx = (G.x + (cs * ox - sn * oy)) - C.x, dy = (G.y + (sn * ox + cs * oy)) - C.y;
-        if (Math.hypot(dx, dy) > 1e-4) { const r2 = await window.Bonsai.oplog.commit({ op_type: 'GEOM_MOVE', parameters: { parent: tid, dx, dy, dz: 0 } }, {}); v = r2.verify; }
+        if (Math.hypot(dx, dy) > 1e-4) gOps.push({ op_type: 'GEOM_MOVE', params: { parent: tid, dx, dy, dz: 0 } });
       }
-      console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     }
+    v = (await _commitUserGesture(gOps)).verify;
+    for (const tid of ids) console.log('§ROTATE commit drot=' + drot.toFixed(2) + ' parent=' + tid + ' verify=' + v);
     setStat('rotated ' + (ids.length > 1 ? ids.length + ' objects about centroid' : '#' + ids[0]) + ' ' + (drot >= 0 ? '+' : '') + drot.toFixed(1) + '°  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
@@ -2965,11 +3268,8 @@ async function commitScale(ax, f) {
   try {
     const P = { fx: 1, fy: 1, fz: 1 }; P['f' + ax] = f;
     let v = true;
-    for (const tid of ids) {
-      const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_SCALE', parameters: { parent: tid, fx: P.fx, fy: P.fy, fz: P.fz } }, {});
-      v = res.verify;
-      console.log('§SCALE commit ' + ax + '=' + f.toFixed(3) + ' parent=' + tid + ' verify=' + v);
-    }
+    v = (await _commitUserGesture(ids.map(tid => ({ op_type: 'GEOM_SCALE', params: { parent: tid, fx: P.fx, fy: P.fy, fz: P.fz } })))).verify;   // §ONE-GESTURE-ONE-UNDO
+    for (const tid of ids) console.log('§SCALE commit ' + ax + '=' + f.toFixed(3) + ' parent=' + tid + ' verify=' + v);
     setStat('scaled #' + ids[0] + ' ' + ax.toUpperCase() + ' ×' + f.toFixed(2) + '  verify=' + v);
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(ids); clearMoveGhost();
@@ -3064,7 +3364,13 @@ window.Bonsai.exportDb = async function (opts) {
   if (!O || !O.db || O.length === 0) { setStat('author something first'); return null; }
   const seal = await window.KernelOps.sealChain(O.db);   // the seal _persistToIdb does — never skipped
   const bytes = O.db.export();                           // same native writer as kernel_ops _persistToIdb
-  console.log('§EXPORT-NATIVE ops=' + O.length + ' sealed=' + seal.sealed + ' tip=' + seal.tip.slice(0, 12) + ' bytes=' + bytes.length);
+  // §ANCHOR (MODELLER_MASTER row 34 — Witness: W-E2E-ANCHOR-SAVE-ROUNDTRIP): the snapshot carries the
+  // void-anchor ops VERBATIM (they are links in the signed chain, and the cascade needs them after re-open);
+  // they stay anchors because the re-fold keys on params.anchorOnly. Count them from the SAME db being
+  // written so the save path is §ANCHOR-tagged, never silently folded into ops=.
+  let anchors = 0;
+  try { const r = O.db.exec("SELECT parameters FROM kernel_ops WHERE op_type='GEOM_INSERT' AND undone=0"); if (r.length) r[0].values.forEach(v => { try { if (JSON.parse(v[0]).anchorOnly) anchors++; } catch (e) { } }); } catch (e) { anchors = -1; }
+  console.log('§EXPORT-NATIVE ops=' + O.length + ' anchors=' + anchors + ' sealed=' + seal.sealed + ' tip=' + seal.tip.slice(0, 12) + ' bytes=' + bytes.length);
   if (!opts || opts.download !== false) {
     try {
       const blob = new Blob([bytes], { type: 'application/octet-stream' });   // same download idiom as bonsai_ifc.js
@@ -3260,8 +3566,9 @@ async function autoRouteMEP(asm, leaves) {
     if (xs.refused) { refusedMEP.push({ disc: s.disc, reason: xs.reason }); return; }
     ops.push({
       op_type: 'GEOM_SWEEP',
-      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)] },
-      _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product }
+      // §RW-TAG-SIGNED (§NET-AUDIT 2026-09-27): oplog.commit signs ONLY {op_type, parameters} — a top-level _rw was dropped
+      // before it reached the log, so nothing downstream could ever read it. Carry it inside parameters, like DiscWalker's _dw.
+      parameters: { profile: { w: xs.w, h: xs.h }, path: [toWorld(s.from), toWorld(s.to)], _rw: { disc: s.disc, storey: s.storey, crossSection: xs.product } }
     });
   });
   const _refByDisc = {}; refusedMEP.forEach(r => { _refByDisc[r.disc] = (_refByDisc[r.disc] || 0) + 1; });
@@ -3304,8 +3611,10 @@ async function autoRouteMEP(asm, leaves) {
     const c = L.get(hash); const ch = c ? c.h : 0.4;
     const w = toWorld([f.x, f.y, f.z]);
     const op = { op_type:'GEOM_INSERT',
-      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba) },
-      _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } };
+      // §RW-TAG-SIGNED: _rw inside parameters so it is SIGNED (a top-level _rw never reached the log) — x-ray's
+      // _fixtureColorMap reads parameters._rw.fixture; before this every route-walk fixture read as structure (glow=0/21).
+      parameters: { hash: hash, placement: { x:+w[0].toFixed(4), y:+w[1].toFixed(4), z:+(w[2]-ch/2).toFixed(4), rot: insRot||0 }, lod:'200', color: rgbaHex(f.rgba),
+        _rw: { fixture: true, disc: f.disc, product: f.product, ifc: f.ifcClass, room: f.room } } };
     try { const res = await window.Bonsai.oplog.commit(op); if (res) placedFx++; }
     catch (e) { console.warn('§MODELLER fixture commit fail ' + (e && e.message || e)); }
     setStat('placing fixtures… ' + placedFx + '/' + fixtures.length);
@@ -3322,6 +3631,9 @@ async function autoRouteMEP(asm, leaves) {
   // Step E: the placed fixtures POP in room-by-room over ~1.5s (whoosh → ticks → chord) — the "all systems go" reveal.
   // (__suppressWalk lets the colour/x-ray self-tests inspect the static placed scene without the animation racing them.)
   if (placedFx > 0 && typeof revealWalk === 'function' && !window.__suppressWalk) revealWalk();
+  // §NET-AUDIT (2026-09-27): the routewalk self-tests hardcoded 23 fixtures, but §WALKERDOCTRINE-11 refuses products with no
+  // real catalog box (SampleHouse: AIRCON_POINT ×2 → 21 placed). Expose the plan so a self-test checks placed == planned − refused.
+  window.__rwLastRoute = { planned: fixtures.length, placed: placedFx, refused: refusedFx.length };
   return { found: segs.length, routed: routed, emitted: ops.length, fixtures: placedFx, fxDisc: fxDisc, bmin: bmin.map(v => +v.toFixed(3)) };
 }
 async function placeAssembly(x, y) {
@@ -3702,8 +4014,31 @@ console.log('§MODELLER outliner ready — ARC (bom-graph) leads + STR Walker ta
 // say MEP routed via RouteWalker; it doesn't, see :2130 below). A disc with no rule/substrate REFUSES honestly
 // (no fabricated run, non-invent). ARC is the base substrate the others fill, not a walked layer.
 // RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-4.
+// §WALK-AFTER-SEED (SPEC_WALK_AFTER_SEED.md): resolves once the open building's ARC seed has committed (str_walker_outliner.js
+// sets it pending on every Open). A Walk clicked earlier waits — its rows must never be signed before the seed's, and the
+// seed's re-fold would drop the walk layer. Capped at 300 s so a stuck seed can never hang a walk forever (logged).
+async function _awaitArcSeed(what) {
+  var p = window.__arcSeedReady; if (!p) return 0;
+  var t0 = Date.now(), pending = true;
+  p.then(function () { pending = false; });
+  await Promise.resolve();
+  if (!pending) return 0;
+  setStat('waiting for ' + (window.__dwName || 'the building') + ' to finish loading before ' + what + '…');
+  var why = await Promise.race([p, new Promise(function (r) { setTimeout(function () { r('timeout-300s'); }, 300000); })]);
+  var ms = Date.now() - t0;
+  console.log('§WALK-AFTER-SEED waited=' + ms + 'ms for=' + what + ' settled=' + why);
+  return ms;
+}
 window.discWalk = function (disc, ctx) {
+  return _awaitArcSeed('Walk ' + String(disc || '').toUpperCase()).then(function () { return _discWalkNow(disc, ctx); });
+};
+function _discWalkNow(disc, ctx) {
   disc = String(disc || '').toUpperCase();
+  // §DISC-CASE (2026-09-26): the walker's roster keys are not all upper-case ('roof'), so upper-casing the Outliner row's
+  // disc sent 'ROOF' → "no measured rule for ROOF": the roof row never walked for a user. Map onto the roster's own key.
+  var _roster = (window.DiscWalker && window.DiscWalker._ready && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
+  var _canon = _roster.filter(function (d) { return String(d).toUpperCase() === disc; })[0];
+  if (_canon && _canon !== disc) { console.log('§DISC-CASE ' + disc + ' → roster key ' + _canon); disc = _canon; }
   var name = (ctx && ctx.building) || '';
   if (disc === 'STR') {
     var d = window.swbTabData && window.swbTabData();
@@ -3729,6 +4064,32 @@ window.discWalk = function (disc, ctx) {
 // logic. Returns { refused, reason, placed } (never throws — same try/catch-and-log the original IIFE had).
 // opts.flash=true (discWalkAll only) plays the orange-flash-then-settle reveal on the just-gated placements
 // BEFORE committing (see _flashSettleDisc) — single-disc discWalk never sets it, so its visuals are unchanged.
+// §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+// be LOD400 or fail hard"). A walked placement is kept ONLY if its geometry_hash resolves to a real mesh in the building's geo
+// buffer; everything else is REFUSED — never registered, rendered or committed. Measured before this gate: SampleCastle rendered
+// 366 LOD200 boxes (legacy walk placements with no device/hash — binding one would be inventing), and Duplex drew boxes when a walk
+// beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
+async function _dwLod400Only(disc, w) {
+  var t0 = Date.now();
+  while (!window.__dwGeoBuf && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 200); });
+  var hashes = {}; w.placements.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (window.__dwGeoBuf && window.RealGeometry && Object.keys(hashes).length) {
+    try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, Object.keys(hashes)); g.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE ' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var kept = [], refused = {}, nRef = 0;
+  w.placements.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { kept.push(p); return; }
+    var k = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no hash)');
+    refused[k] = (refused[k] || 0) + 1; nRef++;
+  });
+  if (nRef) console.log('§DW-LOD400-REFUSE disc=' + disc + ' refused=' + nRef + ' kept=' + kept.length + ' geoBuf=' + !!window.__dwGeoBuf +
+    ' waited=' + (Date.now() - t0) + 'ms [' + Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box, no LOD200 — fail hard)');
+  w.placements = kept; w.placed = kept.length;
+  if (!kept.length) { w.refused = true; w.reason = 'no LOD400 mesh for any of ' + nRef + ' placement(s) — refused, never a box (§WALK-LOD400-ONLY)'; }
+  return w;
+}
 async function _discWalkOne(disc, ctx, opts) {
   opts = opts || {};
   var name = (ctx && ctx.building) || '';
@@ -3745,11 +4106,14 @@ async function _discWalkOne(disc, ctx, opts) {
     // §CAMPAIGN M1: lazy-load mep_rw.db's ad_mep_pattern table (SAME _rwReadyOnce the BOM-drop flow already
     // uses) so DiscWalker.dwWalk's routeChains-0 → routePattern bridge (disc_walker.js) can pair ARC-derived
     // anchors through routewalker.js's proven pattern engine instead of refusing for "not loaded yet". Gated
-    // on disc==='PLB' — the ONLY discipline routePattern's _RW_PATTERN_DISC map covers today (ad_mep_pattern
-    // has CW/SP rows only) — so ELEC/ACMV/FP/STR walks never pay this fetch+parse cost for a bridge they can't
-    // use (W-E2E-WALK's own timing gate caught the unconditional version adding latency to every discipline).
+    // on the disciplines routePattern's _RW_PATTERN_DISC map covers (DiscWalker.patternDiscs(); was a literal
+    // 'PLB' while ad_mep_pattern had CW/SP rows only — §MEP-ROUTE-DISC 2026-09-26 mined FP/ACMV/ELEC patterns, and
+    // Walk-ALL walks ACMV/ELEC BEFORE PLB, so the literal left them refusing "not loaded") — so STR/roof walks
+    // never pay this fetch+parse cost for a bridge they can't use (W-E2E-WALK's own timing gate caught the
+    // unconditional version adding latency to every discipline).
     // Best-effort: a failed/slow fetch does NOT block the walk — routePattern's own guard refuses honestly.
-    if (disc === 'PLB') { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
+    var _patDiscs = (window.DiscWalker && window.DiscWalker.patternDiscs) ? window.DiscWalker.patternDiscs() : ['PLB'];
+    if (_patDiscs.indexOf(disc) >= 0) { try { await _rwReadyOnce(); } catch (e) { /* routePattern refuses cleanly if this never resolves */ } }
     if (!window.__dwBuf) { setStat(disc + ' — open a building first'); console.log('§DISC-WALK ' + disc + ' no-building (open a resident first)'); return { refused: true, reason: 'no building open', placed: 0 }; }
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));   // read-only re-open of the open building
     // §ANCHOR-BLIND (W-E2E-VOID-ANCHOR): the disc-walkers must see the PRE-ANCHOR substrate — a void-anchor
@@ -3761,7 +4125,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // 5/5). A building neither path can serve (no spaces + no rule_mesh_binding → honest 0) falls back to
     // the LEGACY walk below, byte-identical to before the flip — no resident loses placements; the flip is
     // strictly additive where the mined data supports it. §-logged both ways, never silent.
-    //   opts.geoDb  — transient open of the shared mesh.db buffer (stashed __dwGeoBuf at resident-open):
+    //   opts.geoDb  — transient open of this building's _geo.db buffer (stashed __dwGeoBuf at resident-open; §GEO-SERVED split of the old shared mesh.db):
     //                 hostBind/_trueMidpoint midpoint correction now runs on REAL meshes in the live walk
     //                 (legacy live walks passed no geoDb at all — a standing correctness gap, now closed).
     //   opts.avoid  — other discs' live placements (window.__dwWalks): W7 cross-disc clearance coordination.
@@ -3773,12 +4137,13 @@ async function _discWalkOne(disc, ctx, opts) {
       if (d2 !== disc) avoid = avoid.concat(window.__dwWalks[d2] || []);
     });
     var w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { schedule: true, geoDb: gdb || undefined, avoid: avoid });
-    if (w.refused || !w.placed) {
+    if ((w.refused || !w.placed) && !w.verdict) {   // §ROOF-PATTERN: a deliberate verdict (present/refused) is final
       console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') → legacy walk (pre-flip behaviour, unchanged)');
       w = window.DiscWalker.dwWalk(disc, bdb, name || window.__dwName || '', { geoDb: gdb || undefined });
     }
     if (gdb) { try { gdb.close(); } catch (e2) { } }
     bdb.close();
+    if (!w.refused && w.placed && !w.verdict) await _dwLod400Only(disc, w);   // §WALK-LOD400-ONLY: refuse, never box
     if (w.refused || !w.placed) {
       _clearDiscWalk(disc);
       setStat(disc + ' — no walk (' + (w.reason || 'no placements') + ')');
@@ -3825,8 +4190,8 @@ async function _discWalkOne(disc, ctx, opts) {
     }
     // §3c ASSEMBLE: when a routed network exists, instantiate the projected catalog PARTS at the real
     // routed NODES (rule_joint_piece — pose from the node, Ø from the measured catalog, orientation from
-    // the run vector) + enrich them with their connector hookup. Rendered as boxes via the _dwPrimGeo LOD
-    // seam. No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
+    // the run vector) + enrich them with their connector hookup. Rendered ONLY from a real mesh (§WALK-LOD400-ONLY —
+    // a part with no resolvable geometry_hash is refused, never boxed). No network (e.g. SC FP has no duct topology) → honest REFUSE, logged, no fabricated part.
     var asmN = 0;
     try {
       if (window.DiscWalker.assemble) {
@@ -3837,7 +4202,7 @@ async function _discWalkOne(disc, ctx, opts) {
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
           window.DiscWalker.connectorEnrich(asm.parts);
           _renderDiscAssembly(disc, asm.parts);
-          asmN = asm.parts.length;
+          asmN = (window.__dwAssembly[disc] || []).length;   // drawn parts only — refused ones are logged by the renderer
         }
         console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
           ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
@@ -3940,7 +4305,7 @@ function _renderDiscWalk(disc, placements) {
   // the 0.18 marker cube fallback (never a fabricated size). The 3-material split is preserved per class.
   // §LIVEWIRE LOD400 (RESUME_DISC_WALKER_ENVELOPE_BOUND.md §LIVEWIRE item 5 — the render seam): a
   // schedule/measured-band placement carries its MINED real mesh hash (rule_space_schedule /
-  // rule_mesh_binding, projected into the shared mesh.db by project_device_meshes_to_meshdb.py).
+  // rule_mesh_binding, projected into the mesh store by project_device_meshes_to_meshdb.py; served per building in <Building>_geo.db since §GEO-SERVED — measured 2026-09-27: Duplex ELEC lod400=102).
   // Bucket by (class, hash) — one InstancedMesh geometry per REAL mesh, recentred about its own bbox
   // centre (RealGeometry.resolveHashes), exactly the centre semantics the measured box already had.
   // No hash / hash unresolvable → the pre-existing _dwPrimGeo path (LOD300 catalog match or measured
@@ -3965,7 +4330,7 @@ function _renderDiscWalk(disc, placements) {
           return { hash: h, v: _lod400[h].positions, f: _lod400[h].faces, bbox: _lod400[h].bbox, anchorOffset: [0, 0, 0] };
         }));
       }
-    } catch (e) { console.warn('§DW-PRIM-LOD mesh.db resolve failed ' + (e && e.message)); _lod400 = {}; }
+    } catch (e) { console.warn('§DW-PRIM-LOD geo db resolve failed (' + (window.__dwName || '?') + '_geo.db) ' + (e && e.message)); _lod400 = {}; }
   }
   var dims = [];
   var lod400N = 0, lod300N = 0, lod200N = 0;                                    // honesty tally (real mined mesh / catalog match / box)
@@ -3985,7 +4350,10 @@ function _renderDiscWalk(disc, placements) {
       geo.userData.lod400 = true; geo.userData.hash = s.geometry_hash;
       isLod400 = true;
     } else {
-      geo = window._dwPrimGeo(prim, bx, by, bz, cls);                           // POC box (measured) or catalog-matched LOD300 mesh
+      // §WALK-LOD400-ONLY: no box / LOD300 stand-in, ever. The gate in _discWalkOne keeps only placements whose mesh
+      // resolved; reaching here means that mesh was not resolvable at redraw time → refuse the bucket, log it.
+      console.warn('§DW-LOD400-REFUSE render disc=' + disc + ' class=' + cls + ' ×' + list.length + ' — no real mesh at redraw, not drawn');
+      return;
     }
     var isLod300 = !!(geo.userData && geo.userData.lod300);
     if (isLod400) lod400N += list.length; else if (isLod300) lod300N += list.length; else lod200N += list.length;
@@ -4032,7 +4400,7 @@ function _renderDiscWalk(disc, placements) {
   window.__dwInstVer++;   // §I5: fresh buckets → invalidate the record→(im,i) ref map (hidden lens resets, §V1 doctrine)
   console.log('§DW-PRIM disc=' + disc + ' n=' + placements.length + ' classes=' + Object.keys(byCls).length + ' [' + dims.join(' ') + ']');
   console.log('§DW-PRIM-LOD disc=' + disc + ' lod400=' + lod400N + ' lod300=' + lod300N + ' lod200=' + lod200N +
-    ' (lod400=rule-mined REAL mesh from shared mesh.db [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
+    ' (lod400=rule-mined REAL mesh from the per-building _geo.db — the per-building split of the old shared mesh.db, §GEO-SERVED [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
   // §DW-DEDUP-RENDER (DW_FIXTURE_DOUBLE_RENDER_FINDING.md G1-G3, visual z-fighting confirmed 2026-07-17
@@ -4143,6 +4511,7 @@ function _flashSettleDisc(disc) {
 // there is ONE walk implementation, not two. Honest-refuse per discipline is preserved and logged, never
 // swallowed. X-ray brackets the whole loop (on before, off after — try/finally so an error still restores).
 window.discWalkAll = async function (ctx) {
+  await _awaitArcSeed('Walk ALL Services');
   var t0 = Date.now();
   var ds = (window.DiscWalker && window.DiscWalker._ready()) ? window.DiscWalker.disciplines() : [];
   // §WALKALL-MEP-ONLY (2026-09-24, MODELLER_MASTER §STRATEGY L7, red1's decision "MEP only in Walk ALL"): on the complex
@@ -4205,8 +4574,8 @@ window.discWalkAll = async function (ctx) {
   return window.__dwAllResult;
 };
 // §3c ASSEMBLE render — catalog PARTS instantiated at the real routed NODES (disc_walker.assemble): each part
-// is a BOX via the _dwPrimGeo LOD seam, oriented by its run vector (part.dir), tinted by disc, plus its
-// connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
+// renders ONLY from its own real mesh (geometry_hash resolved in the building geo — §WALK-LOD400-ONLY; a part without
+// one is refused and logged, never a box), tinted by disc, plus its connector hookup edge. This is the LANDED assembly layer (parts sit on real element endpoints — the assembly
 // analogue of the tube network); stored so a later commit re-fold redraws it. Refuses honestly when no network.
 window.__dwAssembly = window.__dwAssembly || {};   // disc -> assembled parts (for redraw-after-scrub)
 function _renderDiscAssembly(disc, parts) {
@@ -4217,26 +4586,40 @@ function _renderDiscAssembly(disc, parts) {
   if (!parts || !parts.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var base = DW_COLOR[disc] || 0xc0c0c0;
   var mat = new THREE.MeshStandardMaterial({ color: base, emissive: base, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.5 });
-  var up = new THREE.Vector3(0, 0, 1), dir = new THREE.Vector3(), q = new THREE.Quaternion(), pos = new THREE.Vector3();
-  var sc = new THREE.Vector3(1, 1, 1), m = new THREE.Matrix4();
-  var byCls = {};
-  parts.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
+  var m = new THREE.Matrix4();
+  // §WALK-LOD400-ONLY (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md, red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must
+  // be LOD400 or fail hard"). An assembled part used to render as a BoxGeometry(Ø, Ø, length) of the catalog's measured medians — a
+  // box standing in for a fitting. Now a part renders ONLY from a real mesh: its geometry_hash resolved in this building's geo buffer
+  // (the SAME RealGeometry seam _renderDiscWalk uses; recentred mesh, placed at the node + the walker's yaw). A part with no hash, or
+  // an unresolvable one, is REFUSED — not drawn, not given an Outliner row — and logged §DW-LOD400-REFUSE asm. Today's assemble()
+  // emits Ø/length medians only (no mesh binding), so every such part refuses; the routed node itself is already drawn by the walk.
+  var hashes = {}; parts.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
+  var real = {};
+  if (Object.keys(hashes).length && window.__dwGeoBuf && window.RealGeometry && window.SQL) {
+    try { var gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(gdb, Object.keys(hashes)); gdb.close(); }
+    catch (e) { console.warn('§DW-LOD400-REFUSE asm disc=' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
+  }
+  var byKey = {}, refused = {}, nRef = 0, drawn = [];
+  parts.forEach(function (p) {
+    if (p.geometry_hash && real[p.geometry_hash]) { var k = p.ifc_class + '|' + p.geometry_hash; (byKey[k] = byKey[k] || []).push(p); drawn.push(p); return; }
+    var rk = String(p.ifc_class || '?').replace(/^Ifc/, '') + (p.geometry_hash ? '(hash unresolved)' : '(no mesh)');
+    refused[rk] = (refused[rk] || 0) + 1; nRef++;
+  });
+  window.__dwAssembly[disc] = drawn;   // Outliner rows / redraw carry only what is actually on screen
+  if (nRef) console.log('§DW-LOD400-REFUSE asm disc=' + disc + ' refused=' + nRef + ' drawn=' + drawn.length + ' [' +
+    Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box — fail hard)');
   var verts = [];
-  Object.keys(byCls).forEach(function (cls) {
-    var list = byCls[cls];
-    var d = (list[0].diameter_mm || 100) / 1000, L = (list[0].length_mm || 200) / 1000;   // measured Ø/length → box (m)
-    // Bug-2 scope: NOT wired to the LOD300 catalog match here (deliberately, unlike _renderDiscWalk above) — this
-    // BoxGeometry(d,d,L)'s long axis is Z BY CONSTRUCTION (THREE.BoxGeometry(w,h,depth) → depth=Z=L), which the
-    // quaternion below (up=(0,0,1) → p.dir) relies on to orient the run along its real direction. The 3 catalog
-    // meshes are baked with their long axis on X (Beam/Door) — swapping one in under the SAME Z→dir quaternion
-    // would rotate it 90° off its real run direction (a WRONG, not just approximate, render) — worse than the
-    // honest box. No ifcClass passed ⇒ _dwPrimGeo's match guard short-circuits ⇒ same box as before, unchanged.
-    var geo = window._dwPrimGeo('run', d, d, L);                                            // LOD seam (POC box of catalog dims)
+  Object.keys(byKey).forEach(function (key) {
+    var list = byKey[key], d400 = real[list[0].geometry_hash];
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(d400.positions, 3));
+    geo.setIndex(new THREE.BufferAttribute(d400.faces, 1));
+    geo.computeVertexNormals();
+    geo.userData.lod400 = true; geo.userData.hash = list[0].geometry_hash;
     var im = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach(function (p, i) {
-      var v = p.dir || [0, 0, 1]; dir.set(v[0], v[1], v[2]).normalize();
-      q.setFromUnitVectors(up, dir); pos.set(p.pos[0], p.pos[1], p.pos[2]);
-      im.setMatrixAt(i, m.compose(pos, q, sc));
+      m.makeRotationZ(p.yaw || 0); m.setPosition(p.pos[0], p.pos[1], p.pos[2]);
+      im.setMatrixAt(i, m);
       if (p.connector && p.connector.faceDir) {
         var fd = p.connector.faceDir, off = (p.standoff_m > 0 ? p.standoff_m : 0.3);
         verts.push(p.pos[0], p.pos[1], p.pos[2], p.pos[0] + fd[0] * off, p.pos[1] + fd[1] * off, p.pos[2] + fd[2] * off);
@@ -4246,12 +4629,13 @@ function _renderDiscAssembly(disc, parts) {
     im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
     root.add(im);
   });
+  var byCls = byKey;
   if (verts.length) {
     var cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
     var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
     cl.userData.dwAsm = disc; root.add(cl);
   }
-  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' classes=' + Object.keys(byCls).length +
+  console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' drawn=' + drawn.length + ' refused=' + nRef + ' buckets=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // §I5d: assembly parts get Walked-Fixtures rows too
   if (window.A && A.requestRender) A.requestRender();
@@ -4263,7 +4647,19 @@ function _discGate() {
   var all = [];
   Object.keys(window.__dwWalks).forEach(function (d) { all = all.concat(window.__dwWalks[d]); });
   if (all.length < 2) return { yields: 0 };
-  return window.DiscWalker.gate(all);
+  // §GATE-STOREY-FLOOR: give the gate this building's real storey floors so a yield never sinks a fixture below its storey
+  // (it used to sink 20 Duplex outlets ~1 m underground). Cached per open building.
+  var floors = null;
+  try {
+    if (window.DiscWalker.storeyFloors && window.__dwBuf && window.SQL) {
+      if (window.__dwFloorsFor !== window.__dwName || !window.__dwFloors) {
+        var fdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+        try { window.__dwFloors = window.DiscWalker.storeyFloors(fdb); window.__dwFloorsFor = window.__dwName; } finally { fdb.close(); }
+      }
+      floors = window.__dwFloors;
+    }
+  } catch (e) { console.warn('§GATE-STOREY-FLOOR floors unavailable ' + (e && e.message)); }
+  return window.DiscWalker.gate(all, floors ? { storeyFloors: floors } : undefined);
 }
 // Tack-chain op-log emit (W-DW-OPLOG): commit each disc-walk placement as a signed GEOM_INSERT so the walk
 // is undoable and folds to the enterprise (same doctrine as dropLeaves/RouteWalker GEOM_SWEEP).
@@ -4350,7 +4746,12 @@ window.__dwChains = window.__dwChains || {};   // disc -> chain segments (for th
 window.__dwChainMeta = window.__dwChainMeta || {};   // disc -> { seed, riser } from routePattern's patternBridge (M4 reveal order only; redraw-after-scrub reuses it instant)
 window.__dwChainAnimating = window.__dwChainAnimating || {};   // disc -> true while an M4 reveal rAF loop is in flight
 window.__dwChainRevealMeta = window.__dwChainRevealMeta || {};   // disc -> { start, gen } — wall-clock reveal timeline, so a fold-triggered rebuild RESUMES it (see _renderDiscChains)
-window.DW_CHAIN_COMMIT_CAP = 60;               // op-log GEOM_SWEEP cap (occt is per-sweep, so this is a signed sample); the full network always renders (window-scoped so a witness can shrink it)
+// §MEP-SIGN-ALL (2026-09-26, MODELLER_MASTER NEXT #3): was 60, a signed SAMPLE, set when each sweep was its own commit
+// (~1.6-2 s each). _commitDiscChains has since become ONE signed group, so measured per phase (Terminal PLB, 2,915 runs):
+// cap 60 → walk 16.5 s, cap none → 24.0 s (occt builds 2,915 sweeps once, ~3.4 s; later folds hit the op_hash cache).
+// Every run is now signed the same way the 60 were: per-row hash + signature + verifyChain, nothing skipped.
+// Knob kept (window-scoped) so a witness can still shrink it.
+window.DW_CHAIN_COMMIT_CAP = Infinity;
 // LANDED routed network → LOD MESH: cylinder TUBES between the REAL element endpoints, not flat lines.
 // This is the PROVEN-EXACT layer (witness_disc_route_nnchain R2: every segment joins two real
 // elements_meta rows at their real element_transforms position, ≤1e-6), so it renders as solid 3D
@@ -4475,6 +4876,17 @@ function _renderDiscChains(disc, segs, opts) {
     }
   })(nowTs0);
 }
+// One routed run → its signed GEOM_SWEEP op, or {refused} (no real cross-section, WalkerDoctrine §8). Shared by the walk's
+// _commitDiscChains and the §MEP-REROUTE re-sign, so a re-routed run is signed with the identical payload.
+function _dwChainOp(s) {
+  var xsDisc = (s.from_kind && s.from_kind.indexOf('RW_') === 0) ? s.from_kind.slice(3) : s.disc;
+  var xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(xsDisc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
+  if (xs.refused) return { refused: { disc: xsDisc, reason: xs.reason } };
+  return { op: { op_type: 'GEOM_SWEEP',
+    params: { profile: { w: xs.w, h: xs.h }, path: [s.from.slice(), s.to.slice()],
+              _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
+                     from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap, crossSection: xs.product } } } };
+}
 async function _commitDiscChains(disc, segs) {
   var O = window.Bonsai && window.Bonsai.oplog; if (!O) return 0;
   var capMax = window.DW_CHAIN_COMMIT_CAP || 120;
@@ -4495,14 +4907,9 @@ async function _commitDiscChains(disc, segs) {
   // narrows correctly; routeChains()' own nn-network segs carry the real discipline directly in s.disc.
   var ops = [], refusedChain = [];
   for (var i = 0; i < cap; i++) {
-    var s = segs[i];
-    var xsDisc = (s.from_kind && s.from_kind.indexOf('RW_') === 0) ? s.from_kind.slice(3) : s.disc;
-    var xs = (typeof rwCrossSectionFor === 'function') ? rwCrossSectionFor(xsDisc) : { refused: true, reason: 'rwCrossSectionFor not loaded' };
-    if (xs.refused) { refusedChain.push({ disc: xsDisc, reason: xs.reason }); continue; }
-    ops.push({ op_type: 'GEOM_SWEEP',
-      params: { profile: { w: xs.w, h: xs.h }, path: [s.from.slice(), s.to.slice()],
-                _dw: { disc: s.disc, rule: s.rule, from_kind: s.from_kind, to_kind: s.to_kind,
-                       from_guid: s.from_guid, to_guid: s.to_guid, gap: s.gap, crossSection: xs.product } } });
+    var c = _dwChainOp(segs[i]);
+    if (c.refused) { refusedChain.push(c.refused); continue; }
+    ops.push(c.op);
   }
   var committed = 0;
   if (ops.length) {
@@ -4536,17 +4943,40 @@ async function _commitDiscChains(disc, segs) {
 window.__dwFittings = window.__dwFittings || {};   // disc -> fitting placements (introspection/witness only; redraw
                                                     // doesn't need to replay these — they are committed rows, folded
                                                     // by the normal GEOM_INSERT path like any other insert)
+// One bend fitting → its signed GEOM_INSERT op (shared by the walk and the §MEP-REROUTE re-derive).
+function _dwFitOp(disc, f) {
+  return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: DW_COLOR[disc] || 0xc0c0c0,
+    // landed/prov: M6 mini-BOM RosettaStone lookup provenance (WalkerDoctrine.md §7) — true when this
+    // fitting's rotation was REPLAYED from a real extracted mep_rosettastone_miniset.db fragment, false when
+    // no real match existed and it fell back to fittingOrientation's bisector (flagged low-confidence).
+    _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n, landed: !!f.landed, prov: f.prov } } };
+}
+// LOD-200 → real LOD-300 catalog mesh for freshly committed fittings ({id, hash}[]), the assembly-drop retry idiom.
+function _dwUpgradeFitMeshes(disc, placed) {
+  var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+  if (!O || !L || !placed.length) return;
+  var needs = placed.filter(function (p) { var c = L.get(p.hash); return c && c.gh; });
+  if (!needs.length) return;
+  var upgrade = function (tries) {
+    L.ensureMesh(needs[0].hash).then(function () {
+      needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
+      return O.scrubTo(O.length);
+    }).then(function () {
+      // §CATALOG-PATH: scrubTo re-folds the editable group and drops the dwRoot layer (run tubes, markers) — restore it
+      // like every other re-fold path. Unreachable while the catalog was empty (#550 → 2026-09-26), so never seen.
+      _redrawAllDiscWalks();
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+      var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
+      console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
+      if (boxed && tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300);
+    }).catch(function () { if (tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300); });
+  };
+  upgrade(2);
+}
 async function _commitDiscFittings(disc, fittings) {
   var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
   if (!O || !L || !fittings || !fittings.length) return 0;
-  var color = DW_COLOR[disc] || 0xc0c0c0;
-  var ops = fittings.map(function (f) {
-    return { op_type: 'GEOM_INSERT', params: { hash: f.hash, placement: f.placement, lod: '200', color: color,
-      // landed/prov: M6 mini-BOM RosettaStone lookup provenance (WalkerDoctrine.md §7) — true when this
-      // fitting's rotation was REPLAYED from a real extracted mep_rosettastone_miniset.db fragment, false when
-      // no real match existed and it fell back to fittingOrientation's bisector (flagged low-confidence).
-      _dw: { disc: disc, fit: f.kind, network: f.network, n: f.n, landed: !!f.landed, prov: f.prov } } };
-  });
+  var ops = fittings.map(function (f) { return _dwFitOp(disc, f); });
   var committed = 0, ids = [];
   try { var res = await O.commitSeedGroup(ops, 'dwfit-' + disc + '-' + O.length); ids = res.ids || []; committed = ids.length; }
   catch (e) { console.warn('§DW-FIT-COMMIT batch fail ' + (e && e.message)); }
@@ -4554,22 +4984,7 @@ async function _commitDiscFittings(disc, fittings) {
     _redrawAllDiscWalks();
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
-    var placed = ids.map(function (id, i) { return { id: id, hash: fittings[i].hash }; });
-    var needs = placed.filter(function (p) { var c = L.get(p.hash); return c && c.gh; });
-    if (needs.length) {
-      var upgrade = function (tries) {
-        L.ensureMesh(needs[0].hash).then(function () {
-          needs.forEach(function (p) { if (L.hasMesh(p.hash)) L.setLod(p.id, '300'); });
-          return O.scrubTo(O.length);
-        }).then(function () {
-          if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
-          var boxed = needs.filter(function (p) { return L.lodFor(p.id, '200') !== '300'; }).length;
-          console.log('§DW-FIT-MESH disc=' + disc + ' upgraded=' + (needs.length - boxed) + '/' + needs.length);
-          if (boxed && tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300);
-        }).catch(function () { if (tries > 0) setTimeout(function () { upgrade(tries - 1); }, 300); });
-      };
-      upgrade(2);
-    }
+    _dwUpgradeFitMeshes(disc, ids.map(function (id, i) { return { id: id, hash: fittings[i].hash }; }));
   }
   console.log('§DW-FIT-COMMIT disc=' + disc + ' fittings=' + fittings.length + ' committed=' + committed + ' (1 signed group)');
   window.__dwLastFitDisc = disc;                      // sentinel for witnesses
@@ -4589,6 +5004,7 @@ function _redrawAllDiscWalks() {
   if (window.__dwAssembly) Object.keys(window.__dwAssembly).forEach(function (d) { if (window.__dwAssembly[d]) _renderDiscAssembly(d, window.__dwAssembly[d]); });   // §3c
   if (window.__dwTrunk) Object.keys(window.__dwTrunk).forEach(function (d) { if (window.__dwTrunk[d]) _renderSeedTrunk(d, window.__dwTrunk[d]); });   // seed→trunk
   _hideUndoneWalkLayers();
+  _xrayReapply('dw-redraw');   // §XRAY-REFOLD: fresh buckets come back without the x-ray glow
 }
 // §WALK-GESTURE-DRAW (2026-09-24, §STRATEGY L4): the decorative walk layer (markers, run tubes, assembly parts,
 // trunk) is drawn from JS state (__dwWalks/__dwChains/…), not from the op-log. So after a walk is undone its
@@ -4603,8 +5019,15 @@ function _redrawAllDiscWalks() {
 // position signature differs from the one the drawn network was routed from, the network is re-routed with
 // DiscWalker.bridgeRoute (the SAME bridge the walk uses) and redrawn. Runs on every signed change ('bonsai:oplog':
 // grid drag, item drag, undo/redo), so undoing the move re-routes back. Scope, stated: only pattern-bridged networks (the ARC-only
-// generation path); the re-routed runs are UNSIGNED, exactly like the walk's own runs until §STRATEGY L3; bend
-// fittings committed by the original walk are NOT re-derived (recorded follow-up).
+// generation path).
+// §MEP-REROUTE-SIGN (2026-09-26, MODELLER_MASTER NEXT #2) — SPEC: the re-routed network is now SIGNED and its bend
+// fittings RE-DERIVED. Before: the drawn runs moved but the op-log kept the walk's sweeps + fittings at the OLD route
+// (0 new rows). Now the new route (+ DiscWalker.bendFittings of it, the walk's own call) is DIFFED against the disc's
+// active route rows, matched within 1 mm (op-log placements are rounded to 4 dp, so exact keys would re-sign the whole
+// network on undo): unchanged rows stay, new runs/fittings are committed as ONE signed group ('dwrr-<disc>-<n>', same
+// payload builders as the walk), rows no longer in the route are superseded (undone=1; soft, the chain stays valid).
+// Those rows ride the history node of the edit that caused the re-route (ModellerHistory.attachDerived), so one
+// Ctrl+Z restores the move AND the old signed network, one Ctrl+Y the new one; the diff then finds nothing to commit.
 window.__dwRouteSig = window.__dwRouteSig || {};
 function _dwOplogPlacements(disc) {
   var rows = (window.__dwRowsByDisc || {})[disc], O = window.Bonsai && window.Bonsai.oplog;
@@ -4620,12 +5043,97 @@ function _dwOplogPlacements(disc) {
   return out;
 }
 function _dwSig(pl) { return pl ? pl.map(function (p) { return p.x.toFixed(3) + ',' + p.y.toFixed(3) + ',' + p.z.toFixed(3); }).join(';') : ''; }
-function _dwStampRouteSig(disc) { var pl = _dwOplogPlacements(disc); if (pl) window.__dwRouteSig[disc] = _dwSig(pl); }
-function _reRouteMovedWalks() {
+window.__dwRouteRowIds = window.__dwRouteRowIds || {};   // disc -> {id:1} every chain/fit row of this disc's route (walk + re-routes)
+function _dwStampRouteSig(disc) {
+  var pl = _dwOplogPlacements(disc); if (!pl) return;
+  window.__dwRouteSig[disc] = _dwSig(pl);
+  var rows = (window.__dwRowsByDisc || {})[disc] || {}, ids = {};
+  (rows.chain || []).concat(rows.fit || []).forEach(function (id) { ids[id] = 1; });
+  window.__dwRouteRowIds[disc] = ids;                    // a (re-)walk starts a fresh route row set
+}
+// Active route rows of a disc, read from the signed op-log: sweeps {id, a, b} and fittings {id, hash, pl}.
+function _dwActiveRoute(disc) {
+  var want = window.__dwRouteRowIds[disc] || {}, sw = [], ft = [];
+  window.Bonsai.oplog._geomOps().forEach(function (op) {
+    if (!want[op.id]) return; var P = op.parameters || {};
+    if (op.op_type === 'GEOM_SWEEP' && P.path && P.path.length === 2) sw.push({ id: op.id, a: P.path[0], b: P.path[1] });
+    else if (op.op_type === 'GEOM_INSERT' && P.placement) ft.push({ id: op.id, hash: P.hash, pl: P.placement });
+  });
+  return { sweeps: sw, fits: ft };
+}
+var DW_RR_TOL = 0.001;   // 1 mm: the walk routes from in-memory placements, the re-route from 4-dp op-log ones (≤0.05 mm apart, measured)
+function _dwNear(p, q) { return Math.abs(p[0] - q[0]) <= DW_RR_TOL && Math.abs(p[1] - q[1]) <= DW_RR_TOL && Math.abs(p[2] - q[2]) <= DW_RR_TOL; }
+function _dwSameRun(r, s) { return (_dwNear(r.a, s.from) && _dwNear(r.b, s.to)) || (_dwNear(r.a, s.to) && _dwNear(r.b, s.from)); }
+function _dwSameFit(r, f) {
+  var a = r.pl, b = f.placement; if (r.hash !== f.hash) return false;
+  if (!_dwNear([a.x, a.y, a.z], [b.x, b.y, b.z])) return false;
+  return ['rot', 'rotX', 'rotY', 'rotZRad'].every(function (k) { return Math.abs((a[k] || 0) - (b[k] || 0)) <= 1e-3; });
+}
+// Pair each wanted item with one unused active row (cell-bucketed so Terminal/Hospital stay O(n)). Returns
+// { keep:[ids], add:[wanted items], off:[ids] }.
+function _dwDiff(rows, wanted, keyOf, keyOfW, same) {
+  var cell = {}, used = {};
+  rows.forEach(function (r) { var k = keyOf(r); (cell[k] = cell[k] || []).push(r); });
+  var keep = [], add = [];
+  wanted.forEach(function (w) {
+    var k0 = keyOfW(w), hit = null;
+    for (var i = 0; i < k0.length && !hit; i++) { var c = cell[k0[i]] || []; for (var j = 0; j < c.length; j++) { if (!used[c[j].id] && same(c[j], w)) { hit = c[j]; break; } } }
+    if (hit) { used[hit.id] = 1; keep.push(hit.id); } else add.push(w);
+  });
+  return { keep: keep, add: add, off: rows.filter(function (r) { return !used[r.id]; }).map(function (r) { return r.id; }) };
+}
+// Cell key = midpoint on a 1 cm grid; a wanted item probes its own cell and the 26 neighbours (tolerance ≪ cell).
+function _dwCell(x, y, z) { return Math.round(x * 100) + ',' + Math.round(y * 100) + ',' + Math.round(z * 100); }
+function _dwCells(x, y, z) {
+  var cx = Math.round(x * 100), cy = Math.round(y * 100), cz = Math.round(z * 100), out = [];
+  for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) out.push((cx + i) + ',' + (cy + j) + ',' + (cz + k));
+  return out;
+}
+async function _dwResignRoute(d, segs) {
+  var O = window.Bonsai.oplog, cap = Math.min(segs.length, window.DW_CHAIN_COMMIT_CAP || 120);
+  var target = segs.slice(0, cap);                      // the same run set the walk signs
+  var fits = [];
+  if (window.DiscWalker.bendFittings) { try { fits = window.DiscWalker.bendFittings(d, segs, {}); } catch (e) { console.warn('§DW-FIT ' + d + ' failed ' + (e && e.message)); } }
+  window.__dwFittings[d] = fits;
+  var act = _dwActiveRoute(d);
+  var mid = function (a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; };
+  var ds = _dwDiff(act.sweeps, target,
+    function (r) { var m = mid(r.a, r.b); return _dwCell(m[0], m[1], m[2]); },
+    function (s) { var m = mid(s.from, s.to); return _dwCells(m[0], m[1], m[2]); }, _dwSameRun);
+  var df = _dwDiff(act.fits, fits,
+    function (r) { return _dwCell(r.pl.x, r.pl.y, r.pl.z); },
+    function (f) { return _dwCells(f.placement.x, f.placement.y, f.placement.z); }, _dwSameFit);
+  var ops = [], refused = 0, nSweep = 0;
+  ds.add.forEach(function (s) { var c = _dwChainOp(s); if (c.refused) refused++; else { ops.push(c.op); nSweep++; } });
+  df.add.forEach(function (f) { ops.push(_dwFitOp(d, f)); });
+  var off = ds.off.concat(df.off), on = [];
+  if (!ops.length && !off.length) return { changed: false, keep: ds.keep.length + df.keep.length };
+  O._treeOwned = O._treeOwned || new Set();
+  O._setUndone(off, 1);                                 // supersede first → commitSeedGroup's single fold shows the new route only
+  if (ops.length) {
+    var maxR = O.db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'), n = maxR.length ? maxR[0].values[0][0] : 0;
+    try { on = (await O.commitSeedGroup(ops, 'dwrr-' + d + '-' + n)).ids || []; }
+    catch (e) { O._setUndone(off, 0); console.warn('§MEP-REROUTE-SIGN commit failed, old route restored — ' + (e && e.message)); await O.scrubTo(O.length); return { changed: false, failed: true }; }
+  } else { await O.scrubTo(O.length); O._emit(); }
+  on.forEach(function (id) { window.__dwRouteRowIds[d][id] = 1; O._treeOwned.add(id); });
+  off.forEach(function (id) { O._treeOwned.add(id); });
+  var MH = window.ModellerHistory, att = (MH && MH.attachDerived) ? MH.attachDerived(on, off, d) : { attached: null };
+  var fitIds = on.slice(nSweep);
+  _dwUpgradeFitMeshes(d, fitIds.map(function (id, i) { return { id: id, hash: df.add[i].hash }; }));
+  console.log('§MEP-REROUTE-SIGN disc=' + d + ' runs keep=' + ds.keep.length + ' new=' + nSweep + ' superseded=' + ds.off.length +
+    (refused ? ' refused=' + refused : '') + ' · fittings keep=' + df.keep.length + ' new=' + df.add.length + ' superseded=' + df.off.length +
+    ' (bendFittings re-derived, 1 signed group) · history=' + (att.attached ? '"' + att.attached + '"' : 'own node'));
+  return { changed: true, on: on, off: off };
+}
+var _mepRerouteBusy = false, _mepRerouteAgain = false;
+async function _reRouteMovedWalks() {
   if (!window.DiscWalker || !window.DiscWalker.bridgeRoute || !window.__dwBuf || !window.SQL) return;
-  Object.keys(window.__dwRouteSig).forEach(function (d) {
-    var pl = _dwOplogPlacements(d); if (!pl || !pl.length) return;   // walk undone / nothing committed → leave
-    var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) return;
+  var MH = window.ModellerHistory; if (MH && MH.inWalk && MH.inWalk()) return;   // a walk in flight owns its rows
+  var discs = Object.keys(window.__dwRouteSig);
+  for (var i = 0; i < discs.length; i++) {
+    var d = discs[i];
+    var pl = _dwOplogPlacements(d); if (!pl || !pl.length) continue;   // walk undone / nothing committed → leave
+    var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) continue;
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
     try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND, as the walk
     var r; try { r = window.DiscWalker.bridgeRoute(d, bdb, window.__dwName || '', pl); } finally { bdb.close(); }
@@ -4633,19 +5141,26 @@ function _reRouteMovedWalks() {
     window.__dwChains[d] = r.segs;
     window.__dwRouteSig[d] = sig;
     _renderDiscChains(d, r.segs, { instant: true });
-    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions; unsigned runs, §STRATEGY L3)');
-  });
+    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions)');
+    await _dwResignRoute(d, r.segs);
+  }
 }
 // Any signed change (grid drag, item drag, undo/redo) fires 'bonsai:oplog'. Debounced to one check per burst; the
-// signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer.
+// signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer. Serialized:
+// the re-sign commits (async), and an event that lands meanwhile re-runs the check once it is done.
 var _mepRerouteTimer = null;
 window.addEventListener('bonsai:oplog', function () {
   if (!Object.keys(window.__dwRouteSig).length) return;
+  if (_mepRerouteBusy) { _mepRerouteAgain = true; return; }
   clearTimeout(_mepRerouteTimer);
-  _mepRerouteTimer = setTimeout(function () {
+  _mepRerouteTimer = setTimeout(async function run() {
+    _mepRerouteBusy = true; _mepRerouteAgain = false;
     var before = JSON.stringify(window.__dwRouteSig);
-    try { _reRouteMovedWalks(); } catch (e) { console.warn('§MEP-REROUTE failed', e && e.message); }
-    if (JSON.stringify(window.__dwRouteSig) !== before) _redrawAllDiscWalks();
+    try { await _reRouteMovedWalks(); } catch (e) { console.warn('§MEP-REROUTE failed', e && e.message); }
+    if (JSON.stringify(window.__dwRouteSig) !== before) { _redrawAllDiscWalks(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); syncHistory(); }
+    _mepRerouteBusy = false;
+    if (_mepRerouteAgain) { _mepRerouteAgain = false; run(); }
+    else window.__dwRerouteIdle = (window.__dwRerouteIdle || 0) + 1;   // sentinel for witnesses: a check finished
   }, 0);
 });
 function _hideUndoneWalkLayers() {
@@ -4930,7 +5445,10 @@ function _registerDiscRoster() {
         // §WALKALL-MEP-ONLY: the row walks the SERVICES only; STR/roof keep their own rows below.
         var absentMep = absent.filter(function (d) { return d !== 'STR' && d !== 'roof'; });
         var allNode = { id: 'dw-all', label: '▶▶ Walk ALL Services', kind: 'disc', disc: '__ALL__', sub: absentMep.length + ' services not extracted · x-ray reveal' };
-        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.map(function (d) {
+        // §ROOF-PREFAB (red1 2026-09-26): the tiled roof is prefab ARC/STR the user reshapes along its axis like any other
+        // element (grid drag — W-E2E-GRIDMOVE-ROOF); walkers FILL IN services. So no roof walk row (it could only ever say
+        // "already present" or refuse — §ROOF-PATTERN). The engine keeps that verdict; only the Outliner button goes.
+        var rosterNode = { id: 'dw-root', label: 'Not extracted — walk from ' + rf, kind: 'group', children: [allNode].concat(absent.filter(function (d) { return d !== 'roof'; }).map(function (d) {
           var n = (window.__dwWalks && window.__dwWalks[d]) ? window.__dwWalks[d].length : 0;
           return { id: 'dw-' + d, label: d, kind: 'disc', disc: d, sub: n ? (n + ' placed ▶') : '▶ walk' };
         })) };
@@ -5823,8 +6341,10 @@ if (qs.get('routewalk') === 'sh') {
       out.colouredFixtures = coloured; out.miscolouredFixtures = miscoloured; out.distinctColours = Object.keys(hexSet).length;
       console.log('§MODELLER routewalk-sh-colour coloured=' + coloured + '/' + fxOps.length + ' miscoloured=' + miscoloured +
         ' distinct=' + out.distinctColours + ' hex=' + Object.keys(hexSet).map(h => (+h).toString(16)).join(','));
-      out.pass = out.fixtures === 23 && out.fixtureOps === 23 && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
-        out.colouredFixtures === 23 && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.fixtureOps === _rwN && out.hasELEC && out.hasACMV && out.noWetRoom && out.verify &&
+        out.colouredFixtures === _rwN && out.miscolouredFixtures === 0 && out.distinctColours >= 3;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk sh fail ' + e); }
     window.__routewalkShResult = out;
     window.__routewalkShDone = true;
@@ -5877,9 +6397,11 @@ if (qs.get('routewalk') === 'xray') {
       });
       out.structureRestored = restored; out.stillGlowing = stillGlowing; out.fixturesColouredAfter = fixturesColoured;
       out.verify = (await O.verify()).ok;
-      out.pass = out.fixtures === 23 && out.glow === 23 && out.glass >= 50 &&
-        out.glassOK === out.glass && out.glowOK === 23 && out.glowColourOK === 23 && out.shineThrough === 23 &&
-        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === 23 && out.verify;
+      const _rwN = window.__rwLastRoute ? window.__rwLastRoute.planned - window.__rwLastRoute.refused : -1;   // §NET-AUDIT: was a literal 23
+      out.expectedFixtures = _rwN;
+      out.pass = _rwN > 0 && out.fixtures === _rwN && out.glow === _rwN && out.glass >= 50 &&
+        out.glassOK === out.glass && out.glowOK === _rwN && out.glowColourOK === _rwN && out.shineThrough === _rwN &&
+        out.structureRestored === out.glass && out.stillGlowing === 0 && out.fixturesColouredAfter === _rwN && out.verify;
     } catch (e) { out.error = String(e && e.message || e); console.warn('§MODELLER routewalk xray fail ' + e); }
     window.__xrayResult = out;
     window.__xrayDone = true;
@@ -6059,7 +6581,7 @@ if (qs.get('connectid') === 'demo') {
 if (qs.get('place') === 'demo') {
   (async () => {
     const out = {};
-    const meshOf = (fid) => { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
+    const meshOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { zmin: +b.min.z.toFixed(2), zmax: +b.max.z.toFixed(2), xext: +(b.max.x - b.min.x).toFixed(2), yext: +(b.max.y - b.min.y).toFixed(2) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (gx, gy) => { const v = new THREE.Vector3(gx, gy, 0).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
     const clickGround = async (gx, gy) => { const c = toClient(gx, gy); const before = window.Bonsai.oplog.length; canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...c, bubbles: true })); for (let i = 0; i < 40 && window.Bonsai.oplog.length === before; i++) await new Promise(r => setTimeout(r, 50)); };
@@ -6427,7 +6949,7 @@ if (qs.get('move') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const centreOf = (fid) => { const m = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
+    const centreOf = (fid) => { const m = window.Bonsai.meshFor(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     try {
       window.Bonsai.grid.define({ xs: [0, 1, 2, 3, 4], ys: [0, 3], xlabels: ['A', 'B', 'C', 'D', 'E'], ylabels: ['1', '2'] });
       window.Bonsai.grid.show(true);
@@ -6474,7 +6996,7 @@ if (qs.get('move') === 'demo') {
       const wall = await O.commit({ op_type: 'GEOM_EXTRUDE_POLY', parameters: { profile: { points: [[0, 0], [2, 0], [2, 0.2], [0, 0.2]] }, depth: 3 } });
       await sleep(50);
       out.wallBeforeX = centreOf(wall.id) ? centreOf(wall.id).x : null;   // ~1
-      selectedId = wall.id; selectedMesh = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === wall.id);
+      selectedId = wall.id; selectedMesh = window.Bonsai.meshFor(wall.id);
       await commitMove(1, 0, 0); await sleep(300);
       out.wallAfterX = centreOf(wall.id) ? centreOf(wall.id).x : null;    // ~2 (occt shape translated)
       await O.commit({ op_type: 'GEOM_CUT', parameters: { parent: wall.id, void: { c1: [2.6, -1, 1], c2: [2.9, 1, 2] } } });
@@ -6495,7 +7017,7 @@ if (qs.get('multiselect') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const centreOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { x: +((b.min.x + b.max.x) / 2).toFixed(3), y: +((b.min.y + b.max.y) / 2).toFixed(3), z: +((b.min.z + b.max.z) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6625,7 +7147,7 @@ if (qs.get('snapgeom') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const bboxOf = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { minx: +b.min.x.toFixed(3), miny: +b.min.y.toFixed(3), maxx: +b.max.x.toFixed(3), maxy: +b.max.y.toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6694,7 +7216,7 @@ if (qs.get('rotate') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const dims = (fid) => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const rect = canvas.getBoundingClientRect();
     const toClient = (wx, wy, wz) => { const v = new THREE.Vector3(wx, wy, wz).project(camera); return { clientX: rect.left + (v.x + 1) / 2 * rect.width, clientY: rect.top + (1 - v.y) / 2 * rect.height }; };
@@ -6748,7 +7270,7 @@ if (qs.get('grouprot') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = fid => { const g = window.Bonsai.group(); return g && g.children.find(o => o.isMesh && o.userData.featureId === fid); };
+    const meshOf = fid => window.Bonsai.meshFor(fid);
     const dims = fid => { const m = meshOf(fid); if (!m) return null; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox;
       return { ex: +(b.max.x - b.min.x).toFixed(3), ey: +(b.max.y - b.min.y).toFixed(3), cx: +((b.min.x + b.max.x) / 2).toFixed(3), cy: +((b.min.y + b.max.y) / 2).toFixed(3) }; };
     const near = (a, b, t) => Math.abs(a - b) <= (t || 0.12);
@@ -6789,7 +7311,7 @@ if (qs.get('hover') === 'demo') {
   (async () => {
     const out = {}; const O = window.Bonsai.oplog;
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const meshOf = (fid) => window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === fid);
+    const meshOf = (fid) => window.Bonsai.meshFor(fid);
     const emisOf = (fid) => { const m = meshOf(fid); return m && m.material && m.material.emissive ? m.material.emissive.getHex() : null; };
     const centreClient = (fid) => { const m = meshOf(fid); m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; const c = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2); const r = canvas.getBoundingClientRect(); const v = c.project(camera); return { clientX: r.left + (v.x + 1) / 2 * r.width, clientY: r.top + (1 - v.y) / 2 * r.height }; };
     const move = (pt, buttons) => canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.clientX, clientY: pt.clientY, buttons: buttons || 0, bubbles: true }));
@@ -6839,7 +7361,7 @@ if (qs.get('gmpreview') === 'demo') {
       const d = toClient(4, 1.5), m = toClient(5.5, 1.5);
       canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, ...d, bubbles: true })); out.grabbed = _dragGrid && _dragGrid.id;
       canvas.dispatchEvent(new PointerEvent('pointermove', { ...m, bubbles: true })); out.dragDelta = _dragGrid ? +(_dragGrid.delta || 0).toFixed(2) : null;
-      const emis = id => { const o = window.Bonsai.group().children.find(o => o.isMesh && o.userData.featureId === id); return o ? '#' + o.material.emissive.getHexString() : null; };
+      const emis = id => { const o = window.Bonsai.meshFor(id); return o ? '#' + o.material.emissive.getHexString() : null; };
       out.tintW1 = emis(w1.id);                          // mid-drag PREVIEW (before release): blue 1e66c8 = translate
       out.tintW2 = emis(w2.id);                          // orange c8731e = stretch
       out.opsBeforeRelease = O._geomOps().filter(o => o.op_type === 'GEOM_GRID_MOVE').length;   // 0 — preview only, not committed

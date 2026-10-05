@@ -111,6 +111,18 @@
         console.log('§LOGIC_EVAL attr=' + a + ' col=' + (f.col || '?') + ' expr="' + expr + '" ctx=' + JSON.stringify(context || {}) + ' result=' + res);
       });
     }
+    // §GT.7 GridField.isEditable:443-585 — the record-state rules iDempiere keys on column NAMES (not AD data): an always-
+    //   updateable column stays editable; Processing/DocAction/GenerateTo stay editable on an active record; a Processed or
+    //   Processing record is read-only; IsActive itself stays editable; an inactive record is read-only. Existing records only.
+    var rv = function (c) { if (!record) return undefined; var k; for (k in record) if (Object.prototype.hasOwnProperty.call(record, k) && k.toLowerCase() === c) return record[k]; return undefined; };
+    var col = String(f.col || '').toLowerCase();
+    if (!f.readonly && !readonly && !f.alwaysupdateable && record && col !== 'posted') {
+      var act = rv('isactive'), stateRO = false;
+      if (act === 'Y' && (col === 'processing' || col === 'docaction' || col === 'generateto')) stateRO = false;
+      else if (rv('processed') === 'Y' || rv('processing') === 'Y') stateRO = true;
+      else if (col !== 'isactive' && act != null && act !== 'Y') stateRO = true;
+      if (stateRO) readonly = true;
+    }
     return { visible: visible, readonly: readonly, required: required };
   }
 
@@ -182,7 +194,7 @@
   // coerce a raw form value to its stored shape (number -> Number) for the op payload.
   function coerce(type, val) {
     if (val == null || val === '') return null;
-    if (type === 'number' || type === 'fk') return Number(val);
+    if (type === 'number' || type === 'fk' || type === 'location') return Number(val);   // FS-13: a C_Location_ID
     return String(val);
   }
   // ON CREATE ONLY: also carry any hook-derived, undeclared column already merged into `values` (saveForm's
@@ -251,6 +263,9 @@
     var base = { key: entry.key, table: entry.key, verb: verb, ownerGated: !!entry.ownerGated, op_uuid: ctx.opUuid || null };
     if (verb === 'create') {
       base.op_type = 'CRUD_CREATE'; base.fields = cleanVals(entry, values, verb); base.cas = entry.cas || null;
+      // §GT — the hidden fields' defaults (foldCrudSpec.hiddenDefaults) join the inserted row where the form set nothing.
+      if (entry.hiddenDefaults) { var _have = {}; Object.keys(base.fields || {}).forEach(function (k) { _have[k.toLowerCase()] = 1; });
+        Object.keys(entry.hiddenDefaults).forEach(function (k) { if (!_have[k]) { base.fields = base.fields || {}; base.fields[k] = entry.hiddenDefaults[k]; } }); }
       // Task 1 — iDempiere setStandardDefaults parity: carry actor+tenant onto the op; listTip materialises them
       var _cActor = ctx.actor != null ? ctx.actor : sessionActor();
       var _cCid   = ctx.clientId != null ? ctx.clientId : sessionClientId();
@@ -399,10 +414,11 @@
   function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
     var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
-    var created = [], hidden = [], updated = [], want = String(table || '').toLowerCase();
+    var created = [], hidden = [], hiddenBy = [], updated = [], want = String(table || '').toLowerCase();
     if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
     try {
-      var r = db.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC");
+      var _w = " FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0" + _branchClause(branch) + " ORDER BY id ASC", r;
+      try { r = db.exec("SELECT id, op_type, parameters, timestamp, op_uuid" + _w); } catch (eU) { r = db.exec("SELECT id, op_type, parameters, timestamp" + _w); }
       if (!r.length || !r[0].values.length) return { rows: rows, created: created, hidden: hidden, updated: updated };
       r[0].values.forEach(function (row) {
         var opId = row[0], type = row[1], opTs = row[3], p;
@@ -439,10 +455,23 @@
             if (tcols['posted']     && !fkeys['posted'])     nr['posted']     = 'N';
             console.log('§STD-DEFAULTS create table=' + want + ' client=' + sd.clientId + ' org=' + sd.orgId + ' by=' + sd.actor + ' active=Y');
           }
-          nr[pkCol] = synth; byId[String(synth)] = nr; rows.push(nr);
+          // FS-8 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2h — Witness: W-ERP-FIRST-SETUP S11b): the fold is
+          // IDEMPOTENT — a caller may pass an already-folded set as the base (idempiere.html's commit refold passes
+          // _records, which carries the earlier created rows); the CREATE then REPLACES that row in place instead of
+          // appending a duplicate. A base with no synthetic pks (every bundle SELECT) is unaffected.
+          nr[pkCol] = synth;
+          // §GT: PO.saveNew:3546-3555 stamps <Table>_UU when empty — the op's own uuid is that record's UU (a UU-linked child tab needs it).
+          var uuCol = want + '_uu';
+          if (row[4] && _getTableCols(want)[uuCol] && (nr[uuCol] == null || nr[uuCol] === '')) nr[uuCol] = row[4];
+          var prevRow = byId[String(synth)], prevAt = prevRow ? rows.indexOf(prevRow) : -1;
+          byId[String(synth)] = nr;
+          if (prevAt >= 0) rows[prevAt] = nr; else rows.push(nr);
           if (created.indexOf(synth) < 0) created.push(synth);
         } else if (type === 'CRUD_UPDATE') {
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
+          // model_layer: a table with no single key (AD_Column.IsKey/IsParent composite — M_StorageOnHand, M_Cost …) is
+          // addressed by its <Table>_UU (p.idCol), the record identity PO.saveNew:3546 stamps.
+          if (!ex && p.idCol && p.id != null) { for (var xi = 0; xi < rows.length; xi++) { if (String(rows[xi][p.idCol]) === String(p.id)) { ex = rows[xi]; break; } } }
           if (ex) {
             if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
             // apply each change onto the EXISTING key case (the op keys lowercase via f.col, but a SELECT* bundle row
@@ -461,13 +490,14 @@
             if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['updatedby'] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
           }
         } else if (type === 'CRUD_DELETE') {
+          if (p.idCol && p.id != null) { hiddenBy.push([p.idCol, String(p.id)]); return; }   // composite-key row by its UU
           if (p.id != null && hidden.indexOf(p.id) < 0) hidden.push(p.id);
         }
       });
     } catch (e) {}
     // apply tombstones last (a delete after a create on the same id still hides it).
     var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
-    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])]; });
+    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])] && !hiddenBy.some(function (h) { return String(r[h[0]]) === h[1]; }); });
     created = created.filter(function (c) { return !hideSet[String(c)]; });
     updated = updated.filter(function (u) { return !hideSet[String(u)]; });
     return { rows: rows, created: created, hidden: hidden, updated: updated };
@@ -707,9 +737,12 @@
       case 13: return 'id'; case 28: return 'button';
       case 17: return 'list'; case 20: return 'yesno';
       // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
-      // fallback: 10 String · 14 Text · 21 Location · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
+      // fallback: 10 String · 14 Text · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
       // · 34 Memo · 35 PAttribute · 38 PrinterName.
-      case 10: case 14: case 21: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
+      // FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b): 21 Location is its own
+      // editor (WLocationEditor) — an address dialog that saves an MLocation and sets the id — not free text.
+      case 21: return 'location';
+      case 10: case 14: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }
   }
@@ -764,7 +797,7 @@
     opts = opts || {};
     var roTable = !!opts.isView || !!opts.isReadOnly;     // AD_Table.IsView or AD_Tab.IsReadOnly → the whole row is read-only
     var forVerb = opts.forVerb || 'update';
-    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [];   // §P7/§P8 — witness seams, emitted once per fold
+    var exemptLog = [], dtLog = [], exprLog = [], unresolvedLog = [], refTblLog = [], spLog = [];   // §P7/§P8 — witness seams, emitted once per fold
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
@@ -773,13 +806,14 @@
       var f = ft.f, type = ft.type;
       // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
       // read-only table/tab are always read-only.
-      var readonly = !!f.isReadOnly || roTable || (forVerb === 'update' && f.isUpdateable === false);
+      var readonly = !!f.isReadOnly || roTable || !!f.isVirtual || (forVerb === 'update' && f.isUpdateable === false);
       // §P7 P7.1 — GridField.isMandatory():377-385's window exemptions, before anything else reads `required`.
       var exempt = gridFieldMandatoryExempt(f.columnName, !!f.isKey);
       if (exempt) exemptLog.push(String(f.columnName) + ':' + exempt);
       var spec = { col: String(f.columnName).toLowerCase(), label: f.name || f.columnName, type: type,
                    required: !!f.isMandatory && !exempt, readonly: readonly };
       if (exempt) spec.mandatoryexempt = exempt;
+      if (f.isAlwaysUpdateable) spec.alwaysupdateable = true;
       // DEFAULTS: resolve the well-known AD context variables iDempiere's Env fills on New (@#AD_Client_ID@,
       // @#AD_Org_ID@, @#Date@) from opts.ctx — so a mandatory system column (AD_Client_ID/AD_Org_ID) doesn't block a
       // folded create; keep PLAIN literals (0/N/Y/DR…); drop any OTHER unevaluated expression (@SQL=…, functions) —
@@ -825,6 +859,14 @@
       // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
       // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
       // "0" and "N" are NOT empty), which is exactly why an untouched New can be required-checked at all.
+      // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b) — stage 5 of
+      // GridField.getDefault's "123457" (GridField.java:98): the SYSTEM preference #ColumnName (:1001-1012 →
+      // Env.getPreference(ctx,win,col,true) = ctx "#"+col, Env.java:1072-1078), which Login.loadDefault
+      // (Login.java:701-734) filled with the client's IsDefault='Y' row of each table. The host supplies the map
+      // (ctx.sysPref, lower-case column → value); absent map → unchanged behaviour. Stage 4 (user P| prefs) not ported.
+      if (!Object.prototype.hasOwnProperty.call(spec, 'default') && ctx.sysPref && ctx.sysPref[spec.col] != null && String(ctx.sysPref[spec.col]) !== '') {
+        spec.default = ctx.sysPref[spec.col]; spec.defaultsource = 'syspref'; spLog.push(spec.col + '=' + spec.default);
+      }
       if (!Object.prototype.hasOwnProperty.call(spec, 'default')) {
         var dtd = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
         if (dtd != null) { spec.default = dtd; spec.defaultsource = 'datatype'; dtLog.push(spec.col + '=' + dtd); }
@@ -880,11 +922,39 @@
                   '] (GridField.defaultFromDatatype:1022-1051)');
       console.log('§GRIDFIELD-EXPR-DEFAULT key=' + (opts.key || '?') + ' resolved=' + exprLog.length + ' [' + exprLog.join(' · ') +
                   '] unresolved=' + unresolvedLog.length + ' [' + unresolvedLog.join(' · ') + '] (GridField.defaultFromExpression:875-913)');
+      if (opts.ctx && opts.ctx.sysPref) console.log('§GRIDFIELD-SYSPREF-DEFAULT key=' + (opts.key || '?') + ' n=' + spLog.length + ' [' + spLog.join(',') +
+                  '] (GridField stage 5 #ColumnName ← Login.loadDefault, FS-12)');
       console.log('§REFTABLE-FOLD key=' + (opts.key || '?') + ' resolved=' + refTblLog.length + ' [' + refTblLog.join(',') +
                   '] (MLookupFactory.getLookup_Table — DisplayType 18/30 targets that <col minus _id> gets wrong)');
     }
+    // §GT (ERP_IDEMPIERE_UX_PARITY.md §GT.4 — W-GRIDTAB-LIVE window 111): GridTable.dataNew:2052-2150 runs
+    //   GridField.getDefault for EVERY field of the tab — IsDisplayed='N' ones included — so a hidden column's default
+    //   (e.g. AD_Role.IsMasterRole DefaultValue 'N') is in the inserted row and the tab's WhereClause
+    //   (AD_Role.IsMasterRole='N') finds the new record. The form above renders displayed fields only; the hidden ones
+    //   ride on the create op as `hiddenDefaults` (stages: literal DefaultValue · @#AD_Client_ID@/@#AD_Org_ID@/@#Date@ ·
+    //   defaultFromDatatype). Expression/@SQL defaults on hidden fields are NOT resolved here (named, not invented).
+    var hiddenDefaults = {}, hdLog = [];
+    (adFields || []).forEach(function (f) {
+      if (!f || f.isDisplayed || f.isKey || f.isVirtual) return;
+      var type = (f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f.referenceType);
+      if (type === 'button' || type === 'id') return;
+      var col = String(f.columnName).toLowerCase(), d = f.defaultValue, ctx = opts.ctx || {}, v = null;
+      if (d != null && String(d) !== '') {
+        var ds = String(d);
+        if (ds === '@#AD_Client_ID@') v = ctx.clientId; else if (ds === '@#AD_Org_ID@') v = ctx.orgId;
+        else if (ds === '@#Date@') v = ctx.today; else if (!/[@()]/.test(ds)) v = ds.replace(/^'(.*)'$/, '$1');
+      } else v = gridFieldDatatypeDefault(f.columnName, f.referenceId, type);
+      if (v != null && String(v) !== '') { hiddenDefaults[col] = v; hdLog.push(col + '=' + v); }
+    });
+    if (typeof console !== 'undefined') console.log('§GRIDFIELD-HIDDEN-DEFAULT key=' + (opts.key || '?') + ' n=' + hdLog.length + ' [' + hdLog.join(',') + '] (GridTable.dataNew: every field, displayed or not)');
+    // verbs from AD only (§GT.6): AD_Tab.IsReadOnly / AD_Table.IsView → none; IsInsertRecord → create; AD_Table.IsDeleteable
+    //   → delete; a DocAction column → process (GridTab.isInsertRecord / isDeleteRecord, ADWindowToolbar).
+    var verbs = roTable ? [] : ['update'];
+    if (!roTable && opts.isInsertRecord !== false) verbs.unshift('create');
+    if (!roTable && opts.isDeleteable !== false) verbs.push('delete');
+    if (opts.hasDocAction) verbs.push('process');
     return { key: opts.key, title: opts.title || opts.key, folded: true, isView: !!opts.isView,
-             verbs: roTable ? [] : ['create', 'update', 'delete'], fields: fields };
+             verbs: verbs, fields: fields, hiddenDefaults: hiddenDefaults };
   }
 
   // ── §P1 (ERP_IDEMPIERE_UX_PARITY.md §IMPL P1.1 — Witness: W-PARITY-FIELDSET) ─────────────────────────────
@@ -902,6 +972,11 @@
     if (!folded || !folded.fields) return curated;
     var out = {}, k;
     for (k in curated) if (Object.prototype.hasOwnProperty.call(curated, k) && k !== 'fields') out[k] = curated[k];
+    if (folded.verbs) out.verbs = folded.verbs;   // §GT.6: what a window may do comes from AD, not the hand list
+    if (folded.hiddenDefaults && !out.hiddenDefaults) {   // §GT — hidden-field defaults ride along unless a curated column covers them
+      var _cc = {}; (curated.fields || []).forEach(function (cf) { _cc[String(cf.col).toLowerCase()] = 1; });
+      out.hiddenDefaults = {}; Object.keys(folded.hiddenDefaults).forEach(function (hk) { if (!_cc[hk]) out.hiddenDefaults[hk] = folded.hiddenDefaults[hk]; });
+    }
     var byCol = {};
     (folded.fields || []).forEach(function (f) { byCol[String(f.col).toLowerCase()] = f; });
     var pinned = (curated.fields || []).map(function (cf) {
@@ -926,6 +1001,9 @@
         });
         if (ad.refsource && ad.ref && o.type === 'fk' && String(o.ref || '') !== String(ad.ref)) o.ref = ad.ref;
         if (o.seq == null && ad.seq != null) o.seq = ad.seq;
+        // FS-12 (§FS2j): a curated pin with NO default of its own takes the fold's GridField stage-5 (#ColumnName)
+        // default — additive (no curated pin with a default changes); c_order.M_PriceList_ID is such a pin.
+        if (o.default == null && ad.defaultsource === 'syspref') { o.default = ad.default; o.defaultsource = 'syspref'; }
       }
       return o;
     });

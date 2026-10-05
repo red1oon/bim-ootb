@@ -19,7 +19,7 @@ const xext = (t, fid) => t.pg.evaluate((f) => {
 }, fid);
 runE2E('W-E2E-SCALE', async (t) => {
   await t.open('Duplex'); await t.shot('01-open');
-  const sel = await t.pick({ prefer: 'wall' });   // §F2-FRAMING: gizmo close-ups need an element-scale subject, not the roof slab
+  const sel = await t.pick({ prefer: 'wall', axisSafe: true });   // §NET-AUDIT 2026-09-27: without axisSafe the pick landed on fid 69, a rotY=90° IfcWindow — local-X scale/yaw ≠ world-X extent.   // §F2-FRAMING: gizmo close-ups need an element-scale subject, not the roof slab
   t.assert('S1 SELECT (insert selected)', !!sel, 'fid=' + (sel && sel.fid));
   if (!sel) return;
   const ext0 = await xext(t, sel.fid);

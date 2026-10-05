@@ -139,6 +139,8 @@
       };
     }
     registerHandler('report:c_payment', voucherHandler('c_payment'), { kind: 'report', reportKey: 'c_payment' });
+    registerAging();                                                   // FS-14 (§FS2l)
+    registerImportBPartner();                                          // FS-16 (§FS2n)
 
     // org.compiere.report.TrialBalance -> report_overlay.foldTrialBalance over the posted journal.
     registerHandler('org.compiere.report.TrialBalance', function (ctx, info) {
@@ -590,7 +592,7 @@
   function readProcess(db, ad_process_id) {
     var p = db.prepare('SELECT ad_process_id,value,name,classname,isreport,procedurename,jasperreport,ad_reportview_id FROM ad_process WHERE ad_process_id=?').get(ad_process_id);
     if (!p) throw new Error('no ad_process row for ' + ad_process_id);
-    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
+    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
     return {
       AD_Process_ID: p.ad_process_id, value: p.value, name: p.name,
       classname: p.classname || '', isReport: p.isreport === 'Y',
@@ -599,7 +601,8 @@
         return {
           name: r.name, columnName: r.columnname, mandatory: r.ismandatory === 'Y',
           ad_reference_id: r.ad_reference_id, type: refType(r.ad_reference_id),
-          isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno
+          isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno,
+          ad_val_rule_id: r.ad_val_rule_id   // FS-9: a TableDir param with a val rule keeps its text box (named)
         };
       })
     };
@@ -668,6 +671,262 @@
     return { ok: missing.length === 0 && badType.length === 0, required: required, supplied: supplied, missing: missing, badType: badType };
   }
 
+  // ══ FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l — Witness: W-ERP-FIRST-SETUP S24c) — Aging ══════════
+  //   openItems(q, opts) = the RV_OpenItem view (live pg_get_viewdef, idempiere DB) over the bundle, with the PL/pgSQL it
+  //   calls transcribed: paymenttermduedate / paymenttermduedays (IsDueFixed branch included), invoiceopen (allocations ×
+  //   MultiplierAP, currency-converted; per pay schedule the allocations consume schedules in DueDate order), daysbetween.
+  //   agingFold(items, opts) = Aging.doIt (Aging.java:102-262) + MAging.add (MAging.java:157-235), bucket bounds verbatim.
+  //   q(sql) → array of lower-case-keyed rows. opts = { today:'YYYY-MM-DD', clientId, isSOTrx:'Y'|'N', bpartnerId, bpGroupId, orgId }.
+  function _agDay(v) { var s = String(v || '').slice(0, 10); var t = Date.parse(s + 'T00:00:00Z'); return isNaN(t) ? null : Math.floor(t / 86400000); }
+  function _agIso(d) { return new Date(d * 86400000).toISOString().slice(0, 10); }
+  function _agRound(x, p) { var f = Math.pow(10, p == null ? 2 : p); var v = Number(x) || 0; return Math.round(v * f + (v < 0 ? -1e-9 : 1e-9)) / f; }
+  // paymentTermDueDate / paymentTermDueDays: ONE implementation — the PL/pgSQL ports in callouts/sqlfn.js (RUNTIME.M.SqlFn), run over the
+  // aging query's own db (A.bind for the call, previous binding restored). The former JS copies _agDueDate/_agDueDays are deleted.
+  function _agSqlFn(q, fn) {
+    var R = _A().RUNTIME, prevDB = R.DB, prevPO = R.PO;
+    _A().bind(function (sql, params) { return q(sql, params); });
+    try { var F = R.M && R.M.SqlFn; if (!F) throw new Error('Aging: callouts/sqlfn.js (paymenttermduedate/paymenttermduedays) not loaded'); return fn(F); }
+    finally { R.DB = prevDB; R.PO = prevPO; }
+  }
+  function _agRate(q, from, to, when) {                     // MConversionRate.getRate, same ORDER BY as crud_overlay _rate
+    if (!Number(from) || !Number(to) || Number(from) === Number(to)) return 1;
+    var r = q('SELECT multiplyrate FROM c_conversion_rate WHERE c_currency_id=' + Number(from) + ' AND c_currency_id_to=' + Number(to) +
+      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(validfrom) AND date(validto) AND upper(isactive)='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC LIMIT 1")[0];
+    return r && r.multiplyrate != null ? Number(r.multiplyrate) : null;
+  }
+  // invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) — the live function, transcribed.
+  function _agInvoiceOpen(q, inv, ipsId) {
+    var base = String(inv.docbasetype || ''), mulCM = base.charAt(2) === 'C' ? -1 : 1, mulAP = base.charAt(1) === 'P' ? -1 : 1;
+    var cur = Number(inv.c_currency_id || 0), pc = q('SELECT stdprecision FROM c_currency WHERE c_currency_id=' + cur)[0];
+    var prec = pc ? Number(pc.stdprecision) : 2, min = Math.pow(10, -prec);
+    var sched = String(inv.ispayschedulevalid || 'N') === 'Y'
+      ? q("SELECT c_invoicepayschedule_id, dueamt FROM c_invoicepayschedule WHERE c_invoice_id=" + Number(inv.c_invoice_id) + " AND isvalid='Y' ORDER BY duedate") : null;
+    var total = sched ? sched.reduce(function (a, s) { return a + Number(s.dueamt || 0) * mulCM; }, 0) : Number(inv.grandtotal || 0) * mulCM;
+    var paid = 0;
+    q("SELECT al.amount, al.discountamt, al.writeoffamt, a.c_currency_id, a.datetrx FROM c_allocationline al JOIN c_allocationhdr a ON a.c_allocationhdr_id=al.c_allocationhdr_id " +
+      "WHERE al.c_invoice_id=" + Number(inv.c_invoice_id) + " AND a.isactive='Y'").forEach(function (a) {
+      var t = (Number(a.amount || 0) + Number(a.discountamt || 0) + Number(a.writeoffamt || 0)) * mulAP;
+      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx); paid += rt == null ? t : t * rt;
+    });
+    var open;
+    if (Number(ipsId) > 0 && sched) {
+      var rem = paid; open = total - paid;
+      sched.forEach(function (s) {
+        if (Number(s.c_invoicepayschedule_id) === Number(ipsId)) { open = Number(s.dueamt) * mulCM - rem; if (Number(s.dueamt) - rem < 0) open = 0; }
+        else { rem = rem - Number(s.dueamt); if (rem < 0) rem = 0; }
+      });
+    } else open = total - paid;
+    if (open > -min && open < min) open = 0;
+    return _agRound(open, prec);
+  }
+  function openItems(q, opts) {
+    opts = opts || {};
+    var today = _agDay(opts.today), out = [];
+    var where = "i.docstatus IN ('CO','CL') AND i.ispaid='N'" + (opts.clientId != null ? ' AND i.ad_client_id IN (0,' + Number(opts.clientId) + ')' : '');
+    q('SELECT i.*, d.docbasetype FROM c_invoice i LEFT JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE ' + where + ' ORDER BY i.c_invoice_id').forEach(function (inv) {
+      var doc = _agDay(inv.dateinvoiced), cm = String(inv.docbasetype || '').charAt(2) === 'C' ? -1 : 1;
+      var common = { ad_org_id: inv.ad_org_id, ad_client_id: inv.ad_client_id, c_invoice_id: inv.c_invoice_id, c_bpartner_id: inv.c_bpartner_id,
+        issotrx: inv.issotrx, dateinvoiced: inv.dateinvoiced, c_currency_id: inv.c_currency_id, c_activity_id: inv.c_activity_id,
+        c_campaign_id: inv.c_campaign_id, c_project_id: inv.c_project_id };
+      if (String(inv.ispayschedulevalid || 'N') !== 'Y') {        // branch 1 — JOIN C_PaymentTerm (inner)
+        var pt = q('SELECT * FROM c_paymentterm WHERE c_paymentterm_id=' + Number(inv.c_paymentterm_id || 0))[0];
+        if (!pt) return;
+        var open = _agInvoiceOpen(q, inv, 0); if (open === 0) return;
+        var due = _agSqlFn(q, function (F) { var ptid = pt.c_paymentterm_id; return { dd: String(F.paymenttermduedate(ptid, inv.dateinvoiced)).slice(0, 10), days: Number(F.paymenttermduedays(ptid, inv.dateinvoiced, _agIso(today))) }; });
+        var row = Object.assign({}, common, { c_invoicepayschedule_id: 0, netdays: Number(pt.netdays || 0), duedate: _agIso(_agDay(due.dd)),
+          daysdue: due.days, grandtotal: Number(inv.grandtotal || 0) * cm, openamt: open });
+        out.push(row);
+      } else {                                                       // branch 2 — one row per valid schedule
+        q("SELECT * FROM c_invoicepayschedule WHERE c_invoice_id=" + Number(inv.c_invoice_id) + " AND isvalid='Y' ORDER BY c_invoicepayschedule_id").forEach(function (s) {
+          var o = _agInvoiceOpen(q, inv, s.c_invoicepayschedule_id); if (o === 0) return;
+          var dd = _agDay(s.duedate);
+          out.push(Object.assign({}, common, { c_invoicepayschedule_id: s.c_invoicepayschedule_id, netdays: dd - doc, duedate: _agIso(dd),
+            daysdue: today - dd, grandtotal: Number(s.dueamt || 0), openamt: o }));
+        });
+      }
+    });
+    return out;
+  }
+  var AGING_BUCKETS = ['dueamt', 'due0', 'due0_7', 'due0_30', 'due1_7', 'due8_30', 'due31_60', 'due31_plus', 'due61_90', 'due61_plus', 'due91_plus',
+    'pastdueamt', 'pastdue1_7', 'pastdue1_30', 'pastdue8_30', 'pastdue31_60', 'pastdue31_plus', 'pastdue61_90', 'pastdue61_plus', 'pastdue91_plus'];
+  function agingFold(items, opts) {
+    opts = opts || {};
+    var off = opts.statementOffset || 0, list = !!opts.isListInvoices, rows = [], cur = null;
+    var sorted = items.slice().sort(function (a, b) { return (a.c_bpartner_id - b.c_bpartner_id) || (a.c_currency_id - b.c_currency_id) || (a.c_invoice_id - b.c_invoice_id); });
+    sorted.forEach(function (oi) {
+      var inv = list ? Number(oi.c_invoice_id) : 0, ips = list ? Number(oi.c_invoicepayschedule_id || 0) : 0;
+      if (!cur || cur.c_bpartner_id !== oi.c_bpartner_id || cur.c_currency_id !== oi.c_currency_id || cur.c_invoice_id !== inv || cur.c_invoicepayschedule_id !== ips) {
+        cur = { c_bpartner_id: oi.c_bpartner_id, c_currency_id: oi.c_currency_id, c_invoice_id: inv, c_invoicepayschedule_id: ips, c_bp_group_id: oi.c_bp_group_id,
+                ad_org_id: oi.ad_org_id, issotrx: oi.issotrx, duedate: oi.duedate, invoicedamt: 0, openamt: 0, daysdue: 0, _n: 0, _sum: 0 };
+        AGING_BUCKETS.forEach(function (b) { cur[b] = 0; });
+        rows.push(cur);
+      }
+      var daysDue = Number(oi.daysdue) + off, amt = Number(oi.openamt) || 0;
+      cur.invoicedamt += Number(oi.grandtotal) || 0; cur.openamt += amt;
+      cur._n++; cur._sum += daysDue; cur.daysdue = Math.trunc(cur._sum / cur._n);
+      if (String(cur.duedate) > String(oi.duedate)) cur.duedate = oi.duedate;
+      if (daysDue <= 0) {
+        cur.dueamt += amt;
+        if (daysDue === 0) cur.due0 += amt;
+        if (daysDue >= -7) cur.due0_7 += amt;
+        if (daysDue >= -30) cur.due0_30 += amt;
+        if (daysDue <= -1 && daysDue >= -7) cur.due1_7 += amt;
+        if (daysDue <= -8 && daysDue >= -30) cur.due8_30 += amt;
+        if (daysDue <= -31 && daysDue >= -60) cur.due31_60 += amt;
+        if (daysDue <= -31) cur.due31_plus += amt;
+        if (daysDue <= -61 && daysDue >= -90) cur.due61_90 += amt;
+        if (daysDue <= -61) cur.due61_plus += amt;
+        if (daysDue <= -91) cur.due91_plus += amt;
+      } else {
+        cur.pastdueamt += amt;
+        if (daysDue <= 7) cur.pastdue1_7 += amt;
+        if (daysDue <= 30) cur.pastdue1_30 += amt;
+        if (daysDue >= 8 && daysDue <= 30) cur.pastdue8_30 += amt;
+        if (daysDue >= 31 && daysDue <= 60) cur.pastdue31_60 += amt;
+        if (daysDue >= 31) cur.pastdue31_plus += amt;
+        if (daysDue >= 61 && daysDue <= 90) cur.pastdue61_90 += amt;
+        if (daysDue >= 61) cur.pastdue61_plus += amt;
+        if (daysDue >= 91) cur.pastdue91_plus += amt;
+      }
+    });
+    rows.forEach(function (r) { delete r._n; delete r._sum; ['invoicedamt', 'openamt'].concat(AGING_BUCKETS).forEach(function (k) { r[k] = _agRound(r[k], 2); }); });
+    return rows;
+  }
+  function registerAging() {
+    registerHandler('org.compiere.process.Aging', function (ctx, info) {
+      var p = (info && info.params) || {}, q = ctx.query;
+      if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
+      if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
+      if (Number(p.ConvertAmountsInCurrency_ID) > 0) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
+      var today = ctx.today || new Date().toISOString().slice(0, 10);
+      var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
+      var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
+      var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';
+      var bp = Number(p.C_BPartner_ID) > 0 ? Number(p.C_BPartner_ID) : 0, grp = Number(p.C_BP_Group_ID) > 0 ? Number(p.C_BP_Group_ID) : 0;
+      var org = Number(p.AD_Org_ID) > 0 ? Number(p.AD_Org_ID) : 0;
+      var items = openItems(q, { today: today, clientId: ctx.clientId });
+      var groups = {};
+      items = items.filter(function (oi) {
+        if (String(oi.issotrx) !== so) return false;
+        var g = groups[oi.c_bpartner_id]; if (g === undefined) { var r = q('SELECT c_bp_group_id FROM c_bpartner WHERE c_bpartner_id=' + Number(oi.c_bpartner_id))[0]; g = groups[oi.c_bpartner_id] = r ? r.c_bp_group_id : null; }
+        if (g === null) return false;                                     // INNER JOIN C_BPartner
+        oi.c_bp_group_id = g;
+        if (bp) return Number(oi.c_bpartner_id) === bp;
+        if (grp && Number(g) !== grp) return false;
+        if (org && Number(oi.ad_org_id) !== org) return false;
+        return true;
+      });
+      var rows = agingFold(items, { statementOffset: offset, isListInvoices: String(p.IsListInvoices || 'N') === 'Y' });
+      var tot = {}; ['invoicedamt', 'openamt'].concat(AGING_BUCKETS).forEach(function (k) { tot[k] = _agRound(rows.reduce(function (a, r) { return a + r[k]; }, 0), 2); });
+      var names = {}; rows.forEach(function (r) { if (names[r.c_bpartner_id] === undefined) { var n = q('SELECT name FROM c_bpartner WHERE c_bpartner_id=' + Number(r.c_bpartner_id))[0]; names[r.c_bpartner_id] = n ? n.name : String(r.c_bpartner_id); }
+        var c = q('SELECT iso_code FROM c_currency WHERE c_currency_id=' + Number(r.c_currency_id))[0]; r.bpname = names[r.c_bpartner_id]; r.iso = c ? c.iso_code : String(r.c_currency_id); });
+      if (typeof console !== 'undefined') console.log('§AGING stmt=' + stmt + ' offset=' + offset + ' isSOTrx=' + so + ' bp=' + bp + ' items=' + items.length + ' rows=' + rows.length +
+        ' open=' + tot.openamt + ' due=' + tot.dueamt + ' pastDue=' + tot.pastdueamt + ' totals=' + JSON.stringify(tot) + ' (Aging.java:102-262, MAging.add :157-235)');
+      return { ok: true, message: 'aging: ' + rows.length + ' row(s) from ' + items.length + ' open item(s) as of ' + stmt, rows: rows.length,
+               result: { aging: rows, totals: tot, statementDate: stmt, items: items.length } };
+    }, { kind: 'report' });
+  }
+
+  // ══ FS-16 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2n — Witness: W-ERP-FIRST-SETUP S25b) — ImportBPartner ═══
+  //   ImportBPartner.doIt (ImportBPartner.java:92-605) over the TIP of i_bpartner (rows the File Loader committed this
+  //   session). Pure: returns { ops } — ONE signed group of CRUD ops (staging updates + C_BPartner / C_Location /
+  //   C_BPartner_Location / AD_User creates, FKs as {__opRef:i}); the host commits it. ctx.tipRows(table) → lower-case rows.
+  function importBPartner(ctx, p) {
+    var q = ctx.query, tip = ctx.tipRows, cli = Number(p.AD_Client_ID);
+    var ops = [], log = { inserted: 0, updated: 0, errors: 0, contacts: 0, locations: 0 };
+    var std = ctx.stdDefaults || null;
+    function mk(op) { if (op.op_type === 'CRUD_CREATE' && std && !op.stdDefaults) op.stdDefaults = std; ops.push(op); return ops.length - 1; }
+    function create(table, fields) { return mk({ op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', id: null, fields: fields, cas: null }); }
+    function update(table, id, changes) { var ch = {}; Object.keys(changes).forEach(function (k) { ch[k] = { old: null, new: changes[k] }; }); return mk({ op_type: 'CRUD_UPDATE', key: table, table: table, verb: 'update', id: id, changes: ch }); }
+    var nz = function (v) { return v != null && String(v) !== ''; };
+    var rows = tip('i_bpartner').filter(function (r) { return Number(r.ad_client_id) === cli && String(r.i_isimported || 'N') !== 'Y'; });
+    var bps = tip('c_bpartner').filter(function (b) { return Number(b.ad_client_id) === cli; });
+    var users = tip('ad_user'), bpls = tip('c_bpartner_location'), locs = tip('c_location');
+    var defGroup = (q("SELECT MAX(value) AS v FROM c_bp_group WHERE isdefault='Y' AND ad_client_id=" + cli)[0] || {}).v;
+    rows.forEach(function (r) {                                           // ****	Prepare / validate (the UPDATE statements)	****
+      r._err = [];
+      r.ad_org_id = r.ad_org_id == null ? 0 : r.ad_org_id; r.isactive = r.isactive || 'Y';
+      if (!nz(r.groupvalue) && !nz(r.c_bp_group_id)) r.groupvalue = defGroup;
+      if (!nz(r.c_bp_group_id)) { var g = q("SELECT c_bp_group_id AS id FROM c_bp_group WHERE value='" + String(r.groupvalue || '').replace(/'/g, "''") + "' AND ad_client_id=" + cli)[0]; r.c_bp_group_id = g ? g.id : null; }
+      if (!nz(r.c_bp_group_id)) r._err.push('ERR=Invalid Group, ');
+      if (!nz(r.c_country_id)) { var c = q("SELECT c_country_id AS id FROM c_country WHERE countrycode='" + String(r.countrycode || '').trim().replace(/'/g, "''") + "' AND ad_client_id IN (0," + cli + ')')[0]; r.c_country_id = c ? c.id : null; }
+      if (!nz(r.c_country_id) && (nz(r.city) || nz(r.address1))) r._err.push('ERR=Invalid Country, ');
+      if (!nz(r.regionname) && !nz(r.c_region_id) && nz(r.c_country_id)) { var rd = q("SELECT MAX(name) AS n FROM c_region WHERE isdefault='Y' AND c_country_id=" + Number(r.c_country_id) + ' AND ad_client_id IN (0,' + cli + ')')[0]; r.regionname = rd ? rd.n : null; }
+      if (!nz(r.c_region_id) && nz(r.regionname) && nz(r.c_country_id)) { var rg = q("SELECT c_region_id AS id FROM c_region WHERE name='" + String(r.regionname).replace(/'/g, "''") + "' AND c_country_id=" + Number(r.c_country_id) + ' AND ad_client_id IN (0,' + cli + ')')[0]; r.c_region_id = rg ? rg.id : null; }
+      if (!nz(r.c_region_id) && nz(r.c_country_id) && (q('SELECT hasregion AS h FROM c_country WHERE c_country_id=' + Number(r.c_country_id))[0] || {}).h === 'Y') r._err.push('ERR=Invalid Region, ');
+      if (nz(r.email)) { var ue = users.filter(function (u) { return u.email === r.email && Number(u.ad_client_id) === cli; })[0]; if (ue) { r.c_bpartner_id = ue.c_bpartner_id; r.ad_user_id = ue.ad_user_id; } }
+      if (!nz(r.c_bpartner_id) && nz(r.value)) { var bm = bps.filter(function (b) { return b.value === r.value; })[0]; if (bm) r.c_bpartner_id = bm.c_bpartner_id; }
+      if (nz(r.c_bpartner_id) && !nz(r.ad_user_id) && nz(r.contactname)) { var uc = users.filter(function (u) { return u.name === r.contactname && String(u.c_bpartner_id) === String(r.c_bpartner_id); })[0]; if (uc) r.ad_user_id = uc.ad_user_id; }
+      if (nz(r.c_bpartner_id) && !nz(r.c_bpartner_location_id)) {           // Existing Location ? Exact Match
+        var same = function (a, b) { return (a == null || a === '') ? (b == null || b === '') : String(a) === String(b); };
+        var hit = bpls.filter(function (bl) { if (String(bl.c_bpartner_id) !== String(r.c_bpartner_id)) return false; var l = locs.filter(function (x) { return String(x.c_location_id) === String(bl.c_location_id); })[0];
+          return l && same(r.address1, l.address1) && same(r.address2, l.address2) && same(r.city, l.city) && same(r.postal, l.postal) && same(r.c_region_id, l.c_region_id) && String(r.c_country_id) === String(l.c_country_id); })[0];
+        if (hit) r.c_bpartner_location_id = hit.c_bpartner_location_id;
+      }
+      if (!nz(r.value)) r._err.push('ERR=Value is mandatory, ');
+    });
+    var validateOnly = String(p.IsValidateOnly || 'N') === 'Y';
+    var good = rows.filter(function (r) { return !r._err.length; }).sort(function (a, b) { return String(a.value) < String(b.value) ? -1 : String(a.value) > String(b.value) ? 1 : Number(a.i_bpartner_id) - Number(b.i_bpartner_id); });
+    rows.filter(function (r) { return r._err.length; }).forEach(function (r) { log.errors++; update('i_bpartner', r.i_bpartner_id, { i_isimported: 'N', i_errormsg: ' ' + r._err.join('') }); });
+    if (!validateOnly) {
+      var oldValue = null, bpRef = null, bplRef = null;
+      good.forEach(function (r) {
+        var stg = {};
+        if (String(r.value) !== String(oldValue)) {
+          oldValue = r.value; bplRef = null;
+          if (!nz(r.c_bpartner_id)) {                                       // new MBPartner(impBP) MBPartner.java:310-335 + setInitialDefaults
+            var bf = { ad_org_id: r.ad_org_id, value: r.value || r.email || r.contactname, name: r.name || r.contactname || r.email, name2: r.name2 || null,
+              description: r.description || null, duns: r.duns || null, taxid: r.taxid || null, naics: r.naics || null, c_bp_group_id: r.c_bp_group_id,
+              iscustomer: 'Y', isprospect: 'Y', isvendor: 'N', isemployee: 'N', issummary: 'N', issalesrep: 'N', istaxexempt: 'N', ispotaxexempt: 'N', isonetime: 'N',
+              so_creditlimit: 0, so_creditused: 0, totalopenbalance: 0, socreditstatus: 'X' };
+            if (r.isvendor === 'Y') { bf.isvendor = 'Y'; bf.iscustomer = 'N'; }   // setTypeOfBPartner :619-632
+            if (r.isemployee === 'Y') { bf.isemployee = 'Y'; bf.iscustomer = 'N'; }
+            if (r.iscustomer === 'Y') bf.iscustomer = 'Y';
+            bpRef = { __opRef: create('c_bpartner', bf) }; log.inserted++;
+          } else {                                                          // Update existing BPartner
+            var ch = {}; if (nz(r.name)) { ch.name = r.name; ch.name2 = r.name2 || null; }
+            ['duns', 'taxid', 'naics', 'description'].forEach(function (k) { if (nz(r[k])) ch[k] = r[k]; });
+            if (nz(r.c_bp_group_id)) ch.c_bp_group_id = r.c_bp_group_id;
+            if (Object.keys(ch).length) update('c_bpartner', r.c_bpartner_id, ch);
+            bpRef = r.c_bpartner_id; log.updated++;
+          }
+          if (nz(r.c_bpartner_location_id)) bplRef = r.c_bpartner_location_id;   // update of an existing location: named, not ported
+          else if (nz(r.c_country_id) && nz(r.address1) && nz(r.city)) {
+            var li = create('c_location', { ad_org_id: 0, c_country_id: r.c_country_id, c_region_id: r.c_region_id || null, city: r.city, address1: r.address1,
+              address2: r.address2 || null, postal: r.postal || null, postal_add: r.postal_add || null });
+            bplRef = { __opRef: create('c_bpartner_location', { ad_org_id: r.ad_org_id, c_bpartner_id: bpRef, c_location_id: { __opRef: li },
+              name: String(r.city || r.address1),                                  // MBPartnerLocation.beforeSave '.' → makeUnique level 0 (City)
+              phone: r.phone || null, phone2: r.phone2 || null, fax: r.fax || null, isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y', ispreservecustomname: 'N' }) };
+            log.locations++;
+          }
+        }
+        stg.c_bpartner_id = bpRef;
+        if (bplRef != null) stg.c_bpartner_location_id = bplRef;
+        if (!nz(r.ad_user_id) && (nz(r.contactname) || nz(r.email))) {          // New Contact — new MUser(bp)
+          stg.ad_user_id = { __opRef: create('ad_user', { ad_org_id: r.ad_org_id, c_bpartner_id: bpRef, name: r.contactname || r.email, title: r.title || null,
+            description: r.contactdescription || null, comments: r.comments || null, phone: r.phone || null, phone2: r.phone2 || null, fax: r.fax || null,
+            email: r.email || null, birthday: r.birthday || null, c_bpartner_location_id: bplRef }) };
+          log.contacts++;
+        }
+        stg.i_isimported = 'Y'; stg.processed = 'Y'; stg.processing = 'N'; stg.i_errormsg = ' ';
+        update('i_bpartner', r.i_bpartner_id, stg);
+      });
+    }
+    return { ops: ops, log: log, staged: rows.length, validateOnly: validateOnly };
+  }
+  function registerImportBPartner() {
+    registerHandler('org.compiere.process.ImportBPartner', function (ctx, info) {
+      var p = (info && info.params) || {};
+      if (typeof ctx.query !== 'function' || typeof ctx.tipRows !== 'function') return { ok: false, message: 'ImportBPartner: no data accessor', rows: 0 };
+      if (!(Number(p.AD_Client_ID) >= 0) || p.AD_Client_ID == null || p.AD_Client_ID === '') return { ok: false, message: 'AD_Client_ID is mandatory', rows: 0 };
+      var r = importBPartner(ctx, p);
+      if (typeof console !== 'undefined') console.log('§IMPORT-BP client=' + p.AD_Client_ID + ' staged=' + r.staged + ' inserted=' + r.log.inserted + ' updated=' + r.log.updated +
+        ' locations=' + r.log.locations + ' contacts=' + r.log.contacts + ' errors=' + r.log.errors + ' ops=' + r.ops.length + (r.validateOnly ? ' validateOnly=Y' : '') + ' (ImportBPartner.java:92-605)');
+      return { ok: true, message: (r.validateOnly ? 'Validated: ' : '') + r.log.inserted + ' business partner(s) inserted, ' + r.log.updated + ' updated, ' + r.log.errors + ' error(s)',
+               rows: r.log.inserted + r.log.updated, result: { commitOps: r.ops, importLog: r.log, staged: r.staged } };
+    }, { kind: 'process' });
+  }
+
   // dispatch — the full spine: read → resolve classname → validate params → run handler → result.
   //   db   = better-sqlite3 handle on ad_full.db (for the AD rows)
   //   info = { AD_Process_ID, params:{columnName:value}, ...handler-specific (Record_ID etc.) }
@@ -689,6 +948,17 @@
       };
     }
 
+    // §CP — a verbatim SvrProcess port runs inside ONE ModelLayer.Trx the host opens (ctx.runInTrx); its ops are the commit
+    if (classname && JAVA[classname] && typeof ctx.runInTrx === 'function') {
+      var jr = ctx.runInTrx(function (query, env) {
+        return runJava(query, env, { AD_Process_ID: proc.AD_Process_ID, className: classname, title: proc.name,
+          Record_ID: info.Record_ID || 0, Table_ID: info.Table_ID || 0, params: info.params || {} });
+      }) || { ok: false, summary: 'no transaction' , ops: [], logs: [] };
+      (jr.log || []).forEach(function (l) { if (typeof console !== 'undefined') console.log(l); });
+      return { ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname, kind: 'java', dispatched: true,
+        ok: !!jr.ok, reason: jr.ok ? 'ok' : 'process-error', validate: validate, rows: (jr.ops || []).length, message: jr.summary,
+        result: { commitOps: jr.ops || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError } };
+    }
     // Core.getProcess(className) == null branch (ProcessUtil:166-170): explicit absent-handler, NOT a no-op.
     if (!classname || !hasHandler(classname)) {
       return {
@@ -757,6 +1027,229 @@
     return { byAccess: byAccess, byWorkflow: byWorkflow, union: union };
   }
 
+  // ══ JAVA PROCESS RUNTIME — SvrProcess ported (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — W-CP-PROC-ORACLE) ═══
+  // Each core AD_Process.Classname is a verbatim SvrProcess port in erp/processes/*.js, registered with defineProcess.
+  // It runs inside ONE ModelLayer.Trx (the Java trxName): reads are SQL over the host query (tip-shadowed) through the
+  // callout runtime's DB/PO (AdCallout.RUNTIME, bound to the Trx's query), writes go through ModelLayer.save/processIt,
+  // and trx.groupOps() is what the host commits as ONE signed group (__crud.applyOpGroup) — the Java commit.
+  //   SvrProcess.startProcess/process   ← org/compiere/process/SvrProcess.java:132-232, :238-330
+  //   ProcessInfoParameter               ← org/compiere/process/ProcessInfoParameter.java:126-275
+  //   ProcessInfoUtil.setParameterFromDB ← P_Number→BigDecimal, P_Date→Timestamp, P_String→String (AD_PInstance_Para)
+  var JAVA = {};
+  function _A() { return (typeof module !== 'undefined' && module.exports) ? require('./ad_callout.js') : global.AdCallout; }
+  function _ML() { return (typeof module !== 'undefined' && module.exports) ? require('./model_layer.js') : global.ModelLayer; }
+  function ProcessInfoParameter(name, p, pTo, info, infoTo) { this.n = name; this.p = p == null ? null : p; this.pt = pTo == null ? null : pTo; this.info = info || null; this.infoTo = infoTo || null; }
+  var PIP = ProcessInfoParameter.prototype;
+  PIP.getParameterName = function () { return this.n; };
+  PIP.getParameter = function () { return this.p; };
+  PIP.getParameter_To = function () { return this.pt; };
+  PIP.getInfo = function () { return this.info; }; PIP.getInfo_To = function () { return this.infoTo; };
+  function _asInt(v) { if (v == null) return 0; if (typeof v === 'number') return Math.trunc(v); var A = _A(); return Number(A.toBD(String(v)).setScale(0, A.RoundingMode.DOWN).toString()); }
+  function _asBool(v) { if (v == null) return false; if (typeof v === 'boolean') return v; return 'Y' === v; }
+  function _asTS(v) { var A = _A(); return v instanceof A.Timestamp ? v : null; }
+  function _asBD(v) { if (v == null) return null; var A = _A(); return v instanceof A.BigDecimal ? v : A.toBD(String(v)); }
+  PIP.getParameterAsInt = function () { return _asInt(this.p); }; PIP.getParameter_ToAsInt = function () { return _asInt(this.pt); };
+  PIP.getParameterAsBoolean = function () { return _asBool(this.p); }; PIP.getParameter_ToAsBoolean = function () { return _asBool(this.pt); };
+  PIP.getParameterAsTimestamp = function () { return _asTS(this.p); }; PIP.getParameter_ToAsTimestamp = function () { return _asTS(this.pt); };
+  PIP.getParameterAsString = function () { return this.p == null ? null : String(_A().stored(this.p)); };
+  PIP.getParameter_ToAsString = function () { return this.pt == null ? null : String(_A().stored(this.pt)); };
+  PIP.getParameterAsBigDecimal = function () { return _asBD(this.p); }; PIP.getParameter_ToAsBigDecimal = function () { return _asBD(this.pt); };
+  PIP.getParameterAsCSVInt = function () { return this.p == null ? null : String(this.p); };
+  PIP.getParameterAsIntArray = function () { return this.p == null ? [] : String(this.p).split(',').map(function (x) { return parseInt(x, 10); }); };
+  // typedParam — AD_PInstance_Para typing: numbers/IDs BigDecimal (P_Number), dates Timestamp (P_Date), else String
+  function typedParam(refId, v) {
+    if (v == null || v === '') return null;
+    var A = _A(), t = refType(refId);
+    if (t === 'integer' || t === 'number') return A.toBD(String(v));
+    if (t === 'date') return A.Timestamp.of(v);
+    if (t === 'yesno') return (v === true || v === 'Y') ? 'Y' : 'N';
+    return String(v);
+  }
+
+  function SvrProcess() { this.m_ctx = null; this.m_pi = null; this.m_trx = null; this.logs = []; }
+  // startProcess + process (SvrProcess.java:132-330): prepare → doIt; an exception's message is the summary; "@Error@" fails
+  SvrProcess.prototype.startProcess = function (ctx, pi, trx) {
+    this.m_ctx = ctx; this.m_pi = pi; this.m_trx = trx;
+    var msg = null, success = true, A = _A();
+    try { this.prepare(); msg = this.doIt(); }
+    catch (e) { msg = (e && e.message) || String(e); success = false; if (trx && trx.say) trx.say('§PROC-EXCEPTION ' + pi.className + ' ' + msg + (e && e.stack ? ' @' + String(e.stack).split('\n')[1] : '')); }
+    if (msg != null && String(msg).indexOf('@Error@') === 0) success = false;
+    msg = A.Msg.parseTranslation(ctx, msg == null ? '' : String(msg));
+    pi.summary = msg; pi.isError = !success;
+    return success;
+  };
+  SvrProcess.prototype.prepare = function () {};
+  SvrProcess.prototype.doIt = function () { throw new Error('doIt not implemented'); };
+  SvrProcess.prototype.getCtx = function () { return this.m_ctx; };
+  SvrProcess.prototype.getProcessInfo = function () { return this.m_pi; };
+  SvrProcess.prototype.getName = function () { return this.m_pi.title; };
+  SvrProcess.prototype.getAD_PInstance_ID = function () { return this.m_pi.AD_PInstance_ID || 0; };
+  SvrProcess.prototype.getTable_ID = function () { return this.m_pi.Table_ID || 0; };
+  SvrProcess.prototype.getRecord_ID = function () { return this.m_pi.Record_ID || 0; };
+  SvrProcess.prototype.getRecord_IDs = function () { return this.m_pi.Record_IDs || []; };
+  SvrProcess.prototype.getAD_User_ID = function () { return this.m_pi.AD_User_ID || _A().Env.getAD_User_ID(this.m_ctx); };
+  SvrProcess.prototype.getAD_Client_ID = function () { return this.m_pi.AD_Client_ID || _A().Env.getAD_Client_ID(this.m_ctx); };
+  SvrProcess.prototype.getParameter = function () { return this.m_pi.parameter || []; };
+  SvrProcess.prototype.get_TrxName = function () { return this.m_trx; };
+  SvrProcess.prototype.addLog = function (id, date, number, msg, tableId, recordId) {
+    if (arguments.length === 1) { msg = id; id = 0; date = null; number = null; }
+    this.logs.push({ id: id, date: date == null ? null : String(date), number: number == null ? null : String(number), msg: msg == null ? null : String(msg), tableId: tableId || 0, recordId: recordId || 0 });
+  };
+  SvrProcess.prototype.addBufferLog = SvrProcess.prototype.addLog;
+  SvrProcess.prototype.statusUpdate = function (m) { if (this.m_trx && this.m_trx.say) this.m_trx.say('§PROC-STATUS ' + m); };
+  SvrProcess.prototype.commitEx = function () {};     // one Trx = one signed group: the host commits at the end
+  SvrProcess.prototype.commit = function () {};
+  SvrProcess.prototype.rollback = function () { if (this.m_trx) { this.m_trx.ops = []; this.m_trx.pend = {}; } };
+
+  // ── DB writes inside a process (DB.executeUpdateEx / getIDsEx) — the Java's raw SQL writes, routed into the Trx as ops.
+  //   UPDATE t SET a=expr,… WHERE w  → SELECT key, expr AS a … FROM t WHERE w (params keep their order: SET first, WHERE next)
+  //   DELETE FROM t WHERE w          → SELECT key … → trx.del
+  //   INSERT INTO t (cols) SELECT …|VALUES (…) → the row(s) → trx.insert
+  //   Named limit: a later raw SELECT in the same process does not see these pending writes (Trx.get/find do).
+  function _splitTop(str) {
+    var out = [], depth = 0, q = false, cur = '';
+    for (var i = 0; i < str.length; i++) { var ch = str.charAt(i);
+      if (ch === "'") q = !q;
+      if (!q) { if (ch === '(') depth++; else if (ch === ')') depth--; else if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; } }
+      cur += ch; }
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
+  // index of the first match of re at paren-depth 0 outside quotes (-1 if none)
+  function _topIdx(str, re) {
+    var depth = 0, q = false;
+    for (var i = 0; i < str.length; i++) { var ch = str.charAt(i);
+      if (ch === "'") q = !q;
+      if (q) continue;
+      if (ch === '(') depth++; else if (ch === ')') depth--;
+      else if (depth === 0 && /\s/.test(ch) && re.test(str.slice(i, i + 12))) { var mm = re.exec(str.slice(i)); if (mm && mm.index === 0) return i; } }
+    return -1;
+  }
+  function processDB(trx) {
+    var A = _A(), base = A.RUNTIME.DB;
+    function keyOf(t) { return trx.idCol(t); }
+    function rowsOf(t, where, params) { return trx.q('SELECT * FROM ' + t + (where ? ' WHERE ' + where : ''), params || []); }
+    function plain(v) { return A.stored(v); }
+    var db = Object.create(base);
+    db.getIDsEx = db.getIDs = function (trxName, sql) { var a = Array.prototype.slice.call(arguments, 2); if (a.length === 1 && Array.isArray(a[0])) a = a[0];
+      return base.query(sql, a).map(function (r) { var k = Object.keys(r)[0]; return Math.trunc(Number(r[k])); }); };
+    // DB.executeUpdate (non-Ex) logs and returns -1 on an SQL error (U/DB.java executeUpdate catch → log.SEVERE, no throw)
+    // DB.executeUpdate overloads (DB.java): (sql, trxName) · (sql, param, trxName) · (sql, Object[] params, ignoreError, trxName) · (sql, ignoreError, trxName).
+    //   A Trx object / String trxName / boolean ignoreError is never a bind parameter (pre-fix: FactAcctReset's (sql, trx) bound the Trx as ?).
+    function _updArgs(args) {
+      var rest = Array.prototype.slice.call(args, 1).filter(function (x) { return typeof x !== 'boolean' && !(x && typeof x === 'object' && typeof x.q === 'function' && !Array.isArray(x)); });
+      if (rest.length >= 2) return rest[0];                       // (sql, param, trxName)
+      return rest.length === 1 && typeof rest[0] !== 'string' ? rest[0] : undefined;   // single: Object[]/value is the params; a String is the trxName
+    }
+    db.executeUpdate = function (sql) {
+      var params = _updArgs(arguments);
+      try { return db.executeUpdateEx(sql, params); }
+      catch (e) { trx.say('§PROC-SQL-ERROR executeUpdate → -1: ' + ((e && e.message) || e) + ' :: ' + String(sql).replace(/\s+/g, ' ').slice(0, 160)); return -1; }
+    };
+    db.executeUpdateEx = function (sql) {
+      var params = _updArgs(arguments);
+      if (params === undefined || params === null) params = [];
+      if (!Array.isArray(params)) params = [params];
+      params = params.map(plain);
+      var m, S = String(sql).trim().replace(/\s+/g, ' ');
+      if ((m = /^UPDATE\s+([\w.]+)(?:\s+(?!SET\b)(\w+))?\s+SET\s+(.*)$/i.exec(S))) {
+        // UPDATE t [alias] SET assignments [WHERE w] — the WHERE is the one at paren-depth 0 (a subselect's own WHERE is not it).
+        //   assignment = col=expr | (c1,c2,…)=(SELECT e1,e2 FROM …) | (c1,c2)=(v1,v2)  → one scalar per column, so SQLite (no row-value SET) runs it.
+        var t = m[1].toLowerCase(), al = m[2] || t, wi = _topIdx(m[3], /\sWHERE\s/i), setS = wi < 0 ? m[3] : m[3].slice(0, wi), whereS = wi < 0 ? '' : m[3].slice(wi).replace(/^\s*WHERE\s+/i, '');
+        var sets = [], cur0 = 0, nq = function (z) { return (String(z).match(/\?/g) || []).length; }, take = function (n) { var r = params.slice(cur0, cur0 + n); cur0 += n; return r; };
+        _splitTop(setS).forEach(function (x) {
+          var i = x.indexOf('='), lhs = x.slice(0, i).trim(), rhs = x.slice(i + 1).trim();
+          if (lhs.charAt(0) === '(') {
+            var cs = lhs.slice(1, -1).split(',').map(function (c) { return c.trim().toLowerCase(); }), inner = rhs.replace(/^\(\s*/, '').replace(/\s*\)$/, ''), es;
+            if (/^SELECT\s/i.test(inner)) {
+              var fi = _topIdx(inner, /\sFROM\s/i), lst = _splitTop(inner.slice(6, fi < 0 ? inner.length : fi)), rest = fi < 0 ? '' : inner.slice(fi);
+              var lp = lst.map(function (e) { return take(nq(e)); }), rp = take(nq(rest));      // ?s in select-list order, then the FROM… part (repeated per column)
+              es = lst.map(function (e, j) { return { e: '(SELECT ' + e.trim() + rest + ')', ps: lp[j].concat(rp) }; });
+            } else es = _splitTop(inner).map(function (e) { return { e: e, ps: take(nq(e)) }; });
+            if (es.length !== cs.length) throw new Error('executeUpdate: row-value SET arity ' + cs.length + ' vs ' + es.length);
+            cs.forEach(function (c, j) { sets.push({ c: c, e: es[j].e.trim(), ps: es[j].ps }); });
+          } else sets.push({ c: lhs.toLowerCase(), e: rhs, ps: take(nq(rhs)) });
+        });
+        var k = keyOf(t), rows = trx.q('SELECT ' + al + '.' + k + ' AS __k, ' + sets.map(function (x, i) { return '(' + x.e + ') AS __v' + i; }).join(', ') + ' FROM ' + t + (al !== t ? ' ' + al : '') + (whereS ? ' WHERE ' + whereS : ''), [].concat.apply([], sets.map(function (x) { return x.ps; })).concat(params.slice(cur0)));
+        rows.forEach(function (r) { var cur = trx.get(t, r.__k); if (!cur) return; var ch = {}; sets.forEach(function (x, i) { ch[x.c] = r['__v' + i]; }); trx.update(t, cur, ch); });
+        return rows.length;
+      }
+      if ((m = /^DELETE\s+FROM\s+([\w.]+)(?:\s+(?!WHERE\b)(\w+))?(?:\s+WHERE\s+(.*))?$/i.exec(S))) {
+        var t2 = m[1].toLowerCase(), k2 = keyOf(t2), a2 = m[2] || t2, rs = trx.q('SELECT ' + a2 + '.' + k2 + ' AS __k FROM ' + t2 + (m[2] ? ' ' + m[2] : '') + (m[3] ? ' WHERE ' + m[3] : ''), params);
+        rs.forEach(function (r) { var cur = trx.get(t2, r.__k); if (cur) trx.del(t2, cur); });
+        return rs.length;
+      }
+      if ((m = /^INSERT\s+INTO\s+([\w.]+)\s*\(([^)]*)\)\s*(VALUES\s*\((.*)\)|SELECT .*)$/i.exec(S))) {
+        var t3 = m[1].toLowerCase(), cols = m[2].split(',').map(function (c) { return c.trim().toLowerCase(); }), rs3;
+        if (/^VALUES/i.test(m[3])) rs3 = trx.q('SELECT ' + _splitTop(m[4]).map(function (e, i) { return '(' + e + ') AS __v' + i; }).join(', '), params);
+        else rs3 = trx.q(m[3], params).map(function (r) { var o = {}, ks = Object.keys(r); ks.forEach(function (kk, i) { o['__v' + i] = r[kk]; }); return o; });
+        rs3.forEach(function (r) { var f = {}; cols.forEach(function (c, i) { f[c] = r['__v' + i]; }); trx.insert(t3, f); });
+        return rs3.length;
+      }
+      trx.say('§PROC-UNPORTED-DEP executeUpdate SQL shape not translated: ' + S.slice(0, 160));
+      throw new Error('executeUpdate: unsupported SQL ' + S.slice(0, 80));
+    };
+    return db;
+  }
+  // PO_HELPERS — PO read/write inside the process Trx (PO.java get/set/save via ModelLayer.save; reads see this Trx's writes)
+  //   plain(v): a Java-typed value → the store's value (BigDecimal → Number via ML.N, Timestamp → 'yyyy-MM-dd HH:mm:ss', boolean → Y/N)
+  var PO_HELPERS = {
+    get A() { return _A(); }, get ML() { return _ML(); }, ProcessInfoParameter: ProcessInfoParameter,
+    plain: function (v) { var A = _A(); if (v instanceof A.BigDecimal) return _ML().N(v); if (v instanceof A.Timestamp) return v.toString(); if (typeof v === 'boolean') return v ? 'Y' : 'N'; return v; },
+    plainMap: function (m) { var o = {}; for (var k in m) if (Object.prototype.hasOwnProperty.call(m, k)) o[k.toLowerCase()] = PO_HELPERS.plain(m[k]); return o; },
+    // get(trx, table, id) → Java-shaped getters over the Trx's live row (pending writes included); null if absent
+    get: function (trx, table, id) { var r = trx.get(String(table).toLowerCase(), id); return r ? _A().RUNTIME.PO.wrap(table, r) : null; },
+    find: function (trx, table, where, orderBy) { return trx.find(String(table).toLowerCase(), where || {}, orderBy).map(function (r) { return _A().RUNTIME.PO.wrap(table, r); }); },
+    // save(trx, table, poOrNull, changes) — PO.save: new when po is null; returns {ok,row,error}
+    save: function (trx, table, po, changes) { return _ML().save(trx, String(table).toLowerCase(), po ? (po.row || po) : null, PO_HELPERS.plainMap(changes || {})); },
+    remove: function (trx, table, po) { return _ML().remove(trx, String(table).toLowerCase(), po.row || po); },
+    newPO: function (trx, table, fields) { return _ML().newPO(trx, String(table).toLowerCase(), PO_HELPERS.plainMap(fields || {})); }
+  };
+  function defineProcess(classname, factory) {
+    var C = factory(SvrProcess, PO_HELPERS);
+    JAVA[classname] = C;
+    return C;
+  }
+  // runJava(query, env, pi) — ProcessUtil.startJavaProcess (ProcessUtil.java:145-205) inside one ModelLayer.Trx.
+  //   pi = { AD_Process_ID, className, title, Record_ID, Table_ID, AD_PInstance_ID, params:{name:{v,vTo}|v}, ctx(Ctx) }
+  var proc0db = null;
+  function runJava(query, env, pi) {
+    var A = _A(), ML = _ML(), C = JAVA[pi.className];
+    if (!C) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + pi.className };
+    var trx = new ML.Trx(query, env || {});
+    A.bind(function (sql, params) { return trx.q(sql, params); }, { now: env && env.nowMillis ? function () { return env.nowMillis; } : undefined, log: function (l) { trx.say(l); } });
+    var ctx = pi.ctx || A.loginContext({ client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date });
+    // ProcessInfoParameter[] from AD_Process_Para (SeqNo order) — the parameter types the UI's AD_PInstance_Para carry
+    var paras = [];
+    try { paras = query('SELECT columnname AS c, ad_reference_id AS r FROM ad_process_para WHERE ad_process_id=? AND isactive=? ORDER BY seqno', [pi.AD_Process_ID, 'Y']) || []; } catch (e) {}
+    // Java: SvrProcess.getParameter:582-589 → ProcessInfoUtil.setParameterFromDB:181-253 reads EVERY AD_PInstance_Para row the caller wrote
+    //   (declared or not — an undeclared one is a "Custom" parameter, MProcess/MProcessPara.validateUnknownParameter:443-457 only logs it),
+    //   plus a NULL entry for each declared AD_Process_Para not passed (the UNION :192-198). Typing: declared → by AD_Reference_ID;
+    //   undeclared → by the caller's type ({type:'date'|'num'|'int'|'str'} or the JS value), as P_Date/P_Number/P_String were written.
+    var given = pi.params || {}, seen = {}, decl = {};
+    paras.forEach(function (pp) { decl[String(pp.c).toLowerCase()] = pp; });
+    pi.parameter = [];
+    function wrap(g) { return (g && typeof g === 'object' && !(g instanceof A.BigDecimal) && !(g instanceof A.Timestamp) && ('v' in g)) ? g : { v: g }; }
+    function byType(t, v) {
+      if (v == null || v === '') return null;
+      if (t === 'date') return A.Timestamp.of(v);
+      if (t === 'num' || t === 'int' || (!t && typeof v === 'number')) return A.toBD(String(v));
+      return v;                                  // BigDecimal / Timestamp / String stay as given
+    }
+    Object.keys(given).forEach(function (k) {
+      var pp = decl[k.toLowerCase()], v = wrap(given[k]); seen[k.toLowerCase()] = 1;
+      if (pp) pi.parameter.push(new ProcessInfoParameter(pp.c, typedParam(pp.r, v.v), typedParam(pp.r, v.vTo), null, null));
+      else { A.RUNTIME.log('§PROC-CUSTOM-PARA ' + pi.className + ' ' + k + ' (not in AD_Process_Para; reaches the process as ProcessInfoUtil does)');
+        pi.parameter.push(new ProcessInfoParameter(k, byType(v.type, v.v), byType(v.type, v.vTo), null, null)); }
+    });
+    paras.forEach(function (pp) { if (!seen[String(pp.c).toLowerCase()]) pi.parameter.push(new ProcessInfoParameter(pp.c, null, null, null, null)); });
+    proc0db = processDB(trx); A.RUNTIME.DB = proc0db;
+    var proc = new C();
+    var ok = proc.startProcess(ctx, pi, trx);
+    var ops = ok ? trx.groupOps() : [];
+    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, log: trx.log, trx: trx };
+  }
+
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
@@ -771,7 +1264,9 @@
     readProcess: readProcess, resolveClassname: resolveClassname,
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
-    refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE
+    refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
+    openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

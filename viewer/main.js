@@ -199,10 +199,13 @@ async function initViewer() {
         // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
         // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
         // no-op if missing, but then every › ERP surface is inert).
-        'find_erp_push.js?v=2',
+        'find_erp_push.js?v=3',
         // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
         // would still carry its own copy AND the new wiring would never run.
-        'navigate_find.js?v=61',
+        // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
+        'find_ask_grammar.js?v=1',
+        'find_ask.js?v=4',
+        'navigate_find.js?v=63',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -229,16 +232,22 @@ async function initViewer() {
   };
   // Proxy so nlp.js "typeof A.openFindPanel === 'function'" finds it immediately.
   // setupNavigate() overwrites APP.openFindPanel with the real implementation.
+  // S226 §R2 — status/toast strings resolve through the AD_Message dictionary (viewer/i18n via locale_loader.js); the
+  // English literal stays the in-code default, used if the loader has not run yet (main.js is parsed before it).
+  function _trlD(key, repl, dflt) {
+    if (typeof window._trl === 'function') return window._trl(key, repl, dflt);
+    var s = dflt != null ? dflt : key; if (repl) for (var k in repl) s = s.replace('{' + k + '}', repl[k]); return s;
+  }
   var _navProxy = function(searchTerm) {
     console.log('[S275] §FIND_PROXY loading navigate modules…');
-    if (APP.status) APP.status.textContent = 'Loading Find…';
+    if (APP.status) APP.status.textContent = _trlD('ui_loading_find', null, 'Loading Find…');
     APP.loadNavigate().then(function() {
       // After load, APP.openFindPanel is the real function (set by setupNavigate)
       if (APP.openFindPanel !== _navProxy) APP.openFindPanel(searchTerm);
       else console.warn('[S275] §FIND_PROXY_FAIL openFindPanel still proxy after load');
     }).catch(function(e) {
       console.warn('[S275] §FIND_PROXY_ERR', e);
-      if (APP.status) APP.status.textContent = 'Find failed to load';
+      if (APP.status) APP.status.textContent = _trlD('ui_find_load_failed', null, 'Find failed to load');
     });
   };
   APP.openFindPanel = _navProxy;
@@ -325,7 +334,7 @@ async function initViewer() {
     if (window._isMobile) { APP.status.textContent = '2D views are desktop-only'; console.log('§2D_GATE skip — mobile'); return; }
     // Block if Measure is active
     if (APP.measureActive) {
-      APP.status.textContent = 'Close Measure first';
+      APP.status.textContent = _trlD('ui_close_measure', null, 'Close Measure first');
       return;
     }
     if (typeof APP.toggleGridOverlay === 'function') {
@@ -873,7 +882,7 @@ async function initViewer() {
   APP._onStreamDone = function() {
     if (!APP._isWebGPU || !APP.renderer.compileAsync) return;
     _pipelinesCompiling = true;
-    if (APP.status) APP.status.textContent = 'Compiling GPU shaders — please wait...';
+    if (APP.status) APP.status.textContent = _trlD('ui_gpu_compiling', null, 'Compiling GPU shaders — please wait...');
     console.log('§S276_COMPILE_ASYNC starting pipeline pre-compilation...');
     var t0 = performance.now();
     APP.renderer.compileAsync(APP.scene, APP.camera).then(function() {
@@ -885,7 +894,7 @@ async function initViewer() {
         console.log('§S276_BBOX_CLEAR bboxes removed after pipeline compilation');
       }
       _needsRender = true;
-      if (APP.status) APP.status.textContent = 'GPU shaders compiled in ' + ms + 'ms — rendering';
+      if (APP.status) APP.status.textContent = _trlD('ui_gpu_compiled', { ms: ms }, 'GPU shaders compiled in {ms}ms — rendering');
       console.log('§S276_COMPILE_ASYNC done ms=' + ms);
     });
   };
@@ -1268,12 +1277,12 @@ async function initViewer() {
     if (online) {
       div.style.background = 'rgba(39,174,96,0.92)';
       div.style.color = '#fff';
-      div.textContent = 'Back online';
+      div.textContent = _trlD('ui_back_online', null, 'Back online');
       console.log('[S243] §NET_STATUS online');
     } else {
       div.style.background = 'rgba(230,126,34,0.92)';
       div.style.color = '#fff';
-      div.textContent = 'Offline mode — cached buildings still available';
+      div.textContent = _trlD('ui_offline_mode', null, 'Offline mode — cached buildings still available');
       console.log('[S243] §NET_STATUS offline');
     }
     document.body.appendChild(div);
@@ -1289,7 +1298,7 @@ async function initViewer() {
     var mic = document.getElementById('nlp-btn');
     var badge = document.createElement('span');
     badge.id = id;
-    badge.textContent = 'OFFLINE';
+    badge.textContent = _trlD('ui_offline_badge', null, 'OFFLINE');
     badge.style.cssText = 'position:fixed;top:10px;z-index:21;padding:2px 7px;' +
       'background:rgba(200,30,30,0.85);color:#fff;font-size:10px;font-family:Segoe UI,sans-serif;' +
       'border-radius:4px;letter-spacing:0.5px;pointer-events:none;opacity:0.9;';

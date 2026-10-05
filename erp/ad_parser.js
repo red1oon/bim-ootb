@@ -294,7 +294,7 @@
       // c.ad_val_rule_id) AS AD_Val_Rule_ID", with validationcode joined on that same COALESCE
       // (migration/iD10/postgresql/202209141520_IDEMPIERE-5396.sql:7,14). Same precedence this function
       // already applies to DefaultValue / AD_Reference_ID / AD_Reference_Value_ID, not a new convention.
-      '       COALESCE(NULLIF(f.AD_Val_Rule_ID, \'\'), c.AD_Val_Rule_ID) as ValRule ';
+      '       COALESCE(NULLIF(f.AD_Val_Rule_ID, \'\'), c.AD_Val_Rule_ID) as ValRule, c.IsAlwaysUpdateable as AlwaysUpd, c.ColumnSQL as ColSQL ';
     var TAIL = 'FROM AD_Field f ' +
       'JOIN AD_Column c ON f.AD_Column_ID = c.AD_Column_ID ' +
       'WHERE f.AD_Tab_ID = ? AND f.IsActive = \'Y\' ' +
@@ -338,6 +338,8 @@
         fieldLength: o.FieldLength,
         isKey: o.IsKey === 'Y',
         isIdentifier: o.IsIdentifier === 'Y',
+        isAlwaysUpdateable: o.AlwaysUpd === 'Y',
+        isVirtual: o.ColSQL != null && String(o.ColSQL).trim() !== '',   // §GT.7 AD_Column.ColumnSQL → never editable (GridField.isEditable:445)             // §GT.7 AD_Column.IsAlwaysUpdateable (GridField.isEditable:462)
         isUpdateable: o.IsUpdateable !== 'N'                 // S2B: AD_Column.IsUpdateable (null/Y → updateable; 'N' → display-only on Edit)
       };
     }).filter(Boolean);

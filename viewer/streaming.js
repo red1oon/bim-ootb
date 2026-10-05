@@ -301,6 +301,35 @@ function setupStreaming(A) {
     return A._matNameCol;
   };
 
+  // §FB (prompts/CIVIL_HIGHWAY_JELAPANG.md §FB SPEC): ONE owner for "which building does a whole-scene
+  // reader (Find tree/search/isolate) scope to". A MERGED scene (>1 building, not City) is one model →
+  // '' = all buildings. Every other scene (all hub DBs are 1 building; City keeps per-building) → the
+  // active building, exactly as before.
+  var _sceneScopeLast = null;
+  A.sceneScopeBuilding = function() {
+    var n = Object.keys(A.buildingCentres || {}).length;
+    var merged = !A.CITY_URL && n > 1;
+    var out = merged ? '' : (A.activeBuilding || '');
+    var key = merged ? 'all:' + n : 'one:' + out;
+    if (key !== _sceneScopeLast) {
+      _sceneScopeLast = key;
+      console.log(merged ? '§SCENE_SCOPE all buildings=' + n : '§SCENE_SCOPE one bld=' + out);
+    }
+    return out;
+  };
+
+  // §MESH_SLIM: ONE owner for "is this a civil model" on the viewer side — any element discipline in rates.js
+  // SEQUENCE_CIVIL. Cached per A.db object. Fleet DBs: 0 civil rows → false.
+  A.isCivilModel = function() {
+    if (!A.db || !window.SEQUENCE_CIVIL) return false;
+    if (A._civilModelDb === A.db) return A._civilModel;
+    var n = 0;
+    try { var r = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')"); n = (r.length && r[0].values[0][0]) || 0; } catch (e) {}
+    A._civilModelDb = A.db; A._civilModel = n > 0;
+    console.log('§CIVIL_MODEL civilRows=' + n + ' → ' + A._civilModel);
+    return A._civilModel;
+  };
+
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
     for (const [name, bc] of Object.entries(A.buildingCentres)) {
@@ -924,8 +953,38 @@ function setupStreaming(A) {
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i], bx = +r[6] || 0, by = +r[7] || 0, bz = +r[8] || 0;
       if (!(bz < Math.min(bx, by) && Math.max(bx, by) >= 0.1)) continue;
-      flat.push({ g: r[0], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
+      flat.push({ g: r[0], c: r[1], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
         y0: Math.floor(r[4] - by / 2), y1: Math.floor(r[4] + by / 2), zb: r[5] - bz / 2, zt: r[5] + bz / 2 });
+    }
+    // §ROOF_LAYER_BUDGET (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §LOAD): the 1 m grid costs the SUM of every
+    // flat element's plan area. Fleet max 381,732 cells (LTU_AHouse); a 2 km road site 13,416,479 (16.1 s on the main
+    // thread). Over budget → judge ONLY the classes the sole reader uses (_SURF_ENVELOPE, A._surfRowOf) and find cover
+    // through a 16 m bucket index with the SAME per-cell predicate. Measured identical membership for every envelope
+    // element on all 11 fleet DBs + JELAPANG (diff=0); under budget the path below is untouched.
+    var cellSum = 0;
+    for (var ci = 0; ci < flat.length; ci++) cellSum += (flat[ci].x1 - flat[ci].x0 + 1) * (flat[ci].y1 - flat[ci].y0 + 1);
+    if (cellSum > 2000000) {
+      var B = 16, bk = new Map();
+      flat.forEach(function(o, k) {
+        for (var i = Math.floor(o.x0 / B); i <= Math.floor(o.x1 / B); i++) for (var j = Math.floor(o.y0 / B); j <= Math.floor(o.y1 / B); j++) {
+          var c = i * 1048576 + j; var l = bk.get(c); if (!l) bk.set(c, l = []); l.push(k);
+        }
+      });
+      var judged = 0;
+      flat.forEach(function(e, k) {
+        if (!_SURF_ENVELOPE[e.c]) return;
+        judged++;
+        var cells = 0, covered = 0;
+        for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+          cells++; var l = bk.get(Math.floor(x / B) * 1048576 + Math.floor(y / B));
+          for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02 && o.x0 <= x && x <= o.x1 && o.y0 <= y && y <= o.y1) { covered++; break; } }
+        }
+        if (covered < 0.5 * cells) roof.add(e.g);
+      });
+      A._surfRoofGuids = roof;
+      console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size +
+        ' ms=' + (performance.now() - t0).toFixed(0) + ' path=bucket cells=' + cellSum + ' budget=2000000 judged=' + judged + ' (envelope classes only)');
+      return;
     }
     flat.forEach(function(e, k) { for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) { var c = x + ',' + y; var l = grid.get(c); if (!l) grid.set(c, l = []); l.push(k); } });
     flat.forEach(function(e, k) {
@@ -937,7 +996,7 @@ function setupStreaming(A) {
       if (covered < 0.5 * cells) roof.add(e.g);
     });
     A._surfRoofGuids = roof;
-    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0));
+    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0) + ' path=grid cells=' + cellSum);
   };
   A._surfRowOf = function(el) {
     if (A._alphaOf(el.rgba) < 1.0) return 'R9';
@@ -1101,10 +1160,10 @@ function setupStreaming(A) {
         get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
     });
     Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
-    // §R10_CLONE_MAP_SHADOW (2026-09-28, 30 s bake §MAXQ_FAIL 'arr.map is not a function' at the film's room highlight): 'map' is
-    // forwarded above (the TEXTURE slot), which shadows Array.prototype.map on this array — clone with a plain loop.
-    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { var c = []; for (var i = 0; i < arr.length; i++) c.push(arr[i].clone()); return A._r10MatArray(c); } });
-    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { arr.forEach(function(x) { if (x.dispose) x.dispose(); }); } });
+    // §R10-MAP-SHADOW (prompts/PHOTOREAL_STILL_RENDER.md, 2026-10-04): 'map' is forwarded above (the texture slot), which
+    // SHADOWS the array's own .map() — so clone/dispose call the Array.prototype methods directly. Witness: W-R10-CLONE.
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(Array.prototype.map.call(arr, function(x) { return x.clone(); })); } });
+    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { Array.prototype.forEach.call(arr, function(x) { if (x.dispose) x.dispose(); }); } });
     Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
     return arr;
   };
@@ -2276,9 +2335,14 @@ function setupStreaming(A) {
                 _mcSt.reset();
               }
               _mcSt.free();
-              console.log('§MERGE_CONTRACT buildings=' + Object.keys(_mcOwn).length +
+              var _mcN = Object.keys(_mcOwn).length, _mcC = Object.keys(A.buildingCentres).length;
+              var _mcPend = (A._mergePending || []).filter(function(n) { return !A.buildingsRendered.has(n); }).length;
+              // §FB.4: a witness that can say WRONG — fewer buildings drawn than the DB holds, nothing queued.
+              var _mcVerdict = _mcN >= _mcC ? 'COMPLETE' : ((_mcPend > 0 || A.streaming) ? 'DRAINING' : 'INCOMPLETE');  // drain shifts the queue BEFORE the next building streams
+              console.log('§MERGE_CONTRACT buildings=' + _mcN +
                 ' rendered=' + JSON.stringify(_mcOwn) +
-                ' centres=' + Object.keys(A.buildingCentres).length);
+                ' centres=' + _mcC + ' pending=' + _mcPend + ' verdict=' + _mcVerdict);
+              if (_mcVerdict === 'COMPLETE' && !A.CITY_URL && A._findRefreshTree) A._findRefreshTree('merge-complete');
             } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
           }
         }
@@ -2439,7 +2503,11 @@ function setupStreaming(A) {
         }
         console.log(`[S231] §NORMALS_PROBE libHasNormals=${A._libHasNormals}`);
       }
-      const cols = A._libHasNormals
+      // §MESH_SLIM: a civil model's stored normals are redundant (99.95 % = own face normal) — don't pull them out of
+      // the sql.js heap; blobToGeometry derives them exactly as for every fleet DB (which ships none).
+      const _useN = A._libHasNormals && !A.isCivilModel();
+      if (A._libHasNormals && !_useN && !A._meshSlimLoadLogged) { A._meshSlimLoadLogged = true; console.log('§MESH_SLIM_LOAD civil=1 storedNormals=ignored (derived)'); }
+      const cols = _useN
         ? 'geometry_hash, vertices, faces, normals'
         : 'geometry_hash, vertices, faces';
       // Fetch in chunks of 200 to avoid sql.js bind limit
@@ -2455,7 +2523,7 @@ function setupStreaming(A) {
             while (stmt.step()) {
               const row = stmt.get();
               const ghash = row[0], vBlob = row[1], fBlob = row[2];
-              const nBlob = A._libHasNormals ? (row[3] || null) : null;
+              const nBlob = _useN ? (row[3] || null) : null;
               if (vBlob && fBlob) {
                 const _wt = A._windTableGet && A._windTableGet(), geo = A.blobToGeometry(vBlob, fBlob, nBlob, _wt ? (_wt.get(ghash) || 0) : null);   // §WIND_FLIP baked
                 if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
@@ -3497,7 +3565,7 @@ function setupStreaming(A) {
     // fail confusingly. A.openModelDb() (Ctrl+O / Open Building pill) navigates to viewer.html?db=import://…
     // once a file is picked — a fresh page load, so no re-entry guard is needed here.
     if (A.BLANK_MODE && !A.DB_URL) {
-      A.status.textContent = 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
+      A.status.textContent = (typeof _trl === 'function') ? _trl('ui_blank_scene_hint', null, 'Blank scene — press Ctrl+O (Open Building) to load a .db file') : 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
       console.log('§BLANK_MODE active=1 waiting_for_open=1');
       return;
     }
@@ -3975,6 +4043,26 @@ function setupStreaming(A) {
       envW = xMax - xMin;
       envD = yMax - yMin;
       envH = zMax - zMin;
+      // §FRAME_ROBUST (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §I.3): a few stray elements
+      // (LTU PLB: 426 m vs a ~126 m core) push the camera ~3x too far. When strays are detached, frame
+      // on the 2nd–98th percentile of element centres. Strays stay loaded and visible.
+      const _cq = A.dbQuery(`SELECT center_x, center_y, center_z FROM element_transforms WHERE center_x IS NOT NULL`);
+      if (_cq.length >= 50) {
+        const _pct = (ax) => {
+          const v = _cq.map(r => r[ax]).sort((a, b) => a - b);
+          return v[Math.floor(v.length * 0.98)] - v[Math.floor(v.length * 0.02)];
+        };
+        const rW = _pct(0), rD = _pct(1), rH = _pct(2);
+        // Trim ONLY when the outer 2% are detached strays: full envelope > 2x the p2–98 envelope.
+        // Measured 2026-10-04 (ratio full/p2-98): LTU 426/126=3.4 (PLB strays) → trim; Hospital
+        // 151/85=1.8, Duplex 22/17=1.3, Terminal 69/60=1.15 → keep (real wings, not strays).
+        const _full = Math.max(envW, envD, envH), _core = Math.max(rW, rD, rH);
+        const _trim = _core > 0 && _full > 2 * _core;
+        console.log(`§FRAME_ROBUST n=${_cq.length} minmax=${envW.toFixed(0)}x${envD.toFixed(0)}x${envH.toFixed(0)}m p2-98=${rW.toFixed(0)}x${rD.toFixed(0)}x${rH.toFixed(0)}m ratio=${_core > 0 ? (_full / _core).toFixed(2) : 'n/a'} ${_trim ? 'TRIM (strays detached)' : 'KEEP min/max'}`);
+        if (_trim) { envW = rW; envD = rD; envH = Math.max(rH, 1); }
+      } else {
+        console.log(`§FRAME_ROBUST n=${_cq.length} <50 — min/max kept (too few elements for percentiles)`);
+      }
     }
     // If envelope is too small (re-centred DB), use sum of bbox spreads from buildingCentres
     if (envW < 1 && Object.keys(A.buildingCentres).length > 0) {
@@ -3987,6 +4075,11 @@ function setupStreaming(A) {
     for (const bc of Object.values(A.buildingCentres)) {
       bc.envelope = envelope;
     }
+    // §FOG_AFTER_ENVELOPE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): the fog was sized at :3801, BEFORE
+    // the envelope existed, so it always read the 100 m default → density clamped at 0.004 (≈ nothing visible past
+    // ~500 m). JELAPANG (2114 m) flew at ~3 km inside a wall of fog. Re-size now the envelope is known. Any model
+    // under ~375 m still clamps to 0.004 — Hospital 151 / LTU 126 / Terminal 69 / Duplex 22 unchanged.
+    if (A._updateFogDensity) A._updateFogDensity();
     const dist = Math.max(80, envelope * 1.5);
     // Use buildingCentres for camera target (has IFC world coords via modelOffset)
     const firstBc = Object.values(A.buildingCentres)[0];
@@ -4060,6 +4153,17 @@ function setupStreaming(A) {
       A.streamBuilding(hashParams.bld);
     } else {
       A.startStreaming();
+    }
+    // §FB.3: a saved MERGED DB holds >1 building but the line above streams ONE (camera-nearest). Queue
+    // the rest into the same drain a live merge uses (scene.js _mergeStreamNext, chained from the
+    // stream-complete hook) so reopening shows the whole merged scene. Gate: >1 building, not City.
+    if (!A.CITY_URL && Object.keys(A.buildingCentres).length > 1) {
+      var _openRest = Object.keys(A.buildingCentres).filter(function(n) {
+        return n !== A.activeBuilding && !(A.buildingsRendered && A.buildingsRendered.has(n));
+      });
+      A._mergePending = (A._mergePending || []).concat(_openRest);
+      console.log('§OPEN_ALL_BUILDINGS queued=' + _openRest.length + ' first=' + A.activeBuilding +
+        ' rest=' + JSON.stringify(_openRest));
     }
     console.log(`[S241] §BBOX_EARLY placeholders drawn before library fetch`);
 

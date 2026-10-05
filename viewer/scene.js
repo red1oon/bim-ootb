@@ -148,6 +148,12 @@ async function setupScene(A) {
     if (bc && bc.envelope) env = bc.envelope;
     // Larger envelope = lighter fog (LTU 426m→0.0004, Castle 23m→0.003)
     scene.fog.density = Math.max(0.00015, Math.min(0.004, 1.5 / env));
+    // §FOG_LARGE_SITE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): past ~375 m the 1.5/env branch leaves the
+    // 0.004 cap and hides the model from its OWN framing distance (camera = 1.5 x env, streaming.js §CAMERA): at env
+    // 2114 m transmittance there is exp(-(1.5/env * 1.5 env)^2) = exp(-5.06) = 0.6%. For those sites only, size the fog
+    // so the model stays >= 50% visible from the framing distance: density = sqrt(ln 2) / (1.5 env). Every building
+    // that stays on the 0.004 cap (env < 375 m: Hospital, LTU, Terminal, Duplex) is unchanged.
+    if (1.5 / env < 0.004) scene.fog.density = Math.max(0.00015, Math.min(scene.fog.density, Math.sqrt(Math.LN2) / (1.5 * env)));
     console.log('§FOG_DENSITY env=' + env.toFixed(0) + 'm density=' + scene.fog.density.toFixed(5));
   };
   A.scene = scene;
@@ -887,10 +893,25 @@ async function setupScene(A) {
       console.log('§LIGHT_FIELD_DB save key=' + rec.key + ' bld=' + rec.bld + ' bytes=' + rec.bytes + ' raw=' + rec.rawBytes + ' src=' + rec.src + ' packMs=' + rec.packMs + ' gzipMs=' + rec.gzipMs + ' created=' + rec.created);
     } catch (e) { console.warn('§LIGHT_FIELD_DB_SAVE_FAIL ' + e.message); }
   }
+  // §MESH_SLIM save: a civil model drops its stored normals (derived on load, fleet format) and compacts, so the
+  // saved file — and every reload/IDB copy of it — is light. Fleet / building DBs: isCivilModel() false → untouched.
+  function _meshSlim(db) {
+    if (!(A.isCivilModel && A.isCivilModel())) return;
+    try {
+      var r = db.exec("SELECT COUNT(*), COALESCE(SUM(LENGTH(normals)),0) FROM component_geometries WHERE normals IS NOT NULL");
+      var n = r.length ? r[0].values[0][0] : 0, b = r.length ? r[0].values[0][1] : 0;
+      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); return; }
+      var t0 = performance.now();
+      db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      db.run('VACUUM');
+      console.log('§MESH_SLIM_SAVE normalsDropped=' + n + ' bytes=' + b + ' ms=' + (performance.now() - t0).toFixed(0));
+    } catch (e) { console.warn('§MESH_SLIM_SAVE_ERR ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      _meshSlim(A.db);
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
       _writeSceneStateTable(A.db);
@@ -919,6 +940,7 @@ async function setupScene(A) {
       copied++;
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    _meshSlim(mono);
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
     _writeSceneStateTable(mono);
@@ -1678,7 +1700,8 @@ async function setupScene(A) {
         // §S-PROGRESS-META — clamp ≤100%: gzip/transfer-encoding makes Content-Length (compressed)
         // smaller than received (decompressed) bytes, so the raw ratio can exceed 1.0.
         const pct = Math.min(100, Math.round((received / contentLength) * 100));
-        if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
+        if (A.status) A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloading_pct||'Downloading {name}... {pct}% ({a}/{b}MB)')   // S226 §R2b
+          .replace('{name}',fileName).replace('{pct}',pct).replace('{a}',(received/1024/1024).toFixed(0)).replace('{b}',(contentLength/1024/1024).toFixed(0));
         // drive the visible bar during cachedFetch (meta.db phase), not just the status text
         var _sp = document.getElementById('s-progress');
         if (_sp) _sp.style.width = pct + '%';
@@ -1926,7 +1949,37 @@ async function setupScene(A) {
       console.log('§LIGHT_FIELD_BY_BUILDING none bld=' + bld + ' opened=' + own + ' tried=' + names.join(',') + ' ms=' + Math.round(performance.now() - t0));
     } catch (e) { console.warn('§LIGHT_FIELD_BY_BUILDING failed ' + (e && e.message)); }
   };
+  // §PATCH_QTO (prompts/FIND_ASK_ANSWERS.md §K.1) — the main <db>.sql patch is applied exactly as
+  // before; THEN an optional, separately-owned <db>.qto.sql (the building's own cost rows, copied from
+  // its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent: a missing main
+  // patch does not skip the cost patch, a missing cost patch changes nothing.
   A._applyPendingPatch = async function(buf, url) {
+    var out = await A._applyMainPatch(buf, url);
+    return A._applyQtoPatch(out, url);
+  };
+  A._applyQtoPatch = async function(buf, url) {
+    try {
+      var dir = url.slice(0, url.lastIndexOf('/') + 1);
+      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var qUrl = dir + 'patches/' + dbFile + '.qto.sql';
+      var r = await fetch(qUrl);
+      if (!r.ok) { console.log('§PATCH_QTO_NONE ' + dbFile + ' (' + r.status + ')'); return buf; }
+      var sql = await r.text();
+      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;
+      if (!SQLFactory) { console.warn('§PATCH_QTO_FAIL ' + url + ' — sql.js factory not loaded yet'); return buf; }
+      var pdb = new SQLFactory.Database(new Uint8Array(buf));
+      var _ch = A._runSqlChunked(pdb, sql);
+      var n = 0; try { n = pdb.exec('SELECT count(*) FROM qto_cache')[0].values[0][0]; } catch (e) { n = -1; }
+      var out = pdb.export().buffer;
+      pdb.close();
+      console.log('§PATCH_QTO ' + dbFile + ' applied (' + _ch.statements + ' statements) qto_cache rows=' + n + ' from ' + qUrl);
+      return out;
+    } catch (e) {
+      console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', e && e.message);
+      return buf;
+    }
+  };
+  A._applyMainPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
       var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
@@ -2657,6 +2710,9 @@ async function setupScene(A) {
     var existing = document.getElementById('cmd-palette');
     if (existing) { existing.remove(); console.log('§KBD_HELP close'); return; }
     console.log('§KBD_HELP open');
+    // S226 §R2d: the palette's own strings through the dictionary — rebuilt on every open, so always in the current language
+    var _hT = function (k, en) { return (typeof _trl === 'function') ? _trl(k, null, en) : en; };
+    var _hA = function (k, en) { return String(_hT(k, en)).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); };   // into an attribute
 
     var pal = document.createElement('div');
     pal.id = 'cmd-palette';
@@ -2669,7 +2725,7 @@ async function setupScene(A) {
     // Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
     var _pwaInstalled = _isStandalone || window._pwaAccepted;
     var _badgeColor = _pwaInstalled ? '#4caf50' : '#4fc3f7';
-    var _badgeTitle = _pwaInstalled ? 'Installed \u2714' : 'Download \xB7 Run Offline';
+    var _badgeTitle = _pwaInstalled ? _hA('ui_cmd_installed', 'Installed \u2714') : _hA('ui_cmd_download_offline', 'Download · Run Offline');
     var _badgeIcon = _pwaInstalled
       ? '<polyline points="20 6 9 17 4 12"/>'  // checkmark
       : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
@@ -2688,14 +2744,14 @@ async function setupScene(A) {
     var html = '<div style="padding:6px 14px;color:#888;font-size:10px;border-bottom:1px solid #222;text-align:center">' +
       badgeHtml +
       '<div style="padding:10px 14px;border-bottom:1px solid #333">' +
-      '<input id="cmd-search" type="text" placeholder="Type a command..." ' +
+      '<input id="cmd-search" type="text" placeholder="' + _hA('ui_cmd_placeholder', 'Type a command...') + '" ' +
       'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;' +
       'padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div id="cmd-list" style="max-height:260px;overflow-y:auto;padding:4px 0"></div>' +
       '<div style="padding:8px 14px;border-top:1px solid #333;text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
-      '<span id="cmd-report" title="Report Bug" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
-      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="Viewer User Guide" ' +
+      '<span id="cmd-report" title="' + _hA('ui_report_bug', 'Report Bug') + '" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
+      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="' + _hA('ui_cmd_user_guide', 'Viewer User Guide') + '" ' +
       'style="color:#4fc3f7;line-height:0">' + _ic(ICONS.lightbulb.svg) + '</a></div>';
     pal.innerHTML = html;
     document.body.appendChild(pal);
@@ -2740,18 +2796,18 @@ async function setupScene(A) {
         });
       }
       // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
-      all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
-      all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
+      all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'),  icon: '', action: function() { _shortcuts['+'](); }, children: null });
+      all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function() { _shortcuts['-'](); }, children: null });
       // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
       // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
       // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
-      all.push({ seq: 'ALT+C', name: 'MaxQ Movie', icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
-      all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
       // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
       // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
-      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
+      if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });

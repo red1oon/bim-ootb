@@ -353,9 +353,14 @@
   // _listLabel — List reference: ad_ref_list.name for (ad_reference_id=valId, value=<code>).
   function _listLabel(db, valId, value) {
     try {
-      var r = db.exec('SELECT name FROM ad_ref_list WHERE ad_reference_id = ' + Number(valId) +
+      var r = db.exec('SELECT name, ad_ref_list_id FROM ad_ref_list WHERE ad_reference_id = ' + Number(valId) +
                       " AND value = '" + String(value).replace(/'/g, "''") + "'");
-      if (r.length && r[0].values.length && r[0].values[0][0]) return String(r[0].values[0][0]);
+      // UI locale (bim-compiler prompts/ERP_UI_LOCALES.md §L1): AD_Ref_List_Trl by AD_Ref_List_ID, English otherwise.
+      if (r.length && r[0].values.length && r[0].values[0][0]) {
+        var nm = String(r[0].values[0][0]);
+        var I = (typeof window !== 'undefined') ? window.ErpI18n : null;
+        return (I && I.pack) ? I.refList(r[0].values[0][1], nm) : nm;
+      }
     } catch (e) { /* no ad_ref_list */ }
     return null;
   }
@@ -403,7 +408,8 @@
    */
   function resolveFK(db, columnName, value) {
     if (value === null || value === undefined || value === '') return null;
-    var cacheKey = columnName + ':' + value;
+    var I18 = (typeof window !== 'undefined') ? window.ErpI18n : null;
+    var cacheKey = ((I18 && I18.pack) ? I18.lang + ':' : '') + columnName + ':' + value;   // list labels differ per UI locale
     if (_fkCache[cacheKey] !== undefined) return _fkCache[cacheKey];
 
     var meta = _colRefMeta(db, columnName);

@@ -1,0 +1,3466 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--BIM OOTB Viewer — AD_Message_Trl zh_CN — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/zh_CN.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="zh_CN" table="AD_Message">
+ <row id="1000000" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Frictionless BIM">BIM OOTB — Frictionless BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="MsgText" original="Discipline">专业</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000002" trl="Y">
+  <value column="MsgText" original="IFC Class">IFC类</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000003" trl="Y">
+  <value column="MsgText" original="Quantity">数量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000004" trl="Y">
+  <value column="MsgText" original="UOM">单位</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000005" trl="Y">
+  <value column="MsgText" original="Description">描述</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000006" trl="Y">
+  <value column="MsgText" original="Storey">楼层</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000007" trl="Y">
+  <value column="MsgText" original="Phase">阶段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000008" trl="Y">
+  <value column="MsgText" original="Item">项目</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000009" trl="Y">
+  <value column="MsgText" original="Material">材料</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000010" trl="Y">
+  <value column="MsgText" original="Labour">人工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000011" trl="Y">
+  <value column="MsgText" original="Equipment">设备</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000012" trl="Y">
+  <value column="MsgText" original="Total">合计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000013" trl="Y">
+  <value column="MsgText" original="Unit Rate">单价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000014" trl="Y">
+  <value column="MsgText" original="Mat Rate">材料单价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000015" trl="Y">
+  <value column="MsgText" original="Lab Rate">人工单价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000016" trl="Y">
+  <value column="MsgText" original="Rate/Day">日单价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000017" trl="Y">
+  <value column="MsgText" original="Trade">工种</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000018" trl="Y">
+  <value column="MsgText" original="Crew Size">班组人数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000019" trl="Y">
+  <value column="MsgText" original="Man-Days">人天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000020" trl="Y">
+  <value column="MsgText" original="Duration (days)">工期（天）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000021" trl="Y">
+  <value column="MsgText" original="GRAND TOTAL">总计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000022" trl="Y">
+  <value column="MsgText" original="SUBTOTAL">小计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000023" trl="Y">
+  <value column="MsgText" original="WBS">WBS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000024" trl="Y">
+  <value column="MsgText" original="Task Name">任务名</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000025" trl="Y">
+  <value column="MsgText" original="Productivity">生产率</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000026" trl="Y">
+  <value column="MsgText" original="Gangs">班组数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000027" trl="Y">
+  <value column="MsgText" original="Start Date">开始日期</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000028" trl="Y">
+  <value column="MsgText" original="Finish Date">结束日期</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000029" trl="Y">
+  <value column="MsgText" original="Labor Resource">劳务资源</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000030" trl="Y">
+  <value column="MsgText" original="Status">状态</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000031" trl="Y">
+  <value column="MsgText" original="% Complete">完成百分比</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000032" trl="Y">
+  <value column="MsgText" original="Day Offset">天偏移</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000033" trl="Y">
+  <value column="MsgText" original="Date">日期</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000034" trl="Y">
+  <value column="MsgText" original="Milestone">里程碑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000035" trl="Y">
+  <value column="MsgText" original="Task">任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000036" trl="Y">
+  <value column="MsgText" original="Task Count">任务数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000037" trl="Y">
+  <value column="MsgText" original="Total Days">总天数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000038" trl="Y">
+  <value column="MsgText" original="Total Man-Days">总人天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000039" trl="Y">
+  <value column="MsgText" original="Week">周</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000040" trl="Y">
+  <value column="MsgText" original="Cumulative %">累计 %</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000041" trl="Y">
+  <value column="MsgText" original="5D — Cost by Discipline">5D — 各专业造价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000042" trl="Y">
+  <value column="MsgText" original="Cost Components by Discipline">各专业费用组成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000043" trl="Y">
+  <value column="MsgText" original="Task Distribution by Phase">各阶段任务分布</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000044" trl="Y">
+  <value column="MsgText" original="Task Count by Discipline">各专业任务数量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000045" trl="Y">
+  <value column="MsgText" original="4D — Phase Duration (Total Days)">4D — 各阶段工期（总天数）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000046" trl="Y">
+  <value column="MsgText" original="4D — Resource Workload (Man-Days by Phase)">4D — 资源负荷（各阶段工日）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000047" trl="Y">
+  <value column="MsgText" original="4D — S-Curve Progress">4D — S曲线进度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000048" trl="Y">
+  <value column="MsgText" original="4D — Milestone Timeline">4D — 里程碑时间线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000049" trl="Y">
+  <value column="MsgText" original="4D — Gantt Timeline (Strategic Tasks by Phase)">4D — 甘特图（各阶段关键任务）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000050" trl="Y">
+  <value column="MsgText" original="5D — Variation Order Impact">5D — 变更令影响</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000051" trl="Y">
+  <value column="MsgText" original="Cover Sheet">封面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000052" trl="Y">
+  <value column="MsgText" original="Executive Summary">执行摘要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000053" trl="Y">
+  <value column="MsgText" original="Material Summary">材料汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000054" trl="Y">
+  <value column="MsgText" original="Labour Summary">人工摘要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000055" trl="Y">
+  <value column="MsgText" original="Equipment Summary">机械汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000056" trl="Y">
+  <value column="MsgText" original="Detailed BOQ">详细工程量清单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000057" trl="Y">
+  <value column="MsgText" original="Provisional Sums">暂估价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000058" trl="Y">
+  <value column="MsgText" original="Construction Schedule">施工进度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000059" trl="Y">
+  <value column="MsgText" original="Project Summary">项目总结</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000060" trl="Y">
+  <value column="MsgText" original="BIM 4D Dashboard">BIM 4D 仪表盘</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000061" trl="Y">
+  <value column="MsgText" original="COMPREHENSIVE BILL OF QUANTITIES">工程量清单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000062" trl="Y">
+  <value column="MsgText" original="COST BREAKDOWN METHODOLOGY">费用分解方法</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000063" trl="Y">
+  <value column="MsgText" original="MATERIAL COST SUMMARY">材料费汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000064" trl="Y">
+  <value column="MsgText" original="LABOUR COST SUMMARY">人工费汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000065" trl="Y">
+  <value column="MsgText" original="EQUIPMENT COST SUMMARY">机械费汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000066" trl="Y">
+  <value column="MsgText" original="PROVISIONAL SUMS">暂估价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000067" trl="Y">
+  <value column="MsgText" original="Phase Duration Analysis">各阶段工期分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000068" trl="Y">
+  <value column="MsgText" original="Resource Workload Analysis">资源负荷分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000069" trl="Y">
+  <value column="MsgText" original="S-Curve Progress">S曲线进度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000070" trl="Y">
+  <value column="MsgText" original="Milestone Timeline">里程碑时间线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000071" trl="Y">
+  <value column="MsgText" original="Gantt Timeline (Strategic Tasks)">甘特图（关键任务）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000072" trl="Y">
+  <value column="MsgText" original="Not Started">未开始</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000073" trl="Y">
+  <value column="MsgText" original="Frictionless BIM. Two DBs. One browser. Zero install.">无摩擦BIM。两个数据库。一个浏览器。零安装。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000074" trl="Y">
+  <value column="MsgText" original="Tools">工具</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000075" trl="Y">
+  <value column="MsgText" original="Storeys">楼层</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000076" trl="Y">
+  <value column="MsgText" original="Disciplines">专业</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000077" trl="Y">
+  <value column="MsgText" original="Filter...">筛选...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000078" trl="Y">
+  <value column="MsgText" original="All Storeys">所有楼层</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000079" trl="Y">
+  <value column="MsgText" original="X-Ray">透视</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000080" trl="Y">
+  <value column="MsgText" original="Screenshot">截图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000081" trl="Y">
+  <value column="MsgText" original="Fullscreen">全屏</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000082" trl="Y">
+  <value column="MsgText" original="Light/Dark">明暗切换</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000083" trl="Y">
+  <value column="MsgText" original="Fly Around">环绕飞行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000084" trl="Y">
+  <value column="MsgText" original="Walk Speed">步行速度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000085" trl="Y">
+  <value column="MsgText" original="4D/5D Export">4D/5D导出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000086" trl="Y">
+  <value column="MsgText" original="Issues">问题</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000087" trl="Y">
+  <value column="MsgText" original="Measure">测量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000088" trl="Y">
+  <value column="MsgText" original="Section Cut">剖面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000089" trl="Y">
+  <value column="MsgText" original="2D Plans">2D图纸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000090" trl="Y">
+  <value column="MsgText" original="Site Camera">现场相机</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000091" trl="Y">
+  <value column="MsgText" original="Walk Mode">步行模式</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000092" trl="Y">
+  <value column="MsgText" original="Voice Search">语音搜索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000093" trl="Y">
+  <value column="MsgText" original="Cancel">取消</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000094" trl="Y">
+  <value column="MsgText" original="Back">返回</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000095" trl="Y">
+  <value column="MsgText" original="Save">保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000096" trl="Y">
+  <value column="MsgText" original="Undo">撤销</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000097" trl="Y">
+  <value column="MsgText" original="Retake">重拍</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000098" trl="Y">
+  <value column="MsgText" original="Go">搜索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000099" trl="Y">
+  <value column="MsgText" original="Clear">清除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000100" trl="Y">
+  <value column="MsgText" original="Clear All">全部清除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000101" trl="Y">
+  <value column="MsgText" original="Export Excel">导出Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000102" trl="Y">
+  <value column="MsgText" original="Share → WhatsApp">分享 → WhatsApp</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000103" trl="Y">
+  <value column="MsgText" original="Show in 3D">在3D中显示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000104" trl="Y">
+  <value column="MsgText" original="Snag">缺陷</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000105" trl="Y">
+  <value column="MsgText" original="Class">类别</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000106" trl="Y">
+  <value column="MsgText" original="Name">名称</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000107" trl="Y">
+  <value column="MsgText" original="GUID">GUID</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000108" trl="Y">
+  <value column="MsgText" original="Building">建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000109" trl="Y">
+  <value column="MsgText" original="GPS">GPS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000110" trl="Y">
+  <value column="MsgText" original="Compass">罗盘</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000111" trl="Y">
+  <value column="MsgText" original="Time">时间</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000112" trl="Y">
+  <value column="MsgText" original="Notes">备注</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000113" trl="Y">
+  <value column="MsgText" original="Open">打开</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000114" trl="Y">
+  <value column="MsgText" original="Buildings">建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000115" trl="Y">
+  <value column="MsgText" original="Elements">构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000116" trl="Y">
+  <value column="MsgText" original="Meshes">网格</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000117" trl="Y">
+  <value column="MsgText" original="Streaming">流式传输</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000118" trl="Y">
+  <value column="MsgText" original="Rendered">已渲染</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000119" trl="Y">
+  <value column="MsgText" original="Done">完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000120" trl="Y">
+  <value column="MsgText" original="Variance">变更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000121" trl="Y">
+  <value column="MsgText" original="Initializing...">初始化中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000122" trl="Y">
+  <value column="MsgText" original="Walk Mode">步行模式</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000123" trl="Y">
+  <value column="MsgText" original="Stand at the building entrance and tap SET to anchor your GPS position to the model.">站在建筑入口处，点击SET将GPS位置锚定到模型。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000124" trl="Y">
+  <value column="MsgText" original="SET">设定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000125" trl="Y">
+  <value column="MsgText" original="Walk Mode: No building data">步行模式：无建筑数据</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000126" trl="Y">
+  <value column="MsgText" original="Walk Mode: No GPS — orientation only">步行模式：无GPS — 仅方向</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000127" trl="Y">
+  <value column="MsgText" original="Walk Mode stopped.">步行模式已停止。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000128" trl="Y">
+  <value column="MsgText" original="Drive-Thru: Tap to walk, hold to glide">漫游：点击步行，长按滑行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000129" trl="Y">
+  <value column="MsgText" original="Drive-Thru: {n} steps ({d}m)">漫游：{n}步 ({d}m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000130" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: {n} MEP elements behind {name}">墙体透视：{name}后面有{n}个MEP构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000131" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: No MEP elements found behind {name}">墙体透视：{name}后面没有MEP构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000132" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Site Inspection">BIM OOTB — 现场检查</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000133" trl="Y">
+  <value column="MsgText" original="GPS: acquiring...">GPS：获取中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000134" trl="Y">
+  <value column="MsgText" original="GPS: unavailable">GPS：不可用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000135" trl="Y">
+  <value column="MsgText" original="GPS: not supported">GPS：不支持</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000136" trl="Y">
+  <value column="MsgText" original="BIM Model View">BIM模型视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000137" trl="Y">
+  <value column="MsgText" original="Bearing">方位</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000138" trl="Y">
+  <value column="MsgText" original="Arrow">箭头</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000139" trl="Y">
+  <value column="MsgText" original="Circle">圆圈</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000140" trl="Y">
+  <value column="MsgText" original="Draw">绘制</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000141" trl="Y">
+  <value column="MsgText" original="Text">文字</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000142" trl="Y">
+  <value column="MsgText" original="Reading file...">正在读取文件...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000143" trl="Y">
+  <value column="MsgText" original="Reading {fmt} file...">正在读取{fmt}文件...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000144" trl="Y">
+  <value column="MsgText" original="Very large file ({n}MB) — may take a few minutes">超大文件 ({n}MB) — 可能需要几分钟</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000145" trl="Y">
+  <value column="MsgText" original="Large file ({n}MB) — please wait...">大文件 ({n}MB) — 请稍候...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000146" trl="Y">
+  <value column="MsgText" original="Building databases...">正在构建数据库...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000147" trl="Y">
+  <value column="MsgText" original="Imported {n} elements">已导入{n}个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000148" trl="Y">
+  <value column="MsgText" original="Imported {n} elements from {fmt}">从{fmt}导入了{n}个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000149" trl="Y">
+  <value column="MsgText" original="CITY MODE — {n} buildings, {m} elements. Click a building to load.">城市模式 — {n}栋建筑，{m}个构件。点击建筑加载。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000150" trl="Y">
+  <value column="MsgText" original="Flew to {name} ({n} elements)">飞至{name} ({n}个构件)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000151" trl="Y">
+  <value column="MsgText" original="Downloading {name}...">正在下载{name}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000152" trl="Y">
+  <value column="MsgText" original="CLEARED — {n} meshes removed.">已清除 — 移除了{n}个网格。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000153" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — 0/{n} elements">正在传输{name} — 0/{n}个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000154" trl="Y">
+  <value column="MsgText" original="Downloaded {name}. Streaming {bld}...">已下载{name}。正在传输{bld}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000155" trl="Y">
+  <value column="MsgText" original="count doors, floor 1 walls, total cost, Find fire pump...">统计门，1层墙，总造价，查找消防泵...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000156" trl="Y">
+  <value column="MsgText" original="No speech detected — tap mic again">未检测到语音 — 请再次点击麦克风</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000157" trl="Y">
+  <value column="MsgText" original="No match. Try: &quot;count doors&quot; or &quot;floor 1 walls&quot;">无匹配。尝试："统计门"或"1层墙"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000158" trl="Y">
+  <value column="MsgText" original="No results for &quot;{q}&quot;">"{q}"无结果</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000159" trl="Y">
+  <value column="MsgText" original="Details ({n})">详情 ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000160" trl="Y">
+  <value column="MsgText" original="Issues">问题</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000161" trl="Y">
+  <value column="MsgText" original="Swipe to show panels">滑动显示面板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000162" trl="Y">
+  <value column="MsgText" original="Swipe to hide panels">滑动隐藏面板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000163" trl="Y">
+  <value column="MsgText" original="Section Cut">剖面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000164" trl="Y">
+  <value column="MsgText" original="New element">新增构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000165" trl="Y">
+  <value column="MsgText" original="Existed">已存在</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000166" trl="Y">
+  <value column="MsgText" original="— (demolished)">— (已拆除)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000167" trl="Y">
+  <value column="MsgText" original="Settings">设置</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000168" trl="Y">
+  <value column="MsgText" original="Language">语言</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000169" trl="Y">
+  <value column="MsgText" original="Currency">货币</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000170" trl="Y">
+  <value column="MsgText" original="Rate Source">费率来源</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000171" trl="Y">
+  <value column="MsgText" original="Reset to Defaults">恢复默认</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000172" trl="Y">
+  <value column="MsgText" original="Apply">应用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000173" trl="Y">
+  <value column="MsgText" original="Check for Updates">检查更新</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000174" trl="Y">
+  <value column="MsgText" original="Downloaded {name}.ifc ({size} KB)">已下载 {name}.ifc ({size} KB)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000175" trl="Y">
+  <value column="MsgText" original="Please drop an .ifc file">请拖放 .ifc 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000176" trl="Y">
+  <value column="MsgText" original="Exporting IFC ({n} elements)...">导出IFC ({n}个元素)...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000177" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel...">生成4D Excel...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000178" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel — preparing charts...">生成4D Excel — 准备图表...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000179" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel...">生成5D Excel...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000180" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel — preparing charts...">生成5D Excel — 准备图表...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000181" trl="Y">
+  <value column="MsgText" original="Loading">加载中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000182" trl="Y">
+  <value column="MsgText" original="No data.">无数据</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000183" trl="Y">
+  <value column="MsgText" original="Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL">不支持: .{ext} — 接受: IFC, DAE, OBJ, GLB, 3DS, FBX, STL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000184" trl="Y">
+  <value column="MsgText" original="Description">描述</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000185" trl="Y">
+  <value column="MsgText" original="Parameter">参数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000186" trl="Y">
+  <value column="MsgText" original="Value">值</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000187" trl="Y">
+  <value column="MsgText" original="Saved {f} ({n} sheets)">{f} 已保存 ({n} 张工作表)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000188" trl="Y">
+  <value column="MsgText" original="includes Variance Order">包含变更单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000189" trl="Y">
+  <value column="MsgText" original="Search elements...">搜索构件...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000190" trl="Y">
+  <value column="MsgText" original="All types">所有类型</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000191" trl="Y">
+  <value column="MsgText" original="▶ Navigate">▶ 导航</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000192" trl="Y">
+  <value column="MsgText" original="▶ Navigate to selected">▶ 导航到选中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000193" trl="Y">
+  <value column="MsgText" original="{n} found">找到 {n} 个</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000194" trl="Y">
+  <value column="MsgText" original="0 matches">0 个结果</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000195" trl="Y">
+  <value column="MsgText" original="Did you mean:">您是否是指:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000196" trl="Y">
+  <value column="MsgText" original="No start position — cannot navigate">无起始位置 — 无法导航</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000197" trl="Y">
+  <value column="MsgText" original="No path found">未找到路径</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000198" trl="Y">
+  <value column="MsgText" original="Arrived — walk freely or Find again">已到达 — 自由行走或重新搜索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000199" trl="Y">
+  <value column="MsgText" original="Watch Demo">观看演示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000200" trl="Y">
+  <value column="MsgText" original="About">关于</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000201" trl="Y">
+  <value column="MsgText" original="outofthebox">开箱即用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000202" trl="Y">
+  <value column="MsgText" original="In 60 seconds, the way you BIM will never be the same.">60秒内，您的BIM将焕然一新。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000203" trl="Y">
+  <value column="MsgText" original="Import">导入</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000204" trl="Y">
+  <value column="MsgText" original="View">查看</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000205" trl="Y">
+  <value column="MsgText" original="Compare">对比</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000206" trl="Y">
+  <value column="MsgText" original="Costed">计价</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000207" trl="Y">
+  <value column="MsgText" original="Done">完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000208" trl="Y">
+  <value column="MsgText" original="Drop IFC or 3D file here">将IFC或三维文件拖放到此处</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000209" trl="Y">
+  <value column="MsgText" original="My Buildings">我的建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000210" trl="Y">
+  <value column="MsgText" original="City Buildings">城市建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000211" trl="Y">
+  <value column="MsgText" original="Landmark Buildings">地标建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000212" trl="Y">
+  <value column="MsgText" original="Loading building manifest...">正在加载建筑清单...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000213" trl="Y">
+  <value column="MsgText" original="Created by">创建者</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000214" trl="Y">
+  <value column="MsgText" original="Live Stats">实时统计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000215" trl="Y">
+  <value column="MsgText" original="COMPLETE THE CITY">完成城市</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000216" trl="Y">
+  <value column="MsgText" original="buildings explored">建筑已探索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000217" trl="Y">
+  <value column="MsgText" original="CITY UNLOCKED">城市解锁</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000218" trl="Y">
+  <value column="MsgText" original="LAUNCH CITY 1M">启动城市 1M</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000219" trl="Y">
+  <value column="MsgText" original="Open 3D Viewer">打开 3D 查看器</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000220" trl="Y">
+  <value column="MsgText" original="Open Tabs">打开的标签页</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000221" trl="Y">
+  <value column="MsgText" original="Theory">理论</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000222" trl="Y">
+  <value column="MsgText" original="Practical">实践</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000223" trl="Y">
+  <value column="MsgText" original="Loading WebAssembly...">正在加载 WebAssembly...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000224" trl="Y">
+  <value column="MsgText" original="Fetching {url}...">正在获取 {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000225" trl="Y">
+  <value column="MsgText" original="DB loaded ({size}MB). Querying...">数据库已加载 ({size}MB)。正在查询...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000226" trl="Y">
+  <value column="MsgText" original="Library loaded ({size}MB). Streaming nearest building...">库已加载 ({size}MB)。传输最近的建筑...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000227" trl="Y">
+  <value column="MsgText" original="Using main DB for geometry. Streaming...">使用主数据库获取几何体。传输中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000228" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — {i}/{n} elements">传输 {name} — {i}/{n} 个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000229" trl="Y">
+  <value column="MsgText" original="DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.">完成 — {name} {n} 个构件 ({g} 个实例组)。已渲染 {b} 栓建筑。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000230" trl="Y">
+  <value column="MsgText" original="{name} — DONE">{name} — 完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000231" trl="Y">
+  <value column="MsgText" original="Cleared. Search and click a building to stream.">已清除。搜索并点击建筑以传输。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000232" trl="Y">
+  <value column="MsgText" original="2D Plans">2D图纸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000233" trl="Y">
+  <value column="MsgText" original="Layers">图层</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000234" trl="Y">
+  <value column="MsgText" original="Fit">适应视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000235" trl="Y">
+  <value column="MsgText" original="Generate">生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000236" trl="Y">
+  <value column="MsgText" original="Export DXF">导出 DXF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000237" trl="Y">
+  <value column="MsgText" original="Drop DXF file here">将 DXF 文件拖到此处</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000238" trl="Y">
+  <value column="MsgText" original="Entities: ">实体：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000239" trl="Y">
+  <value column="MsgText" original="Layers: ">图层：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000240" trl="Y">
+  <value column="MsgText" original="Class: ">类别：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000241" trl="Y">
+  <value column="MsgText" original="Name: ">名称：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000242" trl="Y">
+  <value column="MsgText" original="Storey: ">楼层: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000243" trl="Y">
+  <value column="MsgText" original="— select sheet —">— 选择图纸 —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000244" trl="Y">
+  <value column="MsgText" original="— storey —">— 楼层 —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000245" trl="Y">
+  <value column="MsgText" original="Floor Plan">平面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000246" trl="Y">
+  <value column="MsgText" original="Front Elev">正立面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000247" trl="Y">
+  <value column="MsgText" original="Rear Elev">背立面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000248" trl="Y">
+  <value column="MsgText" original="Left Elev">左立面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000249" trl="Y">
+  <value column="MsgText" original="Right Elev">右立面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000250" trl="Y">
+  <value column="MsgText" original="Loading {url}...">加载 {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000251" trl="Y">
+  <value column="MsgText" original="Loaded: {n} entities, {l} layers">已加载: {n}个, {l}个图层</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000252" trl="Y">
+  <value column="MsgText" original="Generating {mode}...">生成 {mode}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000253" trl="Y">
+  <value column="MsgText" original="Generated: {n} entities, {l} layers ({ms}ms)">已生成: {n}个, {l}个图层 ({ms}ms)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000254" trl="Y">
+  <value column="MsgText" original="Loading databases...">正在加载数据库...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000255" trl="Y">
+  <value column="MsgText" original="DBs loaded — generating...">DB已加载 — 生成中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000256" trl="Y">
+  <value column="MsgText" original="No DB loaded — add ?db= to URL">未加载DB — 在URL添加?db=</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000257" trl="Y">
+  <value column="MsgText" original="Drop a .dxf file">拖入 .dxf 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000258" trl="Y">
+  <value column="MsgText" original="Nothing to export">没有可导出的内容</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000259" trl="Y">
+  <value column="MsgText" original="2D views are desktop-only">2D视图仅限桌面端</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000260" trl="Y">
+  <value column="MsgText" original="Close Measure first">请先关闭测量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000261" trl="Y">
+  <value column="MsgText" original="Back online">已恢复在线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000262" trl="Y">
+  <value column="MsgText" original="Offline mode — cached buildings still available">离线模式 — 缓存建筑仍可用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000263" trl="Y">
+  <value column="MsgText" original="Select a building first.">请先选择建筑。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000264" trl="Y">
+  <value column="MsgText" original="4D/5D analytics opened for {name}">已打开{name}的4D/5D分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000265" trl="Y">
+  <value column="MsgText" original="Screenshot saved to Downloads/">截图已保存到下载/</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000266" trl="Y">
+  <value column="MsgText" original="Spatial index ready">空间索引就绪</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000267" trl="Y">
+  <value column="MsgText" original="Building spatial index…">正在构建空间索引…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000268" trl="Y">
+  <value column="MsgText" original="Report already generating...">报告已在生成中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000269" trl="Y">
+  <value column="MsgText" original="Building report…">正在生成报告…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000270" trl="Y">
+  <value column="MsgText" original="No clashes — open matrix first">无碰撞 — 请先打开矩阵</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000271" trl="Y">
+  <value column="MsgText" original="Clash report opened in new tab">碰撞报告已在新标签页打开</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000272" trl="Y">
+  <value column="MsgText" original="No clash data — open matrix first">无碰撞数据 — 请先打开矩阵</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000273" trl="Y">
+  <value column="MsgText" original="CSV export already in progress...">CSV 导出已在进行中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000274" trl="Y">
+  <value column="MsgText" original="CSV exported — {n} clashes">CSV 已导出 — {n} 处碰撞</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000275" trl="Y">
+  <value column="MsgText" original="Exporting CSV… pair {i}/{n}">正在导出 CSV… 组合 {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000276" trl="Y">
+  <value column="MsgText" original="No clash pairs to export">没有可导出的碰撞组合</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000277" trl="Y">
+  <value column="MsgText" original="Matrix needs 2+ disciplines (found: {d})">矩阵需要 2 个以上专业（已找到：{d}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000278" trl="Y">
+  <value column="MsgText" original="Close 2D view first">请先关闭 2D 视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000279" trl="Y">
+  <value column="MsgText" original="Click for dimensions. Right-click for Info">点击测量尺寸。右键查看信息</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000280" trl="Y">
+  <value column="MsgText" original="Tap for dimensions. Long-press for Info. Tap here to exit.">点击测量。长按查看信息。点此退出。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000281" trl="Y">
+  <value column="MsgText" original="Tap another spot for length, same spot for Area">点别处测长度，点同处测面积</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000282" trl="Y">
+  <value column="MsgText" original="Clash snag shared">碰撞缺陷已分享</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000283" trl="Y">
+  <value column="MsgText" original="Check Clash at Desktop..">在桌面端检查碰撞..</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000284" trl="Y">
+  <value column="MsgText" original="Generating report… {done}/{total} pairs">正在生成报告… {done}/{total} 组</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000285" trl="Y">
+  <value column="MsgText" original="Counting {a} vs {b}… {i}/{n}">正在统计 {a} 与 {b}… {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000286" trl="Y">
+  <value column="MsgText" original="Fetching city index ({url})...">正在获取城市索引（{url}）...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000287" trl="Y">
+  <value column="MsgText" original="{name} already loaded ({n} elements)">{name} 已加载（{n} 个构件）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000288" trl="Y">
+  <value column="MsgText" original="Unknown building: {name}">未知建筑：{name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000289" trl="Y">
+  <value column="MsgText" original="No streamable elements for {name}">{name} 没有可流式加载的构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000290" trl="Y">
+  <value column="MsgText" original="MEP BOQ Guide">MEP工程量清单指南</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000291" trl="Y">
+  <value column="MsgText" original="SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)&lt;br&gt;Pipes/ducts → length (m) · slabs → area (m²) · fittings → count&lt;br&gt;17 country rate templates from national publications&lt;br&gt;Section totals + labour trades + charts + reinstatement value&lt;br&gt;CSV (UTF-8 BOM) or shareable self-contained HTML">SMM2 §R–V · IFC→按专业分类 (PLB·ELEC·ACMV·FP)&lt;br&gt;管道/风管 → 长度(m) · 板 → 面积(m²) · 配件 → 个数&lt;br&gt;17个国家定额模板来自官方出版物&lt;br&gt;分部合计 + 工种 + 图表 + 重置价值&lt;br&gt;CSV (UTF-8 BOM) 或可分享独立 HTML</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000292" trl="Y">
+  <value column="MsgText" original="No DB for archetype: {name}">原型没有数据库：{name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000293" trl="Y">
+  <value column="MsgText" original="Disposal Systems">排水系统</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000294" trl="Y">
+  <value column="MsgText" original="Piped Supply Systems">管道供应系统</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000295" trl="Y">
+  <value column="MsgText" original="Mechanical Heating / Cooling">机械供暖/制冷</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000296" trl="Y">
+  <value column="MsgText" original="Ventilation / Air Conditioning">通风/空调</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000297" trl="Y">
+  <value column="MsgText" original="Electrical Supply / Power / Lighting">电气供应/照明</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000298" trl="Y">
+  <value column="MsgText" original="Communications / Security / Controls">通信/安防/控制</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000299" trl="Y">
+  <value column="MsgText" original="Mechanical / Electrical Services (General)">机电服务(综合)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000300" trl="Y">
+  <value column="MsgText" original="REINSTATEMENT VALUE">重置价值</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000301" trl="Y">
+  <value column="MsgText" original="Contingency">不可预见费</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000302" trl="Y">
+  <value column="MsgText" original="INSURED VALUE">保险价值</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000303" trl="Y">
+  <value column="MsgText" original="MEP BOQ complete">MEP工程量清单完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000304" trl="Y">
+  <value column="MsgText" original="sections">个分部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000305" trl="Y">
+  <value column="MsgText" original="Section">分部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000306" trl="Y">
+  <value column="MsgText" original="Share Report">分享报告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000307" trl="Y">
+  <value column="MsgText" original="No database specified. Open from 4D/5D Analytics page.">未指定数据库。从4D/5D分析页打开。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000308" trl="Y">
+  <value column="MsgText" original="No elements found for building:">未找到建筑的元素:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000309" trl="Y">
+  <value column="MsgText" original="Red — you go in (sound on, then we load)">红色 — 你进入（开启声音，然后加载）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000310" trl="Y">
+  <value column="MsgText" original="Blue — nothing happens, nothing loads">蓝色 — 什么都不会发生，什么都不加载</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000311" trl="Y">
+  <value column="MsgText" original="&quot;You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe.&quot;">“你吃下蓝色药丸 — 故事结束，你在自己的床上醒来，相信你愿意相信的一切。”</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000312" trl="Y">
+  <value column="MsgText" original="← back">← 返回</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000313" trl="Y">
+  <value column="MsgText" original="choose your door">选择你的门</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000314" trl="Y">
+  <value column="MsgText" original="Site traffic stats (GoatCounter)">站点流量统计（GoatCounter）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000315" trl="Y">
+  <value column="MsgText" original="BUILDINGS &amp; IFC">建筑与 IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000316" trl="Y">
+  <value column="MsgText" original="drop your own IFC, or open a ready building — opens in the viewer">拖入你自己的 IFC，或打开现成建筑 — 将在查看器中打开</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000317" trl="Y">
+  <value column="MsgText" original="Buildings / IFC">建筑 / IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000318" trl="Y">
+  <value column="MsgText" original="BIM Modeller">BIM 建模器</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000319" trl="Y">
+  <value column="MsgText" original="ERP">ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000320" trl="Y">
+  <value column="MsgText" original="User Guide">用户指南</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000321" trl="Y">
+  <value column="MsgText" original="Watch demo">观看演示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000322" trl="Y">
+  <value column="MsgText" original="Clear cache">清除缓存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000323" trl="Y">
+  <value column="MsgText" original="More">更多</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000324" trl="Y">
+  <value column="MsgText" original="BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.">BIM 建模（DAGeVu）面向桌面端 — 请在更大的屏幕上打开。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000325" trl="Y">
+  <value column="MsgText" original="↓ Drop IFC / 3D files here — or tap to browse">↓ 将 IFC / 3D 文件拖到此处 — 或点击浏览</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000326" trl="Y">
+  <value column="MsgText" original="multiple discipline files merge into one building">多个专业文件将合并为一栋建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000327" trl="Y">
+  <value column="MsgText" original="Blank Viewer">空白查看器</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000328" trl="Y">
+  <value column="MsgText" original="Open your own .db file">打开你自己的 .db 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000329" trl="Y">
+  <value column="MsgText" original="loading building manifest…">正在加载建筑清单…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000330" trl="Y">
+  <value column="MsgText" original="City buildings">城市建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000331" trl="Y">
+  <value column="MsgText" original="Landmark buildings">地标建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000332" trl="Y">
+  <value column="MsgText" original="elements">个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000333" trl="Y">
+  <value column="MsgText" original="reload">重新加载</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000334" trl="Y">
+  <value column="MsgText" original="No DB for {name}">{name} 没有数据库</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000335" trl="Y">
+  <value column="MsgText" original="Reset to the start screen?&#10;&#10;Clears the in-browser building data:&#10;  • cached buildings&#10;  • any IFC scene you dropped in (not saved to a .db file)&#10;and returns you to the red / blue choice.&#10;&#10;Keeps: the installed app + offline data, and any .db you saved yourself.">重置到起始画面？
+
+将清除浏览器中的建筑数据：
+  • 已缓存的建筑
+  • 你拖入的任何 IFC 场景（未保存为 .db 文件）
+并返回红 / 蓝选择。
+
+保留：已安装的应用 + 离线数据，以及你自己保存的任何 .db。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000336" trl="Y">
+  <value column="MsgText" original="Grid Bays">轴网跨</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000337" trl="Y">
+  <value column="MsgText" original="Share">分享</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000338" trl="Y">
+  <value column="MsgText" original="Min/Max">最小/最大</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000339" trl="Y">
+  <value column="MsgText" original="Menu">菜单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000340" trl="Y">
+  <value column="MsgText" original="Previous phase">上一阶段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000341" trl="Y">
+  <value column="MsgText" original="Next phase">下一阶段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000342" trl="Y">
+  <value column="MsgText" original="Bookmark this cut position">收藏此剖切位置</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000343" trl="Y">
+  <value column="MsgText" original="Remove bookmark">删除书签</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000344" trl="Y">
+  <value column="MsgText" original="Update ready — tap to refresh">更新已就绪 — 点击刷新</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000345" trl="Y">
+  <value column="MsgText" original="Report Bug">报告错误</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000346" trl="Y">
+  <value column="MsgText" original="Save Building">保存建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000347" trl="Y">
+  <value column="MsgText" original="Open Building">打开建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000348" trl="Y">
+  <value column="MsgText" original="Find / Navigate">查找 / 导航</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000349" trl="Y">
+  <value column="MsgText" original="Role View">角色视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000350" trl="Y">
+  <value column="MsgText" original="Help">帮助</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000351" trl="Y">
+  <value column="MsgText" original="World History">全局历史</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000352" trl="Y">
+  <value column="MsgText" original="Page History">页面历史</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000353" trl="Y">
+  <value column="MsgText" original="Walk">行走</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000354" trl="Y">
+  <value column="MsgText" original="Pick Walk">拣货路线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000355" trl="Y">
+  <value column="MsgText" original="Share">分享</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000356" trl="Y">
+  <value column="MsgText" original="Human-Asset">人员-资产</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000357" trl="Y">
+  <value column="MsgText" original="Measure">测量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000358" trl="Y">
+  <value column="MsgText" original="Clash Matrix">碰撞矩阵</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000359" trl="Y">
+  <value column="MsgText" original="Sanity">合理性检查</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000360" trl="Y">
+  <value column="MsgText" original="Egress">疏散</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000361" trl="Y">
+  <value column="MsgText" original="X-Ray / Bbox">X 光 / 包围盒</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000362" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">包围盒</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000363" trl="Y">
+  <value column="MsgText" original="Time Machine">时光机</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000364" trl="Y">
+  <value column="MsgText" original="4D Window">4D 窗口</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000365" trl="Y">
+  <value column="MsgText" original="4D Window — tap to generate a programme">4D 窗口 — 点击生成进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000366" trl="Y">
+  <value column="MsgText" original="Section Cut">剖切</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000367" trl="Y">
+  <value column="MsgText" original="Background">背景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000368" trl="Y">
+  <value column="MsgText" original="Night">夜间</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000369" trl="Y">
+  <value column="MsgText" original="Palette">调色板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000370" trl="Y">
+  <value column="MsgText" original="Shadow + Ground">阴影 + 地面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000371" trl="Y">
+  <value column="MsgText" original="Fly Tour">飞行巡览</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000372" trl="Y">
+  <value column="MsgText" original="Nav LOD (large bldgs)">导航 LOD（大型建筑）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000373" trl="Y">
+  <value column="MsgText" original="4D / 5D">4D / 5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000374" trl="Y">
+  <value column="MsgText" original="Issues">问题</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000375" trl="Y">
+  <value column="MsgText" original="Fullscreen">全屏</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000376" trl="Y">
+  <value column="MsgText" original="Precision (Fine)">精细模式</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000377" trl="Y">
+  <value column="MsgText" original="Reset Camera">重置相机</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000378" trl="Y">
+  <value column="MsgText" original="Auto-Pivot">自动枢轴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000379" trl="Y">
+  <value column="MsgText" original="Home">主页</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000380" trl="Y">
+  <value column="MsgText" original="Sound FX">音效</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000381" trl="Y">
+  <value column="MsgText" original="Settings">设置</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000382" trl="Y">
+  <value column="MsgText" original="Navigate">导航</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000383" trl="Y">
+  <value column="MsgText" original="Inspect">检查</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000384" trl="Y">
+  <value column="MsgText" original="Camera / View">相机 / 视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000385" trl="Y">
+  <value column="MsgText" original="Plumber">水暖工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000386" trl="Y">
+  <value column="MsgText" original="Electrician">电工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000387" trl="Y">
+  <value column="MsgText" original="ACMV Tech">空调技术员</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000388" trl="Y">
+  <value column="MsgText" original="Structural">结构</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000389" trl="Y">
+  <value column="MsgText" original="Cleaner">保洁</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000390" trl="Y">
+  <value column="MsgText" original="5D Rate Pack">5D 费率包</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000391" trl="Y">
+  <value column="MsgText" original="Cache Info">缓存信息</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000392" trl="Y">
+  <value column="MsgText" original="Reset Pill Icons">重置工具条图标</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000393" trl="Y">
+  <value column="MsgText" original="Defaults restored">已恢复默认值</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000394" trl="Y">
+  <value column="MsgText" original="Shadow + Ground — cycle Off → Earth → Grass → Paved">阴影 + 地面 — 循环 关 → 泥土 → 草地 → 铺装</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000395" trl="Y">
+  <value column="MsgText" original="None">无</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000396" trl="Y">
+  <value column="MsgText" original="Grass">草地</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000397" trl="Y">
+  <value column="MsgText" original="Earth">泥土</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000398" trl="Y">
+  <value column="MsgText" original="Paved">铺装</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000399" trl="Y">
+  <value column="MsgText" original="Blank scene — press Ctrl+O (Open Building) to load a .db file">空白场景 — 按 Ctrl+O（打开建筑）加载 .db 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000400" trl="Y">
+  <value column="MsgText" original="change in ⚙">在 ⚙ 中更改</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000401" trl="Y">
+  <value column="MsgText" original="History — across pages">历史 — 跨页面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000402" trl="Y">
+  <value column="MsgText" original="Whole">全部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000403" trl="Y">
+  <value column="MsgText" original="This page">本页</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000404" trl="Y">
+  <value column="MsgText" original="Close">关闭</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000405" trl="Y">
+  <value column="MsgText" original="Fine precision">精细精度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000406" trl="Y">
+  <value column="MsgText" original="Reset camera">重置相机</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000407" trl="Y">
+  <value column="MsgText" original="Auto-pivot on scene centre">以场景中心自动枢轴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000408" trl="Y">
+  <value column="MsgText" original="Still Refine (Alt+S)">静帧精修（Alt+S）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000409" trl="Y">
+  <value column="MsgText" original="Populate (Alt+P)">填充人物（Alt+P）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000410" trl="Y">
+  <value column="MsgText" original="MaxQ Movie (Alt+C — press again to cancel)">MaxQ 影片（Alt+C — 再按一次取消）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000411" trl="Y">
+  <value column="MsgText" original="Time Machine">时光机</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000412" trl="Y">
+  <value column="MsgText" original="Find">查找</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000413" trl="Y">
+  <value column="MsgText" original="Share">分享</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000414" trl="Y">
+  <value column="MsgText" original="Help">帮助</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000415" trl="Y">
+  <value column="MsgText" original="Clash Matrix">碰撞矩阵</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000416" trl="Y">
+  <value column="MsgText" original="Color Studio">色彩工作室</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000417" trl="Y">
+  <value column="MsgText" original="Night">夜间</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000418" trl="Y">
+  <value column="MsgText" original="Shadow">阴影</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000419" trl="Y">
+  <value column="MsgText" original="Background">背景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000420" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">包围盒</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000421" trl="Y">
+  <value column="MsgText" original="Cinema Orbit">影院环绕</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000422" trl="Y">
+  <value column="MsgText" original="Document">文档</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000423" trl="Y">
+  <value column="MsgText" original="Grid">轴网</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000424" trl="Y">
+  <value column="MsgText" original="Table">表格</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000425" trl="Y">
+  <value column="MsgText" original="Next Phase">下一阶段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000426" trl="Y">
+  <value column="MsgText" original="Save Design">保存设计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000427" trl="Y">
+  <value column="MsgText" original="Open Design">打开设计</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000428" trl="Y">
+  <value column="MsgText" original="MEP Routes">MEP 管线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000429" trl="Y">
+  <value column="MsgText" original="UBBL Compliance">UBBL 合规</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000430" trl="Y">
+  <value column="MsgText" original="Rosetta Stone">罗塞塔石碑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000431" trl="Y">
+  <value column="MsgText" original="Disciplines">专业</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000432" trl="Y">
+  <value column="MsgText" original="Sun intensity">太阳强度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000433" trl="Y">
+  <value column="MsgText" original="Exposure">曝光</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000434" trl="Y">
+  <value column="MsgText" original="Ambient">环境光</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000435" trl="Y">
+  <value column="MsgText" original="Hemisphere">半球光</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000436" trl="Y">
+  <value column="MsgText" original="All">全部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000437" trl="Y">
+  <value column="MsgText" original="Off">关</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000438" trl="Y">
+  <value column="MsgText" original="On — {n} fixtures">开 — {n} 盏灯具</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000439" trl="Y">
+  <value column="MsgText" original="Find">查找</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000440" trl="Y">
+  <value column="MsgText" original="Ask">提问</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000441" trl="Y">
+  <value column="MsgText" original="Save .xlsx">保存 .xlsx</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000442" trl="Y">
+  <value column="MsgText" original="All Types">所有类型</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000443" trl="Y">
+  <value column="MsgText" original="View back">上一视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000444" trl="Y">
+  <value column="MsgText" original="View forward">下一视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000445" trl="Y">
+  <value column="MsgText" original="Expand">展开</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000446" trl="Y">
+  <value column="MsgText" original="Voice not supported">不支持语音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000447" trl="Y">
+  <value column="MsgText" original="Loading Find…">正在加载查找…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000448" trl="Y">
+  <value column="MsgText" original="Find failed to load">查找加载失败</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000449" trl="Y">
+  <value column="MsgText" original="Compiling GPU shaders — please wait...">正在编译 GPU 着色器 — 请稍候...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000450" trl="Y">
+  <value column="MsgText" original="GPU shaders compiled in {ms}ms — rendering">GPU 着色器编译完成，用时 {ms} 毫秒 — 渲染中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000451" trl="Y">
+  <value column="MsgText" original="OFFLINE">离线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000452" trl="Y">
+  <value column="MsgText" original="BIM OOTB — 4D/5D Analytics">BIM OOTB — 4D/5D 分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000453" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Clash Coordination Report">BIM OOTB — 碰撞协调报告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000454" trl="Y">
+  <value column="MsgText" original="BIM OOTB — MEP Bill of Quantities">BIM OOTB — MEP 工程量清单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000455" trl="Y">
+  <value column="MsgText" original="4D/5D Analytics">4D/5D 分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000456" trl="Y">
+  <value column="MsgText" original="5D — Cost Excel">5D — 成本 Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000457" trl="Y">
+  <value column="MsgText" original="4D — Schedule Excel">4D — 进度 Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000458" trl="Y">
+  <value column="MsgText" original="MEP Bill of Quantities">MEP 工程量清单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000459" trl="Y">
+  <value column="MsgText" original="Copy shareable link">复制分享链接</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000460" trl="Y">
+  <value column="MsgText" original="Change locale / currency">更改语言 / 货币</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000461" trl="Y">
+  <value column="MsgText" original="Change locale">更改语言</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000462" trl="Y">
+  <value column="MsgText" original="Loading...">加载中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000463" trl="Y">
+  <value column="MsgText" original="Requesting data from viewer...">正在向查看器请求数据...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000464" trl="Y">
+  <value column="MsgText" original="Waiting for DB to cache in main scene...">等待数据库在主场景中缓存...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000465" trl="Y">
+  <value column="MsgText" original="Loading {url}...">正在加载 {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000466" trl="Y">
+  <value column="MsgText" original="Site Resources">现场资源</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000467" trl="Y">
+  <value column="MsgText" original="5D — Bill of Quantities">5D — 工程量清单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000468" trl="Y">
+  <value column="MsgText" original="Clash Coordination Report">碰撞协调报告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000469" trl="Y">
+  <value column="MsgText" original="Home">主页</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000470" trl="Y">
+  <value column="MsgText" original="Report Downloaded">报告已下载</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000471" trl="Y">
+  <value column="MsgText" original="HTML file saved. Share via WhatsApp, Email, or any medium.&lt;br&gt;Recipient opens it in any browser — full charts, no setup needed.">HTML 文件已保存。可通过 WhatsApp、电子邮件或任何方式分享。&lt;br&gt;接收者可在任意浏览器中打开 — 图表齐全，无需安装。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000472" trl="Y">
+  <value column="MsgText" original="OK">确定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000473" trl="Y">
+  <value column="MsgText" original="Total Clashes">碰撞总数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000474" trl="Y">
+  <value column="MsgText" original="Reviewed">已审查</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000475" trl="Y">
+  <value column="MsgText" original="Resolved">已解决</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000476" trl="Y">
+  <value column="MsgText" original="Accepted">已接受</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000477" trl="Y">
+  <value column="MsgText" original="Total bbox overlaps detected across all discipline pairs">所有专业组合中检测到的包围盒重叠总数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000478" trl="Y">
+  <value column="MsgText" original="Acknowledged clashes under investigation">已确认、正在调查的碰撞</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000479" trl="Y">
+  <value column="MsgText" original="Clashes fixed in the model — ready for re-check">已在模型中修复的碰撞 — 可复查</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000480" trl="Y">
+  <value column="MsgText" original="Risk accepted — no design change needed">风险已接受 — 无需设计变更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000481" trl="Y">
+  <value column="MsgText" original="By Discipline Pair">按专业组合</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000482" trl="Y">
+  <value column="MsgText" original="Discipline Risk Profile">专业风险概况</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000483" trl="Y">
+  <value column="MsgText" original="By Severity">按严重程度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000484" trl="Y">
+  <value column="MsgText" original="By Status">按状态</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000485" trl="Y">
+  <value column="MsgText" original="Top Offenders — Fix These First">主要问题构件 — 优先处理</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000486" trl="Y">
+  <value column="MsgText" original="By Element Class">按构件类别</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000487" trl="Y">
+  <value column="MsgText" original="Discipline Matrix Summary">专业矩阵汇总</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000488" trl="Y">
+  <value column="MsgText" original="Source">源</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000489" trl="Y">
+  <value column="MsgText" original="Target">目标</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000490" trl="Y">
+  <value column="MsgText" original="Tolerance">容差</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000491" trl="Y">
+  <value column="MsgText" original="Clashes">碰撞</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000492" trl="Y">
+  <value column="MsgText" original="clashes">处碰撞</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000493" trl="Y">
+  <value column="MsgText" original="Day/night cycle">昼夜循环</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000494" trl="Y">
+  <value column="MsgText" original="Drone Pilot — cinematic camera">无人机飞手 — 电影镜头</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000495" trl="Y">
+  <value column="MsgText" original="Gantt chart">甘特图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000496" trl="Y">
+  <value column="MsgText" original="What-if: slip a phase, watch the chain re-fold in blue">假设分析：推移一个阶段，看后续链条以蓝色重新排布</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000497" trl="Y">
+  <value column="MsgText" original="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">P6 / MS Project 互操作 — 将 Primavera .xer/.xml 或 MS Project XML 进度计划导入到此模型，导出 MSPDI/PMXML/XER，或将导入的进度计划与模型比对，查看其自身的工程量 + 单价估算</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000498" trl="Y">
+  <value column="MsgText" original="Dashboard">仪表板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000499" trl="Y">
+  <value column="MsgText" original="Budget vs Actual variance">预算与实际偏差</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000500" trl="Y">
+  <value column="MsgText" original="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.">绘制成本代理：将镜头外已建成的构件显示为包围盒（仅限大型建筑）。关闭 = 维持当前渲染不变。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000501" trl="Y">
+  <value column="MsgText" original="4D Construction Playback">4D 施工回放</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000502" trl="Y">
+  <value column="MsgText" original="DAY">天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000503" trl="Y">
+  <value column="MsgText" original="HR">时</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000504" trl="Y">
+  <value column="MsgText" original="MIN">分</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000505" trl="Y">
+  <value column="MsgText" original="Jump to start">跳到开始</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000506" trl="Y">
+  <value column="MsgText" original="Deconstruct">拆除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000507" trl="Y">
+  <value column="MsgText" original="Stop">停止</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000508" trl="Y">
+  <value column="MsgText" original="Build">建造</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000509" trl="Y">
+  <value column="MsgText" original="Jump to end">跳到结束</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000510" trl="Y">
+  <value column="MsgText" original="Undo edit">撤销编辑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000511" trl="Y">
+  <value column="MsgText" original="Undo the last Gantt drag/resize">撤销上一次甘特图拖动/调整</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000512" trl="Y">
+  <value column="MsgText" original="Set Baseline">设定基线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000513" trl="Y">
+  <value column="MsgText" original="Snapshot current dates as the baseline for schedule variance">将当前日期快照为进度偏差的基线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000514" trl="Y">
+  <value column="MsgText" original="Pull Back">前拉</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000515" trl="Y">
+  <value column="MsgText" original="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">把每项任务拉回其紧前任务允许的最早开始（仅压缩 — 绝不把任务推后）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000516" trl="Y">
+  <value column="MsgText" original="Drag to resize the Gantt drawer">拖动以调整甘特图抽屉大小</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000517" trl="Y">
+  <value column="MsgText" original="Locked">已锁定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000518" trl="Y">
+  <value column="MsgText" original="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">已锁定：禁用拖动/调整/链接，时间轴仍可实时拖动。点击解锁编辑。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000519" trl="Y">
+  <value column="MsgText" original="Editing">编辑中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000520" trl="Y">
+  <value column="MsgText" original="Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.">编辑中：拖动可移动/调整，拖到另一条上可建立链接，双击可键入编辑。点击锁定。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000521" trl="Y">
+  <value column="MsgText" original="Drag to shift the whole project's start/finish (Editing must be unlocked)">拖动以整体平移项目的开始/结束（须先解锁编辑）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000522" trl="Y">
+  <value column="MsgText" original="Drag to resize the drawer">拖动以调整抽屉大小</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000523" trl="Y">
+  <value column="MsgText" original="Import">导入</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000524" trl="Y">
+  <value column="MsgText" original="Export">导出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000525" trl="Y">
+  <value column="MsgText" original="P6/MSP file">P6/MSP 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000526" trl="Y">
+  <value column="MsgText" original="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">导入 Primavera P6 进度计划（.xer 或 .xml/PMXML）或 MS Project XML（MSPDI）— 将其 WBS、逻辑和日期套用到此模型。任务与构件的绑定仍是独立、可审查的一步。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000527" trl="Y">
+  <value column="MsgText" original="auto-bind">自动绑定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000528" trl="Y">
+  <value column="MsgText" original="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.">若作业名称带有 BIM-Bind 标记（@专业:Ifc类[:楼层]），则在此模型中解析并在导入时把任务预绑定到构件 — 这是可审查的第一遍，不是猜测。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000529" trl="Y">
+  <value column="MsgText" original="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">将当前进度计划（WBS、日期、依赖关系）导出为 MS Project XML（MSPDI）— 可直接在 Microsoft Project 中打开；也可在此重新导入。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000530" trl="Y">
+  <value column="MsgText" original="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">导出为 Primavera P6 PMXML（APIBusinessObjects XML）— 所有有文档记载的 P6 导出路径都使用此格式；也可在此重新导入。部分字段（WBS 代码、EPS 级作业代码、资源分配、全局日历、基线）不会携带 — P6 自身在跨库导入时也会丢弃其中大部分。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000531" trl="Y">
+  <value column="MsgText" original="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">导出为 Primavera XER — 较旧的制表符分隔 P6 交换格式，供仍偏好它而非 PMXML 的 P6 安装使用。与 PMXML 相同的已知丢失字段。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000532" trl="Y">
+  <value column="MsgText" original="Diff vs Model">与模型比对</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000533" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">4D 进度比对 — 按阶段将已导入的 P6/MSP 进度计划与模型比对。它把对方的工期与我们基于真实工程量 + 人工单价的估算相比较（请先导入文件）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000534" trl="Y">
+  <value column="MsgText" original="Phase Progress">阶段进度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000535" trl="Y">
+  <value column="MsgText" original="S-Curve">S 曲线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000536" trl="Y">
+  <value column="MsgText" original="Day {c} / {t} — {p}% complete">第 {c} / {t} 天 — 已完成 {p}%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000537" trl="Y">
+  <value column="MsgText" original="{n} placed | {names}">已放置 {n} | {names}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000538" trl="Y">
+  <value column="MsgText" original="idle">空闲</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000539" trl="Y">
+  <value column="MsgText" original="Author engine not loaded">编排引擎未加载</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000540" trl="Y">
+  <value column="MsgText" original="What-if engine not loaded">假设分析引擎未加载</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000541" trl="Y">
+  <value column="MsgText" original="⊕ Now building">⊕ 正在建造</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000542" trl="Y">
+  <value column="MsgText" original="item">项</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000543" trl="Y">
+  <value column="MsgText" original="items">项</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000544" trl="Y">
+  <value column="MsgText" original="Loading timeline...">正在加载时间轴...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000545" trl="Y">
+  <value column="MsgText" original="Setting up 4D construction timeline...">正在搭建 4D 施工时间轴...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000546" trl="Y">
+  <value column="MsgText" original="No elements found in database">数据库中未找到构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000547" trl="Y">
+  <value column="MsgText" original="{storey} — {phase} ({n} el, Day {a}–{b}, {src})">{storey} — {phase}（{n} 个构件，第 {a}–{b} 天，{src}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000548" trl="Y">
+  <value column="MsgText" original="IFC 4D">IFC 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000549" trl="Y">
+  <value column="MsgText" original="generated">自动生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000550" trl="Y">
+  <value column="MsgText" original="Locked — click 🔒 Locked to enable editing">已锁定 — 点击 🔒 已锁定 以启用编辑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000551" trl="Y">
+  <value column="MsgText" original="Shift whole schedule {d}d">整体平移进度计划 {d} 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000552" trl="Y">
+  <value column="MsgText" original="Time Machine couldn't complete this edit — {reason}">时光机无法完成此次编辑 — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000553" trl="Y">
+  <value column="MsgText" original="unexpected error">意外错误</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000554" trl="Y">
+  <value column="MsgText" original="Close other panels ({n})">关闭其他面板（{n}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000555" trl="Y">
+  <value column="MsgText" original="Blocked by {by} — clamped to {start}">被 {by} 阻挡 — 限制到 {start}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000556" trl="Y">
+  <value column="MsgText" original="Not editable — no schedule task on this bar">不可编辑 — 此条上没有进度任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000557" trl="Y">
+  <value column="MsgText" original="Move {n} bars  {d}d">移动 {n} 条  {d} 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000558" trl="Y">
+  <value column="MsgText" original="Move">移动</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000559" trl="Y">
+  <value column="MsgText" original="Resize">调整</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000560" trl="Y">
+  <value column="MsgText" original="Rejected: {reason}">已拒绝：{reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000561" trl="Y">
+  <value column="MsgText" original="unknown">未知</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000562" trl="Y">
+  <value column="MsgText" original="Clamped to {start} by {by}">被 {by} 限制到 {start}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000563" trl="Y">
+  <value column="MsgText" original="Applied · {n} successor(s) cascaded">已应用 · 级联 {n} 个后继任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000564" trl="Y">
+  <value column="MsgText" original="Nothing to undo">没有可撤销的操作</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000565" trl="Y">
+  <value column="MsgText" original="Undone: {mode} {task}">已撤销：{mode} {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000566" trl="Y">
+  <value column="MsgText" original="No schedule to baseline yet — generate a 4D schedule first">尚无可设基线的进度计划 — 请先生成 4D 进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000567" trl="Y">
+  <value column="MsgText" original="Baseline set — {n} tasks">基线已设定 — {n} 项任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000568" trl="Y">
+  <value column="MsgText" original="Not available">不可用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000569" trl="Y">
+  <value column="MsgText" original="Cannot compress — {reason}">无法压缩 — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000570" trl="Y">
+  <value column="MsgText" original="no schedule">无进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000571" trl="Y">
+  <value column="MsgText" original="Nothing to compress — schedule is already at earliest float">无可压缩 — 进度计划已处于最早浮时</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000572" trl="Y">
+  <value column="MsgText" original="Compressed 1 task">已压缩 1 项任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000573" trl="Y">
+  <value column="MsgText" original="Compressed {n} tasks">已压缩 {n} 项任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000574" trl="Y">
+  <value column="MsgText" original="project finish moved up 1 day">项目完工提前 1 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000575" trl="Y">
+  <value column="MsgText" original="project finish moved up {d} days">项目完工提前 {d} 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000576" trl="Y">
+  <value column="MsgText" original="project finish unchanged (internal float closed)">项目完工不变（内部浮时已消除）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000577" trl="Y">
+  <value column="MsgText" original="Cannot shift — {reason}">无法平移 — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000578" trl="Y">
+  <value column="MsgText" original="Cannot move group — {reason}">无法移动分组 — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000579" trl="Y">
+  <value column="MsgText" original="Cannot edit — no real dates found for this task">无法编辑 — 此任务没有真实日期</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000580" trl="Y">
+  <value column="MsgText" original="Could not generate a schedule">无法生成进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000581" trl="Y">
+  <value column="MsgText" original="Schedule generated — refreshing…">进度计划已生成 — 刷新中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000582" trl="Y">
+  <value column="MsgText" original="Linked: {pred}  →  {succ}">已链接：{pred}  →  {succ}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000583" trl="Y">
+  <value column="MsgText" original="Refused — that link would create a cycle">已拒绝 — 该链接会形成循环</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000584" trl="Y">
+  <value column="MsgText" original="Linked, but {task} clamped to {start} — blocked by {by}">已链接，但 {task} 被限制到 {start} — 被 {by} 阻挡</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000585" trl="Y">
+  <value column="MsgText" original="Verifying integrity…">正在校验完整性…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000586" trl="Y">
+  <value column="MsgText" original="⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again">⚠ 完整性破坏：{list} — 请按 ↺ 撤销编辑（或修正），然后重新锁定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000587" trl="Y">
+  <value column="MsgText" original="+{n} floating">+{n} 悬空</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000588" trl="Y">
+  <value column="MsgText" original="+{n} hanging in midair">+{n} 悬在半空</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000589" trl="Y">
+  <value column="MsgText" original="No schedule available">没有可用的进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000590" trl="Y">
+  <value column="MsgText" original="critical">关键</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000591" trl="Y">
+  <value column="MsgText" original="with float">有浮时</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000592" trl="Y">
+  <value column="MsgText" original="Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.&#10;Project duration {pf}d · total float {minF}..{maxF}d.&#10;CPM reads the dates the drag produced — it never changes one.">关键路径法，每次编辑后重新计算。红色 = 总浮时为零：该任务一旦推迟就会推迟项目完工。绿色 = 有余量。
+项目工期 {pf} 天 · 总浮时 {minF}..{maxF} 天。
+CPM 只读取拖动产生的日期 — 从不更改日期。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000593" trl="Y">
+  <value column="MsgText" original="← after">← 之后</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000594" trl="Y">
+  <value column="MsgText" original="→ before">→ 之前</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000595" trl="Y">
+  <value column="MsgText" original="unlink">取消链接</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000596" trl="Y">
+  <value column="MsgText" original="no dependencies">无依赖关系</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000597" trl="Y">
+  <value column="MsgText" original="{n} elements · {task}">{n} 个构件 · {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000598" trl="Y">
+  <value column="MsgText" original="CRITICAL PATH · zero float">关键路径 · 浮时为零</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000599" trl="Y">
+  <value column="MsgText" original="Total float {n}d">总浮时 {n} 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000600" trl="Y">
+  <value column="MsgText" original="(CPM, dates unchanged)">（CPM，日期不变）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000601" trl="Y">
+  <value column="MsgText" original="Start">开始</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000602" trl="Y">
+  <value column="MsgText" original="Finish">完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000603" trl="Y">
+  <value column="MsgText" original="Dependencies">依赖关系</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000604" trl="Y">
+  <value column="MsgText" original="Apply">应用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000605" trl="Y">
+  <value column="MsgText" original="Budget vs Actual">预算 vs 实际</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000606" trl="Y">
+  <value column="MsgText" original="Reading records…">正在读取记录…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000607" trl="Y">
+  <value column="MsgText" original="No project records for this model">此模型没有项目记录</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000608" trl="Y">
+  <value column="MsgText" original="from records">来自记录</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000609" trl="Y">
+  <value column="MsgText" original="Cost">成本</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000610" trl="Y">
+  <value column="MsgText" original="Schedule">进度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000611" trl="Y">
+  <value column="MsgText" original="(planned baseline)">（计划基线）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000612" trl="Y">
+  <value column="MsgText" original="Projected finish">预计完工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000613" trl="Y">
+  <value column="MsgText" original="projected from cost">由成本推算</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000614" trl="Y">
+  <value column="MsgText" original="forecast">预测</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000615" trl="Y">
+  <value column="MsgText" original="cost · from records">成本 · 来自记录</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000616" trl="Y">
+  <value column="MsgText" original="Recording in progress — import refused">正在录制 — 已拒绝导入</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000617" trl="Y">
+  <value column="MsgText" original="Interop module not loaded — reopen the P6/MSP section">互操作模块未加载 — 请重新打开 P6/MSP 区域</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000618" trl="Y">
+  <value column="MsgText" original="Interop modules failed to load: {err}">互操作模块加载失败：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000619" trl="Y">
+  <value column="MsgText" original="No model open yet">尚未打开模型</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000620" trl="Y">
+  <value column="MsgText" original="Imported {format} &quot;{file}&quot; — {wbs} WBS / {acts} activities / {links} links.">已导入 {format}“{file}” — {wbs} 个 WBS / {acts} 项作业 / {links} 条链接。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000621" trl="Y">
+  <value column="MsgText" original="Pre-bound {n} elements across {a} activities by convention">按约定在 {a} 项作业中预绑定了 {n} 个构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000622" trl="Y">
+  <value column="MsgText" original="({n} selector(s) matched nothing — review)">（{n} 个选择器无匹配 — 请检查）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000623" trl="Y">
+  <value column="MsgText" original="({n} activities carry a bind token — tick auto-bind to resolve.)">（{n} 项作业带有绑定标记 — 勾选自动绑定以解析。）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000624" trl="Y">
+  <value column="MsgText" original="Import failed: {err}">导入失败：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000625" trl="Y">
+  <value column="MsgText" original="No schedule to export">没有可导出的进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000626" trl="Y">
+  <value column="MsgText" original="No tasks to export">没有可导出的任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000627" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to MS Project XML ({file}).">已将 {n} 项任务 / {m} 条链接导出为 MS Project XML（{file}）。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000628" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">已将 {n} 项任务 / {m} 条链接导出为 {label}（{file}）。部分字段（WBS 代码、EPS 级作业代码、资源分配、全局日历、基线）不会携带 — P6 自身在跨库导入时也会丢弃其中大部分。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000629" trl="Y">
+  <value column="MsgText" original="No schedule loaded">未加载进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000630" trl="Y">
+  <value column="MsgText" original="Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.">“与模型比对”把已导入的 P6/MSP 进度计划与我们基于真实工程量的估算相比较 — 请先导入一个。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000631" trl="Y">
+  <value column="MsgText" original="Computing schedule diff…">正在计算进度比对…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000632" trl="Y">
+  <value column="MsgText" original="Diff failed: {err}">比对失败：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000633" trl="Y">
+  <value column="MsgText" original="theirs {a}d vs ours {b}d">对方 {a} 天 vs 我方 {b} 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000634" trl="Y">
+  <value column="MsgText" original="{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED">{n} 项作业未匹配 — 见控制台 §4D_DIFF_UNMATCHED</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000635" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.">4D 进度比对：已比较 {a}/{b} 个阶段，匹配 {c}/{d} 项作业。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000636" trl="Y">
+  <value column="MsgText" original="What-if schedule">假设分析进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000637" trl="Y">
+  <value column="MsgText" original="Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.">拖动阶段条以推移它（或用 ± 调整 ±7 天）→ 每个下游阶段以蓝色重新排布（完成-开始）。接受即重设基线，放弃即丢弃。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000638" trl="Y">
+  <value column="MsgText" original="Accept — re-baseline">接受 — 重设基线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000639" trl="Y">
+  <value column="MsgText" original="Discard">放弃</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000640" trl="Y">
+  <value column="MsgText" original="Official (planned)">正式（计划）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000641" trl="Y">
+  <value column="MsgText" original="What-if (blue ripple)">假设分析（蓝色涟漪）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000642" trl="Y">
+  <value column="MsgText" original="Finish:">完成：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000643" trl="Y">
+  <value column="MsgText" original="BAC:">BAC：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000644" trl="Y">
+  <value column="MsgText" original="(unchanged — same scope)">（不变 — 范围相同）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000645" trl="Y">
+  <value column="MsgText" original="PV @ finish:">完工时 PV：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000646" trl="Y">
+  <value column="MsgText" original="drag to slip · official {a}→{b}">拖动以推移 · 正式 {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000647" trl="Y">
+  <value column="MsgText" original="blue {a}→{b}">蓝色 {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000648" trl="Y">
+  <value column="MsgText" original="pull in 7 days">提前 7 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000649" trl="Y">
+  <value column="MsgText" original="slip out 7 days">推后 7 天</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000650" trl="Y">
+  <value column="MsgText" original="What-if accepted — schedule re-baselined (finish +{d}d)">假设分析已接受 — 进度计划已重设基线（完成 +{d} 天）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000651" trl="Y">
+  <value column="MsgText" original="What-if discarded — official schedule restored">假设分析已放弃 — 已恢复正式进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000652" trl="Y">
+  <value column="MsgText" original="What-if: ERP engine not ready">假设分析：ERP 引擎未就绪</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000653" trl="Y">
+  <value column="MsgText" original="What-if: no folded project yet — push one to ERP first">假设分析：尚无折叠的项目 — 请先推送一个到 ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000654" trl="Y">
+  <value column="MsgText" original="Project {id}">项目 {id}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000655" trl="Y">
+  <value column="MsgText" original="Downloading {name}... {pct}% ({a}/{b}MB)">正在下载 {name}... {pct}%（{a}/{b}MB）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000656" trl="Y">
+  <value column="MsgText" original="Cost variance">成本偏差</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000657" trl="Y">
+  <value column="MsgText" original="· from records">· 来自记录</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000658" trl="Y">
+  <value column="MsgText" original="match">个匹配</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000659" trl="Y">
+  <value column="MsgText" original="matches">个匹配</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000660" trl="Y">
+  <value column="MsgText" original="planned">计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000661" trl="Y">
+  <value column="MsgText" original="Phase">阶段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000662" trl="Y">
+  <value column="MsgText" original="Project">项目</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000663" trl="Y">
+  <value column="MsgText" original="⏱ View at this moment">⏱ 查看此刻</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000664" trl="Y">
+  <value column="MsgText" original="Construction window">施工时段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000665" trl="Y">
+  <value column="MsgText" original="Not yet assigned to a dated task in &quot;{name}&quot;.">尚未分配到“{name}”中有日期的任务。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000666" trl="Y">
+  <value column="MsgText" original="Which schedule this window comes from">此时段来自哪个进度计划</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000667" trl="Y">
+  <value column="MsgText" original="Task">任务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000668" trl="Y">
+  <value column="MsgText" original="Window">时段</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000669" trl="Y">
+  <value column="MsgText" original="Trade">工种</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000670" trl="Y">
+  <value column="MsgText" original="Float">浮动时间</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000671" trl="Y">
+  <value column="MsgText" original="(critical path)">（关键路径）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000672" trl="Y">
+  <value column="MsgText" original="Type a command...">输入命令...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000673" trl="Y">
+  <value column="MsgText" original="Zoom In">放大</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000674" trl="Y">
+  <value column="MsgText" original="Zoom Out">缩小</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000675" trl="Y">
+  <value column="MsgText" original="MaxQ Movie">MaxQ 电影</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000676" trl="Y">
+  <value column="MsgText" original="Populate (people + trees)">放置人物与树木</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000677" trl="Y">
+  <value column="MsgText" original="Hover Name">悬停显示名称</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000678" trl="Y">
+  <value column="MsgText" original="Installed ✔">已安装 ✔</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000679" trl="Y">
+  <value column="MsgText" original="Download · Run Offline">下载 · 离线运行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000680" trl="Y">
+  <value column="MsgText" original="Viewer User Guide">查看器用户指南</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000681" trl="Y">
+  <value column="MsgText" original="Save the open building to a .db file">将当前建筑保存为 .db 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000682" trl="Y">
+  <value column="MsgText" original="Native Save As… dialog — pick name + folder">原生“另存为…”对话框 — 选择名称和文件夹</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000683" trl="Y">
+  <value column="MsgText" original="Re-openable with Open (Ctrl+O)">可用“打开”（Ctrl+O）重新打开</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000684" trl="Y">
+  <value column="MsgText" original="Open a saved .db file">打开已保存的 .db 文件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000685" trl="Y">
+  <value column="MsgText" original="Native Open… dialog">原生“打开…”对话框</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000686" trl="Y">
+  <value column="MsgText" original="Replaces the current scene">替换当前场景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000687" trl="Y">
+  <value column="MsgText" original="Search by name/class">按名称/类别搜索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000688" trl="Y">
+  <value column="MsgText" original="Filter by storey/type">按楼层/类型筛选</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000689" trl="Y">
+  <value column="MsgText" original="Voice search (mic)">语音搜索（麦克风）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000690" trl="Y">
+  <value column="MsgText" original="Navigate to element">导航到构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000691" trl="Y">
+  <value column="MsgText" original="Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)">循环切换专业预设（水管工/电工/ACMV/结构/清洁工）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000692" trl="Y">
+  <value column="MsgText" original="Filters the 3D scene + Outliner to that role's disciplines">将 3D 场景和大纲视图筛选为该角色的专业</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000693" trl="Y">
+  <value column="MsgText" original="Convenience filter only — not access control">仅为便捷筛选 — 不是访问控制</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000694" trl="Y">
+  <value column="MsgText" original="History across ALL pages — viewer, iDempiere, Gravity">所有页面的历史 — 查看器、iDempiere、Gravity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000695" trl="Y">
+  <value column="MsgText" original="Whole | This page toggle">全局 | 本页 切换</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000696" trl="Y">
+  <value column="MsgText" original="Day strip — step back/forward by day">日期条 — 按天前进/后退</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000697" trl="Y">
+  <value column="MsgText" original="Tap a card to jump to that building/doc">点按卡片跳转到该建筑/文档</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000698" trl="Y">
+  <value column="MsgText" original="Long-press → clear (bomb), warns first">长按 → 清除（炸弹），先警告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000699" trl="Y">
+  <value column="MsgText" original="This page's own dot timeline">本页自己的圆点时间线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000700" trl="Y">
+  <value column="MsgText" original="Step back/forward through your edits">在你的编辑中前进/后退</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000701" trl="Y">
+  <value column="MsgText" original="Route over locators (walk order)">货位路线（行走顺序）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000702" trl="Y">
+  <value column="MsgText" original="Fly-to next bin, FIND-lens depth">飞向下一个货位，FIND 视图深度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000703" trl="Y">
+  <value column="MsgText" original="Scan bin QR / type code">扫描货位 QR / 输入编码</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000704" trl="Y">
+  <value column="MsgText" original="Signed pick group per bin">每个货位的签名拣货组</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000705" trl="Y">
+  <value column="MsgText" original="Operate-phase (7D) cockpit — one model, lenses each answering ONE question">运营阶段（7D）驾驶舱 — 一个模型，每个视图只回答一个问题</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000706" trl="Y">
+  <value column="MsgText" original="Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard">占用（含租约状态）· 在场 · 单元类别 · 资产/IoT · 仪表板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000707" trl="Y">
+  <value column="MsgText" original="Wake-aware: only lenses with data in THIS building are enabled (others greyed)">感知数据：仅启用本建筑有数据的视图（其余置灰）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000708" trl="Y">
+  <value column="MsgText" original="All off one signed op-log; toggle a lens off restores the model">全部来自同一签名操作日志；关闭视图即还原模型</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000709" trl="Y">
+  <value column="MsgText" original="Discipline pair grid">专业配对网格</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000710" trl="Y">
+  <value column="MsgText" original="Tolerance 1–100mm">容差 1–100mm</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000711" trl="Y">
+  <value column="MsgText" original="Status: Review/Resolve/Accept">状态：复核/解决/接受</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000712" trl="Y">
+  <value column="MsgText" original="HTML Report + CSV export">HTML 报告 + CSV 导出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000713" trl="Y">
+  <value column="MsgText" original="Floating Member (STR beams)">悬空构件（STR 梁）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000714" trl="Y">
+  <value column="MsgText" original="Span/Depth (advisory)">跨度/梁高（建议）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000715" trl="Y">
+  <value column="MsgText" original="Column Continuity">柱连续性</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000716" trl="Y">
+  <value column="MsgText" original="Isolated Room (no measured route out)">孤立房间（无测得出路）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000717" trl="Y">
+  <value column="MsgText" original="Circulation Distance (to real exit, falls back to spine)">疏散距离（到真实出口，否则回退到主干线）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000718" trl="Y">
+  <value column="MsgText" original="Door Width (advisory)">门宽（建议）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000719" trl="Y">
+  <value column="MsgText" original="Gantt timeline">甘特图时间线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000720" trl="Y">
+  <value column="MsgText" original="Author 4D schedule (✎)">编制 4D 进度计划（✎）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000721" trl="Y">
+  <value column="MsgText" original="What-if (slip a phase)">假设分析（推移一个阶段）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000722" trl="Y">
+  <value column="MsgText" original="Play / Pause sequence">播放 / 暂停序列</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000723" trl="Y">
+  <value column="MsgText" original="Phase slider">阶段滑块</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000724" trl="Y">
+  <value column="MsgText" original="Share ?tm=play link">分享 ?tm=play 链接</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000725" trl="Y">
+  <value column="MsgText" original="Task name + start→finish beside the picked element">拾取构件旁显示任务名称 + 开始→完成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000726" trl="Y">
+  <value column="MsgText" original="Trade + float, critical-path marker">专业 + 浮时，关键路径标记</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000727" trl="Y">
+  <value column="MsgText" original="One extra line on hover">悬停时多一行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000728" trl="Y">
+  <value column="MsgText" original="No schedule yet? Tap to generate one on the fly">还没有进度计划？点按即时生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000729" trl="Y">
+  <value column="MsgText" original="Y axis (vertical)">Y 轴（垂直）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000730" trl="Y">
+  <value column="MsgText" original="X axis (lateral)">X 轴（横向）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000731" trl="Y">
+  <value column="MsgText" original="Z axis (depth)">Z 轴（纵深）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000732" trl="Y">
+  <value column="MsgText" original="Slider 0–100%">滑块 0–100%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000733" trl="Y">
+  <value column="MsgText" original="Bookmarks">书签</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000734" trl="Y">
+  <value column="MsgText" original="Ambience 0–100">环境氛围 0–100</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000735" trl="Y">
+  <value column="MsgText" original="Sun 0–5">太阳 0–5</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000736" trl="Y">
+  <value column="MsgText" original="Exposure 0.1–3">曝光 0.1–3</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000737" trl="Y">
+  <value column="MsgText" original="Ambient 0–2">环境光 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000738" trl="Y">
+  <value column="MsgText" original="Hemisphere 0–2">半球光 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000739" trl="Y">
+  <value column="MsgText" original="Night">夜间</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000740" trl="Y">
+  <value column="MsgText" original="Shadow + Ground (cycle)">阴影 + 地面（循环）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000741" trl="Y">
+  <value column="MsgText" original="Reverse background">反转背景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000742" trl="Y">
+  <value column="MsgText" original="Sound FX">音效</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000743" trl="Y">
+  <value column="MsgText" original="Boxes far/off-screen elements while you fly/orbit">飞行或环绕时，将远处/屏幕外构件显示为方框</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000744" trl="Y">
+  <value column="MsgText" original="Real mesh within 50 m + in view">50 m 内且在视野内显示真实网格</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000745" trl="Y">
+  <value column="MsgText" original="Off during Time Machine, Find isolate, Cinema">时光机、查找隔离、电影模式期间关闭</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000746" trl="Y">
+  <value column="MsgText" original="Snag photo + annotation">问题照片 + 标注</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000747" trl="Y">
+  <value column="MsgText" original="Fly to clash deep-link">飞到碰撞深度链接</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000748" trl="Y">
+  <value column="MsgText" original="Export Excel">导出 Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000749" trl="Y">
+  <value column="MsgText" original="Time Machine: earcon per construction phase">时光机：每个施工阶段一个提示音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000750" trl="Y">
+  <value column="MsgText" original="Fly Tour: positional waypoint cues">飞行巡览：定位航点提示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000751" trl="Y">
+  <value column="MsgText" original="UI: soft tap tick">界面：轻柔点按音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000752" trl="Y">
+  <value column="MsgText" original="Synthesized — no audio files, default OFF">合成音 — 无音频文件，默认关闭</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000753" trl="Y">
+  <value column="MsgText" original="Iso">等轴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000754" trl="Y">
+  <value column="MsgText" original="Move Grid">移动轴网</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000755" trl="Y">
+  <value column="MsgText" original="Drag Item">拖动构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000756" trl="Y">
+  <value column="MsgText" original="Sketch">草图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000757" trl="Y">
+  <value column="MsgText" original="Extrude">拉伸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000758" trl="Y">
+  <value column="MsgText" original="Axis">轴向</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000759" trl="Y">
+  <value column="MsgText" original="Cut">切割</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000760" trl="Y">
+  <value column="MsgText" original="Route">路径</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000761" trl="Y">
+  <value column="MsgText" original="Sweep Run">扫掠管线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000762" trl="Y">
+  <value column="MsgText" original="Fillet">圆角</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000763" trl="Y">
+  <value column="MsgText" original="Insert">插入</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000764" trl="Y">
+  <value column="MsgText" original="History">历史</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000765" trl="Y">
+  <value column="MsgText" original="Guide">指南</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000766" trl="Y">
+  <value column="MsgText" original="Delete">删除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000767" trl="Y">
+  <value column="MsgText" original="Sound">声音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000768" trl="Y">
+  <value column="MsgText" original="Connect">连接</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000769" trl="Y">
+  <value column="MsgText" original="Teams">团队</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000770" trl="Y">
+  <value column="MsgText" original="X-ray">透视</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000771" trl="Y">
+  <value column="MsgText" original="history">历史</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000772" trl="Y">
+  <value column="MsgText" original="OUTLINER">大纲视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000773" trl="Y">
+  <value column="MsgText" original="BOM Tree">BOM 树</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000774" trl="Y">
+  <value column="MsgText" original="STR Walker">STR 遍历器</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000775" trl="Y">
+  <value column="MsgText" original="Open a resident (▾) or local .db (🏗) to walk">打开常驻建筑 (▾) 或本地 .db (🏗) 进行遍历</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000776" trl="Y">
+  <value column="MsgText" original="Walls">墙体</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000777" trl="Y">
+  <value column="MsgText" original="Openings">开口</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000778" trl="Y">
+  <value column="MsgText" original="Routes">路径</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000779" trl="Y">
+  <value column="MsgText" original="Fillets">圆角</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000780" trl="Y">
+  <value column="MsgText" original="Grid Moves">轴网移动</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000781" trl="Y">
+  <value column="MsgText" original="Arrays">阵列</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000782" trl="Y">
+  <value column="MsgText" original="Lofts">放样</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000783" trl="Y">
+  <value column="MsgText" original="Revolves">旋转体</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000784" trl="Y">
+  <value column="MsgText" original="Shells">抽壳</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000785" trl="Y">
+  <value column="MsgText" original="Offsets">偏移</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000786" trl="Y">
+  <value column="MsgText" original="Var. Fillets">变半径圆角</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000787" trl="Y">
+  <value column="MsgText" original="Chamfers∠">倒角∠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000788" trl="Y">
+  <value column="MsgText" original="Drafts">拔模</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000789" trl="Y">
+  <value column="MsgText" original="Components">构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000790" trl="Y">
+  <value column="MsgText" original="{n} features">{n} 个特征</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000791" trl="Y">
+  <value column="MsgText" original="Help — toolbar &amp; shortcuts">帮助 — 工具栏与快捷键</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000792" trl="Y">
+  <value column="MsgText" original="Back to the Matrix">返回 Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000793" trl="Y">
+  <value column="MsgText" original="Open a building — load a resident or a local .db → walk + bom-graph">打开建筑 — 加载常驻建筑或本地 .db → 遍历 + bom-graph</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000794" trl="Y">
+  <value column="MsgText" original="Zoom to fit (F) — frames the selection, or all">缩放至合适 (F) — 框选所选对象，或全部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000795" trl="Y">
+  <value column="MsgText" original="Cycle view: Iso / Top">切换视图：等轴 / 俯视</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000796" trl="Y">
+  <value column="MsgText" original="Drag a gridline — attached walls recompose">拖动轴线 — 相连的墙体自动重组</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000797" trl="Y">
+  <value column="MsgText" original="Move the selected object — drag an axis handle or nudge with arrow keys (M)">移动所选对象 — 拖动轴手柄或用方向键微调 (M)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000798" trl="Y">
+  <value column="MsgText" original="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)">自由拖动固定装置/配件 — 由真实放置解析器把关 (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000799" trl="Y">
+  <value column="MsgText" original="Constraint intent the solver enforces on the sketch">求解器对草图强制执行的约束意图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000800" trl="Y">
+  <value column="MsgText" original="Sweep a profile along a route (MEP run)">沿路径扫掠截面 (MEP 管线)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000801" trl="Y">
+  <value column="MsgText" original="Round a selected solid's picked edges">为所选实体的选定边倒圆角</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000802" trl="Y">
+  <value column="MsgText" original="Insert a library component (assemble, don't draw)">插入库构件（组装，而非绘制）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000803" trl="Y">
+  <value column="MsgText" original="Refine the selected component's level of detail (same signed row)">细化所选构件的细节层级（同一已签名行）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000804" trl="Y">
+  <value column="MsgText" original="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue">导出 — 原生 .db（完整保真：已签名的操作日志）、IFC4 或 BCF 2.1 问题</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000805" trl="Y">
+  <value column="MsgText" original="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)">保存 — 碰撞检查 + 自动修复，然后写入物理数据库快照（存在未解决的红色项时阻止）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000806" trl="Y">
+  <value column="MsgText" original="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)">全局历史：跨页面时间线 (Viewer、iDempiere、Gravity、Modeller)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000807" trl="Y">
+  <value column="MsgText" original="Modeller User Guide — how to Open, walk, edit &amp; export">Modeller 用户指南 — 如何打开、遍历、编辑与导出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000808" trl="Y">
+  <value column="MsgText" original="Delete selected (Del)">删除所选 (Del)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000809" trl="Y">
+  <value column="MsgText" original="Authoring sound feedback">创作操作音效反馈</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000810" trl="Y">
+  <value column="MsgText" original="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)">连接场景 — 与 Viewer 和 ERP 共享所选内容/时间线（需主动开启；各界面保持独立）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000811" trl="Y">
+  <value column="MsgText" original="Teams — who's on this scene (presence &amp; activity). Click to enable.">团队 — 谁在此场景中（在线状态与活动）。点击启用。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000812" trl="Y">
+  <value column="MsgText" original="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours">透视显示 (X) — 结构变为玻璃状，使已布线的 MEP 系统以各专业颜色透出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000813" trl="Y">
+  <value column="MsgText" original="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)">移动/微调步长 (m) — 方向键按此值移动所选对象 (Shift ×10, Alt ÷10)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000814" trl="Y">
+  <value column="MsgText" original="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)">按输入角度旋转 — Enter 提交一次带符号的 GEOM_ROTATE（§P6 之前仅支持拖动）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000815" trl="Y">
+  <value column="MsgText" original="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)">按输入的轴+系数缩放 (x1.5, y2, z0.5) — Enter 提交一次带符号的 GEOM_SCALE（仅限单个构件，与立方体手柄一致）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000816" trl="Y">
+  <value column="MsgText" original="Wall height / extrude depth (m)">墙高 / 拉伸深度 (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000817" trl="Y">
+  <value column="MsgText" original="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style">草图宽度 (m) — Enter 重新求解整个矩形/正方形，类似拖动单个尺寸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000818" trl="Y">
+  <value column="MsgText" original="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style">草图高度 (m) — Enter 重新求解整个矩形/正方形，类似拖动单个尺寸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000819" trl="Y">
+  <value column="MsgText" original="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle">草图拐角角度 (°, 默认 90) — Enter 按输入角度重新求解为平行四边形</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000820" trl="Y">
+  <value column="MsgText" original="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)">圆半径 (m) — Enter 精确设置半径（提交待定圆心，或编辑最近一个圆）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000821" trl="Y">
+  <value column="MsgText" original="Sweep profile size w×h (m)">扫掠截面尺寸 宽×高 (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000822" trl="Y">
+  <value column="MsgText" original="Fillet / chamfer radius (m)">圆角 / 倒角半径 (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000823" trl="Y">
+  <value column="MsgText" original="History — ‹ older · newer › (click a dot to jump · ←/→ when focused)">历史 — ‹ 较早 · 较新 ›（点击圆点跳转 · 聚焦时按 ←/→）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000824" trl="Y">
+  <value column="MsgText" original="Older (←)">较早 (←)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000825" trl="Y">
+  <value column="MsgText" original="Newer (→)">较新 (→)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000826" trl="Y">
+  <value column="MsgText" original="Collapse panel">折叠面板</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000827" trl="Y">
+  <value column="MsgText" original="Collapse all — fold the tree to its top-level trunk">全部折叠 — 将树折叠至顶层主干</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000828" trl="Y">
+  <value column="MsgText" original="Adjacency lens — highlight a selected element’s abutting neighbours">邻接透镜 — 高亮所选构件相邻接触的构件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000829" trl="Y">
+  <value column="MsgText" original="double-click: collapse all">双击：全部折叠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000830" trl="Y">
+  <value column="MsgText" original="Toolbar">工具栏</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000831" trl="Y">
+  <value column="MsgText" original="Show Outliner">显示大纲视图</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000832" trl="Y">
+  <value column="MsgText" original="🔍 find…">🔍 查找…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000833" trl="Y">
+  <value column="MsgText" original="TOOLBAR · PILL REGISTRY">工具栏 · 按钮注册表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000834" trl="Y">
+  <value column="MsgText" original="KEYBOARD">键盘</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000835" trl="Y">
+  <value column="MsgText" original="Redo">重做</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000836" trl="Y">
+  <value column="MsgText" original="Cancel current mode">取消当前模式</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000837" trl="Y">
+  <value column="MsgText" original="Snap-to-geometry on/off (while moving)">几何吸附开/关（移动时）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000838" trl="Y">
+  <value column="MsgText" original="Arm rotate ring (turn, in Move)">启用旋转环（旋转，在移动模式中）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000839" trl="Y">
+  <value column="MsgText" original="Arm scale cubes (in Move)">启用缩放立方体（在移动模式中）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000840" trl="Y">
+  <value column="MsgText" original="OPEN A BUILDING">打开建筑</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000841" trl="Y">
+  <value column="MsgText" original="FROM IFC (ARC only)">从 IFC (仅 ARC)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000842" trl="Y">
+  <value column="MsgText" original="Open local .db / .ifc…">打开本地 .db / .ifc…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000843" trl="Y">
+  <value column="MsgText" original="Not extracted — walk from duplex_rules.db">未提取 — 从 duplex_rules.db 遍历</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000844" trl="Y">
+  <value column="MsgText" original="▶▶ Walk ALL Services">▶▶ 遍历全部服务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000845" trl="Y">
+  <value column="MsgText" original="{n} services not extracted · x-ray reveal">{n} 项服务未提取 · 透视显示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000846" trl="Y">
+  <value column="MsgText" original="▶ walk">▶ 遍历</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000847" trl="Y">
+  <value column="MsgText" original="{n} columns">{n} 根柱</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000848" trl="Y">
+  <value column="MsgText" original="{n} girders">{n} 根大梁</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000849" trl="Y">
+  <value column="MsgText" original="RED {r} · ORANGE {o} · GREEN {g}">红 {r} · 橙 {o} · 绿 {g}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000850" trl="Y">
+  <value column="MsgText" original="Confidence {p}% mean">置信度 平均 {p}%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000851" trl="Y">
+  <value column="MsgText" original="✓ all girders ≥80% (oracle-calibrated)">✓ 所有大梁 ≥80%（经预言机校准）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000852" trl="Y">
+  <value column="MsgText" original="Building Parts">建筑部件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000853" trl="Y">
+  <value column="MsgText" original="Route trunk · from entry (seed)">路径干线 · 从入口 (种子)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000854" trl="Y">
+  <value column="MsgText" original="walk a discipline first, then route its trunk">请先遍历一个专业，再布设其干线</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000855" trl="Y">
+  <value column="MsgText" original="{n} features 🔒 {h}">{n} 个特征 🔒 {h}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000856" trl="Y">
+  <value column="MsgText" original="Opened {name}">已打开 {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000857" trl="Y">
+  <value column="MsgText" original="hide in 3D">在 3D 中隐藏</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000858" trl="Y">
+  <value column="MsgText" original="Move this room — drag on canvas after grabbing">移动此房间 — 抓取后在画布上拖动</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000859" trl="Y">
+  <value column="MsgText" original="Walk this discipline">遍历此专业</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000860" trl="Y">
+  <value column="MsgText" original="Walk ALL services">遍历全部服务</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000861" trl="Y">
+  <value column="MsgText" original="ERP ▸ Project Order">ERP ▸ 项目订单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000862" trl="Y">
+  <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">读取 / 生成 / 打开所选部件的 ERP 项目订单</value>
+  <value column="MsgTip" original=""/>
+ </row>
+</idempiereTrl>

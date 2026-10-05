@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>BIM OOTB — MEP Bill of Quantities</title>
+<title data-trl="title_mep">BIM OOTB — MEP Bill of Quantities</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="lib/chart.umd.min.js"></script>
 <style>
@@ -48,17 +48,17 @@
 <div class="toolbar">
   <button onclick="_shareReport()" data-trl="mep_share">Share Report</button>
   <button onclick="_csvExport()">&#128196; CSV</button>
-  <button onclick="_copyUrl(this)" title="Copy shareable link">&#128203;</button>
-  <button onclick="window.close()" title="Back">&#8592; Back</button>
+  <button onclick="_copyUrl(this)" data-trl-title="ui_tt_copy_link" title="Copy shareable link">&#128203;</button>
+  <button onclick="window.close()" data-trl-title="ui_back" title="Back">&#8592; <span data-trl="ui_back">Back</span></button>
 </div>
 
-<div id="report-content">Loading...</div>
+<div id="report-content" data-trl="ui_loading_ellipsis">Loading...</div>
 <div id="status"></div>
 
 <script src="lib/sql-wasm.js"></script>
-<script src="rates.js?v=7"></script>
+<script src="rates.js?v=10"></script>
 <script src="analysis_sidecar.js?v=1"></script>
-<script src="locale_loader.js?v=7"></script>
+<script src="locale_loader.js?v=13"></script>
 
 <script>
 var params = new URLSearchParams(location.search);

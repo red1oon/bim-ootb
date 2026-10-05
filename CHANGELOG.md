@@ -4,6 +4,66 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.71.0](https://github.com/red1oon/bim-ootb/compare/v1.70.1...v1.71.0) (2026-10-02)
+
+
+### ✨ Features
+
+* **history:** §THREADS step 1 — category/element threads on the Modeller dotline (read-only) ([#1807](https://github.com/red1oon/bim-ootb/issues/1807)) ([a363d71](https://github.com/red1oon/bim-ootb/commit/a363d711922b557eb2efb12bcb07495edda10e2e))
+* **history:** §THREADS step 1b — read-only category scrubber: 'Viewing: &lt;Cat&gt;', ‹ › step the thread, jump-to-view ([#1812](https://github.com/red1oon/bim-ootb/issues/1812)) ([7f2f05a](https://github.com/red1oon/bim-ootb/commit/7f2f05a70774c9184a713d227bc9bca159f280dd))
+* **modeller:** §GRID-SPAN-GATE — span colours on grid drag, Add one more (one gesture), column-derived grid on Move Grid ([#1803](https://github.com/red1oon/bim-ootb/issues/1803)) ([bda94cd](https://github.com/red1oon/bim-ootb/commit/bda94cd1a37de73b5b67276dc0ef940ee904d6bc))
+
+
+### 🐛 Fixes
+
+* **ask:** live split buildings get their cost table — separate &lt;db&gt;.qto.sql patch + loader ([#1816](https://github.com/red1oon/bim-ootb/issues/1816)) ([1513755](https://github.com/red1oon/bim-ootb/commit/1513755dbf2d2ad0200ae68f7027e92107902654))
+* **modeller:** §THREADS history bar gets an opaque backing (the §S8 Δ pin text showed through it) ([#1815](https://github.com/red1oon/bim-ootb/issues/1815)) ([9aea666](https://github.com/red1oon/bim-ootb/commit/9aea666ee461f9adadd00d2e4f1d15ed6813802c))
+
+## [1.70.1](https://github.com/red1oon/bim-ootb/compare/v1.70.0...v1.70.1) (2026-09-30)
+
+
+### 🐛 Fixes
+
+* **modeller:** one gesture = one undo — move/rotate/scale with hosted riders commit as ONE gesture (sw v67) ([#1794](https://github.com/red1oon/bim-ootb/issues/1794)) ([b0ffae5](https://github.com/red1oon/bim-ootb/commit/b0ffae52a3b17900bedb77e4be4724adf5bfba36))
+
+## [1.70.0](https://github.com/red1oon/bim-ootb/compare/v1.69.0...v1.70.0) (2026-09-26)
+
+
+### ✨ Features
+
+* **§GLOW_LAYERS_OFF:** delete the two decorative glow layers from Alt+S completely; §FIXTURE_EMISSIVE count; §ITEM_C check; sw v1410 ([92b36bd](https://github.com/red1oon/bim-ootb/commit/92b36bdbd45ae889b7bd50b94d8dfac861e9f294))
+* **§SKY_VIEW_FIELD + §LUX_CHECK:** one camera-free CIE-overcast sky-view field F per covered cell (41 dirs to 6.7 deg, glass T once per pane), trilinear irradiance-volume read in G (RG16UI) scaling hemi/ambient/IBL of zone fragments; ADF add removed (logged cross-check only); portals retired (&portals=1); §LUX_CHECK vs prEN 12464-1:2019 rows; §STILL_STAGE_MS (88c90251 effects.js); sw v1394 ([901d75a](https://github.com/red1oon/bim-ootb/commit/901d75a5e064280a6d6a2fa9f11aae1cebe36d7b))
+
+
+### 🐛 Fixes
+
+* **§LAMP_ZONE_PICK:** DECIDE by zone boxes vs the frustum (S5) — decideMs 0.9-2 ms per press on Hospital (first press 40 ms = the one-time BUILD box pass); sw v1402 ([996d204](https://github.com/red1oon/bim-ootb/commit/996d20492803486feb5b594d32c954861da838a3))
+* **§LAMP_ZONE_PICK:** pick Alt+S lamps by the zones they light — A._lampZonePick(camPos, camZone, visZones, fixtures, cap) replaces the frustum test + zone-blind top-up when the camera is in a light zone; sw v1400 ([34ab1e3](https://github.com/red1oon/bim-ootb/commit/34ab1e3801319b568f2e73bb4f06aaab0a57453a))
+* **§LAMP_ZONE_PICK:** ray-free DECIDE (ALTC_SHOWSTOPPERS S5) — BUILD: A._lampZoneTable (fixture -&gt; zone via atLamp, cached per building+zone grid+fixture count); DECIDE: _lampZonePick(camPos, camZone, visZones) with camZone = LightZones.at(camera) and visZones = 64x36 depth readback -&gt; world -&gt; LightZones.at (A._lampZoneView), no raycast, decideMs logged; sw v1401 ([973de0e](https://github.com/red1oon/bim-ootb/commit/973de0e5a40855576117e701950fe4cc2addcf5c))
+* **§SKY_VIEW_FIELD V12/V13:** interreflected component per zone (flux balance, R 0.5) so ceilings/soffits under an opaque roof are not sourceless; fieldOn carries no film gate; sw v1396 ([ad1314f](https://github.com/red1oon/bim-ootb/commit/ad1314fbe474b163c3fb25042767f6b698db0258))
+* **§SKY_VIEW_FIELD:** glass cell = majority surface (V3'), outside fragments filtered (V5'); witness: warm-up double read, class pairs, acrossSolid (V11), exterior no-regression pose; sw v1395 ([5bae708](https://github.com/red1oon/bim-ootb/commit/5bae708a97f7ddfb253703081db923e4be619aec))
+* **§SKY_VIEW_FIELD:** IRC OFF by default (watchdog ruling: the GI bounce pass already carries interreflection; V12 double-counts and is a flat fill); &irc=1 / APP._stillIrc keeps it for A/B, logged; wash witness §GI_AWARE (composite/app readback: blackFinal, GI share, IRC share); sw v1397 ([59e0b22](https://github.com/red1oon/bim-ootb/commit/59e0b22d307716277ad739137e4176b1b03028bf))
+* **§SOURCED_DAYLIGHT D7:** A_z = surfaceM2 + apertureM2 (BRE's A includes the openings); over10 split all-sky-lit vs receiving with glazing ratio; sw v1391 ([62b7ea9](https://github.com/red1oon/bim-ootb/commit/62b7ea92ff539919d1b097272707c6c103860974))
+* **§STILL_SHADOW_CASCADE_MAPS_EXIST:** render every cascade map once when the lights are added — with no map, staged draws before the fit wrote nothing and every indoor §METER was VACUOUS (0a9950a3); gate witness FAILs on §METER VACUOUS; sw v1382 ([c56769b](https://github.com/red1oon/bim-ootb/commit/c56769bfa60cf25e7552317db1b803dd785859cc))
+
+## [1.69.0](https://github.com/red1oon/bim-ootb/compare/v1.68.1...v1.69.0) (2026-09-24)
+
+
+### ✨ Features
+
+* **gi:** bounce light on Alt+S and in the film bake, checked frame-by-frame against a no-bounce control ([#1756](https://github.com/red1oon/bim-ootb/issues/1756)) ([c79120c](https://github.com/red1oon/bim-ootb/commit/c79120cb7f691e6e9e3ec3875417dc3689aef509))
+* **viewer:** Alt+S bounce light live — three r186 core, desktop + WebGPU only (§GI_LIVE) ([#1757](https://github.com/red1oon/bim-ootb/issues/1757)) ([02216f9](https://github.com/red1oon/bim-ootb/commit/02216f9368c79ae5527bdeef2d4755f1f5abf9be))
+
+
+### 🐛 Fixes
+
+* **film:** no frame reuse while a Sanity set is live inside a load-path hold (§FRAME_REUSE_SANITY, sw v1303) ([#1767](https://github.com/red1oon/bim-ootb/issues/1767)) ([247cb9a](https://github.com/red1oon/bim-ootb/commit/247cb9ae6e22fedd33e4a142040639bb4fd713fb))
+* **viewer:** Alt+S bounce orientation at low-contrast views never falls back to colour (§GI_ORIENT_RATIO) ([#1758](https://github.com/red1oon/bim-ootb/issues/1758)) ([25f6f97](https://github.com/red1oon/bim-ootb/commit/25f6f97dc6af1c2a1da333c3bc01e7b65e6958a9))
+* **viewer:** Alt+S Close button ends the still — viewer no longer stuck (§STILL_EXIT_NAV, sw v1295) ([#1765](https://github.com/red1oon/bim-ootb/issues/1765)) ([2fe6360](https://github.com/red1oon/bim-ootb/commit/2fe6360acb486462fbf71dbae4f0f1c8bbf6c599))
+* **viewer:** Alt+S owns the ghost view — no ghost-box shell during a still (§STILL_GHOST_OWNERSHIP) ([#1764](https://github.com/red1oon/bim-ootb/issues/1764)) ([f410933](https://github.com/red1oon/bim-ootb/commit/f41093319b4808d4e3ec63a2fa8f48e0e8721d86))
+* **viewer:** Alt+S row-order probe for views the geometry test can't decide (§GI_ROW_PROBE) ([#1759](https://github.com/red1oon/bim-ootb/issues/1759)) ([bd9089b](https://github.com/red1oon/bim-ootb/commit/bd9089b8981e05e7a459e2a5bc41e8fefedac68e))
+* **viewer:** films use the pre-[#1601](https://github.com/red1oon/bim-ootb/issues/1601) fill light — interiors no longer gloomy (§FILM_FILL_RESTORE) ([#1760](https://github.com/red1oon/bim-ootb/issues/1760)) ([b8f844f](https://github.com/red1oon/bim-ootb/commit/b8f844fb017f2c6b38252515eb7c957b690c3140))
+
 ## [1.68.1](https://github.com/red1oon/bim-ootb/compare/v1.68.0...v1.68.1) (2026-09-18)
 
 

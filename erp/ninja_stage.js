@@ -13,6 +13,13 @@
 //   AD_Window(ID,Name,Description,WindowType,IsActive)
 //   AD_TreeNodeMM(AD_Tree_ID,Node_ID,Parent_ID,SeqNo,IsActive)
 //
+// §GT-NINJA (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): a DETAIL table (model.master names ANOTHER table staged in the
+// same model, and that table has the `<Master>_ID` FK column) is staged the iDempiere way — a TabLevel = master+1 AD_Tab INSIDE
+// its master's AD_Window (no window / menu leaf of its own), with AD_Column.IsParent='Y' on `<Master>_ID`. The generic GridTab
+// layer (ad_gridtab.js, GridWindow.initTab:193-242) then resolves the link column from IsParent alone — AD_Tab.AD_Column_ID is
+// only written where iDempiere needs it (more than one IsParent column on the tab's table; the Ninja grammar yields exactly one).
+// A table whose master is NOT in the model (external FK) keeps the legacy own-window shape: no parent tab to be a detail of.
+//
 // ID policy (deterministic): NINJA_BASE = 7_000_000. Same model → same IDs on every re-run.
 // Rollback: SET IsActive='N' on all rows with ID >= NINJA_BASE.
 // kernel_ops audit: NINJA_STAGE / NINJA_ROLLBACK ops appended.
@@ -22,6 +29,11 @@
 
   var NINJA_BASE    = 7000000;  // matches oracle PackOut.xml starting IDs
   var NINJA_TREE_ID = 10;       // AD_TreeNodeMM tree (10 = menu tree in seed db)
+
+  // Stock iDempiere DefaultValue of the standard columns (verified against ad_seed C_Order: IsActive 'Y', AD_Org_ID/AD_Client_ID
+  // @#..@, Created/Updated SYSDATE). Without IsActive='Y' a NEW record is "inactive" and GridField.isEditable (:565-585) makes every
+  // other field read-only — the staged window opened with a dead form.
+  var STD_DEFAULTS = { IsActive: 'Y', AD_Org_ID: '@#AD_Org_ID@', AD_Client_ID: '@#AD_Client_ID@', Created: 'SYSDATE', Updated: 'SYSDATE' };
 
   // ── tiny helpers ────────────────────────────────────────────────────────────────────────
   function q(s) { return String(s == null ? '' : s).replace(/'/g, "''"); }
@@ -70,6 +82,9 @@
     // ensure AD_Column.Callout exists (additive — ad_seed.db omits it; ALTER is safe if missing)
     var hasCalloutCol = db.exec("SELECT name FROM pragma_table_info('AD_Column') WHERE lower(name)='callout'").length > 0;
     if (!hasCalloutCol) db.run('ALTER TABLE AD_Column ADD COLUMN Callout TEXT');
+    // same for AD_Column.IsParent (§GT-NINJA) — the simplified post_poc seed omits it; the full ad_seed has it
+    var hasParentCol = db.exec("SELECT name FROM pragma_table_info('AD_Column') WHERE lower(name)='isparent'").length > 0;
+    if (!hasParentCol) db.run("ALTER TABLE AD_Column ADD COLUMN IsParent TEXT DEFAULT 'N'");
 
     // ID sub-ranges (each table gets 200 column/field slots)
     var tBase  = NINJA_BASE;
@@ -97,16 +112,62 @@
       }
     } else { counts.skipped++; }
 
-    tables.forEach(function (t, ti) {
-      var tableId  = tBase    + ti;
-      var windowId = wBase    + ti;
-      var tabId    = tabBase  + ti;
-      var menuId   = mBase    + 1 + ti;
-      var colStart = cBase    + ti * 200;
-      var fieldStart = fBase  + ti * 200;
+    // ── §GT-NINJA master/detail resolution — from the model only (t.master + the staged table set) ──
+    var byName = {};
+    tables.forEach(function (t, i) { byName[t.name] = i; });
+    var parentOf = tables.map(function (t) {
+      var m = t.master, mi = (m && m !== t.name) ? byName[m] : undefined;
+      if (mi === undefined) return -1;
+      var fk = m + '_ID';
+      return t.columns.some(function (c) { return c.name === fk; }) ? mi : -1;
+    });
+    tables.forEach(function (t, i) {                       // cycle guard: a loop has no root — break it at its entry point
+      var j = i, n = 0; while (parentOf[j] >= 0 && n <= tables.length) { j = parentOf[j]; n++; }
+      if (n > tables.length) parentOf[i] = -1;
+    });
+    var rootOf = [], levelOf = [], seqOf = [], kids = tables.map(function () { return []; }), roots = [];
+    tables.forEach(function (t, i) { if (parentOf[i] >= 0) kids[parentOf[i]].push(i); else roots.push(i); });
+    (function walk() {                                     // depth-first per root: a detail tab always follows its master tab
+      roots.forEach(function (r) {
+        var pos = 0;
+        (function dfs(i, lvl) { rootOf[i] = r; levelOf[i] = lvl; seqOf[i] = 10 * (++pos); kids[i].forEach(function (k) { dfs(k, lvl + 1); }); })(r, 0);
+      });
+    })();
+    counts.details = 0; counts.dataTables = 0;
 
-      // AD_Window
-      if (ensure(db, 'AD_Window', 'AD_Window_ID', windowId)) {
+    // ── slot offset: IDs are index-derived (deterministic), but a slot may already hold a DIFFERENT table — ad_seed.db ships a
+    //    deactivated Ninja leftover (C_Attendance @7000000), and ensure() would silently reactivate it AS this model's table.
+    //    Shift the whole model to the first offset where every slot is free or already ours (same TableName) — re-stage-stable.
+    var slot = 0;
+    for (;;) {
+      var clash = tables.some(function (t, i) {
+        var nm = val(db, 'SELECT TableName FROM AD_Table WHERE AD_Table_ID=' + (tBase + i + slot));
+        return nm != null && nm !== t.name;
+      });
+      if (!clash) break;
+      slot++;
+    }
+    counts.slot = slot;
+
+    tables.forEach(function (t, ti) {
+      var isDetail = parentOf[ti] >= 0;
+      var si       = ti + slot;
+      var tableId  = tBase    + si;
+      var windowId = wBase    + (isDetail ? rootOf[ti] : ti) + slot;   // a detail lives in its root master's window
+      var ownWinId = wBase    + si;
+      var tabId    = tabBase  + si;
+      var menuId   = mBase    + 1 + si;
+      var tabLevel = isDetail ? levelOf[ti] : (t.master ? 1 : 0);
+      var tabSeq   = isDetail ? seqOf[ti] : 10;
+      if (isDetail) counts.details++;
+      var colStart = cBase    + si * 200;
+      var fieldStart = fBase  + si * 200;
+
+      // AD_Window — a detail has none of its own (a stale one from a pre-§GT-NINJA staging is deactivated, with its menu leaf)
+      if (isDetail) {
+        db.run("UPDATE AD_Window SET IsActive='N' WHERE AD_Window_ID=" + ownWinId);
+        db.run("UPDATE AD_Menu SET IsActive='N' WHERE AD_Menu_ID=" + menuId);
+      } else if (ensure(db, 'AD_Window', 'AD_Window_ID', windowId)) {
         db.run("INSERT INTO AD_Window (AD_Window_ID, Name, Description, WindowType, IsActive)" +
           " VALUES (" + windowId + ",'" + q(t.name.replace(/_/g, ' ')) + "'," +
           "'Ninja: " + q(t.name) + "','M','Y')");
@@ -120,14 +181,16 @@
           "'Ninja: " + q(t.name) + "'," + windowId + ",'Y')");
         counts.tables++;
       } else { counts.skipped++; }
+      db.run('UPDATE AD_Table SET AD_Window_ID=' + windowId + ' WHERE AD_Table_ID=' + tableId);   // re-stage corrects the shape
 
       // AD_Tab
       if (ensure(db, 'AD_Tab', 'AD_Tab_ID', tabId)) {
         db.run("INSERT INTO AD_Tab (AD_Tab_ID, AD_Window_ID, Name, AD_Table_ID, TabLevel, SeqNo, IsActive)" +
           " VALUES (" + tabId + "," + windowId + ",'" + q(t.name.replace(/_/g, ' ')) + "'," +
-          tableId + "," + (t.master ? 1 : 0) + ",10,'Y')");
+          tableId + "," + tabLevel + "," + tabSeq + ",'Y')");
         counts.tabs++;
       } else { counts.skipped++; }
+      db.run('UPDATE AD_Tab SET AD_Window_ID=' + windowId + ', TabLevel=' + tabLevel + ', SeqNo=' + tabSeq + ' WHERE AD_Tab_ID=' + tabId);
 
       // AD_Columns + AD_Fields
       t.columns.forEach(function (col, ci) {
@@ -141,17 +204,20 @@
 
         var isKey = col.name === (t.name + '_ID') ? 'Y' : 'N';
         var isId  = (col.name === 'Name' || isKey === 'Y') ? 'Y' : 'N';
+        var stdDef = Object.prototype.hasOwnProperty.call(STD_DEFAULTS, col.name) && col.isStandard ? "'" + q(STD_DEFAULTS[col.name]) + "'" : 'NULL';
+        var isParent = (isDetail && col.name === t.master + '_ID') ? 'Y' : 'N';   // §GT-NINJA — iDempiere's link-column marker
 
         if (ensure(db, 'AD_Column', 'AD_Column_ID', colId)) {
           var calloutVal = col.callout ? "'" + q(col.callout) + "'" : 'NULL';
           db.run("INSERT INTO AD_Column (AD_Column_ID, AD_Table_ID, ColumnName, Name, Description," +
-            " AD_Reference_ID, FieldLength, IsMandatory, IsKey, IsIdentifier, Callout, IsActive)" +
+            " AD_Reference_ID, FieldLength, IsMandatory, IsKey, IsParent, IsIdentifier, Callout, DefaultValue, IsActive)" +
             " VALUES (" + colId + "," + tableId + ",'" + q(col.name) + "'," +
             "'" + q(col.name.replace(/_/g, ' ')) + "','Ninja col'," +
-            col.refId + "," + fieldLen + ",'N','" + isKey + "','" + isId + "'," + calloutVal + ",'Y')");
+            col.refId + "," + fieldLen + ",'N','" + isKey + "','" + isParent + "','" + isId + "'," + calloutVal + "," + stdDef + ",'Y')");
           counts.cols++;
           if (col.callout) counts.callouts++;
         } else { counts.skipped++; }
+        db.run("UPDATE AD_Column SET IsParent='" + isParent + "'" + (stdDef !== 'NULL' ? ', DefaultValue=COALESCE(DefaultValue,' + stdDef + ')' : '') + ' WHERE AD_Column_ID=' + colId);
 
         if (ensure(db, 'AD_Field', 'AD_Field_ID', fieldId)) {
           db.run("INSERT INTO AD_Field (AD_Field_ID, AD_Tab_ID, AD_Column_ID, Name," +
@@ -162,8 +228,18 @@
         } else { counts.skipped++; }
       });
 
-      // AD_Menu leaf
-      if (ensure(db, 'AD_Menu', 'AD_Menu_ID', menuId)) {
+      // Data table (iDempiere: Synchronize Column / "Create Table in DB"). Without it the window renders "table not in this seed"
+      // (idempiere.html renderActiveTab) and neither tab has a row source — AD alone is not a module. Seed convention: NUMERIC / TEXT,
+      // PRIMARY KEY on <Table>_ID. IF NOT EXISTS: a re-stage / rollback never touches rows already entered.
+      var NUMERIC_REFS = { 11: 1, 12: 1, 13: 1, 18: 1, 19: 1, 29: 1 };
+      var ddl = t.columns.map(function (col) { return '"' + col.name.replace(/"/g, '') + '" ' + (NUMERIC_REFS[col.refId] ? 'NUMERIC' : 'TEXT'); });
+      var hasPk = t.columns.some(function (col) { return col.name === t.name + '_ID'; });
+      if (isMissing(db, 'sqlite_master', "type='table' AND lower(name)=lower('" + q(t.name) + "')")) counts.dataTables = (counts.dataTables || 0) + 1;
+      db.run('CREATE TABLE IF NOT EXISTS "' + t.name.replace(/"/g, '') + '" (' + ddl.join(', ') + (hasPk ? ', PRIMARY KEY ("' + t.name + '_ID")' : '') + ')');
+
+      // AD_Menu leaf — one per WINDOW (a detail is a tab of its master's window, not a menu entry)
+      if (isDetail) { /* §GT-NINJA no menu leaf */ }
+      else if (ensure(db, 'AD_Menu', 'AD_Menu_ID', menuId)) {
         db.run("INSERT INTO AD_Menu (AD_Menu_ID, Name, Description, IsSummary, Action, AD_Window_ID, IsActive)" +
           " VALUES (" + menuId + ",'" + q(t.name.replace(/_/g, ' ')) + "'," +
           "'Ninja: " + q(t.name) + "','N','W'," + windowId + ",'Y')");
@@ -248,7 +324,7 @@
       var tabLevel = tab ? Number(tab.TabLevel) : 0;
 
       var cols = rows(
-        'SELECT ColumnName,AD_Reference_ID FROM AD_Column WHERE AD_Table_ID=? AND IsActive="Y" ORDER BY AD_Column_ID',
+        'SELECT ColumnName,AD_Reference_ID,IsParent FROM AD_Column WHERE AD_Table_ID=? AND IsActive="Y" ORDER BY AD_Column_ID',
         [tbl.AD_Table_ID]
       );
 
@@ -263,14 +339,17 @@
         var nm = c.ColumnName;
         if (stdSet[nm]) return;                     // skip standard boilerplate
         if (WORKFLOW_COL_NAMES.indexOf(nm) >= 0) { hasWorkflow = true; if (nm==='DocStatus') hasKanban=true; return; }
-        userCols.push({ name: nm, refId: c.AD_Reference_ID });
+        userCols.push({ name: nm, refId: c.AD_Reference_ID, isParent: c.IsParent === 'Y' });
       });
 
-      // master FK col is generated by stageModels ONLY when TabLevel > 0, and buildTable APPENDS it
-      // AFTER the user columns — so it is the LAST non-standard/non-workflow *_ID TableDir col, never
-      // the first (a user col like AD_User_ID/C_BPartner_ID can precede it). Pop it off the tail.
-      var masterCol = null;
-      if (tabLevel > 0 && userCols.length) {
+      // §GT-NINJA master = the column AD marks IsParent='Y' (iDempiere's own link marker, GridWindow.initTab) — read from the AD,
+      // not inferred from position. buildTable APPENDS the generated FK after the user columns, so on re-parse it lands last again.
+      // LEGACY (staged before §GT-NINJA, own-window TabLevel-1 shape, no IsParent): fall back to the last non-standard *_ID TableDir
+      // col of a TabLevel>0 tab — never the first (a user col like AD_User_ID/C_BPartner_ID can precede it). Pop it off the tail.
+      var masterCol = null, pi = -1;
+      userCols.forEach(function (c, i) { if (c.isParent && c.name.slice(-3) === '_ID' && pi < 0) pi = i; });
+      if (pi >= 0) { masterCol = userCols[pi].name.slice(0, -3); userCols.splice(pi, 1); }
+      else if (tabLevel > 0 && userCols.length) {
         var last = userCols[userCols.length - 1];
         if (last.name.slice(-3) === '_ID' &&
             (last.refId === DT_TABLEDIR || last.refId === DT_TABLE)) {
@@ -278,6 +357,7 @@
           userCols.pop();                           // drop the generated FK col
         }
       }
+      userCols = userCols.map(function (c) { return { name: c.name, refId: c.refId }; });
 
       return { name: tableName, master: masterCol || null, workflow: hasWorkflow, kanban: hasKanban,
                columns: userCols };

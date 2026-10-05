@@ -31,42 +31,48 @@ runE2E('W-SAVE-BLOCKED-HEAL-INDUCED', async (t) => {
   await t.open('Duplex');
   await t.pg.waitForFunction(() => !!window.__saveGateBaseline, { timeout: 20000 }).catch(() => {});
 
+  // §HEAL-INDUCED-FIXTURE (2026-09-26): the original search needed neighbours with NO recovered edge at all; since §XEDGE-3AXIS
+  // every Duplex element has one, so it found nothing (0/2 on main 9325eb6d). The only real requirement is that wA and elX are
+  // UNRELATED to each other (and elC is pulled from wA). Candidates are now chosen by SIMULATING the real gate: place elC + elX,
+  // pull elC → exactly the wA/elC abuts-realign with no RED; heal (SdgSave.healOp) → a RED naming wA vs elX.
   const setup = await t.pg.evaluate(() => {
-    const boxes = window.__gateBoxes(), rel = window.__gateRel();
-    const entangled = new Set();
-    Object.keys(rel.hostOf).forEach(k => { entangled.add(+k); entangled.add(rel.hostOf[k]); });
-    (rel.abuts || []).forEach(e => { entangled.add(e.a); entangled.add(e.b); });
+    const boxes = window.__gateBoxes(), rel = window.__gateRel(), G = window.SdgGate, SS = window.SdgSave;
     const ids = Object.keys(boxes).map(Number);
     const ext = (id) => { const b = boxes[id]; return [b[1] - b[0], b[3] - b[2], b[5] - b[4]]; };
-    // wall-ish: thin on exactly one horizontal axis, tall/long on the others (mirrors the scale-check C2 filter).
+    const shift = (bx, d) => [bx[0] + d[0], bx[1] + d[0], bx[2] + d[1], bx[3] + d[1], bx[4] + d[2], bx[5] + d[2]];
     const wallish = ids.filter(id => { const e = ext(id); const mn = Math.min(...e), mx = Math.max(...e); return mn > 0.05 && mn < 0.6 && mx > 1.5; });
+    const small = ids.filter(id => Math.max(...ext(id)) < 2.0 && Math.min(...ext(id)) > 0.05);
+    let tries = 0;
     for (const wA of wallish) {
-      const wExt = ext(wA);
-      const k = wExt.indexOf(Math.min(...wExt));                 // thickness axis (the thinnest extent)
-      if (k === 2) continue;                                     // a "wall" thin along Z would be a floor/roof slab — skip
-      const j = [0, 1, 2].find(a => a !== k && a !== 2);          // the wall's in-plane LENGTH axis (not thickness, not Z)
-      const small = ids.filter(id => id !== wA && !entangled.has(id) && Math.max(...ext(id)) < 2.0 && Math.min(...ext(id)) > 0.05);
-      if (small.length < 2) continue;
-      const wBox = boxes[wA];
-      function flushOnK(id) {
-        const b = boxes[id]; const d = [0, 0, 0];
-        d[k] = wBox[2 * k + 1] - b[2 * k];                        // flush against wA's + face on the thickness axis
-        for (let ax = 0; ax < 3; ax++) { if (ax === k) continue; const wC = (wBox[2 * ax] + wBox[2 * ax + 1]) / 2, bC = (b[2 * ax] + b[2 * ax + 1]) / 2; d[ax] = wC - bC; }
-        return d;
-      }
-      // try every distinct pair for elC/elX until one placement keeps them from overlapping each other
-      for (let ci = 0; ci < small.length; ci++) for (let xi = 0; xi < small.length; xi++) {
-        if (ci === xi) continue;
-        const elC = small[ci], elX = small[xi];
-        const dC = flushOnK(elC), dX = flushOnK(elX);
-        const eC = ext(elC), eX = ext(elX);
-        dX[j] += eC[j] / 2 + eX[j] / 2 + 0.3;                     // shove elX further along the wall's length — beside elC, not on top of it
-        return { wA, elC, elX, k, j, dC, dX };
+      const wExt = ext(wA), k = wExt.indexOf(Math.min(...wExt));
+      if (k === 2) continue;
+      const j = [0, 1, 2].find(a => a !== k && a !== 2), wBox = boxes[wA];
+      const flushOnK = (id) => { const b = boxes[id], d = [0, 0, 0]; d[k] = wBox[2 * k + 1] - b[2 * k];
+        for (let ax = 0; ax < 3; ax++) { if (ax === k) continue; d[ax] = (wBox[2 * ax] + wBox[2 * ax + 1]) / 2 - (b[2 * ax] + b[2 * ax + 1]) / 2; } return d; };
+      const cand = small.filter(id => id !== wA && rel.hostOf[id] !== wA).slice(0, 12);
+      for (const elC of cand) for (const elX of cand) {
+        if (elC === elX || rel.related(wA, elX) || rel.related(elC, elX)) continue;
+        if (++tries > 600) return { none: 'search cap', tries };
+        const dC = flushOnK(elC), dX = flushOnK(elX), eC = ext(elC), eX = ext(elX);
+        dX[j] += eC[j] / 2 + eX[j] / 2 + 0.3;
+        const placed = Object.assign({}, boxes); placed[elC] = shift(boxes[elC], dC); placed[elX] = shift(boxes[elX], dX);
+        const pull = [0, 0, 0]; pull[k] = 0.5;
+        const pulled = Object.assign({}, placed); pulled[elC] = shift(placed[elC], pull);
+        const r2 = { related: (x, y) => rel.related(x, y) || (Math.min(x, y) === Math.min(wA, elC) && Math.max(x, y) === Math.max(wA, elC)),
+          hostOf: rel.hostOf, abuts: (rel.abuts || []).concat([{ a: wA, b: elC }]) };
+        const pre = G.evaluate(placed, pulled, [elC], r2, {});
+        const f = pre.orange.find(o => o.kind === 'abuts-realign' && o.a === wA && o.b === elC);
+        if (pre.red.length || !f) continue;
+        const op = SS.healOp(f), healed = Object.assign({}, pulled); healed[wA] = shift(pulled[wA], [op.params.dx, op.params.dy, op.params.dz]);
+        const post = G.evaluate(placed, healed, [elC, wA], r2, {});
+        if (post.red.some(r => (r.a === wA && r.b === elX) || (r.a === elX && r.b === wA))) return { wA, elC, elX, k, j, dC, dX, tries };
       }
     }
-    return null;
+    return { none: 'no candidate', tries };
   });
-  t.assert('H0-SETUP found a real wall + 2 distinct unrelated small neighbours (elC to pull, elX to be swept into)', !!setup, JSON.stringify(setup));
+  if (setup && setup.none) { console.log('  ⚪ VOID — ' + setup.none + ' after ' + setup.tries + ' simulated fixtures'); }
+  t.assert('H0-SETUP found a real wall + elC to pull + elX (unrelated to wA) that the heal sweeps wA into — gate-simulated', !!setup && !setup.none, JSON.stringify(setup));
+  if (!setup || setup.none) return;   // VOID: nothing below is judged
 
   await t.pg.evaluate(async (s) => {
     window.swXEdges = window.swXEdges || { abuts: [], fills: [], anchored: [], spans: [], aggregates: [], datums: [] };

@@ -1,0 +1,3466 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--BIM OOTB Viewer — AD_Message_Trl ja_JP — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/ja_JP.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="ja_JP" table="AD_Message">
+ <row id="1000000" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Frictionless BIM">BIM OOTB — Frictionless BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000001" trl="Y">
+  <value column="MsgText" original="Discipline">専門分野</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000002" trl="Y">
+  <value column="MsgText" original="IFC Class">IFCクラス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000003" trl="Y">
+  <value column="MsgText" original="Quantity">数量</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000004" trl="Y">
+  <value column="MsgText" original="UOM">単位</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000005" trl="Y">
+  <value column="MsgText" original="Description">説明</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000006" trl="Y">
+  <value column="MsgText" original="Storey">階</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000007" trl="Y">
+  <value column="MsgText" original="Phase">フェーズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000008" trl="Y">
+  <value column="MsgText" original="Item">項目</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000009" trl="Y">
+  <value column="MsgText" original="Material">材料費</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000010" trl="Y">
+  <value column="MsgText" original="Labour">労働</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000011" trl="Y">
+  <value column="MsgText" original="Equipment">機器</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000012" trl="Y">
+  <value column="MsgText" original="Total">合計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000013" trl="Y">
+  <value column="MsgText" original="Unit Rate">単価</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000014" trl="Y">
+  <value column="MsgText" original="Mat Rate">材料単価</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000015" trl="Y">
+  <value column="MsgText" original="Lab Rate">労務単価</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000016" trl="Y">
+  <value column="MsgText" original="Rate/Day">日単価</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000017" trl="Y">
+  <value column="MsgText" original="Trade">職種</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000018" trl="Y">
+  <value column="MsgText" original="Crew Size">作業員数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000019" trl="Y">
+  <value column="MsgText" original="Man-Days">人日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000020" trl="Y">
+  <value column="MsgText" original="Duration (days)">期間（日）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000021" trl="Y">
+  <value column="MsgText" original="GRAND TOTAL">総合計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000022" trl="Y">
+  <value column="MsgText" original="SUBTOTAL">小計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000023" trl="Y">
+  <value column="MsgText" original="WBS">WBS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000024" trl="Y">
+  <value column="MsgText" original="Task Name">タスク名</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000025" trl="Y">
+  <value column="MsgText" original="Productivity">生産性</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000026" trl="Y">
+  <value column="MsgText" original="Gangs">班</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000027" trl="Y">
+  <value column="MsgText" original="Start Date">開始日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000028" trl="Y">
+  <value column="MsgText" original="Finish Date">終了日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000029" trl="Y">
+  <value column="MsgText" original="Labor Resource">労務資源</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000030" trl="Y">
+  <value column="MsgText" original="Status">状態</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000031" trl="Y">
+  <value column="MsgText" original="% Complete">進捗率</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000032" trl="Y">
+  <value column="MsgText" original="Day Offset">日オフセット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000033" trl="Y">
+  <value column="MsgText" original="Date">日付</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000034" trl="Y">
+  <value column="MsgText" original="Milestone">マイルストーン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000035" trl="Y">
+  <value column="MsgText" original="Task">タスク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000036" trl="Y">
+  <value column="MsgText" original="Task Count">タスク数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000037" trl="Y">
+  <value column="MsgText" original="Total Days">総日数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000038" trl="Y">
+  <value column="MsgText" original="Total Man-Days">総人日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000039" trl="Y">
+  <value column="MsgText" original="Week">週</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000040" trl="Y">
+  <value column="MsgText" original="Cumulative %">累積 %</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000041" trl="Y">
+  <value column="MsgText" original="5D — Cost by Discipline">5D — 専門分野別コスト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000042" trl="Y">
+  <value column="MsgText" original="Cost Components by Discipline">専門分野別コスト構成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000043" trl="Y">
+  <value column="MsgText" original="Task Distribution by Phase">フェーズ別作業分布</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000044" trl="Y">
+  <value column="MsgText" original="Task Count by Discipline">専門分野別作業数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000045" trl="Y">
+  <value column="MsgText" original="4D — Phase Duration (Total Days)">4D — フェーズ工期（総日数）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000046" trl="Y">
+  <value column="MsgText" original="4D — Resource Workload (Man-Days by Phase)">4D — 資源投入量（フェーズ別人工）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000047" trl="Y">
+  <value column="MsgText" original="4D — S-Curve Progress">4D — Sカーブ進捗</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000048" trl="Y">
+  <value column="MsgText" original="4D — Milestone Timeline">4D — マイルストーンタイムライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000049" trl="Y">
+  <value column="MsgText" original="4D — Gantt Timeline (Strategic Tasks by Phase)">4D — ガントチャート（フェーズ別戦略作業）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000050" trl="Y">
+  <value column="MsgText" original="5D — Variation Order Impact">5D — 変更指示影響</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000051" trl="Y">
+  <value column="MsgText" original="Cover Sheet">表紙</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000052" trl="Y">
+  <value column="MsgText" original="Executive Summary">概要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000053" trl="Y">
+  <value column="MsgText" original="Material Summary">材料費集計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000054" trl="Y">
+  <value column="MsgText" original="Labour Summary">労働費概要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000055" trl="Y">
+  <value column="MsgText" original="Equipment Summary">機械費集計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000056" trl="Y">
+  <value column="MsgText" original="Detailed BOQ">詳細BOQ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000057" trl="Y">
+  <value column="MsgText" original="Provisional Sums">暫定金額</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000058" trl="Y">
+  <value column="MsgText" original="Construction Schedule">工程表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000059" trl="Y">
+  <value column="MsgText" original="Project Summary">プロジェクト概要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000060" trl="Y">
+  <value column="MsgText" original="BIM 4D Dashboard">BIM 4D ダッシュボード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000061" trl="Y">
+  <value column="MsgText" original="COMPREHENSIVE BILL OF QUANTITIES">数量調書（総括）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000062" trl="Y">
+  <value column="MsgText" original="COST BREAKDOWN METHODOLOGY">コスト積算方法</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000063" trl="Y">
+  <value column="MsgText" original="MATERIAL COST SUMMARY">材料費集計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000064" trl="Y">
+  <value column="MsgText" original="LABOUR COST SUMMARY">労務費集計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000065" trl="Y">
+  <value column="MsgText" original="EQUIPMENT COST SUMMARY">機械費集計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000066" trl="Y">
+  <value column="MsgText" original="PROVISIONAL SUMS">暫定金額</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000067" trl="Y">
+  <value column="MsgText" original="Phase Duration Analysis">フェーズ工期分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000068" trl="Y">
+  <value column="MsgText" original="Resource Workload Analysis">資源投入量分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000069" trl="Y">
+  <value column="MsgText" original="S-Curve Progress">Sカーブ進捗</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000070" trl="Y">
+  <value column="MsgText" original="Milestone Timeline">マイルストーンタイムライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000071" trl="Y">
+  <value column="MsgText" original="Gantt Timeline (Strategic Tasks)">ガントチャート（戦略作業）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000072" trl="Y">
+  <value column="MsgText" original="Not Started">未着手</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000073" trl="Y">
+  <value column="MsgText" original="Frictionless BIM. Two DBs. One browser. Zero install.">フリクションレスBIM。2つのDB。1つのブラウザ。インストール不要。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000074" trl="Y">
+  <value column="MsgText" original="Tools">ツール</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000075" trl="Y">
+  <value column="MsgText" original="Storeys">階</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000076" trl="Y">
+  <value column="MsgText" original="Disciplines">分野</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000077" trl="Y">
+  <value column="MsgText" original="Filter...">フィルター...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000078" trl="Y">
+  <value column="MsgText" original="All Storeys">すべての階</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000079" trl="Y">
+  <value column="MsgText" original="X-Ray">X線</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000080" trl="Y">
+  <value column="MsgText" original="Screenshot">スクリーンショット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000081" trl="Y">
+  <value column="MsgText" original="Fullscreen">フルスクリーン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000082" trl="Y">
+  <value column="MsgText" original="Light/Dark">ライト/ダーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000083" trl="Y">
+  <value column="MsgText" original="Fly Around">フライアラウンド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000084" trl="Y">
+  <value column="MsgText" original="Walk Speed">歩行速度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000085" trl="Y">
+  <value column="MsgText" original="4D/5D Export">4D/5Dエクスポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000086" trl="Y">
+  <value column="MsgText" original="Issues">問題</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000087" trl="Y">
+  <value column="MsgText" original="Measure">計測</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000088" trl="Y">
+  <value column="MsgText" original="Section Cut">断面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000089" trl="Y">
+  <value column="MsgText" original="2D Plans">2D図面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000090" trl="Y">
+  <value column="MsgText" original="Site Camera">現場カメラ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000091" trl="Y">
+  <value column="MsgText" original="Walk Mode">ウォークモード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000092" trl="Y">
+  <value column="MsgText" original="Voice Search">音声検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000093" trl="Y">
+  <value column="MsgText" original="Cancel">キャンセル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000094" trl="Y">
+  <value column="MsgText" original="Back">戻る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000095" trl="Y">
+  <value column="MsgText" original="Save">保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000096" trl="Y">
+  <value column="MsgText" original="Undo">元に戻す</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000097" trl="Y">
+  <value column="MsgText" original="Retake">撮り直し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000098" trl="Y">
+  <value column="MsgText" original="Go">検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000099" trl="Y">
+  <value column="MsgText" original="Clear">クリア</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000100" trl="Y">
+  <value column="MsgText" original="Clear All">すべてクリア</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000101" trl="Y">
+  <value column="MsgText" original="Export Excel">Excelエクスポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000102" trl="Y">
+  <value column="MsgText" original="Share → WhatsApp">共有 → WhatsApp</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000103" trl="Y">
+  <value column="MsgText" original="Show in 3D">3Dで表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000104" trl="Y">
+  <value column="MsgText" original="Snag">不具合</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000105" trl="Y">
+  <value column="MsgText" original="Class">クラス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000106" trl="Y">
+  <value column="MsgText" original="Name">名前</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000107" trl="Y">
+  <value column="MsgText" original="GUID">GUID</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000108" trl="Y">
+  <value column="MsgText" original="Building">建物</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000109" trl="Y">
+  <value column="MsgText" original="GPS">GPS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000110" trl="Y">
+  <value column="MsgText" original="Compass">コンパス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000111" trl="Y">
+  <value column="MsgText" original="Time">時刻</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000112" trl="Y">
+  <value column="MsgText" original="Notes">メモ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000113" trl="Y">
+  <value column="MsgText" original="Open">未解決</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000114" trl="Y">
+  <value column="MsgText" original="Buildings">建物</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000115" trl="Y">
+  <value column="MsgText" original="Elements">要素</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000116" trl="Y">
+  <value column="MsgText" original="Meshes">メッシュ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000117" trl="Y">
+  <value column="MsgText" original="Streaming">ストリーミング</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000118" trl="Y">
+  <value column="MsgText" original="Rendered">レンダリング済</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000119" trl="Y">
+  <value column="MsgText" original="Done">完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000120" trl="Y">
+  <value column="MsgText" original="Variance">差異</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000121" trl="Y">
+  <value column="MsgText" original="Initializing...">初期化中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000122" trl="Y">
+  <value column="MsgText" original="Walk Mode">ウォークモード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000123" trl="Y">
+  <value column="MsgText" original="Stand at the building entrance and tap SET to anchor your GPS position to the model.">建物の入口に立ち、SETをタップしてGPS位置をモデルに固定します。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000124" trl="Y">
+  <value column="MsgText" original="SET">設定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000125" trl="Y">
+  <value column="MsgText" original="Walk Mode: No building data">ウォークモード：建物データなし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000126" trl="Y">
+  <value column="MsgText" original="Walk Mode: No GPS — orientation only">ウォークモード：GPS なし — 方向のみ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000127" trl="Y">
+  <value column="MsgText" original="Walk Mode stopped.">ウォークモード停止。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000128" trl="Y">
+  <value column="MsgText" original="Drive-Thru: Tap to walk, hold to glide">ドライブスルー：タップで歩行、長押しで滑走</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000129" trl="Y">
+  <value column="MsgText" original="Drive-Thru: {n} steps ({d}m)">ドライブスルー：{n}歩 ({d}m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000130" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: {n} MEP elements behind {name}">壁X線：{name}の後ろにMEP要素{n}個</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000131" trl="Y">
+  <value column="MsgText" original="Wall X-Ray: No MEP elements found behind {name}">壁X線：{name}の後ろにMEP要素なし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000132" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Site Inspection">BIM OOTB — 現場検査</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000133" trl="Y">
+  <value column="MsgText" original="GPS: acquiring...">GPS：取得中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000134" trl="Y">
+  <value column="MsgText" original="GPS: unavailable">GPS：利用不可</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000135" trl="Y">
+  <value column="MsgText" original="GPS: not supported">GPS：非対応</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000136" trl="Y">
+  <value column="MsgText" original="BIM Model View">BIMモデルビュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000137" trl="Y">
+  <value column="MsgText" original="Bearing">方位</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000138" trl="Y">
+  <value column="MsgText" original="Arrow">矢印</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000139" trl="Y">
+  <value column="MsgText" original="Circle">円</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000140" trl="Y">
+  <value column="MsgText" original="Draw">描画</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000141" trl="Y">
+  <value column="MsgText" original="Text">テキスト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000142" trl="Y">
+  <value column="MsgText" original="Reading file...">ファイル読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000143" trl="Y">
+  <value column="MsgText" original="Reading {fmt} file...">{fmt}ファイル読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000144" trl="Y">
+  <value column="MsgText" original="Very large file ({n}MB) — may take a few minutes">非常に大きなファイル ({n}MB) — 数分かかる場合があります</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000145" trl="Y">
+  <value column="MsgText" original="Large file ({n}MB) — please wait...">大きなファイル ({n}MB) — お待ちください...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000146" trl="Y">
+  <value column="MsgText" original="Building databases...">データベース構築中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000147" trl="Y">
+  <value column="MsgText" original="Imported {n} elements">{n}要素をインポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000148" trl="Y">
+  <value column="MsgText" original="Imported {n} elements from {fmt}">{fmt}から{n}要素をインポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000149" trl="Y">
+  <value column="MsgText" original="CITY MODE — {n} buildings, {m} elements. Click a building to load.">シティモード — {n}棟、{m}要素。建物をクリックして読込。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000150" trl="Y">
+  <value column="MsgText" original="Flew to {name} ({n} elements)">{name}へ飛行 ({n}要素)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000151" trl="Y">
+  <value column="MsgText" original="Downloading {name}...">{name}をダウンロード中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000152" trl="Y">
+  <value column="MsgText" original="CLEARED — {n} meshes removed.">クリア済 — {n}メッシュを削除。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000153" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — 0/{n} elements">ストリーミング {name} — 0/{n}要素</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000154" trl="Y">
+  <value column="MsgText" original="Downloaded {name}. Streaming {bld}...">{name}ダウンロード完了。{bld}をストリーミング...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000155" trl="Y">
+  <value column="MsgText" original="count doors, floor 1 walls, total cost, Find fire pump...">ドアを数える、1階の壁、総コスト...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000156" trl="Y">
+  <value column="MsgText" original="No speech detected — tap mic again">音声が検出されません — もう一度タップ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000157" trl="Y">
+  <value column="MsgText" original="No match. Try: &quot;count doors&quot; or &quot;floor 1 walls&quot;">一致なし。試してください："ドアを数える"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000158" trl="Y">
+  <value column="MsgText" original="No results for &quot;{q}&quot;">"{q}"の結果なし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000159" trl="Y">
+  <value column="MsgText" original="Details ({n})">詳細 ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000160" trl="Y">
+  <value column="MsgText" original="Issues">問題</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000161" trl="Y">
+  <value column="MsgText" original="Swipe to show panels">スワイプでパネル表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000162" trl="Y">
+  <value column="MsgText" original="Swipe to hide panels">スワイプでパネル非表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000163" trl="Y">
+  <value column="MsgText" original="Section Cut">断面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000164" trl="Y">
+  <value column="MsgText" original="New element">新規要素</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000165" trl="Y">
+  <value column="MsgText" original="Existed">既存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000166" trl="Y">
+  <value column="MsgText" original="— (demolished)">— (解体)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000167" trl="Y">
+  <value column="MsgText" original="Settings">設定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000168" trl="Y">
+  <value column="MsgText" original="Language">言語</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000169" trl="Y">
+  <value column="MsgText" original="Currency">通貨</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000170" trl="Y">
+  <value column="MsgText" original="Rate Source">単価出典</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000171" trl="Y">
+  <value column="MsgText" original="Reset to Defaults">デフォルトに戻す</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000172" trl="Y">
+  <value column="MsgText" original="Apply">適用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000173" trl="Y">
+  <value column="MsgText" original="Check for Updates">更新を確認</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000174" trl="Y">
+  <value column="MsgText" original="Downloaded {name}.ifc ({size} KB)">{name}.ifc ダウンロード済み ({size} KB)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000175" trl="Y">
+  <value column="MsgText" original="Please drop an .ifc file">.ifcファイルをドロップしてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000176" trl="Y">
+  <value column="MsgText" original="Exporting IFC ({n} elements)...">IFCエクスポート中 ({n}個)...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000177" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel...">4D Excel生成中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000178" trl="Y">
+  <value column="MsgText" original="Generating 4D Excel — preparing charts...">4D Excel — チャート準備中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000179" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel...">5D Excel生成中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000180" trl="Y">
+  <value column="MsgText" original="Generating 5D Excel — preparing charts...">5D Excel — チャート準備中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000181" trl="Y">
+  <value column="MsgText" original="Loading">読み込み中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000182" trl="Y">
+  <value column="MsgText" original="No data.">データなし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000183" trl="Y">
+  <value column="MsgText" original="Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL">非対応: .{ext} — 対応: IFC, DAE, OBJ, GLB, 3DS, FBX, STL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000184" trl="Y">
+  <value column="MsgText" original="Description">説明</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000185" trl="Y">
+  <value column="MsgText" original="Parameter">パラメータ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000186" trl="Y">
+  <value column="MsgText" original="Value">値</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000187" trl="Y">
+  <value column="MsgText" original="Saved {f} ({n} sheets)">{f} を保存しました ({n} シート)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000188" trl="Y">
+  <value column="MsgText" original="includes Variance Order">変更注文を含む</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000189" trl="Y">
+  <value column="MsgText" original="Search elements...">エレメントを検索...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000190" trl="Y">
+  <value column="MsgText" original="All types">すべてのタイプ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000191" trl="Y">
+  <value column="MsgText" original="▶ Navigate">▶ ナビゲート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000192" trl="Y">
+  <value column="MsgText" original="▶ Navigate to selected">▶ 選択先にナビゲート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000193" trl="Y">
+  <value column="MsgText" original="{n} found">{n} 件見つかりました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000194" trl="Y">
+  <value column="MsgText" original="0 matches">0 件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000195" trl="Y">
+  <value column="MsgText" original="Did you mean:">もしかして:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000196" trl="Y">
+  <value column="MsgText" original="No start position — cannot navigate">開始位置なし — ナビゲートできません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000197" trl="Y">
+  <value column="MsgText" original="No path found">ルートが見つかりません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000198" trl="Y">
+  <value column="MsgText" original="Arrived — walk freely or Find again">到着 — 自由に歩くか再検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000199" trl="Y">
+  <value column="MsgText" original="Watch Demo">デモを見る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000200" trl="Y">
+  <value column="MsgText" original="About">概要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000201" trl="Y">
+  <value column="MsgText" original="outofthebox">すぐ使える</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000202" trl="Y">
+  <value column="MsgText" original="In 60 seconds, the way you BIM will never be the same.">60秒で、あなたのBIMが変わる。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000203" trl="Y">
+  <value column="MsgText" original="Import">インポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000204" trl="Y">
+  <value column="MsgText" original="View">表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000205" trl="Y">
+  <value column="MsgText" original="Compare">比較</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000206" trl="Y">
+  <value column="MsgText" original="Costed">原価</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000207" trl="Y">
+  <value column="MsgText" original="Done">完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000208" trl="Y">
+  <value column="MsgText" original="Drop IFC or 3D file here">IFCまたは3Dファイルをここにドロップ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000209" trl="Y">
+  <value column="MsgText" original="My Buildings">マイビルディング</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000210" trl="Y">
+  <value column="MsgText" original="City Buildings">都市の建物</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000211" trl="Y">
+  <value column="MsgText" original="Landmark Buildings">ランドマーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000212" trl="Y">
+  <value column="MsgText" original="Loading building manifest...">建物マニフェストを読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000213" trl="Y">
+  <value column="MsgText" original="Created by">作成者</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000214" trl="Y">
+  <value column="MsgText" original="Live Stats">ライブ統計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000215" trl="Y">
+  <value column="MsgText" original="COMPLETE THE CITY">都市を完成させよう</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000216" trl="Y">
+  <value column="MsgText" original="buildings explored">建物探索済み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000217" trl="Y">
+  <value column="MsgText" original="CITY UNLOCKED">都市解除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000218" trl="Y">
+  <value column="MsgText" original="LAUNCH CITY 1M">都市 1M 起動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000219" trl="Y">
+  <value column="MsgText" original="Open 3D Viewer">3Dビューアを開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000220" trl="Y">
+  <value column="MsgText" original="Open Tabs">開いているタブ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000221" trl="Y">
+  <value column="MsgText" original="Theory">理論</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000222" trl="Y">
+  <value column="MsgText" original="Practical">実践</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000223" trl="Y">
+  <value column="MsgText" original="Loading WebAssembly...">WebAssembly を読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000224" trl="Y">
+  <value column="MsgText" original="Fetching {url}...">{url} を取得中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000225" trl="Y">
+  <value column="MsgText" original="DB loaded ({size}MB). Querying...">DB 読み込み完了 ({size}MB)。クエリ実行中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000226" trl="Y">
+  <value column="MsgText" original="Library loaded ({size}MB). Streaming nearest building...">ライブラリ読み込み完了 ({size}MB)。最近の建物をストリーミング...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000227" trl="Y">
+  <value column="MsgText" original="Using main DB for geometry. Streaming...">ジオメトリにメインDBを使用。ストリーミング...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000228" trl="Y">
+  <value column="MsgText" original="STREAMING {name} — {i}/{n} elements">ストリーミング {name} — {i}/{n} 要素</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000229" trl="Y">
+  <value column="MsgText" original="DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.">完了 — {name} {n} 要素 ({g} インスタンスグループ)。{b} 棟レンダリング済み。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000230" trl="Y">
+  <value column="MsgText" original="{name} — DONE">{name} — 完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000231" trl="Y">
+  <value column="MsgText" original="Cleared. Search and click a building to stream.">クリア済み。建物を検索しクリック。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000232" trl="Y">
+  <value column="MsgText" original="2D Plans">2D図面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000233" trl="Y">
+  <value column="MsgText" original="Layers">レイヤー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000234" trl="Y">
+  <value column="MsgText" original="Fit">全体表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000235" trl="Y">
+  <value column="MsgText" original="Generate">生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000236" trl="Y">
+  <value column="MsgText" original="Export DXF">DXF出力</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000237" trl="Y">
+  <value column="MsgText" original="Drop DXF file here">DXFファイルをここにドロップ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000238" trl="Y">
+  <value column="MsgText" original="Entities: ">エンティティ: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000239" trl="Y">
+  <value column="MsgText" original="Layers: ">レイヤー: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000240" trl="Y">
+  <value column="MsgText" original="Class: ">クラス: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000241" trl="Y">
+  <value column="MsgText" original="Name: ">名前: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000242" trl="Y">
+  <value column="MsgText" original="Storey: ">階: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000243" trl="Y">
+  <value column="MsgText" original="— select sheet —">— シートを選択 —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000244" trl="Y">
+  <value column="MsgText" original="— storey —">— 階 —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000245" trl="Y">
+  <value column="MsgText" original="Floor Plan">平面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000246" trl="Y">
+  <value column="MsgText" original="Front Elev">正面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000247" trl="Y">
+  <value column="MsgText" original="Rear Elev">背面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000248" trl="Y">
+  <value column="MsgText" original="Left Elev">左側面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000249" trl="Y">
+  <value column="MsgText" original="Right Elev">右側面図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000250" trl="Y">
+  <value column="MsgText" original="Loading {url}...">ロード中 {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000251" trl="Y">
+  <value column="MsgText" original="Loaded: {n} entities, {l} layers">読込み完了: {n}個, {l}レイヤー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000252" trl="Y">
+  <value column="MsgText" original="Generating {mode}...">生成中 {mode}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000253" trl="Y">
+  <value column="MsgText" original="Generated: {n} entities, {l} layers ({ms}ms)">生成完了: {n}個, {l}レイヤー ({ms}ms)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000254" trl="Y">
+  <value column="MsgText" original="Loading databases...">DB読込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000255" trl="Y">
+  <value column="MsgText" original="DBs loaded — generating...">DB完了 — 生成中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000256" trl="Y">
+  <value column="MsgText" original="No DB loaded — add ?db= to URL">DB未ロード — ?db=をURLに追加</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000257" trl="Y">
+  <value column="MsgText" original="Drop a .dxf file">.dxfファイルをドロップ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000258" trl="Y">
+  <value column="MsgText" original="Nothing to export">エクスポートするものなし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000259" trl="Y">
+  <value column="MsgText" original="2D views are desktop-only">2D表示はデスクトップのみ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000260" trl="Y">
+  <value column="MsgText" original="Close Measure first">先に計測を閉じてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000261" trl="Y">
+  <value column="MsgText" original="Back online">オンラインに復帰</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000262" trl="Y">
+  <value column="MsgText" original="Offline mode — cached buildings still available">オフライン — キャッシュ済建物が利用可能</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000263" trl="Y">
+  <value column="MsgText" original="Select a building first.">まず建物を選択してください。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000264" trl="Y">
+  <value column="MsgText" original="4D/5D analytics opened for {name}">{name} の 4D/5D 分析を開きました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000265" trl="Y">
+  <value column="MsgText" original="Screenshot saved to Downloads/">スクリーンショットを Downloads/ に保存しました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000266" trl="Y">
+  <value column="MsgText" original="Spatial index ready">空間インデックス準備完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000267" trl="Y">
+  <value column="MsgText" original="Building spatial index…">空間インデックスを構築中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000268" trl="Y">
+  <value column="MsgText" original="Report already generating...">レポートはすでに生成中です...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000269" trl="Y">
+  <value column="MsgText" original="Building report…">レポートを生成中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000270" trl="Y">
+  <value column="MsgText" original="No clashes — open matrix first">干渉なし — 先にマトリクスを開いてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000271" trl="Y">
+  <value column="MsgText" original="Clash report opened in new tab">干渉レポートを新しいタブで開きました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000272" trl="Y">
+  <value column="MsgText" original="No clash data — open matrix first">干渉データなし — 先にマトリクスを開いてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000273" trl="Y">
+  <value column="MsgText" original="CSV export already in progress...">CSV エクスポートはすでに進行中です...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000274" trl="Y">
+  <value column="MsgText" original="CSV exported — {n} clashes">CSV をエクスポートしました — 干渉 {n} 件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000275" trl="Y">
+  <value column="MsgText" original="Exporting CSV… pair {i}/{n}">CSV をエクスポート中… ペア {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000276" trl="Y">
+  <value column="MsgText" original="No clash pairs to export">エクスポートする干渉ペアがありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000277" trl="Y">
+  <value column="MsgText" original="Matrix needs 2+ disciplines (found: {d})">マトリクスには 2 つ以上の分野が必要です（検出: {d}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000278" trl="Y">
+  <value column="MsgText" original="Close 2D view first">先に 2D ビューを閉じてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000279" trl="Y">
+  <value column="MsgText" original="Click for dimensions. Right-click for Info">クリックで寸法、右クリックで情報</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000280" trl="Y">
+  <value column="MsgText" original="Tap for dimensions. Long-press for Info. Tap here to exit.">タップで寸法、長押しで情報。ここをタップで終了。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000281" trl="Y">
+  <value column="MsgText" original="Tap another spot for length, same spot for Area">別の点をタップで長さ、同じ点で面積</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000282" trl="Y">
+  <value column="MsgText" original="Clash snag shared">干渉の指摘を共有しました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000283" trl="Y">
+  <value column="MsgText" original="Check Clash at Desktop..">干渉チェックはデスクトップで..</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000284" trl="Y">
+  <value column="MsgText" original="Generating report… {done}/{total} pairs">レポートを生成中… {done}/{total} ペア</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000285" trl="Y">
+  <value column="MsgText" original="Counting {a} vs {b}… {i}/{n}">{a} と {b} を集計中… {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000286" trl="Y">
+  <value column="MsgText" original="Fetching city index ({url})...">都市インデックスを取得中（{url}）...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000287" trl="Y">
+  <value column="MsgText" original="{name} already loaded ({n} elements)">{name} は読み込み済みです（{n} 要素）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000288" trl="Y">
+  <value column="MsgText" original="Unknown building: {name}">不明な建物: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000289" trl="Y">
+  <value column="MsgText" original="No streamable elements for {name}">{name} にストリーミングできる要素がありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000290" trl="Y">
+  <value column="MsgText" original="MEP BOQ Guide">MEP数量計算書ガイド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000291" trl="Y">
+  <value column="MsgText" original="SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)&lt;br&gt;Pipes/ducts → length (m) · slabs → area (m²) · fittings → count&lt;br&gt;17 country rate templates from national publications&lt;br&gt;Section totals + labour trades + charts + reinstatement value&lt;br&gt;CSV (UTF-8 BOM) or shareable self-contained HTML">SMM2 §R–V · IFC→工種分類 (PLB·ELEC·ACMV·FP)&lt;br&gt;配管/ダクト → 長さ(m) · スラブ → 面積(m²) · 継手 → 個数&lt;br&gt;17ヵ国の単価テンプレート&lt;br&gt;セクション合計 + 職種 + チャート + 保険価値&lt;br&gt;CSV (UTF-8 BOM) または共有可能な HTML</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000292" trl="Y">
+  <value column="MsgText" original="No DB for archetype: {name}">アーキタイプの DB がありません: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000293" trl="Y">
+  <value column="MsgText" original="Disposal Systems">排水設備</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000294" trl="Y">
+  <value column="MsgText" original="Piped Supply Systems">給水・配管設備</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000295" trl="Y">
+  <value column="MsgText" original="Mechanical Heating / Cooling">機械式暖房 / 冷房</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000296" trl="Y">
+  <value column="MsgText" original="Ventilation / Air Conditioning">換気 / 空調</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000297" trl="Y">
+  <value column="MsgText" original="Electrical Supply / Power / Lighting">電力供給 / 動力 / 照明</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000298" trl="Y">
+  <value column="MsgText" original="Communications / Security / Controls">通信 / セキュリティ / 制御</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000299" trl="Y">
+  <value column="MsgText" original="Mechanical / Electrical Services (General)">機械 / 電気設備（一般）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000300" trl="Y">
+  <value column="MsgText" original="REINSTATEMENT VALUE">再調達価額</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000301" trl="Y">
+  <value column="MsgText" original="Contingency">予備費</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000302" trl="Y">
+  <value column="MsgText" original="INSURED VALUE">保険価額</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000303" trl="Y">
+  <value column="MsgText" original="MEP BOQ complete">MEP 数量表 完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000304" trl="Y">
+  <value column="MsgText" original="sections">セクション</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000305" trl="Y">
+  <value column="MsgText" original="Section">セクション</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000306" trl="Y">
+  <value column="MsgText" original="Share Report">レポートを共有</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000307" trl="Y">
+  <value column="MsgText" original="No database specified. Open from 4D/5D Analytics page.">データベースが指定されていません。4D/5D 分析ページから開いてください。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000308" trl="Y">
+  <value column="MsgText" original="No elements found for building:">建物に要素が見つかりません:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000309" trl="Y">
+  <value column="MsgText" original="Red — you go in (sound on, then we load)">赤 — 入ります（音をオンにしてから読み込み）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000310" trl="Y">
+  <value column="MsgText" original="Blue — nothing happens, nothing loads">青 — 何も起こらず、何も読み込みません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000311" trl="Y">
+  <value column="MsgText" original="&quot;You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe.&quot;">「青い薬を飲めば — 物語は終わり、ベッドで目覚めて、信じたいことを信じる。」</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000312" trl="Y">
+  <value column="MsgText" original="← back">← 戻る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000313" trl="Y">
+  <value column="MsgText" original="choose your door">扉を選んでください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000314" trl="Y">
+  <value column="MsgText" original="Site traffic stats (GoatCounter)">サイト訪問統計（GoatCounter）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000315" trl="Y">
+  <value column="MsgText" original="BUILDINGS &amp; IFC">建物と IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000316" trl="Y">
+  <value column="MsgText" original="drop your own IFC, or open a ready building — opens in the viewer">自分の IFC をドロップするか、用意された建物を開く — ビューアで開きます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000317" trl="Y">
+  <value column="MsgText" original="Buildings / IFC">建物 / IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000318" trl="Y">
+  <value column="MsgText" original="BIM Modeller">BIM モデラー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000319" trl="Y">
+  <value column="MsgText" original="ERP">ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000320" trl="Y">
+  <value column="MsgText" original="User Guide">ユーザーガイド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000321" trl="Y">
+  <value column="MsgText" original="Watch demo">デモを見る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000322" trl="Y">
+  <value column="MsgText" original="Clear cache">キャッシュを消去</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000323" trl="Y">
+  <value column="MsgText" original="More">その他</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000324" trl="Y">
+  <value column="MsgText" original="BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.">BIM オーサリング（DAGeVu）はデスクトップ向けです — より大きな画面で開いてください。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000325" trl="Y">
+  <value column="MsgText" original="↓ Drop IFC / 3D files here — or tap to browse">↓ IFC / 3D ファイルをここにドロップ — またはタップして参照</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000326" trl="Y">
+  <value column="MsgText" original="multiple discipline files merge into one building">複数の分野ファイルは 1 つの建物に統合されます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000327" trl="Y">
+  <value column="MsgText" original="Blank Viewer">空のビューア</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000328" trl="Y">
+  <value column="MsgText" original="Open your own .db file">自分の .db ファイルを開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000329" trl="Y">
+  <value column="MsgText" original="loading building manifest…">建物一覧を読み込み中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000330" trl="Y">
+  <value column="MsgText" original="City buildings">都市の建物</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000331" trl="Y">
+  <value column="MsgText" original="Landmark buildings">ランドマーク建物</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000332" trl="Y">
+  <value column="MsgText" original="elements">要素</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000333" trl="Y">
+  <value column="MsgText" original="reload">再読み込み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000334" trl="Y">
+  <value column="MsgText" original="No DB for {name}">{name} の DB がありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000335" trl="Y">
+  <value column="MsgText" original="Reset to the start screen?&#10;&#10;Clears the in-browser building data:&#10;  • cached buildings&#10;  • any IFC scene you dropped in (not saved to a .db file)&#10;and returns you to the red / blue choice.&#10;&#10;Keeps: the installed app + offline data, and any .db you saved yourself.">開始画面にリセットしますか？
+
+ブラウザ内の建物データを消去します:
+  • キャッシュされた建物
+  • ドロップした IFC シーン（.db ファイルに未保存のもの）
+そして赤 / 青の選択に戻ります。
+
+保持: インストール済みアプリ + オフラインデータ、および自分で保存した .db。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000336" trl="Y">
+  <value column="MsgText" original="Grid Bays">グリッドベイ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000337" trl="Y">
+  <value column="MsgText" original="Share">共有</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000338" trl="Y">
+  <value column="MsgText" original="Min/Max">最小/最大</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000339" trl="Y">
+  <value column="MsgText" original="Menu">メニュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000340" trl="Y">
+  <value column="MsgText" original="Previous phase">前のフェーズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000341" trl="Y">
+  <value column="MsgText" original="Next phase">次のフェーズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000342" trl="Y">
+  <value column="MsgText" original="Bookmark this cut position">この断面位置をブックマーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000343" trl="Y">
+  <value column="MsgText" original="Remove bookmark">ブックマークを削除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000344" trl="Y">
+  <value column="MsgText" original="Update ready — tap to refresh">更新の準備ができました — タップして再読み込み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000345" trl="Y">
+  <value column="MsgText" original="Report Bug">バグを報告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000346" trl="Y">
+  <value column="MsgText" original="Save Building">建物を保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000347" trl="Y">
+  <value column="MsgText" original="Open Building">建物を開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000348" trl="Y">
+  <value column="MsgText" original="Find / Navigate">検索 / ナビゲート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000349" trl="Y">
+  <value column="MsgText" original="Role View">役割ビュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000350" trl="Y">
+  <value column="MsgText" original="Help">ヘルプ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000351" trl="Y">
+  <value column="MsgText" original="World History">全体履歴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000352" trl="Y">
+  <value column="MsgText" original="Page History">ページ履歴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000353" trl="Y">
+  <value column="MsgText" original="Walk">ウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000354" trl="Y">
+  <value column="MsgText" original="Pick Walk">ピッキング経路</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000355" trl="Y">
+  <value column="MsgText" original="Share">共有</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000356" trl="Y">
+  <value column="MsgText" original="Human-Asset">人と資産</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000357" trl="Y">
+  <value column="MsgText" original="Measure">計測</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000358" trl="Y">
+  <value column="MsgText" original="Clash Matrix">干渉マトリクス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000359" trl="Y">
+  <value column="MsgText" original="Sanity">整合性チェック</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000360" trl="Y">
+  <value column="MsgText" original="Egress">避難経路</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000361" trl="Y">
+  <value column="MsgText" original="X-Ray / Bbox">X 線 / 境界ボックス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000362" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">境界ボックス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000363" trl="Y">
+  <value column="MsgText" original="Time Machine">タイムマシン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000364" trl="Y">
+  <value column="MsgText" original="4D Window">4D ウィンドウ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000365" trl="Y">
+  <value column="MsgText" original="4D Window — tap to generate a programme">4D ウィンドウ — タップして工程表を生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000366" trl="Y">
+  <value column="MsgText" original="Section Cut">断面カット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000367" trl="Y">
+  <value column="MsgText" original="Background">背景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000368" trl="Y">
+  <value column="MsgText" original="Night">夜間</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000369" trl="Y">
+  <value column="MsgText" original="Palette">パレット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000370" trl="Y">
+  <value column="MsgText" original="Shadow + Ground">影 + 地面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000371" trl="Y">
+  <value column="MsgText" original="Fly Tour">フライツアー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000372" trl="Y">
+  <value column="MsgText" original="Nav LOD (large bldgs)">ナビ LOD（大規模建物）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000373" trl="Y">
+  <value column="MsgText" original="4D / 5D">4D / 5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000374" trl="Y">
+  <value column="MsgText" original="Issues">指摘事項</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000375" trl="Y">
+  <value column="MsgText" original="Fullscreen">全画面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000376" trl="Y">
+  <value column="MsgText" original="Precision (Fine)">精密（微調整）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000377" trl="Y">
+  <value column="MsgText" original="Reset Camera">カメラをリセット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000378" trl="Y">
+  <value column="MsgText" original="Auto-Pivot">自動ピボット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000379" trl="Y">
+  <value column="MsgText" original="Home">ホーム</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000380" trl="Y">
+  <value column="MsgText" original="Sound FX">効果音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000381" trl="Y">
+  <value column="MsgText" original="Settings">設定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000382" trl="Y">
+  <value column="MsgText" original="Navigate">ナビゲート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000383" trl="Y">
+  <value column="MsgText" original="Inspect">検査</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000384" trl="Y">
+  <value column="MsgText" original="Camera / View">カメラ / ビュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000385" trl="Y">
+  <value column="MsgText" original="Plumber">配管工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000386" trl="Y">
+  <value column="MsgText" original="Electrician">電気工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000387" trl="Y">
+  <value column="MsgText" original="ACMV Tech">空調技術者</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000388" trl="Y">
+  <value column="MsgText" original="Structural">構造</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000389" trl="Y">
+  <value column="MsgText" original="Cleaner">清掃</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000390" trl="Y">
+  <value column="MsgText" original="5D Rate Pack">5D 単価パック</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000391" trl="Y">
+  <value column="MsgText" original="Cache Info">キャッシュ情報</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000392" trl="Y">
+  <value column="MsgText" original="Reset Pill Icons">ツールバーのアイコンをリセット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000393" trl="Y">
+  <value column="MsgText" original="Defaults restored">既定値に戻しました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000394" trl="Y">
+  <value column="MsgText" original="Shadow + Ground — cycle Off → Earth → Grass → Paved">影 + 地面 — 切替 オフ → 土 → 芝 → 舗装</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000395" trl="Y">
+  <value column="MsgText" original="None">なし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000396" trl="Y">
+  <value column="MsgText" original="Grass">芝</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000397" trl="Y">
+  <value column="MsgText" original="Earth">土</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000398" trl="Y">
+  <value column="MsgText" original="Paved">舗装</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000399" trl="Y">
+  <value column="MsgText" original="Blank scene — press Ctrl+O (Open Building) to load a .db file">空のシーン — Ctrl+O（建物を開く）で .db ファイルを読み込みます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000400" trl="Y">
+  <value column="MsgText" original="change in ⚙">⚙ で変更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000401" trl="Y">
+  <value column="MsgText" original="History — across pages">履歴 — 全ページ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000402" trl="Y">
+  <value column="MsgText" original="Whole">全体</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000403" trl="Y">
+  <value column="MsgText" original="This page">このページ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000404" trl="Y">
+  <value column="MsgText" original="Close">閉じる</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000405" trl="Y">
+  <value column="MsgText" original="Fine precision">精密モード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000406" trl="Y">
+  <value column="MsgText" original="Reset camera">カメラをリセット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000407" trl="Y">
+  <value column="MsgText" original="Auto-pivot on scene centre">シーン中心で自動ピボット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000408" trl="Y">
+  <value column="MsgText" original="Still Refine (Alt+S)">静止画を精細化（Alt+S）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000409" trl="Y">
+  <value column="MsgText" original="Populate (Alt+P)">人物を配置（Alt+P）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000410" trl="Y">
+  <value column="MsgText" original="MaxQ Movie (Alt+C — press again to cancel)">MaxQ ムービー（Alt+C — もう一度押すと中止）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000411" trl="Y">
+  <value column="MsgText" original="Time Machine">タイムマシン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000412" trl="Y">
+  <value column="MsgText" original="Find">検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000413" trl="Y">
+  <value column="MsgText" original="Share">共有</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000414" trl="Y">
+  <value column="MsgText" original="Help">ヘルプ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000415" trl="Y">
+  <value column="MsgText" original="Clash Matrix">干渉マトリクス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000416" trl="Y">
+  <value column="MsgText" original="Color Studio">カラースタジオ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000417" trl="Y">
+  <value column="MsgText" original="Night">夜間</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000418" trl="Y">
+  <value column="MsgText" original="Shadow">影</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000419" trl="Y">
+  <value column="MsgText" original="Background">背景</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000420" trl="Y">
+  <value column="MsgText" original="Bounding Boxes">境界ボックス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000421" trl="Y">
+  <value column="MsgText" original="Cinema Orbit">シネマ軌道</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000422" trl="Y">
+  <value column="MsgText" original="Document">ドキュメント</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000423" trl="Y">
+  <value column="MsgText" original="Grid">グリッド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000424" trl="Y">
+  <value column="MsgText" original="Table">表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000425" trl="Y">
+  <value column="MsgText" original="Next Phase">次のフェーズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000426" trl="Y">
+  <value column="MsgText" original="Save Design">設計を保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000427" trl="Y">
+  <value column="MsgText" original="Open Design">設計を開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000428" trl="Y">
+  <value column="MsgText" original="MEP Routes">MEP ルート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000429" trl="Y">
+  <value column="MsgText" original="UBBL Compliance">UBBL 適合</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000430" trl="Y">
+  <value column="MsgText" original="Rosetta Stone">ロゼッタストーン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000431" trl="Y">
+  <value column="MsgText" original="Disciplines">分野</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000432" trl="Y">
+  <value column="MsgText" original="Sun intensity">太陽の強さ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000433" trl="Y">
+  <value column="MsgText" original="Exposure">露出</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000434" trl="Y">
+  <value column="MsgText" original="Ambient">環境光</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000435" trl="Y">
+  <value column="MsgText" original="Hemisphere">半球光</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000436" trl="Y">
+  <value column="MsgText" original="All">すべて</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000437" trl="Y">
+  <value column="MsgText" original="Off">オフ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000438" trl="Y">
+  <value column="MsgText" original="On — {n} fixtures">オン — 照明器具 {n} 台</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000439" trl="Y">
+  <value column="MsgText" original="Find">検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000440" trl="Y">
+  <value column="MsgText" original="Ask">質問</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000441" trl="Y">
+  <value column="MsgText" original="Save .xlsx">.xlsx を保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000442" trl="Y">
+  <value column="MsgText" original="All Types">すべてのタイプ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000443" trl="Y">
+  <value column="MsgText" original="View back">前のビュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000444" trl="Y">
+  <value column="MsgText" original="View forward">次のビュー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000445" trl="Y">
+  <value column="MsgText" original="Expand">展開</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000446" trl="Y">
+  <value column="MsgText" original="Voice not supported">音声は非対応です</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000447" trl="Y">
+  <value column="MsgText" original="Loading Find…">検索を読み込み中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000448" trl="Y">
+  <value column="MsgText" original="Find failed to load">検索を読み込めませんでした</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000449" trl="Y">
+  <value column="MsgText" original="Compiling GPU shaders — please wait...">GPU シェーダーをコンパイル中 — お待ちください...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000450" trl="Y">
+  <value column="MsgText" original="GPU shaders compiled in {ms}ms — rendering">GPU シェーダーを {ms}ms でコンパイル — 描画中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000451" trl="Y">
+  <value column="MsgText" original="OFFLINE">オフライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000452" trl="Y">
+  <value column="MsgText" original="BIM OOTB — 4D/5D Analytics">BIM OOTB — 4D/5D 分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000453" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Clash Coordination Report">BIM OOTB — 干渉調整レポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000454" trl="Y">
+  <value column="MsgText" original="BIM OOTB — MEP Bill of Quantities">BIM OOTB — MEP 数量表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000455" trl="Y">
+  <value column="MsgText" original="4D/5D Analytics">4D/5D 分析</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000456" trl="Y">
+  <value column="MsgText" original="5D — Cost Excel">5D — コスト Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000457" trl="Y">
+  <value column="MsgText" original="4D — Schedule Excel">4D — 工程 Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000458" trl="Y">
+  <value column="MsgText" original="MEP Bill of Quantities">MEP 数量表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000459" trl="Y">
+  <value column="MsgText" original="Copy shareable link">共有リンクをコピー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000460" trl="Y">
+  <value column="MsgText" original="Change locale / currency">言語 / 通貨を変更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000461" trl="Y">
+  <value column="MsgText" original="Change locale">言語を変更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000462" trl="Y">
+  <value column="MsgText" original="Loading...">読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000463" trl="Y">
+  <value column="MsgText" original="Requesting data from viewer...">ビューアにデータを要求中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000464" trl="Y">
+  <value column="MsgText" original="Waiting for DB to cache in main scene...">メインシーンで DB がキャッシュされるのを待機中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000465" trl="Y">
+  <value column="MsgText" original="Loading {url}...">{url} を読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000466" trl="Y">
+  <value column="MsgText" original="Site Resources">現場リソース</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000467" trl="Y">
+  <value column="MsgText" original="5D — Bill of Quantities">5D — 数量表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000468" trl="Y">
+  <value column="MsgText" original="Clash Coordination Report">干渉調整レポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000469" trl="Y">
+  <value column="MsgText" original="Home">ホーム</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000470" trl="Y">
+  <value column="MsgText" original="Report Downloaded">レポートをダウンロードしました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000471" trl="Y">
+  <value column="MsgText" original="HTML file saved. Share via WhatsApp, Email, or any medium.&lt;br&gt;Recipient opens it in any browser — full charts, no setup needed.">HTML ファイルを保存しました。WhatsApp、メールなど任意の手段で共有できます。&lt;br&gt;受け取った人はどのブラウザでも開けます — グラフ付き、設定不要。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000472" trl="Y">
+  <value column="MsgText" original="OK">OK</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000473" trl="Y">
+  <value column="MsgText" original="Total Clashes">干渉合計</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000474" trl="Y">
+  <value column="MsgText" original="Reviewed">確認済み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000475" trl="Y">
+  <value column="MsgText" original="Resolved">解決済み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000476" trl="Y">
+  <value column="MsgText" original="Accepted">許容</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000477" trl="Y">
+  <value column="MsgText" original="Total bbox overlaps detected across all discipline pairs">全分野ペアで検出された境界ボックスの重なり総数</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000478" trl="Y">
+  <value column="MsgText" original="Acknowledged clashes under investigation">確認済みで調査中の干渉</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000479" trl="Y">
+  <value column="MsgText" original="Clashes fixed in the model — ready for re-check">モデル内で修正済みの干渉 — 再チェック可能</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000480" trl="Y">
+  <value column="MsgText" original="Risk accepted — no design change needed">リスク許容 — 設計変更不要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000481" trl="Y">
+  <value column="MsgText" original="By Discipline Pair">分野ペア別</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000482" trl="Y">
+  <value column="MsgText" original="Discipline Risk Profile">分野別リスクプロファイル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000483" trl="Y">
+  <value column="MsgText" original="By Severity">重大度別</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000484" trl="Y">
+  <value column="MsgText" original="By Status">ステータス別</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000485" trl="Y">
+  <value column="MsgText" original="Top Offenders — Fix These First">主要な問題要素 — 最優先で修正</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000486" trl="Y">
+  <value column="MsgText" original="By Element Class">要素クラス別</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000487" trl="Y">
+  <value column="MsgText" original="Discipline Matrix Summary">分野マトリクス概要</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000488" trl="Y">
+  <value column="MsgText" original="Source">元</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000489" trl="Y">
+  <value column="MsgText" original="Target">相手</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000490" trl="Y">
+  <value column="MsgText" original="Tolerance">許容差</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000491" trl="Y">
+  <value column="MsgText" original="Clashes">干渉</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000492" trl="Y">
+  <value column="MsgText" original="clashes">件の干渉</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000493" trl="Y">
+  <value column="MsgText" original="Day/night cycle">昼夜サイクル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000494" trl="Y">
+  <value column="MsgText" original="Drone Pilot — cinematic camera">ドローンパイロット — シネマティックカメラ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000495" trl="Y">
+  <value column="MsgText" original="Gantt chart">ガントチャート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000496" trl="Y">
+  <value column="MsgText" original="What-if: slip a phase, watch the chain re-fold in blue">What-if：フェーズをずらすと、後続の連鎖が青で組み直されます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000497" trl="Y">
+  <value column="MsgText" original="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">P6 / MS Project 連携 — Primavera の .xer/.xml または MS Project XML の工程表をこのモデルに取り込み、MSPDI/PMXML/XER へ書き出し、または取り込んだ工程をモデルと照合して数量 + 単価による自前の見積を確認します</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000498" trl="Y">
+  <value column="MsgText" original="Dashboard">ダッシュボード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000499" trl="Y">
+  <value column="MsgText" original="Budget vs Actual variance">予算と実績の差異</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000500" trl="Y">
+  <value column="MsgText" original="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.">描画コストの代替：カメラ外の施工済み要素をボックス表示（大規模建物のみ）。OFF = 現在の描画のまま。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000501" trl="Y">
+  <value column="MsgText" original="4D Construction Playback">4D 施工再生</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000502" trl="Y">
+  <value column="MsgText" original="DAY">日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000503" trl="Y">
+  <value column="MsgText" original="HR">時</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000504" trl="Y">
+  <value column="MsgText" original="MIN">分</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000505" trl="Y">
+  <value column="MsgText" original="Jump to start">先頭へ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000506" trl="Y">
+  <value column="MsgText" original="Deconstruct">解体</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000507" trl="Y">
+  <value column="MsgText" original="Stop">停止</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000508" trl="Y">
+  <value column="MsgText" original="Build">施工</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000509" trl="Y">
+  <value column="MsgText" original="Jump to end">末尾へ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000510" trl="Y">
+  <value column="MsgText" original="Undo edit">編集を元に戻す</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000511" trl="Y">
+  <value column="MsgText" original="Undo the last Gantt drag/resize">直前のガントのドラッグ/リサイズを元に戻す</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000512" trl="Y">
+  <value column="MsgText" original="Set Baseline">ベースライン設定</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000513" trl="Y">
+  <value column="MsgText" original="Snapshot current dates as the baseline for schedule variance">現在の日付を工程差異のベースラインとして保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000514" trl="Y">
+  <value column="MsgText" original="Pull Back">前倒し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000515" trl="Y">
+  <value column="MsgText" original="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">各タスクを先行作業が許す最早開始まで引き戻します（短縮のみ — タスクを遅らせることはありません）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000516" trl="Y">
+  <value column="MsgText" original="Drag to resize the Gantt drawer">ドラッグでガントドロワーのサイズを変更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000517" trl="Y">
+  <value column="MsgText" original="Locked">ロック中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000518" trl="Y">
+  <value column="MsgText" original="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">ロック中：ドラッグ/リサイズ/リンクは無効、タイムラインのスクラブは引き続き可能。クリックで編集をロック解除。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000519" trl="Y">
+  <value column="MsgText" original="Editing">編集中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000520" trl="Y">
+  <value column="MsgText" original="Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.">編集中：ドラッグで移動/リサイズ、別のバーへドラッグでリンク、ダブルクリックで数値入力。クリックでロック。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000521" trl="Y">
+  <value column="MsgText" original="Drag to shift the whole project's start/finish (Editing must be unlocked)">ドラッグでプロジェクト全体の開始/終了をずらす（編集のロック解除が必要）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000522" trl="Y">
+  <value column="MsgText" original="Drag to resize the drawer">ドラッグでドロワーのサイズを変更</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000523" trl="Y">
+  <value column="MsgText" original="Import">インポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000524" trl="Y">
+  <value column="MsgText" original="Export">エクスポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000525" trl="Y">
+  <value column="MsgText" original="P6/MSP file">P6/MSP ファイル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000526" trl="Y">
+  <value column="MsgText" original="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">Primavera P6 の工程表（.xer または .xml/PMXML）あるいは MS Project XML（MSPDI）を取り込み、その WBS・ロジック・日付をこのモデルに適用します。タスクと要素の紐付けは別の確認可能なステップです。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000527" trl="Y">
+  <value column="MsgText" original="auto-bind">自動紐付け</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000528" trl="Y">
+  <value column="MsgText" original="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.">アクティビティ名に BIM-Bind トークン（@discipline:IfcClass[:storey]）があれば、このモデルで解決し取り込み時にタスクを要素へ事前紐付けします — 確認可能な一次処理であり、推測ではありません。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000529" trl="Y">
+  <value column="MsgText" original="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">現在の工程表（WBS・日付・依存関係）を MS Project XML（MSPDI）として書き出します — Microsoft Project で直接開け、ここへの再取り込みも可能です。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000530" trl="Y">
+  <value column="MsgText" original="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Primavera P6 PMXML（APIBusinessObjects XML）として書き出します — 文書化されたあらゆる P6 エクスポート経路が使う形式で、ここへの再取り込みも可能です。一部のフィールド（WBS コード、EPS レベルのアクティビティコード、リソース割当、グローバルカレンダー、ベースライン）は引き継がれません — P6 自身も DB 間取り込みでその大半を捨てます。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000531" trl="Y">
+  <value column="MsgText" original="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">Primavera XER として書き出します — タブ区切りの旧来の P6 交換形式で、PMXML より XER を好む P6 環境向けです。失われるフィールドは PMXML と同じです。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000532" trl="Y">
+  <value column="MsgText" original="Diff vs Model">モデルと比較</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000533" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">4D 工程比較 — 取り込んだ P6/MSP 工程表をフェーズごとにモデルと照合します。先方の所要日数を、実数量 + 労務単価による自前の見積と比べます（先にファイルを取り込んでください）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000534" trl="Y">
+  <value column="MsgText" original="Phase Progress">フェーズ進捗</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000535" trl="Y">
+  <value column="MsgText" original="S-Curve">S カーブ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000536" trl="Y">
+  <value column="MsgText" original="Day {c} / {t} — {p}% complete">{c} / {t} 日目 — {p}% 完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000537" trl="Y">
+  <value column="MsgText" original="{n} placed | {names}">{n} 配置済み | {names}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000538" trl="Y">
+  <value column="MsgText" original="idle">待機</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000539" trl="Y">
+  <value column="MsgText" original="Author engine not loaded">作成エンジンが未ロード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000540" trl="Y">
+  <value column="MsgText" original="What-if engine not loaded">What-if エンジンが未ロード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000541" trl="Y">
+  <value column="MsgText" original="⊕ Now building">⊕ 施工中</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000542" trl="Y">
+  <value column="MsgText" original="item">件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000543" trl="Y">
+  <value column="MsgText" original="items">件</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000544" trl="Y">
+  <value column="MsgText" original="Loading timeline...">タイムラインを読み込み中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000545" trl="Y">
+  <value column="MsgText" original="Setting up 4D construction timeline...">4D 施工タイムラインを準備中...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000546" trl="Y">
+  <value column="MsgText" original="No elements found in database">データベースに要素が見つかりません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000547" trl="Y">
+  <value column="MsgText" original="{storey} — {phase} ({n} el, Day {a}–{b}, {src})">{storey} — {phase}（{n} 要素、{a}–{b} 日目、{src}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000548" trl="Y">
+  <value column="MsgText" original="IFC 4D">IFC 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000549" trl="Y">
+  <value column="MsgText" original="generated">自動生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000550" trl="Y">
+  <value column="MsgText" original="Locked — click 🔒 Locked to enable editing">ロック中 — 🔒 ロック中 をクリックして編集を有効化</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000551" trl="Y">
+  <value column="MsgText" original="Shift whole schedule {d}d">工程全体をずらす {d}日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000552" trl="Y">
+  <value column="MsgText" original="Time Machine couldn't complete this edit — {reason}">タイムマシンはこの編集を完了できませんでした — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000553" trl="Y">
+  <value column="MsgText" original="unexpected error">予期しないエラー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000554" trl="Y">
+  <value column="MsgText" original="Close other panels ({n})">他のパネルを閉じる（{n}）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000555" trl="Y">
+  <value column="MsgText" original="Blocked by {by} — clamped to {start}">{by} に阻まれました — {start} に制限</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000556" trl="Y">
+  <value column="MsgText" original="Not editable — no schedule task on this bar">編集不可 — このバーに工程タスクがありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000557" trl="Y">
+  <value column="MsgText" original="Move {n} bars  {d}d">{n} 本を移動  {d}日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000558" trl="Y">
+  <value column="MsgText" original="Move">移動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000559" trl="Y">
+  <value column="MsgText" original="Resize">リサイズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000560" trl="Y">
+  <value column="MsgText" original="Rejected: {reason}">却下：{reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000561" trl="Y">
+  <value column="MsgText" original="unknown">不明</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000562" trl="Y">
+  <value column="MsgText" original="Clamped to {start} by {by}">{by} により {start} に制限</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000563" trl="Y">
+  <value column="MsgText" original="Applied · {n} successor(s) cascaded">適用 · 後続 {n} 件を連動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000564" trl="Y">
+  <value column="MsgText" original="Nothing to undo">元に戻す操作はありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000565" trl="Y">
+  <value column="MsgText" original="Undone: {mode} {task}">元に戻しました：{mode} {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000566" trl="Y">
+  <value column="MsgText" original="No schedule to baseline yet — generate a 4D schedule first">ベースライン化する工程表がまだありません — 先に 4D 工程を生成してください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000567" trl="Y">
+  <value column="MsgText" original="Baseline set — {n} tasks">ベースライン設定済み — {n} タスク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000568" trl="Y">
+  <value column="MsgText" original="Not available">利用できません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000569" trl="Y">
+  <value column="MsgText" original="Cannot compress — {reason}">短縮できません — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000570" trl="Y">
+  <value column="MsgText" original="no schedule">工程表なし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000571" trl="Y">
+  <value column="MsgText" original="Nothing to compress — schedule is already at earliest float">短縮の余地なし — 工程は既に最早フロートです</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000572" trl="Y">
+  <value column="MsgText" original="Compressed 1 task">1 タスクを短縮</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000573" trl="Y">
+  <value column="MsgText" original="Compressed {n} tasks">{n} タスクを短縮</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000574" trl="Y">
+  <value column="MsgText" original="project finish moved up 1 day">プロジェクト完了が 1 日前倒し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000575" trl="Y">
+  <value column="MsgText" original="project finish moved up {d} days">プロジェクト完了が {d} 日前倒し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000576" trl="Y">
+  <value column="MsgText" original="project finish unchanged (internal float closed)">プロジェクト完了は変わらず（内部フロートを解消）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000577" trl="Y">
+  <value column="MsgText" original="Cannot shift — {reason}">ずらせません — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000578" trl="Y">
+  <value column="MsgText" original="Cannot move group — {reason}">グループを移動できません — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000579" trl="Y">
+  <value column="MsgText" original="Cannot edit — no real dates found for this task">編集できません — このタスクに実日付がありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000580" trl="Y">
+  <value column="MsgText" original="Could not generate a schedule">工程表を生成できませんでした</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000581" trl="Y">
+  <value column="MsgText" original="Schedule generated — refreshing…">工程表を生成 — 更新中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000582" trl="Y">
+  <value column="MsgText" original="Linked: {pred}  →  {succ}">リンク：{pred}  →  {succ}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000583" trl="Y">
+  <value column="MsgText" original="Refused — that link would create a cycle">却下 — そのリンクは循環を生みます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000584" trl="Y">
+  <value column="MsgText" original="Linked, but {task} clamped to {start} — blocked by {by}">リンクしましたが {task} は {start} に制限 — {by} に阻まれました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000585" trl="Y">
+  <value column="MsgText" original="Verifying integrity…">整合性を検証中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000586" trl="Y">
+  <value column="MsgText" original="⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again">⚠ 整合性違反：{list} — ↺ 編集を元に戻す（または修正）を押してから再度ロックしてください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000587" trl="Y">
+  <value column="MsgText" original="+{n} floating">+{n} 浮遊</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000588" trl="Y">
+  <value column="MsgText" original="+{n} hanging in midair">+{n} 宙吊り</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000589" trl="Y">
+  <value column="MsgText" original="No schedule available">利用できる工程表がありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000590" trl="Y">
+  <value column="MsgText" original="critical">クリティカル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000591" trl="Y">
+  <value column="MsgText" original="with float">フロートあり</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000592" trl="Y">
+  <value column="MsgText" original="Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.&#10;Project duration {pf}d · total float {minF}..{maxF}d.&#10;CPM reads the dates the drag produced — it never changes one.">クリティカルパス法。編集のたびに再計算します。赤 = トータルフロート 0：このタスクが遅れるとプロジェクト完了も遅れます。緑 = 余裕あり。
+プロジェクト期間 {pf}日 · トータルフロート {minF}..{maxF}日。
+CPM はドラッグで生じた日付を読むだけで、日付を変更することはありません。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000593" trl="Y">
+  <value column="MsgText" original="← after">← 後続</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000594" trl="Y">
+  <value column="MsgText" original="→ before">→ 先行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000595" trl="Y">
+  <value column="MsgText" original="unlink">リンク解除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000596" trl="Y">
+  <value column="MsgText" original="no dependencies">依存関係なし</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000597" trl="Y">
+  <value column="MsgText" original="{n} elements · {task}">{n} 要素 · {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000598" trl="Y">
+  <value column="MsgText" original="CRITICAL PATH · zero float">クリティカルパス · フロート 0</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000599" trl="Y">
+  <value column="MsgText" original="Total float {n}d">トータルフロート {n}日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000600" trl="Y">
+  <value column="MsgText" original="(CPM, dates unchanged)">（CPM、日付は変更なし）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000601" trl="Y">
+  <value column="MsgText" original="Start">開始</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000602" trl="Y">
+  <value column="MsgText" original="Finish">終了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000603" trl="Y">
+  <value column="MsgText" original="Dependencies">依存関係</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000604" trl="Y">
+  <value column="MsgText" original="Apply">適用</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000605" trl="Y">
+  <value column="MsgText" original="Budget vs Actual">予算 vs 実績</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000606" trl="Y">
+  <value column="MsgText" original="Reading records…">レコードを読み込み中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000607" trl="Y">
+  <value column="MsgText" original="No project records for this model">このモデルのプロジェクトレコードがありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000608" trl="Y">
+  <value column="MsgText" original="from records">レコードより</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000609" trl="Y">
+  <value column="MsgText" original="Cost">コスト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000610" trl="Y">
+  <value column="MsgText" original="Schedule">工程</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000611" trl="Y">
+  <value column="MsgText" original="(planned baseline)">（計画ベースライン）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000612" trl="Y">
+  <value column="MsgText" original="Projected finish">予測完了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000613" trl="Y">
+  <value column="MsgText" original="projected from cost">コストから予測</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000614" trl="Y">
+  <value column="MsgText" original="forecast">予測</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000615" trl="Y">
+  <value column="MsgText" original="cost · from records">コスト · レコードより</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000616" trl="Y">
+  <value column="MsgText" original="Recording in progress — import refused">録画中 — 取り込みを拒否しました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000617" trl="Y">
+  <value column="MsgText" original="Interop module not loaded — reopen the P6/MSP section">連携モジュールが未ロード — P6/MSP セクションを開き直してください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000618" trl="Y">
+  <value column="MsgText" original="Interop modules failed to load: {err}">連携モジュールの読み込みに失敗：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000619" trl="Y">
+  <value column="MsgText" original="No model open yet">モデルがまだ開かれていません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000620" trl="Y">
+  <value column="MsgText" original="Imported {format} &quot;{file}&quot; — {wbs} WBS / {acts} activities / {links} links.">{format}「{file}」を取り込みました — WBS {wbs} / アクティビティ {acts} / リンク {links}。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000621" trl="Y">
+  <value column="MsgText" original="Pre-bound {n} elements across {a} activities by convention">規約により {a} アクティビティにわたり {n} 要素を事前紐付け</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000622" trl="Y">
+  <value column="MsgText" original="({n} selector(s) matched nothing — review)">（{n} 件のセレクタが一致せず — 要確認）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000623" trl="Y">
+  <value column="MsgText" original="({n} activities carry a bind token — tick auto-bind to resolve.)">（{n} 件のアクティビティに紐付けトークンあり — 自動紐付けにチェックして解決してください。）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000624" trl="Y">
+  <value column="MsgText" original="Import failed: {err}">取り込み失敗：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000625" trl="Y">
+  <value column="MsgText" original="No schedule to export">書き出す工程表がありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000626" trl="Y">
+  <value column="MsgText" original="No tasks to export">書き出すタスクがありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000627" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to MS Project XML ({file}).">{n} タスク / {m} リンクを MS Project XML（{file}）へ書き出しました。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000628" trl="Y">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">{n} タスク / {m} リンクを {label}（{file}）へ書き出しました。一部のフィールド（WBS コード、EPS レベルのアクティビティコード、リソース割当、グローバルカレンダー、ベースライン）は引き継がれません — P6 自身も DB 間取り込みでその大半を捨てます。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000629" trl="Y">
+  <value column="MsgText" original="No schedule loaded">工程表が読み込まれていません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000630" trl="Y">
+  <value column="MsgText" original="Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.">「モデルと比較」は取り込んだ P6/MSP 工程表を実数量に基づく自前の見積と比べます — 先に取り込んでください。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000631" trl="Y">
+  <value column="MsgText" original="Computing schedule diff…">工程比較を計算中…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000632" trl="Y">
+  <value column="MsgText" original="Diff failed: {err}">比較失敗：{err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000633" trl="Y">
+  <value column="MsgText" original="theirs {a}d vs ours {b}d">先方 {a}日 vs 当方 {b}日</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000634" trl="Y">
+  <value column="MsgText" original="{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED">{n} 件のアクティビティが未一致 — コンソールの §4D_DIFF_UNMATCHED を参照</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000635" trl="Y">
+  <value column="MsgText" original="4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.">4D 工程比較：{a}/{b} フェーズを比較、{c}/{d} アクティビティが一致。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000636" trl="Y">
+  <value column="MsgText" original="What-if schedule">What-if 工程表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000637" trl="Y">
+  <value column="MsgText" original="Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.">フェーズのバーをドラッグしてずらす（または ± で ±7日）→ 後続の各フェーズが青で組み直されます（終了-開始）。承認で再ベースライン、破棄で取り消し。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000638" trl="Y">
+  <value column="MsgText" original="Accept — re-baseline">承認 — 再ベースライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000639" trl="Y">
+  <value column="MsgText" original="Discard">破棄</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000640" trl="Y">
+  <value column="MsgText" original="Official (planned)">正式（計画）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000641" trl="Y">
+  <value column="MsgText" original="What-if (blue ripple)">What-if（青の波及）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000642" trl="Y">
+  <value column="MsgText" original="Finish:">完了：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000643" trl="Y">
+  <value column="MsgText" original="BAC:">BAC：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000644" trl="Y">
+  <value column="MsgText" original="(unchanged — same scope)">（変更なし — 同一スコープ）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000645" trl="Y">
+  <value column="MsgText" original="PV @ finish:">完了時 PV：</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000646" trl="Y">
+  <value column="MsgText" original="drag to slip · official {a}→{b}">ドラッグでずらす · 正式 {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000647" trl="Y">
+  <value column="MsgText" original="blue {a}→{b}">青 {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000648" trl="Y">
+  <value column="MsgText" original="pull in 7 days">7 日前倒し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000649" trl="Y">
+  <value column="MsgText" original="slip out 7 days">7 日後ろ倒し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000650" trl="Y">
+  <value column="MsgText" original="What-if accepted — schedule re-baselined (finish +{d}d)">What-if を承認 — 工程を再ベースライン（完了 +{d}日）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000651" trl="Y">
+  <value column="MsgText" original="What-if discarded — official schedule restored">What-if を破棄 — 正式工程を復元</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000652" trl="Y">
+  <value column="MsgText" original="What-if: ERP engine not ready">What-if：ERP エンジンが未準備</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000653" trl="Y">
+  <value column="MsgText" original="What-if: no folded project yet — push one to ERP first">What-if：折り畳まれたプロジェクトがまだありません — 先に ERP へ送ってください</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000654" trl="Y">
+  <value column="MsgText" original="Project {id}">プロジェクト {id}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000655" trl="Y">
+  <value column="MsgText" original="Downloading {name}... {pct}% ({a}/{b}MB)">{name} をダウンロード中... {pct}%（{a}/{b}MB）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000656" trl="Y">
+  <value column="MsgText" original="Cost variance">コスト差異</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000657" trl="Y">
+  <value column="MsgText" original="· from records">· 記録より</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000658" trl="Y">
+  <value column="MsgText" original="match">件一致</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000659" trl="Y">
+  <value column="MsgText" original="matches">件一致</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000660" trl="Y">
+  <value column="MsgText" original="planned">計画</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000661" trl="Y">
+  <value column="MsgText" original="Phase">フェーズ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000662" trl="Y">
+  <value column="MsgText" original="Project">プロジェクト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000663" trl="Y">
+  <value column="MsgText" original="⏱ View at this moment">⏱ この時点で見る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000664" trl="Y">
+  <value column="MsgText" original="Construction window">施工期間</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000665" trl="Y">
+  <value column="MsgText" original="Not yet assigned to a dated task in &quot;{name}&quot;.">「{name}」の日付付きタスクにまだ割り当てられていません。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000666" trl="Y">
+  <value column="MsgText" original="Which schedule this window comes from">この期間の出典となる工程表</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000667" trl="Y">
+  <value column="MsgText" original="Task">タスク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000668" trl="Y">
+  <value column="MsgText" original="Window">期間</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000669" trl="Y">
+  <value column="MsgText" original="Trade">職種</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000670" trl="Y">
+  <value column="MsgText" original="Float">フロート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000671" trl="Y">
+  <value column="MsgText" original="(critical path)">（クリティカルパス）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000672" trl="Y">
+  <value column="MsgText" original="Type a command...">コマンドを入力...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000673" trl="Y">
+  <value column="MsgText" original="Zoom In">ズームイン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000674" trl="Y">
+  <value column="MsgText" original="Zoom Out">ズームアウト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000675" trl="Y">
+  <value column="MsgText" original="MaxQ Movie">MaxQ ムービー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000676" trl="Y">
+  <value column="MsgText" original="Populate (people + trees)">配置（人 + 樹木）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000677" trl="Y">
+  <value column="MsgText" original="Hover Name">ホバー名</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000678" trl="Y">
+  <value column="MsgText" original="Installed ✔">インストール済み ✔</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000679" trl="Y">
+  <value column="MsgText" original="Download · Run Offline">ダウンロード · オフライン実行</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000680" trl="Y">
+  <value column="MsgText" original="Viewer User Guide">ビューア ユーザーガイド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000681" trl="Y">
+  <value column="MsgText" original="Save the open building to a .db file">開いている建物を .db ファイルに保存</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000682" trl="Y">
+  <value column="MsgText" original="Native Save As… dialog — pick name + folder">ネイティブの「名前を付けて保存…」ダイアログ — 名前とフォルダを選択</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000683" trl="Y">
+  <value column="MsgText" original="Re-openable with Open (Ctrl+O)">開く（Ctrl+O）で再度開けます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000684" trl="Y">
+  <value column="MsgText" original="Open a saved .db file">保存した .db ファイルを開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000685" trl="Y">
+  <value column="MsgText" original="Native Open… dialog">ネイティブの「開く…」ダイアログ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000686" trl="Y">
+  <value column="MsgText" original="Replaces the current scene">現在のシーンを置き換えます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000687" trl="Y">
+  <value column="MsgText" original="Search by name/class">名前/クラスで検索</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000688" trl="Y">
+  <value column="MsgText" original="Filter by storey/type">階/種類で絞り込み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000689" trl="Y">
+  <value column="MsgText" original="Voice search (mic)">音声検索（マイク）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000690" trl="Y">
+  <value column="MsgText" original="Navigate to element">要素へナビゲート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000691" trl="Y">
+  <value column="MsgText" original="Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)">職種プリセットを切替（配管工/電気工/ACMV/構造/清掃）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000692" trl="Y">
+  <value column="MsgText" original="Filters the 3D scene + Outliner to that role's disciplines">3D シーンとアウトライナーをその役割の分野に絞り込み</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000693" trl="Y">
+  <value column="MsgText" original="Convenience filter only — not access control">便宜上のフィルターのみ — アクセス制御ではありません</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000694" trl="Y">
+  <value column="MsgText" original="History across ALL pages — viewer, iDempiere, Gravity">全ページの履歴 — ビューア、iDempiere、Gravity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000695" trl="Y">
+  <value column="MsgText" original="Whole | This page toggle">全体 | このページ 切替</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000696" trl="Y">
+  <value column="MsgText" original="Day strip — step back/forward by day">日付ストリップ — 日単位で戻る/進む</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000697" trl="Y">
+  <value column="MsgText" original="Tap a card to jump to that building/doc">カードをタップでその建物/文書へジャンプ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000698" trl="Y">
+  <value column="MsgText" original="Long-press → clear (bomb), warns first">長押し → 消去（爆弾）、先に警告</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000699" trl="Y">
+  <value column="MsgText" original="This page's own dot timeline">このページ独自のドットタイムライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000700" trl="Y">
+  <value column="MsgText" original="Step back/forward through your edits">編集を戻る/進む</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000701" trl="Y">
+  <value column="MsgText" original="Route over locators (walk order)">ロケーション経路（歩行順）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000702" trl="Y">
+  <value column="MsgText" original="Fly-to next bin, FIND-lens depth">次のビンへ移動、FIND レンズの深度</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000703" trl="Y">
+  <value column="MsgText" original="Scan bin QR / type code">ビンの QR をスキャン / コードを入力</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000704" trl="Y">
+  <value column="MsgText" original="Signed pick group per bin">ビンごとの署名済みピック群</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000705" trl="Y">
+  <value column="MsgText" original="Operate-phase (7D) cockpit — one model, lenses each answering ONE question">運用フェーズ（7D）コックピット — 1 モデル、各レンズが 1 つの問いに答える</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000706" trl="Y">
+  <value column="MsgText" original="Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard">占有（賃貸状況含む）· 在室 · ユニット区分 · 資産/IoT · ダッシュボード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000707" trl="Y">
+  <value column="MsgText" original="Wake-aware: only lenses with data in THIS building are enabled (others greyed)">ウェイク対応：この建物にデータのあるレンズのみ有効（他はグレー）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000708" trl="Y">
+  <value column="MsgText" original="All off one signed op-log; toggle a lens off restores the model">すべて 1 つの署名済み操作ログから。レンズを切ると元のモデルに戻る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000709" trl="Y">
+  <value column="MsgText" original="Discipline pair grid">分野ペアのグリッド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000710" trl="Y">
+  <value column="MsgText" original="Tolerance 1–100mm">許容差 1–100mm</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000711" trl="Y">
+  <value column="MsgText" original="Status: Review/Resolve/Accept">ステータス：レビュー/解決/承認</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000712" trl="Y">
+  <value column="MsgText" original="HTML Report + CSV export">HTML レポート + CSV エクスポート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000713" trl="Y">
+  <value column="MsgText" original="Floating Member (STR beams)">浮いた部材（STR 梁）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000714" trl="Y">
+  <value column="MsgText" original="Span/Depth (advisory)">スパン/せい（参考）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000715" trl="Y">
+  <value column="MsgText" original="Column Continuity">柱の連続性</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000716" trl="Y">
+  <value column="MsgText" original="Isolated Room (no measured route out)">孤立した部屋（計測上の出口経路なし）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000717" trl="Y">
+  <value column="MsgText" original="Circulation Distance (to real exit, falls back to spine)">歩行距離（実際の出口まで、なければスパインへ）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000718" trl="Y">
+  <value column="MsgText" original="Door Width (advisory)">扉幅（参考）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000719" trl="Y">
+  <value column="MsgText" original="Gantt timeline">ガントタイムライン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000720" trl="Y">
+  <value column="MsgText" original="Author 4D schedule (✎)">4D 工程を作成（✎）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000721" trl="Y">
+  <value column="MsgText" original="What-if (slip a phase)">What-if（フェーズをずらす）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000722" trl="Y">
+  <value column="MsgText" original="Play / Pause sequence">再生 / 一時停止 シーケンス</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000723" trl="Y">
+  <value column="MsgText" original="Phase slider">フェーズスライダー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000724" trl="Y">
+  <value column="MsgText" original="Share ?tm=play link">?tm=play リンクを共有</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000725" trl="Y">
+  <value column="MsgText" original="Task name + start→finish beside the picked element">選択した要素の横にタスク名 + 開始→終了</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000726" trl="Y">
+  <value column="MsgText" original="Trade + float, critical-path marker">職種 + フロート、クリティカルパスのマーカー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000727" trl="Y">
+  <value column="MsgText" original="One extra line on hover">ホバー時に 1 行追加</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000728" trl="Y">
+  <value column="MsgText" original="No schedule yet? Tap to generate one on the fly">工程表がまだない？タップでその場で生成</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000729" trl="Y">
+  <value column="MsgText" original="Y axis (vertical)">Y 軸（垂直）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000730" trl="Y">
+  <value column="MsgText" original="X axis (lateral)">X 軸（横）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000731" trl="Y">
+  <value column="MsgText" original="Z axis (depth)">Z 軸（奥行）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000732" trl="Y">
+  <value column="MsgText" original="Slider 0–100%">スライダー 0–100%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000733" trl="Y">
+  <value column="MsgText" original="Bookmarks">ブックマーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000734" trl="Y">
+  <value column="MsgText" original="Ambience 0–100">雰囲気 0–100</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000735" trl="Y">
+  <value column="MsgText" original="Sun 0–5">太陽 0–5</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000736" trl="Y">
+  <value column="MsgText" original="Exposure 0.1–3">露出 0.1–3</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000737" trl="Y">
+  <value column="MsgText" original="Ambient 0–2">環境光 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000738" trl="Y">
+  <value column="MsgText" original="Hemisphere 0–2">半球光 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000739" trl="Y">
+  <value column="MsgText" original="Night">夜間</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000740" trl="Y">
+  <value column="MsgText" original="Shadow + Ground (cycle)">影 + 地面（切替）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000741" trl="Y">
+  <value column="MsgText" original="Reverse background">背景を反転</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000742" trl="Y">
+  <value column="MsgText" original="Sound FX">効果音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000743" trl="Y">
+  <value column="MsgText" original="Boxes far/off-screen elements while you fly/orbit">飛行/周回中、遠方・画面外の要素をボックス表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000744" trl="Y">
+  <value column="MsgText" original="Real mesh within 50 m + in view">50 m 以内かつ視野内は実メッシュ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000745" trl="Y">
+  <value column="MsgText" original="Off during Time Machine, Find isolate, Cinema">タイムマシン、検索の分離表示、シネマ中はオフ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000746" trl="Y">
+  <value column="MsgText" original="Snag photo + annotation">指摘の写真 + 注釈</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000747" trl="Y">
+  <value column="MsgText" original="Fly to clash deep-link">干渉ディープリンクへ移動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000748" trl="Y">
+  <value column="MsgText" original="Export Excel">Excel を書き出し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000749" trl="Y">
+  <value column="MsgText" original="Time Machine: earcon per construction phase">タイムマシン：施工フェーズごとの効果音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000750" trl="Y">
+  <value column="MsgText" original="Fly Tour: positional waypoint cues">フライツアー：位置付きウェイポイント合図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000751" trl="Y">
+  <value column="MsgText" original="UI: soft tap tick">UI：やわらかいタップ音</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000752" trl="Y">
+  <value column="MsgText" original="Synthesized — no audio files, default OFF">合成音 — 音声ファイルなし、既定はオフ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000753" trl="Y">
+  <value column="MsgText" original="Iso">アイソ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000754" trl="Y">
+  <value column="MsgText" original="Move Grid">グリッド移動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000755" trl="Y">
+  <value column="MsgText" original="Drag Item">アイテムドラッグ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000756" trl="Y">
+  <value column="MsgText" original="Sketch">スケッチ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000757" trl="Y">
+  <value column="MsgText" original="Extrude">押し出し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000758" trl="Y">
+  <value column="MsgText" original="Axis">軸</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000759" trl="Y">
+  <value column="MsgText" original="Cut">カット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000760" trl="Y">
+  <value column="MsgText" original="Route">ルート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000761" trl="Y">
+  <value column="MsgText" original="Sweep Run">スイープラン</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000762" trl="Y">
+  <value column="MsgText" original="Fillet">フィレット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000763" trl="Y">
+  <value column="MsgText" original="Insert">挿入</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000764" trl="Y">
+  <value column="MsgText" original="History">履歴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000765" trl="Y">
+  <value column="MsgText" original="Guide">ガイド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000766" trl="Y">
+  <value column="MsgText" original="Delete">削除</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000767" trl="Y">
+  <value column="MsgText" original="Sound">サウンド</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000768" trl="Y">
+  <value column="MsgText" original="Connect">接続</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000769" trl="Y">
+  <value column="MsgText" original="Teams">チーム</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000770" trl="Y">
+  <value column="MsgText" original="X-ray">X線</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000771" trl="Y">
+  <value column="MsgText" original="history">履歴</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000772" trl="Y">
+  <value column="MsgText" original="OUTLINER">アウトライナー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000773" trl="Y">
+  <value column="MsgText" original="BOM Tree">BOM ツリー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000774" trl="Y">
+  <value column="MsgText" original="STR Walker">STR ウォーカー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000775" trl="Y">
+  <value column="MsgText" original="Open a resident (▾) or local .db (🏗) to walk">常駐ビルディング (▾) またはローカル .db (🏗) を開いてウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000776" trl="Y">
+  <value column="MsgText" original="Walls">壁</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000777" trl="Y">
+  <value column="MsgText" original="Openings">開口部</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000778" trl="Y">
+  <value column="MsgText" original="Routes">ルート</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000779" trl="Y">
+  <value column="MsgText" original="Fillets">フィレット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000780" trl="Y">
+  <value column="MsgText" original="Grid Moves">グリッド移動</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000781" trl="Y">
+  <value column="MsgText" original="Arrays">配列</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000782" trl="Y">
+  <value column="MsgText" original="Lofts">ロフト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000783" trl="Y">
+  <value column="MsgText" original="Revolves">回転体</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000784" trl="Y">
+  <value column="MsgText" original="Shells">シェル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000785" trl="Y">
+  <value column="MsgText" original="Offsets">オフセット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000786" trl="Y">
+  <value column="MsgText" original="Var. Fillets">可変フィレット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000787" trl="Y">
+  <value column="MsgText" original="Chamfers∠">面取り∠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000788" trl="Y">
+  <value column="MsgText" original="Drafts">抜き勾配</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000789" trl="Y">
+  <value column="MsgText" original="Components">コンポーネント</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000790" trl="Y">
+  <value column="MsgText" original="{n} features">{n} 個のフィーチャ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000791" trl="Y">
+  <value column="MsgText" original="Help — toolbar &amp; shortcuts">ヘルプ — ツールバーとショートカット</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000792" trl="Y">
+  <value column="MsgText" original="Back to the Matrix">Matrix に戻る</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000793" trl="Y">
+  <value column="MsgText" original="Open a building — load a resident or a local .db → walk + bom-graph">建物を開く — 常駐ビルまたはローカル .db を読み込み → ウォーク + bom-graph</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000794" trl="Y">
+  <value column="MsgText" original="Zoom to fit (F) — frames the selection, or all">全体表示 (F) — 選択範囲、または全体にフレーミング</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000795" trl="Y">
+  <value column="MsgText" original="Cycle view: Iso / Top">ビュー切替：アイソ / 平面</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000796" trl="Y">
+  <value column="MsgText" original="Drag a gridline — attached walls recompose">グリッド線をドラッグ — 接続された壁が再構成されます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000797" trl="Y">
+  <value column="MsgText" original="Move the selected object — drag an axis handle or nudge with arrow keys (M)">選択オブジェクトを移動 — 軸ハンドルをドラッグ、または矢印キーで微調整 (M)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000798" trl="Y">
+  <value column="MsgText" original="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)">器具/設備を自由にドラッグ — 実際の配置リゾルバーで制限 (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000799" trl="Y">
+  <value column="MsgText" original="Constraint intent the solver enforces on the sketch">ソルバーがスケッチに適用する拘束の意図</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000800" trl="Y">
+  <value column="MsgText" original="Sweep a profile along a route (MEP run)">プロファイルをルートに沿ってスイープ (MEP ラン)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000801" trl="Y">
+  <value column="MsgText" original="Round a selected solid's picked edges">選択したソリッドの指定エッジを丸める</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000802" trl="Y">
+  <value column="MsgText" original="Insert a library component (assemble, don't draw)">ライブラリコンポーネントを挿入（描かずに組み立てる）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000803" trl="Y">
+  <value column="MsgText" original="Refine the selected component's level of detail (same signed row)">選択コンポーネントの詳細度を上げる（同じ署名済み行）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000804" trl="Y">
+  <value column="MsgText" original="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue">エクスポート — ネイティブ .db（完全忠実：署名済み操作ログ）、IFC4、または BCF 2.1 課題</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000805" trl="Y">
+  <value column="MsgText" original="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)">保存 — 干渉チェック + 自動修復の後、物理 DB スナップショットを書き込み（未解決の赤がある場合はブロック）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000806" trl="Y">
+  <value column="MsgText" original="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)">全体履歴：ページ横断タイムライン (Viewer、iDempiere、Gravity、Modeller)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000807" trl="Y">
+  <value column="MsgText" original="Modeller User Guide — how to Open, walk, edit &amp; export">Modeller ユーザーガイド — 開く、ウォーク、編集、エクスポートの方法</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000808" trl="Y">
+  <value column="MsgText" original="Delete selected (Del)">選択を削除 (Del)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000809" trl="Y">
+  <value column="MsgText" original="Authoring sound feedback">オーサリング操作のサウンドフィードバック</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000810" trl="Y">
+  <value column="MsgText" original="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)">シーンを接続 — 選択/タイムラインを Viewer と ERP と共有（オプトイン；各画面は独立のまま）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000811" trl="Y">
+  <value column="MsgText" original="Teams — who's on this scene (presence &amp; activity). Click to enable.">チーム — このシーンにいる人（プレゼンスとアクティビティ）。クリックで有効化。</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000812" trl="Y">
+  <value column="MsgText" original="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours">X線表示 (X) — 構造体がガラス化し、配管済みの MEP 系統が各設備色で透けて見えます</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000813" trl="Y">
+  <value column="MsgText" original="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)">移動/ナッジ量 (m) — 矢印キーで選択をこの量だけ移動 (Shift ×10, Alt ÷10)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000814" trl="Y">
+  <value column="MsgText" original="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)">入力した角度で回転 — Enter で署名付き GEOM_ROTATE を 1 件コミット（§P6 以前はドラッグのみ）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000815" trl="Y">
+  <value column="MsgText" original="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)">軸+係数を入力して拡縮 (x1.5, y2, z0.5) — Enter で署名付き GEOM_SCALE を 1 件コミット（単一コンポーネントのみ、キューブハンドルと同様）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000816" trl="Y">
+  <value column="MsgText" original="Wall height / extrude depth (m)">壁の高さ / 押し出し深さ (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000817" trl="Y">
+  <value column="MsgText" original="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style">スケッチの幅 (m) — Enter で矩形/正方形全体を再解決、寸法を 1 つドラッグするのと同様</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000818" trl="Y">
+  <value column="MsgText" original="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style">スケッチの高さ (m) — Enter で矩形/正方形全体を再解決、寸法を 1 つドラッグするのと同様</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000819" trl="Y">
+  <value column="MsgText" original="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle">スケッチの角度 (°、既定 90) — Enter で入力角度の平行四辺形として再解決</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000820" trl="Y">
+  <value column="MsgText" original="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)">円の半径 (m) — Enter で半径を正確に設定（保留中の中心をコミット、または最新の円を編集）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000821" trl="Y">
+  <value column="MsgText" original="Sweep profile size w×h (m)">スイーププロファイルのサイズ 幅×高さ (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000822" trl="Y">
+  <value column="MsgText" original="Fillet / chamfer radius (m)">フィレット / 面取り半径 (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000823" trl="Y">
+  <value column="MsgText" original="History — ‹ older · newer › (click a dot to jump · ←/→ when focused)">履歴 — ‹ 古い · 新しい ›（ドットをクリックでジャンプ · フォーカス時は ←/→）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000824" trl="Y">
+  <value column="MsgText" original="Older (←)">古い (←)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000825" trl="Y">
+  <value column="MsgText" original="Newer (→)">新しい (→)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000826" trl="Y">
+  <value column="MsgText" original="Collapse panel">パネルを折りたたむ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000827" trl="Y">
+  <value column="MsgText" original="Collapse all — fold the tree to its top-level trunk">すべて折りたたむ — ツリーを最上位の幹まで折りたたむ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000828" trl="Y">
+  <value column="MsgText" original="Adjacency lens — highlight a selected element’s abutting neighbours">隣接レンズ — 選択要素に接する隣接要素をハイライト</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000829" trl="Y">
+  <value column="MsgText" original="double-click: collapse all">ダブルクリック：すべて折りたたむ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000830" trl="Y">
+  <value column="MsgText" original="Toolbar">ツールバー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000831" trl="Y">
+  <value column="MsgText" original="Show Outliner">アウトライナーを表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000832" trl="Y">
+  <value column="MsgText" original="🔍 find…">🔍 検索…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000833" trl="Y">
+  <value column="MsgText" original="TOOLBAR · PILL REGISTRY">ツールバー · ピルレジストリ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000834" trl="Y">
+  <value column="MsgText" original="KEYBOARD">キーボード</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000835" trl="Y">
+  <value column="MsgText" original="Redo">やり直し</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000836" trl="Y">
+  <value column="MsgText" original="Cancel current mode">現在のモードをキャンセル</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000837" trl="Y">
+  <value column="MsgText" original="Snap-to-geometry on/off (while moving)">ジオメトリスナップ オン/オフ（移動中）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000838" trl="Y">
+  <value column="MsgText" original="Arm rotate ring (turn, in Move)">回転リングを有効化（回す、移動モード中）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000839" trl="Y">
+  <value column="MsgText" original="Arm scale cubes (in Move)">スケールキューブを有効化（移動モード中）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000840" trl="Y">
+  <value column="MsgText" original="OPEN A BUILDING">建物を開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000841" trl="Y">
+  <value column="MsgText" original="FROM IFC (ARC only)">IFC から (ARC のみ)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000842" trl="Y">
+  <value column="MsgText" original="Open local .db / .ifc…">ローカル .db / .ifc を開く…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000843" trl="Y">
+  <value column="MsgText" original="Not extracted — walk from duplex_rules.db">未抽出 — duplex_rules.db からウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000844" trl="Y">
+  <value column="MsgText" original="▶▶ Walk ALL Services">▶▶ 全サービスをウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000845" trl="Y">
+  <value column="MsgText" original="{n} services not extracted · x-ray reveal">{n} 件のサービスが未抽出 · X線表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000846" trl="Y">
+  <value column="MsgText" original="▶ walk">▶ ウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000847" trl="Y">
+  <value column="MsgText" original="{n} columns">柱 {n} 本</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000848" trl="Y">
+  <value column="MsgText" original="{n} girders">大梁 {n} 本</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000849" trl="Y">
+  <value column="MsgText" original="RED {r} · ORANGE {o} · GREEN {g}">赤 {r} · 橙 {o} · 緑 {g}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000850" trl="Y">
+  <value column="MsgText" original="Confidence {p}% mean">信頼度 平均 {p}%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000851" trl="Y">
+  <value column="MsgText" original="✓ all girders ≥80% (oracle-calibrated)">✓ すべての大梁 ≥80%（オラクル校正済み）</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000852" trl="Y">
+  <value column="MsgText" original="Building Parts">建物パーツ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000853" trl="Y">
+  <value column="MsgText" original="Route trunk · from entry (seed)">ルート幹線 · 入口から (シード)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000854" trl="Y">
+  <value column="MsgText" original="walk a discipline first, then route its trunk">先に専門分野をウォークしてから、その幹線をルーティング</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000855" trl="Y">
+  <value column="MsgText" original="{n} features 🔒 {h}">{n} 個のフィーチャ 🔒 {h}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000856" trl="Y">
+  <value column="MsgText" original="Opened {name}">{name} を開きました</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000857" trl="Y">
+  <value column="MsgText" original="hide in 3D">3D で非表示</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000858" trl="Y">
+  <value column="MsgText" original="Move this room — drag on canvas after grabbing">この部屋を移動 — つかんだ後にキャンバス上でドラッグ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000859" trl="Y">
+  <value column="MsgText" original="Walk this discipline">この専門分野をウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000860" trl="Y">
+  <value column="MsgText" original="Walk ALL services">全サービスをウォーク</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000861" trl="Y">
+  <value column="MsgText" original="ERP ▸ Project Order">ERP ▸ プロジェクトオーダー</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000862" trl="Y">
+  <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">選択パーツの ERP プロジェクトオーダーを読み取り / 生成 / 開く</value>
+  <value column="MsgTip" original=""/>
+ </row>
+</idempiereTrl>

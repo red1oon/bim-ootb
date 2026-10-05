@@ -79,6 +79,11 @@ window.HistoryBar = (function () {
     treeKey: null,                            // per-building localStorage key for the persisted TREE (opt-in)
     combine: null,                            // combine(current,donor,ancestor)→{viewState,label} (cross-branch VIEW union)
     cherryPick: null,                         // cherryPick(donorOp,ancestor)→bool (replay a signed op onto current)
+    categorize: null,                         // §THREADS (HISTORY_PARALLEL_TIMELINE §THREADS-IMPL) OPTIONAL: categorize(entry)→[cat…].
+                                              // Absent ⇒ NO thread code path runs (Viewer/ERP render byte-for-byte as before).
+    elementOf: null,                          // §THREADS OPTIONAL: elementOf(entry)→id|[id…] (second level: per-element threads)
+    elementLabel: null,                       // §THREADS OPTIONAL: elementLabel(id)→'Wall #110'
+    onScope: null,                            // §THREADS OPTIONAL: onScope(scope|null, reason) — host reacts to glow on/off
     restoreView: null                         // restoreView(entry|null) — READ-ONLY: re-apply the moment's stamped
                                               // VIEW (camera/lens/section) ONLY, never flip the kernel op-log.
                                               // The KNOB-DIAL scrubber + dot clicks route here (HISTORY_KNOB_DIAL.md).
@@ -120,6 +125,7 @@ window.HistoryBar = (function () {
     if (!_configured) { if (!_cfg.skipKeyboard) _wireKeyboard(); _wireCrossTab(); _configured = true; }
     _syncTapKnob();                     // ONE KNOB: push the loaded depth onto the §-tap at startup
     if (_cfg.treeKey) _persistLoad();   // restore persisted universes for this building (item 4)
+    if (_cfg.categorize) _wireThreadKeys();   // §THREADS: Esc exits the glowing thread (only when a host opted in)
     console.log('§HIST_CONFIGURE source=' + _cfg.source + ' depth=' + _depth + ' host=' + (_cfg.mountHostId || 'body') + ' treeKey=' + (_cfg.treeKey || '-'));
   }
 
@@ -167,6 +173,9 @@ window.HistoryBar = (function () {
     // bar's per-stop significant() gate, which is the DUPLICATE breadth logic this unification retires for
     // the read-only tier (HISTORY_KNOB_SIGNAL_TAP §THE WORK step 1/2). _on() (off) still suppresses all.
     if (!entry || (!entry.fromTap && !significant(entry.bucket, entry.type, entry.label))) return;
+    // §THREADS auto-exit: starting ANY new edit leaves the glowing thread (so the user can't forget the mode is on).
+    // A node the scoped undo itself appends carries scoped:true and keeps the mode. No scope ⇒ no-op (Viewer/ERP).
+    if (_scope && !entry.scoped && !entry.readonly) clearScope('new-edit');
     if (entry.ts == null) entry.ts = _now();
     // Coalesce rapid same-signature repeats — only at a TRUE tip (cursor node has no children, so
     // there is no sibling/redo subtree we'd quietly mutate).
@@ -282,8 +291,19 @@ window.HistoryBar = (function () {
     console.log('§HIST_VIEWNAV idx=' + _viewCursor + ' label="' + lbl + '" opLogMutated=NO dotJump=ok');
     return { idx: _viewCursor, label: lbl };
   }
-  function viewStepBack() { return (_viewCursor > 0) ? _viewApply(_viewCursor - 1) : (_viewCursor === 0 ? _viewApply(-1) : null); }
-  function viewStepFront() { return (_viewCursor < _stream.length - 1) ? _viewApply(_viewCursor + 1) : null; }
+  function viewStepBack() { if (_scope) return _threadStep(-1); return (_viewCursor > 0) ? _viewApply(_viewCursor - 1) : (_viewCursor === 0 ? _viewApply(-1) : null); }
+  function viewStepFront() { if (_scope) return _threadStep(1); return (_viewCursor < _stream.length - 1) ? _viewApply(_viewCursor + 1) : null; }
+  // §THREADS category scrubber: with a thread glowing, step the READ-ONLY view cursor to the previous/next entry OF THAT
+  // THREAD (line indices in log order), skipping everything in between. _scope is null unless a host passed categorize.
+  function _threadStep(dir) {
+    var idxs = threadEntries(_scope.cat, _scope.el).map(function (e) { return _stream.indexOf(e); }).filter(function (i) { return i >= 0; });
+    var to = null, i;
+    if (dir < 0) { for (i = idxs.length - 1; i >= 0; i--) if (idxs[i] < _viewCursor) { to = idxs[i]; break; } }
+    else { for (i = 0; i < idxs.length; i++) if (idxs[i] > _viewCursor) { to = idxs[i]; break; } }
+    if (to == null) { console.log('§THREAD_SCRUB end dir=' + dir + ' cat=' + _scope.cat + ' at=' + _viewCursor); return null; }
+    console.log('§THREAD_SCRUB dir=' + dir + ' cat=' + _scope.cat + (_scope.el != null ? ' el=' + _scope.el : '') + ' ' + _viewCursor + '→' + to);
+    return _viewApply(to);
+  }
   function viewJumpTo(idx) { return _viewApply(idx); }
   function viewCanStep() { return { back: _viewCursor > -1, front: _viewCursor < _stream.length - 1 }; }
 
@@ -627,7 +647,7 @@ window.HistoryBar = (function () {
     if (_fwd) _fwd.style.display = hasSteps ? '' : 'none';
     _marks.style.display = hasSteps ? 'flex' : 'none';
     _marks.innerHTML = '';
-    if (!hasSteps) return;
+    if (!hasSteps) { if (_cfg.categorize) _renderThreads(); return; }
     // the arrows walk the READ-ONLY view cursor → light them by what the scrubber can still step.
     var cs = viewCanStep();
     if (_back) _back.style.opacity = cs.back ? '1' : '0.35';
@@ -656,6 +676,165 @@ window.HistoryBar = (function () {
       }
     }
     if (current) { try { _marks.scrollLeft = current.offsetLeft - _marks.clientWidth / 2 + current.offsetWidth / 2; } catch (e3) {} }
+    if (_cfg.categorize) _renderThreads();   // §THREADS — only when the host passed categorize (else untouched)
+  }
+
+  // ── §THREADS — category / element threads (HISTORY_PARALLEL_TIMELINE §THREADS step 1) ─────────
+  // ONE log, many VIEWS: a thread is a FILTER over the active line (_stream), never a second log. Each host
+  // supplies categorize(entry)→[cat…] (+ optional elementOf). Chips `+ Walls (4)` sit beside the dotline;
+  // double-click (desktop) / tap (touch) expands a strip; a strip lists exactly that category's entries in log
+  // order; a second level `+ Wall #110 (2)` expands one element's thread. Tapping a strip makes it GLOW blue and
+  // shows the badge "Viewing: Walls" — a READ-ONLY category scrubber: while it glows, ‹ › (and ←/→ on the focused
+  // bar) step the VIEW cursor along that thread's entries only. Nothing here mutates the model (scoped undo = step 2,
+  // ON HOLD, red1 2026-10-02). Exit: tap the glowing strip again · Esc · any new edit.
+  var _scope = null, _thrOpen = {}, _thrElOpen = {}, _thrNote = null, _thrSig = '';
+  var _thrChips = null, _thrStrips = null, _thrBadge = null;
+  var BLUE = '#4fc3f7';
+  function _catsOf(e) {
+    if (!_cfg.categorize || !e) return [];
+    try { var c = _cfg.categorize(e); return Array.isArray(c) ? c : (c ? [c] : []); } catch (x) { console.warn('§THREAD_CAT_ERR', x); return []; }
+  }
+  function _elsOf(e) {
+    if (!_cfg.elementOf || !e) return [];
+    try { var v = _cfg.elementOf(e); return v == null ? [] : (Array.isArray(v) ? v : [v]); } catch (x) { return []; }
+  }
+  function _elLabel(id) { try { return _cfg.elementLabel ? _cfg.elementLabel(id) : ('#' + id); } catch (x) { return '#' + id; } }
+  // {cat: [seq…]} over the active line, log order. Category order = first appearance in the log.
+  function threads() {
+    var out = {};
+    for (var i = 0; i < _stream.length; i++) { var cs = _catsOf(_stream[i]); for (var j = 0; j < cs.length; j++) (out[cs[j]] || (out[cs[j]] = [])).push(_stream[i].seq); }
+    return out;
+  }
+  function threadEntries(cat, el) {
+    return _stream.filter(function (e) { return _catsOf(e).indexOf(cat) >= 0 && (el == null || _elsOf(e).indexOf(el) >= 0); });
+  }
+  function _threadElements(cat) {
+    var seen = [], n = {};
+    threadEntries(cat).forEach(function (e) { _elsOf(e).forEach(function (id) { if (!(id in n)) { n[id] = 0; seen.push(id); } n[id]++; }); });
+    return seen.map(function (id) { return { id: id, n: n[id] }; });
+  }
+  function _scopeName(sc) { return sc ? (sc.el != null ? _elLabel(sc.el) : sc.cat) : ''; }
+  function getScope() { return _scope ? { cat: _scope.cat, el: _scope.el, label: _scopeName(_scope) } : null; }
+  function setScope(cat, el) {
+    _scope = { cat: cat, el: (el == null ? null : el) }; _thrNote = null;
+    var n = threadEntries(cat, _scope.el).length;
+    console.log('§THREAD_SCOPE on cat=' + cat + (_scope.el != null ? ' el=' + _scope.el : '') + ' n=' + n + ' badge="Viewing: ' + _scopeName(_scope) + '"');
+    _render();
+    try { if (_cfg.onScope) _cfg.onScope(getScope(), 'on'); } catch (x) {}
+  }
+  function clearScope(reason) {
+    if (!_scope) return false;
+    var was = _scope; _scope = null; _thrNote = null;
+    console.log('§THREAD_SCOPE off cat=' + was.cat + (was.el != null ? ' el=' + was.el : '') + ' reason=' + (reason || 'api'));
+    _render();
+    try { if (_cfg.onScope) _cfg.onScope(null, reason || 'api'); } catch (x) {}
+    return true;
+  }
+  // A host may annotate the badge (e.g. a refusal naming dependents + a Cascade action). Cleared on scope change.
+  function setScopeNote(text, actions) { _thrNote = text ? { text: String(text), actions: actions || [] } : null; _render(); }
+  function _toggleScope(cat, el) {
+    var same = _scope && _scope.cat === cat && String(_scope.el) === String(el == null ? null : el);
+    if (same) clearScope('tap-again'); else setScope(cat, el);
+  }
+  function toggleThread(cat, el) {     // expand/collapse a category strip (el == null) or an element strip
+    if (el == null) { _thrOpen[cat] = !_thrOpen[cat]; } else { var k = cat + '|' + el; _thrElOpen[k] = !_thrElOpen[k]; }
+    var es = threadEntries(cat, el);
+    console.log('§THREAD_EXPAND cat=' + cat + (el != null ? ' el=' + el : '') + ' open=' + (el == null ? !!_thrOpen[cat] : !!_thrElOpen[cat + '|' + el]) +
+      ' n=' + es.length + ' seqs=[' + es.map(function (e) { return e.seq; }).join(',') + ']');
+    _render();
+  }
+  // double-click (mouse) or a tap (touch/pen) = expand; never reaches the bar's own double-tap bloom.
+  function _wireExpand(el, fn) {
+    el.addEventListener('dblclick', function (ev) { ev.stopPropagation(); ev.preventDefault(); fn(); });
+    el.addEventListener('pointerup', function (ev) { ev.stopPropagation(); if (ev.pointerType === 'touch' || ev.pointerType === 'pen') fn(); });
+  }
+  function _thrDot(e) {
+    var idx = _stream.indexOf(e), applied = idx <= _cursor, isCur = idx === _viewCursor;
+    var d = _dot(e, idx, applied, isCur);
+    d.setAttribute('data-seq', e.seq); d.className = 'hist-thr-dot';
+    return d;
+  }
+  function _strip(cat, el, depth) {
+    var es = threadEntries(cat, el);
+    var on = !!(_scope && _scope.cat === cat && String(_scope.el) === String(el == null ? null : el));
+    var s = document.createElement('div');
+    s.className = 'hist-thr-strip' + (on ? ' hist-thr-glow' : '');
+    s.setAttribute('data-thr-cat', cat); if (el != null) s.setAttribute('data-thr-el', el);
+    s.setAttribute('data-thr-n', es.length);
+    s.title = 'Tap = scrub this thread only (glows blue; ‹ › step along it) · tap again / Esc = leave';
+    s.style.cssText = 'display:flex;flex-wrap:wrap;gap:3px;align-items:center;cursor:pointer;padding:2px 6px;margin-left:' + (depth * 14) + 'px;' +
+      'border-radius:8px;font-size:10px;color:' + BLUE + ';border:1px solid ' + (on ? BLUE : 'rgba(79,195,247,0.25)') + ';' +
+      'background:' + (on ? 'rgba(79,195,247,0.18)' : 'rgba(20,35,60,0.55)') + ';' + (on ? 'box-shadow:0 0 10px ' + BLUE + ',0 0 3px ' + BLUE + ' inset;' : '');
+    var lab = document.createElement('span'); lab.textContent = (el != null ? _elLabel(el) : cat) + ':'; lab.style.cssText = 'margin-right:3px;white-space:nowrap';
+    s.appendChild(lab);
+    es.forEach(function (e) { s.appendChild(_thrDot(e)); });
+    if (el == null && _cfg.elementOf) {
+      _threadElements(cat).forEach(function (o) {
+        var k = cat + '|' + o.id, c = document.createElement('button');
+        c.className = 'hist-thr-elchip'; c.setAttribute('data-thr-cat', cat); c.setAttribute('data-thr-el', o.id); c.setAttribute('data-thr-n', o.n);
+        c.textContent = (_thrElOpen[k] ? '− ' : '+ ') + _elLabel(o.id) + ' (' + o.n + ')';
+        c.title = 'Double-click / tap = this element\'s own thread';
+        c.style.cssText = 'padding:1px 6px;border-radius:9px;font-size:10px;cursor:pointer;white-space:nowrap;color:' + BLUE + ';border:1px dashed rgba(79,195,247,0.5);background:rgba(20,35,60,0.6)';
+        _wireExpand(c, function () { toggleThread(cat, o.id); });
+        s.appendChild(c);
+      });
+    }
+    s.addEventListener('pointerup', function (ev) { ev.stopPropagation(); if (ev.target === s || ev.target === lab) _toggleScope(cat, el); });
+    return s;
+  }
+  function _renderThreads() {
+    if (!_bar) return;
+    if (!_thrChips) {
+      _bar.style.flexWrap = 'wrap';
+      _thrChips = document.createElement('div'); _thrChips.id = 'hist-thr-chips';
+      _thrChips.style.cssText = 'display:flex;gap:4px;align-items:center;flex-wrap:wrap';
+      _thrBadge = document.createElement('div'); _thrBadge.id = 'hist-thr-badge';
+      _thrBadge.style.cssText = 'display:none;align-items:center;gap:6px;padding:2px 8px;border-radius:10px;font-size:11px;color:#0b1a2a;background:' + BLUE + ';box-shadow:0 0 8px ' + BLUE;
+      _thrStrips = document.createElement('div'); _thrStrips.id = 'hist-thr-strips';
+      _thrStrips.style.cssText = 'display:flex;flex-direction:column;gap:3px;flex-basis:100%';
+      _bar.appendChild(_thrChips); _bar.appendChild(_thrBadge); _bar.appendChild(_thrStrips);
+    }
+    var th = threads(), cats = Object.keys(th);
+    var sig = cats.map(function (c) { return c + '=' + th[c].length; }).join(' ');
+    if (sig !== _thrSig) { _thrSig = sig; console.log('§THREAD_CHIPS ' + (sig || '(none)') + ' line=' + _stream.length); }
+    _thrChips.innerHTML = ''; _thrStrips.innerHTML = '';
+    cats.forEach(function (cat) {
+      var c = document.createElement('button');
+      c.className = 'hist-thr-chip'; c.setAttribute('data-thr-cat', cat); c.setAttribute('data-thr-n', th[cat].length);
+      c.textContent = (_thrOpen[cat] ? '− ' : '+ ') + cat + ' (' + th[cat].length + ')';
+      c.title = 'Double-click / tap = expand the ' + cat + ' thread';
+      var on = _scope && _scope.cat === cat;
+      c.style.cssText = 'padding:2px 7px;border-radius:10px;font-size:10px;cursor:pointer;white-space:nowrap;color:' + BLUE + ';' +
+        'border:1px solid ' + (on ? BLUE : 'rgba(79,195,247,0.4)') + ';background:rgba(20,35,60,0.7)' + (on ? ';box-shadow:0 0 6px ' + BLUE : '');
+      _wireExpand(c, function () { toggleThread(cat); });
+      _thrChips.appendChild(c);
+      if (_thrOpen[cat]) {
+        _thrStrips.appendChild(_strip(cat, null, 0));
+        _threadElements(cat).forEach(function (o) { if (_thrElOpen[cat + '|' + o.id]) _thrStrips.appendChild(_strip(cat, o.id, 1)); });
+      }
+    });
+    // an empty strips row must not take a line: flex-basis:100% would widen the bar across the canvas (it ate wall clicks)
+    _thrStrips.style.display = _thrStrips.children.length ? 'flex' : 'none';
+    if (_scope) {
+      _thrBadge.style.display = 'flex'; _thrBadge.innerHTML = '';
+      var b = document.createElement('span'); b.textContent = 'Viewing: ' + _scopeName(_scope); _thrBadge.appendChild(b);
+      if (_thrNote) {
+        var nt = document.createElement('span'); nt.id = 'hist-thr-note'; nt.textContent = _thrNote.text; nt.style.cssText = 'font-weight:600'; _thrBadge.appendChild(nt);
+        (_thrNote.actions || []).forEach(function (a, i) {
+          var ab = document.createElement('button'); ab.className = 'hist-thr-act'; ab.setAttribute('data-act', a.id || ('a' + i)); ab.textContent = a.label;
+          ab.style.cssText = 'padding:1px 6px;border-radius:8px;border:1px solid #0b1a2a;background:#e8f6fe;color:#0b1a2a;font-size:10px;cursor:pointer';
+          ab.addEventListener('pointerup', function (ev) { ev.stopPropagation(); try { a.fn(); } catch (x) { console.warn('§THREAD_ACT_ERR', x); } });
+          _thrBadge.appendChild(ab);
+        });
+      }
+    } else { _thrBadge.style.display = 'none'; _thrBadge.innerHTML = ''; }
+  }
+  var _thrKeysWired = false;
+  function _wireThreadKeys() {
+    if (_thrKeysWired) return; _thrKeysWired = true;
+    document.addEventListener('keydown', function (e) {
+      if (_scope && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); clearScope('esc'); }
+    }, true);
   }
 
   // ── Keyboard + cross-tab ──────────────────────────────────────────────
@@ -682,6 +861,9 @@ window.HistoryBar = (function () {
     // ── branch TREE (PR #5) + combine (PR #6) ──
     switchToId: switchToId, tips: tips, dumpTree: dumpTree, treeShape: treeShape,
     serialize: serialize, hydrate: hydrate, setTreeKey: setTreeKey,
-    combineFromId: combineFromId
+    combineFromId: combineFromId,
+    // ── §THREADS (HISTORY_PARALLEL_TIMELINE §THREADS-IMPL) — inert unless configure({categorize}) ──
+    threads: threads, threadEntries: threadEntries, toggleThread: toggleThread,
+    getScope: getScope, setScope: setScope, clearScope: clearScope, setScopeNote: setScopeNote
   };
 })();

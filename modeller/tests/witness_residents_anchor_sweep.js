@@ -32,14 +32,14 @@ const TOL = 1e-3;
 // row count (measured, 2026-07-10): SampleHouse 60, Duplex 218, SampleCastle 3342, HHS 2560, Clinic 2620,
 // Hospital 14641, HospitalGarage 1271, Terminal 35552.
 const RESIDENTS = [
-  { key: 'SampleHouse', db: 'SampleHouse_ARC.db', geoDb: 'mesh.db', minChildren: 40, deadline: 120000 },
-  { key: 'Duplex', db: 'Duplex_ARC.db', geoDb: 'mesh.db', minChildren: 150, deadline: 120000 },
-  { key: 'SampleCastle', db: 'SampleCastle_ARC.db', geoDb: 'mesh.db', minChildren: 2000, deadline: 180000 },
-  { key: 'HHS', db: 'HHS_ARC.db', geoDb: 'mesh.db', minChildren: 1500, deadline: 150000 },
-  { key: 'Clinic', db: 'Clinic_ARC.db', geoDb: 'mesh.db', minChildren: 1500, deadline: 150000 },
-  { key: 'Hospital', db: 'Hospital_ARC.db', geoDb: 'mesh.db', minChildren: 8000, deadline: 210000 },
-  { key: 'HospitalGarage', db: 'Garage_ARC.db', geoDb: 'mesh.db', minChildren: 800, deadline: 150000 },
-  { key: 'Terminal', db: 'Terminal_ARC.db', geoDb: 'mesh.db', minChildren: 20000, deadline: 240000 }
+  { key: 'SampleHouse', db: 'SampleHouse_ARC.db', minChildren: 40, deadline: 120000 },
+  { key: 'Duplex', db: 'Duplex_ARC.db', minChildren: 150, deadline: 120000 },
+  { key: 'SampleCastle', db: 'SampleCastle_ARC.db', minChildren: 2000, deadline: 180000 },
+  { key: 'HHS', db: 'HHS_ARC.db', minChildren: 1500, deadline: 150000 },
+  { key: 'Clinic', db: 'Clinic_ARC.db', minChildren: 1500, deadline: 150000 },
+  { key: 'Hospital', db: 'Hospital_ARC.db', minChildren: 8000, deadline: 210000 },
+  { key: 'HospitalGarage', db: 'Garage_ARC.db', minChildren: 800, deadline: 150000 },
+  { key: 'Terminal', db: 'Terminal_ARC.db', minChildren: 20000, deadline: 240000 }
 ];
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
@@ -51,6 +51,27 @@ const server = http.createServer((q, r) => {
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
 const fmt = v => (v == null || !isFinite(v)) ? String(v) : (Math.abs(v) < 1e-2 && v !== 0 ? v.toExponential(3) : v.toFixed(4));
+
+// §NET-AUDIT (2026-09-27): the shared modeller/mesh.db this sweep read was RETIRED (§GEO-SERVED 2026-07-30: each resident
+// names its own small _geo.db on object storage; mesh.db left the repo 2026-09-01) → 'unable to open database file'.
+// Read each resident's geoDb/geoV and GEO_BASE from the app's OWN registry (str_walker_outliner.js) and fetch the
+// same object the live page fetches, cached once under ~/.cache/bim-modeller-geo/.
+const _SWO = fs.readFileSync(path.join(ROOT, 'modeller', 'str_walker_outliner.js'), 'utf8');
+const _GEO_BASE = (_SWO.match(/var GEO_BASE = '([^']+)'/) || [])[1];
+async function geoFileFor(key) {
+  const m = _SWO.match(new RegExp("key: '" + key + "',[^\\n]*?geoDb: '([^']+)',\\s*geoV: (\\d+)"));
+  if (!m || !_GEO_BASE) { console.log('  §ANCHOR-SWEEP geo registry miss key=' + key); return null; }
+  const dir = path.join(process.env.HOME, '.cache', 'bim-modeller-geo'); fs.mkdirSync(dir, { recursive: true });
+  const fp = path.join(dir, 'v' + m[2] + '_' + m[1]);
+  if (!fs.existsSync(fp) || fs.statSync(fp).size < 1024) {
+    const res = await fetch(_GEO_BASE + m[1] + '?v=' + m[2]);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!res.ok || buf.slice(0, 15).toString() !== 'SQLite format 3') { console.log('  §ANCHOR-SWEEP geo fetch FAIL ' + m[1] + ' http=' + res.status + ' bytes=' + buf.length); return null; }
+    fs.writeFileSync(fp, buf);
+  }
+  console.log('  §ANCHOR-SWEEP geo ' + key + ' ← ' + m[1] + ' v' + m[2] + ' (' + fs.statSync(fp).size + ' B)');
+  return fp;
+}
 
 // ── 3×3 rotation helpers (Z-up DB space, the modeller's DIRECT convention) ──
 function m3mul(a, b) { const o = [[0,0,0],[0,0,0],[0,0,0]]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) o[i][j] = a[i][0]*b[0][j] + a[i][1]*b[1][j] + a[i][2]*b[2][j]; return o; }
@@ -109,7 +130,7 @@ function anchorTruthExact(metaPath, geoPath) {
 
   for (const R of RESIDENTS) {
     console.log(`═══ W-ANCHOR-SWEEP ${R.key} ═══`);
-    const t = anchorTruthExact(path.join(ROOT, 'modeller', R.db), R.geoDb ? path.join(ROOT, 'modeller', R.geoDb) : null);
+    const t = anchorTruthExact(path.join(ROOT, 'modeller', R.db), await geoFileFor(R.key));
     console.log(`  §SWEEP-TRUTH ${R.key} geoTable=${t.geoTable} truthGuids=${Object.keys(t.truth).length} tiltedRows=${t.tilted || 0}`);
 
     const pg = await br.newPage(); await pg.setViewport({ width: 1280, height: 850, deviceScaleFactor: 1 });

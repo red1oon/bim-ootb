@@ -18,6 +18,16 @@ function setupTools(A) {
     if (!A.db || !A.ground) return;
     var _gLvl = 0, _gSrc = '?';
     try {
+      // §GROUND_CIVIL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §FB ground): a model holding civil disciplines
+      // (codes = rates.js SEQUENCE_CIVIL keys, the viewer's one civil list) takes Step 4 directly. Steps 1-3 are
+      // BUILDING rules: a bridge merged into a road has a "Level 1" slab at 56.58 m that buried 1,394 road pieces
+      // under the Night/Shadow ground plane; Step 4 over all elements = 43.46 m, below the road (p2 51.74).
+      // Fleet: 0 civil-discipline rows in every buildings/*.db → gate false → Steps 1-3 unchanged.
+      if (window.SEQUENCE_CIVIL) {
+        var _cq = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')");
+        var _cn = (_cq.length && _cq[0].values[0][0]) || 0;
+        if (_cn > 0) { _gSrc = 'civil'; console.log('§GROUND_CIVIL civilRows=' + _cn + ' → p2-bottom over all elements (building slab steps skipped)'); }
+      }
       // Step 1: Try storey name matching for ground floor slabs.
       // §GROUND_Y_LOWEST_GF (2026-07-17): among the largest few GF-named slabs, take the LOWEST,
       // not simply the largest-area one. A "ground floor" name can appear at multiple elevations
@@ -28,7 +38,7 @@ function setupTools(A) {
       // scoped to the storey-name filter; identical result for normal buildings (their GF plate is
       // both largest AND lowest), only differs — correctly — in the mixed-datum case.
       var gfNames = "('Ground Floor','Ground','First Floor','1st Floor','Level 0','Level 00','Level 1','GF','L0','L00','L1','00','0','1F','EG','Erdgeschoss','Storey 1','Plan 1','VÅN 1','VÅNING 1','1. OG','Rez-de-chaussée','RC','Planta Baja','PB','Piso 0','Begane grond','BG','GROUND FLOOR LEVEL','Ground Lev','Aras Tanah','u.etg')";
-      var zr = A.db.exec(
+      var zr = _gSrc !== '?' ? [] : A.db.exec(
         "SELECT t.center_z - t.bbox_z/2 AS bottom, t.bbox_x * t.bbox_y AS area, t.center_z, m.storey " +
         "FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid " +
         "WHERE m.ifc_class='IfcSlab' AND t.bbox_z IS NOT NULL AND t.bbox_z < 1.0 " +
@@ -99,10 +109,21 @@ function setupTools(A) {
         if (zr.length && zr[0].values[0][0] != null) { _gLvl = zr[0].values[0][0]; _gSrc = 'GF-avg'; }
       }
 
-      // Step 4: Last resort — minimum z
-      if (_gSrc === '?') {
-        zr = A.db.exec('SELECT MIN(center_z) FROM element_transforms');
-        if (zr.length && zr[0].values[0][0] != null) { _gLvl = zr[0].values[0][0]; _gSrc = 'min-z'; }
+      // Step 4: Last resort — lowest element bottoms, stray-robust.
+      // §GROUND_ROBUST (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §M): only models with no slab /
+      // storey match reach here (roads, MEP-only). MIN(center_z) let a handful of strays set the plane:
+      // JELAPANG road bottoms 51–79 m, 16 lighting strays down to −18 m → plane at −11 m, road ~62 m
+      // above it. Take the 2nd percentile of element BOTTOMS instead (≥50 elements; else MIN as before).
+      if (_gSrc === '?' || _gSrc === 'civil') {
+        zr = A.db.exec('SELECT center_z - COALESCE(bbox_z, 0) / 2 FROM element_transforms WHERE center_z IS NOT NULL ORDER BY 1');
+        var _zb = (zr.length ? zr[0].values : []).map(function(r) { return r[0]; });
+        if (_zb.length >= 50) {
+          _gLvl = _zb[Math.floor(_zb.length * 0.02)]; _gSrc = 'p2-bottom';
+          console.log('§GROUND_ROBUST n=' + _zb.length + ' min=' + _zb[0].toFixed(2) + ' p2=' + _gLvl.toFixed(2) +
+            ' below_p2=' + _zb.filter(function(z) { return z < _gLvl; }).length + ' below_min+1m=' + _zb.filter(function(z) { return z < _zb[0] + 1; }).length);
+        } else if (_zb.length) {
+          _gLvl = _zb[0]; _gSrc = 'min-bottom';
+        }
       }
       var p = A.ifc2three(0, 0, _gLvl);
       A.ground.position.y = p.y;
@@ -712,7 +733,7 @@ function setupTools(A) {
     A._ambienceTick = tick;   // §-tap palette field reads this (one scalar = the whole palette state)
     A._restoreSunglass();
     if (tick === 0) {
-      document.getElementById('sunglass-val').textContent = 'Off';
+      document.getElementById('sunglass-val').textContent = (typeof _trl === 'function') ? _trl('ui_off', null, 'Off') : 'Off';
       console.log('[S200] §SUNGLASS off');
       return;
     }
@@ -1017,6 +1038,54 @@ function setupTools(A) {
       A.sun.shadow.bias = -0.0005;
       A.sun.shadow.camera.updateProjectionMatrix();
       console.log('§SHADOW_FRUSTUM env=' + _env + ' sunDist=' + _sunDist.toFixed(0) + ' near=' + (A.sun.shadow.camera.near).toFixed(0) + ' far=' + (A.sun.shadow.camera.far).toFixed(0));
+      // §SHADOW_FOLLOW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §P): one 2048² map over a whole large
+      // site is too coarse for thin casters — JELAPANG env 2114 m → 2.06 m/texel, so 0.2 m lamp poles cast
+      // nothing (and the depth range made bias ≈ metres). When the full-site texel exceeds 0.25 m
+      // (env > 256 m), fit the shadow box to the camera's neighbourhood instead and refit after each camera
+      // move, keeping the sun's current DIRECTION (TM sun-cycle keeps owning that). Buildings ≤ 256 m: unchanged.
+      A._shadowFollowEnv = _env;
+      if (2 * _env / A.sun.shadow.mapSize.width > 0.25) {
+        if (!A._shadowFollowFn) {
+          // §SHADOW_FOLLOW_THROTTLE (user 2026-10-05: lamp shadows "take long time to appear"): the first
+          // cut DEBOUNCED 150 ms after the last controls 'change' — OrbitControls damping keeps firing
+          // 'change' for the whole glide, so the refit waited for full stop. Now: refit immediately when
+          // shadows turn on, then at most every 250 ms while moving (+ one trailing refit), and skip a refit
+          // when the view barely moved (target shift < 10% of the box and size change < 20%) — each refit
+          // is a full shadow-map pass, so no needless re-renders.
+          var _sfT = null, _sfLast = 0, _sfPrev = null;
+          var _sfFit = function (force) {
+            if (!A._shadowOn || !A.sun.castShadow) return;
+            var tgt = A.controls.target, envF = A._shadowFollowEnv || 300;
+            var half = Math.min(envF, Math.max(40, A.camera.position.distanceTo(tgt) * 1.2));
+            if (!force && _sfPrev && tgt.distanceTo(_sfPrev.t) < 0.1 * _sfPrev.half &&
+                Math.abs(half - _sfPrev.half) < 0.2 * _sfPrev.half) return;
+            _sfPrev = { t: tgt.clone(), half: half };
+            var dir = A.sun.position.clone().sub(A.sun.target.position);
+            if (dir.lengthSq() < 1e-6) dir.set(0.8, 2, 0.6);
+            dir.normalize();
+            var dist = half * 2.24;
+            A.sun.target.position.copy(tgt); A.sun.target.updateMatrixWorld();
+            A.sun.position.copy(tgt).addScaledVector(dir, dist);
+            var sc = A.sun.shadow.camera;
+            sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+            sc.near = dist * 0.05; sc.far = dist * 4; sc.updateProjectionMatrix();
+            A.renderer.shadowMap.needsUpdate = true;
+            if (A.markDirty) A.markDirty();
+            console.log('§SHADOW_FOLLOW half=' + half.toFixed(0) + 'm texel=' + (2 * half / A.sun.shadow.mapSize.width).toFixed(3) + 'm env=' + envF + (force ? ' (immediate)' : ''));
+          };
+          A._shadowFollowFn = function (force) {
+            var now = performance.now();
+            if (force === true) { _sfLast = now; _sfFit(true); return; }
+            if (now - _sfLast >= 250) { _sfLast = now; _sfFit(false); }
+            if (_sfT) clearTimeout(_sfT);
+            _sfT = setTimeout(function () { _sfT = null; _sfLast = performance.now(); _sfFit(false); }, 250);
+          };
+          A.controls.addEventListener('change', A._shadowFollowFn);
+        }
+        A._shadowFollowFn(true);
+      } else {
+        console.log('§SHADOW_FOLLOW off env=' + _env + ' texel=' + (2 * _env / A.sun.shadow.mapSize.width).toFixed(3) + 'm (whole-site map is fine)');
+      }
       // Show ground plane at building base
       if (A.ground) {
         A.ground.visible = true;
@@ -1044,6 +1113,7 @@ function setupTools(A) {
     }
     if (turningOff) {
       A.sun.castShadow = false;
+      if (A._shadowFollowFn) { A.controls.removeEventListener('change', A._shadowFollowFn); A._shadowFollowFn = null; }
       // §S276b: Hide Sky when shadows off (unless TM sun cycle active)
       if (A._sky && !A._sunCycleActive) A._sky.visible = false;
       // §S277c: Disable SSAO with shadows
@@ -1214,8 +1284,11 @@ function setupTools(A) {
   var LAMP_ROUND_FILL_MIN = 0.70, LAMP_ROUND_FILL_MAX = 0.86, LAMP_ROUND_ASPECT_MAX = 1.25, LAMP_RECT_FILL_MIN = 0.93;
   var LAMP_BODY_SLICE = 0.25, LAMP_LINEAR_ASPECT = 2.0;   // §LAMP_SHAPE_FACE
   var _lampShapeByHash = {};
-  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
-  function _hullFill(pts) {
+  // §MIN_AREA_RECT — tightest rectangle at ANY angle around a 2-D point set: convex hull + rotating calipers.
+  // Shared by the lamp shape test (_hullFill, §LAMP_SHAPE_FACE) and Measure item size (measure.js §MEASURE_ITEM).
+  // Returns { w, d, ux, uy, u0, u1, v0, v1, hullArea }: w along unit axis (ux,uy), d along its normal (−uy,ux);
+  // u/v bounds in that frame. Sorts `pts` in place.
+  A.minAreaRect = function(pts) {
     if (pts.length < 3) return null;
     pts.sort(function(a, b) { return a[0] - b[0] || a[1] - b[1]; });
     function cr(o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); }
@@ -1225,9 +1298,6 @@ function setupTools(A) {
     var hull = lo.slice(0, -1).concat(up.slice(0, -1)); if (hull.length < 3) return null;
     var area = 0; for (var h = 0; h < hull.length; h++) { var q = hull[h], r = hull[(h + 1) % hull.length]; area += q[0] * r[1] - r[0] * q[1]; }
     area = Math.abs(area) / 2;
-    // Tightest box at ANY angle (rotating calipers over the hull edges), not the axis-aligned one: Hospital's
-    // fixture meshes carry their yaw in the vertices, and a rotated rectangle in an axis box reads 0.5-0.9 fill,
-    // i.e. "round". A disc is 0.785 at every angle; a rectangle is 1.0 at every angle.
     var best = null;
     for (var e = 0; e < hull.length; e++) {
       var p0 = hull[e], p1 = hull[(e + 1) % hull.length], ex = p1[0] - p0[0], ey = p1[1] - p0[1], L = Math.hypot(ex, ey);
@@ -1236,10 +1306,20 @@ function setupTools(A) {
       for (var t = 0; t < hull.length; t++) { var u = hull[t][0] * ex + hull[t][1] * ey, v = -hull[t][0] * ey + hull[t][1] * ex;
         if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
       var w = u1 - u0, d = v1 - v0;
-      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d };
+      if (w > 1e-4 && d > 1e-4 && (!best || w * d < best.w * best.d)) best = { w: w, d: d, ux: ex, uy: ey, u0: u0, u1: u1, v0: v0, v1: v1 };
     }
     if (!best) return null;
-    return { fill: area / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: area };
+    best.hullArea = area;
+    return best;
+  };
+  // Convex-hull fill of a 2-D point set: hull area / bbox area, plus aspect and the hull area itself.
+  // Tightest box at ANY angle, not the axis-aligned one: Hospital's fixture meshes carry their yaw in the vertices,
+  // and a rotated rectangle in an axis box reads 0.5-0.9 fill, i.e. "round". A disc is 0.785 at every angle; a
+  // rectangle is 1.0 at every angle.
+  function _hullFill(pts) {
+    var best = A.minAreaRect(pts);
+    if (!best) return null;
+    return { fill: best.hullArea / (best.w * best.d), aspect: Math.max(best.w, best.d) / Math.min(best.w, best.d), area: best.hullArea };
   }
   // §LAMP_SHAPE_FACE (watcher go, 2026-09-24). Measured on HHS: "biggest face" picks the wrong face (a linear
   // pendant's side, a round downlight's side), so the rule is PLAN FIRST, then the elevations:
@@ -1745,6 +1825,107 @@ function setupTools(A) {
           source = 'IFC';
         }
       } catch(e) {}
+      // §NIGHT_CIVIL_LAMPS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §W, user 2026-10-05: "Night lighting feature
+      // to consider road street/traffic lights"). A civil import names its elements 'IfcBuildingElementProxy_<id>', so
+      // the name vocabulary above finds nothing; its DISCIPLINE (from the file name, import_worker CIVIL_DISCS) says
+      // LIGHTING. Same owner, one more selector — gated on that civil-only discipline, so a building never enters here.
+      // The light sits at the LAMP HEAD read from the element's own mesh (top band, farthest from the pole = arm end;
+      // a double-arm column gives two heads), never the box centre (1.3–3.7 m off on JELAPANG's 4 m / 7.5 m arms).
+      // Rejected and counted: STRAYS — sort the bottoms of all LIGHTING elements; if the largest jump between consecutive
+      // bottoms is taller than the tallest of them, nothing standing on real ground explains it, so the SMALLER group
+      // below the jump is buried (export error). No datum, no tuned number: a road climbs gradually (JELAPANG 47→68 m —
+      // one ground height rejected 67 real poles there) and an isolated junction has no near neighbours to compare to.
+      // And boxes shorter than CIVIL_COLUMN_MIN_M (bases / junction boxes) — presentation rule, not data: a luminaire
+      // stands on a column. No project label (pset name/value) is read: discipline + geometry only.
+      try {
+        var CIVIL_COLUMN_MIN_M = 2.5;
+        var cr = A.db.exec("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z, t.rotation_z, i.geometry_hash " +
+          "FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid LEFT JOIN element_instances i ON i.guid=m.guid " +
+          "WHERE m.discipline='LIGHTING' AND t.center_x IS NOT NULL");
+        if (cr.length && cr[0].values.length) {
+          var cLit = {}; A._nightFixtures.forEach(function(f) { if (f.guid) cLit[f.guid] = 1; });
+          var cStray = 0, cLow = 0, cCols = 0, cHeads = 0, cMesh = 0, cBox = 0, cRot = 0, geoMemo = {};
+          var headsOf = function(hash) {
+            if (!hash) return null;
+            if (geoMemo[hash] !== undefined) return geoMemo[hash];
+            var res = null;
+            try {
+              var gr = A.db.exec("SELECT vertices FROM component_geometries WHERE geometry_hash='" + String(hash).replace(/'/g, "''") + "'");
+              var blob = gr.length && gr[0].values.length ? gr[0].values[0][0] : null;
+              if (blob && blob.byteLength >= 12) {
+                var v = new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + (blob.byteLength - blob.byteLength % 4)));
+                var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity], k, j;
+                for (k = 0; k + 2 < v.length; k += 3) for (j = 0; j < 3; j++) { if (v[k + j] < mn[j]) mn[j] = v[k + j]; if (v[k + j] > mx[j]) mx[j] = v[k + j]; }
+                var px = 0, py = 0, pn2 = 0, top = [];
+                for (k = 0; k + 2 < v.length; k += 3) {
+                  if (v[k + 2] < mn[2] + 1) { px += v[k]; py += v[k + 1]; pn2++; }
+                  if (v[k + 2] > mx[2] - 0.5) top.push([v[k], v[k + 1]]);
+                }
+                if (pn2 && top.length) {
+                  px /= pn2; py /= pn2;
+                  var far = null, dMax = 0;
+                  top.forEach(function(q) { var d = Math.hypot(q[0] - px, q[1] - py); if (d > dMax) { dMax = d; far = q; } });
+                  var heads = [];
+                  if (dMax < 0.8) heads.push([px, py]);   // lantern on top of the column, no arm
+                  else {
+                    var ux = (far[0] - px) / dMax, uy = (far[1] - py) / dMax;
+                    [1, -1].forEach(function(sg) {
+                      var side = top.filter(function(q) { return sg * ((q[0] - px) * ux + (q[1] - py) * uy) > 0.8; });
+                      if (!side.length) return;
+                      var sMax = 0; side.forEach(function(q) { sMax = Math.max(sMax, Math.hypot(q[0] - px, q[1] - py)); });
+                      var end = side.filter(function(q) { return Math.hypot(q[0] - px, q[1] - py) > sMax - 0.5; });
+                      var hx = 0, hy = 0; end.forEach(function(q) { hx += q[0]; hy += q[1]; });
+                      heads.push([hx / end.length, hy / end.length]);
+                    });
+                  }
+                  res = { botZ: mn[2], topZ: mx[2], heads: heads };
+                }
+              }
+            } catch (e) { res = null; }
+            geoMemo[hash] = res;
+            return res;
+          };
+          var bottomOf = {}, cApprox = 0;
+          cr[0].values.forEach(function(r) {
+            var g0 = headsOf(r[8]);
+            if (g0) bottomOf[r[0]] = r[3] + g0.botZ; else { bottomOf[r[0]] = r[3] - (r[6] || 0) / 2; cApprox++; }
+          });
+          var bots = cr[0].values.map(function(r) { return bottomOf[r[0]]; }).sort(function(a, b) { return a - b; });
+          var maxH = 0; cr[0].values.forEach(function(r) { if ((r[6] || 0) > maxH) maxH = r[6] || 0; });
+          var gapLo = null, gapHi = null, gapM = 0, buriedBelow = null;
+          for (var gi = 1; gi < bots.length; gi++) if (bots[gi] - bots[gi - 1] > gapM) { gapM = bots[gi] - bots[gi - 1]; gapLo = bots[gi - 1]; gapHi = bots[gi]; }
+          if (gapM > maxH && bots.filter(function(b) { return b <= gapLo; }).length < bots.length / 2) buriedBelow = (gapLo + gapHi) / 2;
+          cr[0].values.forEach(function(r) {
+            var guid = r[0], cx = r[1], cy = r[2], cz = r[3], bz = r[6] || 0, rz = r[7] || 0;
+            if (cLit[guid]) return;
+            if (bz < CIVIL_COLUMN_MIN_M) { cLow++; return; }
+            if (buriedBelow !== null && bottomOf[guid] < buriedBelow) { cStray++; return; }
+            cCols++;
+            var nm = 'civil lighting column';
+            var g = headsOf(r[8]), pts;
+            if (g && g.heads.length) {
+              cMesh++;
+              if (rz) cRot++;
+              var cs = Math.cos(rz), sn = Math.sin(rz);
+              // DB center = the vertex CENTROID and the stored vertices are centroid-relative (import_worker
+              // "compute centroid → re-center at origin"), so world = center + R(local) — never center ± bbox/2.
+              pts = g.heads.map(function(h) {
+                return [cx + h[0] * cs - h[1] * sn, cy + h[0] * sn + h[1] * cs, cz + g.topZ];
+              });
+            } else { cBox++; pts = [[cx, cy, cz + bz / 2]]; }   // no mesh: box top (centroid ± half-extent, approximate)
+            pts.forEach(function(q, hi) {
+              A._nightFixtures.push({ x: q[0], y: q[1], z: q[2], name: nm, h: 0.3, bw: 0, bd: 0, rz: rz,
+                guid: hi === 0 ? guid : null, ghash: null, civil: true,
+                mountH: Math.max(0, q[2] - bottomOf[guid]) });   // §CIVIL_LAMP_THROW — head height above its own column base
+              cHeads++;
+            });
+          });
+          console.log('§NIGHT_CIVIL_LAMPS lightingElements=' + cr[0].values.length + ' columns=' + cCols + ' heads=' + cHeads +
+            ' fromMesh=' + cMesh + ' boxTopFallback=' + cBox + ' strayBuried=' + cStray + ' (largest bottom gap ' + gapM.toFixed(1) + 'm vs tallest ' + maxH.toFixed(1) + 'm → ' + (buriedBelow === null ? 'no split' : 'below z=' + buriedBelow.toFixed(1)) + ')' +
+            ' shorterThanColumn=' + cLow + ' bottomFromBoxApprox=' + cApprox + ' rotated=' + cRot + (cRot ? '' : ' VACUOUS(rotation)'));
+          if (cHeads) source = (source === 'none' ? '' : source + '+') + 'civil-lighting(' + cCols + ' columns, ' + cHeads + ' heads)';
+        }
+      } catch (e) { console.warn('§NIGHT_CIVIL_LAMPS query failed', e); }
       // §NIGHT_ROOM_FALLBACK (2026-08-07, user cascade: "1. fixtures on ceiling 2. any fixtures
       // 3. just per square empty per PL", refined same session after LTU corridors still read too
       // dark: "in rooms u can use flow terminal as been the only fixture around"). Uses REAL
@@ -1833,6 +2014,35 @@ function setupTools(A) {
     return source;
   };
 
+  // §CIVIL_LAMP_GLOW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §NL step 1): only 30 nearest heads are point lights,
+  // so on a km road the other ~190 heads were invisible — "no street lamps get lighted". Every civil head gets a fixed
+  // screen-size point (sizeAttenuation off → reads at any distance), built ONCE per night-on, never restaged per frame
+  // (the §GLOW_LAYERS_OFF cost), colour <= 1 so the Alt+S bloom (threshold 1.2) never flares it. Depth-tested: a bridge
+  // deck hides the heads behind it. Civil heads only → buildings never take this path.
+  A._civilLampGlow = function(on) {
+    if (A._civilGlowPts) { A.scene.remove(A._civilGlowPts); A._civilGlowPts.geometry.dispose(); A._civilGlowPts.material.dispose(); A._civilGlowPts = null; }
+    if (!on) return;
+    var pos = (A._nightFixtureWorldPositions() || []).filter(function(p) { return p.__civil; });
+    if (!pos.length) { console.log('§CIVIL_LAMP_GLOW heads=0 VACUOUS (no civil heads)'); return; }
+    var arr = new Float32Array(pos.length * 3), col = new Float32Array(pos.length * 3), c = new THREE.Color();
+    pos.forEach(function(p, i) {
+      arr[3 * i] = p.x; arr[3 * i + 1] = p.y; arr[3 * i + 2] = p.z;
+      c.set(p.__color || 0xffe4b5); col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
+    });
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    var m = new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, transparent: true,
+      opacity: 0.95, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending });
+    A._civilGlowPts = new THREE.Points(g, m);
+    A._civilGlowPts.renderOrder = 5;
+    A._civilGlowPts.userData.civilLampGlow = true;
+    A.scene.add(A._civilGlowPts);
+    var mh = pos.map(function(p) { return p.__intensityMult; }).sort(function(a, b) { return a - b; });
+    console.log('§CIVIL_LAMP_GLOW heads=' + pos.length + ' sizePx=6 throwMult min=' + mh[0].toFixed(2) +
+      ' median=' + mh[mh.length >> 1].toFixed(2) + ' max=' + mh[mh.length - 1].toFixed(2));
+    if (A.markDirty) A.markDirty();
+  };
   A.toggleNightMode = function() {
     A._nightMode = !A._nightMode;
     var btn = document.getElementById('night-btn');
@@ -1934,6 +2144,7 @@ function setupTools(A) {
         ' glowMats=' + A._nightGlowMats.length);
       // §S277d: 4 POL follow camera — subtle ambient on nearby walls/floor
       A._nightUpdateLights();
+      A._civilLampGlow(true);
       // §NIGHT_MEM_WITNESS (2026-08-08, moved AFTER _nightUpdateLights() — placing it before, as
       // the first version did, made nightLights read 0 on every toggle-on since the light Map
       // hadn't been populated yet. Real numbers now.
@@ -1977,7 +2188,7 @@ function setupTools(A) {
       }
       btn.style.background = '#ff8c00';
       btn.style.color = '#000';
-      label.textContent = 'On — ' + A._nightFixtures.length + ' fixtures';
+      label.textContent = (typeof _trl === 'function') ? _trl('ui_night_on', { n: A._nightFixtures.length }, 'On — {n} fixtures') : 'On — ' + A._nightFixtures.length + ' fixtures';
     } else {
       // §S277d: Restore fixture emissive glow
       if (A._nightGlowMats) {
@@ -2036,10 +2247,11 @@ function setupTools(A) {
         ' matCacheKeys=' + Object.keys(A._matCache || {}).length +
         ' glowMatKeys=' + Object.keys(A._nightGlowMatKeys || {}).length +
         ' nightLights=' + (A._nightLightByPos ? A._nightLightByPos.size : 0));
+      A._civilLampGlow(false);
       console.log('§NIGHT_MODE off');
       btn.style.background = '#1a1a3e';
       btn.style.color = '#aac';
-      label.textContent = 'Off';
+      label.textContent = (typeof _trl === 'function') ? _trl('ui_off', null, 'Off') : 'Off';
     }
     if (A.markDirty) A.markDirty();
   };
@@ -2061,6 +2273,13 @@ function setupTools(A) {
         // §NIGHT_PL_INTENSITY_HEURISTIC — style-convention multiplier by name-pattern, NOT real
         // photometric data (see A.nightLightIntensityMult for the full investigation/framing).
         p.__intensityMult = A.nightLightIntensityMult(f.name);
+        // §CIVIL_LAMP_THROW (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §NL): NIGHT_LIGHT_INTENSITY was tuned on
+        // interiors (fixture ~3 m over the floor, one storey). Decay is 1 (E ∝ I/d), so a road head mounted mountH m up
+        // delivers 3/mountH of that at the carriageway — ~0.2 for JELAPANG's 10-15 m columns, i.e. unlit. Scale the
+        // civil head by mountH/3 so the pool under it matches an interior fixture's floor. Presentation only; civil
+        // fixtures exist only on models with a LIGHTING discipline (never a building).
+        p.__civil = !!f.civil;
+        if (f.civil && f.mountH > 3) p.__intensityMult *= f.mountH / 3;
         // Real fixture footprint + yaw (MODEL data bbox_x/bbox_y/rotation_z) — kept for the
         // §FIXTURE_EMISSIVE follow-up (emissive shapes for lamps with no emissive mesh).
         p.__bw = f.bw || 0; p.__bd = f.bd || 0; p.__rz = f.rz || 0;
@@ -2363,7 +2582,9 @@ function setupTools(A) {
       A._lampCapFarM = null;   // §LAMP_CAP_FADE — set only while the cap is cutting the in-view set
       // Default OFF (watchdog for red1, 2026-09-25: the approved ref4 hall is the list-order look; nearest read brighter and
       // harsher). &lampcap=nearest / APP._stillLampCapNearest=true turns it on for later comparison.
-      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search);
+      // §ALTC_HIGHWAY: a road has ~220 heads strung over km — list order would light the first 200 along the export, not
+      // the ones by the camera. Civil models take the nearest-first rule (same switch as &lampcap=nearest).
+      var _nearestOn = A._stillLampCapNearest === true || /[?&]lampcap=nearest/.test(location.search) || !!(A.isCivilModel && A.isCivilModel());
       // §SOURCED_LIGHT_CAP — with light zones (Alt+S), keep camera-zone lamps first, then lamps in zones the frame shows,
       // then the nearest. &lampcap=list keeps the old list order for red1's A/B.
       var _zoneCap = inView.length > _capN && A._sourcedCap && window.LightZones && window.LightZones.get() && !/[?&]lampcap=list/.test(location.search);

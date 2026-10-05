@@ -646,6 +646,7 @@ function setupPicking(A) {
       // picks where it has never appeared, which is a product decision, not a refactor (user ruling,
       // option 1 of §S7-OPEN). Info4DPanel is eagerly loaded (viewer.html) and self-hides on a miss.
       try { if (window.Info4DPanel) window.Info4DPanel.render(A, g || guid); } catch (e) { console.log('§4D_INFO_PANEL_ERR ' + e.message); }
+      try { if (window.EditDeltaViewer) window.EditDeltaViewer.renderInfo(A, g || guid); } catch (e) { console.log('§S8-INFO_ERR ' + e.message); }   // §S8
       // BIM_EMBED_WINDOW_SESSION §B3 — when docked inside an ERP window (A.EMBEDDED), a pick broadcasts
       // {bim:focusRecord} to the host so it focuses the owning project line (product Value == ifc_class).
       if (A.EMBEDDED && A._bimPostFocus) A._bimPostFocus(g || guid, cls);

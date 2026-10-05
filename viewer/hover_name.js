@@ -41,7 +41,10 @@ function setupHoverName(A) {
 
   function _positionLabel() {
     if (!_label) return;
-    _label.style.left = (_mouseX + 14) + 'px';
+    // §S8: keep the label inside the window (the Δ line can be long): flip left of the cursor when it would run off the right edge.
+    var w = _label.offsetWidth || 0, x = _mouseX + 14;
+    if (w && x + w > window.innerWidth - 6) x = Math.max(6, _mouseX - 14 - w);
+    _label.style.left = x + 'px';
     _label.style.top = (_mouseY + 16) + 'px';
   }
 
@@ -64,6 +67,9 @@ function setupHoverName(A) {
     if (o.userData && o.userData.guid) return o.userData.guid;
     return null;
   }
+
+  // §MEASURE_ITEM: the same read-only resolver, shared so Measure does not grow a third copy of the chain.
+  A.guidForHit = _guidForHit;
 
   function _resolveMeshes() {
     var now = performance.now();
@@ -113,6 +119,21 @@ function setupHoverName(A) {
     } catch (e) { return null; }
   }
 
+  // §S8 witness oracle (same idea as the Modeller harness's clickPointFor): which guid would a hover at this CSS pixel resolve to? Side-effect free,
+  // same raycast + same _guidForHit + same low-opacity skip as _tick — so a witness can FIND a pixel over an element, then hover it with a REAL mouse.
+  A.hoverGuidAt = function(cx, cy) {
+    if (!A.camera || typeof THREE === 'undefined') return null;
+    if (!_rc) _rc = new THREE.Raycaster();
+    _rc.setFromCamera({ x: (cx / window.innerWidth) * 2 - 1, y: -(cy / window.innerHeight) * 2 + 1 }, A.camera);
+    var meshes = _resolveMeshes();
+    var hits = meshes.length ? _rc.intersectObjects(meshes, false) : [];
+    for (var i = 0; i < hits.length; i++) {
+      if (hits[i].object.material && hits[i].object.material.opacity < 0.3) continue;
+      var g = _guidForHit(hits[i]); if (g) return g;
+    }
+    return null;
+  };
+
   // Event-driven, not a perpetual loop: a raycast only runs when the mouse actually moves, and at
   // most once per animation frame no matter how many pointermove events land in that frame
   // (HOVER_NAME.md's trap — "raycast per pointermove is not free at 63k elements"). A continuous
@@ -146,17 +167,19 @@ function setupHoverName(A) {
     var name = _name(rows[0][0], rows[0][1]);
     var room = _roomLabelFor(guid);
     var win4d = _4dLabelFor(guid);   // S7 §S7-DO item 3 — one extra line, only on a real hit
+    var s8 = (window.EditDeltaViewer && window.EditDeltaViewer.labelFor) ? window.EditDeltaViewer.labelFor(guid) : null;   // §S8 — the Modeller edit's Δ, only for an edited element
     var lbl = _ensureLabel();
     lbl.innerHTML = '<div>' + String(name).replace(/</g, '&lt;') + '</div>' +
       (room ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(room).replace(/</g, '&lt;') + '</div>' : '') +
-      (win4d ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(win4d).replace(/</g, '&lt;') + '</div>' : '');
+      (win4d ? '<div style="opacity:0.65;font-size:10px;margin-top:2px">' + String(win4d).replace(/</g, '&lt;') + '</div>' : '')
+      + (s8 ? '<div id="s8-hover-line" style="color:#ffd166;font-size:10px;margin-top:2px;white-space:normal;max-width:380px">' + String(s8).replace(/</g, '&lt;') + '</div>' : '');
     lbl.style.display = 'block';
     _positionLabel();
     // §IDLE_GATE parks the rAF chain when nothing moves — force one frame so the label isn't
     // stranded on a still scene (same trap §CPE_HOVER_SCRUB names for the Cinema hover).
     if (A.markDirty) A.markDirty();
     console.log('§HOVER_NAME guid=' + guid.substring(0, 12) + ' name="' + name + '" ifc=' +
-      (rows[0][1] || '') + ' room="' + (room || '') + '" ms=' + (performance.now() - t0).toFixed(1));
+      (rows[0][1] || '') + ' room="' + (room || '') + '" s8=' + (s8 ? 1 : 0) + ' full=' + guid + ' ms=' + (performance.now() - t0).toFixed(1));
   }
 
   function _onMove(e) {

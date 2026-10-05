@@ -63,6 +63,13 @@
       if (_bimErpDb) return Promise.resolve(_bimErpDb);
       var SQL = A._SQL || (typeof window !== 'undefined' && (window.SQL || window._SQL_CACHED));   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !global.ProjFold) return Promise.resolve(null);
+      // §S9 (TM_4D5D_VARIANCE_LANE §S9): OPFS-FIRST, exactly as diff.js _loadVoErpDb already does for the VO path — so a Project Order the MODELLER (or an
+      // earlier session) generated is the SAME store this push amends (context-based: an existing Project Order is a variant, not a duplicate). Falls back to the seed.
+      if (global.ProjOrderState && global.ProjOrderState.openStore) {
+        return global.ProjOrderState.openStore(SQL, function () { return A.cachedFetch('../erp/ad_seed.db'); })
+          .then(function (st) { _bimErpDb = st.db; return _bimErpDb; })
+          .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
+      }
       return A.cachedFetch('../erp/ad_seed.db')
         .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
         .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
@@ -163,14 +170,22 @@
         console.log('[RP-TA] §CONSTRUCTION_LINK guid=' + guid + ' warehouse=' + whId + ' url=' + url);
       } catch (e) { console.log('[RP-TA] §CONSTRUCTION_LINK err=' + e.message); }
     }
+    // S226 §R2c.6 — Info panel strings through the AD_Message dictionary (English default = what this file printed before)
+    function _it(k, d, r) { return (typeof window !== 'undefined' && typeof window._trl === 'function') ? window._trl(k, r || null, d) : d; }
+    var _lastCost = null;   // last _showClassCost args — re-rendered on an in-place language switch (trl-ready)
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('trl-ready', function (e) {
+      var box = document.getElementById('info-cost');
+      if (e && e.detail && e.detail.inplace && _lastCost && box && box.style.display === 'block') _showClassCost.apply(null, _lastCost);
+    });
     function _pct(planned, committed) { return planned > 0 ? Math.round((committed - planned) * 100 / planned) : 0; }
     function _showClassCost(ifcClass, matchCount, guid) {
       var box = document.getElementById('info-cost'); if (!box) return;
+      _lastCost = [ifcClass, matchCount, guid];
       box.style.display = 'none';
       _foldClassTwin(ifcClass).then(function (t) {
         if (!t) { console.log('§ZOOM-COST skip — no twin for class="' + ifcClass + '"'); return; }
         var pj = t.project, pjPct = _pct(pj.planned, pj.committed);
-        var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">Cost variance <span style="font-size:9px;color:#888;font-weight:normal">· from records</span></div>';
+        var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:3px">' + _it('info_cost_title', 'Cost variance') + ' <span style="font-size:9px;color:#888;font-weight:normal">' + _it('info_cost_records', '· from records') + '</span></div>';
         if (t.phase) {   // the committed actual lives at phase/control-account grain
           var phPct = _pct(t.phase.planned, t.phase.committed), over = t.phase.committed >= t.phase.planned;
           // §S7-GRAIN (W-S7-GRAIN): this figure is the WHOLE CLASS's line, not the picked element's own
@@ -178,19 +193,19 @@
           // sitting next to the element's own Name/GUID rows could be misread as "what this item costs".
           // Naming the match count inline is what makes the grain visible on the panel itself.
           html += '<div><span class="label">' + ifcClass + ' <span style="font-size:9px;color:#888;font-weight:normal">(' +
-            (matchCount || 0) + (matchCount === 1 ? ' match' : ' matches') + ')</span></span>: <span class="value">' +
-            _money(t.line ? t.line.planned : 0) + ' planned</span></div>';
-          html += '<div><span class="label">Phase ' + t.phase.name + '</span>: <span class="value">' + _money(t.phase.planned) + ' → ' + _money(t.phase.committed) +
+            (matchCount || 0) + ' ' + (matchCount === 1 ? _it('info_match_one', 'match') : _it('info_match_many', 'matches')) + ')</span></span>: <span class="value">' +
+            _money(t.line ? t.line.planned : 0) + ' ' + _it('info_planned', 'planned') + '</span></div>';
+          html += '<div><span class="label">' + _it('info_phase', 'Phase') + ' ' + t.phase.name + '</span>: <span class="value">' + _money(t.phase.planned) + ' → ' + _money(t.phase.committed) +
             ' <b style="color:' + (over ? '#ff6b6b' : '#26a69a') + '">(' + (phPct >= 0 ? '+' : '') + phPct + '%)</b></span></div>';
         }
-        html += '<div><span class="label">Project ' + t.building + '</span>: <span class="value">' + _money(pj.planned) + ' → ' + _money(pj.committed) +
+        html += '<div><span class="label">' + _it('info_project', 'Project') + ' ' + t.building + '</span>: <span class="value">' + _money(pj.planned) + ' → ' + _money(pj.committed) +
           ' <b style="color:' + (pj.committed >= pj.planned ? '#ff6b6b' : '#26a69a') + '">(' + (pjPct >= 0 ? '+' : '') + pjPct + '%)</b></span></div>';
         // "View at this moment" — freeze TM on the moment this thing is built. With a guid (a specific picked
         // element) → §360-IDENTITY tmJumpToElement (the EXACT item); else fall back to the class's phase window.
         var canElem = guid && typeof window.tmJumpToElement === 'function';
         var canPhase = t.phase && typeof window.tmJumpToPhase === 'function';
         if (canElem || canPhase) {
-          html += '<div style="margin-top:6px"><button id="info-cost-tm" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">⏱ View at this moment</button></div>';
+          html += '<div style="margin-top:6px"><button id="info-cost-tm" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">' + _it('info_view_moment', '⏱ View at this moment') + '</button></div>';
         }
         box.innerHTML = html;
         box.style.display = 'block';

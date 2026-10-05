@@ -140,23 +140,23 @@
 <div class="screen" id="morpheus">
   <div class="morph-wrap">
     <img id="morph-img" src="assets/2hands.jpg" alt="" onerror="this.style.outline='1px dashed #555';this.alt='2hands.jpg (drop into assets/)'">
-    <div class="hot red"  data-tip="Red — you go in (sound on, then we load)" onclick="takeRed()"></div>
-    <div class="hot blue" data-tip="Blue — nothing happens, nothing loads"     onclick="takeBlue()"></div>
+    <div class="hot red"  data-trl-tip="landing_tip_red" data-tip="Red — you go in (sound on, then we load)" onclick="takeRed()"></div>
+    <div class="hot blue" data-trl-tip="landing_tip_blue" data-tip="Blue — nothing happens, nothing loads"     onclick="takeBlue()"></div>
   </div>
 </div>
 
 <!-- graceful blue end -->
 <div class="screen" id="ended">
-  <div class="quote intertitle">"You take the blue pill &mdash; the story ends, you wake up in your bed and believe whatever you want to believe."</div>
-  <div class="back" onclick="location.reload()">&larr; back</div>
+  <div class="quote intertitle" data-trl="landing_blue_quote">"You take the blue pill &mdash; the story ends, you wake up in your bed and believe whatever you want to believe."</div>
+  <div class="back" onclick="location.reload()" data-trl="landing_back">&larr; back</div>
 </div>
 
 <!-- THE MATRIX PORTAL -->
 <div class="screen" id="portal">
   <div id="portal-vortex"></div>
   <div id="portal-stage"></div>
-  <div class="por-hint intertitle">choose your door</div>
-  <a class="por-stats" href="https://red1oon.goatcounter.com" target="_blank" rel="noopener" title="Site traffic stats (GoatCounter)">📊 Live Stats</a>
+  <div class="por-hint intertitle" data-trl="landing_choose_door">choose your door</div>
+  <a class="por-stats" href="https://red1oon.goatcounter.com" target="_blank" rel="noopener" data-trl-title="landing_stats_title" title="Site traffic stats (GoatCounter)">📊 <span data-trl="landing_live_stats">Live Stats</span></a>
 </div>
 
 <!-- desktop background (rail + hub open over this) -->
@@ -165,8 +165,8 @@
 <!-- Buildings / IFC hub (scaffold) -->
 <div id="hub">
   <span class="hub-close" onclick="closeHub()">&times;</span>
-  <h2>BUILDINGS &amp; IFC</h2>
-  <div class="sub">drop your own IFC, or open a ready building &mdash; opens in the viewer</div>
+  <h2 data-trl="landing_hub_title">BUILDINGS &amp; IFC</h2>
+  <div class="sub" data-trl="landing_hub_sub">drop your own IFC, or open a ready building &mdash; opens in the viewer</div>
   <div id="hub-body"></div>
 </div>
 
@@ -175,12 +175,13 @@
 <script src="common/pill_builder.js?v=1"></script>
 <script src="common/whole_history.js"></script>
 <script src="common/about_diy.js"></script>
-<script src="viewer/locale_loader.js"></script>
+<script>window.__TRL_INPLACE = true; /* S226 §R2c — flag picker switches language in place */</script>
+<script src="viewer/locale_loader.js?v=13"></script>
 <!-- Bonsai BIM modeller host: window.Bonsai (preload streams occt-wasm bytes — does NOT spin the worker). -->
 <script src="viewer/bonsai_kernel.js"></script>
 <!-- Drop-own-IFC: real landing import pipeline (buildImportDBs) + the verbatim-extracted handler/helpers. -->
-<script src="viewer/import_db_builder.js?v=4"></script>
-<script src="import_own.js?v=1"></script>
+<script src="viewer/import_db_builder.js?v=7"></script>
+<script src="import_own.js?v=4"></script>
 
 <script>
 'use strict';
@@ -331,15 +332,26 @@ async function warmBehindVortex(){
 function _ic(k){ return (window.ICONS && window.ICONS[k]) ? window.ICONS[k].svg : ''; }
 // GPS = centre (largest, drops first). The other 7 ride a ring, evenly spaced (computed, not hand-placed).
 var LAUNCHERS=[
-  { id:'gps',   key:'grid',       name:'Buildings / IFC', center:true, fn:function(){ openHub(); } },
-  { id:'bonsai',key:'bonsaiTree', name:'BIM Modeller',    fn:function(){ launchModeller(); } },
-  { id:'erp',   key:'barChart',   name:'ERP',             fn:function(){ go('erp/erp.html'); } },
-  { id:'doc',   key:'lightbulb',  name:'User Guide',  fn:function(){ openTab('https://red1oon.github.io/BIMCompiler/USER_GUIDE/'); } },
-  { id:'help',  key:'circleHelp', name:'About',           fn:function(){ openAbout(); } },
-  { id:'flag',  key:'flag',       name:'Language',        fn:function(){ openFlags(); } },
-  { id:'watch', key:'video',      name:'Watch demo',      fn:function(){ openTab('https://youtu.be/hnLYNcRihzs'); } },
-  { id:'clear', key:'trash',      name:'Clear cache',     fn:function(){ clearCache(); } }   // 8th — resets to the red/blue gate
+  { id:'gps',   key:'grid',       name:'Buildings / IFC', trl:'landing_launcher_gps', center:true, fn:function(){ openHub(); } },
+  { id:'bonsai',key:'bonsaiTree', name:'BIM Modeller',    trl:'landing_launcher_bonsai', fn:function(){ launchModeller(); } },
+  { id:'erp',   key:'barChart',   name:'ERP',             trl:'landing_launcher_erp', fn:function(){ go('erp/erp.html'); } },
+  { id:'doc',   key:'lightbulb',  name:'User Guide',      trl:'landing_launcher_doc', fn:function(){ openTab('https://red1oon.github.io/BIMCompiler/USER_GUIDE/'); } },
+  { id:'help',  key:'circleHelp', name:'About',           trl:'landing_about', fn:function(){ openAbout(); } },
+  { id:'flag',  key:'flag',       name:'Language',        trl:'ui_language', fn:function(){ openFlags(); } },
+  { id:'watch', key:'video',      name:'Watch demo',      trl:'landing_launcher_watch', fn:function(){ openTab('https://youtu.be/hnLYNcRihzs'); } },
+  { id:'clear', key:'trash',      name:'Clear cache',     trl:'landing_launcher_clear', fn:function(){ clearCache(); } }   // 8th — resets to the red/blue gate
 ];
+// S226 §R2 — every landing string resolves through the AD_Message dictionary (viewer/i18n, via locale_loader.js);
+// the English in this file is the default shown until the label pack lands. On trl-ready the icons/rail re-label.
+function _lt(key, dflt, repl){ return (typeof _trl==='function') ? _trl(key, repl||null, dflt) : dflt; }
+function launcherName(a){ return _lt(a.trl, a.name); }
+window.addEventListener('trl-ready', function(e){
+  LAUNCHERS.forEach(function(a){ var el=document.getElementById('por-'+a.id); if(el) el.title=launcherName(a); });
+  if(_rail && _rail.actions){ _rail.actions.forEach(function(x){ var a=LAUNCHERS.filter(function(l){return l.id===x.id;})[0]; if(a) x.name=launcherName(a); }); if(_rail.build) _rail.build(); }
+  if(window._railTrigger) _railTrigger.title=_lt('landing_more','More');
+  if(typeof _applyTrlToDOM==='function') _applyTrlToDOM();   // hub cards built before the pack landed
+  L('§TRL_LANDING relabelled locale='+(e&&e.detail&&e.detail.locale)+' labels='+(e&&e.detail&&e.detail.labels));
+});
 function isMobile(){ return matchMedia('(pointer:coarse)').matches || Math.min(innerWidth,innerHeight)<560; }
 function ringPos(i,n,r){ var a=(-90+i*360/n)*Math.PI/180; return [50+r*Math.cos(a), 50+r*Math.sin(a)]; }
 function _svgWrap(inner){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+inner+'</svg>'; }
@@ -355,7 +367,7 @@ function dropIcons(){
   ordered.forEach(function(a,i){
     var el=document.createElement('div');
     el.className='por-ic'+(a.center?' center':''); el.id='por-'+a.id;
-    el.style.left=a._pos[0]+'%'; el.style.top=a._pos[1]+'%'; el.title=a.name;
+    el.style.left=a._pos[0]+'%'; el.style.top=a._pos[1]+'%'; el.title=launcherName(a);
     el.innerHTML=_svgWrap(_ic(a.key));
     el.addEventListener('click', function(){ pickLauncher(a, el); });
     stage.appendChild(el);
@@ -420,12 +432,12 @@ function buildRail(){
   _injectRailStyle();
   var wrap=document.createElement('div'); wrap.id='erp-pillbar';
   var pill=document.createElement('div'); pill.id='erp-pill';
-  var trigger=document.createElement('button'); trigger.id='erp-pill-trigger'; trigger.title='More';
+  var trigger=document.createElement('button'); trigger.id='erp-pill-trigger'; trigger.title=_lt('landing_more','More');
   var mv=_ic('moreHoriz')||'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>';
   trigger.innerHTML=_svgWrap(mv);
   wrap.appendChild(pill); wrap.appendChild(trigger); document.body.appendChild(wrap);
   // launcher context = the SAME 7 (per MORPHEUS_PLATE_REBUILD §CONTEXT-AWARE RAIL).
-  var actions=LAUNCHERS.map(function(a){ return { id:a.id, name:a.name, icon:_ic(a.key), fn:a.fn }; });
+  var actions=LAUNCHERS.map(function(a){ return { id:a.id, name:launcherName(a), icon:_ic(a.key), fn:a.fn }; });
   var PB=window.PillBuilder({ pill:pill, trigger:trigger, APP:{}, actions:actions,
     order:actions.map(function(a){return a.id;}), storageKey:'index2_pill_config' });
   trigger.addEventListener('pointerup', function(e){ e.stopPropagation(); PB.toggle(); });
@@ -444,7 +456,7 @@ function openTab(url){ sfxPress(); L('§OPEN tab '+url); window.open(url,'_blank
 window.addEventListener('keydown', function(e){ if(e.key==='Escape'){ closeHub(); } });
 function launchModeller(){
   // Bonsai authoring is desktop-only (heavy occt-wasm kernel). On mobile → polite note, no launch.
-  if(isMobile()){ sfxPress(); L('§BONSAI-LAUNCH blocked mobile → desktop-only note'); toast('BIM authoring (DAGeVu) is a desktop experience &mdash; open it on a larger screen.'); return; }
+  if(isMobile()){ sfxPress(); L('§BONSAI-LAUNCH blocked mobile → desktop-only note'); toast(_lt('landing_mobile_note','BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.')); return; }
   // lazy-mount: occt bytes are warm; the worker spins inside modeller.html on demand.
   sfxPress(); L('§BONSAI-LAUNCH → modeller/modeller.html (occt bytes warm, worker spins there)');
   location.href='modeller/modeller.html';
@@ -491,7 +503,7 @@ function openBlankViewer(){
 function openHub(){ document.getElementById('hub').classList.add('active'); buildHubBody(); _refreshCachedIndicator(); L('§HUB opened (Buildings/IFC)'); }
 function closeHub(){ document.getElementById('hub').classList.remove('active'); }
 function openBuilding(name){
-  var bld=BUILDINGS[name]; if(!bld){ toast('No DB for '+name); return; }
+  var bld=BUILDINGS[name]; if(!bld){ toast(_lt('landing_no_db_for','No DB for {name}',{name:name})); return; }
   var base=bld.gh||_prodBase;   // §HBA: HHS_Office_Federated served from GH bim-ootb (gh override); others from OCI _prodBase
   var url='viewer/viewer.html?db='+base+'buildings/'+bld.db+'&ghost=1';   // same form as index.html openViewer
   sfxPress(); L('§BUILDING_OPEN '+name+' → '+bld.db);
@@ -505,7 +517,7 @@ function _card(a){
   }).join('');
   return '<div class="hub-card" data-bld="'+a.name+'" onclick="openBuilding(\''+a.name+'\')">'+
     '<div class="nm">'+a.name+'</div>'+
-    '<div class="mt"><b>'+a.count.toLocaleString()+'</b> elements &middot; '+Object.keys(a.disciplines||{}).join(' ')+'</div>'+
+    '<div class="mt"><b>'+a.count.toLocaleString()+'</b> <span data-trl="landing_elements">'+_lt('landing_elements','elements')+'</span> &middot; '+Object.keys(a.disciplines||{}).join(' ')+'</div>'+
     '<div class="db">'+bars+'</div></div>';
 }
 // §CACHE-INDICATOR — green a building's name if its DB is already in the IndexedDB building cache
@@ -546,16 +558,16 @@ async function buildHubBody(){
   if(_hubBuilt) return; _hubBuilt=true;
   var b=document.getElementById('hub-body');
   b.innerHTML='<div class="hub-import">'+
-      '<div id="m-import-zone" class="hub-drop">&#8595; Drop IFC / 3D files here &mdash; or tap to browse<br><span style="font-size:11px;opacity:.7">multiple discipline files merge into one building</span></div>'+
+      '<div id="m-import-zone" class="hub-drop"><span data-trl="landing_drop_hint">'+_lt('landing_drop_hint','↓ Drop IFC / 3D files here — or tap to browse')+'</span><br><span style="font-size:11px;opacity:.7" data-trl="landing_drop_sub">'+_lt('landing_drop_sub','multiple discipline files merge into one building')+'</span></div>'+
       '<input type="file" id="m-import-file" accept=".ifc,.dae,.obj,.glb,.gltf,.3ds,.fbx,.stl" multiple style="display:none">'+
       '<div id="import-status" style="text-align:center;color:#cfe3ef;font-size:12px;margin-top:8px;min-height:16px"></div>'+
       '<div style="display:none;margin:8px auto 0;max-width:400px;height:4px;background:#222;border-radius:2px;overflow:hidden">'+
         '<div id="import-progress-bar" style="height:100%;width:0%;background:#0277bd;border-radius:2px;transition:width .3s"></div></div>'+
     '</div>'+
     '<div class="hub-sect"><div class="hub-grid"><div class="hub-card" style="border:1px dashed rgba(79,195,247,.4)" onclick="openBlankViewer()">'+
-      '<div class="nm" style="color:#4fc3f7">&#10133; Blank Viewer</div>'+
-      '<div class="mt">Open your own .db file</div></div></div></div>'+
-    '<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px">loading building manifest&hellip;</div>';
+      '<div class="nm" style="color:#4fc3f7">&#10133; <span data-trl="landing_blank_viewer">'+_lt('landing_blank_viewer','Blank Viewer')+'</span></div>'+
+      '<div class="mt" data-trl="landing_open_own_db">'+_lt('landing_open_own_db','Open your own .db file')+'</div></div></div></div>'+
+    '<div id="hub-status" style="text-align:center;color:#667;font-size:12px;padding:20px" data-trl="landing_loading_manifest">'+_lt('landing_loading_manifest','loading building manifest…')+'</div>';
   if(typeof wireImportZone==='function') wireImportZone(); else L('§HUB import_own.js not loaded');
   try {
     var data=await fetch('manifest.json').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
@@ -563,14 +575,14 @@ async function buildHubBody(){
     var landmark=data.archetypes.filter(function(a){ return a.count>=5000||a.landmark; });
     var city=data.archetypes.filter(function(a){ return a.count<5000&&!a.landmark; });
     var html='';
-    if(city.length)     html+='<div class="hub-sect"><div class="hub-sh">City buildings</div><div class="hub-grid">'+city.map(_card).join('')+'</div></div>';
-    if(landmark.length) html+='<div class="hub-sect"><div class="hub-sh">Landmark buildings</div><div class="hub-grid">'+landmark.map(_card).join('')+'</div></div>';
+    if(city.length)     html+='<div class="hub-sect"><div class="hub-sh" data-trl="landing_city_buildings">'+_lt('landing_city_buildings','City buildings')+'</div><div class="hub-grid">'+city.map(_card).join('')+'</div></div>';
+    if(landmark.length) html+='<div class="hub-sect"><div class="hub-sh" data-trl="landing_landmark_buildings">'+_lt('landing_landmark_buildings','Landmark buildings')+'</div><div class="hub-grid">'+landmark.map(_card).join('')+'</div></div>';
     document.getElementById('hub-status').remove();
     b.insertAdjacentHTML('beforeend', html);
     _markCachedBuildings();
     L('§HUB_CARDS rendered city='+city.length+' landmark='+landmark.length);
   } catch(e){
-    var s=document.getElementById('hub-status'); if(s){ s.innerHTML='&#9888; '+e.message+' &mdash; <a href="javascript:location.reload()" style="color:#4fc3f7">reload</a>'; }
+    var s=document.getElementById('hub-status'); if(s){ s.innerHTML='&#9888; '+e.message+' &mdash; <a href="javascript:location.reload()" style="color:#4fc3f7" data-trl="landing_reload">'+_lt('landing_reload','reload')+'</a>'; }
     L('§HUB_CARDS fail '+e.message);
   }
 }
@@ -603,7 +615,7 @@ async function clearCache(){
   sfxPress();
   // HONEST confirm — list exactly what goes. ONLY the in-browser building IndexedDB + the entered flag;
   // the installed app / offline shells stay, and any IFC saved as a .db file is the user's own copy.
-  if(!confirm('Reset to the start screen?\n\nClears the in-browser building data:\n  • cached buildings\n  • any IFC scene you dropped in (not saved to a .db file)\nand returns you to the red / blue choice.\n\nKeeps: the installed app + offline data, and any .db you saved yourself.')) return;
+  if(!confirm(_lt('landing_clear_confirm','Reset to the start screen?\n\nClears the in-browser building data:\n  • cached buildings\n  • any IFC scene you dropped in (not saved to a .db file)\nand returns you to the red / blue choice.\n\nKeeps: the installed app + offline data, and any .db you saved yourself.'))) return;
   try { localStorage.removeItem('mx_entered'); localStorage.removeItem('bim_ootb_viewed'); } catch(e){}
   await _emptyIdb('bim_ootb_imports');
   await _emptyIdb('bim_ootb_cache');

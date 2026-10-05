@@ -1153,7 +1153,9 @@
     const chunk = new Uint8Array(12 + len), dv = new DataView(chunk.buffer); dv.setUint32(0, len); chunk.set(body, 4); dv.setUint32(8 + len, crc);
     const iend = png.length - 12; const out = new Uint8Array(png.length + chunk.length); out.set(png.subarray(0, iend), 0); out.set(chunk, iend); out.set(png.subarray(iend), iend + chunk.length); return out;
   }
-  function show(canvas, secs, passes) {
+  // §STILL_OVERLAY_NOGI: kind 'plain' = the app's own still with no bounce (phones / no WebGPU) — same overlay, own title + file name
+  function show(canvas, secs, passes, kind) {
+    const plain = kind === 'plain';
     // §STILL_ESC_LEAK: effects.js's still lock eats Esc first (stopImmediatePropagation) and removes the overlay itself, so this
     // module's own Esc listener never ran exit() and was never removed: each press stranded one listener holding its overlay
     // and the finished 1666x864 canvas (5.8 MB). The live listener is kept here and dropped before the next one is added.
@@ -1163,7 +1165,8 @@
     wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column';
     const bar = document.createElement('div');
     bar.style.cssText = 'flex:0 0 auto;padding:8px 14px;background:#11141a;color:#e8eaf0;font:13px/1.5 system-ui;display:flex;gap:14px;align-items:center';
-    bar.innerHTML = '<b>Bounce still</b><span>' + canvas.width + '×' + canvas.height + ' · ' + passes + ' passes · ' + secs + 's</span>';
+    bar.innerHTML = plain ? '<b>Still</b><span>' + canvas.width + '×' + canvas.height + ' · ' + secs + 's · no bounce on this device</span>'
+                       : '<b>Bounce still</b><span>' + canvas.width + '×' + canvas.height + ' · ' + passes + ' passes · ' + secs + 's</span>';
     const save = document.createElement('button');
     save.textContent = 'Save PNG';
     save.style.cssText = 'margin-left:auto;padding:6px 14px;border-radius:6px;border:1px solid #3a4150;background:#1d2230;color:#e8eaf0;cursor:pointer';
@@ -1173,7 +1176,7 @@
     save.onclick = () => canvas.toBlob(async b => { let out = b;
       try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null, pressS: +secs, passes: passes }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
         else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
-      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = 'bounce_still_' + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
+      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = (plain ? 'still_' : 'bounce_still_') + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
     const close = document.createElement('button');
     close.textContent = 'Close (Esc)';
     close.style.cssText = save.style.cssText + ';margin-left:8px';
@@ -1186,7 +1189,7 @@
     document.body.appendChild(wrap);
     function esc(e) { if (e.key === 'Escape') exit('esc-overlay'); }
     window.addEventListener('keydown', esc, true); window.__giStillEsc = esc;
-    toast('Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
+    toast(plain ? 'Still ready — ' + secs + 's' : 'Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
   }
   // ALT+S IS NOT INTERCEPTED (red1: "alt-s must be like original, not impacted.. just with the new
   // bounce is what i expect"). Let the key through, wait for the app's still to finish refining
@@ -1224,7 +1227,7 @@
     if (!(e.altKey && (e.key === 's' || e.key === 'S'))) return;
     if (e.shiftKey) return;
     if (busy) return;
-    if (!giSupported()) return;              // §GI_LIVE gate: phones / no WebGPU / not r186 keep today's Alt+S
+    if (!giSupported()) { plainStill(); return; }   // §GI_LIVE gate: phones / no WebGPU / not r186 keep today's Alt+S (+ §STILL_OVERLAY_NOGI)
     const A = window.APP;
     if (A._stillRefineActive) return;        // this press is the app's own toggle-OFF; leave it alone
     setTimeout(async () => {
@@ -1414,6 +1417,28 @@
         if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
     }
   };
+  // §STILL_OVERLAY_NOGI (PHOTOREAL_STILL_RENDER.md, 2026-10-05): without the bounce the still finished with no sign of it —
+  // the overlay (Save PNG / Close) came only from show() on the bounce path, the toast was hidden and §STILL_LOCK ate clicks.
+  // Same wait, a copy of the app's finished frame, the same show().
+  function plainStill() {
+    const A = window.APP;
+    if (!A || A._stillRefineActive) return;          // the app's own toggle-OFF press
+    const t0 = performance.now(), reason = giOffReason();
+    setTimeout(async () => {
+      const ok = await waitForStill(120000);
+      if (!ok) { console.log('§STILL_OVERLAY_NOGI skipped reason=cancelled'); return; }
+      const src = A.renderer.domElement, c = document.createElement('canvas');
+      c.width = src.width; c.height = src.height; const ctx = c.getContext('2d');
+      const mean = () => { ctx.drawImage(src, 0, 0); const u = ctx.getImageData(0, 0, Math.min(128, c.width), Math.min(72, c.height)).data;
+        let t = 0; for (let i = 0; i < u.length; i += 4) t += (u[i] + u[i + 1] + u[i + 2]) / 3; return +(t / (u.length / 4)).toFixed(1); };
+      let m = mean();
+      if (m < 2) { try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); } catch (e) {} ctx.clearRect(0, 0, c.width, c.height); m = mean(); }
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      if (m < 2) console.warn('§STILL_OVERLAY_NOGI FAULT blank frame mean=' + m + ' size=' + c.width + 'x' + c.height);
+      console.log('§STILL_OVERLAY_NOGI shown reason=' + reason + ' size=' + c.width + 'x' + c.height + ' mean=' + m + ' ms=' + Math.round(performance.now() - t0));
+      show(c, secs, 0, 'plain');
+    }, 0);
+  }
   function giOffReason() {
     const T = window.THREE;
     if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 'touch-device';

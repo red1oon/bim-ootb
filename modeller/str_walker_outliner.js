@@ -72,7 +72,7 @@
     var d = window.swbTabData && window.swbTabData();
     if (!d) return [{ id: 'sw-empty', label: 'Open a resident (▾) or local .db (🏗) to walk', sub: '' }];
     var rows = [
-      { id: 'sw-grid', label: 'Grid ' + d.grid, sub: d.columns + ' columns' },
+      { id: 'sw-grid', label: 'Grid ' + d.grid + (d.rotationDeg ? ' ∠' + d.rotationDeg.toFixed(2) + '°' : ''), sub: d.columns + ' columns' },   // §ROW7-ROT
       { id: 'sw-gird', label: d.girders + ' girders', sub: 'RED ' + d.signals.RED + ' · ORANGE ' + d.signals.ORANGE + ' · GREEN ' + d.signals.GREEN }
     ];
     // CALIBRATED confidence (the EARNED gauge — fitted on the Terminal RosettaStone, never the raw
@@ -130,7 +130,44 @@
 
   // Open core (shared by local-file + resident fetch): init the walker from a DB's bytes. The bridge
   // swbInit AUTO-PICKS column-framed (STR columns) vs wall-bearing (ARC-only → semi-grid) — §STRWALK-INIT.
-  function _openBuffer(buf, name) {
+  // §FOLD-NO-BOX (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §WALK-LOD400-ONLY): walked fixtures are committed with realGeomHash and the
+  // mesh registry is filled only by a LIVE walk render — so a reopened building folded every saved walk op as a box (Duplex: 102/102).
+  // On geo arrival, resolve every realGeomHash named by a saved walk op (_dw) from THIS building's geo and register it (walk convention:
+  // recentred mesh, anchorOffset [0,0,0]) so the fold renders the real mesh; unresolvable ones stay refused by the fold.
+  function _registerWalkRealGeom(geoBuf) {
+    try {
+      var O = window.Bonsai && window.Bonsai.oplog, L = window.Bonsai && window.Bonsai.library;
+      if (!geoBuf || !O || !O._geomOps || !L || !L.registerRealGeometry || !window.RealGeometry) return;
+      var hs = {}; O._geomOps().forEach(function (o) { var P = o.parameters; if (P && P._dw && P.realGeomHash) hs[P.realGeomHash] = 1; });
+      var list = Object.keys(hs); if (!list.length) return;
+      var g = new window.SQL.Database(new Uint8Array(geoBuf)); var got = window.RealGeometry.resolveHashes(g, list); g.close();
+      var n = L.registerRealGeometry(Object.keys(got).map(function (h) { return { hash: h, v: got[h].positions, f: got[h].faces, bbox: got[h].bbox, anchorOffset: [0, 0, 0] }; }));
+      console.log(TAG + ' §FOLD-NO-BOX walk meshes named=' + list.length + ' resolved=' + Object.keys(got).length + ' registered=' + n + ' (unresolved stay refused, never boxed)');
+    } catch (e) { console.warn(TAG + ' §FOLD-NO-BOX register failed ' + (e && e.message)); }
+  }
+
+  function _injectRoomsIfNone(db, buf, name, from) {
+    var n = 0;
+    try { n = db.exec("SELECT COUNT(*) FROM spatial_structure WHERE type='IfcSpace'")[0].values[0][0]; } catch (e) { n = 0; }   // no table = zero
+    // §B1-ROW8: this buffer IS a previous Open's walker output (IDB compiled-rooms cache, keyed on the patched bytes' sha
+    // + ROOM_WALKER_V) — nothing to walk; say where the rooms came from instead of claiming they were 'present'.
+    if (from === 'cache' && n > 0) { console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=cache ifcSpace=' + n + ' (compiled RM_ rooms restored — same walker output as the Open that compiled them, no re-walk)'); return buf; }
+    if (n > 0) { console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=present ifcSpace=' + n + ' (left untouched)'); return buf; }
+    if (!window.RoomWalker || !window.RoomWalker.walk) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" RoomWalker not loaded — no rooms (never invented)'); return buf; }
+    try {
+      var t0 = Date.now();
+      db.run('CREATE TABLE IF NOT EXISTS rel_contained_in_space (space_guid TEXT, element_guid TEXT)');
+      var r = window.RoomWalker.walk(db, { write: true });
+      console.log(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" source=walker rooms=' + (r.roomsWritten || 0) + ' rel=' + (r.relWritten || 0) +
+        ' suspect=' + (r.suspectTotal || 0) + ' ms=' + (Date.now() - t0) + ' (compiled RM_ rooms, approximate — never presented as real)');
+      if (!(r.roomsWritten > 0)) return buf;
+      var tx = Date.now(), out = db.export().buffer;
+      console.log(TAG + ' §MODELLER-ROOM-COST "' + name + '" walkMs=' + (tx - t0) + ' exportMs=' + (Date.now() - tx) + ' bytes=' + out.byteLength);
+      return out;
+    } catch (e) { console.warn(TAG + ' §MODELLER-ROOM-INJECT "' + name + '" walker failed ' + (e && e.message) + ' — no rooms'); return buf; }
+  }
+
+  function _openBuffer(buf, name, opts) {
     if (!window.SQL) { console.warn(TAG + ' sql.js not ready'); return false; }
     try {
       var db = new window.SQL.Database(new Uint8Array(buf));
@@ -149,6 +186,11 @@
       }
       // Stash the open buffer + name so the disc-walker (DiscWalker.dwWalk) can re-open this building
       // read-only on a discipline click (this db is closed below after seeding). NON-INVENT substrate.
+      // §MODELLER-ROOM-INJECT (ROOM_INJECTION_HYBRID.md, 2026-09-27): WalkerDoctrine §14 — every building gets rooms. The
+      // Viewer infuses them (A.ensureRooms → RoomWalker.walk); the Modeller never did, so 6 of 8 residents opened with 0 rooms.
+      // Same rule as ensureRooms' 'zero' state: only when the db has NO IfcSpace at all (real or curated RM_ are never
+      // touched), compile from walls/doors with the SAME shared walker, into this handle AND the stashed buffer below.
+      buf = _injectRoomsIfNone(db, buf, name, opts && opts.roomsFrom);
       window.__dwBuf = buf; window.__dwName = name;
       // §NOGEO_COMPOSE (Modeller trigger — see the function's own doc above): compose geometry-less
       // aggregate-parents from their real IfcRelAggregates children NOW, so swbInit, the BOM-graph
@@ -165,7 +207,9 @@
       // buffer separately. Guarded: only a patched SampleCastle_ARC.db has the column; getRowsModified
       // makes the exclusion loud instead of silent.
       try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); var _abn = db.getRowsModified(); if (_abn) console.log(TAG + ' §ANCHOR blind: ' + _abn + ' anchor transform(s) hidden from walker/BOM-tree/cross-edge substrate (ARC seed still sees them)'); } catch (e) { }
-      var st = window.swbInit(db);   // §STRWALK-INIT logged by the bridge
+      // §B1-ROW3: one index for this (building × building) pair, shared by swbInit and the seed-phase cross-edge derive.
+      var openIdx = _geoIndex(db, null);
+      var st = window.swbInit(db, openIdx ? { geoIndex: openIdx } : undefined);   // §STRWALK-INIT logged by the bridge
       // Same meta.db ALSO seeds the bom-graph tab (DISC/ARC): building→storey→room→disc→class→element.
       if (window.BOMTreeOutliner && window.BOMTreeOutliner.loadFromDb) {
         try { window.BOMTreeOutliner.loadFromDb(db, name); } catch (e) { console.warn(TAG + ' bom-graph seed failed', e && e.message); }
@@ -174,7 +218,7 @@
       // NOT baked (W-UX-6 Phase 2; user fork = JS-derive). Geometric edges abuts/anchored/spans are JS-derived
       // (witnessed == Python, W-SDG-JS-PARITY); fills/aggregates are RECOVERED IFC reads. Stashed on window for
       // the bom-graph adjacency lens (element↔element abuts/fills/aggregates highlight; anchored/spans annotate).
-      _deriveXEdges(db, null, 'seed');
+      _deriveXEdges(db, null, 'seed', openIdx);
       db.close();
       ready = !!st; lastEx = [];
       if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
@@ -214,7 +258,7 @@
     if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
-      s.src = '../viewer/import_db_builder.js?v=1';
+      s.src = '../viewer/import_db_builder.js?v=7';
       s.onload = function () { _ifcEngineLoaded = true; resolve(); };
       s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
       document.head.appendChild(s);
@@ -245,7 +289,7 @@
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
     Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
       var arrayBuffer = r[0], wasmBytes = r[1];
-      var worker = new Worker(new URL('../viewer/import_worker.js?v=8', location.href).href);
+      var worker = new Worker(new URL('../viewer/import_worker.js?v=15', location.href).href);
       worker.onmessage = function (e) {
         var msg = e.data;
         if (msg.type === 'progress') { console.log(TAG + ' §IFC-OPEN-PROGRESS ' + msg.phase); return; }
@@ -278,7 +322,9 @@
             var openIt = function () {
               var ok = _openBuffer(dbs.extractedDb, name);
               if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+              else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
             };
+            _seedPending(name);
             if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
             else openIt();
           } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
@@ -522,20 +568,30 @@
   //                                  EVERY count/pick/audit.
   // Logs §XEDGE-GEO with resolved-vs-total: cross_edges.js has no logging of its own, which is exactly why a
   // fix that stopped running left no trace for ~7 weeks. A regression here is now loud.
-  function _deriveXEdges(db, geoBuf, phase) {
-    if (!(window.CrossEdges && window.CrossEdges.deriveAll)) return;
-    var geo = null;
+  // §B1-ROW3: ONE geometry index per (building, geometry) pair per Open — built here (or handed in by the caller
+  // that already built it), used for the §XEDGE-GEO count AND handed to deriveAll, and RETURNED so the STR re-init
+  // and the ARC seed reuse it (was: this function built one only to log a count, deriveAll built 3 more).
+  function _geoIndex(db, geo) {
+    if (!(window.RealGeometry && window.RealGeometry.buildGeometryIndex)) return null;
+    try { return window.RealGeometry.buildGeometryIndex(db, geo || undefined); } catch (e) { return null; }
+  }
+  function _deriveXEdges(db, geoBuf, phase, geoIndex) {
+    if (!(window.CrossEdges && window.CrossEdges.deriveAll)) return null;
+    var geo = null, idx = geoIndex || null;
     try {
       if (geoBuf) geo = new window.SQL.Database(new Uint8Array(geoBuf));
       // §XEDGE-3AXIS: `resolved` is keyed by geometry HASH, `byGuid` by element — count ELEMENTS whose hash
       // resolved (the old line printed distinct meshes over elements, 1924/3225, and read as 1,301 missing).
       var res = -1, tot = -1, meshes = -1;
-      if (geo && window.RealGeometry && window.RealGeometry.buildGeometryIndex) {
-        try { var idx = window.RealGeometry.buildGeometryIndex(db, geo), bg = idx.byGuid || {}, rs = idx.resolved || {};
+      if (!idx) idx = _geoIndex(db, geo);
+      if (geo && idx) {
+        try { var bg = idx.byGuid || {}, rs = idx.resolved || {};
           tot = Object.keys(bg).length; meshes = Object.keys(rs).length;
           res = Object.keys(bg).filter(function (g) { return bg[g] != null && rs[bg[g]]; }).length; } catch (e) { }
       }
-      window.swXEdges = window.CrossEdges.deriveAll(db, geo ? { geoDb: geo } : undefined);
+      var xo = geo ? { geoDb: geo } : {};
+      if (idx) xo.geoIndex = idx;
+      window.swXEdges = window.CrossEdges.deriveAll(db, xo);
       var X = window.swXEdges;
       console.log(TAG + ' §XEDGE-ALL abuts=' + X.abuts.length + ' anchored=' + X.anchored.length +
         ' spans=' + X.spans.length + ' fills=' + X.fills.length + ' aggregates=' + X.aggregates.length +
@@ -546,21 +602,56 @@
         ' abuts=' + X.abuts.length);
     } catch (e) { console.warn(TAG + ' cross-edge derive failed (' + phase + ')', e && e.message); }
     finally { if (geo) { try { geo.close(); } catch (e) { } } }
+    return idx;
   }
 
   // §XEDGE-GEOWIRE — re-derive over the SAME substrate the synchronous open built, now that geometry exists.
   // Re-opens __dwBuf (the sync path closed its own handle) and replays composeGhosts + §ANCHOR-BLIND so the
   // two derivations differ in exactly ONE variable: whether geoDb is present.
+  // Returns the (building × geometry) index it built, for _reinitStrWalkWithGeo + _seedArcEditable (§B1-ROW3).
   function _reDeriveXEdgesWithGeo(geoBuf) {
-    if (!geoBuf || !window.__dwBuf || !window.SQL) return;
-    var db = null;
+    if (!geoBuf || !window.__dwBuf || !window.SQL) return null;
+    var db = null, idx = null;
     try {
       db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
       composeGhostsFromAggregates(db);
       try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
-      _deriveXEdges(db, geoBuf, 'geo');
+      idx = _deriveXEdges(db, geoBuf, 'geo');
     } catch (e) { console.warn(TAG + ' §XEDGE-GEO re-derive failed', e && e.message); }
     finally { if (db) { try { db.close(); } catch (e) { } } }
+    return idx;
+  }
+
+  // §ROW7-TRUE-CENTRE — re-init the STR walk over the SAME substrate the synchronous open built, now that the
+  // geometry exists. Same shape and reason as _reDeriveXEdgesWithGeo above: swbInit ran at _openBuffer BEFORE
+  // the *_geo.db fetch was even issued, so its columns were placement ANCHORS, not centres (MODELLER_MASTER row 7:
+  // 0.0939 m reported vs 0.1039 m true on Terminal; column z off by up to 3.944 m in the rendered skeleton).
+  // Replays composeGhosts + §ANCHOR-BLIND so the two inits differ in exactly ONE variable (geoDb), then re-folds
+  // the instance's recorded STR_WALK_EDIT ops onto the re-inited base (they are already signed in the mo_ log —
+  // swbReplay never re-commits). Runs BEFORE _seedArcEditable so _seedStrWalk renders the true-centre walk.
+  // Logs §STRWALK-GEO with the centre census; a re-init that resolved 0 meshes is visible, not silent.
+  function _reinitStrWalkWithGeo(geoBuf, geoIndex) {
+    if (!geoBuf || !window.__dwBuf || !window.SQL || !window.swbInit) return null;
+    var db = null, geo = null, st = null;
+    try {
+      db = new window.SQL.Database(new Uint8Array(window.__dwBuf));
+      geo = new window.SQL.Database(new Uint8Array(geoBuf));
+      composeGhostsFromAggregates(db);
+      try { db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }
+      st = window.swbInit(db, geoIndex ? { geoDb: geo, geoIndex: geoIndex } : { geoDb: geo });   // §B1-ROW3
+      ready = !!st; lastEx = [];
+      if (st) _replayEdits();
+      var c = (st && st.centres) || { mesh: 0, anchor: 0 };
+      var gg = st && st.base && st.base.grid;
+      console.log(TAG + ' §STRWALK-GEO re-init with real geometry: system=' + (st ? st.system : 'none') +
+        ' centres=mesh:' + c.mesh + ' anchor:' + c.anchor +
+        (st && st.colRMS != null ? ' colRMS=' + st.colRMS.toFixed(4) + 'm' : '') +
+        (gg ? ' grid=' + gg.xLines.length + '×' + gg.yLines.length + (gg.theta ? ' rot=' + gg.thetaDeg.toFixed(3) + '°' : '') : '') +   // §ROW7-ROT
+        (c.mesh === 0 ? ' — 0 meshes resolved: the walk is still on ANCHORS' : ''));
+      if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    } catch (e) { console.warn(TAG + ' §STRWALK-GEO re-init failed', e && e.message); }
+    finally { if (geo) { try { geo.close(); } catch (e) { } } if (db) { try { db.close(); } catch (e) { } } }
+    return st;
   }
 
   function _fetchGeoDb(res) {
@@ -589,8 +680,16 @@
   // Fork the per-building EDITABLE INSTANCE (op-log key 'mo_<building>') so this resident's signed edits
   // fold into its own instance while the loaded meta.db REFERENCE (the IDB cache entry) stays pristine.
   // Once the instance's op-log is loaded, replay its recorded edits back into the fresh walk.
+  // §WALK-AFTER-SEED (SPEC_WALK_AFTER_SEED.md): an Open makes the building's ARC seed PENDING; discWalk/discWalkAll await it,
+  // so a Walk clicked early (Duplex 4.4 s, Terminal 24 s window measured) never signs its rows before the seed's.
+  function _seedPending(key) {
+    var done; window.__arcSeedReady = new Promise(function (r) { done = r; });
+    window.__arcSeedDone = function (why) { if (done) { console.log(TAG + ' §WALK-AFTER-SEED seed settled building=' + key + ' (' + why + ')'); done(why); done = null; } };
+  }
   function _forkEditable(res) {
+    _seedPending(res.key);
     var O = window.Bonsai && window.Bonsai.oplog;
+    if (!(O && O.setModelKey)) window.__arcSeedDone('no-oplog');
     if (O && O.setModelKey) O.setModelKey('mo_' + res.key).then(function (n) {
       console.log(TAG + ' §STRWALK-MO editable instance mo_' + res.key + ' active ops=' + n + ' (reference meta.db stays pristine)');
       _replayEdits();
@@ -601,14 +700,20 @@
         window.__dwGeoBuf = geoBuf || null;
         // §XEDGE-GEOWIRE: the cross-edge set derived synchronously at open had NO geometry (it ran before
         // this fetch was even issued). Now that the real substrate is here, derive it again for real.
-        _reDeriveXEdgesWithGeo(geoBuf);
-        _seedArcEditable(O, res.key, geoBuf);
+        // §B1-ROW3: the index it builds for (__dwBuf × geoBuf) is handed on — the STR re-init and the ARC seed
+        // read the SAME pair, so they reuse it instead of each rebuilding it.
+        var geoIdx = _reDeriveXEdgesWithGeo(geoBuf);
+        // §ROW7-TRUE-CENTRE: the STR walk, too, was initialised before this fetch — re-init it on true centres.
+        _reinitStrWalkWithGeo(geoBuf, geoIdx);
+        _registerWalkRealGeom(geoBuf);   // §FOLD-NO-BOX: saved walk ops name their mesh — register it before the seed's re-fold
+        _seedArcEditable(O, res.key, geoBuf, geoIdx);
       }).catch(function (e) {
         // §GEO-SERVED: console.error, NOT console.warn — DevTools' default filter hides warn, which is how the
-        // live LFS-pointer defect stayed invisible for months. What follows is measured bounding boxes, which
-        // are NOT this building's real geometry; say so unmistakably rather than letting it pass for a render.
-        console.error(TAG + ' §GEO-SERVED-DEGRADED ' + res.key + ' — NO real geometry substrate loaded. What you' +
-          ' are seeing is MEASURED BOUNDING BOXES, not the building. Cause: ' + (e && e.message), e);
+        // live LFS-pointer defect stayed invisible for months. §WALK-LOD400-ONLY (2026-09-27): with no substrate the seed
+        // REFUSES every element (arc_editable buildSeedOps) — nothing is drawn as a box; say so unmistakably.
+        console.error(TAG + ' §GEO-SERVED-DEGRADED ' + res.key + ' — NO real geometry substrate loaded. The building is' +
+          ' NOT drawn (every element refused — LOD400 or fail hard, never bounding boxes). Cause: ' + (e && e.message), e);
+        try { if (typeof window.setStat === 'function') window.setStat(res.key + ': geometry failed to load — building not drawn (no box fallback)'); } catch (e2) { }
         window.__dwGeoBuf = null;
         _seedArcEditable(O, res.key, null);
       });
@@ -624,8 +729,9 @@
   // element's real mesh against IT instead of `bdb` (which, for Terminal, carries no geometry tables at all).
   // Absent/null (every other resident) → io.geoDb stays undefined, buildSeedOps falls back to `bdb` itself —
   // byte-identical to pre-existing behaviour.
-  function _seedArcEditable(O, key, geoBuf) {
-    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) return;
+  function _seedArcEditable(O, key, geoBuf, geoIndex) {
+    var settle = function (why) { if (window.__arcSeedDone) window.__arcSeedDone(why); };
+    if (!(window.ArcEditable && window.__dwBuf && window.SQL && window.KernelOps && O && O.commitSeedGroup)) { settle('not-seedable'); return; }
     var bdb = null, gdb = null;
     try {
       bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
@@ -650,6 +756,8 @@
         // §GEO-SPLIT: undefined for every non-split resident (bdb itself carries the geometry tables, exactly
         // as before); the opened Terminal_geo.db handle for Terminal.
         geoDb: gdb || undefined,
+        // §B1-ROW3: the Open's (__dwBuf × geoBuf) index — only when the geo db actually opened here too.
+        geoIndex: (gdb && geoIndex) || undefined,
         // §GEOMAP-WIRE (RESUME_IFC_BOM_GEOMAPPING.md §WIRE-SPEC): best-effort AUDIT channel — own-class
         // measured-band check on every seeded element (return block + §GEOMAP-VALIDATE logs; op substrate
         // provably untouched, W-GEOMAP-WIRE W1). Gated on the bridge's data actually having loaded (gmLoad
@@ -662,6 +770,11 @@
         console.log(TAG + ' §ARC-SEED-WIRE ' + key + ' editable ARC elements=' + r.committed + ' skipped=' + r.skipped +
           ' realGeom=' + (r.realResolved || 0) + ' hardfail=' + (r.hardfail || 0) +
           ' (featureId↔guid bridge ready)');
+        // §NET-AUDIT / W-E2E-OLEYE (2026-09-26): the Outliner painted its bom-graph BEFORE this bridge existed, and an
+        // element row only gets its eye when its guid resolves in __arcFidByGuid at paint time (bonsai_outliner.js
+        // §V1 honesty). Nothing repainted after the bridge landed → 0 leaf eyes on an opened Duplex (198 after a
+        // refresh). Repaint once, now that rows can act on the scene.
+        if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
         // §GEOMAP-WIRE: surface the audit for the Outliner (read-only; null when the bridge wasn't ready)
         if (r.geomap) {
           window.__gmSeedAudit = window.__gmSeedAudit || {};
@@ -672,8 +785,8 @@
       // hint) and the exact way Terminal silently never loaded any geometry. console.error makes it a loud,
       // impossible-to-miss line in devtools/CI logs (still just a log line — no new UI surface, per scope).
       }).catch(function (e) { console.error(TAG + ' §ARC-SEED-WIRE failed ' + (e && e.message) + ' — building=' + key + ' seeded ZERO ops (no geometry will render)'); })
-        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } });
-    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } }
+        .finally(function () { try { if (bdb) bdb.close(); } catch (e) { } try { if (gdb) gdb.close(); } catch (e) { } settle('seeded'); });
+    } catch (e) { console.error(TAG + ' §ARC-SEED-WIRE open failed ' + (e && e.message) + ' — building=' + key); if (bdb) { try { bdb.close(); } catch (e2) { } } if (gdb) { try { gdb.close(); } catch (e3) { } } settle('open-failed'); }
   }
 
   // §8E-1b — render the walked STR SKELETON (columns + girders) into the laid ARC as signed GEOM_INSERT op-rows
@@ -887,6 +1000,64 @@
     }
   }
 
+  // §B1-ROW8 (pattern review row 8) — the room compile is a pure function of (patched bytes, ROOM_WALKER_V), so its
+  // output is persisted once and re-opened, instead of RoomWalker.walk + db.export() on every Open. The RAW bytes
+  // stay cached under the url exactly as before (the patch must keep re-applying over raw); the compiled buffer
+  // lives beside them under 'mrooms_<url>|<ROOM_WALKER_V>|<sha256(patched)>' (the 'rw_<url>' prefix precedent,
+  // routewalker.js). A new ROOM_WALKER_V, a new raw ?v= or a changed patch changes the key; writing a new entry
+  // deletes every other 'mrooms_<url>|' entry, so a stale compile is never served and never accumulates.
+  function _sha256Hex(buf) {
+    try {
+      if (!(window.crypto && window.crypto.subtle && window.crypto.subtle.digest)) return Promise.resolve(null);
+      return window.crypto.subtle.digest('SHA-256', new Uint8Array(buf)).then(function (h) {
+        return Array.prototype.map.call(new Uint8Array(h), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+      }).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function _idbDropStale(prefix, keepKey) {
+    return _idbEnsureStore().then(function () { return new Promise(function (resolve) {
+      try {
+        var rq = indexedDB.open('bim_ootb_cache');
+        rq.onsuccess = function () {
+          var idb = rq.result, dropped = 0;
+          try {
+            var tx = idb.transaction('dbs', 'readwrite'), st = tx.objectStore('dbs');
+            var kr = st.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'));
+            kr.onsuccess = function () { (kr.result || []).forEach(function (k) { if (k !== keepKey) { st.delete(k); dropped++; } }); };
+            tx.oncomplete = function () { idb.close(); resolve(dropped); };
+            tx.onerror = function () { idb.close(); resolve(-1); };
+          } catch (e) { idb.close(); resolve(-1); }
+        };
+        rq.onerror = function () { resolve(-1); };
+      } catch (e) { resolve(-1); }
+    }); });
+  }
+  function _openResidentBuffer(patched, res, url) {
+    var V = window.RoomWalker && window.RoomWalker.ROOM_WALKER_V;
+    if (!V) return Promise.resolve(_openBuffer(patched, res.key));
+    var t0 = Date.now();
+    return _sha256Hex(patched).then(function (sha) {
+      if (!sha) return _openBuffer(patched, res.key);
+      var prefix = 'mrooms_' + url + '|', key = prefix + V + '|' + sha;
+      return _idbGetDb(key).then(function (hit) {
+        if (hit) {
+          console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" HIT lookupMs=' + (Date.now() - t0) + ' bytes=' + hit.byteLength + ' sha=' + sha.slice(0, 12) + ' V=' + V);
+          return _openBuffer(hit, res.key, { roomsFrom: 'cache' });
+        }
+        var ok = _openBuffer(patched, res.key);
+        var compiled = window.__dwBuf;
+        if (ok && compiled && compiled !== patched) {
+          _idbPutDb(key, compiled).then(function (p) { return _idbDropStale(prefix, key).then(function (d) {
+            console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" MISS persisted=' + p + ' staleDropped=' + d + ' bytes=' + compiled.byteLength + ' sha=' + sha.slice(0, 12) + ' V=' + V);
+          }); });
+        } else {
+          console.log(TAG + ' §MODELLER-ROOM-CACHE "' + res.key + '" MISS nothing-compiled (rooms present or walker wrote 0) — not cached');
+        }
+        return ok;
+      });
+    });
+  }
+
   // Open a permanent resident: cache-first (local), else fetch the substrate from the modeller's GH
   // playground (../modeller/<db>) and cache it. GH Pages serves Range requests + gzip → fetch() auto-inflates.
   function openResident(res) {
@@ -894,15 +1065,14 @@
     _idbGetDb(url).then(function (cached) {
       if (cached) {
         console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-HIT (local) ' + (cached.byteLength / 1024).toFixed(0) + 'KB');
-        _applyPendingPatch(cached, res.db).then(function (patched) {
-          if (_openBuffer(patched, res.key)) _forkEditable(res);
+        _applyPendingPatch(cached, res.db).then(function (patched) { return _openResidentBuffer(patched, res, url); }).then(function (ok) {
+          if (ok) _forkEditable(res);
         });
         return;
       }
       console.log(TAG + ' §STRWALK-OPEN ' + res.key + ' cache-MISS → fetch ' + url);
       fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
-        .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) {
-          var ok = _openBuffer(patched, res.key);
+        .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) { return _openResidentBuffer(patched, res, url); }).then(function (ok) {
           if (ok) {
             _forkEditable(res);
             _idbPutDb(url, buf).then(function (p) {   // cache RAW server bytes, not the patched buffer
@@ -924,14 +1094,18 @@
     var GM = window.Bonsai && window.Bonsai.gridmove;
     if (!GM || GM._strWrapped) return;
     var orig = GM.commit.bind(GM);
-    GM.commit = async function (gridId, delta) {
-      var res = await orig(gridId, delta);                 // the modeller commits GEOM_GRID_MOVE first
+    GM.commit = async function (gridId, delta, extra) {
+      // §GRID-SPAN-GATE: read the dragged line's position BEFORE the commit — an "Add one more" gesture inserts a line
+      // into Bonsai.grid in the same commit, which shifts the gx/gy indices, so a post-commit G.xs[index] is a different line.
+      var _G0 = window.Bonsai && window.Bonsai.grid, _m0 = GM._map && GM._map[gridId];
+      var _pos0 = (_G0 && _m0) ? (_m0.axis === 'x' ? _G0.xs[_m0.index] : _G0.ys[_m0.index]) : null;
+      var res = await orig(gridId, delta, extra);          // the modeller commits GEOM_GRID_MOVE first
       try {
         if (ready && window.swbOnGridMove) {
           var m = GM._map && GM._map[gridId];               // gridId → {axis,index}
           var G = window.Bonsai.grid;
           if (m && G) {
-            var pos = m.axis === 'x' ? G.xs[m.index] : G.ys[m.index];
+            var pos = _pos0 != null ? _pos0 : (m.axis === 'x' ? G.xs[m.index] : G.ys[m.index]);   // pre-commit position (§GRID-SPAN-GATE); the walker snaps it to its own line either way
             // §STRWALK_RACE_FIX (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 3, TOCTOU-shaped): the
             // injected `commit` callback used to call window.Bonsai.oplog.commit() DIRECTLY, per op, inside
             // str_walker_bridge.js's swbOnGridMove forEach — that forEach never awaits it, so a 30-op rewalk
@@ -1008,6 +1182,8 @@
     },
     onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
-    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase,
+    _reinitStrWalkWithGeo: _reinitStrWalkWithGeo,   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
+    _composeGhosts: composeGhostsFromAggregates     // W-E2E-VOID-ANCHOR G6 same-run control (read-only use on a copy)
   };
 })();

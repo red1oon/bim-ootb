@@ -83,6 +83,46 @@
       "target": { "discipline": "MEP" },
       "tolerance_m": 0.050,
       "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "DRAINAGE vs ROAD",
+      "family": "civil",
+      "source": { "discipline": "DRAINAGE" },
+      "target": { "discipline": "ROAD" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "LIGHTING vs DRAINAGE",
+      "family": "civil",
+      "source": { "discipline": "LIGHTING" },
+      "target": { "discipline": "DRAINAGE" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "SIGNAGE vs DRAINAGE",
+      "family": "civil",
+      "source": { "discipline": "SIGNAGE" },
+      "target": { "discipline": "DRAINAGE" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "FURNITURE vs LIGHTING",
+      "family": "civil",
+      "source": { "discipline": "FURNITURE" },
+      "target": { "discipline": "LIGHTING" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "SIGNAGE vs LIGHTING",
+      "family": "civil",
+      "source": { "discipline": "SIGNAGE" },
+      "target": { "discipline": "LIGHTING" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
     }
   ],
   "severity": {
@@ -93,6 +133,7 @@
   "display": {
     "max_visible": 20,
     "max_report": 200,
+    "hide_box_only_above": 1000,
     "dim_opacity": 0.1,
     "pulse_speed_s": 1.5
   }

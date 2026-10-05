@@ -58,18 +58,29 @@ async function runE2E(NAME, body, opts) {
   const pg = await br.newPage(); await pg.setViewport({ width: opts.width || 1280, height: opts.height || 860, deviceScaleFactor: opts.dpr || 1 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 180)));
   const slog = []; pg.on('console', m => { const t = m.text(); if (/^§/.test(t)) slog.push(t); });
+  // §NET-FAILLOG (MODELLER_MASTER §MODELLER-NET-AUDIT class 2 SCOPE-BLIND, 2026-09-26): the app reports most failures as
+  // console lines, not pageerrors (the catalog was empty 3 months behind 1,194 'insert fold fail' warnings no check read).
+  // Capture every warning/error line and every line naming a failure, so the run log shows what NO-ERROR never saw.
+  const FAILRE = /§[\w-]*(FAIL|REFUSE|ERR)\b|fold fail|\bREFUSED?\b|\bunknown (product|op|class)\b/i;
+  // Noise measured on the 58-witness baseline and excluded: summary lines whose only fail-word carries a zero count
+  // ('§GEOM-HARDFAIL total=0 of 196', '§LAYER-GATE … refused=0'), and the browser's own favicon probe (+ its console twin).
+  const NOISE = /§GEOM-HARDFAIL total=0 |§LAYER-GATE armed .* refused=0 |favicon\.ico|^Failed to load resource: the server responded with a status of 404/;
+  const flog = []; pg.on('console', m => { const ty = m.type(), x = m.text(); if (NOISE.test(x)) return; if (ty === 'error' || ty === 'warn' || ty === 'warning' || FAILRE.test(x)) flog.push(ty + ': ' + x.slice(0, 200)); });
+  pg.on('response', r => { const u = r.url().replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, ''); if (r.status() >= 400 && !NOISE.test(u)) flog.push('http' + r.status() + ': ' + u); });
 
   let pass = 0, fail = 0;
   const t = {
     pg, sleep, slog, errs,
     assert(n, c, x) { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } },
     async shot(label) { try { await pg.screenshot({ path: path.join(SHOTS, NAME + '-' + label + '.png') }); } catch (e) {} },
-    async open(key) {
-      await pg.click('#b-open'); await sleep(200);
-      await pg.click('#m-open-panel .mo-row[data-key="' + key + '"]');
+    async open(key, oo) {
+      oo = oo || {};   // §GUIDE-POC additive: {panelOpen:true} = caller already clicked #b-open; {noFit:true} = leave the camera as Open left it
+      if (!oo.panelOpen) await pg.click('#b-open'); await sleep(200);
+      if (oo.rowText) await pg.evaluate(txt => { const r = Array.from(document.querySelectorAll('#m-open-panel .mo-row')).find(x => new RegExp(txt).test(x.textContent)); if (r) r.click(); }, oo.rowText);   // §S9 additive: a chooser row WITHOUT a data-key (the 'FROM IFC' rows)
+      else await pg.click('#m-open-panel .mo-row[data-key="' + key + '"]');
       await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
       await sleep(2200);
-      const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
+      if (!oo.noFit) { const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); } }
       await pg.evaluate(() => {
         window.__e2e = {
           proj(x, y, z) { const v = new window.THREE.Vector3(x, y, z).project(window.A.camera); const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect(); return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top, v.z]; },
@@ -81,6 +92,42 @@ async function runE2E(NAME, body, opts) {
           // height. Pure camera maths off the real mesh bbox; no scene mutation.
           , frame(fid, fill) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return false; const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return false; const c = new window.THREE.Vector3(); b.getCenter(c); const s = new window.THREE.Vector3(); b.getSize(s); const rad = Math.max(s.x, s.y, s.z) * 0.5 || 1; const cam = window.A.camera, ctl = window.A.controls; const dir = new window.THREE.Vector3().subVectors(cam.position, ctl.target).normalize(); const dist = Math.max(rad / Math.tan(cam.fov * Math.PI / 360) / fill, rad * 1.5); ctl.target.copy(c); cam.position.copy(c).addScaledVector(dir, dist); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
           , dolly(f) { const cam = window.A.camera, ctl = window.A.controls; const d = new window.THREE.Vector3().subVectors(cam.position, ctl.target); cam.position.copy(ctl.target).addScaledVector(d, f); ctl.update(); if (window.A.requestRender) window.A.requestRender(); return true; }
+          // §L3-AIM (W-E2E-CUT-LAYERS L3 fix, 2026-09-25): place the camera where this element's OWN face is
+          // the FIRST raycast hit (clickPointFor's oracle — the same visible/non-anchor mesh list pickAt uses)
+          // AND that pixel is on the canvas (document.elementFromPoint — a real user cannot click through the
+          // Outliner/toolbar). Why: frame(fid, fill) keeps the CURRENT view direction; from the open view's
+          // iso direction a low interior wall sits behind upper-storey slabs/walls, so clickPointFor() was
+          // null and clickOn()'s bbox-centre fallback selected the OCCLUDER instead. Measured on origin/main
+          // 39673dd7 (Duplex, 27 wallish layered walls): frame(fid,0.5) → 0/27 have a verified point (8
+          // candidates × 2 attempts, 0 selections, the click picked fid 55/22 — the page's own pickAt was
+          // right, the aim was wrong). With this placement search → 26/27; the one left, fid 87 (the 7-layer
+          // party-wall core), is enclosed on every side by walls 5/14/13/6/90 (0.06 m interpenetration), a
+          // data fact of the resident, not a pick defect. Pure camera maths off the real mesh bbox: face-on to
+          // the thin axis from either side at 4 stand-offs, then 8 yaws × 2 distances. Returns the verified
+          // CSS-px click point (null = genuinely unreachable) and leaves the camera at that placement.
+          , framePickable(fid) {
+            const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null;
+            const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) return null;
+            const c = b.getCenter(new window.THREE.Vector3()), s = b.getSize(new window.THREE.Vector3());
+            const cam = window.A.camera, ctl = window.A.controls, cv = window.A.renderer.domElement;
+            const thin = s.x <= s.y ? 'x' : 'y', half = (thin === 'x' ? s.x : s.y) / 2;
+            const ps = [];
+            for (const gap of [1.0, 1.8, 2.6, 3.4]) for (const side of [1, -1]) { const p = c.clone(); p[thin] += side * (half + gap); ps.push({ tag: 'face-' + thin + (side > 0 ? '+' : '-') + '-' + gap, pos: p }); }
+            for (const dist of [2.0, 3.5]) for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; ps.push({ tag: 'yaw' + (k * 45) + '-' + dist, pos: c.clone().add(new window.THREE.Vector3(Math.cos(a) * Math.cos(0.35), Math.sin(a) * Math.cos(0.35), Math.sin(0.35)).multiplyScalar(dist)) }); }
+            // The on-canvas test is applied PER SAMPLE POINT (clickPointFor's `ok`), not per placement: after a
+            // selection the page shows UI over part of the canvas, and the first face point of an otherwise
+            // good placement can sit under it (measured: face-y+-1.8 on fid 88 → (935,648) blocked after
+            // select, every other sample of the same placement fine). `blocked` names the last blocker for the log.
+            let blocked = null;
+            const onCanvas = (p) => { const el = document.elementFromPoint(p[0], p[1]); if (el === cv) return true; blocked = el ? (el.tagName + '#' + el.id) : 'null'; return false; };
+            for (const p of ps) {
+              cam.position.copy(p.pos); ctl.target.copy(c); ctl.update(); cam.updateMatrixWorld(true);
+              const pt = this.clickPointFor(fid, onCanvas); if (!pt) continue;
+              if (window.A.requestRender) window.A.requestRender();
+              return { tag: p.tag, pt: pt, cam: cam.position.toArray().map(v => +v.toFixed(2)) };
+            }
+            return { unreachable: true, blocked: blocked };
+          }
           // §F2-FRAMING: deterministic overhead plan view over (cx,cy) at height h — the exact camera pattern
           // the app itself uses for its own top-down moments (modeller.html §deep-link: up=(0,1,0), position
           // above, target below). Saved/restored so tool state after the shot is untouched.
@@ -140,7 +187,9 @@ async function runE2E(NAME, body, opts) {
           // run. Return a VERIFIED click point instead: sample the mesh's own triangle centroids, project each,
           // and keep the first whose raycast FIRST HIT (same raycast the app's pick uses) is this very mesh.
           // Deterministic given the camera; null = genuinely not visible from here (caller skips the candidate).
-          , clickPointFor(fid) {
+          // `ok` (optional, §L3-AIM): an extra per-point predicate (CSS px → bool) — e.g. "this pixel is on the
+          // canvas, not under a panel". Absent ⇒ byte-identical to before (every existing caller passes none).
+          , clickPointFor(fid, ok) {
             const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid); if (!m) return null;
             const cam = window.A.camera, rc = new window.THREE.Raycaster();
             const meshes = g.children.filter(o => o.isMesh);
@@ -157,7 +206,7 @@ async function runE2E(NAME, body, opts) {
               if (sp[0] < r.left + 8 || sp[0] > r.right - 8 || sp[1] < r.top + 8 || sp[1] > r.bottom - 8 || sp[2] > 1) continue;
               rc.setFromCamera(new window.THREE.Vector2(((sp[0] - r.left) / r.width) * 2 - 1, -(((sp[1] - r.top) / r.height) * 2 - 1)), cam);
               const hits = rc.intersectObjects(meshes, false);
-              if (hits.length && hits[0].object === m) return [sp[0], sp[1]];
+              if (hits.length && hits[0].object === m && (!ok || ok([sp[0], sp[1]]))) return [sp[0], sp[1]];
             }
             return null;
           }
@@ -169,11 +218,14 @@ async function runE2E(NAME, body, opts) {
       // is camera-timing flake, not an app bug (mesh/candidate DATA is present throughout — see diag capture
       // in RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md 2026-08-07). Poll instead of trusting the fixed sleep so
       // t.pick() never starts its scan against a transiently-empty candidate list.
-      { const t0 = Date.now(); let n = 0;
+      if (!oo.noFit) { const t0 = Date.now(); let n = 0;
         while (Date.now() - t0 < 6000) { n = await pg.evaluate(() => window.__e2e.candidates().length); if (n > 0) break; await sleep(200); }
         console.log('  §OPEN-SETTLE candidates=' + n + ' waitedMs=' + (Date.now() - t0)); }
     },
-    proj(x, y, z) { return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
+    // §NET-AUDIT RACE (2026-09-26, W-E2E-RSARM A5 root cause): pixels are only valid on a settled camera. A commit
+    // that re-selects (commitScale → selectMany) starts a fresh §ZOOM-SEL fly, so projecting right after it gave the
+    // ring drag stale pixels (committed GEOM_MOVE instead of GEOM_ROTATE). Settle a LIVE fly before projecting.
+    async proj(x, y, z) { if (await pg.evaluate(() => !!window.__flyLive)) await this.flySettle(); return pg.evaluate((a, b, c) => window.__e2e.proj(a, b, c), x, y, z); },
     centre(fid) { return pg.evaluate(f => window.__e2e.centre(f), fid); },
     // real mouse click ON the mesh with this featureId, at a raycast-verified point (anti-flake — see
     // __e2e.clickPointFor); falls back to the projected bbox centre if no verified point is visible.
@@ -189,10 +241,29 @@ async function runE2E(NAME, body, opts) {
     // shotClip so the clip region is a legible close-up, not a sliver of a wide shot. fill≈0.4 → the element
     // spans ~40% of the frame height. Logged so a silent no-op (mesh not found) can't hide again.
     async frameElement(fid, fill) {
+      // §NET-AUDIT RACE (2026-09-26, W-E2E-SCALE root cause): a §ZOOM-SEL fly started AFTER pick() settled (e.g. by
+      // #b-move re-selecting) keeps lerping the camera and overwrites this placement a few frames later; the
+      // witness then drags from stale pixels (measured: the scaleX-cube press became a 'move X' GEOM_MOVE and
+      // logged '§ZOOM-SEL yield'). Settle any in-flight fly BEFORE placing the camera.
+      await this.flySettle();
       const ok = await pg.evaluate((f, fl) => window.__e2e.frame(f, fl), fid, fill == null ? 0.4 : fill);
       await sleep(350);
       console.log('  §SHOTFRAME fid=' + fid + ' fill=' + (fill == null ? 0.4 : fill) + ' ok=' + ok);
       return ok;
+    },
+    // §L3-AIM: camera to a placement from which `fid`'s own face is the first raycast hit and on the canvas
+    // (see __e2e.framePickable). No sleep and no rAF wait: the placement is synchronous and pickAt raycasts
+    // with the live camera object whose matrices __e2e.framePickable already updated — a rendered frame is
+    // not a precondition for the pick (an earlier draft waited two rAF frames; at the ~0.15 fps measured here
+    // that was a multi-second window in which a still-live §ZOOM-SEL fly moved the camera off the placement
+    // and the re-verify failed — the caller must settle/yield the fly BEFORE aiming, see the witness).
+    // Returns {tag, pt:[sx,sy], cam} or null (unreachable). Logged.
+    async framePickable(fid) {
+      let r = await pg.evaluate(f => window.__e2e.framePickable(f), fid);
+      const blocked = r && r.unreachable ? r.blocked : null;
+      if (r && r.unreachable) r = null;
+      console.log('  §L3-AIM fid=' + fid + (r ? ' via=' + r.tag + ' pt=[' + r.pt.map(v => v.toFixed(1)).join(',') + '] cam=[' + r.cam.join(',') + ']' : ' UNREACHABLE (no placement puts its own face first in the ray on the canvas' + (blocked ? '; last on-canvas blocker=' + blocked : '') + ')'));
+      return r;
     },
     async dolly(f) { await pg.evaluate(x => window.__e2e.dolly(x), f); await sleep(250); },
     async clearGround(size) { const r = await pg.evaluate(s => window.__e2e.clearGround(s), size); console.log('  §CLEARGROUND size=' + size + ' -> ' + JSON.stringify(r)); return r; },
@@ -322,9 +393,19 @@ async function runE2E(NAME, body, opts) {
     },
     // §ZOOM-SEL: wait for an in-flight zoom-to-selection camera fly (plus OrbitControls damping tail) to
     // finish — headless-swiftshader rAF runs ~14fps so the 25-frame fly takes ~2s wall-clock.
+    // §NET-AUDIT RACE (2026-09-26): under CPU load swiftshader rAF drops far enough that the fly outlives maxMs; the
+    // old loop then returned SILENTLY with the fly still live, and it overwrote the witness's camera a few frames
+    // later (measured: W-E2E-SCALE, 3 runs in parallel, camera ended on the fly's own dist=4.92 endpoint and the
+    // drag press landed off-viewport at (1251,866) of 1200x850). On timeout, yield the fly exactly as a user's grab
+    // does (OrbitControls 'start' → modeller.html §FLY-YIELD) so the camera stops where it is, and say so.
     async flySettle(maxMs) {
       const t0 = Date.now(); maxMs = maxMs || 15000;
       while (Date.now() - t0 < maxMs && await pg.evaluate(() => !!window.__flyLive)) await sleep(120);
+      if (await pg.evaluate(() => !!window.__flyLive)) {
+        await pg.evaluate(() => window.A.controls.dispatchEvent({ type: 'start' }));
+        const t1 = Date.now(); while (Date.now() - t1 < 30000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120);
+        console.log('  §E2E-FLYSETTLE timeout=' + maxMs + 'ms → yielded (user-grab path); stopped=' + !(await pg.evaluate(() => !!window.__flyLive)) + ' after ' + (Date.now() - t1) + 'ms');
+      }
       await sleep(300);
     },
     clickSel(sel) { return pg.click(sel); },
@@ -337,12 +418,17 @@ async function runE2E(NAME, body, opts) {
   };
 
   console.log('═══ ' + NAME + ' — real-user, maths-asserted (headless swiftshader) ═══');
-  await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
+  // §GUIDE-POC additive: opts.url / env E2E_URL points the SAME rig at a deployed page (the live site) instead of the local server.
+  await pg.goto(opts.url || process.env.E2E_URL || `http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady===true && !!window.THREE && !!window.A && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
 
   let fatal = null;
   try { await body(t); } catch (e) { fatal = String(e && e.message) + ' | ' + ((e.stack || '').split('\n')[1] || ''); }
   t.assert('NO-ERROR (no pageerror / no fatal)', errs.length === 0 && !fatal, (fatal || '') + ' ' + errs.slice(0, 2).join(' | '));
+  { const keys = {}, first = {}; for (const l of flog) { const k = l.replace(/[0-9.]+/g, '#').slice(0, 90); keys[k] = (keys[k] || 0) + 1; if (!first[k]) first[k] = l; }
+    const all = Object.entries(keys).sort((a, b) => b[1] - a[1]), top = all.slice(0, 8);
+    console.log('§NET-FAILLOG ' + NAME + ' n=' + flog.length + ' kinds=' + all.length);
+    for (const [k, c] of top) console.log('§NET-FAILLOG-KIND ' + NAME + ' x' + c + ' ' + first[k].slice(0, 220)); }
 
   await br.close(); server.close();
   console.log(NAME + ': ' + pass + ' PASS / ' + fail + ' FAIL');

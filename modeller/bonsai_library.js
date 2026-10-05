@@ -31,7 +31,13 @@
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src
     : (typeof location !== 'undefined' ? location.href : '');
   const ready = (typeof fetch === 'function')
-    ? fetch(new URL('dagevu_catalog.json?v=11', _base).href).then(function (r) { return r.json(); }).then(function (j) {
+    // §CATALOG-PATH: the catalog lives in viewer/ (shared, one owner). #550 moved this file to modeller/ but not the
+    // catalog, so a same-folder fetch 404'd and the catalog stayed EMPTY (every catalog GEOM_INSERT, incl. bend fittings,
+    // failed its fold). A non-OK response is a load failure, never a parsed body.
+    ? fetch(new URL('../viewer/dagevu_catalog.json?v=11', _base).href).then(function (r) {
+        if (!r.ok) throw new Error('http=' + r.status);
+        return r.json();
+      }).then(function (j) {
         GROUPS = j.groups || []; CHEAT = j.cheatsheet || [];
         DB_PRODUCTS = (j.products || []).map(function (p) {
           return { hash: p.id, id: p.id, name: p.name, ifc_class: p.ifc_class, category: p.catLabel || p.cat,
@@ -349,9 +355,9 @@
       // retries cleanly, and we check r.ok (a 404/empty service-worker response must not flow into r.json()).
       if (!this._geomP) {
         this._geomP = (typeof fetch === 'function')
-          ? fetch(new URL('dagevu_geometries.json?v=7', _base).href)
+          ? fetch(new URL('../viewer/dagevu_geometries.json?v=7', _base).href)   // §CATALOG-PATH: shared with the Viewer
               .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-              .then(j => { this._geom = j; console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length); return j; })
+              .then(j => { this._geom = Object.assign({}, j, this._geom || {}); console.log(TAG + ' geometries lazy-loaded meshes=' + Object.keys(j).length + ' (kept ' + Object.keys(this._geom).filter(k => k.indexOf('rg:') === 0).length + ' registered real meshes — §GEOM-KEEP-RG)'); return j; })   // §GEOM-KEEP-RG (2026-09-30): the lazy catalog load used to REPLACE _geom, wiping the ARC's namespaced 'rg:' meshes registered at seed -> the next refold (any Walk) refused every ARC insert and the building vanished (W-FIRST-STEPS-MEP mep3: 214 fold fails, 196->27 meshes)
               .catch(e => { console.warn(TAG + ' geometries load failed (will retry next insert) ' + e); this._geomP = null; return null; })
           : Promise.resolve(this._geom = {});
       }
@@ -373,10 +379,18 @@
         const key = 'rg:' + e.hash;
         // §LAYER-SOLID-SEED: e.layers (from arc_editable.js's _layerGate.layerRanges) rides the SAME
         // hash-keyed entry as the mesh it slices — additive field, absent/null for every non-layered hash.
-        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null }; n++; }
+        // §SLIDE-SEED (RESUME_MODELLER_LOD400_REAL_GEOMETRY.md §SLIDE-REAL-WALLS Phase B): e.uncut marks a host body
+        // tessellated with its IfcRelVoidsElement subtraction DISABLED (slide_hosts patch table) — the openings are
+        // GEOM_CUT rows instead, so a hole can travel with its door (§CUT-MOVE). Additive flag, false for every other hash.
+        if (!this._geom[key]) { this._geom[key] = { v: e.v, f: e.f, bbox: e.bbox, anchorOffset: e.anchorOffset, layers: e.layers || null, uncut: !!e.uncut }; n++; }
       });
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
+    },
+    // §SLIDE-SEED: is this registered real mesh an UNCUT host body (no baked opening — its holes are GEOM_CUT rows)?
+    isUncutBody(hash) {
+      const g = hash && this._geom && this._geom['rg:' + hash];
+      return !!(g && g.uncut);
     },
 
     // §LAYER-SOLID-SEED (CUT_GATE_CSG_SPEC.md §THE CALL): the real per-layer (face_start,face_count)
@@ -426,6 +440,11 @@
       // folds EXACTLY as before. When present, it WINS over both the box and the generic 3-item catalog — this
       // element's OWN scanned shape is always more faithful than a coincidentally-dimension-matched generic.
       const realMesh = (P.realGeomHash && this._geom && this._geom['rg:' + P.realGeomHash]) ? this._geom['rg:' + P.realGeomHash] : null;
+      // §WALK-LOD400-ONLY / §FOLD-NO-BOX (red1 2026-09-27: "no BBoxes or cubes, or LOD200 fallback. All must be LOD400 or fail hard"):
+      // an op that NAMES its real mesh (realGeomHash) but whose mesh is not registered used to fold as boxArrays(bbox) — measured: a
+      // reopened Duplex drew all 102 walked fixtures as boxes. Refuse instead: the throw is caught per op by the fold (logged
+      // 'insert fold fail', not rendered) — the existing hard-fail convention. The mesh is registered on open once the geo arrives.
+      if (P.realGeomHash && !realMesh && !P.anchorOnly) throw new Error('§LOD400-REFUSE realGeomHash ' + P.realGeomHash + ' not registered — refused, never a box');
       const lod = this.lodFor(op.id, P.lod);
       let base = realMesh
         ? { positions: realMesh.v instanceof Float32Array ? realMesh.v : new Float32Array(b64ToBuf(realMesh.v)),

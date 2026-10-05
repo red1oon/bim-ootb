@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>BIM OOTB — 4D/5D Analytics</title>
+<title data-trl="title_boq">BIM OOTB — 4D/5D Analytics</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#4fc3f7">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -40,16 +40,16 @@
 </style>
 </head>
 <body>
-<h1>BIM OOTB — 4D/5D Analytics</h1>
-<div class="subtitle" id="info">Loading...</div>
+<h1>BIM OOTB — <span data-trl="t_analytics_4d5d">4D/5D Analytics</span></h1>
+<div class="subtitle" id="info" data-trl="ui_loading_ellipsis">Loading...</div>
 <div class="toolbar">
   <button onclick="save5D()" data-trl-title="ui_tt_export_5d" title="5D — Cost Excel">&#128202; 5D</button>
   <button onclick="save4D()" data-trl-title="ui_tt_export_4d" title="4D — Schedule Excel">&#128197; 4D</button>
-  <button onclick="openMepReport()" title="MEP Bill of Quantities">&#128295; MEP</button>
+  <button onclick="openMepReport()" data-trl-title="ui_tt_mep_boq" title="MEP Bill of Quantities">&#128295; MEP</button>
   <button onclick="toggleTheme()" data-trl-title="ui_tt_theme" title="Light/Dark">&#9788;</button>
-  <button onclick="copyPageUrl(this)" title="Copy shareable link">&#128203;</button>
-  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" title="Change locale / currency" style="font-size:20px">&#127760;</button>
-  <button onclick="if(history.length>1){history.back()}else{window.close()}" title="Back">&#8592; Back</button>
+  <button onclick="copyPageUrl(this)" data-trl-title="ui_tt_copy_link" title="Copy shareable link">&#128203;</button>
+  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" data-trl-title="ui_tt_change_locale_cur" title="Change locale / currency" style="font-size:20px">&#127760;</button>
+  <button onclick="if(history.length>1){history.back()}else{window.close()}" data-trl-title="ui_back" title="Back">&#8592; <span data-trl="ui_back">Back</span></button>
 </div>
 <div class="charts" id="charts"></div>
 <div id="status"></div>
@@ -59,13 +59,13 @@
 <script src="lib/exceljs.min.js"></script>
 <script src="lib/FileSaver.min.js"></script>
 <script src="lib/chart.umd.min.js"></script>
-<script src="rates.js?v=7"></script>
+<script src="rates.js?v=10"></script>
 <script src="analysis_sidecar.js?v=1"></script>
 <!-- §GANTT_EDIT/BOQ4D: read the REAL persisted schedule (tasks/task_elements/task_sequences)
      instead of recomputing a fourth private one. schedule_author.js supplies activeSchedule()
      (the single existing "which schedule is active" verb — not a fourth copy of it). -->
-<script src="schedule_author.js?v=7"></script>
-<script src="schedule_read_4d.js?v=1"></script>
+<script src="schedule_author.js?v=9"></script>
+<script src="schedule_read_4d.js?v=2"></script>
 <script src="export_5d.js?v=1"></script>
 <script src="export_4d.js?v=1"></script>
 
@@ -905,7 +905,9 @@ function buildScheduleFromOps(ops) {
     if (op.cls) g.classes.add(op.cls);
     if (op.resource) g.resources.add(op.resource);
     // Derive discipline from SEQUENCE_RULES
-    var rule = SEQUENCE_RULES[op.cls];
+    // §CIVIL_TRADES: a civil crew on the op (time_machine wrote it from the civil rule) names the discipline;
+    // building ops carry building resources → the class-rule path below, unchanged.
+    var rule = (op.resource && op.resource.indexOf('CIVIL_') === 0) ? { resource: op.resource } : SEQUENCE_RULES[op.cls];
     if (rule && rule.resource) {
       // §BOQ4D — one shared mapping (schedule_read_4d.js), so an authored task and a kernel_ops
       // task never disagree about what discipline the same resource belongs to.
@@ -990,7 +992,7 @@ async function init() {
 
   // S253: Fast path — ask viewer for data via BroadcastChannel (no DB load)
   // §S260b: Increased timeout 500→2000ms — viewer may be busy streaming geometry
-  document.getElementById('info').textContent = 'Requesting data from viewer...';
+  document.getElementById('info').textContent = _trl('ui_requesting_viewer', null, 'Requesting data from viewer...');
   const relay = await _tryChannelRelay(2000);
 
   if (relay && !relay.error && relay.countRows && relay.countRows.length) {
@@ -1020,7 +1022,7 @@ async function init() {
     }
   } else if (relay && relay.error === 'no_db') {
     // §S260b: Viewer is open but DB not ready yet (still streaming) — wait and retry
-    document.getElementById('info').textContent = 'Waiting for DB to cache in main scene...';
+    document.getElementById('info').textContent = _trl('ui_waiting_db_cache', null, 'Waiting for DB to cache in main scene...');
     console.log('§QTO_RELAY_WAIT viewer has no DB yet — retrying in 3s');
     await new Promise(function(r) { setTimeout(r, 3000); });
     const retry = await _tryChannelRelay(3000);
@@ -1083,7 +1085,7 @@ async function init() {
     const SQL = await initSqlJs({
       locateFile: f => 'lib/' + f
     });
-    document.getElementById('info').textContent = 'Loading ' + _actualUrl + '...';
+    document.getElementById('info').textContent = _trl('ui_loading_url', { url: _actualUrl }, 'Loading {url}...');
     // _meta.db split is an OPTIMIZATION, never a hard dependency — fall back to the sibling.
     var buf = null;
     try {
@@ -1154,16 +1156,34 @@ async function init() {
   }
 
   if (!countRows || !countRows.length || !countRows[0].values.length) {
-    document.getElementById('info').textContent = 'No data.'; return;
+    document.getElementById('info').textContent = _trl('ui_no_data', null, 'No data.'); return;
   }
 
   // Process data with unit-aware quantities
-  qtoData = []; discSummary = {};
+  qtoData = []; discSummary = {}; var civilUnpriced = 0;
   grandMaterial = 0; grandLabor = 0; grandEquip = 0; totalQty = 0;
   let qtoWarnCount = 0;
 
   for (const row of countRows[0].values) {
     const [disc, cls, storey, cnt, meshes] = row;
+    // §CIVIL_RATES (CIVIL_HIGHWAY_JELAPANG.md §R.2): a civil discipline prices by DISCIPLINE from the JKR SoR pack,
+    // never by ifc_class (all civil elements are IfcBuildingElementProxy → one RM-850 'Misc Element' line before).
+    const cr = (typeof CIVIL_RATES !== 'undefined' && disc && disc.charAt(0) !== '_') ? CIVIL_RATES[disc] : null;
+    if (cr) {
+      const lab = (typeof civilLabor === 'function' ? civilLabor(disc, cnt) : null) || { cost: 0, days: 0, crew: 0, trade: '', prod: 0 };
+      const priced = cr.rate != null;
+      const matTotal = priced ? Math.round(cr.rate * cnt * 100) / 100 : 0;
+      grandMaterial += matTotal; grandLabor += lab.cost; totalQty += cnt;
+      if (!priced) civilUnpriced = (civilUnpriced || 0) + 1;
+      qtoData.push({ disc, cls, storey, qty: cnt, cnt, meshes, matRate: priced ? cr.rate : 0, matTotal, unit: cr.qtyBasis,
+        laborDays: lab.days, laborCost: lab.cost, laborCrew: lab.crew, laborTrade: lab.trade,
+        equipCost: 0, equipDesc: '', equipDays: 0,
+        desc: cr.desc + (priced ? '' : ' — UNPRICED (JKR SoR 2023 pending)') + (cr.measure !== cr.qtyBasis ? ' [SoR measures ' + cr.measure + '; counted until mesh measure]' : ''),
+        smmSection: cr.sor_item || '', labor: lab, civil: true, priced });
+      if (!discSummary[disc]) discSummary[disc] = {qty:0, matTotal:0, laborCost:0, equipCost:0};
+      discSummary[disc].qty += cnt; discSummary[disc].matTotal += matTotal; discSummary[disc].laborCost += lab.cost;
+      continue;
+    }
     const mc = RATES[cls];
     const unit = mc ? mc.unit : 'EA';
     const key = disc + '|' + cls + '|' + storey;
@@ -1829,7 +1849,7 @@ function renderCharts() {
     }
   }
   const resBox = el('div','chart-box full');
-  resBox.innerHTML = '<h2>\ud83d\udea7 Site Resources</h2>';
+  resBox.innerHTML = '<h2>\ud83d\udea7 ' + _trl('t_site_resources', null, 'Site Resources') + '</h2>';
   var resHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;padding:8px 0">';
   for (var rk in resCounts) {
     var rIcon = RES_ICONS[rk] || '\ud83d\udc77';
@@ -1916,7 +1936,7 @@ function renderCharts() {
 
   // ── 10. BOQ Data Table (enhanced with Equipment column) ──
   const tableBox = el('div','chart-box full');
-  tableBox.innerHTML = '<h2>5D — Bill of Quantities (' + _TRL.rate_source + ')</h2>';
+  tableBox.innerHTML = '<h2>' + _trl('t_boq_5d', null, '5D — Bill of Quantities') + ' (' + _TRL.rate_source + ')</h2>';
   let html = '<table><tr><th>' + _TRL.h_discipline + '</th><th>' + _TRL.h_ifc_class + '</th><th>' + _TRL.h_storey + '</th><th>' + _TRL.h_quantity + '</th><th>' + _TRL.h_uom + '</th>' +
     '<th>' + _TRL.h_description + '</th><th>' + _TRL.h_unit_rate + ' (' + CUR + ')</th><th>' + _TRL.h_material + ' (' + CUR + ')</th><th>' + _TRL.h_man_days + '</th><th>' + _TRL.h_labour + ' (' + CUR + ')</th>' +
     '<th>' + _TRL.h_equipment + ' (' + CUR + ')</th><th>' + _TRL.h_total + ' (' + CUR + ')</th></tr>';
@@ -2179,7 +2199,7 @@ function toggleTheme() {
 
 </script>
 <!-- Locale: loads before init() so all _TRL keys are resolved when charts render -->
-<script src="locale_loader.js?v=7"></script>
+<script src="locale_loader.js?v=13"></script>
 <script>
 (function(){
   var done=false;

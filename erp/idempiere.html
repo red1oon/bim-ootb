@@ -25,10 +25,27 @@
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { height:100%; }
   body {
-    font-family:'Segoe UI', Tahoma, system-ui, sans-serif; font-size:13px;
+    font-family:'Segoe UI', Tahoma, system-ui, sans-serif, 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Noto Sans Thai', 'Leelawadee UI', 'Noto Sans CJK SC', 'Microsoft YaHei', 'PingFang SC'; font-size:13px;
     color:var(--idmp-text); background:var(--idmp-bg);
     display:flex; flex-direction:column; height:100vh; overflow:hidden;
   }
+  /* ── UI locales (bim-compiler prompts/ERP_UI_LOCALES.md §L5) — per-script font preference + RTL mirror ── */
+  :lang(ja) body, body:lang(ja) { font-family:'Segoe UI', 'Yu Gothic UI', 'Meiryo', 'Hiragino Sans', 'Noto Sans CJK JP', system-ui, sans-serif; }
+  :lang(zh) body, body:lang(zh) { font-family:'Segoe UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', system-ui, sans-serif; }
+  :lang(th) body, body:lang(th) { font-family:'Leelawadee UI', 'Noto Sans Thai', 'Tahoma', system-ui, sans-serif; }
+  :lang(ar) body, body:lang(ar) { font-family:'Segoe UI', 'Noto Sans Arabic', 'Noto Naskh Arabic', 'Tahoma', system-ui, sans-serif; }
+  .idmp-lang-sel { height:26px; border-radius:4px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.12); color:#fff; font:inherit; font-size:12px; padding:0 4px; cursor:pointer; max-width:130px; }
+  .idmp-lang-sel option { color:#1c1c1c; background:#fff; }
+  .idmp-login-lang { display:flex; align-items:center; gap:8px; justify-content:flex-end; margin:0 0 4px; font-size:12px; color:var(--idmp-muted); }
+  .idmp-login-lang select { height:26px; border:1px solid var(--idmp-border); border-radius:4px; font:inherit; padding:0 4px; background:#fff; }
+  [dir=rtl] #idmp-menu { border-right:none; border-left:1px solid var(--idmp-border); }
+  [dir=rtl] .idmp-row { border-left:none; border-right:3px solid transparent; }
+  [dir=rtl] .idmp-row.leaf.active { border-right-color:var(--idmp-blue); }
+  [dir=rtl] .idmp-row .tw { transform:scaleX(-1); }
+  [dir=rtl] .idmp-login-user .tag { margin-left:0; margin-right:auto; }
+  [dir=rtl] .idmp-procresult th, [dir=rtl] .idmp-procresult td, [dir=rtl] .idmp-grid th, [dir=rtl] .idmp-grid td { text-align:right; }
+  [dir=rtl] .idmp-fld.mand .val, [dir=rtl] .idmp-procform .fld.mand input { border-left:none; border-right:3px solid #e0a800; }
+  @media (min-width:761px){ [dir=rtl] body.idmp-menu-collapsed #idmp-menu { transform:translateX(100%); border-left:none; } }
   /* ── Header bar ── */
   #idmp-header {
     flex:0 0 auto; height:46px; display:flex; align-items:center; gap:12px; padding:0 12px;
@@ -384,34 +401,35 @@
 <div id="idmp-login" style="display:none">
   <div class="idmp-login-card">
     <div class="idmp-login-mark"><img src="logo_glass.png?v=2" alt="" width="52" height="52"></div>
-    <div class="idmp-login-title">Kernel-ERP — Sign In</div>
-    <div class="idmp-login-sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
+    <div class="idmp-login-lang"><span data-i18n="login.language">Language</span><select id="idmp-login-lang" aria-label="Language"></select></div>
+    <div class="idmp-login-title" data-i18n="login.title">Kernel-ERP — Sign In</div>
+    <div class="idmp-login-sub" data-i18n-html="login.sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
          pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
          A duplicate card link was redundant once the pill existed (#206). -->
     <!-- Step 0 — TENANT SWITCHER (NEW_CLIENT_MGMT.md P3): only rendered when ≥2 installed tenants exist; a
          single-tenant seed skips straight to the user list (zero behaviour change). -->
     <div id="idmp-login-step0" style="display:none">
-      <div class="idmp-login-label">Select a tenant</div>
+      <div class="idmp-login-label" data-i18n="login.selectTenant">Select a tenant</div>
       <div id="idmp-login-clients" class="idmp-login-list"></div>
     </div>
     <div id="idmp-login-step1" style="display:none">
       <div class="idmp-login-label" id="idmp-login-step1-label">Select a user</div>
       <div id="idmp-login-users" class="idmp-login-list"></div>
       <div class="idmp-login-actions" id="idmp-login-step1-actions" style="display:none">
-        <button id="idmp-login-tenants-back" class="ghost">&lsaquo; Tenants</button>
+        <button id="idmp-login-tenants-back" class="ghost" data-i18n="login.tenantsBack">&lsaquo; Tenants</button>
       </div>
     </div>
     <div id="idmp-login-step2" style="display:none">
-      <div class="idmp-login-label">Role</div>
+      <div class="idmp-login-label" data-i18n="login.role">Role</div>
       <select id="idmp-login-role"></select>
-      <div class="idmp-login-label">Client</div>
+      <div class="idmp-login-label" data-i18n="login.client">Client</div>
       <input id="idmp-login-client" readonly>
-      <div class="idmp-login-label">Organisation</div>
+      <div class="idmp-login-label" data-i18n="login.org">Organisation</div>
       <select id="idmp-login-org"></select>
       <div class="idmp-login-actions">
-        <button id="idmp-login-back" class="ghost">&lsaquo; Back</button>
-        <button id="idmp-login-ok" class="primary">Log In &rsaquo;</button>
+        <button id="idmp-login-back" class="ghost" data-i18n="login.back">&lsaquo; Back</button>
+        <button id="idmp-login-ok" class="primary" data-i18n="login.ok">Log In &rsaquo;</button>
       </div>
       <div id="idmp-login-note" class="idmp-login-note"></div>
     </div>
@@ -433,23 +451,24 @@
 </div>
 
 <div id="idmp-header">
-  <button id="idmp-burger" class="hbtns" title="Menu">&#9776;</button>
+  <button id="idmp-burger" class="hbtns" title="Menu" data-i18n-title="hdr.menu">&#9776;</button>
   <span id="idmp-logo"><img src="logo_glass.png?v=2" alt="" width="36" height="36"></span>
   <span id="idmp-title">Kernel-ERP</span>
-  <input id="idmp-search" type="search" placeholder="Search menu&hellip;" autocomplete="off">
+  <input id="idmp-search" type="search" placeholder="Search menu&hellip;" data-i18n-ph="hdr.search" autocomplete="off">
   <span class="spacer"></span>
   <span class="ctx" id="idmp-ctx">&mdash;</span>
   <span class="hbtns">
     <!-- FUNDAMENTAL LAW (2026-06-18): the iDempiere surface is indistinguishable from real iDempiere — zero
          learning curve. The header keeps ONLY iDempiere-native bits (menu · logo · search · role/client ctx ·
          role-switch/logout). Non-iDempiere controls (Share, Home/engine-view, etc.) live in the pill rail. -->
-    <button id="idmp-switch-btn" title="Log out">&#8676;</button>
+    <select id="idmp-lang" class="idmp-lang-sel" title="Language" aria-label="Language"></select><!-- UI locale switch (ERP_UI_LOCALES.md §L4): in place, keeps session + open window + record -->
+    <button id="idmp-switch-btn" title="Log out" data-i18n-title="hdr.logout">&#8676;</button>
   </span>
 </div>
 
 <div id="idmp-body">
   <aside id="idmp-menu">
-    <div id="idmp-menu-head"><input id="idmp-menu-filter" type="search" placeholder="Filter menu&hellip;" autocomplete="off"></div>
+    <div id="idmp-menu-head"><input id="idmp-menu-filter" type="search" placeholder="Filter menu&hellip;" data-i18n-ph="hdr.filter" autocomplete="off"></div>
     <div id="idmp-tree"></div>
   </aside>
   <div id="idmp-menu-backdrop"></div>
@@ -458,7 +477,7 @@
     <div id="idmp-toolbar" style="display:none"></div>
     <div id="idmp-tabstrip" style="display:none"></div>
     <div id="idmp-content">
-      <div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
+      <div id="idmp-placeholder"><div class="big">&#128193;</div><span data-i18n="main.placeholder">Select a menu item to open a window.</span><br>Every window, tab and field is folded from <b>ad_seed.db</b> via SQLite WASM.</div>
     </div>
     <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
@@ -466,16 +485,17 @@
 
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
+<script src="erp_i18n.js?v=2"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
 <script src="ad_parser.js?v=24"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
-<script src="ad_modelval.js?v=1"></script>
+<script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=11"></script>
+<script src="ad_process.js?v=14"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -501,9 +521,9 @@
 <!-- POSTING_PREVIEW_PANEL.md — the Posting-Preview lens: what a DocAction (Complete) WOULD post, pure/no-write.
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1"></script>
-<script src="doc_poster.js?v=1"></script>
-<script src="genesis_seed.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=2"></script>
+<script src="doc_poster.js?v=2"></script>
+<script src="genesis_seed.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
+<script src="genesis.js?v=7"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -515,18 +535,18 @@
 <script src="overlay_kit.js?v=1"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase A/D — the Fold-Engine plugin host (W-PLUGIN) + its pill overlay. ad_callout.js
      gives callout-contributing bundles a live target (it joins ad_modelval/ad_process/post_resolver already loaded). -->
-<script src="ad_callout.js?v=1"></script>
 <!-- ERP_IDEMPIERE_UX_PARITY.md §P3 (W-PARITY-VALRULE) — the AD_Val_Rule interpreter (W-VALRULE, already
      witnessed headless) reaching the LIVE FK pickers: crud_overlay.populateRefs appends the rule's where-clause
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
+<script src="ad_gridtab.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
 <script src="ninja_model.js?v=2"></script>
-<script src="ninja_stage.js?v=2"></script>
+<script src="ninja_stage.js?v=3"></script>
 <script src="ninja_bundle.js?v=1"></script>
 <script src="ninja_create.js?v=1"></script>
 <script src="ninja_starter.js?v=1"></script>
@@ -539,7 +559,7 @@
 <script src="ad_modelval_bridge.js?v=1"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (supersedes migrate_showme + the Install/Migrate
      pills). Mounted from the `showme` pill → AboutDIY.open(). icons.js + overlay_kit loaded above. -->
-<script src="../common/about_diy.js?v=1"></script>
+<script src="../common/about_diy.js?v=2"></script>
 <!-- MIGRATE_ERP_PICKER.md §SPEC — still loaded: the login front-door tenant picker (ErpPicker.manifest). -->
 <script src="erp_picker.js?v=6"></script>
 <!-- Kanban write path — engine seam (window.ERP) + the lens chrome + the reusable host (publish/persist). -->
@@ -568,6 +588,89 @@
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
      Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
 <script src="erp_engine.js?v=1"></script>
+<!-- bim-compiler prompts/ERP_MODEL_LAYER.md — the MODEL layer: iDempiere PO + DocAction + DocumentEngine + AD_Workflow contract
+     (model_layer.js) and the ported trade-cycle classes registered into it. crud_overlay.completeFanout / save seams call
+     ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
+<script src="ad_workflow.js?v=1"></script>
+<script src="model_layer.js?v=2"></script>
+<script src="model_trade.js?v=2"></script>
+<script src="model_ctor.js?v=1"></script>
+<script src="model_cost.js?v=1"></script>
+<script src="model_match.js?v=1"></script>
+<script src="model_order.js?v=2"></script>
+<script src="model_invoice.js?v=2"></script>
+<script src="model_post.js?v=2"></script>
+<!-- §CP-SCRIPTS (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP) — the callout runtime + verbatim callout/process ports.
+     Generated by bim-compiler scripts/pilot/cp_sync_tags.py; after bigdecimal.js + model_layer.js. -->
+<script src="ad_callout.js?v=3"></script>
+<script src="callouts/support.js?v=1"></script>
+<script src="callouts/support_stock.js?v=1"></script>
+<script src="callouts/views.js?v=1"></script>
+<script src="callouts/currency.js?v=1"></script>
+<script src="callouts/uom.js?v=1"></script>
+<script src="callouts/pricing.js?v=1"></script>
+<script src="callouts/tax.js?v=1"></script>
+<script src="callouts/sqlfn.js?v=1"></script>
+<script src="callouts/CalloutAssignment.js?v=1"></script>
+<script src="callouts/CalloutBankStatement.js?v=1"></script>
+<script src="callouts/CalloutBankTransfer.js?v=1"></script>
+<script src="callouts/CalloutCashJournal.js?v=1"></script>
+<script src="callouts/CalloutDepositBatch.js?v=1"></script>
+<script src="callouts/CalloutFillLocator.js?v=1"></script>
+<script src="callouts/CalloutGLJournal.js?v=1"></script>
+<script src="callouts/CalloutInOut.js?v=1"></script>
+<script src="callouts/CalloutInventory.js?v=1"></script>
+<script src="callouts/CalloutInvoice.js?v=1"></script>
+<script src="callouts/CalloutInvoiceBatch.js?v=1"></script>
+<script src="callouts/CalloutMovement.js?v=1"></script>
+<script src="callouts/CalloutOrder.js?v=1"></script>
+<script src="callouts/CalloutPaySelection.js?v=1"></script>
+<script src="callouts/CalloutPayment.js?v=1"></script>
+<script src="callouts/CalloutPaymentAllocate.js?v=1"></script>
+<script src="callouts/CalloutRMA.js?v=1"></script>
+<script src="callouts/CalloutRequisition.js?v=1"></script>
+<script src="callouts/CostAdjustmentLine.js?v=1"></script>
+<script src="callouts/InOutFreightCostRule.js?v=1"></script>
+<script src="processes/AcctSchemaCopyAcct.js?v=1"></script>
+<script src="processes/AllocationReset.js?v=1"></script>
+<script src="processes/BOMVerify.js?v=1"></script>
+<script src="processes/BankStatementMatcher.js?v=1"></script>
+<script src="processes/CommissionAPInvoice.js?v=1"></script>
+<script src="processes/CopyFromBankStmt.js?v=1"></script>
+<script src="processes/CopyFromInvoice.js?v=1"></script>
+<script src="processes/CopyFromJournal.js?v=1"></script>
+<script src="processes/CopyFromJournalDoc.js?v=1"></script>
+<script src="processes/CopyFromOrder.js?v=1"></script>
+<script src="processes/CopyProduct.js?v=1"></script>
+<script src="processes/CostCreate.js?v=1"></script>
+<script src="processes/DunningRunCreate.js?v=1"></script>
+<script src="processes/FactAcctReset.js?v=1"></script>
+<script src="processes/InOutCreateConfirm.js?v=1"></script>
+<script src="processes/InOutCreateInvoice.js?v=1"></script>
+<script src="processes/InventoryCountCreate.js?v=1"></script>
+<script src="processes/InventoryCountUpdate.js?v=1"></script>
+<script src="processes/InvoiceCreateInOut.js?v=1"></script>
+<script src="processes/InvoicePayScheduleValidate.js?v=1"></script>
+<script src="processes/M_PriceList_Create.js?v=1"></script>
+<script src="processes/MatchInvDelete.js?v=1"></script>
+<script src="processes/MatchPODelete.js?v=1"></script>
+<script src="processes/OrderLineCreateProduction.js?v=1"></script>
+<script src="processes/OrderLineCreateShipment.js?v=1"></script>
+<script src="processes/PackageCreate.js?v=1"></script>
+<script src="processes/PaySelectionCheckReverse.js?v=1"></script>
+<script src="processes/PaySelectionCreateCheck.js?v=1"></script>
+<script src="processes/PaySelectionCreateFrom.js?v=1"></script>
+<script src="processes/PaymentOnline.js?v=1"></script>
+<script src="processes/PeriodControlStatus.js?v=1"></script>
+<script src="processes/PeriodStatus.js?v=1"></script>
+<script src="processes/ProductionCreate.js?v=1"></script>
+<script src="processes/RMACreateOrder.js?v=1"></script>
+<script src="processes/SalesOrderRateInquiryProcess.js?v=1"></script>
+<script src="processes/YearCreatePeriods.js?v=1"></script>
+<script src="processes/support_docgen.js?v=1"></script>
+<script src="processes/support_pay.js?v=1"></script>
+<script src="processes/support_stock_proc.js?v=1"></script>
+<!-- /§CP-SCRIPTS -->
 <script src="pos_core.js?v=3"></script>
 <!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
 <script src="img_store.js?v=2"></script>
@@ -619,8 +722,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=1"></script>
-<script src="crud_overlay.js?v=21"></script>
+<script src="crud_core.js?v=6"></script>
+<script src="crud_overlay.js?v=32"></script>
+<!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
+<script src="erp_replica_client.js?v=1"></script>
+<script src="erp_persist_ui.js?v=2"></script>
 <!-- ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring (W-N-CONVERGE) — the engine-proven relay transport
      (erp_relay_client.js) + the engine-proven rebase loop (erp_sync_fsm.js, test_kernel_relay.js/
      test_kernel_rebase.js), wired to crud_overlay.js's sidecar via erp_sync_relay.js. Inert unless the
@@ -700,19 +806,27 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
   var _recByLevel = {};      // §P7 — tabLevel -> the selected RECORD (the window context a detail tab reads)
-  var _lastFoldCreated = []; // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
-                              // most recent _overlayListTip() fold's `created` synthetic-pk list (ascending
-                              // opId order — see CORE.listTip in crud_overlay.js). CRUD_CREATE ops never carry
-                              // a real pk on their op record (buildOp() only sets base.id for update/delete/
-                              // process) so overlay:committed's `id` is always null for a create — the ONLY
-                              // place the new row's synthetic pk (-opId) becomes known is this fold's `created`
-                              // array. The CRUD_CREATE handler reads the LAST entry (the just-committed row)
-                              // to thread the correct pk into _selByLevel instead of leaving it stale.
+  // §GT (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §GT.2 — W-GRIDTAB-LIVE): the current RECORD per tab is a KEY, not an
+  //   index — GridTab.dataRefreshAll keeps the record by key (M/GridTab.java:908-940); a committed CREATE makes its exact
+  //   synthetic pk current (GridTable.dataSave). Supersedes W-SO-CHILD-BIND's _lastFoldCreated guess (removed).
+  var _curKeyByTab = {};     // tabIndex -> current record key (this window)
+  var _curQ = null;          // the active tab's query contract { tm, q, where } — the op-log fold admits created rows through it
   var _winByName = {};       // AD window name (lowercased) -> windowId — built as the menu renders; drives IdmpHost.focus
 
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function status(main) { if (main != null) $('idmp-status-main').textContent = main; }
+  // _T — UI-locale string (erp_i18n.js chrome catalogue, ERP_UI_LOCALES.md §L3); English when the module/key is absent.
+  function _T(key, en, args) {
+    if (window.ErpI18n && ErpI18n.lang !== ErpI18n.BASE && ErpI18n.has(key)) return ErpI18n.t(key, args);   // English = the caller's literal, byte-identical
+    return args ? String(en).replace(/\{(\d)\}/g, function (_, i) { return args[i] != null ? args[i] : ''; }) : en;
+  }
+  // _Ttl — a TOOLTIP: English stays byte-identical to today's title (witnesses select on it, e.g. title^="New record");
+  //   another locale shows the translated label + the accelerator suffix.
+  function _Ttl(key, enTitle, suffix) {
+    if (!window.ErpI18n || ErpI18n.lang === ErpI18n.BASE || !ErpI18n.has(key)) return enTitle;
+    return ErpI18n.t(key) + (suffix || '');
+  }
 
   // ── IndexedDB cache (shares 'ad_seed_v18' with erp.html) ──
   function idbGet(key) {
@@ -926,6 +1040,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (!seedParam) idbPut('ad_seed_v18', buf);   // cache only the real seed, never a ?seed= override
     }
     window.__idmpDb = db;
+    // FS-15 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2m) — the ad_seed.db SELF-HEAL patch: patches/<seedFile>.sql
+    //   (viewer/scene.js A._applyPendingPatch convention: same directory as the db, applied on EVERY load — cache hit or
+    //   fresh — idempotent statements only, best-effort: a 404 or a failing statement never blocks the boot). Statements run
+    //   one by one (§PATCH_CHUNK: one giant db.run crashes the bundled wasm). Generated by patches/build_ad_seed_patch.sh.
+    try {
+      var pr = await fetch('patches/' + seedFile + '.sql', { cache: 'no-cache' });
+      if (pr.ok) {
+        var ptxt = await pr.text(), pOk = 0, pFail = 0, pChg = 0;
+        ptxt.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return;
+          try { db.run(st); pOk++; pChg += db.getRowsModified(); } catch (eP) { pFail++; } });
+        console.log('§AD-SEED-PATCH file=patches/' + seedFile + '.sql statements=' + pOk + ' changed=' + pChg + ' failed=' + pFail + ' (self-heal, idempotent)');
+      } else console.log('§AD-SEED-PATCH none (HTTP ' + pr.status + ')');
+    } catch (ePatch) { console.log('§AD-SEED-PATCH skipped (' + ePatch.message + ')'); }
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
     // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
     // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
@@ -946,6 +1073,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (pending && pending.groups) { await installGenesis(pending); idbDel('genesis_pending'); }
       } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
     if (ADP && ADP.init) ADP.init(db);
+    // UI locale (ERP_UI_LOCALES.md §L4): bind the dictionary, load the chrome catalogue, wire both pickers, and come
+    // up in the persisted / ?lang= language BEFORE the login card renders (so the very first paint is in it).
+    if (window.ErpI18n) {
+      try {
+        ErpI18n.bindDb(db);
+        await ErpI18n.loadCatalogue();
+        ErpI18n.picker($('idmp-login-lang')); ErpI18n.picker($('idmp-lang'));
+        ErpI18n.onChange(_i18nRerender);
+        var _lang0 = ErpI18n.initial();
+        if (_lang0 !== ErpI18n.BASE) await ErpI18n.set(_lang0, { noPersist: true });
+        else ErpI18n.applyDom(document);
+      } catch (eI) { console.warn('§I18N boot-fail ' + eI.message); }
+    }
     console.log('§IDEMPIERE boot db=' + src + ' ms=' + Math.round(performance.now() - _t0));
 
     // Menu builds only AFTER login — it is role-scoped (docs §3b). Defer the deep link too.
@@ -1024,7 +1164,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       return { key: k, id: s.client, name: s.name, file: s.file, poc: !!s.poc, demo: true }; })
       .filter(function (t) { return t.id != null && !resident[t.id]; });
   }
+  var _loginStepNow = null;   // which login step is on screen — the locale switch re-renders it in place (§L4)
   function loginStep0(tenants, demos) {
+    _loginStepNow = 0;
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step0').style.display = '';
@@ -1033,7 +1175,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var row = el('div', 'idmp-login-user');
       row.appendChild(el('span', 'av', (c.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', c.name));
-      row.appendChild(el('span', 'tag', c.users + (c.users === 1 ? ' user' : ' users') + ' · ' + c.id));
+      row.appendChild(el('span', 'tag', c.users + ' ' + (c.users === 1 ? _T('login.user1', 'user') : _T('login.userN', 'users')) + ' · ' + c.id));
       row.addEventListener('click', function () { _loginClient = c; loginStep1(); });
       // delete affordance — every resident tenant EXCEPT System(0)/GardenWorld(11), which are framework/seed.
       if (c.id !== 0 && c.id !== 11) {
@@ -1049,7 +1191,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var row = el('div', 'idmp-login-user idmp-login-demo');
       row.appendChild(el('span', 'av', (t.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', t.name));
-      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>demo · ' + (t.poc ? 'PoC' : 'ready');
+      var tag = el('span', 'tag'); tag.innerHTML = '<span class="idmp-demo-pip"></span>' + (t.poc ? _T('login.demoPoc', 'demo · PoC') : _T('login.demoReady', 'demo · ready'));
       row.appendChild(tag);
       row.addEventListener('click', function () { _enterDemoTenant(t, row, tag); });
       host.appendChild(row);
@@ -1139,24 +1281,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
   }
   function loginStep1() {
+    _loginStepNow = 1;
     $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step2').style.display = 'none';
     $('idmp-login-step1').style.display = '';
     // when a tenant was picked, scope the user list to it + offer a "‹ Tenants" back; else the full list (as before)
     var users = _loginClient ? SES.usersForClient(db, _loginClient.id) : SES.listUsers(db);
-    $('idmp-login-step1-label').textContent = _loginClient ? ('Select a user · ' + _loginClient.name) : 'Select a user';
+    $('idmp-login-step1-label').textContent = _loginClient ? (_T('login.selectUser', 'Select a user') + ' · ' + _loginClient.name) : _T('login.selectUser', 'Select a user');
     $('idmp-login-step1-actions').style.display = (_loginClient && SES.listClients(db).length >= 2) ? '' : 'none';
     var host = $('idmp-login-users'); host.innerHTML = '';
     users.forEach(function (u) {
       var row = el('div', 'idmp-login-user' + (u.hasRoles ? '' : ' disabled'));
       row.appendChild(el('span', 'av', (u.name || '?').charAt(0).toUpperCase()));
       row.appendChild(el('span', 'nm', u.name));
-      if (!u.hasRoles) row.appendChild(el('span', 'tag', '(no roles)'));   // seed reality — named, not dropped
+      if (!u.hasRoles) row.appendChild(el('span', 'tag', _T('login.noRoles', '(no roles)')));   // seed reality — named, not dropped
       else row.addEventListener('click', function () { _loginUser = u; loginStep2(u); });
       host.appendChild(row);
     });
   }
   function loginStep2(u) {
+    _loginStepNow = 2;
     $('idmp-login-step0').style.display = 'none';
     $('idmp-login-step1').style.display = 'none';
     $('idmp-login-step2').style.display = '';
@@ -1206,7 +1350,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // a role change can revoke window access — close any open windows, reset to placeholder
     _openWins = {}; _activeWin = null; renderWinTabs();
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
+    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
     buildMenu();   // role-scoped
     console.log('§IDEMPIERE-LOGIN user=' + _session.user.name + ' roles=' + (_session.roles ? _session.roles.length : '?') +
       ' client=' + _session.client.name + '(' + _session.client.id + ')' +
@@ -1232,9 +1376,60 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§MOBILE-LANDING drawer=open reason=empty-landing innerW=' + window.innerWidth);
   }
 
+  // ── UI locale switch, IN PLACE (bim-compiler prompts/ERP_UI_LOCALES.md §L4 — W-ERP-I18N) ──
+  // Runs as an ErpI18n.onChange listener, i.e. inside ErpI18n.set() after the pack is loaded and <html lang/dir> is
+  // flipped. Nothing is reloaded and nobody is logged out: the session, the open windows, the active tab, the
+  // current record index and the grid/form mode are all kept. Only labels change:
+  //   static markup ([data-i18n*]) · the login step on screen · the menu tree (rebuilt from AD_Menu + _Trl) ·
+  //   every open window's window/tab/field names (relabelled in place on the same objects) · toolbar · tab strip ·
+  //   body (grid headers / form labels). A form with UNSAVED edits is not rebuilt (its typed values would be lost):
+  //   its labels are rewritten in place instead, and that is logged.
+  function _i18nRerender(code) {
+    ErpI18n.applyDom(document);
+    var loginOn = $('idmp-login') && $('idmp-login').style.display !== 'none';
+    if (loginOn && _loginStepNow === 0) loginStep0(SES.listClients(db), _demoTenants());
+    else if (loginOn && _loginStepNow === 1) loginStep1();
+    var body = 'none';
+    if (_session) {
+      // keep the menu tree exactly as the user left it: open folders, active leaf, scroll, filter text
+      var openIds = {}, activeId = null, tree = $('idmp-tree'), sc = tree ? tree.scrollTop : 0;
+      document.querySelectorAll('#idmp-tree .idmp-node.open > .idmp-row').forEach(function (r) { openIds[r.dataset.menuId] = 1; });
+      var act = document.querySelector('#idmp-tree .idmp-row.leaf.active'); if (act) activeId = act.dataset.menuId;
+      buildMenu();
+      document.querySelectorAll('#idmp-tree .idmp-node > .idmp-row').forEach(function (r) {
+        if (openIds[r.dataset.menuId]) { r.parentNode.classList.add('open'); var tw = r.querySelector('.tw'); if (tw) tw.textContent = '▾'; }
+        if (activeId != null && r.dataset.menuId === activeId) r.classList.add('active');
+      });
+      if (tree) tree.scrollTop = sc;
+      var mf = $('idmp-menu-filter'); if (mf && mf.value) applyFilter(mf.value);
+      Object.keys(_openWins).forEach(function (id) {
+        var o = _openWins[id]; ErpI18n.applyWindow(o.win); o.name = o.win.name;
+      });
+      renderWinTabs();
+      if (_activeWin != null && _openWins[_activeWin]) {
+        renderTabStrip();
+        if (_formNeedsSave()) {
+          var tab = _curTab(), byCol = {};
+          (tab && tab.fields || []).forEach(function (f) { byCol[String(f.columnName).toLowerCase()] = f.name; });
+          document.querySelectorAll('#idmp-inline-mount .cfrow').forEach(function (r) {
+            var lb = r.querySelector('.cfl'), nm = byCol[String(r.getAttribute('data-row') || '').toLowerCase()];
+            if (lb && nm && lb.firstChild && lb.firstChild.nodeType === 3) lb.firstChild.nodeValue = nm + ' ';
+          });
+          renderToolbar(); refreshNavOnly(); body = 'kept-dirty';
+        } else { renderToolbar(); renderBody(); body = _viewMode; }   // toolbar FIRST: renderBody→refreshForm fills its record nav
+      } else {
+        var ph = document.querySelector('#idmp-content > #idmp-placeholder');
+        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
+      }
+    }
+    console.log('§I18N-RERENDER lang=' + code + ' login=' + (loginOn ? 'step' + _loginStepNow : 'off') + ' session=' + (_session ? 'kept' : 'none') +
+      ' openWindows=' + Object.keys(_openWins).length + ' activeWin=' + _activeWin + ' tab=' + _activeTabIdx + ' rec=' + _recIdx + ' body=' + body);
+  }
+
   // ── Left menu tree (folded from AD_Menu) ──
   function buildMenu() {
     var roots = (ADP && ADP.getMenuTree) ? ADP.getMenuTree(db) : [];
+    if (window.ErpI18n) ErpI18n.applyMenuTree(roots);   // AD_Menu_Trl / central Window|Process|Form _Trl (§L1); English kept on node._en
     // Role-scope: prune W leaves the role can't open + P/R ∉ ad_process_access + X ∉ ad_form_access
     // + empty folders (docs §3b.1 + §AD-MENU-PRF-LIVE). Sets from buildContext (real grant rows).
     var scoped = (_session && SES && SES.scopeMenu) ? SES.scopeMenu(roots, _session.winSet, _session.procSet, _session.formSet) : { tree: roots, visible: 0, total: 0 };
@@ -1250,7 +1445,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var wrap = el('div', 'idmp-node');
     var isFolder = node.isSummary || (node.children && node.children.length);
     var row = el('div', 'idmp-row' + (isFolder ? '' : ' leaf'));
-    row.dataset.name = (node.name || '').toLowerCase();
+    row.dataset.name = ((node.name || '') + (node._en && node._en !== node.name ? ' ' + node._en : '')).toLowerCase();   // filter matches the shown AND the English name
+    row.dataset.menuId = node.id;
     var tw = el('span', 'tw', isFolder ? '▸' : '');
     var ic = el('span', 'ic', isFolder ? '📁' : _actionGlyph(node.action));
     var nm = el('span', 'nm', node.name || ('#' + node.id));
@@ -1264,7 +1460,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       row.addEventListener('click', function () { wrap.classList.toggle('open'); tw.textContent = wrap.classList.contains('open') ? '▾' : '▸'; });
     } else {
       leaves++;
-      if (node.action === 'W' && node.windowId) _winByName[(node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus
+      if (node.action === 'W' && node.windowId) _winByName[(node._en || node.name || '').toLowerCase()] = Number(node.windowId);  // name->id for IdmpHost.focus (English key, locale-proof)
       row.addEventListener('click', function () {
         document.querySelectorAll('.idmp-row.leaf.active').forEach(function (e) { e.classList.remove('active'); });
         row.classList.add('active');
@@ -1288,10 +1484,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!_openWins[windowId]) {
       var win = ADP.getWindow(db, windowId);
       if (!win) { status('Window ' + windowId + ' not found'); return; }
+      if (window.ErpI18n) ErpI18n.applyWindow(win);   // AD_Window/AD_Tab/AD_Field _Trl (§L1); English kept on ._en
       _openWins[windowId] = { win: win, name: name || win.name };
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
-    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {};
+    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {}; _curKeyByTab = {}; _curQ = null;
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
     _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
@@ -1342,7 +1539,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (windowId === _activeWin) {
       if (ids.length) openWindow(Number(ids[ids.length - 1]));
       else { _activeWin = null; renderWinTabs(); $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready'); _mobileSurfaceMenu(false); }
+        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready'); _mobileSurfaceMenu(false); }
     } else renderWinTabs();
   }
   function renderWinTabs() {
@@ -1387,7 +1584,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       tb.appendChild(b); return b;
     }
     function sep() { tb.appendChild(el('span', 'sep')); }
-    btn('⟲', 'Refresh', true, function () { renderActiveTab(); });
+    btn('⟲', _Ttl('tb.refresh', 'Refresh'), true, function () { renderActiveTab(); });
     sep();
     // ── iDempiere ADWindowToolbar verbs (New/Copy/Save/Save&New/Delete/Ignore) + Process ▶ — the classic
     //    chrome IS the CRUD surface (red-pill "just the pill" retired; these no longer live in the pill rail).
@@ -1400,15 +1597,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       function ic(name, fb) { return (window.OverlayKit && OverlayKit.ico) ? (OverlayKit.ico(name, 15) + ' ') : (fb ? fb + ' ' : ''); }
       var rec = _records[_recIdx], hasRec = !!rec;
       var editable = _crudHas(tn) || typeof window.__crud.update === 'function';   // curated OR S2B AD-folded fallback
+      // §GT — GridTab.isInsertRecord (M/GridTab.java:1555-1560: IsReadOnly incl. m_parentNeedSave → false; AD_Tab.IsInsertRecord)
+      //   gates New/Copy (Z/AbstractADWindowContent.java:2119-2136). A detail tab whose parent has no saved record cannot insert.
+      var canIns = !(_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && window.AdGridTab) || AdGridTab.canInsert(_curQ.tm, _curQ.q);
       var editing = !!document.getElementById('idmp-inline-mount');                // an inline New/Edit is open
-      btn(ic('plus', '✚') + 'New', 'New record (Alt+N)', editable, function () { _openCreate(); });
-      btn(ic('clipboard', '⧉') + 'Copy', 'Copy this record to a new one (Alt+C)', editable && hasRec, function () {
+      btn(ic('plus', '✚') + _T('tb.new', 'New'), _Ttl('tb.new', 'New record (Alt+N)', ' (Alt+N)'), editable && canIns, function () { _openCreate(); }).setAttribute('data-tb', 'new');
+      btn(ic('clipboard', '⧉') + _T('tb.copy', 'Copy'), _Ttl('tb.copy', 'Copy this record to a new one (Alt+C)', ' (Alt+C)'), editable && canIns && hasRec, function () {
         var id = recVal(rec, _keyCol(tab)); _startInlineNew(id); console.log('§TOOLBAR copy from=' + id); });
-      btn(ic('save', '💾') + 'Save', 'Save (Alt+S)', editing, function () { _formSave(); });
-      btn('Save & New', 'Save and start a new record (Alt+A)', editing, function () {
+      btn(ic('save', '💾') + _T('tb.save', 'Save'), _Ttl('tb.save', 'Save (Alt+S)', ' (Alt+S)'), editing, function () { _formSave(); });
+      btn(_T('tb.saveNew', 'Save & New'), _Ttl('tb.saveNew', 'Save and start a new record (Alt+A)', ' (Alt+A)'), editing, function () {
         var b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="savenew"]'); if (b) b.click(); else _formSave(); });
-      btn(ic('trash', '🗑') + 'Delete', 'Delete this record (Alt+D)', editable && hasRec, function () { _openDelete(); });
-      btn(ic('x', '↺') + 'Ignore', 'Ignore — discard unsaved edits (Alt+Z)', editing, function () {
+      btn(ic('trash', '🗑') + _T('tb.delete', 'Delete'), _Ttl('tb.delete', 'Delete this record (Alt+D)', ' (Alt+D)'), editable && hasRec, function () { _openDelete(); });
+      btn(ic('x', '↺') + _T('tb.ignore', 'Ignore'), _Ttl('tb.ignore', 'Ignore — discard unsaved edits (Alt+Z)', ' (Alt+Z)'), editing, function () {
         var b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="ignore"]'); if (b) b.click();
         else { status('Nothing to ignore'); } });
       // Process — iDempiere's GEAR (cog) button (verified vs iDempiere theme Process24.png). Always present,
@@ -1420,21 +1620,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         ? ('<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.settings.svg + '</svg> ')
         : '⚙ ';
       // Accelerator = Alt+O (oracle: ADWindowToolbar altKeyMap.put(VK_O, btnProcess); Alt+P is btnPrint's, not Process's).
-      btn(gear + 'Process', 'Process (Alt+O) — run the document/table process', hasProc, function () { _showProcessChooser(); });
+      btn(gear + _T('tb.process', 'Process'), _Ttl('tb.process', 'Process (Alt+O) — run the document/table process', ' (Alt+O)'), hasProc, function () { _showProcessChooser(); });
       // Print — iDempiere's btnPrint (Print24.png, Alt+P): print THIS document = fold its receipt from raw
       //   header+lines (window.__report.printRecord, PURE). Enabled only on a saved record of a PRINTABLE document
       //   kind (a header/line table in REPORT_MAP — orders/invoices/shipments/payments/…); iDempiere greys it the
       //   same way (enablePrint). DISTINCT from the ⋯ Reports pill (= Performance-Analysis financial statements menu).
       var rmap = (window.__report && window.__report.core) ? window.__report.core.REPORT_MAP : null;
       var canPrint = !!(hasRec && tn && rmap && rmap[tn]);
-      btn(ic('printer', '🖨') + 'Print', 'Print this document (Alt+P)', canPrint, function () {
+      btn(ic('printer', '🖨') + _T('tb.print', 'Print'), _Ttl('tb.print', 'Print this document (Alt+P)', ' (Alt+P)'), canPrint, function () {
         var ok = window.__report.printRecord(tn, recVal(rec, _keyCol(tab)));
         console.log('§TOOLBAR print table=' + tn + ' rec=' + recVal(rec, _keyCol(tab)) + ' printable=' + ok);
       });
       // Zoom Across — iDempiere's btnZoomAcross (magnifier, verified vs theme ZoomAcross24.png). WHERE-USED:
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
-      btn(ic('search', '🔍') + 'Zoom', 'Zoom Across — windows that reference this record',
+      btn(ic('search', '🔍') + _T('tb.zoom', 'Zoom'), _Ttl('tb.zoom', 'Zoom Across — windows that reference this record'),
         hasRec, function () { _zoomAcross(tab, rec); });
       sep();
     })();
@@ -1442,22 +1642,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
     //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the
     //   old ✎ re-point that W-RING-LEAK guarded is now removed entirely — there is no ring affordance on this surface).
-    btn('◀◀', 'First record', true, function () { _dirtyGuard(function () { _recIdx = 0; refreshForm(); }); });
-    btn('◀', 'Previous record', true, function () { _dirtyGuard(function () { if (_recIdx > 0) _recIdx--; refreshForm(); }); });
+    btn('◀◀', _Ttl('tb.first', 'First record'), true, function () { _saveAndNavigate(function () { _recIdx = 0; refreshForm(); }); });
+    btn('◀', _Ttl('tb.prev', 'Previous record'), true, function () { _saveAndNavigate(function () { if (_recIdx > 0) _recIdx--; refreshForm(); }); });
     var navSpan = el('span', 'nav'); navSpan.id = 'idmp-recnav'; tb.appendChild(navSpan);
     // Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING — RECORD-INFO POPUP, W-RECINFO). The iDempiere "(i)" record-info
     // affordance at the rec/total indicator: who/when last touched this record, read from the immutable op-log
     // (CORE.recordInfo) + the row's own audit columns. Always-on (no AD_ChangeLog gate, unlike 🕒 Log).
     btn('ⓘ', 'Record info — who created / last updated this record', true, function () { _showRecordInfo(); });
-    btn('▶', 'Next record', true, function () { _dirtyGuard(function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); }); });
-    btn('▶▶', 'Last record', true, function () { _dirtyGuard(function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); }); });
+    btn('▶', _Ttl('tb.next', 'Next record'), true, function () { _saveAndNavigate(function () { if (_recIdx < _records.length - 1) _recIdx++; refreshForm(); }); });
+    btn('▶▶', _Ttl('tb.last', 'Last record'), true, function () { _saveAndNavigate(function () { _recIdx = Math.max(0, _records.length - 1); refreshForm(); }); });
     sep();
     var tgl = btn('▦ Grid', 'Toggle Grid / Form', true, function () {
       _viewMode = _viewMode === 'grid' ? 'form' : 'grid';
-      tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
-      renderBody();
+      tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
+      renderBody(); renderToolbar(); refreshNavOnly();   // FS-19 (§FS2q): Save/Ignore enable from #idmp-inline-mount, which renderBody just (un)mounted; the redrawn toolbar's record counter is refilled
     });
-    tgl.innerHTML = _viewMode === 'grid' ? '▦ Grid' : '▤ Form';
+    tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
+    tgl.setAttribute('data-tb', 'toggle');
     // Task 2 — changelog affordance (iDempiere record-history icon): only for tables with AD_Table.IsChangeLog='Y'
     (function () {
       var tab = _curTab(); if (!tab || !tab.tableName) return;
@@ -1670,6 +1871,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // P3 (CRUD_INPLACE_EDIT_SESSION.md) — New is IN PLACE: enter new-mode → a blank inline create form (no modal).
   function _openCreate() {
     var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
+    if (_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && window.AdGridTab && !AdGridTab.canInsert(_curQ.tm, _curQ.q)) {   // §GT dataNew guard (M/GridTab.java:1151-1165)
+      console.log('§GT-NEW refused table=' + tn + ' readOnly=' + _curQ.tm.isReadOnly + ' insertRecord=' + _curQ.tm.isInsertRecord + ' parentNeedSave=' + !!_curQ.q.parentNeedSave);
+      status(_curQ.q.parentNeedSave ? 'New — save the parent record first' : 'New — this tab does not allow new records'); return;
+    }
     if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
     if (typeof window.__crud.createInline === 'function') { _startInlineNew(null); console.log('§FORM-PILL new=inline-create table=' + tn + ' (no modal, ring not fanned)'); return; }
     _openCreate0();   // pre-P3 fallback (older overlay) — modal create
@@ -1758,7 +1963,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), tab.name);   // no tree glyph — iDempiere shows plain tab names
       if (lvl) t.style.paddingLeft = (16 + lvl * 10) + 'px';   // child tabs subtly indented (iDempiere parent→child)
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
-      t.addEventListener('click', function () { _dirtyGuard(function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); }); });
+      t.addEventListener('click', function () { if (i === _activeTabIdx) return; _saveAndNavigate(function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); }, 'tab'); });
       strip.appendChild(t);
     });
   }
@@ -1787,6 +1992,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var lvl = tab.tabLevel || 0;
     var rec = _records[_recIdx];
     _selByLevel[lvl] = rec ? recVal(rec, _keyCol(tab)) : null;
+    if (tab === _curTab() && rec) _curKeyByTab[_activeTabIdx] = _selByLevel[lvl];   // §GT current key (keep-by-key)
     // §P7 P7.6 (ERP_IDEMPIERE_UX_PARITY.md §P7-SPEC — W-PARITY-MANDATORY-CREATE): keep the selected ROW, not
     //   just its key. iDempiere's GridTab.setCurrentRow pushes EVERY column of the selected row into the window
     //   Env (GridField.setValue → updateContext), which is what a detail tab's @token@ DefaultValue and its
@@ -1809,6 +2015,98 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     put('date', (new Date()).toISOString().slice(0, 10));
     return ctx;
   }
+  // §GT — the tab model (one per AD_Tab, cached on the open window) + the window context Env.getContext reads:
+  //   the parent tab's current row first, then shallower levels, then the #globals (GridTab.query :688-700).
+  function _gtModel(i) {
+    var ow = _openWins[_activeWin]; if (!ow || !window.AdGridTab) return null;
+    ow.gt = ow.gt || {};
+    if (!ow.gt[i]) { try { ow.gt[i] = AdGridTab.open(db, ow.win.tabs || [], i); } catch (e) { ow.gt[i] = null; } }
+    return ow.gt[i];
+  }
+  function _gtFor(tab) { var w = _curWin(); var i = w ? (w.tabs || []).indexOf(tab) : -1; return i >= 0 ? _gtModel(i) : null; }
+  var _isSOTrxCache = {};
+  function _winIsSOTrx() {
+    if (_activeWin == null) return null;
+    if (!(_activeWin in _isSOTrxCache)) { var v = null; try { var r = db.exec('SELECT IsSOTrx FROM AD_Window WHERE AD_Window_ID=?', [_activeWin]); v = r.length && r[0].values.length ? r[0].values[0][0] : null; } catch (e) {} _isSOTrxCache[_activeWin] = v; }
+    return _isSOTrxCache[_activeWin];
+  }
+  function _ctxGetFor(level) {
+    return function (name) {
+      var g = String(name).charAt(0) === '#' || String(name).charAt(0) === '$', n = String(name).replace(/^[#$]/, ''), v;
+      if (!g) for (var L = level - 1; L >= 0; L--) { v = _recByLevel[L] ? recVal(_recByLevel[L], n) : ''; if (v != null && String(v) !== '') return v; }
+      var ln = n.toLowerCase();
+      if (ln === 'ad_client_id') return _session && _session.client ? _session.client.id : null;
+      if (ln === 'ad_org_id') return _session && _session.org ? _session.org.id : null;
+      if (ln === 'ad_user_id') return _session && _session.user ? _session.user.id : null;
+      if (ln === 'ad_role_id') return _session && _session.role ? _session.role.id : null;
+      if (ln === 'date') return (new Date()).toISOString().slice(0, 10);
+      if (ln === 'issotrx') return _winIsSOTrx();
+      return null;
+    };
+  }
+  // §GT-SNAP — read-only witness seam: the active tab's contract + every visible row's key and LINK value (W-GRIDTAB-LIVE counts
+  //   detail rows per parent from THIS, never from a save log line).
+  window.IdmpGridTab = {
+    snapshot: function () {
+      var tab = _curTab(); if (!tab) return null;
+      var tm = _curQ && _curQ.tabIdx === _activeTabIdx ? _curQ.tm : null, q = _curQ ? _curQ.q : null, kc = _keyCol(tab);
+      var snap = { window: _activeWin, tabIdx: _activeTabIdx, tab: tab.name, table: tab.tableName, level: tab.tabLevel || 0, keyColumn: kc,
+        linkColumn: tm ? tm.linkColumn : null, linkSource: tm ? tm.linkSource : null, linkValue: q ? q.linkValue : null,
+        parentNeedSave: !!(q && q.parentNeedSave), canInsert: !!(tm && window.AdGridTab && AdGridTab.canInsert(tm, q)),
+        parentKey: (tab.tabLevel || 0) > 0 ? _selByLevel[(tab.tabLevel || 0) - 1] : null, currentKey: _records[_recIdx] ? recVal(_records[_recIdx], kc) : null, newMode: !!_newMode, editing: !!document.getElementById('idmp-inline-mount'),
+        rows: _records.map(function (r) { return { pk: recVal(r, kc), link: tm && tm.linkColumn ? recVal(r, tm.linkColumn) : null }; }) };
+      console.log('§GT-SNAP window=' + snap.window + ' tab=' + snap.tab + ' level=' + snap.level + ' link=' + snap.linkColumn + '=' + snap.linkValue +
+        ' rows=' + snap.rows.length + ' foreign=' + snap.rows.filter(function (x) { return snap.linkColumn && String(x.link) !== String(snap.linkValue); }).length +
+        ' current=' + snap.currentKey + ' canInsert=' + snap.canInsert);
+      return snap;
+    }
+  };
+  // MRole.getOrgWhere(false) (MRole.java:1192-1230): the ROLE's org access list + 0, none when IsAccessAllOrgs — not the login org.
+  var _orgWhereCache = {};
+  function _roleOrgWhere() {
+    var rid = _session && _session.role ? _session.role.id : null; if (rid == null) return null;
+    if (rid in _orgWhereCache) return _orgWhereCache[rid];
+    var all = false; try { var r = db.exec('SELECT IsAccessAllOrgs FROM AD_Role WHERE AD_Role_ID=?', [rid]); all = r.length && r[0].values.length && r[0].values[0][0] === 'Y'; } catch (e) {}
+    var ids = { 0: 1 }; (_session.orgs || []).forEach(function (o) { ids[Number(o.id)] = 1; });
+    return (_orgWhereCache[rid] = all ? null : 'AD_Org_ID IN (' + Object.keys(ids).join(',') + ')');
+  }
+  function _keepIdx(tab) {
+    var k = _curKeyByTab[_activeTabIdx];
+    var i = (k != null && window.AdGridTab) ? AdGridTab.indexOfKey(_records, _keyCol(tab), k) : -1;
+    return i >= 0 ? i : 0;
+  }
+  // _saveAndNavigate (Z/AbstractADWindowContent.java:1693-1725 + onSave0 :2927-2945; M/GridTab.navigate :2558-2582):
+  //   real change → Save (AutoCommit, Env.isAutoCommit default Y); ok → proceed; REJECT → STAY (the error is on the form).
+  //   New with nothing typed → dataIgnore (current record returns to the one before New) → proceed. Nothing open → proceed.
+  function _saveAndNavigate(proceed, what) {
+    var tn = (_curTab() && _curTab().tableName) || '?';
+    if (!document.getElementById('idmp-inline-mount')) { proceed(); return; }
+    if (_formNeedsSave() && window.__crud && typeof window.__crud.saveInline === 'function') {
+      console.log('§GT-NAV autosave table=' + tn + ' on=' + (what || 'nav') + ' newRecord=' + !!_newMode);
+      window.__crud.saveInline(function (res) {
+        if (res && res.ok) {
+          _newMode = null;
+          // the op-log fold that makes the saved row current may land a tick later (sidecar re-hydrate) — the detail must
+          //   bind to the SAVED record, so wait for it to be current (GridTab.dataSave is synchronous in iDempiere).
+          var tries = 0, ct = _curTab(), want = res.createdId;
+          (function settle() {
+            var cur = _records[_recIdx] ? String(recVal(_records[_recIdx], _keyCol(ct))) : null;
+            if (want == null || cur === String(want) || tries++ > 60) {
+              if (want != null && cur !== String(want)) { var i = AdGridTab.indexOfKey(_records, _keyCol(ct), want); if (i >= 0) { _recIdx = i; _setSel(ct); cur = String(want); } }
+              console.log('§GT-NAV autosave table=' + tn + ' verdict=saved' + (want != null ? ' id=' + want + ' current=' + cur : '') + ' → proceed');
+              proceed();
+            } else setTimeout(settle, 50);
+          })();
+        }
+        else { console.log('§GT-NAV autosave table=' + tn + ' verdict=blocked reason=' + (res && res.reason) + (res && res.error ? ' error="' + res.error + '"' : '') + ' → stay');
+          status('Save failed — ' + ((res && res.error) || (res && res.reason) || 'not saved') + ' (stayed on this record)'); }
+      });
+      return;
+    }
+    if (_newMode) console.log('§GT-NAV ignore-new table=' + tn + ' on=' + (what || 'nav') + ' (nothing typed → dataIgnore)');
+    _newMode = null;
+    proceed();
+  }
   function renderActiveTab() {
     _newMode = null;   // P3 — any tab switch / grid reload exits new-record mode (untouched New auto-discards, nothing committed)
     _drillSaved = null; _drillActive = false;   // a real reload supersedes any dashboard drill-narrowing
@@ -1827,27 +2125,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       status(_curWin().name + ' › ' + tab.name + '  ·  table ' + tab.tableName + ' not in curated seed');
       return;
     }
-    var clauses = [];
-    if (tab.whereClause && tab.whereClause.indexOf('@') < 0) clauses.push('(' + tab.whereClause + ')'); // skip context-var clauses in I1
-    // ── Session data scope (docs §3b.1): client always; specific org narrows; org 0=* means no org narrowing.
-    // Applied ONLY when the column exists on this table — same clause layer as master-detail's parent FK.
+    // ── §GT — the tab's query is the GridTab contract (ad_gridtab.js, AD-driven, identical for every window): WhereClause
+    //    (@ctx@ parsed, unresolved → 1 = 2), the detail LINK (AD_Tab.AD_Column_ID / IsParent, value from the window context,
+    //    empty → 2=3 + parentNeedSave), then MRole.addAccessSQL: client + the role's org access list (when the column exists).
+    var access = [];
     if (_session) {
-      if (_session.client && _colExists(tab.tableName, 'AD_Client_ID')) clauses.push('AD_Client_ID IN (0,' + _session.client.id + ')');
-      if (_session.org && _session.org.id !== 0 && _colExists(tab.tableName, 'AD_Org_ID')) clauses.push('AD_Org_ID IN (0,' + _session.org.id + ')');
+      if (_session.client && _colExists(tab.tableName, 'AD_Client_ID')) access.push('AD_Client_ID IN (0,' + _session.client.id + ')');
+      var ow = _roleOrgWhere(); if (ow && _colExists(tab.tableName, 'AD_Org_ID')) access.push(ow);
+      try { window.APP = window.APP || {}; window.APP.roleOrgWhere = ow; } catch (eO) {}   // the FK lookups take the same org access
     }
-    // ── Master-detail: a child tab (tabLevel>0) filters by its parent record's key (the iDempiere drill) ──
     var level = tab.tabLevel || 0, mdNote = '';
-    if (level > 0) {
-      var w = _curWin(), pIdx = -1;
-      for (var pi = _activeTabIdx - 1; pi >= 0; pi--) { if ((w.tabs[pi].tabLevel || 0) === level - 1) { pIdx = pi; break; } }
-      if (pIdx >= 0) {
-        var pTab = w.tabs[pIdx], pKey = _keyCol(pTab), pPk = _selByLevel[level - 1];
-        if (pPk != null && pKey && _colExists(tab.tableName, pKey)) {
-          clauses.push(pKey + '=' + _lit(pPk));
-          mdNote = pTab.tableName + '.' + pKey + '=' + pPk;
-          console.log('§IDEMPIERE-MD tab=' + tab.name + ' level=' + level + ' parent=' + pTab.tableName + ' filter=' + pKey + '=' + pPk);
-        }
-      }
+    var tm = _gtModel(_activeTabIdx), gq = window.AdGridTab && tm ? AdGridTab.query(tm, _ctxGetFor(level), access) : { where: access.join(' AND ') || null, orderBy: null, note: 'no-gridtab' };
+    var clauses = gq.where ? [gq.where] : [];
+    if (tm && tm.tabLevel > 0) {
+      var pTab = _curWin().tabs[tm.parentIndex];
+      mdNote = (pTab ? pTab.tableName : '?') + '.' + (tm.linkColumn || '-') + '=' + (gq.linkValue == null ? '(none)' : gq.linkValue);
+      console.log('§IDEMPIERE-MD tab=' + tab.name + ' level=' + level + ' parent=' + (pTab ? pTab.tableName : '?') + ' filter=' + (tm.linkColumn || '-') + '=' + (gq.linkValue == null ? '(none)' : gq.linkValue) +
+        ' link=' + (tm.linkColumn || '-') + ' source=' + tm.linkSource + ' parentNeedSave=' + !!gq.parentNeedSave + (gq.note ? ' note=' + gq.note : ''));
     }
     // ── Zoom Across filter: while a where-used drill is active on THIS window, the header tab shows only the
     //    records that reference the origin record (iDempiere opens the destination window filtered to the query).
@@ -1859,11 +2153,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
     }
     var where = clauses.length ? clauses.join(' AND ') : null;
-    var orderBy = tab.orderByClause && tab.orderByClause.indexOf('@') < 0 ? tab.orderByClause : null;
+    var orderBy = gq.orderBy || null;
+    _curQ = { tm: tm, q: gq, where: where, tabIdx: _activeTabIdx, win: _activeWin };
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
     _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
-    _recIdx = 0; _gridSel = Object.create(null); _setSel(tab);   // fresh record set → clear any grid multi-select (item 4)
+    _recIdx = _keepIdx(tab); _gridSel = Object.create(null); _setSel(tab);   // §GT keep the current record by key (else row 0); fresh set → clear multi-select
     // §AD-GATE — re-evaluate the accounting pills: surface them only on a posting document (carries `Posted`).
     _curPostingDoc = _isPostingDoc(tab.tableName);
     if (window.IdmpPills && window.IdmpPills.setDocContext) window.IdmpPills.setDocContext();
@@ -2019,7 +2314,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
       if (showPosted) { var tdP = el('td', 'idmp-posted-cell'); tdP.setAttribute('data-ad-col', 'Posted'); tdP.appendChild(_postedButton(rec, i)); tr.appendChild(tdP); }
-      tr.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
+      tr.addEventListener('click', function () { _saveAndNavigate(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -2072,7 +2367,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       acc.appendChild(bd);
       // chevron / label-region tap = expand body (peek); "Open ›" or the rest of the header = open form view.
       lbl.addEventListener('click', function (e) { e.stopPropagation(); hd.classList.toggle('open'); bd.classList.toggle('open'); });
-      hd.addEventListener('click', function () { _dirtyGuard(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
+      hd.addEventListener('click', function () { _saveAndNavigate(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       cards.appendChild(acc);
     });
     return cards;
@@ -2125,7 +2420,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var n = _applyDocTip(tab, recs, sdb, br);
       if (n) {
         console.log('§DOC-TIP overlay table=' + tn + ' rows=' + recs.length + ' advanced=' + n + ' source=readTip(SET_STATUS)' + (br ? ' branch=' + br : ''));
-        if (_viewMode === 'form') refreshForm(); else renderBody();
+        if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
       }
     });
   }
@@ -2151,26 +2446,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try { folded = c.core.listTip(sdb, tn, pkCol, recs, br); } catch (e) { folded = null; }
       var rows = (folded && folded.rows) || recs;
       var created = (folded && folded.created) || [], hidden = (folded && folded.hidden) || [], updated = (folded && folded.updated) || [];
-      // gate created rows to the session client/org (the SAME scope the bundle SELECT applied to base rows).
-      if (created.length && _session) {
+      // §GT — created rows pass the SAME query contract the bundle SELECT applied to the base rows (WhereClause + detail link +
+      //   access + zoom), evaluated by sqlite itself (AdGridTab.admit) — a session row of ANOTHER parent, or failing the tab's
+      //   WhereClause (IsSOTrx…), never shows. (Was: only client/org re-checked in JS → MD-2 / MD-5.)
+      if (created.length && _curQ && _curQ.where && window.AdGridTab && recs === _records) {
         var createdSet = {}; created.forEach(function (p) { createdSet[String(p)] = 1; });
-        var cid = _session.client ? _session.client.id : null;
-        var oid = (_session.org && _session.org.id !== 0) ? _session.org.id : null;
-        rows = rows.filter(function (r) {
-          if (!createdSet[String(recVal(r, pkCol))]) return true;           // base row — already SQL-scoped
-          if (cid != null) { var rc = recVal(r, 'AD_Client_ID'); if (rc !== '' && rc != null && Number(rc) !== 0 && Number(rc) !== Number(cid)) return false; }
-          if (oid != null) { var ro = recVal(r, 'AD_Org_ID');    if (ro !== '' && ro != null && Number(ro) !== 0 && Number(ro) !== Number(oid)) return false; }
-          return true;
-        });
-        var kept = {}; rows.forEach(function (r) { kept[String(recVal(r, pkCol))] = 1; });
-        created = created.filter(function (p) { return kept[String(p)]; });
+        var cand = rows.filter(function (r) { return createdSet[String(recVal(r, pkCol))]; });
+        var adm = AdGridTab.admit(db, tab.tableName, cand, _curQ.where), okSet = {}, curK = _curKeyByTab[_activeTabIdx];
+        adm.rows.forEach(function (r) { okSet[String(recVal(r, pkCol))] = 1; });
+        var ret = curK != null ? adm.rejected.filter(function (r) { return String(recVal(r, pkCol)) === String(curK); }) : [];   // retained current row
+        if (ret.length && AdGridTab.admit(db, tab.tableName, ret, _curQ.q.whereRetain || '1=1').rows.length) { okSet[String(curK)] = 1; console.log('§GT-RETAIN table=' + tn + ' id=' + curK + ' (current record kept outside the tab WhereClause)'); }
+        rows = rows.filter(function (r) { var k = String(recVal(r, pkCol)); return !createdSet[k] || okSet[k]; });
+        if (adm.rejected.length) { var r0 = adm.rejected[0], lc0 = _curQ.tm && _curQ.tm.linkColumn;
+          console.log('§GT-ADMIT table=' + tn + ' created=' + created.length + ' admitted=' + adm.rows.length + ' rejected=' + adm.rejected.length + ' where=' + _curQ.where.slice(0, 160) +
+            ' firstRejected={' + (lc0 ? lc0 + ':' + recVal(r0, lc0) + ',' : '') + 'client:' + recVal(r0, 'AD_Client_ID') + ',org:' + recVal(r0, 'AD_Org_ID') + '}'); }
+        created = created.filter(function (p) { return okSet[String(p)]; });
       }
       var nStatus = _applyDocTip(tab, rows, sdb, br);          // a created-then-processed row reads its signed CO
-      _lastFoldCreated = created;   // W-SO-CHILD-BIND — ascending-opId synthetic pks; last entry = most recent create
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
-        _records = rows; _recIdx = Math.min(_recIdx, Math.max(0, rows.length - 1));
+        _records = rows;
+        var _ki = window.AdGridTab ? AdGridTab.indexOfKey(rows, pkCol, _curKeyByTab[_activeTabIdx]) : -1;   // §GT keep-by-key
+        _recIdx = _ki >= 0 ? _ki : Math.min(_recIdx, Math.max(0, rows.length - 1));
+        if (tab === _curTab()) _setSel(tab);
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
-        if (_viewMode === 'form') refreshForm(); else renderBody();
+        if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
       }
     });
   }
@@ -2444,6 +2743,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       return _sqlRows('SELECT * FROM ' + map.key + w + ' ORDER BY ' + map.pk + ' LIMIT 1')[0] || null;
     }
     return {
+      // §CP — a verbatim SvrProcess port runs in ONE ModelLayer.Trx over the tip-shadowed bundle (crud_overlay withModelTrx)
+      runInTrx: (window.__crud && typeof window.__crud.withModelTrx === 'function') ? function (fn) { return window.__crud.withModelTrx(fn); } : null,
       // receipt handlers (report:c_order / report:c_invoice): fold the requested record, else the first row.
       fetchHeader: header,
       fetchLines: function (key, info) {
@@ -2472,7 +2773,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       // TrialBalance / FactAcctReset: the posted journal. fact_acct is NOT carried in ad_seed.db → the fold is an
       // honest empty statement (§-named seed scope, not engine scope).
-      fetchFacts: function () { return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct'); },
+      // FS2 FIX-B (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2b — Witness: W-ERP-FIRST-SETUP S24): the facts
+      // a report folds are THIS tenant's, in the CHOSEN schema — TrialBalance.java:400 `FROM Fact_Acct WHERE
+      // AD_Client_ID=<client>` + :161 `C_AcctSchema_ID=<param>` (mandatory). Unscoped, it added USD to EUR facts and
+      // folded every resident tenant's ledger into one (42 lines vs the 20 of GardenWorld/101), still balanced=true.
+      fetchFacts: function (info) {
+        var w = [], p = (info && info.params) || {};
+        if (_session && _session.client && _session.client.id != null) w.push('ad_client_id=' + Number(_session.client.id));
+        var as = p.C_AcctSchema_ID != null ? p.C_AcctSchema_ID : p.c_acctschema_id;
+        if (as != null && String(as).trim() !== '' && !isNaN(Number(as))) w.push('c_acctschema_id=' + Number(as));
+        console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
+        return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));
+      },
+      // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
+      // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
+      query: function (sql) { return _sqlRows(sql); },
+      // FS-16 (§FS2n): the TIP of a table (bundle + this session's signed CRUD ops), keys lower-cased — ImportBPartner reads
+      // the staging rows the File Loader committed, and matches BPs / users / locations created in the session too.
+      tipRows: function (table) {
+        return _foldRowsSync(table, table + '_id', _sqlRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
+      },
+      stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
+      today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
+      clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
         var m = {};
         _sqlRows('SELECT c_elementvalue_id, value, name, accounttype FROM c_elementvalue').forEach(function (r) {
@@ -2598,7 +2921,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
     _showProcPane(pane);
@@ -2721,7 +3044,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-match-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     function paintTo() {
       var opts = _matchToOptions(fromSel.value);
@@ -2840,6 +3163,98 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     return null;                                          // log.warning("Not found zoom table")
   }
+  // FS-16 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2n — Witness: W-ERP-FIRST-SETUP S25b) — Import File Loader
+  //   (VFileImport + ImpFormat): pick an AD_ImpFormat, load a file, preview, Save → ONE signed group of CRUD_CREATE rows on the
+  //   format's import table. parseFlexFormat (ImpFormat.java:467-538) and parseLine/updateDB (:370-460, :547-680) transcribed.
+  function _impParseField(line, formatType, sep, fieldNo) {
+    var QUOTE = '"', d = formatType === 'C' ? ',' : formatType === 'T' ? '\t' : formatType === 'U' ? String(sep || ',').charAt(0) : null;
+    if (d == null) throw new Error('ImpFormat.parseFlexFormat - unknown format: ' + formatType);
+    if (!line || fieldNo < 0) return '';
+    var pos = 0, len = line.length;
+    for (var field = 1; field <= fieldNo && pos < len; field++) {
+      var content = '';
+      if (line.charAt(pos) === d) { pos++; continue; }                      // two delimiters → empty field (the Java's own quirk)
+      if (line.charAt(pos) === QUOTE) {
+        pos++;
+        while (pos < len) {
+          if (line.charAt(pos) === QUOTE && pos + 1 < len && line.charAt(pos + 1) === QUOTE) { content += line.charAt(pos++); pos++; }
+          else if (line.charAt(pos) === QUOTE) { pos++; break; }
+          else content += line.charAt(pos++);
+        }
+        if (pos < len && line.charAt(pos) !== d) {} pos++;
+      } else { while (pos < len && line.charAt(pos) !== d) content += line.charAt(pos++); pos++; }
+      if (field === fieldNo) return content;
+    }
+    return '';
+  }
+  function _impParseLine(fmt, rows, line) {
+    var out = {};
+    rows.forEach(function (r) {
+      var col = String(r.columnname).toLowerCase(), info;
+      if (String(r.datatype) === 'C') info = r.constantvalue == null ? '' : String(r.constantvalue);
+      else if (String(fmt.formattype) === 'F') info = (Number(r.startno) > 0 && Number(r.endno) <= line.length) ? line.substring(Number(r.startno) - 1, Number(r.endno)) : '';
+      else info = _impParseField(line, String(fmt.formattype), fmt.separatorchar, Number(r.startno));
+      if (info == null) info = '';
+      if (String(r.datatype) === 'N') info = info === '' ? '' : String(Number(String(info).replace(r.decimalpoint && r.decimalpoint !== '.' ? r.decimalpoint : /(?!)/, '.')));
+      if (info === '') return;                                               // ignoreEmpty
+      if (out[col] != null && (String(r.datatype) === 'S' || String(r.datatype) === 'C')) out[col] = String(out[col]) + info;   // concat mechanic :382-395
+      else out[col] = info;
+    });
+    return out;
+  }
+  _registerForm('org.compiere.apps.form.VFileImport', function (form) {
+    var pane = el('div', 'idmp-procpane idmp-procform');
+    pane.appendChild(el('h3', null, form.name));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + form.ad_form_id + ' · ' + form.classname + ' · load a file into an import table with an Import Format; then run that table\'s Import process'));
+    var cli = (_session && _session.client) ? Number(_session.client.id) : 0;
+    var fmts = _sqlRows("SELECT f.ad_impformat_id, f.name, f.ad_table_id, f.formattype, f.separatorchar, t.tablename FROM ad_impformat f JOIN ad_table t ON t.ad_table_id=f.ad_table_id " +
+      "WHERE f.isactive='Y' AND f.ad_client_id IN (0," + cli + ') ORDER BY f.name');
+    var fld = el('div', 'fld'); fld.appendChild(el('label', null, 'Import Format'));
+    var fs = document.createElement('select'); fs.setAttribute('data-imp-format', '1');
+    fmts.forEach(function (f) { var o = el('option', null, f.name + ' → ' + f.tablename); o.value = String(f.ad_impformat_id); fs.appendChild(o); });
+    fld.appendChild(fs); fld.appendChild(el('label', null, 'File'));
+    var fi = document.createElement('input'); fi.type = 'file'; fi.setAttribute('data-imp-file', '1'); fld.appendChild(fi);
+    pane.appendChild(fld);
+    var info = el('div', 'msg'); pane.appendChild(info);
+    var prev = el('div', null); pane.appendChild(prev);
+    var actions = el('div', 'actions'); var save = el('button', 'run', 'Save'); save.setAttribute('data-imp-save', '1'); save.disabled = true;
+    actions.appendChild(save); pane.appendChild(actions);
+    var parsed = [], fmt = null;
+    function load(text) {
+      fmt = fmts.filter(function (f) { return String(f.ad_impformat_id) === fs.value; })[0];
+      var rows = fmt ? _sqlRows('SELECT r.seqno, r.name, c.columnname, r.startno, r.endno, r.datatype, r.dataformat, r.decimalpoint, r.constantvalue FROM ad_impformat_row r ' +
+        'JOIN ad_column c ON c.ad_column_id=r.ad_column_id WHERE r.ad_impformat_id=' + Number(fmt.ad_impformat_id) + " AND r.isactive='Y' ORDER BY r.seqno") : [];
+      var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim().length; });
+      parsed = lines.map(function (l) { return _impParseLine(fmt, rows, l); }).filter(function (o) { return Object.keys(o).length; });
+      prev.innerHTML = '';
+      var t = document.createElement('table'); t.setAttribute('data-imp-preview', '1');
+      var cols = rows.map(function (r) { return String(r.columnname).toLowerCase(); }).filter(function (c, i, a) { return a.indexOf(c) === i; });
+      var tr = el('tr'); cols.forEach(function (c) { tr.appendChild(el('th', null, c)); }); t.appendChild(tr);
+      parsed.forEach(function (o) { tr = el('tr'); cols.forEach(function (c) { tr.appendChild(el('td', null, o[c] == null ? '' : String(o[c]))); }); t.appendChild(tr); });
+      prev.appendChild(t);
+      info.textContent = lines.length + ' line(s) read · ' + parsed.length + ' record(s) to load into ' + (fmt ? fmt.tablename : '?');
+      save.disabled = !parsed.length || !fmt;
+      console.log('§IMPLOADER preview format=' + (fmt && fmt.ad_impformat_id) + ' table=' + (fmt && fmt.tablename) + ' lines=' + lines.length + ' records=' + parsed.length + ' formatRows=' + rows.length);
+    }
+    fi.addEventListener('change', function () { var f = fi.files && fi.files[0]; if (!f) return; var rd = new FileReader(); rd.onload = function () { load(rd.result); }; rd.readAsText(f); });
+    fs.addEventListener('change', function () { if (fi.files && fi.files[0]) fi.dispatchEvent(new Event('change')); });
+    save.addEventListener('click', function () {
+      if (!fmt || !parsed.length || !window.__crud || typeof window.__crud.applyOpGroup !== 'function') return;
+      var tn = String(fmt.tablename).toLowerCase(), A = window.APP || {};
+      var std = { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 };
+      var ops = parsed.map(function (o) {                                    // updateDB :640-672 — std fields + Processed/I_IsImported='N'
+        var f = {}; for (var k in o) f[k] = o[k]; f.isactive = 'Y'; f.processed = 'N'; f.i_isimported = 'N';
+        return { op_type: 'CRUD_CREATE', key: tn, table: tn, verb: 'create', id: null, fields: f, cas: null, stdDefaults: std };
+      });
+      save.disabled = true;
+      window.__crud.applyOpGroup(ops, function (res) {
+        info.textContent = res && res.committed ? ops.length + ' record(s) loaded into ' + fmt.tablename + ' (signed). Run its Import process next.' : 'Load failed: ' + (res && res.reason);
+        console.log('§IMPLOADER saved table=' + tn + ' rows=' + ops.length + ' committed=' + !!(res && res.committed) + ' gid=' + (res && res.gid) + ' verifyChain=' + (res && res.verifyOk ? 'ok' : 'FAIL'));
+      });
+    });
+    _showProcPane(pane);
+    console.log('§IMPLOADER mount form=' + form.ad_form_id + ' formats=' + fmts.length);
+  });
   _registerForm('org.compiere.apps.form.VTrxMaterial', function (form) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, form.name));
@@ -2871,7 +3286,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-trx-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     [orgSel, locSel, prdSel, mtSel].forEach(function (s) { s.addEventListener('change', run); });
     d1.addEventListener('change', run); d2.addEventListener('change', run);
@@ -3007,7 +3422,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3062,7 +3477,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     _showProcPane(pane);
 
@@ -3187,7 +3602,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, {}, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3209,27 +3624,82 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var name = document.createElement('input'); name.value = 'AcmeCo'; name.setAttribute('autocomplete', 'off');
     name.setAttribute('data-genesis-name', '1'); fName.appendChild(name); pane.appendChild(fName);
     var fCcy = el('div', 'fld'); fCcy.appendChild(el('label', null, 'Currency'));
-    var ccy = document.createElement('select'); var oc = el('option', null, 'USD — US Dollar'); oc.value = '100'; oc.setAttribute('data-prec', '2');
-    ccy.appendChild(oc); fCcy.appendChild(ccy); pane.appendChild(fCcy);
+    // FS-3 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness: W-ERP-FIRST-SETUP S04): any ACTIVE
+    // C_Currency is a valid setup currency (MSetup.java:542 new MAcctSchema(client, currency)); USD preselected.
+    var ccy = document.createElement('select'); ccy.setAttribute('data-genesis-currency', '1'); var nCcy = 0;
+    try {
+      var cr = db.exec("SELECT C_Currency_ID, ISO_Code, Description, StdPrecision FROM C_Currency WHERE IsActive='Y' ORDER BY ISO_Code");
+      (cr.length ? cr[0].values : []).forEach(function (v) {
+        var oc = el('option', null, v[1] + ' — ' + (v[2] || v[1])); oc.value = String(v[0]);
+        oc.setAttribute('data-prec', String(v[3] == null ? 2 : v[3])); oc.setAttribute('data-iso', String(v[1]));
+        if (Number(v[0]) === 100) oc.selected = true; ccy.appendChild(oc); nCcy++;
+      });
+    } catch (eC) {}
+    if (!nCcy) { var oc0 = el('option', null, 'USD — US Dollar'); oc0.value = '100'; oc0.setAttribute('data-prec', '2'); oc0.setAttribute('data-iso', 'USD'); ccy.appendChild(oc0); }
+    console.log('§GENESIS-WIZARD currencies=' + (nCcy || 1) + ' source=' + (nCcy ? "C_Currency IsActive='Y'" : 'fallback-USD'));
+    fCcy.appendChild(ccy); pane.appendChild(fCcy);
+    // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j): process 53161 param C_Country_ID (mandatory), default
+    // = its SQL "MIN(C_Country_ID) … AD_Language='@#AD_Language@'" — the seed has no AD_Language table, so the same rule
+    // reads C_Country.AD_Language='en_US' (100 United States). The org / Standard BP / warehouse locations take it.
+    var fCty = el('div', 'fld'); fCty.appendChild(el('label', null, 'Country'));
+    var cty = document.createElement('select'); cty.setAttribute('data-genesis-country', '1'); var nCty = 0, ctyDef = null;
+    try {
+      var dq = db.exec("SELECT MIN(C_Country_ID) FROM C_Country WHERE AD_Language='en_US'"); ctyDef = dq.length ? dq[0].values[0][0] : null;
+      var cq = db.exec("SELECT C_Country_ID, Name, CountryCode FROM C_Country WHERE IsActive='Y' ORDER BY Name");
+      (cq.length ? cq[0].values : []).forEach(function (v) {
+        var o = el('option', null, v[1] + ' (' + v[2] + ')'); o.value = String(v[0]); if (Number(v[0]) === Number(ctyDef)) o.selected = true; cty.appendChild(o); nCty++;
+      });
+    } catch (eT) {}
+    console.log('§GENESIS-WIZARD countries=' + nCty + ' default=' + ctyDef + " (param 53161 C_Country_ID default SQL, AD_Language='en_US')");
+    fCty.appendChild(cty); pane.appendChild(fCty);
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
-    pane.appendChild(el('div', 'sub', 'Chart of accounts: iDempiere default (311 accounts) — folded automatically.'));
+    // FS-18 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2p): process 53161 UseDefaultCoA / CoAFile — the default chart, or
+    //   the user's own file in iDempiere's AccountingUS.csv layout (NaturalAccountMap). Required default-account keys = every active
+    //   AD_Reference 25 (Account) column of C_AcctSchema_GL + C_AcctSchema_Default (MSetup.createAccountingRecord :877-900).
+    var fCoa = el('div', 'fld'); fCoa.appendChild(el('label', null, 'Chart of accounts'));
+    var coaSel = document.createElement('select'); coaSel.setAttribute('data-genesis-coa', '1');
+    [['default', 'iDempiere default (311 accounts)'], ['file', 'Load your own file (CSV, iDempiere AccountingUS format)']].forEach(function (o) {
+      var op = el('option', null, o[1]); op.value = o[0]; coaSel.appendChild(op); });
+    var coaFile = document.createElement('input'); coaFile.type = 'file'; coaFile.accept = '.csv,text/csv'; coaFile.setAttribute('data-genesis-coafile', '1'); coaFile.style.display = 'none';
+    var coaInfo = el('div', 'sub', ''); coaInfo.setAttribute('data-genesis-coainfo', '1');
+    var coaParsed = null;
+    coaSel.addEventListener('change', function () { coaFile.style.display = coaSel.value === 'file' ? '' : 'none'; });
+    coaFile.addEventListener('change', function () {
+      var f = coaFile.files && coaFile.files[0]; if (!f) return;
+      var rd = new FileReader(); rd.onload = function () {
+        coaParsed = window.Genesis.parseCoA(rd.result);
+        coaInfo.textContent = coaParsed.accounts.length + ' accounts, ' + Object.keys(coaParsed.keyToValue).length + ' default-account keys read from ' + f.name;
+        console.log('§GENESIS-COA parsed file=' + f.name + ' lines=' + coaParsed.lines + ' skipped=' + coaParsed.skipped + ' accounts=' + coaParsed.accounts.length + ' keys=' + Object.keys(coaParsed.keyToValue).length);
+      }; rd.readAsText(f);
+    });
+    fCoa.appendChild(coaSel); fCoa.appendChild(coaFile); fCoa.appendChild(coaInfo); pane.appendChild(fCoa);
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Create tenant'); run.setAttribute('data-genesis-create', '1');
     var cancel = el('button', null, 'Cancel');
     var out = el('div', 'sub');
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     run.addEventListener('click', function () {
       var opt = ccy.options[ccy.selectedIndex];
-      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value),
-        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: '2024-01-15' };
+      // FS-2: the setup year is TODAY's (MYear.java:110-115 reads the clock); genesis takes it as its explicit dateAcct.
+      var dNow = new Date(), today = dNow.getFullYear() + '-' + ('0' + (dNow.getMonth() + 1)).slice(-2) + '-' + ('0' + dNow.getDate()).slice(-2);
+      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
+        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
+      if (cty.value) input.countryId = Number(cty.value);                    // FS-12
+      if (coaSel.value === 'file') {                                         // FS-18
+        if (!coaParsed) { out.textContent = 'Choose a chart of accounts file first.'; return; }
+        input.coa = coaParsed;
+        input.requiredKeys = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName IN " +
+          "('C_AcctSchema_GL','C_AcctSchema_Default') AND c.AD_Reference_ID=25 AND c.IsActive='Y'").map(function (r) { return String(r.cn).toUpperCase(); });
+        console.log('§GENESIS-COA use=file accounts=' + coaParsed.accounts.length + ' requiredKeys=' + input.requiredKeys.length);
+      }
       run.disabled = true; run.textContent = 'Creating…';
       var born;
       try { born = window.Genesis.birthTenant(input); }
-      catch (e) { out.textContent = 'Genesis failed: ' + e.message; run.disabled = false; run.textContent = 'Create tenant';
+      catch (e) { out.textContent = 'Genesis failed: ' + e.message; out.setAttribute('data-genesis-error', '1'); run.disabled = false; run.textContent = 'Create tenant';
         console.log('§W-GENESIS-SYSADMIN-LIVE create FAIL ' + e.message); return; }
       console.log('§W-GENESIS-SYSADMIN-LIVE born client=' + input.clientName + ' groups=' + born.groups.length + ' head=' + born.tip.slice(0, 12));
       // Append a G7 sample invoice (named cols → mergeGenesisInto column-intersects it) — same shape genesis.html
@@ -3237,7 +3707,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var invId = 9000001;
       var bundle = { input: born.input, tip: born.tip, refs: born.refs, groups: born.groups.concat([{
         seq: born.groups.length + 1, label: 'G7 sample invoice', ops: [
-          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: '2024-01-15', docstatus: 'CO' } },
+          { op: 'CREATE', table: 'c_invoice', row: { c_invoice_id: invId, c_bpartner_id: born.refs.bpartnerId, ad_client_id: born.refs.clientId, grandtotal: 109.00, issotrx: 'Y', ispaid: 'N', dateinvoiced: input.dateAcct, docstatus: 'CO' } },
           { op: 'CREATE', table: 'c_invoiceline', row: { c_invoice_id: invId, m_product_id: born.refs.productId, ad_client_id: born.refs.clientId, linenetamt: 100.00 } },
           { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
         ] }]) };
@@ -3268,6 +3738,20 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
+  function _procTableDirSelect(pp, dflt) {
+    var tbl = String(pp.columnName).replace(/_ID$/i, ''), key = pp.columnName, sel = document.createElement('select');
+    var blank = el('option', null, ''); blank.value = ''; sel.appendChild(blank);
+    var ids = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower('" +
+      tbl.replace(/'/g, '') + "') AND c.IsIdentifier='Y' ORDER BY c.SeqNo").map(function (r) { return r.cn; }).filter(function (c) { return _colExists(tbl, c); });
+    if (!ids.length || !_tableExists(tbl)) { console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' skipped=no-table-or-identifier → text box kept'); return null; }
+    var disp = ids.map(function (c) { return "COALESCE(CAST(" + c + " AS TEXT),'')"; }).join(" || '_' || ");
+    var cli = (_session && _session.client) ? Number(_session.client.id) : null, acc = '';
+    if (cli != null && _colExists(tbl, 'AD_Client_ID')) acc = ' AND ' + (cli === 0 ? 'AD_Client_ID=0' : 'AD_Client_ID IN (0,' + cli + ')');
+    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY 2');
+    rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (dflt != null && String(dflt) === String(r.k)) o.selected = true; sel.appendChild(o); });
+    console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
+    return sel;
+  }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
@@ -3293,7 +3777,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         inp = document.createElement('select');
         ['', 'Y', 'N'].forEach(function (v) { var o = el('option', null, v || '—'); o.value = v; inp.appendChild(o); });
         inp.value = defaults[pp.columnName] === 'Y' || defaults[pp.columnName] === 'N' ? defaults[pp.columnName] : '';
-      } else {
+      } else if (Number(pp.ad_reference_id) === 19 && !(pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '')) {
+        // FS-9 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2i — Witness: W-ERP-FIRST-SETUP S24b). TableDir =
+        // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
+        // by SeqNo joined '_', ORDER BY display, + MRole.addAccessSQL's client clause (:902; the FS-5 clause).
+        inp = _procTableDirSelect(pp, defaults[pp.columnName]);
+      }
+      if (!inp) {
         inp = document.createElement('input');
         inp.type = pp.type === 'date' ? 'date' : (pp.type === 'integer' || pp.type === 'number') ? 'number' : 'text';
         inp.value = defaults[pp.columnName];
@@ -3327,7 +3817,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel);
@@ -3335,10 +3825,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
   }
   function runProcess(proc, params, recordId) {
+    // FS-16 (§FS2n): hydrate the signed sidecar FIRST — a handler that reads the tip (ImportBPartner over the rows the File
+    //   Loader committed) must not run against a not-yet-hydrated sidecar (kernelDb() is null before hydration → base only).
+    var C = window.__crud;
+    if (C && typeof C.withSidecar === 'function' && typeof C.kernelDb === 'function' && !C.kernelDb()) { C.withSidecar(function () { _runProcessNow(proc, params, recordId); }); return; }
+    _runProcessNow(proc, params, recordId);
+  }
+  function _runProcessNow(proc, params, recordId) {
     var b = _b3(window.__idmpDb);
     var info = { AD_Process_ID: proc.AD_Process_ID, params: params };
     if (recordId != null) info.Record_ID = recordId;          // §GENPO-LIVE — record-scoped processes (getRecord_ID)
     var res = window.AdProcess.dispatch(b, info, _procCtx());
+    // FS-16 (§FS2n): a process whose doIt WRITES (ImportBPartner) returns its rows as one CRUD op group; iDempiere commits
+    //   inside doIt, so the host commits it now — ONE signed group (FKs by {__opRef}, resolved at commit).
+    if (res && res.ok && res.result && res.result.commitOps && res.result.commitOps.length && window.__crud && typeof window.__crud.applyOpGroup === 'function') {
+      var nOps = res.result.commitOps.length;
+      window.__crud.applyOpGroup(res.result.commitOps, function (cr) {
+        console.log('§PROC-COMMIT proc=' + res.ad_process_id + ' ops=' + nOps + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
+      });
+    }
     console.log('§AD-PROC-LIVE proc=' + res.ad_process_id + ' name="' + res.name + '" classname=' + (res.classname || '(blank)') +
       ' dispatched=' + (res.dispatched ? 'Y' : 'N') +
       (res.dispatched ? ' ok=' + (res.ok ? 'Y' : 'N') + ' rows=' + res.rows + (res.ok ? '' : ' reason=' + res.reason + ' message=' + JSON.stringify(res.message)) : ' reason=' + res.reason));
@@ -3420,6 +3925,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       else if (r.total != null) pane.appendChild(el('div', 'msg', 'Subtotal ' + r.subtotal + ' · Tax ' + r.tax + ' · Total ' + r.total));
       if (r.foldsFrom === 'fact_acct' && res.rows === 0)
         pane.appendChild(el('div', 'gap', 'fact_acct is not carried in ad_seed.db — the journal folds to an honest empty statement (seed scope, not engine scope).'));
+    }
+    // FS-14 (§FS2l) — the RV_T_Aging face: one row per (BPartner, Currency[, Invoice]) + a totals row.
+    if (!absent && r && r.aging) {
+      var at = document.createElement('table'); at.setAttribute('data-aging', '1');
+      var acols = [['bpname', 'Business Partner'], ['iso', 'Currency'], ['invoicedamt', 'Invoiced'], ['openamt', 'Open'], ['dueamt', 'Not yet due'],
+        ['pastdue1_7', 'Past due 1-7'], ['pastdue8_30', '8-30'], ['pastdue31_60', '31-60'], ['pastdue61_90', '61-90'], ['pastdue91_plus', '91+'], ['pastdueamt', 'Past due']];
+      var atr = el('tr'); acols.forEach(function (c, i) { atr.appendChild(el('th', i >= 2 ? 'r' : null, c[1])); }); at.appendChild(atr);
+      // totals per currency (amounts in different currencies are never added together); RV_T_Aging rows are per currency too.
+      var perCcy = {}, ccyOrder = [];
+      r.aging.forEach(function (row) { var k = row.iso; if (!perCcy[k]) { perCcy[k] = { bpname: 'Total ' + k, iso: k, _total: true }; ccyOrder.push(k); }
+        acols.slice(2).forEach(function (c) { perCcy[k][c[0]] = Math.round(((perCcy[k][c[0]] || 0) + (Number(row[c[0]]) || 0)) * 100) / 100; }); });
+      if (!ccyOrder.length) { perCcy[''] = { bpname: 'Total', iso: '', _total: true }; acols.slice(2).forEach(function (c) { perCcy[''][c[0]] = 0; }); ccyOrder.push(''); }
+      r.aging.concat(ccyOrder.map(function (k) { return perCcy[k]; })).forEach(function (row) {
+        atr = el('tr'); if (row._total) atr.setAttribute('data-aging-total', row.iso || '-');
+        acols.forEach(function (c, i) { var td = el('td', i >= 2 ? 'r' : null, row[c[0]] == null ? '' : String(row[c[0]])); td.setAttribute('data-k', c[0]); atr.appendChild(td); });
+        at.appendChild(atr);
+      });
+      pane.appendChild(at);
+      pane.appendChild(el('div', 'msg', 'Statement date ' + r.statementDate + ' · ' + r.items + ' open item(s)'));
     }
     // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
     // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
@@ -3557,7 +4081,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>Select a menu item to open a window.</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
@@ -3577,7 +4101,27 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       afterSaveCreate: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
       afterDiscardNew: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
       afterDelete: function () { _newMode = null; _viewMode = 'grid'; renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
-      onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); }
+      // §CP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — W-CP-CALLOUT-LIVE): the GridTab context the callout
+      //   engine needs — this AD_Tab, its TabNo (GridWindow index), the window IsSOTrx (AbstractADWindowContent sets it in the
+      //   window ctx) and each parent tab's CURRENT row (GridTab.setCurrentRow pushed those into the window ctx).
+      calloutCtx: function () {
+        var w = _curWin(), tabs = (w && w.tabs) || [], ti = _activeTabIdx, t = tabs[ti]; if (!t) return null;
+        var parents = [], want = (t.tabLevel || 0) - 1;
+        for (var i = ti - 1; i >= 0 && want >= 0; i--) if ((tabs[i].tabLevel || 0) === want) { parents.unshift({ AD_Tab_ID: tabs[i].id, tabNo: i, row: _recByLevel[want] || {} }); want--; }
+        // current: the record on screen when New is pressed — its values stay in the WINDOW context (GridTable.dataNew keeps W|col)
+        var cur = (_records && _recIdx != null && _recIdx >= 0) ? (_records[_recIdx] || null) : null;
+        return { AD_Tab_ID: t.id, tabNo: ti, isSOTrx: _winIsSOTrx(), parents: parents, current: cur };
+      },
+      onUnsupported: function () { formEl.className = 'idmp-form'; var m = formEl.querySelector('#idmp-inline-mount'); if (m) m.remove(); _appendReadonlyFields(formEl, _curTab(), _records[_recIdx]); },
+      // UI locale (ERP_UI_LOCALES.md §L1): a curated crud spec carries its own ENGLISH labels ("Price List (ID)"); in
+      //   another locale the field label is the AD field's translated name (same column, same tab). English: null →
+      //   the curated label stays byte-identical.
+      labelFor: function (col) {
+        if (!window.ErpI18n || ErpI18n.lang === ErpI18n.BASE) return null;
+        var t = _curTab(); if (!t || !t.fields) return null; col = String(col).toLowerCase();
+        for (var i = 0; i < t.fields.length; i++) if (String(t.fields[i].columnName).toLowerCase() === col) return t.fields[i].name !== t.fields[i]._en ? t.fields[i].name : null;
+        return null;
+      }
     };
   }
   // _startInlineNew — enter new-record mode (blank or cloned-from copyFromId) and render the inline create form.
@@ -3629,17 +4173,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var copyFrom = _newMode.copyFrom;
       _withFoldedEntry(tn, 'create', function () {
         var opts = _inlineOptsFor(tn, nf);
-        // §DOCTYPE-PER-WINDOW (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "IsSOTrx/DocType gap") — the AD_Tab's
-        // own WhereClause is the REAL per-window signal iDempiere already uses to split Sales vs Purchase Order
-        // windows (e.g. "C_Order.IsSOTrx='Y'" vs "...='N'", confirmed live: window 143 vs 181), already loaded
-        // into tab.whereClause for grid filtering but never consulted at CREATE time — beforeSave's
-        // docTypeTargetDefault always fell back to the client's Standard SALES doctype regardless of which
-        // window authored the record. Stash it as a create-scoped hint on window.APP (the SAME session-context
-        // channel _docCtx() already reads orgId/clientId from), read+applied only for this one create, cleared
-        // right after so it never leaks into an unrelated later save.
+        // §GT.7 the window context IsSOTrx = AD_Window.IsSOTrx (AbstractADWindowContent → Env.setContext(WindowNo,"IsSOTrx")),
+        //   which @IsSOTrx@ defaults and the doc-type default read. Replaces the WhereClause regex.
         window.APP = window.APP || {};
-        var _wc = tab.whereClause && /\bIsSOTrx\s*=\s*'([YN])'/i.exec(tab.whereClause);
-        window.APP._createIsSOTrx = _wc ? _wc[1].toUpperCase() : null;
+        window.APP._createIsSOTrx = _winIsSOTrx();
         // Implementing ERP_P2P_INVOICE_MATCH.md §Fix 2 — Witness: W-RECEIPT-MOVEMENTTYPE. The M_InOut
         // real AD_Tab family splits Shipment (257, "MovementType IN ('C-')") vs Material Receipt (296,
         // "MovementType IN ('V+')") vs the return tabs (52371/53276) by MovementType, NOT IsSOTrx (verified
@@ -3648,24 +4185,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         // pattern as _createIsSOTrx.
         var _wcMt = tab.whereClause && /\bMovementType\s+IN\s*\(\s*'([A-Z][+-])'/i.exec(tab.whereClause);
         window.APP._createMovementType = _wcMt ? _wcMt[1].toUpperCase() : null;
-        // §ORDERLINE-PARENT-FK (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22, "order-LINE stale parent FK") —
-        // a child tab's (tabLevel>0) New form has a locked/readonly parent-link column (e.g.
-        // C_OrderLine.C_Order_ID) but nothing ever seeded its value with the actual parent record's pk:
-        // defaultsFor() only resolves AD_Column.DefaultValue (empty here, by real iDempiere convention —
-        // the parent link is set programmatically, never via a column default), so the field rendered
-        // empty, then populateRefs()'s FK dropdown (never matching that empty value against any real row)
-        // silently fell through to whichever row sorts first — an ARBITRARY, WRONG parent order. Reuses the
-        // SAME naming-convention parent-column resolution renderActiveTab() already uses for GRID filtering
-        // (pKey = the parent tab's own key column name, matched by identity against the child table — real
-        // iDempiere's GridTab.getLinkColumnName() convention) to seed the value BEFORE the form renders.
-        var seedVals = null, _lvl = tab.tabLevel || 0;
-        if (_lvl > 0) {
-          var _w = _curWin(), _pIdx = -1;
-          for (var _pi = _activeTabIdx - 1; _pi >= 0; _pi--) { if ((_w.tabs[_pi].tabLevel || 0) === _lvl - 1) { _pIdx = _pi; break; } }
-          if (_pIdx >= 0) {
-            var _pTab = _w.tabs[_pIdx], _pKey = _keyCol(_pTab), _pPk = _selByLevel[_lvl - 1];
-            if (_pPk != null && _pKey && _colExists(tab.tableName, _pKey)) { seedVals = {}; seedVals[_pKey.toLowerCase()] = _pPk; }
-          }
+        // §GT — GridField.defaultFromParent (M/GridField.java:757-768): the new row's LINK column takes the window context
+        //   value of that column (the parent's current row) — the link column per AD (AD_Tab.AD_Column_ID / IsParent), the
+        //   value the tab query used. Supersedes §ORDERLINE-PARENT-FK's parent-key-name search.
+        var seedVals = null;
+        if (_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && _curQ.tm.tabLevel > 0 && _curQ.tm.linkColumn && _curQ.q.linkValue != null) {
+          seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue;
         }
         if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
@@ -3721,9 +4246,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       form.appendChild(fld);
     });
   }
+  function refreshNavOnly() {
+    var nav = $('idmp-recnav');
+    if (nav) nav.textContent = _records.length ? (_T('tb.record', 'Record') + ' ' + (_recIdx + 1) + ' ' + _T('tb.of', 'of') + ' ' + _records.length) : ('0 ' + _T('tb.records', 'records'));
+  }
   function refreshForm() {
     var nav = $('idmp-recnav');
-    if (nav) nav.textContent = _records.length ? ('Record ' + (_recIdx + 1) + ' of ' + _records.length) : '0 records';
+    if (nav) nav.textContent = _records.length ? (_T('tb.record', 'Record') + ' ' + (_recIdx + 1) + ' ' + _T('tb.of', 'of') + ' ' + _records.length) : ('0 ' + _T('tb.records', 'records'));
     if (_viewMode === 'form') { var tab = _curTab(); if (tab) { $('idmp-content').innerHTML = ''; $('idmp-content').appendChild(buildForm(tab)); } }
     var t = _curTab(); if (t) { _setSel(t); updateStatus(t); }
   }
@@ -3808,8 +4337,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { var tab = _curTab(); if (!tab) return null; var rec = _records[_recIdx]; if (!rec) return null;
       var v = recVal(rec, _keyCol(tab)); return (v === '' || v == null) ? null : v; } catch (e) { return null; }
   }
-  // _curatedHas — does the CURATED crud_ops store carry an entry for this (lower-cased) table? (The 5 document
-  //   tables: docPolicy fan-out + ownerGate.) Tolerant: store may not be fetched yet → "maybe".
+  // _curatedHas — does crud_ops.json carry this table (docPolicy / ownerGate / cas pins only — never editability).
   function _curatedHas(tn) {
     try { var st = window.__crud && window.__crud.store && window.__crud.store();
       if (!st) return true;                 // store not fetched yet — don't pre-disable; openRing re-checks
@@ -3826,19 +4354,51 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       v = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
     _isViewCache[key] = v; return v;
   }
-  // S2B — _foldableTab: a NON-curated table the AD says is editable (not a view, not a read-only tab, has fields).
-  //   The general path: every window editable per its OWN dictionary, retiring the curated allow-list as the GATE.
+  // _foldableTab — editable per AD only: not AD_Table.IsView, not AD_Tab.IsReadOnly, has displayed fields.
   function _foldableTab(tab) {
     if (!tab || !tab.tableName) return false;
     var tn = String(tab.tableName).toLowerCase();
-    if (_curatedHas(tn)) return false;                       // curated wins (its docPolicy fan-out)
-    if (_tableIsView(tn) || tab.isReadOnly) return false;    // AD_Table.IsView / AD_Tab.IsReadOnly → read-only
+    if (_tableIsView(tn) || tab.isReadOnly) return false;
     return (tab.fields || []).some(function (f) { return f.isDisplayed && !f.isKey; });
   }
   // S2B — _foldCrudSpecForTab: derive + register the crud_ops-shaped entry FROM the current tab's AD-folded
   //   fields (the renderer's getFields shape — reused, not re-derived) so hostCreate/Update/Delete's entryFor
   //   resolves for a non-curated table. forVerb shapes the readonly set (IsUpdateable='N' settable on New,
   //   display-only on Edit). Returns the registered spec (or null when the engine seam is absent).
+  // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b) — Login.loadDefault
+  //   (Login.java:659-670 + :701-734), ported: for every non-view table with a key column AND an active IsDefault
+  //   column, #<KeyColumn> = SELECT key WHERE IsDefault='Y' AND IsActive='Y' (+ the role's client clause
+  //   AD_Client_ID IN (0,<client>)) ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, key; C_DocType → #C_DocTypeTarget_ID;
+  //   AD_Window*/AD_PrintFormat*/AD_Workflow*/AD_StorageProvider/M_Locator* skipped (:703-708). Org access not ported.
+  //   Cached per client; one §LOGIN-DEFAULTS line. Returns { lower-case column: value }.
+  var _loginDefCache = {};
+  function _loginDefaults() {
+    var cli = (_session && _session.client) ? Number(_session.client.id) : null;
+    if (cli == null || !db) return null;
+    if (_loginDefCache[cli]) return _loginDefCache[cli];
+    var out = {}, n = 0;
+    try {
+      var r = db.exec("SELECT t.TableName, c.ColumnName FROM AD_Column c JOIN AD_Table t ON c.AD_Table_ID=t.AD_Table_ID " +
+        "WHERE c.IsKey='Y' AND t.IsActive='Y' AND t.IsView='N' AND EXISTS (SELECT 1 FROM AD_Column cc WHERE cc.ColumnName='IsDefault' " +
+        "AND cc.AD_Table_ID=t.AD_Table_ID AND cc.IsActive='Y')");
+      (r.length ? r[0].values : []).forEach(function (v) {
+        var tn = String(v[0]), kc = String(v[1]);
+        if (/^AD_Window|^AD_PrintFormat|^AD_Workflow|^M_Locator/.test(tn) || tn === 'AD_StorageProvider') return;
+        if (!_colExists(tn, kc) || !_colExists(tn, 'IsDefault')) return;
+        var hasCli = _colExists(tn, 'AD_Client_ID'), hasOrg = _colExists(tn, 'AD_Org_ID');
+        try {
+          var q = db.exec('SELECT ' + kc + ' FROM ' + tn + " WHERE IsDefault='Y' AND IsActive='Y'" + (hasCli ? ' AND AD_Client_ID IN (0,' + cli + ')' : '') +
+            ' ORDER BY ' + (hasCli ? 'AD_Client_ID DESC, ' : '') + (hasOrg ? 'AD_Org_ID DESC, ' : '') + kc + ' LIMIT 1');
+          var val = q.length && q[0].values.length ? q[0].values[0][0] : null;
+          if (val != null && String(val) !== '') { out[(tn === 'C_DocType' ? 'c_doctypetarget_id' : kc.toLowerCase())] = val; n++; }
+        } catch (eQ) {}
+      });
+    } catch (e) {}
+    _loginDefCache[cli] = out;
+    console.log('§LOGIN-DEFAULTS client=' + cli + ' n=' + n + ' m_pricelist_id=' + out.m_pricelist_id + ' c_paymentterm_id=' + out.c_paymentterm_id +
+      ' c_doctypetarget_id=' + out.c_doctypetarget_id + ' (Login.loadDefault :701-734)');
+    return out;
+  }
   function _foldCrudSpecForTab(tab, forVerb) {
     if (!tab || !tab.tableName || !window.__crud || !window.__crud.core ||
         typeof window.__crud.core.foldCrudSpec !== 'function' || typeof window.__crud.registerFolded !== 'function') return null;
@@ -3848,6 +4408,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
                 orgId: (_session && _session.org) ? _session.org.id : null,
                 today: (new Date()).toISOString().slice(0, 10) };
+    ctx.sysPref = _loginDefaults();                          // FS-12: GridField stage 5 (#ColumnName)
     // §P2.7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-REFLIST): a List column's option set
     //   is its AD_Reference_Value_ID's AD_Ref_List rows — resolved by the SAME ADParser.resolveReference the read
     //   view already uses (active rows, ordered per AD_Reference.IsOrderByValue). Handed to the pure fold as a resolver.
@@ -3867,17 +4428,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       catch (eRT) { return null; }
     };
     var spec = window.__crud.core.foldCrudSpec(tab.fields, {
-      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList, refTable: refTable });
+      key: tn, title: tab.name || tn, isView: _tableIsView(tn), isReadOnly: !!tab.isReadOnly, forVerb: forVerb || 'update', ctx: ctx, refList: refList, refTable: refTable,
+      isInsertRecord: _gtFor(tab) ? _gtFor(tab).isInsertRecord : true, isDeleteable: _gtFor(tab) ? _gtFor(tab).isDeleteable : true, hasDocAction: _colExists(tab.tableName, 'DocAction') });
     window.__crud.registerFolded(tn, spec);
     console.log('§S2B-FOLD table=' + tn + ' verb=' + (forVerb || 'update') + ' verbs=[' + (spec.verbs || []).join(',') + '] fields=' + (spec.fields || []).length + ' isView=' + spec.isView + ' tabRO=' + !!tab.isReadOnly);
     return spec;
   }
-  // _crudHas — is this table editable AT ALL? curated crud_ops OR AD-foldable (S2B general). Drives the ✎ CRUD
-  //   button's enabled state. Tolerant: store may not be fetched yet → "maybe".
-  function _crudHas(tn) {
-    if (_curatedHas(tn)) return true;
-    return _foldableTab(_curTab());
-  }
+  function _crudHas(tn) { return _foldableTab(_curTab()); }   // §GT.6: AD decides, crud_ops.json does not
   // S2B — _withFoldedEntry: register a dictionary-folded spec for a NON-curated table BEFORE invoking a host CRUD
   //   seam, so entryFor resolves. ensureStore first (so _curatedHas sees the loaded crud_ops; a curated doc table
   //   is NEVER folded — its docPolicy entry wins). forVerb shapes the readonly set. Degrades to a bare run() if the
@@ -3954,28 +4511,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var ct = _curTab();
       if (ct && ct.tableName && _adMatch(ct.tableName, t)) {
         console.log('§CRUD-COMMIT-LIVE refold table=' + t + ' op=' + d.op_type + ' view=' + _viewMode);
+        if (d.op_type === 'CRUD_CREATE' && d.createdId != null) _curKeyByTab[_activeTabIdx] = d.createdId;   // before the fold: it is the retained row
         try { _overlayListTip(ct, _records); } catch (er) {}
-        // Fix: ERP_BUSINESS_CYCLE_E2E.md Stage-1 SO parent-binding — Witness: W-SO-CHILD-BIND
-        // A CRUD_CREATE folds the new row into _records but previously left _recIdx/_selByLevel pointing at
-        // whatever record was current at window open — so a child tab drilled after New+Save filtered by the
-        // STALE parent pk (master-detail reads _selByLevel[level-1], see renderActiveTab ~line 1723), not the
-        // record just created. NOTE (verified against the real code, differs from the original bug report):
-        // d.id is NOT usable here — buildOp() in crud_overlay.js only sets base.id for update/delete/process,
-        // never for create, so overlay:committed's `id` field is always null on a CRUD_CREATE. The new row's
-        // real synthetic pk (-opId) only becomes known inside _overlayListTip's listTip() fold — captured just
-        // above into _lastFoldCreated (ascending opId order; last entry = the row this very commit just made).
-        if (d.op_type === 'CRUD_CREATE') {
+        // §GT — the saved record stays current (GridTable.dataSave, M/GridTable.java:1848-1854): the commit event carries the
+        //   exact synthetic pk (-opId) of the created row → it becomes this tab's current key; a detail tab then links to it.
+        if (d.op_type === 'CRUD_CREATE' && d.createdId != null) {
           try {
-            var newPk = _lastFoldCreated.length ? _lastFoldCreated[_lastFoldCreated.length - 1] : null;
-            var newKeyCol = _keyCol(ct), foundIdx = -1;
-            if (newPk != null) {
-              for (var ri = 0; ri < _records.length; ri++) {
-                if (String(recVal(_records[ri], newKeyCol)) === String(newPk)) { foundIdx = ri; break; }
-              }
-            }
+            _curKeyByTab[_activeTabIdx] = d.createdId;
+            var foundIdx = AdGridTab.indexOfKey(_records, _keyCol(ct), d.createdId);
             if (foundIdx >= 0) { _recIdx = foundIdx; _setSel(ct); }
-            console.log('§CRUD-CREATE-SEL table=' + t + ' id=' + newPk + ' recIdx=' + foundIdx + ' selLevel=' + (ct.tabLevel || 0) + ' sel=' + _selByLevel[ct.tabLevel || 0]);
-          } catch (er4) { console.log('§CRUD-CREATE-SEL-ERROR table=' + t + ' id=' + d.id + ' err=' + er4); }
+            console.log('§CRUD-CREATE-SEL table=' + t + ' id=' + d.createdId + ' recIdx=' + foundIdx + ' selLevel=' + (ct.tabLevel || 0) + ' sel=' + _selByLevel[ct.tabLevel || 0]);
+          } catch (er4) { console.log('§CRUD-CREATE-SEL-ERROR table=' + t + ' id=' + d.createdId + ' err=' + er4); }
         }
         // P2/P3 — repaint the CURRENT view post-commit: form view re-mounts the inline editor from the now-committed
         //   tip (baseline resets, dirty clears); grid view repaints so a created row APPEARS / a deleted row vanishes.
@@ -5542,6 +6088,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }
       return null;
     }
+    // S226 §R1.1 (bim-compiler prompts/S226_localisation.md) — Witness: W-ZOOM-LANG. The ERP's UI language rides in
+    //   the Viewer URL as ?lang=; the Viewer's locale_loader resolves it through its own LOCALE_MAP (ar → ar_SA).
+    //   Only a CHOSEN language is passed: a Viewer locale also carries currency + rate book, so the ERP base (en_US)
+    //   must not override the Viewer user's own saved locale (e.g. en_MY / RM).
+    function _zoomLang() { var I = window.ErpI18n, l = I && I.lang; return (l && l !== I.BASE) ? '&lang=' + encodeURIComponent(l) : ''; }
     if (window.ZoomAcross) window.ZoomAcross.register({
       id: 'viewer', label: 'BIM Viewer',
       // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
@@ -5555,6 +6106,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
         if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
+        url += _zoomLang();                                          // S226 §R1.1 — the Viewer opens in the ERP's language
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
       }
@@ -5571,7 +6123,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (!sc || !sc.tm || !sc.bld) { status('No BIM model linked to this order'); console.log('§ZOOM-ACROSS no-scope id=timemachine'); return; }
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' +
-          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order);
+          encodeURIComponent(sc.bld) + '&home=' + homeUrl + '&tm=1&pporder=' + encodeURIComponent(sc.tm.order) + _zoomLang();
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=timemachine bld=' + sc.bld + ' pporder=' + sc.tm.order + ' url=' + url);
       }
