@@ -363,7 +363,12 @@ var CIVIL_RATES = {
   SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: 800, currency: 'RM', label: 'regional-official',
                sor_item: 'Selangor tender "JKH Perabot Jalan" 2023-09, Papantanda item C (RM 800–870/Nos range)',
                desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
-  LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
+  // §CW_LIGHTING_RATE (2026-10-07, user: "use all the standard prices … editable") — RM 485/EA = the market pack already shipped,
+  //   rates/cidb2024_my.json materials.IfcLightFixture "LED Light Fixture" (CIDB N3C 2024). A BUILDING fixture standing in for a road
+  //   lantern (no free road-lighting source, §R) — label says so; edit in the 4D/5D rates panel.
+  LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: 485, currency: 'RM', label: 'market-pack-proxy',
+               sor_item: 'rates/cidb2024_my.json IfcLightFixture (CIDB 2024, LED light fixture — building item used as proxy)',
+               desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
   MARKING:   { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road marking', trade: 'CIVIL_MARKING' },
   // §PARTNER_DISCS: GEOTECH = piles / soil nails / horizontal drains / RC walls (EA until a true measure exists); GABION = mattress (M2)
   GEOTECH:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Ground treatment (piles, soil nails, horizontal drains, RC walls)', trade: 'CIVIL_GEOTECH' },
