@@ -4,6 +4,41 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.73.0](https://github.com/red1oon/bim-ootb/compare/v1.72.0...v1.73.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **4d:** road + bridge in one civil programme; partner phases; one schedule-population owner (sw v1581) ([#1890](https://github.com/red1oon/bim-ootb/issues/1890)) ([0696593](https://github.com/red1oon/bim-ootb/commit/06965933c3cf9d3b2a0ecd6fa34e08f871e5f748))
+* **4d:** road build-up by chainage — lamps never before their pavement (sw v1571) ([#1880](https://github.com/red1oon/bim-ootb/issues/1880)) ([80f00d0](https://github.com/red1oon/bim-ootb/commit/80f00d017714b3ded9783e660068c0b75a4a773e))
+* **altc:** earthworks volume line on the planned card — V from the closed EARTHWORK solid, NO number when the surface is open (sw v1590) ([#1899](https://github.com/red1oon/bim-ootb/issues/1899)) ([ceaefd5](https://github.com/red1oon/bim-ootb/commit/ceaefd5a64d355ea7d43eba81d3e5e17a6770e8f))
+* **altc:** earthworks volume option (a) — open surface shows ≈ V ±B (bbox-centre origin, B over 14 fixed shifts); B&gt;=V or wrong-way edge = not measurable (sw v1592) ([#1900](https://github.com/red1oon/bim-ootb/issues/1900)) ([1862c3a](https://github.com/red1oon/bim-ootb/commit/1862c3af7d270bc9ac346aeb1461c5d18603baeb))
+* **altc:** ground-works card, red-banner Outstanding card, earthworks row replaces the stale 'no earthwork surface' (sw v1586) ([#1892](https://github.com/red1oon/bim-ootb/issues/1892)) ([b599428](https://github.com/red1oon/bim-ootb/commit/b599428d8d6d460cd1c8871b1477143c8ce12316))
+* **civil:** §EW_VOLUME_SURFACE — earthworks volume on ground card, model check report, 4D/5D page; one owner earthworks_volume.js (sw v1593) ([#1902](https://github.com/red1oon/bim-ootb/issues/1902)) ([eb6b5a8](https://github.com/red1oon/bim-ootb/commit/eb6b5a8b31ab0ba1486539f32d139c5fad76759d))
+* **civil:** §LONG_SECTION road profile panel + §CROSS_SECTION slab square to route (civil-gated; sw v1593) ([#1901](https://github.com/red1oon/bim-ootb/issues/1901)) ([ca26e8b](https://github.com/red1oon/bim-ootb/commit/ca26e8bf81f6d57bc0260f5172814d4141aa670a))
+* **civil:** §SECTION_CIVIL_MODES — Long/Cross inside the Cut section tool, chainage scrubber, floating button deleted (sw v1595) ([#1904](https://github.com/red1oon/bim-ootb/issues/1904)) ([fb183dd](https://github.com/red1oon/bim-ootb/commit/fb183ddf3faee0e20d5f1a6cbc42a7c89cd7a869))
+* **import:** the BIM partner's added files import as civil disciplines — GEOTECH, GABION, CHAINAGE, ROW (sw v1577) ([#1886](https://github.com/red1oon/bim-ootb/issues/1886)) ([dfb4748](https://github.com/red1oon/bim-ootb/commit/dfb47486fc4a6b1aa391de068b5d1450d7513cb0))
+* **viewer:** civil earthworks see-through, right-of-way as outline, ground at the true earthworks bottom (sw v1579) ([#1887](https://github.com/red1oon/bim-ootb/issues/1887)) ([6e39a98](https://github.com/red1oon/bim-ootb/commit/6e39a98c43a44bd4f2d029b836d0535957e8b0d3))
+* **viewer:** road checks in the road film as worked formulas, each tagged VALID or SPECULATIVE (sw v1573) ([#1882](https://github.com/red1oon/bim-ootb/issues/1882)) ([44fa0c7](https://github.com/red1oon/bim-ootb/commit/44fa0c76896a7b8e0eee8bba86841987bcf48673))
+* **viewer:** road film data cards on quiet stretches of the drive (sw v1570) ([#1879](https://github.com/red1oon/bim-ootb/issues/1879)) ([cfd2b4e](https://github.com/red1oon/bim-ootb/commit/cfd2b4e5b1d93bcf4dc93de5715bffeebf880a8a))
+* **viewer:** road film v2 — one drive, build-up by half-way, parade in the drive, junction close-up (sw v1569) ([#1878](https://github.com/red1oon/bim-ootb/issues/1878)) ([e8ef457](https://github.com/red1oon/bim-ootb/commit/e8ef4574886e3154b3ba4f77ed0132b511e7cb35))
+* **viewer:** road film v3 — build by pieces completed, no load-path freeze, 8 s approach, grass ground; road compliance mock-up replaces the MEP tab (sw v1574) ([#1883](https://github.com/red1oon/bim-ootb/issues/1883)) ([7a1f9c5](https://github.com/red1oon/bim-ootb/commit/7a1f9c515f2f97a85e12eb856ee14435ea5369f7))
+
+
+### 🐛 Fixes
+
+* **4d:** film day counter read 20,791 days — reused raw schedule kept 1970 timestamps for pieces outside any task (sw v1576) ([#1885](https://github.com/red1oon/bim-ootb/issues/1885)) ([cdc1951](https://github.com/red1oon/bim-ootb/commit/cdc195158f866b5d5ebf0b3f7fc3ca539af207b6))
+* **cpe:** Alt+C checkboxes mark the path edited and are all saved (cinema_path +8 cols) ([#1898](https://github.com/red1oon/bim-ootb/issues/1898)) ([ff901cf](https://github.com/red1oon/bim-ootb/commit/ff901cf4aba1f3e62121f9ebb0e20956136b7dc3))
+* **viewer:** a merge into an already-drawn building draws the new rows and refreshes Find (sw v1578) ([#1888](https://github.com/red1oon/bim-ootb/issues/1888)) ([ef2d66d](https://github.com/red1oon/bim-ootb/commit/ef2d66dabda3030f90c27216ce52c36812aa18fc))
+* **viewer:** bbox view boxes every element of a civil building in a merged scene (sw v1580) ([#1889](https://github.com/red1oon/bim-ootb/issues/1889)) ([44d4a22](https://github.com/red1oon/bim-ootb/commit/44d4a22f4b2e8379b8cdf60744faa3ccd8b1baf1))
+* **viewer:** box view is the same whatever the drop order — group by civil discipline, not building name (sw v1589) ([#1895](https://github.com/red1oon/bim-ootb/issues/1895)) ([bdd70f1](https://github.com/red1oon/bim-ootb/commit/bdd70f1321f836f4d6d6ee279116bdd8126ed24d))
+* **viewer:** drawn-box owner reads the real placement of a DLOD-culled instance, not its zeroed matrix (sw v1587) ([#1893](https://github.com/red1oon/bim-ootb/issues/1893)) ([e768a63](https://github.com/red1oon/bim-ootb/commit/e768a632e859cad2cc5127edbfb06e402f3a7a2e))
+* **viewer:** Open→Merge carries element properties (element_psets) — only for elements new to the scene (sw v1585) ([#1891](https://github.com/red1oon/bim-ootb/issues/1891)) ([5f18779](https://github.com/red1oon/bim-ootb/commit/5f18779c44c6c061bb8c58dde38f91b0cbb204d0))
+* **viewer:** road film mirror ghost (no interior room probe on roads) + status box Chainage row instead of the model name (sw v1575) ([#1884](https://github.com/red1oon/bim-ootb/issues/1884)) ([3669849](https://github.com/red1oon/bim-ootb/commit/3669849dfd7f28494a99c1eae0ae83c1c84af9a0))
+* **viewer:** road films stop showing building labels — no building rule cards, Site Envelope, road trade clash names (sw v1572) ([#1881](https://github.com/red1oon/bim-ootb/issues/1881)) ([88106e7](https://github.com/red1oon/bim-ootb/commit/88106e797c7fc9682e8071528e857d1f95f9be2f))
+* **viewer:** road lamp glow hidden in daylight, soft round dot instead of square (sw v1567) ([#1875](https://github.com/red1oon/bim-ootb/issues/1875)) ([1135bb9](https://github.com/red1oon/bim-ootb/commit/1135bb9ce55b2b783cb782a76847686e96870de9))
+* **viewer:** road reveal hides the pavement too — reveal shell = ARC+STR+ROAD on civil models (sw v1568) ([#1877](https://github.com/red1oon/bim-ootb/issues/1877)) ([5f7bdc2](https://github.com/red1oon/bim-ootb/commit/5f7bdc237857eb2a58886ec43a740be40dea504f))
+
 ## [1.72.0](https://github.com/red1oon/bim-ootb/compare/v1.71.0...v1.72.0) (2026-10-05)
 
 
