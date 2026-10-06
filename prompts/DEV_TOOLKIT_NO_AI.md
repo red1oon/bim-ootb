@@ -192,6 +192,38 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
 - **Real gaps already found by this triage** (not tool work — real app findings, owner lanes to decide):
   modeller has no `persist()`; no app code watches quota; no app code runs `integrity_check`.
 
+## §12 T22 Offline Map — which code is air-gap ready (user request 2026-10-06)
+**Question it answers:** "If the network is cut, does this file / feature still work?"
+### Tiers (read from the service-worker rules, not guessed)
+| Tier | Meaning | How a file lands here (`viewer/sw.js` @ origin/main; `erp/`, `modeller/` mirror it) |
+|---|---|---|
+| **P — Precached** | Offline from the first install | in `PRECACHE_ASSETS` / `_PRECACHE_SET` or `CDN_ASSETS` → cache-first (`isNetworkFirst` returns false, ~L1199) |
+| **R — Runtime-cached** | Offline **only if it was opened online once** | `.html` / `.js` / `.sql` not precached → network-first, response stored by `networkFirst()` (`c.put`, ~L1271); `lib/` → cache-on-first-use |
+| **N — Network-only** | Breaks offline | fetched from a host no cache rule covers, or outside the SW scope |
+| **S — Stored data** | Offline via the app's own storage, not the SW | buildings / DBs kept in IndexedDB / OPFS (`cachedFetch` path) |
+### Known N cases already on record (seeds the witness)
+- **Root Hub `index.html` is outside the service worker's scope** — dead when starting offline
+  (`bim-compiler prompts/OFFLINE_HUB_SW_SCOPE_GAP.md`, parked 2026-07-19). The viewer opened from a
+  cached link does work offline (`W-OFFLINE-CACHED-CLICK`, same file).
+- **External hosts in app code** (origin/main grep, 2026-10-06): `cdn.jsdelivr.net` 24 refs,
+  `objectstorage.ap-kulai-2.oraclecloud.com` (OCI buildings) 9, `raw.githubusercontent.com` 6,
+  `github.com` 35, `red1oon.github.io` 19. Each must be classed P (in `CDN_ASSETS`), S (stored after
+  download) or N. `localhost`/`127.0.0.1`/XML-namespace URLs are not fetches — excluded.
+### What the dev sees
+- **File explorer badge** (VS Code `FileDecorationProvider`): letter `P` / `R` / `N` on each app file,
+  hover gives the rule that put it there (file:line in `sw.js`).
+- **Feature roll-up:** a page or feature is only as offline as its weakest file + data. Table:
+  `viewer.html  P:212 R:4 N:1 (cdn …/x.js)  → NOT air-gap ready`.
+- **Code lens on `fetch(` / `<script src>`** to an external host: `N — offline: breaks` or `P — in CDN_ASSETS`.
+### Static map is a claim; the witness is a real offline run
+- **Witness `§DEVTK_OFFLINE`:** per app — load online once, cut the network (Playwright `setOffline(true)`,
+  the same method `W-OFFLINE-CACHED-CLICK` used), reload fresh, record every failed request. Assert:
+  every request that failed is tier N on the static map; every P/R file loaded. **A mismatch either way
+  is the finding** (map wrong, or SW rule wrong). Red control: drop one file from `PRECACHE_ASSETS` →
+  the witness must report it.
+  *Issue it proves:* "offline-ready" is measured per file, not assumed from the PWA badge.
+- Reuses T13 Precache Auditor's parse of `sw.js` — one parser, not two.
+
 ## §6 Spikes before locking (each ends in a `§` line, not an opinion)
 | Spike | Question | Decides |
 |---|---|---|
@@ -199,6 +231,7 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
 | S1 | How many of 211 witnesses print a `contract.js` summary? | T5 scope |
 | S4 | Which of the 129 JSON files are read by app code? | T18 schema list |
 | S5 | Which local-DB writers coordinate across tabs (locks / BroadcastChannel), which don't? | T19 multi-tab check |
+| S6 | Does `cachedFetch` store every OCI building fetch, or are some paths uncached? | T22 S vs N for OCI |
 | S3 | Which existing viewer/erp/modeller objects hold each T9 field? | T9 field list |
 | S2 | Can the running tab report its active SW version to an outside caller without the bridge? | whether §4.2 needs app code at all |
 
@@ -216,5 +249,6 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
 | §9 framework tools T10–T17, T20–T21 | triaged, specs to write |
 | §10 T18 JSON schemas | draft |
 | §11 T19 Health Monitor | draft — lock after S5 |
+| §12 T22 Offline Map | draft — lock after S6 |
 | Packaging §5 | draft |
 | Implementation | not started |
