@@ -124,7 +124,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
 
   // ── W-FIN-EVM-6 — contract. ──
   const pcSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'proj_control.js'), 'utf8');
-  const nfSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'navigate_find.js'), 'utf8');
+  const nfSrc = require('../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
   const htmlSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'viewer.html'), 'utf8');
   const c6 = ['function evmMetrics', 'function contractSum', 'function evm', 'function projectControl', 'global.ProjControl'].every(function (t) { return pcSrc.indexOf(t) >= 0; })
     && nfSrc.indexOf('ProjControl') >= 0 && nfSrc.indexOf('§PROJ_CONTROL') >= 0
