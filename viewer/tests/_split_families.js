@@ -7,7 +7,7 @@ const V = path.join(__dirname, '..');
 const FAMILIES = {
   cpe_load_path: {
     shell: 'cpe_load_path.js', shared: 'LPS',
-    files: ['cpe_load_path.js'],
+    files: ['lp_chain.js', 'lp_geom_pick.js', 'lp_build.js', 'lp_backdrop_diag.js', 'lp_apply_restore.js', 'lp_hud.js', 'cpe_load_path.js'],
     loader: { kind: 'html', file: 'viewer.html' },
     runtime: (win) => { if (typeof win.setupCpeLoadPath === 'function') win.setupCpeLoadPath(win.APP); },
   },
