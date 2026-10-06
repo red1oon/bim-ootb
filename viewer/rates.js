@@ -356,7 +356,13 @@ var CIVIL_RATES = {
   DRAINAGE:  { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Drains, culverts & structures', trade: 'CIVIL_DRAINAGE' },
   ROAD:      { measure: 'M2', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road pavement', trade: 'CIVIL_PAVING' },
   FURNITURE: { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road furniture', trade: 'CIVIL_FURNITURE' },
-  SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
+  // §CW_SIGNAGE_RATE (2026-10-07, user: "use the std in the market"; source bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §R.3) —
+  //   label regional-official (Selangor, NOT JKR national; JELAPANG is Perak). RM 800.00/Nos = the LOWEST sign line (items C–L,
+  //   prohibitory signs) of 800–870; includes face, post, concrete base and labour ("papanmuka, tiang, tapak konkrit … dan upah").
+  //   Model pieces carry no sign type and one piece may not be one whole sign — the line says so.
+  SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: 800, currency: 'RM', label: 'regional-official',
+               sor_item: 'Selangor tender "JKH Perabot Jalan" 2023-09, Papantanda item C (RM 800–870/Nos range)',
+               desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
   LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
   MARKING:   { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road marking', trade: 'CIVIL_MARKING' },
   // §PARTNER_DISCS: GEOTECH = piles / soil nails / horizontal drains / RC walls (EA until a true measure exists); GABION = mattress (M2)
