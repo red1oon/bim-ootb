@@ -65,7 +65,10 @@
   function _hasFoldedProject(db) {
     return Number(_scalar(db, "SELECT COUNT(*) FROM C_ProjectPhase") || 0) > 0;
   }
-  // pick the folded project: the active building's C_Project if it has phases, else the first project that does.
+  // pick the folded project: the active building's C_Project if it has phases — ONLY that one.
+  // §NO_FALLTHROUGH (user 2026-10-07: "falling thru to pick up Hospital … just where clause proper"): there used to be an
+  //   "else the newest project with phases" branch, which on the bundled seed is always Hospital (C_Project 990000) — so a
+  //   Civil Works session showed and edited Hospital's schedule. No match now returns null + a § line; open() tells the user.
   function _pickProject(db) {
     var building = A().activeBuilding;
     // NB: don't filter on branch_id here — that column only exists AFTER a blue commit ALTERs it in. readPhases is
@@ -74,8 +77,7 @@
       var pid = _scalar(db, "SELECT p.C_Project_ID FROM C_Project p WHERE p.Value=? AND EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID)", [building]);
       if (pid != null) return { id: pid, name: _scalar(db, "SELECT Name FROM C_Project WHERE C_Project_ID=?", [pid]) };
     }
-    var r = db.exec("SELECT p.C_Project_ID, p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
-    if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+    console.log('§WHATIF-UI no-project-for-building building="' + (building || '') + '" (no fall-through to another project)');
     return null;
   }
 
