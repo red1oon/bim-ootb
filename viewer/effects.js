@@ -3968,6 +3968,47 @@ async function setupEffects(A, renderer, scene, camera) {
       _puddleRadii.push(2 + rr * (envelope * 0.09));
     }
   }
+  // §ALTS_CIVIL_TERRAIN_GROUND (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md, user 2026-10-06: "Go on horizon"): a civil model carrying
+  // an EARTHWORK body has its OWN ground. For the still: the body goes OPAQUE in the default ground's own albedo (one ground look, not two);
+  // the default plane stays where _calcGroundY put it — the body's true lowest vertex (§CIVIL_REF_LOOK G1), which no terrain surface goes
+  // below (measured CivilWorks.db: bottom 30.52 m, lowest top surface 30.85 m) — so inside the footprint the opaque body hides it and it
+  // shows only OUTSIDE, as horizon, the envelope fog dissolving the far seam. No puddles (they are painted on the plane). Gate: EARTHWORK
+  // materials exist — buildings and terrain-less models never enter this path. Restored on exit (_terrainStillRestore).
+  var _terrainStillSaved = null;
+  function _earthworkMats() {
+    var out = [], mc = A._matCache || {};
+    for (var k in mc) { var parts = k.split('|'); if (parts[3] === 'EARTHWORK' && mc[k] && mc[k].isMaterial) out.push(mc[k]); }
+    return out;
+  }
+  function _terrainStillApply() {
+    var mats = _earthworkMats();
+    if (!mats.length) return false;
+    var key = A._groundTexKey, gain = A._groundAlbedoGain || 1, map = A.ground && A.ground.material && A.ground.material.map, rho = null, src = 'table';
+    try { var m = (map && map.image && map.image.complete !== false) ? _groundTexMeanRGB(map) : null; if (m) { rho = m.map(function(v) { return v * gain; }); src = 'texture'; } } catch (e) {}
+    if (!rho) { var l = (key && GROUND_TEX_MEAN_LUM[key] != null) ? GROUND_TEX_MEAN_LUM[key] : GROUND_TEX_AVG_LUM; rho = [l * gain, l * gain, l * gain]; }
+    var tint = A.ground && A.ground.material && A.ground.material.color;   // the tint _setGroundColor gave the default ground
+    if (tint) rho = [rho[0] * tint.r, rho[1] * tint.g, rho[2] * tint.b];
+    _terrainStillSaved = mats.map(function(mt) { return { m: mt, o: mt.opacity, t: mt.transparent, dw: mt.depthWrite, c: mt.color ? mt.color.clone() : null, oo: mt.userData.origOpacity }; });
+    mats.forEach(function(mt) {
+      mt.opacity = 1; mt.transparent = false; mt.depthWrite = true; mt.userData.origOpacity = 1;
+      if (mt.color) mt.color.setRGB(Math.min(1, rho[0]), Math.min(1, rho[1]), Math.min(1, rho[2]));
+      mt.needsUpdate = true;
+    });
+    console.log('§ALTS_TERRAIN_GROUND earthworkMats=' + mats.length + ' opaque=1 albedo=[' + rho.map(function(v) { return v.toFixed(3); }).join(',') +
+      '] src=' + src + '(' + (key || 'none') + ') gain=' + gain.toFixed(2) + ' planeIfcZ=' + (A.groundIfcZ != null ? A.groundIfcZ.toFixed(2) : '?') +
+      ' (body bottom — horizon outside the footprint only)');
+    return true;
+  }
+  function _terrainStillRestore() {
+    if (!_terrainStillSaved) return;
+    _terrainStillSaved.forEach(function(s) {
+      s.m.opacity = s.o; s.m.transparent = s.t; s.m.depthWrite = s.dw; s.m.userData.origOpacity = s.oo;
+      if (s.c && s.m.color) s.m.color.copy(s.c);
+      s.m.needsUpdate = true;
+    });
+    console.log('§ALTS_TERRAIN_GROUND restored earthworkMats=' + _terrainStillSaved.length + ' (navigation see-through look)');
+    _terrainStillSaved = null;
+  }
   function _applyPuddleUniforms(shader) {
     var n = Math.min(_puddleCenters.length, 8);
     shader.uniforms.uPuddleCount.value = n;
@@ -4337,9 +4378,11 @@ async function setupEffects(A, renderer, scene, camera) {
     else if (!_photoVariationLocked || A._photoPaintSeed == null) A._photoPaintSeed = Math.random();
     _wireGroundPuddleShader();
     var _pbbox = _buildingBBoxIfc();
-    if (_pbbox) _buildGroundPuddles((_pbbox.xMin + _pbbox.xMax) / 2, (_pbbox.yMin + _pbbox.yMax) / 2);
+    var _hasTerrain = _earthworkMats().length > 0;   // §ALTS_CIVIL_TERRAIN_GROUND: puddles live on the plane, which is not the ground here
+    if (_hasTerrain) { _puddleCenters = []; _puddleRadii = []; _puddleSeedBuilt = null; }
+    else if (_pbbox) _buildGroundPuddles((_pbbox.xMin + _pbbox.xMax) / 2, (_pbbox.yMin + _pbbox.yMax) / 2);
     console.log('§PHOTO_PAINT_SEED seed=' + A._photoPaintSeed.toFixed(4) + ' locked=' + _photoVariationLocked + (_pinSeed ? ' pinned=url' : '') +
-      ' puddles=' + _puddleCenters.length);
+      ' puddles=' + _puddleCenters.length + (_hasTerrain ? ' reason=terrain' : ''));
     _photoGroundWasVisible = !!(A.ground && A.ground.visible);
     _photoGroundPrevKey = A._groundTexKey || null;
     _photoGroundPrevColor = A._groundSolidColor;
@@ -4372,6 +4415,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A._applyGroundTexture(_civGround ? 'grass' : 'earth');
       if (A._setGroundColor) A._setGroundColor(_civGround ? 0xe6ead8 : 0xd9c39a);  // civil: neutral (green shows) · building: warm sunlit-concrete
       if (_civGround) console.log('§ALTC_V3_GRASS ground=grass tint=0xe6ead8 (road film)');
+      _terrainStillApply();   // §ALTS_CIVIL_TERRAIN_GROUND — after the ground's texture/gain/tint are set, so the body takes the same albedo
       console.log('§GROUND_ALBEDO gain=' + A._groundAlbedoGain.toFixed(2) + ' texAvgLum=' +
         GROUND_TEX_AVG_LUM.toFixed(3) + ' effAlbedo=' + (GROUND_TEX_AVG_LUM * A._groundAlbedoGain).toFixed(3) +
         ' color=' + (A.ground.material.color ? A.ground.material.color.r.toFixed(2) : 'n/a') +
@@ -5129,6 +5173,7 @@ async function setupEffects(A, renderer, scene, camera) {
       A._applyGroundTexture(_photoGroundPrevKey);  // null → clears map, restores flat color
       if (_photoGroundPrevColor != null && A._setGroundColor) A._setGroundColor(_photoGroundPrevColor);
       A.ground.visible = _photoGroundWasVisible;
+      _terrainStillRestore();   // §ALTS_CIVIL_TERRAIN_GROUND
       console.log('§GROUND_ALBEDO restored gain=' + A._groundAlbedoGain.toFixed(2) +
         ' color=' + (A.ground.material.color ? A.ground.material.color.r.toFixed(2) : 'n/a'));
     }
