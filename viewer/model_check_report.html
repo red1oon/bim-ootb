@@ -48,6 +48,7 @@
 <div id="report-content"></div>
 <script src="lib/sql-wasm.js"></script>
 <script src="road_check.js?v=1"></script>
+<script src="earthworks_volume.js?v=1"></script>
 <script>
 var params = new URLSearchParams(location.search);
 var DB_URL = params.get('db') || '';
@@ -108,6 +109,10 @@ function _csv() {
     '<div class="row">Stud groups judged <span>' + ((res.studGroups || []).length) + '</span></div></div>' +
     '<div class="note">MOCK-UP. Each rule shows its formula and its status: <b>VALID</b> = the measuring method is checked; <b>SPECULATIVE</b> = the method is under review, numbers are indicative. The status list lives in rates/road_rules.json (film_status) and changes only with a stated reason.</div>';
   h += '<div class="stat-cards">';
+  // §EW_VOLUME_SURFACE: the Quantities card — the SAME line the Alt+C ground card shows (earthworks_volume.js is the one owner); none for a model with no EARTHWORK body
+  var ew = window.EarthworksVolume ? window.EarthworksVolume.measureSqlJs(db) : null, ewLine = ew ? window.EarthworksVolume.line(ew) : null;
+  if (ewLine) h += '<div class="stat-card" id="ew-volume-card"><div class="lbl">Quantities</div><div class="num" id="ew-volume-line" style="font-size:18px">' + esc(ewLine) + '</div><div class="lbl">Earthworks volume</div></div>';
+  console.log('§EW_VOLUME_SURFACE surface=model_check_report line=' + (ewLine ? '"' + ewLine + '"' : 'none') + ' verdict=' + (ew ? ew.verdict : 'NO_ENGINE'));
   cfg.road_rules.forEach(function (ru) {
     var p = (res.populations || {})[ru.name] || {}, st = (ru.film_status && ru.film_status.status) || 'speculative';
     h += '<div class="stat-card"><div class="num">' + (p.findings || 0) + ' / ' + (p.population || 0) + '</div><div class="lbl">' + esc(ru.label) + ' — outside / judged</div>' +
