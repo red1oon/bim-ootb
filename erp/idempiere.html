@@ -540,7 +540,7 @@
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
-<script src="ad_gridtab.js?v=1"></script>
+<script src="ad_gridtab.js?v=2"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
@@ -2020,7 +2020,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _gtModel(i) {
     var ow = _openWins[_activeWin]; if (!ow || !window.AdGridTab) return null;
     ow.gt = ow.gt || {};
-    if (!ow.gt[i]) { try { ow.gt[i] = AdGridTab.open(db, ow.win.tabs || [], i); } catch (e) { ow.gt[i] = null;
+    if (!ow.gt[i]) { try { ow.gt[i] = AdGridTab.open(db, ow.win.tabs || [], i);
+      if (ow.gt[i] && ow.gt[i].degraded && ow.gt[i].degraded.length) { var dg = ow.gt[i]; ow.gt[i] = null; return dg; }   // §MD-UPSTREAM never cache a model built from a failed AD read: re-open next render (self-heal)
+    } catch (e) { ow.gt[i] = null;
       // §GT-OPEN-FAIL — was swallowed silently; a detail tab then rendered with NO parent link (all rows of every parent).
       console.log('§GT-OPEN-FAIL tab=' + ((ow.win.tabs || [])[i] ? ow.win.tabs[i].name : i) + ' error="' + (e && e.message) + '"'); } }
     return ow.gt[i];

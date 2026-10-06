@@ -49,18 +49,19 @@
     // GridTab.getParentTabNo (M/GridTab.java:3473-3503): walk back to the nearest tab with TabLevel-1.
     var parentIndex = -1;
     if (level > 0) for (var i = index - 1; i >= 0; i--) if (Number(tabs[i].tabLevel || 0) === level - 1) { parentIndex = i; break; }
-    var meta = {};
+    var meta = {}, degraded = [];   // degraded = AD reads that THREW (not "row absent"): the link is then UNKNOWN, not "none"
     try {
       meta = _rows(db, 'SELECT t.AD_Column_ID AS lc, t.Parent_Column_ID AS pc, t.IsInsertRecord AS ins, ' +
         '(SELECT ColumnName FROM AD_Column WHERE AD_Column_ID=t.AD_Column_ID) AS lcName, ' +
         '(SELECT ColumnName FROM AD_Column WHERE AD_Column_ID=t.Parent_Column_ID) AS pcName, ' +
         '(SELECT IsDeleteable FROM AD_Table WHERE AD_Table_ID=t.AD_Table_ID) AS del ' +
         'FROM AD_Tab t WHERE t.AD_Tab_ID=?', [tab.id])[0] || {};
-    } catch (e) { meta = {}; }
+    } catch (e) { meta = {}; degraded.push('AD_Tab:' + (e && e.message)); }
+    var parents = parentColumns(db, tab.tableName, degraded);
     var tm = {
       id: tab.id, name: tab.name, index: index, tabLevel: level, parentIndex: parentIndex,
       tableName: tab.tableName, keyColumn: keyColumn(tab),
-      parents: parentColumns(db, tab.tableName),
+      parents: parents, degraded: degraded,
       whereClause: tab.whereClause || '', orderByClause: tab.orderByClause || '',
       isReadOnly: !!tab.isReadOnly, isSingleRow: !!tab.isSingleRow,
       isInsertRecord: meta.ins == null ? true : String(meta.ins) !== 'N',     // GridTabVO default IsInsertRecord=true (:123-139)
@@ -75,6 +76,7 @@
       var r = linkColumn(tm.parents, parentTab ? keyColumn(parentTab) : '', parentTab ? parentColumns(db, parentTab.tableName) : [], meta.lcName);
       tm.linkColumn = r.col; tm.linkSource = r.source;
     }
+    if (degraded.length && typeof console !== 'undefined') console.log('§GT-OPEN-DEGRADED tab=' + tab.name + ' level=' + level + ' errors="' + degraded.join(' | ') + '" → link UNKNOWN, detail fails closed');
     return tm;
   }
   // GridWindow.initTab:193-242 then setLinkColumnName(null) — AD_Column_ID wins when set.
@@ -95,12 +97,12 @@
     var k = (tab.fields || []).filter(function (f) { return f.isKey; })[0];
     return k ? k.columnName : (tab.tableName ? tab.tableName + '_ID' : null);
   }
-  function parentColumns(db, tableName) {
+  function parentColumns(db, tableName, degraded) {
     if (!tableName) return [];
     try {
       return _rows(db, "SELECT c.ColumnName AS n FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID " +
         "WHERE lower(t.TableName)=lower(?) AND c.IsParent='Y' AND COALESCE(c.IsActive,'Y')='Y' ORDER BY c.AD_Column_ID", [tableName]).map(function (r) { return r.n; });
-    } catch (e) { return []; }
+    } catch (e) { if (degraded) degraded.push('AD_Column:' + (e && e.message)); return []; }
   }
 
   // Env.parseContext (raw text substitution, as iDempiere — the clause author writes the quotes). @Name@ / @#Name@ /
@@ -129,7 +131,8 @@
       }
       nTab = 1;
     }
-    if (tm.isDetail) {
+    if (tm.degraded && tm.degraded.length && tm.tabLevel > 0) { parts.push('2=3'); note.push('link-unknown(ad-read-failed)'); }   // GridTab never shows every parent's rows
+    else if (tm.isDetail) {
       var lc = tm.linkColumn;
       if (!lc) { parts.push('2=3'); note.push('no-link-column'); }
       else {
