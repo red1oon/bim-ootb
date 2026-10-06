@@ -1,3 +1,4 @@
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_gantt_edit_coherence.js — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT W1.
 //
 // THE ISSUE THIS PROVES OR DISPROVES:
@@ -27,7 +28,7 @@ function check(name, cond, detail) {
 }
 
 // ---- Slice the shipped function out of the real source.
-var txt = fs.readFileSync(SRC, 'utf8');
+var txt = __readSrc(SRC, 'utf8');
 var i = txt.indexOf('function _retimeSpan(');
 check('G-COH-0 shipped-function-found', i >= 0, 'viewer/time_machine.js');
 if (i < 0) { console.log('§W-COH RESULT pass=' + pass + ' fail=' + fail); process.exit(1); }
@@ -182,9 +183,9 @@ function sliceNamed(src, name) {
     console.log('§W-COH RESULT pass=' + pass + ' fail=' + fail);
     process.exit(fail ? 1 : 0);
   }
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  var db = new SQL.Database(fs.readFileSync(dbPath));
-  var rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  var SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  var db = new SQL.Database(__readSrc(dbPath));
+  var rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   var SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
 
   // §TPL_MODEL (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §L) — JUDGE THE CANONICAL
@@ -194,7 +195,7 @@ function sliceNamed(src, name) {
   // user named as "WITNESS is moot if underlying design is poor", and PRIMAL LAW clause 2's
   // §CRISIS case: an editor witness that never edited the canonical timeline.
   var TPL_PATH = path.join(__dirname, '..', 'rates', '4D_template.json');
-  var TPL = fs.existsSync(TPL_PATH) ? JSON.parse(fs.readFileSync(TPL_PATH, 'utf8')) : null;
+  var TPL = fs.existsSync(TPL_PATH) ? JSON.parse(__readSrc(TPL_PATH, 'utf8')) : null;
 
   // Tee console.log so G-COH-10 can read the shipped §TPL_MODEL verdict rather than re-deriving
   // which branch ran. PRIMAL LAW clause 3 — the line is still PRINTED, never suppressed.

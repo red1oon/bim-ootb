@@ -28,6 +28,7 @@
 //
 // Command: BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_tm_element_window_bind.js
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -69,16 +70,16 @@ function hardClamp(win, s) {
 }
 
 (async () => {
-  const tmSrc = fs.readFileSync(TM_PATH, 'utf8');
+  const tmSrc = __readSrc(TM_PATH, 'utf8');
   const capSlice = sliceIife(tmSrc, 'var _cap = (function() {', '    })();');
   const rescaleSlice = sliceFn(tmSrc, '_tmRescaleToTaskWindow');
 
   const sandbox = { console, window: undefined };
   vm.createContext(sandbox);
-  vm.runInContext(fs.readFileSync(RATES_PATH, 'utf8'), sandbox);
+  vm.runInContext(__readSrc(RATES_PATH, 'utf8'), sandbox);
 
   const SQL = await initSqlJs();
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(DB_PATH)));
+  const db = new SQL.Database(new Uint8Array(__readSrc(DB_PATH)));
   SA.materializeDefault(db, sandbox.SEQUENCE_RULES, { laborRates: sandbox.LABOR_RATES, rates: {}, defaultRule: sandbox.SEQUENCE_DEFAULT });
   SA.scheduleContiguous(db, 'SCH_AUTHORED', { start: '2026-01-01' });
   SA.computeCpm(db, 'SCH_AUTHORED', {});

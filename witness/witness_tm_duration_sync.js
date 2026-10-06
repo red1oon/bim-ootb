@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_tm_duration_sync.js — §TM_DURATION_SYNC
 //
 // ROOT CAUSE (see prompts/GANTT_ACCURACY.md + commit d35366a "§LABOR_QUANTITY_WEIGHT — real cause
@@ -58,7 +59,7 @@ function gitShowLines(commit, relPath, startLine, endLine) {
   // ── Load rates.js globals (RATES / LABOR_RATES / SEQUENCE_RULES / SEQUENCE_DEFAULT /
   //    SEQUENCE_NAME_OVERRIDES) verbatim, same slice-and-eval technique witness_phase_duration.js
   //    uses, widened to also pull RATES + SEQUENCE_NAME_OVERRIDES. ──
-  var ratesTxt = fs.readFileSync(path.join(VIEWER, 'rates.js'), 'utf8');
+  var ratesTxt = __readSrc(path.join(VIEWER, 'rates.js'), 'utf8');
   var globals = (function () {
     // eslint-disable-next-line no-new-func
     return (new Function(ratesTxt +
@@ -69,7 +70,7 @@ function gitShowLines(commit, relPath, startLine, endLine) {
     ' LABOR_RATES=' + Object.keys(globals.LABOR_RATES).length +
     ' SEQUENCE_RULES=' + Object.keys(globals.SEQUENCE_RULES).length);
 
-  var dbBytes = fs.readFileSync(DB_PATH);
+  var dbBytes = __readSrc(DB_PATH);
   var db = new SQL.Database(new Uint8Array(dbBytes));
   var nElems = db.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];
   console.log('§W-TMSYNC DB-LOADED elements=' + nElems + ' path=' + DB_PATH);
@@ -150,7 +151,7 @@ function gitShowLines(commit, relPath, startLine, endLine) {
   //    same `db`/`window`/`LR` upvalues the real injectGantt() closure has, and confirm it produces
   //    the IDENTICAL numbers to afterGetInstallSecs above (same function, same inputs, same output —
   //    proving the wiring is real, not just plausible-looking). ──
-  var tmSrc = fs.readFileSync(path.join(VIEWER, 'time_machine.js'), 'utf8');
+  var tmSrc = __readSrc(path.join(VIEWER, 'time_machine.js'), 'utf8');
   var tmLines = tmSrc.split('\n');
   var afterSrcStart = tmLines.findIndex(function (l) { return /var _frag = \(function \(\) \{/.test(l); }) + 1;
   var afterSrcEnd = tmLines.findIndex(function (l) { return /^    function getInstallSecs\(/.test(l); });

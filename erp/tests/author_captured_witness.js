@@ -1,3 +1,4 @@
+const __readSrc = require('../../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // author_captured_witness.js — W-AUTHOR-CAPTURED (FUSED_4D5D_WEDGE_LANE — user 2026-06-23)
 //
 // ISSUE PROVED: a model dropped from Bonsai/Revit can arrive WITH a native IFC schedule
@@ -17,7 +18,7 @@ var SA = require(path.join(VIEWER, 'schedule_author.js'));
 
 var pass = 0, fail = 0;
 function ck(n, c, d) { if (c) { pass++; console.log('§W-CAPT PASS  ' + n + (d ? '  ' + d : '')); } else { fail++; console.log('§W-CAPT FAIL  ' + n + (d ? '  ' + d : '')); } }
-function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
+function read(f) { return __readSrc(path.join(VIEWER, f), 'utf8'); }
 function loadRules() { var t = read('rates.js'), s = t.indexOf('var SEQUENCE_RULES = {'), d = t.indexOf('var SEQUENCE_DEFAULT'); return (new Function(t.slice(s, t.indexOf('};', d) + 2) + '\n return SEQUENCE_RULES;'))(); }
 function loadCap() { var t = read('time_machine.js'), s = t.indexOf('var _cap = (function() {'), e = t.indexOf('})();', s) + 5; return new Function('db', t.slice(s, e) + '\n return _cap;'); }
 
@@ -26,7 +27,7 @@ var WIDE = 'CREATE TABLE tasks (task_id TEXT PRIMARY KEY, schedule_id TEXT, wbs_
 (async function () {
   var RULES = loadRules(), makeCap = loadCap();
   var SQL = await initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } });
-  var db = new SQL.Database(new Uint8Array(fs.readFileSync(SH_DB)));
+  var db = new SQL.Database(new Uint8Array(__readSrc(SH_DB)));
 
   // ── Simulate import_worker landing a Bonsai/Revit IfcWorkSchedule (GlobalId-keyed) ──
   db.run('DROP TABLE IF EXISTS tasks'); db.run(WIDE);

@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /**
  * test_tm_variance.js — W-PC-TWIN-SOURCE + W-PC-DRAWER (TM_4D5D_VARIANCE_LANE §S1).
  *
@@ -49,7 +50,7 @@ PHWIN.forEach(function (p) {
 });
 
 // ── 3. Slice the pure variance logic and run _computeVariance with the twin injected ──
-const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 const a = src.indexOf('var _DAY_MS = 86400000;');
 const b = src.indexOf('function _recomputeBounds()');
 if (a < 0 || b < 0 || b < a) { console.log('§TEST FAIL: could not locate variance logic span'); process.exit(1); }

@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_gantt_ops_blackbox.js — headless, no browser. The "black box output log" requested
 // 2026-08-04: dump the deterministic Gantt op population in build order (first pile knocked, last
 // thing built) so a session can READ what the chart will draw instead of screenshotting it.
@@ -26,7 +27,7 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 const a = src.indexOf('function _placeOps()');
 const b = src.indexOf('\n  }', src.indexOf('function computeDays()')) + 4;
 if (a < 0 || b < a) { console.log('§BLACKBOX FAIL: could not locate _placeOps/computeDays span'); process.exit(1); }

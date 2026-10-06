@@ -5,6 +5,7 @@
 // axis math used everywhere else in the drawer. Slices the real wireGanttRulerShift by balanced
 // braces, never reimplements the gate or the day math.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -23,7 +24,7 @@ function sliceFn(src, name) {
   throw new Error('unbalanced braces for ' + name);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 const sliced = sliceFn(tmSrc, 'wireGanttRulerShift');
 
 function fakeElement(clientWidth) {

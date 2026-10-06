@@ -50,6 +50,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_s55_identity_vs_cell.js  (from viewer/)
 // Read the § log lines, not the exit code alone (Log Mandate).
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -63,7 +64,7 @@ const GanttModel = require(path.join(__dirname, '..', 'gantt_model.js'));   // t
 globalThis.RoomWalker = require(path.join(__dirname, '..', 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(__dirname, '..', 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(__dirname, '..', 'location_axis.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
@@ -98,7 +99,7 @@ const sliced = ['var _CPM_DISPLAY = true;',
   sliceFn(tmSrc, '_displayTimelineRemember'), sliceFn(tmSrc, '_displayTimeline')].join('\n');
 
 function loadRatesTable() {
-  const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   return (new Function(txt.slice(start, txt.indexOf('};', defIdx) + 2) + '\n return RATES;'))();
@@ -122,8 +123,8 @@ function authoredRowCounts(db) {
 }
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SR = rulesJson.SEQUENCE_RULES, SD = rulesJson.SEQUENCE_DEFAULT, LR = rulesJson.LABOR_RATES;
   const NO = rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [];
   const RATES = loadRatesTable();
@@ -133,7 +134,7 @@ function authoredRowCounts(db) {
     const dbPick = resolveDbFile(bld);
     console.log('\n§S55_DBFILE ' + bld + ' using=' + path.basename(dbPick.path) + ' kind=' + dbPick.kind);
     if (!fs.existsSync(dbPick.path)) { assert(false, 'W-S55 ' + bld + ' fixture missing: ' + dbPick.path); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPick.path));
+    const db = new SQL.Database(__readSrc(dbPick.path));
     try {
       // ── W-S55-0a: the shipped DB really has no authored schedule (the §S55 premise) ──
       const shipped = authoredRowCounts(db);

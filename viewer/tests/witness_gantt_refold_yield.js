@@ -16,6 +16,7 @@
 //   (b) YIELDING — on Hospital-scale real data the passes actually yield (count > 0) and no
 //       single synchronous span between yields exceeds SPAN_MS (200ms).
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -27,7 +28,7 @@ const SPAN_MS = 200;
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function sliceFn(src, header) {
   const idx = src.indexOf(header);
   if (idx < 0) throw new Error(header + ' not found — renamed/moved?');
@@ -46,7 +47,7 @@ function sliceFn(src, header) {
 const writerSrc = sliceFn(tmSrc, 'async function _writeScheduledChunked(');
 
 function loadRules() {
-  var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  var txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   var start = txt.indexOf('var RATES = {');
   var defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   var end = txt.indexOf('};', defIdx) + 2;
@@ -93,7 +94,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   for (const bld of ['Terminal_extracted.db', 'Hospital_extracted.db']) {
     const dbPath = path.join(BLD_DIR, bld);
     if (!fs.existsSync(dbPath)) { console.log('§SKIP ' + bld + ' — fixture missing'); continue; }
-    const src = new SQL.Database(fs.readFileSync(dbPath));
+    const src = new SQL.Database(__readSrc(dbPath));
     const rows = src.exec(Q)[0].values;
     src.close();
 

@@ -46,6 +46,7 @@
 // Command: node viewer/tests/witness_tm_reveal_within_bar.js [Building ...]
 //          (default Duplex HHS_Office_Federated Hospital; env DB_KIND=extracted to force *_extracted.db)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os');
 const HOME = os.homedir();
 const V = path.join(__dirname, '..');
@@ -60,8 +61,8 @@ const GM = require(path.join(V, 'gantt_model.js')); global.GanttModel = GM;
 globalThis.RoomWalker = require(path.join(V, 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
-const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
-const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+const T = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
+const tmSrc = __readSrc(path.join(V, 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0, inconclusive = 0;
 function claim(id, pop, bad, detail) {
@@ -82,14 +83,14 @@ function sliceFn(src, name) {
 }
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
-  vm.createContext(sb); vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8'), sb);
+  vm.createContext(sb); vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), sb);
   return sb;
 }
 function resolveDbFile(bld) {
   const meta = path.join(BLD_DIR, bld + '_meta.db'), ext = path.join(BLD_DIR, bld + '_extracted.db');
   if (process.env.DB_KIND === 'extracted' && fs.existsSync(ext)) return ext;
   // *_meta.db is the viewer's file where it exists, but a split without elements_meta (Duplex) is not usable here
-  if (fs.existsSync(meta)) { try { const b = fs.readFileSync(meta); if (b.length > 100 && b.indexOf('elements_meta') > 0) return meta; } catch (e) {} }
+  if (fs.existsSync(meta)) { try { const b = __readSrc(meta); if (b.length > 100 && b.indexOf('elements_meta') > 0) return meta; } catch (e) {} }
   return ext;
 }
 function buildSandbox(R, logSink) {
@@ -132,7 +133,7 @@ function deciles(pos) { const h = new Array(10).fill(0); pos.forEach(p => { let 
 async function runBuilding(bld, SQL, R) {
   const dbf = resolveDbFile(bld);
   if (!fs.existsSync(dbf)) { console.log('§W_RWB SKIP ' + bld + ' — no db'); return; }
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf)));
+  const db = new SQL.Database(new Uint8Array(__readSrc(dbf)));
   const sbLog = [];
   const sb = buildSandbox(R, sbLog);
   const base = { start: START, laborRates: R.LABOR_RATES, rates: R.RATES, nameOverrides: R.SEQUENCE_NAME_OVERRIDES,

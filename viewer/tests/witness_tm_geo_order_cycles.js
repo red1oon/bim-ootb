@@ -44,6 +44,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_tm_geo_order_cycles.js  (from viewer/)
 // Read the §TM_GEO_ORDER_CYCLES_REPRO log line, not exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -54,7 +55,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');
@@ -93,9 +94,9 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 
   const dbPath = path.join(BLD_DIR, 'Terminal_extracted.db');
   if (!fs.existsSync(dbPath)) { console.log('§TMREPRO_SKIP Terminal fixture missing at ' + dbPath); finish(); return; }
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const db = new SQL.Database(fs.readFileSync(dbPath));
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const db = new SQL.Database(__readSrc(dbPath));
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
 
   const sandbox = {
     console: console,

@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_gantt_palette.js — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT VIS.
 //
 // THE ISSUE THIS PROVES OR DISPROVES:
@@ -39,7 +40,7 @@ function lab(h){var r=hx(h).map(srgb);
   return [116*f(Y)-16,500*(f(X)-f(Y)),200*(f(Y)-f(Z))];}
 function dE(a,b){var A=lab(a),B=lab(b);return Math.sqrt(Math.pow(A[0]-B[0],2)+Math.pow(A[1]-B[1],2)+Math.pow(A[2]-B[2],2));}
 
-var txt = fs.readFileSync(SRC, 'utf8');
+var txt = __readSrc(SRC, 'utf8');
 var COLORS = grabObj(txt, 'PHASE_COLORS');
 var INK = grabObj(txt, 'PHASE_INK');
 var SHORT = grabObj(txt, 'PHASE_SHORT');

@@ -24,13 +24,14 @@
 // Run (from the repo root): node witness_cpe_buildup_require_tm_first.js
 // Read the log, not the exit code.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const cp = require('child_process');
 
 const TM = path.join(__dirname, '..', 'time_machine.js');
-const workingSrc = fs.readFileSync(TM, 'utf8');
+const workingSrc = __readSrc(TM, 'utf8');
 const shippedSrc = cp.execFileSync('git', ['show', 'origin/main:viewer/time_machine.js'],
   { cwd: __dirname, maxBuffer: 1 << 28 }).toString();
 

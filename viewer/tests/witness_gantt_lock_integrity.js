@@ -24,6 +24,7 @@
 //
 // Read the §LI log lines, not exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -35,7 +36,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 // §S73: LINE-ANCHORED. A plain indexOf finds the first mention of `function NAME(` ANYWHERE —
 // including inside a comment that talks about the function — and then slices prose as if it were
@@ -163,9 +164,9 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
   }
   const dbPath = path.join(BLD_DIR, 'Duplex_extracted.db');
   if (!fs.existsSync(dbPath)) { console.log('§LI_SKIP Duplex fixture missing at ' + dbPath); finish(); return; }
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const db = new SQL.Database(fs.readFileSync(dbPath));
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const db = new SQL.Database(__readSrc(dbPath));
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
 
   const sandbox = {
     console: console,

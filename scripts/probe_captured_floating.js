@@ -6,6 +6,7 @@
 // floating audit (_contactGraph/_midairAudit, ~4557/4601). Pure node, no DOM — every step sliced
 // verbatim from the shipped files so a fix measured here matches what the browser actually plays.
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
@@ -13,7 +14,7 @@ const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
 const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
 const CpmScheduleMod = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));   // §S20: EXP6/7/8's live-path source
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.lastIndexOf('function ' + name + '(');
@@ -100,11 +101,11 @@ function storeyOrderReport(items, label) {
 }
 
 async function main() {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   const dbPath = path.join(BLD_DIR, ONLY + '.db');
-  const db = new SQL.Database(fs.readFileSync(dbPath));
+  const db = new SQL.Database(__readSrc(dbPath));
 
-  const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
+  const ratesSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
   const RATES = (new Function(ratesSrc +
     '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES, SEQUENCE_DEFAULT:SEQUENCE_DEFAULT, ' +
     'SEQUENCE_NAME_OVERRIDES:SEQUENCE_NAME_OVERRIDES, LABOR_RATES:LABOR_RATES, RATES:RATES};'))();

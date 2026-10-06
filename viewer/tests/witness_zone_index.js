@@ -37,6 +37,7 @@
 //   BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_zone_index.js
 //   (the OLD baseline is derived from git at 475373b^; OLD=<path> / OLD_REV=<rev> override)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -128,15 +129,15 @@ function gate(name, pass, detail) {
 }
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(SQLJS_DIR, 'sql-wasm.wasm')) });
-  const newSrc = fs.readFileSync(NEW_TM, 'utf8');
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(SQLJS_DIR, 'sql-wasm.wasm')) });
+  const newSrc = __readSrc(NEW_TM, 'utf8');
   if (!OLD_TM || !fs.existsSync(OLD_TM)) {
     console.log('§ZONE_INDEX_SKIP baseline revision ' + OLD_REV + ' unavailable (not a git checkout, or the ' +
       'revision is not fetched). Set OLD=<path to a pre-§ZONE_INDEX time_machine.js> to run. Skipping, not failing.');
     process.exit(0);
   }
-  const oldSrc = fs.readFileSync(OLD_TM, 'utf8');
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
+  const oldSrc = __readSrc(OLD_TM, 'utf8');
+  const rulesJson = JSON.parse(__readSrc(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
 
   let totMismatch = 0, totCompared = 0, bandsBad = [], tieReport = [], levelReport = [], memoReport = [];
   let ran = 0;
@@ -144,7 +145,7 @@ function gate(name, pass, detail) {
   for (const bld of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { console.log(`      (skip ${bld} — fixture missing)`); continue; }
-    const buf = fs.readFileSync(dbPath);
+    const buf = __readSrc(dbPath);
 
     const cN = { builds: 0 }, cO = { builds: 0 };
     const dbN = new SQL.Database(buf), dbO = new SQL.Database(buf);

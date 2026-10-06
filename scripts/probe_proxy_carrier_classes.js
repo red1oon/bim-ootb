@@ -5,13 +5,14 @@
 // "what does each floating-candidate proxy actually touch" so a phase/sequence fix targets the
 // real population, not a guess.
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
 const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.lastIndexOf('function ' + name + '(');
@@ -29,13 +30,13 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 const ONLY = process.env.ONLY || 'Hospital_extracted';
 
 async function main() {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   const dbPath = path.join(BLD_DIR, ONLY + '.db');
-  const buf = fs.readFileSync(dbPath);
+  const buf = __readSrc(dbPath);
   const db = new SQL.Database(buf);
   // rates.js is a plain top-level-var script (browser global scope), not a CommonJS module — load
   // it the same way witness_midair_zero.js's loadRatesTable() does, via `new Function`.
-  const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
+  const ratesSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
   const RATES = (new Function(ratesSrc +
     '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES, SEQUENCE_DEFAULT:SEQUENCE_DEFAULT, ' +
     'SEQUENCE_NAME_OVERRIDES:SEQUENCE_NAME_OVERRIDES, LABOR_RATES:LABOR_RATES, RATES:RATES};'))();

@@ -27,6 +27,7 @@
 //
 // Command: node viewer/tests/witness_tm_played_layer_midair.js [Building]     (default Duplex)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os');
 const ROOT = path.join(__dirname, '..', '..');
 const V = path.join(ROOT, 'viewer');
@@ -43,8 +44,8 @@ const GM = require(path.join(V, 'gantt_model.js')); global.GanttModel = GM;
 globalThis.RoomWalker = require(path.join(V, 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
-const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
-const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+const T = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
+const tmSrc = __readSrc(path.join(V, 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0, inconclusive = 0;
 function claim(id, verdict, detail) {
@@ -53,7 +54,7 @@ function claim(id, verdict, detail) {
 }
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
-  vm.createContext(sb); vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8'), sb);
+  vm.createContext(sb); vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), sb);
   return sb;
 }
 
@@ -64,7 +65,7 @@ function executedRules() {
   const initSqlJs = require(path.join(ROOT, 'node_modules', 'sql.js'));
   const SQL = await initSqlJs({ locateFile: f => path.join(ROOT, 'node_modules', 'sql.js', 'dist', f) });
   const R = executedRules();
-  const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbf)));
+  const db = new SQL.Database(new Uint8Array(__readSrc(dbf)));
 
   // The run — the same configuration scripts/cache_4d_run.js persists (template, real rates, the
   // displayRemap hook, SupportSweep loaded). The § log is teed, never suppressed (PRIMAL LAW clause 3).

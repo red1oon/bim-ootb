@@ -11,6 +11,7 @@
  * Run: node tests/test_shop_scurve.js   (from /tmp/wt-360)
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs  = require('fs');
 const vm  = require('vm');
 const path = require('path');
@@ -22,7 +23,7 @@ function assert(cond, msg) {
 }
 
 // ── Slice computeSCurve + _SF_ELEMS from time_machine.js ──
-const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 const A_MARK = '// §E2b — STACKED S-curve:';
 const B_MARK = '  function drawSCurve()';
 const ai = src.indexOf(A_MARK), bi = src.indexOf(B_MARK, ai);

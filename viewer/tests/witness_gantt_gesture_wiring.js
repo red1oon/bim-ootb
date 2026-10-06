@@ -26,13 +26,14 @@
 //
 // Command: node viewer/tests/witness_gantt_gesture_wiring.js     (no fixtures, no DB, no browser)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function fnBody(name) {
   const idx = src.indexOf('function ' + name + '(');
   if (idx < 0) return '';

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-DLOD-CENSUS, §129.56
  * (bim-compiler prompts/LOADPATH_FREEZE_POLISH_RESUME.md §129.56)
  *
@@ -39,7 +40,7 @@
  */
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const SRC = process.argv[2] || path.resolve(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(SRC, 'utf8');
+const src = __readSrc(SRC, 'utf8');
 
 // ── extract the real function, never a retyped copy ──────────────────────────────────────────
 const start = src.indexOf('function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {');

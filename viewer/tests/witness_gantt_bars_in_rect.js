@@ -4,6 +4,7 @@
 // that misses a bar findBarAtClick would hit is a real bug, not a UI nuance. Slices the real
 // barsInRect by balanced braces.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -22,7 +23,7 @@ function sliceFn(src, name) {
   throw new Error('unbalanced braces for ' + name);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 const sliced = sliceFn(tmSrc, 'barsInRect');
 
 // A 30-day axis over a 600px bar area (+60px gutter = 660px canvas) -> 20px/day.

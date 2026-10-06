@@ -5,6 +5,12 @@
 const fs = require('fs'), path = require('path');
 const V = path.join(__dirname, '..');
 const FAMILIES = {
+  time_machine: {
+    shell: 'time_machine.js', shared: 'TMS',
+    files: ['time_machine.js'],
+    loader: { kind: 'html', file: 'viewer.html' },
+    runtime: () => {},                                      // IIFE: what it defines happens at load (window.tm* API)
+  },
   cpe_load_path: {
     shell: 'cpe_load_path.js', shared: 'LPS',
     files: ['lp_chain.js', 'lp_geom_pick.js', 'lp_build.js', 'lp_backdrop_diag.js', 'lp_apply_restore.js', 'lp_hud.js', 'cpe_load_path.js'],

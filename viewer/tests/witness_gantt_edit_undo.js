@@ -11,6 +11,7 @@
 // DOM-heavy in its host file, so this witness supplies a minimal sandbox for its free variables
 // (A(), document, window.ScheduleAuthor, the redraw no-ops) — never a second copy of the restore SQL.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -33,7 +34,7 @@ function sliceFn(src, name) {
   throw new Error('unbalanced braces for ' + name);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
   // §S56: commitGanttDrag/generateGanttSchedule now call _tmBusyRecording (the §TM_BAKE_LOCK
   // guard). Declared here because a sliced function cannot state its own dependencies — the
   // same undeclared-dep class that killed two witnesses in §S62. Adding the name is the fix;
@@ -51,12 +52,12 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 const BUILDING = process.argv[2] || 'Duplex';
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   const dbPath = path.join(BLD_DIR, BUILDING + '_extracted.db');
   if (!fs.existsSync(dbPath)) { console.log('§UNDO_SKIP ' + BUILDING + ' fixture missing'); return; }
-  const db = new SQL.Database(fs.readFileSync(dbPath));
+  const db = new SQL.Database(__readSrc(dbPath));
 
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
   const opts = { start: '2026-01-01', laborRates: {}, rates: {}, scheduleGate: ScheduleGate };
   const mres = ScheduleAuthor.materializeZones(db, SEQUENCE_RULES, opts);

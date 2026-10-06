@@ -29,6 +29,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_big_element_support_coverage.js (from viewer/)
 // Read the §BIG_SUPPORT_COVERAGE log lines, not exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -39,7 +40,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');
@@ -167,14 +168,14 @@ const BUILDINGS = [
   try { sliced = names.map(n => sliceFn(tmSrc, n)).join('\n'); }
   catch (e) { assert(false, 'W-BIGSUP-SLICE failed: ' + e.message); finish(); return; }
 
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
 
   let totBig = 0, totUnchecked = 0;
   for (const B of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, B.file);
     if (!fs.existsSync(dbPath)) { console.log('§BIGSUP_SKIP ' + B.name + ' fixture missing at ' + dbPath); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     const sandbox = {
       console: console,
       performance: { now: () => Date.now() },

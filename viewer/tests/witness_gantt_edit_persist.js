@@ -48,6 +48,7 @@
 //
 // Command: node viewer/tests/witness_gantt_edit_persist.js     (no fixtures, no DB, no browser)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -61,7 +62,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 function inconc(msg) { inconclusive++; console.log('  INCONCLUSIVE ' + msg); }
 
 const TM = path.join(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(TM, 'utf8');
+const src = __readSrc(TM, 'utf8');
 
 function namedFns(text) {
   const out = [];
@@ -147,7 +148,7 @@ function drive(app) {
 // "buildings/Hospital_meta.db" here by hand would pin this witness to a url shape the loader is
 // free to stop producing — the fixture would keep passing while the real derivation drifted. So
 // the two derivation statements are lifted VERBATIM out of the shipped source and run.
-const ST_SRC = fs.readFileSync(path.join(__dirname, '..', 'streaming.js'), 'utf8');
+const ST_SRC = __readSrc(path.join(__dirname, '..', 'streaming.js'), 'utf8');
 const DERIV = ST_SRC.split('\n').filter(l => /metaUrl\s*=\s*A\.DB_URL\.replace\(/.test(l)).map(l => l.trim());
 function metaUrlFor(dbUrl) {
   if (!DERIV.length) return null;
@@ -215,8 +216,8 @@ assert(disabled.got.length === 0 && disabled.logs.some(l => l.indexOf('reason=ca
 // DbResolve.cacheKey(url), every persist path wrote the RAW url, and cachedFetch reads the raw url
 // only as a LEGACY fallback when the canonical key misses. On any profile that had loaded the
 // building normally, every persisted edit went somewhere nothing reads.
-const SA_SRC = fs.readFileSync(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
-const KO_SRC = fs.readFileSync(path.join(__dirname, '..', 'kernel_ops.js'), 'utf8');
+const SA_SRC = __readSrc(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
+const KO_SRC = __readSrc(path.join(__dirname, '..', 'kernel_ops.js'), 'utf8');
 const SA_FNS = namedFns(SA_SRC);
 const persistDbFn = SA_FNS.find(f => f.name === 'persistDb');
 assert(!!persistDbFn && /put\(buf,\s*key\)/.test(persistDbFn.body) && /_cacheKeyFor\(url\)/.test(persistDbFn.body),

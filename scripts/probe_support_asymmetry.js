@@ -15,11 +15,12 @@
 // Reads ONLY. Changes nothing. Command:
 //   BLD_DIR=~/bim-ootb/buildings node scripts/probe_support_asymmetry.js
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
 const SG = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
 const ZoneIndex = require(path.join(__dirname, '..', 'viewer', 'zone_index.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');
@@ -47,14 +48,14 @@ const auditTPool = e => e.cls === 'IfcSlab' && e.seq > 4;                   // a
   if (tmSrc.indexOf('function _promoteRoofLoadPath(') >= 0) names.unshift('_promoteRoofLoadPath');
   for (const d of ['_classifyNameOverride', '_classifyRule']) if (tmSrc.indexOf('function ' + d + '(') >= 0) names.push(d);
   const sliced = names.map(n => sliceFn(tmSrc, n)).join('\n');
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));
   const totals = { floating: 0 };
 
   for (const B of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[B] || (B + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { console.log('§ASYM_SKIP ' + B + ' fixture missing'); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: rulesJson.SEQUENCE_RULES, SEQUENCE_DEFAULT: rulesJson.SEQUENCE_DEFAULT, SEQUENCE_NAME_OVERRIDES: rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [] },
       A: () => ({ db: db }), ZoneIndex: ZoneIndex, _zoneIndex: () => ZoneIndex.build(db) };

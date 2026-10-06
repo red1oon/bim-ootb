@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // whitebox_regression.js — S260c deterministic regression suite
 // Covers: split DB, IFC drop, auto-split, variance, offline, filename case, ground Y
 // Run: node deploy/dev/tests/whitebox_regression.js
@@ -129,7 +130,7 @@ test('split_threshold', () => {
   // Read the threshold from split_db.sh
   let threshold = 0;
   if (scriptExists) {
-    const content = fs.readFileSync(scriptPath, 'utf8');
+    const content = __readSrc(scriptPath, 'utf8');
     const m = content.match(/-lt\s+(\d+)/);
     if (m) threshold = parseInt(m[1], 10);
   }
@@ -155,7 +156,7 @@ test('variance_modules', () => {
 
   let boqRef = false;
   if (fs.existsSync(boqPath)) {
-    const boqContent = fs.readFileSync(boqPath, 'utf8');
+    const boqContent = __readSrc(boqPath, 'utf8');
     boqRef = boqContent.includes('diff') || boqContent.includes('variance') || boqContent.includes('variation');
   }
 
@@ -177,8 +178,8 @@ test('offline_pwa', () => {
     return { ok: false, log: '§WB_OFFLINE', reason: 'sw.js or index.html not found' };
   }
 
-  const swContent = fs.readFileSync(swPath, 'utf8');
-  const indexContent = fs.readFileSync(indexPath, 'utf8');
+  const swContent = __readSrc(swPath, 'utf8');
+  const indexContent = __readSrc(indexPath, 'utf8');
 
   // Extract CACHE_VERSION from sw.js
   const swMatch = swContent.match(/CACHE_VERSION\s*=\s*'v(\d+)'/);
@@ -223,7 +224,7 @@ test('filename_case', () => {
 
   for (const lf of landingFiles) {
     if (!fs.existsSync(lf)) continue;
-    const content = fs.readFileSync(lf, 'utf8');
+    const content = __readSrc(lf, 'utf8');
     // Extract db filenames from BUILDINGS config
     const dbMatches = content.matchAll(/db:\s*'([^']+)'/g);
     for (const m of dbMatches) {
@@ -386,9 +387,9 @@ test('offline_idb_chain', () => {
     return { ok: false, log: '§WB_OFFLINE_IDB', reason: 'required files not found' };
   }
 
-  const swContent = fs.readFileSync(swPath, 'utf8');
-  const indexContent = fs.readFileSync(indexPath, 'utf8');
-  const sceneContent = fs.readFileSync(scenePath, 'utf8');
+  const swContent = __readSrc(swPath, 'utf8');
+  const indexContent = __readSrc(indexPath, 'utf8');
+  const sceneContent = __readSrc(scenePath, 'utf8');
 
   // 1. Extract JS files loaded by index.html (script src= and import map)
   const scriptSrcs = [];
@@ -435,7 +436,7 @@ test('drop_ifc_clinic_disc_assignment', () => {
   if (!fs.existsSync(landingPath)) {
     return { ok: false, log: '§WB_CLINIC_DROP', reason: 'landing.html not found' };
   }
-  const content = fs.readFileSync(landingPath, 'utf8');
+  const content = __readSrc(landingPath, 'utf8');
 
   // Extract _VALID_DISCS array
   const validMatch = content.match(/_VALID_DISCS\s*=\s*\[([^\]]+)\]/);
@@ -646,8 +647,8 @@ test('dlod_budget_math', () => {
 test('dlod_visibility_only', () => {
   // §S262+S265: DLOD = visibility culling only, no geometry swap, no invented cubes.
   // S265: DLOD enabled on all devices (mobile parity) — no _isMobile guard on dlodEnable.
-  var streamSrc = fs.readFileSync(path.join(__dirname, '..', 'streaming.js'), 'utf8');
-  var dlodSrc = fs.readFileSync(path.join(__dirname, '..', 'dlod.js'), 'utf8');
+  var streamSrc = __readSrc(path.join(__dirname, '..', 'streaming.js'), 'utf8');
+  var dlodSrc = __readSrc(path.join(__dirname, '..', 'dlod.js'), 'utf8');
   var noSwapPath = !streamSrc.includes('_useDlodPath = !A._isMobile');
   var hasDlodEnable = streamSrc.includes('A.dlodEnable');
   var noMobileGate = !streamSrc.includes('!A._isMobile && A.dlodEnable');
@@ -663,7 +664,7 @@ test('dlod_visibility_only', () => {
 // ─── S265: Mobile mesh parity ────────────────────────────────────────────────
 // Issue: Mobile was excluded from BatchedMesh, DLOD, and consolidation.
 test('mobile_batched_mesh_parity', () => {
-  var src = fs.readFileSync(path.join(__dirname, '..', 'streaming.js'), 'utf8');
+  var src = __readSrc(path.join(__dirname, '..', 'streaming.js'), 'utf8');
   // Single-instance elements must NOT be routed to mergeBuckets on mobile
   var noMobileMerge = !src.includes('elements.length === 1 && A._isMobile');
   // BatchedMesh flush must not gate on _isMobile
@@ -673,7 +674,7 @@ test('mobile_batched_mesh_parity', () => {
   // markDirty after stream-complete (scene refresh fix)
   var markDirtyAfterDone = src.includes('markDirty') && src.includes('Force render after stream-complete');
   // ESM loader exposes BatchedMesh check in log
-  var loaderSrc = fs.readFileSync(path.join(__dirname, '..', 'loader.js'), 'utf8');
+  var loaderSrc = __readSrc(path.join(__dirname, '..', 'loader.js'), 'utf8');
   var batchedLog = loaderSrc.includes('BatchedMesh=');
   var allOk = noMobileMerge && batchNoGate && consolidateNoGate && markDirtyAfterDone && batchedLog;
   return {
@@ -688,8 +689,8 @@ test('mobile_batched_mesh_parity', () => {
 // ─── S265: Material color audit — compare current vs colorful baseline (pre-S260c) ─────
 // Issue: SampleCastle lost its colors somewhere between sessions.
 test('material_color_audit', () => {
-  var streamSrc = fs.readFileSync(path.join(DEV_DIR, 'streaming.js'), 'utf8');
-  var sceneSrc = fs.readFileSync(path.join(DEV_DIR, 'scene.js'), 'utf8');
+  var streamSrc = __readSrc(path.join(DEV_DIR, 'streaming.js'), 'utf8');
+  var sceneSrc = __readSrc(path.join(DEV_DIR, 'scene.js'), 'utf8');
 
   // Material type: MeshPhongMaterial (colorful) vs MeshStandardMaterial (PBR)
   var hasPhong = streamSrc.includes('MeshPhongMaterial');
@@ -758,11 +759,11 @@ test('material_color_audit', () => {
 // Proven pattern: sitecam.js uses navigator.share+canShare guard → wa.me fallback.
 // share.js MUST use the same guard sequence and fallback.
 test('share_refactor_s265', () => {
-  var shareSrc = fs.readFileSync(path.join(DEV_DIR, 'share.js'), 'utf8');
-  var sitecamSrc = fs.readFileSync(path.join(DEV_DIR, 'sitecam.js'), 'utf8');
-  var mainSrc = fs.readFileSync(path.join(DEV_DIR, 'main.js'), 'utf8');
-  var indexSrc = fs.readFileSync(path.join(DEV_DIR, 'index.html'), 'utf8');
-  var tmSrc = fs.readFileSync(path.join(DEV_DIR, 'time_machine.js'), 'utf8');
+  var shareSrc = __readSrc(path.join(DEV_DIR, 'share.js'), 'utf8');
+  var sitecamSrc = __readSrc(path.join(DEV_DIR, 'sitecam.js'), 'utf8');
+  var mainSrc = __readSrc(path.join(DEV_DIR, 'main.js'), 'utf8');
+  var indexSrc = __readSrc(path.join(DEV_DIR, 'index.html'), 'utf8');
+  var tmSrc = __readSrc(path.join(DEV_DIR, 'time_machine.js'), 'utf8');
 
   var issues = [];
 
@@ -856,11 +857,11 @@ test('share_refactor_s265', () => {
 
   // ── E. CONTEXT DETECTION: buildShareUrl must read the same vars that features write ──
   // Cross-reference: each feature sets a variable on A/APP, buildShareUrl must read it.
-  var panelsSrc = fs.readFileSync(path.join(DEV_DIR, 'panels.js'), 'utf8');
-  var toolsSrc = fs.readFileSync(path.join(DEV_DIR, 'tools.js'), 'utf8');
-  var tourSrc = fs.readFileSync(path.join(DEV_DIR, 'tour.js'), 'utf8');
-  var pickingSrc = fs.readFileSync(path.join(DEV_DIR, 'picking.js'), 'utf8');
-  var measureSrc = fs.readFileSync(path.join(DEV_DIR, 'measure.js'), 'utf8');
+  var panelsSrc = __readSrc(path.join(DEV_DIR, 'panels.js'), 'utf8');
+  var toolsSrc = __readSrc(path.join(DEV_DIR, 'tools.js'), 'utf8');
+  var tourSrc = __readSrc(path.join(DEV_DIR, 'tour.js'), 'utf8');
+  var pickingSrc = __readSrc(path.join(DEV_DIR, 'picking.js'), 'utf8');
+  var measureSrc = __readSrc(path.join(DEV_DIR, 'measure.js'), 'utf8');
 
   // Storey: panels.js writes A.activeStoreyFilter, share.js must read A.activeStoreyFilter
   var storeyWrite = panelsSrc.includes('A.activeStoreyFilter =');
@@ -1170,8 +1171,8 @@ test('share_restore_parse', () => {
 // Fix: quickShare builds same text format directly from _currentClashes[0] + _buildClashDeepLink.
 // Legacy clash_snag.js UNTOUCHED — it's the reference baseline.
 test('share_clash_text_format', () => {
-  var shareSrc = fs.readFileSync(path.join(DEV_DIR, 'share.js'), 'utf8');
-  var clashSnagSrc = fs.readFileSync(path.join(DEV_DIR, 'clash_snag.js'), 'utf8');
+  var shareSrc = __readSrc(path.join(DEV_DIR, 'share.js'), 'utf8');
+  var clashSnagSrc = __readSrc(path.join(DEV_DIR, 'clash_snag.js'), 'utf8');
 
   var qsMatch = shareSrc.match(/A\.quickShare\s*=\s*async\s+function[\s\S]*?(?=\n  [A-Z]|\n  \/\/\s*──)/);
   var qsBody = qsMatch ? qsMatch[0] : '';
@@ -1229,8 +1230,8 @@ test('s224_idb_split_overflow', () => {
   const preFix  = (fullMB + metaMB + geoMB) * MB;   // monolith + split = same data stored twice
   const postFix = (metaMB + geoMB) * MB;            // split only (monolith dropped)
 
-  const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const impSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'import.js'), 'utf8');
+  const idxSrc = __readSrc(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const impSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'import.js'), 'utf8');
 
   const issues = [];
   // (a) arithmetic: pre-fix overflows, post-fix fits → fix resolves the exact error

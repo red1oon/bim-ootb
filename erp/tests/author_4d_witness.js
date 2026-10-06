@@ -1,3 +1,4 @@
+const __readSrc = require('../../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // author_4d_witness.js — W-AUTHOR-4D-BLANK (FUSED_4D5D_WEDGE_LANE §AUTHOR-1)
 //
 // ISSUE PROVED: a user can start from a real model with ZERO 4D metadata, materialize an
@@ -28,7 +29,7 @@ function check(name, cond, detail) {
 
 // Extract `var SEQUENCE_RULES = {...}; ... var SEQUENCE_DEFAULT = {...};` verbatim from rates.js.
 function loadRules() {
-  var txt = fs.readFileSync(path.join(VIEWER, 'rates.js'), 'utf8');
+  var txt = __readSrc(path.join(VIEWER, 'rates.js'), 'utf8');
   var start = txt.indexOf('var SEQUENCE_RULES = {');
   var defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   var end = txt.indexOf('};', defIdx) + 2;
@@ -39,7 +40,7 @@ function loadRules() {
 
 // Extract the REAL `_cap` IIFE verbatim from time_machine.js → a callable function of `db`.
 function loadCapConsumer() {
-  var txt = fs.readFileSync(path.join(VIEWER, 'time_machine.js'), 'utf8');
+  var txt = __readSrc(path.join(VIEWER, 'time_machine.js'), 'utf8');
   var start = txt.indexOf('var _cap = (function() {');
   if (start < 0) throw new Error('could not find _cap in time_machine.js');
   var end = txt.indexOf('})();', start) + '})();'.length;
@@ -56,7 +57,7 @@ function loadCapConsumer() {
   console.log('§W-AUTHOR RULES-LOADED keys=' + Object.keys(RULES).length + ' default=' + DEFAULT.phase);
   var makeCap = loadCapConsumer();
 
-  var db = new SQL.Database(new Uint8Array(fs.readFileSync(SH_DB)));
+  var db = new SQL.Database(new Uint8Array(__readSrc(SH_DB)));
 
   // ── 1. Blank-4D precondition (real model, no schedule) ───────────────────────
   var nElems = db.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];

@@ -20,6 +20,7 @@
 // exact same pattern erp/tests/witness_content_sign.js already proves (global.window=global,
 // global.crypto=require('crypto').webcrypto, require('erp/kernel_ops.js')).
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 var fs = require('fs');
 var path = require('path');
 
@@ -56,10 +57,10 @@ function reqSql() {
   var initSqlJs = reqSql();
   var wasmPath = path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm');
   var SQL = fs.existsSync(wasmPath)
-    ? await initSqlJs({ wasmBinary: fs.readFileSync(wasmPath) })
+    ? await initSqlJs({ wasmBinary: __readSrc(wasmPath) })
     : await initSqlJs();
 
-  var db = new SQL.Database(new Uint8Array(fs.readFileSync(SRC)));
+  var db = new SQL.Database(new Uint8Array(__readSrc(SRC)));
 
   var tableR = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='kernel_ops'");
   if (!tableR.length || !tableR[0].values.length) {
@@ -90,7 +91,7 @@ function reqSql() {
   // ELEMENT_PLACE op's own stamped `_genVersion` — a real, disclosed comparison, never a guess.
   function currentGenVersion() {
     try {
-      var src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+      var src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
       var m = src.match(/_GANTT_CACHE_VERSION\s*=\s*(\d+)/);
       return m ? Number(m[1]) : null;
     } catch (e) { return null; }
