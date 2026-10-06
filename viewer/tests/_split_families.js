@@ -7,7 +7,7 @@ const V = path.join(__dirname, '..');
 const FAMILIES = {
   cinema_maxq: {
     shell: 'cinema_maxq.js', shared: 'MQS',
-    files: ['cinema_maxq.js'],
+    files: ['maxq_buildup_ghost.js', 'maxq_infra.js', 'maxq_hud_layers.js', 'maxq_capture_stitch.js', 'maxq_start.js', 'cinema_maxq.js'],
     loader: { kind: 'html', file: 'viewer.html' },
     runtime: () => {},                                      // IIFE: everything it defines happens at load
   },
