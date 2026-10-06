@@ -5226,7 +5226,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   The interactive schedule what-if (date slips on a blue branch) lives in viewer/whatif.js on the Gantt; it is
   //   NOT folded here — a generic dashboard has no schedule-slip surface, and faking one would invent.
   function _isProjectWindow() { var t = _curTab(); return !!t && String(t.tableName || '').toLowerCase() === 'c_project'; }
-  // pick the project in the open window that HAS phases (mirrors whatif_panel _pickProject); NON-INVENT.
+  // pick the project in the open window that HAS phases — only from the open records (mirrors whatif_panel _pickProject); NON-INVENT.
   function _pickPhasedProject() {
     if (!db) return null;
     // prefer a project actually in the open records, else any project with phases.
@@ -5236,8 +5236,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var r0 = db.exec('SELECT 1 FROM C_ProjectPhase WHERE C_Project_ID=' + Number(ids[i]) + ' LIMIT 1');
         if (r0.length && r0[0].values.length) { var nm = db.exec('SELECT Name FROM C_Project WHERE C_Project_ID=' + Number(ids[i])); return { id: ids[i], name: nm.length && nm[0].values.length ? nm[0].values[0][0] : ('#' + ids[i]) }; }
       }
-      var r = db.exec("SELECT p.C_Project_ID,p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
-      if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+      // §NO_FALLTHROUGH (user 2026-10-07): no "newest project with phases" fallback — on the seed that is always Hospital.
+      console.log('§DASH-VARIANCE-PICK none-in-open-records records=' + ids.length + ' (no fall-through to another project)');
     } catch (e) { console.log('§DASH-VARIANCE-PICK err=' + e.message); }
     return null;
   }
