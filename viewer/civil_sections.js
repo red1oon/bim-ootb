@@ -209,6 +209,7 @@ function setupCivilSections(A) {
   // triangles with the mid-plane T.p = d (T horizontal) -> segments. Same three scene paths as civilElementBoxes
   // (merged idx slice / BatchedMesh slot / InstancedMesh instance). Segment = [x0,y0,z0,x1,y1,z1] WORLD metres.
   var DISC_COL = { ROAD: '#0277bd', EARTHWORK: '#8d6e00', DRAINAGE: '#c62828', STRUCTURE: '#6a1b9a', STRUCT: '#6a1b9a', UTILITY: '#2e7d32', MEP: '#2e7d32', ARC: '#455a64' };
+  function _shortDisc(d) { var t = String(d || '?').replace(/^_+/, ''); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); }   // GEOTECH → Geotech
   function _discCol(d) { if (DISC_COL[d]) return DISC_COL[d]; var h = 0, t = String(d); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 360; return 'hsl(' + h + ',60%,38%)'; }
   function _triCut(pos, idx, i0, i1, M, T, d, out, g) {   // idx may be null (non-indexed); i0/i1 = vertex-slot range [i0,i1) in index units
     var a = new Array(3), n, k, e, v = new THREE.Vector3(), P = [0, 0, 0], D = [0, 0, 0], pts, q, ea, eb;
@@ -285,8 +286,19 @@ function setupCivilSections(A) {
     var Lm = 56, Rm = 14, Tm = 54, Bm = 40, u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity, i, p;
     var U = function (x, z) { return -R.tz * (x - R.x) + R.tx * (z - R.z); };
     R.segments.forEach(function (sg) { p = sg.p; [[p[0], p[2]], [p[3], p[5]]].forEach(function (a) { var u = U(a[0], a[1]); if (u < u0) u0 = u; if (u > u1) u1 = u; }); if (p[1] < z0) z0 = p[1]; if (p[4] < z0) z0 = p[4]; if (p[1] > z1) z1 = p[1]; if (p[4] > z1) z1 = p[4]; });
+    // §CROSS_POPUP_COMPACT (user 2026-10-07: popup "text at the top is all jumbled up … make them short or simple names"):
+    //   a small canvas (the live popup) drops the in-canvas title (its header carries chainage + counts) and lays the
+    //   legend out left-to-right in wrapping rows with short names, so nothing overlaps.
+    var compact = W < 600, lgRects = [];
+    if (compact) {
+      g.font = '10px sans-serif'; var lgx = 6, lgy = 4, discs = {};
+      R.segments.forEach(function (sg) { discs[sg.disc] = 1; });
+      Object.keys(discs).sort().forEach(function (dn) { var t = _shortDisc(dn), w = g.measureText(t).width + 16; if (lgx + w > W - 4) { lgx = 6; lgy += 13; } lgRects.push([lgx, lgy, lgx + w - 4, lgy + 11]); g.fillStyle = _discCol(dn); g.fillRect(lgx, lgy + 1, 8, 8); g.fillStyle = '#000'; g.fillText(t, lgx + 11, lgy + 9); lgx += w; });
+      Tm = lgy + 18; Lm = 34; Bm = 22;
+    } else {
     g.fillStyle = '#000'; g.font = 'bold 14px sans-serif'; g.fillText('Cross-section — chainage ' + R.s.toFixed(1) + ' m (inferred)', Lm, 20);
     g.font = '11px sans-serif'; g.fillStyle = '#555'; g.fillText('elements cut ' + R.elements + ' · segments ' + R.nSeg + ' · bbox only ' + R.nBboxOnly + ' · scale 1:1 (offset m × z m)', Lm, 36);
+    }
     if (!isFinite(u0)) { g.fillStyle = '#c00'; g.fillText('no triangle crosses the plane here (bbox only)', Lm, 70); return cv; }
     var du = Math.max(1, u1 - u0), dz = Math.max(1, z1 - z0), sc = Math.min((W - Lm - Rm) / du, (H - Tm - Bm) / dz);
     var ox = Lm + ((W - Lm - Rm) - du * sc) / 2, oy = H - Bm - ((H - Tm - Bm) - dz * sc) / 2;
@@ -296,10 +308,11 @@ function setupCivilSections(A) {
     for (var a = Math.ceil(u0 / stepM) * stepM; a <= u1 + 1e-9; a += stepM) { g.beginPath(); g.moveTo(X(a), Y(z0)); g.lineTo(X(a), Y(z1)); g.stroke(); g.fillText(a.toFixed(stepM < 1 ? 1 : 0), X(a), H - Bm + 14); }
     g.textAlign = 'right';
     for (var b = Math.ceil(z0 / stepM) * stepM; b <= z1 + 1e-9; b += stepM) { g.beginPath(); g.moveTo(X(u0), Y(b)); g.lineTo(X(u1), Y(b)); g.stroke(); g.fillText(b.toFixed(stepM < 1 ? 1 : 0), Lm - 4, Y(b) + 4); }
-    g.textAlign = 'center'; g.fillText('offset from centreline (m)', (Lm + W - Rm) / 2, H - 6);
+    g.textAlign = 'center'; g.fillText(compact ? 'offset (m)' : 'offset from centreline (m)', (Lm + W - Rm) / 2, H - 6);
     if (u0 <= 0 && u1 >= 0) { g.strokeStyle = '#999'; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(X(0), Y(z0)); g.lineTo(X(0), Y(z1)); g.stroke(); g.setLineDash([]); }
     g.lineWidth = 1.4; var seen = {};
     R.segments.forEach(function (sg) { p = sg.p; seen[sg.disc] = 1; g.strokeStyle = _discCol(sg.disc); g.beginPath(); g.moveTo(X(U(p[0], p[2])), Y(p[1])); g.lineTo(X(U(p[3], p[5])), Y(p[4])); g.stroke(); });
+    if (compact) { cv.__legend = lgRects; cv.__plotTop = Tm; return cv; }
     g.textAlign = 'left'; var lx = W - Rm; Object.keys(seen).reverse().forEach(function (dn) { var w = g.measureText(dn).width + 18; lx -= w; g.fillStyle = _discCol(dn); g.fillRect(lx, 8, 10, 10); g.fillStyle = '#000'; g.fillText(dn, lx + 14, 17); });
     return cv;
   }
@@ -611,9 +624,10 @@ function setupCivilSections(A) {
       L.pending = 0; L.frames++; if (!L.active || !A._civilSection) return;
       var R = A.civilCrossOutput(); if (!R) return;
       var c = _crossCanvas(R, LV_W, LV_H), g = L.cv.getContext('2d'); g.clearRect(0, 0, LV_W, LV_H); g.drawImage(c, 0, 0);
-      L.hd.textContent = 'chainage ' + R.s.toFixed(0) + ' m (inferred) · ' + R.elements + ' elements · ' + R.nSeg + ' segments';
+      L.hd.textContent = 'Ch ' + R.s.toFixed(0) + ' m · ' + R.elements + ' items';
+      L.hd.title = 'chainage ' + R.s.toFixed(1) + ' m (inferred) · ' + R.elements + ' elements cut · ' + R.nSeg + ' segments';
       if (!L.pinned) _liveAnchor();
-      L.redraws++; L.drawn = { s: R.s, nSeg: R.nSeg, elements: R.elements };
+      L.redraws++; L.drawn = { s: R.s, nSeg: R.nSeg, elements: R.elements, legend: c.__legend || [], plotTop: c.__plotTop };
       console.log('§CROSS_LIVE s=' + R.s.toFixed(1) + ' segments=' + R.nSeg + ' redraws=' + L.redraws + ' scrubs=' + L.scrubs + ' frames=' + L.frames + ' pinned=' + L.pinned);
     });
   }
