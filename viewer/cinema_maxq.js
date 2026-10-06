@@ -5304,10 +5304,13 @@
         // Shallow copy before the flag-merge so a staged holder (A._cinemaPathEdit) is never
         // mutated (§CPE_HOLDER_INTEGRITY, same reasoning as _buildOverride's deep copies).
         var ov2 = {}; for (var k in ov) ov2[k] = ov[k]; ov = ov2;
-        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
+        if (o.flags) ['buildup', 'roomTitle', 'reveal', 'dayCounter', 'clash', 'measure', 'storeyReveal', 'loadPath', 'ledger', 'cost', 'sunCompass', 'sunDate', 'escapeRoute', 'visualPanel', 'audioPanel', 'filmBounce'].forEach(function(fk) {   // §FREEZE_PERF_PANEL added visualPanel/audioPanel
             // §FLYTHRU_DATUM §28.1: 'measure' was missing — a CLI --measure was silently dropped; §129 GATING added 'ledger'/'cost' (2026-09-15)
           if (o.flags[fk] !== undefined) ov[fk] = o.flags[fk];
         });
+        // §CPE_CHECKBOX_SAVE: the saved Bounce-light box (default ON when absent) drives the same runtime switch the panel's
+        // checkbox sets; an explicit CLI --bounce arrives as flags.filmBounce and wins via the merge above.
+        if (ov.filmBounce !== undefined) { a._filmBounceOff = (ov.filmBounce === false); console.log('§CPE_FILM_BOUNCE source=' + (o.flags && o.flags.filmBounce !== undefined ? 'cli' : src) + ' bounce=' + (ov.filmBounce === false ? 0 : 1)); }
         // §SDC (2026-09-04, PHOTOREAL_STILL_RENDER.md §BME.7): a dev clip window rides the same
         // §CPE_CLIP field the editor writes, so the loop below needs no second notion of a window.
         if (o.clip && +o.clip.out > +o.clip.in) ov.clip = { in: +o.clip.in, out: +o.clip.out };

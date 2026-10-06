@@ -766,6 +766,7 @@
       audioPanel: !!s.audioPanel,
       escapeRoute: !!s.escapeRoute,         // §ESCAPE_ROUTE_REVEAL
       sunCompass: !!s.sunCompass,           // §SUN_COMPASS
+      filmBounce: s.filmBounce !== false,   // §CPE_CHECKBOX_SAVE — the Bounce-light box (default ON), persisted like its siblings
       sunDate: s.sunDate || '',             // §SUN_DAY
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
@@ -800,6 +801,21 @@
     if (L > 1e-6) for (i = 0; i < cum.length; i++) cum[i] /= L;
     return cum;
   }
+  // §CPE_CHECKBOX_SAVE — the boxes beyond buildup/roomTitle/reveal (those keep their own origX baselines).
+  var _CPE_FLAG_KEYS = ['clash', 'measure', 'storeyReveal', 'loadPath', 'visualPanel', 'audioPanel', 'escapeRoute', 'sunCompass'];
+  function _flagBaseline() {
+    var o = { filmBounce: _state.filmBounce !== false, sunDate: _state.sunDate || '', bakeRes: _state.bakeRes || '' };
+    _CPE_FLAG_KEYS.forEach(function(k) { o[k] = !!_state[k]; });
+    return o;
+  }
+  // The ONE handler tail for every panel box: a toggle is an edit, so a prior Save no longer covers it
+  // (staged=false, same as every other edit site) and the OK/Save buttons must re-read _isEdited().
+  function _flagChanged() {
+    if (!_state) return;
+    _state.staged = false;
+    _markPreviewStale();
+    _syncButtons();
+  }
   function _isEdited() {
     if (!_state || !_state.origBands) return false;
     // §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP are edits in their own right: a path that was ONLY hosed,
@@ -820,6 +836,20 @@
     if (_state.roomTitle !== _state.origRoomTitle) return true;
     if (_state.reveal) return true;
     if (_state.reveal !== _state.origReveal) return true;
+    // §CPE_CHECKBOX_SAVE (2026-10-06): every OTHER panel box is an edit in its own right — the same rule as
+    // the three above (ON must produce an override because the consumer defaults it off with none; changed
+    // from the open/restore baseline counts too). Was missing, so a path changed ONLY by one of these boxes
+    // kept Save disabled. Table-driven off _CPE_FLAG_KEYS so a new box cannot be forgotten in one place.
+    var _of = _state.origFlags || {};
+    for (var _fi = 0; _fi < _CPE_FLAG_KEYS.length; _fi++) {
+      var _fk = _CPE_FLAG_KEYS[_fi];
+      if (!!_state[_fk]) return true;
+      if (!!_state[_fk] !== !!_of[_fk]) return true;
+    }
+    if (_state.sunDate || _state.bakeRes) return true;
+    if ((_state.sunDate || '') !== (_of.sunDate || '') || (_state.bakeRes || '') !== (_of.bakeRes || '')) return true;
+    // Bounce defaults ON, so only a change away from the baseline is an edit (ON must NOT make every open dirty).
+    if ((_state.filmBounce !== false) !== (_of.filmBounce !== false)) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -2466,7 +2496,7 @@
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
                     storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath, visualPanel: !!ov.visualPanel, audioPanel: !!ov.audioPanel,
-                    escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass },
+                    escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass, filmBounce: ov.filmBounce !== false },
       sunDate: ov.sunDate || '',
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
@@ -2530,6 +2560,10 @@
     if (_sdEl) _sdEl.value = _state.sunDate || '';
     var _sdRow = document.getElementById('cpe-sun-date-row');
     if (_sdRow) _sdRow.style.display = _state.sunCompass ? '' : 'none';
+    var _fbSync = document.getElementById('cpe-film-bounce');
+    if (_fbSync && _fbSync.checked !== (_state.filmBounce !== false)) { _fbSync.checked = _state.filmBounce !== false; _fbSync.dispatchEvent(new Event('change')); }
+    var _brSync = document.getElementById('cpe-bake-res');
+    if (_brSync && _brSync.value !== (_state.bakeRes || '')) { _brSync.value = _state.bakeRes || ''; _brSync.dispatchEvent(new Event('change')); }
     var dayEl = document.getElementById('cpe-day-counter'), want = _state.dayCounter || 'tr';
     if (dayEl && dayEl.value !== want) { dayEl.value = want; dayEl.dispatchEvent(new Event('change')); }
   }
@@ -2553,11 +2587,18 @@
       _state.loadPath = !!ps.checkboxes.loadPath;
       _state.visualPanel = !!ps.checkboxes.visualPanel; _state.audioPanel = !!ps.checkboxes.audioPanel;   // §FREEZE_PERF_PANEL
       _state.escapeRoute = !!ps.checkboxes.escapeRoute;
+      // §CPE_CHECKBOX_SAVE: clash/measure/sunCompass/bounce were CAPTURED in panelState but never assigned here,
+      // so reopening a saved plan dropped them (the sync below then unticked the boxes to match).
+      _state.clash = !!ps.checkboxes.clash; _state.measure = !!ps.checkboxes.measure;
+      _state.sunCompass = !!ps.checkboxes.sunCompass;
+      _state.filmBounce = ps.checkboxes.filmBounce !== false;
+      _state.sunDate = ps.sunDate || ''; _state.bakeRes = ps.bakeRes || '';
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
       _state.origRoomTitle = _state.roomTitle;
       _state.origReveal = _state.reveal;
+      _state.origFlags = _flagBaseline();   // §CPE_CHECKBOX_SAVE
     }
     if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
     _syncPanelControls();
@@ -3741,6 +3782,8 @@
         sunDate: '',
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
+        filmBounce: true,      // §CPE_CHECKBOX_SAVE — Bounce light, default ON
+        origFlags: null,       // §CPE_CHECKBOX_SAVE — set right after _state is built
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
@@ -3767,6 +3810,8 @@
         ' bandLen=' + _state.bands[0].len.toFixed(2) + 'm pathLen=' + plan.pathLen.toFixed(1) +
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
+      _state.filmBounce = true; a._filmBounceOff = false;   // §CPE_CHECKBOX_SAVE: the box opens ticked, so state must agree with it
+      _state.origFlags = _flagBaseline();
       var panel = _buildPanel();
       // §CPE_SCRUB_EYE_GATED (2026-08-06, retires §CPE_SCRUB_STANDALONE's "built unconditionally"
       // behaviour) — user, this session: "Been minimalist, user is asked to just bake on the fly.
@@ -3839,6 +3884,7 @@
       });
       document.getElementById('cpe-buildup').addEventListener('change', function(e) {
         _state.buildup = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         // §CPE_BUILDUP_FOLLOW_TM — the reveal is the Time Machine's own timeline, unmodified. The
         // mode (S = linked schedule, T = this model's derived 4D) is decided and logged by
@@ -3864,6 +3910,7 @@
       });
       document.getElementById('cpe-room-title').addEventListener('change', function(e) {
         _state.roomTitle = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         console.log('§CPE_ROOM_TITLE ' + (_state.roomTitle ? 'ON' : 'off'));
         // a.friendlyName/a.getRoomGraph live in the lazy Navigate bundle — same load-on-first-use
@@ -3885,7 +3932,7 @@
       var _clashEl = document.getElementById('cpe-clash');
       if (_clashEl) _clashEl.addEventListener('change', function(e) {
         _state.clash = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
           ' — mesh-true clash pairs as world content in the bake');
       });
@@ -3894,7 +3941,7 @@
       var _measureEl = document.getElementById('cpe-measure');
       if (_measureEl) _measureEl.addEventListener('change', function(e) {
         _state.measure = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_MEASURE checkbox=' + (_state.measure ? 'on' : 'off') +
           ' — setting-out drawing (grid bubbles, bay chains, storey rules) in the bake');
       });
@@ -3906,7 +3953,7 @@
         _state.sunCompass = !!e.target.checked;
         var _row = document.getElementById('cpe-sun-date-row');
         if (_row) _row.style.display = _state.sunCompass ? '' : 'none';
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_SUN_COMPASS checkbox=' + (_state.sunCompass ? 'on' : 'off') +
           ' — true-north ground rose + day-of-year + sun angle of attack, as ONE overlay. ' +
           'On a building with no site lat/long this draws nothing and the bake logs ' +
@@ -3917,7 +3964,7 @@
       var _sunDateEl = document.getElementById('cpe-sun-date');
       if (_sunDateEl) _sunDateEl.addEventListener('change', function(e) {
         _state.sunDate = String(e.target.value || '');
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_SUN_DATE ' + (_state.sunDate
           ? 'pinned to ' + _state.sunDate + ' — the whole film is lit on that one day, hour ' +
             'sweeping morning to late afternoon; the BUILD still follows the 4D timeline'
@@ -3927,7 +3974,7 @@
       if (_sunDateClr) _sunDateClr.addEventListener('click', function() {
         _state.sunDate = '';
         if (_sunDateEl) _sunDateEl.value = '';
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_SUN_DATE cleared — the light follows the 4D timeline\'s own dates again');
       });
       // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
@@ -3936,7 +3983,7 @@
       var _storeyRevealEl = document.getElementById('cpe-storey-reveal');
       if (_storeyRevealEl) _storeyRevealEl.addEventListener('change', function(e) {
         _state.storeyReveal = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§STOREY_REVEAL checkbox=' + (_state.storeyReveal ? 'on' : 'off') +
           ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
       });
@@ -3944,13 +3991,13 @@
       // no beat boundary moves, so _markPreviewStale() is the whole handler.
       ['visualPanel', 'cpe-visual-panel', 'audioPanel', 'cpe-audio-panel'].forEach(function (_k, _i, _a) {   // §FREEZE_PERF_PANEL
         if (_i % 2) return; var _el = document.getElementById(_a[_i + 1]);
-        if (_el) _el.addEventListener('change', function (e) { _state[_k] = !!e.target.checked; _markPreviewStale();
+        if (_el) _el.addEventListener('change', function (e) { _state[_k] = !!e.target.checked; _flagChanged();
           console.log('§CPE_FREEZE_PERF checkbox ' + _k + '=' + (_state[_k] ? 'on' : 'off') + (_state.loadPath ? '' : ' (draws nothing until Load path freeze is on)')); });
       });
       var _loadPathEl = document.getElementById('cpe-load-path');
       if (_loadPathEl) _loadPathEl.addEventListener('change', function(e) {
         _state.loadPath = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_LOAD_PATH checkbox=' + (_state.loadPath ? 'on' : 'off') +
           ' — structural chain freeze-frame (section-cut, cost/schedule HUD) in the bake');
       });
@@ -3963,7 +4010,7 @@
       var _escapeRouteEl = document.getElementById('cpe-escape-route');
       if (_escapeRouteEl) _escapeRouteEl.addEventListener('change', function(e) {
         _state.escapeRoute = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§ESCAPE_ROUTE checkbox=' + (_state.escapeRoute ? 'on' : 'off') +
           ' — the worst-case room\'s REAL escape route traced during the closing orbit, with a live' +
           ' walking-time (1.19 m/s, SFPE, cited) and step (0.75 m stride, uncited) count. On a' +
@@ -3978,6 +4025,7 @@
       var _resEl = document.getElementById('cpe-bake-res');
       if (_resEl) _resEl.addEventListener('change', function(e) {
         _state.bakeRes = e.target.value || '';
+        _flagChanged();
         var _app = A();
         var _winSize = (_app && _app.renderer && _app.renderer.domElement) ?
           (_app.renderer.domElement.width + 'x' + _app.renderer.domElement.height) : 'this window';
@@ -3988,7 +4036,7 @@
       // bake; the honest control is handing over the exact command for the user's own terminal
       // (repo cloned, Node installed, the building's DB available locally).
       var _fbEl = document.getElementById('cpe-film-bounce');
-      if (_fbEl) _fbEl.addEventListener('change', function(e) { var _app = A(); if (_app) _app._filmBounceOff = !e.target.checked;
+      if (_fbEl) _fbEl.addEventListener('change', function(e) { var _app = A(); _state.filmBounce = !!e.target.checked; if (_app) _app._filmBounceOff = !e.target.checked; _flagChanged();
         console.log('§GI_FILM_TOGGLE bounce=' + (e.target.checked ? 'on' : 'off') + ' (this window\'s Alt+C and the bake command)');
         if (_cmdText && _cmdBox && _cmdBox.style.display !== 'none') _cmdText.value = _buildBakeCommand(); });
       var _cmdLink = document.getElementById('cpe-bake-cmd-link');
@@ -4025,6 +4073,7 @@
       });
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         // §CPE_DISCIPLINE_REVEAL — real bug found live (user, 2026-08-14: "Preview also do not go
         // 2nd round" / "the pov timeline numbering did double but the alt-c still remains not").
