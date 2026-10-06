@@ -28,7 +28,8 @@
 // it against the fontPx the layout measured the plate with. A no-op fix would show them still
 // disagreeing; a wrong one would show a font that is not the layout's own number.
 const fs=require('fs'), vm=require('vm');
-const src=fs.readFileSync(process.argv[2] || '/tmp/wt-loadpath/viewer/cpe_load_path.js','utf8');
+// default = the cpe_load_path family in load order (was a hard-coded /tmp/wt-loadpath path; VIEWER_FILE_SPLIT_PLAN.md §5)
+const src=process.argv[2] ? fs.readFileSync(process.argv[2],'utf8') : require('./_lp_family.js').readFamily();
 const seen=[];
 function mkCtx(){
   return { font:'10px sans-serif', fillStyle:'', textAlign:'', textBaseline:'', canvas:{width:1920,height:1080},

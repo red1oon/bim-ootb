@@ -45,7 +45,8 @@ const LP = process.argv[2] || path.resolve(__dirname, '..', 'cpe_load_path.js');
 const RP = path.resolve(__dirname, '..', 'cpe_resource_panel.js');
 const CM = path.resolve(__dirname, '..', 'cinema_maxq.js');
 let lp, rp, cm;
-try { lp = fs.readFileSync(LP, 'utf8'); rp = fs.readFileSync(RP, 'utf8'); cm = fs.readFileSync(CM, 'utf8'); }
+try { lp = process.argv[2] ? fs.readFileSync(LP, 'utf8') : require('./_lp_family.js').readFamily();   // whole family when unsplit path not given (VIEWER_FILE_SPLIT_PLAN.md §5)
+       rp = fs.readFileSync(RP, 'utf8'); cm = fs.readFileSync(CM, 'utf8'); }
 catch (e) { console.log('§FREEZE_THEME INCONCLUSIVE — ' + e.message); process.exit(2); }
 
 let fails = 0;

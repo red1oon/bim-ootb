@@ -26,7 +26,9 @@
  */
 const fs = require('fs'), vm = require('vm');
 const SRC = process.argv[2] || require('path').join(__dirname, '..', 'cpe_load_path.js');
-const src = fs.readFileSync(SRC, 'utf8');
+// cpe_load_path.js is now a family of part files (VIEWER_FILE_SPLIT_PLAN.md §5): with no path argument, judge the
+// whole family in load order (_lp_family.js); a path argument still judges that one file (e.g. a pre-split copy).
+const src = process.argv[2] ? fs.readFileSync(SRC, 'utf8') : require('./_lp_family.js').readFamily();
 
 // ── Fixtures. bz/tz derived from the shipped DB's centre_z +/- bbox_z/2, plan rects wide enough to
 //    overlap (both real chains sit on one column line / one footprint, verified in the same bake).
