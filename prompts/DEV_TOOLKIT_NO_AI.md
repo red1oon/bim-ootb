@@ -7,6 +7,27 @@ a tool whose witness judged nothing prints `INCONCLUSIVE`, never `PASS`.
 
 ---
 
+## ▶ RESUME HERE — PARKED 2026-10-06 (spec complete enough to build; zero code written)
+**State:** triage + review done; 26 tools → 6 extensions × 3 engines (§2); playbook drafted (§3); admin
+decisions taken (§10); 6 app findings handed to owner lanes (§7, all merged to bim-compiler `master`
+via #169/#170). Spec PRs merged on bim-ootb `main`: #1905 (orphaned tail landed by #1911), #1913.
+**Next session, in order — do not re-triage:**
+1. Run spikes **S0** (js-debug source/line) and **S2** (SW version readable without the bridge) — they gate
+   the first slice. Each ends in a `§DEVTK_SPIKE_*` line saved to a log.
+2. Build the **first slice §6**: playbook skeleton → localhost SW-bypass launch config → §-Diff CLI → Version Doctor.
+   Code goes in `bim-ootb/devtools/` (worktree off `origin/main`; the shared checkout is hook-blocked).
+3. Then X1 panel (T1), then by rank in §2. Lock each §5 spec only after its spike.
+**Things a fresh session must know:**
+- **Big-file splits in flight** (other lane, owner session bim-compiler-9b, on hold as of 2026-10-06):
+  #1908 cinema_maxq → `maxq_*.js`, #1909 effects → `fx_*.js`, #1910 cpe_load_path, #1914 time_machine
+  (stacked, merge order 1908 → 1909 → 1910). A generator re-splits by function name. **So E3 (§4.3) and every
+  citation in this file must locate code by FUNCTION NAME, never file:line** — line refs here are pinned to
+  `origin/main @ fb183ddf` and will drift.
+- **Witness reality (§9.1):** only 54/265 witnesses use `contract.js`, 110 hard-code `/home/red1`, CI runs 0.
+  Witness Writer (T25) and Witness Lint (T14) are designed around that; don't assume the 265 run elsewhere.
+- **Admin questions are the session's to decide** (user, 2026-10-06) — only project-shape questions go to the user.
+
+
 ## §0 Why (user, 2026-10-06)
 > *"a more powerful toolset that helps to debug easily whenever Claude AI is not available or tokens run
 > out, this is the next best thing to use"* … *"like extensions to an IDE. make it into a set where devs can
@@ -359,3 +380,4 @@ Method: creation date of each `viewer/tests/witness_*.js` (`git log --diff-filte
 | Tool specs §5 | draft — each locks after its spike |
 | Findings §7 | 6 handed off |
 | Implementation | not started — first slice §6 |
+| **Lane** | ⏸ PARKED 2026-10-06 — resume at ▶ RESUME HERE (top) |
