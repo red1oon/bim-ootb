@@ -6,7 +6,7 @@ const fs = require('fs'), path = require('path');
 const V = path.join(__dirname, '..');
 const FAMILIES = {
   navigate_find: {
-    files: ['navigate_find.js'],
+    files: ['nf_ui_history.js', 'nf_tree_lens.js', 'nf_highlight_cost.js', 'nf_room.js', 'nf_trees.js', 'nf_isolate_drill.js', 'nf_panel_search.js', 'navigate_find.js'],
     loader: { kind: 'modules', file: 'main.js' },          // lazy: main.js APP.loadNavigate() modules[] (sequential)
     // what to call after loading so the census sees what setup defines
     runtime: (win) => { if (win.NavigateFind && typeof win.NavigateFind.init === 'function') win.NavigateFind.init(win.APP, {}, function () { return null; }); },
