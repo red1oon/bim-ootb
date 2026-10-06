@@ -186,7 +186,7 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1601';
+const CACHE_VERSION = 'v1603';
 // v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=3.
 // v1600 (main)
 // v1597 (2026-10-06) §SKY_GHOST_SKYLINE: a civil model builds no fake-city skyline ring (effects.js?v=150); tools/sky_ghost_detect.js + viewer/tests/witness_sky_ghost.js.

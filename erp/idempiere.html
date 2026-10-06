@@ -6067,13 +6067,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var v = recVal(ctx.rec, 'Value');
         return v ? _linkBack({ bld: String(v), find: null }, pk, true) : null;   // project header → whole building (or the pushed GUID set)
       }
-      if (tn === 'c_projectline') {                                  // a focused line → its IFC class
-        var projId = recVal(ctx.rec, 'C_Project_ID');
+      if (tn === 'c_projectline') {                                  // the TICKED lines (else the focused one) → their line keys
+        // §ZOOM-LINES (user 2026-10-07: "call back the selected lines"): ticked grid rows win over the cursor row; only
+        //   lines of the first ticked line's project are kept (one project = one model db). Key = M_Product.Value, the
+        //   proj_fold line key (<IfcClass> or IfcBuildingElementProxy:<DISC>); several keys / a DISC key → ';'-joined,
+        //   resolved to GUIDs by the viewer's applyFindScope. One plain class → the unchanged class scope.
+        var recs = _selectedRecs(ctx.tab); if (!recs.length) recs = [ctx.rec];
+        var projId = recVal(recs[0], 'C_Project_ID');
         if (projId == null || Number(projId) < 990000) return null;
         var pr = _sqlRows('SELECT value FROM c_project WHERE c_project_id=' + Number(projId))[0];
         if (!pr || !pr.value) return null;
-        var find = null, pid = recVal(ctx.rec, 'M_Product_ID');
-        if (pid != null) { var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0]; find = p && p.value ? String(p.value) : null; }
+        var keys = [], dropped = 0;
+        recs.forEach(function (rr) {
+          if (String(recVal(rr, 'C_Project_ID')) !== String(projId)) { dropped++; return; }
+          var pid = recVal(rr, 'M_Product_ID'); if (pid == null) return;
+          var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0];
+          if (p && p.value && keys.indexOf(String(p.value)) < 0) keys.push(String(p.value));
+        });
+        var find = keys.length ? keys.join(';') : null;
+        console.log('§ZOOM-LINES project=' + projId + ' lines=' + recs.length + ' keys=' + keys.length + ' otherProjectDropped=' + dropped + ' find=' + find);
         return _linkBack({ bld: String(pr.value), find: find }, projId, false);
       }
       if (tn === 'pp_order') {                                       // PP_ORDER_ZOOM_TM_SPEC §A — a manufacturing

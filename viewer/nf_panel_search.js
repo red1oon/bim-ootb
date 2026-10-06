@@ -991,6 +991,16 @@
       var _tmSt = null; try { _tmSt = window.tmGetState && window.tmGetState(); } catch (e) {}
       var tmOpen = !!(_tmSt && _tmSt.active && typeof window.tmJumpToElement === 'function');
 
+      // §ZOOM-LINES — ERP ticked project lines: ';'-joined proj_fold line keys (<IfcClass> or <IfcClass>:<DISCIPLINE>).
+      //   Resolve to GUIDs from elements_meta (class AND discipline), then fall through to the guid-set path.
+      if (/^ifc[a-z]\w*(:[\w-]+)?(;ifc[a-z]\w*(:[\w-]+)?)*$/i.test(scope) && /[;:]/.test(scope)) {
+        var where = [], prm = [];
+        scope.split(';').forEach(function (k) { var kp = k.split(':'); where.push(kp[1] ? '(ifc_class=? AND discipline=?)' : 'ifc_class=?'); prm.push(kp[0]); if (kp[1]) prm.push(kp[1]); });
+        var gr = []; try { var rs = A.db.exec('SELECT guid FROM elements_meta WHERE ' + where.join(' OR '), prm); gr = rs.length ? rs[0].values.map(function (v) { return v[0]; }).filter(Boolean) : []; } catch (e) { console.log('§ZOOM-LINES err=' + e.message); }
+        console.log('§ZOOM-LINES keys=' + where.length + ' guids=' + gr.length + ' scope="' + scope + '"');
+        if (!gr.length) return 0;
+        scope = gr.join(',') + (gr.length === 1 ? ',' : '');      // force the guid-set path even for one element
+      }
       // guid-set: has a comma OR isn't an Ifc* class token → treat as explicit element ids.
       if (scope.indexOf(',') >= 0 || !/^ifc[a-z]/i.test(scope)) {
         var guids = scope.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
