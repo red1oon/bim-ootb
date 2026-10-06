@@ -195,13 +195,136 @@ function setupCivilSections(A) {
   // elements whose world AABB spans the section mid-plane: signed distance (along the route tangent) of its 4 xz corners straddles 0
   A.civilSectionCut = function () {
     var S = A._civilSection; if (!S) return { guids: [], indexed: 0, byDisc: {} };
-    var guids = [], byDisc = {}, all = A.civilElementBoxes();
+    var guids = [], byDisc = {}, all = A.civilElementBoxes(), hit = [];
     all.forEach(function (m) {
       var lo = Infinity, hi = -Infinity, xs = [m.minX, m.maxX], zs = [m.minZ, m.maxZ];
       for (var i = 0; i < 2; i++) for (var k = 0; k < 2; k++) { var dd = S.tx * xs[i] + S.tz * zs[k] - S.d; if (dd < lo) lo = dd; if (dd > hi) hi = dd; }
-      if (lo <= 0 && hi >= 0) { guids.push(m.guid); byDisc[m.disc] = (byDisc[m.disc] || 0) + 1; }
+      if (lo <= 0 && hi >= 0) { guids.push(m.guid); hit.push(m); byDisc[m.disc] = (byDisc[m.disc] || 0) + 1; }
     });
-    return { guids: guids, indexed: all.length, byDisc: byDisc };
+    return { guids: guids, indexed: all.length, byDisc: byDisc, items: hit };
+  };
+
+  // ══ §CROSS_OUTPUT (CIVIL_HIGHWAY_JELAPANG.md §CROSS_OUTPUT) ═══════════════════════════════════════════════════
+  // The REAL cut: for each element of the civilSectionCut set ONLY (one owner of "which elements"), intersect its world
+  // triangles with the mid-plane T.p = d (T horizontal) -> segments. Same three scene paths as civilElementBoxes
+  // (merged idx slice / BatchedMesh slot / InstancedMesh instance). Segment = [x0,y0,z0,x1,y1,z1] WORLD metres.
+  var DISC_COL = { ROAD: '#0277bd', EARTHWORK: '#8d6e00', DRAINAGE: '#c62828', STRUCTURE: '#6a1b9a', STRUCT: '#6a1b9a', UTILITY: '#2e7d32', MEP: '#2e7d32', ARC: '#455a64' };
+  function _discCol(d) { if (DISC_COL[d]) return DISC_COL[d]; var h = 0, t = String(d); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 360; return 'hsl(' + h + ',60%,38%)'; }
+  function _triCut(pos, idx, i0, i1, M, T, d, out, g) {   // idx may be null (non-indexed); i0/i1 = vertex-slot range [i0,i1) in index units
+    var a = new Array(3), n, k, e, v = new THREE.Vector3(), P = [0, 0, 0], D = [0, 0, 0], pts, q, ea, eb;
+    var VX = [0, 0, 0], VY = [0, 0, 0], VZ = [0, 0, 0];
+    for (var t = i0; t + 2 < i1; t += 3) {
+      for (k = 0; k < 3; k++) {
+        var vi = idx ? idx.getX(t + k) : t + k; v.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi)).applyMatrix4(M);
+        VX[k] = v.x; VY[k] = v.y; VZ[k] = v.z; D[k] = T.x * v.x + T.z * v.z - d;
+      }
+      if (D[0] < 0 === D[1] < 0 && D[1] < 0 === D[2] < 0) continue;
+      pts = [];
+      for (e = 0; e < 3; e++) {
+        ea = e; eb = (e + 1) % 3;
+        if ((D[ea] < 0) !== (D[eb] < 0)) { q = D[ea] / (D[ea] - D[eb]); pts.push(VX[ea] + q * (VX[eb] - VX[ea]), VY[ea] + q * (VY[eb] - VY[ea]), VZ[ea] + q * (VZ[eb] - VZ[ea])); }
+      }
+      if (pts.length === 6) { out.push(pts); g.n++; }
+    }
+  }
+  // returns { segs: {guid:[seg...]}, nSeg }
+  A.civilCrossSegments = function (cut) {
+    var S = A._civilSection; if (!S) return null; cut = cut || A.civilSectionCut();
+    var want = {}; cut.guids.forEach(function (g) { want[g] = 1; });
+    var T = { x: S.tx, z: S.tz }, d = S.d, segs = {}, m4 = new THREE.Matrix4(), M = new THREE.Matrix4(), cnt = { n: 0 };
+    var put = function (guid) { return segs[guid] || (segs[guid] = []); };
+    A.collectMeshes(function (o) { return o.isMesh; }).forEach(function (o) {
+      var geo = o.geometry; if (!geo || !geo.attributes || !geo.attributes.position) return;
+      if (A._mergedMeta && A._mergedMeta[o.id]) {
+        A._mergedMeta[o.id].forEach(function (m) { if (want[m.guid] && geo.index) _triCut(geo.attributes.position, geo.index, m.idxStart, m.idxStart + m.idxCount, o.matrixWorld, T, d, put(m.guid), cnt); });
+      } else if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) {
+        var sg = o.userData.slotGeo || {};
+        A._batchMeta[o.id].forEach(function (m) {
+          if (!want[m.guid]) return; var g = sg[m.slotId]; if (!g || !g.attributes.position) return;
+          o.getMatrixAt(m.slotId, m4); M.multiplyMatrices(o.matrixWorld, m4);
+          _triCut(g.attributes.position, g.index, 0, g.index ? g.index.count : g.attributes.position.count, M, T, d, put(m.guid), cnt);
+        });
+      } else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) {
+        A._instanceMeta[o.id].forEach(function (m, i) {
+          if (!want[m.guid]) return; o.getMatrixAt(i, m4); M.multiplyMatrices(o.matrixWorld, m4);
+          _triCut(geo.attributes.position, geo.index, 0, geo.index ? geo.index.count : geo.attributes.position.count, M, T, d, put(m.guid), cnt);
+        });
+      }
+    });
+    return { segs: segs, nSeg: cnt.n };
+  };
+  function _nameMap(guids) {
+    var map = {}; if (!A.dbQuery) return map;
+    for (var i = 0; i < guids.length; i += 400) {
+      var ch = guids.slice(i, i + 400);
+      try { A.dbQuery('SELECT guid, element_name FROM elements_meta WHERE guid IN (' + ch.map(function () { return '?'; }).join(',') + ')', ch).forEach(function (r) { map[r[0]] = r[1]; }); } catch (e) {}
+    }
+    return map;
+  }
+  // One result object: segments (+ per-disc), table rows (disc · name · count, from the SAME cut), bboxOnly rows.
+  A.civilCrossOutput = function () {
+    var S = A._civilSection; if (!S) return null;
+    var t0 = performance.now(), cut = A.civilSectionCut(), sg = A.civilCrossSegments(cut), nm = _nameMap(cut.guids), rows = {}, bb = {}, nBB = 0;
+    cut.items.forEach(function (m) {
+      var name = nm[m.guid] || '(unnamed)', key = m.disc + '\u0001' + name, has = sg.segs[m.guid] && sg.segs[m.guid].length > 0;
+      var tgt = has ? rows : bb; if (!has) nBB++;
+      tgt[key] = tgt[key] || { disc: m.disc, name: name, count: 0 }; tgt[key].count++;
+    });
+    var sortR = function (o) { return Object.keys(o).map(function (k) { return o[k]; }).sort(function (a, b) { return a.disc < b.disc ? -1 : a.disc > b.disc ? 1 : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); }); };
+    var segList = [];   // flat: {disc, p:[x0,y0,z0,x1,y1,z1]}
+    cut.items.forEach(function (m) { (sg.segs[m.guid] || []).forEach(function (p) { segList.push({ disc: m.disc, p: p }); }); });
+    var res = { s: S.s, tx: S.tx, tz: S.tz, x: S.x, z: S.z, d: S.d, segments: segList, nSeg: sg.nSeg, elements: cut.guids.length, rows: sortR(rows), bboxOnly: sortR(bb), nBboxOnly: nBB, byDisc: cut.byDisc };
+    var ms = performance.now() - t0, heap = (performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : 'NA');
+    console.log('§CROSS_OUTPUT s=' + S.s.toFixed(1) + ' segments=' + sg.nSeg + ' elements=' + cut.guids.length + ' bboxOnly=' + nBB + ' ms=' + ms.toFixed(0) + ' heapMB=' + heap);
+    return res;
+  };
+  // Offscreen RECTANGULAR canvas, one scale (equal x/z metres). u = offset from centreline along n=(-tz,tx), v = world y.
+  function _crossCanvas(R, W, H) {
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H; var g = cv.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    var Lm = 56, Rm = 14, Tm = 54, Bm = 40, u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity, i, p;
+    var U = function (x, z) { return -R.tz * (x - R.x) + R.tx * (z - R.z); };
+    R.segments.forEach(function (sg) { p = sg.p; [[p[0], p[2]], [p[3], p[5]]].forEach(function (a) { var u = U(a[0], a[1]); if (u < u0) u0 = u; if (u > u1) u1 = u; }); if (p[1] < z0) z0 = p[1]; if (p[4] < z0) z0 = p[4]; if (p[1] > z1) z1 = p[1]; if (p[4] > z1) z1 = p[4]; });
+    g.fillStyle = '#000'; g.font = 'bold 14px sans-serif'; g.fillText('Cross-section — chainage ' + R.s.toFixed(1) + ' m (inferred)', Lm, 20);
+    g.font = '11px sans-serif'; g.fillStyle = '#555'; g.fillText('elements cut ' + R.elements + ' · segments ' + R.nSeg + ' · bbox only ' + R.nBboxOnly + ' · scale 1:1 (offset m × z m)', Lm, 36);
+    if (!isFinite(u0)) { g.fillStyle = '#c00'; g.fillText('no triangle crosses the plane here (bbox only)', Lm, 70); return cv; }
+    var du = Math.max(1, u1 - u0), dz = Math.max(1, z1 - z0), sc = Math.min((W - Lm - Rm) / du, (H - Tm - Bm) / dz);
+    var ox = Lm + ((W - Lm - Rm) - du * sc) / 2, oy = H - Bm - ((H - Tm - Bm) - dz * sc) / 2;
+    var X = function (u) { return ox + (u - u0) * sc; }, Y = function (z) { return oy - (z - z0) * sc; };
+    var stepM = _niceStep(Math.max(du, dz) / 8);
+    g.strokeStyle = '#ddd'; g.lineWidth = 1; g.fillStyle = '#555'; g.textAlign = 'center';
+    for (var a = Math.ceil(u0 / stepM) * stepM; a <= u1 + 1e-9; a += stepM) { g.beginPath(); g.moveTo(X(a), Y(z0)); g.lineTo(X(a), Y(z1)); g.stroke(); g.fillText(a.toFixed(stepM < 1 ? 1 : 0), X(a), H - Bm + 14); }
+    g.textAlign = 'right';
+    for (var b = Math.ceil(z0 / stepM) * stepM; b <= z1 + 1e-9; b += stepM) { g.beginPath(); g.moveTo(X(u0), Y(b)); g.lineTo(X(u1), Y(b)); g.stroke(); g.fillText(b.toFixed(stepM < 1 ? 1 : 0), Lm - 4, Y(b) + 4); }
+    g.textAlign = 'center'; g.fillText('offset from centreline (m)', (Lm + W - Rm) / 2, H - 6);
+    if (u0 <= 0 && u1 >= 0) { g.strokeStyle = '#999'; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(X(0), Y(z0)); g.lineTo(X(0), Y(z1)); g.stroke(); g.setLineDash([]); }
+    g.lineWidth = 1.4; var seen = {};
+    R.segments.forEach(function (sg) { p = sg.p; seen[sg.disc] = 1; g.strokeStyle = _discCol(sg.disc); g.beginPath(); g.moveTo(X(U(p[0], p[2])), Y(p[1])); g.lineTo(X(U(p[3], p[5])), Y(p[4])); g.stroke(); });
+    g.textAlign = 'left'; var lx = W - Rm; Object.keys(seen).reverse().forEach(function (dn) { var w = g.measureText(dn).width + 18; lx -= w; g.fillStyle = _discCol(dn); g.fillRect(lx, 8, 10, 10); g.fillStyle = '#000'; g.fillText(dn, lx + 14, 17); });
+    return cv;
+  }
+  A.civilCrossPNG = function (download) {
+    var R = A.civilCrossOutput(); if (!R) return Promise.resolve(null);
+    var cv = _crossCanvas(R, 1000, 600), name = 'cross_' + Math.round(R.s) + 'm.png';
+    return new Promise(function (res) {
+      cv.toBlob(function (bl) {
+        if (download && bl) { var a = document.createElement('a'); a.href = URL.createObjectURL(bl); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000); }
+        console.log('§CROSS_OUTPUT_PNG name=' + name + ' type=' + (bl && bl.type) + ' bytes=' + (bl && bl.size) + ' px=' + cv.width + 'x' + cv.height); res({ blob: bl, name: name, out: R });
+      }, 'image/png');
+    });
+  };
+  function _esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  A.civilCrossSheetHTML = function () {
+    var R = A.civilCrossOutput(); if (!R) return null;
+    var img = _crossCanvas(R, 1400, 840).toDataURL('image/png'), tr = function (list, extra) { return list.map(function (r) { return '<tr><td style="text-align:left">' + _esc(r.disc) + '</td><td style="text-align:left">' + _esc(r.name) + '</td><td>' + r.count + extra + '</td></tr>'; }).join(''); };
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Cross-section ' + R.s.toFixed(0) + ' m (inferred)</title><style>body{font:13px sans-serif;margin:16px}img{width:100%;max-width:1000px;border:1px solid #bbb}' +
+      'table{border-collapse:collapse;margin-top:8px}td,th{border:1px solid #bbb;padding:2px 8px;text-align:right}th{text-align:left}@page{size:A4 landscape;margin:12mm}</style></head><body>' +
+      '<h1>Cross-section — chainage ' + R.s.toFixed(1) + ' m (inferred)</h1><img alt="cross-section" src="' + img + '"><h2>Elements cut (' + R.elements + ')</h2>' +
+      '<table id="cross-table"><thead><tr><th>discipline</th><th>element</th><th>count</th></tr></thead><tbody>' + tr(R.rows, '') + tr(R.bboxOnly, ' (bbox only)') + '</tbody></table></body></html>';
+  };
+  A.civilCrossPDF = function () {
+    var html = A.civilCrossSheetHTML(); if (!html) return null;
+    var w = window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank'); console.log('§CROSS_OUTPUT_SHEET htmlKB=' + (html.length / 1024).toFixed(0) + ' opened=' + !!w); return w;
   };
 
   // ── camera (linked view) ──
@@ -434,11 +557,21 @@ function setupCivilSections(A) {
     sl.min = '0'; sl.max = String(L); sl.step = '1'; sl.value = String(s);
   }
   var _lastS = 0;
+  function _crossTools(show) {
+    var panel = document.getElementById('section-slider-panel'); if (!panel) return; var t = document.getElementById('civil-cross-tools');
+    if (!t && show) {
+      t = _el('div', 'margin-top:6px;display:flex;gap:6px'); t.id = 'civil-cross-tools';
+      [['PNG', 'civil-cross-png', function () { A.civilCrossPNG(true); }], ['Section sheet', 'civil-cross-sheet', function () { A.civilCrossPDF(); }]].forEach(function (d) {
+        var b = _el('button', 'background:#444;color:#fff;border:1px solid #666;border-radius:4px;padding:3px 8px;cursor:pointer', d[0]); b.id = d[1]; b.onclick = d[2]; t.appendChild(b);
+      }); panel.appendChild(t);
+    }
+    if (t) t.style.display = show ? 'flex' : 'none';
+  }
   A.sectionModes.Cross = {
     label: 'Cross', avail: function () { return !!_route(); },
-    enter: function () { var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); this.scrub(s); },
+    enter: function () { var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); _crossTools(true); this.scrub(s); },
     scrub: function (s) { _lastS = s; A.civilCrossSection(s); _showScrub(s); },
-    exit: function () { A.civilCrossSectionOff(true); }
+    exit: function () { _crossTools(false); A.civilCrossSectionOff(true); }
   };
   A.sectionModes.Long = {
     label: 'Long', avail: function () { return !!_route(); },

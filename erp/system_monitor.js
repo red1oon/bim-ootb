@@ -216,6 +216,27 @@
   var OPLOG_IDB = 'glassbowl_kernel_ops';
   // nuclear full-wipe set: data cache · kernel op-log · installed plugins · device signing key.
   var FULL_WIPE_IDB = ['erp_cache', 'glassbowl_kernel_ops', 'fold_plugins', 'bim_erp_signer'];
+  // §BIM-CRUD (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): the viewer's push store (OPFS bim_analysis/bim_project_orders.db,
+  //   written by find_erp_push · diff §H1 VO · whatif_panel · schedule_author_ui) is re-overlaid onto the ERP at every boot
+  //   (bim_orders_overlay.js §BIM_OVERLAY), so a reset that leaves it brings the pushed Project Orders straight back.
+  //   Both resets remove the file; the viewer writers re-create it on the next push (they fall back to the bundled seed).
+  async function clearBimPushStore() {
+    var n = -1;
+    try {
+      var dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_analysis');
+      try {
+        var buf = await (await (await dir.getFileHandle('bim_project_orders.db')).getFile()).arrayBuffer();
+        var sdb = new global.SQL.Database(new Uint8Array(buf));
+        var r = sdb.exec('SELECT COUNT(*) FROM C_Project WHERE C_Project_ID >= 990000'); n = r.length ? r[0].values[0][0] : 0; sdb.close();
+      } catch (e) {}
+      await dir.removeEntry('bim_project_orders.db');
+      console.log('§SEED-RESET bim-push-store removed projects=' + n);
+      return true;
+    } catch (e) {
+      console.log('§SEED-RESET bim-push-store ' + (e && e.name === 'NotFoundError' ? 'none' : 'remove-fail ' + (e && (e.name || e.message))));
+      return false;
+    }
+  }
   function clearWorldHistory() { try { var ls = global.localStorage; if (ls) WORLD_HISTORY_KEYS.forEach(function (k) { try { ls.removeItem(k); } catch (e) {} }); } catch (e) {} }
 
   // idbPutBlob — write a blob under erp_cache/blobs (the SAME store/key idempiere.html loads the live db from).
@@ -281,7 +302,7 @@
       return;
     }
     if (!global.confirm || !global.confirm(
-      'Reset demo / seed ERPs?\n\nThe shipped tenants — System, GardenWorld, and any demo-band installs (Odoo · iDempiere · SAP · Oracle · Dynamics) — return to their INITIAL state. Dirty / edited / demo data is removed.\n\nThe tenants YOU created (and all their data) are KEPT untouched.')) return;
+      'Reset demo / seed ERPs?\n\nThe shipped tenants — System, GardenWorld, and any demo-band installs (Odoo · iDempiere · SAP · Oracle · Dynamics) — return to their INITIAL state. Dirty / edited / demo data is removed, and so are the Project Orders pushed from the BIM viewer.\n\nThe tenants YOU created (and all their data) are KEPT untouched.')) return;
     console.log('§SEED-RESET start floor=' + SEED_FLOOR);
 
     // 1+2. re-fetch the PRISTINE shipped seed, then rebuild it with the resident (>= floor) snapshot.
@@ -293,16 +314,17 @@
     console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
 
     // 3. persist the rebuilt base as the live cache (replaces the mutated blob).
-    try { await idbPutBlob('ad_seed_v16', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v16 pristine+resident'); }
+    try { await idbPutBlob('ad_seed_v18', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v18 pristine+resident'); }
     catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
     try { fresh.close(); } catch (e) {}
     // 4. clear the World history (whole-history timeline) + the kernel op-log so the reset is a clean slate.
     //    (born-tenant DATA is preserved above; only the audit/history trail is reset — the user's call.)
     clearWorldHistory(); await delIdb(OPLOG_IDB);
     console.log('§SEED-RESET cleared world-history + op-log (' + OPLOG_IDB + ')');
+    await clearBimPushStore();
     var kept = 0; try { var kr = db.exec('SELECT COUNT(*) FROM AD_Client WHERE AD_Client_ID >= ' + SEED_FLOOR); kept = (kr.length && kr[0].values.length) ? kr[0].values[0][0] : 0; } catch (e) {}
     console.log('§SEED-RESET done keptTenants=' + kept + ' — reloading');
-    if (global.alert) global.alert('Reset demo / seed ERPs — done.\n\n• Shipped ERPs restored to their initial state\n• World history + kernel op-log cleared\n• Your created tenant(s) kept: ' + kept + '\n\nClick OK to reload.');
+    if (global.alert) global.alert('Reset demo / seed ERPs — done.\n\n• Shipped ERPs restored to their initial state\n• World history + kernel op-log cleared\n• Project Orders pushed from the BIM viewer removed\n• Your created tenant(s) kept: ' + kept + '\n\nClick OK to reload.');
     location.reload();
   }
 
@@ -312,6 +334,7 @@
     // the WHOLE local footprint: data cache · op-log · plugins · device signer · World history · SW asset caches
     clearWorldHistory();
     for (var i = 0; i < FULL_WIPE_IDB.length; i++) { try { await delIdb(FULL_WIPE_IDB[i]); console.log('§SYSTEM-MONITOR wiped idb=' + FULL_WIPE_IDB[i]); } catch (e) {} }
+    await clearBimPushStore();
     try { if (global.caches) { var ks = await caches.keys(); await Promise.all(ks.filter(function (k) { return /erp-ootb-/.test(k); }).map(function (k) { return caches.delete(k); })); } } catch (e) {}
     console.log('§SYSTEM-MONITOR reset-to-seed done (world-history + op-log + plugins + signer cleared) — reloading');
     if (global.alert) global.alert('Reset to seed (full) — done.\n\nCleared everything local: all tenants you created, the kernel op-log, the World history, installed plugins and the device key.\n\nClick OK to reload fresh from the shipped seed.');
@@ -334,7 +357,7 @@
     });
   }
 
-  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed,
+  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed, _clearBimPushStore: clearBimPushStore,
     resolveRelease: resolveRelease, releaseHref: releaseHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.SystemMonitor;
 })(typeof window !== 'undefined' ? window : this);
