@@ -530,7 +530,7 @@
         var a = agg[k], rt = R[a.cls], unit = rt ? rt.unit : 'EA', rate = rt ? rt.rate : 0, qty, unpriced = false;
         // §CIVIL_RATES — the SAME owner boq_charts.html uses: a civil discipline prices by DISCIPLINE (rates.js CIVIL_RATES),
         // never by the generic proxy class's building rate. rate null (no cited SoR) → qty carried, price 0, flagged unpriced.
-        var _CR = (typeof window !== 'undefined' && window.CIVIL_RATES) || (typeof CIVIL_RATES !== 'undefined' ? CIVIL_RATES : null);
+        var _CR = (typeof window !== 'undefined' && window.CIVIL_RATES) || null;   // rates.js top-level var → window.CIVIL_RATES
         var cr = (_CR && a.disc && a.disc.charAt(0) !== '_') ? _CR[a.disc] : null;
         if (cr) { rt = null; unit = cr.qtyBasis || 'EA'; rate = cr.rate != null ? cr.rate : 0; unpriced = cr.rate == null; }
         if (unit === 'M') qty = a.len; else if (unit === 'M2') qty = a.area; else if (unit === 'M3') qty = a.vol; else { unit = rt ? unit : 'EA'; qty = a.cnt; }
