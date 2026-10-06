@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-CARD-FONT, §129.39 (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §129.39).
  *
  * THE ISSUE IT PROVES OR DISPROVES:
@@ -28,7 +29,7 @@
 // it against the fontPx the layout measured the plate with. A no-op fix would show them still
 // disagreeing; a wrong one would show a font that is not the layout's own number.
 const fs=require('fs'), vm=require('vm');
-const src=fs.readFileSync(process.argv[2] || '/tmp/wt-loadpath/viewer/cpe_load_path.js','utf8');
+const src=__readSrc(process.argv[2] || '/tmp/wt-loadpath/viewer/cpe_load_path.js','utf8');
 const seen=[];
 function mkCtx(){
   return { font:'10px sans-serif', fillStyle:'', textAlign:'', textBaseline:'', canvas:{width:1920,height:1080},

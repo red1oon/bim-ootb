@@ -1,0 +1,16 @@
+{
+  "family": "cpe_load_path",
+  "file": "viewer/cpe_load_path.js",
+  "container": { "kind": "function", "name": "setupCpeLoadPath" },
+  "shared": "LPS",
+  "registry": "__cpeLoadPathParts",
+  "prefix": "lp_",
+  "parts": [
+    { "name": "chain" },
+    { "name": "geom_pick", "startsAt": "_chainWorldBBox" },
+    { "name": "build", "startsAt": "_framingWitness" },
+    { "name": "backdrop_diag", "startsAt": "_backdropFadeT" },
+    { "name": "apply_restore", "startsAt": "A.loadPathApplyVisual" },
+    { "name": "hud", "startsAt": "_freeVerticalSpan" }
+  ]
+}

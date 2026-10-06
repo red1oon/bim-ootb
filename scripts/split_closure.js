@@ -66,7 +66,10 @@ if (new RegExp('\\b' + SH + '\\b').test(src)) refuse('shared name "' + SH + '" a
 
 // ── assign statements to parts by anchor NAME ────────────────────────────────────────────────────────────────
 const declNames = (st) => ts.isFunctionDeclaration(st) && st.name ? [st.name.text]
-  : ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => ts.isIdentifier(d.name) ? d.name.text : null) : [];
+  : ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => ts.isIdentifier(d.name) ? d.name.text : null)
+  // an anchor may also be an assignment target like "A.loadPathApplyVisual" (a part that starts with `A.x = function…`)
+  : (ts.isExpressionStatement(st) && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+    ? [st.expression.left.getText(sf)] : [];
 const partIdx = new Array(stmts.length); let cur = 0;
 stmts.forEach((st, i) => {
   const nx = cfg.parts[cur + 1];
