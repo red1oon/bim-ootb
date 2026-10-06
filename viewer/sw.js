@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1594';
+const CACHE_VERSION = 'v1595';
+// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=2, #sec-axes.
 // v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=1, main.js setupCivilSections.
 // v1594 (2026-10-06) §EW_VOLUME_SURFACE: earthworks_volume.js (ONE owner of the volume line) -> Alt+C ground card, model_check_report.html, boq_charts.html.
 // v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
