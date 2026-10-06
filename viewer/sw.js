@@ -187,6 +187,8 @@
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
 const CACHE_VERSION = 'v1603';
+// v1603 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill.
+// v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=4.
 // v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=3.
 // v1600 (main)
 // v1597 (2026-10-06) §SKY_GHOST_SKYLINE: a civil model builds no fake-city skyline ring (effects.js?v=150); tools/sky_ghost_detect.js + viewer/tests/witness_sky_ghost.js.
