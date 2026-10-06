@@ -15,7 +15,7 @@
   'use strict';
 
   function init(A, nav, getStartNavigation) {
-    'use strict';
+    // <split-driver> (readUnsplit() in viewer/tests/_split_families.js rebuilds the original body here)
     // Body split move-only into nf_ui_history.js, nf_tree_lens.js, nf_highlight_cost.js, nf_room.js, nf_trees.js, nf_isolate_drill.js, nf_panel_search.js (loaded before this file) by scripts/split_closure.js
     // (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Each part is a generator: phase 1 (to its `yield`) hoists its
     // functions/vars and publishes shared names on NF; phase 2 runs its original statements, parts in original order.
@@ -27,6 +27,7 @@
     var parts = ORDER.map(function (n) { return R[n](NF, A, nav, getStartNavigation); });
     parts.forEach(function (p) { p.next(); });   // phase 1
     parts.forEach(function (p) { p.next(); });   // phase 2
+    // </split-driver>
   }
 
   console.log('§NAV_FIND_VERSION v41 — yellow-outline + focus-bg(tree+results) + adjustable-panel');

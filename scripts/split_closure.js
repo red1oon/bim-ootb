@@ -56,6 +56,12 @@ if (!C) refuse('container not found: ' + JSON.stringify(cfg.container));
 const isAsync = !!(C.modifiers && C.modifiers.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
 const params = C.parameters.map((p) => { if (!ts.isIdentifier(p.name)) refuse('non-identifier parameter'); return p.name.text; });
 const stmts = C.body.statements;
+// strictness: parts and driver are strict ONLY if the original container already ran strict (a directive in it or in
+// any enclosing function / the file). Adding 'use strict' to sloppy code would change its behaviour.
+const hasStrictDirective = (body) => { for (const st of body.statements) { if (!(ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression))) break; if (st.expression.text === 'use strict') return true; } return false; };
+let STRICT = hasStrictDirective(C.body) || hasStrictDirective(sf);
+for (let p = C.parent; p && !STRICT; p = p.parent) if (ts.isFunctionLike(p) && p.body && ts.isBlock(p.body) && hasStrictDirective(p.body)) STRICT = true;
+const USE_STRICT = STRICT ? "  'use strict';\n" : '', OWN_STRICT = hasStrictDirective(C.body);   // parts are files: they need it explicitly; the driver repeats only the container's own directive
 if (new RegExp('\\b' + SH + '\\b').test(src)) refuse('shared name "' + SH + '" already occurs in the file');
 
 // ── assign statements to parts by anchor NAME ────────────────────────────────────────────────────────────────
@@ -155,7 +161,7 @@ cfg.parts.forEach((P, pi) => {
     '// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.\n' +
     G + '.' + REG + ' = ' + G + '.' + REG + ' || {};\n' +
     G + '.' + REG + '.' + P.name + ' = ' + (asyncRun ? 'async ' : '') + 'function* __split_' + FAMILY + '_' + P.name + '(' + [SH].concat(params).join(', ') + ') {\n' +
-    "  'use strict';\n" +
+    USE_STRICT +
     (pub.length ? '  // phase 1 — publish this part\'s names that other parts use (same function objects; vars as live accessors)\n' + pub.join('\n') + '\n' : '') +
     '  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order\n' +
     text + '\n};\n');
@@ -166,7 +172,7 @@ cfg.parts.forEach((P, pi) => {
 // ── rewrite the container body as the driver ─────────────────────────────────────────────────────────────────
 const anyAsync = asyncParts.length > 0;
 const ind = ' '.repeat(sf.getLineAndCharacterOfPosition(stmts[0].getStart(sf)).character), indClose = ' '.repeat(Math.max(0, ind.length - 2));
-const driver = '{\n' + ind + "'use strict';\n" +
+const driver = '{\n' + (OWN_STRICT ? ind + "'use strict';\n" : '') + ind + '// <split-driver> (readUnsplit() in viewer/tests/_split_families.js rebuilds the original body here)\n' +
   ind + '// Body split move-only into ' + files.join(', ') + ' (loaded before this file) by scripts/split_closure.js\n' +
   ind + '// (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Each part is a generator: phase 1 (to its `yield`) hoists its\n' +
   ind + '// functions/vars and publishes shared names on ' + SH + '; phase 2 runs its original statements, parts in original order.\n' +
@@ -181,8 +187,8 @@ const driver = '{\n' + ind + "'use strict';\n" +
       ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') await r2; }\n'
     : ind + 'parts.forEach(function (p) { p.next(); });   // phase 1\n' +
       ind + 'parts.forEach(function (p) { p.next(); });   // phase 2\n') +
-  indClose + '}';
+  ind + '// </split-driver>\n' + indClose + '}';
 const shell = src.slice(0, C.body.getStart(sf)) + driver + src.slice(C.body.end);
 fs.writeFileSync(path.join(OUT, path.basename(cfg.file)), shell);
 console.log(report.join('\n'));
-console.log('§SPLIT_DONE ' + FAMILY + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);
+console.log('§SPLIT_DONE ' + FAMILY + ' strict=' + STRICT + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);
