@@ -1057,7 +1057,15 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
 <script src="zone_index.js?v=1" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
 <script src="support_sweep.js?v=1" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="time_machine.js?v=86" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
+<script src="tm_core.js?v=1" onerror="console.warn('§LOAD_FAIL tm_core.js')"></script>
+<script src="tm_render.js?v=1" onerror="console.warn('§LOAD_FAIL tm_render.js')"></script>
+<script src="tm_panel.js?v=1" onerror="console.warn('§LOAD_FAIL tm_panel.js')"></script>
+<script src="tm_sched_xray.js?v=1" onerror="console.warn('§LOAD_FAIL tm_sched_xray.js')"></script>
+<script src="tm_gantt_build.js?v=1" onerror="console.warn('§LOAD_FAIL tm_gantt_build.js')"></script>
+<script src="tm_gantt_edit.js?v=1" onerror="console.warn('§LOAD_FAIL tm_gantt_edit.js')"></script>
+<script src="tm_dash.js?v=1" onerror="console.warn('§LOAD_FAIL tm_dash.js')"></script>
+<script src="tm_lifecycle_api.js?v=1" onerror="console.warn('§LOAD_FAIL tm_lifecycle_api.js')"></script>
+<script src="time_machine.js?v=87" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=4" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source

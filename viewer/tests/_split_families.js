@@ -7,7 +7,7 @@ const V = path.join(__dirname, '..');
 const FAMILIES = {
   time_machine: {
     shell: 'time_machine.js', shared: 'TMS',
-    files: ['time_machine.js'],
+    files: ['tm_core.js', 'tm_render.js', 'tm_panel.js', 'tm_sched_xray.js', 'tm_gantt_build.js', 'tm_gantt_edit.js', 'tm_dash.js', 'tm_lifecycle_api.js', 'time_machine.js'],
     loader: { kind: 'html', file: 'viewer.html' },
     runtime: () => {},                                      // IIFE: what it defines happens at load (window.tm* API)
   },
@@ -52,7 +52,8 @@ function readUnsplit(name, dir) {
     return t.slice(y + 1, t.lastIndexOf('\n};'));
   }).join('').replace(/return \{ __splitReturn: true(?:, value: ([\s\S]*?))? \};/g, (m, x) => x ? 'return ' + x + ';' : 'return;')   // early-exit marker
     .replace(new RegExp('\\b' + SH + '\\.', 'g'), '');   // a shorthand {x} comes back as {x: x}: same meaning
-  const lineStart = shellSrc.lastIndexOf('\n', a) + 1, lineEnd = shellSrc.indexOf('\n', b) + 1;
+  // cut BEFORE the newline that ends the line above the marker: each part's text starts with its own leading newline
+  const lineStart = shellSrc.lastIndexOf('\n', a), lineEnd = shellSrc.indexOf('\n', b) + 1;
   return shellSrc.slice(0, lineStart) + body + '\n' + shellSrc.slice(lineEnd);
 }
 // readSource(p, enc) — drop-in for fs.readFileSync in tests that read a module's source: a split module's shell comes
