@@ -17,7 +17,7 @@ function check(name, cond, detail) {
 }
 function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
 
-var nf = read('navigate_find.js');
+var nf = require('../../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
 var tm = read('time_machine.js');
 
 // Router branches present in applyFindScope (whole function body).

@@ -99,7 +99,7 @@ ok(eqArr([...discHidden(allDiscs, ['MEP'])].sort(), ['ARC', 'ELEC', 'STR']), 'si
 
 // ── Issue 5: deployed source actually defines the contract (guards against drift) ──
 const panels = fs.readFileSync(path.resolve(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
-const navfind = fs.readFileSync(path.resolve(__dirname, '..', 'viewer', 'navigate_find.js'), 'utf8');
+const navfind = require('../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
 ok(/A\._storeyVisible\s*=\s*function/.test(panels), 'panels.js defines A._storeyVisible');
 ok(/A\.filterDiscs\s*=\s*function/.test(panels), 'panels.js defines A.filterDiscs');
 ok(/§FIND_MULTISEL/.test(navfind), 'navigate_find.js logs §FIND_MULTISEL');
