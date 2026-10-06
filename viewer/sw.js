@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1591';
+const CACHE_VERSION = 'v1592';
+// v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
 // v1591 (2026-10-06) §EARTHWORKS_VOLUME: cpe_road_panels.js earthworks volume line on the planned card (closed-solid gate).
 // v1590 (2026-10-06) §CPE_CHECKBOX_SAVE: every Alt+C box marks the path edited + persists in cinema_path (8 new columns); effects.js?v=149 cinema_path_editor.js?v=23 cinema_maxq.js?v=42 scene.js?v=73.
 // v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
