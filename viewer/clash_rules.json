@@ -123,6 +123,14 @@
       "target": { "discipline": "LIGHTING" },
       "tolerance_m": 0,
       "ignore_classes": ["IfcOpeningElement"]
+    },
+    {
+      "name": "GEOTECH vs DRAINAGE",
+      "family": "civil",
+      "source": { "discipline": "GEOTECH" },
+      "target": { "discipline": "DRAINAGE" },
+      "tolerance_m": 0,
+      "ignore_classes": ["IfcOpeningElement"]
     }
   ],
   "severity": {
