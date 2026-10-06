@@ -6033,6 +6033,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   class (c_projectline → m_product.value, the proj_fold key), null = whole-building floor. _lastBimScope =
     //   the nearest/latest remembered scope (the "no discerning record / blank page" fallback). NON-INVENT.
     var _lastBimScope = null;
+    var _zoomViewerWin = null;                                       // §ZOOM-REUSE: handle of the viewer this ERP tab opened (focus target)
     // §ZOOM-LINKBACK — a Project Order pushed from the viewer carries its source: Description='BIM src db=<url>' and
     //   Note=<pushed GUIDs> (viewer/find_erp_push.js). sc.db overrides the <bld>_extracted.db convention (Hospital has
     //   no tag → unchanged); header scope with GUIDs uses them as find= (applyFindScope's existing guid-set path).
@@ -6152,8 +6153,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = _viewerUrl(sc, homeUrl);
         url += _zoomLang();                                          // S226 §R1.1 — the Viewer opens in the ERP's language
-        window.open(url, '_blank');
-        console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
+        // §ZOOM-REUSE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ZOOM_BACK_FIELD 5): ask an OPEN viewer on the same model db
+        //   first (BroadcastChannel, key = the db URL resolved like the viewer resolves it); it zooms in place. No answer in
+        //   400 ms → cold open, logged as such (an explicit branch, not a silent fall-through).
+        var dbAbs = ''; try { dbAbs = new URL(decodeURIComponent((/[?&]db=([^&]+)/.exec(url) || [])[1] || ''), new URL(url, location.href)).href; } catch (e) {}
+        var findParam = (/[?&]find=([^&]+)/.exec(url) || [])[1];
+        var bc = null; try { bc = (typeof BroadcastChannel !== 'undefined' && dbAbs) ? new BroadcastChannel('bim-zoom-across') : null; } catch (e) {}
+        var rid = 'z' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), done = false;
+        var cold = function (why) {
+          if (done) return; done = true; if (bc) bc.close();
+          console.log('§ZOOM-REUSE none (' + why + ') → cold open');
+          _zoomViewerWin = window.open(url, '_blank');
+          console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
+        };
+        if (!bc) return cold(dbAbs ? 'no BroadcastChannel' : 'db url unresolved');
+        bc.onmessage = function (e) {
+          var m = e.data || {}; if (m.type !== 'zoom!' || m.id !== rid || done) return;
+          done = true; bc.close();
+          if (_zoomViewerWin && !_zoomViewerWin.closed) { try { _zoomViewerWin.focus(); } catch (x) {} }
+          status('Zoomed in the open BIM Viewer tab');
+          console.log('§ZOOM-REUSE hit id=' + rid + ' db=' + dbAbs + ' focusedHandle=' + !!(_zoomViewerWin && !_zoomViewerWin.closed));
+        };
+        bc.postMessage({ type: 'zoom?', id: rid, db: dbAbs, find: findParam ? decodeURIComponent(findParam) : '', t0: Date.now() });
+        setTimeout(function () { cold('no open viewer on ' + dbAbs); }, 400);
       }
     });
     // PP_ORDER_ZOOM_TM_SPEC §A — the manufacturing/project order destination: BIM Viewer in TimeMachine mode,

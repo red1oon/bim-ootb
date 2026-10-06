@@ -118,6 +118,30 @@ async function initViewer() {
       }, 300);
     } catch (e) { /* never block boot */ }
   })();
+  // §ZOOM-REUSE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ZOOM_BACK_FIELD 5; user 2026-10-07: "it can reuse the open tab if it is
+  //   opened. Only when not, it loads again"). The ERP red pill asks on a same-origin BroadcastChannel first; a viewer whose model db
+  //   (resolved absolute URL — the key, never a model name) matches answers and zooms IN PLACE (no reload). TM is closed first:
+  //   a zoom-back is a straight Find zoom. Only one tab answers (the first to claim the request id).
+  (function () {
+    try {
+      if (typeof BroadcastChannel === 'undefined') return;
+      var bc = new BroadcastChannel('bim-zoom-across');
+      bc.onmessage = function (e) {
+        var m = e.data || {};
+        if (m.type !== 'zoom?' || !m.db || !APP.db || typeof APP.applyFindScope !== 'function') return;
+        var mine = ''; try { mine = new URL(APP.DB_URL, location.href).href; } catch (x) {}
+        if (m.db !== mine) return;
+        bc.postMessage({ type: 'zoom!', id: m.id });
+        var scope = String(m.find || '');
+        if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (x) { scope = ''; } }
+        var st = null; try { st = window.tmGetState && window.tmGetState(); } catch (x) {}
+        if (st && st.active && typeof window.toggleTimeMachine === 'function') { window.toggleTimeMachine(); console.log('§ZOOM-REUSE closed-tm'); }
+        var n = scope ? APP.applyFindScope(scope) : 0;
+        console.log('§ZOOM-REUSE hit db=' + mine + ' find=' + (scope ? scope.length + 'ch' : '-') + ' focused=' + n + ' ms=' + (m.t0 ? Date.now() - m.t0 : -1) + ' (no reload)');
+        try { window.focus(); } catch (x) {}
+      };
+    } catch (e) { console.log('§ZOOM-REUSE listener-fail ' + (e && e.message)); }
+  })();
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
   if (typeof setupGhostGlass === 'function') setupGhostGlass(APP);
@@ -1215,6 +1239,13 @@ async function initViewer() {
                 "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
               if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
               var sr = ssRows[0], ssApplied = [];
+              // §ZOOM_LANDING_NO_RESTORE (user 2026-10-07: zoom back "reload afresh with Time Machine"): a ?find= landing is a
+              //   deliberate zoom, so the saved default view's camera, saved Find filter and Time Machine are NOT re-applied
+              //   (they fought the zoom and routed it into the TM). xray/dlod/walk/panel still restore.
+              if (/[?&]find=/.test(location.search)) {
+                if (sr[11]) console.log('§SCENE_STATE_RESTORE skip=tm,camera,find (zoom landing)');
+                sr = sr.slice(); sr[0] = null; sr[10] = null; sr[11] = 0;
+              }
               if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
                 var scp = APP.ifc2three(sr[0], sr[1], sr[2]), sct = APP.ifc2three(sr[3], sr[4], sr[5]);
                 APP.camera.position.set(scp.x, scp.y, scp.z);
