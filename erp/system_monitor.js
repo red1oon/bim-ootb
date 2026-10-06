@@ -314,7 +314,7 @@
     console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
 
     // 3. persist the rebuilt base as the live cache (replaces the mutated blob).
-    try { await idbPutBlob('ad_seed_v16', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v16 pristine+resident'); }
+    try { await idbPutBlob('ad_seed_v18', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v18 pristine+resident'); }
     catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
     try { fresh.close(); } catch (e) {}
     // 4. clear the World history (whole-history timeline) + the kernel op-log so the reset is a clean slate.
