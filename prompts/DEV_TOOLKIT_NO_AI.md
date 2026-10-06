@@ -46,6 +46,7 @@ they read what the code already prints.
 | T6 | "Who owns this value?" | **Owner Trace** — for a 4D question, the owning function from `4D_MODEL_INTEGRITY.md §I` | Profiler / call graph |
 | T7 | "What is in the local DB right now?" | **Data peek** — open SQLite / IndexedDB snapshot read-only | DB Browser + IndexedDB inspector |
 | T8 | "Let me replay the bug offline" | **Record/Replay** — save inputs + `§` log, replay headless in Node | Replay.io |
+| T9 | "What is the canvas actually showing?" | **Scene Snapshot** — the render state as numbers (JSON), diffable with T3 | Screenshot / eyeballing the canvas |
 
 ## §3 Triage (rank = pain killed ÷ cost)
 | Rank | Tool | Pain evidence | Cost | Verdict |
@@ -53,6 +54,7 @@ they read what the code already prints.
 | **P1** | T1 §-Lens | CLAUDE.md PRIMAL LAW §3: "the shipped §-log is PRIMARY EVIDENCE" — but it is unreadable as raw console scroll at ~5k call sites | S–M (see §4.1 mechanism) | **BUILD FIRST** |
 | **P1** | T2 Version Doctor | Memory: "stale tab serves stale JS" — recurring false defects (CPE resume 2026-09-01; `AGENT_QUEUE.md` "check the INSTRUMENT before believing the defect") | S | **BUILD FIRST** |
 | **P1** | T3 §-Diff | Every regression hunt is a good-vs-bad comparison; today done by eye or by Claude | S (pure text over two log files) | **BUILD FIRST** |
+| **P1** | T9 Scene Snapshot | PRIMAL LAW §1 + FUNDAMENTAL LAW: screenshots are not proof — but devs still need to know what the canvas shows. Numbers give both | S (rides on T2's bridge) | **BUILD FIRST** (user agreed 2026-10-06) |
 | P2 | T4 §-Spec hover | 5,262 tags; their meaning lives in `prompts/*.md` + `docs/`, which only Claude reads fluently | S (index tag → file:heading) | build second |
 | P2 | T5 Witness Explorer | 211 witnesses run by hand; INCONCLUSIVE rule (PRIMAL LAW §4) not visible | M (needs a summary-line contract — §4.5) | build second |
 | P3 | T6 Owner Trace | Real (5 re-derivations in 2 sessions) but covers 4D only; needs §I as data, not prose | M | park until §I is machine-readable |
@@ -85,6 +87,14 @@ they read what the code already prints.
   STALE; reload → must report MATCH. Red control: fake equal versions → must not report STALE.
   *Issue it proves:* "stale tab" is caught before it is mistaken for a code bug.
 
+- **Localhost freshness finding (2026-10-06, read from `origin/main` `sw.js` ×3):** the service workers
+  have **no localhost bypass**. Precached files are cache-first everywhere (`viewer/sw.js:1200`,
+  `modeller/sw.js:121`; `erp/sw.js:11`). So on `localhost:8000`, **save + reload can serve the OLD file**
+  until `CACHE_VERSION` is bumped. Serving from the working tree is live for network-first files only.
+  Spec options, pick one at lock: (a) the dev launch config starts Chrome with the SW bypassed
+  (no app change); (b) a `?nosw` / localhost rule in the 3 `sw.js` (app change, 3 files).
+  Version Doctor must flag this case per file: `disk newer than served → STALE (SW cache)`.
+
 ### §4.3 T3 §-Diff
 - **Input:** two log files (good, bad) — from §-Lens "save log", from `cache_4d_run.js`, or any witness log.
 - **Output:** per tag: `only in good`, `only in bad`, `count changed`, `value changed` (numbers in the line
@@ -106,9 +116,23 @@ they read what the code already prints.
   do not. Count how many of the 211 use `contract.js` before building (spike S1). Non-uniform ones show
   as `UNKNOWN`, never green.
 
+### §4.6 T9 Scene Snapshot (user agreed 2026-10-06)
+- **What:** one command in VS Code → the running tab (via the `?devtk=1` bridge, §4.2) returns JSON:
+  camera position / target / angle, objects loaded vs visible, model bounding box, draw calls, vertex
+  count, heap (`performance.memory`), active app + building, 4D frame / time position.
+- **Use:** saved next to the `§` log; compared with T3 (`visible 1,204 vs 3,880`). Numbers are the truth.
+- **Thumbnail (optional):** a small canvas image saved beside the JSON, labelled *view only, not evidence*.
+  It is never what a witness asserts on. Existing pixel-diff witnesses stay the only place pixels become
+  a number.
+- **Field list is extracted, not invented:** each field must name the existing object it reads (e.g. the
+  viewer's camera / renderer `info`) at spec lock — spike S3.
+- **Witness `§DEVTK_SCENE`:** load a known building at a fixed camera → visible count and bbox match a
+  stored baseline. Red control: move the camera → the snapshot must differ.
+  *Issue it proves:* a dev can state what the canvas shows as numbers, without a screenshot.
+
 ## §5 Packaging — install like any other plugin
 - **Source:** `bim-ootb/devtools/vscode/` — one folder per extension (`slens/`, `version-doctor/`,
-  `sdiff/`, `spec-hover/`, `witness-explorer/`) + `pack/` = an **Extension Pack** (`extensionPack` field in
+  `sdiff/`, `scene-snapshot/`, `spec-hover/`, `witness-explorer/`) + `pack/` = an **Extension Pack** (`extensionPack` field in
   its `package.json`) that installs the set in one go, plus a recommended existing SQLite viewer (T7).
 - **Build:** `npx @vscode/vsce package` per extension → `.vsix` files.
 - **Install (dev, any machine):** VS Code → Extensions → `…` → *Install from VSIX*, or
@@ -123,6 +147,7 @@ they read what the code already prints.
 |---|---|---|
 | S0 | Does js-debug give `source`/`line` on page `console.log` output events? | T1 live mode vs file-only |
 | S1 | How many of 211 witnesses print a `contract.js` summary? | T5 scope |
+| S3 | Which existing viewer/erp/modeller objects hold each T9 field? | T9 field list |
 | S2 | Can the running tab report its active SW version to an outside caller without the bridge? | whether §4.2 needs app code at all |
 
 ## §7 Open decisions (user's call)
@@ -134,7 +159,7 @@ they read what the code already prints.
 | Item | State |
 |---|---|
 | Triage (§2–§3) | ✅ written 2026-10-06 |
-| P1 specs §4.1–§4.3 | draft — lock after S0, S2 |
+| P1 specs §4.1–§4.3, §4.6 | draft — lock after S0, S2, S3 |
 | P2 specs §4.4–§4.5 | draft — lock after S1 |
 | Packaging §5 | draft |
 | Implementation | not started |
