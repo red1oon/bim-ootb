@@ -100,6 +100,7 @@ async function initViewer() {
       var _zm = /[?&]find=([^&]+)/.exec(location.search);
       if (!_zm) return;
       var scope = decodeURIComponent(_zm[1].replace(/\+/g, ' '));
+      if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (e) { scope = ''; } if (!scope) return; }   // §ZOOM-LINKBACK long GUID set handoff
       var tries = 0, poll = setInterval(function () {
         tries++;
         if (!APP.db) { if (tries > 300) clearInterval(poll); return; } // wait for the model db (runSearch needs it)

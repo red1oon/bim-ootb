@@ -39,8 +39,14 @@ const server = http.createServer((req, res) => { try {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   await new Promise(r => server.listen(PORT, '127.0.0.1', r));
+  // GPU=real → the bakes' selector (cli_silent_bake.js §HEADFUL_GPU_SELECT): swiftshader recompiles every material when 421 meshes
+  // change clip planes and the "leave" block crashed the page twice (CIVIL_HIGHWAY_JELAPANG.md §SECTIONS_BLOCKER).
+  const REAL = process.env.GPU === 'real';
   const b = await puppeteer.launch({ headless: true, userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'wcs-')), protocolTimeout: 1800000,
-    args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--js-flags=--max-old-space-size=8192'] });
+    env: Object.assign({}, process.env, REAL ? { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' } : {}),
+    args: ['--no-sandbox', '--js-flags=--max-old-space-size=8192'].concat(REAL ? ['--use-angle=gl-egl', '--ignore-gpu-blocklist']
+      : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']) });
+  log('  [gpu] ' + (REAL ? 'real (gl-egl, NVIDIA vendor pin)' : 'swiftshader'));
   const fin = async (code) => { fs.writeFileSync(LOG, out.join('\n') + '\n'); try { await b.close(); } catch (e) {} server.close(); process.exit(code); };
   const p = await b.newPage(); await p.setViewport({ width: 1280, height: 800 });
   p.on('console', m => { const t = m.text(); if (/§(LONG_SECTION|PROFILE_LENS|CROSS_SECTION|CIVIL_MODEL|ALTC_HIGHWAY|CIVIL_ROUTE)/.test(t)) log('  [con] ' + t); });
@@ -295,12 +301,20 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   add('Cross: cut set == independent bbox-straddle recompute (raw vertices x matrix) at each scrub', XS.res.every(x => x.onlyP === 0 && x.onlyI === 0 && x.prod === x.indep), JSON.stringify(XS.res.map(x => [x.s, x.prod, x.indep, x.onlyP, x.onlyI])));
 
   // ---- leaving the mode ----
-  const Z = await p.evaluate(() => { const A = APP, cnt = () => { const ms = A.collectMeshes(o => o.isMesh); return { one: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 1).length, two: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 2).length, n: ms.length }; };
-    document.getElementById('sec-axis-x').click(); const afterX = cnt(), modeX = A._secMode, axis = A.sectionAxis, slMax = document.getElementById('section-slider').max;
-    document.getElementById('sec-axis-cross').click(); document.getElementById('sec-axis-y').click(); const afterY = cnt();
-    A.toggleSection(); const closed = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length;
-    A.toggleSection(); document.getElementById('sec-axis-long').click(); A.toggleSection(); const closedLong = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length;
-    return { afterX, modeX, axis, slMax, afterY, closed, closedLong, cs: A._civilSection, canvas: document.getElementById('civil-lens').style.display }; });
+  // §SECTIONS_BLOCKER fix: the leave sequence ran as ONE evaluate (5 mode switches, each re-setting clip planes on every mesh) —
+  // now one short evaluate per step with a settle between, so no single protocol call carries the whole recompile burst.
+  const cntJs = () => { const ms = APP.collectMeshes(o => o.isMesh); return { one: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 1).length, two: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 2).length, n: ms.length, any: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length }; };
+  const step = async (fn) => { await p.evaluate(fn); await sleep(1500); return p.evaluate(cntJs); };
+  const Z = {};
+  Z.afterX = await step(() => document.getElementById('sec-axis-x').click());
+  Object.assign(Z, await p.evaluate(() => ({ modeX: APP._secMode, axis: APP.sectionAxis, slMax: document.getElementById('section-slider').max, cs: APP._civilSection })));
+  await step(() => document.getElementById('sec-axis-cross').click());
+  Z.afterY = await step(() => document.getElementById('sec-axis-y').click());
+  Z.closed = (await step(() => APP.toggleSection())).any;
+  await step(() => APP.toggleSection());
+  await step(() => document.getElementById('sec-axis-long').click());
+  Z.closedLong = (await step(() => APP.toggleSection())).any;
+  Z.canvas = await p.evaluate(() => document.getElementById('civil-lens').style.display);
   log('  [leave] ' + JSON.stringify(Z));
   add('X after Cross: 1 clip plane on every mesh (not 2), civil slab cleared, mode off', Z.afterX.one === Z.afterX.n && Z.afterX.two === 0 && Z.modeX === null && Z.axis === 'X' && Z.cs === null, JSON.stringify(Z.afterX));
   add('Y after Cross: 1 clip plane, not 2', Z.afterY.one === Z.afterY.n && Z.afterY.two === 0, JSON.stringify(Z.afterY));
