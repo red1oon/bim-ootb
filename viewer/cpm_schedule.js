@@ -54,10 +54,16 @@
   })();
   var SS = 0, FS = 1;
 
-  // contactGraph(items) — same algorithm, same shipped ScheduleGate CELL/EPS/GAP constants as
-  // time_machine.js _contactGraph (the judge). This module is the destined single home of the
-  // relation (§CPM_SPEC stage 4); until retirement, probe_cpm_schedule.js §CPM_PARITY asserts the
-  // two copies agree contact-for-contact so they cannot drift unnoticed.
+  // contactGraph(items) — THE owner of the physical support relation (bim-compiler prompts/4D_MODEL_INTEGRITY.md
+  // §I.1a, 2026-10-06). support_sweep.js's contactGraph/designatedSupport delegate here; there is no second copy.
+  // contactGraph(items) — the one place the physical world is derived. Both the repair below and
+  // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
+  // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
+  // (x0,x1,y0,y1,bz,tz) — times are read later, never here: geometry does not move — plus
+  // seq/phase for the §GROUND_CONNECTED classification seeds (absent ⇒ NOT exempt, never looser;
+  // a population carrying none at all takes the ground-band fallback, see below).
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok,
+  //           groundConnected: Uint8Array, groundConnectedN, groundSeeds, groundSeedMode }.
   function contactGraph(items) {
     var SG = (typeof global.ScheduleGate !== 'undefined') ? global.ScheduleGate
       : (typeof ScheduleGate !== 'undefined' ? ScheduleGate : null);
@@ -96,13 +102,46 @@
       contacts[i] = list;
       if (grounded[i]) groundedN++;
     }
-    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — byte-identical
-    // twin of support_sweep.js _contactGraph's block; the full doctrine comment lives THERE (one
-    // home), probe_cpm_schedule.js §CPM_PARITY diffs the two verdicts element-for-element. Summary:
-    // the orphan exemption is classification + DIRECTED reachability (supporter -> supported) over
-    // the contacts just built, seeded from seq===1 / phase==='Substructure'; a population with no
-    // classified ground at all falls back to footprint-grounded elements within
-    // ScheduleGate.GROUND_BAND of its 1st-percentile base. `grounded[i]` is never the exemption.
+    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — the orphan
+    // exemption is DERIVED from classification and graph reachability, never from `grounded[i]`.
+    // `grounded[i]` answers "is nothing beneath me in my own XY column" (footprint-local; correct
+    // for "rests on soil in its footprint", §I.2) and was reused on this line as "is this element
+    // allowed to be unsupported" — a different question whose answer §I.2 already names: seq===1.
+    // Two failure shapes, one root line: (a) an element with ZERO contacts and nothing below it
+    // defaulted into "grounded" by the absence of any comparison; (b) the bottom of a stack that
+    // never reaches real ground read grounded=1 because "nothing below me in my column" is locally
+    // true (HHS's three 7m Stahlbalkon brackets at bz 3.74: contacts=0, grounded=1 — absorbed into
+    // groundedN, never an orphan, revealed alone in the bake). Fix: a DIRECTED walk along the
+    // support edges this function already built (contacts[i] = "what supports i"; the walk goes
+    // supporter -> supported), seeded from the true-ground population. An element is ground-
+    // connected iff it is a seed or something ground-connected supports it; everything else is an
+    // orphan REGARDLESS of grounded[i]. Directed, not undirected: the segment resting ON a floating
+    // bracket lists the bracket as its bearing contact, and an undirected walk would let that
+    // segment "rescue" the bracket — the backward "I depend on the thing resting on me" edge
+    // §GROUNDED_NEVER_HANGS already rejects (measured: undirected reaches all 6839 of HHS).
+    //   seeds (classification, §I.2): seq===1 (IfcFooting/IfcPile/§SLAB_ON_GRADE_RECLASS) OR
+    //   phase==='Substructure' (§GROUNDWORK_SLAB reclassifies slab-on-grade by mutating phase ONLY,
+    //   seq stays 4 — JKR's 16 are its whole classified ground, reachable no other way). A missing
+    //   .seq/.phase is NOT a seed — stricter, never looser.
+    //   fallback (ONLY when the population carries no classified ground at all — schedule_gate's
+    //   own buildingModelsSubstructure=false, "this building never modeled a foundation layer",
+    //   HHS today): footprint-grounded elements within ScheduleGate.GROUND_BAND of the building's
+    //   1st-percentile base — the same ground datum witness_true_orphan_floating.js (PR #1712)
+    //   exempts. Without it a building with no substructure would be 100% orphans; with it a stack
+    //   bottom metres above the datum (the HHS brackets) still cannot seed itself. The mode is
+    //   RETURNED, never silent.
+    // MEASURED on the 7 shipped buildings (2026-09-12, extracted DBs, before -> after):
+    //   Duplex 1->0 (the one old "orphan" was a seq===1 slab-on-grade — §I.2's own example, wrongly
+    //   flagged before) · Clinic 27->27 · HHS 36->44 (+3 brackets, +5 that rest only on them) ·
+    //   JKR 1->2 · Hospital 35->69 (+a 30-railing island with NOTHING beneath its lowest member) ·
+    //   Terminal 7->14 · LTU_AHouse 51->1096 (a ground-floor MEP network with no modelled substrate;
+    //   PR #1712's engine-blind detector already reports 2548 true orphans on this building).
+    //   W-MZ-4's lock (meta DBs where they exist) moves further on the two patched-elevation files:
+    //   Terminal_meta 25->2740 (2711 co-planar "Metal Deck" IfcPlate roof sheets with 18.7m of
+    //   nothing beneath them in that DB) and LTU_AHouse_meta 865->3288 — data findings the old
+    //   exemption hid, recorded in baselines/midair.json `_relocked_2026_09_12`.
+    // `grounded`/`groundedN` keep their footprint-local meaning (designatedSupport's cls=2
+    // rejection still reads them). Return fields are additive; `orphans` now counts !groundConnected.
     var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
     for (i = 0; i < n; i++) {
       T = items[i];
