@@ -561,17 +561,70 @@ function setupCivilSections(A) {
     var panel = document.getElementById('section-slider-panel'); if (!panel) return; var t = document.getElementById('civil-cross-tools');
     if (!t && show) {
       t = _el('div', 'margin-top:6px;display:flex;gap:6px'); t.id = 'civil-cross-tools';
-      [['PNG', 'civil-cross-png', function () { A.civilCrossPNG(true); }], ['Section sheet', 'civil-cross-sheet', function () { A.civilCrossPDF(); }]].forEach(function (d) {
+      [['PNG', 'civil-cross-png', function () { A.civilCrossPNG(true); }], ['Section sheet', 'civil-cross-sheet', function () { A.civilCrossPDF(); }], ['Popup', 'civil-cross-popup', function () { A._civilLiveReopen(); }]].forEach(function (d) {
         var b = _el('button', 'background:#444;color:#fff;border:1px solid #666;border-radius:4px;padding:3px 8px;cursor:pointer', d[0]); b.id = d[1]; b.onclick = d[2]; t.appendChild(b);
       }); panel.appendChild(t);
     }
     if (t) t.style.display = show ? 'flex' : 'none';
   }
+  // ── §CROSS_LIVE_POPUP: draggable floating drawing that redraws while the Cross scrubber moves. Drawing = A.civilCrossOutput + _crossCanvas
+  // (the §CROSS_OUTPUT owner; no second cut). One redraw per animation frame, latest chainage wins.
+  var LV_W = 360, LV_H = 240, _live = { el: null, cv: null, hd: null, pinned: false, closed: false, left: 0, top: 0, pending: 0, drawn: null, redraws: 0, scrubs: 0, frames: 0, active: false };
+  function _liveAnchor() {   // screen position beside the cut: projection of the route point at s, offset right/up, clamped into the canvas
+    var S = A._civilSection, b = _canvasBox(), L = _live; if (!S || !A.camera) return;
+    var rp = A.civilRouteAt(S.s), v = new THREE.Vector3(rp.x, rp.y, rp.z).project(A.camera), px = b.left + (v.x * 0.5 + 0.5) * b.width, py = b.top + (-v.y * 0.5 + 0.5) * b.height;
+    if (!(v.z > -1 && v.z < 1)) { px = b.left + b.width / 2; py = b.top + b.height / 2; }
+    var h = L.el.offsetHeight || (LV_H + 26);
+    L.left = Math.max(b.left, Math.min(b.left + b.width - LV_W, px + 24)); L.top = Math.max(b.top, Math.min(b.top + b.height - h, py - h - 12));
+    L.el.style.left = L.left + 'px'; L.el.style.top = L.top + 'px';
+  }
+  function _liveBuild() {
+    var L = _live; if (L.el) return;
+    var el = _el('div', 'position:fixed;z-index:60;width:' + LV_W + 'px;background:#fff;border:1px solid #666;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.4);font:12px sans-serif;color:#000;touch-action:none;display:none'); el.id = 'civil-cross-live';
+    var hd = _el('div', 'display:flex;align-items:center;gap:6px;padding:3px 6px;background:#263238;color:#fff;cursor:move;border-radius:6px 6px 0 0;user-select:none'); hd.id = 'civil-cross-live-head';
+    var tt = _el('span', 'flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis', ''); tt.id = 'civil-cross-live-title';
+    var bk = _el('button', 'background:#455a64;color:#fff;border:0;border-radius:3px;cursor:pointer;padding:0 6px', '⟲'); bk.id = 'civil-cross-live-anchor'; bk.title = 'Re-anchor beside the cut';
+    var bx = _el('button', 'background:#455a64;color:#fff;border:0;border-radius:3px;cursor:pointer;padding:0 6px', '✕'); bx.id = 'civil-cross-live-close'; bx.title = 'Close';
+    hd.appendChild(tt); hd.appendChild(bk); hd.appendChild(bx);
+    var cv = document.createElement('canvas'); cv.width = LV_W; cv.height = LV_H; cv.style.cssText = 'display:block;width:' + LV_W + 'px;height:' + LV_H + 'px';
+    el.appendChild(hd); el.appendChild(cv); document.body.appendChild(el);
+    ['mousedown', 'mouseup', 'click', 'dblclick', 'wheel', 'touchstart', 'touchmove', 'touchend', 'contextmenu'].forEach(function (n) { el.addEventListener(n, function (e) { e.stopPropagation(); }, { passive: true }); });
+    var drag = null;
+    hd.addEventListener('pointerdown', function (e) { if (e.target === bk || e.target === bx) return; e.stopPropagation(); drag = { dx: e.clientX - L.left, dy: e.clientY - L.top }; try { hd.setPointerCapture(e.pointerId); } catch (x) {} });
+    hd.addEventListener('pointermove', function (e) {
+      if (!drag) return; var b = _canvasBox();
+      L.left = Math.max(b.left, Math.min(b.left + b.width - LV_W, e.clientX - drag.dx)); L.top = Math.max(b.top, Math.min(b.top + b.height - el.offsetHeight, e.clientY - drag.dy));
+      el.style.left = L.left + 'px'; el.style.top = L.top + 'px'; L.pinned = true;
+    });
+    var end = function () { if (drag) { drag = null; console.log('§CROSS_LIVE pinned left=' + L.left.toFixed(0) + ' top=' + L.top.toFixed(0)); } };
+    hd.addEventListener('pointerup', end); hd.addEventListener('pointercancel', end);
+    bk.onclick = function () { L.pinned = false; _liveAnchor(); }; bx.onclick = function () { L.closed = true; _liveShow(false); };
+    L.el = el; L.cv = cv; L.hd = tt;
+  }
+  function _liveShow(on) {
+    var L = _live; L.active = on && !L.closed;
+    if (L.active) { _liveBuild(); L.el.style.display = 'block'; if (!L.pinned) _liveAnchor(); _liveSchedule(); } else if (L.el) { L.el.style.display = 'none'; }
+  }
+  function _liveSchedule() {
+    var L = _live; if (!L.active || L.pending) return;
+    L.pending = requestAnimationFrame(function () {
+      L.pending = 0; L.frames++; if (!L.active || !A._civilSection) return;
+      var R = A.civilCrossOutput(); if (!R) return;
+      var c = _crossCanvas(R, LV_W, LV_H), g = L.cv.getContext('2d'); g.clearRect(0, 0, LV_W, LV_H); g.drawImage(c, 0, 0);
+      L.hd.textContent = 'chainage ' + R.s.toFixed(0) + ' m (inferred) · ' + R.elements + ' elements · ' + R.nSeg + ' segments';
+      if (!L.pinned) _liveAnchor();
+      L.redraws++; L.drawn = { s: R.s, nSeg: R.nSeg, elements: R.elements };
+      console.log('§CROSS_LIVE s=' + R.s.toFixed(1) + ' segments=' + R.nSeg + ' redraws=' + L.redraws + ' scrubs=' + L.scrubs + ' frames=' + L.frames + ' pinned=' + L.pinned);
+    });
+  }
+  A._civilLive = function () { var L = _live; return { shown: !!(L.el && L.el.style.display !== 'none'), closed: L.closed, pinned: L.pinned, left: L.left, top: L.top, redraws: L.redraws, scrubs: L.scrubs, frames: L.frames, drawn: L.drawn, title: L.hd ? L.hd.textContent : null, canvasW: L.cv ? L.cv.width : 0, canvasH: L.cv ? L.cv.height : 0, pending: !!L.pending }; };
+  A._civilLiveReset = function () { _live.redraws = 0; _live.scrubs = 0; _live.frames = 0; };
+  A._civilLiveReopen = function () { _live.closed = false; _liveShow(!!A._civilSection); };
   A.sectionModes.Cross = {
     label: 'Cross', avail: function () { return !!_route(); },
-    enter: function () { var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); _crossTools(true); this.scrub(s); },
-    scrub: function (s) { _lastS = s; A.civilCrossSection(s); _showScrub(s); },
-    exit: function () { _crossTools(false); A.civilCrossSectionOff(true); }
+    enter: function () { var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); _crossTools(true); _liveShow(true); this.scrub(s); },
+    scrub: function (s) { _lastS = s; A.civilCrossSection(s); _showScrub(s); _live.scrubs++; _liveSchedule(); },
+    exit: function () { _liveShow(false); _crossTools(false); A.civilCrossSectionOff(true); }
   };
   A.sectionModes.Long = {
     label: 'Long', avail: function () { return !!_route(); },
