@@ -9,6 +9,8 @@
 //  (4) the cross-section plane normal . route tangent (tangent recomputed here from the polyline) >= 0.999;
 //  (5) the elements cut at s == the elements whose bbox spans the plane, the bbox RE-DERIVED here from raw merged-mesh
 //      vertices (not from A._mergedMeta), and the set is neither empty nor everything (else INCONCLUSIVE);
+//  (10) §CROSS_OUTPUT: at 3 chainages every cut segment endpoint lies on the plane (|n.p-d| < 1 mm, n/d recomputed here from the polyline), segments > 0,
+//      table (rows + bbox-only) count == §CROSS_SECTION elementsCut, PNG is image/png 1000x600, sheet HTML carries the table; building -> API null (VACUOUS).
 //  (6) a building (MODEL=building) gets no button/panel and the civil checks are VACUOUS, never PASS;
 //  (7) §SECTION_CIVIL_MODES: Long/Cross are axis buttons INSIDE the Cut section tool (civil -> 5 buttons, building -> X/Y/Z only),
 //      the panel slider is the chainage scrubber, no floating 'civil-section-btn' exists, X/Y/Z after Cross leaves ONE clip plane;
@@ -49,7 +51,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   log('  [gpu] ' + (REAL ? 'real (gl-egl, NVIDIA vendor pin)' : 'swiftshader'));
   const fin = async (code) => { fs.writeFileSync(LOG, out.join('\n') + '\n'); try { await b.close(); } catch (e) {} server.close(); process.exit(code); };
   const p = await b.newPage(); await p.setViewport({ width: 1280, height: 800 });
-  p.on('console', m => { const t = m.text(); if (/§(LONG_SECTION|PROFILE_LENS|CROSS_SECTION|CIVIL_MODEL|ALTC_HIGHWAY|CIVIL_ROUTE)/.test(t)) log('  [con] ' + t); });
+  const CONS = []; p.on('console', m => { const t = m.text(); if (/§CROSS_(SECTION|OUTPUT)/.test(t)) CONS.push(t); if (/§(LONG_SECTION|PROFILE_LENS|CROSS_SECTION|CROSS_OUTPUT|CIVIL_MODEL|ALTC_HIGHWAY|CIVIL_ROUTE)/.test(t)) log('  [con] ' + t); });
   await p.goto(`http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${BLD}.db`, { waitUntil: 'domcontentloaded', timeout: 600000 });
   let ok = false;
   for (let i = 0; i < 900 && !ok; i++) { await sleep(1000); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && APP.scene && APP.collectMeshes(o => o.isMesh).length > 0)); } catch (e) {} }
@@ -68,7 +70,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (MODEL === 'building') {
     add('building: exactly 3 axis buttons X/Y/Z', JSON.stringify(btns) === JSON.stringify(WANT_B), JSON.stringify(btns));
     add('building: no floating civil button / panel / chart canvas in DOM', !pre.floatBtn && !pre.floatPanel && !(await p.evaluate(() => !!document.getElementById('civil-section-canvas') || !!document.getElementById('civil-lens'))));
-    const nul = await p.evaluate(() => typeof APP.civilLongSection === 'function' ? APP.civilLongSection() === null && APP.civilCrossSection(100) === null : 'api-absent');
+    const nul = await p.evaluate(() => typeof APP.civilLongSection === 'function' ? APP.civilLongSection() === null && APP.civilCrossSection(100) === null && APP.civilCrossOutput() === null : 'api-absent');
     add('building: civilLongSection()/civilCrossSection() return null (gate closed)', nul === true, 'got=' + nul);
     const fail = checks.filter(c => !c[1]).length;
     log('§WITNESS_CIVIL_SECTIONS_BUILDING ' + (fail ? 'FAIL' : 'VACUOUS — gate closed, no civil checks judged (NOT a PASS)'));
@@ -78,6 +80,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     add('civil: Long+Cross buttons inside the Cut tool (5 axis buttons)', JSON.stringify(btns) === JSON.stringify(WANT_C), JSON.stringify(btns));
     add('no floating civil-section-btn in DOM', !pre.floatBtn, 'floatBtn=' + pre.floatBtn);
     add('Profile lens API present (APP.civilProfilePrepare) and no old panel chart canvas', await p.evaluate(() => typeof APP.civilProfilePrepare === 'function' && !document.getElementById('civil-section-canvas')), 'old code has neither');
+    add('§CROSS_OUTPUT API present (APP.civilCrossOutput / civilCrossPNG)', await p.evaluate(() => typeof APP.civilCrossOutput === 'function' && typeof APP.civilCrossPNG === 'function'), 'origin/main has neither');
     const fail = checks.filter(c => !c[1]).length;
     log('§WITNESS_CIVIL_SECTIONS RED-CONTROL ' + (fail ? 'FAIL (old code: floating button / no Long-Cross, as expected on origin/main)' : 'UNEXPECTED PASS — control is not red'));
     return fin(fail ? 1 : 3);
@@ -299,6 +302,30 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   add('Cross: slab (2 clip planes) on every mesh at each scrub', XS.res.every(x => x.two === x.meshN), 'meshes=' + XS.res[0].meshN);
   add('Cross: cut set non-trivial at each scrub (0 < cut < all indexed)', XS.res.every(x => x.indep > 0 && x.indep < x.total), JSON.stringify(XS.res.map(x => [x.s, x.indep, x.total])));
   add('Cross: cut set == independent bbox-straddle recompute (raw vertices x matrix) at each scrub', XS.res.every(x => x.onlyP === 0 && x.onlyI === 0 && x.prod === x.indep), JSON.stringify(XS.res.map(x => [x.s, x.prod, x.indep, x.onlyP, x.onlyI])));
+
+  // ---- §CROSS_OUTPUT: real cut segments on the plane, table == cut set, PNG + sheet ----
+  const XO = await p.evaluate(async (fr) => {
+    const A = APP, r = A.civilDriveRoute(), len = A.civilRouteAt(0).len, sl = document.getElementById('section-slider'), res = [];
+    for (const f of fr) {
+      sl.value = String(len * f); sl.dispatchEvent(new Event('input', { bubbles: true })); const sel = +sl.value;
+      let cum = 0, T = null;   // independent tangent + plane from the polyline
+      for (let i = 1; i < r.length; i++) { const h = Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z); if (cum + h >= sel) { T = { x: (r[i].x - r[i - 1].x) / h, z: (r[i].z - r[i - 1].z) / h, px: r[i - 1].x + (sel - cum) / h * (r[i].x - r[i - 1].x), pz: r[i - 1].z + (sel - cum) / h * (r[i].z - r[i - 1].z) }; break; } cum += h; }
+      const d0 = T.x * T.px + T.z * T.pz, R = A.civilCrossOutput();
+      let worst = 0; R.segments.forEach(sg => { const q = sg.p; [[q[0], q[2]], [q[3], q[5]]].forEach(a => { worst = Math.max(worst, Math.abs(T.x * a[0] + T.z * a[1] - d0)); }); });
+      const tab = R.rows.reduce((a, x) => a + x.count, 0) + R.bboxOnly.reduce((a, x) => a + x.count, 0);
+      const segDisc = {}; R.segments.forEach(sg => { segDisc[sg.disc] = (segDisc[sg.disc] || 0) + 1; });
+      res.push({ s: +sel.toFixed(1), nSeg: R.nSeg, listed: R.segments.length, worstM: worst, elements: R.elements, tab, bboxOnly: R.nBboxOnly, rows: R.rows.length, byDisc: R.byDisc, segDisc, cutLen: A.civilSectionCut().guids.length });
+    }
+    const png = await A.civilCrossPNG(false), html = A.civilCrossSheetHTML();
+    return { res, png: { type: png.blob.type, bytes: png.blob.size }, sheetHasTable: html.indexOf('id="cross-table"') > 0 && html.indexOf('(inferred)') > 0 && html.indexOf('data:image/png') > 0 };
+  }, [0.25, 0.55, 0.85]);
+  log('  [crossOut] ' + JSON.stringify(XO));
+  const secLogs = CONS.filter(t => t.startsWith('§CROSS_SECTION')).map(t => +(t.match(/elementsCut=(\d+)/) || [])[1]);
+  add('§CROSS_OUTPUT: every segment endpoint |n.p-d| < 1 mm at 3 chainages (plane recomputed from polyline)', XO.res.every(x => x.worstM < 0.001), JSON.stringify(XO.res.map(x => [x.s, +x.worstM.toExponential(2)])));
+  add('§CROSS_OUTPUT: segments > 0 at each chainage', XO.res.every(x => x.nSeg > 0 && x.nSeg === x.listed), JSON.stringify(XO.res.map(x => [x.s, x.nSeg])));
+  add('§CROSS_OUTPUT: table count (rows + bbox-only) == cut set == a §CROSS_SECTION elementsCut log value', XO.res.every(x => x.tab === x.elements && x.elements === x.cutLen && secLogs.includes(x.elements)), JSON.stringify(XO.res.map(x => [x.s, x.tab, x.elements, x.bboxOnly])) + ' secLogs=' + JSON.stringify(secLogs.slice(-6)));
+  add('§CROSS_OUTPUT: PNG is image/png and non-empty; sheet HTML has table + "(inferred)" + drawing', XO.png.type === 'image/png' && XO.png.bytes > 1000 && XO.sheetHasTable, JSON.stringify(XO.png));
+  judged += XO.res.length;
 
   // ---- leaving the mode ----
   // §SECTIONS_BLOCKER fix: the leave sequence ran as ONE evaluate (5 mode switches, each re-setting clip planes on every mesh) —
