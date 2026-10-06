@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1592';
+const CACHE_VERSION = 'v1593';
+// v1593 (2026-10-06) cpe_load_path.js split into 6 part files (lp_chain/lp_geom_pick/lp_build/lp_backdrop_diag/lp_apply_restore/lp_hud.js, loaded before it); move-only, two-phase setup keeps the single closure's semantics. W-LP-SURFACE. cpe_load_path.js?v=12
 // v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
 // v1591 (2026-10-06) §EARTHWORKS_VOLUME: cpe_road_panels.js earthworks volume line on the planned card (closed-solid gate).
 // v1590 (2026-10-06) §CPE_CHECKBOX_SAVE: every Alt+C box marks the path edited + persists in cinema_path (8 new columns); effects.js?v=149 cinema_path_editor.js?v=23 cinema_maxq.js?v=42 scene.js?v=73.
@@ -980,7 +981,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','road_check.js','cpe_road_panels.js','cpe_freeze_perf.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','lp_chain.js','lp_geom_pick.js','lp_build.js','lp_backdrop_diag.js','lp_apply_restore.js','lp_hud.js','cpe_load_path.js','road_check.js','cpe_road_panels.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
   'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
