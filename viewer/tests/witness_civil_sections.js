@@ -11,6 +11,7 @@
 //      vertices (not from A._mergedMeta), and the set is neither empty nor everything (else INCONCLUSIVE);
 //  (10) §CROSS_OUTPUT: at 3 chainages every cut segment endpoint lies on the plane (|n.p-d| < 1 mm, n/d recomputed here from the polyline), segments > 0,
 //      table (rows + bbox-only) count == §CROSS_SECTION elementsCut, PNG is image/png 1000x600, sheet HTML carries the table; building -> API null (VACUOUS).
+//  (11) §CROSS_LIVE_POPUP: draggable popup redraws live while scrubbing: chainage/segments == scrubber/independent output, <=1 redraw per frame (burst of 40 scrubs -> 1), header drag pins, close/reopen, gone after leaving Cross; building -> no popup.
 //  (6) a building (MODEL=building) gets no button/panel and the civil checks are VACUOUS, never PASS;
 //  (7) §SECTION_CIVIL_MODES: Long/Cross are axis buttons INSIDE the Cut section tool (civil -> 5 buttons, building -> X/Y/Z only),
 //      the panel slider is the chainage scrubber, no floating 'civil-section-btn' exists, X/Y/Z after Cross leaves ONE clip plane;
@@ -72,6 +73,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     add('building: no floating civil button / panel / chart canvas in DOM', !pre.floatBtn && !pre.floatPanel && !(await p.evaluate(() => !!document.getElementById('civil-section-canvas') || !!document.getElementById('civil-lens'))));
     const nul = await p.evaluate(() => typeof APP.civilLongSection === 'function' ? APP.civilLongSection() === null && APP.civilCrossSection(100) === null && APP.civilCrossOutput() === null : 'api-absent');
     add('building: civilLongSection()/civilCrossSection() return null (gate closed)', nul === true, 'got=' + nul);
+    add('building: no cross-live popup in the DOM (VACUOUS)', !(await p.evaluate(() => !!document.getElementById('civil-cross-live'))));
     const fail = checks.filter(c => !c[1]).length;
     log('§WITNESS_CIVIL_SECTIONS_BUILDING ' + (fail ? 'FAIL' : 'VACUOUS — gate closed, no civil checks judged (NOT a PASS)'));
     return fin(fail ? 1 : 0);
@@ -81,6 +83,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     add('no floating civil-section-btn in DOM', !pre.floatBtn, 'floatBtn=' + pre.floatBtn);
     add('Profile lens API present (APP.civilProfilePrepare) and no old panel chart canvas', await p.evaluate(() => typeof APP.civilProfilePrepare === 'function' && !document.getElementById('civil-section-canvas')), 'old code has neither');
     add('§CROSS_OUTPUT API present (APP.civilCrossOutput / civilCrossPNG)', await p.evaluate(() => typeof APP.civilCrossOutput === 'function' && typeof APP.civilCrossPNG === 'function'), 'origin/main has neither');
+    add('§CROSS_LIVE popup API present (APP._civilLive)', await p.evaluate(() => typeof APP._civilLive === 'function'), 'origin/main has none');
     const fail = checks.filter(c => !c[1]).length;
     log('§WITNESS_CIVIL_SECTIONS RED-CONTROL ' + (fail ? 'FAIL (old code: floating button / no Long-Cross, as expected on origin/main)' : 'UNEXPECTED PASS — control is not red'));
     return fin(fail ? 1 : 3);
@@ -327,6 +330,61 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   add('§CROSS_OUTPUT: PNG is image/png and non-empty; sheet HTML has table + "(inferred)" + drawing', XO.png.type === 'image/png' && XO.png.bytes > 1000 && XO.sheetHasTable, JSON.stringify(XO.png));
   judged += XO.res.length;
 
+  // ---- §CROSS_LIVE_POPUP: draggable popup redraws live while the scrubber moves ----
+  // Issues: (a) popup drawing chainage/segments == scrubber s / independent civilCrossOutput; (b) one redraw per frame max (burst of 40 scrubs -> <=1 redraw);
+  // (c) header drag pins it and later scrubs don't move it back; (d) close/reopen; (e) follows the cut when unpinned; (f) absent after leaving Cross.
+  const LV = await p.evaluate(async () => {
+    const A = APP, len = A.civilRouteAt(0).len, sl = document.getElementById('section-slider'), raf = () => new Promise(r => requestAnimationFrame(() => r()));
+    const frames = async n => { for (let i = 0; i < n; i++) await raf(); };
+    const scrub = f => { sl.value = String(len * f); sl.dispatchEvent(new Event('input', { bubbles: true })); return +sl.value; };
+    const el = document.getElementById('civil-cross-live'); const o = { present: !!el };
+    if (!el) return o;
+    const box = () => { const c = A.renderer.domElement.getBoundingClientRect(), r = el.getBoundingClientRect(); return { inside: r.left >= c.left - 1 && r.top >= c.top - 1 && r.right <= c.right + 1 && r.bottom <= c.bottom + 1, l: r.left, t: r.top }; };
+    const inkPx = () => { const cv = el.querySelector('canvas'), d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let k = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 200 || d[i + 1] < 200 || d[i + 2] < 200) k++; return k; };
+    A._civilLiveReopen(); await frames(3);
+    o.steps = [];
+    for (const f of [0.2, 0.5, 0.8]) {   // (a) + (e)
+      const s = scrub(f); await frames(3); const L = A._civilLive(), ind = A.civilCrossOutput(), b = box();
+      o.steps.push({ s: +s.toFixed(1), drawnS: L.drawn && +L.drawn.s.toFixed(1), nSeg: L.drawn && L.drawn.nSeg, indSeg: ind.nSeg, titleHasS: !!(L.title && L.title.indexOf('chainage ' + Math.round(s) + ' m') === 0), ink: inkPx(), inside: b.inside, l: Math.round(b.l), t: Math.round(b.t), pinned: L.pinned });
+    }
+    // (b) burst: 40 scrubs in one task, then settle
+    A._civilLiveReset(); let sB = 0; for (let i = 0; i < 40; i++) sB = scrub(0.3 + i * 0.005); await frames(4);
+    let L = A._civilLive(); o.burst = { scrubs: L.scrubs, redraws: L.redraws, frames: L.frames, drawnS: +L.drawn.s.toFixed(1), lastS: +sB.toFixed(1) };
+    // (b2) one scrub per animation frame for 30 frames: redraws <= frames, latest chainage drawn
+    A._civilLiveReset(); let own = 0, sP = 0; for (let i = 0; i < 30; i++) { sP = scrub(0.4 + i * 0.004); await raf(); own++; } await frames(2); own += 2; L = A._civilLive();
+    o.perFrame = { scrubs: L.scrubs, redraws: L.redraws, frames: L.frames, ownFrames: own, drawnS: +L.drawn.s.toFixed(1), lastS: +sP.toFixed(1) };
+    // (c) header drag
+    scrub(0.5); await frames(3); const hd = document.getElementById('civil-cross-live-head'), r0 = el.getBoundingClientRect(), cb = A.renderer.domElement.getBoundingClientRect();
+    const ev = (type, x, y) => hd.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 7, pointerType: 'mouse', isPrimary: true }));
+    const sx = r0.left + 40, sy = r0.top + 8, dx = (r0.left - 90 > cb.left ? -90 : 90), dy = (r0.top + 70 + r0.height < cb.bottom ? 70 : -40);
+    ev('pointerdown', sx, sy); ev('pointermove', sx + dx / 2, sy + dy / 2); ev('pointermove', sx + dx, sy + dy); ev('pointerup', sx + dx, sy + dy); await frames(2);
+    const r1 = el.getBoundingClientRect(); L = A._civilLive();
+    o.drag = { dx, dy, movedX: Math.round(r1.left - r0.left), movedY: Math.round(r1.top - r0.top), pinned: L.pinned };
+    scrub(0.7); await frames(3); scrub(0.25); await frames(3); const r2 = el.getBoundingClientRect(); L = A._civilLive();
+    o.afterScrub = { dl: Math.round(r2.left - r1.left), dt: Math.round(r2.top - r1.top), pinned: L.pinned, drawnS: +L.drawn.s.toFixed(1), s: +sl.value };
+    document.getElementById('civil-cross-live-anchor').click(); await frames(1); const r3 = el.getBoundingClientRect(); L = A._civilLive();
+    o.reanchor = { pinned: L.pinned, moved: Math.round(Math.hypot(r3.left - r2.left, r3.top - r2.top)) };
+    // (d) close / reopen
+    document.getElementById('civil-cross-live-close').click(); const rd0 = A._civilLive().redraws; scrub(0.6); await frames(3);
+    L = A._civilLive(); o.closed = { shown: L.shown, closed: L.closed, redrawsAdded: L.redraws - rd0 };
+    document.getElementById('civil-cross-popup').click(); scrub(0.62); await frames(3); L = A._civilLive(); o.reopen = { shown: L.shown, drawnS: +L.drawn.s.toFixed(1), s: +sl.value };
+    return o;
+  });
+  log('  [crossLive] ' + JSON.stringify(LV));
+  add('§CROSS_LIVE: popup exists in Cross mode', LV.present === true, 'present=' + LV.present);
+  if (LV.present) {
+    add('§CROSS_LIVE: at 3 scrubbed chainages popup chainage == scrubber s, header says so, segments == independent civilCrossOutput, drawing has ink', LV.steps.every(x => Math.abs(x.drawnS - x.s) < 0.06 && x.titleHasS && x.nSeg === x.indSeg && x.nSeg > 0 && x.ink > 300), JSON.stringify(LV.steps.map(x => [x.s, x.drawnS, x.nSeg, x.indSeg, x.ink])));
+    add('§CROSS_LIVE: popup stays inside the canvas and (unpinned) follows the cut (position differs across chainages)', LV.steps.every(x => x.inside && !x.pinned) && new Set(LV.steps.map(x => x.l + ',' + x.t)).size > 1, JSON.stringify(LV.steps.map(x => [x.l, x.t])));
+    add('§CROSS_LIVE: throttle — 40 scrubs in one task -> <=1 redraw, latest chainage wins', LV.burst.redraws >= 1 && LV.burst.redraws <= 1 && Math.abs(LV.burst.drawnS - LV.burst.lastS) < 0.06, JSON.stringify(LV.burst));
+    add('§CROSS_LIVE redraws <= frames (30 scrubs at one per frame), last chainage drawn', LV.perFrame.redraws <= LV.perFrame.frames && LV.perFrame.frames <= LV.perFrame.ownFrames + 1 && LV.perFrame.redraws >= 10 && Math.abs(LV.perFrame.drawnS - LV.perFrame.lastS) < 0.06, 'redraws=' + LV.perFrame.redraws + ' frames=' + LV.perFrame.frames + ' ownFrames=' + LV.perFrame.ownFrames + ' scrubs=' + LV.perFrame.scrubs);
+    log('§CROSS_LIVE redraws=' + LV.perFrame.redraws + ' frames=' + LV.perFrame.frames + ' scrubs=' + LV.perFrame.scrubs + ' (burst: scrubs=' + LV.burst.scrubs + ' redraws=' + LV.burst.redraws + ')');
+    add('§CROSS_LIVE: header drag moves the popup and pins it', LV.drag.pinned && Math.abs(LV.drag.movedX) >= 40 && Math.sign(LV.drag.movedX) === Math.sign(LV.drag.dx), JSON.stringify(LV.drag));
+    add('§CROSS_LIVE: later scrubs do NOT move a pinned popup back; drawing still updates', LV.afterScrub.dl === 0 && LV.afterScrub.dt === 0 && LV.afterScrub.pinned && Math.abs(LV.afterScrub.drawnS - LV.afterScrub.s) < 0.06, JSON.stringify(LV.afterScrub));
+    add('§CROSS_LIVE: re-anchor button unpins (and moves it back beside the cut)', !LV.reanchor.pinned && LV.reanchor.moved > 5, JSON.stringify(LV.reanchor));
+    add('§CROSS_LIVE: close hides it for the session (no redraws); Popup button reopens and redraws at the scrubber s', !LV.closed.shown && LV.closed.closed && LV.closed.redrawsAdded === 0 && LV.reopen.shown && Math.abs(LV.reopen.drawnS - LV.reopen.s) < 0.06, JSON.stringify([LV.closed, LV.reopen]));
+    judged += LV.steps.length;
+  }
+
   // ---- leaving the mode ----
   // §SECTIONS_BLOCKER fix: the leave sequence ran as ONE evaluate (5 mode switches, each re-setting clip planes on every mesh) —
   // now one short evaluate per step with a settle between, so no single protocol call carries the whole recompile burst.
@@ -334,6 +392,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const step = async (fn) => { await p.evaluate(fn); await sleep(1500); return p.evaluate(cntJs); };
   const Z = {};
   Z.afterX = await step(() => document.getElementById('sec-axis-x').click());
+  Z.liveAfterX = await p.evaluate(() => { const e = document.getElementById('civil-cross-live'); return { api: APP._civilLive().shown, dom: !e || e.style.display === 'none' || !e.offsetParent }; });
   Object.assign(Z, await p.evaluate(() => ({ modeX: APP._secMode, axis: APP.sectionAxis, slMax: document.getElementById('section-slider').max, cs: APP._civilSection })));
   await step(() => document.getElementById('sec-axis-cross').click());
   Z.afterY = await step(() => document.getElementById('sec-axis-y').click());
@@ -344,6 +403,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   Z.canvas = await p.evaluate(() => document.getElementById('civil-lens').style.display);
   log('  [leave] ' + JSON.stringify(Z));
   add('X after Cross: 1 clip plane on every mesh (not 2), civil slab cleared, mode off', Z.afterX.one === Z.afterX.n && Z.afterX.two === 0 && Z.modeX === null && Z.axis === 'X' && Z.cs === null, JSON.stringify(Z.afterX));
+  add('§CROSS_LIVE: leaving Cross (X) removes the popup', Z.liveAfterX.api === false && Z.liveAfterX.dom === true, JSON.stringify(Z.liveAfterX));
   add('Y after Cross: 1 clip plane, not 2', Z.afterY.one === Z.afterY.n && Z.afterY.two === 0, JSON.stringify(Z.afterY));
   add('closing the tool clears all clip planes (from Cross and from Long) and hides the chart', Z.closed === 0 && Z.closedLong === 0 && Z.canvas === 'none', 'closed=' + Z.closed + ' closedLong=' + Z.closedLong + ' canvas=' + Z.canvas);
 
