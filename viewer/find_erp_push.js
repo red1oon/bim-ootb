@@ -348,7 +348,7 @@
             console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
           }
         });
-      });
+      }).catch(function (e) { _pushReject('Project Order push failed: ' + (e && e.message)); console.log('[RP-C] §PROJ_PUSH_ERR ' + (e && e.stack || e)); });
     }
 
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,
