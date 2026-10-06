@@ -186,8 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1603';
-// v1603 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill.
+const CACHE_VERSION = 'v1605';
+// v1605 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill (was v1603 on its branch).
+// v1604 (2026-10-07) §CROSS_LIVE_POPUP: draggable live cross-section popup beside the cut while scrubbing (civil_sections.js); viewer.html civil_sections.js?v=5.
 // v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=4.
 // v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=3.
 // v1600 (main)
