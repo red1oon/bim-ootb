@@ -232,6 +232,8 @@ if (_fEscapeRoute !== undefined) FLAGS.escapeRoute = _fEscapeRoute;
 if (_fSunCompass !== undefined) FLAGS.sunCompass = _fSunCompass;
 if (_fVisualPanel !== undefined) FLAGS.visualPanel = _fVisualPanel;
 if (_fAudioPanel !== undefined) FLAGS.audioPanel = _fAudioPanel;
+// §CPE_CHECKBOX_SAVE: an explicit --bounce overrides the saved Bounce-light box; absent = the stored path decides.
+if (arg('bounce', null) !== null) FLAGS.filmBounce = FILM_BOUNCE;
 // §SUN_DAY — light the whole film on one day (yyyy-mm-dd), hour sweeping morning to late
 // afternoon. Absent = the 4D timeline's own dates drive the light, which is the shipped behaviour.
 if (arg('sun-date', null)) FLAGS.sunDate = String(arg('sun-date'));
