@@ -297,8 +297,8 @@ Then X1 panel (T1), then the rest by rank.
 | SW has no localhost bypass — save + reload can show old code | `viewer/sw.js:1200`, `modeller/sw.js:121`, `erp/sw.js:11` | Offline/PWA lane | `OFFLINE_HUB_SW_SCOPE_GAP.md` §2026-10-06 |
 | Two different `_isMobile` definitions | `viewer/config.js:12` vs `viewer/effects.js:52`, `effects_gi_poc.js:14` | Mobile perf | `MOBILE_PERF.md` §2026-10-06 |
 | Modeller never calls `navigator.storage.persist()` | grep `modeller/` | Modeller | `MODELLER_MASTER.md` §2026-10-06 |
-| No app code watches quota (`storage.estimate`) | grep | ⛔ no owner lane — user picks | — |
-| No app code runs SQLite `integrity_check` | grep | ⛔ no owner lane — user picks | — |
+| No app code watches quota (`storage.estimate`) | grep | Offline / local-storage lane | `OFFLINE_HUB_SW_SCOPE_GAP.md` §2026-10-06 |
+| No app code runs SQLite `integrity_check` | grep | Offline / local-storage lane | `OFFLINE_HUB_SW_SCOPE_GAP.md` §2026-10-06 |
 
 ## §8 Packaging — install like any other plugin
 - Source `bim-ootb/devtools/vscode/`: `x1-slens/`, `x2-live-doctor/`, `x3-maps/`, `x4-rules/` (also usable
@@ -324,10 +324,12 @@ Then X1 panel (T1), then the rest by rank.
 | S8 | Existing FPS / frame-ms / heap targets in MOBILE_PERF + `§FPS_MODE` lane? | T24 thresholds |
 | S9 | Each playbook row matched to a real past incident? | §3 lock |
 
-## §10 Open decisions (user's call)
-- ⛔ Publish to Open VSX / Marketplace, or `.vsix` in GitHub Releases only? Default until answered: Releases.
-- ⛔ Pack name (working: *BIM DevTools*).
-- ⛔ Owner for the quota and `integrity_check` findings (§7).
+## §10 Decisions (admin, decided 2026-10-06 — user: "the gitadmin has to answer those questions that is not about project shape")
+- ✅ **Distribution:** `.vsix` attached to GitHub Releases. Open VSX / Marketplace only after the first slice
+  (§6) is witnessed — publishing a half-built pack adds nothing.
+- ✅ **Name:** *BIM DevTools* (pack id `bim-devtools`).
+- ✅ **Owner for quota + `integrity_check` findings (§7):** the offline / local-storage lane
+  (`bim-compiler prompts/OFFLINE_HUB_SW_SCOPE_GAP.md`) — both are local-storage durability, same as the SW finding.
 
 ## §11 Status
 | Item | State |
@@ -336,5 +338,5 @@ Then X1 panel (T1), then the rest by rank.
 | Playbook §3 | draft — lock after S9 |
 | Engines §4 | draft — lock after S0, S2 |
 | Tool specs §5 | draft — each locks after its spike |
-| Findings §7 | 3 handed off, 2 need an owner |
+| Findings §7 | 5 handed off |
 | Implementation | not started — first slice §6 |
