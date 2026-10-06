@@ -188,6 +188,24 @@
     if (!_wpSched) return bkState.projectStart + t * (bkState.projectEnd - bkState.projectStart);
     if (t <= 0) return _wpSched.projectStart;
     if (t >= 1) return _wpSched.projectEnd;
+    // §CW_PACE_DISTINCT (CIVIL ONLY — bim-compiler prompts/CWRoadBakeIssues.md Issue B). Road v6: ~7,000 ground pieces share ONE
+    // completion instant, so k-th-completion pacing held the cursor (and the day counter, day 18) for ~30 s while nothing new
+    // appeared. A civil film paces by DISTINCT completion instants instead: each instant gets an equal share of film time, a
+    // pile-up of identical instants is one step. Buildings never reach this branch (even-tempo above), and the tie-free
+    // case is unchanged in order.
+    if (_civilWork) {
+      if (!_wpSched.uends) {
+        var _ue = [], _pe = null;
+        for (var _ui = 0; _ui < _wpSched.ends.length; _ui++) { if (_wpSched.ends[_ui] !== _pe) { _ue.push(_wpSched.ends[_ui]); _pe = _wpSched.ends[_ui]; } }
+        _wpSched.uends = _ue;
+        console.log('§CW_PACE_DISTINCT ops=' + _wpSched.total + ' distinctInstants=' + _ue.length +
+          ' — civil film paces by distinct completion instants (a tie of N pieces is one step, no frozen day counter)');
+      }
+      var _uk = Math.round(t * _wpSched.uends.length);
+      if (_uk < 1) return _wpSched.projectStart;
+      if (_uk >= _wpSched.uends.length) return _wpSched.projectEnd;
+      return _wpSched.uends[_uk - 1];
+    }
     // k-th completion. `ends` is sorted, so this is the instant at which exactly k ops are done.
     var k = Math.round(t * _wpSched.total);
     if (k < 1) return _wpSched.projectStart;
