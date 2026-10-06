@@ -224,6 +224,60 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
   *Issue it proves:* "offline-ready" is measured per file, not assumed from the PWA badge.
 - Reuses T13 Precache Auditor's parse of `sw.js` — one parser, not two.
 
+## §13 T23 Platform Map — desktop / mobile / both (user request 2026-10-06)
+**Question:** "Is this feature in the mobile version, the desktop version, or both?"
+### How the code decides today (origin/main, 2026-10-06)
+- One global flag: `window._isMobile` — `viewer/config.js:12`
+  `('ontouchstart' in window || navigator.maxTouchPoints > 0) && screen.width < 1024`.
+- Read in 25 files (`git grep -c _isMobile`); top: `time_machine.js` 12, `streaming.js` 11, `measure.js` 10, `scene.js` 7.
+- **Finding — second, different definition:** `viewer/effects.js:52` (and `effects_gi_poc.js:14`) re-derive a
+  local `_isMobile` WITHOUT the `ontouchstart` term. A device can be "mobile" to `config.js` and "desktop"
+  to `effects.js`. One-owner violation; owner lane decides (not tool work).
+- **Deliberate splits on record:** `prompts/MOBILE_PERF.md` §SHIPPED STACK (on-demand render = mobile only;
+  DPR 1 / 0.75 mobile) and §DELIBERATELY NOT ON MOBILE (InstancedMesh zero-scale, custom frustum tick).
+### What the dev sees
+- **Code lens on every `_isMobile` branch:** `M only` / `D only` above the block; hover = the condition.
+- **File badge** `B` / `D` / `M` (both / desktop-only / mobile-only) — a file whose entry is gated by
+  `_isMobile` takes that letter; otherwise `B`.
+- **Feature roll-up table:** pill / panel / tool → B / D / M, so a dev (and the guide writer) can answer
+  "is Measure on phones?" without reading code.
+### Static map is a claim; the witness runs both
+- **Witness `§DEVTK_PLATFORM`:** load the same building twice — desktop profile and phone profile
+  (Playwright device emulation sets touch + screen width, which is exactly what the flag reads). Collect
+  the `§` tags fired + panels/pills present in each. Feed both into T3 §-Diff. Assert the measured
+  "only in desktop" / "only in mobile" sets match the static map. Red control: flip one branch in a
+  fixture → the witness must report the mismatch.
+  *Issue it proves:* the D/M/B label is measured, not read off comments.
+
+## §14 T24 Mobile Perf + Memory-Hog Monitor (user request 2026-10-06)
+**Question:** "Is the phone keeping up, and which part is eating the memory?"
+### Signals — reuse what exists first
+| Signal | Source | Exists today? |
+|---|---|---|
+| **Frame time / FPS** | `§FPS_MODE mean= max= n=` sampler, tagged by nav state (orbit / fly / xray / DLOD) — `viewer/main.js:707-725` | **yes** — reuse, do not build a second sampler |
+| **Response (input → next frame)** | browser Event Timing (INP) | no |
+| **Long tasks (main thread stalls)** | `PerformanceObserver('longtask')` | **no use in app code** (grep) |
+| **Heap** | `performance.memory` (Chromium only) | used in a few `§…MEM…` probes (`§MEM_PROBE`, `§NIGHT_MEM_WITNESS`, `§CLASH_MEM`) |
+| **Verts loaded** vs budget | PERF BUDGET: 0.17 GB / M verts; phone ~0.6 GB tab ≈ 4 M verts (**unverified**) | budget is in CLAUDE.md; per-pass vert lines partial |
+| **Device memory hint** | `navigator.deviceMemory` | no |
+| **WebGL context lost** | handler in `viewer/scene.js` (MOBILE_PERF §SHIPPED STACK 7) | yes — count it |
+### Memory-hog ranking
+- Every heavy pass that logs `heap` + `verts` in a `§` line (PERF BUDGET rule) becomes a row:
+  `pass · verts added · heap delta`. Sorted biggest first = the hog list. Passes that do NOT log it show
+  as `UNMEASURED` — that list is itself the to-do for the PERF BUDGET rule.
+### Live from a real phone
+- Android Chrome: USB remote debugging; the same `?devtk=1` bridge streams samples to the dev machine
+  (opt-in, read-only). iOS Safari has **no `performance.memory`** → heap shows `INCONCLUSIVE (iOS)`, FPS
+  and long tasks still work where supported.
+- Desktop emulation (CPU/GPU throttle) is allowed but labelled `EMULATED` — never reported as a phone number
+  (MOBILE_PERF PRIME RULE: real device or labelled throttle, same device + building before/after).
+### Thresholds — extracted, not invented
+- No new FPS / ms limits are made up here. Spike **S8** extracts the targets already used in
+  `prompts/MOBILE_PERF.md` and the `§FPS_MODE` lane; until then the panel shows numbers only, no colours.
+- **Witness `§DEVTK_PERF`:** a fixture page with a planted 200 ms busy loop and a planted 50 MB allocation →
+  the monitor reports one long task ≥ 200 ms and a heap delta ≈ 50 MB on the right pass. Red control:
+  remove the busy loop → no long task reported.
+
 ## §6 Spikes before locking (each ends in a `§` line, not an opinion)
 | Spike | Question | Decides |
 |---|---|---|
@@ -232,6 +286,8 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
 | S4 | Which of the 129 JSON files are read by app code? | T18 schema list |
 | S5 | Which local-DB writers coordinate across tabs (locks / BroadcastChannel), which don't? | T19 multi-tab check |
 | S6 | Does `cachedFetch` store every OCI building fetch, or are some paths uncached? | T22 S vs N for OCI |
+| S7 | Which `_isMobile` branches gate a whole feature vs a tweak (DPR, AA)? | T23 roll-up granularity |
+| S8 | Which FPS / frame-ms / heap targets already exist in MOBILE_PERF.md + `§FPS_MODE` lane? | T24 thresholds |
 | S3 | Which existing viewer/erp/modeller objects hold each T9 field? | T9 field list |
 | S2 | Can the running tab report its active SW version to an outside caller without the bridge? | whether §4.2 needs app code at all |
 
@@ -250,5 +306,7 @@ and how close is it to breaking?"** Each check is a known failure of THIS archit
 | §10 T18 JSON schemas | draft |
 | §11 T19 Health Monitor | draft — lock after S5 |
 | §12 T22 Offline Map | draft — lock after S6 |
+| §13 T23 Platform Map | draft — lock after S7 |
+| §14 T24 Mobile Perf Monitor | draft — lock after S8 |
 | Packaging §5 | draft |
 | Implementation | not started |
