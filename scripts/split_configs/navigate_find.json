@@ -1,0 +1,17 @@
+{
+  "family": "navigate_find",
+  "file": "viewer/navigate_find.js",
+  "container": { "kind": "function", "name": "init" },
+  "shared": "NF",
+  "registry": "__navigateFindParts",
+  "prefix": "nf_",
+  "parts": [
+    { "name": "ui_history" },
+    { "name": "tree_lens", "startsAt": "_orderedParentLabels" },
+    { "name": "highlight_cost", "startsAt": "_clearPathHighlight" },
+    { "name": "room", "startsAt": "_buildShapeMeshes" },
+    { "name": "trees", "startsAt": "_buildRoomTree" },
+    { "name": "isolate_drill", "startsAt": "_isolateGuidSet" },
+    { "name": "panel_search", "startsAt": "_handleInput" }
+  ]
+}

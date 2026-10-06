@@ -125,7 +125,7 @@ function sumElems(rows) { return rows.reduce(function (a, r) { return a + r.coun
   // (guards against the inlined compute5D/apply5DRates above drifting from navigate_find.js).
   function srcHas(file, tokens) {
     var p = path.join(__dirname, '..', 'viewer', file);
-    var s = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+    var s = file === 'navigate_find.js' ? require('../viewer/tests/_split_families.js').readFamily('navigate_find') : fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
     return tokens.every(function (t) {
       var ok = s.indexOf(t) >= 0;
       if (!ok) console.log('  §FIND_COST_CONTRACT MISSING ' + file + ' :: ' + t);
