@@ -345,7 +345,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     o.steps = [];
     for (const f of [0.2, 0.5, 0.8]) {   // (a) + (e)
       const s = scrub(f); await frames(3); const L = A._civilLive(), ind = A.civilCrossOutput(), b = box();
-      o.steps.push({ s: +s.toFixed(1), drawnS: L.drawn && +L.drawn.s.toFixed(1), nSeg: L.drawn && L.drawn.nSeg, indSeg: ind.nSeg, titleHasS: !!(L.title && L.title.indexOf('chainage ' + Math.round(s) + ' m') === 0), ink: inkPx(), inside: b.inside, l: Math.round(b.l), t: Math.round(b.t), pinned: L.pinned });
+      o.steps.push({ s: +s.toFixed(1), drawnS: L.drawn && +L.drawn.s.toFixed(1), nSeg: L.drawn && L.drawn.nSeg, indSeg: ind.nSeg, titleHasS: !!(L.title && L.title.indexOf('Ch ' + Math.round(s) + ' m') === 0), cw: L.canvasW, legend: L.drawn && L.drawn.legend, plotTop: L.drawn && L.drawn.plotTop, ink: inkPx(), inside: b.inside, l: Math.round(b.l), t: Math.round(b.t), pinned: L.pinned });
     }
     // (b) burst: 40 scrubs in one task, then settle
     A._civilLiveReset(); let sB = 0; for (let i = 0; i < 40; i++) sB = scrub(0.3 + i * 0.005); await frames(4);
@@ -373,6 +373,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   log('  [crossLive] ' + JSON.stringify(LV));
   add('§CROSS_LIVE: popup exists in Cross mode', LV.present === true, 'present=' + LV.present);
   if (LV.present) {
+    // §CROSS_POPUP_COMPACT — issue: popup top text overlapped ("jumbled"). Legend labels must not overlap each other, stay inside
+    // the canvas width, and sit above the plot area.
+    var lgOk = LV.steps.every(function (x) { var r = x.legend || []; if (!r.length) return false; for (var i = 0; i < r.length; i++) { if (r[i][2] > x.cw || r[i][3] > x.plotTop) return false; for (var j = i + 1; j < r.length; j++) if (r[i][0] < r[j][2] && r[j][0] < r[i][2] && r[i][1] < r[j][3] && r[j][1] < r[i][3]) return false; } return true; });
+    add('§CROSS_POPUP_COMPACT: popup legend labels never overlap, fit the width, sit above the plot', lgOk, JSON.stringify(LV.steps.map(function (x) { return [x.s, (x.legend || []).length, x.plotTop]; })));
     add('§CROSS_LIVE: at 3 scrubbed chainages popup chainage == scrubber s, header says so, segments == independent civilCrossOutput, drawing has ink', LV.steps.every(x => Math.abs(x.drawnS - x.s) < 0.06 && x.titleHasS && x.nSeg === x.indSeg && x.nSeg > 0 && x.ink > 300), JSON.stringify(LV.steps.map(x => [x.s, x.drawnS, x.nSeg, x.indSeg, x.ink])));
     add('§CROSS_LIVE: popup stays inside the canvas and (unpinned) follows the cut (position differs across chainages)', LV.steps.every(x => x.inside && !x.pinned) && new Set(LV.steps.map(x => x.l + ',' + x.t)).size > 1, JSON.stringify(LV.steps.map(x => [x.l, x.t])));
     add('§CROSS_LIVE: throttle — 40 scrubs in one task -> <=1 redraw, latest chainage wins', LV.burst.redraws >= 1 && LV.burst.redraws <= 1 && Math.abs(LV.burst.drawnS - LV.burst.lastS) < 0.06, JSON.stringify(LV.burst));
