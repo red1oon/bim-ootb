@@ -12,6 +12,68 @@ function setupCpeRoadPanels(A) {
   var _rp = null;
 
   function _q(sql) { try { return (A.dbQuery && A.dbQuery(sql)) || []; } catch (e) { return []; } }
+  // §EARTHWORKS_VOLUME (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md, queue item 3): V = |sum of signed tetra volumes| of the
+  // EARTHWORK solid's triangles, ONLY if the surface is closed. Rigid motion (the stored rotation, the blob's Y/Z axis swap)
+  // keeps volume, so the blob's own coordinates are used; no scale exists in element_transforms.
+  // Closed = after welding bit-identical positions (the blob repeats vertices), dropping zero-area index-collapsed triangles,
+  // EVERY undirected edge is used by exactly 2 triangles, once in each direction. Anything else: open -> NO number (never guessed).
+  A.meshSolidVolume = function (vArr, fArr) {
+    var nV = Math.floor(vArr.length / 3), nT = Math.floor(fArr.length / 3), map = new Map(), id = new Int32Array(nV), nU = 0, i;
+    var f32 = new Float32Array(3), u32 = new Uint32Array(f32.buffer), U = [];
+    for (i = 0; i < nV; i++) {
+      f32[0] = vArr[3 * i]; f32[1] = vArr[3 * i + 1]; f32[2] = vArr[3 * i + 2];
+      var k = u32[0] + ',' + u32[1] + ',' + u32[2], g = map.get(k);
+      if (g === undefined) { g = nU++; map.set(k, g); U.push(f32[0], f32[1], f32[2]); }
+      id[i] = g;
+    }
+    var edges = new Map(), signed = 0, tris = 0, collapsed = 0, t, j;
+    for (t = 0; t < nT; t++) {
+      var a = id[fArr[3 * t]], b = id[fArr[3 * t + 1]], c = id[fArr[3 * t + 2]];
+      if (a === b || b === c || a === c) { collapsed++; continue; }
+      tris++;
+      var ax = U[3 * a], ay = U[3 * a + 1], az = U[3 * a + 2], bx = U[3 * b], by = U[3 * b + 1], bz = U[3 * b + 2], cx = U[3 * c], cy = U[3 * c + 1], cz = U[3 * c + 2];
+      signed += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);   // a . (b x c)
+      var tri = [a, b, c];
+      for (j = 0; j < 3; j++) {
+        var p = tri[j], q = tri[(j + 1) % 3], lo = p < q ? p : q, hi = p < q ? q : p, ek = lo * 4294967296 + hi, e = edges.get(ek);
+        if (!e) { e = [0, 0]; edges.set(ek, e); }
+        e[p < q ? 0 : 1]++;
+      }
+    }
+    var open = 0, nonManifold = 0, wrongWay = 0;
+    edges.forEach(function (e) { var n = e[0] + e[1];
+      if (n === 1) open++; else if (n !== 2) nonManifold++; else if (e[0] !== 1) wrongWay++; });
+    var closed = tris > 0 && open === 0 && nonManifold === 0 && wrongWay === 0;
+    return { tris: tris, collapsed: collapsed, verts: nV, uniqueVerts: nU, edges: edges.size, openEdges: open, nonManifoldEdges: nonManifold,
+             wrongWayEdges: wrongWay, closed: closed, signedSum: signed / 6, volume: closed ? Math.abs(signed / 6) : null };
+  };
+  // the EARTHWORK elements of the open model -> one verdict. Any element not closed -> total null (INCONCLUSIVE). None -> VACUOUS.
+  var _ewVol = null;
+  A.earthworksVolume = function () {
+    if (_ewVol && _ewVol.db === A.db) return _ewVol.r;
+    var rows = _q("SELECT m.guid, i.geometry_hash FROM elements_meta m JOIN element_instances i ON i.guid = m.guid WHERE m.discipline = 'EARTHWORK' AND i.geometry_hash IS NOT NULL");
+    var r = { n: rows.length, elements: [], total: null, verdict: 'VACUOUS' };
+    if (rows.length) {
+      var allClosed = true, sum = 0;
+      rows.forEach(function (row) {
+        var g = []; try { g = A.dbQuery('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [row[1]]) || []; } catch (e) {}
+        if (!g.length && A.libDb && A.libDb !== A.db) { try { var lr = A.libDb.exec('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [row[1]]); g = lr.length ? lr[0].values : []; } catch (e2) {} }
+        var vb = g.length && g[0][0], fb = g.length && g[0][1], m;
+        if (!vb || !fb) { m = { guid: row[0], closed: false, volume: null, noMesh: true }; allClosed = false; }
+        else {
+          m = A.meshSolidVolume(new Float32Array(vb.buffer.slice(vb.byteOffset, vb.byteOffset + vb.byteLength)), new Uint32Array(fb.buffer.slice(fb.byteOffset, fb.byteOffset + fb.byteLength)));
+          m.guid = row[0]; if (m.closed) sum += m.volume; else allClosed = false;
+        }
+        r.elements.push(m);
+        console.log('§EARTHWORKS_VOLUME guid=' + row[0] + ' tris=' + m.tris + ' uniqueVerts=' + m.uniqueVerts + ' openEdges=' + m.openEdges + ' nonManifoldEdges=' + m.nonManifoldEdges +
+          ' wrongWayEdges=' + m.wrongWayEdges + ' closed=' + m.closed + (m.closed ? ' V_m3=' + m.volume.toFixed(3) : ' V=NONE (surface not closed; raw signed sum ' + (m.signedSum == null ? 'n/a' : m.signedSum.toFixed(3)) + ' is not a volume)'));
+      });
+      if (allClosed) { r.total = sum; r.verdict = 'MEASURED'; } else r.verdict = 'INCONCLUSIVE';
+    }
+    console.log('§EARTHWORKS_VOLUME verdict=' + r.verdict + ' elements=' + r.n + (r.total != null ? ' total_m3=' + r.total.toFixed(3) : ''));
+    _ewVol = { db: A.db, r: r };
+    return r;
+  };
   function _hasPsets() { return _q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'").length > 0; }
 
   // nearest-segment projection of an xz point onto the route polyline → chainage (m) from the drive's first point
@@ -207,8 +269,13 @@ function setupCpeRoadPanels(A) {
       return { kind: kind, title: 'Coming to this view — planned', rows: [
         (function () { var ew = (_q("SELECT COUNT(*) FROM elements_meta WHERE discipline = 'EARTHWORK'")[0] || [0])[0];   // G2: true only when none
           return ew ? { label: 'Earthworks body (solids)', value: ew, disc: 'EARTHWORK' } : { label: 'Terrain profile', value: 'planned — no earthwork surface in this model' }; })(),
+        (function () { var ev = A.earthworksVolume();   // §EARTHWORKS_VOLUME: only a model with an EARTHWORK body gets the line
+          if (!ev.n) return null;
+          if (ev.verdict === 'MEASURED') return { label: 'Earthworks volume', value: Math.round(ev.total).toLocaleString('en-US') + ' m³', vol: true };
+          var oe = ev.elements.reduce(function (a, m) { return a + (m.openEdges || 0) + (m.nonManifoldEdges || 0) + (m.wrongWayEdges || 0); }, 0);
+          return { label: 'Earthworks volume', value: 'not measurable — surface open (' + oe + ' edges)', vol: true }; })(),
         { label: 'Weather', value: 'planned — no weather data' },
-        { label: 'Traffic', value: 'planned — no traffic data' }], guids: [] };
+        { label: 'Traffic', value: 'planned — no traffic data' }].filter(Boolean), guids: [] };
     }
     return null;
   }
@@ -265,6 +332,7 @@ function setupCpeRoadPanels(A) {
     return A.roadPanelsLastBox;
   };
   A.roadPanelsSlots = function () { return _rp ? _rp.slots : null; };
+  A.roadPanelsCardOf = function (kind) { return _card(kind, [], _hasPsets(), 0, 0, false, false); };   // witness access: one card kind, whatever the film slots picked
   // §ALTC_V3_CHAINAGE_ROW: ONE owner for "where along the drive is this point" on a road film (the status box's Chainage row reads it).
   // Same projection the cards use, on the film's drive route (A.civilDriveRoute). Null on a building.
   var _chainRouteRef = null, _chainFn = null;

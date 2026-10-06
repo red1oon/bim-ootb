@@ -67,6 +67,7 @@ async function probe(browser, bld, dir) {
         else if (card.kind === 'ground' && row.key != null) sql = "SELECT COUNT(DISTINCT guid) FROM element_psets WHERE name='15_Name' AND value='" + String(row.key).replace(/'/g, "''") + "' AND guid IN (" + inList + ")";
         else if (card.kind === 'ground' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta m WHERE m.discipline='" + row.disc + "' AND m.guid IN (" + inList + ")" +
           (A.dbQuery("SELECT name FROM sqlite_master WHERE name='element_psets'").length ? " AND NOT EXISTS (SELECT 1 FROM element_psets p WHERE p.guid=m.guid AND p.name='15_Name')" : '');
+        else if (card.kind === 'planned' && row.vol) { chk.push({ shown: row.value, vol: true }); return; }   // §EARTHWORKS_VOLUME: judged by witness_earthworks_volume.js
         else if (card.kind === 'planned' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta WHERE discipline='" + row.disc + "'";
         else if (card.kind === 'outstanding') {
           const CR = window.CIVIL_RATES || {}, pres = {}; A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline').forEach(x => { pres[x[0]] = x[1]; });
@@ -121,7 +122,7 @@ async function probe(browser, bld, dir) {
     .invariant('road: slots never overlap', rs => rs.every(r => r.road.slots.every((s, i, a) => i === 0 || s.t0 >= a[i - 1].t1)))
     .invariant('road: every slot inside the build-up drive window (never the parade half or the orbit)', rs => rs.every(r => r.road.slots.every(s => s.t0 >= r.road.w0 && s.t1 <= r.road.w1 && s.t1 <= r.road.out)))
     .invariant('road: every slot quiet (busy ≤ the window median)', rs => rs.every(r => r.road.slots.every(s => s.busy <= +r.road.median.toFixed(3) + 1e-9)))
-    .invariant('road: every number on every card = SQL count over its own guids; planned rows carry no number', rs => rs.every(r => r.road.slots.every(s => s.chk.every(c => (c.sql != null ? +c.shown === +c.sql : c.planned)))))
+    .invariant('road: every number on every card = SQL count over its own guids; planned rows carry no number', rs => rs.every(r => r.road.slots.every(s => s.chk.every(c => (c.sql != null ? +c.shown === +c.sql : (c.planned || c.vol))))))
     .invariant('road §ALTC_CHECKS: ≥ 1 road-check card; its measured value = road_check row for that element; its tag = the rule\'s film_status in road_rules.json', rs => rs.every(r => { const cs = r.road.slots.filter(s => s.kind === 'check'); return cs.length > 0 && cs.every(s => { const o = (r.road.oracleRows[s.check.guid] || []).filter(x => x.rule === s.check.rule); return o.some(x => x.measured === s.check.measured) && s.check.status === r.road.statusOf[s.check.rule] && s.check.tag === (s.check.status === 'valid' ? 'VALID' : 'SPECULATIVE'); }); }))
     .invariant('road §ALTC_GROUND_CARDS: a model with ground works shows ≥ 1 ground card (none without: VACUOUS-safe)', rs => rs.every(r => !r.road.groundRows || r.road.slots.some(s => s.kind === 'ground')))
     .invariant('road §ALTC_GROUND_CARDS: at most ONE outstanding card, and it carries the red banner', rs => rs.every(r => { const os = r.road.slots.filter(s => s.kind === 'outstanding'); return os.length <= 1 && os.every(s => s.banner === 'red'); }))
