@@ -7,7 +7,7 @@ const V = path.join(__dirname, '..');
 const FAMILIES = {
   effects: {
     shell: 'effects.js', shared: 'FXS',
-    files: ['effects.js'],
+    files: ['fx_composer.js', 'fx_props_staffage.js', 'fx_sun_shadow.js', 'fx_photo_staging.js', 'fx_still_refine.js', 'fx_cpe_reveal_bands.js', 'fx_cinema_path_plan.js', 'fx_cinema_orbit.js', 'effects.js'],
     loader: { kind: 'html', file: 'viewer.html' },
     runtime: (win) => (typeof win.setupEffects === 'function' ? win.setupEffects(win.APP, {}, {}, {}) : undefined),   // async
     // mobile: setupEffects' early `return` (§EFFECTS_SKIP) must still stop the WHOLE setup after the split

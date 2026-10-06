@@ -156,7 +156,9 @@ cfg.parts.forEach((P, pi) => {
   if (asyncRun && !isAsync) refuse('await at container level in a non-async container (part ' + P.name + ')');
   if (asyncRun) asyncParts.push(P.name);
   const text = mine.filter((st) => !(ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression) && st.expression.text === 'use strict'))
-    .map((st) => render(st.getFullStart(), st.end)).join('');
+    .map((st) => render(st.getFullStart(), st.end)).join('') +
+    // the container's trailing comments (after its last statement, before its closing brace) belong to the last part
+    (pi === cfg.parts.length - 1 ? src.slice(stmts[stmts.length - 1].end, C.body.end - 1).replace(/\s+$/, '') : '');
   const pub = [].concat(
     ownCrossFn.map((n) => '  ' + SH + '.' + n + ' = ' + n + ';'),
     ownCrossVar.map((n) => '  Object.defineProperty(' + SH + ", '" + n + "', { get: function () { return " + n + '; }, set: function (v) { ' + n + ' = v; }, enumerable: true });'));

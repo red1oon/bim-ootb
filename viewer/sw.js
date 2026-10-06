@@ -186,7 +186,8 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1597';
+const CACHE_VERSION = 'v1598';
+// v1598 (2026-10-06) effects.js split move-only into fx_composer.js fx_props_staffage.js fx_sun_shadow.js fx_photo_staging.js fx_still_refine.js fx_cpe_reveal_bands.js fx_cinema_path_plan.js fx_cinema_orbit.js (precached, loaded before it); early mobile return preserved; W-SPLIT-SURFACE + split_verify. effects.js?v=150
 // v1597 (2026-10-06) cinema_maxq.js split move-only into maxq_buildup_ghost.js maxq_infra.js maxq_hud_layers.js maxq_capture_stitch.js maxq_start.js (precached, loaded before it); W-SPLIT-SURFACE + split_verify. cinema_maxq.js?v=43
 // v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
 // v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=2, #sec-axes.
@@ -968,7 +969,7 @@ const PRECACHE_ASSETS = [
   'sourced_light.js',   // §SOURCED_LIGHT: zone-bound lamps/portals, no sourceless sky indoors
   'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
-  'effects.js',
+  'fx_composer.js','fx_props_staffage.js','fx_sun_shadow.js','fx_photo_staging.js','fx_still_refine.js','fx_cpe_reveal_bands.js','fx_cinema_path_plan.js','fx_cinema_orbit.js','effects.js',
   'maxq_buildup_ghost.js','maxq_infra.js','maxq_hud_layers.js','maxq_capture_stitch.js','maxq_start.js','cinema_maxq.js',
   'gi_still.js',  // §GI_LIVE: Alt+S bounce (desktop + WebGPU only); its two lib/gi modules cache on first use
   'cinema_path_editor.js',
