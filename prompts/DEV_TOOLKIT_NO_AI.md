@@ -29,7 +29,7 @@ separate tools. Fewer things to install, fewer things to keep working when no AI
 | Top tags | `§CRUD` 190, `§LOAD_FAIL` 174, `§S260` 169, `§KANBAN` 111 | same |
 | Service workers (each own `CACHE_VERSION`) | 3 — `viewer/sw.js`, `erp/sw.js`, `modeller/sw.js` | `git grep -l "const CACHE_VERSION"` |
 | Files touching IndexedDB / OPFS | 42 | `git grep -l "indexedDB.open\|navigator.storage.getDirectory"` |
-| Witness scripts | 211 `viewer/tests/witness_*.js` + `witness_kit/contract.js` | `ls` |
+| Witness scripts | 265 `viewer/tests/witness_*.js` (54 on `witness_kit/contract.js`, §9.1) | `ls` |
 | Project JSON files (non-package) | 129 | `git ls-tree` |
 | Files reading `_isMobile` | 25 | `git grep -c _isMobile` |
 | Existing VS Code setup | `jsconfig.json`, `types/erp-globals.d.ts`, tasks *Serve repo* + *Lint viewer*, ESLint recommended (#1896) | `.vscode/` |
@@ -235,9 +235,8 @@ logs. It is the non-AI version of what Claude does: read the log, pick the claim
 **Big tool it simplifies:** invariant miners (Daikon-style) + golden-master / snapshot testing.
 - **Built on the existing kit, not beside it:** emits a `witness_kit/contract.js` `Witness(name)` file —
   `.population()` / `.schema()` / `.invariant()` / `.redControl()` — so it inherits the kit's refusals
-  (no population / no red control → will not run). Measured: **53 of 211** `viewer/tests/witness_*.js`
-  use `contract.js` today (`git grep -l "require('.*witness_kit/contract"`, 2026-10-06) — the writer
-  only ever emits the kit form.
+  (no population / no red control → will not run). Measured (S1, below): **54 of 265** `viewer/tests/witness_*.js`
+  use `contract.js` — the writer only ever emits the kit form.
 - **Steps (each a screen in the extension, each a CLI flag too):**
   1. **Pick the claim source:** a `§TAG` in T1, or a function under the cursor (E3 finds the `§` lines it emits).
   2. **Population = a real recorded run**, never a fixture: a saved X1 session, a `~/.cache/bim4d/` run, or a
@@ -299,6 +298,7 @@ Then X1 panel (T1), then the rest by rank.
 | Modeller never calls `navigator.storage.persist()` | grep `modeller/` | Modeller | `MODELLER_MASTER.md` §2026-10-06 |
 | No app code watches quota (`storage.estimate`) | grep | Offline / local-storage lane | `OFFLINE_HUB_SW_SCOPE_GAP.md` §2026-10-06 |
 | No app code runs SQLite `integrity_check` | grep | Offline / local-storage lane | `OFFLINE_HUB_SW_SCOPE_GAP.md` §2026-10-06 |
+| 211 hand-rolled witnesses (135 after the kit), 110 with `/home/red1` paths, 0 in CI | §9.1 | Witness lane | `WITNESS_INTERFACE_FRAMEWORK.md` §2026-10-06 |
 
 ## §8 Packaging — install like any other plugin
 - Source `bim-ootb/devtools/vscode/`: `x1-slens/`, `x2-live-doctor/`, `x3-maps/`, `x4-rules/` (also usable
@@ -314,7 +314,7 @@ Then X1 panel (T1), then the rest by rank.
 | Spike | Question | Decides |
 |---|---|---|
 | S0 | js-debug gives `source`/`line` on page `console.log`? | E1 live vs file-only |
-| S1 | ✅ partly: 53 of 211 `viewer/tests` witnesses use `contract.js`; erp/modeller tests not yet counted | T5 scope, T25 output form |
+| S1 | ✅ see §9.1 | T5 scope, T25 output form |
 | S2 | Tab's active SW version readable without the bridge? | T2 needs app code or not |
 | S3 | Which objects hold each T9 field? | T9 field list |
 | S4 | Which of 129 JSONs the app reads? | T18 list |
@@ -323,6 +323,25 @@ Then X1 panel (T1), then the rest by rank.
 | S7 | `_isMobile` gates: whole feature vs tweak? | T23 roll-up |
 | S8 | Existing FPS / frame-ms / heap targets in MOBILE_PERF + `§FPS_MODE` lane? | T24 thresholds |
 | S9 | Each playbook row matched to a real past incident? | §3 lock |
+
+### §9.1 S1 result — why only 54 of 265 witnesses use the kit (measured 2026-10-06, origin/main)
+Method: creation date of each `viewer/tests/witness_*.js` (`git log --diff-filter=A`) vs the kit's birth
+(`witness_kit/contract.js`, 2026-08-25 `5c73a5dd`); kit use = `git grep witness_kit/contract`.
+| Born | Uses kit | Hand-rolled |
+|---|---|---|
+| before the kit (< 2026-08-25) | 0 | 76 |
+| after the kit | 53 | **135** (69 Node-only, 66 browser) |
+- **History explains only 76.** 135 witnesses were written AFTER the kit existed and still skipped it.
+- **Shape does not explain it:** 29 kit witnesses drive a browser too, and 69 of the skippers are plain Node.
+- **What does:** nothing enforces it. CI runs **0** witnesses (`ci.yml` has no witness step); no lint
+  requires the kit; CLAUDE.md's startup step 7 says "start from contract.js" but adds "use judgment".
+  Advice without a gate decays — the same pattern `WITNESS_INTERFACE_FRAMEWORK.md §CRISIS` recorded.
+- **Second finding, worse for other devs:** **110** witnesses hard-code `/home/red1/...` paths (e.g.
+  41 `require('/home/red1/bim-compiler/node_modules/puppeteer')`). They cannot run on any other machine —
+  a dev without Claude can't run them at all. 120 need a browser (puppeteer/playwright).
+- **Toolkit consequence:** T14 Witness Lint gets two rules — "new witness must use `contract.js`" and "no
+  absolute home path" — run on changed files only (new code gated, old code listed, not blocked).
+  T5 shows hand-rolled ones as `UNKNOWN`. Migrating the 211 old ones is a witness-lane job, not tool work (§7).
 
 ## §10 Decisions (admin, decided 2026-10-06 — user: "the gitadmin has to answer those questions that is not about project shape")
 - ✅ **Distribution:** `.vsix` attached to GitHub Releases. Open VSX / Marketplace only after the first slice
@@ -338,5 +357,5 @@ Then X1 panel (T1), then the rest by rank.
 | Playbook §3 | draft — lock after S9 |
 | Engines §4 | draft — lock after S0, S2 |
 | Tool specs §5 | draft — each locks after its spike |
-| Findings §7 | 5 handed off |
+| Findings §7 | 6 handed off |
 | Implementation | not started — first slice §6 |
