@@ -1,44 +1,24 @@
 // navigate_find family — part `trees` (original navigate_find.js lines 2850–3825).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.trees = function __split_navigate_find_trees(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.trees = function* __split_navigate_find_trees(NF, A, nav, getStartNavigation) {
   'use strict';
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)
-
-    // Isolate a raw element group (Stairs/Lift-Shaft/Plant-Room — see §ROOM_LENS_TAXONOMY in
-    // _buildRoomTree(), the sole caller now that the standalone Parts axis is retired) — plain
-    // filterByGuids, no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail
-    // (isoBar show) but takes the guid set directly since the caller already has the rows in hand.
-    // §RAW-ISOLATE-TOGGLE (2026-07-15, real user report on Hospital: "stairs does not untoggle" —
-    // tapping Stairs a 2nd time just re-ran the same isolate instead of clearing it, unlike the
-    // new category reveal (§ROOM_LENS_TAXONOMY §3) which DOES toggle off on repeat tap. User also
-    // confirmed switching BETWEEN raw groups already worked ("plants/stairs untoggle each other" —
-    // a new isolate naturally replaces the old one); only the SAME-label-twice case was missing.
-    // `label` is the tracking key for both header taps ("Stairs") and individual leaf taps (a
-    // specific stair's own name) — tapping the exact same one again clears back to normal.
-    var _rawIsolateOn = null;  // { order:[name...], byPhase:{ name:{guids:Set,count,firstTs} } }
-    var _tmGenTried = false;
-
-    // §D drill helpers ───────────────────────────────────────────────────────────
-    var _PHASE_ELEM_CAP = 250;
-
-    // §RP-SHAPE drill: x-ray the rest (transparent), keep the WHOLE PHASE solid (real-geometry
-    // opaque overlay), and light the SELECTED item's real SHAPE in cyan. Never hides. `phaseSet`
-    // (optional) is the parent phase's guids — the part kept solid; `set` is what's lit.
-    // §DEPTH — ONE uniform model across every lens (Storey·Disc·Room·Material·Phase). The view is
-    // a pure function of selection depth; NO per-lens custom rendering:
-    //   • rest of building = 0.1 GHOST, always (never hidden).
-    //   • GROUP selected (litSet empty, only groupSet) → group = 1.0 SOLID natural material +
-    //     zoom-to-FIT the group (fills the frame). No cyan — solid IS the "you are here".
-    //   • ITEM selected (litSet present) → item = bright cyan, its group drops to 0.5 (semi),
-    //     item zoom 1.1. The 0.1↔0.5 gap + colour (not another opacity step) carries the hierarchy.
-    // Callers: group-select passes (null, …, groupSet); item-select passes (itemSet, …, groupSet).
-    // ctxOpacity overrides the item-mode group opacity (default 0.5); group mode is always 1.0.
-    // zoomBox (optional, item mode): a {center,size} to FRAME instead of the lit set — e.g. a Room
-    // frames its whole VOLUME (its 2 contained elements would zoom to a tiny erroneous frame).
-    var _drillRAF1 = null, _drillRAF2 = null;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._buildRoomTree = _buildRoomTree;
+  NF._buildMaterialTree = _buildMaterialTree;
+  NF._buildPhaseTree = _buildPhaseTree;
+  NF._bboxOfGuids = _bboxOfGuids;
+  NF._zoomToGuids = _zoomToGuids;
+  NF._drillSelect = _drillSelect;
+  NF._viewToDrill = _viewToDrill;
+  NF._typeShapeDrill = _typeShapeDrill;
+  NF._axisGroupSelect = _axisGroupSelect;
+  NF._typeItemChildren = _typeItemChildren;
+  Object.defineProperty(NF, '_phaseCache', { get: function () { return _phaseCache; }, set: function (v) { _phaseCache = v; }, enumerable: true });
+  Object.defineProperty(NF, '_elMetaMap', { get: function () { return _elMetaMap; }, set: function (v) { _elMetaMap = v; }, enumerable: true });
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
 
 
     // §RP-T3 axis builders — list the groups for Room / Material / Phase.
@@ -446,6 +426,19 @@
         box.appendChild(d);
       });
     }
+
+    // Isolate a raw element group (Stairs/Lift-Shaft/Plant-Room — see §ROOM_LENS_TAXONOMY in
+    // _buildRoomTree(), the sole caller now that the standalone Parts axis is retired) — plain
+    // filterByGuids, no highlight/box overlay to own or tear down. Mirrors _isolateLensGroup's tail
+    // (isoBar show) but takes the guid set directly since the caller already has the rows in hand.
+    // §RAW-ISOLATE-TOGGLE (2026-07-15, real user report on Hospital: "stairs does not untoggle" —
+    // tapping Stairs a 2nd time just re-ran the same isolate instead of clearing it, unlike the
+    // new category reveal (§ROOM_LENS_TAXONOMY §3) which DOES toggle off on repeat tap. User also
+    // confirmed switching BETWEEN raw groups already worked ("plants/stairs untoggle each other" —
+    // a new isolate naturally replaces the old one); only the SAME-label-twice case was missing.
+    // `label` is the tracking key for both header taps ("Stairs") and individual leaf taps (a
+    // specific stair's own name) — tapping the exact same one again clears back to normal.
+    var _rawIsolateOn = null;
     function _isolatePartsGroup(label, guids) {
       if (!A.db || !A.filterByGuids) return;
       if (_rawIsolateOn === label) {
@@ -558,7 +551,15 @@
           .forEach(function(r) { if (_deriveCategory(r[1]) === cat) set.add(r[0]); });
       } catch(e) { console.warn('[RP-T3] §MAT_SELECT_ERR', e.message); }
       _materialHighlight(cat + ' (derived)', set);
-    } // ran tmGenerateTimeline once
+    }
+
+    // ══ §RP Task B: Phase axis = Time Machine's REAL timeline generator ══
+    // Source of truth = window.tmGenerateTimeline() (time_machine.js injectGantt). It writes
+    // one ELEMENT_PLACE row per element into kernel_ops (timestamp = install order,
+    // parameters = JSON {phase,...}). We trigger it lazily ONCE (cached), then read
+    // kernel_ops ORDER BY timestamp, grouping output_guid by parameters.phase.
+    var _phaseCache = null;  // { order:[name...], byPhase:{ name:{guids:Set,count,firstTs} } }
+    var _tmGenTried = false; // ran tmGenerateTimeline once
 
     function _readKernelOps() {
       var rows = [];
@@ -582,12 +583,12 @@
       var order = Object.keys(byPhase).sort(function(a, b) {
         return byPhase[a].firstTs - byPhase[b].firstTs || (a < b ? -1 : 1);
       });
-      NF._phaseCache = { order: order, byPhase: byPhase };
-      return NF._phaseCache;
+      _phaseCache = { order: order, byPhase: byPhase };
+      return _phaseCache;
     }
 
     function _generatePhases() {
-      if (NF._phaseCache) return NF._phaseCache;
+      if (_phaseCache) return _phaseCache;
       var pc = _readKernelOps();
       if (pc) return pc;
       if (!_tmGenTried) {
@@ -618,7 +619,7 @@
     }
 
     function _buildPhaseTree() {
-      if (NF._phaseCache) { _renderPhaseList(NF._phaseCache, 'cached'); return; }
+      if (_phaseCache) { _renderPhaseList(_phaseCache, 'cached'); return; }
       var hint = document.createElement('div');
       hint.style.cssText = 'padding:10px;font-size:11px;color:#4fc3f7';
       hint.textContent = NF._t('ui_phase_generating', 'Timeline generating…');
@@ -636,16 +637,20 @@
         }
         _renderPhaseList(pc, 'fresh');
       }, 0);
-    }         // guid → {name, cls}, lazily cached per Find-open
+    }
+
+    // §D drill helpers ───────────────────────────────────────────────────────────
+    var _PHASE_ELEM_CAP = 250;     // max element leaves listed per phase/task (no silent cap)
+    var _elMetaMap = null;         // guid → {name, cls}, lazily cached per Find-open
 
     function _elMeta() {
-      if (NF._elMetaMap) return NF._elMetaMap;
-      NF._elMetaMap = {};
+      if (_elMetaMap) return _elMetaMap;
+      _elMetaMap = {};
       try {
         A.dbQuery("SELECT guid, element_name, ifc_class FROM elements_meta")
-          .forEach(function(r) { NF._elMetaMap[r[0]] = { name: r[1], cls: r[2] }; });
+          .forEach(function(r) { _elMetaMap[r[0]] = { name: r[1], cls: r[2] }; });
       } catch(e) { /* map stays empty */ }
-      return NF._elMetaMap;
+      return _elMetaMap;
     }
     function _elLabel(g) {
       var em = _elMeta()[g];
@@ -673,6 +678,22 @@
                size: new THREE.Vector3(maxx - minx, maxy - miny, maxz - minz) };
     }
     function _zoomToGuids(set, factor) { var bb = _bboxOfGuids(set); if (bb) NF._zoomToBox(bb.center, bb.size, factor); return !!bb; }
+
+    // §RP-SHAPE drill: x-ray the rest (transparent), keep the WHOLE PHASE solid (real-geometry
+    // opaque overlay), and light the SELECTED item's real SHAPE in cyan. Never hides. `phaseSet`
+    // (optional) is the parent phase's guids — the part kept solid; `set` is what's lit.
+    // §DEPTH — ONE uniform model across every lens (Storey·Disc·Room·Material·Phase). The view is
+    // a pure function of selection depth; NO per-lens custom rendering:
+    //   • rest of building = 0.1 GHOST, always (never hidden).
+    //   • GROUP selected (litSet empty, only groupSet) → group = 1.0 SOLID natural material +
+    //     zoom-to-FIT the group (fills the frame). No cyan — solid IS the "you are here".
+    //   • ITEM selected (litSet present) → item = bright cyan, its group drops to 0.5 (semi),
+    //     item zoom 1.1. The 0.1↔0.5 gap + colour (not another opacity step) carries the hierarchy.
+    // Callers: group-select passes (null, …, groupSet); item-select passes (itemSet, …, groupSet).
+    // ctxOpacity overrides the item-mode group opacity (default 0.5); group mode is always 1.0.
+    // zoomBox (optional, item mode): a {center,size} to FRAME instead of the lit set — e.g. a Room
+    // frames its whole VOLUME (its 2 contained elements would zoom to a tiny erroneous frame).
+    var _drillRAF1 = null, _drillRAF2 = null;
     // §DEPTH — ONE windowed model (user-designed), uniform across every lens. Reading OUTWARD from
     // the focus (the thing you tapped):
     //   focus  = solid  (+ a SEE-THROUGH cyan mesh-highlight if it's the FINAL ITEM — the item is the
@@ -835,10 +856,10 @@
       return { focus: focus, opts: { isItem: isItem, parentSet: parent, grandSet: grand } };
     }
     function _phaseGuids(name) {
-      return (NF._phaseCache && NF._phaseCache.byPhase[name]) ? NF._phaseCache.byPhase[name].guids : null;
+      return (_phaseCache && _phaseCache.byPhase[name]) ? _phaseCache.byPhase[name].guids : null;
     }
     function _phaseSelect(name) {
-      var pc = NF._phaseCache;
+      var pc = _phaseCache;
       if (!pc || !pc.byPhase[name]) return;
       _drillSelect(pc.byPhase[name].guids, name, 'PHASE_SELECT', { isItem: false }); // top-level group: phase solid, building 0.2
     }
@@ -918,7 +939,7 @@
     // Lazy children for a phase node: Phase → task → element when task_elements is populated,
     // else Phase → element directly (kernel-only timelines, e.g. tasks table empty). Never hide.
     function _buildPhaseChildren(container, phaseName, hasTasks) {
-      var b = NF._phaseCache && NF._phaseCache.byPhase[phaseName];
+      var b = _phaseCache && _phaseCache.byPhase[phaseName];
       if (!b) return;
       var guids = Array.from(b.guids);
       if (hasTasks) {
@@ -977,27 +998,4 @@
       console.log('[RP-TB] §PHASE_LENS gen=real source=kernel_ops phases=' + pc.order.length +
         ' tasks=' + (hasTasks ? 'yes' : 'none(kernel-only)') + ' status=' + status);
     }
-
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._buildRoomTree = _buildRoomTree;
-  NF._buildMaterialTree = _buildMaterialTree;
-  NF._buildPhaseTree = _buildPhaseTree;
-  NF._bboxOfGuids = _bboxOfGuids;
-  NF._zoomToGuids = _zoomToGuids;
-  NF._drillSelect = _drillSelect;
-  NF._viewToDrill = _viewToDrill;
-  NF._typeShapeDrill = _typeShapeDrill;
-  NF._axisGroupSelect = _axisGroupSelect;
-  NF._typeItemChildren = _typeItemChildren;
-
-  return function () {   // phase 2: this part's setup statements, in original order
-
-    // ══ §RP Task B: Phase axis = Time Machine's REAL timeline generator ══
-    // Source of truth = window.tmGenerateTimeline() (time_machine.js injectGantt). It writes
-    // one ELEMENT_PLACE row per element into kernel_ops (timestamp = install order,
-    // parameters = JSON {phase,...}). We trigger it lazily ONCE (cached), then read
-    // kernel_ops ORDER BY timestamp, grouping output_guid by parameters.phase.
-    NF._phaseCache = null;     // max element leaves listed per phase/task (no silent cap)
-    NF._elMetaMap = null;
-  };
 };

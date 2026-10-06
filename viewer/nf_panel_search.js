@@ -1,31 +1,17 @@
 // navigate_find family — part `panel_search` (original navigate_find.js lines 4237–5287).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.panel_search = function __split_navigate_find_panel_search(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.panel_search = function* __split_navigate_find_panel_search(NF, A, nav, getStartNavigation) {
   'use strict';
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)
-    // §S275 (user): tap OUTSIDE the Find panel must NOT close it — only Esc or the × button do.
-    // The outside-tap-to-close handler was removed; the panel stays put while you click the model.
-
-    // ── Populate dropdowns — show all types/storeys, with match counts when searching ──
-    // §S280: Two-phase dropdowns — storeys appear instantly, types load in background
-    var _typesTimer = 0;
-
-    // §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
-    // CODE stored in elements_meta.discipline (ACMV/ELEC/PLB/FP/MEP/STR/ARC). Every filter/query/
-    // A.filterDisc still runs on the raw code — this only swaps the rendered text. Fixed list, no
-    // invented mapping for a code outside it (unmapped code falls back to itself, never blank).
-    var DISC_LABELS = {
-      ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
-      FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
-    };
-
-    // ── Highlight element (yellow IFC bbox from DB — same as picking.js) ──
-    var _highlight = null;
-    var _highlightPulse = null;
-    var _flyAnim = null;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._handleInput = _handleInput;
+  NF.populateDropdowns = populateDropdowns;
+  NF.runSearch = runSearch;
+  NF.friendlyClass = friendlyClass;
+  NF.friendlyDisc = friendlyDisc;
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
 
     function _handleInput(text, explicit) {
       // FIND_ASK_ANSWERS.md §D — while Ask is active, typed/voice/chip text drives the Ask catalog
@@ -67,6 +53,73 @@
       } catch (e) { /* ignore */ }
     }
 
+    // ── Open find panel (called from pill, nlp.js, or directly) ──
+    A.openFindPanel = function(searchTerm) {
+      // S275: Toggle — if already open with no search term, close it
+      if (!searchTerm && NF.panel.style.display === 'block') {
+        closeFindPanel();
+        return;
+      }
+      nav.voiceMode = !!A.inputWasVoice;
+      // Exit walk mode from previous navigation — ensures next Navigate starts from main entrance
+      if (A.walkModeActive) {
+        if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
+        A.walkModeActive = false;
+        if (A.controls) A.controls.enabled = true;
+        if (A.camera) A.camera.rotation.reorder('XYZ');
+        var walkBtn = document.getElementById('walk-mode-btn');
+        if (walkBtn) walkBtn.classList.remove('active');
+        console.log('[S233] §FIND_OPEN_RESET_WALK exited walk mode for fresh search');
+      }
+      // Full reset — clear previous search state
+      nav.results = [];
+      nav.activeIdx = -1;
+      nav.gridCache = {}; // clear stale grid caches
+      if (A.clearRouteCache) A.clearRouteCache(); // clear route templates too
+      NF.elType.value = '';
+      NF.elStorey.value = '';
+      NF.elResults.innerHTML = '';
+      NF.elCount.textContent = '';
+      NF.elSelected.style.display = 'none';
+      NF.panel.classList.remove('results-expanded');
+      [NF.elStoreyRow, NF.elTypeRow].forEach(function(r) { r.classList.remove('expanded'); });
+      clearHighlight();
+      // §RevitParity A1/Task A/B: fresh open clears any prior isolate + lens overlays
+      if (A.filterByGuids) A.filterByGuids(null);
+      NF._roomLensReset();
+      NF._highlightLensReset();
+      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing: category-reveal doors and the
+      // Path highlight survived a Find-panel close/reopen): _roomLensReset() only tears down
+      // _roomBoxes — the category reveal's OWN door meshes (_revealDoorMeshes) and the Path
+      // sub-mode's line/markers (_pathExtraMeshes) are separate arrays neither reset touches. Clear
+      // both explicitly, same as every other overlay this open path already resets.
+      NF._clearCategoryReveal();
+      NF._clearPathHighlight();
+      if (NF.elIsoBar) NF.elIsoBar.style.display = 'none';
+      NF._phaseCache = null; // fresh timeline per open (building may have changed)
+      NF._probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
+      NF._roomVolCache = null; NF._roomVolCacheBld = null; // §ROOM-VOL-CACHE: same reasoning
+      NF._elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
+      // Set search term and open
+      NF.panel.style.display = 'block';
+      NF.elName.value = searchTerm || '';
+      // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
+      NF._renderAxes(); // §RULE1: single axis toggle (cycles storey→disc→room→material→phase)
+      // §RULE1: with one toggle, the CURRENT axis tree is shown immediately (no hide-until-tap).
+      if (NF.elTree) { NF.elTree.style.display = ''; NF._treeRevealed = true; if (NF.elTreeGrip) NF.elTreeGrip.style.display = 'flex'; }
+      NF.buildTree();
+      buildChips();
+      if (searchTerm) { _handleInput(searchTerm, true); }
+      // S275: Auto-focus — panel system + input
+      if (typeof window._focusPanel === 'function') window._focusPanel('find');
+      // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.
+      if (!window._isMobile) NF.elName.focus();
+      // §VIEWLOG: fresh view-history per open (building may have changed); show the bar.
+      NF._vhClear();
+      NF._vhRender();
+      console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
+    };
+
     function closeFindPanel() {
       NF.panel.style.display = 'none';
       if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
@@ -107,6 +160,32 @@
       NF._vhRender();
       console.log('[S233] §FIND_CLOSE restored=none kept=[' + _kept.join(',') + ']');
     }
+    A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
+    // §CINEMA_GHOST_RESET (2026-07-21, broadened after user correction — the ghost shell can be
+    // visible for TWO independent reasons that don't track each other: auto-engaged by a Find-panel
+    // lens (_mgLensOwned=true, torn down by closeFindPanel/_setTreeMode/etc.) OR manually toggled via
+    // the Alt+Z 3-state cycle (tools.js `cycleXrayBboxMode` → `toggleMergedGhost`, which flips
+    // `_mergedGhost.visible` alone and NEVER touches `_mgLensOwned` — confirmed reading it directly).
+    // The original version of this fix only checked `_mgLensOwned`, so a manually-toggled-on ghost
+    // (e.g. cycled to Bbox mode via Alt+Z, or via the old Alt+X before it was merged into that cycle)
+    // survived into Alt+C untouched — likely the actual scenario hit live, since no Find-panel drill
+    // was involved. Fixed to key off VISIBILITY, not ownership — a cinematic film should never show
+    // the ghost shell regardless of how it got turned on.
+    A.resetCinemaGhostLens = function() {
+      if (NF._mergedGhost && NF._mergedGhost.visible) {
+        NF._mergedGhost.visible = false;
+        if (A.filterByGuids) A.filterByGuids(null); // restore solids — mirrors toggleMergedGhost's own off-path
+        var _wasAuto = NF._mgLensOwned; NF._mgLensOwned = false;
+        console.log('[MG] §CINEMA_GHOST_RESET hidden (' + (_wasAuto ? 'lens-owned' : 'manually toggled') + ', cinema orbit starting)');
+      }
+    };
+    NF.elClose.onclick = closeFindPanel;
+    // §S275 (user): tap OUTSIDE the Find panel must NOT close it — only Esc or the × button do.
+    // The outside-tap-to-close handler was removed; the panel stays put while you click the model.
+
+    // ── Populate dropdowns — show all types/storeys, with match counts when searching ──
+    // §S280: Two-phase dropdowns — storeys appear instantly, types load in background
+    var _typesTimer = 0;
 
     function populateDropdowns() {
       if (!A.db) return;
@@ -489,6 +568,15 @@
       c = c.replace(/([a-z])([A-Z])/g, '$1 $2');
       return c;
     }
+
+    // §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
+    // CODE stored in elements_meta.discipline (ACMV/ELEC/PLB/FP/MEP/STR/ARC). Every filter/query/
+    // A.filterDisc still runs on the raw code — this only swaps the rendered text. Fixed list, no
+    // invented mapping for a code outside it (unmapped code falls back to itself, never blank).
+    var DISC_LABELS = {
+      ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
+      FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
+    };
     function friendlyDisc(code) { return DISC_LABELS[code] || code; }
 
     function classIcon(ifcClass) {
@@ -614,7 +702,12 @@
       } catch(e) {
         console.log('[S275] §FIND_INFO_ERR ' + e.message);
       }
-    } // S275: running fly-to animation frame
+    }
+
+    // ── Highlight element (yellow IFC bbox from DB — same as picking.js) ──
+    var _highlight = null;
+    var _highlightPulse = null;
+    var _flyAnim = null; // S275: running fly-to animation frame
     function highlightElement(guid) {
       clearHighlight();
       // Clear picking.js highlight too (shared global)
@@ -716,124 +809,6 @@
       }
     }
 
-    function debounce(fn, ms) {
-      var t; return function() { clearTimeout(t); t = setTimeout(fn, ms); };
-    }
-
-    // ── Zoom-Across SCOPE consume (ZOOM_ACROSS_SCOPE_SESSION §SPEC) ─────────────────────────────────────────
-    // §BUGFIX 2026-07-13 (user report: "the ERP drawer at the bottom does not appear [after Zoom Across
-    // lands]; only when exiting the building and back to it, it is") — root cause: A.focusElement only
-    // does the 3D highlight (ghost/outline/zoom); it never touches #find-selected (the bottom bar with
-    // the cost figure + "› ERP" push + "open ↗"/"iDempiere ↗" links). Every OTHER selection path (a
-    // single result-item click, line ~3940; a storey/disc GROUP tap, line ~3117) explicitly reveals that
-    // bar via elSelected.style.display='flex' + _updateSelCost(set,label) — applyFindScope (the THIRD
-    // selection path, boot-time auto-Find from the ERP pill) never did. Re-entering the building later
-    // hits one of the other two paths, which is why a manual re-select "fixed" it. Mirrors the GROUP-tap
-    // fix (§FIND_MULTISEL, line ~3117) exactly — same reveal, same _updateSelCost call.
-    function _revealSelectedBar(set, label) {
-      var elSelText = document.getElementById('find-selected-text');
-      if (!set || !set.size) { if (NF.elSelected) NF.elSelected.style.display = 'none'; return; }
-      if (elSelText) elSelText.textContent = label;
-      if (NF.elSelected) NF.elSelected.style.display = 'flex';
-      try { NF._updateSelCost(set, label); } catch (e) { console.log('§ZOOM-SCOPE_BAR_ERR ' + e.message); }
-    }
-
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._handleInput = _handleInput;
-  NF.populateDropdowns = populateDropdowns;
-  NF.runSearch = runSearch;
-  NF.friendlyClass = friendlyClass;
-  NF.friendlyDisc = friendlyDisc;
-
-  return function () {   // phase 2: this part's setup statements, in original order
-
-    // ── Open find panel (called from pill, nlp.js, or directly) ──
-    A.openFindPanel = function(searchTerm) {
-      // S275: Toggle — if already open with no search term, close it
-      if (!searchTerm && NF.panel.style.display === 'block') {
-        closeFindPanel();
-        return;
-      }
-      nav.voiceMode = !!A.inputWasVoice;
-      // Exit walk mode from previous navigation — ensures next Navigate starts from main entrance
-      if (A.walkModeActive) {
-        if (nav.active) { if (A.stopNavigation) A.stopNavigation(); }
-        A.walkModeActive = false;
-        if (A.controls) A.controls.enabled = true;
-        if (A.camera) A.camera.rotation.reorder('XYZ');
-        var walkBtn = document.getElementById('walk-mode-btn');
-        if (walkBtn) walkBtn.classList.remove('active');
-        console.log('[S233] §FIND_OPEN_RESET_WALK exited walk mode for fresh search');
-      }
-      // Full reset — clear previous search state
-      nav.results = [];
-      nav.activeIdx = -1;
-      nav.gridCache = {}; // clear stale grid caches
-      if (A.clearRouteCache) A.clearRouteCache(); // clear route templates too
-      NF.elType.value = '';
-      NF.elStorey.value = '';
-      NF.elResults.innerHTML = '';
-      NF.elCount.textContent = '';
-      NF.elSelected.style.display = 'none';
-      NF.panel.classList.remove('results-expanded');
-      [NF.elStoreyRow, NF.elTypeRow].forEach(function(r) { r.classList.remove('expanded'); });
-      clearHighlight();
-      // §RevitParity A1/Task A/B: fresh open clears any prior isolate + lens overlays
-      if (A.filterByGuids) A.filterByGuids(null);
-      NF._roomLensReset();
-      NF._highlightLensReset();
-      // §REVEAL-LEAK-ON-EXIT (2026-07-26, user-reported live testing: category-reveal doors and the
-      // Path highlight survived a Find-panel close/reopen): _roomLensReset() only tears down
-      // _roomBoxes — the category reveal's OWN door meshes (_revealDoorMeshes) and the Path
-      // sub-mode's line/markers (_pathExtraMeshes) are separate arrays neither reset touches. Clear
-      // both explicitly, same as every other overlay this open path already resets.
-      NF._clearCategoryReveal();
-      NF._clearPathHighlight();
-      if (NF.elIsoBar) NF.elIsoBar.style.display = 'none';
-      NF._phaseCache = null; // fresh timeline per open (building may have changed)
-      NF._probeCacheResult = null; // §PROBE-DEDUP: fresh probe per open too, same reasoning
-      NF._roomVolCache = null; NF._roomVolCacheBld = null; // §ROOM-VOL-CACHE: same reasoning
-      NF._elMetaMap = null;  // §D drill: re-cache element labels for the (possibly new) building
-      // Set search term and open
-      NF.panel.style.display = 'block';
-      NF.elName.value = searchTerm || '';
-      // §S281: Defer item queries — only build tree (fast GROUP BY) on open.
-      NF._renderAxes(); // §RULE1: single axis toggle (cycles storey→disc→room→material→phase)
-      // §RULE1: with one toggle, the CURRENT axis tree is shown immediately (no hide-until-tap).
-      if (NF.elTree) { NF.elTree.style.display = ''; NF._treeRevealed = true; if (NF.elTreeGrip) NF.elTreeGrip.style.display = 'flex'; }
-      NF.buildTree();
-      buildChips();
-      if (searchTerm) { _handleInput(searchTerm, true); }
-      // S275: Auto-focus — panel system + input
-      if (typeof window._focusPanel === 'function') window._focusPanel('find');
-      // §S280: Mobile — don't steal focus (triggers virtual keyboard). User taps searchbox when ready.
-      if (!window._isMobile) NF.elName.focus();
-      // §VIEWLOG: fresh view-history per open (building may have changed); show the bar.
-      NF._vhClear();
-      NF._vhRender();
-      console.log('[S233] §NAV_FIND_OPEN term="' + (searchTerm || '') + '" voice=' + nav.voiceMode);
-    };
-    A.closeFindPanel = closeFindPanel; // exposed for nlp.js bar close
-    // §CINEMA_GHOST_RESET (2026-07-21, broadened after user correction — the ghost shell can be
-    // visible for TWO independent reasons that don't track each other: auto-engaged by a Find-panel
-    // lens (_mgLensOwned=true, torn down by closeFindPanel/_setTreeMode/etc.) OR manually toggled via
-    // the Alt+Z 3-state cycle (tools.js `cycleXrayBboxMode` → `toggleMergedGhost`, which flips
-    // `_mergedGhost.visible` alone and NEVER touches `_mgLensOwned` — confirmed reading it directly).
-    // The original version of this fix only checked `_mgLensOwned`, so a manually-toggled-on ghost
-    // (e.g. cycled to Bbox mode via Alt+Z, or via the old Alt+X before it was merged into that cycle)
-    // survived into Alt+C untouched — likely the actual scenario hit live, since no Find-panel drill
-    // was involved. Fixed to key off VISIBILITY, not ownership — a cinematic film should never show
-    // the ghost shell regardless of how it got turned on.
-    A.resetCinemaGhostLens = function() {
-      if (NF._mergedGhost && NF._mergedGhost.visible) {
-        NF._mergedGhost.visible = false;
-        if (A.filterByGuids) A.filterByGuids(null); // restore solids — mirrors toggleMergedGhost's own off-path
-        var _wasAuto = NF._mgLensOwned; NF._mgLensOwned = false;
-        console.log('[MG] §CINEMA_GHOST_RESET hidden (' + (_wasAuto ? 'lens-owned' : 'manually toggled') + ', cinema orbit starting)');
-      }
-    };
-    NF.elClose.onclick = closeFindPanel;
-
     // ── Filter change listeners — all filters cross-update dropdowns + results ──
     NF.elType.onchange = function() { populateDropdowns(); runSearch(); };
     NF.elStorey.onchange = function() { populateDropdowns(); runSearch(); };
@@ -864,6 +839,10 @@
     // Make accordion headers focusable (PanelNav handles Enter/Space/Escape)
     NF.elStoreyHdr.tabIndex = 0;
     NF.elTypeHdr.tabIndex = 0;
+
+    function debounce(fn, ms) {
+      var t; return function() { clearTimeout(t); t = setTimeout(fn, ms); };
+    }
 
     // ── Wire navigate button — calls startNavigation from navigate.js ──
     NF.elNavBtn.tabIndex = 0;
@@ -981,6 +960,24 @@
       }
       console.log('[RP-TB] §FOCUS_ELEM_CLEAR');
     };
+
+    // ── Zoom-Across SCOPE consume (ZOOM_ACROSS_SCOPE_SESSION §SPEC) ─────────────────────────────────────────
+    // §BUGFIX 2026-07-13 (user report: "the ERP drawer at the bottom does not appear [after Zoom Across
+    // lands]; only when exiting the building and back to it, it is") — root cause: A.focusElement only
+    // does the 3D highlight (ghost/outline/zoom); it never touches #find-selected (the bottom bar with
+    // the cost figure + "› ERP" push + "open ↗"/"iDempiere ↗" links). Every OTHER selection path (a
+    // single result-item click, line ~3940; a storey/disc GROUP tap, line ~3117) explicitly reveals that
+    // bar via elSelected.style.display='flex' + _updateSelCost(set,label) — applyFindScope (the THIRD
+    // selection path, boot-time auto-Find from the ERP pill) never did. Re-entering the building later
+    // hits one of the other two paths, which is why a manual re-select "fixed" it. Mirrors the GROUP-tap
+    // fix (§FIND_MULTISEL, line ~3117) exactly — same reveal, same _updateSelCost call.
+    function _revealSelectedBar(set, label) {
+      var elSelText = document.getElementById('find-selected-text');
+      if (!set || !set.size) { if (NF.elSelected) NF.elSelected.style.display = 'none'; return; }
+      if (elSelText) elSelText.textContent = label;
+      if (NF.elSelected) NF.elSelected.style.display = 'flex';
+      try { NF._updateSelCost(set, label); } catch (e) { console.log('§ZOOM-SCOPE_BAR_ERR ' + e.message); }
+    }
     // The ERP "Zoom Across" pill cold-opens the viewer with ?find=<scope>; we run the INCUMBENT Find on it and
     // light the matches with the SAME highlighter a pick/Find-zoom uses (A.focusElement). NO parallel highlighter.
     //   scope = a comma-separated guid set  → focus those elements directly.
@@ -1067,5 +1064,4 @@
     }
 
     console.log('[S233] §NAV_FIND_MODULE_LOADED panel=' + !!document.getElementById('find-panel'));
-  };
 };

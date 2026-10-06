@@ -6,13 +6,13 @@
 // WHAT IT DOES. A viewer module is one closure — `function setupX(A){…}`, a nested `function init(…){…}`, or a
 // `(function(){…})()` IIFE — whose top-level statements share one scope. This splits those statements into part
 // files WITHOUT changing what any of them does:
-//   phase 1  every part is defined (its functions hoisted, its literal constants set, its cross-part functions
-//            exported on ONE shared object) — exactly what the single closure's hoisting gave,
-//   phase 2  every part's remaining setup statements run, in the original order.
-// The ONLY edits to moved code: (a) a top-level name used by another part is reached as <SHARED>.name (functions:
-// the same function object; vars: the property IS the variable), (b) a top-level `var` keyword is dropped where its
-// name is hoisted to the part (literal-valued constants are kept verbatim). scripts/split_verify.js re-proves this
-// independently with a parser.
+//   phase 1  every part is created and run to its `yield` — exactly what the single closure's hoisting gave,
+//   phase 2  every part resumes and runs its statements, parts in the original order.
+// Each part is a generator function: phase 1 runs to its `yield` (the language has already hoisted its functions and
+// vars; it publishes the names other parts use on ONE shared object — functions as the same objects, vars as live
+// get/set accessors), phase 2 resumes in the SAME scope and runs the original statements verbatim. The ONLY edit to
+// moved code: a reference to a name owned by ANOTHER part becomes <SHARED>.name. The owner's text is byte-identical.
+// scripts/split_verify.js re-proves this independently with a parser.
 //
 // REFUSES (prints why, writes nothing): container-level return/arguments/this, destructuring or let/const/class at
 // container level, a reference to a variable of an ENCLOSING non-global scope (it cannot cross files), a part
@@ -111,81 +111,70 @@ stmts.forEach((st, i) => (function walk(n) {
   ts.forEachChild(n, walk);
 })(st));
 const cross = new Set(refs.filter((r) => !r.isDeclName && r.part !== r.d.part).map((r) => r.d.name));
-const crossVar = (nm) => cross.has(nm) && [...decl.values()].some((d) => d.name === nm && d.kind === 'var');
-function pure(e) { if (!e) return true;
-  if (ts.isStringLiteral(e) || ts.isNumericLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) || ts.isRegularExpressionLiteral(e)) return true;
-  if ([ts.SyntaxKind.TrueKeyword, ts.SyntaxKind.FalseKeyword, ts.SyntaxKind.NullKeyword].includes(e.kind)) return true;
-  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(e.operand)) return true;
-  if (ts.isArrayLiteralExpression(e)) return e.elements.every(pure);
-  if (ts.isObjectLiteralExpression(e)) return e.properties.every((p) => ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name) && pure(p.initializer));
-  if (ts.isParenthesizedExpression(e)) return pure(e.expression);
-  return false; }
-const constStmt = (st) => ts.isVariableStatement(st) && st.declarationList.declarations.every((d) => !crossVar(d.name.text) && pure(d.initializer));
 
-// ── edits ────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── edits: ONLY a non-owner reference becomes <SHARED>.name (owner text stays byte-identical) ─────────────────
 const edits = [];
-refs.forEach((r) => { const nm = r.d.name; if (!cross.has(nm)) return;
-  const viaShared = r.d.kind === 'var' || (!r.isDeclName && r.part !== r.d.part);
-  if (!viaShared) return;
-  if (r.shorthand) edits.push([r.node.getStart(sf), r.node.end, nm + ': ' + SH + '.' + nm]);
-  else edits.push([r.node.getStart(sf), r.node.end, SH + '.' + nm]); });
-stmts.forEach((st) => { if (ts.isVariableStatement(st) && !constStmt(st)) { const kw = st.declarationList.getStart(sf);
-  if (src.slice(kw, kw + 4) !== 'var ') refuse('var keyword not found at line ' + line(kw)); edits.push([kw, kw + 4, '']); } });
+refs.forEach((r) => { if (!cross.has(r.d.name) || r.isDeclName || r.part === r.d.part) return;
+  edits.push([r.node.getStart(sf), r.node.end, r.shorthand ? r.d.name + ': ' + SH + '.' + r.d.name : SH + '.' + r.d.name]); });
 const render = (a, b) => { let o = '', p = a; edits.filter((e) => e[0] >= a && e[1] <= b).sort((x, y) => x[0] - y[0]).forEach((e) => { o += src.slice(p, e[0]) + e[2]; p = e[1]; }); return o + src.slice(p, b); };
 const awaitsAtTop = (st) => { let f = false; (function w(n, inFn) { if (!inFn && ts.isAwaitExpression(n)) f = true; ts.forEachChild(n, (c) => w(c, inFn || ts.isFunctionLike(n))); })(st, false); return f; };
 
-// ── emit parts ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── emit parts: each part is a GENERATOR — phase 1 runs to `yield` (functions + vars are hoisted by the language,
+//    cross names published on <SHARED>), phase 2 resumes IN THE SAME SCOPE and runs the original statements verbatim.
 const G = "(typeof window !== 'undefined' ? window : globalThis)";
-const ORDER = cfg.parts.map((p) => p.name), report = [], files = [];
+const ORDER = cfg.parts.map((p) => p.name), report = [], files = [], asyncParts = [];
 cfg.parts.forEach((P, pi) => {
   const mine = stmts.filter((_, i) => partIdx[i] === pi);
-  const fnT = [], runT = [], hoist = [], exp = [], constT = []; let asyncRun = false;
+  const ownCrossFn = [], ownCrossVar = []; let asyncRun = false;
   mine.forEach((st) => {
-    const t = render(st.getFullStart(), st.end);
-    if (ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression) && st.expression.text === 'use strict') return;
-    if (constStmt(st)) constT.push(t);
-    else if (ts.isFunctionDeclaration(st)) { fnT.push(t); if (cross.has(st.name.text)) exp.push(st.name.text); }
-    else { runT.push(t); if (awaitsAtTop(st)) asyncRun = true;
-      if (ts.isVariableStatement(st)) st.declarationList.declarations.forEach((d) => { if (!crossVar(d.name.text)) hoist.push(d.name.text); }); }
+    if (ts.isFunctionDeclaration(st) && cross.has(st.name.text)) ownCrossFn.push(st.name.text);
+    if (ts.isVariableStatement(st)) st.declarationList.declarations.forEach((d) => { if (cross.has(d.name.text)) ownCrossVar.push(d.name.text); });
+    if (!ts.isFunctionDeclaration(st) && awaitsAtTop(st)) asyncRun = true;
   });
   if (asyncRun && !isAsync) refuse('await at container level in a non-async container (part ' + P.name + ')');
+  if (asyncRun) asyncParts.push(P.name);
+  const text = mine.filter((st) => !(ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression) && st.expression.text === 'use strict'))
+    .map((st) => render(st.getFullStart(), st.end)).join('');
+  const pub = [].concat(
+    ownCrossFn.map((n) => '  ' + SH + '.' + n + ' = ' + n + ';'),
+    ownCrossVar.map((n) => '  Object.defineProperty(' + SH + ", '" + n + "', { get: function () { return " + n + '; }, set: function (v) { ' + n + ' = v; }, enumerable: true });'));
   const lines = [mine.length ? line(mine[0].getStart(sf)) : 0, mine.length ? line(mine[mine.length - 1].end) : 0];
-  const body = ["  'use strict';",
-    hoist.length ? '  var ' + hoist.join(', ') + ';   // hoisted to this part, as the single closure hoisted them' : '',
-    constT.length ? '  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)' + constT.join('') : '',
-    fnT.join(''),
-    exp.length ? '\n  // phase-1 exports: other parts reach these through ' + SH + ' (same function objects)\n' + exp.map((n) => '  ' + SH + '.' + n + ' = ' + n + ';').join('\n') : '',
-    '\n  return ' + (asyncRun ? 'async ' : '') + "function () {   // phase 2: this part's setup statements, in original order" + runT.join('') + '\n  };'].filter(Boolean).join('\n');
   const fname = cfg.prefix + P.name + '.js';
   fs.writeFileSync(path.join(OUT, fname),
     '// ' + FAMILY + ' family — part `' + P.name + '` (original ' + path.basename(cfg.file) + ' lines ' + lines.join('–') + ').\n' +
-    '// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/' + FAMILY + '.json) — edit this file\n' +
-    '// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared\n' +
-    '// across parts live on `' + SH + '`; load order + the two-phase setup are in ' + path.basename(cfg.file) + '.\n' +
+    '// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/' + FAMILY + '.json). Below the `yield` every\n' +
+    '// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as ' + SH + '.name.\n' +
+    '// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.\n' +
     G + '.' + REG + ' = ' + G + '.' + REG + ' || {};\n' +
-    G + '.' + REG + '.' + P.name + ' = function __split_' + FAMILY + '_' + P.name + '(' + [SH].concat(params).join(', ') + ') {\n' + body + '\n};\n');
+    G + '.' + REG + '.' + P.name + ' = ' + (asyncRun ? 'async ' : '') + 'function* __split_' + FAMILY + '_' + P.name + '(' + [SH].concat(params).join(', ') + ') {\n' +
+    "  'use strict';\n" +
+    (pub.length ? '  // phase 1 — publish this part\'s names that other parts use (same function objects; vars as live accessors)\n' + pub.join('\n') + '\n' : '') +
+    '  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order\n' +
+    text + '\n};\n');
   files.push(fname);
-  report.push('§SPLIT_PART ' + fname + ' lines=' + lines.join('-') + ' statements=' + mine.length + ' functions=' + fnT.length + ' exports=' + exp.length + ' hoisted=' + hoist.length + ' constants=' + constT.length + (asyncRun ? ' async' : ''));
+  report.push('§SPLIT_PART ' + fname + ' lines=' + lines.join('-') + ' statements=' + mine.length + ' publishedFns=' + ownCrossFn.length + ' publishedVars=' + ownCrossVar.length + (asyncRun ? ' async' : ''));
 });
 
 // ── rewrite the container body as the driver ─────────────────────────────────────────────────────────────────
-const anyAsync = report.some((r) => / async$/.test(r));
+const anyAsync = asyncParts.length > 0;
 const ind = ' '.repeat(sf.getLineAndCharacterOfPosition(stmts[0].getStart(sf)).character), indClose = ' '.repeat(Math.max(0, ind.length - 2));
 const driver = '{\n' + ind + "'use strict';\n" +
   ind + '// Body split move-only into ' + files.join(', ') + ' (loaded before this file) by scripts/split_closure.js\n' +
-  ind + '// (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Two phases keep the single closure\'s semantics: every part is\n' +
-  ind + '// defined first (cross-part functions on ' + SH + '), then each part\'s setup statements run in the original order.\n' +
+  ind + '// (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Each part is a generator: phase 1 (to its `yield`) hoists its\n' +
+  ind + '// functions/vars and publishes shared names on ' + SH + '; phase 2 runs its original statements, parts in original order.\n' +
   ind + 'var R = ' + G + '.' + REG + ' || {};\n' +
   ind + 'var ORDER = ' + JSON.stringify(ORDER) + ';\n' +
   ind + 'var missing = ORDER.filter(function (n) { return typeof R[n] !== \'function\'; });\n' +
   ind + "if (missing.length) { console.warn('§SPLIT_PART_MISSING " + FAMILY + " ' + missing.join(',')); return; }\n" +
   ind + 'var ' + SH + ' = {};\n' +
-  ind + 'var runs = ORDER.map(function (n) { return R[n](' + [SH].concat(params).join(', ') + '); });\n' +
+  ind + 'var parts = ORDER.map(function (n) { return R[n](' + [SH].concat(params).join(', ') + '); });\n' +
   (anyAsync
-    ? ind + 'for (var i = 0; i < runs.length; i++) { var r = runs[i](); if (r && typeof r.then === \'function\') await r; }\n'
-    : ind + 'runs.forEach(function (run) { run(); });\n') +
+    ? ind + 'for (var i = 0; i < parts.length; i++) { var r1 = parts[i].next(); if (r1 && typeof r1.then === \'function\') await r1; }\n' +
+      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') await r2; }\n'
+    : ind + 'parts.forEach(function (p) { p.next(); });   // phase 1\n' +
+      ind + 'parts.forEach(function (p) { p.next(); });   // phase 2\n') +
   indClose + '}';
 const shell = src.slice(0, C.body.getStart(sf)) + driver + src.slice(C.body.end);
 fs.writeFileSync(path.join(OUT, path.basename(cfg.file)), shell);
 console.log(report.join('\n'));
-console.log('§SPLIT_DONE ' + FAMILY + ' parts=' + files.length + ' crossNames=' + cross.size + ' crossVars=' + [...cross].filter(crossVar).length + ' edits=' + edits.length + ' async=' + anyAsync + ' shellLines=' + shell.split('\n').length);
+console.log('§SPLIT_DONE ' + FAMILY + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);

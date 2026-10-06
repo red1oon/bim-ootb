@@ -17,15 +17,16 @@
   function init(A, nav, getStartNavigation) {
     'use strict';
     // Body split move-only into nf_ui_history.js, nf_tree_lens.js, nf_highlight_cost.js, nf_room.js, nf_trees.js, nf_isolate_drill.js, nf_panel_search.js (loaded before this file) by scripts/split_closure.js
-    // (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Two phases keep the single closure's semantics: every part is
-    // defined first (cross-part functions on NF), then each part's setup statements run in the original order.
+    // (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Each part is a generator: phase 1 (to its `yield`) hoists its
+    // functions/vars and publishes shared names on NF; phase 2 runs its original statements, parts in original order.
     var R = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
     var ORDER = ["ui_history","tree_lens","highlight_cost","room","trees","isolate_drill","panel_search"];
     var missing = ORDER.filter(function (n) { return typeof R[n] !== 'function'; });
     if (missing.length) { console.warn('§SPLIT_PART_MISSING navigate_find ' + missing.join(',')); return; }
     var NF = {};
-    var runs = ORDER.map(function (n) { return R[n](NF, A, nav, getStartNavigation); });
-    runs.forEach(function (run) { run(); });
+    var parts = ORDER.map(function (n) { return R[n](NF, A, nav, getStartNavigation); });
+    parts.forEach(function (p) { p.next(); });   // phase 1
+    parts.forEach(function (p) { p.next(); });   // phase 2
   }
 
   console.log('§NAV_FIND_VERSION v41 — yellow-outline + focus-bg(tree+results) + adjustable-panel');

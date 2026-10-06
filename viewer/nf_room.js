@@ -1,88 +1,29 @@
 // navigate_find family — part `room` (original navigate_find.js lines 1848–2847).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.room = function __split_navigate_find_room(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.room = function* __split_navigate_find_room(NF, A, nav, getStartNavigation) {
   'use strict';
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)                                   // §SHELL: parked — bbox-boundary too sparse (28 elems); needs class/PVS
-    // §SHELL: the building's OUTFACING shell — elements whose bbox touches the outer building bbox (within
-    // MARGIN of any of the 6 faces): exterior walls, floor + roof slabs. The deep interior (MEP, furniture
-    // — the triangle-heavy occluded bulk) is excluded. Inline + cached per building. The dim context then
-    // renders ONLY these (hidden rest = zero draw) → far fewer triangles, the real lever (geometry, not fill).
-    var _extCache = null, _extBld = null;
-
-    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2): category → shell/cuboid color
-    // pair (fill, wire). 'habitable' keeps the purple this file already used for the single
-    // selected-room cuboid (§ROOM-CUBOID below) — now a real per-CATEGORY color, not just a
-    // selection-only accent. 'corridor' keeps the pre-existing default blue (was every room's
-    // fixed default before this change — now deliberate, corridor-only). 'utilities' is a muted
-    // dark grey — reads as "present, low-priority" without an alarming/error connotation.
-    // §DEEP-PALETTE (2026-07-15l, user-reported live pre-deploy test on a large building, this
-    // session): the bulk room-shine-through shell (_drawRoomShell below) always draws at a fixed
-    // 10% opacity — tuned against the dark x-ray-dimmed backdrop, where a faint pastel tint reads
-    // fine. The desktop bbox-shell default (§DESKTOP-BBOX-THRESHOLD, this same session) puts large
-    // buildings on a much LIGHTER wireframe backdrop instead — the same 10% wash of a pastel hue
-    // (0x9c6ade etc.) blends toward near-white there ("bland whitish", user's own words). Fix:
-    // deepen the base hues themselves (user's own pick over a mode-aware-opacity/outline
-    // alternative) so even a thin 10% wash still carries visible color against a light background.
-    // `wire` (the SELECTED single room's bright cuboid border, §ROOM-CUBOID) is untouched — it
-    // already renders near-opaque, not the washed-out case this fixes, and a lighter wire against a
-    // now-deeper fill is if anything MORE legible than before.
-    var ROOM_CATEGORY_COLORS = {
-      habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
-      corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
-      restroom: { fill: 0x6d4c41, wire: 0xbcaaa4 },   // §RESTROOM-CLASS: wet sanitary room = brown (Material brown 600/200)
-      kitchen: { fill: 0xff8f00, wire: 0xffe082 },    // §KITCHEN-CLASS: food-service room = amber (Material amber 800/200)
-      bedroom: { fill: 0x00796b, wire: 0x80cbc4 },    // §BEDROOM-CLASS: sleeping room = teal (Material teal 700/200)
-      utilities: { fill: 0x212121, wire: 0x5a5a5a }
-    };
-    // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
-    // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
-    // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
-    // §FILL-SHINE-THROUGH (2026-07-15p, user-reported live testing: "it highlights with the box
-    // shines thru, but the purplish interiors does not"): the wire border already sets
-    // `depthTest: false` (shines through occluding geometry, see lineMat below) but the fill's
-    // MeshBasicMaterial never set depthTest at all — defaults to true, so it's occluded by any
-    // real wall/floor in front of it, unlike its own border. Same §BORDER_STRONG "duplicate mesh
-    // underneath" trick this function already uses for the wire, applied to the fill: a dim
-    // depthTest:false glow layer draws first (always visible, ~90% of the crisp opacity — the
-    // user's own "-10%" ask), then the normal depth-tested fill draws on top at full opacity
-    // wherever genuinely unoccluded. Net: dim-but-visible through walls, brighter where actually
-    // in view — a real depth cue, "always shines thru" per the user's own framing. True per-layer
-    // graduated falloff (their stretch "-5% per additional layer") would need real depth-peeling
-    // (multi-pass, real GPU cost) for an effect a human eye won't reliably distinguish past one
-    // tier anyway — this two-tier version gets the same PERCEIVED result far more cheaply.
-    // §SELECT-PULSE (2026-07-15o, user's own pick, "cheap doesn't bog or lag"): a brief settle-in
-    // pulse on selection — starts oversized/dim, eases down to resting scale/opacity over 300ms —
-    // draws the eye to what just got picked instead of an instant flat cut. Pure JS scale/opacity
-    // tween, same requestAnimationFrame + generation-counter pattern _lerpCam already uses (a
-    // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
-    // animations, never a leaked rAF loop after the mesh is gone).
-    var _pulseId = 0;
-
-    // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
-    // proven camera-lerp from diff.js zoomToGuid, but is box-based (works for rooms/phases/
-    // elements that live in batched/instanced meshes, which zoomToGuid can't find). markDirty
-    // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
-    // Shared camera fly-to: lerp to `dist` units from `center` along the standard iso offset,
-    // easing over ~0.3s. markDirty each frame — the §S286 idle gate parks the loop otherwise.
-    var _lerpId = 0, _lerpHooked = false;
-
-    // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
-    // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
-    // §CORRIDOR-ROOM-BACKPROP (2026-07-14): a `CORRIDOR_ROOM::*` guid has NO spatial_structure row
-    // — it's a synthetic room node injected by room_graph.js's buildGraph() for a real, door+wall-
-    // verified hallway bucket that room-compilation never turned into a room. _roomUnionBBox()
-    // would correctly return null for it (nothing to query), so build the SAME {name,storey,
-    // rectCount,cx,cy,cz,sx,sy,sz} shape directly from the room graph's own node instead — real
-    // measured position/span either way, just a different (in-memory, not DB) source. sz (height)
-    // has no measured real ceiling for a synthetic hallway node — per user steer (2026-07-14): this
-    // box is for PATH-OF-MOVEMENT first, not volumetric/ceiling accuracy, so a 2.0m human-clearance
-    // height is enough even where the real ceiling is much taller (a foyer/atrium-fronted corridor,
-    // say) — same movement-clearance convention as common/hallway_backbone.js's STAIR_CLEARANCE.
-    // Real ceiling height (for equipment placement etc) is Modeller's job later, not this walkway box.
-    var CORRIDOR_BOX_CLEARANCE_HEIGHT = 2.0;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._buildShapeMeshes = _buildShapeMeshes;
+  NF._dimXrayTo = _dimXrayTo;
+  NF._exteriorGuids = _exteriorGuids;
+  NF._roomLensReset = _roomLensReset;
+  NF._roomLensOn = _roomLensOn;
+  NF._zoomToBox = _zoomToBox;
+  NF._zoomToBoxFill = _zoomToBoxFill;
+  NF._zoomToGroup = _zoomToGroup;
+  NF._roomSelect = _roomSelect;
+  NF._clearCategoryReveal = _clearCategoryReveal;
+  NF._revealCategoryGroup = _revealCategoryGroup;
+  NF._subToggleRow = _subToggleRow;
+  Object.defineProperty(NF, '_USE_SHELL', { get: function () { return _USE_SHELL; }, set: function (v) { _USE_SHELL = v; }, enumerable: true });
+  Object.defineProperty(NF, '_roomVolCache', { get: function () { return _roomVolCache; }, set: function (v) { _roomVolCache = v; }, enumerable: true });
+  Object.defineProperty(NF, '_roomVolCacheBld', { get: function () { return _roomVolCacheBld; }, set: function (v) { _roomVolCacheBld = v; }, enumerable: true });
+  Object.defineProperty(NF, '_categoryRevealOn', { get: function () { return _categoryRevealOn; }, set: function (v) { _categoryRevealOn = v; }, enumerable: true });
+  Object.defineProperty(NF, '_revealDoorMeshes', { get: function () { return _revealDoorMeshes; }, set: function (v) { _revealDoorMeshes = v; }, enumerable: true });
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
      // exposed for witnesses (S7)
 
     // solidOpacity (optional): for the kept-solid CONTEXT build (color==null), render it at this
@@ -195,6 +136,13 @@
       });
       NF._roomBoxes = [];
     }
+
+    var _USE_SHELL = false;                                   // §SHELL: parked — bbox-boundary too sparse (28 elems); needs class/PVS
+    // §SHELL: the building's OUTFACING shell — elements whose bbox touches the outer building bbox (within
+    // MARGIN of any of the 6 faces): exterior walls, floor + roof slabs. The deep interior (MEP, furniture
+    // — the triangle-heavy occluded bulk) is excluded. Inline + cached per building. The dim context then
+    // renders ONLY these (hidden rest = zero draw) → far fewer triangles, the real lever (geometry, not fill).
+    var _extCache = null, _extBld = null;
     function _exteriorGuids() {
       if (_extCache && _extBld === A.activeBuilding) return _extCache;
       var set = new Set();
@@ -218,6 +166,32 @@
       console.log('[RP-TB] §SHELL exterior=' + set.size + ' (outfacing-shell dim context)');
       return set;
     }
+
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §2): category → shell/cuboid color
+    // pair (fill, wire). 'habitable' keeps the purple this file already used for the single
+    // selected-room cuboid (§ROOM-CUBOID below) — now a real per-CATEGORY color, not just a
+    // selection-only accent. 'corridor' keeps the pre-existing default blue (was every room's
+    // fixed default before this change — now deliberate, corridor-only). 'utilities' is a muted
+    // dark grey — reads as "present, low-priority" without an alarming/error connotation.
+    // §DEEP-PALETTE (2026-07-15l, user-reported live pre-deploy test on a large building, this
+    // session): the bulk room-shine-through shell (_drawRoomShell below) always draws at a fixed
+    // 10% opacity — tuned against the dark x-ray-dimmed backdrop, where a faint pastel tint reads
+    // fine. The desktop bbox-shell default (§DESKTOP-BBOX-THRESHOLD, this same session) puts large
+    // buildings on a much LIGHTER wireframe backdrop instead — the same 10% wash of a pastel hue
+    // (0x9c6ade etc.) blends toward near-white there ("bland whitish", user's own words). Fix:
+    // deepen the base hues themselves (user's own pick over a mode-aware-opacity/outline
+    // alternative) so even a thin 10% wash still carries visible color against a light background.
+    // `wire` (the SELECTED single room's bright cuboid border, §ROOM-CUBOID) is untouched — it
+    // already renders near-opaque, not the washed-out case this fixes, and a lighter wire against a
+    // now-deeper fill is if anything MORE legible than before.
+    var ROOM_CATEGORY_COLORS = {
+      habitable: { fill: 0x6a1b9a, wire: 0xd8b4fe },
+      corridor: { fill: 0x0277bd, wire: 0x7fd6fb },
+      restroom: { fill: 0x6d4c41, wire: 0xbcaaa4 },   // §RESTROOM-CLASS: wet sanitary room = brown (Material brown 600/200)
+      kitchen: { fill: 0xff8f00, wire: 0xffe082 },    // §KITCHEN-CLASS: food-service room = amber (Material amber 800/200)
+      bedroom: { fill: 0x00796b, wire: 0x80cbc4 },    // §BEDROOM-CLASS: sleeping room = teal (Material teal 700/200)
+      utilities: { fill: 0x212121, wire: 0x5a5a5a }
+    };
     function _categoryColor(category) {
       return ROOM_CATEGORY_COLORS[category] || ROOM_CATEGORY_COLORS.habitable;
     }
@@ -256,6 +230,29 @@
       });
       NF._roomBoxes = kept;
     }
+    // §ROOM-CUBOID: the SELECTED room as a crisp soft-purple box — faint translucent fill + a bright
+    // WIREFRAME of the 12 cuboid edges that shines THROUGH geometry (depthTest off), so the room
+    // reads as a clean volume from any angle. Both tracked in _roomBoxes for disposal.
+    // §FILL-SHINE-THROUGH (2026-07-15p, user-reported live testing: "it highlights with the box
+    // shines thru, but the purplish interiors does not"): the wire border already sets
+    // `depthTest: false` (shines through occluding geometry, see lineMat below) but the fill's
+    // MeshBasicMaterial never set depthTest at all — defaults to true, so it's occluded by any
+    // real wall/floor in front of it, unlike its own border. Same §BORDER_STRONG "duplicate mesh
+    // underneath" trick this function already uses for the wire, applied to the fill: a dim
+    // depthTest:false glow layer draws first (always visible, ~90% of the crisp opacity — the
+    // user's own "-10%" ask), then the normal depth-tested fill draws on top at full opacity
+    // wherever genuinely unoccluded. Net: dim-but-visible through walls, brighter where actually
+    // in view — a real depth cue, "always shines thru" per the user's own framing. True per-layer
+    // graduated falloff (their stretch "-5% per additional layer") would need real depth-peeling
+    // (multi-pass, real GPU cost) for an effect a human eye won't reliably distinguish past one
+    // tier anyway — this two-tier version gets the same PERCEIVED result far more cheaply.
+    // §SELECT-PULSE (2026-07-15o, user's own pick, "cheap doesn't bog or lag"): a brief settle-in
+    // pulse on selection — starts oversized/dim, eases down to resting scale/opacity over 300ms —
+    // draws the eye to what just got picked instead of an instant flat cut. Pure JS scale/opacity
+    // tween, same requestAnimationFrame + generation-counter pattern _lerpCam already uses (a
+    // newer pulse or a fresh _clearRoomCuboid supersedes any in-flight one — never two competing
+    // animations, never a leaked rAF loop after the mesh is gone).
+    var _pulseId = 0;
     // §ROOM_SELECT_DOORS (2026-07-26, user ask: "when we zoom to particular room it is just a box
     // purple without its accompanying door... let's have that too since its free" — free because
     // _spawnDoorMeshesForRooms already exists for the category-reveal case; a single selected room
@@ -380,10 +377,40 @@
         new THREE.Plane(new THREE.Vector3(0, 0, 1), -(c.z - hz))
       ];
     }
+    // All IfcSpace volumes mapped to Three space (IFC size → Three: x→x, z→y, y→z — bbox parity).
+    // §ROOM-HAB (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 1): filters out non-habitable spaces
+    // (Roof/Shaft/Void/Plant/... voids, real OR synthetic) via the shared window.RoomHabitability
+    // classifier (common/room_habitability.js, ported from disc_walker.js's spaceHabitable()) —
+    // this is a DISPLAY filter only, distinct from the Modeller's stricter real-vs-synthetic
+    // (RM_/≈ prefix) exclusion; the Room Lens intentionally still shows synthetic compile_rooms.py
+    // rooms, it just must not show one labelled Roof/Shaft/etc as if it were a normal room.
+    // §MULTI-RECT (ROOM_INJECTION_HYBRID.md §8/§9): a compiled room may be N spatial_structure rows
+    // (one per sub-rectangle) sharing `room_guid` — the LOGICAL room key. Group by it (falling back
+    // to `guid` for real IfcSpace / pre-§8 data with no room_guid column) so the Room Lens renders
+    // the UNION of a room's sub-rect boxes, not one undersized/border-hugging inscribed rectangle
+    // and not N disconnected boxes each masquerading as its own room. Ports the SAME guarded-query +
+    // grouping shape already proven by `viewer/hba_lens.js` `bindStoreysFromModel` (W-HBA-MULTIRECT
+    // 6/6) — that is the reference pattern for this fix, not re-derived from scratch. Returns a FLAT
+    // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
+    // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
+    // identical across a room's sub-rect set per §8's own design), never per sub-rect.
+    // §ROOM-VOL-CACHE (2026-07-15n, user-reported "panel tabbing refresh" lag + user's own
+    // "queries perhaps need to pre stored lazily" diagnosis — correct instinct, same gap this
+    // session already closed for the Phase axis via _phaseCache): unlike _phaseCache/
+    // _probeCacheResult, _allRoomVolumes() had NO cache at all — the full SQL query + per-room
+    // habitability/utility classification (measured live on Terminal: 30-60ms) reran from
+    // scratch on EVERY single Room-axis entry, not just the first. The THREE.Mesh shells
+    // themselves still get disposed+recreated each entry (_clearRoomBoxes() in _roomLensOn(),
+    // unavoidable — meshes are scene-owned, not reusable across a dispose cycle) but that part
+    // alone measured only ~3-4ms; caching the query+classification result removes the other
+    // 30-60ms. Same invalidation convention as _phaseCache/_probeCacheResult: reset only on a
+    // fresh openFindPanel() (building may have changed) or a real data change (needle-inject),
+    // never on a plain axis re-entry within one open session.
+    var _roomVolCache = null, _roomVolCacheBld = null;
     function _allRoomVolumes() {
-      if (NF._roomVolCache && NF._roomVolCacheBld === A.activeBuilding) {
-        console.log('[RP-TA] §ROOM_VOL_CACHE_HIT boxes=' + NF._roomVolCache.length);
-        return NF._roomVolCache;
+      if (_roomVolCache && _roomVolCacheBld === A.activeBuilding) {
+        console.log('[RP-TA] §ROOM_VOL_CACHE_HIT boxes=' + _roomVolCache.length);
+        return _roomVolCache;
       }
       var _t0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       var out = [];
@@ -490,7 +517,7 @@
         console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + kept + ' excluded=' + excluded +
           ' boxes=' + out.length + (RH ? '' : ' (RoomHabitability NOT loaded — filter skipped)'));
         console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
-        NF._roomVolCache = out; NF._roomVolCacheBld = A.activeBuilding; // §ROOM-VOL-CACHE: only the clean success path is cached
+        _roomVolCache = out; _roomVolCacheBld = A.activeBuilding; // §ROOM-VOL-CACHE: only the clean success path is cached
         return out;
       } catch (e) { console.warn('[RP-TA] §ROOM_VOL_ERR', e.message); }
       console.log('[RP-TA] §ROOM_VOL_COUNT habitable=' + out.length + ' excluded=' + excluded +
@@ -498,6 +525,11 @@
       console.log('[RP-TA] §PERF_PROBE _allRoomVolumes ms=' + ((performance && performance.now) ? (performance.now() - _t0).toFixed(1) : '?')); // §13
       return out; // exception path — never cached, so the next entry retries fresh rather than sticking with a partial result
     }
+
+    // §FLYTHRU_ROOMS (2026-09-07) — exposed for cpe_flythru_cues.js. Read-only handle to the SAME
+    // cached function the Room Lens uses; no behaviour change here, and the cue layer must never
+    // get its own second room query (prompts/MEP_CLASH_REVEAL_MOVIE.md §10.2).
+    A.allRoomVolumes = _allRoomVolumes;
 
     // Remove boxes, restore opacity (turn X-Ray off if WE turned it on), drop outline.
     function _roomLensReset() {
@@ -577,6 +609,14 @@
         ' shells=' + NF._roomBoxes.length + ' (all rooms shine-through; building ghost=0.12)');
       console.log('[RP-TA] §PERF_PROBE _roomLensOn total_ms=' + ((performance && performance.now) ? (performance.now() - _rlT0).toFixed(1) : '?')); // §13
     }
+
+    // §RP zoom-to-fit: frame the camera on a box (center+size, Three units). Reuses the
+    // proven camera-lerp from diff.js zoomToGuid, but is box-based (works for rooms/phases/
+    // elements that live in batched/instanced meshes, which zoomToGuid can't find). markDirty
+    // every frame — the §S286 idle gate parks the loop, so the move won't render without it.
+    // Shared camera fly-to: lerp to `dist` units from `center` along the standard iso offset,
+    // easing over ~0.3s. markDirty each frame — the §S286 idle gate parks the loop otherwise.
+    var _lerpId = 0, _lerpHooked = false;
     function _lerpCam(center, dist) {
       if (!A.camera || !A.controls || typeof THREE === 'undefined') return;
       // §FLY-YIELD: the moment the user grabs the controls (OrbitControls 'start'), cancel any in-flight
@@ -700,6 +740,21 @@
         ' center=' + out.cx.toFixed(2) + ',' + out.cy.toFixed(2) + ',' + out.cz.toFixed(2));
       return out;
     }
+
+    // §RP-SHAPE: tap a room → light its real CONTENTS (rel_contained_in_space) in cyan,
+    // keep that storey solid, rest at 0.2 (same drill as Phase/Material). No box.
+    // §CORRIDOR-ROOM-BACKPROP (2026-07-14): a `CORRIDOR_ROOM::*` guid has NO spatial_structure row
+    // — it's a synthetic room node injected by room_graph.js's buildGraph() for a real, door+wall-
+    // verified hallway bucket that room-compilation never turned into a room. _roomUnionBBox()
+    // would correctly return null for it (nothing to query), so build the SAME {name,storey,
+    // rectCount,cx,cy,cz,sx,sy,sz} shape directly from the room graph's own node instead — real
+    // measured position/span either way, just a different (in-memory, not DB) source. sz (height)
+    // has no measured real ceiling for a synthetic hallway node — per user steer (2026-07-14): this
+    // box is for PATH-OF-MOVEMENT first, not volumetric/ceiling accuracy, so a 2.0m human-clearance
+    // height is enough even where the real ceiling is much taller (a foyer/atrium-fronted corridor,
+    // say) — same movement-clearance convention as common/hallway_backbone.js's STAIR_CLEARANCE.
+    // Real ceiling height (for equipment placement etc) is Modeller's job later, not this walkway box.
+    var CORRIDOR_BOX_CLEARANCE_HEIGHT = 2.0;
     function _corridorRoomBBox(guid) {
       var graph = NF._roomGraphFor();
       var n = graph && graph.nodesByGuid && graph.nodesByGuid[guid];
@@ -710,7 +765,7 @@
     }
 
     function _roomSelect(guid) {
-      if (NF._categoryRevealOn) _clearCategoryReveal(); // a leaf tap commits to one room — any active headline reveal is now stale
+      if (_categoryRevealOn) _clearCategoryReveal(); // a leaf tap commits to one room — any active headline reveal is now stale
       var set = new Set(), name = guid, storeySet = null, zoomBox = null;
       var isCorridorRoom = guid.indexOf('CORRIDOR_ROOM::') === 0;
       if (!isCorridorRoom) { try { NF._surfaceConstructionLink(guid, guid); } catch (e) {} }
@@ -785,14 +840,27 @@
         NF._drillSelect(storeySet || new Set([guid]), name, 'ROOM_SELECT', { isItem: false, zoomBox: zoomBox });
         if (zoomBox) _drawRoomCuboid(zoomBox.center, zoomBox.size, selCategory, guid);
       }
-    }     // brown door-marker meshes, disposed on toggle-off/switch
+    }
+
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §3/§9, 2026-07-15): a NEW, lightweight
+    // "reveal" for a Storey or Type headline tap — camera stays put, that group's own room-shell
+    // boxes brighten to their real category color, every real door serving those rooms lights up
+    // brown, tapping the SAME headline again clears it. This REPLACES the old _roomGroupSelect
+    // isolate-drill for normal room headers specifically (user's own framing: today's immediate
+    // zoom/isolate on a header tap is premature for someone still building a mental map of the
+    // floor — the reveal is the lighter first move; a single ROOM's leaf tap keeps the existing
+    // zoom-in unchanged, see _roomSelect). Raw Parts-migrated groups (Stairs/Lift-Shaft/Plant-Room)
+    // still use `_isolatePartsGroup` at the header level (see the render loop below) — those were
+    // never IfcSpace rows, there's no room-shell/category concept to reveal for them.
+    var _categoryRevealOn = null;   // null | the currently-revealed group key (gk)
+    var _revealDoorMeshes = [];     // brown door-marker meshes, disposed on toggle-off/switch
     function _clearCategoryReveal() {
-      NF._revealDoorMeshes.forEach(function(m) {
+      _revealDoorMeshes.forEach(function(m) {
         if (m.parent) m.parent.remove(m);
         if (m.geometry) m.geometry.dispose();
         if (m.material) m.material.dispose();
       });
-      NF._revealDoorMeshes = [];
+      _revealDoorMeshes = [];
       // §CORRIDOR-REVEAL-SHELL: a shell _revealCategoryGroup added for a backprop CORRIDOR_ROOM::*
       // guid was never part of the base Room Lens batch (_roomLensOn never draws one for it) — DROP
       // it entirely here rather than just dimming, or it lingers as a phantom faint box forever
@@ -812,7 +880,7 @@
         kept.push(rb);
       });
       NF._roomBoxes = kept;
-      NF._categoryRevealOn = null;
+      _categoryRevealOn = null;
       if (A.markDirty) A.markDirty();
     }
     // Real door positions for a set of room guids — reuses room_graph.js's ALREADY-COMPUTED
@@ -893,7 +961,7 @@
       return meshes;
     }
     function _revealCategoryGroup(gk, groupRooms) {
-      if (NF._categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
+      if (_categoryRevealOn === gk) { _clearCategoryReveal(); console.log('[RP-TA] §CATEGORY_REVEAL off gk="' + gk + '"'); return; }
       _clearCategoryReveal(); // mutually exclusive — switching categories clears the previous one first
       var guidSet = {};
       (groupRooms || []).forEach(function(rm) { guidSet[rm.key] = true; });
@@ -932,10 +1000,10 @@
           addedShells++; brightened++;
         }
       });
-      NF._revealDoorMeshes = _spawnDoorMeshesForRooms(Object.keys(guidSet));
-      NF._categoryRevealOn = gk;
+      _revealDoorMeshes = _spawnDoorMeshesForRooms(Object.keys(guidSet));
+      _categoryRevealOn = gk;
       if (A.markDirty) A.markDirty();
-      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' addedShells=' + addedShells + ' doors=' + NF._revealDoorMeshes.length);
+      console.log('[RP-TA] §CATEGORY_REVEAL on gk="' + gk + '" rooms=' + brightened + ' addedShells=' + addedShells + ' doors=' + _revealDoorMeshes.length);
     }
 
     // §RP sub-toggle row [A | B | ...] — a small N-pill regroup control inside a lens tree.
@@ -964,71 +1032,4 @@
       });
       return row;
     }
-
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._buildShapeMeshes = _buildShapeMeshes;
-  NF._dimXrayTo = _dimXrayTo;
-  NF._exteriorGuids = _exteriorGuids;
-  NF._roomLensReset = _roomLensReset;
-  NF._roomLensOn = _roomLensOn;
-  NF._zoomToBox = _zoomToBox;
-  NF._zoomToBoxFill = _zoomToBoxFill;
-  NF._zoomToGroup = _zoomToGroup;
-  NF._roomSelect = _roomSelect;
-  NF._clearCategoryReveal = _clearCategoryReveal;
-  NF._revealCategoryGroup = _revealCategoryGroup;
-  NF._subToggleRow = _subToggleRow;
-
-  return function () {   // phase 2: this part's setup statements, in original order
-
-    NF._USE_SHELL = false;
-    // All IfcSpace volumes mapped to Three space (IFC size → Three: x→x, z→y, y→z — bbox parity).
-    // §ROOM-HAB (VIEWER_FIND_PANEL_ROOM_ACCURACY.md Task 1): filters out non-habitable spaces
-    // (Roof/Shaft/Void/Plant/... voids, real OR synthetic) via the shared window.RoomHabitability
-    // classifier (common/room_habitability.js, ported from disc_walker.js's spaceHabitable()) —
-    // this is a DISPLAY filter only, distinct from the Modeller's stricter real-vs-synthetic
-    // (RM_/≈ prefix) exclusion; the Room Lens intentionally still shows synthetic compile_rooms.py
-    // rooms, it just must not show one labelled Roof/Shaft/etc as if it were a normal room.
-    // §MULTI-RECT (ROOM_INJECTION_HYBRID.md §8/§9): a compiled room may be N spatial_structure rows
-    // (one per sub-rectangle) sharing `room_guid` — the LOGICAL room key. Group by it (falling back
-    // to `guid` for real IfcSpace / pre-§8 data with no room_guid column) so the Room Lens renders
-    // the UNION of a room's sub-rect boxes, not one undersized/border-hugging inscribed rectangle
-    // and not N disconnected boxes each masquerading as its own room. Ports the SAME guarded-query +
-    // grouping shape already proven by `viewer/hba_lens.js` `bindStoreysFromModel` (W-HBA-MULTIRECT
-    // 6/6) — that is the reference pattern for this fix, not re-derived from scratch. Returns a FLAT
-    // array (one entry per sub-rect box, `guid` = the LOGICAL room guid so callers can group/count
-    // by it) — habitability is evaluated ONCE per logical room (name/predefined_type/object_type are
-    // identical across a room's sub-rect set per §8's own design), never per sub-rect.
-    // §ROOM-VOL-CACHE (2026-07-15n, user-reported "panel tabbing refresh" lag + user's own
-    // "queries perhaps need to pre stored lazily" diagnosis — correct instinct, same gap this
-    // session already closed for the Phase axis via _phaseCache): unlike _phaseCache/
-    // _probeCacheResult, _allRoomVolumes() had NO cache at all — the full SQL query + per-room
-    // habitability/utility classification (measured live on Terminal: 30-60ms) reran from
-    // scratch on EVERY single Room-axis entry, not just the first. The THREE.Mesh shells
-    // themselves still get disposed+recreated each entry (_clearRoomBoxes() in _roomLensOn(),
-    // unavoidable — meshes are scene-owned, not reusable across a dispose cycle) but that part
-    // alone measured only ~3-4ms; caching the query+classification result removes the other
-    // 30-60ms. Same invalidation convention as _phaseCache/_probeCacheResult: reset only on a
-    // fresh openFindPanel() (building may have changed) or a real data change (needle-inject),
-    // never on a plain axis re-entry within one open session.
-    NF._roomVolCache = null, NF._roomVolCacheBld = null;
-
-    // §FLYTHRU_ROOMS (2026-09-07) — exposed for cpe_flythru_cues.js. Read-only handle to the SAME
-    // cached function the Room Lens uses; no behaviour change here, and the cue layer must never
-    // get its own second room query (prompts/MEP_CLASH_REVEAL_MOVIE.md §10.2).
-    A.allRoomVolumes = _allRoomVolumes;
-
-    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §3/§9, 2026-07-15): a NEW, lightweight
-    // "reveal" for a Storey or Type headline tap — camera stays put, that group's own room-shell
-    // boxes brighten to their real category color, every real door serving those rooms lights up
-    // brown, tapping the SAME headline again clears it. This REPLACES the old _roomGroupSelect
-    // isolate-drill for normal room headers specifically (user's own framing: today's immediate
-    // zoom/isolate on a header tap is premature for someone still building a mental map of the
-    // floor — the reveal is the lighter first move; a single ROOM's leaf tap keeps the existing
-    // zoom-in unchanged, see _roomSelect). Raw Parts-migrated groups (Stairs/Lift-Shaft/Plant-Room)
-    // still use `_isolatePartsGroup` at the header level (see the render loop below) — those were
-    // never IfcSpace rows, there's no room-shell/category concept to reveal for them.
-    NF._categoryRevealOn = null;   // null | the currently-revealed group key (gk)
-    NF._revealDoorMeshes = [];
-  };
 };

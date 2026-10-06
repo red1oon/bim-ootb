@@ -1,13 +1,17 @@
 // navigate_find family — part `isolate_drill` (original navigate_find.js lines 3829–4236).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.isolate_drill = function __split_navigate_find_isolate_drill(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.isolate_drill = function* __split_navigate_find_isolate_drill(NF, A, nav, getStartNavigation) {
   'use strict';
-  var elSelText, _SR;   // hoisted to this part, as the single closure hoisted them
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)
-    var _recognition = null, _listening = false;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._emitIsolate = _emitIsolate;
+  NF._treeNode = _treeNode;
+  NF._buildStoreyTree = _buildStoreyTree;
+  NF._buildDiscTree = _buildDiscTree;
+  Object.defineProperty(NF, '_nlpRe', { get: function () { return _nlpRe; }, set: function (v) { _nlpRe = v; }, enumerable: true });
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
 
 
     // ── §RevitParity A1: Isolate the current drill — hide everything except the matched set ──
@@ -107,6 +111,8 @@
         NF.elIsoBar.style.display = 'none';
       }
     }
+    if (NF.elIsoBtn) NF.elIsoBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); applyIsolate(); });
+    if (NF.elShowAllBtn) NF.elShowAllBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); clearIsolate(); });
 
     function _treeNode(label, count, level, opts) {
       opts = opts || {};
@@ -359,18 +365,8 @@
       console.log('§FIND_TREE mode=disc discs=' + discs[0].values.length);
     }
 
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._emitIsolate = _emitIsolate;
-  NF._treeNode = _treeNode;
-  NF._buildStoreyTree = _buildStoreyTree;
-  NF._buildDiscTree = _buildDiscTree;
-
-  return function () {   // phase 2: this part's setup statements, in original order
-    if (NF.elIsoBtn) NF.elIsoBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); applyIsolate(); });
-    if (NF.elShowAllBtn) NF.elShowAllBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); clearIsolate(); });
-
     // Tap selected text → re-expand results list
-    elSelText = document.getElementById('find-selected-text');
+    var elSelText = document.getElementById('find-selected-text');
     if (elSelText) elSelText.addEventListener('pointerup', function(e) {
       e.stopPropagation();
       NF.panel.classList.add('results-expanded');
@@ -379,7 +375,8 @@
     });
 
     // ── S265 Phase 5: Voice mic inside Find panel ──
-    _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var _SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var _recognition = null, _listening = false;
     if (_SR && NF.elMicBtn) {
       NF.elMicBtn.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -426,6 +423,5 @@
 
     // ── S265 Phase 5: Dual-purpose input — NLP queries vs element search ──
     // NLP only fires on Enter or chip click (explicit=true), never on live typing.
-    NF._nlpRe = /^(count|how many|number of|total|cost|show|list|what|find|search)\b/i;
-  };
+    var _nlpRe = /^(count|how many|number of|total|cost|show|list|what|find|search)\b/i;
 };

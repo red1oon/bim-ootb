@@ -1,51 +1,39 @@
 // navigate_find family — part `tree_lens` (original navigate_find.js lines 545–1277).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.tree_lens = function __split_navigate_find_tree_lens(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.tree_lens = function* __split_navigate_find_tree_lens(NF, A, nav, getStartNavigation) {
   'use strict';
-  var _probeCacheT;   // hoisted to this part, as the single closure hoisted them
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)
-
-    // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
-    var _audioCtx = null;
-    // §NEEDLE (ROOM_INJECTOR_NEEDLE.md): cached _probeLenses() result (incl. spaceCount, the raw
-    // IfcSpace row count) so _renderNeedle() can gate on it without re-querying; whether an
-    // injection is in flight (guards double-press).
-    var _lastPresent = null;
-    var _needleBusy = false;
-    // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
-    // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
-    // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
-    // witnessed 13/13 PASS on real Duplex/SampleCastle/Terminal/Hospital/Clinic IFC data). Existence-
-    // only match against elements_meta.ifc_class / .element_name — no element_transforms JOIN
-    // required (§PARENT-NO-TRANSFORM there: an IfcStair assembly parent frequently carries no
-    // transform of its own, only its child IfcStairFlight does; an existence match is the correct
-    // "does this building have one" signal, same choice this axis needs).
-    var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
-    // §PLANT_ROOM_GATE_FIX Bug 2: smallest static filename->class map (NOT a general classifier —
-    // mirrors bim-compiler config/building_taxonomy.yaml's building_classes exactly, which itself
-    // cites WalkerDoctrine.md §1 LOCKED: residential = SampleHouse/Duplex/SampleCastle, complex =
-    // Terminal/Clinic/Hospital/HHS). The Viewer has no building-class concept anywhere else (grep
-    // confirmed zero hits before this change) — this reads A.DB_URL (the ?db= query param, a stable
-    // filename per WalkerDoctrine's own fixed building list) rather than A.activeBuilding (the raw
-    // elements_meta.building column, confirmed messy/inconsistent per-building — e.g. Clinic carries
-    // 5 different discipline-suffixed values, Duplex carries the full IFC federation filename).
-    var _RESIDENTIAL_BUILDINGS = ['duplex', 'samplehouse', 'samplecastle'];
-    var _COMPLEX_BUILDINGS = ['terminal', 'clinic', 'hospital', 'hhs'];  // §MOBILE-BBOX: true → the lens auto-enabled the bbox shell on mobile (hide it on reset; user Alt+X is NOT lens-owned)
-
-    // ══ §7 Room-to-room pathway (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7) ══
-    // Room axis "Path" sub-mode: pick two rooms, route through the real door-adjacency graph
-    // (common/room_graph.js — new, see that file's header for why no such graph existed before).
-    var _pathGraphCache = null, _pathGraphBld = null;
-
-    // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask): Type-grouped room tree DISPLAY-only override —
-    // a room whose centroid sits on a real, door+wall-verified hallway backbone
-    // (common/hallway_backbone.js) shows as "Hall / Corridor" in the Type view instead of whatever
-    // generic predefined_type it was compiled with. Never rewrites spatial_structure — same
-    // per-building cache convention as _roomGraphFor() above.
-    var _corridorLabelsCache = null, _corridorLabelsBld = null;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._orderedParentLabels = _orderedParentLabels;
+  NF._applyParentHighlight = _applyParentHighlight;
+  NF._setTreeMode = _setTreeMode;
+  NF._scopeBld = _scopeBld;
+  NF.buildTree = buildTree;
+  NF._partsCond = _partsCond;
+  NF._keywordTokenMatch = _keywordTokenMatch;
+  NF._buildingClass = _buildingClass;
+  NF._renderAxes = _renderAxes;
+  NF._isolateLensGroup = _isolateLensGroup;
+  NF._roomGraphFor = _roomGraphFor;
+  NF._corridorLabelsFor = _corridorLabelsFor;
+  Object.defineProperty(NF, '_roomHasVol', { get: function () { return _roomHasVol; }, set: function (v) { _roomHasVol = v; }, enumerable: true });
+  Object.defineProperty(NF, '_roomsEnsuredBld', { get: function () { return _roomsEnsuredBld; }, set: function (v) { _roomsEnsuredBld = v; }, enumerable: true });
+  Object.defineProperty(NF, 'LIFT_KEYWORDS', { get: function () { return LIFT_KEYWORDS; }, set: function (v) { LIFT_KEYWORDS = v; }, enumerable: true });
+  Object.defineProperty(NF, 'PLANT_KEYWORDS', { get: function () { return PLANT_KEYWORDS; }, set: function (v) { PLANT_KEYWORDS = v; }, enumerable: true });
+  Object.defineProperty(NF, 'RESTROOM_KEYWORDS', { get: function () { return RESTROOM_KEYWORDS; }, set: function (v) { RESTROOM_KEYWORDS = v; }, enumerable: true });
+  Object.defineProperty(NF, '_PARTS_GROUPS', { get: function () { return _PARTS_GROUPS; }, set: function (v) { _PARTS_GROUPS = v; }, enumerable: true });
+  Object.defineProperty(NF, '_probeCacheResult', { get: function () { return _probeCacheResult; }, set: function (v) { _probeCacheResult = v; }, enumerable: true });
+  Object.defineProperty(NF, '_roomBoxes', { get: function () { return _roomBoxes; }, set: function (v) { _roomBoxes = v; }, enumerable: true });
+  Object.defineProperty(NF, '_roomXrayWasOff', { get: function () { return _roomXrayWasOff; }, set: function (v) { _roomXrayWasOff = v; }, enumerable: true });
+  Object.defineProperty(NF, '_hlXrayWasOff', { get: function () { return _hlXrayWasOff; }, set: function (v) { _hlXrayWasOff = v; }, enumerable: true });
+  Object.defineProperty(NF, '_mgLensOwned', { get: function () { return _mgLensOwned; }, set: function (v) { _mgLensOwned = v; }, enumerable: true });
+  Object.defineProperty(NF, '_pathFromGuid', { get: function () { return _pathFromGuid; }, set: function (v) { _pathFromGuid = v; }, enumerable: true });
+  Object.defineProperty(NF, '_pathToGuid', { get: function () { return _pathToGuid; }, set: function (v) { _pathToGuid = v; }, enumerable: true });
+  Object.defineProperty(NF, '_pathLastResult', { get: function () { return _pathLastResult; }, set: function (v) { _pathLastResult = v; }, enumerable: true });
+  Object.defineProperty(NF, '_pathExtraMeshes', { get: function () { return _pathExtraMeshes; }, set: function (v) { _pathExtraMeshes = v; }, enumerable: true });
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
  // last plain/ctrl-tapped label, for Shift-range
     function _orderedParentLabels() {
       return Array.prototype.map.call(
@@ -73,6 +61,9 @@
         _setParentRowStyle(row, sel.has(row.getAttribute('data-find-parent')));
       });
     }
+
+    // §S280: Audio thump — short click on mode toggle (lightweight, no file load)
+    var _audioCtx = null;
     function _thump() {
       // §AUDIO: honour the global audio toggle (sfx.js). When audio is OFF, purge our own
       // context — close() frees the hardware audio resource (zero cost), and it is recreated
@@ -114,8 +105,8 @@
       // checked, so switching axes away from a storey/disc drill left the ghost shell visible
       // forever. Made unconditional (not mode-gated) — resetting an already-false _mgLensOwned is a
       // safe no-op, and this way no future axis needs its own copy of this reset.
-      if (NF._mgLensOwned && NF._mergedGhost) {
-        NF._mergedGhost.visible = false; NF._mgLensOwned = false;
+      if (_mgLensOwned && NF._mergedGhost) {
+        NF._mergedGhost.visible = false; _mgLensOwned = false;
         console.log('[MG] §BBOX_GHOST_STUCK_RESET hidden on axis change (was lens-owned)');
       }
       NF._treeMode = mode;
@@ -138,6 +129,14 @@
     // §FB.2: whole-scene readers scope through ONE owner (streaming.js A.sceneScopeBuilding) — a merged
     // scene (>1 building, not City) is one model; everything else stays on A.activeBuilding as before.
     function _scopeBld() { return A.sceneScopeBuilding ? A.sceneScopeBuilding() : (A.activeBuilding || ''); }
+    // §FB.4: rebuild an OPEN panel when a merge finishes streaming, so the merged disciplines appear
+    // without reopening. Closed panel → nothing (it rebuilds on open anyway).
+    A._findRefreshTree = function(why) {
+      if (NF.panel.style.display !== 'block') { console.log('§FIND_REFRESH skip=closed why=' + why); return; }
+      NF.populateDropdowns();
+      buildTree();
+      console.log('§FIND_REFRESH why=' + why + ' mode=' + NF._treeMode + ' scope="' + _scopeBld() + '"');
+    };
 
     function buildTree() {
       if (!NF.elTree || !A.db) return;
@@ -152,9 +151,42 @@
         else if (NF._treeMode === 'phase') NF._buildPhaseTree();
       } catch(e) { console.warn('§FIND_TREE error', e); }
     }
+
+    // ══ §RP-T3: Axis pills — Room/Material/Phase fold INTO the toggle, data-gated ══
+    // Engine: UNIFY — every axis group isolates via filterByGuids (W-LENS-ISOLATE).
+    // An optional axis appears ONLY when its query returns rows (W-LENS-PROBE).
+    // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
+    // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
+    var _roomHasVol = false;
+    // §NEEDLE (ROOM_INJECTOR_NEEDLE.md): cached _probeLenses() result (incl. spaceCount, the raw
+    // IfcSpace row count) so _renderNeedle() can gate on it without re-querying; whether an
+    // injection is in flight (guards double-press).
+    var _lastPresent = null;
+    var _needleBusy = false;
+    // §FIND_ENSURE_ROOMS (ROOM_INJECTOR_NEEDLE.md, 2026-07-21): building name the Room lens has
+    // already run A.ensureRooms({}) for this session, so entering/refreshing the room tree does not
+    // re-fire the shared injection core on every filter keystroke / sub-toggle switch.
+    var _roomsEnsuredBld = null;
+    // §BUILDING-PARTS-TAXONOMY: STAIRWAY/LIFT_SHAFT/PLANT_ROOM keyword constants, ported verbatim
+    // from bim-compiler build/building_parts_taxonomy.js (which itself reuses build/room_walker.js's
+    // §STAIR-EXCLUDE / door-rescue constants — see prompts/BUILDING_PARTS_TAXONOMY.md in that repo,
+    // witnessed 13/13 PASS on real Duplex/SampleCastle/Terminal/Hospital/Clinic IFC data). Existence-
+    // only match against elements_meta.ifc_class / .element_name — no element_transforms JOIN
+    // required (§PARENT-NO-TRANSFORM there: an IfcStair assembly parent frequently carries no
+    // transform of its own, only its child IfcStairFlight does; an existence match is the correct
+    // "does this building have one" signal, same choice this axis needs).
+    var STAIR_LIKE = ["IfcStair%", "IfcRamp%"];
+    var LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
+    var PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
+    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10, 2026-07-15): real evidence
+    // already seen this session (Clinic doors named "M_Toilet Partition:0865 x 1500mm" near First
+    // Floor R58/R59) — same word-boundary discipline as LIFT_KEYWORDS/PLANT_KEYWORDS above, applied
+    // to a room's CONTAINED elements (rel_contained_in_space) rather than the room's own generic
+    // "COMPILED INTERNAL" label, which carries no descriptive signal for real synthetic rooms.
+    var RESTROOM_KEYWORDS = ["toilet", "restroom", "washroom", "lavatory", "wc"];
     function _partsCond(part) {
       if (part === 'STAIRWAY') return STAIR_LIKE.map(function(p) { return "ifc_class LIKE '" + p + "'"; }).join(' OR ');
-      var words = (part === 'LIFT_SHAFT') ? NF.LIFT_KEYWORDS : NF.PLANT_KEYWORDS;
+      var words = (part === 'LIFT_SHAFT') ? LIFT_KEYWORDS : PLANT_KEYWORDS;
       // §PLANT_ROOM_GATE_FIX Bug 1: SQL stays a broad substring pre-filter (cheap, superset —
       // real matches never excluded here); the word-boundary discipline that actually rejects
       // false positives (e.g. "Preventer" containing "vent") runs in JS via _keywordTokenMatch()
@@ -195,22 +227,45 @@
         return words.some(function(w) { return tl.indexOf(w) === 0; });
       });
     }
+    // §PLANT_ROOM_GATE_FIX Bug 2: smallest static filename->class map (NOT a general classifier —
+    // mirrors bim-compiler config/building_taxonomy.yaml's building_classes exactly, which itself
+    // cites WalkerDoctrine.md §1 LOCKED: residential = SampleHouse/Duplex/SampleCastle, complex =
+    // Terminal/Clinic/Hospital/HHS). The Viewer has no building-class concept anywhere else (grep
+    // confirmed zero hits before this change) — this reads A.DB_URL (the ?db= query param, a stable
+    // filename per WalkerDoctrine's own fixed building list) rather than A.activeBuilding (the raw
+    // elements_meta.building column, confirmed messy/inconsistent per-building — e.g. Clinic carries
+    // 5 different discipline-suffixed values, Duplex carries the full IFC federation filename).
+    var _RESIDENTIAL_BUILDINGS = ['duplex', 'samplehouse', 'samplecastle'];
+    var _COMPLEX_BUILDINGS = ['terminal', 'clinic', 'hospital', 'hhs'];
     function _buildingClass() {
       var src = String((A.DB_URL || '')).toLowerCase();
       for (var i = 0; i < _COMPLEX_BUILDINGS.length; i++) { if (src.indexOf(_COMPLEX_BUILDINGS[i]) >= 0) return 'complex'; }
       for (var i = 0; i < _RESIDENTIAL_BUILDINGS.length; i++) { if (src.indexOf(_RESIDENTIAL_BUILDINGS[i]) >= 0) return 'residential'; }
       return null; // unclassed (e.g. Garage, n=1 per scoreboard) — PLANT_ROOM stays hidden, same as residential
     }
+    var _PARTS_GROUPS = [
+      { type: 'STAIRWAY', label: 'Stairway' },
+      { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
+      { type: 'PLANT_ROOM', label: 'Plant Room' }
+    ];
+    // §PROBE-DEDUP (2026-07-15j, §13): a single axis-toggle tap calls _axes() TWICE — once in the
+    // toggle button's own pointerup handler (to compute the NEXT axis from the CURRENT list) and
+    // again inside _setTreeMode()'s _renderAxes() (to redraw the button showing the NEW state) —
+    // each running _probeLenses()'s ~4 real COUNT queries against A.db. The DB's data-presence
+    // (room/material/phase available) cannot legitimately change between these two calls in the
+    // same synchronous tap; a short TTL memo collapses the pair into ONE real probe per tap without
+    // risking staleness for genuine data changes (needle-inject etc. are always async, >>50ms away).
+    var _probeCacheResult = null, _probeCacheT = 0;
     function _probeLenses() {
       var _plT0 = (performance && performance.now) ? performance.now() : 0; // §PERF_PROBE (2026-07-15j, §13)
       var _now = _plT0 || (Date.now ? Date.now() : 0);
-      if (NF._probeCacheResult && (_now - _probeCacheT) < 50) {
+      if (_probeCacheResult && (_now - _probeCacheT) < 50) {
         console.log('[RP-T3] §LENS_PROBE_DEDUP_HIT age_ms=' + (_now - _probeCacheT).toFixed(1));
-        return NF._probeCacheResult;
+        return _probeCacheResult;
       }
       var bld = _scopeBld();
       var room = false, material = false, phase = false;
-      NF._roomHasVol = false;
+      _roomHasVol = false;
       try {
         var hasSS = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'");
         var hasRel = A.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rel_contained_in_space'");
@@ -225,8 +280,8 @@
             if (colNames.indexOf('center_x') >= 0 && colNames.indexOf('size_x') >= 0) {
               var vc = A.db.exec("SELECT COUNT(*) FROM spatial_structure" +
                 " WHERE type='IfcSpace' AND center_x IS NOT NULL AND size_x IS NOT NULL");
-              NF._roomHasVol = !!(vc.length && vc[0].values[0][0] > 0);
-              if (NF._roomHasVol) room = true; // volume alone enables the Room axis
+              _roomHasVol = !!(vc.length && vc[0].values[0][0] > 0);
+              if (_roomHasVol) room = true; // volume alone enables the Room axis
             }
           } catch(e) { /* _roomHasVol stays false */ }
         }
@@ -268,11 +323,11 @@
         } catch(e) { /* kernel_ops table may not exist yet */ }
         phase = hasElems && (genReady || opsExist);
       } catch(e) { /* phase stays false */ }
-      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + NF._roomHasVol + ' material=' + material + ' phase=' + phase + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
+      console.log('[RP-T3] §LENS_PROBE room=' + room + ' roomVol=' + _roomHasVol + ' material=' + material + ' phase=' + phase + ' spaceCount=' + _needleSpaceCount + ' needleState=' + _needleState);
       console.log('[RP-T3] §PERF_PROBE _probeLenses ms=' + ((performance && performance.now) ? (performance.now() - _plT0).toFixed(1) : '?')); // §13
-      NF._probeCacheResult = { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
+      _probeCacheResult = { room: room, material: material, phase: phase, spaceCount: _needleSpaceCount, needleState: _needleState };
       _probeCacheT = _now;
-      return NF._probeCacheResult;
+      return _probeCacheResult;
     }
 
     // Storey + Discipline always; Room/Material/Phase only when their data is present.
@@ -376,6 +431,22 @@
       });
       if (!window.RoomWalker) throw new Error('RoomWalker unavailable after load');
     }
+
+    // ══ FLY_TOUR_CORRIDOR_GRAPH.md §S1 — A.ensureRooms: the ONE shared injection core ══
+    // Extracted verbatim from _needleInject (ROOM_INJECTOR_NEEDLE.md S2+S3+S4's cache half) so the
+    // Fly tour can run the SAME patch→walker→IDB sequence without forking it. Semantics:
+    //   - real (non-RM_) IfcSpace rows present → 'present', NEVER touched (needle 'none' state),
+    //     force or not — never overwrite real extraction.
+    //   - compiled rooms present, no force → 'present' (no auto-recompute; standing needle policy).
+    //   - zero rooms, or compiled+{force:true} (the needle's recompute press) → inject.
+    // Returns {status:'present'|'injected'|'error', source, rooms, rects}. Never throws.
+    // Single-flight: concurrent callers (Fly prep + a needle press) share one run.
+    A.ensureRooms = function(opts) {
+      if (A._ensureRoomsInflight) return A._ensureRoomsInflight;
+      A._ensureRoomsInflight = _ensureRoomsCore(opts);
+      A._ensureRoomsInflight.finally(function() { A._ensureRoomsInflight = null; });
+      return A._ensureRoomsInflight;
+    };
     async function _ensureRoomsCore(opts) {
       opts = opts || {};
       if (!A.db) return { status: 'error', message: 'no db' };
@@ -641,7 +712,24 @@
         if (NF.elIsoBtn) NF.elIsoBtn.style.display = 'none';
         if (NF.elShowAllBtn) NF.elShowAllBtn.style.display = '';
       }
-    }  // the connecting polyline + any path-only overlays (disposed on reset/mode-leave)
+    }
+
+    // ══ §RP Task A: Room volume lens — highlight room boxes, x-ray the rest ══
+    // The Room axis ghosts the whole model (X-Ray) and draws a translucent cyan box at
+    // each IfcSpace bbox (center+size from spatial_structure). Tapping a room brightens
+    // THAT box. We do NOT inject IfcSpace meshes into the geometry stream — boxes are
+    // plain THREE.Mesh added to A.scene, disposed on reset.
+    var _roomBoxes = [];      // { guid, name, mesh, center:{x,y,z} }
+    var _roomXrayWasOff = false;
+    var _hlXrayWasOff = false; // true → the Phase/Material highlight lens turned X-Ray on
+    var _mgLensOwned = false;  // §MOBILE-BBOX: true → the lens auto-enabled the bbox shell on mobile (hide it on reset; user Alt+X is NOT lens-owned)
+
+    // ══ §7 Room-to-room pathway (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7) ══
+    // Room axis "Path" sub-mode: pick two rooms, route through the real door-adjacency graph
+    // (common/room_graph.js — new, see that file's header for why no such graph existed before).
+    var _pathGraphCache = null, _pathGraphBld = null;  // cached per activeBuilding (rebuilding on every keystroke is wasteful)
+    var _pathFromGuid = '', _pathToGuid = '', _pathLastResult = null;
+    var _pathExtraMeshes = [];  // the connecting polyline + any path-only overlays (disposed on reset/mode-leave)
 
     function _roomGraphFor() {
       var RG = (typeof window !== 'undefined') && window.RoomGraph;
@@ -659,6 +747,16 @@
       _pathGraphCache = g; _pathGraphBld = A.activeBuilding;
       return g;
     }
+    // FLY_TOUR_CORRIDOR_GRAPH.md §S2 — the Fly tour shares THIS cache (one graph per building,
+    // never two). Read-only alias; invalidation stays in ensureRooms/needle above.
+    A.getRoomGraph = _roomGraphFor;
+
+    // §CORRIDOR-TYPE-LABEL (2026-07-14, user ask): Type-grouped room tree DISPLAY-only override —
+    // a room whose centroid sits on a real, door+wall-verified hallway backbone
+    // (common/hallway_backbone.js) shows as "Hall / Corridor" in the Type view instead of whatever
+    // generic predefined_type it was compiled with. Never rewrites spatial_structure — same
+    // per-building cache convention as _roomGraphFor() above.
+    var _corridorLabelsCache = null, _corridorLabelsBld = null;
     function _corridorLabelsFor() {
       var HB = (typeof window !== 'undefined') && window.HallwayBackbone;
       if (!HB || !A.dbQuery) return {};
@@ -670,92 +768,4 @@
       _corridorLabelsCache = labels; _corridorLabelsBld = A.activeBuilding;
       return labels;
     }
-
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._orderedParentLabels = _orderedParentLabels;
-  NF._applyParentHighlight = _applyParentHighlight;
-  NF._setTreeMode = _setTreeMode;
-  NF._scopeBld = _scopeBld;
-  NF.buildTree = buildTree;
-  NF._partsCond = _partsCond;
-  NF._keywordTokenMatch = _keywordTokenMatch;
-  NF._buildingClass = _buildingClass;
-  NF._renderAxes = _renderAxes;
-  NF._isolateLensGroup = _isolateLensGroup;
-  NF._roomGraphFor = _roomGraphFor;
-  NF._corridorLabelsFor = _corridorLabelsFor;
-
-  return function () {   // phase 2: this part's setup statements, in original order
-    // §FB.4: rebuild an OPEN panel when a merge finishes streaming, so the merged disciplines appear
-    // without reopening. Closed panel → nothing (it rebuilds on open anyway).
-    A._findRefreshTree = function(why) {
-      if (NF.panel.style.display !== 'block') { console.log('§FIND_REFRESH skip=closed why=' + why); return; }
-      NF.populateDropdowns();
-      buildTree();
-      console.log('§FIND_REFRESH why=' + why + ' mode=' + NF._treeMode + ' scope="' + _scopeBld() + '"');
-    };
-
-    // ══ §RP-T3: Axis pills — Room/Material/Phase fold INTO the toggle, data-gated ══
-    // Engine: UNIFY — every axis group isolates via filterByGuids (W-LENS-ISOLATE).
-    // An optional axis appears ONLY when its query returns rows (W-LENS-PROBE).
-    // §RP Task A: a room has VOLUME data when spatial_structure carries center_*/size_*
-    // columns AND at least one IfcSpace row is populated. _roomHasVol is cached per-open.
-    NF._roomHasVol = false;
-    // §FIND_ENSURE_ROOMS (ROOM_INJECTOR_NEEDLE.md, 2026-07-21): building name the Room lens has
-    // already run A.ensureRooms({}) for this session, so entering/refreshing the room tree does not
-    // re-fire the shared injection core on every filter keystroke / sub-toggle switch.
-    NF._roomsEnsuredBld = null;
-    NF.LIFT_KEYWORDS = ["liftdeur", "lift", "elevator", "aufzug", "fahrstuhl", "hoist"];
-    NF.PLANT_KEYWORDS = ["vent", "duct", "fan", "ahu", "damper", "chiller", "condens", "fancoil", "pump"];
-    // §ROOM_LENS_TAXONOMY (ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §10, 2026-07-15): real evidence
-    // already seen this session (Clinic doors named "M_Toilet Partition:0865 x 1500mm" near First
-    // Floor R58/R59) — same word-boundary discipline as LIFT_KEYWORDS/PLANT_KEYWORDS above, applied
-    // to a room's CONTAINED elements (rel_contained_in_space) rather than the room's own generic
-    // "COMPILED INTERNAL" label, which carries no descriptive signal for real synthetic rooms.
-    NF.RESTROOM_KEYWORDS = ["toilet", "restroom", "washroom", "lavatory", "wc"];
-    NF._PARTS_GROUPS = [
-      { type: 'STAIRWAY', label: 'Stairway' },
-      { type: 'LIFT_SHAFT', label: 'Lift Shaft' },
-      { type: 'PLANT_ROOM', label: 'Plant Room' }
-    ];
-    // §PROBE-DEDUP (2026-07-15j, §13): a single axis-toggle tap calls _axes() TWICE — once in the
-    // toggle button's own pointerup handler (to compute the NEXT axis from the CURRENT list) and
-    // again inside _setTreeMode()'s _renderAxes() (to redraw the button showing the NEW state) —
-    // each running _probeLenses()'s ~4 real COUNT queries against A.db. The DB's data-presence
-    // (room/material/phase available) cannot legitimately change between these two calls in the
-    // same synchronous tap; a short TTL memo collapses the pair into ONE real probe per tap without
-    // risking staleness for genuine data changes (needle-inject etc. are always async, >>50ms away).
-    NF._probeCacheResult = null, _probeCacheT = 0;
-
-    // ══ FLY_TOUR_CORRIDOR_GRAPH.md §S1 — A.ensureRooms: the ONE shared injection core ══
-    // Extracted verbatim from _needleInject (ROOM_INJECTOR_NEEDLE.md S2+S3+S4's cache half) so the
-    // Fly tour can run the SAME patch→walker→IDB sequence without forking it. Semantics:
-    //   - real (non-RM_) IfcSpace rows present → 'present', NEVER touched (needle 'none' state),
-    //     force or not — never overwrite real extraction.
-    //   - compiled rooms present, no force → 'present' (no auto-recompute; standing needle policy).
-    //   - zero rooms, or compiled+{force:true} (the needle's recompute press) → inject.
-    // Returns {status:'present'|'injected'|'error', source, rooms, rects}. Never throws.
-    // Single-flight: concurrent callers (Fly prep + a needle press) share one run.
-    A.ensureRooms = function(opts) {
-      if (A._ensureRoomsInflight) return A._ensureRoomsInflight;
-      A._ensureRoomsInflight = _ensureRoomsCore(opts);
-      A._ensureRoomsInflight.finally(function() { A._ensureRoomsInflight = null; });
-      return A._ensureRoomsInflight;
-    };
-
-    // ══ §RP Task A: Room volume lens — highlight room boxes, x-ray the rest ══
-    // The Room axis ghosts the whole model (X-Ray) and draws a translucent cyan box at
-    // each IfcSpace bbox (center+size from spatial_structure). Tapping a room brightens
-    // THAT box. We do NOT inject IfcSpace meshes into the geometry stream — boxes are
-    // plain THREE.Mesh added to A.scene, disposed on reset.
-    NF._roomBoxes = [];      // { guid, name, mesh, center:{x,y,z} }
-    NF._roomXrayWasOff = false;
-    NF._hlXrayWasOff = false; // true → the Phase/Material highlight lens turned X-Ray on
-    NF._mgLensOwned = false;  // cached per activeBuilding (rebuilding on every keystroke is wasteful)
-    NF._pathFromGuid = '', NF._pathToGuid = '', NF._pathLastResult = null;
-    NF._pathExtraMeshes = [];
-    // FLY_TOUR_CORRIDOR_GRAPH.md §S2 — the Fly tour shares THIS cache (one graph per building,
-    // never two). Read-only alias; invalidation stays in ensureRooms/needle above.
-    A.getRoomGraph = _roomGraphFor;
-  };
 };

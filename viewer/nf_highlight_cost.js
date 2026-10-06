@@ -1,45 +1,30 @@
 // navigate_find family — part `highlight_cost` (original navigate_find.js lines 1279–1840).
-// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json) — edit this file
-// normally from now on; regenerate only to re-split a branch that still edits the old single file. Names shared
-// across parts live on `NF`; load order + the two-phase setup are in navigate_find.js.
+// GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/navigate_find.json). Below the `yield` every
+// statement is the original text; the only edit is that a name owned by ANOTHER part is reached as NF.name.
+// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
 (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts = (typeof window !== 'undefined' ? window : globalThis).__navigateFindParts || {};
-(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.highlight_cost = function __split_navigate_find_highlight_cost(NF, A, nav, getStartNavigation) {
+(typeof window !== 'undefined' ? window : globalThis).__navigateFindParts.highlight_cost = function* __split_navigate_find_highlight_cost(NF, A, nav, getStartNavigation) {
   'use strict';
-  var _MG_VCAP, _AREA_EXPR_SC, _erpPush, _surfaceExistingOrder;   // hoisted to this part, as the single closure hoisted them
-  // literal-valued constants, verbatim (evaluating a literal earlier changes nothing)
-
-    // §C ELEMENT-PRECISE: the Phase/Material highlight overlay. ONE InstancedMesh of unit
-    // boxes — one box per matched element, positioned+scaled from element_transforms (same
-    // bbox→Three mapping as the picker). Replaces the old whole-BatchedMesh OutlinePass,
-    // which lit every neighbour in a batch when any one slot matched.
-    var _hlOverlay = null; // vert cap, bail above
-    // §DESKTOP-BBOX-THRESHOLD (2026-07-15i, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §13): extend the
-    // existing mobile-only bbox-shell default to desktop by real element count, so a large
-    // building gets the light shell without needing window._isMobile. Threshold grounded against
-    // actual elements_meta counts across the fleet (measured this session, /home/red1/bim-ootb/
-    // buildings/*_extracted.db): Clinic=16114, HHS=6880 (both "small enough" per §12 — never want
-    // the bbox default here) vs. Terminal=48428, Hospital=63415 (both real "large" buildings named
-    // in §13's own framing) — 25000 sits with comfortable margin below every large building and
-    // above every small one in the current fleet, not a guessed round number.
-    var _LARGE_BUILDING_ELEM_THRESHOLD = 25000;
-    var _elemCountCache = null, _elemCountCacheBld = null;
-
-    // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
-    // material (the highlighted item); color==null → opaque CLONE of each element's real
-    // material (so the phase reads solid over the x-rayed base). Returns elements drawn.
-    // §PERF: the element_instances⋈transforms⋈meta join is STATIC per building but was
-    // re-run on EVERY drill (twice — solid+lit), marshalling the whole table through sql.js
-    // each tap → the "panel responds late / unresponsive to touch". Cache it per activeBuilding;
-    // the first drill pays the query, every subsequent tap reuses the rows.
-    var _instRows = null, _instRowsBld = null;
-
-    // ── §FIND_COST (BIM→Project TASK A, docs/BIMtoProject.md §A): indicative 5D cost of a selection ──
-    // Same currency-free quantity basis as analysis_sidecar.js compute5D/apply5DRates (the consistency
-    // invariant: round(rate×qty) in JS Number — BigDecimal is reserved for the ERP push, Task C).
-    // Cost folds over the focusSet GUIDs, so EVERY selection kind (storey/disc/type/room/item/phase)
-    // is handled uniformly. Bound params cap at 999 → chunk by 900. Non-invent: a class with no pack
-    // rate contributes 0 (never a guessed price). Witness W-FIND-COST (tests/poc_find_cost.js).
-    var _SELCOST_CAP = 30000;
+  // phase 1 — publish this part's names that other parts use (same function objects; vars as live accessors)
+  NF._clearPathHighlight = _clearPathHighlight;
+  NF._findRoomPath = _findRoomPath;
+  NF._clearHlOverlay = _clearHlOverlay;
+  NF._highlightLensReset = _highlightLensReset;
+  NF._clearShapeOverlays = _clearShapeOverlays;
+  NF._isLargeBuilding = _isLargeBuilding;
+  NF._buildMergedGhost = _buildMergedGhost;
+  NF._getInstanceRows = _getInstanceRows;
+  NF._instRowsForSet = _instRowsForSet;
+  NF._updateSelCost = _updateSelCost;
+  Object.defineProperty(NF, '_HL_CAP', { get: function () { return _HL_CAP; }, set: function (v) { _HL_CAP = v; }, enumerable: true });
+  Object.defineProperty(NF, '_shapeOverlays', { get: function () { return _shapeOverlays; }, set: function (v) { _shapeOverlays = v; }, enumerable: true });
+  Object.defineProperty(NF, '_mergedGhost', { get: function () { return _mergedGhost; }, set: function (v) { _mergedGhost = v; }, enumerable: true });
+  Object.defineProperty(NF, '_mergedGhostBld', { get: function () { return _mergedGhostBld; }, set: function (v) { _mergedGhostBld = v; }, enumerable: true });
+  Object.defineProperty(NF, '_surfaceConstructionLink', { get: function () { return _surfaceConstructionLink; }, set: function (v) { _surfaceConstructionLink = v; }, enumerable: true });
+  Object.defineProperty(NF, '_showClassCost', { get: function () { return _showClassCost; }, set: function (v) { _showClassCost = v; }, enumerable: true });
+  Object.defineProperty(NF, '_show4DWindow', { get: function () { return _show4DWindow; }, set: function (v) { _show4DWindow = v; }, enumerable: true });
+  Object.defineProperty(NF, '_pushToErp', { get: function () { return _pushToErp; }, set: function (v) { _pushToErp = v; }, enumerable: true });
+  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
 
 
     function _clearPathHighlight() {
@@ -191,7 +176,15 @@
         (repeated.length ? ' repeatedPortals=[' + repeated.map(function(g) { return g + 'x' + distinctDoors[g]; }).join(',') + ']' : ''));
       _drawPathHighlight(graph, result);
       return result;
-    } // §RP-SHAPE: real-geometry overlays [{mesh, disposeMat}]
+    }
+
+    // §C ELEMENT-PRECISE: the Phase/Material highlight overlay. ONE InstancedMesh of unit
+    // boxes — one box per matched element, positioned+scaled from element_transforms (same
+    // bbox→Three mapping as the picker). Replaces the old whole-BatchedMesh OutlinePass,
+    // which lit every neighbour in a batch when any one slot matched.
+    var _hlOverlay = null;   // THREE.InstancedMesh | null
+    var _HL_CAP = 4000;      // hard cap on highlighted boxes (no silent truncation — §-logged)
+    var _shapeOverlays = []; // §RP-SHAPE: real-geometry overlays [{mesh, disposeMat}]
 
     function _clearHlOverlay() {
       if (_hlOverlay) {
@@ -208,8 +201,8 @@
       _clearShapeOverlays();
       if (A.setOutline) A.setOutline([]);
       if (A.filterByGuids) A.filterByGuids(null);  // §SHELL: un-hide the base (shell-mode or old _USE_SHELL)
-      if (NF._mgLensOwned && NF._mergedGhost) {           // §MOBILE-BBOX: lens-owned bbox shell → hide on reset (user Alt+X stays put)
-        NF._mergedGhost.visible = false; NF._mgLensOwned = false;
+      if (NF._mgLensOwned && _mergedGhost) {           // §MOBILE-BBOX: lens-owned bbox shell → hide on reset (user Alt+X stays put)
+        _mergedGhost.visible = false; NF._mgLensOwned = false;
         console.log('[MG] §MOBILE_BBOX_RESET hidden (lens-owned)');
       }
       if (A.xrayOn && NF._hlXrayWasOff && A.toggleXray) {
@@ -240,7 +233,7 @@
           " FROM element_transforms");
       } catch (e) { console.log('[RP-C] §HL_OVERLAY_ERR ' + e.message); }
       var hits = [];
-      for (var i = 0; i < rows.length && hits.length < NF._HL_CAP; i++) {
+      for (var i = 0; i < rows.length && hits.length < _HL_CAP; i++) {
         if (rows[i][1] != null && set.has(rows[i][0])) hits.push(rows[i]);
       }
       var capped = (rows.filter(function (r) { return r[1] != null && set.has(r[0]); }).length > hits.length);
@@ -269,7 +262,7 @@
         _hlOverlay = inst;
       }
       console.log('[RP-C] §HL_OVERLAY boxes=' + hits.length + ' setSize=' + set.size +
-        (capped ? ' CAPPED@' + NF._HL_CAP : '') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
+        (capped ? ' CAPPED@' + _HL_CAP : '') + ' xray=' + (A.xrayOn ? 'on' : 'off'));
       if (A.markDirty) A.markDirty();
       return hits.length;
     }
@@ -279,15 +272,31 @@
     // so the actual LOD mesh SHAPE lights up. Geometry is SHARED with the scene — NEVER dispose
     // it; materials here are fresh/cloned (opaque, so x-ray can't dim them) and ARE disposed.
     function _clearShapeOverlays() {
-      NF._shapeOverlays.forEach(function(o) {
+      _shapeOverlays.forEach(function(o) {
         if (o.mesh && o.mesh.parent) o.mesh.parent.remove(o.mesh);
         // §UNIFIED-SELECT: drop the per-overlay instance→guid map registered in _buildShapeMeshes
         // (so picking can never resolve a stale, removed overlay).
         if (o.mesh && A._instanceMeta) delete A._instanceMeta[o.mesh.id];
         if (o.disposeMat && o.mesh && o.mesh.material) o.mesh.material.dispose();
       });
-      NF._shapeOverlays = [];
+      _shapeOverlays = [];
     }
+
+    // §SHELL-GHOST (user): the building's OUTER SHELL — only envelope classes (walls/slabs/roof/curtain/
+    // covering/plate, ~7% of elements) baked into ONE merged mesh, real LOD shapes, see-through 0.3,
+    // colored by real material. ONE draw. NOT the whole building (full merge = 2.3GB; envelope ≈ ~150MB).
+    // A persistent overlay (NOT in _shapeOverlays → never cleared on tap). Built deferred, after open.
+    var _mergedGhost = null, _mergedGhostBld = null, _MG_VCAP = 60000000; // vert cap, bail above
+    // §DESKTOP-BBOX-THRESHOLD (2026-07-15i, ROOM_LENS_VISUAL_HIGHLIGHT_SPEC.md §13): extend the
+    // existing mobile-only bbox-shell default to desktop by real element count, so a large
+    // building gets the light shell without needing window._isMobile. Threshold grounded against
+    // actual elements_meta counts across the fleet (measured this session, /home/red1/bim-ootb/
+    // buildings/*_extracted.db): Clinic=16114, HHS=6880 (both "small enough" per §12 — never want
+    // the bbox default here) vs. Terminal=48428, Hospital=63415 (both real "large" buildings named
+    // in §13's own framing) — 25000 sits with comfortable margin below every large building and
+    // above every small one in the current fleet, not a guessed round number.
+    var _LARGE_BUILDING_ELEM_THRESHOLD = 25000;
+    var _elemCountCache = null, _elemCountCacheBld = null;
     function _isLargeBuilding() {
       if (!A.dbQuery) return false;
       if (_elemCountCacheBld === A.activeBuilding && _elemCountCache != null) return _elemCountCache > _LARGE_BUILDING_ELEM_THRESHOLD;
@@ -307,7 +316,7 @@
     }
     function _buildMergedGhost() {
       if (!A.scene || typeof THREE === 'undefined' || !A.dbQuery || !A.ifc2three) { console.log('[MG] §SHELL_GHOST_SKIP deps'); return null; }
-      if (NF._mergedGhost && NF._mergedGhostBld === A.activeBuilding) return NF._mergedGhost; // cached
+      if (_mergedGhost && _mergedGhostBld === A.activeBuilding) return _mergedGhost; // cached
       var t0 = (performance && performance.now) ? performance.now() : 0;
       // §BBOX-GHOST: draw the envelope as instanced WIREFRAME BOUNDING BOXES, grouped by discipline and
       // coloured with the SAME A.DISC_COLORS the load placeholders use (no new palette). Per-element bbox is
@@ -403,7 +412,7 @@
       group.renderOrder = -1;
       group.userData._mergedGhost = true;
       A.scene.add(group);
-      NF._mergedGhost = group; NF._mergedGhostBld = A.activeBuilding;
+      _mergedGhost = group; _mergedGhostBld = A.activeBuilding;
       var ms = ((performance && performance.now) ? performance.now() : 0) - t0;
       console.log('[MG] §SHELL_GHOST_BBOX bld=' + A.activeBuilding + ' boxes=' + total + ' discs=' + discs.length +
         ' build_ms=' + ms.toFixed(0));
@@ -413,17 +422,40 @@
     function toggleMergedGhost() {
       // Alt+X: show the envelope ghost ALONE — hide every solid mesh via filterByGuids (VISIBILITY ONLY,
       // no material.opacity/color mutated → clean toggle, no residue). Off → everything restored.
-      if (NF._mergedGhost && NF._mergedGhostBld === A.activeBuilding) {
-        NF._mergedGhost.visible = !NF._mergedGhost.visible;
-        if (A.filterByGuids) A.filterByGuids(NF._mergedGhost.visible ? new Set() : null); // on → hide solids; off → restore
-        console.log('[MG] §GHOST_XRAY visible=' + NF._mergedGhost.visible + ' solids=' + (NF._mergedGhost.visible ? 'hidden' : 'shown'));
+      if (_mergedGhost && _mergedGhostBld === A.activeBuilding) {
+        _mergedGhost.visible = !_mergedGhost.visible;
+        if (A.filterByGuids) A.filterByGuids(_mergedGhost.visible ? new Set() : null); // on → hide solids; off → restore
+        console.log('[MG] §GHOST_XRAY visible=' + _mergedGhost.visible + ' solids=' + (_mergedGhost.visible ? 'hidden' : 'shown'));
         if (A.markDirty) A.markDirty();
-        return NF._mergedGhost.visible;
+        return _mergedGhost.visible;
       }
       var _mg = _buildMergedGhost();
       if (_mg && A.filterByGuids) A.filterByGuids(new Set()); // first build → hide solids so the ghost stands alone
       return !!_mg;
     }
+    window._mergeGhost = toggleMergedGhost;
+    window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
+    window.ghostXrayOn = function() { return !!(_mergedGhost && _mergedGhost.visible && _mergedGhostBld === A.activeBuilding); }; // §GHOST_STATE — for pill/Help isActive
+    // §BBOX_GHOST_STUCK_RESET witness hooks — exposed ONLY so the fix can be verified without
+    // reverse-engineering the Find panel's DOM (same convention as A._showClassCost above). Forces
+    // the exact precondition `_drillSelect()`'s §BBOX_SHELL_DEFAULT creates (lens-owned ghost, solids
+    // hidden) without needing a real large-building drill click.
+    A._debugForceGhostLensOwned = function() {
+      var g = _buildMergedGhost();
+      if (g) { g.visible = true; NF._mgLensOwned = true; if (A.filterByGuids) A.filterByGuids(new Set()); }
+      return { built: !!g, mgLensOwned: NF._mgLensOwned, ghostVisible: !!(g && g.visible) };
+    };
+    A._debugGhostLensOwned = function() { return { mgLensOwned: NF._mgLensOwned, ghostVisible: !!(_mergedGhost && _mergedGhost.visible) }; };
+    A._setTreeMode = NF._setTreeMode;
+
+    // Build InstancedMeshes of the real geometry for `set`. color!=null → one cyan opaque
+    // material (the highlighted item); color==null → opaque CLONE of each element's real
+    // material (so the phase reads solid over the x-rayed base). Returns elements drawn.
+    // §PERF: the element_instances⋈transforms⋈meta join is STATIC per building but was
+    // re-run on EVERY drill (twice — solid+lit), marshalling the whole table through sql.js
+    // each tap → the "panel responds late / unresponsive to touch". Cache it per activeBuilding;
+    // the first drill pays the query, every subsequent tap reuses the rows.
+    var _instRows = null, _instRowsBld = null;
     function _getInstanceRows() {
       if (_instRows && _instRowsBld === A.activeBuilding) return _instRows;
       try {
@@ -453,6 +485,19 @@
         return r;
       } catch (e) { console.log('[RP-C] §SHAPE_ERR_SET ' + e.message); return _getInstanceRows(); }
     }
+
+    // ── §FIND_COST (BIM→Project TASK A, docs/BIMtoProject.md §A): indicative 5D cost of a selection ──
+    // Same currency-free quantity basis as analysis_sidecar.js compute5D/apply5DRates (the consistency
+    // invariant: round(rate×qty) in JS Number — BigDecimal is reserved for the ERP push, Task C).
+    // Cost folds over the focusSet GUIDs, so EVERY selection kind (storey/disc/type/room/item/phase)
+    // is handled uniformly. Bound params cap at 999 → chunk by 900. Non-invent: a class with no pack
+    // rate contributes 0 (never a guessed price). Witness W-FIND-COST (tests/poc_find_cost.js).
+    var _SELCOST_CAP = 30000;       // beyond this, the per-guid fold is too heavy for an indicative readout
+    var _AREA_EXPR_SC =
+      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
+      "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
+      "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
+      "ELSE MAX(t.bbox_x,t.bbox_y) END";
     function _rates() { return (typeof window !== 'undefined' && window.RATES) || (typeof RATES !== 'undefined' ? RATES : {}); }
     function _cur() { return (typeof window !== 'undefined' && window._TRL && window._TRL.cur) || 'RM'; }
     function _pack() { return (typeof window !== 'undefined' && window.RATE_TEMPLATE_NAME) || 'hardcoded'; }
@@ -519,47 +564,6 @@
       } catch (e) { el.textContent = ''; console.log('[RP-C] §FIND_COST_ERR ' + e.message); }
     }
 
-  // phase-1 exports: other parts reach these through NF (same function objects)
-  NF._clearPathHighlight = _clearPathHighlight;
-  NF._findRoomPath = _findRoomPath;
-  NF._clearHlOverlay = _clearHlOverlay;
-  NF._highlightLensReset = _highlightLensReset;
-  NF._clearShapeOverlays = _clearShapeOverlays;
-  NF._isLargeBuilding = _isLargeBuilding;
-  NF._buildMergedGhost = _buildMergedGhost;
-  NF._getInstanceRows = _getInstanceRows;
-  NF._instRowsForSet = _instRowsForSet;
-  NF._updateSelCost = _updateSelCost;
-
-  return function () {   // phase 2: this part's setup statements, in original order   // THREE.InstancedMesh | null
-    NF._HL_CAP = 4000;      // hard cap on highlighted boxes (no silent truncation — §-logged)
-    NF._shapeOverlays = [];
-
-    // §SHELL-GHOST (user): the building's OUTER SHELL — only envelope classes (walls/slabs/roof/curtain/
-    // covering/plate, ~7% of elements) baked into ONE merged mesh, real LOD shapes, see-through 0.3,
-    // colored by real material. ONE draw. NOT the whole building (full merge = 2.3GB; envelope ≈ ~150MB).
-    // A persistent overlay (NOT in _shapeOverlays → never cleared on tap). Built deferred, after open.
-    NF._mergedGhost = null, NF._mergedGhostBld = null, _MG_VCAP = 60000000;
-    window._mergeGhost = toggleMergedGhost;
-    window.toggleGhostXray = toggleMergedGhost; // Alt+X — ghost x-ray (cached, cheap)
-    window.ghostXrayOn = function() { return !!(NF._mergedGhost && NF._mergedGhost.visible && NF._mergedGhostBld === A.activeBuilding); }; // §GHOST_STATE — for pill/Help isActive
-    // §BBOX_GHOST_STUCK_RESET witness hooks — exposed ONLY so the fix can be verified without
-    // reverse-engineering the Find panel's DOM (same convention as A._showClassCost above). Forces
-    // the exact precondition `_drillSelect()`'s §BBOX_SHELL_DEFAULT creates (lens-owned ghost, solids
-    // hidden) without needing a real large-building drill click.
-    A._debugForceGhostLensOwned = function() {
-      var g = _buildMergedGhost();
-      if (g) { g.visible = true; NF._mgLensOwned = true; if (A.filterByGuids) A.filterByGuids(new Set()); }
-      return { built: !!g, mgLensOwned: NF._mgLensOwned, ghostVisible: !!(g && g.visible) };
-    };
-    A._debugGhostLensOwned = function() { return { mgLensOwned: NF._mgLensOwned, ghostVisible: !!(NF._mergedGhost && NF._mergedGhost.visible) }; };
-    A._setTreeMode = NF._setTreeMode;       // beyond this, the per-guid fold is too heavy for an indicative readout
-    _AREA_EXPR_SC =
-      "MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE " +
-      "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
-      "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
-      "ELSE MAX(t.bbox_x,t.bbox_y) END";
-
     // ── §PROJ_PUSH / §S2 / §GOVERNANCE-GATE block — EXTRACTED VERBATIM to find_erp_push.js
     // (bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S59 candidate 2, 2026-08-23). All 8
     // functions (_ensureErpDb/_persistErpDb/_money/_foldClassTwin/_surfaceExistingOrder/
@@ -570,7 +574,7 @@
     // survey's own rule low witness coverage DISQUALIFIES a candidate. Locked end-to-end by
     // poc_find_erp_link_live.js + poc_construction_link_live.js (real browser, §-log asserted).
     // find_erp_push.js loads BEFORE this file in main.js's A.loadNavigate() module list.
-    _erpPush = (typeof window.FindErpPush !== 'undefined' && window.FindErpPush.create) ? window.FindErpPush.create({
+    var _erpPush = (typeof window.FindErpPush !== 'undefined' && window.FindErpPush.create) ? window.FindErpPush.create({
       A: A, elErpOpen: NF.elErpOpen, elConstructionOpen: NF.elConstructionOpen,
       getLastSelSet: function () { return NF._lastSelSet; },      // selection state stays owned HERE (_updateSelCost writes it)
       getLastSelLabel: function () { return NF._lastSelLabel; },
@@ -578,12 +582,11 @@
       cur: _cur
     }) : null;
     if (!_erpPush) console.log('[RP-C] §ERP_PUSH_MODULE_ABSENT find_erp_push.js not loaded — ERP push surfaces inert (honest no-op)');
-    _surfaceExistingOrder = _erpPush ? _erpPush.surfaceExistingOrder : function () {};
-    NF._surfaceConstructionLink = _erpPush ? _erpPush.surfaceConstructionLink : function () {};
-    NF._showClassCost = _erpPush ? _erpPush.showClassCost : function () {};
-    NF._show4DWindow = _erpPush ? _erpPush.show4DWindow : function () {};   // S7 §S7-DO item 2, sibling of _showClassCost
-    NF._pushToErp = _erpPush ? _erpPush.pushToErp : function () { if (A.status) A.status.textContent = 'ERP push module not loaded'; };
-    A._showClassCost = NF._showClassCost;   // exposed for applyFindScope + witnesses
-    A._show4DWindow = NF._show4DWindow;
-  };
+    var _surfaceExistingOrder = _erpPush ? _erpPush.surfaceExistingOrder : function () {};
+    var _surfaceConstructionLink = _erpPush ? _erpPush.surfaceConstructionLink : function () {};
+    var _showClassCost = _erpPush ? _erpPush.showClassCost : function () {};
+    var _show4DWindow = _erpPush ? _erpPush.show4DWindow : function () {};   // S7 §S7-DO item 2, sibling of _showClassCost
+    var _pushToErp = _erpPush ? _erpPush.pushToErp : function () { if (A.status) A.status.textContent = 'ERP push module not loaded'; };
+    A._showClassCost = _showClassCost;   // exposed for applyFindScope + witnesses
+    A._show4DWindow = _show4DWindow;
 };
