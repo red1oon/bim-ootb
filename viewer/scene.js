@@ -796,8 +796,13 @@ async function setupScene(A) {
              "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
              "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
              "hold_sec REAL, buildup INTEGER, room_title INTEGER, reveal INTEGER, day_counter TEXT, " +
-             "clash INTEGER, measure INTEGER, storey_reveal INTEGER)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+             "clash INTEGER, measure INTEGER, storey_reveal INTEGER, " +
+             // §CPE_CHECKBOX_SAVE (2026-10-06, user: "it does not save new boxes") — the rest of the panel,
+             // appended after storey_reveal under the same version-skew rule. The table is rebuilt on every
+             // save, so an older .db upgrades to this shape the first time it is saved from this build.
+             "load_path INTEGER, visual_panel INTEGER, audio_panel INTEGER, escape_route INTEGER, " +
+             "sun_compass INTEGER, sun_date TEXT, bake_res TEXT, film_bounce INTEGER)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       ov.bands.forEach(function(b, i) {
         var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
         var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
@@ -809,7 +814,11 @@ async function setupScene(A) {
                   ov.buildup ? 1 : 0, ov.roomTitle ? 1 : 0, ov.reveal ? 1 : 0,
                   ov.dayCounter == null ? null : String(ov.dayCounter),
                   // §CPE_FLAGS_PORTABLE_2 — the other three the panel tracks.
-                  ov.clash ? 1 : 0, ov.measure ? 1 : 0, ov.storeyReveal ? 1 : 0]);
+                  ov.clash ? 1 : 0, ov.measure ? 1 : 0, ov.storeyReveal ? 1 : 0,
+                  // §CPE_CHECKBOX_SAVE — the remaining boxes + sun date + bake size + bounce (default ON).
+                  ov.loadPath ? 1 : 0, ov.visualPanel ? 1 : 0, ov.audioPanel ? 1 : 0, ov.escapeRoute ? 1 : 0,
+                  ov.sunCompass ? 1 : 0, ov.sunDate ? String(ov.sunDate) : '', ov.bakeRes ? String(ov.bakeRes) : '',
+                  ov.filmBounce === false ? 0 : 1]);
       });
       stmt.free();
       // §CPE_FLAGS_PORTABLE — the flags are now part of what a save CLAIMS to have written, so a
@@ -820,7 +829,10 @@ async function setupScene(A) {
         ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'default') +
         ' clash=' + (ov.clash ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
         ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) +
-        ' (§CPE_FLAGS_PORTABLE — these travel with the .db now)');
+        ' loadPath=' + (ov.loadPath ? 1 : 0) + ' visualPanel=' + (ov.visualPanel ? 1 : 0) + ' audioPanel=' + (ov.audioPanel ? 1 : 0) +
+        ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) + ' sunCompass=' + (ov.sunCompass ? 1 : 0) +
+        ' sunDate=' + (ov.sunDate || '-') + ' bakeRes=' + (ov.bakeRes || '-') + ' filmBounce=' + (ov.filmBounce === false ? 0 : 1) +
+        ' (§CPE_CHECKBOX_SAVE cols=28; §CPE_FLAGS_PORTABLE — these travel with the .db now)');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }
   // prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4 — camera/display/nav/panel/Find-selection/Time-Machine

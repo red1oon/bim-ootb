@@ -10626,13 +10626,14 @@ async function setupEffects(A, renderer, scene, camera) {
       // §CPE_FLAGS_PORTABLE_2 (2026-09-14): clash/measure/storey_reveal were appended after
       // day_counter, so they get their own probe — a .db written between the two revisions has the
       // first four flags and not these three, and must still open.
-      var _hasHold = false, _hasFlags = false, _hasFlags2 = false;
+      var _hasHold = false, _hasFlags = false, _hasFlags2 = false, _hasFlags3 = false;
       try {
         var ti = A.dbQuery("PRAGMA table_info(cinema_path)");
         for (var _ti = 0; _ti < (ti || []).length; _ti++) {
           if (ti[_ti][1] === 'hold_sec') _hasHold = true;
           if (ti[_ti][1] === 'buildup') _hasFlags = true;
           if (ti[_ti][1] === 'storey_reveal') _hasFlags2 = true;
+          if (ti[_ti][1] === 'film_bounce') _hasFlags3 = true;   // §CPE_CHECKBOX_SAVE — all 8 appended together
         }
       } catch (eTi) {}
       var rows = A.dbQuery("SELECT seq,ifc_x,ifc_y,ifc_z,dir_x,dir_y,dir_z,len," +
@@ -10641,7 +10642,9 @@ async function setupEffects(A, renderer, scene, camera) {
         (_hasFlags ? "buildup,room_title,reveal,day_counter"
                    : "0 AS buildup,0 AS room_title,0 AS reveal,NULL AS day_counter") + "," +
         (_hasFlags2 ? "clash,measure,storey_reveal"
-                    : "NULL AS clash,NULL AS measure,NULL AS storey_reveal") +
+                    : "NULL AS clash,NULL AS measure,NULL AS storey_reveal") + "," +
+        (_hasFlags3 ? "load_path,visual_panel,audio_panel,escape_route,sun_compass,sun_date,bake_res,film_bounce"
+                    : "NULL AS load_path,NULL AS visual_panel,NULL AS audio_panel,NULL AS escape_route,NULL AS sun_compass,NULL AS sun_date,NULL AS bake_res,NULL AS film_bounce") +
         " FROM cinema_path ORDER BY seq");
       if (!rows || rows.length < 2) { console.log('§CINEMA_PATH_RESTORE none (0 rows) — derived path'); return; }
       // §CPE_BANDS: rebuilt as bands, so the rigid-straight invariant is restored with the data
@@ -10673,6 +10676,24 @@ async function setupEffects(A, renderer, scene, camera) {
         if (rows[0][19] != null) A._cinemaPathEdit.measure = !!rows[0][19];
         if (rows[0][20] != null) A._cinemaPathEdit.storeyReveal = !!rows[0][20];
       }
+      // §CPE_CHECKBOX_SAVE — NULL (column absent) leaves the key UNDEFINED, so loadPath still falls back to Measure
+      // (cinema_maxq.js `_loadPath`) and the others to their off defaults, exactly as for a pre-column .db.
+      if (_hasFlags3) {
+        var _c3 = A._cinemaPathEdit, _r0 = rows[0];
+        if (_r0[21] != null) _c3.loadPath = !!_r0[21];
+        if (_r0[22] != null) _c3.visualPanel = !!_r0[22];
+        if (_r0[23] != null) _c3.audioPanel = !!_r0[23];
+        if (_r0[24] != null) _c3.escapeRoute = !!_r0[24];
+        if (_r0[25] != null) _c3.sunCompass = !!_r0[25];
+        if (_r0[26] != null && _r0[26] !== '') _c3.sunDate = String(_r0[26]);
+        if (_r0[27] != null && _r0[27] !== '') _c3.bakeRes = String(_r0[27]);
+        if (_r0[28] != null) _c3.filmBounce = !!_r0[28];
+      }
+      if (_hasFlags3) console.log('§CPE_FLAGS_RESTORE3 loadPath=' + (A._cinemaPathEdit.loadPath === undefined ? '-' : (A._cinemaPathEdit.loadPath ? 1 : 0)) +
+        ' visualPanel=' + (A._cinemaPathEdit.visualPanel ? 1 : 0) + ' audioPanel=' + (A._cinemaPathEdit.audioPanel ? 1 : 0) +
+        ' escapeRoute=' + (A._cinemaPathEdit.escapeRoute ? 1 : 0) + ' sunCompass=' + (A._cinemaPathEdit.sunCompass ? 1 : 0) +
+        ' sunDate=' + (A._cinemaPathEdit.sunDate || '-') + ' bakeRes=' + (A._cinemaPathEdit.bakeRes || '-') +
+        ' filmBounce=' + (A._cinemaPathEdit.filmBounce === undefined ? '-' : (A._cinemaPathEdit.filmBounce ? 1 : 0)) + ' (§CPE_CHECKBOX_SAVE)');
       console.log('§CPE_FLAGS_RESTORE hasFlags=' + (_hasFlags ? 1 : 0) + ' hasFlags2=' + (_hasFlags2 ? 1 : 0) +
         ' buildup=' + (A._cinemaPathEdit.buildup === undefined ? '-' : (A._cinemaPathEdit.buildup ? 1 : 0)) +
         ' roomTitle=' + (A._cinemaPathEdit.roomTitle === undefined ? '-' : (A._cinemaPathEdit.roomTitle ? 1 : 0)) +
