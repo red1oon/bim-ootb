@@ -142,11 +142,63 @@ they read what the code already prints.
 - **No runtime coupling:** nothing in `devtools/` is loaded by a page, except the opt-in `?devtk=1` bridge (§4.2).
 - **CLI twins:** T3 and T4 also ship as plain `node` scripts — the "no IDE at all" fallback.
 
+## §9 Framework-specific tools (user agreed all, 2026-10-06)
+Tools only THIS codebase needs — each makes a written rule (CLAUDE.md / memory) visible or checkable.
+| # | Tool | Rule it enforces / pain | Rank |
+|---|---|---|---|
+| T10 | **Doctrine Lint** — custom ESLint rules: per-window `if (table==='c_order')` in the AD engine; wrapping/silencing `console.log` around pipeline calls; `dwInit` without `duplex_rules.db` on a residential path; edits to `bar_model.js`; `oci os object put` without `--content-type` | AD-LAYER LAW 1, PRIMAL LAW §3, Walker Doctrine, OCI MIME rule — the drift Claude is reminded of most | **P1** |
+| T11 | **AD Sweep panel** — reads `ad_seed.db`, runs the generic grid invariants over every AD window → `X of N pass`; click a window → its AD_Tab/AD_Field/DisplayLogic rows | AD-LAYER LAW 2–3 (invariant × denominator) | **P1** |
+| T12 | **Patch Ledger** — every `patches/*.sql` / `migration/*.sql`, applied-or-not on this client, dry-run on a DB copy | DB CHANGES = patch + self-heal loader | **P1** |
+| T13 | **Precache Auditor** — every file a page loads is in its `sw.js` precache list; `sw.js` merge helper (keep both additions, higher `CACHE_VERSION`) | `§OFFLINE-GATEWAY-LEAK` class; `sw.js` = conflict magnet | P2 |
+| T14 | **Witness Lint** — a witness with no red control or no INCONCLUSIVE path is flagged | PRIMAL LAW §4; `contract.js` §W-REDCONTROL | P2 |
+| T15 | **Gantt Edit Chain view** — one bar edit → timeline delta → recomputed projections → persisted → judge re-score, each as numbers | PRIMAL LAW §2 | P2 |
+| T16 | **4D Cache browser** — `~/.cache/bim4d/` per building: `witness.log`, `run.json`, cache key fresh/stale | PRIMAL LAW §5 (run once, read forever) | P2 |
+| T17 | **Worktree panel** — ahead / dirty / occupied per worktree, prune-safe button | Worktree Hygiene closeout rule | P2 |
+| T20 | BOM tree browser (building → floor → room → leaf) | BOM PRINCIPLE | P3 |
+| T21 | Perf budget tracker — heap + verts per pass from `§` lines over time | PERF BUDGET (0.17 GB / M verts) | P3 |
+
+## §10 T18 JSON — schemas, not a second editor
+- **The app already has ONE JSON editor:** `viewer/settings_editor.js` (PR #57) with
+  `SettingsEditor.jsonToSchema()` (infers a schema from any project JSON). Do NOT build another.
+- **IDE side = feed VS Code's built-in JSON editor real schemas.** A script runs `jsonToSchema` (plus the
+  same overrides the app uses) over the project JSONs → `devtools/schemas/*.schema.json`, mapped in
+  `.vscode/settings.json` `json.schemas`. Result: autocomplete + red squiggle on a bad key/value in
+  `4D_template.json`, `grid_rules`, `clash_rules`, `corporate`, … — same rules in the app and the IDE.
+- 129 non-package JSON files on `origin/main`; spike S4 lists which ones are app-consumed (schema-worthy).
+- **Witness `§DEVTK_JSON`:** a known-good JSON validates; a planted wrong type fails; a schema regenerated
+  from the same file is byte-identical (no drift between app and IDE).
+
+## §11 T19 Local-First Health Monitor
+One panel (and a CLI twin over exported DB files) that answers: **"is this browser's local data healthy,
+and how close is it to breaking?"** Each check is a known failure of THIS architecture, with its source.
+| Check | Why it matters here | Source / current state (origin/main, 2026-10-06) |
+|---|---|---|
+| **Eviction protection** — `navigator.storage.persisted()` per app | Browser can wipe local data (Safari ~7 days) | `erp/DistributedERP.md:323`. `persist()` is requested in `erp/erp_persist.js` and `viewer/scene.js`; **no call found in `modeller/`** |
+| **Quota** — `navigator.storage.estimate()` usage / quota | Imports of big buildings fill storage silently | **No `estimate()` call found in app code** — nobody watches it today |
+| **IDB record size** vs ~1,042 MB structured-clone limit | `§MULTI_DB_ERROR The structured clone is too large` (172K-element import) | memory `project_import_idb_limit`; fixed by split-only storage, guard by `§WB_IDB_OVERFLOW` |
+| **Split vs monolith** — record has meta+geo, monolith null; flag consumers that expect monolith | Export / compare / merge must handle null db | same memory (`§EXPORT_DB_SPLIT`, `§MERGE_BLOCK_SPLIT`) |
+| **Save cost** — last save bytes + seconds | Whole-DB rewrites scale with model size; `runSave()` 57 s never profiled | PERF BUDGET "save deltas, not the DB"; CLAUDE.md WORK-TO-ZERO item (1) |
+| **SQLite integrity** — `PRAGMA integrity_check`, `foreign_key_check`, `user_version` vs expected | A corrupt or half-patched local DB looks like an app bug | **No `integrity_check` call in app code** today |
+| **Patch drift** — applied patches vs shipped (T12) | Client DB older than the code reading it | self-heal loader convention |
+| **Op-log replay hash** (ERP) — export → replay → hash equal | Local ledger is the truth until synced | `W-PERSIST`, `erp/ERP.md:1132` |
+| **Multi-tab** — how many tabs hold the same DB; who writes | Two tabs writing one local DB = lost update | `BroadcastChannel`/locks appear in `common/history_bar.js`, `common/whole_history.js`, `erp/ad_ui.js`, `erp/crud_overlay.js` — **coverage across writers unknown, spike S5** |
+| **Heap vs verts** — `performance.memory` vs 0.17 GB / M verts | Memory, not draw speed, is the tab's limit (phones ~0.6 GB) | PERF BUDGET, `docs/BrowserScaleBenchmark.md` |
+| **Version match** — SW / served JS / disk (T2) | Stale tab mistaken for a code bug | §4.2 |
+- **Output:** one line per check: `OK` / `WARN <number vs limit>` / `FAIL` / `INCONCLUSIVE <why not measured>`.
+- **Reads via the same `?devtk=1` bridge as T2/T9** — one bridge, read-only, opt-in. No write path.
+- **Witness `§DEVTK_HEALTH`:** planted cases — DB with a broken FK, oversized record, unpersisted storage,
+  stale patch → each reported as the matching WARN/FAIL; a clean fixture → all OK. Red control: disable
+  one check → the witness must notice the missing line.
+- **Real gaps already found by this triage** (not tool work — real app findings, owner lanes to decide):
+  modeller has no `persist()`; no app code watches quota; no app code runs `integrity_check`.
+
 ## §6 Spikes before locking (each ends in a `§` line, not an opinion)
 | Spike | Question | Decides |
 |---|---|---|
 | S0 | Does js-debug give `source`/`line` on page `console.log` output events? | T1 live mode vs file-only |
 | S1 | How many of 211 witnesses print a `contract.js` summary? | T5 scope |
+| S4 | Which of the 129 JSON files are read by app code? | T18 schema list |
+| S5 | Which local-DB writers coordinate across tabs (locks / BroadcastChannel), which don't? | T19 multi-tab check |
 | S3 | Which existing viewer/erp/modeller objects hold each T9 field? | T9 field list |
 | S2 | Can the running tab report its active SW version to an outside caller without the bridge? | whether §4.2 needs app code at all |
 
@@ -161,5 +213,8 @@ they read what the code already prints.
 | Triage (§2–§3) | ✅ written 2026-10-06 |
 | P1 specs §4.1–§4.3, §4.6 | draft — lock after S0, S2, S3 |
 | P2 specs §4.4–§4.5 | draft — lock after S1 |
+| §9 framework tools T10–T17, T20–T21 | triaged, specs to write |
+| §10 T18 JSON schemas | draft |
+| §11 T19 Health Monitor | draft — lock after S5 |
 | Packaging §5 | draft |
 | Implementation | not started |
