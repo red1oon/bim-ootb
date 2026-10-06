@@ -2020,7 +2020,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _gtModel(i) {
     var ow = _openWins[_activeWin]; if (!ow || !window.AdGridTab) return null;
     ow.gt = ow.gt || {};
-    if (!ow.gt[i]) { try { ow.gt[i] = AdGridTab.open(db, ow.win.tabs || [], i); } catch (e) { ow.gt[i] = null; } }
+    if (!ow.gt[i]) { try { ow.gt[i] = AdGridTab.open(db, ow.win.tabs || [], i); } catch (e) { ow.gt[i] = null;
+      // §GT-OPEN-FAIL — was swallowed silently; a detail tab then rendered with NO parent link (all rows of every parent).
+      console.log('§GT-OPEN-FAIL tab=' + ((ow.win.tabs || [])[i] ? ow.win.tabs[i].name : i) + ' error="' + (e && e.message) + '"'); } }
     return ow.gt[i];
   }
   function _gtFor(tab) { var w = _curWin(); var i = w ? (w.tabs || []).indexOf(tab) : -1; return i >= 0 ? _gtModel(i) : null; }
@@ -2137,6 +2139,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var level = tab.tabLevel || 0, mdNote = '';
     var tm = _gtModel(_activeTabIdx), gq = window.AdGridTab && tm ? AdGridTab.query(tm, _ctxGetFor(level), access) : { where: access.join(' AND ') || null, orderBy: null, note: 'no-gridtab' };
     var clauses = gq.where ? [gq.where] : [];
+    // §MD-FAIL-CLOSED (GridTab contract: a detail tab whose parent link cannot be resolved shows NO rows — never every parent's
+    //   rows). Field case 2026-10-07: Task Line listed 29 lines of two projects, the cursor sat on a Hospital line and the red pill
+    //   opened Hospital from a Civil Works project. Generic for every window (AD-LAYER LAW) — keyed on AD tab level only.
+    if (!tm && (tab.tabLevel || 0) > 0) {
+      clauses.push('2=3');
+      console.log('§IDEMPIERE-MD tab=' + tab.name + ' level=' + tab.tabLevel + ' filter=UNRESOLVED (no GridTab model) → fail-closed 2=3');
+    }
     if (tm && tm.tabLevel > 0) {
       var pTab = _curWin().tabs[tm.parentIndex];
       mdNote = (pTab ? pTab.tableName : '?') + '.' + (tm.linkColumn || '-') + '=' + (gq.linkValue == null ? '(none)' : gq.linkValue);
