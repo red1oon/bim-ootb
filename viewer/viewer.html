@@ -607,7 +607,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <pre id="walk-log" style="display:none;position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow:auto;background:#111;color:#0f0;font-size:10px;z-index:99;padding:4px;margin:0"></pre>
 <div id="section-slider-panel">
   <label><span data-trl="ui_section_cut">Section Cut</span> <span class="panel-toggle" onclick="toggleSection()" style="float:right;cursor:pointer">&times;</span></label>
-  <div style="margin:4px 0">
+  <div id="sec-axes" style="margin:4px 0">
     <button id="sec-axis-y" onclick="setSectionAxis('Y')" style="padding:2px 8px;background:#4fc3f7;color:#000;border:1px solid #666;border-radius:3px;cursor:pointer;font-size:11px">Y ↕</button>
     <button id="sec-axis-x" onclick="setSectionAxis('X')" style="padding:2px 8px;background:#444;color:#fff;border:1px solid #666;border-radius:3px;cursor:pointer;font-size:11px">X ↔</button>
     <button id="sec-axis-z" onclick="setSectionAxis('Z')" style="padding:2px 8px;background:#444;color:#fff;border:1px solid #666;border-radius:3px;cursor:pointer;font-size:11px">Z ⊥</button>
@@ -891,7 +891,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="road_check.js?v=1" onerror="console.warn('§LOAD_FAIL road_check.js — §ALTC_CHECKS road check cards disabled')"></script>
 <script src="earthworks_volume.js?v=1" onerror="console.warn('§LOAD_FAIL earthworks_volume.js — earthworks volume disabled')"></script>
 <script src="cpe_road_panels.js?v=4" onerror="console.warn('§LOAD_FAIL cpe_road_panels.js — §ALTC_PANELS road cards disabled')"></script>
-<script src="civil_sections.js?v=1" onerror="console.warn('§LOAD_FAIL civil_sections.js — §LONG_SECTION/§CROSS_SECTION disabled')"></script>
+<script src="civil_sections.js?v=2" onerror="console.warn('§LOAD_FAIL civil_sections.js — §LONG_SECTION/§CROSS_SECTION disabled')"></script>
 <script src="cpe_load_path.js?v=11" onerror="console.warn('§LOAD_FAIL cpe_load_path.js — §129.1 load path beat disabled')"></script>
 <script src="cpe_ledger_ticker.js?v=1" onerror="console.warn('§LOAD_FAIL cpe_ledger_ticker.js — §129.2 ledger ticker beat disabled')"></script>
 <script src="cpe_escape_route.js?v=2" onerror="console.warn('§LOAD_FAIL cpe_escape_route.js — escape route reveal disabled')"></script>

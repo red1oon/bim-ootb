@@ -10,12 +10,14 @@
 //  (5) the elements cut at s == the elements whose bbox spans the plane, the bbox RE-DERIVED here from raw merged-mesh
 //      vertices (not from A._mergedMeta), and the set is neither empty nor everything (else INCONCLUSIVE);
 //  (6) a building (MODEL=building) gets no button/panel and the civil checks are VACUOUS, never PASS;
-//  (7) RED=1 serves the page WITHOUT civil_sections.js (== origin/main) and the same checks must report FAIL/absent.
+//  (7) §SECTION_CIVIL_MODES: Long/Cross are axis buttons INSIDE the Cut section tool (civil -> 5 buttons, building -> X/Y/Z only),
+//      the panel slider is the chainage scrubber, no floating 'civil-section-btn' exists, X/Y/Z after Cross leaves ONE clip plane;
+//  (8) RED=1 ROOT=<origin/main checkout> runs the same checks against the OLD code and must FAIL (floating button, no Long/Cross).
 // Env: MODEL=civil|building (default civil) · BLD · BLD_DIR · PORT · LOG · RED=1 · SEED
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
-const ROOT = path.resolve(path.join(__dirname, '..', '..'));
+const ROOT = process.env.ROOT || path.resolve(path.join(__dirname, '..', '..'));
 const MODEL = process.env.MODEL || 'civil', RED = process.env.RED === '1';
 const BLD = process.env.BLD || (MODEL === 'civil' ? 'CivilWorks' : 'Duplex_extracted');
 const BLD_DIR = process.env.BLD_DIR || (MODEL === 'civil' ? path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC') : '/home/red1/bim-ootb/buildings');
@@ -24,7 +26,6 @@ const out = []; const log = l => { out.push(l); console.log(l); };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.css': 'text/css' };
 const server = http.createServer((req, res) => { try {
   const u = decodeURIComponent(req.url.split('?')[0]);
-  if (RED && /civil_sections\.js$/.test(u)) { res.writeHead(404); res.end(); return; }
   let fp = path.join(ROOT, u.replace(/^\/+/, ''));
   if (!fs.existsSync(fp) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice(11));
   if (!fs.existsSync(fp)) { const alt = path.join('/home/red1/bim-ootb', u); if (fs.existsSync(alt)) fp = alt; else { res.writeHead(404); res.end(); return; } }
@@ -43,14 +44,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   for (let i = 0; i < 900 && !ok; i++) { await sleep(1000); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && APP.scene && APP.collectMeshes(o => o.isMesh).length > 0)); } catch (e) {} }
   if (!ok) { log('§WITNESS_CIVIL_SECTIONS INCONCLUSIVE — model never ready'); return fin(2); }
   await sleep(4000);   // let the 1.5 s UI poll run at least twice
-  const pre = await p.evaluate(() => ({ civil: !!APP.isCivilModel(), btn: !!document.getElementById('civil-section-btn'), panel: !!document.getElementById('civil-section-panel'),
-    api: typeof APP.civilLongSection === 'function' }));
-  log('  [state] ' + JSON.stringify(pre) + ' MODEL=' + MODEL + ' RED=' + RED);
+  const pre = await p.evaluate(() => { const bs = [...document.querySelectorAll('#sec-axes button')]; return { civil: !!APP.isCivilModel(), floatBtn: !!document.getElementById('civil-section-btn'),
+    floatPanel: !!document.getElementById('civil-section-panel'), api: typeof APP.civilLongSection === 'function', modes: !!APP.sectionModes }; });
+  // open the REAL Cut section tool, read its axis buttons
+  const axes = async () => p.evaluate(() => { if (!APP.sectionOn) APP.toggleSection(); APP.refreshSectionModes && APP.refreshSectionModes();
+    return [...document.querySelectorAll('#sec-axes button')].map(b => b.id.replace('sec-axis-', '')).sort(); });
+  const btns = await axes();
+  log('  [state] ' + JSON.stringify(pre) + ' buttons=' + JSON.stringify(btns) + ' MODEL=' + MODEL + ' RED=' + RED);
   const checks = []; const add = (n, v, d) => { checks.push([n, !!v]); log('  ' + (v ? 'PASS ' : 'FAIL ') + n + (d ? '  ' + d : '')); };
+  const WANT_B = ['x', 'y', 'z'], WANT_C = ['cross', 'long', 'x', 'y', 'z'];
 
   if (MODEL === 'building') {
-    add('building: no section button in DOM', !pre.btn);
-    add('building: no section panel in DOM', !pre.panel);
+    add('building: exactly 3 axis buttons X/Y/Z', JSON.stringify(btns) === JSON.stringify(WANT_B), JSON.stringify(btns));
+    add('building: no floating civil button / panel / chart canvas in DOM', !pre.floatBtn && !pre.floatPanel && !(await p.evaluate(() => !!document.getElementById('civil-section-canvas'))));
     const nul = await p.evaluate(() => typeof APP.civilLongSection === 'function' ? APP.civilLongSection() === null && APP.civilCrossSection(100) === null : 'api-absent');
     add('building: civilLongSection()/civilCrossSection() return null (gate closed)', nul === true, 'got=' + nul);
     const fail = checks.filter(c => !c[1]).length;
@@ -58,21 +64,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     return fin(fail ? 1 : 0);
   }
   if (RED) {
-    add('feature present (APP.civilLongSection is a function)', pre.api);
-    add('section button present', pre.btn);
+    add('civil: Long+Cross buttons inside the Cut tool (5 axis buttons)', JSON.stringify(btns) === JSON.stringify(WANT_C), JSON.stringify(btns));
+    add('no floating civil-section-btn in DOM', !pre.floatBtn, 'floatBtn=' + pre.floatBtn);
     const fail = checks.filter(c => !c[1]).length;
-    log('§WITNESS_CIVIL_SECTIONS RED-CONTROL ' + (fail ? 'FAIL (feature absent, as expected on origin/main)' : 'UNEXPECTED PASS — control is not red'));
+    log('§WITNESS_CIVIL_SECTIONS RED-CONTROL ' + (fail ? 'FAIL (old code: floating button / no Long-Cross, as expected on origin/main)' : 'UNEXPECTED PASS — control is not red'));
     return fin(fail ? 1 : 3);
   }
-  add('civil model + button + panel present', pre.civil && pre.btn && pre.panel && pre.api);
+  add('civil: exactly 5 axis buttons X/Y/Z/Long/Cross in the Cut tool', JSON.stringify(btns) === JSON.stringify(WANT_C), JSON.stringify(btns));
+  add('no floating civil-section-btn / civil-section-panel in the DOM', !pre.floatBtn && !pre.floatPanel);
   if (!pre.civil || !pre.api) { log('§WITNESS_CIVIL_SECTIONS INCONCLUSIVE — not a civil model / api absent'); return fin(2); }
 
-  // ---- long section: monotonic + independent raycast ----
+  // ---- long section data: monotonic + independent raycast ----
   const R = await p.evaluate((seed) => {
     const A = APP, t0 = performance.now(), ls = A.civilLongSection({ fresh: true }), ms = performance.now() - t0;
     let mono = true; for (let i = 1; i < ls.s.length; i++) if (!(ls.s[i] > ls.s[i - 1])) mono = false;
     const cnt = k => ls[k].filter(v => v != null).length;
-    // independent caster: own Raycaster over EVERY mesh; discipline of each hit from the DB (elements_meta) via the hit's guid
     const rc = new THREE.Raycaster(); rc.firstHitOnly = false;
     const meshes = A.collectMeshes(o => o.isMesh), discOf = {};
     A.dbQuery('SELECT guid, discipline FROM elements_meta').forEach(r => { discOf[r[0]] = r[1]; });
@@ -92,7 +98,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       res[k] = rows;
     });
-    // heap after
     return { n: ls.n, ds: ls.ds, len: ls.len, mono, first: ls.s[0], last: ls.s[ls.s.length - 1], cnt: { road: cnt('road'), ground: cnt('ground'), drain: cnt('drain') }, ms, res,
       heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null };
   }, +(process.env.SEED || 20261006));
@@ -106,55 +111,74 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     add(k + ': sampled z == independent raycast at ' + rows.length + ' random s within 1 cm', rows.every(r => r.err != null && r.err <= 0.01), JSON.stringify(rows.map(r => [r.s, +(r.prod || 0).toFixed(3), r.err == null ? null : +r.err.toFixed(5)])));
   });
 
-  // ---- click -> camera (real click event on the chart canvas) ----
-  const C = await p.evaluate(async () => {
-    const A = APP; document.getElementById('civil-section-btn').click();
-    const ui = A._civilSectionUI(), cv = ui.canvas, rc = cv.getBoundingClientRect(), m = ui.map, ls = A.civilLongSection();
-    const want = ls.len * 0.63, cx = Math.round(rc.left + (m.P.l + (m.W - m.P.l - m.P.r) * want / m.len) * (rc.width / m.W)), cy = Math.round(rc.top + rc.height / 2);
-    // MouseEvent client coords are whole pixels: the s the click MUST map to is the one at the rounded pixel (expected recomputed here, not read from the module)
-    const tgt = ((cx - rc.left) * (m.W / rc.width) - m.P.l) / (m.W - m.P.l - m.P.r) * m.len;
-    cv.dispatchEvent(new MouseEvent('click', { clientX: cx, clientY: cy, bubbles: true }));
-    const cam = A.camera.position, r = A.civilDriveRoute();
-    // independent: nearest point on the 3D polyline to the camera + chainage of that point
-    let best = Infinity, cum = 0, bestS = 0;
-    for (let i = 1; i < r.length; i++) {
-      const a = r[i - 1], b = r[i], bx = b.x - a.x, by = b.y - a.y, bz = b.z - a.z, L2 = bx * bx + by * by + bz * bz, segH = Math.hypot(bx, bz);
-      const u = L2 > 1e-9 ? Math.max(0, Math.min(1, ((cam.x - a.x) * bx + (cam.y - a.y) * by + (cam.z - a.z) * bz) / L2)) : 0;
-      const d = Math.hypot(cam.x - (a.x + u * bx), cam.y - (a.y + u * by), cam.z - (a.z + u * bz));
-      if (d < best) { best = d; bestS = cum + u * segH; } cum += segH;
+  // ---- LONG mode: real button click, real slider input events, real chart click ----
+  const L = await p.evaluate(async () => {
+    const A = APP, r = A.civilDriveRoute(), len = A.civilRouteAt(0).len;
+    document.getElementById('sec-axis-long').click();
+    const ui = A._civilSectionUI(), sl = document.getElementById('section-slider');
+    const nearest = () => { const cam = A.camera.position; let best = Infinity, cum = 0, bestS = 0;
+      for (let i = 1; i < r.length; i++) { const a = r[i - 1], b = r[i], bx = b.x - a.x, by = b.y - a.y, bz = b.z - a.z, L2 = bx * bx + by * by + bz * bz, segH = Math.hypot(bx, bz);
+        const u = L2 > 1e-9 ? Math.max(0, Math.min(1, ((cam.x - a.x) * bx + (cam.y - a.y) * by + (cam.z - a.z) * bz) / L2)) : 0;
+        const d = Math.hypot(cam.x - (a.x + u * bx), cam.y - (a.y + u * by), cam.z - (a.z + u * bz)); if (d < best) { best = d; bestS = cum + u * segH; } cum += segH; }
+      return { d: best, s: bestS }; };
+    const out = { len, sliderMax: +sl.max, sliderMin: +sl.min, canvasShown: ui && ui.canvas.style.display === 'block', scr: [], clipLong: A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length };
+    for (const f of [0.2, 0.5, 0.8]) {
+      sl.value = String(len * f); sl.dispatchEvent(new Event('input', { bubbles: true }));
+      const want = +sl.value, n = nearest(); out.scr.push({ want, atCam: n.s, dist: n.d, cur: ui.cur, val: document.getElementById('section-val').textContent });
     }
-    return { tgt, nearestDistM: best, sAtCamera: bestS, panelOpen: ui.box.style.display === 'block', input: ui.input.value };
+    // chart click -> scrubber
+    const rc = ui.canvas.getBoundingClientRect(), m = ui.map, cx = Math.round(rc.left + (m.P.l + (m.W - m.P.l - m.P.r) * 0.63) * (rc.width / m.W)), cy = Math.round(rc.top + rc.height / 2);
+    const tgt = ((cx - rc.left) * (m.W / rc.width) - m.P.l) / (m.W - m.P.l - m.P.r) * m.len;
+    ui.canvas.dispatchEvent(new MouseEvent('click', { clientX: cx, clientY: cy, bubbles: true }));
+    const n2 = nearest(); out.click = { tgt, slider: +sl.value, dist: n2.d, atCam: n2.s };
+    return out;
   });
-  log('  [click] ' + JSON.stringify(C));
-  add('click on chart: panel open and camera within 1 m of route(s)', C.panelOpen && C.nearestDistM <= 1, 'dist=' + C.nearestDistM.toFixed(4) + ' m');
-  add('click on chart: camera chainage == clicked chainage within 1 m', Math.abs(C.sAtCamera - C.tgt) <= 1, 'target=' + C.tgt.toFixed(2) + ' atCamera=' + C.sAtCamera.toFixed(2));
+  log('  [long] ' + JSON.stringify(L));
+  add('Long: chart canvas shown inside the section panel, slider = chainage 0..route length, no clip plane left on', L.canvasShown && L.sliderMin === 0 && Math.abs(L.sliderMax - L.len) <= 1 && L.clipLong === 0, 'max=' + L.sliderMax + ' len=' + L.len.toFixed(1) + ' clipped=' + L.clipLong);
+  add('Long: scrub to 3 chainages -> camera within 1 m of route and at that chainage (+-1 m)', L.scr.every(x => x.dist <= 1 && Math.abs(x.atCam - x.want) <= 1), JSON.stringify(L.scr.map(x => [+x.want.toFixed(1), +x.atCam.toFixed(2), +x.dist.toFixed(4)])));
+  add('Long: scrubber label reads "chainage ... (inferred)"', L.scr.every(x => /chainage \d+ m of \d+ m \(inferred\)/.test(x.val)), L.scr[0].val);
+  add('Long: chart click sets the scrubber (+-1 m) and camera within 1 m of route', Math.abs(L.click.slider - L.click.tgt) <= 1 && L.click.dist <= 1 && Math.abs(L.click.atCam - L.click.tgt) <= 1, JSON.stringify(L.click));
 
-  // ---- cross section ----
-  const X = await p.evaluate((ctrl) => {
-    const A = APP, ls = A.civilLongSection(), sel = ls.len * 0.63, S = A.civilCrossSection(sel, 2);
-    const r = A.civilDriveRoute(); let cum = 0, T = null;   // independent tangent: polyline segment containing sel
-    for (let i = 1; i < r.length; i++) { const h = Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z); if (cum + h >= sel) { T = { x: (r[i].x - r[i - 1].x) / h, z: (r[i].z - r[i - 1].z) / h, px: r[i - 1].x + (sel - cum) / h * (r[i].x - r[i - 1].x), pz: r[i - 1].z + (sel - cum) / h * (r[i].z - r[i - 1].z) }; break; } cum += h; }
-    const n = A.sectionPlane.normal, dot = n.x * T.x + n.z * T.z;
-    // independent cut set: bbox re-derived from RAW merged-mesh vertices, 8-corner straddle of the plane through (px,pz) with normal T
-    const d0 = T.x * T.px + T.z * T.pz, mine = new Set(), all = { n: 0 }, m4 = new THREE.Matrix4(), bx = new THREE.Box3();
+  // ---- CROSS mode: 3 scrubbed chainages, each vs an independent recompute ----
+  const XS = await p.evaluate((fr) => {
+    const A = APP, r = A.civilDriveRoute(), len = A.civilRouteAt(0).len, sl = document.getElementById('section-slider'), res = [];
+    document.getElementById('sec-axis-cross').click();
+    const canvasHidden = document.getElementById('civil-section-canvas').style.display === 'none';
+    const m4 = new THREE.Matrix4();
     const lb = (g) => { const p = g.attributes.position; let a = [1e18, 1e18, 1e18], c = [-1e18, -1e18, -1e18]; for (let i = 0; i < p.count; i++) { const v = [p.getX(i), p.getY(i), p.getZ(i)]; for (let k = 0; k < 3; k++) { if (v[k] < a[k]) a[k] = v[k]; if (v[k] > c[k]) c[k] = v[k]; } } return new THREE.Box3(new THREE.Vector3(...a), new THREE.Vector3(...c)); };
-    const test = (guid, box) => { all.n++; let lo = 1e18, hi = -1e18; [box.min.x, box.max.x].forEach(x => [box.min.z, box.max.z].forEach(z => { const d = T.x * x + T.z * z - d0; if (d < lo) lo = d; if (d > hi) hi = d; })); if (lo <= 0 && hi >= 0) mine.add(guid); };
-    A.collectMeshes(o => o.isMesh).forEach(o => {
-      if (o.isBatchedMesh && A._batchMeta[o.id]) A._batchMeta[o.id].forEach(m => { const g = (o.userData.slotGeo || {})[m.slotId]; if (!g) return; o.getMatrixAt(m.slotId, m4); test(m.guid, lb(g).applyMatrix4(m4)); });
-      else if (o.isInstancedMesh && A._instanceMeta[o.id]) { const L = lb(o.geometry); A._instanceMeta[o.id].forEach((m, i) => { o.getMatrixAt(i, m4); test(m.guid, L.clone().applyMatrix4(m4)); }); }
-    });
-    const prod = new Set(A.civilSectionCut().guids);
-    const onlyP = [...prod].filter(g => !mine.has(g)).length, onlyI = [...mine].filter(g => !prod.has(g)).length;
-    const clipN = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 2).length, meshN = A.collectMeshes(o => o.isMesh).length;
-    A.civilCrossSectionOff();
-    const off = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length;
-    return { dot, ny: n.y, prod: prod.size, indep: mine.size, onlyP, onlyI, total: all.n, clipN, meshN, off, s: S && S.s };
-  });
-  log('  [cross] ' + JSON.stringify(X));
-  add('cross-section: normal . route tangent >= 0.999 (and normal horizontal)', Math.abs(X.dot) >= 0.999 && Math.abs(X.ny) < 1e-9, 'dot=' + X.dot.toFixed(6));
-  add('cross-section: slab clip planes installed on every mesh, removed by Clear', X.clipN === X.meshN && X.off === 0, 'clipped=' + X.clipN + '/' + X.meshN + ' afterClear=' + X.off);
-  add('cross-section: cut set non-trivial (0 < cut < all indexed)', X.indep > 0 && X.indep < X.total, 'cut=' + X.indep + ' of ' + X.total);
-  add('cross-section: elements cut == elements whose bbox (local bbox re-derived from raw vertices, x matrix) spans the plane', X.onlyP === 0 && X.onlyI === 0 && X.prod === X.indep, 'prod=' + X.prod + ' indep=' + X.indep + ' onlyProd=' + X.onlyP + ' onlyIndep=' + X.onlyI);
+    for (const f of fr) {
+      sl.value = String(len * f); sl.dispatchEvent(new Event('input', { bubbles: true })); const sel = +sl.value;
+      let cum = 0, T = null;
+      for (let i = 1; i < r.length; i++) { const h = Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z); if (cum + h >= sel) { T = { x: (r[i].x - r[i - 1].x) / h, z: (r[i].z - r[i - 1].z) / h, px: r[i - 1].x + (sel - cum) / h * (r[i].x - r[i - 1].x), pz: r[i - 1].z + (sel - cum) / h * (r[i].z - r[i - 1].z) }; break; } cum += h; }
+      const n = A.sectionPlane.normal, dot = n.x * T.x + n.z * T.z, d0 = T.x * T.px + T.z * T.pz, mine = new Set(); let total = 0;
+      const test = (guid, box) => { total++; let lo = 1e18, hi = -1e18; [box.min.x, box.max.x].forEach(x => [box.min.z, box.max.z].forEach(z => { const d = T.x * x + T.z * z - d0; if (d < lo) lo = d; if (d > hi) hi = d; })); if (lo <= 0 && hi >= 0) mine.add(guid); };
+      A.collectMeshes(o => o.isMesh).forEach(o => {
+        if (o.isBatchedMesh && A._batchMeta[o.id]) A._batchMeta[o.id].forEach(m => { const g = (o.userData.slotGeo || {})[m.slotId]; if (!g) return; o.getMatrixAt(m.slotId, m4); test(m.guid, lb(g).applyMatrix4(m4)); });
+        else if (o.isInstancedMesh && A._instanceMeta[o.id]) { const Lb = lb(o.geometry); A._instanceMeta[o.id].forEach((m, i) => { o.getMatrixAt(i, m4); test(m.guid, Lb.clone().applyMatrix4(m4)); }); }
+      });
+      const prod = new Set(A.civilSectionCut().guids), onlyP = [...prod].filter(g => !mine.has(g)).length, onlyI = [...mine].filter(g => !prod.has(g)).length;
+      const ms = A.collectMeshes(o => o.isMesh);
+      res.push({ s: +sel.toFixed(1), dot, ny: n.y, prod: prod.size, indep: mine.size, onlyP, onlyI, total, two: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 2).length, meshN: ms.length });
+    }
+    return { res, canvasHidden };
+  }, [0.25, 0.55, 0.85]);
+  log('  [cross] ' + JSON.stringify(XS));
+  add('Cross: chart hidden, 3 scrubbed chainages -> normal . route tangent >= 0.999 (normal horizontal)', XS.canvasHidden && XS.res.every(x => Math.abs(x.dot) >= 0.999 && Math.abs(x.ny) < 1e-9), JSON.stringify(XS.res.map(x => [x.s, +x.dot.toFixed(6)])));
+  add('Cross: slab (2 clip planes) on every mesh at each scrub', XS.res.every(x => x.two === x.meshN), 'meshes=' + XS.res[0].meshN);
+  add('Cross: cut set non-trivial at each scrub (0 < cut < all indexed)', XS.res.every(x => x.indep > 0 && x.indep < x.total), JSON.stringify(XS.res.map(x => [x.s, x.indep, x.total])));
+  add('Cross: cut set == independent bbox-straddle recompute (raw vertices x matrix) at each scrub', XS.res.every(x => x.onlyP === 0 && x.onlyI === 0 && x.prod === x.indep), JSON.stringify(XS.res.map(x => [x.s, x.prod, x.indep, x.onlyP, x.onlyI])));
+
+  // ---- leaving the mode ----
+  const Z = await p.evaluate(() => { const A = APP, cnt = () => { const ms = A.collectMeshes(o => o.isMesh); return { one: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 1).length, two: ms.filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length === 2).length, n: ms.length }; };
+    document.getElementById('sec-axis-x').click(); const afterX = cnt(), modeX = A._secMode, axis = A.sectionAxis, slMax = document.getElementById('section-slider').max;
+    document.getElementById('sec-axis-cross').click(); document.getElementById('sec-axis-y').click(); const afterY = cnt();
+    A.toggleSection(); const closed = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length;
+    A.toggleSection(); document.getElementById('sec-axis-long').click(); A.toggleSection(); const closedLong = A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length;
+    return { afterX, modeX, axis, slMax, afterY, closed, closedLong, cs: A._civilSection, canvas: document.getElementById('civil-section-canvas').style.display }; });
+  log('  [leave] ' + JSON.stringify(Z));
+  add('X after Cross: 1 clip plane on every mesh (not 2), civil slab cleared, mode off', Z.afterX.one === Z.afterX.n && Z.afterX.two === 0 && Z.modeX === null && Z.axis === 'X' && Z.cs === null, JSON.stringify(Z.afterX));
+  add('Y after Cross: 1 clip plane, not 2', Z.afterY.one === Z.afterY.n && Z.afterY.two === 0, JSON.stringify(Z.afterY));
+  add('closing the tool clears all clip planes (from Cross and from Long) and hides the chart', Z.closed === 0 && Z.closedLong === 0 && Z.canvas === 'none', 'closed=' + Z.closed + ' closedLong=' + Z.closedLong + ' canvas=' + Z.canvas);
 
   const fail = checks.filter(c => !c[1]).length, vac = judged === 0;
   log('§WITNESS_CIVIL_SECTIONS ' + (vac ? 'INCONCLUSIVE (no series judged)' : (fail ? 'FAIL ' : 'PASS ') + (checks.length - fail) + '/' + checks.length));

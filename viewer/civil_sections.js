@@ -102,7 +102,6 @@ function setupCivilSections(A) {
     var w = widthM > 0 ? widthM : SLAB_M, T = new THREE.Vector3(p.tx, 0, p.tz);
     var d = T.x * p.x + T.z * p.z;                       // T . P  (y component of T is 0)
     if (!_plane2) _plane2 = new THREE.Plane();
-    A.sectionAxis = 'R';
     A.sectionPlane.normal.copy(T); A.sectionPlane.constant = -d + w / 2;      // keeps  T.x >= s0 - w/2
     _plane2.normal.copy(T).negate(); _plane2.constant = d + w / 2;            // keeps  T.x <= s0 + w/2
     A.renderer.localClippingEnabled = true; A.sectionOn = true;
@@ -115,9 +114,10 @@ function setupCivilSections(A) {
       (A.sectionPlane.normal.dot(T)).toFixed(6) + ' slabM=' + w + ' elementsCut=' + cut.guids.length + ' ofIndexed=' + cut.indexed + ' byDisc=' + JSON.stringify(cut.byDisc));
     return A._civilSection;
   };
-  A.civilCrossSectionOff = function () {
+  A.civilCrossSectionOff = function (keepOn) {   // keepOn: the Cut tool stays open (switching to X/Y/Z re-applies its one plane)
     A.collectMeshes(function (o) { return o.isMesh; }).forEach(function (o) { o.material.clippingPlanes = []; o.material.needsUpdate = true; });
-    A.sectionOn = false; A._civilSection = null; var b = document.getElementById('section-btn'); if (b) { b.style.background = '#444'; b.style.color = '#fff'; }
+    A._civilSection = null;
+    if (!keepOn) { A.sectionOn = false; var b = document.getElementById('section-btn'); if (b) { b.style.background = '#444'; b.style.color = '#fff'; } }
     if (A.markDirty) A.markDirty();
   };
   // World AABB per element = Box3.applyMatrix4 of the element's LOCAL geometry bbox (the 8 transformed corners), for the three
@@ -191,46 +191,47 @@ function setupCivilSections(A) {
       ls.s.forEach(function (s, i) { var v = ls[sr[0]][i]; if (v == null) { pen = false; return; } if (!pen) { g.moveTo(X(s), Y(v)); pen = true; } else g.lineTo(X(s), Y(v)); });
       g.stroke();
     });
-    SER.forEach(function (sr, i) { g.fillStyle = sr[2]; g.fillRect(P.l + 110 + i * 150, 8, 14, 3); g.fillStyle = '#ccc'; g.fillText(sr[1], P.l + 128 + i * 150, 13); });
+    SER.forEach(function (sr, i) { g.fillStyle = sr[2]; g.fillRect(P.l + 40 + i * 140, 8, 14, 3); g.fillStyle = '#ccc'; g.fillText(sr[1], P.l + 58 + i * 140, 13); });
     if (_ui.cur != null) { g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.moveTo(X(_ui.cur), P.t); g.lineTo(X(_ui.cur), H - P.b); g.stroke(); }
   }
-  A.civilSectionPanelOpen = function () {
-    if (!_ui) return null;
-    _ui.data = A.civilLongSection(); _ui.box.style.display = 'block'; _draw(); return _ui.data;
-  };
   function _chainFromEvent(e) {
     var rc = _ui.canvas.getBoundingClientRect(), px = (e.clientX - rc.left) * (_ui.canvas.width / rc.width), m = _ui.map; if (!m) return null;
     return Math.max(0, Math.min(m.len, (px - m.P.l) / (m.W - m.P.l - m.P.r) * m.len));
   }
-  function _build() {
-    if (_ui) return;
-    var btn = _el('button', 'position:fixed;right:10px;bottom:70px;z-index:30;padding:6px 10px;font:12px sans-serif;background:#2b3340;color:#fff;border:1px solid #4fc3f7;border-radius:4px;cursor:pointer', 'Road profile');
-    btn.id = 'civil-section-btn'; btn.setAttribute('aria-label', 'Road long section and cross section');
-    var box = _el('div', 'position:fixed;left:10px;right:10px;bottom:110px;max-width:860px;z-index:30;background:#16181d;border:1px solid #4fc3f7;border-radius:6px;padding:6px;display:none;font:12px sans-serif;color:#ddd');
-    box.id = 'civil-section-panel';
-    var cv = _el('canvas', 'width:100%;height:200px;display:block;cursor:crosshair'); cv.id = 'civil-section-canvas'; cv.width = 840; cv.height = 200;
-    var row = _el('div', 'margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap');
-    var lab = _el('span', null, 'chainage (inferred) m'), inp = _el('input', 'width:80px'); inp.type = 'number'; inp.id = 'civil-section-s'; inp.min = '0'; inp.step = '10';
-    var go = _el('button', null, 'Go'), cut = _el('button', null, 'Cross-section'), off = _el('button', null, 'Clear cut'), close = _el('button', 'margin-left:auto', 'Close');
-    go.id = 'civil-section-go'; cut.id = 'civil-section-cut'; off.id = 'civil-section-off';
-    row.appendChild(lab); row.appendChild(inp); row.appendChild(go); row.appendChild(cut); row.appendChild(off); row.appendChild(close);
-    box.appendChild(cv); box.appendChild(row); document.body.appendChild(btn); document.body.appendChild(box);
-    _ui = { btn: btn, box: box, canvas: cv, input: inp, data: null, cur: null, map: null };
-    var at = function (s) { if (s == null || isNaN(s)) return; _ui.cur = s; inp.value = s.toFixed(1); A.civilGotoChainage(s); _draw(); };
-    btn.onclick = function () { if (box.style.display === 'block') box.style.display = 'none'; else A.civilSectionPanelOpen(); };
-    cv.addEventListener('click', function (e) { at(_chainFromEvent(e)); });
-    go.onclick = function () { at(parseFloat(inp.value)); };
-    cut.onclick = function () { var s = parseFloat(inp.value); if (isNaN(s)) s = _ui.cur; if (s != null && !isNaN(s)) { _ui.cur = s; A.civilCrossSection(s); _draw(); } };
-    off.onclick = function () { A.civilCrossSectionOff(); };
-    close.onclick = function () { box.style.display = 'none'; };
-    console.log('§LONG_SECTION ui=built (civil model with route)');
+  // ── §SECTION_CIVIL_MODES: Long / Cross are extra axis modes of the Cut section tool (tools.js A.sectionModes).
+  // The panel slider becomes the chainage scrubber 0..route length; Long also shows the profile chart in the panel.
+  function _showScrub(s) {
+    var v = document.getElementById('section-val'), L = A.civilRouteAt(0).len;
+    if (v) v.textContent = 'chainage ' + s.toFixed(0) + ' m of ' + L.toFixed(0) + ' m (inferred)';
   }
-  function _teardown() { if (!_ui) return; _ui.btn.remove(); _ui.box.remove(); _ui = null; _ls = null; }
+  function _slider(s) {
+    var sl = document.getElementById('section-slider'), L = A.civilRouteAt(0).len;
+    sl.min = '0'; sl.max = String(L); sl.step = '1'; sl.value = String(s);
+  }
+  function _buildChart() {
+    if (_ui) return;
+    var panel = document.getElementById('section-slider-panel'); if (!panel) return;
+    var cv = _el('canvas', 'width:min(560px,80vw);height:150px;display:none;cursor:crosshair;margin-top:4px'); cv.id = 'civil-section-canvas'; cv.width = 560; cv.height = 150;
+    panel.appendChild(cv); _ui = { canvas: cv, data: null, cur: null, map: null };
+    cv.addEventListener('click', function (e) { var s = _chainFromEvent(e); if (s != null) { _slider(s); A.sectionModes.Long.scrub(s); } });
+  }
+  var _lastS = 0;
+  A.sectionModes.Cross = {
+    label: 'Cross', avail: function () { return !!_route(); },
+    enter: function () { var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); this.scrub(s); },
+    scrub: function (s) { _lastS = s; A.civilCrossSection(s); _showScrub(s); },
+    exit: function () { A.civilCrossSectionOff(true); }
+  };
+  A.sectionModes.Long = {
+    label: 'Long', avail: function () { return !!_route(); },
+    enter: function () {
+      A.civilCrossSectionOff(true); _buildChart(); if (!_ui) return;
+      _ui.data = A.civilLongSection(); _ui.canvas.style.display = 'block'; var s = Math.min(_lastS, A.civilRouteAt(0).len); _slider(s); this.scrub(s);
+    },
+    scrub: function (s) { _lastS = s; if (_ui) { _ui.cur = s; _draw(); } A.civilGotoChainage(s); _showScrub(s); },
+    exit: function () { if (_ui) { _ui.canvas.style.display = 'none'; _ui.cur = null; } }
+  };
   A._civilSectionUI = function () { return _ui; };
-  var _poll = setInterval(function () {
-    var ok = false; try { ok = !!_route(); } catch (e) {}
-    if (ok && !_ui) _build(); else if (!ok && _ui) _teardown();
-  }, 1500);
-  A._civilSectionPoll = _poll;
+  A._civilSectionPoll = setInterval(function () { try { A.refreshSectionModes && A.sectionOn && A.refreshSectionModes(); } catch (e) {} }, 1500);   // route may appear after the tool opened
 }
 if (typeof window !== 'undefined') window.setupCivilSections = setupCivilSections;

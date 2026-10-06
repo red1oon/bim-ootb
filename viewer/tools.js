@@ -478,6 +478,24 @@ function setupTools(A) {
   A.sectionMin = -100;
   A.sectionMax = 200;
 
+  // §SECTION_CIVIL_MODES — generic extra axis modes (registered by civil_sections.js: Long/Cross). Each mode =
+  // {label, avail(), enter(), scrub(v), exit()}; buttons appear only while avail() is true, so buildings keep X/Y/Z.
+  A.sectionModes = {};
+  A._secMode = null;
+  function _secExit() { var m = A._secMode && A.sectionModes[A._secMode]; A._secMode = null; if (m) m.exit(); }
+  A.refreshSectionModes = function() {
+    var box = document.getElementById('sec-axes'); if (!box) return;
+    Object.keys(A.sectionModes).forEach(function(id) {
+      var m = A.sectionModes[id], b = document.getElementById('sec-axis-' + id.toLowerCase()), ok = false;
+      try { ok = !!m.avail(); } catch (e) {}
+      if (ok && !b) {
+        b = document.createElement('button'); b.id = 'sec-axis-' + id.toLowerCase(); b.textContent = m.label;
+        b.style.cssText = document.getElementById('sec-axis-x').style.cssText; b.onclick = function() { A.setSectionAxis(id); };
+        box.appendChild(b);
+      } else if (!ok && b) { if (A._secMode === id) A.setSectionAxis('Y'); b.remove(); }
+    });
+  };
+
   A.toggleSection = function() {
     A.sectionOn = !A.sectionOn;
     const btn = document.getElementById('section-btn');
@@ -485,7 +503,9 @@ function setupTools(A) {
     btn.style.color = A.sectionOn ? '#000' : '#fff';
     const panel = document.getElementById('section-slider-panel');
     panel.style.display = A.sectionOn ? 'block' : 'none';
+    if (!A.sectionOn) _secExit();
     if (A.sectionOn) {
+      A.refreshSectionModes();
       A.applySectionAxis();
       // No Save button on section slider — scissors in 3D is just cut + Esc.
       // Save lives in the 2D grid panel (grid-save-section-btn) only.
@@ -502,12 +522,15 @@ function setupTools(A) {
   };
 
   A.setSectionAxis = function(axis) {
+    _secExit();
     A.sectionAxis = axis;
-    ['X', 'Y', 'Z'].forEach(a => {
+    ['X', 'Y', 'Z'].concat(Object.keys(A.sectionModes)).forEach(a => {
       const b = document.getElementById('sec-axis-' + a.toLowerCase());
+      if (!b) return;
       b.style.background = (a === axis) ? '#4fc3f7' : '#444';
       b.style.color = (a === axis) ? '#000' : '#fff';
     });
+    if (A.sectionModes[axis]) { A._secMode = axis; A.sectionModes[axis].enter(); if (A.markDirty) A.markDirty(); return; }
     if (axis === 'Y') A.sectionPlane.normal.set(0, -1, 0);
     else if (axis === 'X') A.sectionPlane.normal.set(-1, 0, 0);
     else A.sectionPlane.normal.set(0, 0, -1);
@@ -562,6 +585,7 @@ function setupTools(A) {
 
   A.updateSectionPlane = function(val) {
     const v = parseFloat(val);
+    if (A._secMode) { A.sectionModes[A._secMode].scrub(v); return; }
     A.sectionPlane.constant = v;
     document.getElementById('section-val').textContent = v.toFixed(1) + ' m';
     if (A.onSectionSliderChange) A.onSectionSliderChange(v);
