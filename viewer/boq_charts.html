@@ -60,6 +60,7 @@
 <script src="lib/FileSaver.min.js"></script>
 <script src="lib/chart.umd.min.js"></script>
 <script src="rates.js?v=11"></script>
+<script src="earthworks_volume.js?v=1"></script>
 <script src="analysis_sidecar.js?v=1"></script>
 <!-- §GANTT_EDIT/BOQ4D: read the REAL persisted schedule (tasks/task_elements/task_sequences)
      instead of recomputing a fourth private one. schedule_author.js supplies activeSchedule()
@@ -1948,6 +1949,12 @@ function renderCharts() {
       `<td>${r.matTotal.toLocaleString()}</td><td>${r.laborDays.toFixed(1)}</td><td>${r.laborCost.toLocaleString()}</td>` +
       `<td>${r.equipCost.toLocaleString()}</td><td>${rowTotal.toLocaleString()}</td></tr>`;
   }
+  // §EW_VOLUME_SURFACE: EARTHWORK quantity = the SAME line as the Alt+C ground card (earthworks_volume.js is the one owner; none for a model without an EARTHWORK body)
+  try {
+    const ewv = window.EarthworksVolume ? window.EarthworksVolume.measureSqlJs(db) : null, ewl = ewv ? window.EarthworksVolume.line(ewv) : null;
+    if (ewl) html += '<tr class="ew-volume-row"><td>EARTHWORK</td><td>Earthworks volume</td><td></td><td colspan="9" id="ew-volume-line">' + ewl.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</td></tr>';
+    console.log('§EW_VOLUME_SURFACE surface=boq_charts line=' + (ewl ? '"' + ewl + '"' : 'none') + ' verdict=' + (ewv ? ewv.verdict : 'NO_ENGINE'));
+  } catch (e) { console.log('§EW_VOLUME_SURFACE surface=boq_charts INCONCLUSIVE ' + e.message); }
   const gt = grandMaterial + grandLabor + grandEquip;
   html += `<tr class="total-row"><td colspan="7">${_TRL.h_grand_total}</td>` +
     `<td>${CUR}${grandMaterial.toLocaleString()}</td><td></td><td>${CUR}${grandLabor.toLocaleString()}</td>` +

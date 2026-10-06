@@ -67,7 +67,7 @@ async function probe(browser, bld, dir) {
         else if (card.kind === 'ground' && row.key != null) sql = "SELECT COUNT(DISTINCT guid) FROM element_psets WHERE name='15_Name' AND value='" + String(row.key).replace(/'/g, "''") + "' AND guid IN (" + inList + ")";
         else if (card.kind === 'ground' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta m WHERE m.discipline='" + row.disc + "' AND m.guid IN (" + inList + ")" +
           (A.dbQuery("SELECT name FROM sqlite_master WHERE name='element_psets'").length ? " AND NOT EXISTS (SELECT 1 FROM element_psets p WHERE p.guid=m.guid AND p.name='15_Name')" : '');
-        else if (card.kind === 'planned' && row.vol) { chk.push({ shown: row.value, vol: true }); return; }   // §EARTHWORKS_VOLUME: judged by witness_earthworks_volume.js
+        else if ((card.kind === 'planned' || card.kind === 'ground') && row.vol) { chk.push({ shown: row.value, vol: true }); return; }   // §EARTHWORKS_VOLUME: judged by witness_earthworks_volume.js
         else if (card.kind === 'planned' && row.disc) sql = "SELECT COUNT(*) FROM elements_meta WHERE discipline='" + row.disc + "'";
         else if (card.kind === 'outstanding') {
           const CR = window.CIVIL_RATES || {}, pres = {}; A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline').forEach(x => { pres[x[0]] = x[1]; });

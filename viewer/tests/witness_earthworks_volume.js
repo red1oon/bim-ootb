@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — WITNESS §EARTHWORKS_VOLUME (2026-10-06, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md "NEXT SESSION" item 3)
-// Scope: the earthworks volume line on the Alt+C 'planned' card (viewer/cpe_road_panels.js A.earthworksVolume / A.meshSolidVolume).
+// Scope: the earthworks volume line on the Alt+C ground card (moved off 'planned' by §EW_VOLUME_SURFACE) (viewer/cpe_road_panels.js A.earthworksVolume / A.meshSolidVolume).
 // No bake. Read the log after every run — the exit code is not evidence.
 //
 // ISSUE THIS PROVES OR DISPROVES: V (m3) of the EARTHWORK solid is extracted (|sum of signed tetra volumes|) ONLY from a CLOSED
@@ -44,7 +44,12 @@ const server = http.createServer((req, res) => { try {
 function probeBody(A) {
   const out = { civil: A.isCivilModel(), hasFn: typeof A.earthworksVolume === 'function', hasCore: typeof A.meshSolidVolume === 'function' };
   out.ewRows = (A.dbQuery("SELECT COUNT(*) FROM elements_meta WHERE discipline='EARTHWORK'")[0] || [0])[0];
-  if (typeof A.roadPanelsCardOf === 'function') { const c = A.roadPanelsCardOf('planned'); out.plannedRows = c ? c.rows.map(r => ({ label: r.label, value: String(r.value), vol: !!r.vol })) : null; }
+  // §EW_VOLUME_SURFACE: the volume row moved from the 'planned' card to the 'ground' card. plannedRows = the volume row as the ground card
+  // carries it (ground card when this model has GEOTECH/GABION stretches; else the shared line A.earthworksVolumeLine, same owner).
+  if (typeof A.roadPanelsCardOf === 'function') { const c = A.roadPanelsCardOf('ground'); const pl = A.roadPanelsCardOf('planned');
+    out.plannedHasVol = !!(pl && pl.rows.some(r => r.vol));
+    if (c) out.plannedRows = c.rows.map(r => ({ label: r.label, value: String(r.value), vol: !!r.vol }));
+    else { const l = typeof A.earthworksVolumeLine === 'function' ? A.earthworksVolumeLine() : null; out.plannedRows = l ? [{ label: 'Earthworks volume', value: l, vol: true }] : []; } }
   if (out.hasFn) { const v = A.earthworksVolume(); out.ev = { n: v.n, verdict: v.verdict, total: v.total, V: v.V, B: v.B, E: v.E, elements: v.elements }; }
   if (out.hasCore) {   // instrument controls: analytic solids, outward-facing triangles (counter-clockwise seen from outside)
     const cube = (sx, sy, sz, ox, oy, oz) => { const V = [], P = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
@@ -83,8 +88,8 @@ function nodeProbe(ewGuid, civil) {
       if (/FROM component_geometries/.test(sql)) return blobs ? [[blobs.v, blobs.f]] : [];
       return [];
     } };
-  const ctx = { window: {}, console: { log: l => lines.push(l) }, Float32Array, Uint32Array, Int32Array, Map, Math };
-  vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, 'viewer', 'cpe_road_panels.js'), 'utf8') + '\nsetupCpeRoadPanels(__A);', Object.assign(ctx, { __A: A }));
+  const ctx = { window: {}, module: undefined, console: { log: l => lines.push(l) }, Float32Array, Uint32Array, Int32Array, Map, Math };
+  vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(ROOT, 'viewer', 'earthworks_volume.js'), 'utf8') + '\n' + fs.readFileSync(path.join(ROOT, 'viewer', 'cpe_road_panels.js'), 'utf8') + '\nsetupCpeRoadPanels(__A);', Object.assign(ctx, { __A: A }));
   const r = probeBody(A); r.logLines = lines; return r;
 }
 (async () => {
@@ -140,7 +145,8 @@ function nodeProbe(ewGuid, civil) {
       const m = /^≈ ([\d,]+) m³ \((\d+) open edges, ±([\d.]+) m³\)$/.exec(row.value);
       return ev.verdict === 'APPROXIMATE' && !!m && +m[1].replace(/,/g, '') === Math.round(iV) && +m[2] === iE && near(+m[3], Math.ceil(iB * 10) / 10, 0.1 + TOL_B);
     }))
-    .invariant('NON-IMPACT building (Duplex): not civil, 0 EARTHWORK rows, verdict VACUOUS, no volume line on the planned card', rs => rs.every(r => !r.bld.civil && r.bld.ewRows === 0 && r.bld.ev && r.bld.ev.verdict === 'VACUOUS' && !(r.bld.plannedRows || []).some(x => x.vol)))
+      .invariant('the old planned card carries NO volume row (moved to the ground card)', rs => rs.every(r => r.civil.plannedHasVol === false && r.bld.plannedHasVol === false))
+    .invariant('NON-IMPACT building (Duplex): not civil, 0 EARTHWORK rows, verdict VACUOUS, no volume line on the card', rs => rs.every(r => !r.bld.civil && r.bld.ewRows === 0 && r.bld.ev && r.bld.ev.verdict === 'VACUOUS' && !(r.bld.plannedRows || []).some(x => x.vol)))
     .redControl(rs => rs.map(r => { const c = JSON.parse(JSON.stringify(r)); c.indep[0].B += 1; c.indep[0].V += 5; return c; }))
     .run();
   logStream.end();
