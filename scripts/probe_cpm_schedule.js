@@ -143,14 +143,20 @@ async function runBuilding(SQL, RATES, name) {
     ' elementMismatch=' + mismatch + ' orphans=' + Gj.orphans + '/' + Gm.orphans +
     ' grounded=' + Gj.groundedN + '/' + Gm.groundedN +
     ' groundConnected=' + Gj.groundConnectedN + '/' + Gm.groundConnectedN +
-    ' seedMode=' + Gj.groundSeedMode + '/' + Gm.groundSeedMode + ' ' + (mismatch === 0 ? 'PASS' : 'FAIL'));
+    ' seedMode=' + Gj.groundSeedMode + '/' + Gm.groundSeedMode + ' ' +
+    // §I.1a (2026-10-06): SupportSweep.contactGraph now DELEGATES to CpmSchedule.contactGraph — one owner,
+    // no second copy. Zero mismatch here proves only that the delegation is wired; it can no longer catch a
+    // physics drift between copies (there is one copy). So it never prints PASS (PRIMAL LAW 4): a mismatch is
+    // still a FAIL (the delegation is broken), zero is SINGLE-OWNER. Independent judging of floating lives in
+    // viewer/tests/witness_midair_zero.js (copy 4, deliberately independent — §I.5e).
+    (mismatch === 0 ? 'SINGLE-OWNER (delegation wired; parity vacuous by construction)' : 'FAIL'));
 
   // §CPM_PARITY_SUPPORT — designatedSupport, the same two-copy discipline extended (2026-08-18,
   // grounded-narrowing fix): the judge's own copy vs the module's, support-index-for-support-index.
   const desJ = _designatedSupport(items, Gj), desM = CpmSchedule.designatedSupport(items, Gm);
   let supportMismatch = 0;
   for (let i = 0; i < items.length; i++) if (desJ[i] !== desM[i]) supportMismatch++;
-  console.log('§CPM_PARITY_SUPPORT elementMismatch=' + supportMismatch + ' ' + (supportMismatch === 0 ? 'PASS' : 'FAIL'));
+  console.log('§CPM_PARITY_SUPPORT elementMismatch=' + supportMismatch + ' ' + (supportMismatch === 0 ? 'SINGLE-OWNER (delegation wired)' : 'FAIL'));
 
   // RAW baseline floating (pre-CPM, crew-leveled generative times), for the delta report.
   const rawCensus = floatingCensus(items.map(o => Object.assign({}, o)));
