@@ -24,6 +24,7 @@
 // Command: node viewer/tests/witness_film_boxes.js [--frames 4699] [--fps 24] [--w 1280] [--h 720] [--pos tr]
 // Log Mandate: tee to out/witness_film_boxes.log and read it.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
@@ -33,7 +34,7 @@ const NFRAMES = +arg('frames', 4699);            // the real Hospital full film
 const POS = arg('pos', 'tr');
 
 // ── the module under test, loaded the way the page loads it (a plain global function)
-const src = fs.readFileSync(path.join(ROOT, 'viewer', 'cpe_film_boxes.js'), 'utf8');
+const src = __readSrc(path.join(ROOT, 'viewer', 'cpe_film_boxes.js'), 'utf8');
 global.window = global.window || {};
 new Function(src + '\nglobal.__setup = setupCpeFilmBoxes;')();
 const setup = global.__setup;
@@ -129,7 +130,7 @@ mute = false;
 // ── THE ANTI-SCOPE-BLIND SCAN. The rows above prove the boxes behave; they cannot prove that
 // _captureFrame draws nothing else, because they do not run it. So read it and classify every
 // composite call in its body against a declared registry — an unregistered one FAILS.
-const maxq = fs.readFileSync(path.join(ROOT, 'viewer', 'cinema_maxq.js'), 'utf8');
+const maxq = __readSrc(path.join(ROOT, 'viewer', 'cinema_maxq.js'), 'utf8');
 const bodyStart = maxq.indexOf('function _captureFrame(');
 const bodyEnd = maxq.indexOf('// §MAXQ_MP4 — mp4/H.264 stitch', bodyStart);
 const body = maxq.slice(bodyStart, bodyEnd);

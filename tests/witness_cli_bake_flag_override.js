@@ -16,11 +16,12 @@
 // matching and driven with real argv shapes; the merge rule and the prime gate are read out of the
 // shipped cinema_maxq.js / cli_silent_bake.js rather than restated here.
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const { Witness } = require(path.join(__dirname, '..', 'witness_kit', 'contract.js'));
 
-const cliSrc = fs.readFileSync(path.join(__dirname, '..', 'cli_silent_bake.js'), 'utf8');
-const maxqSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'cinema_maxq.js'), 'utf8');
+const cliSrc = __readSrc(path.join(__dirname, '..', 'cli_silent_bake.js'), 'utf8');
+const maxqSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'cinema_maxq.js'), 'utf8');
 
 function sliceFn(src, marker) {
   const i = src.indexOf(marker);

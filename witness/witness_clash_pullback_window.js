@@ -21,8 +21,9 @@
  *      reader can see this is the film's beat geometry and not a defect.
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'cinema_maxq.js'), 'utf8');
+const SRC = __readSrc(path.join(__dirname, '..', 'viewer', 'cinema_maxq.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };

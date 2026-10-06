@@ -1,0 +1,15 @@
+{
+  "family": "cinema_maxq",
+  "file": "viewer/cinema_maxq.js",
+  "container": { "kind": "iife" },
+  "shared": "MQS",
+  "registry": "__cinemaMaxqParts",
+  "prefix": "maxq_",
+  "parts": [
+    { "name": "buildup_ghost" },
+    { "name": "infra", "startsAt": "_wakeAcquire" },
+    { "name": "hud_layers", "startsAt": "_hudRectsOverlap" },
+    { "name": "capture_stitch", "startsAt": "_capFmt" },
+    { "name": "start", "startsAt": "start" }
+  ]
+}

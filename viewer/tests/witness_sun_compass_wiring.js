@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-SUN-COMPASS-WIRING, §CPE_SUN_COMPASS
  * (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7, bake-panel toggle).
  *
@@ -40,7 +41,7 @@ for (var k in FILES) {
     console.log('§SUN_COMPASS_WIRING INCONCLUSIVE — missing ' + FILES[k] + '. Nothing judged.');
     process.exit(2);
   }
-  src[k] = fs.readFileSync(FILES[k], 'utf8');
+  src[k] = __readSrc(FILES[k], 'utf8');
 }
 
 var fails = 0, checks = 0;
@@ -171,7 +172,7 @@ link('no separate day-of-year or sun-angle checkbox was added',
   // so it slices out by brace-matching.
   var ICONS;
   (function () {
-    var pj = fs.readFileSync(path.join(__dirname, '..', 'panels.js'), 'utf8');
+    var pj = __readSrc(path.join(__dirname, '..', 'panels.js'), 'utf8');
     var i = pj.indexOf('var ICONS = {');
     if (i < 0) return;
     var depth = 0, j = pj.indexOf('{', i);
@@ -256,7 +257,7 @@ link('no separate day-of-year or sun-angle checkbox was added',
 // is 180° plus true north out — the light comes from the wrong side and every shadow is backwards,
 // while everything still "works". Pinned here against the shipped constant.
 (function () {
-  var eff = fs.readFileSync(path.join(__dirname, '..', 'effects.js'), 'utf8');
+  var eff = __readSrc(path.join(__dirname, '..', 'effects.js'), 'utf8');
   var a = eff.indexOf('function _realSunForRender()');
   var b = eff.indexOf('\n  }', a);
   if (a < 0 || b < 0) {

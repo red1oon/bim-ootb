@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-HUD-LAYOUT-COVERAGE, §129.55
  * (bim-compiler prompts/LOADPATH_FREEZE_POLISH_RESUME.md §129.55)
  *
@@ -47,7 +48,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const PREFIX = process.argv[2] || null;
 function srcPath(base) { return PREFIX ? (PREFIX + base) : path.join(ROOT, base); }
-function read(base) { return fs.readFileSync(srcPath(base), 'utf8'); }
+function read(base) { return __readSrc(srcPath(base), 'utf8'); }
 
 let fails = 0, inconclusive = 0;
 const say = (s) => console.log(s);

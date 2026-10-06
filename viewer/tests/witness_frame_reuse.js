@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-FRAME-REUSE, §129.57
  * (bim-compiler prompts/LOADPATH_FREEZE_POLISH_RESUME.md §129.57)
  *
@@ -45,7 +46,7 @@
 const fs = require('fs'), path = require('path');
 const SRC = process.argv[2] || path.resolve(__dirname, '..', 'cinema_maxq.js');
 const FIX = path.resolve(__dirname, 'fixtures', 'framehash_Hospital_2026-09-20_0531.txt');
-const src = fs.readFileSync(SRC, 'utf8');
+const src = __readSrc(SRC, 'utf8');
 
 if (!/§129\.57 FRAME REUSE/.test(src) || !/_reuseKey === _lastFrameKey/.test(src)) {
   console.log('§FRAME_REUSE_W INCONCLUSIVE — no §129.57 reuse branch in ' + path.basename(SRC) + '; nothing judged');
@@ -55,7 +56,7 @@ if (!/§129\.57 FRAME REUSE/.test(src) || !/_reuseKey === _lastFrameKey/.test(sr
 // ── PART E — the expected split, re-derived from the REAL bake ───────────────────────────────
 let EXPECT_REUSE = null, EXPECT_RENDER = null, HOLD = [1923, 2187];
 try {
-  const rows = fs.readFileSync(FIX, 'utf8').trim().split('\n').map((l) => l.split(' '));
+  const rows = __readSrc(FIX, 'utf8').trim().split('\n').map((l) => l.split(' '));
   let prev = null, dup = 0, tot = 0;
   for (const [iS, sha] of rows) {
     const i = +iS;
@@ -107,7 +108,7 @@ function run(frames, noReuse) {
 // nothing would otherwise pass this leg.
 const HOLD_START = HOLD[0], FPS = 24, FADE_FRAMES = 24;   // fadeSec 1.0 at 24 fps, §129.27 front-loaded
 const shaAt = {};
-for (const [iS, sha] of fs.readFileSync(FIX, 'utf8').trim().split('\n').map((l) => l.split(' '))) shaAt[+iS] = sha;
+for (const [iS, sha] of __readSrc(FIX, 'utf8').trim().split('\n').map((l) => l.split(' '))) shaAt[+iS] = sha;
 function stateAt(i, opts) {
   opts = opts || {};
   const e = i - HOLD_START, last = HOLD[1] - HOLD_START;
@@ -175,7 +176,7 @@ console.log('\n── PART F — SANITY LIVE INSIDE THE HOLD ──────�
 {
   const gateSrc = src.slice(src.indexOf('§FRAME_REUSE_SANITY'), src.indexOf("var _reuseKey = null;") + 400);
   ok(/inHold && _lastFrameBlob && !A\._ruleFilmLive\)/.test(src), 'cinema_maxq.js reuse branch is gated on !A._ruleFilmLive');
-  const rff = fs.readFileSync(path.resolve(path.dirname(SRC), 'rule_findings_film.js'), 'utf8');
+  const rff = __readSrc(path.resolve(path.dirname(SRC), 'rule_findings_film.js'), 'utf8');
   ok(/A\._ruleFilmLive = boxes\.length > 0/.test(rff) && /A\._ruleFilmLive = false/.test(rff), 'rule_findings_film.js sets A._ruleFilmLive from its on-screen boxes (reset each composite)');
   const N = HOLD[1] - HOLD[0] + 1, LIVE = [60, 160];   // a 100-frame Sanity window inside the hold
   const base = [], withS = [];

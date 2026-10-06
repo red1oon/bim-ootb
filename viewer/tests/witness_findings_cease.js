@@ -20,9 +20,10 @@
  * RUN: node viewer/tests/witness_findings_cease.js
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const mq = fs.readFileSync(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
+const mq = __readSrc(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const ck = (n, c, x) => { (c ? pass++ : fail++); console.log('  §CEASE ' + (c ? 'ok    ' : 'WRONG ') + n + (x ? '   ' + x : '')); };
@@ -64,7 +65,7 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
     .filter((f) => /^cpe_(flythru_|indoor_beats|slab_beat|linear_beat)/.test(f) && f.endsWith('.js'));
   const found = [];
   MEASURE_MODULES.forEach((f) => {
-    const src = fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+    const src = __readSrc(path.join(ROOT, 'viewer', f), 'utf8');
     if (!/A\.scene\.add\(/.test(src)) return;                      // no scene geometry, nothing to cease
     const m = src.match(/_gr(?:p|oup)\.name = '([A-Za-z0-9_]+)'/);
     found.push({ file: f, name: m ? m[1] : null });
@@ -101,7 +102,7 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   // The one exemption. A blind sweep would switch off the escape route's own room glow, which is
   // depthTest:false BY DESIGN — cpe_escape_route.js §ESCAPE_ROUTE_NO_XRAY depends on it reading
   // through the building. Exactly one exemption, and it must be that beat's.
-  const esc = fs.readFileSync(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
+  const esc = __readSrc(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
   const exRx = /var CEASE_3D_EXEMPT_RX = \/\^([A-Za-z0-9_]+)\//.exec(mq);
   const escNames = (esc.match(/\.name = '(escapeRoute[A-Za-z0-9_]*)'/g) || []);
   ck('exactly ONE exemption exists, and it is the beat that is actually on screen',
@@ -147,7 +148,7 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
     const REG = {};
     ['cpe_flythru_datum.js', 'cpe_flythru_cues.js', 'cpe_indoor_beats.js', 'cpe_slab_beat.js', 'clash_film.js']
       .forEach((f) => {
-        const src = fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+        const src = __readSrc(path.join(ROOT, 'viewer', f), 'utf8');
         const m = src.match(/A\.filmLayer\('([a-z.]+)'/g) || [];
         REG[f] = m.map((x) => x.replace(/.*'([a-z.]+)'/, '$1'));
       });
@@ -172,8 +173,8 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
   //    the cease switches OFF, so ceasing the chip is what froze the boxes on the building.
   //    These claims prove the teardown is now reachable FROM THE FILM and that it is one-shot.
   {
-    const rc = fs.readFileSync(path.join(ROOT, 'viewer/rule_checklist.js'), 'utf8');
-    const rf = fs.readFileSync(path.join(ROOT, 'viewer/rule_findings_film.js'), 'utf8');
+    const rc = __readSrc(path.join(ROOT, 'viewer/rule_checklist.js'), 'utf8');
+    const rf = __readSrc(path.join(ROOT, 'viewer/rule_findings_film.js'), 'utf8');
     ck('the Sanity tint IS added to the scene and IS the shine-through kind — the thing being judged exists',
        /A\.showRuleModeTint = function/.test(rc) && /A\.scene\.add\(iMesh\)/.test(rc) &&
        /A\.showRuleModeTint\(/.test(rf),
@@ -196,12 +197,12 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
     ck('…and it SAYS what it removed, with its own verdict, not just that it ran',
        /§RULE_TINT_CEASE removed=/.test(mq) && /stillHidden=/.test(mq) &&
        /' => ' \+ \(_rtOk \? 'PASS' : 'FAIL'\)/.test(mq) &&
-       /RULE_TINT_CEASE/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')),
+       /RULE_TINT_CEASE/.test(__readSrc(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')),
        'left=0 stillHidden=0 active=false is the post-condition, and the CLI relays the line');
     // red1, 2026-09-20: "but not confuse with the Storeys reveal tint section … which is governed by
     // its own feature check". It is: STOREY_REVEAL_MODE === 'tint' sets STOREY_REVEAL_TINT, and that
     // flag alone decides whether _applyTint/_restoreTint run. This claim keeps the two apart.
-    const sr = fs.readFileSync(path.join(ROOT, 'viewer/cpe_storey_reveal.js'), 'utf8');
+    const sr = __readSrc(path.join(ROOT, 'viewer/cpe_storey_reveal.js'), 'utf8');
     ck('…and it does NOT reach into the storey reveal\'s tint — that one has its OWN feature check',
        !/storeyRevealTintRestore|_restoreTint|_applyTint/.test(ceaseCode) &&
        /var STOREY_REVEAL_TINT = \(STOREY_REVEAL_MODE === 'tint'\);/.test(sr) &&
@@ -213,7 +214,7 @@ ck('and NOTHING else is ceased — the sun clock, the compass, the day counter, 
      'the sweep line carries the ancestor chain, renderOrder and material colour');
   ck('…and the bake SAYS which group it hid',
      /§FINDINGS_CEASE_3D group="/.test(mq) &&
-     /FINDINGS_CEASE_3D/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));
+     /FINDINGS_CEASE_3D/.test(__readSrc(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));
 }
 
 // ── 2. THE TRIGGER, DRIVEN FRAME BY FRAME ────────────────────────────────────────────────────
@@ -256,7 +257,7 @@ function sweep(storeyOn) {
      !!first && Math.abs((first.sec - orbitSec) - 2) < 0.3,
      first ? 'orbit ' + orbitSec.toFixed(1) + 's, cease at ' + first.sec.toFixed(1) + 's' : 'never ceased');
   ck('…and that bound exists in CODE, not by accident on a film that happens to have the reveal on',
-     /FINDINGS_OFF_TAIL_SEC/.test(fs.readFileSync(path.join(ROOT, 'viewer/cpe_storey_reveal.js'), 'utf8')));
+     /FINDINGS_OFF_TAIL_SEC/.test(__readSrc(path.join(ROOT, 'viewer/cpe_storey_reveal.js'), 'utf8')));
 }
 
 // ── 3. THE BAKE ITSELF SAYS SO ───────────────────────────────────────────────────────────────
@@ -265,7 +266,7 @@ ck('the bake logs §FINDINGS_CEASE per layer, naming the layer and which trigger
    /§FINDINGS_CEASE layer=/.test(mq) && /trigger=/.test(mq) &&
    /storey-reveal-onset/.test(mq) && /escape-route-window/.test(mq));
 ck('…and the CLI relays it, so it reaches out\\/<db>.log and not only the firehose',
-   /FINDINGS_CEASE/.test(fs.readFileSync(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));
+   /FINDINGS_CEASE/.test(__readSrc(path.join(ROOT, 'cli_silent_bake.js'), 'utf8')));
 
 console.log('§FINDINGS_CEASE ' + (fail ? 'FAIL' : 'PASS') + ' pass=' + pass + ' fail=' + fail +
   ' layers=' + layers.length);

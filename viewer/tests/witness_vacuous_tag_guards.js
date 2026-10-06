@@ -30,12 +30,13 @@
 //
 // Command: node viewer/tests/witness_vacuous_tag_guards.js
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const { Witness } = require('../../witness_kit/contract');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SRC = f => fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+const SRC = f => __readSrc(path.join(ROOT, 'viewer', f), 'utf8');
 const FIXTURE = path.join(ROOT, 'tests', 'fixtures', 'vac_tag_series_s5_hospital.json');
 
 // ── §W-VACUOUS-SELF: this witness must be able to say INCONCLUSIVE about ITSELF. If the archived
@@ -46,7 +47,7 @@ if (!fs.existsSync(FIXTURE)) {
     '; nothing was judged. This is NOT a pass.');
   process.exit(2);
 }
-const FX = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
+const FX = JSON.parse(__readSrc(FIXTURE, 'utf8'));
 
 // ── Extract and EXECUTE the shipped _vacLog, rather than reimplementing it here. A reimplementation
 // would prove that this file is lossless, which is not the claim. ────────────────────────────────

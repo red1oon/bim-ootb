@@ -20,6 +20,7 @@
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), os = require('os');
 
 let pass = 0, fail = 0, inconclusive = 0;
@@ -50,7 +51,7 @@ const angDeg = (a, b) => {
 function judge(file) {
   console.log('§CAM_FACE_PATH file=' + path.basename(file));
   let rows;
-  try { rows = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  try { rows = JSON.parse(__readSrc(file, 'utf8')); }
   catch (e) { inc('W-CFP-0 the pose tap is readable', e.message); return; }
   if (!Array.isArray(rows) || rows.length < MIN_SPAN || !Array.isArray(rows[0]) || rows[0].length < 7) {
     inc('W-CFP-0 the pose tap has one row per frame with a camera and a target', 'rows=' + (rows && rows.length));
@@ -105,7 +106,7 @@ function judge(file) {
 function judgeSource() {
   const f = path.join(__dirname, '..', 'viewer/cinema_maxq.js');
   let mq;
-  try { mq = fs.readFileSync(f, 'utf8'); } catch (e) { inc('W-CFP-3 cinema_maxq.js is readable', e.message); return; }
+  try { mq = __readSrc(f, 'utf8'); } catch (e) { inc('W-CFP-3 cinema_maxq.js is readable', e.message); return; }
   const loop = mq.slice(mq.indexOf('for (var i = 0; i < nFrames; i++) {'));
   const calls = loop.match(/_blendedGazeTarget\([^,]+,/g) || [];
   ck('W-CFP-3 the gaze blend is handed the POSE\'s own time, never the raw film clock',

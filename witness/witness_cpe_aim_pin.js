@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — §CPE_AIM_PIN (Part C): click-to-pin explicit look-target.
 // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part C.
 //
@@ -175,7 +176,7 @@ async function gates(browser, BLD) {
   // Static: cinema_maxq.js (the bake loop) is untouched by this whole feature — same boundary as
   // Part B, restated here since this session's brief called it out explicitly.
   const fs = require('fs');
-  const maxqSrc = fs.readFileSync(__dirname + '/../viewer/cinema_maxq.js', 'utf8');
+  const maxqSrc = __readSrc(__dirname + '/../viewer/cinema_maxq.js', 'utf8');
   P('G-PIN-static cinema_maxq.js has zero references to _cpePinZonesDebug/_setPin/_tryPinClick',
     !/_cpePinZonesDebug|_tryPinClick/.test(maxqSrc),
     `matches=${(maxqSrc.match(/_cpePinZonesDebug|_tryPinClick/g) || []).length}`);

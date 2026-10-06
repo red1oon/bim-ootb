@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — §CPE_PIE_HOLD + §CPE_STATS_TAIL (bim-compiler prompts/CINEMA_PATH_EDITOR.md).
 //
 // ISSUE IT PROVES/DISPROVES: the composition pie DISAPPEARED for the whole silent tail of a bake
@@ -46,8 +47,8 @@ let OFFSCREEN = [];
 sandbox.document = { createElement: () => { const c = { width: 0, height: 0 };
   c.getContext = () => { const x = mkCtx(c.width, c.height); OFFSCREEN.push(x); return x; }; return c; } };
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'viewer/cpe_resource_panel.js'), 'utf8'), sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'viewer/rates.js'), 'utf8'), sandbox);
+vm.runInContext(__readSrc(path.join(__dirname, '..', 'viewer/cpe_resource_panel.js'), 'utf8'), sandbox);
+vm.runInContext(__readSrc(path.join(__dirname, '..', 'viewer/rates.js'), 'utf8'), sandbox);
 
 const A = { sun: { position: { x: -0.6, y: 1, z: -0.8 } } };
 sandbox.APP = A;
@@ -217,7 +218,7 @@ const inBox = (c) => c._rec.textXY.every(([, tx, ty]) =>
 const drawsInBox = inBox(c6) && inBox(c8);
 
 // wiring — the shipped reveal branch itself: held must be null and the entered-log must say so.
-const maxqSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer/cinema_maxq.js'), 'utf8');
+const maxqSrc = __readSrc(path.join(__dirname, '..', 'viewer/cinema_maxq.js'), 'utf8');
 const revealAt = maxqSrc.indexOf('tailPanelAt(_bigCards');
 const revealBlock = maxqSrc.slice(revealAt, maxqSrc.indexOf('_captureFrame(w, h,', revealAt));
 const wiringOk = /held:\s*null/.test(revealBlock) && !/held:\s*_holdInfo/.test(revealBlock) &&

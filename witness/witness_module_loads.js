@@ -21,6 +21,7 @@
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 
 // Identifiers a real browser DOES supply to the right kind of file, so their absence here is the
@@ -66,7 +67,7 @@ function freshCtx() {
 const HTML = path.join(__dirname, '..', 'viewer/viewer.html');
 let order = [];
 try {
-  const html = fs.readFileSync(HTML, 'utf8');
+  const html = __readSrc(HTML, 'utf8');
   const rx = /<script[^>]*\ssrc="([^"]+)"/g;
   let m;
   while ((m = rx.exec(html))) {
@@ -91,7 +92,7 @@ const broken = [], stubbed = [];
 order.forEach((rel) => {
   const f = path.join(__dirname, '..', 'viewer', rel);
   let src;
-  try { src = fs.readFileSync(f, 'utf8'); } catch (e) { missing++; return; }
+  try { src = __readSrc(f, 'utf8'); } catch (e) { missing++; return; }
   try { vm.runInContext(src, ctx, { timeout: 8000, filename: 'viewer/' + rel }); ok++; }
   catch (e) {
     const m = /^(\w[\w$]*) is not defined$/.exec(e.message || '');

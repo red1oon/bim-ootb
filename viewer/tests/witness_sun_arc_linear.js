@@ -8,6 +8,7 @@
 // viewer page and checks its returned elevation against the formula at seven film fractions, that a stray
 // second argument changes nothing, and (statically) that cinema_maxq.js calls it with exactly one argument.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const { Witness } = require('../../witness_kit/contract');
@@ -41,8 +42,8 @@ function inconclusive(r) { log('§SAL verdict=INCONCLUSIVE reason=' + r + ' — 
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'sal-'));
   const commit = (() => { try { return require('child_process').execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim(); } catch (e) { return '?'; } })();
   log(`§SAL_ENV root=${ROOT} commit=${commit} bld=${BLD} gpu=${GPU} log=${LOG}`);
-  const EFFECTS = fs.readFileSync(path.join(ROOT, 'viewer/effects.js'), 'utf8');
-  const MAXQ = fs.readFileSync(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
+  const EFFECTS = __readSrc(path.join(ROOT, 'viewer/effects.js'), 'utf8');
+  const MAXQ = __readSrc(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
   const START = +(EFFECTS.match(/var PHOTO_SUN_ELEVATION_START = (\d+(?:\.\d+)?)/) || [])[1];
   const END = +(EFFECTS.match(/var PHOTO_SUN_ELEVATION = (\d+(?:\.\d+)?)/) || [])[1];
   const browser = await puppeteer.launch({ headless: true, userDataDir: profile, protocolTimeout: 20 * 60 * 1000, env: Object.assign({}, process.env, gpuEnv), args: ['--no-sandbox', '--hide-crash-restore-bubble', '--window-size=1300,840'].concat(gpuArgs) });

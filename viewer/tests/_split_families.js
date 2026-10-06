@@ -5,6 +5,12 @@
 const fs = require('fs'), path = require('path');
 const V = path.join(__dirname, '..');
 const FAMILIES = {
+  cinema_maxq: {
+    shell: 'cinema_maxq.js', shared: 'MQS',
+    files: ['cinema_maxq.js'],
+    loader: { kind: 'html', file: 'viewer.html' },
+    runtime: () => {},                                      // IIFE: everything it defines happens at load
+  },
   navigate_find: {
     shell: 'navigate_find.js', shared: 'NF',
     files: ['nf_ui_history.js', 'nf_tree_lens.js', 'nf_highlight_cost.js', 'nf_room.js', 'nf_trees.js', 'nf_isolate_drill.js', 'nf_panel_search.js', 'navigate_find.js'],
@@ -28,5 +34,13 @@ function readUnsplit(name, dir) {
   const lineStart = shellSrc.lastIndexOf('\n', a) + 1, lineEnd = shellSrc.indexOf('\n', b) + 1;
   return shellSrc.slice(0, lineStart) + body + '\n' + shellSrc.slice(lineEnd);
 }
+// readSource(p, enc) — drop-in for fs.readFileSync in tests that read a module's source: a split module's shell comes
+// back as readUnsplit() (the original text); every other file is passed straight through, unchanged.
+function readSource(p, enc) {
+  const base = path.basename(String(p));
+  const fam = Object.keys(FAMILIES).find((k) => (FAMILIES[k].shell || FAMILIES[k].files[FAMILIES[k].files.length - 1]) === base);
+  if (fam) { const raw = fs.readFileSync(p, 'utf8'); if (raw.indexOf('// <split-driver>') >= 0) { const u = readUnsplit(fam, path.dirname(String(p))); return enc ? u : Buffer.from(u); } }
+  return fs.readFileSync(p, enc);
+}
 function readFamily(name, dir) { const f = FAMILIES[name]; return f.files.map((x) => fs.readFileSync(path.join(dir || V, x), 'utf8')).join('\n'); }
-module.exports = { FAMILIES, readFamily, readUnsplit };
+module.exports = { FAMILIES, readFamily, readUnsplit, readSource };
