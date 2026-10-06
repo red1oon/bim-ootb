@@ -112,6 +112,14 @@ stmts.forEach((st, i) => (function walk(n) {
 })(st));
 const cross = new Set(refs.filter((r) => !r.isDeclName && r.part !== r.d.part).map((r) => r.d.name));
 
+// `this` guard: a shared function is called as <SHARED>.f() from other parts, which binds `this` to the shared object
+// (the original f() call had `this` undefined). Refuse if any shared function uses `this` at its own level.
+const thisUsers = [];
+stmts.forEach((st) => { if (!ts.isFunctionDeclaration(st) || !cross.has(st.name.text)) return;
+  (function w(n) { if (n.kind === ts.SyntaxKind.ThisKeyword) { thisUsers.push(st.name.text + '@' + line(n.getStart(sf))); return; }
+    if (n !== st && ts.isFunctionLike(n) && !ts.isArrowFunction(n)) return; ts.forEachChild(n, w); })(st); });
+if (thisUsers.length) refuse('shared functions use `this` (would bind to ' + SH + ' when called from another part): ' + thisUsers.join(','));
+
 // ── edits: ONLY a non-owner reference becomes <SHARED>.name (owner text stays byte-identical) ─────────────────
 const edits = [];
 refs.forEach((r) => { if (!cross.has(r.d.name) || r.isDeclName || r.part === r.d.part) return;
