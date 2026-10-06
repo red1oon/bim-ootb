@@ -62,6 +62,7 @@ function finish(browser) {
 
   // 2. open Find, Discipline lens, pick a category
   await page.evaluate(() => window.APP.openFindPanel());
+  for (let i = 0; i < 120 && !(await page.evaluate(() => !!document.getElementById('find-axis-toggle') && !!document.getElementById('find-erp-btn'))); i++) await page.waitForTimeout(1000);   // lazy Find parts (#1907 split)
   await page.waitForTimeout(1500);
   for (let k = 0; k < 6; k++) {
     const ax = await page.evaluate(() => { const b = document.getElementById('find-axis-toggle'); return b && b.getAttribute('data-axis'); });
