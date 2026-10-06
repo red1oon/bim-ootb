@@ -229,7 +229,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const wantC = gC.s0 + (100 / gC.D) * gC.span;
   add('click inside lens: s0 = clicked chainage (+-1 m), camera flies to within 1 m of route there', Math.abs(gC2.s0 - wantC) <= 1 && nearCam.d <= 1, 's0=' + gC2.s0.toFixed(1) + ' want=' + wantC.toFixed(1) + ' camDist=' + nearCam.d.toFixed(4));
   // PNG
-  const PNG = await p.evaluate(async () => { const r = await APP.civilLensPNG(true), l = APP._civilLens(); let w = null, h = null; if (r && r.blob) { const bm = await createImageBitmap(r.blob); w = bm.width; h = bm.height; }
+  const PNG = await p.evaluate(async () => { const r = await APP.civilLensPNG(false), l = APP._civilLens();   // false: check the blob only — true dropped a profile_*.png into the user's real ~/Downloads on every run let w = null, h = null; if (r && r.blob) { const bm = await createImageBitmap(r.blob); w = bm.width; h = bm.height; }
     return r ? { type: r.blob && r.blob.type, size: r.blob && r.blob.size, name: r.name, w, h, cw: l.canvas.width, ch: l.canvas.height, s0: l.s0, span: l.span } : null; });
   log('  [png] ' + JSON.stringify(PNG));
   add('PNG: blob is image/png, non-zero, decoded size == lens canvas size, filename carries the chainage range', PNG && PNG.type === 'image/png' && PNG.size > 0 && PNG.w === PNG.cw && PNG.h === PNG.ch && PNG.name === 'profile_' + Math.round(PNG.s0 - PNG.span / 2) + '-' + Math.round(PNG.s0 + PNG.span / 2) + 'm.png', PNG && PNG.name);
