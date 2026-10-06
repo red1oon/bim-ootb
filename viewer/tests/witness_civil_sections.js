@@ -24,7 +24,7 @@ const fs = require('fs'), path = require('path'), http = require('http'), os = r
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const ROOT = process.env.ROOT || path.resolve(path.join(__dirname, '..', '..'));
 const MODEL = process.env.MODEL || 'civil', RED = process.env.RED === '1';
-const BLD = process.env.BLD || (MODEL === 'civil' ? 'CivilWorks' : 'Duplex_extracted');
+const BLD = process.env.BLD || (MODEL === 'civil' ? 'CivilWorksPath' : 'Duplex_extracted');
 const BLD_DIR = process.env.BLD_DIR || (MODEL === 'civil' ? path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC') : '/home/red1/bim-ootb/buildings');
 const PORT = +(process.env.PORT || 8591), LOG = process.env.LOG || '/tmp/witness_civil_sections_' + MODEL + (RED ? '_red' : '') + '.log';
 const out = []; const log = l => { out.push(l); console.log(l); };
