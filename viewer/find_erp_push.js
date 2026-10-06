@@ -268,6 +268,14 @@
       console.log('[RP-C] §PROJ_PUSH_AUDIO id=' + id + ' sfx=' + (ok ? 'played' : 'absent'));
     }
     function _pushReject(msg) { if (A.status) A.status.textContent = msg; _pushSfx('erp_reject'); }
+    // §ZOOM-LINKBACK pure store rule (node-witnessed: viewer/tests/witness_zoom_linkback_node.js).
+    function _linkBackStore(prevNote, set, dbUrl) {
+      var gs = {};
+      if (/^\S+(,\S+)*$/.test(prevNote || '')) prevNote.split(',').forEach(function (g) { gs[g] = 1; });
+      set.forEach(function (g) { gs[g] = 1; });
+      var keys = Object.keys(gs);
+      return { description: 'BIM src db=' + dbUrl, note: keys.join(','), count: keys.length };
+    }
     function _pushToErp() {
       var set = D.getLastSelSet();
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
@@ -288,6 +296,17 @@
         console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + D.getLastSelLabel() + '" phases=+' + r.created.phases +
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
           ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        // §ZOOM-LINKBACK (bim-ootb prompts: ZoomAcross red pill, GUID + source-model link back) — the order carries the
+        // link back to its source: Description = the model db url this push came from, Note = the pushed GUID set (union
+        // with earlier pushes to the same project). ERP Zoom Across reads both → opens THAT db, highlights those GUIDs.
+        try {
+          if (r.projectId != null) {
+            var _cur = db.exec("SELECT Note FROM C_Project WHERE C_Project_ID=?", [r.projectId]);
+            var _lb = _linkBackStore((_cur.length && _cur[0].values[0][0]) ? String(_cur[0].values[0][0]) : '', set, A.DB_URL);
+            db.run("UPDATE C_Project SET Description=?, Note=? WHERE C_Project_ID=?", [_lb.description, _lb.note, r.projectId]);
+            console.log('[RP-C] §ZOOM_LINKBACK_STORE project=' + r.projectId + ' db=' + A.DB_URL + ' guids=' + _lb.count);
+          }
+        } catch (e) { console.log('[RP-C] §ZOOM_LINKBACK_ERR ' + e.message); }
         // §F9 — when BlueFuture is engaged, route the pushed Project Order onto the active blue branch
         // (op-log + projection tag) so it's a speculative UNOFFICIAL draft, invisible to official chrome
         // until accepted on the timeline. No-op in the plain viewer (BlueFuture/BlueFold absent → white push).

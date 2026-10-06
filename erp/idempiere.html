@@ -6024,6 +6024,31 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   class (c_projectline → m_product.value, the proj_fold key), null = whole-building floor. _lastBimScope =
     //   the nearest/latest remembered scope (the "no discerning record / blank page" fallback). NON-INVENT.
     var _lastBimScope = null;
+    // §ZOOM-LINKBACK — a Project Order pushed from the viewer carries its source: Description='BIM src db=<url>' and
+    //   Note=<pushed GUIDs> (viewer/find_erp_push.js). sc.db overrides the <bld>_extracted.db convention (Hospital has
+    //   no tag → unchanged); header scope with GUIDs uses them as find= (applyFindScope's existing guid-set path).
+    function _linkBack(sc, projId, useGuids) {
+      try {
+        var r = _sqlRows('SELECT description AS d, note AS n FROM c_project WHERE c_project_id=' + Number(projId))[0];
+        var m = r && /^BIM src db=(\S+)$/.exec(String(r.d || ''));
+        if (m) { sc.db = m[1]; if (useGuids && r.n && /^\S+(,\S+)*$/.test(String(r.n))) sc.find = String(r.n); }
+      } catch (e) {}
+      return sc;
+    }
+    // §ZOOM-LINKBACK pure URL builder (node-witnessed: viewer/tests/witness_zoom_linkback_node.js). Hospital (no sc.db,
+    //   short find) yields the exact pre-change URL; sc.db overrides the <bld>_extracted.db convention.
+    function _viewerUrl(sc, homeUrl) {
+      var url = '../viewer/viewer.html?db=' + (sc.db ? encodeURI(sc.db) : '../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db') + '&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
+      if (sc.find) {                                               // carry the finer scope to the Find panel
+        var fq = encodeURIComponent(sc.find);
+        if (fq.length > 1500) {                                    // long GUID set: hand off via same-origin localStorage, find=@token
+          var tok = 'z' + Date.now().toString(36);
+          try { localStorage.setItem('zoomfind_' + tok, sc.find); fq = '@' + tok; } catch (e) {}
+        }
+        url += '&find=' + fq;
+      }
+      return url;
+    }
     function _zoomScope(ctx) {
       if (!ctx || !ctx.tab || !ctx.rec) return null;
       var tn = String(ctx.tab.tableName || '').toLowerCase();
@@ -6031,7 +6056,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var pk = recVal(ctx.rec, 'C_Project_ID');
         if (pk == null || Number(pk) < 990000) return null;
         var v = recVal(ctx.rec, 'Value');
-        return v ? { bld: String(v), find: null } : null;            // project header → whole building
+        return v ? _linkBack({ bld: String(v), find: null }, pk, true) : null;   // project header → whole building (or the pushed GUID set)
       }
       if (tn === 'c_projectline') {                                  // a focused line → its IFC class
         var projId = recVal(ctx.rec, 'C_Project_ID');
@@ -6040,7 +6065,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (!pr || !pr.value) return null;
         var find = null, pid = recVal(ctx.rec, 'M_Product_ID');
         if (pid != null) { var p = _sqlRows('SELECT value FROM m_product WHERE m_product_id=' + Number(pid))[0]; find = p && p.value ? String(p.value) : null; }
-        return { bld: String(pr.value), find: find };
+        return _linkBack({ bld: String(pr.value), find: find }, projId, false);
       }
       if (tn === 'pp_order') {                                       // PP_ORDER_ZOOM_TM_SPEC §A — a manufacturing
         var ppId = recVal(ctx.rec, 'PP_Order_ID');                  //   order → its project's building, in TM mode
@@ -6104,8 +6129,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         else sc = _lastBimScope;                                     // blank/no-record → nearest/latest
         if (!sc || !sc.bld) { status('No BIM model linked to this record'); console.log('§ZOOM-ACROSS no-scope'); return; }
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
-        var url = '../viewer/viewer.html?db=../buildings/' + encodeURIComponent(sc.bld) + '_extracted.db&bld=' + encodeURIComponent(sc.bld) + '&home=' + homeUrl;
-        if (sc.find) url += '&find=' + encodeURIComponent(sc.find);  // carry the finer scope to the Find panel
+        var url = _viewerUrl(sc, homeUrl);
         url += _zoomLang();                                          // S226 §R1.1 — the Viewer opens in the ERP's language
         window.open(url, '_blank');
         console.log('§ZOOM-ACROSS launch id=viewer bld=' + sc.bld + ' find=' + (sc.find || '-') + ' url=' + url);
