@@ -38,7 +38,7 @@ separate tools. Fewer things to install, fewer things to keep working when no AI
 ran, what changed between a good and a bad run. **Key enabler:** the ~5k `§` lines already exist; most
 tools read what the code already prints.
 
-## §2 Master table — 5 extensions × 3 engines
+## §2 Master table — 6 extensions × 3 engines
 Engines: **E1 Log** (parses `§` lines) · **E2 Bridge** (reads the running tab, §4.2) · **E3 Static**
 (parses source with ESLint's parser — one parser for every code scan, no regex scans).
 | Ext | Tool | Dev's question | Engine | Rank | Spec |
@@ -64,6 +64,8 @@ Engines: **E1 Log** (parses `§` lines) · **E2 Bridge** (reads the running tab,
 | | T15 Gantt Edit Chain — one bar edit → each step as numbers | "Did my bar edit propagate?" | E1 | P2 | §5.16 |
 | | T16 4D Cache browser — `~/.cache/bim4d/` | "What did the last run say?" | E1 | P2 | §5.16 |
 | | T17 Worktree panel — ahead / dirty / occupied, prune-safe | "Which worktrees can go?" | — | P3 | §5.16 |
+| **X6 Witness & Ship** | T25 Witness Writer — record a good run → draft witness (population, schema, mined invariants, auto red control) | "How do I prove this without Claude writing the test?" | E1 + E3 | **P1** | §5.17 |
+| | T26 Ship Runner — CLAUDE.md Deploy Flow as one stepped task, stop on first fail | "Is it really live, and the right bytes?" | E1 + E3 | **P1** | §5.18 |
 | | T20 BOM tree browser | "What is under this floor/room?" | — | P3 | later |
 | — | T6 Owner Trace (4D) | "Who owns this value?" | — | parked | until `4D_MODEL_INTEGRITY.md §I` is data |
 | — | T8 Record / Replay | "Replay the bug offline" | — | parked | after first slice is in use |
@@ -87,6 +89,8 @@ against a real past incident before lock (spike S9):**
 | ERP window wrong | T11 AD Sweep — is it one window or all (generic layer, AD-LAYER LAW) |
 | 4D bar edit wrong | T15 Edit Chain — which step's number did not move |
 | Data lost / odd after reload | T19 Health (eviction, multi-tab, patch drift) → T12 Patch Ledger |
+| I fixed it — now prove it | T25 Witness Writer from a good run → accept invariants → red control must fail → commit |
+| Ready to ship | T26 Ship Runner — every step a `§SHIP_*` line; live bytes must equal committed bytes |
 | Witness green but feature broken | T5 — INCONCLUSIVE / UNKNOWN? → T14 Witness Lint (no red control?) |
 
 ## §4 Engines
@@ -225,6 +229,61 @@ T15: one bar edit → `witness_gantt_edit_coherence` chain steps as numbers (tim
 persisted → judge). T16: `~/.cache/bim4d/` per building, cache key fresh/stale vs the hashed source files.
 T17: worktree ahead / dirty / occupied (`/proc/*/cwd`), prune only when all three are clear.
 
+### §5.17 T25 Witness Writer (user request 2026-10-06)
+**Goal:** a dev without AI produces a real witness — not a happy-path script — from what the code already
+logs. It is the non-AI version of what Claude does: read the log, pick the claim, make it able to fail.
+**Big tool it simplifies:** invariant miners (Daikon-style) + golden-master / snapshot testing.
+- **Built on the existing kit, not beside it:** emits a `witness_kit/contract.js` `Witness(name)` file —
+  `.population()` / `.schema()` / `.invariant()` / `.redControl()` — so it inherits the kit's refusals
+  (no population / no red control → will not run). Measured: **53 of 211** `viewer/tests/witness_*.js`
+  use `contract.js` today (`git grep -l "require('.*witness_kit/contract"`, 2026-10-06) — the writer
+  only ever emits the kit form.
+- **Steps (each a screen in the extension, each a CLI flag too):**
+  1. **Pick the claim source:** a `§TAG` in T1, or a function under the cursor (E3 finds the `§` lines it emits).
+  2. **Population = a real recorded run**, never a fixture: a saved X1 session, a `~/.cache/bim4d/` run, or a
+     `witness_kit/generators/*` driver. If the claim needs a driver that doesn't exist, the writer says so
+     and stops — the generators header (`gantt_bars.js`) records why: witnesses that drove the wrong path
+     stayed green through real defects (§S65 STAGE 1).
+  3. **Schema:** inferred from the `key=value` fields seen (same idea as `SettingsEditor.jsonToSchema`).
+  4. **Invariants — proposed, never auto-accepted:** mined from ≥ 2 good runs: field always present,
+     always > 0, constant, equal across runs, monotonic, count in observed range. Dev ticks which are the
+     real claim. *This is the one human step — choosing the claim is the part no tool can do.*
+  5. **Red control — automatic, mandatory:** the writer mutates the population (drop rows, zero a field,
+     swap order) and **refuses to save the witness unless the red control FAILS it** (§W-REDCONTROL).
+  6. **Empty population → `INCONCLUSIVE`** built in (PRIMAL LAW §4).
+  7. **Names the issue** in the header (global rule "tests expose issues"): the dev types one line — what
+     defect this witness proves or disproves. Blank = not saved.
+- **Known risk, stated in the UI:** a baseline from a run that already had the bug freezes the bug. The
+  writer shows the run's date + commit and asks for one that is known good.
+- **Witness `§DEVTK_WRITER`:** feed a recorded log with a planted invariant (`moved=0` in every good run) →
+  writer proposes it; accepted witness PASSES on good log, FAILS on a log with `moved=12`; with red control
+  disabled the writer refuses to save. Red control of the writer itself: a log where nothing is constant
+  → writer proposes nothing, says `INCONCLUSIVE no stable invariant`.
+
+### §5.18 T26 Ship Runner (user request 2026-10-06)
+**Goal:** the same code → test → deploy path Claude walks, as one stepped task a dev can run with the same
+tools Claude uses (`node`, `git`, `gh`, `curl`). Stops on the first failed step; every step prints a
+`§SHIP_<STEP>` line into a saved log (Log Mandate).
+| Step | What runs | Source of the rule |
+|---|---|---|
+| 1 Syntax | `node --check` on changed `.js` | `ci.yml` "JS syntax check" |
+| 2 Lint | `npx eslint` (+ X4 rules) on changed files | `ci.yml` no-undef gate |
+| 3 `§` tags exist | E3: every `§` tag the change claims is present in code | CLAUDE.md Deploy Flow "verify all `§` tags exist" |
+| 4 Audits | `tests/audit_sw_precache.js`, `audit_script_tags.js`, `audit_input_registry.js`, `audit_spec_paths.js` | `ci.yml` |
+| 5 SW bump | changed precached file ⇒ `CACHE_VERSION` bumped in that app's `sw.js` | CLAUDE.md `sw.js` rule |
+| 6 Related witnesses | witnesses that reference a changed file (E3 import / path scan) run; log saved | Witness Explorer T5 |
+| 7 Push + PR | `git push` (90 s timeout, skip-not-retry on hang), `gh pr create`, `gh pr merge --auto --squash` | CLAUDE.md push + LFS notes |
+| 8 Merged? | `gh pr view` until MERGED — never trust auto-merge without checking | CLAUDE.md (PR #138 orphan) |
+| 9 Live bytes | `curl` the GH Pages URL of each changed file → sha256 equals the committed file | `AGENT_QUEUE.md`: Pages = legacy, serves TRACKED FILES from `main`; "a green pipeline is not a deployed feature — always fetch the URL" |
+| 10 Live version | T2 against the live URL: live `CACHE_VERSION` = the bumped one | §5.5 |
+- **Not in scope:** OCI uploads (separate rules, `deploy/OCI_UPLOAD.md`) and docs deploy
+  (`scripts/safe_gh_deploy.sh` only) — the runner calls those scripts if asked, never re-implements them.
+- **Respects the PUSH PAUSE switch:** if CLAUDE.md says push is paused, steps 7–10 are skipped and logged
+  `§SHIP_SKIP push paused`.
+- **Witness `§DEVTK_SHIP`:** a sandbox branch with a planted syntax error → stops at step 1; a precached file
+  changed without a version bump → stops at step 5; a clean change → steps 1–6 PASS (7–10 run only on a
+  real PR). Red control: make step 9 compare against a wrong hash → must FAIL.
+
 ## §6 First slice (build in this order)
 1. **Playbook skeleton** (§3) — palette entry + the 9 symptom rows, each opening what exists so far.
 2. **Localhost freshness** — launch config: Chrome with SW bypassed for `localhost:8000` (no app change).
@@ -243,7 +302,7 @@ Then X1 panel (T1), then the rest by rank.
 
 ## §8 Packaging — install like any other plugin
 - Source `bim-ootb/devtools/vscode/`: `x1-slens/`, `x2-live-doctor/`, `x3-maps/`, `x4-rules/` (also usable
-  as plain `eslint-plugin-bim`), `x5-workflow/`, `engines/` (E1–E3, shared), `pack/` = Extension Pack
+  as plain `eslint-plugin-bim`), `x5-workflow/`, `x6-witness-ship/`, `engines/` (E1–E3, shared), `pack/` = Extension Pack
   (`extensionPack` in `package.json`) + one recommended existing SQLite viewer.
 - Build `npx @vscode/vsce package` → `.vsix`. Install: *Extensions → … → Install from VSIX* or
   `code --install-extension bim-devtools-pack.vsix`. `.vscode/extensions.json` recommends the pack.
@@ -255,7 +314,7 @@ Then X1 panel (T1), then the rest by rank.
 | Spike | Question | Decides |
 |---|---|---|
 | S0 | js-debug gives `source`/`line` on page `console.log`? | E1 live vs file-only |
-| S1 | How many of 211 witnesses use `contract.js`? | T5 scope |
+| S1 | ✅ partly: 53 of 211 `viewer/tests` witnesses use `contract.js`; erp/modeller tests not yet counted | T5 scope, T25 output form |
 | S2 | Tab's active SW version readable without the bridge? | T2 needs app code or not |
 | S3 | Which objects hold each T9 field? | T9 field list |
 | S4 | Which of 129 JSONs the app reads? | T18 list |
@@ -273,7 +332,7 @@ Then X1 panel (T1), then the rest by rank.
 ## §11 Status
 | Item | State |
 |---|---|
-| Triage + review restructure (§2) | ✅ 2026-10-06 — 24 tools → 5 extensions × 3 engines |
+| Triage + review restructure (§2) | ✅ 2026-10-06 — 26 tools → 6 extensions × 3 engines |
 | Playbook §3 | draft — lock after S9 |
 | Engines §4 | draft — lock after S0, S2 |
 | Tool specs §5 | draft — each locks after its spike |
