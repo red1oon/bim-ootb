@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — §CINEMA_EXIT_BREATHE + §CINEMA_TURN_SLERP
 // (prompts/PHOTOREAL_STILL_RENDER.md, user report 2026-07-26).
 //
@@ -121,7 +122,7 @@ async function sample(root, label) {
   // both — that mistake is the same class as the per-run median bar this witness replaced.
   let overlap = null;
   try {
-    const m = /CINEMA_TURN_OVERLAP = ([0-9.]+)/.exec(fs.readFileSync(path.join(root, 'viewer/effects.js'), 'utf8'));
+    const m = /CINEMA_TURN_OVERLAP = ([0-9.]+)/.exec(__readSrc(path.join(root, 'viewer/effects.js'), 'utf8'));
     if (m) overlap = Number(m[1]);
   } catch (e) { /* falls through to the §CINEMA_BEATS log below */ }
   if (overlap == null) { const m2 = /turnOverlap=([0-9.]+)/.exec(beats); if (m2) overlap = Number(m2[1]); }

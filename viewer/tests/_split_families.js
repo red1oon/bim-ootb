@@ -5,6 +5,14 @@
 const fs = require('fs'), path = require('path');
 const V = path.join(__dirname, '..');
 const FAMILIES = {
+  effects: {
+    shell: 'effects.js', shared: 'FXS',
+    files: ['effects.js'],
+    loader: { kind: 'html', file: 'viewer.html' },
+    runtime: (win) => (typeof win.setupEffects === 'function' ? win.setupEffects(win.APP, {}, {}, {}) : undefined),   // async
+    // mobile: setupEffects' early `return` (§EFFECTS_SKIP) must still stop the WHOLE setup after the split
+    scenarios: { mobile: (win) => { win.navigator = { maxTouchPoints: 5 }; win.screen = { width: 800 }; }, __keys: ['navigator', 'screen'] },
+  },
   cinema_maxq: {
     shell: 'cinema_maxq.js', shared: 'MQS',
     files: ['maxq_buildup_ghost.js', 'maxq_infra.js', 'maxq_hud_layers.js', 'maxq_capture_stitch.js', 'maxq_start.js', 'cinema_maxq.js'],
@@ -30,7 +38,8 @@ function readUnsplit(name, dir) {
   const SH = f.shared, body = f.files.filter((x) => x !== f.shell).map((x) => {
     const t = fs.readFileSync(path.join(D, x), 'utf8'), y = t.indexOf('\n', t.indexOf('  yield;'));
     return t.slice(y + 1, t.lastIndexOf('\n};'));
-  }).join('').replace(new RegExp('\\b' + SH + '\\.', 'g'), '');   // a shorthand {x} comes back as {x: x}: same meaning
+  }).join('').replace(/return \{ __splitReturn: true(?:, value: ([\s\S]*?))? \};/g, (m, x) => x ? 'return ' + x + ';' : 'return;')   // early-exit marker
+    .replace(new RegExp('\\b' + SH + '\\.', 'g'), '');   // a shorthand {x} comes back as {x: x}: same meaning
   const lineStart = shellSrc.lastIndexOf('\n', a) + 1, lineEnd = shellSrc.indexOf('\n', b) + 1;
   return shellSrc.slice(0, lineStart) + body + '\n' + shellSrc.slice(lineEnd);
 }

@@ -28,6 +28,7 @@
  *       (then READ THE LOG — exit code is not evidence.)
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -45,9 +46,9 @@ function qrows(sql) { const out = q(sql); return out ? out.split('\n').map(l => 
 
 console.log('§NIGHT_GATE_WITNESS start db=' + DB);
 
-const tmSrc = fs.readFileSync(path.join(ROOT, 'viewer/time_machine.js'), 'utf8');
-const fxSrc = fs.readFileSync(path.join(ROOT, 'viewer/effects.js'), 'utf8');
-const toolsSrc = fs.readFileSync(path.join(ROOT, 'viewer/tools.js'), 'utf8');
+const tmSrc = __readSrc(path.join(ROOT, 'viewer/time_machine.js'), 'utf8');
+const fxSrc = __readSrc(path.join(ROOT, 'viewer/effects.js'), 'utf8');
+const toolsSrc = __readSrc(path.join(ROOT, 'viewer/tools.js'), 'utf8');
 
 // ── extract (a) renderAtTime's op→state loop, verbatim — SAME anchor witness_glow_buildup_gate.js uses ──
 const LOOP_HEAD = '    for (var i = 0; i < _ops.length; i++) {\n      var op = _ops[i];\n      if (op.start_ts > cursorMs) break;';

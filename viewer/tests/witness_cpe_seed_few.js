@@ -4,10 +4,11 @@
 // 207 m walk), the bands overlapped and the authored walk zig-zagged to 704 m (film 151 s -> 474 s); and the seeded
 // middle bands had no delete button. Runs the SHIPPED _cinemaSeedBands source (sliced from effects.js), node only.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 var fs = require('fs'), path = require('path');
 var root = path.join(__dirname, '..');
-var eff = fs.readFileSync(path.join(root, 'effects.js'), 'utf8');
-var cpe = fs.readFileSync(path.join(root, 'cinema_path_editor.js'), 'utf8');
+var eff = __readSrc(path.join(root, 'effects.js'), 'utf8');
+var cpe = __readSrc(path.join(root, 'cinema_path_editor.js'), 'utf8');
 var fails = 0, judged = 0;
 function gate(name, ok, msg) { judged++; if (!ok) fails++; console.log('§W_SEED_FEW ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + ' ' + msg); }
 

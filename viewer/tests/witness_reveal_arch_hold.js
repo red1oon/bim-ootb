@@ -13,12 +13,13 @@
  * gate that can detect the fix MUST fail under it, or the gate proves nothing.
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const RED = process.env.W_ARCH_HOLD_RED === '1';
 const SRC = path.join(__dirname, '..', 'effects.js');
 
 // ── slice the pure function out of the shipped file ──────────────────────────
-const src = fs.readFileSync(SRC, 'utf8');
+const src = __readSrc(SRC, 'utf8');
 const start = src.indexOf('A.cpeRevealVisualAt = function');
 if (start < 0) { console.log('§W_ARCH_HOLD INCONCLUSIVE — cpeRevealVisualAt not found in effects.js'); process.exit(2); }
 // take to the end of the function: first line that is exactly "  };" after start

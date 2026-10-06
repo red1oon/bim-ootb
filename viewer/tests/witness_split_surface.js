@@ -41,21 +41,26 @@ const census = {
   functions: grab(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g).filter((n) => !/^__split_/.test(n)),
 };
 
-const win = {}; win.window = win; win.APP = {}; win.A = win.APP;
-['Math','JSON','Date','Object','Array','Number','String','Boolean','isFinite','isNaN','parseInt','parseFloat','Error','TypeError','RangeError','Map','Set','WeakMap','WeakSet','Promise','Symbol','Reflect','Proxy','Float32Array','Float64Array','Int8Array','Int16Array','Int32Array','Uint8Array','Uint16Array','Uint32Array','Uint8ClampedArray','ArrayBuffer','DataView','RegExp','encodeURIComponent','decodeURIComponent','globalThis']
-  .forEach((n) => { win[n] = globalThis[n]; });
-const mk = () => new Proxy(function () {}, { get: (t, k) => k === 'then' ? undefined : (k === Symbol.toPrimitive ? () => 0 : (k === Symbol.iterator ? undefined : mk())), set: () => true, apply: () => mk(), construct: () => mk() });
-const ctx = vm.createContext(new Proxy(win, { has: () => true, get: (t, k) => (k in t) ? t[k] : (k === 'window' ? win : mk()), set: (t, k, v) => { t[k] = v; return true; } }));
-ctx.console = { log: () => {}, warn: () => {}, error: () => {} };
-const before = new Set(Object.keys(win));
-let loadErr = null, runErr = null;
-F.files.forEach((f, i) => { try { vm.runInContext(srcs[i], ctx, { filename: f }); } catch (e) { loadErr = loadErr || (f + ': ' + e.message); } });
-try { F.runtime(win); } catch (e) { runErr = e.message; }
-census.appKeys = Object.keys(win.APP).sort();
-census.windowKeys = Object.keys(win).filter((k) => !before.has(k) && !/^__\w+Parts$/.test(k)).sort();
-census.loadError = loadErr ? [String(loadErr).replace(/^[^:]+: /, '')] : [];
-census.runtimeError = runErr ? [runErr] : [];
-
+async function runScenario(scn) {
+  const win = {}; win.window = win; win.APP = {}; win.A = win.APP;
+  ['Math','JSON','Date','Object','Array','Number','String','Boolean','isFinite','isNaN','parseInt','parseFloat','Error','TypeError','RangeError','Map','Set','WeakMap','WeakSet','Promise','Symbol','Reflect','Proxy','Float32Array','Float64Array','Int8Array','Int16Array','Int32Array','Uint8Array','Uint16Array','Uint32Array','Uint8ClampedArray','ArrayBuffer','DataView','RegExp','encodeURIComponent','decodeURIComponent','globalThis']
+    .forEach((n) => { win[n] = globalThis[n]; });
+  if (F.scenarios && F.scenarios[scn]) F.scenarios[scn](win);
+  const mk = () => new Proxy(function () {}, { get: (t, k) => k === 'then' ? undefined : (k === Symbol.toPrimitive ? () => 0 : (k === Symbol.iterator ? undefined : mk())), set: () => true, apply: () => mk(), construct: () => mk() });
+  const ctx = vm.createContext(new Proxy(win, { has: () => true, get: (t, k) => (k in t) ? t[k] : (k === 'window' ? win : mk()), set: (t, k, v) => { t[k] = v; return true; } }));
+  ctx.console = { log: () => {}, warn: () => {}, error: () => {} };
+  const before = new Set(Object.keys(win));
+  let loadErr = null, runErr = null;
+  F.files.forEach((f, i) => { try { vm.runInContext(srcs[i], ctx, { filename: f }); } catch (e) { loadErr = loadErr || (f + ': ' + e.message); } });
+  try { const r = F.runtime(win); if (r && typeof r.then === 'function') await r.catch((e) => { runErr = e.message; }); } catch (e) { runErr = e.message; }
+  const pre = scn === 'default' ? '' : scn + '_';
+  census[pre + 'appKeys'] = Object.keys(win.APP).sort();
+  census[pre + 'windowKeys'] = Object.keys(win).filter((k) => !before.has(k) && !/^__\w+Parts$/.test(k) && !(F.scenarios && F.scenarios.__keys || []).includes(k)).sort();
+  census[pre + 'loadError'] = loadErr ? [String(loadErr).replace(/^[^:]+: /, '')] : [];
+  census[pre + 'runtimeError'] = runErr ? [runErr] : [];
+}
+(async () => {
+for (const scn of ['default'].concat(Object.keys(F.scenarios || {}).filter((k) => k !== '__keys'))) await runScenario(scn);
 if (process.argv.includes('--write')) {
   fs.mkdirSync(path.dirname(BASE), { recursive: true });
   fs.writeFileSync(BASE, JSON.stringify(census, null, 1) + '\n');
@@ -83,3 +88,4 @@ console.log('§SPLIT_SURFACE ' + FAM + ' wiring files=' + F.files.length + ' loa
 if (!census.appKeys.length && !census.windowKeys.length) { console.log('§SPLIT_SURFACE ' + FAM + ' VERDICT INCONCLUSIVE — nothing defined at runtime, nothing judged'); process.exit(2); }
 console.log('§SPLIT_SURFACE ' + FAM + ' VERDICT ' + (fails ? 'FAIL (' + fails + ')' : 'PASS') + ' appKeys=' + census.appKeys.length + ' windowKeys=' + census.windowKeys.length + ' aAssign=' + census.aAssign.length + ' tags=' + census.tags.length + ' functions=' + census.functions.length);
 process.exit(fails ? 1 : 0);
+})();

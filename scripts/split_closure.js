@@ -84,12 +84,13 @@ stmts.forEach((st, i) => {
     st.declarationList.declarations.forEach((d) => { if (!ts.isIdentifier(d.name)) refuse('destructuring at container level, line ' + line(d.getStart(sf))); decl.set(ck.getSymbolAtLocation(d.name), { name: d.name.text, part: partIdx[i], kind: 'var' }); });
   } else if (ts.isClassDeclaration(st)) refuse('class at container level, line ' + line(st.getStart(sf)));
 });
-const bad = [];
+const bad = [], topReturns = [];   // container-level `return` = an EARLY EXIT of the whole setup (e.g. effects.js mobile skip)
 (function scan(n, inFn) {
-  if (!inFn && (ts.isReturnStatement(n) || (ts.isIdentifier(n) && n.text === 'arguments') || n.kind === ts.SyntaxKind.ThisKeyword)) bad.push(ts.SyntaxKind[n.kind] + '@' + line(n.getStart(sf)));
+  if (!inFn && ts.isReturnStatement(n)) topReturns.push(n);
+  if (!inFn && ((ts.isIdentifier(n) && n.text === 'arguments') || n.kind === ts.SyntaxKind.ThisKeyword)) bad.push(ts.SyntaxKind[n.kind] + '@' + line(n.getStart(sf)));
   ts.forEachChild(n, (c) => scan(c, inFn || (ts.isFunctionLike(n) && !ts.isArrowFunction(n) && n !== C)));
 })(C.body, false);
-if (bad.length) refuse('container-level return/arguments/this: ' + bad.join(','));
+if (bad.length) refuse('container-level arguments/this: ' + bad.join(','));
 // enclosing-scope captures: a symbol declared OUTSIDE the container but not at file/global level
 const outer = new Set();
 (function walk(n) {
@@ -128,8 +129,15 @@ if (thisUsers.length) refuse('shared functions use `this` (would bind to ' + SH 
 
 // ── edits: ONLY a non-owner reference becomes <SHARED>.name (owner text stays byte-identical) ─────────────────
 const edits = [];
+const render0 = (a, b) => { let o = '', p = a; edits.filter((e) => e[0] >= a && e[1] <= b).sort((x, y) => x[0] - y[0]).forEach((e) => { o += src.slice(p, e[0]) + e[2]; p = e[1]; }); return o + src.slice(p, b); };
 refs.forEach((r) => { if (!cross.has(r.d.name) || r.isDeclName || r.part === r.d.part) return;
   edits.push([r.node.getStart(sf), r.node.end, r.shorthand ? r.d.name + ': ' + SH + '.' + r.d.name : SH + '.' + r.d.name]); });
+// an early exit must stop the WHOLE setup, not just its part: `return X;` -> `return { __splitReturn: true, value: X };`
+// (the driver stops running later parts when it sees it; split_verify + readUnsplit undo exactly this text)
+topReturns.forEach((r) => { edits.push([r.getStart(sf), r.end, r.expression
+  ? 'return { __splitReturn: true, value: ' + render0(r.expression.getStart(sf), r.expression.end) + ' };'
+  : 'return { __splitReturn: true };']); });
+for (let i = edits.length - 1; i >= 0; i--) { const e = edits[i]; if (topReturns.some((r) => e[0] >= r.getStart(sf) && e[1] <= r.end && !(e[0] === r.getStart(sf) && e[1] === r.end))) edits.splice(i, 1); }
 const render = (a, b) => { let o = '', p = a; edits.filter((e) => e[0] >= a && e[1] <= b).sort((x, y) => x[0] - y[0]).forEach((e) => { o += src.slice(p, e[0]) + e[2]; p = e[1]; }); return o + src.slice(p, b); };
 const awaitsAtTop = (st) => { let f = false; (function w(n, inFn) { if (!inFn && ts.isAwaitExpression(n)) f = true; ts.forEachChild(n, (c) => w(c, inFn || ts.isFunctionLike(n))); })(st, false); return f; };
 
@@ -184,11 +192,13 @@ const driver = '{\n' + (OWN_STRICT ? ind + "'use strict';\n" : '') + ind + '// <
   ind + 'var parts = ORDER.map(function (n) { return R[n](' + [SH].concat(params).join(', ') + '); });\n' +
   (anyAsync
     ? ind + 'for (var i = 0; i < parts.length; i++) { var r1 = parts[i].next(); if (r1 && typeof r1.then === \'function\') await r1; }\n' +
-      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') await r2; }\n'
+      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') r2 = await r2;\n' +
+      ind + '  if (r2 && r2.value && r2.value.__splitReturn) return r2.value.value; }   // an early `return` in the original stops the whole setup\n'
     : ind + 'parts.forEach(function (p) { p.next(); });   // phase 1\n' +
-      ind + 'parts.forEach(function (p) { p.next(); });   // phase 2\n') +
+      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next();   // phase 2\n' +
+      ind + '  if (r2 && r2.value && r2.value.__splitReturn) return r2.value.value; }   // an early `return` in the original stops the whole setup\n') +
   ind + '// </split-driver>\n' + indClose + '}';
 const shell = src.slice(0, C.body.getStart(sf)) + driver + src.slice(C.body.end);
 fs.writeFileSync(path.join(OUT, path.basename(cfg.file)), shell);
 console.log(report.join('\n'));
-console.log('§SPLIT_DONE ' + FAMILY + ' strict=' + STRICT + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);
+console.log('§SPLIT_DONE ' + FAMILY + ' earlyReturns=' + topReturns.length + ' strict=' + STRICT + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);

@@ -20,7 +20,14 @@ const SH = cfg.shared;
 const pr = ts.createPrinter({ removeComments: true });
 const parse = (f, t) => ts.createSourceFile(f, t, ts.ScriptTarget.ES2020, true, ts.ScriptKind.JS);
 function norm(node, sf) {
-  const tr = (ctx) => { const v = (n) => (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === SH) ? ts.factory.createIdentifier(n.name.text) : ts.visitEachChild(n, v, ctx); return v; };
+  const tr = (ctx) => { const v = (n) => {
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === SH) return ts.factory.createIdentifier(n.name.text);
+    // the splitter's early-exit marker: return { __splitReturn: true[, value: X] }  ->  return[ X]
+    if (ts.isReturnStatement(n) && n.expression && ts.isObjectLiteralExpression(n.expression) && n.expression.properties.some((p) => p.name && p.name.text === '__splitReturn')) {
+      const val = n.expression.properties.find((p) => p.name && p.name.text === 'value');
+      return ts.factory.createReturnStatement(val ? ts.visitNode(val.initializer, v) : undefined);
+    }
+    return ts.visitEachChild(n, v, ctx); }; return v; };
   return pr.printNode(ts.EmitHint.Unspecified, ts.transform(node, [tr]).transformed[0], sf).replace(/\s+/g, ' ').trim();
 }
 // ORIGINAL container

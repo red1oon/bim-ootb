@@ -16,9 +16,10 @@
 // Whitebox, no browser, no bake: `_isPhotoGlossyMat` is SLICED OUT of the shipped effects.js by
 // brace matching and the shipped assignment block is executed against real THREE-shaped stubs.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
-const src = fs.readFileSync(path.join(__dirname, '..', 'effects.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'effects.js'), 'utf8');
 
 function sliceFn(marker) {
   const i = src.indexOf(marker);
