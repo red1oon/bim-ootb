@@ -189,12 +189,13 @@
 // v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
-// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=6; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1619';
+// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
+const CACHE_VERSION = 'v1620';
+// v1620 (2026-10-08) §DISC_ON_BOARD_AREA + §SPEED_SIGN_LIST: disc on the board itself (largest face-on footprint), Speed list = the 8 disc-bearing signs.
 // v1619 (2026-10-08) §DISC_ON_FACE + §PROFILE_AFTER_LOAD: speed discs placed on the board's real face (mesh), long section sampled after loading (80 km/h zone kept).
-// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=5; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
-// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=4.
-// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=4.
+// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=6; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
+// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=5.
+// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=5.
 // v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
 // v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
 // v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
