@@ -121,11 +121,19 @@ for g in bad:
     grades.remove(g)
 G['max_grade'] = {'note': 'one row per (table, terrain/area, speed). terrain_or_area "FLAT|I" = flat for rural classes, area type I for urban classes', 'rows': grades}
 
+# ---- Table 4.1 minimum stopping sight distance (text) — §ROUNDABOUT_ZONE approach length ----
+i41, b41 = block('TABLE 4.1:')
+b41 = b41[:b41.index('Source:')] if 'Source:' in b41 else b41
+ssd = {}
+for m in re.finditer(r'^\s*(\d{2,3})\s+(\d{2,3})\s*$', b41, re.M): ssd[m.group(1)] = int(m.group(2))
+if len(ssd) != 10: G['_unread'].append({'table': '4.1', 'why': 'expected 10 speed rows, read %d' % len(ssd)})
+G['stopping_sight_distance'] = {'ref': ref('Table 4.1 Minimum Stopping Sight Distance (design speed kph -> m)', i41), 'rows_m': ssd}
+
 d = json.load(open(out))
 # keep every hand-set (non-ATJ) key already in geometric (inputs / lever / mapping) — only the extracted ones are overwritten
 old = d.get('geometric', {})
 for k, v in G.items(): old[k] = v
 d['geometric'] = old
 json.dump(d, open(out, 'w'), indent=1, ensure_ascii=False)
-print('§ATJ8_EXTRACT selection=%d speeds=%d/%d lane=%d grades=%d unread=%d' % (len(sel), len(r), len(u), len(lane), len(grades), len(G['_unread'])))
+print('§ATJ8_EXTRACT selection=%d speeds=%d/%d lane=%d grades=%d ssd=%d unread=%d' % (len(sel), len(r), len(u), len(lane), len(grades), len(ssd), len(G['_unread'])))
 for x in G['_unread']: print('  _unread', x)
