@@ -11,6 +11,9 @@
 // says so, (7) Duplex VACUOUS (never PASS), (8b) §SIGNAL_JUNCTION_ZONE + discs on sign faces + MISSING SPEED SIGN rows; (8) §ROUNDABOUT_ZONE: zone s-range == independent projection of the roundabout elements, approach
 // length == ATJ 8/86 Table 4.1 row (cell + page in the .txt) at the adjoining link speed, speed == NCHRP 672 bound, lane/pick/fixed_m levers,
 // none-found message, (9) speed colour ramp (30 km/h near-white, monotonic, == std_values ramp) on legend + painted road + disc.
+// §SIGN_VS_SPEED (2026-10-08): (10) advance-placement distances (ATJ 2B cl.2.2.8) == the .txt sentence + independent along-route recompute of every WD.22/WD.31
+// sign vs its hazard; list holds only rule-applicable signs; levers flip verdicts; size-vs-speed recorded as NOT built with the speed-banded tables found;
+// §LABEL_CLEAN: legend/sign rows are one line + a short tag (derived|demo|NCHRP 672|user), full provenance in the tooltip + HUD card.
 // CAN REPORT ITS OWN FAILURE: INCONCLUSIVE (load failed / nothing judged), VACUOUS (Duplex), RED CONTROL.
 // Env: GPU=real|sw (real only if nvidia-smi < 50% used), BLD, BLD_DIR, DUP_DIR, ATJ_TXT, PORT, LOG.
 'use strict';
@@ -21,6 +24,8 @@ const ROOT = path.resolve(process.env.ROOT || path.join(__dirname, '..', '..'));
 const BLD = process.env.BLD || 'CivilWorksPath';
 const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC');
 const DUP_DIR = process.env.DUP_DIR || '/home/red1/bim-compiler/deploy/buildings';
+const ATJ2B_TXT = process.env.ATJ2B_TXT || path.join(BLD_DIR, 'standards', 'ATJ_2B-85_Pindaan2019_SignApplication.txt');
+const ATJ2A_TXT = process.env.ATJ2A_TXT || path.join(BLD_DIR, 'standards', 'ATJ_2A-85_Pindaan2019_StandardTrafficSigns.txt');
 const ATJ_TXT = process.env.ATJ_TXT || path.join(BLD_DIR, 'standards', 'ATJ_8-86.txt');
 const GPU = process.env.GPU || 'sw';
 const PORT = +(process.env.PORT || 8592);
@@ -54,7 +59,7 @@ function project(route, x, z) { let best = null, cum = 0;
 
 async function open(browser, bld) {
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });
-  page.on('console', m => { const t = m.text(); logStream.write('[con:' + bld + '] ' + t + '\n'); if (/§(SPEED|SIGN_CHECK_PANEL|ZOOM_MISS|PROFILE_LENS_PRECOMPUTE)/.test(t)) console.log('  [' + bld + '] ' + t.slice(0, 260)); });
+  page.on('console', m => { const t = m.text(); logStream.write('[con:' + bld + '] ' + t + '\n'); if (/§SIGN_SIZE_SPEED NOT_BUILT status=no_rule_for_model/.test(t)) global.__sizeLog = true; if (/§(SPEED|SIGN_ADVANCE|SIGN_SIZE|SIGN_CHECK_PANEL|ZOOM_MISS|PROFILE_LENS_PRECOMPUTE)/.test(t)) console.log('  [' + bld + '] ' + t.slice(0, 260)); });
   page.on('pageerror', e => logStream.write('[pageerror] ' + e.message + '\n'));
   await page.goto(`http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${bld}.db`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.activeBuilding && window.APP.buildingsRendered && window.APP.buildingsRendered.has(window.APP.activeBuilding) && !window.APP.streaming, { timeout: 25 * 60 * 1000, polling: 1000 });
@@ -63,13 +68,13 @@ async function open(browser, bld) {
 // open the panel with an optional std override; wait until the Speed section has been derived
 const OPEN_FN = `window.__openSZ = async (ov) => {
   const A = window.APP; localStorage.removeItem('json_std_values');
-  if (ov) { const std = await (await fetch('std_values.json?v=1')).json(); ov(std); localStorage.setItem('json_std_values', JSON.stringify(std)); }
+  if (ov) { const std = await (await fetch('std_values.json?v=2')).json(); ov(std); localStorage.setItem('json_std_values', JSON.stringify(std)); }
   A._speedZones = null; await A.showRoadStandards();
   for (let i = 0; i < 400 && !A._speedZones; i++) await new Promise(r => setTimeout(r, 100));
   localStorage.removeItem('json_std_values'); return A._speedZones;
 };`;
-const SUM = `(r) => r && ({ tw: (r.terrainWindows || []).map(w => !!w.measured), mode: r.mode, ok: r.ok, msgs: r.msgs, assumed: r.assumed, zones: r.zones.map(z => ({ id: z.id, s0: z.s0, s1: z.s1, opens: z.opens, kind: z.kind, node: z.node, offRoute: z.offRoute, srcText: z.srcText, approachM: z.approachM, linkSpeed: z.linkSpeed, terrain: z.terrain, measured: z.terrainMeasured, pct: z.terrainPct, cls: z.cls, speed: z.speed, label: z.label, lane: z.lane && z.lane.m, grade: z.grade && z.grade.pct, gradeRef: z.grade && z.grade.ref, speedRef: z.speedRef && { table: z.speedRef.table, page: z.speedRef.page }, notes: z.notes })),
-  speedSigns: r.speedSigns, nodes: Object.fromEntries(Object.entries(r.nodes || {}).map(([k, v]) => [k, Object.assign({}, v, { guids: undefined, zone: undefined })])), discPlan: r.discPlan, missingRows: r.missingRows, signRows: r.signRows.map(s => ({ guid: s.guid, code: s.code, s: s.s, speed: s.speed, label: s.label, isSpeedSign: s.isSpeedSign })) })`;
+const SUM = `(r) => r && ({ tw: (r.terrainWindows || []).map(w => !!w.measured), mode: r.mode, ok: r.ok, msgs: r.msgs, assumed: r.assumed, zones: r.zones.map(z => ({ id: z.id, s0: z.s0, s1: z.s1, opens: z.opens, kind: z.kind, node: z.node, offRoute: z.offRoute, srcText: z.srcText, approachM: z.approachM, linkSpeed: z.linkSpeed, terrain: z.terrain, measured: z.terrainMeasured, pct: z.terrainPct, cls: z.cls, speed: z.speed, label: z.label, tag: z.tag, lane: z.lane && z.lane.m, grade: z.grade && z.grade.pct, gradeRef: z.grade && z.grade.ref, speedRef: z.speedRef && { table: z.speedRef.table, page: z.speedRef.page }, notes: z.notes })),
+  speedSigns: r.speedSigns, nodes: Object.fromEntries(Object.entries(r.nodes || {}).map(([k, v]) => [k, Object.assign({}, v, { guids: undefined, zone: undefined })])), discPlan: r.discPlan, missingRows: r.missingRows, signRows: r.signRows.map(s => ({ guid: s.guid, code: s.code, s: s.s, speed: s.speed, label: s.label, tag: s.tag, zone: s.zone, isSpeedSign: s.isSpeedSign })), advance: r.advance })`;
 
 async function roadProbe(page) {
   return page.evaluate(async (OPEN, SUMSRC) => {
@@ -82,8 +87,32 @@ async function roadProbe(page) {
     // legend swatches + sign rows from the DOM
     const pan = document.getElementById('road-standards-panel');
     out.signPos = {}; (r0.signRows || []).filter(q => q.isSpeedSign).forEach(q => { const c = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [q.guid])[0], p = A.ifc2three(c[0], c[1], c[2]); out.signPos[q.guid] = { x: p.x, z: p.z }; });
-    out.legend = [...pan.querySelectorAll('.sz-leg')].map(e => ({ zone: e.dataset.zone, bg: e.querySelector('.sz-sw').style.backgroundColor, text: e.textContent }));
-    out.signDom = [...pan.querySelectorAll('.sz-row')].map(e => e.textContent);
+    out.legend = [...pan.querySelectorAll('.sz-leg')].map(e => ({ zone: e.dataset.zone, bg: e.querySelector('.sz-sw').style.backgroundColor, text: e.title + ' | ' + e.textContent, short: e.textContent, title: e.title, lines: e.getClientRects().length, html: e.innerHTML }));
+    out.signDom = [...pan.querySelectorAll('.sz-row')].map(e => e.textContent); out.signTitles = [...pan.querySelectorAll('.sz-row')].map(e => e.title);
+    // §SIGN_VS_SPEED probe: SIGNAGE codes + centres by the witness's own query; the DOM group; click a CHECK row; legend click; size note
+    { const MM2 = JSON.parse(await (await fetch('std_values.json?v=2')).text());
+      const q = A.dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z, (SELECT value FROM element_psets p WHERE p.guid = m.guid AND p.name = ? LIMIT 1) FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE m.discipline = ?", [MM2._model_map.code_prop, MM2._model_map.discipline]);
+      out.advSigns = q.map(r => { const p = A.ifc2three(r[1], r[2], r[3]); return { guid: r[0], code: r[4], x: p.x, z: p.z }; });
+      out.advDom = [...pan.querySelectorAll('.sz-adv')].map(e => ({ guid: e.dataset.guid, text: e.textContent, title: e.title, verdict: e.closest('details').dataset.verdict }));
+      out.advGroups = [...pan.querySelectorAll('.sz-adv-v')].map(e => ({ verdict: e.dataset.verdict, n: e.querySelectorAll('.sz-adv').length, summary: e.querySelector('summary').textContent }));
+      out.advHeader = (pan.querySelector('.sz-adv-grp') || {}).firstElementChild ? pan.querySelector('.sz-adv-grp').firstElementChild.textContent : null;
+      const sn = pan.querySelector('.sz-sizenote'); out.sizeNote = sn ? { text: sn.textContent, title: sn.title } : null;
+      const ck = pan.querySelector('.sz-adv-v[data-verdict="CHECK"] .sz-adv') || pan.querySelector('.sz-adv-v[data-verdict="OK"] .sz-adv');
+      if (ck) { const g = ck.dataset.guid; if (A.loadNavigate && typeof A.focusElement !== 'function') await A.loadNavigate(); ck.click(); const rr = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [g])[0], w = A.ifc2three(rr[0], rr[1], rr[2]);
+        for (let i = 0; i < 80; i++) { await new Promise(r => setTimeout(r, 250)); const t = A.controls.target; if (Math.hypot(w.x - t.x, w.y - t.y, w.z - t.z) < 0.05) break; }
+        const t = A.controls.target; out.advClick = { guid: g, dist: Math.hypot(w.x - t.x, w.y - t.y, w.z - t.z), card: pan.querySelector('.rs-card').textContent }; }
+      const sjz = out.base.zones.find(z => z.kind === 'signal_junction'); const sjLeg = [...pan.querySelectorAll('.sz-leg')].find(e => sjz && e.dataset.zone === sjz.id);
+      if (sjLeg) { sjLeg.click(); out.legClick = { zone: sjLeg.dataset.zone, card: pan.querySelector('.rs-card').textContent, struct: { title: (pan.querySelector('.rs-card .sz-card-title') || {}).textContent, kv: [...pan.querySelectorAll('.rs-card .sz-kv')].length, whyOpen: (pan.querySelector('.rs-card details.sz-why') || {}).open } }; } }
+    // §HUD_LAYOUT probe (whole upper panel): titles, collapsed Why/sources, no long visible paragraph, sign-check card layout
+    { const rr = pan.querySelector('.rs-row'); if (rr) { rr.click(); }
+      const c = pan.querySelector('.rs-card'), vis = e => e.getClientRects().length > 0 && !(e.closest('details:not([open])') && !e.closest('summary')), lines = e => { const cs = getComputedStyle(e), fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight) || fs * 1.2; return e.getBoundingClientRect().height / lh; };
+      const own = [...pan.querySelectorAll('*')].filter(e => vis(e) && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 0));
+      out.layout = { rsTitle: (pan.querySelector('.rs-title') || {}).textContent || null, szTitle: (pan.querySelector('.sz-title') || {}).textContent || null,
+        long: own.filter(e => lines(e) > 3.1).map(e => ({ cls: e.className, lines: +lines(e).toFixed(1), text: e.textContent.slice(0, 60) })), nVisibleText: own.length,
+        whyTop: [...pan.querySelectorAll('details.rs-why-top, details.sz-why-top')].map(d => ({ cls: d.className, open: d.open, text: d.textContent })),
+        szKv: [...pan.querySelectorAll('.sz-section > .sz-body > .sz-kv')].map(e => e.textContent),
+        card: c ? { title: (c.querySelector('.rs-card-title') || {}).textContent || null, kv: c.querySelectorAll('.rs-kv').length, whyOpen: (c.querySelector('details.rs-why') || {}).open, whyText: (c.querySelector('details.rs-why') || {}).textContent || '', maxW: c.firstElementChild ? parseFloat(getComputedStyle(c.firstElementChild).maxWidth) : null } : null,
+        panelW: pan.getBoundingClientRect().width }; }
     // ROAD elements: independent inputs (ifc2three centres) + pre-paint colours
     const rows = A.dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='ROAD'");
     const road = {}; rows.forEach(r => { const p = A.ifc2three(r[1], r[2], r[3]); road[r[0]] = { x: p.x, z: p.z }; }); out.roadN = rows.length; out.roadPos = road;
@@ -96,7 +125,7 @@ async function roadProbe(page) {
       const mc = (m.material && !Array.isArray(m.material) && m.material.color) ? m.material.color : null; if (mc) C.multiply(mc); hex = C.getHex();
       s[k] = { g, hex, fog: !!(m.material && m.material.fog) }; }); return s; }
     // §ROUNDABOUT_ZONE inputs, read by the witness's own query (model_map names come from std_values.json, as the engine's)
-    const MM = JSON.parse(await (await fetch('std_values.json?v=1')).text()).geometric.model_map;
+    const MM = JSON.parse(await (await fetch('std_values.json?v=2')).text()).geometric.model_map;
     out.rbPos = A.dbQuery('SELECT t.center_x, t.center_y, t.center_z FROM element_psets p JOIN element_transforms t ON t.guid = p.guid WHERE p.name = ? AND p.value = ?', [MM.roundabout_prop, MM.roundabout_value]).map(r => { const p = A.ifc2three(r[0], r[1], r[2]); return { x: p.x, z: p.z }; });
     out.rbGuids = A.dbQuery('SELECT p.guid FROM element_psets p WHERE p.name = ? AND p.value = ?', [MM.roundabout_prop, MM.roundabout_value]).map(r => r[0]);
     out.rbSigns = A.dbQuery('SELECT p.guid FROM element_psets p WHERE p.name = ? AND p.value LIKE ?', [MM.sign_name_prop, '%ROUNDABOUT AHEAD%']).length;
@@ -131,7 +160,7 @@ async function roadProbe(page) {
     const row0 = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [g])[0], w0 = A.ifc2three(row0[0], row0[1], row0[2]);
     for (let i = 0; i < 80; i++) { await new Promise(r => setTimeout(r, 250)); const t = A.controls.target; if (Math.hypot(w0.x - t.x, w0.y - t.y, w0.z - t.z) < 0.05) break; }
     const row = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [g])[0], want = A.ifc2three(row[0], row[1], row[2]), t = A.controls.target;
-    out.click = { guid: g, dist: Math.hypot(want.x - t.x, want.y - t.y, want.z - t.z), card: pan.querySelector('.rs-card').textContent, rowText: el.textContent };
+    out.click = { guid: g, dist: Math.hypot(want.x - t.x, want.y - t.y, want.z - t.z), card: pan.querySelector('.rs-card').textContent, rowText: el.textContent, struct: ((c) => ({ title: (c.querySelector('.sz-card-title') || {}).textContent || null, titleFont: c.querySelector('.sz-card-title') ? parseFloat(getComputedStyle(c.querySelector('.sz-card-title')).fontSize) : 0, kv: [...c.querySelectorAll('.sz-kv')].map(e => e.textContent), why: c.querySelector('details.sz-why') ? { open: c.querySelector('details.sz-why').open, text: c.querySelector('details.sz-why').textContent, fontMin: Math.min(...[...c.querySelectorAll('.sz-kv')].map(e => parseFloat(getComputedStyle(e).fontSize))) } : null, maxW: c.firstElementChild ? parseFloat(getComputedStyle(c.firstElementChild).maxWidth) : null }))(pan.querySelector('.rs-card')) };
     tg.checked = false; tg.dispatchEvent(new Event('change'));
     tg.checked = true; tg.dispatchEvent(new Event('change'));
     { const me = pan.querySelector('.sz-missing[data-guid]:not([data-guid=""])'); if (me) { const mg = me.dataset.guid; me.click(); const mr = A.dbQuery('SELECT center_x, center_y, center_z FROM element_transforms WHERE guid = ?', [mg])[0], mw = A.ifc2three(mr[0], mr[1], mr[2]);
@@ -141,8 +170,8 @@ async function roadProbe(page) {
     // lever runs (each through the real Settings override path)
     out.lever = {};
     out.lever.classR6 = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'class'; s.geometric.speed_setting['class'] = 'R6'; }));
-    out.lever.legendClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-leg')].map(e => ({ zone: e.dataset.zone, text: e.textContent }));
-    out.lever.signClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-row')].map(e => e.textContent);
+    out.lever.legendClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-leg')].map(e => ({ zone: e.dataset.zone, text: e.title + ' | ' + e.textContent, short: e.textContent }));
+    out.lever.signClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-row')].map(e => e.title + ' | ' + e.textContent);
     out.lever.manual70 = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 70; }));
     out.lever.manualPerZone = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 70; s.geometric.speed_setting.per_zone = { Z1: 60 }; }));
     out.lever.manualNoRow = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 65; }));
@@ -160,6 +189,10 @@ async function roadProbe(page) {
     out.lever.sjNone = sum(await window.__openSZ(s => { s.geometric.model_map.signal_value = 'NO-SUCH-VALUE'; }));
     out.lever.sjOff = sum(await window.__openSZ(s => { (s.geometric.signal_junction || (s.geometric.signal_junction = {})).enabled = false; }));
     out.lever.sjFixed = sum(await window.__openSZ(s => { (s.geometric.signal_junction || (s.geometric.signal_junction = {})).approach = { fixed_m: 120 }; }));
+    out.lever.advMin30 = sum(await window.__openSZ(s => { if (s.advance_placement) s.advance_placement.clause_2_2_8.rural_or_high_speed.min_m = 30; }));
+    out.lever.advMin50 = sum(await window.__openSZ(s => { if (s.advance_placement) s.advance_placement.clause_2_2_8.rural_or_high_speed.min_m = 50; }));
+    out.lever.advNoRules = sum(await window.__openSZ(s => { if (s.advance_placement) s.advance_placement.rules = []; }));
+    out.lever.advNoSJ = sum(await window.__openSZ(s => { s.geometric.model_map.signal_value = 'NO-SUCH-VALUE'; }));
     out.lever.rbOff = sum(await window.__openSZ(s => { (s.geometric.roundabout || (s.geometric.roundabout = {})).enabled = false; }));
     out.lever.rbUrb = sum(await window.__openSZ(urb('III')));
     await window.__openSZ(null);
@@ -183,10 +216,11 @@ async function roadProbe(page) {
   if (R.err) { logStream.end(); return; }
   const rd = R.road, B = rd.base;
   log('§SPEED_CLICK ' + JSON.stringify(rd.click));
+  log('§SIGN_ADVANCE_UI ' + JSON.stringify({ dom: rd.advDom, groups: rd.advGroups, header: rd.advHeader, size: rd.sizeNote, click: rd.advClick, legClick: rd.legClick }).slice(0, 5000));
   rd.prof.ground = rd.prof.ground.map(v => v == null ? NaN : v); rd.prof.road = rd.prof.road.map(v => v == null ? NaN : v);
   if (!B || !B.zones || !B.zones.length) { log('§SPEED_ZONES verdict=INCONCLUSIVE reason=no zones derived on road'); process.exitCode = 2; logStream.end(); return; }
-  if (!GEO.signal_junction || !GEO.node_kinds || !B.zones.some(z => z.kind === 'signal_junction') || !GEO.roundabout || !GEO.stopping_sight_distance || !GEO.speed_ramp || !B.zones.some(z => z.kind === 'roundabout') ) {
-    log('§WITNESS_SPEED_ZONES verdict=RED reason=§SIGNAL_JUNCTION_ZONE/§ROUNDABOUT_ZONE feature absent on this tree (signal_junction=' + !!GEO.signal_junction + ' node_kinds=' + !!GEO.node_kinds + ' roundabout=' + !!GEO.roundabout + ' ssd=' + !!GEO.stopping_sight_distance + ' ramp=' + !!GEO.speed_ramp + ' zoneKinds=' + [...new Set(B.zones.map(z => z.kind))].join(',') + ')'); process.exitCode = 1; logStream.end(); return; }
+  if (!STD.advance_placement || !GEO.zone_tags || !GEO.signal_junction || !GEO.node_kinds || !B.zones.some(z => z.kind === 'signal_junction') || !GEO.roundabout || !GEO.stopping_sight_distance || !GEO.speed_ramp || !B.zones.some(z => z.kind === 'roundabout') ) {
+    log('§WITNESS_SPEED_ZONES verdict=RED reason=§SIGN_VS_SPEED/§SIGNAL_JUNCTION_ZONE/§ROUNDABOUT_ZONE feature absent on this tree (advance_placement=' + !!STD.advance_placement + ' zone_tags=' + !!GEO.zone_tags + ' signal_junction=' + !!GEO.signal_junction + ' node_kinds=' + !!GEO.node_kinds + ' roundabout=' + !!GEO.roundabout + ' ssd=' + !!GEO.stopping_sight_distance + ' ramp=' + !!GEO.speed_ramp + ' zoneKinds=' + [...new Set(B.zones.map(z => z.kind))].join(',') + ')'); process.exitCode = 1; logStream.end(); return; }
   // ── independent recomputation ──
   const ds = rd.prof.ds, ti = GEO.terrain_inputs, arr = rd.prof[ti.source];
   let L = 0; for (let i = 1; i < rd.route.length; i++) L += Math.hypot(rd.route[i].x - rd.route[i - 1].x, rd.route[i].z - rd.route[i - 1].z);
@@ -209,6 +243,25 @@ async function roadProbe(page) {
     const ok3 = end.nodes.roundabout.offRoute && end.zones.filter(q => q.kind === 'approach').length === 1 && near(end.zones.find(q => q.kind === 'approach').s0, 2000 - 185);
     const ok4 = none.zones.every(q => q.kind === 'link') && none.msgs.some(m => /roundabout: no model elements/.test(m));
     console.log('§SPEED_SYNTH zones=' + JSON.stringify(z) + ' ok=' + [ok1, ok2, ok3, ok4]); return { ok: ok1 && ok2 && ok3 && ok4 }; }
+  // §SIGN_VS_SPEED pure-engine synthetic: straight 2000 m route, signal junction at 1000..1030 (interior), WD.22 signs at known chainages
+  function SYN2() {
+    const SZ = require(path.join(ROOT, 'viewer', 'speed_zones.js')), std = JSON.parse(JSON.stringify(STD)), near = (a, b) => Math.abs(a - b) < 0.01;
+    const route = []; for (let x = 0; x <= 2000; x += 100) route.push({ x, z: 0 });
+    const prof = { ds: 1, ground: new Array(2001).fill(0).map((_, i) => i * 0.01), road: new Array(2001).fill(0) };
+    const sg = (guid, code, x) => ({ guid, code, name: code, x, z: 5 });
+    const signs = [sg('a', 'WD. 22', 800), sg('b', 'WD. 22', 900), sg('c', 'WD. 22', 1100), sg('d', 'WD. 22', 1015), sg('e', 'WD. 22', 0), sg('f', 'WD. 31', 700), sg('g', 'RP. 7', 300), sg('h', 'WD. 23 & WD. 22', 850)];
+    const nodes = { roundabout: [], signal_junction: [{ guid: 'j1', x: 1000, z: 20 }, { guid: 'j2', x: 1030, z: -20 }] };
+    const R = SZ.derive(std, { title: 'JALAN (FT240)', route, profile: prof, signs, nodes }, { log: l => logStream.write('[syn2] ' + l + '\n') });
+    const rows = R.advance.rows, by = g => rows.find(r => r.guid === g);
+    const want = { a: ['OK', 200], b: ['CHECK', 100], c: ['CHECK', 70], d: ['CHECK', 0], e: ['NOT_JUDGED', null], f: ['NOT_JUDGED', null], h: ['CHECK', 150] };
+    const rural = Object.keys(want).every(g => { const r = by(g); return r && r.verdict === want[g][0] && (want[g][1] == null ? r.dist == null : near(r.dist, want[g][1])); }) && !by('g') && R.advance.applicable === 7 && R.advance.column === 'rural_or_high_speed' && by('a').why.includes('below nominal') && /clamped/.test(by('e').why) && /no roundabout derived/.test(by('f').why);
+    const U = SZ.advanceCheck(std, R, SZ.routeLength(route), 'URBAN', () => {});
+    const urban = U.column === 'urban' && U.rows.find(r => r.guid === 'h').verdict === 'OK' && U.rows.find(r => r.guid === 'b').verdict === 'CHECK' && U.rows.find(r => r.guid === 'a').verdict === 'OK';
+    const e = JSON.parse(JSON.stringify(std)); e.advance_placement.rules = []; const E = SZ.advanceCheck(e, R, 2000, 'RURAL', () => {});
+    const n = JSON.parse(JSON.stringify(std)); delete n.advance_placement; const N = SZ.advanceCheck(n, R, 2000, 'RURAL', () => {});
+    console.log('§SIGN_ADVANCE_SYNTH rural=' + rural + ' urban=' + urban + ' noRules.vacuous=' + E.vacuous + ' noData.vacuous=' + N.vacuous + ' counts=' + JSON.stringify(R.advance.counts));
+    return { ok: rural && urban && E.vacuous && N.vacuous };
+  }
   const LK = zs => zs.filter(z => z.kind === 'link');
   // §ROUNDABOUT_ZONE independent inputs
   const rbP = rd.rbPos.map(p => project(rd.route, p.x, p.z).s), rs0 = Math.min(...rbP), rs1 = Math.max(...rbP);
@@ -299,6 +352,71 @@ async function roadProbe(page) {
       return JSON.stringify(got) === JSON.stringify(want.slice().sort()) && okAnchor && pl.every(x => tg(x, D)) && D.length === 2 * pl.length && b.discPlan.filter(x => x.kind === 'real').every(x => !D.some(d => d.g === x.guid)); }))
     .invariant('BORROWED STYLE: discs on borrowed boards / free markers carry the amber ring pixel (255,179,0) + label "derived — no speed sign in model"; real RP. 7 discs do NOT (ring = the speed ramp colour of their speed)', rs => rs.every(r => { const D = r.road.discsOn, hx = c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; return D.length > 0 && D.filter(d => d.borrowed).every(d => d.px[0] === 255 && d.px[1] === 179 && d.px[2] === 0 && /no speed sign in model/.test(d.label)) && D.filter(d => !d.borrowed).every(d => { const w = rampHex(d.speed); return !(d.px[0] === 255 && d.px[1] === 179 && d.px[2] === 0) && w.every((v, j) => Math.abs(v - d.px[j]) <= 2); }); }))
     .invariant('MISSING SPEED SIGN rows: group present, count of rows == zones whose start has no RP. 7 (independent), one row per such zone with text "Zone Zx (s0–s1 m, N km/h) has no speed-limit sign — shown on …"; click a borrowed-board row -> camera on that board (<0.05 m)', rs => rs.every(r => { const b = r.road.base, want = noRp(b), M = r.road.missingDom; return want.length > 0 ? (r.road.missingGrp && M.length === want.length && want.every(z => M.some(m => new RegExp('^Zone ' + z + ' \\(').test(m.text) && /has no speed-limit sign/.test(m.text) && /for demo$/.test(m.text))) && (!r.road.missClick || (r.road.missClick.dist < 0.05 && /MISSING SPEED SIGN/.test(r.road.missClick.card)))) : (M.length === 0 && !r.road.missingGrp); }))
+    .invariant('§SIGN_VS_SPEED extraction (issue: are the advance distances typed from memory?): the shipped advance_placement distances (urban nominal/min, rural nominal/min) are the numbers in the clause 2.2.8 sentence of the ATJ 2B .txt (watermark lines dropped); ref.txt_line starts the clause; ref.page is that pdf page\'s printed number; rules WD22 + WD31 are the codes in the clause heading; re-running tools/extract_atj2b_advance.py on a copy of std_values.json reproduces advance_placement byte-for-byte', rs => {
+      const AP = STD.advance_placement; if (!AP || !fs.existsSync(ATJ2B_TXT) || !fs.existsSync(ATJ2A_TXT)) return false;
+      const T = fs.readFileSync(ATJ2B_TXT, 'utf8'), pg = T.split('\f'), c = AP.clause_2_2_8, lines = T.split('\n');
+      const flat = x => x.split('\n').filter(l => !/^\s*[A-Z]{1,3}\s*$/.test(l)).join(' ').replace(/\s+/g, ' ');
+      const sent = flat(T.slice(T.indexOf('2.2.8   Traffic Signal Ahead Sign (WD.22) and Roundabout'), T.indexOf('2.2.9   Chevron Sign', T.indexOf('2.2.8   Traffic Signal Ahead Sign (WD.22) and Roundabout'))));
+      const m = /at a distance (\d+) m or not less than (\d+) m in urban areas, and (\d+) m or not less than (\d+) m in rural areas or high speed roads in advance/.exec(sent);
+      const nums = pg[c.ref.pdf_page - 1].split('\n').filter(l => /^\s*\d{1,3}\s*$/.test(l)).map(l => +l.trim());
+      const tmp = path.join(os.tmpdir(), 'std_repro_' + process.pid + '.json'); fs.writeFileSync(tmp, JSON.stringify(Object.assign({}, STD, { advance_placement: undefined }), null, 1));
+      let same = false; try { require('child_process').execFileSync('python3', ['-I', path.join(ROOT, 'tools', 'extract_atj2b_advance.py'), ATJ2B_TXT, ATJ2A_TXT, tmp], { stdio: 'pipe' }); same = JSON.stringify(JSON.parse(fs.readFileSync(tmp, 'utf8')).advance_placement) === JSON.stringify(AP); } catch (e) { logStream.write('[repro] ' + e.message + '\n'); } finally { try { fs.unlinkSync(tmp); } catch (e) {} }
+      console.log('§SIGN_ADVANCE_EXTRACT txt=' + JSON.stringify(m && m.slice(1, 5).map(Number)) + ' shipped=' + JSON.stringify([c.urban.nominal_m, c.urban.min_m, c.rural_or_high_speed.nominal_m, c.rural_or_high_speed.min_m]) + ' line=' + c.ref.txt_line + ' pdf=' + c.ref.pdf_page + ' printed=' + c.ref.page + ' printedOnPage=' + JSON.stringify(nums) + ' reproduces=' + same + ' rules=' + AP.rules.map(r => r.code + '->' + r.hazard).join(','));
+      return !!m && +m[1] === c.urban.nominal_m && +m[2] === c.urban.min_m && +m[3] === c.rural_or_high_speed.nominal_m && +m[4] === c.rural_or_high_speed.min_m && /2\.2\.8/.test(lines[c.ref.txt_line - 1]) && nums.length === 1 && nums[0] === c.ref.page &&
+        JSON.stringify(AP.rules.map(r => r.code).sort()) === JSON.stringify(['WD22', 'WD31']) && /\(WD\.22\)/.test(sent) && /\(WD\.31\)/.test(sent) && same && AP._unread.length === 0; })
+    .invariant('§SIGN_VS_SPEED verdicts (issue: do WD.22/WD.31 verdicts match an independent along-route recompute?): every sign whose code part is a rule code is judged; dist == |chainage gap to the near edge of the hazard extent| from the witness\'s own brute-force projection of the signal elements; clamped sign / off-route roundabout = NOT_JUDGED (never CHECK); verdict = dist >= rural min (assumed RURAL column); nothing judged => fails (VACUOUS is not a pass)', rs => rs.every(r => {
+      const rd2 = r.road, A = rd2.base.advance, MMs = GEO.model_map; if (!A || A.vacuous) return false;
+      const Lr = R.indep.L, pr = (x, z) => project(rd2.route, x, z), ext = pts => { const ss = pts.map(q => pr(q.x, q.z).s); return { s0: Math.min(...ss), s1: Math.max(...ss) }; };
+      const sj = ext(rd2.sjPos), rbE = ext(rd2.rbPos), rbOff = (rbE.s1 - rbE.s0) < 1e-6 && (rbE.s1 <= 1e-6 || rbE.s0 >= Lr - 1e-6);
+      const col = STD.advance_placement.clause_2_2_8[GEO.inputs.area.value === 'URBAN' ? 'urban' : 'rural_or_high_speed'];
+      const nrm = c => String(c || '').toUpperCase().replace(/[\s.]/g, ''), hz = { WD22: 'sj', WD31: 'rb' };
+      const exp = []; rd2.advSigns.forEach(sg => { const code = String(sg.code || '').split('&').map(nrm).find(x => hz[x]); if (!code) return; const s = pr(sg.x, sg.z).s;
+        let v, d = null; if (hz[code] === 'rb' ? rbOff : false) v = 'NOT_JUDGED'; else if (s <= 1e-3 || s >= Lr - 1e-3) v = 'NOT_JUDGED'; else { const e = hz[code] === 'sj' ? sj : rbE; d = s < e.s0 ? e.s0 - s : (s > e.s1 ? s - e.s1 : 0); v = d >= col.min_m ? 'OK' : 'CHECK'; }
+        exp.push({ guid: sg.guid, v, d }); });
+      console.log('§SIGN_ADVANCE_INDEP applicable=' + exp.length + ' OK=' + exp.filter(e => e.v === 'OK').length + ' CHECK=' + exp.filter(e => e.v === 'CHECK').length + ' NOT_JUDGED=' + exp.filter(e => e.v === 'NOT_JUDGED').length + ' engine=' + JSON.stringify(A.counts) + ' sj=' + sj.s0.toFixed(1) + '..' + sj.s1.toFixed(1) + ' rbOff=' + rbOff + ' min=' + col.min_m + ' dists=' + exp.map(e => e.v + ':' + (e.d == null ? 'NA' : e.d.toFixed(1))).join(','));
+      return exp.length > 0 && exp.length === A.rows.length && A.applicable === exp.length && exp.every(e => { const g = A.rows.find(q => q.guid === e.guid); return g && g.verdict === e.v && (e.d == null ? g.dist == null : Math.abs(g.dist - e.d) < 0.5); }) &&
+        A.counts.OK + A.counts.CHECK + A.counts.NOT_JUDGED === exp.length && A.column === (GEO.inputs.area.value === 'URBAN' ? 'urban' : 'rural_or_high_speed'); }))
+    .invariant('§SIGN_VS_SPEED list (issue: 138 signs listed when the rule covers few): the group lists ONLY rule-applicable signs — DOM rows == engine rows == independent applicable count, far fewer than all SIGNAGE elements; CHECK group before OK; each DOM row sits in the group of its verdict; NOT JUDGED rows say why in the tooltip; header names the count', rs => rs.every(r => {
+      const rd2 = r.road, A = rd2.base.advance, D = rd2.advDom; if (!A || A.vacuous || !D) return false; const order = ['CHECK', 'OK', 'NOT_JUDGED'];
+      return D.length === A.rows.length && D.length > 0 && D.length < rd2.advSigns.length && D.every(d => { const q = A.rows.find(x => x.guid === d.guid); return q && d.verdict === q.verdict && (d.verdict !== 'NOT_JUDGED' || /(off the route|clamped|derived)/.test(d.title)); }) &&
+        D.map(d => order.indexOf(d.verdict)).every((v, i, a) => !i || v >= a[i - 1]) && rd2.advGroups.every(g => g.n === D.filter(d => d.verdict === g.verdict).length) && new RegExp('\\(' + A.applicable + ' signs a rule applies to\\)').test(rd2.advHeader || ''); }))
+    .invariant('§SIGN_VS_SPEED click (HUD): click a CHECK row -> camera target on that sign (<0.05 m) and the card cites ATJ 2B/85 clause 2.2.8, its printed page, nominal + minimum, the model distance, the hazard chainage, and the zone approach speed', rs => rs.every(r => { const c = r.road.advClick, A = r.road.base.advance; if (!c) return false; const p = STD.advance_placement.clause_2_2_8, row = A.rows.find(q => q.guid === c.guid);
+      return c.dist < 0.05 && !!row && c.card.includes('clause 2.2.8') && c.card.includes('p.' + p.ref.page) && c.card.includes('nominal ' + (row.column === 'urban' ? p.urban.nominal_m : p.rural_or_high_speed.nominal_m)) && c.card.includes('not less than ' + row.minM) && (row.dist == null || c.card.includes(row.dist.toFixed(1))) && /Approach speed of the zone at the sign/.test(c.card); }))
+    .invariant('§SIGN_VS_SPEED levers (issue: is the verdict driven by the JSON, not hard-wired?): rural min 30 / 50 flip every row to the independent dist >= min; rules=[] -> VACUOUS (applicable 0, reason names the codes) not a pass; signal hazard not found -> every WD.22 row NOT_JUDGED "no signal_junction derived" while WD.31 rows are unchanged', rs => rs.every(r => { const b = r.road.base.advance, L2 = r.road.lever; if (!b || !L2.advMin30.advance) return false; const J = b.rows.filter(q => q.verdict !== 'NOT_JUDGED');
+      const flip = (adv, m) => adv.rows.length === b.rows.length && adv.rows.every(q => { const o = b.rows.find(x => x.guid === q.guid); return o.verdict === 'NOT_JUDGED' ? q.verdict === 'NOT_JUDGED' : q.verdict === (o.dist >= m ? 'OK' : 'CHECK'); });
+      const ns = L2.advNoSJ.advance, nr = L2.advNoRules.advance;
+      return J.length > 0 && flip(L2.advMin30.advance, 30) && flip(L2.advMin50.advance, 50) && nr.vacuous === true && nr.applicable === 0 && nr.rows.length === 0 && /no advance_placement rules/.test(nr.reason || '') &&
+        ns.rows.filter(q => q.hazard === 'signal_junction').length > 0 && ns.rows.filter(q => q.hazard === 'signal_junction').every(q => q.verdict === 'NOT_JUDGED' && /no signal_junction derived/.test(q.why)) &&
+        ns.rows.filter(q => q.hazard === 'roundabout').every(q => b.rows.find(x => x.guid === q.guid).verdict === q.verdict); }))
+    .invariant('§SIGN_VS_SPEED pure engine (SYNTHETIC straight route, interior signal junction 1000..1030): WD.22 at 800 -> OK 200 m (below nominal 230), 900 -> CHECK 100, 1100 -> CHECK 70 (other direction), inside -> CHECK 0, at route start -> NOT_JUDGED (clamped), WD.31 with no roundabout -> NOT_JUDGED, compound "WD. 23 & WD. 22" at 850 -> CHECK 150 rural but OK urban (min 150), RP. 7 not listed; empty rules / missing section -> VACUOUS', () => SYN2().ok)
+    .invariant('§SIGN_VS_SPEED size-vs-speed (issue: PHASE-1 gate — is there a speed-banded sign-SIZE rule?): none is built because none exists for the model\'s boards: size_vs_speed.status = no_rule_for_model; an independent grep of ATJ 2A+2B finds every "km/h < Speed Limit" row only inside the recorded LETTER-HEIGHT tables (lettering is not in the model); the WD.39 block (chevron sizes) mentions neither speed nor km/h; the panel shows the "not judgeable" note with the finding in its tooltip; the log carries §SIGN_SIZE_SPEED NOT_BUILT', rs => rs.every(r => {
+      const sv = STD.advance_placement.size_vs_speed, A2 = fs.readFileSync(ATJ2A_TXT, 'utf8'), B2 = fs.readFileSync(ATJ2B_TXT, 'utf8'); const rec = new Set(sv.speed_banded_tables.map(t => t.doc + ':' + t.pdf_page));
+      const found = new Set(); [['ATJ 2B/85', B2], ['ATJ 2A/85', A2]].forEach(([doc, T]) => { const pg = T.split('\f'); pg.forEach((p, i) => { if (/km\/h\s*<\s*Speed [Ll]imit/.test(p)) found.add(doc + ':' + (i + 1)); }); });
+      const wd = A2.slice(A2.indexOf('WD. 39a & 39b CHEVRON DELINEATOR'), A2.indexOf('WD. 39a & 39b CHEVRON DELINEATOR') + 2400);
+      const letter = [...found].every(k => { const [doc, pdf] = k.split(':'), T = doc === 'ATJ 2A/85' ? A2 : B2, p = T.split('\f')[+pdf - 1]; return /letter/i.test(p) && /height/i.test(p); });
+      console.log('§SIGN_SIZE_SPEED_INDEP speedBandedPages=' + [...found].join(',') + ' recorded=' + [...rec].join(',') + ' wd39Speed=' + /speed|km\/h/i.test(wd) + ' status=' + sv.status);
+      return sv.status === 'no_rule_for_model' && found.size > 0 && [...found].every(k => rec.has(k)) && rec.size === found.size && letter && !/speed|km\/h/i.test(wd) && !!r.road.sizeNote && /not judgeable/.test(r.road.sizeNote.text) && /no speed-banded/i.test(r.road.sizeNote.title) && !!global.__sizeLog; }))
+    .invariant('§LABEL_CLEAN legend (issue: the long provenance clutters every row): each legend row is ONE line "N km/h · s0–s1 m · class TAG" with TAG in {derived, demo, NCHRP 672, user} equal to the independent expected tag (link->zone_tags.link, node-><kind>.tag, approach->approach_tag); the row text carries none of the long phrases; the tooltip (title) still carries the full provenance (label, "assumed:" list for link zones); clicking a row puts that provenance in the HUD card', rs => rs.every(r => {
+      const b = r.road.base, lg = r.road.legend, exp = z => z.kind === 'link' ? GEO.zone_tags.link : (z.kind === 'approach' ? GEO[z.node].approach_tag : GEO[z.kind].tag);
+      const sj = b.zones.find(z => z.kind === 'signal_junction'), rbz = b.zones.find(z => z.kind === 'roundabout'), lc = r.road.legClick;
+      console.log('§LABEL_CLEAN legend=' + lg.map(e => e.zone + ':' + e.short.slice(-12)).join(' | '));
+      return lg.length === b.zones.length && lg.every(e => { const z = b.zones.find(q => q.id === e.zone); return /^\d+ km\/h · \d+–\d+ m · \S+ (derived|demo|NCHRP 672|user)$/.test(e.short) && e.short.endsWith(' ' + exp(z)) && z.tag === exp(z) && !/assumed|not from a standard|demo rule|demo default|marked|borrowed|disc:/.test(e.short) && e.short.length <= 48 && !/<br/.test(e.html) &&
+          e.title.includes(z.label) && (z.kind !== 'link' || /assumed: /.test(e.title)); }) &&
+        lg.some(e => e.short.endsWith(' derived')) && lg.some(e => e.short.endsWith(' demo')) && lg.some(e => e.short.endsWith(' NCHRP 672')) && !!lc && lc.zone === sj.id && lc.card.includes('not from a standard') && lc.card.includes(GEO.signal_junction.tag) && !!rbz; }))
+    .invariant('§LABEL_CLEAN sign list + Speed section (issue: same clutter on the speed-sign rows and the mode line): sign rows end with a short tag and carry none of the long phrases; their tooltip carries code, chainage and the full label; the mode line says "assumed inputs (N)" with the list in the tooltip; lever class R6 -> link rows/legend show tag "user" and the tooltip still names "class R6 (user)"', rs => rs.every(r => {
+      const rd2 = r.road, L6 = rd2.lever;
+      return rd2.signDom.length > 0 && rd2.signDom.every((t, i) => /(derived|demo|NCHRP 672|user)$/.test(t) && !/not from a standard|demo rule|demo default|assumed/.test(t) && / @ \d+ m: /.test(rd2.signTitles[i])) && rd2.base.signRows.every(q => q.tag) &&
+        L6.legendClassR6.filter(e => /class R6 \(user\)/.test(e.text)).length > 0 && L6.legendClassR6.filter(e => /class R6 \(user\)/.test(e.text)).every(e => e.short.endsWith(' user')); }))
+    .invariant('§HUD_CARD layout (issue: card was one wall of text, unreadable on a phone): clicking a sign row gives a bold title "N km/h · Zone Zx" (+ sign code), >=5 key/value rows (Chainage, Class, Terrain, Lane width, Max grade, Source tag), font >= 12 px, title larger, max width <= 360 px, and a COLLAPSED "Why / sources" section whose text still holds the ATJ table/page, mode label and assumed inputs; a zone legend click uses the same layout', rs => rs.every(r => { const c = r.road.click.struct, z = r.road.base.zones.find(q => q.id === (r.road.base.signRows.find(x => x.guid === r.road.click.guid) || {}).zone), lc = r.road.legClick;
+      console.log('§HUD_CARD title=' + (c && c.title) + ' kv=' + (c && c.kv.length) + ' whyOpen=' + (c && c.why && c.why.open) + ' titleFont=' + (c && c.titleFont) + ' legend.kv=' + (lc && lc.struct.kv));
+      console.log('§HUD_CARD_TERMS ' + JSON.stringify([!!c, !!z, c && z && c.title.startsWith(z.speed + ' km/h \u00b7 Zone ' + z.id), c.kv.length >= 5, ['Chainage', 'Class', 'Terrain', 'Lane width', 'Max grade', 'Source'].every(k => c.kv.some(t => t.startsWith(k))), c.why.open === false, c.why.fontMin >= 12, c.titleFont > c.why.fontMin, c.maxW <= 360, /ATJ 8\/86 Table 3\.2A/.test(c.why.text), z && c.why.text.includes(z.label), /assumed inputs/.test(c.why.text), !!lc, lc && lc.struct.kv >= 5, lc && lc.struct.whyOpen === false, lc && lc.struct.title])); 
+      return !!c && !!z && c.title.startsWith(z.speed + ' km/h \u00b7 Zone ' + z.id) && c.kv.length >= 5 && ['Chainage', 'Class', 'Terrain', 'Lane width', 'Max grade', 'Source'].every(k => c.kv.some(t => t.startsWith(k))) && c.why && c.why.open === false && c.why.fontMin >= 12 && c.titleFont > c.why.fontMin && c.maxW <= 360 &&
+        /ATJ 8\/86 Table 3\.2A/.test(c.why.text) && c.why.text.includes(z.label) && /assumed inputs/.test(c.why.text) && !!lc && lc.struct.kv >= 5 && lc.struct.whyOpen === false && /Zone Z\d|Z\d/.test(lc.struct.title); }))
+    .invariant('§HUD_LAYOUT upper panel (issue: Road standards + Speed header were paragraphs of 10 px text): section titles present (.rs-title, .sz-title); counts line one row; Mode/Zones as key/value rows; the mode explanation, assumed-inputs list and every derivation message (terrain ASSUMED FLAT ...) are INSIDE a collapsed "Why / sources" (closed, text present); no visible text element wraps to more than ~3 lines; sign-check card = title + >=5 key/value rows + collapsed Why holding the full detail; panel and card <= 360 px wide', rs => rs.every(r => { const L = r.road.layout, b = r.road.base; if (!L || !L.card) return false;
+      console.log('§HUD_LAYOUT titles=' + L.rsTitle + '|' + L.szTitle + ' visibleTextEls=' + L.nVisibleText + ' longVisible=' + JSON.stringify(L.long) + ' whyTop=' + L.whyTop.map(w => w.cls + ':open=' + w.open).join(',') + ' szKv=' + L.szKv.length + ' card.kv=' + L.card.kv + ' panelW=' + L.panelW);
+      const top = L.whyTop.find(w => /sz-why-top/.test(w.cls)), rsTop = L.whyTop.find(w => /rs-why-top/.test(w.cls));
+      return !!L.rsTitle && !!L.szTitle && L.nVisibleText > 10 && L.long.length === 0 && L.szKv.length >= 2 && !!top && top.open === false && b.assumed.every(a => top.text.includes(a)) && b.msgs.every(m => top.text.includes(m)) && !!rsTop && rsTop.open === false && /ATJ 2A\/85/.test(rsTop.text) &&
+        !!L.card.title && L.card.kv >= 5 && L.card.whyOpen === false && L.card.whyText.length > 20 && L.card.maxW <= 360 && L.panelW <= 360; }))
     .invariant('Duplex: not civil, no panel, no Speed section => VACUOUS (not a pass of anything)', rs => rs.every(r => !r.dup.civil && r.dup.opened === null && !r.dup.panel && r.dup.zones === null))
     .redControl(rs => rs.map(r => Object.assign({}, r, { road: Object.assign({}, r.road, { base: Object.assign({}, r.road.base, { zones: r.road.base.zones.map(z => Object.assign({}, z, { speed: z.speed + 10 })) }) }) })))
     ;

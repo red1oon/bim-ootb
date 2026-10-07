@@ -2612,7 +2612,9 @@
    "map": "roundabout",
    "noun": "roundabout",
    "zone_id": "RB",
-   "membership": "self"
+   "membership": "self",
+   "tag": "NCHRP 672",
+   "approach_tag": "demo"
   },
   "speed_ramp": {
    "note": "presentation only (not from ATJ). Colour = linear RGB interpolation between stops by km/h, clamped at the ends: slowest (<=30) = very light warm white #fff3e0 (not pure white, so it still reads as painted on grey unpainted road), fastest = strong red #b71c1c. Lightness decreases monotonically with speed. Editable.",
@@ -2657,10 +2659,170 @@
    "approach": "ssd_table_4_1",
    "approach_note": "'ssd_table_4_1' = ATJ 8/86 Table 4.1 stopping sight distance at the adjoining link design speed (a driver must be able to stop for a red light), each side that exists; or {\"fixed_m\": 150}.",
    "sign_regex": "TRAFFIC SIGNAL AHEAD",
-   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)"
+   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)",
+   "tag": "demo",
+   "approach_tag": "demo"
   },
   "disc_snap_m": 100,
   "disc_has_sign_m": 30,
-  "disc_note": "speed-limit discs: a zone START with no speed sign within disc_has_sign_m (chainage) borrows the nearest SIGNAGE board within disc_snap_m (dashed amber 'no speed sign - borrowed'); none in range -> free-standing marker. Flags the missing RP. 7 for engineers."
+  "disc_note": "speed-limit discs: a zone START with no speed sign within disc_has_sign_m (chainage) borrows the nearest SIGNAGE board within disc_snap_m (dashed amber 'no speed sign - borrowed'); none in range -> free-standing marker. Flags the missing RP. 7 for engineers.",
+  "zone_tags": {
+   "_note": "short legend/list tag per provenance class; the full provenance stays in the row tooltip + HUD card (user 2026-10-08). Tags: derived (ATJ chain) · demo (editable demo rule) · NCHRP 672 (international reference) · user (lever).",
+   "link": "derived",
+   "user": "user"
+  }
+ },
+ "advance_placement": {
+  "_source": {
+   "doc": "ATJ 2B/85 (Pindaan 2019) Sign Application + ATJ 2A/85 (Pindaan 2019) Standard Traffic Signs",
+   "extractor": "tools/extract_atj2b_advance.py",
+   "page_rule": "page = printed page number found on that pdf page (null when ambiguous); pdf_page and txt_line always given",
+   "status": "primary"
+  },
+  "clause_2_2_8": {
+   "clause": "2.2.8",
+   "ref": {
+    "txt_line": 2562,
+    "pdf_page": 29,
+    "page": 22
+   },
+   "urban": {
+    "nominal_m": 200,
+    "min_m": 150
+   },
+   "rural_or_high_speed": {
+    "nominal_m": 230,
+    "min_m": 180
+   },
+   "text": "This sign, either Traffic Signal Ahead or Roundabout Ahead Sign, should be erected at a distance 200 m or not less than 150 m in urban areas, and 230 m or not less than 180 m in rural areas or high speed roads in advance of the respective traffic signal or roundabout. The vertical and lateral clearance for either of these signs "
+  },
+  "rules": [
+   {
+    "code": "WD22",
+    "sign_name": "Traffic Signal Ahead",
+    "hazard": "signal_junction",
+    "clause": "2.2.8",
+    "ref": {
+     "txt_line": 2562,
+     "pdf_page": 29,
+     "page": 22
+    }
+   },
+   {
+    "code": "WD31",
+    "sign_name": "Roundabout Ahead",
+    "hazard": "roundabout",
+    "clause": "2.2.8",
+    "ref": {
+     "txt_line": 2562,
+     "pdf_page": 29,
+     "page": 22
+    }
+   }
+  ],
+  "area_input": "geometric.inputs.area (RURAL -> rural_or_high_speed column, URBAN -> urban column; \"high speed roads\" has no numeric threshold in the text so the speed is shown, not used)",
+  "verdict_rule": "OK when along-route distance sign -> hazard >= min_m of the column; CHECK when below min_m (nominal_m shortfall is stated in the detail). No upper bound in the text.",
+  "other_advance_distances_not_locatable": [
+   {
+    "txt_line": 1877,
+    "pdf_page": 21,
+    "page": 14,
+    "text": "than 100 m and not more than 150 m in advance of the intersections"
+   },
+   {
+    "txt_line": 1938,
+    "pdf_page": 21,
+    "page": 14,
+    "text": "100 m to 150 m in advance of the junction. The final sign shall be"
+   },
+   {
+    "txt_line": 2372,
+    "pdf_page": 26,
+    "page": 19,
+    "text": "placed normally not more than 10 m nor less than 1.2 m in advance of the"
+   },
+   {
+    "txt_line": 2377,
+    "pdf_page": 27,
+    "page": 20,
+    "text": "than 1.2 m in advance of the crosswalk. The vertical and lateral clearances"
+   },
+   {
+    "txt_line": 2733,
+    "pdf_page": 30,
+    "page": 23,
+    "text": "This Winding Road sign should be located at a distance 230 m in advance"
+   },
+   {
+    "txt_line": 2853,
+    "pdf_page": 32,
+    "page": 25,
+    "text": "An Obstruction Markers should be located not more than 6 m in advance of"
+   },
+   {
+    "txt_line": 2936,
+    "pdf_page": 32,
+    "page": 25,
+    "text": "rural areas, and 150 m and not less than 75 m in urban areas, in advance"
+   },
+   {
+    "txt_line": 3076,
+    "pdf_page": 34,
+    "page": 27,
+    "text": "When used, this sign shall be erected 150 m - 200 m in advance of the"
+   },
+   {
+    "txt_line": 3198,
+    "pdf_page": 35,
+    "page": 28,
+    "text": "Weighbridge Station. The first sign shall be located 500 m in advance or"
+   },
+   {
+    "txt_line": 3224,
+    "pdf_page": 36,
+    "page": 29,
+    "text": "shall be located 1 km, 700 m and 250 m respectively, in advance of the"
+   },
+   {
+    "txt_line": 3260,
+    "pdf_page": 36,
+    "page": 29,
+    "text": "at a range of 100 m to 300 m in advance of the humps."
+   }
+  ],
+  "size_vs_speed": {
+   "status": "no_rule_for_model",
+   "finding": "No speed-banded SIGN-BOARD size table exists in ATJ 2A/2B. The only speed-banded size tables are LETTER HEIGHT for guide signs / gantries / camera boxes (needs lettering, which the model does not carry). WD.39a/39b chevron sizes are three options (900x750, 750x600, 600x450 mm) with NO speed mapping in the text (speed/km/h in the WD.39 block: False). 2B p.56 shape sizes (min/normal width per shape) are not speed-banded.",
+   "speed_banded_tables": [
+    {
+     "txt_line": 1593,
+     "pdf_page": 18,
+     "page": 11,
+     "doc": "ATJ 2B/85",
+     "what": "letter-height table"
+    },
+    {
+     "txt_line": 2844,
+     "pdf_page": 35,
+     "page": null,
+     "doc": "ATJ 2A/85",
+     "what": "letter-height table"
+    },
+    {
+     "txt_line": 6267,
+     "pdf_page": 70,
+     "page": null,
+     "doc": "ATJ 2A/85",
+     "what": "letter-height table"
+    }
+   ],
+   "wd39_block_mentions_speed": false,
+   "wd39_sizes_mm": [
+    "900x750",
+    "750x600",
+    "600x450"
+   ]
+  },
+  "_unread": []
  }
 }

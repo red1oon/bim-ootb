@@ -85,7 +85,7 @@ async function roadProbe(page) {
     out.click = { guid: g, dist: Math.hypot(want.x - t.x, want.y - t.y, want.z - t.z), card: P.querySelector('.rs-card').textContent.slice(0, 120) };
     // override drops one OK code
     const drop = out.okCodes[0]; out.drop = drop;
-    const std = await (await fetch('std_values.json?v=1')).json();
+    const std = await (await fetch('std_values.json?v=2')).json();
     const norm = s => String(s).toUpperCase().replace(/[\s.]/g, '');
     std.signs = std.signs.filter(s => norm(s.code) !== norm(drop));
     localStorage.setItem('json_std_values', JSON.stringify(std));
@@ -107,7 +107,7 @@ async function roadProbe(page) {
     R.sql = recount(path.join(BLD_DIR, BLD + '.db')); log('§SIGN_RECOUNT ' + JSON.stringify({ c: R.sql.c, n: R.sql.n }));
     const pr = await open(browser, BLD); R.road = await roadProbe(pr); log('§SIGN_ROAD ' + JSON.stringify(Object.assign({}, R.road, { okCodes: R.road.okCodes.length })));
     const pd = await open(browser, 'Duplex_extracted');
-    R.dup = await pd.evaluate(async () => { const A = window.APP; const std = await (await fetch('std_values.json?v=1')).json();
+    R.dup = await pd.evaluate(async () => { const A = window.APP; const std = await (await fetch('std_values.json?v=2')).json();
       const opened = await A.showRoadStandards(); const direct = window.RoadStandards.checkSigns((q, p) => { const st = A.db.prepare(q), o = []; if (p && p.length) st.bind(p); while (st.step()) o.push(st.getAsObject()); st.free(); return o; }, std, { log: console.log });
       const rows = [...document.querySelectorAll('.bim-drawer-row')].map(e => e.id);
       return { drawer: await window.__drawerProbe(), civil: A.isCivilModel(), opened, vacuous: direct.vacuous, reason: direct.reason, panel: !!document.getElementById('road-standards-panel') }; });
@@ -116,6 +116,7 @@ async function roadProbe(page) {
   finally { await browser.close(); server.close(); }
   if (R.err) { logStream.end(); return; }
   if (!R.sql.n) { log('§SIGN_CHECK verdict=INCONCLUSIVE reason=no SIGNAGE elements judged on road'); process.exitCode = 2; logStream.end(); return; }
+  const _c = console.log; console.log = (...a) => { logStream.write(a.join(' ') + '\n'); _c(...a); };   // mirror the kit's PASS/FAIL + §WITNESS_ summary INTO the LOG
   Witness('sign_check')
     .population(() => [R])
     .schema({ type: 'object', required: ['sql', 'road', 'dup'] })
@@ -128,9 +129,15 @@ async function roadProbe(page) {
     .invariant('tree: level-3 shows "<code> ×<n>" matching the recount for every OK code', rs => rs.every(r => Object.keys(r.sql.byCode).every(c => r.road.lvl3.some(t => t.replace(/\s+/g, ' ') === c + ' ×' + r.sql.byCode[c]))))
     .invariant('click a sign row: camera target lands on that GUID mesh centre (<0.05 m) and the detail card shows', rs => rs.every(r => r.road.click && r.road.click.dist < 0.05 && r.road.click.card.length > 0))
     .invariant('Settings override dropping one OK code: exactly its signs flip OK->UNKNOWN', rs => rs.every(r => r.road.dropFlipped && r.road.dropN > 0 && r.road.after.OK === r.road.counts.OK - r.road.dropN && r.road.after.UNKNOWN === r.road.counts.UNKNOWN + r.road.dropN))
+    .invariant('§SIGN_VS_SPEED link (issue: a rule whose sign code never occurs would be silently vacuous): every advance_placement rule code is a row of the ATJ 2A table whose name says AHEAD, its hazard is a geometric.node_kinds key, and the model carries >=1 sign with each rule code (independent recount of the OK codes)', rs => rs.every(r => {
+      const AP = STD.advance_placement; if (!AP || !AP.rules.length) return false;
+      const have = Object.keys(r.sql.byCode).flatMap(c => c.split('&').map(nrm));
+      console.log('§SIGN_ADVANCE_LINK rules=' + AP.rules.map(x => x.code + ':' + x.hazard + ':' + (STD.signs.find(q => nrm(q.code) === nrm(x.code)) || {}).name + ':n=' + have.filter(h => h === nrm(x.code)).length).join(' '));
+      return AP.rules.every(x => { const row = STD.signs.find(q => nrm(q.code) === nrm(x.code)); return row && /AHEAD/.test(row.name) && STD.geometric.node_kinds.includes(x.hazard) && have.filter(h => h === nrm(x.code)).length > 0; }); }))
     .invariant('Inspect drawer: road has the "Road standards  ·  j" row directly after Measure; Duplex has no such row', rs => rs.every(r => r.road.drawer.found && r.road.drawer.ids.indexOf('drawer-row-roadstd') === r.road.drawer.ids.indexOf('drawer-row-measure') + 1 && /Road standards\s+·\s+j/.test(r.road.drawer.label) && r.dup.drawer.found && r.dup.drawer.ids.indexOf('drawer-row-roadstd') < 0 && r.dup.drawer.ids.indexOf('drawer-row-measure') >= 0))
     .invariant('Duplex: not civil, no panel, SIGNAGE-less => VACUOUS (not a pass of anything)', rs => rs.every(r => !r.dup.civil && r.dup.opened === null && !r.dup.panel && r.dup.vacuous === true && r.dup.reason === 'no-elements'))
     .redControl(rs => rs.map(r => Object.assign({}, r, { road: Object.assign({}, r.road, { counts: Object.assign({}, r.road.counts, { OK: r.road.counts.OK + 1 }) }) })))
     .run();
-  logStream.end();
+  console.log = _c;
+  await new Promise(r => logStream.end(r));
 })();

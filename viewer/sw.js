@@ -190,7 +190,8 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1620';
+const CACHE_VERSION = 'v1621';
+// v1621 (2026-10-08) §SIGN_VS_SPEED + §LABEL_CLEAN: advance-placement check (ATJ 2B cl.2.2.8, std_values.json advance_placement), short legend/list tags with full provenance in tooltip + HUD; speed_zones.js?v=8, road_standards.js?v=2, std_values.json?v=2.
 // v1620 (2026-10-08) §DISC_ON_BOARD_AREA + §SPEED_SIGN_LIST: disc on the board itself (largest face-on footprint), Speed list = the 8 disc-bearing signs.
 // v1619 (2026-10-08) §DISC_ON_FACE + §PROFILE_AFTER_LOAD: speed discs placed on the board's real face (mesh), long section sampled after loading (80 km/h zone kept).
 // v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=6; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
