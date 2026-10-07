@@ -965,5 +965,1601 @@
    "pdf_page": 123
   }
  ],
- "_unread": []
+ "_unread": [],
+ "geometric": {
+  "_source": {
+   "doc": "ATJ 8/86 (Pindaan 2015) A Guide on Geometric Design of Roads, JKR 21300-0073-15",
+   "url": "http://epsmg.jkr.gov.my/images/c/c9/BPIS_ATJ_8-86_19062020.pdf (Wayback id_)",
+   "extractor": "tools/extract_atj8_geometric.py",
+   "page_rule": "printed page = pdf page - 7"
+  },
+  "_unread": [
+   {
+    "table": "4.10B",
+    "row": "MOUNTAINOUS",
+    "speed_kmh": 70,
+    "text_layer_value": 1,
+    "why": "printed as a single digit among 10 / 10 / 9 / 9 / 8 — truncated cell"
+   }
+  ],
+  "selection": {
+   "ref": {
+    "table": "Table 2.4 Selection of Design Standard",
+    "page": 12,
+    "pdf_page": 19
+   },
+   "adt_bands": [
+    "all",
+    ">=10001",
+    "3001-10000",
+    "1001-3000",
+    "151-1000",
+    "<=150"
+   ],
+   "rows": [
+    {
+     "area": "RURAL",
+     "category": "Expressway",
+     "adt_band": "all",
+     "class": "R6"
+    },
+    {
+     "area": "RURAL",
+     "category": "Highway",
+     "adt_band": "all",
+     "class": "R5"
+    },
+    {
+     "area": "RURAL",
+     "category": "Primary Road",
+     "adt_band": ">=10001",
+     "class": "R5"
+    },
+    {
+     "area": "RURAL",
+     "category": "Primary Road",
+     "adt_band": "3001-10000",
+     "class": "R4"
+    },
+    {
+     "area": "RURAL",
+     "category": "Secondary Road",
+     "adt_band": "3001-10000",
+     "class": "R4"
+    },
+    {
+     "area": "RURAL",
+     "category": "Secondary Road",
+     "adt_band": "1001-3000",
+     "class": "R3"
+    },
+    {
+     "area": "RURAL",
+     "category": "Minor Road",
+     "adt_band": "151-1000",
+     "class": "R2"
+    },
+    {
+     "area": "RURAL",
+     "category": "Minor Road",
+     "adt_band": "<=150",
+     "class": "R1"
+    },
+    {
+     "area": "URBAN",
+     "category": "Expressway",
+     "adt_band": "all",
+     "class": "U6"
+    },
+    {
+     "area": "URBAN",
+     "category": "Arterials",
+     "adt_band": ">=10001",
+     "class": "U5"
+    },
+    {
+     "area": "URBAN",
+     "category": "Arterials",
+     "adt_band": "3001-10000",
+     "class": "U4"
+    },
+    {
+     "area": "URBAN",
+     "category": "Collector",
+     "adt_band": ">=10001",
+     "class": "U5"
+    },
+    {
+     "area": "URBAN",
+     "category": "Collector",
+     "adt_band": "3001-10000",
+     "class": "U4"
+    },
+    {
+     "area": "URBAN",
+     "category": "Collector",
+     "adt_band": "1001-3000",
+     "class": "U3"
+    },
+    {
+     "area": "URBAN",
+     "category": "Local Street",
+     "adt_band": "3001-10000",
+     "class": "U4"
+    },
+    {
+     "area": "URBAN",
+     "category": "Local Street",
+     "adt_band": "1001-3000",
+     "class": "U3"
+    },
+    {
+     "area": "URBAN",
+     "category": "Local Street",
+     "adt_band": "151-1000",
+     "class": "U2"
+    },
+    {
+     "area": "URBAN",
+     "category": "Local Street",
+     "adt_band": "<=150",
+     "class": "U1"
+    }
+   ]
+  },
+  "category_network": {
+   "ref": {
+    "table": "Table 2.1 Characteristics of Road Categories (NETWORK column)",
+    "page": 6,
+    "pdf_page": 13
+   },
+   "rows": [
+    {
+     "area": "RURAL",
+     "category": "Expressway",
+     "network": "National network"
+    },
+    {
+     "area": "RURAL",
+     "category": "Highway",
+     "network": "National network"
+    },
+    {
+     "area": "RURAL",
+     "category": "Primary Road",
+     "network": "State network"
+    },
+    {
+     "area": "RURAL",
+     "category": "Secondary Road",
+     "network": "District network"
+    },
+    {
+     "area": "RURAL",
+     "category": "Minor Road",
+     "network": "Supporting network"
+    }
+   ],
+   "_check": "values below are asserted against the .txt"
+  },
+  "terrain": {
+   "ref": {
+    "table": "2.5 Terrain definition (FLAT / ROLLING / MOUNTAINOUS)",
+    "page": 15,
+    "pdf_page": 22
+   },
+   "basis": "NATURAL GROUND CROSS-SLOPE (perpendicular to contours)",
+   "classes": [
+    {
+     "name": "FLAT",
+     "max_pct": 3
+    },
+    {
+     "name": "ROLLING",
+     "min_pct": 3,
+     "max_pct": 25
+    },
+    {
+     "name": "MOUNTAINOUS",
+     "min_pct": 25
+    }
+   ]
+  },
+  "design_speed": {
+   "rural": {
+    "ref": {
+     "table": "Table 3.2A Design Speed (Rural)",
+     "page": 25,
+     "pdf_page": 32
+    },
+    "terrain_order": [
+     "FLAT",
+     "ROLLING",
+     "MOUNTAINOUS"
+    ],
+    "rows": {
+     "R6": [
+      120,
+      100,
+      80
+     ],
+     "R5": [
+      100,
+      80,
+      60
+     ],
+     "R4": [
+      90,
+      70,
+      60
+     ],
+     "R3": [
+      70,
+      60,
+      50
+     ],
+     "R2": [
+      60,
+      50,
+      40
+     ],
+     "R1": [
+      40,
+      30,
+      20
+     ]
+    }
+   },
+   "urban": {
+    "ref": {
+     "table": "Table 3.2B Design Speed (Urban)",
+     "page": 25,
+     "pdf_page": 32
+    },
+    "area_type_order": [
+     "I",
+     "II",
+     "III"
+    ],
+    "rows": {
+     "U6": [
+      100,
+      80,
+      60
+     ],
+     "U5": [
+      80,
+      60,
+      50
+     ],
+     "U4": [
+      70,
+      60,
+      50
+     ],
+     "U3": [
+      60,
+      50,
+      40
+     ],
+     "U2": [
+      50,
+      40,
+      30
+     ],
+     "U1": [
+      40,
+      30,
+      20
+     ]
+    }
+   }
+  },
+  "lane_width": {
+   "ref": {
+    "table": "Table 5.2 Lane & Marginal Strip Widths",
+    "page": 78,
+    "pdf_page": 85
+   },
+   "rows": {
+    "R6": {
+     "lane_width_m": 3.65,
+     "marginal_strip_m": 0.5
+    },
+    "U6": {
+     "lane_width_m": 3.65,
+     "marginal_strip_m": 0.5
+    },
+    "R5": {
+     "lane_width_m": 3.5,
+     "marginal_strip_m": 0.5
+    },
+    "U5": {
+     "lane_width_m": 3.5,
+     "marginal_strip_m": 0.5
+    },
+    "R4": {
+     "lane_width_m": 3.5,
+     "marginal_strip_m": 0.25
+    },
+    "U4": {
+     "lane_width_m": 3.5,
+     "marginal_strip_m": 0.25
+    },
+    "R3": {
+     "lane_width_m": 3.25,
+     "marginal_strip_m": 0.25
+    },
+    "U3": {
+     "lane_width_m": 3.25,
+     "marginal_strip_m": 0.25
+    },
+    "R2": {
+     "lane_width_m": 3.0,
+     "marginal_strip_m": 0.25
+    },
+    "U2": {
+     "lane_width_m": 3.0,
+     "marginal_strip_m": 0.25
+    },
+    "R1": {
+     "lane_width_m": 5.0,
+     "marginal_strip_m": 0.0,
+     "_note": "ATJ footnote *: the 5.00 is the TOTAL TWO-WAY width"
+    },
+    "U1": {
+     "lane_width_m": 5.0,
+     "marginal_strip_m": 0.0,
+     "_note": "ATJ footnote *: the 5.00 is the TOTAL TWO-WAY width"
+    }
+   }
+  },
+  "max_grade": {
+   "note": "one row per (table, terrain/area, speed). terrain_or_area \"FLAT|I\" = flat for rural classes, area type I for urban classes",
+   "rows": [
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 30,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 40,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 50,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 60,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 70,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 80,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 30,
+     "max_grade_pct": 11
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 40,
+     "max_grade_pct": 11
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 50,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 60,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 70,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 80,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 30,
+     "max_grade_pct": 16
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 40,
+     "max_grade_pct": 15
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 50,
+     "max_grade_pct": 14
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 60,
+     "max_grade_pct": 13
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 70,
+     "max_grade_pct": 12
+    },
+    {
+     "table": "Table 4.10A",
+     "page": 58,
+     "pdf_page": 65,
+     "classes": [
+      "R1",
+      "R2",
+      "U1",
+      "U2"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 80,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 50,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 60,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 70,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 80,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 90,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 100,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 50,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 60,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 70,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 80,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 90,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 100,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 50,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 60,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 80,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 90,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10B",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R3",
+      "R4"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 100,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 40,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 50,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 60,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 70,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 80,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 40,
+     "max_grade_pct": 12
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 50,
+     "max_grade_pct": 11
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 60,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 70,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 80,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 40,
+     "max_grade_pct": 13
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 50,
+     "max_grade_pct": 12
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 60,
+     "max_grade_pct": 12
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 70,
+     "max_grade_pct": 11
+    },
+    {
+     "table": "Table 4.10C",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "U3",
+      "U4"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 80,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 60,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 70,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 80,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 90,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 100,
+     "max_grade_pct": 3
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "FLAT",
+     "speed_kmh": 110,
+     "max_grade_pct": 3
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 60,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 70,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 80,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 90,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 100,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "ROLLING",
+     "speed_kmh": 110,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 60,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 70,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 80,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 90,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 100,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10D",
+     "page": 59,
+     "pdf_page": 66,
+     "classes": [
+      "R5"
+     ],
+     "terrain_or_area": "MOUNTAINOUS",
+     "speed_kmh": 110,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 50,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 60,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 70,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 80,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 90,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "I",
+     "speed_kmh": 100,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 50,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 60,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 70,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 80,
+     "max_grade_pct": 7
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 90,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "II",
+     "speed_kmh": 100,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 50,
+     "max_grade_pct": 11
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 60,
+     "max_grade_pct": 10
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 70,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 80,
+     "max_grade_pct": 9
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 90,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10E",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "U5"
+     ],
+     "terrain_or_area": "III",
+     "speed_kmh": 100,
+     "max_grade_pct": 8
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 80,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 90,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 100,
+     "max_grade_pct": 3
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "FLAT|I",
+     "speed_kmh": 110,
+     "max_grade_pct": 3
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 80,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 90,
+     "max_grade_pct": 5
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 100,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "ROLLING|II",
+     "speed_kmh": 110,
+     "max_grade_pct": 4
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 80,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 90,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 100,
+     "max_grade_pct": 6
+    },
+    {
+     "table": "Table 4.10F",
+     "page": 60,
+     "pdf_page": 67,
+     "classes": [
+      "R6",
+      "U6"
+     ],
+     "terrain_or_area": "MOUNTAINOUS|III",
+     "speed_kmh": 110,
+     "max_grade_pct": 5
+    }
+   ]
+  },
+  "_user_editable": "Everything below this note that is NOT extracted from ATJ 8/86 is an editable input or presentation choice; the Settings JSON editor overrides it (browser override + Reset). status \"assumed\" is shown as such on the legend and HUD until set to \"user\".",
+  "model_map": {
+   "title_prop": "01_Project_Title",
+   "road_discipline": "ROAD",
+   "note": "where the project title and the road surface live in the model (measured in CivilWorksPath element_psets / elements_meta)"
+  },
+  "road_category_map": {
+   "rows": [
+    {
+     "title_regex": "\\(FT\\d+\\)",
+     "area": null,
+     "category": "Highway",
+     "status": "assumed",
+     "basis": "title names federal routes (FT240 / FT005) = ATJ 8/86 Table 2.1 NETWORK \"National network\" (Highway or Expressway); Highway chosen — user to confirm"
+    }
+   ],
+   "note": "first row whose title_regex matches the model title wins; edit category to e.g. \"Primary Road\" / \"Arterials\" and set status \"user\""
+  },
+  "inputs": {
+   "area": {
+    "value": "RURAL",
+    "status": "assumed",
+    "note": "not in the model — RURAL or URBAN (Table 2.4 / 3.2A vs 3.2B)"
+   },
+   "adt": {
+    "value": null,
+    "status": "assumed",
+    "note": "projected ADT at design life (veh/day); Highway/Expressway rows of Table 2.4 need none; other categories do"
+   },
+   "area_type": {
+    "value": "I",
+    "status": "assumed",
+    "note": "ATJ 8/86 area type I / II / III — used for URBAN design speed (Table 3.2B) and grade (4.10x)"
+   }
+  },
+  "speed_sign_codes": [
+   "RP7"
+  ],
+  "terrain_inputs": {
+   "source": "ground",
+   "window_m": 500,
+   "min_pairs": 30,
+   "assumed_terrain": "FLAT",
+   "note": "terrain per window = ATJ 8/86 class (thresholds 3% / 25% from the extracted terrain table) of the MEDIAN |gradient| of the long-section samples (A.civilProfile .ground, 1 m). window_m / min_pairs / assumed_terrain are assumed inputs. ATJ defines terrain by natural-ground CROSS-slope; the centre-line long section is the proxy (spec §SPEED_ZONES)."
+  },
+  "speed_setting": {
+   "mode": "derived",
+   "class": null,
+   "design_speed_kmh": null,
+   "per_zone": {},
+   "note": "LEVER. derived = ATJ 8/86 chain. class = set \"class\" to R1-R6 / U1-U6 (speed, width, gradient from that class row). manual = set design_speed_kmh (all zones) or per_zone {\"Z2\": 70}; width/gradient looked up only if the speed identifies one class at that terrain, else \"manual, no table row\"."
+  },
+  "speed_colours": {
+   "20": "#8e24aa",
+   "30": "#3949ab",
+   "40": "#1e88e5",
+   "50": "#00acc1",
+   "60": "#43a047",
+   "70": "#c0ca33",
+   "80": "#fdd835",
+   "90": "#fb8c00",
+   "100": "#f4511e",
+   "110": "#e53935",
+   "120": "#b71c1c",
+   "_note": "presentation only (not from ATJ)"
+  }
+ }
 }

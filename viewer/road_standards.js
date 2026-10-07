@@ -139,6 +139,7 @@
           else if (typeof A.loadNavigate === 'function') A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(guid); else if (A.zoomToGuid) A.zoomToGuid(guid); });
           else if (A.zoomToGuid) A.zoomToGuid(guid);
         });
+        if (A.speedZones && std.geometric) A.speedZones.mount(std, body, body.querySelector('.rs-card'));   // §SPEED_ZONES section (civil-only, same panel)
         var p = A.createPanel(PANEL, { closable: true, style: { position: 'fixed', top: '70px', left: '16px', zIndex: '1101', width: '340px', padding: '12px 14px' }, content: body });
         document.body.appendChild(p); p.style.display = '';
         console.log('§SIGN_CHECK_PANEL verdicts=' + JSON.stringify(res.counts) + ' tree=' + JSON.stringify(bt.tree));
