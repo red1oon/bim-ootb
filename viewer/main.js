@@ -317,6 +317,7 @@ async function initViewer() {
   // STRUCTURAL_SANITY.md T4 — after setupDiff (A.zoomToGuid) and setupShare (A.shareUrl, in the
   // earlier _mods array) so rule_checklist.js's row click/long-press wiring has both available.
   if (typeof setupRuleChecklist === 'function') setupRuleChecklist(APP);
+  if (typeof setupRoadStandards === 'function') setupRoadStandards(APP);   // §SIGN_CHECK
 
   // Expose functions to HTML onclick handlers
   window.togglePanel = APP.togglePanel;

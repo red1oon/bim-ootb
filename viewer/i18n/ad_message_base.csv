@@ -871,3 +871,7 @@ CPM reads the dates the drag produced — it never changes one.",I
 1000860,mdl_bo_trees_tt_4,Walk ALL services,I
 1000861,mdl_s9_erp_btn,ERP ▸ Project Order,I
 1000862,mdl_s9_erp_btn_tt,Read / generate / open the ERP Project Order of the selected parts,I
+1000863,pill_roadstd,Road standards,I
+1000864,pillc_roadstd_1,Sign codes vs ATJ 2A/85,I
+1000865,pillc_roadstd_2,OK / UNKNOWN / MISSING tree,I
+1000866,pillc_roadstd_3,Click a sign: zoom + standard,I

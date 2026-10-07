@@ -1,0 +1,969 @@
+{
+ "_source": {
+  "doc": "ATJ 2A/85 (Pindaan 2019) Manual on Traffic Control Devices: Standard Traffic Signs, JKR 20401-0053-15",
+  "url": "http://epsmg.jkr.gov.my/images/8/81/ATJ_2A.85_P_2019-WM.pdf (Wayback 20250614112213)",
+  "status": "primary",
+  "extractor": "tools/extract_atj2a_signs.py",
+  "note": "Names are best-effort from pdftotext column layout; the code is the checked key."
+ },
+ "_model_map": {
+  "discipline": "SIGNAGE",
+  "code_prop": "17_Code",
+  "note": "where the sign code lives in the model (measured in JELAPANG element_psets, CIVIL_HIGHWAY_JELAPANG.md §K-6.1)"
+ },
+ "signs": [
+  {
+   "code": "RP1",
+   "name": "STOP AT INTERSECTION",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP2a",
+   "name": "NO LEFT TURN",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP2b",
+   "name": "NO RIGHT TURN",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP3",
+   "name": "NO U-TURN",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP4",
+   "name": "NO ENTRY FOR ANY VEHICLE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP5",
+   "name": "NO ENTRY FOR VEHICLES HAVING TOTAL WEIGHT EXCEEDING THE SPECIFIED WEIGHT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP6a",
+   "name": "NO ENTRY FOR VEHICLES HAVING NO ENT OVERALL HEIGHT EXCEEDING THE TOTAL SPECIFIED HEIGHT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP6b",
+   "name": "FOR VEHICLES HAVING WIDTH EXCEEDING THE SPECIFIED WIDTH",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP7",
+   "name": "SPEED LIMIT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 105,
+   "pdf_page": 109
+  },
+  {
+   "code": "RP8a",
+   "name": "NO ENTRY FOR ANIMAL DRAWN VEHICLES CARTS OF ALL FORM",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8b",
+   "name": "NO ENTRY FOR BICYCLE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8c",
+   "name": "NO ENTRY FOR MOTORCYCLE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8d",
+   "name": "NO ENTRY FOR TRICYCLE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8e",
+   "name": "NO ENTRY FOR MOPED",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8f",
+   "name": "NO ENTRY FOR TRISHAW",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8g",
+   "name": "NO ENTRY FOR BULLOCK CART",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP8h",
+   "name": "NO ENTRY FOR OTHER SLOW MOVING VEHICLES",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 106,
+   "pdf_page": 110
+  },
+  {
+   "code": "RP9a(i)",
+   "name": "MULA START OF SPEED LIMIT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP9a(ii)",
+   "name": "TAMAT END OF SPEED LIMIT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP9a(iii)",
+   "name": "END OF SPEED LIMIT",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP9b(i)",
+   "name": "PERINGATAN SPEED LIMIT ZONE REMINDER",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP9b(ii)",
+   "name": "SPEED LIMIT ZONE REMINDER",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP10",
+   "name": "NO PARKING",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP11",
+   "name": "NO STOPPING",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP12",
+   "name": "STRICTION ON USE OF HORNS",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP13",
+   "name": "GIVE WAY",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 107,
+   "pdf_page": 111
+  },
+  {
+   "code": "RP14",
+   "name": "KANAK KANAK MELINTAS STOP CHILDREN CROSSING",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 108,
+   "pdf_page": 112
+  },
+  {
+   "code": "RP15",
+   "name": "DILARANG MEMOTONG NO OVERTAKING",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 108,
+   "pdf_page": 112
+  },
+  {
+   "code": "RP16",
+   "name": "DILARANG MEMOTONG HEAVY VEHICLES FORBIDDEN TO OVERTAKE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 108,
+   "pdf_page": 112
+  },
+  {
+   "code": "RP17",
+   "name": "DILARANG MEMANDU LORONG KANAN HEAVY VEHICLES PROHIBITED FROM DRIVING ON THE RIGHT LANE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 108,
+   "pdf_page": 112
+  },
+  {
+   "code": "RP18",
+   "name": "ROAD RESERVE",
+   "group": "Regulatory Prohibitive",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 108,
+   "pdf_page": 112
+  },
+  {
+   "code": "RM1(i)",
+   "name": "STRAIGHT",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM1(ii)",
+   "name": "TURN LEFT SYMBOL REVERSED)",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM1(iii)",
+   "name": "TURN LEFT AHEAD SYMBOL REVERSED)",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM1(iv)",
+   "name": "TURN LEFT OR STRAIGHT SYMBOL REVERSED)",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2",
+   "name": "DEDICATED LANE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2(i)",
+   "name": "DEDICATED LANE MOTORCYCLE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2(ii)",
+   "name": "DEDICATED LANE BICYCLE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2(iii)",
+   "name": "DEDICATED LANE TRICYCLES",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2(iv)",
+   "name": "DEDICATED LANE MOPEDS",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 109,
+   "pdf_page": 113
+  },
+  {
+   "code": "RM2(v)",
+   "name": "DEDICATED LANE TRISHAWS",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM2(vi)",
+   "name": "DEDICATED LANE NIMAL DRAWN VEHICLES CARTS OF ALL FORM",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM3",
+   "name": "VEHICLES MAY PASS EITHER SIDE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM4(i)",
+   "name": "KEEP LEFT",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM4(ii)",
+   "name": "KEEP RIGHT",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM5",
+   "name": "HEAVY VEHICLES KEEP LEFT",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM6",
+   "name": "USE LEFT LANE UNLESS OVERTAKING",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM7",
+   "name": "TURN LEFT THERE NO VEHICLE OR PEDESTRIAN",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM8",
+   "name": "TOW-AWAY ZONE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 110,
+   "pdf_page": 114
+  },
+  {
+   "code": "RM9",
+   "name": "WHEEL CLAMPING ZONE",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 111,
+   "pdf_page": 115
+  },
+  {
+   "code": "RM10",
+   "name": "PARKING FOR THE DISABL IN",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 111,
+   "pdf_page": 115
+  },
+  {
+   "code": "RM11",
+   "name": "NO THROUGH ROAD",
+   "group": "Regulatory Mandatory",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 111,
+   "pdf_page": 115
+  },
+  {
+   "code": "WD1",
+   "name": "UNEVEN ROAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD2a",
+   "name": "DANGEROUS BENDS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD2b",
+   "name": "DANGEROUS BENDS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD3",
+   "name": "ROAD INTERSECTION",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD4",
+   "name": "LEVEL CROSSING WITH GATES",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD5",
+   "name": "RAILWAY AUTOMATIC LEVEL CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD6",
+   "name": "LEVEL CROSSING WITHOUT GATES",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD7",
+   "name": "LEVEL CROSSING WITHOUT GATES",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD8",
+   "name": "DANGEROUS DESCENT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 112,
+   "pdf_page": 116
+  },
+  {
+   "code": "WD9",
+   "name": "DANGEROUS ASCENT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD10a",
+   "name": "RIGHT BEND",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD10b",
+   "name": "LEFT BEND",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD11",
+   "name": "WINDING ROAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD12",
+   "name": "SOFT ROAD SIDE TABLE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD13",
+   "name": "SLIPPERY CARRIAGEWAY",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD14",
+   "name": "PEDESTRIAN CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD15",
+   "name": "CHILDREN CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD16",
+   "name": "OTHER DANGER",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 113,
+   "pdf_page": 117
+  },
+  {
+   "code": "WD17",
+   "name": "AWAS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD18",
+   "name": "STOP SIGN AHEAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD19",
+   "name": "GIVE WAY SIGN AHEAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD20",
+   "name": "CARRIAGEWAY NARROWS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD21",
+   "name": "ROAD NARROWS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD22",
+   "name": "TRAFFIC SIGNAL AHEAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD23",
+   "name": "OBSTRUCTION",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD24a",
+   "name": "OBSTRUCTION MARKER",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD24b",
+   "name": "OBSTRUCTION MARKER",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 114,
+   "pdf_page": 118
+  },
+  {
+   "code": "WD25",
+   "name": "STAGGERED JUNCTIONS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD26",
+   "name": "STAGGERED JUNCTIONS WITH ROAD CLOSED TO TRAFFIC",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD27a",
+   "name": "ROAD JUNCTION ON THE LEFT RIGHT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD27b",
+   "name": "ROAD JUNCTION ON THE RIGHT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD27c",
+   "name": "ROAD JUNCTION ON THE LEFT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD27d",
+   "name": "ROAD JUNCTION ON THE RIGHT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD27e",
+   "name": "ROAD JUNCTION ON THE LEFT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD28a",
+   "name": "ROAD JUNCTION WITH MINOR ROAD ON THE RIGHT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD28b",
+   "name": "ROAD JUNCTION WITH MINOR ROAD ON THE LEFT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 115,
+   "pdf_page": 119
+  },
+  {
+   "code": "WD29",
+   "name": "ROCK FALLING OR SLIDES",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD30a",
+   "name": "LIVESTOCK CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD30b",
+   "name": "HORSE CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD31",
+   "name": "ROUNDABOUT AHEAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD32a",
+   "name": "CLIMBING LANE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD32b",
+   "name": "CLIMBING LANE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD33",
+   "name": "BLIND PEOPLE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD34",
+   "name": "CROSSING FOR DISABLED PEOPLE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD35",
+   "name": "NARROW BRIDGE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 116,
+   "pdf_page": 120
+  },
+  {
+   "code": "WD36",
+   "name": "DOUBLE ARROW",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD37",
+   "name": "TWO-WAY TRAFFIC",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD38a",
+   "name": "DIVIDED HIGHWAY ENDS",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD38b",
+   "name": "DIVIDED HIGHWAY AHEAD",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD39a",
+   "name": "CHEVRON DELINEATOR",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD39b",
+   "name": "CHEVRON DELINEATOR",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD40a",
+   "name": "WILDLIFE CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD40b",
+   "name": "WILDLIFE CROSSING",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD41",
+   "name": "ROAD JUNCTION ON THE LEFT RIGHT",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 117,
+   "pdf_page": 121
+  },
+  {
+   "code": "WD42",
+   "name": "ADVANCE WARNING FOR SCHOOL ZONE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD43",
+   "name": "CHEVRON",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD44",
+   "name": "PLAYGROUND",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD45a",
+   "name": "KURANGKAN LAJU",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD45c",
+   "name": "SPEED SIGN",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD46a",
+   "name": "WARNING SIGN APPROACHING LANDSLIDE PRONE AREA",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD46b",
+   "name": "WARNING SIGN APPROACHING HUMP",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD46c",
+   "name": "WARNING SIGN APPROACHING ACCIDENT PRONE AREA",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 118,
+   "pdf_page": 122
+  },
+  {
+   "code": "WD47",
+   "name": "HUMP AHEAD SIGN",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 119,
+   "pdf_page": 123
+  },
+  {
+   "code": "WD48",
+   "name": "HUMP",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 119,
+   "pdf_page": 123
+  },
+  {
+   "code": "WD49",
+   "name": "SPEED LIMIT ZONE REMINDER",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 119,
+   "pdf_page": 123
+  },
+  {
+   "code": "WD50",
+   "name": "WARNING SIGN APPROACHING SPEED LIMIT ZONE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 119,
+   "pdf_page": 123
+  },
+  {
+   "code": "WD51",
+   "name": "ZONE UNDER CAMERA SURVEILLANCE",
+   "group": "Warning Danger",
+   "table": "Appendix 4 Standard Traffic Signs (Colours)",
+   "page": 119,
+   "pdf_page": 123
+  }
+ ],
+ "_unread": []
+}
