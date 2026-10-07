@@ -408,7 +408,34 @@
     }
     // flat disc ON the sign face (user 2026-10-07: "stick that right onto the sign board"): CircleGeometry plane, one each side, 0.02 m outward of the bbox face,
     // normal = the thinnest horizontal bbox axis, diameter = the wider horizontal axis, centre one radius below the sign top. Free-standing: faces along the route tangent.
-    var DISC_OFF = 0.02;
+    var DISC_OFF = 0.02, FACE_EPS = 0.006;
+    // the board face of one sign from its world triangles: dominant horizontal normal (area-weighted, sign-folded); the BOARD = the height
+    //   bands at least 60% as wide (along the face) as the widest band — the post is narrow; disc = 90% of min(board width, board height).
+    function boardFace(guid) {
+      var V = [], m4 = new THREE.Matrix4(), v = new THREE.Vector3(), sx = 0, sz = 0;
+      var add = function (g, M) { var P = g.attributes.position, I = g.index, n = I ? I.count : P.count;
+        for (var k = 0; k + 2 < n; k += 3) { var t = []; for (var j = 0; j < 3; j++) { v.fromBufferAttribute(P, I ? I.getX(k + j) : k + j).applyMatrix4(M); t.push([v.x, v.y, v.z]); }
+          var e1 = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], e2 = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
+          var nx = e1[1] * e2[2] - e1[2] * e2[1], nz = e1[0] * e2[1] - e1[1] * e2[0]; if (nx < 0 || (nx === 0 && nz < 0)) { nx = -nx; nz = -nz; }
+          var a = Math.hypot(nx, nz); sx += nx * a; sz += nz * a; V.push(t[0], t[1], t[2]); } };
+      A.collectMeshes(function (o) { return o.isMesh; }).forEach(function (o) {
+        if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) A._batchMeta[o.id].forEach(function (mm) { if (mm.guid !== guid) return; var g = o.userData.slotGeo && o.userData.slotGeo[mm.slotId]; if (!g) return; o.getMatrixAt(mm.slotId, m4); add(g, m4.clone().premultiply(o.matrixWorld)); });
+        else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) A._instanceMeta[o.id].forEach(function (mm, i) { if (mm.guid !== guid) return; o.getMatrixAt(i, m4); add(o.geometry, m4.clone().premultiply(o.matrixWorld)); });
+      });
+      var L = Math.hypot(sx, sz); if (!V.length || !(L > 0)) return null;
+      var N = [sx / L, sz / L], T = [-N[1], N[0]], ymin = Infinity, ymax = -Infinity;
+      V.forEach(function (q) { if (q[1] < ymin) ymin = q[1]; if (q[1] > ymax) ymax = q[1]; });
+      var B = 12, bands = []; for (var b = 0; b < B; b++) bands.push({ u0: Infinity, u1: -Infinity });
+      V.forEach(function (q) { var k = Math.min(B - 1, Math.floor((q[1] - ymin) / ((ymax - ymin) || 1) * B)), u = q[0] * T[0] + q[2] * T[1]; if (u < bands[k].u0) bands[k].u0 = u; if (u > bands[k].u1) bands[k].u1 = u; });
+      var W = 0; bands.forEach(function (bd) { if (bd.u1 > bd.u0) W = Math.max(W, bd.u1 - bd.u0); });
+      var bTop = -Infinity, bBot = Infinity, u0 = Infinity, u1 = -Infinity, d0 = Infinity, d1 = -Infinity;
+      V.forEach(function (q) { var k = Math.min(B - 1, Math.floor((q[1] - ymin) / ((ymax - ymin) || 1) * B)), bd = bands[k]; if (!(bd.u1 - bd.u0 >= 0.6 * W)) return;
+        var u = q[0] * T[0] + q[2] * T[1], d = q[0] * N[0] + q[2] * N[1];
+        if (q[1] > bTop) bTop = q[1]; if (q[1] < bBot) bBot = q[1]; if (u < u0) u0 = u; if (u > u1) u1 = u; if (d < d0) d0 = d; if (d > d1) d1 = d; });
+      var w = u1 - u0, h = bTop - bBot, dia = 0.9 * Math.min(w, h), um = (u0 + u1) / 2, cy = h > w * 1.3 ? bTop - w / 2 : (bTop + bBot) / 2;
+      // centre on the face: point with tangent coordinate um and normal coordinate 0 (the disc is then pushed to front / back planes)
+      return { n: N, c: [T[0] * um, T[1] * um], cy: cy, front: d1, back: d0, dia: dia, w: w, top: bTop, bot: bBot };
+    }
     function mkDisc(map, dia, pos, yaw, ud) {
       var m = new THREE.Mesh(new THREE.CircleGeometry(dia / 2, 48), new THREE.MeshBasicMaterial({ map: map, transparent: true, alphaTest: 0.05, depthTest: true, fog: false }));
       m.position.set(pos.x, pos.y, pos.z); m.rotation.y = yaw; m.renderOrder = 6; Object.assign(m.userData, ud); A.scene.add(m); _discs.push(m); return m;
@@ -425,15 +452,14 @@
           [0, Math.PI].forEach(function (d, i) { var o = DISC_OFF * (i ? -1 : 1); mkDisc(map, dia, { x: pos.x + Math.sin(yaw + d) * o, y: pos.y, z: pos.z + Math.cos(yaw + d) * o }, yaw + d, Object.assign({ side: i, half: half, normal: [Math.sin(yaw + d), 0, Math.cos(yaw + d)] }, ud)); meshes++; });
           made++; cnt.free++; return;
         }
-        var t = objQuery('SELECT center_x AS cx, center_y AS cy, center_z AS cz, bbox_x AS bx, bbox_y AS by, bbox_z AS bz FROM element_transforms WHERE guid = ?', [r.guid])[0];
-        if (!t || !(t.bz > 0)) { skipped.push(r.guid + ':no-bbox'); return; }
-        var w = Math.max(t.bx || 0, t.by || 0), th = Math.min(t.bx || 0, t.by || 0); if (!(w > 0)) { skipped.push(r.guid + ':no-width'); return; }
-        var nIfc = (t.bx || 0) <= (t.by || 0) ? [1, 0] : [0, 1];                       // IFC horizontal axis of the thinnest bbox extent = face normal
-        var c0 = A.ifc2three(t.cx, t.cy, t.cz + t.bz / 2 - w / 2), c1 = A.ifc2three(t.cx + nIfc[0], t.cy + nIfc[1], t.cz + t.bz / 2 - w / 2);
-        var nx = c1.x - c0.x, nz = c1.z - c0.z, nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
-        var yaw0 = Math.atan2(nx, nz);
-        [1, -1].forEach(function (sd, i) { var off = th / 2 + DISC_OFF;
-          mkDisc(map, w, { x: c0.x + sd * nx * off, y: c0.y, z: c0.z + sd * nz * off }, yaw0 + (i ? Math.PI : 0), Object.assign({ side: i, normal: [sd * nx, 0, sd * nz], face: { c: [c0.x, c0.y, c0.z], n: [nx, 0, nz], half: th / 2 } }, ud)); meshes++; });
+        // §DISC_ON_FACE (user 2026-10-08: "not placed right on the sign post at its surface as if painted on it"): the bbox path put discs
+        //   0.2–0.7 m ABOVE the board and 23–32° off its face on angled boards (world-axis bbox). Now from the board's own triangles.
+        var F = boardFace(r.guid); if (!F) { skipped.push(r.guid + ':no-mesh'); return; }
+        var yaw0 = Math.atan2(F.n[0], F.n[1]);
+        [[1, F.front], [-1, F.back]].forEach(function (sd, i) {
+          var off = sd[1] + sd[0] * FACE_EPS;
+          mkDisc(map, F.dia, { x: F.c[0] + F.n[0] * off, y: F.cy, z: F.c[1] + F.n[1] * off }, yaw0 + (i ? Math.PI : 0),
+            Object.assign({ side: i, normal: [sd[0] * F.n[0], 0, sd[0] * F.n[1]], face: { n: [F.n[0], 0, F.n[1]], d: off, top: F.top, bot: F.bot, w: F.w } }, ud)); meshes++; });
         made++; cnt[r.kind]++;
       });
       console.log('§SPEED_SIGN_DISC made=' + made + ' meshes=' + meshes + ' onRealSign=' + cnt.real + ' onOtherSign=' + cnt.other + ' freeStanding=' + cnt.free + ' speedSigns=' + plan.filter(function (r) { return r.kind === 'real'; }).length + (skipped.length ? ' skipped=' + skipped.join(',') : '') + ' verts=' + (meshes * 50));

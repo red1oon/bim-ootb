@@ -363,10 +363,29 @@ function setupCivilSections(A) {
   function _el(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
 
   // 1 m profile: road top / ground / drain invert; NaN = no surface under that point. Async in ~25 ms chunks so the page stays alive.
+  // §PROFILE_AFTER_LOAD (user 2026-10-08 "speed number only 100 and 32"): sampled before the EARTHWORK ground had streamed, every
+  //   terrain window read "unmeasured" → all FLAT → the 80 km/h zone vanished, and the result was cached for the session. Wait until
+  //   streaming has stopped and the element count is stable for 2 s, then sample.
+  function _afterLoad() {
+    return new Promise(function (res) {
+      var last = -1, since = performance.now(), t0 = performance.now(), waited = false;
+      (function tick() {
+        var n = A.streamedCount || 0, busy = !!A.streaming;
+        if (busy || n !== last) { last = n; since = performance.now(); waited = waited || busy; }
+        if (!busy && performance.now() - since >= 2000) { if (waited || performance.now() - t0 > 2100) console.log('§PROFILE_AFTER_LOAD waitedMs=' + Math.round(performance.now() - t0) + ' elements=' + n); return res(); }
+        setTimeout(tick, 250);
+      })();
+    });
+  }
   A.civilProfilePrepare = function () {
     var r = _route(); if (!r) return Promise.resolve(null);
     if (_prof && _prof.db === A.db) return Promise.resolve(_prof);
     if (_profP && _profP.db === A.db) return _profP.p;
+    var _db0 = A.db, _p0 = _afterLoad().then(function () { _profP = null; return A.civilProfilePrepareNow(); });
+    _profP = { db: _db0, p: _p0 }; return _p0;
+  };
+  A.civilProfilePrepareNow = function () {
+    var r = _route(); if (!r) return Promise.resolve(null);
     var t0 = performance.now(), c = _cumOf(r), L = c[c.length - 1], n = Math.floor(L / PROFILE_DS) + 1;
     var P = { db: A.db, ds: PROFILE_DS, len: L, n: n, road: new Float32Array(n), ground: new Float32Array(n), drain: new Float32Array(n), rx: new Float32Array(n), ry: new Float32Array(n), rz: new Float32Array(n), ms: 0, rays: 0 };
     var tR = _targets('ROAD'), tG = _targets('EARTHWORK'), tD = _targets('DRAINAGE');

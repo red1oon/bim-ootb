@@ -189,27 +189,28 @@
 // v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
-// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=5; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1618';
-// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=4; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
-// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=3.
-// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=3.
+// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=6; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
+const CACHE_VERSION = 'v1619';
+// v1619 (2026-10-08) §DISC_ON_FACE + §PROFILE_AFTER_LOAD: speed discs placed on the board's real face (mesh), long section sampled after loading (80 km/h zone kept).
+// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=5; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
+// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=4.
+// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=4.
 // v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
 // v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
 // v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
 // v1609 (2026-10-07) §FIND_ROW_CLIPPED: Find tree height clamped so the cost · › ERP · open ↗ row always fits (saved findTreeH re-fits).
 // v1608 (2026-10-07) §ZOOM-REUSE + §ZOOM_LANDING_NO_RESTORE: red pill zooms in an open viewer tab (no reload); a ?find= landing skips the saved view's TM/camera/filter.
 // v1607 (2026-10-07) §NO_FALLTHROUGH: whatif_panel _pickProject no longer falls through to the newest phased project (Hospital).
-// v1606 (2026-10-07) §CROSS_POPUP_COMPACT: live cross popup — short header, wrapping short-name legend, no overlapping text; civil_sections.js?v=6.
+// v1606 (2026-10-07) §CROSS_POPUP_COMPACT: live cross popup — short header, wrapping short-name legend, no overlapping text; civil_sections.js?v=7.
 // v1605 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill (was v1603 on its branch).
-// v1604 (2026-10-07) §CROSS_LIVE_POPUP: draggable live cross-section popup beside the cut while scrubbing (civil_sections.js); viewer.html civil_sections.js?v=5.
-// v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=4.
-// v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=3.
+// v1604 (2026-10-07) §CROSS_LIVE_POPUP: draggable live cross-section popup beside the cut while scrubbing (civil_sections.js); viewer.html civil_sections.js?v=6.
+// v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=5.
+// v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=4.
 // v1600 (main)
 // v1597 (2026-10-06) §SKY_GHOST_SKYLINE: a civil model builds no fake-city skyline ring (effects.js?v=150); tools/sky_ghost_detect.js + viewer/tests/witness_sky_ghost.js.
 // v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
-// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=2, #sec-axes.
-// v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=1, main.js setupCivilSections.
+// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=3, #sec-axes.
+// v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=2, main.js setupCivilSections.
 // v1594 (2026-10-06) §EW_VOLUME_SURFACE: earthworks_volume.js (ONE owner of the volume line) -> Alt+C ground card, model_check_report.html, boq_charts.html.
 // v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
 // v1591 (2026-10-06) §EARTHWORKS_VOLUME: cpe_road_panels.js earthworks volume line on the planned card (closed-solid gate).
