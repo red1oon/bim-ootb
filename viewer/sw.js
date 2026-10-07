@@ -189,8 +189,9 @@
 // v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
-const CACHE_VERSION = 'v1615';
-// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=2.
+const CACHE_VERSION = 'v1616';
+// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=3.
+// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=3.
 // v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
 // v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
 // v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
