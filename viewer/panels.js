@@ -1396,7 +1396,7 @@ function setupPanels(A) {
       // §SIGN_CHECK (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): civil-only. A.isCivilModel() gates the row (drawer
       // build, see _buildMasterDrawer) AND A.showRoadStandards itself, so a building never reaches it.
       { id: 'roadstd',    name: 'Road standards',  key: 'j', pill: false, icon: I.signpost.svg, platform: null, civilOnly: true,
-        fn: function() { if (A.showRoadStandards) A.showRoadStandards(); },
+        fn: function() { if (A.toggleRoadStandards) A.toggleRoadStandards(); }, isActive: function() { return !!(A.roadStandardsOpen && A.roadStandardsOpen()); },
         children: [ { name: 'Sign codes vs ATJ 2A/85' }, { name: 'OK / UNKNOWN / MISSING tree' }, { name: 'Click a sign: zoom + standard' } ] },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
