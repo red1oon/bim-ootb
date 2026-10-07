@@ -2502,7 +2502,10 @@
    "note": "where the project title and the road surface live in the model (measured in CivilWorksPath element_psets / elements_meta)",
    "roundabout_prop": "06_No_Route",
    "roundabout_value": "ROUNDABOUT",
-   "sign_name_prop": "16_Name"
+   "sign_name_prop": "16_Name",
+   "signal_prop": "01_Component_Name",
+   "signal_value": "TRAFFIC SIGNAL",
+   "signal_discipline": "LIGHTING"
   },
   "road_category_map": {
    "rows": [
@@ -2605,7 +2608,11 @@
    "approach": "ssd_table_4_1",
    "approach_note": "'ssd_table_4_1' = ATJ 8/86 Table 4.1 stopping sight distance at the adjoining link design speed (before AND after the roundabout); or {\"fixed_m\": 150}. Demo rule, editable.",
    "sign_regex": "ROUNDABOUT AHEAD",
-   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)"
+   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)",
+   "map": "roundabout",
+   "noun": "roundabout",
+   "zone_id": "RB",
+   "membership": "self"
   },
   "speed_ramp": {
    "note": "presentation only (not from ATJ). Colour = linear RGB interpolation between stops by km/h, clamped at the ends: slowest (<=30) = very light warm white #fff3e0 (not pure white, so it still reads as painted on grey unpainted road), fastest = strong red #b71c1c. Lightness decreases monotonically with speed. Editable.",
@@ -2631,6 +2638,29 @@
      "hex": "#b71c1c"
     }
    ]
-  }
+  },
+  "node_kinds": [
+   "roundabout",
+   "signal_junction"
+  ],
+  "node_kinds_note": "controlled-node kinds handled by ONE engine mechanism (speed_zones.js §CONTROLLED_NODE); each key has its own config object below. Add a kind = add a config + model_map keys, no code.",
+  "signal_junction": {
+   "enabled": true,
+   "map": "signal",
+   "noun": "signal junction",
+   "zone_id": "SJ",
+   "membership": "road_in_box",
+   "label": "demo default — not from a standard",
+   "speed_kmh": 50,
+   "speed_status": "assumed",
+   "speed_note": "No free standard gives a signalised-junction speed (ATJ 11/87 not in hand; US FHWA signal guides do not reduce design speed): conservative demo default, editable.",
+   "approach": "ssd_table_4_1",
+   "approach_note": "'ssd_table_4_1' = ATJ 8/86 Table 4.1 stopping sight distance at the adjoining link design speed (a driver must be able to stop for a red light), each side that exists; or {\"fixed_m\": 150}.",
+   "sign_regex": "TRAFFIC SIGNAL AHEAD",
+   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)"
+  },
+  "disc_snap_m": 100,
+  "disc_has_sign_m": 30,
+  "disc_note": "speed-limit discs: a zone START with no speed sign within disc_has_sign_m (chainage) borrows the nearest SIGNAGE board within disc_snap_m (dashed amber 'no speed sign - borrowed'); none in range -> free-standing marker. Flags the missing RP. 7 for engineers."
  }
 }
