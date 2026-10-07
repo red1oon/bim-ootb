@@ -129,9 +129,21 @@
     bp = bp.filter(function (v, k, a) { return a.indexOf(v) === k; }).sort(function (a, b) { return a - b; });
     function terrainAt(s) { for (var k = 0; k < tw.length; k++) if (s < tw[k].s1 - 1e-9 || k === tw.length - 1) return tw[k]; return tw[tw.length - 1]; }
     var gcl = geo.speed_setting.class, mainCls = sel.cls;
+    // buildZones(bp, ivs): one zone per breakpoint pair; a zone whose midpoint lies in a roundabout/approach interval (ivs) takes that rule's speed
+    // (a per_zone user value still overrides); every other zone is a link zone (the ATJ 8/86 chain / lever).
+    function buildZones(bp, ivs) {
+    var outZ = [];
     for (var z = 0; z + 1 < bp.length; z++) {
-      var s0 = bp[z], s1 = bp[z + 1], tws = terrainAt(s0 + 1e-6), zone = { id: 'Z' + (z + 1), s0: s0, s1: s1, opens: why[s0] || '', terrain: tws.terrain, terrainMeasured: tws.measured, terrainPct: tws.pct, areaType: areaType, area: area, category: cat.category, derivedClass: mainCls, notes: [] };
+      var s0 = bp[z], s1 = bp[z + 1], tws = terrainAt(s0 + 1e-6), zone = { id: 'Z' + (z + 1), kind: 'link', s0: s0, s1: s1, opens: why[s0] || '', terrain: tws.terrain, terrainMeasured: tws.measured, terrainPct: tws.pct, areaType: areaType, area: area, category: cat.category, derivedClass: mainCls, notes: [] };
       var cls = null, speed = null, spRef = null, label = 'derived';
+      var iv = ivs.filter(function (q) { var m = (s0 + s1) / 2; return m >= q.s0 && m < q.s1; })[0];
+      if (iv) {
+        var pzr = lever.per_zone && lever.per_zone[zone.id];
+        zone.kind = iv.kind; zone.srcText = iv.srcText; zone.approachM = iv.approachM || null; zone.linkSpeed = iv.linkSpeed || null;
+        zone.cls = null; zone.speed = pzr != null ? +pzr : iv.speed; zone.speedRef = null; zone.lane = null; zone.grade = null; zone.selRef = null; zone.catRow = cat; zone.mode = mode;
+        zone.label = pzr != null ? 'manual (user, per zone)' : iv.label; zone.assumed = R.assumed.slice(); if (iv.assumed) zone.assumed.push(iv.assumed);
+        outZ.push(zone); continue;
+      }
       if (mode === 'class') {
         cls = lever['class']; label = 'class ' + cls + ' (user)';
         var sa = cls && speedAt(geo, cls, tws.terrain, areaType);
@@ -156,11 +168,64 @@
       zone.lane = cls ? laneWidth(geo, cls) : null; zone.grade = (cls && speed != null) ? maxGrade(geo, cls, speed, tws.terrain, areaType) : null;
       zone.selRef = sel.ref || null; zone.catRow = cat;
       zone.assumed = R.assumed.slice();
-      R.zones.push(zone);
+      outZ.push(zone);
+    }
+    return outZ;
+    }
+    var n0 = msgs.length, baseZ = buildZones(bp, []), n1 = msgs.length;
+    // §ROUNDABOUT_ZONE — demo rule, editable (spec). Zone = chainage range of the elements the model_map names; speed = NCHRP 672 entry-speed bound;
+    // approach before/after = ATJ 8/86 Table 4.1 SSD at the adjoining link's speed (or fixed_m). Link speed read from the base zones above.
+    var RB = geo.roundabout, ivs = [], rbInfo = null;
+    function linkSpeedAt(s) { var q = baseZ.filter(function (k) { return s >= k.s0 - 1e-9 && s < k.s1 - 1e-9; })[0] || baseZ[baseZ.length - 1]; return q ? q.speed : null; }
+    if (RB && RB.enabled !== false) {
+      var pts = (inp.roundabout || []).map(function (p) { return projectToRoute(inp.route, p.x, p.z); });
+      if (!pts.length) { msgs.push('roundabout: no model elements with ' + (geo.model_map && geo.model_map.roundabout_prop) + ' = ' + (geo.model_map && geo.model_map.roundabout_value) + ' — no roundabout zone derived'); log('§ROUNDABOUT_ZONE NONE ' + msgs[msgs.length - 1]); }
+      else {
+        var rs0 = Math.min.apply(null, pts.map(function (p) { return p.s; })), rs1 = Math.max.apply(null, pts.map(function (p) { return p.s; })), rlat = Math.max.apply(null, pts.map(function (p) { return p.lateral; }));
+        var lane = RB.lane_type, tab = RB.nchrp_entry_speed && RB.nchrp_entry_speed[lane], pick = RB.speed_pick === 'upper' ? 1 : 0, rsp = tab ? tab.kmh[pick] : null;
+        var offRoute = (rs1 - rs0) < 1e-6 && (rs1 <= 1e-6 || rs0 >= L - 1e-6);
+        rbInfo = { offRoute: offRoute, guids: (inp.roundabout || []).map(function (p) { return p.guid; }), n: pts.length, s0: rs0, s1: rs1, maxLateral: rlat, lane: lane, pick: RB.speed_pick || 'lower', speed: rsp, mph: tab ? tab.mph[pick] : null, pre: null, post: null, signs: [] };
+        if (rsp == null) { msgs.push('roundabout: lane_type "' + lane + '" has no row in geometric.roundabout.nchrp_entry_speed — no roundabout zone'); log('§ROUNDABOUT_ZONE NO_SPEED ' + msgs[msgs.length - 1]); rbInfo = null; }
+        else {
+          var ssd = geo.stopping_sight_distance, fixed = RB.approach && typeof RB.approach === 'object' ? RB.approach.fixed_m : null;
+          var lblRb = RB.label || 'NCHRP 672 (US) — international reference, not JKR; ATJ 11/87 not in hand';
+          var laneAssumed = RB.lane_type_status !== 'user' ? 'roundabout lane type ' + lane : null;
+          function appr(side, sref) {
+            var ls = linkSpeed(side), len = null, how = null;
+            if (side === 'before' ? rs0 <= 1e-6 : rs1 >= L - 1e-6) return { len: null, linkSpeed: null, how: null, routeEnd: true };   // the route ends at the roundabout on this side: nothing to slow
+            if (fixed != null) { len = +fixed; how = 'fixed ' + len + ' m (user)'; }
+            else if (ls == null) { msgs.push('roundabout ' + side + '-approach: adjoining link has no design speed — approach not drawn'); }
+            else if (ssd && ssd.rows_m[String(ls)] != null) { len = ssd.rows_m[String(ls)]; how = 'ATJ 8/86 ' + ssd.ref.table.split(' ').slice(0, 2).join(' ') + ', p.' + ssd.ref.page + ': ' + len + ' m SSD at ' + ls + ' km/h link'; }
+            else { msgs.push('roundabout ' + side + '-approach: ATJ 8/86 Table 4.1 has no row for ' + ls + ' km/h — approach not drawn (set approach.fixed_m to override)'); }
+            return { len: len, linkSpeed: ls, how: how };
+          }
+          function linkSpeed(side) { return side === 'before' ? (rs0 > 1e-6 ? linkSpeedAt(rs0 - 1e-6) : null) : (rs1 < L - 1e-6 ? linkSpeedAt(rs1 + 1e-6) : null); }
+          var pre = appr('before'), post = appr('after');
+          rbInfo.pre = pre; rbInfo.post = post;
+          if (pre.len) { pre.s0 = Math.max(0, rs0 - pre.len); ivs.push({ kind: 'approach', s0: pre.s0, s1: rs0, speed: rsp, approachM: pre.len, linkSpeed: pre.linkSpeed, label: 'demo rule (editable): approach slows to the roundabout speed — ' + pre.how, srcText: 'demo rule (editable) · ' + pre.how + ' · speed = roundabout speed (' + lblRb + ')', assumed: laneAssumed }); why[pre.s0] = why[pre.s0] || 'roundabout approach (before)'; bp.push(pre.s0); }
+          why[rs0] = offRoute ? 'roundabout (off-route, ' + rlat.toFixed(0) + ' m max / ' + Math.min.apply(null, pts.map(function (p) { return p.lateral; })).toFixed(0) + ' m min lateral, beyond the route ' + (rs1 <= 1e-6 ? 'start' : 'end') + ')' : 'roundabout'; bp.push(rs0); why[rs1] = why[rs1] || 'roundabout exit (approach after)'; bp.push(rs1);
+          if (!offRoute) ivs.push({ kind: 'roundabout', s0: rs0, s1: rs1, speed: rsp, label: lblRb, srcText: lblRb + ' · recommended max entry design speed ' + rbInfo.mph + ' mph = ' + rsp + ' km/h (' + rbInfo.pick + ' bound, ' + lane + '-lane)', assumed: laneAssumed });
+          if (post.len) { post.s1 = Math.min(L, rs1 + post.len); ivs.push({ kind: 'approach', s0: rs1, s1: post.s1, speed: rsp, approachM: post.len, linkSpeed: post.linkSpeed, label: 'demo rule (editable): approach slows to the roundabout speed — ' + post.how, srcText: 'demo rule (editable) · ' + post.how + ' · speed = roundabout speed (' + lblRb + ')', assumed: laneAssumed }); why[post.s1] = why[post.s1] || 'roundabout approach ends'; bp.push(post.s1); }
+          bp = bp.filter(function (v, k, a) { return a.indexOf(v) === k; }).sort(function (a, b) { return a - b; });
+          var rx = RB.sign_regex ? new RegExp(RB.sign_regex, 'i') : null;
+          if (rx) rbInfo.signs = signs.filter(function (sg) { return rx.test(sg.name || '') || rx.test(sg.code || ''); }).map(function (sg) { return { guid: sg.guid, name: sg.name, code: sg.code, s: sg.s }; });
+        }
+      }
+    }
+    if (rbInfo && !ivs.length) msgs.push('roundabout: zero-length on the route and no approach could be placed');
+    if (ivs.length) { var rbm = msgs.splice(n1); msgs.length = n0; R.zones = buildZones(bp, ivs); rbm.forEach(function (m) { msgs.push(m); }); } else R.zones = baseZ;
+    R.roundabout = rbInfo;
+    // off-route roundabout (all its elements project onto a route END): no chainage extent -> an extra zone entry (id RB, s0=s1) so the legend/sign list/paint
+    // still carry the roundabout speed; the elements themselves are painted by membership, not by chainage.
+    if (rbInfo && rbInfo.offRoute) {
+      var lblO = RB.label || '', zO = { id: 'RB', kind: 'roundabout', s0: rbInfo.s0, s1: rbInfo.s1, opens: 'off-route (' + rbInfo.n + ' elements, nearest ' + Math.min.apply(null, pts.map(function (p) { return p.lateral; })).toFixed(0) + ' m from the route end)', terrain: '-', terrainMeasured: false, terrainPct: null, areaType: areaType, area: area, category: cat.category, derivedClass: mainCls, notes: [], cls: null, speed: rbInfo.speed, speedRef: null, lane: null, grade: null, selRef: null, catRow: cat, mode: mode,
+        label: lblO, srcText: lblO + ' · recommended max entry design speed ' + rbInfo.mph + ' mph = ' + rbInfo.speed + ' km/h (' + rbInfo.pick + ' bound, ' + rbInfo.lane + '-lane) · ' + rbInfo.n + ' roundabout elements lie off the route (no on-route chainage)', assumed: R.assumed.slice().concat(RB.lane_type_status !== 'user' ? ['roundabout lane type ' + rbInfo.lane] : []) };
+      var pzO = geo.speed_setting.per_zone && geo.speed_setting.per_zone.RB; if (pzO != null) { zO.speed = +pzO; zO.label = 'manual (user, per zone)'; }
+      R.zones.push(zO); rbInfo.zone = zO;
     }
     // merge neighbours that differ in nothing but a terrain-window edge (a sign boundary always stays)
     R.signRows = signs.map(function (sg) {
-      var zz = R.zones.filter(function (q) { return sg.s >= q.s0 - 1e-9 && sg.s < q.s1 - 1e-9; })[0] || R.zones[R.zones.length - 1];
+      var tile = R.zones.filter(function (q) { return q.id !== 'RB'; }), zz = tile.filter(function (q) { return sg.s >= q.s0 - 1e-9 && sg.s < q.s1 - 1e-9; })[0] || tile[tile.length - 1];
       var isSpeed = speedSigns.indexOf(sg) >= 0;
       return { guid: sg.guid, code: sg.code, name: sg.name, s: sg.s, lateral: sg.lateral, isSpeedSign: isSpeed, zone: zz.id, speed: zz.speed, label: zz.label, cls: zz.cls };
     });
@@ -171,16 +236,29 @@
         ' routeLen=' + L.toFixed(1) + ' assumed=[' + R.assumed.join('; ') + ']' + (msgs.length ? ' MSG=' + msgs.join(' | ') : ''));
     R.zones.forEach(function (q) {
       log('§SPEED_ZONE ' + q.id + ' s=' + q.s0.toFixed(1) + '..' + q.s1.toFixed(1) + ' opens=' + q.opens + ' terrain=' + q.terrain + (q.terrainMeasured ? '(' + q.terrainPct.toFixed(2) + '%)' : '(assumed)') +
-          ' class=' + q.cls + ' speed=' + q.speed + ' label="' + q.label + '" lane=' + (q.lane ? q.lane.m : 'NA') + ' maxGrade=' + (q.grade ? q.grade.pct : 'NA') + ' src=' + refTxt(q.speedRef));
+          ' kind=' + q.kind + ' class=' + q.cls + ' speed=' + q.speed + ' label="' + q.label + '" lane=' + (q.lane ? q.lane.m : 'NA') + ' maxGrade=' + (q.grade ? q.grade.pct : 'NA') + ' src=' + (q.srcText || refTxt(q.speedRef)));
     });
+    if (R.roundabout) {
+      var rb = R.roundabout; log('§ROUNDABOUT_ZONE s=' + rb.s0.toFixed(1) + '..' + rb.s1.toFixed(1) + ' elements=' + rb.n + ' maxLateralM=' + rb.maxLateral.toFixed(1) + ' lane=' + rb.lane + ' pick=' + rb.pick + ' speed=' + rb.speed + ' km/h (' + rb.mph + ' mph NCHRP 672) before=' + (rb.pre.len || 'none') + ' m@link' + rb.pre.linkSpeed + ' after=' + (rb.post.len || 'none') + ' m@link' + rb.post.linkSpeed);
+      rb.signs.forEach(function (sg) { log('§ROUNDABOUT_SIGN ' + (sg.name || sg.code) + ' s=' + sg.s.toFixed(1) + ' vs approach-before start ' + (rb.pre.s0 != null ? rb.pre.s0.toFixed(1) : 'n/a') + ' (comparison only, not a boundary)'); });
+      log('§ROUNDABOUT_SIGNS count=' + rb.signs.length);
+    }
     return R;
   }
   function norm(c) { return String(c == null ? '' : c).toUpperCase().replace(/[\s.]/g, ''); }
 
   // colour per speed: shipped table (presentation, std_values `speed_colours`), else deterministic hue from the number
   function colourFor(std, speed) {
-    var t = std.geometric && std.geometric.speed_colours, k = String(speed);
-    if (t && t[k]) return t[k];
+    // speed colour ramp lives in std_values.json geometric.speed_ramp (editable); hsl fallback only if the ramp is absent
+    var rp = std.geometric && std.geometric.speed_ramp, st = rp && rp.stops;
+    if (st && st.length && speed != null) {
+      var hx = function (c) { return [(parseInt(c.slice(1), 16) >> 16) & 255, (parseInt(c.slice(1), 16) >> 8) & 255, parseInt(c.slice(1), 16) & 255]; };
+      if (speed <= st[0].kmh) return st[0].hex; if (speed >= st[st.length - 1].kmh) return st[st.length - 1].hex;
+      for (var i = 1; i < st.length; i++) if (speed <= st[i].kmh) {
+        var u = (speed - st[i - 1].kmh) / (st[i].kmh - st[i - 1].kmh), a = hx(st[i - 1].hex), b = hx(st[i].hex), o = '#';
+        for (var j = 0; j < 3; j++) o += ('0' + Math.round(a[j] + (b[j] - a[j]) * u).toString(16)).slice(-2);
+        return o; }
+    }
     var h = Math.round(((speed % 140) / 140) * 300), c = 'hsl(' + h + ',70%,50%)';
     return c;
   }
@@ -200,11 +278,14 @@
       var mm = std._model_map || {}, geo = std.geometric, route = (A.civilDriveRoute && A.civilDriveRoute()) || null;
       var title = '';
       var tr = objQuery('SELECT value FROM element_psets WHERE name = ? LIMIT 1', [geo.model_map.title_prop]); if (tr.length) title = String(tr[0].value);
-      var signs = [], codeOf = {};
+      var signs = [], codeOf = {}, nameOf = {};
+      if (geo.model_map.sign_name_prop) objQuery('SELECT guid, value FROM element_psets WHERE name = ?', [geo.model_map.sign_name_prop]).forEach(function (r) { if (nameOf[r.guid] == null && r.value != null) nameOf[r.guid] = String(r.value); });
       objQuery('SELECT guid, value FROM element_psets WHERE name = ?', [mm.code_prop]).forEach(function (r) { if (codeOf[r.guid] == null && r.value != null) codeOf[r.guid] = String(r.value); });
       objQuery('SELECT m.guid AS guid, m.element_name AS name, t.center_x AS cx, t.center_y AS cy, t.center_z AS cz FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE m.discipline = ?', [mm.discipline]).forEach(function (r) {
-        var p = A.ifc2three(r.cx, r.cy, r.cz); signs.push({ guid: r.guid, code: codeOf[r.guid] || null, name: r.name, x: p.x, z: p.z }); });
-      return { title: title, route: route, signs: signs };
+        var p = A.ifc2three(r.cx, r.cy, r.cz); signs.push({ guid: r.guid, code: codeOf[r.guid] || null, name: nameOf[r.guid] || r.name, x: p.x, z: p.z }); });
+      // §ROUNDABOUT_ZONE: elements the model_map names (property + value from std_values.json, no names in code)
+      var rb = []; if (geo.model_map.roundabout_prop) objQuery('SELECT m.guid AS guid, t.center_x AS cx, t.center_y AS cy, t.center_z AS cz FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid JOIN element_psets p ON p.guid = m.guid WHERE p.name = ? AND p.value = ?', [geo.model_map.roundabout_prop, geo.model_map.roundabout_value]).forEach(function (r) { var p = A.ifc2three(r.cx, r.cy, r.cz); rb.push({ guid: r.guid, x: p.x, z: p.z }); });
+      return { title: title, route: route, signs: signs, roundabout: rb };
     }
     function revert() {
       _touched.forEach(function (s) {
@@ -218,10 +299,14 @@
     // ROAD elements -> chainage -> zone colour (presentation only; saved originals restored by revert())
     function paint(res, std) {
       revert();
-      var route = res.route, byGuid = {}, ms = {}, n = 0, maxLat = 0, noZone = 0, colOf = {};
+      var route = res.route, byGuid = {}, ms = {}, n = 0, maxLat = 0, noZone = 0, colOf = {}, rbSet = {};
+      if (res.roundabout) (res.roundabout.guids || []).forEach(function (g) { rbSet[g] = 1; });
       var rows = objQuery("SELECT m.guid AS guid, t.center_x AS cx, t.center_y AS cy, t.center_z AS cz FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE m.discipline = ?", [std.geometric.model_map.road_discipline]);
       rows.forEach(function (r) {
-        var p = A.ifc2three(r.cx, r.cy, r.cz), pj = projectToRoute(route, p.x, p.z), zz = res.zones.filter(function (q) { return pj.s >= q.s0 - 1e-9 && pj.s < q.s1 - 1e-9; })[0] || res.zones[res.zones.length - 1];
+        var p = A.ifc2three(r.cx, r.cy, r.cz), pj = projectToRoute(route, p.x, p.z), tile = res.zones.filter(function (q) { return q.id !== 'RB'; });
+        var zz = tile.filter(function (q) { return pj.s >= q.s0 - 1e-9 && pj.s < q.s1 - 1e-9; })[0] || tile[tile.length - 1];
+        // roundabout elements (model_map property) carry the roundabout zone speed by membership; interior roundabout zone or the off-route RB entry
+        if (rbSet[r.guid]) zz = res.zones.filter(function (q) { return q.kind === 'roundabout'; })[0] || zz;
         if (zz.speed == null) { noZone++; return; }
         byGuid[r.guid] = { hex: hexOf(colourFor(std, zz.speed)), zone: zz.id, speed: zz.speed, s: pj.s }; maxLat = Math.max(maxLat, pj.lateral);
       });
@@ -262,7 +347,7 @@
         else return;
         n++;
       });
-      discs(res);
+      discs(res, std);
       _on = true; A._speedZonesTint = { byGuid: byGuid, painted: n };
       if (A.markDirty) A.markDirty();
       console.log('§SPEED_ZONES_PAINT on roadElements=' + rows.length + ' painted=' + n + ' whitenedMeshes=' + whitened + ' maxLateralM=' + maxLat.toFixed(2) + ' noZone=' + noZone + ' verts=0');
@@ -271,15 +356,16 @@
     // §SPEED_SIGN_DISC (user 2026-10-07: "better if the speed number is painted on the sign"): a speed-limit disc (red ring, white face,
     //   black number = the zone speed that sign opens, derived or user-set) on each speed sign while the zones are on. Size = the sign's own
     //   plan width (element_transforms bbox), centred one radius below the sign's top — where the face is. Presentation only; revert() removes.
-    function discTex(speed) {
+    function discTex(speed, ring) {
       var cv = document.createElement('canvas'); cv.width = cv.height = 256; var g = cv.getContext('2d');
-      g.beginPath(); g.arc(128, 128, 120, 0, 2 * Math.PI); g.fillStyle = '#d32f2f'; g.fill();
+      g.beginPath(); g.arc(128, 128, 120, 0, 2 * Math.PI); g.fillStyle = '#222'; g.fill();
+      g.beginPath(); g.arc(128, 128, 112, 0, 2 * Math.PI); g.fillStyle = ring || '#d32f2f'; g.fill();
       g.beginPath(); g.arc(128, 128, 92, 0, 2 * Math.PI); g.fillStyle = '#ffffff'; g.fill();
       g.fillStyle = '#000'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + (String(speed).length > 2 ? 84 : 110) + 'px sans-serif';
       g.fillText(String(speed), 128, 136);
       var t = new THREE.CanvasTexture(cv); return t;
     }
-    function discs(res) {
+    function discs(res, std) {
       var rows = res.signRows.filter(function (r) { return r.isSpeedSign; }), made = 0, skipped = [];
       rows.forEach(function (r) {
         if (r.speed == null) { skipped.push(r.guid + ':no-speed'); return; }
@@ -287,15 +373,15 @@
         if (!t || !(t.bz > 0)) { skipped.push(r.guid + ':no-bbox'); return; }
         var w = Math.max(t.bx || 0, t.by || 0); if (!(w > 0)) { skipped.push(r.guid + ':no-width'); return; }
         var p = A.ifc2three(t.cx, t.cy, t.cz + t.bz / 2 - w / 2);
-        var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex(r.speed), depthTest: true, transparent: true }));
-        sp.position.set(p.x, p.y, p.z); sp.scale.set(w, w, 1); sp.renderOrder = 6; sp.userData.speedDisc = r.guid;
+        var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex(r.speed, colourFor(std, r.speed)), depthTest: true, transparent: true }));
+        sp.position.set(p.x, p.y, p.z); sp.scale.set(w, w, 1); sp.renderOrder = 6; sp.userData.speedDisc = r.guid; sp.userData.speed = r.speed;
         A.scene.add(sp); _discs.push(sp); made++;
       });
       console.log('§SPEED_SIGN_DISC made=' + made + ' speedSigns=' + rows.length + (skipped.length ? ' skipped=' + skipped.join(',') : '') + ' verts=' + (made * 4));
     }
     function focusRow(res, std, row, card) {
       var z = res.zones.filter(function (q) { return q.id === row.zone; })[0];
-      var how = z ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, opens at ' + esc(z.opens) + '). ' +
+      var how = z && z.kind !== 'link' ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, ' + esc(z.kind) + ', opens at ' + esc(z.opens) + '). Speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' — ' + esc(z.srcText) + '. Mode: ' + esc(z.label) + (z.assumed.length ? ' · assumed inputs: ' + esc(z.assumed.join('; ')) : '') : z ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, opens at ' + esc(z.opens) + '). ' +
         'Category ' + esc(z.category) + ' (' + (z.catRow.status === 'user' ? 'user' : 'assumed') + ' title mapping: ' + esc(z.catRow.basis) + ') → class ' + esc(z.derivedClass || 'n/a') + ' (' + refTxt(z.selRef) + '). ' +
         'Terrain ' + z.terrain + (z.terrainMeasured ? ' (measured median grade ' + z.terrainPct.toFixed(2) + '%)' : ' (assumed)') + ' → speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' (' + refTxt(z.speedRef) + '). ' +
         'Lane ' + (z.lane ? z.lane.m + ' m (' + refTxt(z.lane.ref).replace('ATJ 8/86 ', '') + ')' : 'n/a') + ', max grade ' + (z.grade ? z.grade.pct + '% (' + z.grade.ref.table + ', p.' + z.grade.ref.page + ')' : 'n/a') + '. ' +
@@ -315,7 +401,7 @@
       host.appendChild(sec); var body = sec.querySelector('.sz-body');
       var p = (A.civilProfilePrepare ? A.civilProfilePrepare() : Promise.resolve(null));
       return p.then(function (prof) {
-        var g = gather(std); var inp = { title: g.title, route: g.route, signs: g.signs, profile: prof ? { ds: prof.ds, ground: prof.ground, road: prof.road } : null };
+        var g = gather(std); var inp = { title: g.title, route: g.route, signs: g.signs, roundabout: g.roundabout, profile: prof ? { ds: prof.ds, ground: prof.ground, road: prof.road } : null };
         var res = derive(std, inp, { log: console.log }); res.route = g.route; A._speedZones = res;
         if (res.vacuous || !res.zones.length) { body.innerHTML = '<span style="color:#f90">' + esc(res.msgs.join(' · ') || 'nothing derived') + '</span>'; return res; }
         var h = '<div style="margin-bottom:4px;color:#aaa;font-size:10px">Mode: <b class="sz-mode">' + esc(res.mode) + '</b> (Settings → std_values.json → geometric.speed_setting)' +

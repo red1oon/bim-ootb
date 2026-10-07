@@ -8,7 +8,9 @@
 // chainages projected independently in node (+ terrain-class changes), (4) legend swatch == the colour read back from every
 // painted ROAD slot; toggle off restores the saved colours exactly, (5) click a sign row -> camera on the sign + card cites
 // the ATJ table/page, (6) lever: class / manual / per-zone / area-type overrides change speeds per the table and the label
-// says so, (7) Duplex VACUOUS (never PASS).
+// says so, (7) Duplex VACUOUS (never PASS), (8) §ROUNDABOUT_ZONE: zone s-range == independent projection of the roundabout elements, approach
+// length == ATJ 8/86 Table 4.1 row (cell + page in the .txt) at the adjoining link speed, speed == NCHRP 672 bound, lane/pick/fixed_m levers,
+// none-found message, (9) speed colour ramp (30 km/h near-white, monotonic, == std_values ramp) on legend + painted road + disc.
 // CAN REPORT ITS OWN FAILURE: INCONCLUSIVE (load failed / nothing judged), VACUOUS (Duplex), RED CONTROL.
 // Env: GPU=real|sw (real only if nvidia-smi < 50% used), BLD, BLD_DIR, DUP_DIR, ATJ_TXT, PORT, LOG.
 'use strict';
@@ -65,8 +67,8 @@ const OPEN_FN = `window.__openSZ = async (ov) => {
   for (let i = 0; i < 400 && !A._speedZones; i++) await new Promise(r => setTimeout(r, 100));
   localStorage.removeItem('json_std_values'); return A._speedZones;
 };`;
-const SUM = `(r) => r && ({ mode: r.mode, ok: r.ok, msgs: r.msgs, assumed: r.assumed, zones: r.zones.map(z => ({ id: z.id, s0: z.s0, s1: z.s1, opens: z.opens, terrain: z.terrain, measured: z.terrainMeasured, pct: z.terrainPct, cls: z.cls, speed: z.speed, label: z.label, lane: z.lane && z.lane.m, grade: z.grade && z.grade.pct, gradeRef: z.grade && z.grade.ref, speedRef: z.speedRef && { table: z.speedRef.table, page: z.speedRef.page }, notes: z.notes })),
-  speedSigns: r.speedSigns, signRows: r.signRows.map(s => ({ guid: s.guid, code: s.code, s: s.s, speed: s.speed, label: s.label, isSpeedSign: s.isSpeedSign })) })`;
+const SUM = `(r) => r && ({ mode: r.mode, ok: r.ok, msgs: r.msgs, assumed: r.assumed, zones: r.zones.map(z => ({ id: z.id, s0: z.s0, s1: z.s1, opens: z.opens, kind: z.kind, srcText: z.srcText, approachM: z.approachM, linkSpeed: z.linkSpeed, terrain: z.terrain, measured: z.terrainMeasured, pct: z.terrainPct, cls: z.cls, speed: z.speed, label: z.label, lane: z.lane && z.lane.m, grade: z.grade && z.grade.pct, gradeRef: z.grade && z.grade.ref, speedRef: z.speedRef && { table: z.speedRef.table, page: z.speedRef.page }, notes: z.notes })),
+  speedSigns: r.speedSigns, roundabout: r.roundabout, signRows: r.signRows.map(s => ({ guid: s.guid, code: s.code, s: s.s, speed: s.speed, label: s.label, isSpeedSign: s.isSpeedSign })) })`;
 
 async function roadProbe(page) {
   return page.evaluate(async (OPEN, SUMSRC) => {
@@ -92,10 +94,17 @@ async function roadProbe(page) {
       //   passed while the road showed grey-brown); fog must be off on painted meshes so distance haze does not grey it.
       const mc = (m.material && !Array.isArray(m.material) && m.material.color) ? m.material.color : null; if (mc) C.multiply(mc); hex = C.getHex();
       s[k] = { g, hex, fog: !!(m.material && m.material.fog) }; }); return s; }
+    // §ROUNDABOUT_ZONE inputs, read by the witness's own query (model_map names come from std_values.json, as the engine's)
+    const MM = JSON.parse(await (await fetch('std_values.json?v=1')).text()).geometric.model_map;
+    out.rbPos = A.dbQuery('SELECT t.center_x, t.center_y, t.center_z FROM element_psets p JOIN element_transforms t ON t.guid = p.guid WHERE p.name = ? AND p.value = ?', [MM.roundabout_prop, MM.roundabout_value]).map(r => { const p = A.ifc2three(r[0], r[1], r[2]); return { x: p.x, z: p.z }; });
+    out.rbGuids = A.dbQuery('SELECT p.guid FROM element_psets p WHERE p.name = ? AND p.value = ?', [MM.roundabout_prop, MM.roundabout_value]).map(r => r[0]);
+    out.rbSigns = A.dbQuery('SELECT p.guid FROM element_psets p WHERE p.name = ? AND p.value LIKE ?', [MM.sign_name_prop, '%ROUNDABOUT AHEAD%']).length;
     const before = snap(); out.nSlots = Object.keys(before).length;
     const tg = pan.querySelector('.sz-toggle'); tg.checked = true; tg.dispatchEvent(new Event('change'));
     const on = snap(); out.on = Object.keys(on).map(k => ({ g: on[k].g, hex: on[k].hex, fog: on[k].fog }));
+    out.discsOn = A.scene.children.filter(o => o.userData && o.userData.speedDisc).map(o => ({ g: o.userData.speedDisc, speed: o.userData.speed }));
     tg.checked = false; tg.dispatchEvent(new Event('change'));
+    out.discsOff = A.scene.children.filter(o => o.userData && o.userData.speedDisc).length;
     const off = snap(); out.revertMismatch = Object.keys(before).filter(k => !off[k] || off[k].hex !== before[k].hex).length;
     out.tintStateAfterOff = A._speedZonesTint;
     // click first sign row (RP. 7 first) -> camera on that GUID's centre
@@ -109,8 +118,8 @@ async function roadProbe(page) {
     // lever runs (each through the real Settings override path)
     out.lever = {};
     out.lever.classR6 = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'class'; s.geometric.speed_setting['class'] = 'R6'; }));
-    out.lever.legendClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-leg')].map(e => e.textContent);
-    out.lever.signClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-row')].slice(0, 3).map(e => e.textContent);
+    out.lever.legendClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-leg')].map(e => ({ zone: e.dataset.zone, text: e.textContent }));
+    out.lever.signClassR6 = [...document.querySelectorAll('#road-standards-panel .sz-row')].map(e => e.textContent);
     out.lever.manual70 = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 70; }));
     out.lever.manualPerZone = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 70; s.geometric.speed_setting.per_zone = { Z1: 60 }; }));
     out.lever.manualNoRow = sum(await window.__openSZ(s => { s.geometric.speed_setting.mode = 'manual'; s.geometric.speed_setting.design_speed_kmh = 65; }));
@@ -118,6 +127,14 @@ async function roadProbe(page) {
     const urb = (at) => s => { s.geometric.road_category_map.rows[0].category = 'Arterials'; s.geometric.road_category_map.rows[0].status = 'user'; s.geometric.inputs.area.value = 'URBAN'; s.geometric.inputs.area.status = 'user'; s.geometric.inputs.adt.value = 10001; s.geometric.inputs.adt.status = 'user'; s.geometric.inputs.area_type.value = at; s.geometric.inputs.area_type.status = 'user'; };
     out.lever.urbanI = sum(await window.__openSZ(urb('I'))); out.lever.urbanIII = sum(await window.__openSZ(urb('III')));
     out.lever.noCategory = sum(await window.__openSZ(s => { s.geometric.road_category_map.rows[0].title_regex = 'NO-SUCH-TEXT-XYZ'; }));
+    const rbz = out.base.zones.find(z => z.kind === 'roundabout');
+    out.lever.rbPerZone = sum(await window.__openSZ(s => { s.geometric.speed_setting.per_zone = { [rbz ? rbz.id : 'none']: 55 }; }));
+    out.lever.multilane = sum(await window.__openSZ(s => { (s.geometric.roundabout || (s.geometric.roundabout = {})).lane_type = 'multilane'; (s.geometric.roundabout || (s.geometric.roundabout = {})).lane_type_status = 'user'; }));
+    out.lever.multiUpper = sum(await window.__openSZ(s => { (s.geometric.roundabout || (s.geometric.roundabout = {})).lane_type = 'multilane'; (s.geometric.roundabout || (s.geometric.roundabout = {})).speed_pick = 'upper'; }));
+    out.lever.fixed150 = sum(await window.__openSZ(s => { (s.geometric.roundabout || (s.geometric.roundabout = {})).approach = { fixed_m: 150 }; }));
+    out.lever.rbNone = sum(await window.__openSZ(s => { s.geometric.model_map.roundabout_value = 'NO-SUCH-VALUE'; }));
+    out.lever.rbOff = sum(await window.__openSZ(s => { (s.geometric.roundabout || (s.geometric.roundabout = {})).enabled = false; }));
+    out.lever.rbUrb = sum(await window.__openSZ(urb('III')));
     await window.__openSZ(null);
     return out;
   }, OPEN_FN, SUM);
@@ -141,6 +158,8 @@ async function roadProbe(page) {
   log('§SPEED_CLICK ' + JSON.stringify(rd.click));
   rd.prof.ground = rd.prof.ground.map(v => v == null ? NaN : v); rd.prof.road = rd.prof.road.map(v => v == null ? NaN : v);
   if (!B || !B.zones || !B.zones.length) { log('§SPEED_ZONES verdict=INCONCLUSIVE reason=no zones derived on road'); process.exitCode = 2; logStream.end(); return; }
+  if (!GEO.roundabout || !GEO.stopping_sight_distance || !GEO.speed_ramp || !B.zones.some(z => z.kind === 'roundabout') ) {
+    log('§WITNESS_SPEED_ZONES verdict=RED reason=§ROUNDABOUT_ZONE feature absent on this tree (roundabout=' + !!GEO.roundabout + ' ssd=' + !!GEO.stopping_sight_distance + ' ramp=' + !!GEO.speed_ramp + ' zoneKinds=' + [...new Set(B.zones.map(z => z.kind))].join(',') + ')'); process.exitCode = 1; logStream.end(); return; }
   // ── independent recomputation ──
   const ds = rd.prof.ds, ti = GEO.terrain_inputs, arr = rd.prof[ti.source];
   let L = 0; for (let i = 1; i < rd.route.length; i++) L += Math.hypot(rd.route[i].x - rd.route[i - 1].x, rd.route[i].z - rd.route[i - 1].z);
@@ -149,34 +168,85 @@ async function roadProbe(page) {
     win.push(sl.length < ti.min_pairs ? { s0, s1, t: ti.assumed_terrain, m: false } : { s0, s1, t: terrOf(median(sl)), m: true, p: median(sl) }); }
   R.indep = { L, win, nWinMeasured: win.filter(w => w.m).length };
   log('§SPEED_INDEP routeLen=' + L.toFixed(1) + ' windows=' + win.length + ' measured=' + R.indep.nWinMeasured + ' terrains=' + win.map(w => w.t[0] + (w.m ? '' : '?')).join(''));
+  function SYN() {
+    const SZ = require(path.join(ROOT, 'viewer', 'speed_zones.js')), std = JSON.parse(JSON.stringify(STD)), near = (a, b) => Math.abs(a - b) < 0.5;
+    const route = []; for (let x = 0; x <= 2000; x += 100) route.push({ x, z: 0 });
+    const prof = { ds: 1, ground: new Array(2001).fill(0).map((_, i) => i * 0.01), road: new Array(2001).fill(0) };
+    const run = pts => SZ.derive(std, { title: 'JALAN (FT240)', route, profile: prof, signs: [], roundabout: pts.map((p, i) => ({ guid: 'g' + i, x: p[0], z: p[1] })) }, { log: l => logStream.write('[syn] ' + l + '\n') });
+    const ring = [[800, 20], [850, -20], [900, 20], [850, 25]];
+    const a = run(ring), z = a.zones.map(q => [q.kind, Math.round(q.s0), Math.round(q.s1), q.speed]);
+    const want = [['link', 0, 615, 100], ['approach', 615, 800, 32], ['roundabout', 800, 900, 32], ['approach', 900, 1085, 32], ['link', 1085, 2000, 100]];
+    const start = run([[-60, 10], [-90, -10]]), end = run([[2060, 10], [2090, -5]]), none = run([]);
+    const ok1 = JSON.stringify(z) === JSON.stringify(want) && a.roundabout.offRoute === false;
+    const ok2 = start.roundabout.offRoute && start.zones.filter(q => q.kind === 'approach').length === 1 && near(start.zones.find(q => q.kind === 'approach').s1, 185);
+    const ok3 = end.roundabout.offRoute && end.zones.filter(q => q.kind === 'approach').length === 1 && near(end.zones.find(q => q.kind === 'approach').s0, 2000 - 185);
+    const ok4 = none.zones.every(q => q.kind === 'link') && none.msgs.some(m => /roundabout: no model elements/.test(m));
+    console.log('§SPEED_SYNTH zones=' + JSON.stringify(z) + ' ok=' + [ok1, ok2, ok3, ok4]); return { ok: ok1 && ok2 && ok3 && ok4 }; }
+  const LK = zs => zs.filter(z => z.kind === 'link');
+  // §ROUNDABOUT_ZONE independent inputs
+  const rbP = rd.rbPos.map(p => project(rd.route, p.x, p.z).s), rs0 = Math.min(...rbP), rs1 = Math.max(...rbP);
+  const termAt = s => (win.find(w => s >= w.s0 && s < w.s1) || win[win.length - 1]).t;
+  const lsIndep = s => speedOf('R5', termAt(s), GEO.inputs.area_type.value);                  // link class R5 (Table 2.4), terrain from the independent windows
+  const SSD = GEO.stopping_sight_distance, pagesTxt = ATJ ? ATJ.split('\f') : [], p41 = pagesTxt.findIndex(p => p.includes('TABLE 4.1:')) + 1 - 7;
+  const ssdCell = (sp, m) => !!ATJ && new RegExp('^\\s*' + sp + '\\s+' + m + '\\s*$', 'm').test(pagesTxt[p41 + 7 - 1] || '');
+  const nAp = (rs0 > 1e-6 ? 1 : 0) + (rs1 < L - 1e-6 ? 1 : 0);
+  const nchrpKmh = mph => Math.round(mph * 1.609344);
+  const RB = GEO.roundabout, RBz = b => b.zones.filter(z => z.kind === 'roundabout'), APz = b => b.zones.filter(z => z.kind === 'approach');
+  const lum = h => 0.2126 * (h >> 16) + 0.7152 * ((h >> 8) & 255) + 0.0722 * (h & 255);
+  const rampHex = k => { const st = GEO.speed_ramp.stops, hx = c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    if (k <= st[0].kmh) return hx(st[0].hex); if (k >= st[st.length - 1].kmh) return hx(st[st.length - 1].hex);
+    const i = st.findIndex(q => k <= q.kmh), u = (k - st[i - 1].kmh) / (st[i].kmh - st[i - 1].kmh), a = hx(st[i - 1].hex), b = hx(st[i].hex); return a.map((v, j) => Math.round(v + (b[j] - v) * u)); };
   Witness('speed_zones')
     .population(() => [R])
     .schema({ type: 'object', required: ['road', 'dup'] })
     .invariant('road: civil, zones derived, every zone has a speed (nothing judged => INCONCLUSIVE above)', rs => rs.every(r => r.road.civil && r.road.base.ok && r.road.base.zones.every(z => z.speed != null)))
-    .invariant('ATJ extraction: each derived speed is a cell of the ATJ 8/86 .txt row for that class (grep of the PDF text) AND carries table+page', rs => rs.every(r => ATJ !== null && r.road.base.zones.every(z => z.speedRef && z.speedRef.table && z.speedRef.page > 0 && atjHasSpeedRow(z.cls, GEO.design_speed[z.cls[0] === 'R' ? 'rural' : 'urban'].rows[z.cls]) && z.speed === speedOf(z.cls, z.terrain, GEO.inputs.area_type.value))))
-    .invariant('ATJ extraction: Table 2.4 chain — Highway/RURAL -> R5 appears in the 2.4 selection rows and the PDF text lists "Highway   R5"', rs => rs.every(r => r.road.base.zones.every(z => z.cls === 'R5') && GEO.selection.rows.some(x => x.area === 'RURAL' && x.category === 'Highway' && x.class === 'R5') && /Highway\s+R5/.test(ATJ || '')))
-    .invariant('lane width and max grade per zone == the extracted tables AND the PDF text carries those cells (R5 lane 3.50; grade row for the zone speed/terrain)', rs => rs.every(r => r.road.base.zones.every(z => z.lane === GEO.lane_width.rows[z.cls].lane_width_m && /R5 \/ U5\s+3\.50/.test(ATJ || '') && z.grade != null && GEO.max_grade.rows.some(g => g.classes.includes(z.cls) && g.speed_kmh === z.speed && g.max_grade_pct === z.grade))))
+    .invariant('ATJ extraction: each derived speed is a cell of the ATJ 8/86 .txt row for that class (grep of the PDF text) AND carries table+page', rs => rs.every(r => ATJ !== null && LK(r.road.base.zones).length > 0 && LK(r.road.base.zones).every(z => z.speedRef && z.speedRef.table && z.speedRef.page > 0 && atjHasSpeedRow(z.cls, GEO.design_speed[z.cls[0] === 'R' ? 'rural' : 'urban'].rows[z.cls]) && z.speed === speedOf(z.cls, z.terrain, GEO.inputs.area_type.value))))
+    .invariant('ATJ extraction: Table 2.4 chain — Highway/RURAL -> R5 appears in the 2.4 selection rows and the PDF text lists "Highway   R5"', rs => rs.every(r => LK(r.road.base.zones).every(z => z.cls === 'R5') && GEO.selection.rows.some(x => x.area === 'RURAL' && x.category === 'Highway' && x.class === 'R5') && /Highway\s+R5/.test(ATJ || '')))
+    .invariant('lane width and max grade per zone == the extracted tables AND the PDF text carries those cells (R5 lane 3.50; grade row for the zone speed/terrain)', rs => rs.every(r => LK(r.road.base.zones).every(z => z.lane === GEO.lane_width.rows[z.cls].lane_width_m && /R5 \/ U5\s+3\.50/.test(ATJ || '') && z.grade != null && GEO.max_grade.rows.some(g => g.classes.includes(z.cls) && g.speed_kmh === z.speed && g.max_grade_pct === z.grade))))
     .invariant('terrain per window == node recomputation from the page long-section samples (median |gradient|, ATJ 3%/25%); measured windows > 0', rs => rs.every(r => win.some(w => w.m) && win.every(w => { const z = r.road.base.zones.find(q => q.s0 <= w.s0 + 1e-6 && q.s1 > w.s0 + 1e-6); return z && z.terrain === w.t && (!w.m || (z.measured && Math.abs(z.pct - w.p) < 1e-6) || z.s0 < w.s0 - 1e-6); })))
     .invariant('speed-sign chainage == independent brute-force projection of the sign centre onto the route (<0.5 m), and zone boundaries == those chainages + terrain-window class changes only', rs => rs.every(r => {
       const sg = r.road.base.speedSigns, ind = sg.map(q => project(r.road.route, r.road.signPos[q.guid].x, r.road.signPos[q.guid].z).s);
       const bps = r.road.base.zones.map(z => z.s0), winChanges = win.filter((w, i) => i && w.t !== win[i - 1].t).map(w => w.s0);
       const near = (a, b) => Math.abs(a - b) < 0.5;
-      return sg.length >= 1 && sg.every((q, i) => near(q.s, ind[i])) && ind.every(s => s <= 0.5 || s >= L - 0.5 || bps.some(b => near(b, s))) && bps.every(b => b < 0.05 || ind.some(s => near(s, b)) || winChanges.some(w => near(w, b))); }))
+      return sg.length >= 1 && sg.every((q, i) => near(q.s, ind[i])) && ind.every(s => s <= 0.5 || s >= L - 0.5 || bps.some(b => near(b, s))) && bps.every(b => b < 0.05 || ind.some(s => near(s, b)) || winChanges.some(w => near(w, b)) || [rs0, rs1].concat(r.road.base.zones.filter(z => z.kind === 'approach').flatMap(z => [z.s0, z.s1])).some(x => near(x, b))); }))
     .invariant('legend: one swatch per zone; swatch colour == colour read back from EVERY painted ROAD slot of that zone (independent chainage projection of each element centre)', rs => rs.every(r => {
       const hexOf = css => { const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(css); return (+m[1] << 16) | (+m[2] << 8) | +m[3]; };
       const sw = {}; r.road.legend.forEach(l => { sw[l.zone] = hexOf(l.bg); });
       if (r.road.legend.length !== r.road.base.zones.length || !r.road.on.length) return false;
       const near = (a, b) => ['r', 'g', 'b'].every((_, i) => Math.abs(((a >> (16 - 8 * i)) & 255) - ((b >> (16 - 8 * i)) & 255)) <= 4);   // setColorAt stores float16/8-bit; tolerance 4/255
-      return r.road.on.every(o => { const pj = project(r.road.route, r.road.roadPos[o.g].x, r.road.roadPos[o.g].z); const z = r.road.base.zones.find(q => pj.s >= q.s0 && pj.s < q.s1) || r.road.base.zones[r.road.base.zones.length - 1]; return near(o.hex, sw[z.id]); }); }))
+      const rbg = new Set(r.road.rbGuids), rbz = r.road.base.zones.find(q => q.kind === 'roundabout');
+      return r.road.on.every(o => { if (rbg.has(o.g)) return near(o.hex, sw[rbz.id]); const pj = project(r.road.route, r.road.roadPos[o.g].x, r.road.roadPos[o.g].z); const tl = r.road.base.zones.filter(q => q.id !== 'RB'), z = tl.find(q => pj.s >= q.s0 && pj.s < q.s1) || tl[tl.length - 1]; return near(o.hex, sw[z.id]); }); }))
     .invariant('painted road ignores distance haze: every painted slot sits on a material with fog off (far road read grey-brown before)', rs => rs.every(r => r.road.on.length > 0 && r.road.on.every(o => o.fog === false)))
     .invariant('toggle off restores the saved colours of every slot (mismatch 0) and clears the tint state; slots judged > 0', rs => rs.every(r => r.road.nSlots > 0 && r.road.revertMismatch === 0 && r.road.tintStateAfterOff === null))
     .invariant('sign list: RP. 7 rows first with a speed + label each; list size == SIGNAGE count; DOM row text carries the km/h', rs => rs.every(r => r.road.base.signRows.length === r.road.signDom.length && r.road.base.signRows[0].isSpeedSign && r.road.base.signRows.every(s => s.speed != null && s.label) && r.road.signDom[0].includes(r.road.base.signRows[0].speed + ' km/h')))
     .invariant('click a sign row: camera target lands on that GUID centre (<0.05 m); card names the ATJ 8/86 table + page, the mode label and the assumed inputs', rs => rs.every(r => r.road.click.dist < 0.05 && /ATJ 8\/86 Table 3\.2A/.test(r.road.click.card) && /p\.\d+/.test(r.road.click.card) && /assumed/.test(r.road.click.card) && /derived/.test(r.road.click.card)))
-    .invariant('LEVER class R6: every zone speed == Table 3.2A R6 at that terrain (independent), label "class R6 (user)", legend + sign list show it', rs => rs.every(r => { const L6 = r.road.lever.classR6; return L6.mode === 'class' && L6.zones.every(z => z.speed === speedOf('R6', z.terrain) && z.label === 'class R6 (user)' && z.lane === 3.65) && r.road.lever.legendClassR6.every(t => t.includes('class R6 (user)')) && r.road.lever.signClassR6.every(t => t.includes('class R6 (user)')); }))
+    .invariant('LEVER class R6: every zone speed == Table 3.2A R6 at that terrain (independent), label "class R6 (user)", legend + sign list show it', rs => rs.every(r => { const L6 = r.road.lever.classR6; const lk = new Set(LK(L6.zones).map(z => z.id)); return L6.mode === 'class' && lk.size > 0 && LK(L6.zones).every(z => z.speed === speedOf('R6', z.terrain) && z.label === 'class R6 (user)' && z.lane === 3.65) && r.road.lever.legendClassR6.filter(e => lk.has(e.zone)).every(e => e.text.includes('class R6 (user)')) && r.road.lever.legendClassR6.filter(e => !lk.has(e.zone)).every(e => /NCHRP 672|demo rule/.test(e.text)) && r.road.lever.signClassR6.slice(0, 3).every(t => t.includes('class R6 (user)') || /NCHRP 672|demo rule/.test(t)); }))
     .invariant('LEVER manual 70: all zones 70 km/h, label "manual (user)"; per_zone Z1=60 overrides only Z1; 65 (no table row) says "manual (user), no table row"; unset manual = no speed + visible message', rs => rs.every(r => { const m = r.road.lever.manual70, pz = r.road.lever.manualPerZone, nr = r.road.lever.manualNoRow, un = r.road.lever.manualUnset;
-      return m.zones.every(z => z.speed === 70 && /^manual \(user\)/.test(z.label)) && pz.zones.every(z => z.speed === (z.id === 'Z1' ? 60 : 70)) && nr.zones.every(z => z.speed === 65 && z.label === 'manual (user), no table row' && z.lane === null) && un.zones.every(z => z.speed === null) && un.msgs.length > 0 && un.ok === false; }))
-    .invariant('LEVER area type: URBAN Arterial ADT 10001 -> U5; area type I vs III change the speed exactly per Table 3.2B (80 vs 50) and both PDF rows exist', rs => rs.every(r => { const a = r.road.lever.urbanI, b = r.road.lever.urbanIII; return a.zones.every(z => z.cls === 'U5' && z.speed === speedOf('U5', 'FLAT', 'I')) && b.zones.every(z => z.cls === 'U5' && z.speed === speedOf('U5', 'FLAT', 'III')) && speedOf('U5', 'FLAT', 'I') !== speedOf('U5', 'FLAT', 'III') && atjHasSpeedRow('U5', GEO.design_speed.urban.rows.U5); }))
+      return LK(m.zones).every(z => z.speed === 70 && /^manual \(user\)/.test(z.label)) && LK(pz.zones).every(z => z.speed === (z.id === 'Z1' ? 60 : 70)) && LK(nr.zones).every(z => z.speed === 65 && z.label === 'manual (user), no table row' && z.lane === null) && LK(un.zones).every(z => z.speed === null) && un.msgs.length > 0 && un.ok === false; }))
+    .invariant('LEVER area type: URBAN Arterial ADT 10001 -> U5; area type I vs III change the speed exactly per Table 3.2B (80 vs 50) and both PDF rows exist', rs => rs.every(r => { const a = r.road.lever.urbanI, b = r.road.lever.urbanIII; return LK(a.zones).every(z => z.cls === 'U5' && z.speed === speedOf('U5', 'FLAT', 'I')) && LK(b.zones).every(z => z.cls === 'U5' && z.speed === speedOf('U5', 'FLAT', 'III')) && speedOf('U5', 'FLAT', 'I') !== speedOf('U5', 'FLAT', 'III') && atjHasSpeedRow('U5', GEO.design_speed.urban.rows.U5); }))
     .invariant('no silent fall-through: a title that matches no category row derives nothing and says why (vacuous, message names the title mapping)', rs => rs.every(r => r.road.lever.noCategory.zones.length === 0 && r.road.lever.noCategory.msgs.some(m => /matches no road_category_map row/.test(m))))
+    .invariant('§ROUNDABOUT zone s-range == min..max of the INDEPENDENT brute-force projection of the roundabout elements (<0.5 m); element count == the model_map query (>0); one roundabout zone', rs => rs.every(r => { const b = r.road.base, z = RBz(b); return rbP.length > 0 && b.roundabout && b.roundabout.n === rbP.length && z.length === 1 && Math.abs(z[0].s0 - rs0) < 0.5 && Math.abs(z[0].s1 - rs1) < 0.5; }))
+    .invariant('§ROUNDABOUT off-route finding (measured): engine flags offRoute exactly when every element projects onto a route end (independent projection), the roundabout entry has zero chainage extent + a visible "off-route" text, and on-route approach starts at that end; roundabout elements (62) are painted with the roundabout speed colour by membership', rs => rs.every(r => { const ind = rbP.every(x => x < 1e-6 || x > L - 1e-6), z = RBz(r.road.base)[0]; return r.road.base.roundabout.offRoute === ind && (!ind || (z.s1 - z.s0 === 0 && /off-route/.test(z.opens))) && r.road.rbGuids.length === rbP.length; }))
+    .invariant('SYNTHETIC (pure engine, interior roundabout; the model itself has none on-route): straight 2000 m route, ring points projecting to 800..900 m, flat ground -> zones link 0..615 @100, approach 615..800 @32 (185 m = Table 4.1 row 100), roundabout 800..900 @32, approach 900..1085 @32, link 1085..2000 @100; ring at the route START/END -> one approach only; speeds from the same table', () => { const o = SYN(); return o.ok; })
+    .invariant('§ROUNDABOUT speed == NCHRP 672 LOWER bound for the lane type (single 20 mph = 32 km/h), stored mph->km/h pairs consistent (x1.609344 rounded), source doc + note present, label says NCHRP 672 (US) / not JKR / ATJ 11/87 not in hand', rs => rs.every(r => RBz(r.road.base)[0].speed === nchrpKmh(RB.nchrp_entry_speed.single.mph[0]) && ['single', 'multilane'].every(k => RB.nchrp_entry_speed[k].mph.every((m, i) => nchrpKmh(m) === RB.nchrp_entry_speed[k].kmh[i])) && /NCHRP Report 672/.test(RB.source.doc) && RB.source.note === 'recommended maximum entry design speed' && /NCHRP 672 \(US\)/.test(RBz(r.road.base)[0].label) && /not JKR/.test(RBz(r.road.base)[0].label) && /ATJ 11\/87 not in hand/.test(RBz(r.road.base)[0].label)))
+    .invariant('§ROUNDABOUT approach length (before AND after) == ATJ 8/86 Table 4.1 SSD row at the adjoining link speed (link speed independently recomputed; the speed/length cell exists in the PDF .txt on the cited page); approach zones carry the roundabout speed + "demo rule (editable)"', rs => rs.every(r => { const b = r.road.base, ap = APz(b), z = RBz(b)[0], pre = ap.find(q => Math.abs(q.s1 - z.s0) < 1e-6), post = ap.find(q => Math.abs(q.s0 - z.s1) < 1e-6);
+      if (p41 !== SSD.ref.page || !!pre !== (rs0 > 1e-6) || !!post !== (rs1 < L - 1e-6) || ap.length !== (pre ? 1 : 0) + (post ? 1 : 0) || !ap.length) return false; const lp = lsIndep(rs0 - 1e-6), lq = lsIndep(rs1 + 1e-6), want = sp => SSD.rows_m[String(sp)];
+      return (!pre || (pre.linkSpeed === lp && pre.approachM === want(lp) && ssdCell(lp, want(lp)) && Math.abs((pre.s1 - pre.s0) - Math.min(want(lp), rs0)) < 0.5)) && (!post || (post.linkSpeed === lq && post.approachM === want(lq) && ssdCell(lq, want(lq)) && Math.abs((post.s1 - post.s0) - Math.min(want(lq), L - rs1)) < 0.5)) && ap.every(q => q.speed === z.speed && /demo rule \(editable\)/.test(q.label) && q.srcText.includes('p.' + SSD.ref.page)); }))
+    .invariant('§ROUNDABOUT zones neighbour the link zones with no overlap/gap: zones tile 0..route length contiguously; link zone speeds outside the approach unchanged (100/80 per table)', rs => rs.every(r => { const zs = r.road.base.zones.filter(q => q.id !== 'RB'); return Math.abs(zs[0].s0) < 1e-6 && Math.abs(zs[zs.length - 1].s1 - L) < 0.5 && zs.every((q, i) => !i || Math.abs(q.s0 - zs[i - 1].s1) < 1e-6); }))
+    .invariant('§ROUNDABOUT lever: lane_type multilane -> lower bound 25 mph = 40 km/h; speed_pick upper -> 48 km/h; per_zone on the roundabout zone overrides to 55 with label "manual (user, per zone)"', rs => rs.every(r => { const l = r.road.lever; return RBz(l.multilane)[0].speed === 40 && RBz(l.multiUpper)[0].speed === 48 && APz(l.multilane).every(q => q.speed === 40) && RBz(l.rbPerZone)[0].speed === 55 && RBz(l.rbPerZone)[0].label === 'manual (user, per zone)'; }))
+    .invariant('§ROUNDABOUT approach fixed_m override: each approach zone that fits on the route is exactly 150 m (clipped only by the route ends) and say "fixed 150 m (user)"', rs => rs.every(r => { const f = r.road.lever.fixed150, ap = APz(f); return ap.length === nAp && ap.every(q => Math.abs((q.s1 - q.s0) - Math.min(150, q.s0 < rs0 ? rs0 : L - rs1)) < 0.5 && /fixed 150 m \(user\)/.test(q.label)); }))
+    .invariant('§ROUNDABOUT no silent fall-through: model_map value matching nothing -> no roundabout/approach zone AND a visible message; enabled=false -> none, no message needed (user choice); URBAN area III link speed 50 -> approach = Table 4.1 row 65 m', rs => rs.every(r => { const n = r.road.lever.rbNone, o = r.road.lever.rbOff, u = r.road.lever.rbUrb; return RBz(n).length === 0 && APz(n).length === 0 && n.msgs.some(m => /roundabout: no model elements/.test(m)) && RBz(o).length === 0 && APz(o).length === 0 && APz(u).length === nAp && APz(u).every(q => q.linkSpeed === 50 && q.approachM === SSD.rows_m['50'] && ssdCell(50, 65)); }))
+    .invariant('§ROUNDABOUT AHEAD signs: logged beside the approach (3 in the model by an independent name query; engine count equal; comparison only — they are not zone boundaries)', rs => rs.every(r => { const rb = r.road.base.roundabout; return r.road.rbSigns > 0 && rb.signs.length === r.road.rbSigns; }))
+    .invariant('§ROUNDABOUT colours/discs/legend/sign list: legend has a swatch per zone incl. roundabout+approach rows (text names NCHRP 672 / demo rule); sign rows inside a roundabout/approach zone show its speed; disc per speed sign carries the zone speed; discs removed on toggle off', rs => rs.every(r => { const b = r.road.base, lg = r.road.legend, z = RBz(b)[0];
+      const inRb = b.signRows.filter(q => b.zones.find(zz => q.s >= zz.s0 && q.s < zz.s1 && zz.kind !== 'link'));
+      return lg.length === b.zones.length && lg.some(e => e.zone === z.id && /NCHRP 672/.test(e.text)) && APz(b).every(a => lg.some(e => e.zone === a.id && /demo rule \(editable\)/.test(e.text))) &&
+        inRb.every(q => { const zz = b.zones.find(k => q.s >= k.s0 && q.s < k.s1); return q.speed === zz.speed && q.label === zz.label; }) &&
+        r.road.discsOn.length === b.speedSigns.length && r.road.discsOn.every(d => { const q = b.signRows.find(x => x.guid === d.g); return q && q.speed === d.speed; }) && r.road.discsOff === 0; }))
+    .invariant('SPEED COLOUR RAMP (user: "30 kph most white as slowest"): ramp stops in std_values.json, lightness strictly decreasing with speed, 30 km/h stop is a light warm white (hex printed) that is NOT pure #ffffff, fastest = red #b71c1c; legend swatch of EVERY zone == the independent ramp interpolation of its speed (+-1/255)', rs => rs.every(r => { const st = GEO.speed_ramp.stops, hx = c => parseInt(c.slice(1), 16);
+      const mono = st.every((q, i) => !i || (q.kmh > st[i - 1].kmh && lum(hx(q.hex)) < lum(hx(st[i - 1].hex)))); const sw = css => { const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(css); return [+m[1], +m[2], +m[3]]; };
+      console.log('§SPEED_RAMP stops=' + st.map(q => q.kmh + ':' + q.hex).join(' ') + ' slowest=' + st[0].hex + ' lum=' + lum(hx(st[0].hex)).toFixed(1) + ' fastest=' + st[st.length - 1].hex);
+      return mono && st[0].kmh === 30 && st[0].hex.toLowerCase() !== '#ffffff' && lum(hx(st[0].hex)) > 235 && st[st.length - 1].hex.toLowerCase() === '#b71c1c' &&
+        r.road.legend.every(e => { const zz = r.road.base.zones.find(q => q.id === e.zone), want = rampHex(zz.speed), got = sw(e.bg); return want.every((v, j) => Math.abs(v - got[j]) <= 1); }); }))
     .invariant('Duplex: not civil, no panel, no Speed section => VACUOUS (not a pass of anything)', rs => rs.every(r => !r.dup.civil && r.dup.opened === null && !r.dup.panel && r.dup.zones === null))
     .redControl(rs => rs.map(r => Object.assign({}, r, { road: Object.assign({}, r.road, { base: Object.assign({}, r.road.base, { zones: r.road.base.zones.map(z => Object.assign({}, z, { speed: z.speed + 10 })) }) }) })))
     .run();

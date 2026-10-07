@@ -2499,7 +2499,10 @@
   "model_map": {
    "title_prop": "01_Project_Title",
    "road_discipline": "ROAD",
-   "note": "where the project title and the road surface live in the model (measured in CivilWorksPath element_psets / elements_meta)"
+   "note": "where the project title and the road surface live in the model (measured in CivilWorksPath element_psets / elements_meta)",
+   "roundabout_prop": "06_No_Route",
+   "roundabout_value": "ROUNDABOUT",
+   "sign_name_prop": "16_Name"
   },
   "road_category_map": {
    "rows": [
@@ -2547,19 +2550,87 @@
    "per_zone": {},
    "note": "LEVER. derived = ATJ 8/86 chain. class = set \"class\" to R1-R6 / U1-U6 (speed, width, gradient from that class row). manual = set design_speed_kmh (all zones) or per_zone {\"Z2\": 70}; width/gradient looked up only if the speed identifies one class at that terrain, else \"manual, no table row\"."
   },
-  "speed_colours": {
-   "20": "#8e24aa",
-   "30": "#3949ab",
-   "40": "#1e88e5",
-   "50": "#00acc1",
-   "60": "#43a047",
-   "70": "#c0ca33",
-   "80": "#fdd835",
-   "90": "#fb8c00",
-   "100": "#f4511e",
-   "110": "#e53935",
-   "120": "#b71c1c",
-   "_note": "presentation only (not from ATJ)"
+  "stopping_sight_distance": {
+   "ref": {
+    "table": "Table 4.1 Minimum Stopping Sight Distance (design speed kph -> m)",
+    "page": 32,
+    "pdf_page": 39
+   },
+   "rows_m": {
+    "120": 250,
+    "110": 220,
+    "100": 185,
+    "90": 160,
+    "80": 130,
+    "70": 105,
+    "60": 85,
+    "50": 65,
+    "40": 50,
+    "30": 35
+   }
+  },
+  "roundabout": {
+   "enabled": true,
+   "source": {
+    "doc": "NCHRP Report 672, Roundabouts: An Informational Guide, 2nd ed., TRB/FHWA 2010",
+    "note": "recommended maximum entry design speed"
+   },
+   "label": "NCHRP 672 (US) — international reference, not JKR; ATJ 11/87 not in hand",
+   "lane_type": "single",
+   "lane_type_status": "assumed",
+   "speed_pick": "lower",
+   "nchrp_entry_speed": {
+    "single": {
+     "mph": [
+      20,
+      25
+     ],
+     "kmh": [
+      32,
+      40
+     ]
+    },
+    "multilane": {
+     "mph": [
+      25,
+      30
+     ],
+     "kmh": [
+      40,
+      48
+     ]
+    },
+    "_note": "km/h = mph x 1.609344 rounded to integer; single-lane 20-25 mph, multilane 25-30 mph. Conservative demo = lower bound."
+   },
+   "approach": "ssd_table_4_1",
+   "approach_note": "'ssd_table_4_1' = ATJ 8/86 Table 4.1 stopping sight distance at the adjoining link design speed (before AND after the roundabout); or {\"fixed_m\": 150}. Demo rule, editable.",
+   "sign_regex": "ROUNDABOUT AHEAD",
+   "sign_note": "warning signs matched by name/code; logged beside the derived approach start for comparison only (not a boundary)"
+  },
+  "speed_ramp": {
+   "note": "presentation only (not from ATJ). Colour = linear RGB interpolation between stops by km/h, clamped at the ends: slowest (<=30) = very light warm white #fff3e0 (not pure white, so it still reads as painted on grey unpainted road), fastest = strong red #b71c1c. Lightness decreases monotonically with speed. Editable.",
+   "stops": [
+    {
+     "kmh": 30,
+     "hex": "#fff3e0"
+    },
+    {
+     "kmh": 50,
+     "hex": "#ffd180"
+    },
+    {
+     "kmh": 70,
+     "hex": "#ffa040"
+    },
+    {
+     "kmh": 90,
+     "hex": "#f4511e"
+    },
+    {
+     "kmh": 120,
+     "hex": "#b71c1c"
+    }
+   ]
   }
  }
 }
