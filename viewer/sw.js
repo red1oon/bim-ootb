@@ -186,7 +186,9 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1611';
+// v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
+// main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
+const CACHE_VERSION = 'v1612';
 // v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
 // v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
 // v1609 (2026-10-07) §FIND_ROW_CLIPPED: Find tree height clamped so the cost · › ERP · open ↗ row always fits (saved findTreeH re-fits).
@@ -1118,6 +1120,8 @@ const PRECACHE_ASSETS = [
   // erp.html/idempiere.html below are now reroute STUBS that live in viewer/.
   'list_builder.js',
   'settings_editor.js',
+  'road_standards.js',
+  'std_values.json',
   'panel_nav.js',
   // Lazy-loaded modules
   'navigate.js',
