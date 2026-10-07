@@ -38,8 +38,18 @@
   function _fmt(ds) { return (typeof ds === 'number' ? global.WhatIf._date(ds) : String(ds)).slice(0, 10); }
 
   // Load the ERP db (OPFS push-store first, then bundled seed). Returns a sql.js Database or null.
+  var _dbStamp = null;
+  function _wiStamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
   function _loadDb() {
-    if (_db) return Promise.resolve(_db);
+    return _wiStamp().then(function (st) {
+      if (_db && st === _dbStamp && st !== 'unknown') return _db;
+      if (_db) console.log('§PUSH_STORE_RELOAD writer=whatif was=' + _dbStamp + ' now=' + st);
+      _db = null; _dbStamp = st;
+      return _openDb();
+    });
+  }
+  function _openDb() {
     var SQL = _SQL();
     if (!SQL || !global.WhatIf) return Promise.resolve(null);
     var fromOpfs = Promise.resolve(null);
@@ -174,6 +184,18 @@
 
   function _persist() {
     if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    // §STORE_STAMP: the panel held this copy while open — if the store changed on disk since (reset, another push), writing would
+    // put old orders back. Refuse, say so; the user reopens What-if on the current store.
+    return _wiStamp().then(function (st) {
+      if (st !== _dbStamp) {
+        console.log('§PUSH_STORE_STALE writer=whatif was=' + _dbStamp + ' now=' + st + ' — accept refused, reopen What-if');
+        var stx = A().status; if (stx) stx.textContent = _wiTrl('wi_store_changed', 'What-if: the project store changed since you opened this — reopen What-if');
+        _db = null; return false;
+      }
+      return _writeDb();
+    });
+  }
+  function _writeDb() {
     try {
       var bytes = _db.export();
       return navigator.storage.getDirectory()
@@ -181,7 +203,7 @@
         .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
         .then(function (fh) { return fh.createWritable(); })
         .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
+        .then(function () { return _wiStamp().then(function (st) { _dbStamp = st; return true; }); }).catch(function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
 
