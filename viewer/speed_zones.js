@@ -412,29 +412,39 @@
     // the board face of one sign from its world triangles: dominant horizontal normal (area-weighted, sign-folded); the BOARD = the height
     //   bands at least 60% as wide (along the face) as the widest band — the post is narrow; disc = 90% of min(board width, board height).
     function boardFace(guid) {
-      var V = [], m4 = new THREE.Matrix4(), v = new THREE.Vector3(), sx = 0, sz = 0;
+      // §DISC_ON_BOARD_AREA (user 2026-10-08, 3 rounds): the board = the biggest flat area FACING the road, not the widest strip — width alone
+      //   picked brackets/edge strips (3–10 cm) and merged a round face with the plate under it. Steps: dominant horizontal normal N
+      //   (area-weighted, folded); face-on triangles |n·N| > 0.9; their area per height band (24); the contiguous band run holding the most
+      //   face-on area (bands ≥ 25% of the max band) = the board; disc = 90% of min(board w, h), centred on it (top-anchored if tall).
+      var Tr = [], m4 = new THREE.Matrix4(), v = new THREE.Vector3(), sx = 0, sz = 0;
       var add = function (g, M) { var P = g.attributes.position, I = g.index, n = I ? I.count : P.count;
         for (var k = 0; k + 2 < n; k += 3) { var t = []; for (var j = 0; j < 3; j++) { v.fromBufferAttribute(P, I ? I.getX(k + j) : k + j).applyMatrix4(M); t.push([v.x, v.y, v.z]); }
           var e1 = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], e2 = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
-          var nx = e1[1] * e2[2] - e1[2] * e2[1], nz = e1[0] * e2[1] - e1[1] * e2[0]; if (nx < 0 || (nx === 0 && nz < 0)) { nx = -nx; nz = -nz; }
-          var a = Math.hypot(nx, nz); sx += nx * a; sz += nz * a; V.push(t[0], t[1], t[2]); } };
+          var cx = e1[1] * e2[2] - e1[2] * e2[1], cy = e1[2] * e2[0] - e1[0] * e2[2], cz = e1[0] * e2[1] - e1[1] * e2[0], A2 = Math.hypot(cx, cy, cz); if (!(A2 > 0)) continue;
+          var nx = cx, nz = cz; if (nx < 0 || (nx === 0 && nz < 0)) { nx = -nx; nz = -nz; } var a = Math.hypot(nx, nz); sx += nx * a; sz += nz * a;
+          Tr.push({ t: t, n: [cx / A2, cy / A2, cz / A2], area: A2 / 2 }); } };
       A.collectMeshes(function (o) { return o.isMesh; }).forEach(function (o) {
         if (o.isBatchedMesh && A._batchMeta && A._batchMeta[o.id]) A._batchMeta[o.id].forEach(function (mm) { if (mm.guid !== guid) return; var g = o.userData.slotGeo && o.userData.slotGeo[mm.slotId]; if (!g) return; o.getMatrixAt(mm.slotId, m4); add(g, m4.clone().premultiply(o.matrixWorld)); });
         else if (o.isInstancedMesh && A._instanceMeta && A._instanceMeta[o.id]) A._instanceMeta[o.id].forEach(function (mm, i) { if (mm.guid !== guid) return; o.getMatrixAt(i, m4); add(o.geometry, m4.clone().premultiply(o.matrixWorld)); });
       });
-      var L = Math.hypot(sx, sz); if (!V.length || !(L > 0)) return null;
-      var N = [sx / L, sz / L], T = [-N[1], N[0]], ymin = Infinity, ymax = -Infinity;
-      V.forEach(function (q) { if (q[1] < ymin) ymin = q[1]; if (q[1] > ymax) ymax = q[1]; });
-      var B = 12, bands = []; for (var b = 0; b < B; b++) bands.push({ u0: Infinity, u1: -Infinity });
-      V.forEach(function (q) { var k = Math.min(B - 1, Math.floor((q[1] - ymin) / ((ymax - ymin) || 1) * B)), u = q[0] * T[0] + q[2] * T[1]; if (u < bands[k].u0) bands[k].u0 = u; if (u > bands[k].u1) bands[k].u1 = u; });
-      var W = 0; bands.forEach(function (bd) { if (bd.u1 > bd.u0) W = Math.max(W, bd.u1 - bd.u0); });
-      var bTop = -Infinity, bBot = Infinity, u0 = Infinity, u1 = -Infinity, d0 = Infinity, d1 = -Infinity;
-      V.forEach(function (q) { var k = Math.min(B - 1, Math.floor((q[1] - ymin) / ((ymax - ymin) || 1) * B)), bd = bands[k]; if (!(bd.u1 - bd.u0 >= 0.6 * W)) return;
-        var u = q[0] * T[0] + q[2] * T[1], d = q[0] * N[0] + q[2] * N[1];
-        if (q[1] > bTop) bTop = q[1]; if (q[1] < bBot) bBot = q[1]; if (u < u0) u0 = u; if (u > u1) u1 = u; if (d < d0) d0 = d; if (d > d1) d1 = d; });
-      var w = u1 - u0, h = bTop - bBot, dia = 0.9 * Math.min(w, h), um = (u0 + u1) / 2, cy = h > w * 1.3 ? bTop - w / 2 : (bTop + bBot) / 2;
-      // centre on the face: point with tangent coordinate um and normal coordinate 0 (the disc is then pushed to front / back planes)
-      return { n: N, c: [T[0] * um, T[1] * um], cy: cy, front: d1, back: d0, dia: dia, w: w, top: bTop, bot: bBot };
+      var L = Math.hypot(sx, sz); if (!Tr.length || !(L > 0)) return null;
+      var N = [sx / L, sz / L], Tg = [-N[1], N[0]], ymin = Infinity, ymax = -Infinity;
+      var F = Tr.filter(function (r) { return Math.abs(r.n[0] * N[0] + r.n[2] * N[1]) > 0.9; }); if (!F.length) return null;
+      F.forEach(function (r) { r.t.forEach(function (q) { if (q[1] < ymin) ymin = q[1]; if (q[1] > ymax) ymax = q[1]; }); });
+      var B = 24, H = (ymax - ymin) || 1, band = function (y) { return Math.min(B - 1, Math.max(0, Math.floor((y - ymin) / H * B))); }, ar = []; for (var b = 0; b < B; b++) ar.push(0);
+      F.forEach(function (r) { var yc = (r.t[0][1] + r.t[1][1] + r.t[2][1]) / 3; ar[band(yc)] += r.area; });
+      var mx = Math.max.apply(null, ar), on = ar.map(function (x) { return x >= 0.10 * mx; }), runs = [];
+      for (var k0 = 0; k0 < B; k0++) { if (!on[k0] || (k0 > 0 && on[k0 - 1])) continue; var k1 = k0; while (k1 + 1 < B && on[k1 + 1]) k1++; runs.push([k0, k1]); }
+      // each run's real footprint on the face (u × y extent of its face-on triangles); the board = the largest footprint
+      var ext = function (kb, kt) { var e = { bTop: -Infinity, bBot: Infinity, u0: Infinity, u1: -Infinity, d0: Infinity, d1: -Infinity };
+        F.forEach(function (r) { var k = band((r.t[0][1] + r.t[1][1] + r.t[2][1]) / 3); if (k < kb || k > kt) return;
+          r.t.forEach(function (q) { var u = q[0] * Tg[0] + q[2] * Tg[1], d = q[0] * N[0] + q[2] * N[1];
+            if (q[1] > e.bTop) e.bTop = q[1]; if (q[1] < e.bBot) e.bBot = q[1]; if (u < e.u0) e.u0 = u; if (u > e.u1) e.u1 = u; if (d < e.d0) e.d0 = d; if (d > e.d1) e.d1 = d; }); });
+        e.fp = (e.u1 - e.u0) * (e.bTop - e.bBot); return e; };
+      var E = null; runs.forEach(function (rk) { var e = ext(rk[0], rk[1]); if (!E || e.fp > E.fp) E = e; }); if (!E || !(E.fp > 0)) return null;
+      var bTop = E.bTop, bBot = E.bBot, u0 = E.u0, u1 = E.u1, d0 = E.d0, d1 = E.d1;
+      var w = u1 - u0, h = bTop - bBot, dia = 0.9 * Math.min(w, h), um = (u0 + u1) / 2, cy = h > w * 1.05 ? bTop - w / 2 : (bTop + bBot) / 2;
+      return { n: N, c: [Tg[0] * um, Tg[1] * um], cy: cy, front: d1, back: d0, dia: dia, w: w, top: bTop, bot: bBot };
     }
     function mkDisc(map, dia, pos, yaw, ud) {
       var m = new THREE.Mesh(new THREE.CircleGeometry(dia / 2, 48), new THREE.MeshBasicMaterial({ map: map, transparent: true, alphaTest: 0.05, depthTest: true, fog: false }));
@@ -503,9 +513,13 @@
           return '<div class="sz-leg" data-zone="' + q.id + '" style="display:flex;gap:6px;align-items:center;margin:2px 0;font-size:10px;color:#ccc"><span class="sz-sw" style="width:12px;height:12px;border-radius:2px;background:' + colourFor(std, q.speed) + ';flex:none"></span>' +
             '<span><b>' + (q.speed != null ? q.speed + ' km/h' : 'no speed') + '</b> · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + esc(q.cls || '—') + ' · ' + esc(q.label) +
             (q.assumed.length ? ' · derived · assumed: ' + esc(q.assumed.join('; ')) : '') + discNote(res, q) + '</span></div>'; }).join('') + '</div>';
-        h += '<div style="font-size:11px;color:#9ad;margin-bottom:2px">Signs (' + res.signRows.length + ') — speed at each</div><div class="sz-signs" style="max-height:22vh;overflow-y:auto">' + res.signRows.map(function (r, i) {
+        // §SPEED_SIGN_LIST (user 2026-10-08: "listing all 138 signs when the speed limit painted ones are few"): only the signs that carry a
+        //   speed disc (real RP. 7 + borrowed boards); the full sign list is the Road standards section above.
+        var discGuids = {}; (res.discPlan || []).forEach(function (x) { if (x.guid && x.kind !== 'free') discGuids[x.guid] = x.kind; });
+        res.listRows = res.signRows.filter(function (r) { return discGuids[r.guid]; });
+        h += '<div style="font-size:11px;color:#9ad;margin-bottom:2px">Speed-limit signs (' + res.listRows.length + ': ' + res.listRows.filter(function (r) { return discGuids[r.guid] === 'real'; }).length + ' real, ' + res.listRows.filter(function (r) { return discGuids[r.guid] !== 'real'; }).length + ' borrowed)</div><div class="sz-signs" style="max-height:22vh;overflow-y:auto">' + res.listRows.map(function (r, i) {
           return '<div class="sz-row" data-i="' + i + '" data-guid="' + esc(r.guid) + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid ' + (r.speed != null ? colourFor(std, r.speed) : '#666') + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
-            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b> · ' + r.s.toFixed(0) + ' m · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' · ' + esc(r.label) + '</div>'; }).join('') + '</div>';
+            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b>' + (discGuids[r.guid] === 'real' ? '' : ' <span style="color:#ffaa33">(borrowed)</span>') + ' · ' + r.s.toFixed(0) + ' m · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' · ' + esc(r.label) + '</div>'; }).join('') + '</div>';
         body.innerHTML = h; body.style.color = '#ccc'; body.style.fontSize = '12px';
         var tg = body.querySelector('.sz-toggle');
         tg.addEventListener('change', function () { if (tg.checked) paint(res, std); else revert(); });
@@ -513,7 +527,7 @@
           console.log('§SPEED_MISSING_CLICK zone=' + m.zone + ' guid=' + (m.guid || 'free') + ' speed=' + m.speed);
           if (m.guid) { if (typeof A.focusElement === 'function') A.focusElement(m.guid); else if (A.zoomToGuid) A.zoomToGuid(m.guid); } });
         console.log('§SPEED_MISSING rows=' + miss.length + ' zones=' + miss.map(function (x) { return x.zone; }).join(','));
-        body.querySelector('.sz-signs').addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-row'); if (!el) return; focusRow(res, std, res.signRows[+el.getAttribute('data-i')], card); });
+        body.querySelector('.sz-signs').addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-row'); if (!el) return; focusRow(res, std, res.listRows[+el.getAttribute('data-i')], card); });
         console.log('§SPEED_ZONES_PANEL zones=' + res.zones.length + ' signRows=' + res.signRows.length + ' mode=' + res.mode);
         return res;
       });
