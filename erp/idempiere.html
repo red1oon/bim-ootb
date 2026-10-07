@@ -6041,7 +6041,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try {
         var r = _sqlRows('SELECT description AS d, note AS n FROM c_project WHERE c_project_id=' + Number(projId))[0];
         var m = r && /^BIM src db=(\S+)$/.exec(String(r.d || ''));
-        if (m) { sc.db = m[1]; if (useGuids && r.n && /^\S+(,\S+)*$/.test(String(r.n))) sc.find = String(r.n); }
+        if (m) { sc.db = m[1]; if (r.n && /^\S+(,\S+)*$/.test(String(r.n))) { if (useGuids) sc.find = String(r.n); else sc.within = String(r.n); } }
+        // §ZOOM-SAME-ITEM (user 2026-10-07: "it does not go back to the same item"): a LINE's key is a class (IfcBeam), so the
+        //   viewer used to select every element of that class; the pushed GUID set (Note) now travels as `within`, and the viewer
+        //   narrows the class to exactly the pushed elements.
       } catch (e) {}
       return sc;
     }
@@ -6056,6 +6059,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           try { localStorage.setItem('zoomfind_' + tok, sc.find); fq = '@' + tok; } catch (e) {}
         }
         url += '&find=' + fq;
+      }
+      if (sc.within) {                                             // §ZOOM-SAME-ITEM: the pushed GUIDs, same long-set handoff as find
+        var wq = encodeURIComponent(sc.within);
+        if (wq.length > 1500) { var wt = 'w' + Date.now().toString(36); try { localStorage.setItem('zoomfind_' + wt, sc.within); wq = '@' + wt; } catch (e) {} }
+        url += '&within=' + wq;
       }
       return url;
     }
@@ -6157,7 +6165,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         //   first (BroadcastChannel, key = the db URL resolved like the viewer resolves it); it zooms in place. No answer in
         //   400 ms → cold open, logged as such (an explicit branch, not a silent fall-through).
         var dbAbs = ''; try { dbAbs = new URL(decodeURIComponent((/[?&]db=([^&]+)/.exec(url) || [])[1] || ''), new URL(url, location.href)).href; } catch (e) {}
-        var findParam = (/[?&]find=([^&]+)/.exec(url) || [])[1];
+        var findParam = (/[?&]find=([^&]+)/.exec(url) || [])[1], withinParam = (/[?&]within=([^&]+)/.exec(url) || [])[1];
         var bc = null; try { bc = (typeof BroadcastChannel !== 'undefined' && dbAbs) ? new BroadcastChannel('bim-zoom-across') : null; } catch (e) {}
         var rid = 'z' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), done = false;
         var cold = function (why) {
@@ -6174,7 +6182,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           status('Zoomed in the open BIM Viewer tab');
           console.log('§ZOOM-REUSE hit id=' + rid + ' db=' + dbAbs + ' focusedHandle=' + !!(_zoomViewerWin && !_zoomViewerWin.closed));
         };
-        bc.postMessage({ type: 'zoom?', id: rid, db: dbAbs, find: findParam ? decodeURIComponent(findParam) : '', t0: Date.now() });
+        bc.postMessage({ type: 'zoom?', id: rid, db: dbAbs, find: findParam ? decodeURIComponent(findParam) : '', within: withinParam ? decodeURIComponent(withinParam) : '', t0: Date.now() });
         setTimeout(function () { cold('no open viewer on ' + dbAbs); }, 400);
       }
     });

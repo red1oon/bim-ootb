@@ -101,12 +101,14 @@ async function initViewer() {
       if (!_zm) return;
       var scope = decodeURIComponent(_zm[1].replace(/\+/g, ' '));
       if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (e) { scope = ''; } if (!scope) return; }   // §ZOOM-LINKBACK long GUID set handoff
+      var _wm = /[?&]within=([^&]+)/.exec(location.search), within = _wm ? decodeURIComponent(_wm[1]) : '';
+      if (within.charAt(0) === '@') { try { within = localStorage.getItem('zoomfind_' + within.slice(1)) || ''; } catch (e) { within = ''; } }
       var tries = 0, poll = setInterval(function () {
         tries++;
         if (!APP.db) { if (tries > 300) clearInterval(poll); return; } // wait for the model db (runSearch needs it)
         clearInterval(poll);
         var go = function () {
-          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
+          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope, { within: within }); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
           else { console.log('§ZOOM-SCOPE skip=no-applyFindScope'); }
         };
         // give geometry a beat to stream (so focusElement can light), then load Navigate + apply.
@@ -134,9 +136,11 @@ async function initViewer() {
         bc.postMessage({ type: 'zoom!', id: m.id });
         var scope = String(m.find || '');
         if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (x) { scope = ''; } }
+        var within = String(m.within || '');
+        if (within.charAt(0) === '@') { try { within = localStorage.getItem('zoomfind_' + within.slice(1)) || ''; } catch (x) { within = ''; } }
         var st = null; try { st = window.tmGetState && window.tmGetState(); } catch (x) {}
         if (st && st.active && typeof window.toggleTimeMachine === 'function') { window.toggleTimeMachine(); console.log('§ZOOM-REUSE closed-tm'); }
-        var n = scope ? APP.applyFindScope(scope) : 0;
+        var n = scope ? APP.applyFindScope(scope, { within: within }) : 0;
         console.log('§ZOOM-REUSE hit db=' + mine + ' find=' + (scope ? scope.length + 'ch' : '-') + ' focused=' + n + ' ms=' + (m.t0 ? Date.now() - m.t0 : -1) + ' (no reload)');
         try { window.focus(); } catch (x) {}
       };
