@@ -188,7 +188,8 @@
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
 // v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
-const CACHE_VERSION = 'v1613';
+// v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
+const CACHE_VERSION = 'v1614';
 // v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
 // v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
 // v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
@@ -1122,6 +1123,7 @@ const PRECACHE_ASSETS = [
   'list_builder.js',
   'settings_editor.js',
   'road_standards.js',
+  'speed_zones.js',
   'std_values.json',
   'panel_nav.js',
   // Lazy-loaded modules
