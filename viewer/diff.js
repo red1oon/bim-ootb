@@ -372,9 +372,18 @@ function setupDiff(A) {
     return Object.keys(out).map(function (k) { return out[k]; });
   };
 
-  var _voErpDb = null;
+  var _voErpDb = null, _voErpStamp = null;
+  function _voStamp() { return (window.ProjOrderState && window.ProjOrderState.storeStamp) ? window.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
   function _loadVoErpDb() {
-    if (_voErpDb) return Promise.resolve(_voErpDb);
+    return _voStamp().then(function (st) {
+      if (_voErpDb && st === _voErpStamp && st !== 'unknown') return _voErpDb;
+      if (_voErpDb) console.log('[RP-F] §PUSH_STORE_RELOAD writer=diff_vo was=' + _voErpStamp + ' now=' + st);
+      _voErpDb = null; _voErpStamp = st;
+      return _openVoErpDb();
+    });
+  }
+  function _openVoErpDb() {
     var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL
     if (!SQL || !window.VoFold) return Promise.resolve(null);
     // OPFS-first: amend the project the > ERP push already wrote; fall back to the seed (plan-only).
@@ -404,7 +413,7 @@ function setupDiff(A) {
         .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
         .then(function (fh) { return fh.createWritable(); })
         .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
+        .then(function () { return _voStamp().then(function (st) { if (db === _voErpDb) _voErpStamp = st; return true; }); }).catch(function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
 
