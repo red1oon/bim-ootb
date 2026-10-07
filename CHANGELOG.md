@@ -4,6 +4,38 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.74.0](https://github.com/red1oon/bim-ootb/compare/v1.73.0...v1.74.0) (2026-10-07)
+
+
+### ✨ Features
+
+* **civil:** Cross section output - real mid-plane cut PNG + Section sheet (§CROSS_OUTPUT, sw v1602) ([#1926](https://github.com/red1oon/bim-ootb/issues/1926)) ([fece022](https://github.com/red1oon/bim-ootb/commit/fece022487b37afd363f3719703cc3c8f3e67345))
+* **civil:** live draggable cross-section popup while scrubbing (sw v1604) ([#1928](https://github.com/red1oon/bim-ootb/issues/1928)) ([d6e4061](https://github.com/red1oon/bim-ootb/commit/d6e4061dc9a4f909d190933b63a166c0fb130034))
+* **civil:** profile lens (Long) + Profile PDF/PNG; sections witness 41/41 (sw v1601) ([#1922](https://github.com/red1oon/bim-ootb/issues/1922)) ([510fb9e](https://github.com/red1oon/bim-ootb/commit/510fb9e0997785904c9e608f034d9e0b427ff2fc))
+* **civil:** Signage priced RM 800/Nos (Selangor 2023 tender, cited) (sw v1600) ([#1921](https://github.com/red1oon/bim-ootb/issues/1921)) ([c5952b7](https://github.com/red1oon/bim-ootb/commit/c5952b7a6b33f9ae78bd24882d609462de154f60))
+
+
+### 🐛 Fixes
+
+* **bim→erp:** proxy folds one line per discipline; civil priced by CIVIL_RATES owner ([#1915](https://github.com/red1oon/bim-ootb/issues/1915)) ([609021e](https://github.com/red1oon/bim-ootb/commit/609021e0fd9197e6c9b156acafa8e22012f6f77b))
+* **civil:** live cross popup — short header + wrapping short-name legend, no overlapping text (viewer sw v1606) ([#1929](https://github.com/red1oon/bim-ootb/issues/1929)) ([d1ba203](https://github.com/red1oon/bim-ootb/commit/d1ba203dab10275e31c879f177a9e03afbe5e24f))
+* **civil:** no fake-city skyline ring around a road (§SKY_GHOST_SKYLINE) + frame detector + witness ([#1918](https://github.com/red1oon/bim-ootb/issues/1918)) ([9f19b6e](https://github.com/red1oon/bim-ootb/commit/9f19b6e36c32cbd73b29e128f03e23508ebee7bf))
+* **civil:** road film paces by distinct completion instants — no frozen day counter (§CW_PACE_DISTINCT) (sw v1599) ([#1920](https://github.com/red1oon/bim-ootb/issues/1920)) ([de1dec7](https://github.com/red1oon/bim-ootb/commit/de1dec75c338706190ace3e5a16e76986a06ac02))
+* **civil:** staged slots revisited at their reveal time — civil-only (§CW_SOLIDIFY_EVENT) (sw v1598) ([#1919](https://github.com/red1oon/bim-ootb/issues/1919)) ([bdd95f3](https://github.com/red1oon/bim-ootb/commit/bdd95f3bc9ad91fcdf38f52718e707cc4b82c1f8))
+* **erp:** detail tab fails closed when its GridTab model can't be built; log §GT-OPEN-FAIL (erp sw v821) ([#1924](https://github.com/red1oon/bim-ootb/issues/1924)) ([eeb8e6b](https://github.com/red1oon/bim-ootb/commit/eeb8e6be02275c0752bbe50125fe39077907679f))
+* **erp:** seed reset also removes the BIM push store (erp sw v822) ([#1925](https://github.com/red1oon/bim-ootb/issues/1925)) ([eb41f8a](https://github.com/red1oon/bim-ootb/commit/eb41f8a65187921d0def722699705158cbf2e595))
+* **find:** the cost · › ERP · open ↗ row can no longer be pushed out of the Find panel (saved tall tree re-fits) ([#1932](https://github.com/red1oon/bim-ootb/issues/1932)) ([45962b2](https://github.com/red1oon/bim-ootb/commit/45962b2dc3ca3f2fe5df7ebedff0a1c3f585caa3))
+* **whatif+erp:** no fall-through to another project (Hospital) when the building has none (viewer v1607, erp v824) ([#1930](https://github.com/red1oon/bim-ootb/issues/1930)) ([fa829aa](https://github.com/red1oon/bim-ootb/commit/fa829aac37d7875765f2142eb8627897f017e5a0))
+* **zoom-across:** red pill on a project line returns to the SAME pushed item, not every element of its class ([#1933](https://github.com/red1oon/bim-ootb/issues/1933)) ([8a30a23](https://github.com/red1oon/bim-ootb/commit/8a30a234e8c15f231dddcf1b3ab34333c55f30d4))
+* **zoom-across:** red pill opens the order's SOURCE model db + highlights the pushed GUIDs (link-back stored at push; node witness) ([#1916](https://github.com/red1oon/bim-ootb/issues/1916)) ([21979ca](https://github.com/red1oon/bim-ootb/commit/21979cae6a94335cd977f7b4cb0eb5b05907b833))
+* **zoom-across:** red pill zooms to the ticked project lines (erp v823, viewer v1603) ([#1927](https://github.com/red1oon/bim-ootb/issues/1927)) ([9f23c4b](https://github.com/red1oon/bim-ootb/commit/9f23c4bb139458d448e425c29239cdbd94b830d5))
+* **zoom-across:** reuse the open viewer tab; zoom landing skips the saved view's Time Machine (viewer v1608, erp v825) ([#1931](https://github.com/red1oon/bim-ootb/issues/1931)) ([b0fd8c6](https://github.com/red1oon/bim-ootb/commit/b0fd8c61c39193f8f9034df77bbacba422b82b48))
+
+
+### ♻️ Refactors
+
+* **navigate_find:** split into 7 parts via committed generator (move-only) + split tooling ([#1907](https://github.com/red1oon/bim-ootb/issues/1907)) ([7464ec8](https://github.com/red1oon/bim-ootb/commit/7464ec8c66b11a27fa5dd71a53d588201a6a314e))
+
 ## [1.73.0](https://github.com/red1oon/bim-ootb/compare/v1.72.0...v1.73.0) (2026-10-06)
 
 
