@@ -141,6 +141,8 @@
     var gcl = geo.speed_setting.class, mainCls = sel.cls;
     // buildZones(bp, ivs): one zone per breakpoint pair; a zone whose midpoint lies in a roundabout/approach interval (ivs) takes that rule's speed
     // (a per_zone user value still overrides); every other zone is a link zone (the ATJ 8/86 chain / lever).
+    function tagOf(k) { var t = geo.zone_tags && geo.zone_tags[k]; if (!t) { if (msgs.indexOf('geometric.zone_tags.' + k + ' missing') < 0) msgs.push('geometric.zone_tags.' + k + ' missing'); return 'untagged'; } return t; }
+    function untagged(k) { var m = 'geometric.' + k + ' has no tag/approach_tag'; if (msgs.indexOf(m) < 0) msgs.push(m); return 'untagged'; }
     function buildZones(bp, ivs) {
     var outZ = [];
     for (var z = 0; z + 1 < bp.length; z++) {
@@ -151,7 +153,7 @@
         var pzr = lever.per_zone && lever.per_zone[zone.id];
         zone.kind = iv.kind; zone.node = iv.node; zone.srcText = iv.srcText; zone.approachM = iv.approachM || null; zone.linkSpeed = iv.linkSpeed || null;
         zone.cls = null; zone.speed = pzr != null ? +pzr : iv.speed; zone.speedRef = null; zone.lane = null; zone.grade = null; zone.selRef = null; zone.catRow = cat; zone.mode = mode;
-        zone.label = pzr != null ? 'manual (user, per zone)' : iv.label; zone.assumed = R.assumed.slice(); if (iv.assumed) zone.assumed.push(iv.assumed);
+        zone.label = pzr != null ? 'manual (user, per zone)' : iv.label; zone.tag = pzr != null ? tagOf('user') : (iv.tag || untagged(iv.kind)); zone.assumed = R.assumed.slice(); if (iv.assumed) zone.assumed.push(iv.assumed);
         outZ.push(zone); continue;
       }
       if (mode === 'class') {
@@ -174,7 +176,7 @@
         if (!sel.cls) { zone.notes.push(sel.why); if (msgs.indexOf(sel.why) < 0) msgs.push(sel.why); }
         else { cls = sel.cls; var sd = speedAt(geo, cls, tws.terrain, areaType); if (sd) { speed = sd.speed; spRef = sd.ref; } }
       }
-      zone.cls = cls; zone.speed = speed; zone.speedRef = spRef; zone.label = label; zone.mode = mode;
+      zone.cls = cls; zone.speed = speed; zone.speedRef = spRef; zone.label = label; zone.tag = tagOf(mode === 'derived' ? 'link' : 'user'); zone.mode = mode;
       zone.lane = cls ? laneWidth(geo, cls) : null; zone.grade = (cls && speed != null) ? maxGrade(geo, cls, speed, tws.terrain, areaType) : null;
       zone.selRef = sel.ref || null; zone.catRow = cat;
       zone.assumed = R.assumed.slice();
@@ -214,14 +216,14 @@
         return { len: len, linkSpeed: ls, how: how };
       }
       var pre = appr('before'), post = appr('after'); info.pre = pre; info.post = post;
-      function apIv(a, s0, s1) { return { kind: 'approach', node: key, s0: s0, s1: s1, speed: sp, approachM: a.len, linkSpeed: a.linkSpeed, label: 'demo rule (editable): approach slows to the ' + noun + ' speed — ' + a.how, srcText: 'demo rule (editable) · ' + a.how + ' · speed = ' + noun + ' speed (' + lbl + ')', assumed: assumedTxt }; }
+      function apIv(a, s0, s1) { return { kind: 'approach', node: key, tag: C.approach_tag || untagged(key), s0: s0, s1: s1, speed: sp, approachM: a.len, linkSpeed: a.linkSpeed, label: 'demo rule (editable): approach slows to the ' + noun + ' speed — ' + a.how, srcText: 'demo rule (editable) · ' + a.how + ' · speed = ' + noun + ' speed (' + lbl + ')', assumed: assumedTxt }; }
       if (pre.len) { pre.s0 = Math.max(0, rs0 - pre.len); ivs.push(apIv(pre, pre.s0, rs0)); why[pre.s0] = why[pre.s0] || noun + ' approach (before)'; bp.push(pre.s0); }
       why[rs0] = offRoute ? noun + ' (off-route, ' + rlat.toFixed(0) + ' m max / ' + rmin.toFixed(0) + ' m min lateral, beyond the route ' + (rs1 <= 1e-6 ? 'start' : 'end') + ')' : noun; bp.push(rs0); why[rs1] = why[rs1] || noun + ' exit (approach after)'; bp.push(rs1);
-      if (!offRoute) ivs.push({ kind: key, node: key, s0: rs0, s1: rs1, speed: sp, label: lbl, srcText: lbl + ' · ' + speedTxt, assumed: assumedTxt });
+      if (!offRoute) ivs.push({ kind: key, node: key, tag: C.tag || untagged(key), s0: rs0, s1: rs1, speed: sp, label: lbl, srcText: lbl + ' · ' + speedTxt, assumed: assumedTxt });
       if (post.len) { post.s1 = Math.min(L, rs1 + post.len); ivs.push(apIv(post, rs1, post.s1)); why[post.s1] = why[post.s1] || noun + ' approach ends'; bp.push(post.s1); }
       var rx = C.sign_regex ? new RegExp(C.sign_regex, 'i') : null;
       if (rx) info.signs = signs.filter(function (sg) { return rx.test(sg.name || '') || rx.test(sg.code || ''); }).map(function (sg) { return { guid: sg.guid, name: sg.name, code: sg.code, s: sg.s }; });
-      info.lbl = lbl; info.speedTxt = speedTxt; info.assumedTxt = assumedTxt; info.minLat = rmin;
+      info.tag = C.tag || untagged(key); info.lbl = lbl; info.speedTxt = speedTxt; info.assumedTxt = assumedTxt; info.minLat = rmin;
       return info;
     }
     (geo.node_kinds || []).forEach(function (key) {
@@ -236,17 +238,18 @@
     Object.keys(nodes).forEach(function (key) {
       var nf = nodes[key]; if (!nf.offRoute) return;
       var zO = { id: nf.zoneId, kind: key, offRoute: true, s0: nf.s0, s1: nf.s1, opens: 'off-route (' + nf.n + ' elements, nearest ' + nf.minLat.toFixed(0) + ' m from the route end)', terrain: '-', terrainMeasured: false, terrainPct: null, areaType: areaType, area: area, category: cat.category, derivedClass: mainCls, notes: [], cls: null, speed: nf.speed, speedRef: null, lane: null, grade: null, selRef: null, catRow: cat, mode: mode,
-        label: nf.lbl, srcText: nf.lbl + ' · ' + nf.speedTxt + ' · ' + nf.n + ' ' + nf.noun + ' elements lie off the route (no on-route chainage)', assumed: R.assumed.slice().concat(nf.assumedTxt ? [nf.assumedTxt] : []) };
-      var pzO = geo.speed_setting.per_zone && geo.speed_setting.per_zone[nf.zoneId]; if (pzO != null) { zO.speed = +pzO; zO.label = 'manual (user, per zone)'; }
+        tag: nf.tag, label: nf.lbl, srcText: nf.lbl + ' · ' + nf.speedTxt + ' · ' + nf.n + ' ' + nf.noun + ' elements lie off the route (no on-route chainage)', assumed: R.assumed.slice().concat(nf.assumedTxt ? [nf.assumedTxt] : []) };
+      var pzO = geo.speed_setting.per_zone && geo.speed_setting.per_zone[nf.zoneId]; if (pzO != null) { zO.speed = +pzO; zO.label = 'manual (user, per zone)'; zO.tag = tagOf('user'); }
       R.zones.push(zO); nf.zone = zO;
     });
     // merge neighbours that differ in nothing but a terrain-window edge (a sign boundary always stays)
     R.signRows = signs.map(function (sg) {
       var tile = R.zones.filter(function (q) { return !q.offRoute; }), zz = tile.filter(function (q) { return sg.s >= q.s0 - 1e-9 && sg.s < q.s1 - 1e-9; })[0] || tile[tile.length - 1];
       var isSpeed = speedSigns.indexOf(sg) >= 0;
-      return { guid: sg.guid, code: sg.code, name: sg.name, s: sg.s, lateral: sg.lateral, isSpeedSign: isSpeed, zone: zz.id, speed: zz.speed, label: zz.label, cls: zz.cls };
+      return { guid: sg.guid, code: sg.code, name: sg.name, s: sg.s, lateral: sg.lateral, isSpeedSign: isSpeed, zone: zz.id, speed: zz.speed, label: zz.label, tag: zz.tag, cls: zz.cls };
     });
     R.signRows.sort(function (a, b) { return (b.isSpeedSign ? 1 : 0) - (a.isSpeedSign ? 1 : 0) || a.s - b.s; });
+    R.advance = advanceCheck(std, R, L, area, log);
     // §SPEED_SIGN_DISC plan: a disc on every real speed sign, plus one at the START of every on-route zone that has no speed sign within disc_snap_m of it
     //   (nearest unused SIGNAGE element within disc_snap_m, else a free-standing marker on the route). Pure data; the browser glue mounts it.
     var snap = (geo.disc_snap_m != null ? +geo.disc_snap_m : 100), atStart = (geo.disc_has_sign_m != null ? +geo.disc_has_sign_m : 30), plan = [], used = {};
@@ -277,6 +280,44 @@
     return R;
   }
   function norm(c) { return String(c == null ? '' : c).toUpperCase().replace(/[\s.]/g, ''); }
+
+  // ── §SIGN_VS_SPEED A.1 advance placement (ATJ 2B/85 clause 2.2.8, extracted into std_values.json `advance_placement` by tools/extract_atj2b_advance.py).
+  //   Signs whose code is a rule in advance_placement.rules are judged ONLY against the hazard that rule names (a geometric.node_kinds key, so the hazard comes
+  //   from the same controlled-node derivation as the speed zones). Distance = along-route chainage between the sign and the NEAR edge of the hazard's extent
+  //   (a two-way road: the sign may lie on either side; inside the extent = 0 m). Not judged, never CHECK: hazard not derived, hazard off the route (no
+  //   along-route position), or the sign itself projected onto a route end (clamped -> its along-route position is unknown). Column = geometric.inputs.area.
+  //   Row: {guid, code, name, s, hazard, noun, dist, minM, nominalM, column, speed (zone speed at the sign, shown not used), verdict OK|CHECK|NOT_JUDGED, why, ref}.
+  function advanceCheck(std, R, L, area, log) {
+    var ap = std.advance_placement, c = ap && ap.clause_2_2_8, rules = ap && ap.rules, res = { rows: [], counts: { OK: 0, CHECK: 0, NOT_JUDGED: 0 }, applicable: 0, vacuous: true, reason: null };
+    if (!c || !Array.isArray(rules) || !rules.length) { res.reason = 'std_values.json has no advance_placement rules'; log('§SIGN_ADVANCE NO_DATA ' + res.reason); return res; }
+    var colKey = area === 'URBAN' ? 'urban' : 'rural_or_high_speed', col = c[colKey], byCode = {};
+    if (!col) { res.reason = 'advance_placement.clause_2_2_8 has no ' + colKey + ' column'; log('§SIGN_ADVANCE NO_DATA ' + res.reason); return res; }
+    rules.forEach(function (r) { byCode[norm(r.code)] = r; });
+    res.column = colKey; res.col = col; res.clause = c;
+    R.signRows.forEach(function (sg) {
+      var rule = null; String(sg.code || '').split('&').map(norm).forEach(function (p) { if (!rule && byCode[p]) rule = byCode[p]; });
+      if (!rule) return;
+      res.applicable++;
+      var nd = R.nodes && R.nodes[rule.hazard], row = { guid: sg.guid, code: sg.code, name: sg.name, s: sg.s, hazard: rule.hazard, noun: nd ? nd.noun : rule.hazard, ruleCode: rule.code, dist: null,
+        minM: col.min_m, nominalM: col.nominal_m, column: colKey, speed: sg.speed, speedTag: sg.tag, verdict: null, why: null, ref: rule.ref };
+      if (!nd) { row.verdict = 'NOT_JUDGED'; row.why = 'no ' + rule.hazard + ' derived in this model - hazard position unknown'; }
+      else if (nd.offRoute) { row.verdict = 'NOT_JUDGED'; row.why = nd.noun + ' lies off the route (every element projects onto a route end) - no along-route distance'; }
+      else if (sg.s <= 1e-6 || sg.s >= L - 1e-6) { row.verdict = 'NOT_JUDGED'; row.why = 'sign projects onto the route end (clamped) - its along-route position is unknown'; }
+      else {
+        row.dist = sg.s < nd.s0 ? nd.s0 - sg.s : (sg.s > nd.s1 ? sg.s - nd.s1 : 0);
+        row.verdict = row.dist >= col.min_m ? 'OK' : 'CHECK'; row.hazardS0 = nd.s0; row.hazardS1 = nd.s1;
+        row.why = row.dist.toFixed(1) + ' m from the ' + nd.noun + ' (chainage ' + nd.s0.toFixed(1) + '..' + nd.s1.toFixed(1) + ') vs required >= ' + col.min_m + ' m (nominal ' + col.nominal_m + ' m)' + (row.dist >= col.min_m && row.dist < col.nominal_m ? ' - above the minimum, below nominal' : '');
+      }
+      res.counts[row.verdict]++; res.rows.push(row);
+      log('§SIGN_ADVANCE_ROW guid=' + sg.guid + ' code=' + sg.code + ' s=' + sg.s.toFixed(1) + ' hazard=' + rule.hazard + ' dist=' + (row.dist == null ? 'NA' : row.dist.toFixed(1)) + ' min=' + col.min_m + ' nominal=' + col.nominal_m + ' zoneSpeed=' + sg.speed + ' verdict=' + row.verdict + ' why="' + row.why + '"');
+    });
+    res.vacuous = res.applicable === 0; res.reason = res.vacuous ? 'no sign in the model carries a code with an advance-placement rule (' + rules.map(function (r) { return r.code; }).join(', ') + ')' : null;
+    var sz = ap.size_vs_speed; res.sizeFinding = sz ? sz.finding : null;
+    log('§SIGN_ADVANCE ' + (res.vacuous ? 'VACUOUS ' + res.reason : (res.counts.OK + res.counts.CHECK === 0 ? 'INCONCLUSIVE judged=0 ' : '') + 'applicable=' + res.applicable + ' OK=' + res.counts.OK + ' CHECK=' + res.counts.CHECK + ' NOT_JUDGED=' + res.counts.NOT_JUDGED) +
+        ' column=' + colKey + ' min=' + col.min_m + ' nominal=' + col.nominal_m + ' ref=ATJ2B p.' + c.ref.page + ' (pdf ' + c.ref.pdf_page + ', txt l.' + c.ref.txt_line + ')');
+    log('§SIGN_SIZE_SPEED NOT_BUILT status=' + (sz ? sz.status : 'no_data') + ' ' + (sz ? sz.finding : 'std_values.json has no advance_placement.size_vs_speed'));
+    return res;
+  }
 
   // colour per speed: shipped table (presentation, std_values `speed_colours`), else deterministic hue from the number
   function colourFor(std, speed) {
@@ -474,6 +515,18 @@
       });
       console.log('§SPEED_SIGN_DISC made=' + made + ' meshes=' + meshes + ' onRealSign=' + cnt.real + ' onOtherSign=' + cnt.other + ' freeStanding=' + cnt.free + ' speedSigns=' + plan.filter(function (r) { return r.kind === 'real'; }).length + (skipped.length ? ' skipped=' + skipped.join(',') : '') + ' verts=' + (meshes * 50));
     }
+    // HUD card (user 2026-10-08: "title prominent, data well arranged below, too much text, won't show on mobile"): (1) bold title line,
+    //   (2) compact 2-column key/value grid (.sz-kv rows), (3) collapsed "Why / sources" holding the FULL derivation, table/page refs, assumed inputs.
+    function zoneCard(res, z, whyHtml, row) {
+      var sp = z && z.speed != null ? z.speed + ' km/h' : (row && row.speed != null ? row.speed + ' km/h' : 'no speed');
+      var kv = z ? [['Chainage', z.s0.toFixed(0) + '\u2013' + z.s1.toFixed(0) + ' m'], ['Class', z.cls || '\u2014'],
+        ['Terrain', z.terrain === '-' ? '\u2014' : z.terrain + (z.terrainMeasured && z.terrainPct != null ? ' (' + z.terrainPct.toFixed(1) + '%)' : ' (assumed)')],
+        ['Lane width', z.lane ? z.lane.m + ' m' : '\u2014'], ['Max grade', z.grade ? z.grade.pct + '%' : '\u2014']] : [];
+      if (row) kv.unshift(['Sign at', row.s.toFixed(1) + ' m']);
+      var grid = kv.concat([['Source', null]]).map(function (r) { return '<div class="sz-kv" style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.06)"><span style="color:#888">' + r[0] + '</span><span style="text-align:right">' + (r[1] == null ? tagHtml(z ? z.tag : (row && row.tag)) : esc(r[1])) + '</span></div>'; }).join('');
+      return '<div style="max-width:340px"><div class="sz-card-title" style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px">' + esc(sp) + ' \u00b7 Zone ' + esc(z ? z.id : (row && row.zone) || '?') + (row && row.code ? ' <span style="font-size:12px;font-weight:600;color:#fc6">' + esc(row.code) + '</span>' : '') + '</div>' + grid +
+        '<details class="sz-why" style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:#9ad">Why / sources</summary><div style="font-size:12px;color:#aaa;margin-top:2px">' + whyHtml + '</div></details></div>';
+    }
     function focusRow(res, std, row, card) {
       var z = res.zones.filter(function (q) { return q.id === row.zone; })[0];
       var how = z && z.kind !== 'link' ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, ' + esc(z.kind) + ', opens at ' + esc(z.opens) + '). Speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' — ' + esc(z.srcText) + '. Mode: ' + esc(z.label) + (z.assumed.length ? ' · assumed inputs: ' + esc(z.assumed.join('; ')) : '') : z ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, opens at ' + esc(z.opens) + '). ' +
@@ -482,50 +535,81 @@
         'Lane ' + (z.lane ? z.lane.m + ' m (' + refTxt(z.lane.ref).replace('ATJ 8/86 ', '') + ')' : 'n/a') + ', max grade ' + (z.grade ? z.grade.pct + '% (' + z.grade.ref.table + ', p.' + z.grade.ref.page + ')' : 'n/a') + '. ' +
         'Mode: ' + esc(z.label) + (z.assumed.length ? ' · assumed inputs: ' + esc(z.assumed.join('; ')) : '') + (z.notes.length ? ' · ' + esc(z.notes.join('; ')) : '') : 'no zone';
       card.style.display = ''; card.setAttribute('data-guid', row.guid);
-      card.innerHTML = '<b>' + esc(row.code) + '</b> @ ' + row.s.toFixed(1) + ' m · <b>' + (row.speed != null ? row.speed + ' km/h' : 'no speed') + '</b> · ' + esc(row.label) + '<br>' + how;
+      card.innerHTML = zoneCard(res, z, how, row);
       console.log('§SPEED_ZONES_CLICK guid=' + row.guid + ' code=' + row.code + ' s=' + row.s.toFixed(1) + ' zone=' + row.zone + ' speed=' + row.speed + ' label="' + row.label + '"');
       // signs are batched/instanced: the shared focus primitive frames from element_transforms (lazy-loaded with the navigation bundle, as road_standards.js)
       if (typeof A.focusElement === 'function') A.focusElement(row.guid);
       else if (typeof A.loadNavigate === 'function') A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(row.guid); else if (A.zoomToGuid) A.zoomToGuid(row.guid); });
       else if (A.zoomToGuid) A.zoomToGuid(row.guid);
     }
+    var TAGCOL = { derived: '#8bc34a', demo: '#ffb300', 'NCHRP 672': '#4fc3f7', user: '#ce93d8' };
+    function tagHtml(t) { return '<span class="sz-tag" style="font-size:9px;padding:0 4px;border-radius:3px;border:1px solid ' + (TAGCOL[t] || '#888') + ';color:' + (TAGCOL[t] || '#888') + '">' + esc(t == null ? '?' : t) + '</span>'; }
+    // the full provenance of one zone (what the legend row used to print inline): label · assumed inputs · where its start disc sits
+    function zoneFull(res, q) { return (q.speed != null ? q.speed + ' km/h' : 'no speed') + ' · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + (q.cls || '—') + ' · ' + q.label + (q.assumed.length ? ' · derived · assumed: ' + q.assumed.join('; ') : '') + (q.srcText ? ' · ' + (q.srcText.indexOf(q.label) === 0 ? q.srcText.slice(q.label.length).replace(/^ · /, '') : q.srcText) : '') + discNote(res, q); }
     function discNote(res, q) { var d = (res.discPlan || []).filter(function (x) { return x.zone === q.id && x.kind !== 'real' && x.zoneStart != null; })[0]; return d ? ' · disc: ' + d.label + (d.kind === 'other' ? ' (on sign ' + (d.guid || '').slice(0, 8) + ')' : ' (free-standing)') : ''; }
     // mount(std, container, card): builds the "Speed" section inside the Road standards panel (async: waits for the profile)
     function mount(std, host, card) {
       var sec = document.createElement('div'); sec.className = 'sz-section'; sec.style.cssText = 'margin-top:10px;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px';
-      sec.innerHTML = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:4px">Speed zones &mdash; derived from ATJ 8/86</div><div class="sz-body" style="color:#888;font-size:10px">computing long section&hellip;</div>';
+      sec.innerHTML = '<div class="sz-title" style="color:#4fc3f7;font-weight:700;font-size:16px;margin-bottom:4px">Speed zones</div><div class="sz-body" style="color:#888;font-size:10px">computing long section&hellip;</div>';
       host.appendChild(sec); var body = sec.querySelector('.sz-body');
       var p = (A.civilProfilePrepare ? A.civilProfilePrepare() : Promise.resolve(null));
       return p.then(function (prof) {
         var g = gather(std); var inp = { title: g.title, route: g.route, signs: g.signs, nodes: g.nodes, profile: prof ? { ds: prof.ds, ground: prof.ground, road: prof.road } : null };
         var res = derive(std, inp, { log: console.log }); res.route = g.route; A._speedZones = res;
         if (res.vacuous || !res.zones.length) { body.innerHTML = '<span style="color:#f90">' + esc(res.msgs.join(' · ') || 'nothing derived') + '</span>'; return res; }
-        var h = '<div style="margin-bottom:4px;color:#aaa;font-size:10px">Mode: <b class="sz-mode">' + esc(res.mode) + '</b> (Settings → std_values.json → geometric.speed_setting)' +
-          (res.assumed.length ? ' · <span style="color:#fc6">assumed inputs: ' + esc(res.assumed.join('; ')) + '</span>' : '') + '</div>';
-        if (res.msgs.length) h += '<div class="sz-msgs" style="color:#f90;font-size:10px;margin-bottom:4px">' + res.msgs.map(esc).join('<br>') + '</div>';
+        // layout rule: facts as one-line rows; the mode explanation, assumed inputs and every derivation message sit in ONE collapsed "Why / sources"
+        var h = '<div class="sz-kv" style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0"><span style="color:#888">Mode</span><span><b class="sz-mode">' + esc(res.mode) + '</b> ' + tagHtml(res.mode === 'derived' ? (std.geometric.zone_tags && std.geometric.zone_tags.link) : (std.geometric.zone_tags && std.geometric.zone_tags.user)) + '</span></div>' +
+          '<div class="sz-kv" style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0"><span style="color:#888">Zones</span><span>' + res.zones.length + (res.msgs.length ? ' &middot; <span style="color:#f90">' + res.msgs.length + ' note' + (res.msgs.length > 1 ? 's' : '') + '</span>' : '') + '</span></div>' +
+          '<details class="sz-why-top" style="margin:2px 0 4px"><summary style="cursor:pointer;font-size:12px;color:#9ad">Why / sources</summary><div style="font-size:12px;color:#aaa">Speed per zone is derived from ATJ 8/86 tables held in std_values.json (Settings &rarr; std_values.json &rarr; geometric.speed_setting sets the mode).' +
+          (res.assumed.length ? '<div class="sz-assumed" style="color:#fc6">Assumed inputs (' + res.assumed.length + '): ' + esc(res.assumed.join('; ')) + '</div>' : '') +
+          (res.msgs.length ? '<div class="sz-msgs" style="color:#f90">' + res.msgs.map(esc).join('<br>') + '</div>' : '') + '</div></details>';
         var miss = (res.discPlan || []).filter(function (x) { return x.kind !== 'real'; }), V = 'MISSING SPEED SIGN';
         res.missingRows = miss.map(function (x) { var z = res.zones.filter(function (q) { return q.id === x.zone; })[0];
           return { guid: x.guid, zone: x.zone, s0: z.s0, s1: z.s1, speed: z.speed, code: x.code, text: 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '\u2013' + z.s1.toFixed(0) + ' m, ' + z.speed + ' km/h) has no speed-limit sign \u2014 shown on ' + (x.guid ? (x.code || 'a sign board') : 'a free-standing marker') + ' for demo' }; });
         if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '" open><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
           return '<div class="sz-missing" data-i="' + i + '" data-guid="' + esc(m.guid || '') + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid #ffaa33;background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' + esc(m.text) + '</div>'; }).join('') + '</details>';
+        // §SIGN_VS_SPEED group: ONLY the signs an advance-placement rule applies to (not all 138); CHECK first, NOT JUDGED = hazard position unknown (counted, not CHECK)
+        var AD = res.advance, ADCOL = { CHECK: '#cc4444', OK: '#44cc44', NOT_JUDGED: '#888' };
+        if (AD && !AD.vacuous) {
+          res.advRows = ['CHECK', 'OK', 'NOT_JUDGED'].reduce(function (a, v) { return a.concat(AD.rows.filter(function (r) { return r.verdict === v; })); }, []);
+          h += '<div class="sz-adv-grp" style="margin-top:6px"><div style="font-size:11px;color:#9ad;margin-bottom:2px">Sign vs approach speed (' + AD.applicable + ' signs a rule applies to)</div>' +
+            ['CHECK', 'OK', 'NOT_JUDGED'].map(function (v) { var rs = res.advRows.filter(function (r) { return r.verdict === v; }); if (!rs.length) return '';
+              return '<details class="sz-adv-v" data-verdict="' + v + '"' + (v === 'NOT_JUDGED' ? '' : ' open') + '><summary style="cursor:pointer;font-weight:600;font-size:11px;color:' + ADCOL[v] + ';margin:3px 0">' + v.replace('_', ' ') + ' (' + rs.length + ')</summary>' +
+                rs.map(function (r) { var i = res.advRows.indexOf(r);
+                  return '<div class="sz-adv" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.why) + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid ' + ADCOL[v] + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa"><b>' + esc(r.code || '') + '</b> · ' +
+                    (r.dist != null ? r.dist.toFixed(0) + ' m to ' + esc(r.noun) + ' (need \u2265 ' + r.minM + ')' : esc(r.noun) + ' \u2014 not judged') + '</div>'; }).join('') + '</details>'; }).join('') +
+            '<div class="sz-sizenote" title="' + esc(AD.sizeFinding || '') + '" style="font-size:10px;color:#888;margin-top:3px">Size vs speed: not judgeable \u2014 ATJ 2A/2B give no speed-banded size for these sign boards (hover)</div></div>';
+        } else if (AD) h += '<div class="sz-adv-grp" style="font-size:10px;color:#888;margin-top:6px">Sign vs approach speed: nothing to judge (' + esc(AD.reason || '') + ')</div>';
         h += '<label style="cursor:pointer;font-size:11px"><input type="checkbox" class="sz-toggle"> Speed zones on road</label>';
+        // §LABEL_CLEAN (user 2026-10-08: "remove the rest of the labels that maybe irrelevant ie 'not from a standard'"): a legend row is ONE line = speed, range, class,
+        //   short tag (derived / demo / NCHRP 672 / user). The long provenance (label, assumed inputs, disc note) is the row's tooltip and the HUD card on click.
         h += '<div class="sz-legend" style="margin:6px 0;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px">' + res.zones.map(function (q) {
-          return '<div class="sz-leg" data-zone="' + q.id + '" style="display:flex;gap:6px;align-items:center;margin:2px 0;font-size:10px;color:#ccc"><span class="sz-sw" style="width:12px;height:12px;border-radius:2px;background:' + colourFor(std, q.speed) + ';flex:none"></span>' +
-            '<span><b>' + (q.speed != null ? q.speed + ' km/h' : 'no speed') + '</b> · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + esc(q.cls || '—') + ' · ' + esc(q.label) +
-            (q.assumed.length ? ' · derived · assumed: ' + esc(q.assumed.join('; ')) : '') + discNote(res, q) + '</span></div>'; }).join('') + '</div>';
+          return '<div class="sz-leg" data-zone="' + q.id + '" title="' + esc(zoneFull(res, q)) + '" style="display:flex;gap:6px;align-items:center;margin:2px 0;font-size:10px;color:#ccc;cursor:pointer"><span class="sz-sw" style="width:12px;height:12px;border-radius:2px;background:' + colourFor(std, q.speed) + ';flex:none"></span>' +
+            '<span><b>' + (q.speed != null ? q.speed + ' km/h' : 'no speed') + '</b> · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + esc(q.cls || '—') + ' ' + tagHtml(q.tag) + '</span></div>'; }).join('') + '</div>';
         // §SPEED_SIGN_LIST (user 2026-10-08: "listing all 138 signs when the speed limit painted ones are few"): only the signs that carry a
         //   speed disc (real RP. 7 + borrowed boards); the full sign list is the Road standards section above.
         var discGuids = {}; (res.discPlan || []).forEach(function (x) { if (x.guid && x.kind !== 'free') discGuids[x.guid] = x.kind; });
         res.listRows = res.signRows.filter(function (r) { return discGuids[r.guid]; });
         h += '<div style="font-size:11px;color:#9ad;margin-bottom:2px">Speed-limit signs (' + res.listRows.length + ': ' + res.listRows.filter(function (r) { return discGuids[r.guid] === 'real'; }).length + ' real, ' + res.listRows.filter(function (r) { return discGuids[r.guid] !== 'real'; }).length + ' borrowed)</div><div class="sz-signs" style="max-height:22vh;overflow-y:auto">' + res.listRows.map(function (r, i) {
-          return '<div class="sz-row" data-i="' + i + '" data-guid="' + esc(r.guid) + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid ' + (r.speed != null ? colourFor(std, r.speed) : '#666') + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
-            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b>' + (discGuids[r.guid] === 'real' ? '' : ' <span style="color:#ffaa33">(borrowed)</span>') + ' · ' + r.s.toFixed(0) + ' m · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' · ' + esc(r.label) + '</div>'; }).join('') + '</div>';
+          return '<div class="sz-row" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.code + ' @ ' + r.s.toFixed(0) + ' m: ' + r.label) + '" style=""margin:1px 0;padding:2px 6px;border-left:3px solid ' + (r.speed != null ? colourFor(std, r.speed) : '#666') + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
+            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b>' + (discGuids[r.guid] === 'real' ? '' : ' <span style="color:#ffaa33">(borrowed)</span>') + ' · ' + r.s.toFixed(0) + ' m · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' ' + tagHtml(r.tag) + '</div>'; }).join('') + '</div>';
         body.innerHTML = h; body.style.color = '#ccc'; body.style.fontSize = '12px';
         var tg = body.querySelector('.sz-toggle');
         tg.addEventListener('change', function () { if (tg.checked) paint(res, std); else revert(); });
         body.addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-missing'); if (!el) return; var m = res.missingRows[+el.getAttribute('data-i')]; card.style.display = ''; card.innerHTML = '<b style="color:#ffaa33">MISSING SPEED SIGN</b> &middot; ' + esc(m.text);
           console.log('§SPEED_MISSING_CLICK zone=' + m.zone + ' guid=' + (m.guid || 'free') + ' speed=' + m.speed);
           if (m.guid) { if (typeof A.focusElement === 'function') A.focusElement(m.guid); else if (A.zoomToGuid) A.zoomToGuid(m.guid); } });
+        body.addEventListener('click', function (ev) {
+          var le = ev.target.closest && ev.target.closest('.sz-leg'); if (le) { var q = res.zones.filter(function (z) { return z.id === le.getAttribute('data-zone'); })[0];
+            if (q) { card.style.display = ''; card.innerHTML = zoneCard(res, q, esc(zoneFull(res, q)), null); console.log('§SPEED_LEGEND_CLICK zone=' + q.id + ' tag=' + q.tag); } return; }
+          var ae = ev.target.closest && ev.target.closest('.sz-adv'); if (!ae) return; var r = res.advRows[+ae.getAttribute('data-i')]; if (!r) return;
+          var A2 = res.advance;
+          card.style.display = ''; card.setAttribute('data-guid', r.guid);
+          card.innerHTML = '<b style="color:' + ADCOL[r.verdict] + '">' + r.verdict.replace('_', ' ') + '</b> &middot; ' + esc(r.code) + ' (' + esc(r.name || '') + ') @ ' + r.s.toFixed(1) + ' m<br>Rule: ATJ 2B/85 clause ' + esc(r.ref ? A2.clause.clause : '') + ', p.' + esc(A2.clause.ref.page) + ' (txt l.' + A2.clause.ref.txt_line + '): advance of the ' + esc(r.noun) + ' nominal ' + r.nominalM + ' m, not less than ' + r.minM + ' m (' + esc(r.column) + ' column; area input is ' + esc(res.assumed.filter(function (x) { return /^area/.test(x); })[0] || 'user-set') + ').<br>' +
+            'Model value: ' + (r.dist != null ? r.dist.toFixed(1) + ' m along the route to the ' + esc(r.noun) + ' (chainage ' + r.hazardS0.toFixed(1) + '..' + r.hazardS1.toFixed(1) + ')' : 'not judged \u2014 ' + esc(r.why)) + '.<br>Approach speed of the zone at the sign: ' + (r.speed != null ? r.speed + ' km/h' : 'n/a') + ' (shown; the clause gives no speed threshold for &ldquo;high speed roads&rdquo;).';
+          console.log('§SIGN_ADVANCE_CLICK guid=' + r.guid + ' verdict=' + r.verdict + ' dist=' + (r.dist == null ? 'NA' : r.dist.toFixed(1)));
+          if (typeof A.focusElement === 'function') A.focusElement(r.guid); else if (A.zoomToGuid) A.zoomToGuid(r.guid);
+        });
         console.log('§SPEED_MISSING rows=' + miss.length + ' zones=' + miss.map(function (x) { return x.zone; }).join(','));
         body.querySelector('.sz-signs').addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-row'); if (!el) return; focusRow(res, std, res.listRows[+el.getAttribute('data-i')], card); });
         console.log('§SPEED_ZONES_PANEL zones=' + res.zones.length + ' signRows=' + res.signRows.length + ' mode=' + res.mode);
@@ -535,7 +619,7 @@
     A.speedZones = { mount: mount, paint: paint, revert: revert, gather: gather, active: function () { return _on; } };
   }
 
-  var api = { derive: derive, selectClass: selectClass, speedAt: speedAt, maxGrade: maxGrade, laneWidth: laneWidth, projectToRoute: projectToRoute, pointAt: pointAt, routeLength: routeLength, terrainClass: terrainClass, colourFor: colourFor, hexOf: hexOf, setupSpeedZones: setupSpeedZones };
+  var api = { derive: derive, advanceCheck: advanceCheck, selectClass: selectClass, speedAt: speedAt, maxGrade: maxGrade, laneWidth: laneWidth, projectToRoute: projectToRoute, pointAt: pointAt, routeLength: routeLength, terrainClass: terrainClass, colourFor: colourFor, hexOf: hexOf, setupSpeedZones: setupSpeedZones };
   if (typeof window !== 'undefined') window.setupSpeedZones = setupSpeedZones;
   return api;
 });

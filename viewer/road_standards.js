@@ -82,8 +82,8 @@
           var g = by[k], label = g[0].code == null ? '(no code)' : g[0].code;
           return '<details data-lvl="3" style="margin-left:10px"><summary style="cursor:pointer;font-size:11px;color:#ddd">' + esc(label) + ' &times;' + g.length + '</summary>' +
             g.map(function (r) {
-              return '<div class="rs-row" data-guid="' + esc(r.guid) + '" style="margin:2px 0 2px 14px;padding:3px 6px;border-left:3px solid ' + VCOL[v] + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
-                esc(r.ifc_class) + ' &middot; ' + esc(String(r.name).substring(0, 40)) + '</div>';
+              return '<div class="rs-row" data-guid="' + esc(r.guid) + '" style="margin:2px 0 2px 14px;padding:3px 6px;border-left:3px solid ' + VCOL[v] + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:12px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.ifc_class + ' · ' + r.name) + '">' +
+                esc(String(r.name).substring(0, 48)) + '</div>';
             }).join('') + '</details>';
         }).join('');
       }
@@ -117,21 +117,26 @@
     }
     A.showRoadStandards = function () {
       if (!(A.isCivilModel && A.isCivilModel())) { console.log('§SIGN_CHECK VACUOUS not a civil model — Road standards is civil-only'); return null; }
-      var loader = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=1', 'json_std_values') : fetch('std_values.json?v=1').then(function (r) { return r.json(); });
+      var loader = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=2', 'json_std_values') : fetch('std_values.json?v=2').then(function (r) { return r.json(); });
       return loader.then(function (std) {
         var res = checkSigns(objQuery, std, { log: console.log });
         A._roadStdResult = res; A._roadStdStd = std;
         var old = document.getElementById(PANEL); if (old) old.remove();
         var body = document.createElement('div'); body.style.cssText = 'font-size:12px;color:#ccc;max-height:60vh;overflow-y:auto';
         var bt = res.vacuous ? { html: '<div style="color:#888;padding:6px 0">Nothing to judge (' + esc(res.reason) + ').</div>', tree: {} } : buildTree(res, std);
-        body.innerHTML = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:4px">Road standards &mdash; signs vs ATJ 2A/85</div>' +
-          '<div style="color:#888;font-size:10px">' + res.rows.length + ' signs &middot; OK ' + res.counts.OK + ' &middot; UNKNOWN ' + res.counts.UNKNOWN + ' &middot; MISSING ' + res.counts.MISSING + ' &middot; click a sign to zoom</div>' +
+        // layout rule (user 2026-10-08): prominent title, facts as short one-line rows, long text in a collapsed "Why / sources"
+        body.innerHTML = '<div class="rs-title" style="color:#4fc3f7;font-weight:700;font-size:16px;margin-bottom:4px">Signs vs ATJ 2A/85</div>' +
+          '<div class="rs-counts" style="font-size:12px;color:#ccc;display:flex;flex-wrap:wrap;gap:4px 10px"><span>' + res.rows.length + ' signs</span><span style="color:' + VCOL.OK + '">OK ' + res.counts.OK + '</span><span style="color:' + VCOL.UNKNOWN + '">UNKNOWN ' + res.counts.UNKNOWN + '</span><span style="color:' + VCOL.MISSING + '">MISSING ' + res.counts.MISSING + '</span></div>' +
+          '<details class="rs-why-top" style="margin:2px 0"><summary style="cursor:pointer;font-size:12px;color:#9ad">Why / sources</summary><div style="font-size:12px;color:#aaa">Each SIGNAGE element\'s code (property ' + esc((std._model_map || {}).code_prop) + ') is looked up in the ATJ 2A/85 (Pindaan 2019) sign table in std_values.json (' + (std.signs || []).length + ' codes, page refs per code). OK = code in the table; UNKNOWN = code not in it; MISSING = no code property. Click a sign to zoom.</div></details>' +
           bt.html + '<div class="rs-card" style="margin-top:8px;padding:6px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11px;color:#aaa;display:none"></div>';
         body.addEventListener('click', function (ev) {
           var el = ev.target.closest && ev.target.closest('.rs-row'); if (!el) return;
           var guid = el.getAttribute('data-guid'), r = res.rows.filter(function (x) { return x.guid === guid; })[0]; if (!r) return;
           var card = body.querySelector('.rs-card'); card.style.display = '';
-          card.innerHTML = '<b style="color:' + VCOL[r.verdict] + '">' + r.verdict + '</b> &middot; ' + esc(r.detail) + (r.stdName ? '<br>Standard: ' + esc(r.stdName) + ' (p.' + esc(r.stdPage) + ')' : '');
+          var kvr = function (k, v) { return '<div class="rs-kv" style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.06)"><span style="color:#888">' + k + '</span><span style="text-align:right">' + v + '</span></div>'; };
+          card.innerHTML = '<div style="max-width:340px"><div class="rs-card-title" style="font-size:16px;font-weight:700;color:' + VCOL[r.verdict] + ';margin-bottom:4px">' + r.verdict + ' &middot; ' + esc(r.code || '(no code)') + '</div>' +
+            kvr('Standard', esc(r.stdName || '\u2014')) + kvr('ATJ 2A/85 page', r.stdPage != null ? esc(r.stdPage) : '\u2014') + kvr('Element', esc(String(r.name).substring(0, 28))) + kvr('Class', esc(r.ifc_class)) + kvr('Verdict', esc(r.verdict)) +
+            '<details class="rs-why" style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:#9ad">Why / sources</summary><div style="font-size:12px;color:#aaa">' + esc(r.detail) + '</div></details></div>';
           console.log('§SIGN_CHECK_CLICK guid=' + guid + ' verdict=' + r.verdict + ' code=' + r.code);
           // Signs are batched/instanced (no per-guid mesh), so A.zoomToGuid would ZOOM_MISS: use the shared focus primitive
           // (Find / 3D-pick / history-restore all route through it; it frames from element_transforms).
