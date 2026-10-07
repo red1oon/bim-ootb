@@ -115,6 +115,18 @@
       try { if (params && params.length) st.bind(params); while (st.step()) out.push(st.getAsObject()); } finally { st.free(); }
       return out;
     }
+    // §RS_TOGGLE (user 2026-10-08: "the Road signs panel has no close or toggle off from the Inspect menu"): the menu row and `j` toggle;
+    //   closing (any route) also clears what the panel put on the road — speed-zone colours + discs — so nothing is left behind.
+    function _clearOverlays(why) {
+      var n = 0; try { if (A.speedZones && A.speedZones.active && A.speedZones.active()) n = A.speedZones.revert(); } catch (e) {}
+      console.log('§RS_TOGGLE closed via=' + why + ' zonesReverted=' + n);
+    }
+    A.roadStandardsOpen = function () { var p = document.getElementById(PANEL); return !!(p && p.style.display !== 'none'); };
+    A.hideRoadStandards = function (why) { var p = document.getElementById(PANEL); if (p) p.style.display = 'none'; _clearOverlays(why || 'api'); };
+    A.toggleRoadStandards = function () {
+      if (A.roadStandardsOpen()) { A.hideRoadStandards('toggle'); return null; }
+      console.log('§RS_TOGGLE open'); return A.showRoadStandards();
+    };
     A.showRoadStandards = function () {
       if (!(A.isCivilModel && A.isCivilModel())) { console.log('§SIGN_CHECK VACUOUS not a civil model — Road standards is civil-only'); return null; }
       var loader = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=2', 'json_std_values') : fetch('std_values.json?v=2').then(function (r) { return r.json(); });
@@ -145,7 +157,7 @@
           else if (A.zoomToGuid) A.zoomToGuid(guid);
         });
         if (A.speedZones && std.geometric) A.speedZones.mount(std, body, body.querySelector('.rs-card'));   // §SPEED_ZONES section (civil-only, same panel)
-        var p = A.createPanel(PANEL, { closable: true, style: { position: 'fixed', top: '70px', left: '16px', zIndex: '1101', width: '340px', padding: '12px 14px' }, content: body });
+        var p = A.createPanel(PANEL, { closable: true, onClose: function () { _clearOverlays('close-button'); }, style: { position: 'fixed', top: '70px', left: '16px', zIndex: '1101', width: '340px', padding: '12px 14px' }, content: body });
         document.body.appendChild(p); p.style.display = '';
         console.log('§SIGN_CHECK_PANEL verdicts=' + JSON.stringify(res.counts) + ' tree=' + JSON.stringify(bt.tree));
         return res;

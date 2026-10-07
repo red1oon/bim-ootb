@@ -2505,7 +2505,7 @@ async function setupScene(A) {
     },
     '4':  function() { if (typeof A.export4D5D === 'function') A.export4D5D(); },
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
-    'j':  function() { if (typeof A.showRoadStandards === 'function') A.showRoadStandards(); },   // §SIGN_CHECK: Road standards (civil-only; the opener gates itself)
+    'j':  function() { if (typeof A.toggleRoadStandards === 'function') A.toggleRoadStandards(); },   // §SIGN_CHECK: Road standards (civil-only; the opener gates itself)
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
