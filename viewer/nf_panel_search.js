@@ -997,7 +997,12 @@
         catch (e) { console.log('§ZOOM-SAME-ITEM err=' + e.message); return 0; }
         console.log('§ZOOM-SAME-ITEM keys="' + scope + '" pushed=' + _within.length + ' matched=' + _hit.length);
         if (!_hit.length) { console.log('§ZOOM-SAME-ITEM none — the pushed elements of this line are not in this model (no fall-through to the whole class)'); return 0; }
+        var _keys = scope.split(';');   // the line keys, captured before scope becomes the GUID list
         scope = _hit.join(',') + (_hit.length === 1 ? ',' : '');
+        // the cost-variance box (Planned → Committed) is drawn for a class on the class path only; a narrowed line zoom
+        //   takes the guid path, so draw it here for the line's ONE class (several keys → no single class → logged, none).
+        if (_keys.length === 1) { try { NF._showClassCost(_keys[0].split(':')[0], _hit.length, _hit.length === 1 ? _hit[0] : undefined); } catch (e) { console.log('§ZOOM-COST wire_err=' + e.message); } }
+        else console.log('§ZOOM-COST skip — ' + _keys.length + ' line keys, no single class');
       }
       // §ARCH-OWNERSHIP (FUSED_4D5D_WEDGE_LANE): if the Time Machine is OPEN it is the OWNER/consumer —
       // it shows the pinpointed element AT ITS MOMENT (tmJumpToElement). Else Find is the default floor
