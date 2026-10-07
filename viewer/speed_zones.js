@@ -194,7 +194,7 @@
 
   // ── browser glue ────────────────────────────────────────────────────────────────────────────────────────────────
   function setupSpeedZones(A) {
-    var _touched = [], _on = false;
+    var _touched = [], _on = false, _discs = [];
     function objQuery(q, params) { var st = A.db.prepare(q), out = []; try { if (params && params.length) st.bind(params); while (st.step()) out.push(st.getAsObject()); } finally { st.free(); } return out; }
     function gather(std) {
       var mm = std._model_map || {}, geo = std.geometric, route = (A.civilDriveRoute && A.civilDriveRoute()) || null;
@@ -210,6 +210,7 @@
       _touched.forEach(function (s) {
         try { if (s.inst != null) { s.m.setColorAt(s.inst, s.col.setHex(s.c)); s.m.instanceColor.needsUpdate = true; } else if (s.batch != null) s.m.setColorAt(s.batch, s.col.setHex(s.c)); } catch (e) {}
       });
+      _discs.forEach(function (d) { try { A.scene.remove(d); d.material.map.dispose(); d.material.dispose(); } catch (e) {} }); _discs = [];
       var n = _touched.length; _touched = []; _on = false; A._speedZonesTint = null; if (A.markDirty) A.markDirty();
       console.log('§SPEED_ZONES_PAINT off reverted=' + n); return n;
     }
@@ -236,10 +237,36 @@
         else return;
         n++;
       });
+      discs(res);
       _on = true; A._speedZonesTint = { byGuid: byGuid, painted: n };
       if (A.markDirty) A.markDirty();
       console.log('§SPEED_ZONES_PAINT on roadElements=' + rows.length + ' painted=' + n + ' maxLateralM=' + maxLat.toFixed(2) + ' noZone=' + noZone + ' verts=0');
       return n;
+    }
+    // §SPEED_SIGN_DISC (user 2026-10-07: "better if the speed number is painted on the sign"): a speed-limit disc (red ring, white face,
+    //   black number = the zone speed that sign opens, derived or user-set) on each speed sign while the zones are on. Size = the sign's own
+    //   plan width (element_transforms bbox), centred one radius below the sign's top — where the face is. Presentation only; revert() removes.
+    function discTex(speed) {
+      var cv = document.createElement('canvas'); cv.width = cv.height = 256; var g = cv.getContext('2d');
+      g.beginPath(); g.arc(128, 128, 120, 0, 2 * Math.PI); g.fillStyle = '#d32f2f'; g.fill();
+      g.beginPath(); g.arc(128, 128, 92, 0, 2 * Math.PI); g.fillStyle = '#ffffff'; g.fill();
+      g.fillStyle = '#000'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold ' + (String(speed).length > 2 ? 84 : 110) + 'px sans-serif';
+      g.fillText(String(speed), 128, 136);
+      var t = new THREE.CanvasTexture(cv); return t;
+    }
+    function discs(res) {
+      var rows = res.signRows.filter(function (r) { return r.isSpeedSign; }), made = 0, skipped = [];
+      rows.forEach(function (r) {
+        if (r.speed == null) { skipped.push(r.guid + ':no-speed'); return; }
+        var t = objQuery('SELECT center_x AS cx, center_y AS cy, center_z AS cz, bbox_x AS bx, bbox_y AS by, bbox_z AS bz FROM element_transforms WHERE guid = ?', [r.guid])[0];
+        if (!t || !(t.bz > 0)) { skipped.push(r.guid + ':no-bbox'); return; }
+        var w = Math.max(t.bx || 0, t.by || 0); if (!(w > 0)) { skipped.push(r.guid + ':no-width'); return; }
+        var p = A.ifc2three(t.cx, t.cy, t.cz + t.bz / 2 - w / 2);
+        var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex(r.speed), depthTest: true, transparent: true }));
+        sp.position.set(p.x, p.y, p.z); sp.scale.set(w, w, 1); sp.renderOrder = 6; sp.userData.speedDisc = r.guid;
+        A.scene.add(sp); _discs.push(sp); made++;
+      });
+      console.log('§SPEED_SIGN_DISC made=' + made + ' speedSigns=' + rows.length + (skipped.length ? ' skipped=' + skipped.join(',') : '') + ' verts=' + (made * 4));
     }
     function focusRow(res, std, row, card) {
       var z = res.zones.filter(function (q) { return q.id === row.zone; })[0];
