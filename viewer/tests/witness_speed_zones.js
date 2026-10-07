@@ -87,10 +87,14 @@ async function roadProbe(page) {
     const ms = {}; A.collectMeshes(o => o.isMesh || o.isInstancedMesh || o.isBatchedMesh).forEach(o => { ms[o.id] = o; });
     const C = new THREE.Color();
     function snap() { const s = {}; Object.keys(A.guidMap).forEach(k => { const g = A.guidMap[k]; if (!road[g]) return; const us = k.indexOf('_'); if (us <= 0) return; const m = ms[+k.slice(0, us)], slot = +k.slice(us + 1); if (!m || !m.getColorAt) return;
-      let hex = 0xffffff; try { if (m.isInstancedMesh && !m.instanceColor) hex = 0xffffff; else { m.getColorAt(slot, C); hex = C.getHex(); } } catch (e) { return; } s[k] = { g, hex }; }); return s; }
+      let hex = 0xffffff; try { if (m.isInstancedMesh && !m.instanceColor) C.setHex(0xffffff); else m.getColorAt(slot, C); } catch (e) { return; }
+      // §SPEED_ZONE_TRUE_COLOUR: judge the RENDERED tint = instance/batch colour × material colour (the old check read the tint alone and
+      //   passed while the road showed grey-brown); fog must be off on painted meshes so distance haze does not grey it.
+      const mc = (m.material && !Array.isArray(m.material) && m.material.color) ? m.material.color : null; if (mc) C.multiply(mc); hex = C.getHex();
+      s[k] = { g, hex, fog: !!(m.material && m.material.fog) }; }); return s; }
     const before = snap(); out.nSlots = Object.keys(before).length;
     const tg = pan.querySelector('.sz-toggle'); tg.checked = true; tg.dispatchEvent(new Event('change'));
-    const on = snap(); out.on = Object.keys(on).map(k => ({ g: on[k].g, hex: on[k].hex }));
+    const on = snap(); out.on = Object.keys(on).map(k => ({ g: on[k].g, hex: on[k].hex, fog: on[k].fog }));
     tg.checked = false; tg.dispatchEvent(new Event('change'));
     const off = snap(); out.revertMismatch = Object.keys(before).filter(k => !off[k] || off[k].hex !== before[k].hex).length;
     out.tintStateAfterOff = A._speedZonesTint;
@@ -164,6 +168,7 @@ async function roadProbe(page) {
       if (r.road.legend.length !== r.road.base.zones.length || !r.road.on.length) return false;
       const near = (a, b) => ['r', 'g', 'b'].every((_, i) => Math.abs(((a >> (16 - 8 * i)) & 255) - ((b >> (16 - 8 * i)) & 255)) <= 4);   // setColorAt stores float16/8-bit; tolerance 4/255
       return r.road.on.every(o => { const pj = project(r.road.route, r.road.roadPos[o.g].x, r.road.roadPos[o.g].z); const z = r.road.base.zones.find(q => pj.s >= q.s0 && pj.s < q.s1) || r.road.base.zones[r.road.base.zones.length - 1]; return near(o.hex, sw[z.id]); }); }))
+    .invariant('painted road ignores distance haze: every painted slot sits on a material with fog off (far road read grey-brown before)', rs => rs.every(r => r.road.on.length > 0 && r.road.on.every(o => o.fog === false)))
     .invariant('toggle off restores the saved colours of every slot (mismatch 0) and clears the tint state; slots judged > 0', rs => rs.every(r => r.road.nSlots > 0 && r.road.revertMismatch === 0 && r.road.tintStateAfterOff === null))
     .invariant('sign list: RP. 7 rows first with a speed + label each; list size == SIGNAGE count; DOM row text carries the km/h', rs => rs.every(r => r.road.base.signRows.length === r.road.signDom.length && r.road.base.signRows[0].isSpeedSign && r.road.base.signRows.every(s => s.speed != null && s.label) && r.road.signDom[0].includes(r.road.base.signRows[0].speed + ' km/h')))
     .invariant('click a sign row: camera target lands on that GUID centre (<0.05 m); card names the ATJ 8/86 table + page, the mode label and the assumed inputs', rs => rs.every(r => r.road.click.dist < 0.05 && /ATJ 8\/86 Table 3\.2A/.test(r.road.click.card) && /p\.\d+/.test(r.road.click.card) && /assumed/.test(r.road.click.card) && /derived/.test(r.road.click.card)))

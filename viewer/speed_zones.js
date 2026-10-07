@@ -194,7 +194,7 @@
 
   // ── browser glue ────────────────────────────────────────────────────────────────────────────────────────────────
   function setupSpeedZones(A) {
-    var _touched = [], _on = false, _discs = [];
+    var _touched = [], _on = false, _discs = [], _mats = [];
     function objQuery(q, params) { var st = A.db.prepare(q), out = []; try { if (params && params.length) st.bind(params); while (st.step()) out.push(st.getAsObject()); } finally { st.free(); } return out; }
     function gather(std) {
       var mm = std._model_map || {}, geo = std.geometric, route = (A.civilDriveRoute && A.civilDriveRoute()) || null;
@@ -210,6 +210,7 @@
       _touched.forEach(function (s) {
         try { if (s.inst != null) { s.m.setColorAt(s.inst, s.col.setHex(s.c)); s.m.instanceColor.needsUpdate = true; } else if (s.batch != null) s.m.setColorAt(s.batch, s.col.setHex(s.c)); } catch (e) {}
       });
+      _mats.forEach(function (x) { try { if (x.m.material !== x.mat) { x.m.material.dispose(); x.m.material = x.mat; } delete x.m._szWhite; } catch (e) {} }); _mats = [];
       _discs.forEach(function (d) { try { A.scene.remove(d); d.material.map.dispose(); d.material.dispose(); } catch (e) {} }); _discs = [];
       var n = _touched.length; _touched = []; _on = false; A._speedZonesTint = null; if (A.markDirty) A.markDirty();
       console.log('§SPEED_ZONES_PAINT off reverted=' + n); return n;
@@ -227,6 +228,30 @@
       var C = new THREE.Color();
       A.collectMeshes(function (o) { return o.isMesh || o.isInstancedMesh || o.isBatchedMesh; }).forEach(function (o) { ms[o.id] = o; });
       var gm = A.guidMap || {};
+      // §SPEED_ZONE_TRUE_COLOUR (user 2026-10-07: "colors on the HUD for high is near red whereas on the hiway they are more greyish brown"):
+      //   an instance/batch colour MULTIPLIES the material colour, so a grey road material turned the legend's red into grey-brown. Each
+      //   mesh holding a painted slot gets a WHITE clone of its material; every other slot of that mesh is compensated to prev × material
+      //   colour (looks unchanged); revert() restores slots then the original material. Rendered tint = legend colour (before lighting).
+      var slotsOf = {};
+      Object.keys(gm).forEach(function (k) { var us = k.indexOf('_'); if (us <= 0 || !/^\d+$/.test(k.slice(us + 1))) return; var id = k.slice(0, us); (slotsOf[id] || (slotsOf[id] = [])).push(parseInt(k.slice(us + 1), 10)); });
+      var whitened = 0;
+      Object.keys(slotsOf).forEach(function (id) {
+        var m = ms[parseInt(id, 10)]; if (!m || !m.setColorAt || m._szWhite) return;
+        if (!slotsOf[id].some(function (sl) { return byGuid[gm[id + '_' + sl]]; })) return;
+        var mat = m.material; m._szWhite = true; if (!mat || Array.isArray(mat) || !mat.color) return;
+        // the clone also ignores distance haze (fog:false) — far road read grey-brown, near read brick (user, same day)
+        var M = mat.color.clone(), plainWhite = M.getHex() === 0xffffff;
+        _mats.push({ m: m, mat: mat }); var cl = mat.clone(); cl.color.set(0xffffff); cl.fog = false; m.material = cl; whitened++;
+        if (plainWhite) return;                                          // no tint to compensate on the other slots
+        slotsOf[id].forEach(function (sl) {
+          if (byGuid[gm[id + '_' + sl]]) return;                        // painted below
+          var pc = new THREE.Color(1, 1, 1);
+          if (m.isInstancedMesh) { if (m.instanceColor) m.getColorAt(sl, pc); }
+          else { try { m.getColorAt(sl, pc); } catch (e) {} }
+          var rec = { m: m, c: pc.getHex(), col: new THREE.Color() }; if (m.isInstancedMesh) rec.inst = sl; else rec.batch = sl; _touched.push(rec);
+          pc.multiply(M); try { m.setColorAt(sl, pc); if (m.instanceColor) m.instanceColor.needsUpdate = true; } catch (e) {}
+        });
+      });
       Object.keys(gm).forEach(function (k) {
         var b = byGuid[gm[k]]; if (!b) return;
         var us = k.indexOf('_'); if (us <= 0 || !/^\d+$/.test(k.slice(us + 1))) return;     // ROAD is per-slot (instanced / batched)
@@ -240,7 +265,7 @@
       discs(res);
       _on = true; A._speedZonesTint = { byGuid: byGuid, painted: n };
       if (A.markDirty) A.markDirty();
-      console.log('§SPEED_ZONES_PAINT on roadElements=' + rows.length + ' painted=' + n + ' maxLateralM=' + maxLat.toFixed(2) + ' noZone=' + noZone + ' verts=0');
+      console.log('§SPEED_ZONES_PAINT on roadElements=' + rows.length + ' painted=' + n + ' whitenedMeshes=' + whitened + ' maxLateralM=' + maxLat.toFixed(2) + ' noZone=' + noZone + ' verts=0');
       return n;
     }
     // §SPEED_SIGN_DISC (user 2026-10-07: "better if the speed number is painted on the sign"): a speed-limit disc (red ring, white face,
