@@ -982,9 +982,23 @@
     // light the matches with the SAME highlighter a pick/Find-zoom uses (A.focusElement). NO parallel highlighter.
     //   scope = a comma-separated guid set  → focus those elements directly.
     //   scope = a single IFC class (default) → drive the Find panel (elName→class) and focus the result set.
-    A.applyFindScope = function (scope) {
+    A.applyFindScope = function (scope, opts) {
       scope = String(scope || '').trim();
       if (!scope) { console.log('§ZOOM-SCOPE skip=empty'); return 0; }
+      // §ZOOM-SAME-ITEM — `within` = the GUIDs actually pushed (ERP C_Project.Note). Class keys are resolved to GUIDs and
+      //   narrowed to that set, so a line keyed IfcBeam lands on the ONE pushed beam, not every beam. Empty intersection →
+      //   say so and stop (no fall-through to the whole class).
+      var _within = opts && opts.within ? String(opts.within).split(',').map(function (s) { return s.trim(); }).filter(Boolean) : [];
+      if (_within.length && /^ifc[a-z]\w*(:[\w-]+)?(;ifc[a-z]\w*(:[\w-]+)?)*$/i.test(scope)) {
+        var _w = [], _p = [];
+        scope.split(';').forEach(function (k) { var kp = k.split(':'); _w.push(kp[1] ? '(ifc_class=? AND discipline=?)' : 'ifc_class=?'); _p.push(kp[0]); if (kp[1]) _p.push(kp[1]); });
+        var _ws = new Set(_within), _hit = [];
+        try { var _rs = A.db.exec('SELECT guid FROM elements_meta WHERE ' + _w.join(' OR '), _p); if (_rs.length) _rs[0].values.forEach(function (v) { if (_ws.has(v[0])) _hit.push(v[0]); }); }
+        catch (e) { console.log('§ZOOM-SAME-ITEM err=' + e.message); return 0; }
+        console.log('§ZOOM-SAME-ITEM keys="' + scope + '" pushed=' + _within.length + ' matched=' + _hit.length);
+        if (!_hit.length) { console.log('§ZOOM-SAME-ITEM none — the pushed elements of this line are not in this model (no fall-through to the whole class)'); return 0; }
+        scope = _hit.join(',') + (_hit.length === 1 ? ',' : '');
+      }
       // §ARCH-OWNERSHIP (FUSED_4D5D_WEDGE_LANE): if the Time Machine is OPEN it is the OWNER/consumer —
       // it shows the pinpointed element AT ITS MOMENT (tmJumpToElement). Else Find is the default floor
       // (cost/location users care about WHAT/WHERE, not the schedule). Mechanism = "TM-if-open, else Find".
