@@ -332,7 +332,7 @@
       });
       elTreeGrip.addEventListener('pointermove', function(e) {
         if (!_gripping) return;
-        var h = Math.max(90, Math.min(window.innerHeight * 0.85, _gH + (e.clientY - _gY)));
+        var h = Math.max(90, Math.min(_treeRoom(), _gH + (e.clientY - _gY)));
         elTree.style.setProperty('height', h + 'px', 'important');
         e.preventDefault();
       });
@@ -345,6 +345,29 @@
       elTreeGrip.addEventListener('pointerup', _gripEnd);
       elTreeGrip.addEventListener('pointercancel', _gripEnd);
       try { var _sh = localStorage.getItem('findTreeH'); if (_sh) elTree.style.setProperty('height', _sh, 'important'); } catch (x) {}
+      // §FIND_ROW_CLIPPED (user 2026-10-07: "the lower part of the find panel with ERP price and link disappears, even refresh does
+      //   not bring it back"). Cause: the tree could be dragged to 85% of the window while the panel is capped at 88vh with
+      //   overflow:hidden, so the row under it (cost · › ERP · open ↗) was pushed out; the height is saved (findTreeH) and
+      //   re-forced on every load, so a refresh kept it hidden. Now the tree may only take the room the rest of the panel leaves,
+      //   checked on drag, on panel show/resize and on window resize — an old saved height shrinks to fit.
+      var _clampTree = function (why) {
+        if (panel.style.display !== 'block' || elTree.style.display === 'none') return;
+        var room = _treeRoom(), h = elTree.getBoundingClientRect().height;
+        if (h > room + 1) {
+          elTree.style.setProperty('height', Math.max(90, Math.floor(room)) + 'px', 'important');
+          console.log('§FIND_ROW_CLIPPED clamp tree ' + Math.round(h) + '→' + Math.max(90, Math.floor(room)) + 'px why=' + why);
+        }
+      };
+      try { new ResizeObserver(function () { _clampTree('panel'); }).observe(panel); } catch (x) {}
+      new MutationObserver(function () { _clampTree('show'); }).observe(panel, { attributes: true, attributeFilter: ['style'] });
+      window.addEventListener('resize', function () { _clampTree('window'); });
+    }
+    // room for the tree = panel max height − everything else in the panel (header, search, chips, results, selected row, grip)
+    function _treeRoom() {
+      var cs = getComputedStyle(panel), maxH = parseFloat(cs.maxHeight);
+      if (!(maxH > 0)) maxH = window.innerHeight * 0.88;
+      var rest = panel.scrollHeight - elTree.getBoundingClientRect().height;
+      return Math.max(90, maxH - rest - 4);   // 4 px: panel border + rounding
     }
     // §FOCUS-ALL-DEPTHS: mark the last-clicked row at ANY level (storey/type/item) with the yellow band.
     // Capture phase so it fires even when inner row handlers stopPropagation. Single-focus (clear others).
