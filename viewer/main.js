@@ -318,6 +318,7 @@ async function initViewer() {
   // earlier _mods array) so rule_checklist.js's row click/long-press wiring has both available.
   if (typeof setupRuleChecklist === 'function') setupRuleChecklist(APP);
   if (typeof window.setupSpeedZones === 'function') window.setupSpeedZones(APP);   // §SPEED_ZONES (via window: no-undef gate)
+  if (typeof window.setupChainageGrid === 'function') window.setupChainageGrid(APP);   // §CHAINAGE_GRID (via window: no-undef gate)
   if (typeof window.setupRoadStandards === 'function') window.setupRoadStandards(APP);   // §SIGN_CHECK (via window: no-undef gate)
 
   // Expose functions to HTML onclick handlers
