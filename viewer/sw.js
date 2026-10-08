@@ -190,8 +190,9 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1623';
+const CACHE_VERSION = 'v1624';
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
+// v1624 (2026-10-08) §CHAINAGE_EVERYWHERE: every chainage readout (speed zones, Long/Cross) shows the model's chainage via A.civilChainLabel; chainage_grid.js?v=2, speed_zones.js?v=9, road_standards.js?v=5, civil_sections.js?v=8.
 // v1623 (2026-10-08) §CHAINAGE_GRID: chainage_grid.js (real chainage read from the model's CHAINAGE glyph solids, station ribbon/ticks/tags, hover chip, bottom strip) added to PRECACHE_ASSETS; std_values.json gains _chainage_map (?v=3); road_standards.js?v=4 mounts the Chainage section.
 // v1621 (2026-10-08) §SIGN_VS_SPEED + §LABEL_CLEAN: advance-placement check (ATJ 2B cl.2.2.8, std_values.json advance_placement), short legend/list tags with full provenance in tooltip + HUD; speed_zones.js?v=8, road_standards.js?v=3, std_values.json?v=2.
 // v1620 (2026-10-08) §DISC_ON_BOARD_AREA + §SPEED_SIGN_LIST: disc on the board itself (largest face-on footprint), Speed list = the 8 disc-bearing signs.
