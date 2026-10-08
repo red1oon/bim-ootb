@@ -1398,6 +1398,10 @@ function setupPanels(A) {
       { id: 'roadstd',    name: 'Road standards',  key: 'j', pill: false, icon: I.signpost.svg, platform: null, civilOnly: true,
         fn: function() { if (A.toggleRoadStandards) A.toggleRoadStandards(); }, isActive: function() { return !!(A.roadStandardsOpen && A.roadStandardsOpen()); },
         children: [ { name: 'Sign codes vs ATJ 2A/85' }, { name: 'OK / UNKNOWN / MISSING tree' }, { name: 'Click a sign: zoom + standard' } ] },
+      // §ROAD_REPORT: civil-only, R (a building's R stays Room Cycle — scene.js)
+      { id: 'roadreport', name: 'Road report',     key: 'r', pill: false, icon: I.clipboard.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleRoadReport) A.toggleRoadReport(); }, isActive: function() { return !!(A.roadReportOpen && A.roadReportOpen()); },
+        children: [ { name: 'Alignment & Drift' }, { name: 'Earthworks' }, { name: 'Geometric Health' }, { name: 'Signs · Environment' }, { name: 'Copy / .txt / PDF' } ] },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
@@ -1789,7 +1793,7 @@ function setupPanels(A) {
     // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
     // this only changes which drawer lists it.
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'clash', 'xray', 'section', 'tm', 'report']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'clash', 'xray', 'section', 'tm', 'report']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at

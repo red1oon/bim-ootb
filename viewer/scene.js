@@ -2694,7 +2694,8 @@ async function setupScene(A) {
     // left anywhere in the codebase — matches the reorg's own "no longer in use, delete" verdict.
     // ROOM_CYCLE_HOME_SHORTCUTS.md (2026-07-22): 'r' reused for Room Cycle — plain R is confirmed
     // free (grepped), unrelated to the retired Record binding above.
-    'r':  function() { _cycleRoom(); },
+    // §ROAD_REPORT (user 2026-10-08 "for CW 'R' be for Road"): on a civil model R opens The Road Report; a building keeps Room Cycle
+    'r':  function() { if (A.isCivilModel && A.isCivilModel() && typeof A.toggleRoadReport === 'function') { A.toggleRoadReport(); return; } _cycleRoom(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…
