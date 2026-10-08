@@ -190,8 +190,9 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1625';
+const CACHE_VERSION = 'v1626';
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
+// v1626 (2026-10-08) §ROAD_REPORT polish: grade value printed with 2 decimals next to its limit, sign chainages de-duplicated, environment terms + ground/drain discipline names from std_values.json; road_report.js?v=2, civil_sections.js?v=9, chainage_grid.js?v=3.
 // v1625 (2026-10-08) §ROAD_REPORT: road_report.js (The Road Report, R on civil models; Inspect row) added to PRECACHE_ASSETS; std_values.json gains _road_report.
 // v1624 (2026-10-08) §CHAINAGE_EVERYWHERE: every chainage readout (speed zones, Long/Cross) shows the model's chainage via A.civilChainLabel; chainage_grid.js?v=2, speed_zones.js?v=9, road_standards.js?v=5, civil_sections.js?v=8.
 // v1623 (2026-10-08) §CHAINAGE_GRID: chainage_grid.js (real chainage read from the model's CHAINAGE glyph solids, station ribbon/ticks/tags, hover chip, bottom strip) added to PRECACHE_ASSETS; std_values.json gains _chainage_map (?v=3); road_standards.js?v=4 mounts the Chainage section.

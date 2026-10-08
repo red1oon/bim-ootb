@@ -14,6 +14,7 @@
  "_road_report": {
   "drift_pct": { "critical": 10, "warning": 5 },
   "grade_window_m": 20,
+  "environment_terms": ["wetland", "buffer zone", "protection zone", "environment"],
   "status": "demo default (editable)",
   "note": "The Road Report cut-offs (CIVIL_HIGHWAY_JELAPANG.md §ROAD_REPORT). No standard gives prognosis cut-offs: drift_pct = chainage drift as % of the printed marker step (CRITICAL >= critical, WARNING >= warning); grade_window_m = chord length for grade and the shortest cut/fill stretch reported. The ATJ limits themselves come from the cited tables."
  },
@@ -2511,7 +2512,7 @@
   "_user_editable": "Everything below this note that is NOT extracted from ATJ 8/86 is an editable input or presentation choice; the Settings JSON editor overrides it (browser override + Reset). status \"assumed\" is shown as such on the legend and HUD until set to \"user\".",
   "model_map": {
    "title_prop": "01_Project_Title",
-   "road_discipline": "ROAD",
+   "road_discipline": "ROAD", "ground_discipline": "EARTHWORK", "drain_discipline": "DRAINAGE",
    "note": "where the project title and the road surface live in the model (measured in CivilWorksPath element_psets / elements_meta)",
    "roundabout_prop": "06_No_Route",
    "roundabout_value": "ROUNDABOUT",
