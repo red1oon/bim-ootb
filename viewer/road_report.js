@@ -72,7 +72,7 @@
     if (inp.prof && inp.zones && inp.zones.length) {
       var G = gradeStretches(inp.prof, inp.zones, cfg.grade_window_m || 20);
       G.stretches.forEach(function (g) {
-        add('WARNING', 'grade', CH(g.s0) + ' to ' + fmtCh(R(g.s1)) + ': grade up to ' + g.maxG.toFixed(1) + '% exceeds max ' + g.max + '% for ' + g.zone + ' ' + g.speed + ' km/h (ATJ 8/86 ' + g.ref.table + ', p.' + g.ref.page + ')',
+        add('WARNING', 'grade', CH(g.s0) + ' to ' + fmtCh(R(g.s1)) + ': grade up to ' + (g.maxG.toFixed(1) === String(+(+g.max).toFixed(1)) || +g.maxG.toFixed(1) === +g.max ? g.maxG.toFixed(2) : g.maxG.toFixed(1)) + '% exceeds max ' + g.max + '% for ' + g.zone + ' ' + g.speed + ' km/h (ATJ 8/86 ' + g.ref.table + ', p.' + g.ref.page + ')',
           { s: g.atS, s0: g.s0, s1: g.s1, maxG: g.maxG, max: g.max, src: 'ATJ 8/86 ' + g.ref.table + ' p.' + g.ref.page });
       });
       add('HEALTHY', 'grade', 'Grade: ' + n0(G.okStarts * inp.prof.ds) + ' m of ' + n0(G.judgedStarts * inp.prof.ds) + ' m judged within the ATJ 8/86 max (' + cfg.grade_window_m + ' m chords)' +
@@ -96,7 +96,8 @@
     var sr = inp.signRows || [], byCode = {};
     sr.forEach(function (r) { if (r.verdict === 'OK') return; var k = r.verdict + '|' + (r.code == null ? '' : r.code); (byCode[k] || (byCode[k] = [])).push(r); });
     Object.keys(byCode).forEach(function (k) {
-      var g = byCode[k], v = g[0].verdict, ss = g.map(function (r) { return inp.signS[r.guid]; }).filter(function (s) { return s != null; }).sort(function (a, b) { return a - b; });
+      var g = byCode[k], v = g[0].verdict, seen = {}, ss = g.map(function (r) { return inp.signS[r.guid]; }).filter(function (s) { return s != null; }).sort(function (a, b) { return a - b; })
+        .filter(function (s) { var key = fmtCh(R(s)); if (seen[key]) return false; seen[key] = 1; return true; });   // one chainage once (several boards at one station)
       var at = ss.slice(0, 4).map(function (s) { return fmtCh(R(s)); }).join(', ') + (ss.length > 4 ? ' +' + (ss.length - 4) + ' more' : '');
       add(v === 'UNKNOWN' ? 'CRITICAL' : 'WARNING', 'sign', (ss.length ? 'CH ' + at : 'Signs') + ': ' + (v === 'UNKNOWN' ? 'sign code "' + g[0].code + '" ×' + g.length + ' not in the ATJ 2A/85 table' : g.length + ' sign' + (g.length > 1 ? 's have' : ' has') + ' no code property'),
         { s: ss[0], guid: g[0].guid, src: 'ATJ 2A/85 (std_values.json)' });
@@ -161,7 +162,9 @@
         return szP.then(function (SZ) {
           var sc = window.RoadStandards ? window.RoadStandards.checkSigns(objQuery, std, {}) : { rows: [] };
           var signS = {}; ((SZ && SZ.signRows) || []).forEach(function (r) { signS[r.guid] = r.s; });
-          var env = objQuery("SELECT COUNT(*) AS n FROM element_psets WHERE lower(name) LIKE '%wetland%' OR lower(value) LIKE '%wetland%' OR lower(name) LIKE '%buffer zone%' OR lower(value) LIKE '%protection zone%' OR lower(name) LIKE '%environment%'")[0].n;
+          // environment layer: any pset name/value containing one of std_values _road_report.environment_terms (editable)
+          var terms = ((std._road_report || {}).environment_terms || []).map(function (t) { return String(t).toLowerCase(); }), env = 0;
+          if (terms.length) env = objQuery('SELECT COUNT(*) AS n FROM element_psets WHERE ' + terms.map(function () { return '(lower(name) LIKE ? OR lower(value) LIKE ?)'; }).join(' OR '), [].concat.apply([], terms.map(function (t) { return ['%' + t + '%', '%' + t + '%']; })))[0].n;
           var P = A.civilProfile ? A.civilProfile() : null;
           var inp = { intervals: C && C.anc ? C.anc.intervals : [], prof: P ? { ds: P.ds, road: P.road, ground: P.ground } : null, zones: SZ ? SZ.zones : null, realAt: C && C.anc ? C.anc.realAt : null, routeSOf: C && C.anc ? C.anc.routeSOf : null,
             signRows: sc.rows, signS: signS, missingRows: SZ ? SZ.missingRows : [], advRows: SZ ? SZ.advRows : [], envHits: env, cfg: std._road_report || {} };

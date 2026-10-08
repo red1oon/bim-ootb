@@ -54,6 +54,9 @@ function setupCivilSections(A) {
     return null;
   }
   // meshes that CAN hold the discipline (uniform match, or an instanced mesh whose discipline is per-instance)
+  // discipline names of the road top / ground / drain surfaces: std_values.json geometric.model_map (A._civilStd, cached by
+  // chainage_grid.js when it loads std_values); the defaults are the import word-match names (import_worker.js CIVIL_DISCS)
+  function _discs() { var m = (A._civilStd && A._civilStd.geometric && A._civilStd.geometric.model_map) || {}; return { R: m.road_discipline || 'ROAD', G: m.ground_discipline || 'EARTHWORK', D: m.drain_discipline || 'DRAINAGE' }; }
   function _targets(disc) {
     return A.collectMeshes(function (o) { return o.isMesh && o.userData && (o.userData.disc === disc || (o.userData.disc == null && o.isInstancedMesh)); });
   }
@@ -134,14 +137,14 @@ function setupCivilSections(A) {
     var c = _cumOf(r), L = c[c.length - 1], ds = Math.max((opts && opts.ds) || DS_M, L / (MAX_N - 1));
     if (_ls && _ls.db === A.db && _ls.ds === ds && !(opts && opts.fresh)) return _ls.r;
     var n = Math.floor(L / ds) + 2, out = { ds: ds, len: L, n: n, s: [], road: [], ground: [], drain: [], gate: 'civil+route' };
-    var tR = _targets('ROAD'), tG = _targets('EARTHWORK'), tD = _targets('DRAINAGE');
-    var yR = _yRange('ROAD', tR), yG = _yRange('EARTHWORK', tG), yD = _yRange('DRAINAGE', tD);
+    var DN = _discs(), tR = _targets(DN.R), tG = _targets(DN.G), tD = _targets(DN.D);
+    var yR = _yRange(DN.R, tR), yG = _yRange(DN.G, tG), yD = _yRange(DN.D, tD);
     for (var i = 0; i < n; i++) {
       var s = (i === n - 1) ? L : i * ds, p = A.civilRouteAt(s);
       out.s.push(s);
-      out.road.push(yR ? _cast(tR, 'ROAD', p.x, p.z, yR.hi + 1, -1, yR.hi - yR.lo + 2) : null);
-      out.ground.push(yG ? _cast(tG, 'EARTHWORK', p.x, p.z, yG.hi + 1, -1, yG.hi - yG.lo + 2) : null);
-      out.drain.push(yD ? _cast(tD, 'DRAINAGE', p.x, p.z, yD.lo - 1, 1, yD.hi - yD.lo + 2) : null);
+      out.road.push(yR ? _cast(tR, DN.R, p.x, p.z, yR.hi + 1, -1, yR.hi - yR.lo + 2) : null);
+      out.ground.push(yG ? _cast(tG, DN.G, p.x, p.z, yG.hi + 1, -1, yG.hi - yG.lo + 2) : null);
+      out.drain.push(yD ? _cast(tD, DN.D, p.x, p.z, yD.lo - 1, 1, yD.hi - yD.lo + 2) : null);
     }
     var cnt = function (a) { return a.filter(function (v) { return v != null; }).length; };
     var ms = performance.now() - t0, heap = (performance.memory ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : 'NA');
@@ -394,17 +397,17 @@ function setupCivilSections(A) {
     var r = _route(); if (!r) return Promise.resolve(null);
     var t0 = performance.now(), c = _cumOf(r), L = c[c.length - 1], n = Math.floor(L / PROFILE_DS) + 1;
     var P = { db: A.db, ds: PROFILE_DS, len: L, n: n, road: new Float32Array(n), ground: new Float32Array(n), drain: new Float32Array(n), rx: new Float32Array(n), ry: new Float32Array(n), rz: new Float32Array(n), ms: 0, rays: 0 };
-    var tR = _targets('ROAD'), tG = _targets('EARTHWORK'), tD = _targets('DRAINAGE');
-    var yR = _yRange('ROAD', tR), yG = _yRange('EARTHWORK', tG), yD = _yRange('DRAINAGE', tD), r0 = A._civilRayCount || 0, i = 0;
+    var DN = _discs(), tR = _targets(DN.R), tG = _targets(DN.G), tD = _targets(DN.D);
+    var yR = _yRange(DN.R, tR), yG = _yRange(DN.G, tG), yD = _yRange(DN.D, tD), r0 = A._civilRayCount || 0, i = 0;
     var nn = function (v) { return v == null ? NaN : v; };
     var pr = new Promise(function (res) {
       (function step() {
         var t = performance.now();
         while (i < n && performance.now() - t < 25) {
           var q = A.civilRouteAt(i * PROFILE_DS); P.rx[i] = q.x; P.ry[i] = q.y; P.rz[i] = q.z;
-          P.road[i] = nn(yR ? _cast(tR, 'ROAD', q.x, q.z, yR.hi + 1, -1, yR.hi - yR.lo + 2) : null);
-          P.ground[i] = nn(yG ? _cast(tG, 'EARTHWORK', q.x, q.z, yG.hi + 1, -1, yG.hi - yG.lo + 2) : null);
-          P.drain[i] = nn(yD ? _cast(tD, 'DRAINAGE', q.x, q.z, yD.lo - 1, 1, yD.hi - yD.lo + 2) : null);
+          P.road[i] = nn(yR ? _cast(tR, DN.R, q.x, q.z, yR.hi + 1, -1, yR.hi - yR.lo + 2) : null);
+          P.ground[i] = nn(yG ? _cast(tG, DN.G, q.x, q.z, yG.hi + 1, -1, yG.hi - yG.lo + 2) : null);
+          P.drain[i] = nn(yD ? _cast(tD, DN.D, q.x, q.z, yD.lo - 1, 1, yD.hi - yD.lo + 2) : null);
           i++;
         }
         A._civilProfileProgress = i / n; if (_lens) _draw();
