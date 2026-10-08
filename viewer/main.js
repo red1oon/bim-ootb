@@ -321,6 +321,7 @@ async function initViewer() {
   if (typeof window.setupChainageGrid === 'function') window.setupChainageGrid(APP);   // §CHAINAGE_GRID (via window: no-undef gate)
   if (typeof window.setupRoadStandards === 'function') window.setupRoadStandards(APP);   // §SIGN_CHECK (via window: no-undef gate)
   if (typeof window.setupRoadReport === 'function') window.setupRoadReport(APP);   // §ROAD_REPORT (via window: no-undef gate)
+  if (typeof window.setupEarthworksOverlay === 'function') window.setupEarthworksOverlay(APP);   // §INSPECT_EARTH_ROAD EW/RW panels (via window: no-undef gate)
 
   // Expose functions to HTML onclick handlers
   window.togglePanel = APP.togglePanel;

@@ -1402,6 +1402,13 @@ function setupPanels(A) {
       { id: 'roadreport', name: 'Road report',     key: 'r', pill: false, icon: I.clipboard.svg, platform: null, civilOnly: true,
         fn: function() { if (A.toggleRoadReport) A.toggleRoadReport(); }, isActive: function() { return !!(A.roadReportOpen && A.roadReportOpen()); },
         children: [ { name: 'Alignment & Drift' }, { name: 'Earthworks' }, { name: 'Geometric Health' }, { name: 'Signs · Environment' }, { name: 'Copy / .txt / PDF' } ] },
+      // §INSPECT_EARTH_ROAD (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md E6): civil-only EW / RW panels; Cut & Fill is the one live feature.
+      { id: 'ew',         name: 'Earthworks',      key: 'u', pill: false, icon: I.layers ? I.layers.svg : I.clipboard.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleEarthworksPanel) A.toggleEarthworksPanel(); }, isActive: function() { return !!(A.earthworksPanelOpen && A.earthworksPanelOpen()); },
+        children: [ { name: 'Cut & Fill overlay (inferred)' }, { name: 'Cost · duration · plant: pending' } ] },
+      { id: 'rw',         name: 'Roadworks',       key: 'k', pill: false, icon: I.signpost.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleRoadworksPanel) A.toggleRoadworksPanel(); }, isActive: function() { return !!(A.roadworksPanelOpen && A.roadworksPanelOpen()); },
+        children: [ { name: 'Sight distance · radius · furniture: pending' } ] },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
@@ -1793,7 +1800,7 @@ function setupPanels(A) {
     // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
     // this only changes which drawer lists it.
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'clash', 'xray', 'section', 'tm', 'report']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
