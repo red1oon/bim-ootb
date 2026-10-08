@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.75.0](https://github.com/red1oon/bim-ootb/compare/v1.74.0...v1.75.0) (2026-10-08)
+
+
+### ✨ Features
+
+* **civil:** §ROUNDABOUT_ZONE - roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD) + near-white-to-red speed ramp ([#1942](https://github.com/red1oon/bim-ootb/issues/1942)) ([7602203](https://github.com/red1oon/bim-ootb/commit/7602203914a70d0aa06843301bb116c82a2a6bcd))
+* **civil:** §SIGN_CHECK — Road standards (sign codes vs ATJ 2A/85) ([#1937](https://github.com/red1oon/bim-ootb/issues/1937)) ([43ce6d1](https://github.com/red1oon/bim-ootb/commit/43ce6d10724f540024ef017010c2612354221e9a))
+* **civil:** §SIGN_VS_SPEED advance placement (ATJ 2B cl.2.2.8) + §LABEL_CLEAN short tags + HUD card/panel layout ([#1946](https://github.com/red1oon/bim-ootb/issues/1946)) ([009f376](https://github.com/red1oon/bim-ootb/commit/009f376f94e08e547ba166afdd9370a6bf65b1cb))
+* **civil:** §SIGNAL_JUNCTION_ZONE - one controlled-node engine (roundabout + signal junction), flat two-sided discs on sign faces, borrowed-board discs + MISSING SPEED SIGN rows (sw v1618, speed_zones.js?v=5) ([#1943](https://github.com/red1oon/bim-ootb/issues/1943)) ([2a5e697](https://github.com/red1oon/bim-ootb/commit/2a5e6976766adcbd45c67d8a7c8a309474b577c2))
+* **civil:** §SPEED_ZONES — speed limits derived from ATJ 8/86, coloured zones, sign list, derived/class/manual lever ([#1939](https://github.com/red1oon/bim-ootb/issues/1939)) ([13312a8](https://github.com/red1oon/bim-ootb/commit/13312a86ae11721a0a685b609c9fc927820e2215))
+* **civil:** chainage read from the model's own markers — station ribbon, ticks, tags, hover chip, bottom strip (§CHAINAGE_GRID) ([#1948](https://github.com/red1oon/bim-ootb/issues/1948)) ([334d11b](https://github.com/red1oon/bim-ootb/commit/334d11b64f6d7f1e7200997490286c851c11bd35))
+* **civil:** every chainage readout shows the model's chainage (§CHAINAGE_EVERYWHERE) ([#1949](https://github.com/red1oon/bim-ootb/issues/1949)) ([990efe7](https://github.com/red1oon/bim-ootb/commit/990efe7358fcc11f91ae9aa2128f345074cbe586))
+* **civil:** speed number painted on each speed-limit sign while Speed zones is on ([#1940](https://github.com/red1oon/bim-ootb/issues/1940)) ([58f991d](https://github.com/red1oon/bim-ootb/commit/58f991dba73b4e0ea24075398279e1729121426e))
+* **civil:** The Road Report — R on a road model, dashboard + .txt + PDF (§ROAD_REPORT) ([#1950](https://github.com/red1oon/bim-ootb/issues/1950)) ([8d1f42d](https://github.com/red1oon/bim-ootb/commit/8d1f42d3980bb47e411c31096c6eea633406179f))
+
+
+### 🐛 Fixes
+
+* **civil:** Road Report polish — grade shown to 2 decimals at its limit, sign chainages de-duplicated, mapping moved to std_values ([#1951](https://github.com/red1oon/bim-ootb/issues/1951)) ([b275026](https://github.com/red1oon/bim-ootb/commit/b27502602ccb6afc557108a861ff887cb0628287))
+* **civil:** Road standards toggles from the Inspect menu and j; closing clears the speed-zone colours and discs ([#1947](https://github.com/red1oon/bim-ootb/issues/1947)) ([0ef1b8e](https://github.com/red1oon/bim-ootb/commit/0ef1b8ebd7d5e9c9e8f0070a5a5d61ec6c930aae))
+* **civil:** speed disc sits on the board itself; Speed list shows only the disc-bearing signs ([#1945](https://github.com/red1oon/bim-ootb/issues/1945)) ([5941ada](https://github.com/red1oon/bim-ootb/commit/5941ada41235f0e6cbf6946acce1fd4e446159bb))
+* **civil:** speed discs painted on the board's real face; long section sampled after loading (80 km/h zone was lost) ([#1944](https://github.com/red1oon/bim-ootb/issues/1944)) ([8f07c40](https://github.com/red1oon/bim-ootb/commit/8f07c408b7bee5d10dd2df3f45026a392a26452a))
+* **civil:** speed-zone road shows the legend's colour (was grey-brown far, brick near) ([#1941](https://github.com/red1oon/bim-ootb/issues/1941)) ([da6a384](https://github.com/red1oon/bim-ootb/commit/da6a384df3be3e66722b5f6cb16d8737488df0ea))
+* **erp-push:** an open viewer tab can no longer write old Project Orders back after a reset / another push ([#1938](https://github.com/red1oon/bim-ootb/issues/1938)) ([4eb59b2](https://github.com/red1oon/bim-ootb/commit/4eb59b22319a5c15139fa4bb3cfc240b1b8ebd3d))
+* **zoom-across:** narrowed line zoom shows the Cost variance box again ([#1935](https://github.com/red1oon/bim-ootb/issues/1935)) ([d603845](https://github.com/red1oon/bim-ootb/commit/d603845e2fd282210250e5bd46690d4db47642e6))
+
 ## [1.74.0](https://github.com/red1oon/bim-ootb/compare/v1.73.0...v1.74.0) (2026-10-07)
 
 
