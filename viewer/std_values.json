@@ -12,7 +12,7 @@
   "note": "where the sign code lives in the model (measured in JELAPANG element_psets, CIVIL_HIGHWAY_JELAPANG.md §K-6.1)"
  },
  "_cut_fill": {
-  "station_m": 10, "step_m": 3, "reach_max_m": 30, "tol_m": 0.3, "lift_m": 0.08, "opacity": 0.55,
+  "station_m": 10, "step_m": 3, "reach_max_m": 60, "tol_m": 0.3, "lift_m": 0.08, "opacity": 0.55,
   "color_cut": "#ff8c1a", "color_fill": "#3388ff",
   "status": "SUGGESTED defaults (editable) \u2014 no standard gives them; tune reach_max_m per project",
   "note": "Inferred cut/fill overlay (CIVIL_HIGHWAY_JELAPANG.md \u00a7INSPECT_EARTH_ROAD E1/E5): ground above the road on both sides = cut, below on both sides = fill. Fill is blue, not green, to avoid reading as vegetation (user 2026-10-09). reach_max_m caps the lateral spread; the tint stops earlier at daylight (ground meets road level)."
