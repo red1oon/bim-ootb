@@ -36,26 +36,35 @@ function setupEarthworksOverlay(A) {
       var s = i * ds, q = route(s), yr = roadAt(s), row = { s: s, y: yr, side: { 1: [], '-1': [] }, kind: 'NO-GROUND' };
       if (q && yr != null && yr === yr) {
         [1, -1].forEach(function (sd) {
-          var nx = -q.tz * sd, nz = q.tx * sd, stop = false;
+          var nx = -q.tz * sd, nz = q.tx * sd, sgn = 0;
           for (var kk = 1; kk <= K; kk++) {
             var x = q.x + nx * kk * step, z = q.z + nz * kk * step, g = castG(x, z);
-            if (g == null) { row.side[sd].push(null); stop = true; break; }
+            // no ground here is NOT the end: the terrain surface has a hole along the road corridor (live 2026-10-09: ground under only
+            // 509 of ~2,100 centre-line points), so keep scanning outward to the first ground beyond it
+            if (g == null) { row.side[sd].push(null); continue; }
             var d = g - yr, onRoad = castR(x, z) != null;
             row.side[sd].push({ x: x, z: z, g: g, d: d, onRoad: onRoad });
-            if (!onRoad && Math.abs(d) <= tol) break;           // daylight: ground meets road level
+            if (onRoad) continue;
+            // a flat shoulder at road level is NOT daylight: the sign is only established once ground leaves the road level
+            // (2026-10-09 live: stopping at the first |d|<=tol cell hid every cut slope beyond a level shoulder -> CUT 0 m3).
+            // Daylight = after that, ground returns to road level or crosses it.
+            var sg = d > tol ? 1 : d < -tol ? -1 : 0;
+            if (!sgn) { if (sg) sgn = sg; }
+            else if (sg !== sgn) break;                         // daylight: ground meets / crosses road level
           }
         });
       }
       grid.push(row);
     }
-    // station kind from the first off-road cell on each side
+    // station kind from the first off-road cell that leaves road level, per side
     var vols = { cut: 0, fill: 0 }, cells = [], bands = [], cur = null, disagree = 0, judged = 0;
     for (i = 0; i < nS; i++) {
       var r = grid[i], ks = [];
       [1, -1].forEach(function (sd) {
         var arr = r.side[sd], f = null;
-        for (var j = 0; j < arr.length; j++) if (arr[j] && !arr[j].onRoad) { f = arr[j]; break; }
-        ks.push(f ? (f.d > tol ? 'cut' : f.d < -tol ? 'fill' : 'flat') : null);
+        for (var j = 0; j < arr.length; j++) if (arr[j] && !arr[j].onRoad && Math.abs(arr[j].d) > tol) { f = arr[j]; break; }   // first cell off the road level (a level shoulder is skipped)
+        var anyG = arr.some(function (v) { return v && !v.onRoad; });
+        ks.push(f ? (f.d > tol ? 'cut' : 'fill') : anyG ? 'flat' : null);   // flat = ground exists but never leaves road level
       });
       var a = ks[0], b = ks[1];
       var hasC = a === 'cut' || b === 'cut', hasF = a === 'fill' || b === 'fill';
@@ -85,7 +94,7 @@ function setupEarthworksOverlay(A) {
     if (_busy) return Promise.resolve(_res);
     _busy = true;
     return _std().then(function (C) {
-      var c = Object.assign({ station_m: 10, step_m: 3, reach_max_m: 30, tol_m: 0.3, color_cut: '#ff8c1a', color_fill: '#3388ff' }, C.cut);
+      var c = Object.assign({ station_m: 10, step_m: 3, reach_max_m: 60, tol_m: 0.3, color_cut: '#ff8c1a', color_fill: '#3388ff' }, C.cut);
       return (A.civilProfilePrepare ? A.civilProfilePrepare() : Promise.resolve(null)).then(function (P) {
         if (!P) { _busy = false; console.log('§CUT_FILL_INFERRED NOT CHECKED no profile (no route/road/ground)'); return null; }
         var GD = C.mm.ground_discipline || 'EARTHWORK', RD = C.mm.road_discipline || 'ROAD', t0 = performance.now(), rays0 = A._civilRayCount || 0;
