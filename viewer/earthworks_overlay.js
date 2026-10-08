@@ -39,7 +39,9 @@ function setupEarthworksOverlay(A) {
           var nx = -q.tz * sd, nz = q.tx * sd, sgn = 0;
           for (var kk = 1; kk <= K; kk++) {
             var x = q.x + nx * kk * step, z = q.z + nz * kk * step, g = castG(x, z);
-            if (g == null) { row.side[sd].push(null); break; }
+            // no ground here is NOT the end: the terrain surface has a hole along the road corridor (live 2026-10-09: ground under only
+            // 509 of ~2,100 centre-line points), so keep scanning outward to the first ground beyond it
+            if (g == null) { row.side[sd].push(null); continue; }
             var d = g - yr, onRoad = castR(x, z) != null;
             row.side[sd].push({ x: x, z: z, g: g, d: d, onRoad: onRoad });
             if (onRoad) continue;
@@ -92,7 +94,7 @@ function setupEarthworksOverlay(A) {
     if (_busy) return Promise.resolve(_res);
     _busy = true;
     return _std().then(function (C) {
-      var c = Object.assign({ station_m: 10, step_m: 3, reach_max_m: 30, tol_m: 0.3, color_cut: '#ff8c1a', color_fill: '#3388ff' }, C.cut);
+      var c = Object.assign({ station_m: 10, step_m: 3, reach_max_m: 60, tol_m: 0.3, color_cut: '#ff8c1a', color_fill: '#3388ff' }, C.cut);
       return (A.civilProfilePrepare ? A.civilProfilePrepare() : Promise.resolve(null)).then(function (P) {
         if (!P) { _busy = false; console.log('§CUT_FILL_INFERRED NOT CHECKED no profile (no route/road/ground)'); return null; }
         var GD = C.mm.ground_discipline || 'EARTHWORK', RD = C.mm.road_discipline || 'ROAD', t0 = performance.now(), rays0 = A._civilRayCount || 0;

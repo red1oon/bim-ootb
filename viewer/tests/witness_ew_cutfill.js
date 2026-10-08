@@ -12,7 +12,7 @@ function ok(c, label, extra) { (c ? pass++ : fail++); console.log('§EW_WIT ' + 
 // pure core via a stub A (non-civil: only to reach the hook)
 const A = { db: null }; setupEarthworksOverlay(A);
 const infer = A._ewInfer;
-const cfg = { station_m: 10, step_m: 3, reach_max_m: 30, tol_m: 0.3 };
+const cfg = { station_m: 10, step_m: 3, reach_max_m: 60, tol_m: 0.3 };
 const route = s => ({ x: s, z: 0, tx: 1, tz: 0 });               // straight road along +x, normal = (0, ±1)
 const roadAt = () => 100;                                         // road top 100 m
 const noRoad = () => null;
@@ -24,7 +24,7 @@ let r = run((x, z) => 100 + 0.5 * lat(z) + 1);
 ok(r.grid.every(g => g.kind === 'CUT'), 'CUT when ground is above the road on both sides', 'kinds=' + [...new Set(r.grid.map(g => g.kind))]);
 // independent recompute of cut volume: every cell has md = mean of its 4 corner d; |d|*step*ds
 let exp = 0, nx = cfg.station_m;
-for (let i = 0; i + 1 < r.stations; i++) [1, -1].forEach(() => { const K = 10; for (let k = 1; k < K; k++) { const d0 = 1 + 0.5 * (k * 3), d1 = 1 + 0.5 * ((k + 1) * 3); exp += ((d0 + d1) / 2) * 3 * nx; } });
+for (let i = 0; i + 1 < r.stations; i++) [1, -1].forEach(() => { const K = cfg.reach_max_m / cfg.step_m; for (let k = 1; k < K; k++) { const d0 = 1 + 0.5 * (k * 3), d1 = 1 + 0.5 * ((k + 1) * 3); exp += ((d0 + d1) / 2) * 3 * nx; } });
 ok(Math.abs(r.vols.cut - exp) < 1e-6 * exp + 1e-6 && r.vols.fill === 0, 'cut volume equals independent recompute', 'got=' + r.vols.cut.toFixed(1) + ' exp=' + exp.toFixed(1));
 
 // 2 FILL: ground falls away both sides
@@ -57,6 +57,12 @@ r = run((x, z) => lat(z) <= 6 ? 100 : 100 - 0.5 * (lat(z) - 6));
 ok(r.grid.every(g => g.kind === 'FILL') && r.vols.fill > 0, 'level shoulder then falling slope = FILL', 'fill=' + r.vols.fill.toFixed(0));
 r = run((x, z) => 100);
 ok(r.grid.every(g => g.kind === 'AT-GRADE') && r.cells.length === 0, 'fully level ground = AT-GRADE, no tint');
+
+// 6c REGRESSION (live 2026-10-09: only 1 cut found): terrain has a HOLE along the road corridor (no ground for |z|<12) -> must scan past it to the first ground
+r = run((x, z) => lat(z) < 12 ? null : 100 + 0.8 * (lat(z) - 11));
+ok(r.grid.every(g => g.kind === 'CUT') && r.vols.cut > 0, 'terrain hole at the corridor then rising ground = CUT (null ground is not the end)', 'cut=' + r.vols.cut.toFixed(0));
+r = run((x, z) => lat(z) < 12 ? null : 100 - 0.5 * (lat(z) - 11));
+ok(r.grid.every(g => g.kind === 'FILL') && r.vols.fill > 0, 'terrain hole then falling ground = FILL', 'fill=' + r.vols.fill.toFixed(0));
 
 // 7 reach cap
 r = run((x, z) => 100 + 1 + 0.5 * lat(z));
