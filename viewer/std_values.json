@@ -11,6 +11,13 @@
   "code_prop": "17_Code",
   "note": "where the sign code lives in the model (measured in JELAPANG element_psets, CIVIL_HIGHWAY_JELAPANG.md §K-6.1)"
  },
+ "_chainage_map": {
+  "discipline": "CHAINAGE",
+  "drift_ok_m": 5,
+  "minor_m": 20,
+  "major_m": 100,
+  "note": "where the chainage markers live in the model (CHAINAGE discipline = 332 glyph solids of 3D text, measured in CivilWorksPath.db, CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_GRID). drift_ok_m = route-vs-marker tolerance per interval; minor_m / major_m = tick spacing (Civil 3D / OpenRoads station style). Editable in Settings."
+ },
  "signs": [
   {
    "code": "RP1",
