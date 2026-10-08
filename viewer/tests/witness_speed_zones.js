@@ -81,6 +81,8 @@ async function roadProbe(page) {
     const A = window.APP, out = { civil: A.isCivilModel() }, sum = eval(SUMSRC);
     // base (derived) run
     const r0 = await window.__openSZ(null); out.base = sum(r0);
+    // §CHAINAGE_EVERYWHERE: the legend's range text must be the one label owner's (its value is proven in witness_chainage_grid)
+    out.chainReal = !!(A.civilChainReal && A.civilChainReal()); out.rangeOf = {}; r0.zones.forEach(z => { out.rangeOf[z.id] = A.civilChainRange(z.s0, z.s1); });
     const P = A.civilProfile(); out.prof = { ds: P.ds, n: P.n, ground: Array.from(P.ground), road: Array.from(P.road) };
     out.route = A.civilDriveRoute().map(p => ({ x: p.x, z: p.z }));
     out.title = A.dbQuery("SELECT value FROM element_psets WHERE name='01_Project_Title' LIMIT 1")[0][0];
@@ -400,12 +402,12 @@ async function roadProbe(page) {
       const b = r.road.base, lg = r.road.legend, exp = z => z.kind === 'link' ? GEO.zone_tags.link : (z.kind === 'approach' ? GEO[z.node].approach_tag : GEO[z.kind].tag);
       const sj = b.zones.find(z => z.kind === 'signal_junction'), rbz = b.zones.find(z => z.kind === 'roundabout'), lc = r.road.legClick;
       console.log('§LABEL_CLEAN legend=' + lg.map(e => e.zone + ':' + e.short.slice(-12)).join(' | '));
-      return lg.length === b.zones.length && lg.every(e => { const z = b.zones.find(q => q.id === e.zone); return /^\d+ km\/h · \d+–\d+ m · \S+ (derived|demo|NCHRP 672|user)$/.test(e.short) && e.short.endsWith(' ' + exp(z)) && z.tag === exp(z) && !/assumed|not from a standard|demo rule|demo default|marked|borrowed|disc:/.test(e.short) && e.short.length <= 48 && !/<br/.test(e.html) &&
+      return lg.length === b.zones.length && lg.every(e => { const z = b.zones.find(q => q.id === e.zone); return /^\d+ km\/h · (CH \d+\+\d{3}–\d+\+\d{3}|\d+–\d+ m \(inferred\)) · \S+ (derived|demo|NCHRP 672|user)$/.test(e.short) && e.short.includes(r.road.rangeOf[z.id]) && e.short.endsWith(' ' + exp(z)) && z.tag === exp(z) && !/assumed|not from a standard|demo rule|demo default|marked|borrowed|disc:/.test(e.short) && e.short.length <= 52 && !/<br/.test(e.html) &&
           e.title.includes(z.label) && (z.kind !== 'link' || /assumed: /.test(e.title)); }) &&
         lg.some(e => e.short.endsWith(' derived')) && lg.some(e => e.short.endsWith(' demo')) && lg.some(e => e.short.endsWith(' NCHRP 672')) && !!lc && lc.zone === sj.id && lc.card.includes('not from a standard') && lc.card.includes(GEO.signal_junction.tag) && !!rbz; }))
     .invariant('§LABEL_CLEAN sign list + Speed section (issue: same clutter on the speed-sign rows and the mode line): sign rows end with a short tag and carry none of the long phrases; their tooltip carries code, chainage and the full label; the mode line says "assumed inputs (N)" with the list in the tooltip; lever class R6 -> link rows/legend show tag "user" and the tooltip still names "class R6 (user)"', rs => rs.every(r => {
       const rd2 = r.road, L6 = rd2.lever;
-      return rd2.signDom.length > 0 && rd2.signDom.every((t, i) => /(derived|demo|NCHRP 672|user)$/.test(t) && !/not from a standard|demo rule|demo default|assumed/.test(t) && / @ \d+ m: /.test(rd2.signTitles[i])) && rd2.base.signRows.every(q => q.tag) &&
+      return rd2.signDom.length > 0 && rd2.signDom.every((t, i) => /(derived|demo|NCHRP 672|user)$/.test(t) && !/not from a standard|demo rule|demo default|assumed/.test(t) && / @ (CH \d+\+\d{3}|\d+ m \(inferred\)): /.test(rd2.signTitles[i])) && rd2.base.signRows.every(q => q.tag) &&
         L6.legendClassR6.filter(e => /class R6 \(user\)/.test(e.text)).length > 0 && L6.legendClassR6.filter(e => /class R6 \(user\)/.test(e.text)).every(e => e.short.endsWith(' user')); }))
     .invariant('§HUD_CARD layout (issue: card was one wall of text, unreadable on a phone): clicking a sign row gives a bold title "N km/h · Zone Zx" (+ sign code), >=5 key/value rows (Chainage, Class, Terrain, Lane width, Max grade, Source tag), font >= 12 px, title larger, max width <= 360 px, and a COLLAPSED "Why / sources" section whose text still holds the ATJ table/page, mode label and assumed inputs; a zone legend click uses the same layout', rs => rs.every(r => { const c = r.road.click.struct, z = r.road.base.zones.find(q => q.id === (r.road.base.signRows.find(x => x.guid === r.road.click.guid) || {}).zone), lc = r.road.legClick;
       console.log('§HUD_CARD title=' + (c && c.title) + ' kv=' + (c && c.kv.length) + ' whyOpen=' + (c && c.why && c.why.open) + ' titleFont=' + (c && c.titleFont) + ' legend.kv=' + (lc && lc.struct.kv));

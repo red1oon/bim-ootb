@@ -344,6 +344,9 @@
 
   // ── browser glue ────────────────────────────────────────────────────────────────────────────────────────────────
   function setupSpeedZones(A) {
+    // §CHAINAGE_EVERYWHERE: chainage TEXT via the one owner (chainage_grid.js); maths stays in route s
+    function CH(s) { return A.civilChainLabel ? A.civilChainLabel(s) : Math.round(s) + ' m (inferred)'; }
+    function RNG(s0, s1) { return A.civilChainRange ? A.civilChainRange(s0, s1) : Math.round(s0) + '\u2013' + Math.round(s1) + ' m (inferred)'; }
     var _touched = [], _on = false, _discs = [], _mats = [];
     function objQuery(q, params) { var st = A.db.prepare(q), out = []; try { if (params && params.length) st.bind(params); while (st.step()) out.push(st.getAsObject()); } finally { st.free(); } return out; }
     function gather(std) {
@@ -519,17 +522,17 @@
     //   (2) compact 2-column key/value grid (.sz-kv rows), (3) collapsed "Why / sources" holding the FULL derivation, table/page refs, assumed inputs.
     function zoneCard(res, z, whyHtml, row) {
       var sp = z && z.speed != null ? z.speed + ' km/h' : (row && row.speed != null ? row.speed + ' km/h' : 'no speed');
-      var kv = z ? [['Chainage', z.s0.toFixed(0) + '\u2013' + z.s1.toFixed(0) + ' m'], ['Class', z.cls || '\u2014'],
+      var kv = z ? [['Chainage', RNG(z.s0, z.s1)], ['Class', z.cls || '\u2014'],
         ['Terrain', z.terrain === '-' ? '\u2014' : z.terrain + (z.terrainMeasured && z.terrainPct != null ? ' (' + z.terrainPct.toFixed(1) + '%)' : ' (assumed)')],
         ['Lane width', z.lane ? z.lane.m + ' m' : '\u2014'], ['Max grade', z.grade ? z.grade.pct + '%' : '\u2014']] : [];
-      if (row) kv.unshift(['Sign at', row.s.toFixed(1) + ' m']);
+      if (row) kv.unshift(['Sign at', CH(row.s)]);
       var grid = kv.concat([['Source', null]]).map(function (r) { return '<div class="sz-kv" style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.06)"><span style="color:#888">' + r[0] + '</span><span style="text-align:right">' + (r[1] == null ? tagHtml(z ? z.tag : (row && row.tag)) : esc(r[1])) + '</span></div>'; }).join('');
       return '<div style="max-width:340px"><div class="sz-card-title" style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px">' + esc(sp) + ' \u00b7 Zone ' + esc(z ? z.id : (row && row.zone) || '?') + (row && row.code ? ' <span style="font-size:12px;font-weight:600;color:#fc6">' + esc(row.code) + '</span>' : '') + '</div>' + grid +
         '<details class="sz-why" style="margin-top:4px"><summary style="cursor:pointer;font-size:12px;color:#9ad">Why / sources</summary><div style="font-size:12px;color:#aaa;margin-top:2px">' + whyHtml + '</div></details></div>';
     }
     function focusRow(res, std, row, card) {
       var z = res.zones.filter(function (q) { return q.id === row.zone; })[0];
-      var how = z && z.kind !== 'link' ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, ' + esc(z.kind) + ', opens at ' + esc(z.opens) + '). Speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' — ' + esc(z.srcText) + '. Mode: ' + esc(z.label) + (z.assumed.length ? ' · assumed inputs: ' + esc(z.assumed.join('; ')) : '') : z ? 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '–' + z.s1.toFixed(0) + ' m, opens at ' + esc(z.opens) + '). ' +
+      var how = z && z.kind !== 'link' ? 'Zone ' + z.id + ' (' + RNG(z.s0, z.s1) + ', ' + esc(z.kind) + ', opens at ' + esc(z.opens) + '). Speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' — ' + esc(z.srcText) + '. Mode: ' + esc(z.label) + (z.assumed.length ? ' · assumed inputs: ' + esc(z.assumed.join('; ')) : '') : z ? 'Zone ' + z.id + ' (' + RNG(z.s0, z.s1) + ', opens at ' + esc(z.opens) + '). ' +
         'Category ' + esc(z.category) + ' (' + (z.catRow.status === 'user' ? 'user' : 'assumed') + ' title mapping: ' + esc(z.catRow.basis) + ') → class ' + esc(z.derivedClass || 'n/a') + ' (' + refTxt(z.selRef) + '). ' +
         'Terrain ' + z.terrain + (z.terrainMeasured ? ' (measured median grade ' + z.terrainPct.toFixed(2) + '%)' : ' (assumed)') + ' → speed ' + (z.speed != null ? z.speed + ' km/h' : 'n/a') + ' (' + refTxt(z.speedRef) + '). ' +
         'Lane ' + (z.lane ? z.lane.m + ' m (' + refTxt(z.lane.ref).replace('ATJ 8/86 ', '') + ')' : 'n/a') + ', max grade ' + (z.grade ? z.grade.pct + '% (' + z.grade.ref.table + ', p.' + z.grade.ref.page + ')' : 'n/a') + '. ' +
@@ -545,7 +548,7 @@
     var TAGCOL = { derived: '#8bc34a', demo: '#ffb300', 'NCHRP 672': '#4fc3f7', user: '#ce93d8' };
     function tagHtml(t) { return '<span class="sz-tag" style="font-size:9px;padding:0 4px;border-radius:3px;border:1px solid ' + (TAGCOL[t] || '#888') + ';color:' + (TAGCOL[t] || '#888') + '">' + esc(t == null ? '?' : t) + '</span>'; }
     // the full provenance of one zone (what the legend row used to print inline): label · assumed inputs · where its start disc sits
-    function zoneFull(res, q) { return (q.speed != null ? q.speed + ' km/h' : 'no speed') + ' · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + (q.cls || '—') + ' · ' + q.label + (q.assumed.length ? ' · derived · assumed: ' + q.assumed.join('; ') : '') + (q.srcText ? ' · ' + (q.srcText.indexOf(q.label) === 0 ? q.srcText.slice(q.label.length).replace(/^ · /, '') : q.srcText) : '') + discNote(res, q); }
+    function zoneFull(res, q) { return (q.speed != null ? q.speed + ' km/h' : 'no speed') + ' · ' + RNG(q.s0, q.s1) + ' · ' + (q.cls || '—') + ' · ' + q.label + (q.assumed.length ? ' · derived · assumed: ' + q.assumed.join('; ') : '') + (q.srcText ? ' · ' + (q.srcText.indexOf(q.label) === 0 ? q.srcText.slice(q.label.length).replace(/^ · /, '') : q.srcText) : '') + discNote(res, q); }
     function discNote(res, q) { var d = (res.discPlan || []).filter(function (x) { return x.zone === q.id && x.kind !== 'real' && x.zoneStart != null; })[0]; return d ? ' · disc: ' + d.label + (d.kind === 'other' ? ' (on sign ' + (d.guid || '').slice(0, 8) + ')' : ' (free-standing)') : ''; }
     // mount(std, container, card): builds the "Speed" section inside the Road standards panel (async: waits for the profile)
     function mount(std, host, card) {
@@ -565,7 +568,7 @@
           (res.msgs.length ? '<div class="sz-msgs" style="color:#f90">' + res.msgs.map(esc).join('<br>') + '</div>' : '') + '</div></details>';
         var miss = (res.discPlan || []).filter(function (x) { return x.kind !== 'real'; }), V = 'MISSING SPEED SIGN';
         res.missingRows = miss.map(function (x) { var z = res.zones.filter(function (q) { return q.id === x.zone; })[0];
-          return { guid: x.guid, zone: x.zone, s0: z.s0, s1: z.s1, speed: z.speed, code: x.code, text: 'Zone ' + z.id + ' (' + z.s0.toFixed(0) + '\u2013' + z.s1.toFixed(0) + ' m, ' + z.speed + ' km/h) has no speed-limit sign \u2014 shown on ' + (x.guid ? (x.code || 'a sign board') : 'a free-standing marker') + ' for demo' }; });
+          return { guid: x.guid, zone: x.zone, s0: z.s0, s1: z.s1, speed: z.speed, code: x.code, text: 'Zone ' + z.id + ' (' + RNG(z.s0, z.s1) + ', ' + z.speed + ' km/h) has no speed-limit sign \u2014 shown on ' + (x.guid ? (x.code || 'a sign board') : 'a free-standing marker') + ' for demo' }; });
         if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '" open><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
           return '<div class="sz-missing" data-i="' + i + '" data-guid="' + esc(m.guid || '') + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid #ffaa33;background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' + esc(m.text) + '</div>'; }).join('') + '</details>';
         // §SIGN_VS_SPEED group: ONLY the signs an advance-placement rule applies to (not all 138); CHECK first, NOT JUDGED = hazard position unknown (counted, not CHECK)
@@ -585,14 +588,14 @@
         //   short tag (derived / demo / NCHRP 672 / user). The long provenance (label, assumed inputs, disc note) is the row's tooltip and the HUD card on click.
         h += '<div class="sz-legend" style="margin:6px 0;border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 6px">' + res.zones.map(function (q) {
           return '<div class="sz-leg" data-zone="' + q.id + '" title="' + esc(zoneFull(res, q)) + '" style="display:flex;gap:6px;align-items:center;margin:2px 0;font-size:10px;color:#ccc;cursor:pointer"><span class="sz-sw" style="width:12px;height:12px;border-radius:2px;background:' + colourFor(std, q.speed) + ';flex:none"></span>' +
-            '<span><b>' + (q.speed != null ? q.speed + ' km/h' : 'no speed') + '</b> · ' + q.s0.toFixed(0) + '–' + q.s1.toFixed(0) + ' m · ' + esc(q.cls || '—') + ' ' + tagHtml(q.tag) + '</span></div>'; }).join('') + '</div>';
+            '<span><b>' + (q.speed != null ? q.speed + ' km/h' : 'no speed') + '</b> · ' + RNG(q.s0, q.s1) + ' · ' + esc(q.cls || '—') + ' ' + tagHtml(q.tag) + '</span></div>'; }).join('') + '</div>';
         // §SPEED_SIGN_LIST (user 2026-10-08: "listing all 138 signs when the speed limit painted ones are few"): only the signs that carry a
         //   speed disc (real RP. 7 + borrowed boards); the full sign list is the Road standards section above.
         var discGuids = {}; (res.discPlan || []).forEach(function (x) { if (x.guid && x.kind !== 'free') discGuids[x.guid] = x.kind; });
         res.listRows = res.signRows.filter(function (r) { return discGuids[r.guid]; });
         h += '<div style="font-size:11px;color:#9ad;margin-bottom:2px">Speed-limit signs (' + res.listRows.length + ': ' + res.listRows.filter(function (r) { return discGuids[r.guid] === 'real'; }).length + ' real, ' + res.listRows.filter(function (r) { return discGuids[r.guid] !== 'real'; }).length + ' borrowed)</div><div class="sz-signs" style="max-height:22vh;overflow-y:auto">' + res.listRows.map(function (r, i) {
-          return '<div class="sz-row" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.code + ' @ ' + r.s.toFixed(0) + ' m: ' + r.label) + '" style=""margin:1px 0;padding:2px 6px;border-left:3px solid ' + (r.speed != null ? colourFor(std, r.speed) : '#666') + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
-            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b>' + (discGuids[r.guid] === 'real' ? '' : ' <span style="color:#ffaa33">(borrowed)</span>') + ' · ' + r.s.toFixed(0) + ' m · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' ' + tagHtml(r.tag) + '</div>'; }).join('') + '</div>';
+          return '<div class="sz-row" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.code + ' @ ' + CH(r.s) + ': ' + r.label) + '" style=""margin:1px 0;padding:2px 6px;border-left:3px solid ' + (r.speed != null ? colourFor(std, r.speed) : '#666') + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' +
+            (r.isSpeedSign ? '<b style="color:#fc6">' : '<b>') + esc(r.code || '(no code)') + '</b>' + (discGuids[r.guid] === 'real' ? '' : ' <span style="color:#ffaa33">(borrowed)</span>') + ' · ' + CH(r.s) + ' · ' + (r.speed != null ? '<b>' + r.speed + ' km/h</b>' : 'n/a') + ' ' + tagHtml(r.tag) + '</div>'; }).join('') + '</div>';
         body.innerHTML = h; body.style.color = '#ccc'; body.style.fontSize = '12px';
         var tg = body.querySelector('.sz-toggle');
         tg.addEventListener('change', function () { if (tg.checked) paint(res, std); else revert(); });
@@ -605,7 +608,7 @@
           var ae = ev.target.closest && ev.target.closest('.sz-adv'); if (!ae) return; var r = res.advRows[+ae.getAttribute('data-i')]; if (!r) return;
           var A2 = res.advance;
           card.style.display = ''; card.setAttribute('data-guid', r.guid);
-          card.innerHTML = '<b style="color:' + ADCOL[r.verdict] + '">' + r.verdict.replace('_', ' ') + '</b> &middot; ' + esc(r.code) + ' (' + esc(r.name || '') + ') @ ' + r.s.toFixed(1) + ' m<br>Rule: ATJ 2B/85 clause ' + esc(r.ref ? A2.clause.clause : '') + ', p.' + esc(A2.clause.ref.page) + ' (txt l.' + A2.clause.ref.txt_line + '): advance of the ' + esc(r.noun) + ' nominal ' + r.nominalM + ' m, not less than ' + r.minM + ' m (' + esc(r.column) + ' column; area input is ' + esc(res.assumed.filter(function (x) { return /^area/.test(x); })[0] || 'user-set') + ').<br>' +
+          card.innerHTML = '<b style="color:' + ADCOL[r.verdict] + '">' + r.verdict.replace('_', ' ') + '</b> &middot; ' + esc(r.code) + ' (' + esc(r.name || '') + ') @ ' + CH(r.s) + '<br>Rule: ATJ 2B/85 clause ' + esc(r.ref ? A2.clause.clause : '') + ', p.' + esc(A2.clause.ref.page) + ' (txt l.' + A2.clause.ref.txt_line + '): advance of the ' + esc(r.noun) + ' nominal ' + r.nominalM + ' m, not less than ' + r.minM + ' m (' + esc(r.column) + ' column; area input is ' + esc(res.assumed.filter(function (x) { return /^area/.test(x); })[0] || 'user-set') + ').<br>' +
             'Model value: ' + (r.dist != null ? r.dist.toFixed(1) + ' m along the route to the ' + esc(r.noun) + ' (chainage ' + r.hazardS0.toFixed(1) + '..' + r.hazardS1.toFixed(1) + ')' : 'not judged \u2014 ' + esc(r.why)) + '.<br>Approach speed of the zone at the sign: ' + (r.speed != null ? r.speed + ' km/h' : 'n/a') + ' (shown; the clause gives no speed threshold for &ldquo;high speed roads&rdquo;).';
           console.log('§SIGN_ADVANCE_CLICK guid=' + r.guid + ' verdict=' + r.verdict + ' dist=' + (r.dist == null ? 'NA' : r.dist.toFixed(1)));
           if (typeof A.focusElement === 'function') A.focusElement(r.guid); else if (A.zoomToGuid) A.zoomToGuid(r.guid);

@@ -23,6 +23,12 @@ function setupCivilSections(A) {
   var _ls = null;                            // cached long section {db, ds, r}
   var _ray = null;
 
+  // §CHAINAGE_EVERYWHERE: chainage TEXT via the one owner (chainage_grid.js); every s below stays route s
+  function REAL() { return !!(A.civilChainReal && A.civilChainReal()); }
+  function LBL(s) { return A.civilChainLabel ? A.civilChainLabel(s) : Math.round(s) + ' m (inferred)'; }
+  function RNG(s0, s1) { return A.civilChainRange ? A.civilChainRange(s0, s1) : Math.round(s0) + '\u2013' + Math.round(s1) + ' m (inferred)'; }
+  function AXL(s) { return REAL() ? LBL(s).replace(/^CH /, '') : String(Math.round(s)); }   // compact axis / table value
+  function AX(t) { return AXL(t); }
   function _civil() { return !!(A.db && A.isCivilModel && A.isCivilModel() && typeof A.civilDriveRoute === 'function'); }
   function _route() { if (!_civil()) return null; var r = A.civilDriveRoute(); return (r && r.length >= 2) ? r : null; }
 
@@ -296,7 +302,7 @@ function setupCivilSections(A) {
       Object.keys(discs).sort().forEach(function (dn) { var t = _shortDisc(dn), w = g.measureText(t).width + 16; if (lgx + w > W - 4) { lgx = 6; lgy += 13; } lgRects.push([lgx, lgy, lgx + w - 4, lgy + 11]); g.fillStyle = _discCol(dn); g.fillRect(lgx, lgy + 1, 8, 8); g.fillStyle = '#000'; g.fillText(t, lgx + 11, lgy + 9); lgx += w; });
       Tm = lgy + 18; Lm = 34; Bm = 22;
     } else {
-    g.fillStyle = '#000'; g.font = 'bold 14px sans-serif'; g.fillText('Cross-section — chainage ' + R.s.toFixed(1) + ' m (inferred)', Lm, 20);
+    g.fillStyle = '#000'; g.font = 'bold 14px sans-serif'; g.fillText('Cross-section — ' + LBL(R.s), Lm, 20);
     g.font = '11px sans-serif'; g.fillStyle = '#555'; g.fillText('elements cut ' + R.elements + ' · segments ' + R.nSeg + ' · bbox only ' + R.nBboxOnly + ' · scale 1:1 (offset m × z m)', Lm, 36);
     }
     if (!isFinite(u0)) { g.fillStyle = '#c00'; g.fillText('no triangle crosses the plane here (bbox only)', Lm, 70); return cv; }
@@ -330,9 +336,9 @@ function setupCivilSections(A) {
   A.civilCrossSheetHTML = function () {
     var R = A.civilCrossOutput(); if (!R) return null;
     var img = _crossCanvas(R, 1400, 840).toDataURL('image/png'), tr = function (list, extra) { return list.map(function (r) { return '<tr><td style="text-align:left">' + _esc(r.disc) + '</td><td style="text-align:left">' + _esc(r.name) + '</td><td>' + r.count + extra + '</td></tr>'; }).join(''); };
-    return '<!doctype html><html><head><meta charset="utf-8"><title>Cross-section ' + R.s.toFixed(0) + ' m (inferred)</title><style>body{font:13px sans-serif;margin:16px}img{width:100%;max-width:1000px;border:1px solid #bbb}' +
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Cross-section ' + LBL(R.s) + '</title><style>body{font:13px sans-serif;margin:16px}img{width:100%;max-width:1000px;border:1px solid #bbb}' +
       'table{border-collapse:collapse;margin-top:8px}td,th{border:1px solid #bbb;padding:2px 8px;text-align:right}th{text-align:left}@page{size:A4 landscape;margin:12mm}</style></head><body>' +
-      '<h1>Cross-section — chainage ' + R.s.toFixed(1) + ' m (inferred)</h1><img alt="cross-section" src="' + img + '"><h2>Elements cut (' + R.elements + ')</h2>' +
+      '<h1>Cross-section — ' + LBL(R.s) + '</h1><img alt="cross-section" src="' + img + '"><h2>Elements cut (' + R.elements + ')</h2>' +
       '<table id="cross-table"><thead><tr><th>discipline</th><th>element</th><th>count</th></tr></thead><tbody>' + tr(R.rows, '') + tr(R.bboxOnly, ' (bbox only)') + '</tbody></table></body></html>';
   };
   A.civilCrossPDF = function () {
@@ -456,9 +462,9 @@ function setupCivilSections(A) {
         });
       }
       var st = _niceStep(w / 5); g.strokeStyle = '#444'; g.lineWidth = 1; g.fillStyle = '#9aa';
-      for (var t = Math.ceil(a / st) * st; t <= b; t += st) { var x = X(t); g.beginPath(); g.moveTo(x, Y1); g.lineTo(x, Y1 + 5); g.stroke(); g.fillText(t.toFixed(0), x, Y1 + 16); }
+      for (var t = Math.ceil(a / st) * st; t <= b; t += st) { var x = X(t); g.beginPath(); g.moveTo(x, Y1); g.lineTo(x, Y1 + 5); g.stroke(); g.fillText(AX(t), x, Y1 + 16); }
       g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(D / 2, Y0 - 6); g.lineTo(D / 2, Y1); g.stroke();
-      g.fillStyle = '#ccc'; g.fillText('chainage (inferred) ' + Ls.s0.toFixed(0) + ' m · span ' + w.toFixed(0) + ' m', D / 2, D * 0.84);
+      g.fillStyle = '#ccc'; g.fillText(LBL(Ls.s0) + ' · span ' + w.toFixed(0) + ' m', D / 2, D * 0.84);
       g.fillStyle = '#4fc3f7'; g.fillText('road', D * 0.36, D * 0.12); g.fillStyle = '#c8a064'; g.fillText('ground', D * 0.5, D * 0.12); g.fillStyle = '#e57373'; g.fillText('drain', D * 0.64, D * 0.12);
     }
     g.restore();
@@ -542,9 +548,9 @@ function setupCivilSections(A) {
     var fz = function (v) { return v === v ? v.toFixed(3) : '–'; }, h = [];
     for (var k = 0; k < ns; k++) {
       var s0 = k * W, s1 = Math.min(P.len, s0 + W), rows = '';
-      for (var s = s0; s <= s1 + 1e-9 && s <= P.n - 1; s += 10) rows += '<tr data-s="' + s + '"><td>' + s + '</td><td class="g">' + fz(P.ground[s]) + '</td><td class="r">' + fz(P.road[s]) + '</td></tr>';
-      h.push('<section class="sheet" data-k="' + k + '" data-s0="' + s0 + '"><h2>Road profile — chainage ' + s0 + ' to ' + (s0 + W) + ' m (inferred) · sheet ' + (k + 1) + ' of ' + ns + '</h2>' +
-        '<canvas width="1000" height="360"></canvas><p class="no-print"><button class="png">PNG</button></p><table><thead><tr><th>chainage m</th><th>ground z m</th><th>road z m</th></tr></thead><tbody>' + rows + '</tbody></table></section>');
+      for (var s = s0; s <= s1 + 1e-9 && s <= P.n - 1; s += 10) rows += '<tr data-s="' + s + '"><td>' + AXL(s) + '</td><td class="g">' + fz(P.ground[s]) + '</td><td class="r">' + fz(P.road[s]) + '</td></tr>';
+      h.push('<section class="sheet" data-k="' + k + '" data-s0="' + s0 + '"><h2>Road profile — ' + RNG(s0, s0 + W) + ' · sheet ' + (k + 1) + ' of ' + ns + '</h2>' +
+        '<canvas width="1000" height="360"></canvas><p class="no-print"><button class="png">PNG</button></p><table><thead><tr><th>chainage</th><th>ground z m</th><th>road z m</th></tr></thead><tbody>' + rows + '</tbody></table></section>');
     }
     var js = '(' + (function (D) {
       var P = D.p, W = D.w; document.querySelectorAll('.sheet').forEach(function (sh) {
@@ -554,14 +560,14 @@ function setupCivilSections(A) {
         if (lo > hi) { g.fillText('no surface under this sheet', 20, 30); } else {
           var pad = Math.max(0.5, (hi - lo) * 0.1); lo -= pad; hi += pad; var X = function (s) { return L + (W2 - L - 10) * (s - a) / W; }, Y = function (z) { return H - B - (H - B - 12) * (z - lo) / (hi - lo); };
           g.strokeStyle = '#ccc'; for (k = 0; k <= 4; k++) { var z = lo + (hi - lo) * k / 4; g.beginPath(); g.moveTo(L, Y(z)); g.lineTo(W2 - 10, Y(z)); g.stroke(); g.fillText(z.toFixed(1), 6, Y(z) + 4); }
-          for (var t = a; t <= b; t += 10) { g.beginPath(); g.moveTo(X(t), H - B); g.lineTo(X(t), H - B + 5); g.stroke(); g.fillText(t, X(t) - 8, H - B + 18); }
+          for (var t = a; t <= b; t += 10) { g.beginPath(); g.moveTo(X(t), H - B); g.lineTo(X(t), H - B + 5); g.stroke(); g.fillText(D.c ? D.c[Math.min(D.n - 1, t)] : t, X(t) - 8, H - B + 18); }
           g.lineWidth = 2; [['road', '#0277bd'], ['ground', '#8d6e00'], ['drain', '#c62828']].forEach(function (sr) { g.strokeStyle = sr[1]; g.beginPath(); var pen = false; for (i = Math.max(0, a); i <= Math.min(D.n - 1, b); i++) { var v = P[sr[0]][i]; if (v == null) { pen = false; continue; } if (!pen) { g.moveTo(X(i), Y(v)); pen = true; } else g.lineTo(X(i), Y(v)); } g.stroke(); });
           g.fillStyle = '#0277bd'; g.fillText('road top', L + 6, 10); g.fillStyle = '#8d6e00'; g.fillText('ground (earthwork)', L + 80, 10); g.fillStyle = '#c62828'; g.fillText('drain invert', L + 220, 10);
         }
         sh.querySelector('.png').onclick = function () { cv.toBlob(function (bl) { var an = document.createElement('a'); an.href = URL.createObjectURL(bl); an.download = 'profile_sheet_' + a + '-' + b + 'm.png'; an.click(); }, 'image/png'); };
       });
-    }).toString() + ')(' + JSON.stringify({ p: { road: r3(P.road), ground: r3(P.ground), drain: r3(P.drain) }, n: P.n, w: W }) + ');';
-    return '<!doctype html><html><head><meta charset="utf-8"><title>Road profile (inferred chainage)</title><style>body{font:13px sans-serif;margin:16px}.sheet{page-break-after:always;break-after:page;margin-bottom:24px}canvas{width:100%;max-width:1000px;border:1px solid #999}' +
+    }).toString() + ')(' + JSON.stringify({ p: { road: r3(P.road), ground: r3(P.ground), drain: r3(P.drain) }, n: P.n, w: W, c: REAL() ? Array.from({ length: P.n }, function (_, i) { return AXL(i * P.ds); }) : null }) + ');';
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Road profile (' + (REAL() ? 'chainage from model markers' : 'inferred chainage') + ')</title><style>body{font:13px sans-serif;margin:16px}.sheet{page-break-after:always;break-after:page;margin-bottom:24px}canvas{width:100%;max-width:1000px;border:1px solid #999}' +
       'table{border-collapse:collapse;margin-top:6px}td,th{border:1px solid #bbb;padding:2px 8px;text-align:right}@page{size:A4 landscape;margin:12mm}@media print{.no-print{display:none}}</style></head><body><h1>Road profile — ' +
       P.len.toFixed(0) + ' m, ' + ns + ' sheets of ' + W + ' m</h1>' + h.join('') + '<script>' + js.replace(/<\//g, '<\\/') + '<\/script></body></html>';
   };
@@ -582,7 +588,7 @@ function setupCivilSections(A) {
   // ── §SECTION_CIVIL_MODES: Long / Cross are extra axis modes of the Cut section tool (tools.js A.sectionModes).
   function _showScrub(s) {
     var v = document.getElementById('section-val'), L = A.civilRouteAt(0).len;
-    if (v) v.textContent = 'chainage ' + s.toFixed(0) + ' m of ' + L.toFixed(0) + ' m (inferred)';
+    if (v) v.textContent = LBL(s) + ' · route ' + L.toFixed(0) + ' m';
   }
   function _slider(s) {
     var sl = document.getElementById('section-slider'), L = A.civilRouteAt(0).len;
@@ -643,8 +649,8 @@ function setupCivilSections(A) {
       L.pending = 0; L.frames++; if (!L.active || !A._civilSection) return;
       var R = A.civilCrossOutput(); if (!R) return;
       var c = _crossCanvas(R, LV_W, LV_H), g = L.cv.getContext('2d'); g.clearRect(0, 0, LV_W, LV_H); g.drawImage(c, 0, 0);
-      L.hd.textContent = 'Ch ' + R.s.toFixed(0) + ' m · ' + R.elements + ' items';
-      L.hd.title = 'chainage ' + R.s.toFixed(1) + ' m (inferred) · ' + R.elements + ' elements cut · ' + R.nSeg + ' segments';
+      L.hd.textContent = LBL(R.s).replace(' m (inferred)', ' m') + ' · ' + R.elements + ' items';
+      L.hd.title = LBL(R.s) + ' · ' + R.elements + ' elements cut · ' + R.nSeg + ' segments';
       if (!L.pinned) _liveAnchor();
       L.redraws++; L.drawn = { s: R.s, nSeg: R.nSeg, elements: R.elements, legend: c.__legend || [], plotTop: c.__plotTop };
       console.log('§CROSS_LIVE s=' + R.s.toFixed(1) + ' segments=' + R.nSeg + ' redraws=' + L.redraws + ' scrubs=' + L.scrubs + ' frames=' + L.frames + ' pinned=' + L.pinned);

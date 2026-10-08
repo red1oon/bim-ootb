@@ -492,6 +492,28 @@
       return C;
     }
 
+    // ── §CHAINAGE_EVERYWHERE: ONE owner for chainage TEXT. Every readout (speed zones, Long/Cross, Alt+C cards, film status row)
+    //    calls these; the maths stays in route s. Anchored → "CH 1+152"; not (yet) read / no markers → today's "1152 m (inferred)".
+    A.civilChainLabel = function (s) {
+      if (s == null || !isFinite(s)) return '\u2014';
+      return _cache && _cache.anc && _cache.db === A.db ? 'CH ' + fmt(_cache.anc.realAt(s)) : Math.round(s) + ' m (inferred)';
+    };
+    A.civilChainRange = function (s0, s1) {
+      if (_cache && _cache.anc && _cache.db === A.db) return 'CH ' + fmt(_cache.anc.realAt(s0)) + '\u2013' + fmt(_cache.anc.realAt(s1));
+      return Math.round(s0) + '\u2013' + Math.round(s1) + ' m (inferred)';
+    };
+    A.civilChainReal = function () { return !!(_cache && _cache.anc && _cache.db === A.db); };
+    // read once after a civil model has loaded (no panel needed); 2 s poll, stops once read or not civil
+    var _autoBusy = false, _autoDb = null;
+    function autoRead() {
+      if (_autoBusy || _autoDb === A.db || (_cache && _cache.db === A.db) || !A.db || A.streaming || !civil() || !(A.civilDriveRoute && A.civilDriveRoute())) return;
+      _autoBusy = true; _autoDb = A.db;   // one attempt per model (a model without markers must not re-read every 2 s)
+      var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=3', 'json_std_values') : fetch('std_values.json?v=3').then(function (r) { return r.json(); });
+      ld.then(function (std) { var t0 = performance.now(); _std = _std || std; read(std); console.log('§CHAINAGE_AUTO_READ ms=' + (performance.now() - t0).toFixed(0) + ' anchored=' + A.civilChainReal()); if (A.markDirty) A.markDirty(); })
+        .catch(function (e) { console.warn('§CHAINAGE_AUTO_READ failed: ' + e.message); }).then(function () { _autoBusy = false; });
+    }
+    setInterval(autoRead, 2000);
+
     A.chainage = { read: read, show: show, hide: hide, mount: mount, hoverAt: hoverAt, drawStrip: drawStrip, active: function () { return _on; },
       realAt: function (s) { return _cache && _cache.anc ? _cache.anc.realAt(s) : null; }, routeSOf: function (ch) { return _cache && _cache.anc ? _cache.anc.routeSOf(ch) : null; },
       reset: function () { hide('reset', true); _cache = null; }, state: null };
