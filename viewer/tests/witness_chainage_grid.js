@@ -34,6 +34,7 @@ const server = http.createServer((req, res) => { try {
   fs.createReadStream(fp).pipe(res); } catch (e) { res.writeHead(500); res.end(String(e)); } });
 const STD = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'std_values.json'), 'utf8'));
 const MAP = STD._chainage_map || {};
+const AUTO = [];
 
 // ── independent helpers (not the engine's) ──
 function project(route, x, z) { let best = null, cum = 0;
@@ -67,7 +68,7 @@ function runCheck(main, step) { // main = [{value, s}] → gap-free 0..N in `ste
 
 async function open(browser, bld) {
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });
-  page.on('console', m => { const t = m.text(); logStream.write('[con:' + bld + '] ' + t + '\n'); if (/§CHAINAGE_(READ|ANCHOR|GRID|PANEL|STRIP|OFF)/.test(t)) _cl('  [' + bld + '] ' + t.slice(0, 220)); });
+  page.on('console', m => { const t = m.text(); if (/§CHAINAGE_AUTO_READ/.test(t)) AUTO.push(bld + ' ' + t); logStream.write('[con:' + bld + '] ' + t + '\n'); if (/§CHAINAGE_(READ|ANCHOR|GRID|PANEL|STRIP|OFF)/.test(t)) _cl('  [' + bld + '] ' + t.slice(0, 220)); });
   page.on('pageerror', e => logStream.write('[pageerror] ' + e.message + '\n'));
   await page.goto(`http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${bld}.db`, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => window.APP && window.APP.activeBuilding && window.APP.buildingsRendered && window.APP.buildingsRendered.has(window.APP.activeBuilding) && !window.APP.streaming, { timeout: 25 * 60 * 1000, polling: 1000 });
@@ -78,6 +79,9 @@ async function probe(page) {
   return page.evaluate(async () => {
     const A = window.APP, out = { civil: A.isCivilModel() }, sleep = ms => new Promise(r => setTimeout(r, ms));
     const std = await (await fetch('std_values.json?v=3')).json();
+    // auto-read must happen with NO panel open: wait for it before opening Road standards
+    for (let i = 0; i < 150 && !(A.civilChainReal && A.civilChainReal()); i++) await sleep(100);
+    out.autoBeforePanel = !!(A.civilChainReal && A.civilChainReal());
     await A.showRoadStandards();
     for (let i = 0; i < 600 && !document.querySelector('.cg-section'); i++) await sleep(100);
     const sec = document.querySelector('.cg-section'); out.panel = sec ? { kv: [...sec.querySelectorAll('.cg-kv')].map(e => e.textContent), rows: sec.querySelectorAll('.cg-row').length, ivs: sec.querySelectorAll('.cg-iv').length, arms: [...sec.querySelectorAll('.cg-arm summary')].map(e => e.textContent) } : null;
@@ -115,6 +119,10 @@ async function probe(page) {
     }
     // hide
     const before = A.scene.children.filter(o => o.name === 'chainage-grid').length; A.hideRoadStandards('witness');
+    // §CHAINAGE_EVERYWHERE: the one label owner, anchored and not
+    out.labelReal = [300, 1000, 1800].map(s => ({ s, lbl: A.civilChainLabel(s), rng: A.civilChainRange(s, s + 100) }));
+    A.chainage.reset(); out.labelNone = { lbl: A.civilChainLabel(1000), rng: A.civilChainRange(1000, 1100), real: A.civilChainReal() }; A.chainage.read(std);
+    out.autoRead = window.__cgAuto || null;
     out.hide = { before, after: A.scene.children.filter(o => o.name === 'chainage-grid').length, strip: !!document.getElementById('chainage-strip'), chip: !!document.getElementById('chainage-chip'), active: A.chainage.active() };
     return out;
   });
@@ -154,6 +162,7 @@ async function probe(page) {
   log('§CHAINAGE_RED dropped=' + (r.red && r.red.dropped) + ' run mono=' + redRun.mono + ' gapFree=' + redRun.gapFree + ' values=' + redRun.vals);
   r.hover.forEach(h => { const own = h.h ? interp(an, project(r.route, h.h.x, h.h.z).s) : null; h.own = own; log('§CHAINAGE_INDEP_HOVER s0=' + h.s0 + ' chip="' + h.chip + '" engine=' + (h.h && h.h.ch.toFixed(2)) + ' own=' + (own != null ? own.toFixed(2) : 'NA') + ' lateral=' + (h.h && h.h.lateral.toFixed(1))); });
   r.stripGo.forEach(g => { const s = L * g.f, p = pointAt(r.route, s); g.err = Math.hypot(g.cam.x - p.x, g.cam.z - p.z); g.wantCh = interp(an, s); log('§CHAINAGE_INDEP_STRIP f=' + g.f + ' s=' + s.toFixed(1) + ' camErr=' + g.err.toFixed(2) + ' now="' + g.now + '" wantCh=' + fmtI(g.wantCh)); });
+  log('§CHAINAGE_LABELS real=' + JSON.stringify(r.labelReal) + ' none=' + JSON.stringify(r.labelNone) + ' auto=' + JSON.stringify(AUTO));
   log('§CHAINAGE_HIDE ' + JSON.stringify(r.hide) + ' panel=' + JSON.stringify(r.panel));
 
   const rows = [Object.assign({ id: BLD }, { r, rc, armOk, iMin, iMaj, redRun, an })];
@@ -169,6 +178,9 @@ async function probe(page) {
     .invariant('(5) hover: chip shown at 3 points, its chainage == own interpolation of own projection ±0.5 m, chip text carries that CH', rs => rs.every(x => x.r.hover.length === 3 && x.r.hover.every(h => h.shown && h.h && h.own != null && Math.abs(h.h.ch - h.own) <= 0.5 && h.chip.indexOf('CH ' + fmtI(h.h.ch)) === 0)))
     .invariant('(6) strip: click at 10/50/90 % → camera on the route at that s (±1 m) and the strip shows CH of that s (±1 m)', rs => rs.every(x => x.r.stripGo.every(g => g.err <= 1 && Math.abs(parseInt(g.now.replace(/\D/g, ''), 10) - Math.round(g.wantCh)) <= 1)))
     .invariant('(7) hide (panel close): 0 chainage groups left, strip + chip removed, inactive', rs => rs.every(x => x.r.hide.before === 1 && x.r.hide.after === 0 && !x.r.hide.strip && !x.r.hide.chip && !x.r.hide.active))
+    .invariant('(9) §CHAINAGE_EVERYWHERE label owner: anchored → "CH " + own k+mmm of own interpolation at 3 s (±1 m), range likewise; markers not read → "N m (inferred)"; auto-read ran once on the road model after load (not on Duplex)', rs => rs.every(x => x.r.labelReal.every(q => { const v = t => { const m = /(\d+)\+(\d{3})/.exec(t); return m ? +m[1] * 1000 + +m[2] : NaN; }, r2 = q.rng.split('\u2013'); console.log('§CHAINAGE_LABEL_CMP s=' + q.s + ' lbl=' + q.lbl + ' own=' + interp(x.an, q.s).toFixed(2) + ' rng=' + q.rng + ' ownEnd=' + interp(x.an, q.s + 100).toFixed(2));
+      return /^CH \d+\+\d{3}$/.test(q.lbl) && Math.abs(v(q.lbl) - interp(x.an, q.s)) <= 1 && Math.abs(v(r2[0]) - interp(x.an, q.s)) <= 1 && Math.abs(v(r2[1]) - interp(x.an, q.s + 100)) <= 1; }) &&
+      x.r.labelNone.lbl === '1000 m (inferred)' && x.r.labelNone.rng === '1000\u20131100 m (inferred)' && !x.r.labelNone.real && x.r.autoBeforePanel) && AUTO.filter(t => t.startsWith(BLD + ' ') && /anchored=true/.test(t)).length === 1 && !AUTO.some(t => t.startsWith('Duplex')))
     .invariant('(8) Duplex: not civil → read null, show null (VACUOUS, not a pass)', () => R.dup && !R.dup.civil && R.dup.read === null && R.dup.shown === null)
     .redControl(rs => rs.map(x => Object.assign({}, x, { rc: Object.assign({}, x.rc, { gapFree: false }) })));
   console.log = (...a) => { const s = a.join(' '); logStream.write(s + '\n'); _cl(...a); };

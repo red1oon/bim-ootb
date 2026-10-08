@@ -171,13 +171,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const out = { len, sliderMax: +sl.max, sliderMin: +sl.min, lensShown: lens.style.display === 'block', oldChart: !!document.getElementById('civil-section-canvas'), scr: [],
       clipLong: A.collectMeshes(o => o.isMesh).filter(o => o.material.clippingPlanes && o.material.clippingPlanes.length).length };
     for (const f of [0.2, 0.5, 0.8]) { sl.value = String(len * f); sl.dispatchEvent(new Event('input', { bubbles: true }));
-      const want = +sl.value, n = nearest(); out.scr.push({ want, atCam: n.s, dist: n.d, cur: A._civilLens().s0, val: document.getElementById('section-val').textContent }); }
+      const want = +sl.value, n = nearest(); out.scr.push({ want, atCam: n.s, dist: n.d, cur: A._civilLens().s0, val: document.getElementById('section-val').textContent, lbl: A.civilChainLabel ? A.civilChainLabel(+sl.value) : null }); }
     return out;
   });
   log('  [long] ' + JSON.stringify(L));
   add('Long: lens shown, old panel chart canvas ABSENT from DOM, slider = chainage 0..route length, no clip plane left on', L.lensShown && !L.oldChart && L.sliderMin === 0 && Math.abs(L.sliderMax - L.len) <= 1 && L.clipLong === 0, 'max=' + L.sliderMax + ' len=' + L.len.toFixed(1) + ' clipped=' + L.clipLong);
   add('Long: scrub to 3 chainages -> camera within 1 m of route at that chainage (+-1 m), lens s0 follows', L.scr.every(x => x.dist <= 1 && Math.abs(x.atCam - x.want) <= 1 && Math.abs(x.cur - x.want) <= 1), JSON.stringify(L.scr.map(x => [+x.want.toFixed(1), +x.atCam.toFixed(2), +x.dist.toFixed(4)])));
-  add('Long: scrubber label reads "chainage ... (inferred)"', L.scr.every(x => /chainage \d+ m of \d+ m \(inferred\)/.test(x.val)), L.scr[0].val);
+  add('Long: scrubber label = the chainage owner\'s label for that s (model markers "CH k+mmm" when anchored, else "N m (inferred)") + route length', L.scr.every(x => (/^CH \d+\+\d{3} · route \d+ m$/.test(x.val) || /^\d+ m \(inferred\) · route \d+ m$/.test(x.val)) && x.val.indexOf(x.lbl) === 0), L.scr[0].val);
 
   // ---- lens gestures with REAL mouse input; every one asserts 0 raycasts and (inside the lens) 0 camera motion ----
   const st = () => p.evaluate(() => { const A = APP, l = A._civilLens(), r = document.getElementById('civil-lens').getBoundingClientRect(), b = A.renderer.domElement.getBoundingClientRect(), c = A.camera;
@@ -320,14 +320,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       res.push({ s: +sel.toFixed(1), nSeg: R.nSeg, listed: R.segments.length, worstM: worst, elements: R.elements, tab, bboxOnly: R.nBboxOnly, rows: R.rows.length, byDisc: R.byDisc, segDisc, cutLen: A.civilSectionCut().guids.length });
     }
     const png = await A.civilCrossPNG(false), html = A.civilCrossSheetHTML();
-    return { res, png: { type: png.blob.type, bytes: png.blob.size }, sheetHasTable: html.indexOf('id="cross-table"') > 0 && html.indexOf('(inferred)') > 0 && html.indexOf('data:image/png') > 0 };
+    return { res, png: { type: png.blob.type, bytes: png.blob.size }, sheetHasTable: html.indexOf('id="cross-table"') > 0 && (html.indexOf('(inferred)') > 0 || /Cross-section — CH \d+\+\d{3}/.test(html)) && html.indexOf('data:image/png') > 0 };
   }, [0.25, 0.55, 0.85]);
   log('  [crossOut] ' + JSON.stringify(XO));
   const secLogs = CONS.filter(t => t.startsWith('§CROSS_SECTION')).map(t => +(t.match(/elementsCut=(\d+)/) || [])[1]);
   add('§CROSS_OUTPUT: every segment endpoint |n.p-d| < 1 mm at 3 chainages (plane recomputed from polyline)', XO.res.every(x => x.worstM < 0.001), JSON.stringify(XO.res.map(x => [x.s, +x.worstM.toExponential(2)])));
   add('§CROSS_OUTPUT: segments > 0 at each chainage', XO.res.every(x => x.nSeg > 0 && x.nSeg === x.listed), JSON.stringify(XO.res.map(x => [x.s, x.nSeg])));
   add('§CROSS_OUTPUT: table count (rows + bbox-only) == cut set == a §CROSS_SECTION elementsCut log value', XO.res.every(x => x.tab === x.elements && x.elements === x.cutLen && secLogs.includes(x.elements)), JSON.stringify(XO.res.map(x => [x.s, x.tab, x.elements, x.bboxOnly])) + ' secLogs=' + JSON.stringify(secLogs.slice(-6)));
-  add('§CROSS_OUTPUT: PNG is image/png and non-empty; sheet HTML has table + "(inferred)" + drawing', XO.png.type === 'image/png' && XO.png.bytes > 1000 && XO.sheetHasTable, JSON.stringify(XO.png));
+  add('§CROSS_OUTPUT: PNG is image/png and non-empty; sheet HTML has table + chainage label (CH k+mmm or "(inferred)") + drawing', XO.png.type === 'image/png' && XO.png.bytes > 1000 && XO.sheetHasTable, JSON.stringify(XO.png));
   judged += XO.res.length;
 
   // ---- §CROSS_LIVE_POPUP: draggable popup redraws live while the scrubber moves ----

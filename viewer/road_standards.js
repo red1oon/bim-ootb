@@ -157,6 +157,7 @@
           else if (typeof A.loadNavigate === 'function') A.loadNavigate().then(function () { if (A.focusElement) A.focusElement(guid); else if (A.zoomToGuid) A.zoomToGuid(guid); });
           else if (A.zoomToGuid) A.zoomToGuid(guid);
         });
+        if (A.chainage && std._chainage_map) { try { A.chainage.read(std); } catch (e) { console.warn('§CHAINAGE_READ failed: ' + e.message); } }   // §CHAINAGE_EVERYWHERE: before Speed, so its labels are the model's chainage
         var szP = (A.speedZones && std.geometric) ? A.speedZones.mount(std, body, body.querySelector('.rs-card')) : null;   // §SPEED_ZONES section (civil-only, same panel)
         // §CHAINAGE_GRID section after Speed (it colours by the speed zones when they exist)
         if (A.chainage && std._chainage_map) Promise.resolve(szP).then(function () { try { A.chainage.mount(std, body, body.querySelector('.rs-card')); } catch (e) { console.warn('§CHAINAGE_PANEL failed: ' + e.message); } });
