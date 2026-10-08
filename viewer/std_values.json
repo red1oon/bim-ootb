@@ -11,6 +11,12 @@
   "code_prop": "17_Code",
   "note": "where the sign code lives in the model (measured in JELAPANG element_psets, CIVIL_HIGHWAY_JELAPANG.md §K-6.1)"
  },
+ "_road_report": {
+  "drift_pct": { "critical": 10, "warning": 5 },
+  "grade_window_m": 20,
+  "status": "demo default (editable)",
+  "note": "The Road Report cut-offs (CIVIL_HIGHWAY_JELAPANG.md §ROAD_REPORT). No standard gives prognosis cut-offs: drift_pct = chainage drift as % of the printed marker step (CRITICAL >= critical, WARNING >= warning); grade_window_m = chord length for grade and the shortest cut/fill stretch reported. The ATJ limits themselves come from the cited tables."
+ },
  "_chainage_map": {
   "discipline": "CHAINAGE",
   "drift_ok_m": 5,
