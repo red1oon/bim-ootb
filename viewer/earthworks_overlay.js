@@ -36,26 +36,33 @@ function setupEarthworksOverlay(A) {
       var s = i * ds, q = route(s), yr = roadAt(s), row = { s: s, y: yr, side: { 1: [], '-1': [] }, kind: 'NO-GROUND' };
       if (q && yr != null && yr === yr) {
         [1, -1].forEach(function (sd) {
-          var nx = -q.tz * sd, nz = q.tx * sd, stop = false;
+          var nx = -q.tz * sd, nz = q.tx * sd, sgn = 0;
           for (var kk = 1; kk <= K; kk++) {
             var x = q.x + nx * kk * step, z = q.z + nz * kk * step, g = castG(x, z);
-            if (g == null) { row.side[sd].push(null); stop = true; break; }
+            if (g == null) { row.side[sd].push(null); break; }
             var d = g - yr, onRoad = castR(x, z) != null;
             row.side[sd].push({ x: x, z: z, g: g, d: d, onRoad: onRoad });
-            if (!onRoad && Math.abs(d) <= tol) break;           // daylight: ground meets road level
+            if (onRoad) continue;
+            // a flat shoulder at road level is NOT daylight: the sign is only established once ground leaves the road level
+            // (2026-10-09 live: stopping at the first |d|<=tol cell hid every cut slope beyond a level shoulder -> CUT 0 m3).
+            // Daylight = after that, ground returns to road level or crosses it.
+            var sg = d > tol ? 1 : d < -tol ? -1 : 0;
+            if (!sgn) { if (sg) sgn = sg; }
+            else if (sg !== sgn) break;                         // daylight: ground meets / crosses road level
           }
         });
       }
       grid.push(row);
     }
-    // station kind from the first off-road cell on each side
+    // station kind from the first off-road cell that leaves road level, per side
     var vols = { cut: 0, fill: 0 }, cells = [], bands = [], cur = null, disagree = 0, judged = 0;
     for (i = 0; i < nS; i++) {
       var r = grid[i], ks = [];
       [1, -1].forEach(function (sd) {
         var arr = r.side[sd], f = null;
-        for (var j = 0; j < arr.length; j++) if (arr[j] && !arr[j].onRoad) { f = arr[j]; break; }
-        ks.push(f ? (f.d > tol ? 'cut' : f.d < -tol ? 'fill' : 'flat') : null);
+        for (var j = 0; j < arr.length; j++) if (arr[j] && !arr[j].onRoad && Math.abs(arr[j].d) > tol) { f = arr[j]; break; }   // first cell off the road level (a level shoulder is skipped)
+        var anyG = arr.some(function (v) { return v && !v.onRoad; });
+        ks.push(f ? (f.d > tol ? 'cut' : 'fill') : anyG ? 'flat' : null);   // flat = ground exists but never leaves road level
       });
       var a = ks[0], b = ks[1];
       var hasC = a === 'cut' || b === 'cut', hasF = a === 'fill' || b === 'fill';

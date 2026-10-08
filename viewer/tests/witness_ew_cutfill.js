@@ -50,6 +50,14 @@ r = run((x, z) => 100 - Math.max(0, 1.2 - 0.0) * 0 - Math.max(0, (9 - lat(z))) *
 const far = r.cells.length ? Math.max(...r.cells.map(c => Math.max(...c.p.map(v => lat(v.z))))) : 0;
 ok(far <= 9 + 1e-9, 'tint stops at daylight (ground meets road level)', 'maxOffset=' + far);
 
+// 6b REGRESSION (live 2026-10-09: CUT 0 m3 on a road running through a hill): a LEVEL shoulder at road height followed by a rising cut slope must be CUT, not AT-GRADE
+r = run((x, z) => lat(z) <= 6 ? 100 : 100 + 0.8 * (lat(z) - 6));
+ok(r.grid.every(g => g.kind === 'CUT') && r.vols.cut > 0, 'level shoulder then rising slope = CUT (flat shoulder is not daylight)', 'cut=' + r.vols.cut.toFixed(0));
+r = run((x, z) => lat(z) <= 6 ? 100 : 100 - 0.5 * (lat(z) - 6));
+ok(r.grid.every(g => g.kind === 'FILL') && r.vols.fill > 0, 'level shoulder then falling slope = FILL', 'fill=' + r.vols.fill.toFixed(0));
+r = run((x, z) => 100);
+ok(r.grid.every(g => g.kind === 'AT-GRADE') && r.cells.length === 0, 'fully level ground = AT-GRADE, no tint');
+
 // 7 reach cap
 r = run((x, z) => 100 + 1 + 0.5 * lat(z));
 const mx = Math.max(...r.cells.map(c => Math.max(...c.p.map(v => lat(v.z)))));
