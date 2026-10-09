@@ -64,8 +64,9 @@ const inc = (id, msg) => say('§WITNESS INCONCLUSIVE ' + id + ' ' + msg);
   // with the server dead, Export must fall back to a normal browser download and raise NO uncaught error.
   const dlDir = path.join(tmp, 'dl'); fs.mkdirSync(dlDir); const cdp = await pg.target().createCDPSession(); await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dlDir });
   await pg.keyboard.press('f'); await pg.click('#sa'); await pg.keyboard.press('Escape'); cli.kill('SIGKILL'); await new Promise((r) => setTimeout(r, 500)); const nErr0 = logs.filter((l) => /PAGEERROR/.test(l)).length;
-  await pg.keyboard.press('e'); await new Promise((r) => setTimeout(r, 1500));
-  const got = fs.readdirSync(dlDir).filter((f) => /_extract\.ifc$/.test(f));
+  await pg.keyboard.press('e');
+  let got = []; for (let i = 0; i < 40 && !got.length; i++) { await new Promise((r) => setTimeout(r, 250)); got = fs.readdirSync(dlDir).filter((f) => /_extract\.ifc$/.test(f)); }   // poll up to 10 s: Windows Chromium finishes downloads slower
+  console.log('§W-PICK-5 dlDir=' + dlDir + ' files=' + JSON.stringify(fs.readdirSync(dlDir)));
   const tt = await pg.$eval('#toast', (e) => e.textContent);
   ok('W-PICK-5', got.length === 1 && fs.statSync(path.join(dlDir, got[0])).size > 1000 && /launcher closed/.test(tt) && logs.filter((l) => /PAGEERROR/.test(l)).length === nErr0, 'server dead -> downloads=' + JSON.stringify(got) + ' toast="' + tt.slice(0, 60) + '" newPageErrors=' + (logs.filter((l) => /PAGEERROR/.test(l)).length - nErr0));
   const errs = logs.filter((l) => /PAGEERROR/.test(l)); ok('W-PAGE-ERRORS', errs.length === 0, 'pageerrors=' + errs.length + (errs[0] ? ' first=' + errs[0].slice(0, 160) : ''));
