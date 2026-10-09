@@ -24,7 +24,7 @@
   }
   const workName = (doc) => doc.gamma === 'linear' ? doc.working + '_linear' : doc.working;
   // composite in the working space (encoded or linear light). Returns premultiplied float32 RGBA.
-  function composite(f, ctx) {
+  function compositeState(f, ctx) {
     const { doc, st, spaceOf } = f, W = doc.w, n = W*W, P = profiles(ctx), work = workName(doc), conv = {}, cst = { W, order: st.order.slice(), L: {}, G: st.G, root: st.root, hasTree: st.hasTree };
     for (const id of st.order) { const l = st.L[id], sp = spaceOf[id];
       if (!conv[sp]) conv[sp] = ctx.lcms.cmsCreateTransform(P(sp), ctx.L.TYPE_RGB_16, P(work), ctx.L.TYPE_RGB_16, ctx.L.INTENT_RELATIVE_COLORIMETRIC, ctx.L.cmsFLAGS_NOOPTIMIZE);
@@ -33,8 +33,9 @@
       const o = (sp === work) ? in16 : ctx.lcms.cmsDoTransform(conv[sp], in16, n);
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; pix[i*4+3] = a; for (let k = 0; k < 3; k++) pix[i*4+k] = F(F(o[i*3+k] / 65535) * a); }
       cst.L[id] = { mode: l.mode, opacity: l.opacity, pix, mask: l.mask, parent: l.parent, clip: l.clip }; }
-    return S.composite(cst);
+    return cst;
   }
+  function composite(f, ctx) { return S.composite(compositeState(f, ctx)); }
   // working-space composite -> straight RGBA8 in the display space (encoded). display: built-in name or icc:<sha>
   function render(back, f, display, ctx) {
     const { doc } = f, W = doc.w, n = W*W, P = profiles(ctx), work = workName(doc), v16 = new Uint16Array(n * 3), res = new Uint8Array(n * 4);
@@ -43,6 +44,6 @@
     ctx.lcms.cmsDeleteTransform(t); for (let i = 0; i < n; i++) { for (let k = 0; k < 3; k++) res[i*4+k] = Math.floor(o[i*3+k] / 257 + 0.5); res[i*4+3] = q8(back[i*4+3]); }
     return res;
   }
-  const api = { fold, composite, render, workName };
+  const api = { fold, composite, compositeState, render, workName };
   if (node) module.exports = api; else root.DocFold = api;
 })(this);

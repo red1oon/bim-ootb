@@ -1,13 +1,13 @@
 // Usage: node witness_all.js [--only icc,doc]   Runs every suite, appends one line per suite to witness_log/ledger.jsonl, keeps full output in witness_log/latest/.
 const { spawnSync } = require('child_process'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
 const SUITES = [['oplog_witness', ['node', 'witness_oplog.js']], ['stack', ['node', 'run_stack.js']], ['psd_roundtrip', ['node', 'psd_roundtrip.js']], ['icc', ['sh', '-c', 'sh icc/fetch_profiles.sh >/dev/null && node icc/run_icc.js']],
-  ['doc', ['node', 'doc/run_doc.js']], ['export', ['node', 'doc/run_export.js']], ['groups', ['node', 'doc/run_groups.js']]];
+  ['doc', ['node', 'doc/run_doc.js']], ['export', ['node', 'doc/run_export.js']], ['groups', ['node', 'doc/run_groups.js']], ['nonsep', ['node', 'doc/run_nonsep.js']]];
 const only = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean), dir = path.join(__dirname, 'witness_log');
 const git = (a) => { const r = spawnSync('git', a, { cwd: __dirname, encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : '?'; };
 const commit = git(['rev-parse', '--short', 'HEAD']), dirty = git(['status', '--porcelain', '--', '.']).split('\n').filter((l) => l && !l.includes('witness_log/')).length > 0;
 fs.mkdirSync(path.join(dir, 'latest'), { recursive: true }); let bad = 0; const rows = [];
 for (const [name, cmd] of SUITES) {
-  if (only.length && !only.includes(name)) continue; if (name === 'groups' && !fs.existsSync(path.join(__dirname, 'doc/run_groups.js'))) continue;
+  if (only.length && !only.includes(name)) continue; if (!fs.existsSync(path.join(__dirname, cmd[cmd.length - 1])) && cmd[0] === 'node') continue;
   const t0 = Date.now(), r = spawnSync(cmd[0], cmd.slice(1), { cwd: __dirname, encoding: 'utf8', timeout: 290000, maxBuffer: 1 << 28 }), out = r.stdout || '';
   let gate = r.status === 0 ? 'PASS' : 'FAIL', fails = [], j = null; try { j = JSON.parse(out); gate = j.gate || gate; fails = j.fails || []; } catch (e) { if (/FAIL/.test(out)) gate = 'FAIL'; }
   if (r.error) { gate = 'ERROR'; fails = [String(r.error.message)]; }

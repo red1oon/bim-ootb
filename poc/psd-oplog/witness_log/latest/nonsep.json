@@ -1,0 +1,911 @@
+{
+ "checks": [
+  {
+   "id": "H30a",
+   "name": "luminosity preserved by hue (200k random pairs, max abs deviation)",
+   "value": 1.765787601692992e-7,
+   "cmp": "<=",
+   "limit": 0.000005,
+   "pass": true
+  },
+  {
+   "id": "H30a",
+   "name": "luminosity preserved by saturation (200k random pairs, max abs deviation)",
+   "value": 1.496076583729078e-7,
+   "cmp": "<=",
+   "limit": 0.000005,
+   "pass": true
+  },
+  {
+   "id": "H30a",
+   "name": "luminosity preserved by color (200k random pairs, max abs deviation)",
+   "value": 1.8537044532696e-7,
+   "cmp": "<=",
+   "limit": 0.000005,
+   "pass": true
+  },
+  {
+   "id": "H30a",
+   "name": "luminosity preserved by luminosity (200k random pairs, max abs deviation)",
+   "value": 1.853704451049154e-7,
+   "cmp": "<=",
+   "limit": 0.000005,
+   "pass": true
+  },
+  {
+   "id": "H30b",
+   "name": "results stay inside [0,1]: min",
+   "value": -5.960464477539063e-8,
+   "cmp": ">=",
+   "limit": -0.000001,
+   "pass": true
+  },
+  {
+   "id": "H30b",
+   "name": "results stay inside [0,1]: max",
+   "value": 1.0000001192092896,
+   "cmp": "<=",
+   "limit": 1.000001,
+   "pass": true
+  },
+  {
+   "id": "H30b",
+   "name": "degenerate colour pairs (grey, black, white, equal channels) produce in-range finite results (violations)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "SCH0",
+   "name": "documents validate under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "hue_s1: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "hue_s1: mean levels",
+   "value": 0.0011,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "hue_s1: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "hue_s1: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "hue_s1: compositor-only, identical converted layers: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "hue_s1: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "hue_s2: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "hue_s2: mean levels",
+   "value": 0.0009,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "hue_s2: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "hue_s2: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "hue_s2: compositor-only, identical converted layers: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "hue_s2: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "saturation_s1: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "saturation_s1: mean levels",
+   "value": 0.0015,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "saturation_s1: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "saturation_s1: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "saturation_s1: compositor-only, identical converted layers: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "saturation_s1: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "saturation_s2: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "saturation_s2: mean levels",
+   "value": 0.0012,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "saturation_s2: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "saturation_s2: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "saturation_s2: compositor-only, identical converted layers: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "saturation_s2: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "color_s1: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "color_s1: mean levels",
+   "value": 0.001,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "color_s1: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "color_s1: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "color_s1: compositor-only, identical converted layers: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "color_s1: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "color_s2: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "color_s2: mean levels",
+   "value": 0.001,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "color_s2: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "color_s2: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "color_s2: compositor-only, identical converted layers: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "color_s2: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "luminosity_s1: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "luminosity_s1: mean levels",
+   "value": 0.0011,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "luminosity_s1: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "luminosity_s1: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "luminosity_s1: compositor-only, identical converted layers: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "luminosity_s1: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "luminosity_s2: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "luminosity_s2: mean levels",
+   "value": 0.0008,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "luminosity_s2: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "luminosity_s2: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "luminosity_s2: compositor-only, identical converted layers: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "luminosity_s2: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "all_modes_groups_clips_srgb: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "all_modes_groups_clips_srgb: mean levels",
+   "value": 0.0018,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "all_modes_groups_clips_srgb: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "all_modes_groups_clips_srgb: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "all_modes_groups_clips_srgb: compositor-only, identical converted layers: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "all_modes_groups_clips_srgb: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c",
+   "name": "all_modes_groups_clips_p3: pipeline vs EXACT float64 oracle (max levels, working space)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H30cm",
+   "name": "all_modes_groups_clips_p3: mean levels",
+   "value": 0.0032,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "all_modes_groups_clips_p3: oracle fed the lcms-converted layers vs canonical: max levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c4",
+   "name": "all_modes_groups_clips_p3: samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "all_modes_groups_clips_p3: compositor-only, identical converted layers: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30c2",
+   "name": "all_modes_groups_clips_p3: compositor-only samples over 1 level",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H30e",
+   "name": "control: unmutated hue document vs oracle (levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30e",
+   "name": "mutation hue->color is detected (levels from oracle)",
+   "value": 81,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H30e",
+   "name": "mutation hue->normal is detected (levels from oracle)",
+   "value": 98,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H30e",
+   "name": "mutation hue->saturation is detected (levels from oracle)",
+   "value": 143,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H30g",
+   "name": "v1 rejects all four modes",
+   "value": 4,
+   "cmp": "==",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H30g",
+   "name": "v2 accepts all four modes on layers and on groups",
+   "value": 8,
+   "cmp": "==",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H30g",
+   "name": "existing 10 modes still valid in v1",
+   "value": 10,
+   "cmp": "==",
+   "limit": 10,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "hue_s1: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "hue_s1: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "saturation_s1: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "saturation_s1: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "color_s1: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "color_s1: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "luminosity_s1: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "luminosity_s1: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "all_modes_groups_clips_srgb: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "all_modes_groups_clips_srgb: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "all_modes_groups_clips_p3: PSD export->import preserves modes and tree",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30f",
+   "name": "all_modes_groups_clips_p3: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "hue_s1: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "hue_s1: psd-tools own compositor vs ours, mean levels",
+   "value": 0.5019,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "hue_s1: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "hue_s1: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "saturation_s1: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "saturation_s1: psd-tools own compositor vs ours, mean levels",
+   "value": 0.4973,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "saturation_s1: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "saturation_s1: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "color_s1: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "color_s1: psd-tools own compositor vs ours, mean levels",
+   "value": 0.4973,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "color_s1: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "color_s1: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "luminosity_s1: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "luminosity_s1: psd-tools own compositor vs ours, mean levels",
+   "value": 0.4977,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "luminosity_s1: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "luminosity_s1: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "all_modes_groups_clips_srgb: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "all_modes_groups_clips_srgb: psd-tools own compositor vs ours, mean levels",
+   "value": 0.4986,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "all_modes_groups_clips_srgb: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "all_modes_groups_clips_srgb: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "all_modes_groups_clips_p3: psd-tools reads the same modes and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H30d",
+   "name": "all_modes_groups_clips_p3: psd-tools own compositor vs ours, mean levels",
+   "value": 0.5003,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H30dp",
+   "name": "all_modes_groups_clips_p3: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H30dx",
+   "name": "all_modes_groups_clips_p3: max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H30h",
+   "name": "Node vs Chromium: f32 and sRGB-render hashes identical",
+   "value": 20,
+   "cmp": "==",
+   "limit": 20,
+   "pass": true
+  },
+  {
+   "id": "GOLD",
+   "name": "golden hashes changed",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  }
+ ],
+ "n_checks": 113,
+ "gate": "PASS",
+ "fails": []
+}

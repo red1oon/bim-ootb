@@ -14,12 +14,13 @@
 //                  directly, then the result is lerped with the backdrop by opacity*mask. Any other mode: isolated (children composite on transparency, then blend like a layer).
 //  layer.parent? = id of an earlier group (nesting depth <= 16, bottom-to-top order within a parent); layer.clip? = true clips it to the nearest unclipped layer below it
 //                  in the same parent (source-atop; blended with the BASE layer's mode/opacity/mask). A clip base must be a layer, not a group.
+//  non-separable blend modes 'hue' | 'saturation' | 'color' | 'luminosity' are valid in v2 documents only.
 //  mdab/set/maskraster may target a group; fill/dab/raster may not.
 //  {op:'raster', layer, pixels:<sha256>}                    replaces layer pixels with a content-addressed blob: w*h*4 bytes straight RGBA8
 //  {op:'maskraster', layer, pixels:<sha256>}                mask from a blob of w*h bytes (requires mask:true)
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack;
-  const MODES = S.MODES, BUILTIN = ['srgb', 'p3', 'adobe'], SHA = /^[0-9a-f]{64}$/;
+  const MODES = S.MODES, NONSEP = S.NONSEP, BUILTIN = ['srgb', 'p3', 'adobe'], SHA = /^[0-9a-f]{64}$/;
   const FIELDS = { doc: ['op', 'v', 'w', 'h', 'working', 'gamma'], layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space', 'parent', 'clip'], group: ['op', 'id', 'mode', 'opacity', 'mask', 'parent'], fill: ['op', 'layer', 'c', 'a'], dab: ['op', 'layer', 'x', 'y', 'r', 'c', 'a'],
     mdab: ['op', 'layer', 'x', 'y', 'r', 'v', 'a'], set: ['op', 'layer', 'mode', 'opacity'], raster: ['op', 'layer', 'pixels'], maskraster: ['op', 'layer', 'pixels'] };
   const REQUIRED = { doc: FIELDS.doc, layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space'], group: ['op', 'id', 'mode', 'opacity', 'mask'], fill: FIELDS.fill, dab: FIELDS.dab, mdab: FIELDS.mdab, set: ['op', 'layer'], raster: FIELDS.raster, maskraster: FIELDS.maskraster };
@@ -45,7 +46,7 @@
       if (o.op === 'group' || o.op === 'layer') {
         if (o.op === 'group' && !v2) e(i, 'group needs doc.v 2'); if (o.op === 'layer' && !v2 && ('parent' in o || 'clip' in o)) e(i, 'parent/clip need doc.v 2');
         if (!Number.isInteger(o.id) || o.id < 0) e(i, 'bad id'); else if (nodes[o.id]) e(i, 'duplicate id ' + o.id);
-        if (!(o.op === 'group' ? [...MODES, 'pass-through'] : MODES).includes(o.mode)) e(i, 'bad blend mode ' + o.mode); if (!unit(o.opacity)) e(i, 'opacity outside 0..1'); if (typeof o.mask !== 'boolean') e(i, 'mask must be boolean');
+        if (!(o.op === 'group' ? [...MODES, ...(v2 ? NONSEP : []), 'pass-through'] : [...MODES, ...(v2 ? NONSEP : [])]).includes(o.mode)) e(i, 'bad blend mode ' + o.mode); if (!unit(o.opacity)) e(i, 'opacity outside 0..1'); if (typeof o.mask !== 'boolean') e(i, 'mask must be boolean');
         const parent = o.parent === undefined ? -1 : o.parent;
         if (parent !== -1 && !(Number.isInteger(parent) && nodes[parent] && nodes[parent].kind === 'group')) e(i, 'parent ' + o.parent + ' is not an earlier group');
         if (o.op === 'layer') { if (!spaceOk(o.space)) e(i, 'bad layer space'); if (o.clip !== undefined && typeof o.clip !== 'boolean') e(i, 'clip must be boolean'); }
@@ -56,7 +57,7 @@
       }
       const l = nodes[o.layer]; if (!l) return e(i, 'unknown layer ' + o.layer);
       if ((o.op === 'fill' || o.op === 'dab' || o.op === 'raster') && l.kind !== 'layer') e(i, o.op + ' needs a layer, not a group');
-      if (o.op === 'set') { if (o.mode !== undefined && !(l.kind === 'group' ? [...MODES, 'pass-through'] : MODES).includes(o.mode)) e(i, 'bad blend mode'); if (o.opacity !== undefined && !unit(o.opacity)) e(i, 'opacity outside 0..1'); }
+      if (o.op === 'set') { if (o.mode !== undefined && !(l.kind === 'group' ? [...MODES, ...(v2 ? NONSEP : []), 'pass-through'] : [...MODES, ...(v2 ? NONSEP : [])]).includes(o.mode)) e(i, 'bad blend mode'); if (o.opacity !== undefined && !unit(o.opacity)) e(i, 'opacity outside 0..1'); }
       if (o.op === 'fill' || o.op === 'dab') { if (!Array.isArray(o.c) || o.c.length !== 3 || !o.c.every(unit)) e(i, 'c must be 3 numbers in 0..1'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'dab' || o.op === 'mdab') { if (!num(o.x) || !num(o.y) || !num(o.r) || o.r <= 0) e(i, 'bad dab geometry'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'mdab') { if (!unit(o.v)) e(i, 'v outside 0..1'); if (!l.mask) e(i, 'layer has no mask'); }

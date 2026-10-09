@@ -1,7 +1,7 @@
 // PSD -> op-log import (Node; needs ag-psd). RGB, 8-bit, square, flat layers only; everything else is rejected loudly.
 const { readPsd, initializeCanvas } = require('ag-psd'), S = require('../stack.js'), PI = require('./psd_icc.js');
 initializeCanvas(() => { throw new Error('no canvas'); }, (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }));
-const MODE_BACK = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft light': 'soft-light', 'hard light': 'hard-light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion' };
+const MODE_BACK = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft light': 'soft-light', 'hard light': 'hard-light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity' };
 function importPsd(bytes) {
   const m = PI.meta(bytes), info = { header: { w: m.width, h: m.height, depth: m.depth, mode: m.mode }, resourceIds: m.resourceIds };
   if (m.mode !== 3) throw new Error('unsupported PSD colour mode ' + m.mode + ' (only RGB=3; CMYK needs its own import path)');
@@ -20,7 +20,7 @@ function importPsd(bytes) {
     if (c.children) {   // group
       const mode = c.blendMode === 'pass through' ? 'pass-through' : MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported group blend mode "' + c.blendMode + '"'); usesTree = true;
       ops.push({ op: 'group', id, mode, opacity, mask: hasMask, ...pf }); if (hasMask) maskOps(c, id, ops); walk(c.children, id); return; }
-    const mode = MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported blend mode "' + c.blendMode + '"'); if (parent >= 0 || c.clipping) usesTree = true;
+    const mode = MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported blend mode "' + c.blendMode + '"'); if (parent >= 0 || c.clipping || S.NONSEP.includes(mode)) usesTree = true;   // non-separable modes need schema v2
     ops.push({ op: 'layer', id, mode, opacity, mask: hasMask, space, ...pf, ...(c.clipping ? { clip: true } : {}) });
     const full = new Uint8Array(W * W * 4), d = c.imageData, ox = c.left || 0, oy = c.top || 0;
     if (d) for (let y = 0; y < d.height; y++) for (let x = 0; x < d.width; x++) { const X = ox + x, Y = oy + y; if (X >= 0 && Y >= 0 && X < W && Y < W) full.set(d.data.subarray((y * d.width + x) * 4, (y * d.width + x) * 4 + 4), (Y * W + X) * 4); }

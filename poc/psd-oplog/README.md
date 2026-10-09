@@ -229,3 +229,21 @@ not Photoshop, and Photoshop's behaviour on partially transparent clip bases is 
 `panel/panel.html` is a small viewer that renders a 235-op sample document (`panel/sample_doc.js`: groups, clipped layers, a masked vignette, sRGB + P3 layers in a P3 working space) through the same engine
 (canonical fold + lcms-wasm) and shows the layer tree, document info and the live witness numbers from `witness_log/latest/`. `node panel/make_screenshot.js` captures it headlessly to
 `panel/out/panel_sample.png` (git-ignored). It is a POC viewer for engine output, **not an editor**: no tools, no editing, no Photoshop UI; the layout is generic.
+
+## Non-separable blend modes: hue, saturation, color, luminosity (schema v2 only; `doc/run_nonsep.js`, `npm run nonsep`; 112 logged checks)
+Implemented straight from the W3C compositing definitions (Lum 0.3/0.59/0.11, Sat, SetLum, SetSat, ClipColor) in the canonical f32 code, and separately in float64 in `oracle.js`; **not fitted to any reference**.
+
+| Check | Result |
+|---|---|
+| Luminosity preserved by construction (200k random pairs x 4 modes) | worst deviation 1.9e-7 (limit 5e-6); results inside [0,1] |
+| Compositor-only: canonical f32 vs the independent oracle on identical converted layers, 10 documents (single modes, groups, clips, P3) | worst 1 level, 0 samples over 1; the canonical source run in float64 matches the oracle exactly |
+| Same, oracle fed the lcms-converted layers | worst 1 level, 0 over 1 (so the gap below is conversion input, not the compositor) |
+| Whole pipeline vs exact float64 | worst 2 levels on 1 of 10 documents (hue/saturation divide by quantities near zero for near-grey colours, amplifying lcms' conversion error) |
+| psd-tools' own compositor vs ours, like for like (6 PSDs incl. groups, clips, P3) | **mean 0.50, max 1 level, 0% of pixels over 8** (unfitted, so independent evidence) |
+| Mutation controls (hue->color, hue->normal, hue->saturation) | 81 / 98 / 143 levels detected; unmutated 1 |
+| Schema | v1 rejects all four; v2 accepts them on layers and groups; the 10 older modes unchanged |
+| PSD round trip | modes and tree preserved; fixed point; psd-tools reads the same modes |
+| Node vs Chromium | 20 / 20 identical |
+
+Method notes: the first run failed 3 pre-registered checks; two were my own test-design/diagnosis errors (a float-vs-8-bit picture comparison, and an explanation "16-bit rounding" that the numbers refuted). Both are recorded in `witness_log/HYPOTHESES.md`;
+the PSD importer also had a real bug (flat docs using these modes were stamped v1) that the schema gate caught. Limits: no GPU twin yet; Photoshop's own hue/color definitions may differ from W3C (unknown, deferred).

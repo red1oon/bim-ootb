@@ -41,5 +41,6 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
 ## GROUPS + CLIPPING DONE (README "Groups and clipping masks"; `npm run groups`; all hypotheses H16-H29 resolved in `witness_log/HYPOTHESES.md`)
 Rules to keep: numbers decide, no human gates; new behaviour = pre-register hypothesis + threshold in the ledger first; never loosen a gate without a ledger entry; keep a held-out set when fitting to a reference.
 Open / DEFERRED (not blockers): Photoshop behaviour on partially transparent clip bases and `clbl` OFF; Safari/ARM/second GPU vendor for the determinism hashes; brush feel.
-NEXT candidates (cloud-friendly, numeric): non-separable blend modes (hue/saturation/colour/luminosity) with an independent oracle; GPU twin for groups/clipping; tile store behind `raster` blobs;
+NON-SEPARABLE MODES DONE (README section; `npm run nonsep`; H30/H31 resolved).
+NEXT candidates (cloud-friendly, numeric): GPU twin for groups/clipping/non-separable modes; tile store behind `raster` blobs;
 adjustment layers (curves/levels) with a float64 oracle; 16-bit/float layer import. Run `node witness_all.js` to refresh `witness_log/ledger.jsonl` before and after any change.

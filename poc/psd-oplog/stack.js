@@ -69,6 +69,29 @@
     },
   };
 
+  // ---- non-separable modes (W3C compositing spec), operating on (Cb, Cs) triples. Canonical rule: only + - * / and comparisons, every step through Math.fround.
+  const NONSEP = ['hue', 'saturation', 'color', 'luminosity'];
+  const lum = (r, g, b) => F(F(F(0.3 * r) + F(0.59 * g)) + F(0.11 * b));
+  function clipColor(c) {
+    const l = lum(c[0], c[1], c[2]), n = Math.min(c[0], c[1], c[2]), x = Math.max(c[0], c[1], c[2]);
+    if (n < 0) { const d = F(l - n); for (let k = 0; k < 3; k++) c[k] = F(l + F(F(F(c[k] - l) * l) / d)); }
+    if (x > 1) { const d = F(x - l), il = F(1 - l); for (let k = 0; k < 3; k++) c[k] = F(l + F(F(F(c[k] - l) * il) / d)); }
+    return c;
+  }
+  function setLum(c, l) { const d = F(l - lum(c[0], c[1], c[2])); return clipColor([F(c[0] + d), F(c[1] + d), F(c[2] + d)]); }
+  const sat = (c) => F(Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]));
+  function setSat(c, s) {
+    const idx = [0, 1, 2].sort((p, q) => c[p] - c[q] || p - q), out = [0, 0, 0], mn = c[idx[0]], md = c[idx[1]], mx = c[idx[2]];
+    if (mx > mn) { out[idx[1]] = F(F(F(md - mn) * s) / F(mx - mn)); out[idx[2]] = s; } return out;
+  }
+  const TRI = {
+    hue: (cb, cs) => setLum(setSat(cs, sat(cb)), lum(cb[0], cb[1], cb[2])),
+    saturation: (cb, cs) => setLum(setSat(cb, sat(cs)), lum(cb[0], cb[1], cb[2])),
+    color: (cb, cs) => setLum(cs, lum(cb[0], cb[1], cb[2])),
+    luminosity: (cb, cs) => setLum(cb, lum(cs[0], cs[1], cs[2])),
+  };
+  for (const m of NONSEP) { BLEND[m] = TRI[m]; BLEND[m].tri = true; }
+
   // ---------- fold ----------
   function newState(W) { return { W, order: [], L: {}, G: {}, root: [], hasTree: false }; }
   function apply(st, o) {
@@ -103,8 +126,9 @@
       const la = src[i*4+3]; if (la <= 0) continue;
       const as = F(la * F(opacity * (mask ? mask[i] : 1))); if (as <= 0) continue;
       const ab = back[i*4+3], oneMinusAb = F(1 - ab), oneMinusAs = F(1 - as);
+      const B3 = bf.tri ? bf([ab > 0 ? F(back[i*4] / ab) : 0, ab > 0 ? F(back[i*4+1] / ab) : 0, ab > 0 ? F(back[i*4+2] / ab) : 0], [F(src[i*4] / la), F(src[i*4+1] / la), F(src[i*4+2] / la)]) : null;
       for (let k = 0; k < 3; k++) {
-        const Cs = F(src[i*4+k] / la), Cb = ab > 0 ? F(back[i*4+k] / ab) : 0, B = bf(Cb, Cs);
+        const Cs = F(src[i*4+k] / la), Cb = ab > 0 ? F(back[i*4+k] / ab) : 0, B = B3 ? B3[k] : bf(Cb, Cs);
         back[i*4+k] = F(F(F(F(as * oneMinusAb) * Cs) + F(F(as * ab) * B)) + F(oneMinusAs * back[i*4+k]));
       }
       back[i*4+3] = F(F(as + ab) - F(as * ab));
@@ -123,7 +147,8 @@
         const la = c.pix[i*4+3]; if (la <= 0) continue;
         const as = F(la * F(c.opacity * (c.mask ? c.mask[i] : 1))); if (as <= 0) continue;
         const ar = F(F(as + a) - F(as * a)), w = F(as / ar), iw = F(1 - w), ia = F(1 - a), bf = BLEND[c.mode];
-        for (let k = 0; k < 3; k++) { const Cs = F(c.pix[i*4+k] / la), B = bf(C[k], Cs); C[k] = F(F(iw * C[k]) + F(w * F(F(ia * Cs) + F(a * B)))); }
+        const B3 = bf.tri ? bf([C[0], C[1], C[2]], [F(c.pix[i*4] / la), F(c.pix[i*4+1] / la), F(c.pix[i*4+2] / la)]) : null;
+        for (let k = 0; k < 3; k++) { const Cs = F(c.pix[i*4+k] / la), B = B3 ? B3[k] : bf(C[k], Cs); C[k] = F(F(iw * C[k]) + F(w * F(F(ia * Cs) + F(a * B)))); }
         a = ar;
       }
       for (let k = 0; k < 3; k++) out[i*4+k] = F(C[k] * ab0); out[i*4+3] = ab0;
@@ -161,8 +186,9 @@
         const la = l.pix[i*4+3]; if (la <= 0) continue;
         const as = F(la * F(l.opacity * (l.mask ? l.mask[i] : 1))); if (as <= 0) continue;
         const ab = back[i*4+3], oneMinusAb = F(1 - ab), oneMinusAs = F(1 - as);
+        const B3 = bf.tri ? bf([ab > 0 ? F(back[i*4] / ab) : 0, ab > 0 ? F(back[i*4+1] / ab) : 0, ab > 0 ? F(back[i*4+2] / ab) : 0], [F(l.pix[i*4] / la), F(l.pix[i*4+1] / la), F(l.pix[i*4+2] / la)]) : null;
         for (let k = 0; k < 3; k++) {
-          const Cs = F(l.pix[i*4+k] / la), Cb = ab > 0 ? F(back[i*4+k] / ab) : 0, B = bf(Cb, Cs);
+          const Cs = F(l.pix[i*4+k] / la), Cb = ab > 0 ? F(back[i*4+k] / ab) : 0, B = B3 ? B3[k] : bf(Cb, Cs);
           back[i*4+k] = F(F(F(F(as * oneMinusAb) * Cs) + F(F(as * ab) * B)) + F(oneMinusAs * back[i*4+k]));
         }
         back[i*4+3] = F(F(as + ab) - F(as * ab));
@@ -185,6 +211,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);
