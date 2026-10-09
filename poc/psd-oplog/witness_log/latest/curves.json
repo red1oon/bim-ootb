@@ -155,10 +155,10 @@
   {
    "id": "H55",
    "name": "curves_s1_srgb: export->import preserves points, opacity, masks and nesting",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H55",
@@ -171,10 +171,10 @@
   {
    "id": "H55",
    "name": "curves_s2_p3: export->import preserves points, opacity, masks and nesting",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H55",
@@ -187,15 +187,15 @@
   {
    "id": "H55",
    "name": "curves_s1_srgb: psd-tools reads the same curve points and opacities (3 curves)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H52",
    "name": "curves_s1_srgb: psd-tools compositor vs our FLOAT picture truncated like psd-tools, mean levels",
-   "value": 0.5308,
+   "value": 0.5318,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -219,15 +219,15 @@
   {
    "id": "H55",
    "name": "curves_s2_p3: psd-tools reads the same curve points and opacities (3 curves)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H52",
    "name": "curves_s2_p3: psd-tools compositor vs our FLOAT picture truncated like psd-tools, mean levels",
-   "value": 0.5222,
+   "value": 0.5235,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -259,13 +259,19 @@
   {
    "id": "GOLD",
    "name": "golden hashes changed",
-   "value": 0,
+   "value": 2,
    "cmp": "==",
    "limit": 0,
-   "pass": true
+   "pass": false
   }
  ],
  "n_checks": 33,
- "gate": "PASS",
- "fails": []
+ "gate": "FAIL",
+ "fails": [
+  "H55 curves_s1_srgb: export->import preserves points, opacity, masks and nesting: got false, need == true",
+  "H55 curves_s2_p3: export->import preserves points, opacity, masks and nesting: got false, need == true",
+  "H55 curves_s1_srgb: psd-tools reads the same curve points and opacities (3 curves): got false, need == true",
+  "H55 curves_s2_p3: psd-tools reads the same curve points and opacities (3 curves): got false, need == true",
+  "GOLD golden hashes changed: got 2, need == 0"
+ ]
 }

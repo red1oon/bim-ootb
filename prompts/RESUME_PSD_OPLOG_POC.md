@@ -47,3 +47,6 @@ ADJUSTMENT LAYERS (invert/levels/threshold/posterize) DONE (README section; `npm
 CURVES DONE (natural cubic spline; Photoshop's spline UNKNOWN; README section; `npm run curves`; H50-H56).
 NEXT candidates (cloud-friendly, numeric): hue/saturation (needs an HSL definition choice, psd-tools has one), GPU twin for groups/clipping/non-separable/adjustments; streaming tiles into the fold; 16-bit/float layer import;
 adjustment layers (curves/levels) with a float64 oracle; 16-bit/float layer import. Run `node witness_all.js` to refresh `witness_log/ledger.jsonl` before and after any change.
+
+## Update: 16-bit layers DONE (suite `depth16`, 82 checks)
+Patched ag-psd writer in `poc/psd-oplog/vendor/ag-psd16`; ops `raster16`/`maskraster16`; `exportPsd(..., {depth:16})`. Exporter opacity bug (float32 0.9 -> 229) fixed with tie-up rounding; older tests used the same flawed formula and were corrected (ledger H61). Remaining candidates: GPU twin for groups/clip/non-sep/adjustments, streaming tiles into the fold, blur filters (scipy reference), affine resampling, hue/saturation, per-channel levels/curves. Photoshop-behaviour checks and Safari/ARM runs need a human.

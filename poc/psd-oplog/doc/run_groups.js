@@ -114,15 +114,15 @@ const lv = (a, b) => { const x = S.toRGBA8(a), y = S.toRGBA8(b); let m = 0; for 
   await br.close(); srv.close(); let same = 0, tot = 0; for (const k of Object.keys(bh)) { tot++; if (bh[k] === hashes[k]) same++; } chk('PAR1', 'Node vs Chromium: group documents with identical f32 hash and sRGB render hash', same, '==', tot);
   // ---------- E. PSD export / import of groups and clipping (H22, H24, H25)
   const q8 = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5))), EMIT = path.join(__dirname, '.emit_groups'); fs.mkdirSync(EMIT, { recursive: true });
-  const desc = (st, ids) => ids.map((id) => st.G[id] ? `G:${st.G[id].mode}:${Math.round(st.G[id].opacity * 255)}${st.G[id].mask ? 'm' : ''}[${desc(st, st.G[id].children)}]` : `L:${st.L[id].mode}:${Math.round(st.L[id].opacity * 255)}${st.L[id].mask ? 'm' : ''}${st.L[id].clip ? 'c' : ''}`).join(',');
-  const tree = (st, ids) => ids.map((id) => st.G[id] ? { kind: 'group', mode: st.G[id].mode, opacity: Math.round(st.G[id].opacity * 255), mask: !!st.G[id].mask, children: tree(st, st.G[id].children) } : { kind: 'layer', mode: st.L[id].mode, opacity: Math.round(st.L[id].opacity * 255), mask: !!st.L[id].mask, clip: !!st.L[id].clip });
+  const desc = (st, ids) => ids.map((id) => st.G[id] ? `G:${st.G[id].mode}:${Math.round(st.G[id].opacity * 255 + 1e-4)}${st.G[id].mask ? 'm' : ''}[${desc(st, st.G[id].children)}]` : `L:${st.L[id].mode}:${Math.round(st.L[id].opacity * 255 + 1e-4)}${st.L[id].mask ? 'm' : ''}${st.L[id].clip ? 'c' : ''}`).join(',');
+  const tree = (st, ids) => ids.map((id) => st.G[id] ? { kind: 'group', mode: st.G[id].mode, opacity: Math.round(st.G[id].opacity * 255 + 1e-4), mask: !!st.G[id].mask, children: tree(st, st.G[id].children) } : { kind: 'layer', mode: st.L[id].mode, opacity: Math.round(st.L[id].opacity * 255 + 1e-4), mask: !!st.L[id].mask, clip: !!st.L[id].clip });
   // float64 reference that applies the same 8-bit quantisation as a PSD (layers AND groups)
   function referenceQ(ops, display) {
     const f = DF.fold(ops, ctx), doc = f.doc, n = W * W, wk = doc.working, st = { W, order: f.st.order.slice(), L: {}, G: {}, root: f.st.root, hasTree: f.st.hasTree };
     for (const id of st.order) { const l = f.st.L[id], sp = f.spaceOf[id], pix = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3], a8 = q8(a); pix[i*4+3] = F(a8 / 255); if (a > 0 && a8 > 0) { const w = CM.fromXyz01(wk, CM.toXyz01(sp, [0, 1, 2].map((k) => l.pix[i*4+k] / a))); for (let k = 0; k < 3; k++) pix[i*4+k] = F(F(q8(w[k]) / 255) * pix[i*4+3]); } }
-      st.L[id] = { ...l, opacity: F(Math.round(l.opacity * 255) / 255), mask: l.mask ? Float32Array.from(l.mask, (m) => F(q8(m) / 255)) : null, pix }; }
-    for (const [id, g] of Object.entries(f.st.G)) st.G[id] = { ...g, opacity: F(Math.round(g.opacity * 255) / 255), mask: g.mask ? Float32Array.from(g.mask, (m) => F(q8(m) / 255)) : null };
+      st.L[id] = { ...l, opacity: F(Math.round(l.opacity * 255 + 1e-4) / 255), mask: l.mask ? Float32Array.from(l.mask, (m) => F(q8(m) / 255)) : null, pix }; }
+    for (const [id, g] of Object.entries(f.st.G)) st.G[id] = { ...g, opacity: F(Math.round(g.opacity * 255 + 1e-4) / 255), mask: g.mask ? Float32Array.from(g.mask, (m) => F(q8(m) / 255)) : null };
     const { C, A } = O.spec64tree(st), res = new Uint8Array(n * 4);
     for (let i = 0; i < n; i++) { const d = CM.fromXyz01(display, CM.toXyz01(wk, [C[i*3], C[i*3+1], C[i*3+2]])); for (let k = 0; k < 3; k++) res[i*4+k] = Math.floor(d[k] * 255 + 0.5); res[i*4+3] = q8(A[i]); }
     return res;

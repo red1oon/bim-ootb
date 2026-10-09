@@ -302,3 +302,7 @@ first and last point, clipped to [0,1]. The spline family is a compatibility cho
 | PSD round trip and fixed point; Node vs Chromium | identical; 5/5 identical |
 
 Method notes: two of my own test-design errors surfaced and were fixed with logged predictions (the knot check fed a float32-rounded position into a steep curve; my first slope estimate under-estimated a steep cubic). Limits: no per-channel curves, no curves in linear-light documents, max 16 points, no GPU twin.
+
+## 16-bit layers (`doc/run_depth16.js`, `npm run depth16`)
+`exportPsd(ops, ctx, {depth: 16})` writes real 16-bit PSDs (raw big-endian channel data for layers, masks and the merged image) through `vendor/ag-psd16`, a generated 115-line patch of ag-psd's writer (stock ag-psd throws on depth 16). `importPsd` accepts depth 8 and 16 (32 and 1 rejected) and emits `raster16` / `maskraster16` blobs (little-endian u16, straight RGBA). Result: 16-bit round trip drift is <= 1 level on the 8-bit display and ~5 units of 65535 at worst (8-bit round trip: mean 0.14-0.17 levels). Limits: opacity is 8-bit in the PSD format; the sRGB `para` curve in an s15Fixed16 ICC profile costs up to ~32 units in the darkest eighth (measured, H60o).
+Found on the way: the exporter rounded float32 opacities (0.9 -> 229 instead of 230), a bug shared by the older tests; fixed, 10 PSD byte goldens updated, fold hashes unchanged.

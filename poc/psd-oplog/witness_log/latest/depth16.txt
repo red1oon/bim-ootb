@@ -1,0 +1,673 @@
+H60o max error by output eighth {"0":31.961002944129632,"1":13.214550323726144,"2":7.594359274982708,"3":4.7571408653238905,"4":3.336989241062838,"5":2.492069628002355,"6":2.0115297011943767,"7":1.5024912495573517}
+H60o measured max 31.961002944129632 mean 1.0919
+{
+ "checks": [
+  {
+   "id": "SCH0",
+   "name": "documents validate (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_srgb: importPsd does not mutate its input bytes (16-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_srgb: importPsd does not mutate its input bytes (8-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_srgb: 16-bit round trip vs the PSD-representable reference (opacity k/255), 16-bit units: max",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_srgb: mean 16-bit units",
+   "value": 0.0729,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_srgb: sRGB display vs the PSD-representable reference: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_srgb: non-vacuous: the 8-bit round trip drifts more in the 8-bit display (8-bit mean 0.1366 vs 16-bit mean 0.00022; >= 5x)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_srgb: control: against the UNROUNDED-opacity original the drift is larger (mean 0.0202 vs 0.00022) when opacities are not k/255",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_srgb: imported 16-bit doc is schema v2 with raster16 ops and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_srgb: export16->import->export16->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_srgb: PSD bytes identical from generation 2 on",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60i",
+   "name": "rich_srgb: negative control: truncating 16->8 bits in the importer is detected by the drift test (mean levels >= 0.1)",
+   "value": 0.1768798828125,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60c",
+   "name": "rich_srgb: raster16 holding v*257 == the 8-bit raster (f32 hash and sRGB render hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60b",
+   "name": "rich_srgb: 8-bit output of the vendored writer is byte-identical to stock ag-psd",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60g",
+   "name": "rich_srgb: tile store holds 11 raster16/maskraster16 blobs exactly (ids == blob ids)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_p3: importPsd does not mutate its input bytes (16-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_p3: importPsd does not mutate its input bytes (8-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_p3: 16-bit round trip vs the PSD-representable reference (opacity k/255), 16-bit units: max",
+   "value": 5,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_p3: mean 16-bit units",
+   "value": 0.0756,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_p3: sRGB display vs the PSD-representable reference: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_p3: non-vacuous: the 8-bit round trip drifts more in the 8-bit display (8-bit mean 0.1581 vs 16-bit mean 0.00028; >= 5x)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_p3: control: against the UNROUNDED-opacity original the drift is larger (mean 0.0258 vs 0.00028) when opacities are not k/255",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_p3: imported 16-bit doc is schema v2 with raster16 ops and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_p3: export16->import->export16->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_p3: PSD bytes identical from generation 2 on",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60i",
+   "name": "rich_p3: negative control: truncating 16->8 bits in the importer is detected by the drift test (mean levels >= 0.1)",
+   "value": 0.19895426432291666,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60c",
+   "name": "rich_p3: raster16 holding v*257 == the 8-bit raster (f32 hash and sRGB render hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60b",
+   "name": "rich_p3: 8-bit output of the vendored writer is byte-identical to stock ag-psd",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60g",
+   "name": "rich_p3: tile store holds 11 raster16/maskraster16 blobs exactly (ids == blob ids)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_adobe: importPsd does not mutate its input bytes (16-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "rich_adobe: importPsd does not mutate its input bytes (8-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_adobe: 16-bit round trip vs the PSD-representable reference (opacity k/255), 16-bit units: max",
+   "value": 3,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_adobe: mean 16-bit units",
+   "value": 0.0821,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_adobe: sRGB display vs the PSD-representable reference: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "rich_adobe: non-vacuous: the 8-bit round trip drifts more in the 8-bit display (8-bit mean 0.1664 vs 16-bit mean 0.00020; >= 5x)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "rich_adobe: control: against the UNROUNDED-opacity original the drift is larger (mean 0.0190 vs 0.00020) when opacities are not k/255",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_adobe: imported 16-bit doc is schema v2 with raster16 ops and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_adobe: export16->import->export16->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "rich_adobe: PSD bytes identical from generation 2 on",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60i",
+   "name": "rich_adobe: negative control: truncating 16->8 bits in the importer is detected by the drift test (mean levels >= 0.1)",
+   "value": 0.20121256510416666,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60c",
+   "name": "rich_adobe: raster16 holding v*257 == the 8-bit raster (f32 hash and sRGB render hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60b",
+   "name": "rich_adobe: 8-bit output of the vendored writer is byte-identical to stock ag-psd",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60g",
+   "name": "rich_adobe: tile store holds 11 raster16/maskraster16 blobs exactly (ids == blob ids)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "flat_p3: importPsd does not mutate its input bytes (16-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60j",
+   "name": "flat_p3: importPsd does not mutate its input bytes (8-bit file)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "flat_p3: 16-bit round trip vs the PSD-representable reference (opacity k/255), 16-bit units: max",
+   "value": 6,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "flat_p3: mean 16-bit units",
+   "value": 0.0696,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "flat_p3: sRGB display vs the PSD-representable reference: max levels",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H60d",
+   "name": "flat_p3: non-vacuous: the 8-bit round trip drifts more in the 8-bit display (8-bit mean 0.2532 vs 16-bit mean 0.00047; >= 5x)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60m",
+   "name": "flat_p3: control: against the UNROUNDED-opacity original the drift is larger (mean 0.0005 vs 0.00047) when opacities are not k/255",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "flat_p3: imported 16-bit doc is schema v2 with raster16 ops and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "flat_p3: export16->import->export16->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "flat_p3: PSD bytes identical from generation 2 on",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60i",
+   "name": "flat_p3: negative control: truncating 16->8 bits in the importer is detected by the drift test (mean levels >= 0.1)",
+   "value": 0.2863362630208333,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60c",
+   "name": "flat_p3: raster16 holding v*257 == the 8-bit raster (f32 hash and sRGB render hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60b",
+   "name": "flat_p3: 8-bit output of the vendored writer is byte-identical to stock ag-psd",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60g",
+   "name": "flat_p3: tile store holds 2 raster16/maskraster16 blobs exactly (ids == blob ids)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60o",
+   "name": "lcms 16-bit p3->srgb vs float64 colour math (20000 colours inside the sRGB gamut, 16-bit units): max",
+   "value": 31.961002944129632,
+   "cmp": "<=",
+   "limit": 40,
+   "pass": true
+  },
+  {
+   "id": "H60o",
+   "name": "mean units",
+   "value": 1.0919,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": true
+  },
+  {
+   "id": "H60o",
+   "name": "error is non-increasing from the darkest eighth up (ordering)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60f",
+   "name": "depth 32 and depth 1 PSDs are rejected with an explicit error",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_srgb: psd-tools reads depth 16",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_srgb: layer samples differing from what was written (8 layers, exact, visible pixels)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_srgb: mask samples differing from what was written (3 masks, exact)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_srgb: psd-tools FLOAT composite vs our float picture, mean abs diff (8-bit levels)",
+   "value": 0.00111,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_srgb: max abs diff (8-bit levels)",
+   "value": 0.0075,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_p3: psd-tools reads depth 16",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_p3: layer samples differing from what was written (8 layers, exact, visible pixels)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_p3: mask samples differing from what was written (3 masks, exact)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_p3: psd-tools FLOAT composite vs our float picture, mean abs diff (8-bit levels)",
+   "value": 0.00111,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_p3: max abs diff (8-bit levels)",
+   "value": 0.0061,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_adobe: psd-tools reads depth 16",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_adobe: layer samples differing from what was written (8 layers, exact, visible pixels)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "rich_adobe: mask samples differing from what was written (3 masks, exact)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_adobe: psd-tools FLOAT composite vs our float picture, mean abs diff (8-bit levels)",
+   "value": 0.00111,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "rich_adobe: max abs diff (8-bit levels)",
+   "value": 0.0062,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "flat_p3: psd-tools reads depth 16",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "flat_p3: layer samples differing from what was written (2 layers, exact, visible pixels)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60a",
+   "name": "flat_p3: mask samples differing from what was written (0 masks, exact)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "flat_p3: psd-tools FLOAT composite vs our float picture, mean abs diff (8-bit levels)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H60e",
+   "name": "flat_p3: max abs diff (8-bit levels)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": true
+  },
+  {
+   "id": "H60h",
+   "name": "Node vs Chromium: f32 and render hashes identical on the 16-bit documents",
+   "value": 8,
+   "cmp": "==",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "GOLD",
+   "name": "golden hashes changed",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  }
+ ],
+ "n_checks": 83,
+ "gate": "PASS",
+ "fails": []
+}

@@ -50,7 +50,7 @@ const fail = (m) => fails.push(m), b64 = (u) => Buffer.from(u).toString('base64'
   checks.semantics = sem; for (const [k, v] of Object.entries(sem)) if (v === false) fail('semantics: ' + k); hashes.chain_head_s1_p3 = log[log.length - 1].h;
   // ---------- PSD: embed profiles, import, compare
   const quant = (st) => st.order.map((id) => { const l = st.L[id], rgba = new Uint8ClampedArray(W * W * 4); for (let i = 0; i < W * W; i++) { const a = l.pix[i*4+3]; rgba[i*4+3] = Math.floor(a * 255 + 0.5); if (a > 0) for (let k = 0; k < 3; k++) rgba[i*4+k] = Math.max(0, Math.min(255, Math.floor(l.pix[i*4+k] / a * 255 + 0.5))); }
-    return { mode: l.mode, opacity: Math.round(l.opacity * 255) / 255, rgba, mask: l.mask ? Uint8Array.from(l.mask, (m) => Math.floor(m * 255 + 0.5)) : null }; });
+    return { mode: l.mode, opacity: Math.round(l.opacity * 255 + 1e-4) / 255, rgba, mask: l.mask ? Uint8Array.from(l.mask, (m) => Math.floor(m * 255 + 0.5)) : null }; });
   const PSD_MODE = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft-light': 'soft light', 'hard-light': 'hard light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion' };
   const layers = quant(S.fold(S.makeScene(1, W), W));
   const mkPsd = () => new Uint8Array(writePsd({ width: W, height: W, children: layers.map((l, i) => ({ name: 'L' + i, left: 0, top: 0, right: W, bottom: W, blendMode: PSD_MODE[l.mode], opacity: l.opacity, imageData: { width: W, height: W, data: l.rgba },
@@ -80,12 +80,12 @@ const fail = (m) => fails.push(m), b64 = (u) => Buffer.from(u).toString('base64'
       const ig = imp.ops.map((o) => o.op === 'doc' ? { ...o, working: 'srgb' } : o.op === 'layer' ? { ...o, space: 'srgb' } : o), cf = DF.fold(ig, c2), wrong = DF.render(DF.composite(cf, c2), cf, 'srgb', c2), dw = diff8(wrong, ref);
       (checks.negative_control_profile_ignored = checks.negative_control_profile_ignored || {})[name] = dw; if (dw.max <= 5) fail(name + ': negative control failed: ignoring the profile was not detected (' + JSON.stringify(dw) + ')'); }
     hashes['psd_' + name] = S.sha256(out); checks.psd[name] = r; psdJobs.push({ key: 'psd_' + name, ops: imp.ops, blobs: imp.blobs, display: 'srgb' });
-    fs.writeFileSync(path.join(EMIT, name + '.psd'), bytes); expectJson[name] = { icc_sha256: icc ? S.sha256(icc) : null, layers: layers.length, modes: layers.map((l) => PSD_MODE[l.mode]), opacity: layers.map((l) => Math.round(l.opacity * 255)) };
+    fs.writeFileSync(path.join(EMIT, name + '.psd'), bytes); expectJson[name] = { icc_sha256: icc ? S.sha256(icc) : null, layers: layers.length, modes: layers.map((l) => PSD_MODE[l.mode]), opacity: layers.map((l) => Math.round(l.opacity * 255 + 1e-4)) };
   }
   fs.writeFileSync(path.join(EMIT, 'expect.json'), JSON.stringify(expectJson));
   // rejections of unsupported PSDs
   const rawPsd = mkPsd(), patch = (off, bytes) => { const c = rawPsd.slice(); bytes.forEach((v, i) => c[off + i] = v); return c; };
-  checks.psd_unsupported_rejected = {}; for (const [name, b] of Object.entries({ 'CMYK colour mode': patch(24, [0, 4]), '16-bit depth': patch(22, [0, 16]), 'PSB (version 2)': patch(4, [0, 2]), 'bad signature': patch(0, [0x58]) })) { let ok = false; try { importPsd(b); } catch (e) { ok = true; } checks.psd_unsupported_rejected[name] = ok; if (!ok) fail('unsupported PSD accepted: ' + name); }
+  checks.psd_unsupported_rejected = {}; for (const [name, b] of Object.entries({ 'CMYK colour mode': patch(24, [0, 4]), '32-bit depth': patch(22, [0, 32]), 'PSB (version 2)': patch(4, [0, 2]), 'bad signature': patch(0, [0x58]) })) { let ok = false; try { importPsd(b); } catch (e) { ok = true; } checks.psd_unsupported_rejected[name] = ok; if (!ok) fail('unsupported PSD accepted: ' + name); }
   // ---------- Chromium parity
   const { chromium } = require('playwright-core');
   const srv = http.createServer((q, r) => { const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); return r.end(); } r.writeHead(200, { 'content-type': f.endsWith('.wasm') ? 'application/wasm' : f.endsWith('.js') ? 'text/javascript' : f.endsWith('.html') ? 'text/html' : 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0);

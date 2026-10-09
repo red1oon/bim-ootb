@@ -10,7 +10,7 @@ function refQuantised(ops, ctx, display) {
   const f = DF.fold(ops, ctx), doc = f.doc, n = W * W, wk = refName(doc.working), st = { W, order: f.st.order.slice(), L: {} };
   for (const id of st.order) { const l = f.st.L[id], sp = refName(f.spaceOf[id]), pix = new Float32Array(n * 4);
     for (let i = 0; i < n; i++) { const a = l.pix[i*4+3], a8 = q8(a); pix[i*4+3] = F(a8 / 255); if (a > 0 && a8 > 0) { const c = [0, 1, 2].map((k) => l.pix[i*4+k] / a), w = CM.fromXyz01(wk, CM.toXyz01(sp, c)); for (let k = 0; k < 3; k++) pix[i*4+k] = F(F(q8(w[k]) / 255) * pix[i*4+3]); } }
-    st.L[id] = { mode: l.mode, opacity: F(Math.round(l.opacity * 255) / 255), pix, mask: l.mask ? Float32Array.from(l.mask, (m) => F(q8(m) / 255)) : null }; }
+    st.L[id] = { mode: l.mode, opacity: F(Math.round(l.opacity * 255 + 1e-4) / 255), pix, mask: l.mask ? Float32Array.from(l.mask, (m) => F(q8(m) / 255)) : null }; }
   const { C, A } = O.spec64raw(st), res = new Uint8Array(n * 4);
   for (let i = 0; i < n; i++) { const d = CM.fromXyz01(refName(display), CM.toXyz01(wk, [C[i*3], C[i*3+1], C[i*3+2]])); for (let k = 0; k < 3; k++) res[i*4+k] = Math.floor(d[k] * 255 + 0.5); res[i*4+3] = q8(A[i]); }
   return res;
