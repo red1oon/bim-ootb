@@ -6,12 +6,13 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
 ## State
 - DONE (cloud, software renderers): precision, blend modes, tile store, op-log witness with hash chain, layer stack with
   alpha/opacity/masks/10 blend modes (CPU f32 canonical + WebGL twin), PSD round-trip (ag-psd and independent psd-tools).
-- WAITING ON A PERSON: step 5, real-GPU run via `poc/psd-oplog/gpu_check.html` (see below). Result decides whether the
-  "deterministic fold" claim survives real hardware.
+- STEP 5 DONE on one device (RTX 4060, Chrome 154, Linux): CPU fold matches golden hashes, GPU within 1 level. See README
+  "Step 5 result". STILL WANTED from a person: Firefox, Safari, and an ARM/Apple device via `gpu_check.html` (steps below);
+  save each JSON under `poc/psd-oplog/gpu_results/`.
 - NEXT after step 5 (cloud-friendly): ICC (LittleCMS WASM), groups / clipping masks, non-separable modes, tile-store
   wired to the fold, op-log signing with bim-ootb's existing signed-log code. Step 7 (brush feel) needs a person.
 
-## Step 5, for the person (about 5 minutes)
+## Extra devices, for the person (about 5 minutes each)
 1. `git fetch origin && git checkout claude/photoshop-clone-gaps-m5p5mz && git pull`
 2. Open `poc/psd-oplog/gpu_check.html` in your normal browser (double-click), click Run, wait for "done".
 3. Check the Verdict line and the "Where it ran" line: it must name your real GPU, not SwiftShader / llvmpipe.
