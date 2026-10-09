@@ -32,17 +32,17 @@ const sl = ms => new Promise(r => setTimeout(r, ms));
   if (!ok) { log('§SAVE_PICKER_FIRST verdict=INCONCLUSIVE (model never ready)'); return fin(2); }
   await sl(3000);
   await p.evaluate(() => { const A = APP; window.__rec = { pickerAt: null, userActive: null, exportAt: null, written: 0, exported: 0, downloads: 0, mode: 'pick' };
-    const oe = A._exportBuildingDb; A._exportBuildingDb = function () { __rec.exportAt = performance.now(); const r = oe.apply(this, arguments); __rec.exported = r ? r.byteLength : 0; return r; };
-    window.showSaveFilePicker = async function (o) { __rec.pickerAt = performance.now(); __rec.userActive = navigator.userActivation.isActive; __rec.exportStartedBefore = __rec.exportAt != null;
-      if (__rec.mode === 'cancel') { const e = new Error('cancel'); e.name = 'AbortError'; throw e; }
-      return { name: o.suggestedName, createWritable: async () => ({ write: async (bl) => { __rec.written = bl.size; }, close: async () => {} }) }; };
-    const oc = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) __rec.downloads++; return oc.apply(this, arguments); };
+    const oe = A._exportBuildingDb; A._exportBuildingDb = function () { window.__rec.exportAt = performance.now(); const r = oe.apply(this, arguments); window.__rec.exported = r ? r.byteLength : 0; return r; };
+    window.showSaveFilePicker = async function (o) { window.__rec.pickerAt = performance.now(); window.__rec.userActive = navigator.userActivation.isActive; window.__rec.exportStartedBefore = window.__rec.exportAt != null;
+      if (window.__rec.mode === 'cancel') { const e = new Error('cancel'); e.name = 'AbortError'; throw e; }
+      return { name: o.suggestedName, createWritable: async () => ({ write: async (bl) => { window.__rec.written = bl.size; }, close: async () => {} }) }; };
+    const oc = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__rec.downloads++; return oc.apply(this, arguments); };
     const btn = document.createElement('button'); btn.id = '__savebtn'; btn.textContent = 'save'; btn.style.cssText = 'position:fixed;top:5px;left:5px;z-index:999999;width:80px;height:30px'; btn.onclick = () => { A.saveModelDb(); }; document.body.appendChild(btn); });
   await p.click('#__savebtn'); await sl(500);
-  let R = null; for (let i = 0; i < 240; i++) { await sl(1000); R = await p.evaluate(() => JSON.parse(JSON.stringify(__rec))); if (R.written || R.downloads) break; }
+  let R = null; for (let i = 0; i < 240; i++) { await sl(1000); R = await p.evaluate(() => JSON.parse(JSON.stringify(window.__rec))); if (R.written || R.downloads) break; }
   log('§SAVE_PICKER_FIRST pick-run ' + JSON.stringify(R));
   await p.evaluate(() => { window.__rec = { pickerAt: null, userActive: null, exportAt: null, written: 0, exported: 0, downloads: 0, mode: 'cancel' }; });
-  await p.click('#__savebtn'); await sl(4000); const C = await p.evaluate(() => JSON.parse(JSON.stringify(__rec)));
+  await p.click('#__savebtn'); await sl(4000); const C = await p.evaluate(() => JSON.parse(JSON.stringify(window.__rec)));
   log('§SAVE_PICKER_FIRST cancel-run ' + JSON.stringify(C));
   if (R.pickerAt == null) { log('§SAVE_PICKER_FIRST verdict=INCONCLUSIVE (picker never called — VACUOUS)'); return fin(2); }
   const c1 = R.exportAt != null && R.pickerAt < R.exportAt && R.exportStartedBefore === false && R.userActive === true, c2 = R.written > 0 && R.written === R.exported && R.downloads === 0, c3 = C.exportAt == null && C.downloads === 0 && C.written === 0;
