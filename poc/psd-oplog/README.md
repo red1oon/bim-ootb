@@ -196,3 +196,31 @@ Available: ImageMagick 6.9.12 (lcms2), Pillow (lcms) and psd-tools 1.24. Not ins
 - `srgb_mixed` vs `p3_mixed` after conversion differ (dE2000 median 1.41, p95 4.91, max 13.3). **This is expected, not a defect**: they hold the same layers composited in different working spaces, which matches the earlier working-space finding (median 1.2, p95 5.8, max 12.8); the oracle gives the same numbers. (An earlier checklist wrongly said they should look nearly identical.)
 - ImageMagick does not re-blend layers (it shows the merged preview and per-layer alpha with mask and opacity folded in); psd-tools' own layer re-render is within 2-11 levels. So these readers confirm profile, structure and the stored preview, not independent blending.
 - Still open for a person: Photoshop, Krita, GIMP; especially the convert-or-keep dialog for `embedded_custom_working.psd`.
+
+## Groups and clipping masks (schema v2; `doc/run_groups.js`, `npm run groups`; 153 logged checks; hypotheses H16-H29 in `witness_log/HYPOTHESES.md`)
+Semantics: **pass-through group** (children blend with the backdrop, then lerp by opacity*mask); **isolated group** (any other mode: composite on transparency, then blend like a layer);
+**clipping**: base layer + clipped layers form an isolated unit, clipped layers composite onto it with the ordinary W3C source-over formula (the unit's alpha grows along the chain),
+the straight colour is kept and the **base layer's alpha is reimposed once at the end**; the unit is then blended with the BASE layer's mode/opacity/mask. A clip base must be a layer.
+Nesting up to 16 deep. Not supported: `clbl` ("blend clipped elements" OFF), clipping to a group, adjustment layers.
+
+| Check | Result |
+|---|---|
+| Pass-through group (opacity 1) == flat stack; 2 nested pass-through groups == flat | bit-identical f32 hash |
+| Isolated normal group of normal layers == flat | 2.4e-7 max abs diff |
+| Isolation is observable (negative control: non-normal layers in an isolated group) | 97 levels different |
+| Clip invariants: unit alpha == base alpha, nothing drawn outside the base (3727 outside pixels, 12657 inside pixels changed) | 0 violations; unclipped control leaks |
+| No-op invariants: empty group, opacity 0, all-zero mask, opacity 0.5 = midpoint | exact / 3e-8 |
+| Canonical + lcms vs an independent float64 straight-alpha tree compositor, 20 comparisons (3 seeds x 3 working spaces, linear, mixed layer spaces) | max 1 level, worst mean 0.0025 |
+| Mutation controls (pass-through->isolated, clip flags dropped, group opacity ignored) are detected | 71 / 151 / 37 levels; unmutated 1 |
+| Schema v2 rejections (v1 with group/parent/clip, clip first, clip base a group, bad parent, depth 17, shared ids, ...) | 16 / 16 rejected |
+| PSD export -> import: tree preserved, quantised float64 reference, fixed point (4 scenes) | identical tree; max 1 level; ops identical |
+| psd-tools (independent) reads the exported tree | exact (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags) |
+| psd-tools' own composite vs ours, in-sample (4 scenes) | mean 0.46-0.48, max 2 (**fitted**, see below) |
+| **Out-of-sample**: 6 documents the clip rule was never fitted on (3-layer chain, masked base+clip, pass-through group with chain, isolated group with nested chains in P3, two clip units in a row, opaque control) | **mean 0.28-0.56, max 1-2, 0% of pixels over 8** (pre-registered: mean <= 0.8, <= 0.5% over 8) |
+| Node vs Chromium on all group documents | 20 / 20 identical |
+
+How the clipping rule was found (numbers, not eyeballing): my first definition (Porter-Duff source-atop) disagreed with psd-tools by mean 10.3 / 3.1 / 5.0 levels on soft-edged clip bases, while every group
+feature agreed to 0.43-0.48 before any change. Candidate formulas computed in float64 from the same layer pixels (`doc/diag_clip_semantics.py`, `diag_clip_normal.py`, `diag_clip_chain.py`) isolated the
+cause to two points: the W3C over colour rule for partially transparent bases (0.42), and alpha growth carried through a chain (0.43 vs 1.9 / 3.7 for restoring after each layer). The rule is identical to
+source-atop whenever the base pixel is opaque (1.45e-7). **Caveats**: the rule was fitted twice to psd-tools, so in-sample agreement is not independent evidence (the held-out set is); psd-tools is
+not Photoshop, and Photoshop's behaviour on partially transparent clip bases is **unknown / deferred**; GPU twin (`glstack.js`) does not implement groups or clipping yet.

@@ -3,7 +3,7 @@ H25: nesting, PASS_THROUGH, clipping flags, mask presence, opacity bytes read ex
 (thresholds fixed in witness_log/HYPOTHESES.md before this was run: mean <= 1.0, max <= 8 levels)."""
 import sys, json, numpy as np
 from psd_tools import PSDImage
-d = sys.argv[1]; exp = json.load(open(d + '/expect.json')); checks = []
+d = sys.argv[1]; exp = json.load(open(d + '/expect.json')); checks = []; HELD = len(sys.argv) > 2 and sys.argv[2] == 'heldout'
 def walk(layers):
     out = []
     for L in layers:
@@ -31,10 +31,15 @@ for name, e in exp.items():
         return t
     checks.append({'id': 'H25', 'name': f'{name}: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)', 'value': flat(strip(got)) == flat(strip(want)), 'cmp': '==', 'limit': True})
     ngroups = sum(1 for _ in psd.descendants() if _.is_group()); nclip = sum(1 for _ in psd.descendants() if not _.is_group() and _.clipping)
-    checks.append({'id': 'H25n', 'name': f'{name}: non-vacuous: groups and clipped layers present in the file', 'value': ngroups >= 3 and nclip >= 3, 'cmp': '==', 'limit': True})
+    checks.append({'id': 'H25n', 'name': f'{name}: non-vacuous: clipped layers present in the file' + ('' if HELD else ' (and groups)'), 'value': (nclip >= 2) if HELD else (ngroups >= 3 and nclip >= 3), 'cmp': '==', 'limit': True})
     ours = np.fromfile(f'{d}/{name}.work.rgba8', np.uint8).reshape(W, W, 4).astype(int)
     comp = np.asarray(psd.composite(force=True, apply_icc=False).convert('RGBA'), dtype=int); dd = np.abs(comp[..., :3] - ours[..., :3])
-    checks.append({'id': 'H24', 'name': f'{name}: psd-tools own group/clipping composite vs ours, mean levels', 'value': round(float(dd.mean()), 4), 'cmp': '<=', 'limit': 1.0})
-    checks.append({'id': 'H24x', 'name': f'{name}: psd-tools own group/clipping composite vs ours, max levels', 'value': int(dd.max()), 'cmp': '<=', 'limit': 8})
-    checks.append({'id': 'H24p', 'name': f'{name}: pixels differing by more than 8 levels (info, limit is generous)', 'value': int((dd.max(axis=2) > 8).sum()), 'cmp': '<=', 'limit': 16384})
+    if HELD:   # H27 out-of-sample thresholds, fixed in witness_log/HYPOTHESES.md before the first run
+        checks.append({'id': 'H27', 'name': f'{name}: HELD-OUT psd-tools group/clipping composite vs ours, mean levels', 'value': round(float(dd.mean()), 4), 'cmp': '<=', 'limit': 0.8})
+        checks.append({'id': 'H27p', 'name': f'{name}: HELD-OUT pixels over 8 levels (percent)', 'value': round(float((dd.max(axis=2) > 8).mean() * 100), 3), 'cmp': '<=', 'limit': 0.5})
+        checks.append({'id': 'H27x', 'name': f'{name}: HELD-OUT max levels (info)', 'value': int(dd.max()), 'cmp': '<=', 'limit': 255})
+    else:
+        checks.append({'id': 'H24', 'name': f'{name}: psd-tools own group/clipping composite vs ours, mean levels', 'value': round(float(dd.mean()), 4), 'cmp': '<=', 'limit': 1.0})
+        checks.append({'id': 'H24x', 'name': f'{name}: psd-tools own group/clipping composite vs ours, max levels', 'value': int(dd.max()), 'cmp': '<=', 'limit': 8})
+        checks.append({'id': 'H24p', 'name': f'{name}: pixels differing by more than 8 levels (info, limit is generous)', 'value': int((dd.max(axis=2) > 8).sum()), 'cmp': '<=', 'limit': 16384})
 print(json.dumps({'checks': checks}))

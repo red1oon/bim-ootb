@@ -110,20 +110,25 @@
       back[i*4+3] = F(F(as + ab) - F(as * ab));
     }
   }
-  // Clipping rule K (validated against an independent compositor, see witness_log/HYPOTHESES.md H24/H27): composite the clipped layer onto the clip unit with the ordinary
-  // W3C source-over formula (the unit's alpha would grow), keep the resulting straight colour, and restore the unit's alpha to the base layer's. Equal to source-atop on opaque bases.
-  function atop(iso, src, bf, opacity, mask, n) {
+  // Clipping rule K2 (validated against an independent compositor, witness_log/HYPOTHESES.md H24/H27): the clip unit is an isolated composite. Each clipped layer is composited
+  // onto it with the ordinary W3C source-over formula (the unit's alpha grows along the chain, and later layers see the grown alpha); the straight colour is kept and the
+  // base layer's alpha is reimposed once, at the end. Equal to source-atop when the base pixel is opaque.
+  function clipUnit(base, chain, n) {
+    const out = new Float32Array(n * 4), C = new Float32Array(3);
     for (let i = 0; i < n; i++) {
-      const la = src[i*4+3]; if (la <= 0) continue;
-      const as = F(la * F(opacity * (mask ? mask[i] : 1))); if (as <= 0) continue;
-      const ab = iso[i*4+3]; if (ab <= 0) continue;
-      const ar = F(F(as + ab) - F(as * ab)), w = F(as / ar), iw = F(1 - w), iab = F(1 - ab);
-      for (let k = 0; k < 3; k++) {
-        const Cs = F(src[i*4+k] / la), Cb = F(iso[i*4+k] / ab), B = bf(Cb, Cs);
-        const Cr = F(F(iw * Cb) + F(w * F(F(iab * Cs) + F(ab * B))));
-        iso[i*4+k] = F(Cr * ab);
+      const ab0 = base.pix[i*4+3]; if (ab0 <= 0) continue;
+      for (let k = 0; k < 3; k++) C[k] = F(base.pix[i*4+k] / ab0);
+      let a = ab0;
+      for (const c of chain) {
+        const la = c.pix[i*4+3]; if (la <= 0) continue;
+        const as = F(la * F(c.opacity * (c.mask ? c.mask[i] : 1))); if (as <= 0) continue;
+        const ar = F(F(as + a) - F(as * a)), w = F(as / ar), iw = F(1 - w), ia = F(1 - a), bf = BLEND[c.mode];
+        for (let k = 0; k < 3; k++) { const Cs = F(c.pix[i*4+k] / la), B = bf(C[k], Cs); C[k] = F(F(iw * C[k]) + F(w * F(F(ia * Cs) + F(a * B)))); }
+        a = ar;
       }
+      for (let k = 0; k < 3; k++) out[i*4+k] = F(C[k] * ab0); out[i*4+3] = ab0;
     }
+    return out;
   }
   function renderList(st, ids, back) {
     const n = st.W * st.W; let j = 0;
@@ -141,7 +146,7 @@
       }
       const l = st.L[id]; if (l.clip) throw new Error('clipped layer ' + id + ' has no base layer before it in its list');
       j++; const chain = []; while (j < ids.length && st.L[ids[j]] && st.L[ids[j]].clip) chain.push(st.L[ids[j++]]);
-      if (chain.length) { const iso = l.pix.slice(); for (const c of chain) atop(iso, c.pix, BLEND[c.mode], c.opacity, c.mask, n); over(back, iso, BLEND[l.mode], l.opacity, l.mask, n); }
+      if (chain.length) over(back, clipUnit(l, chain, n), BLEND[l.mode], l.opacity, l.mask, n);
       else over(back, l.pix, BLEND[l.mode], l.opacity, l.mask, n);
     }
     return back;

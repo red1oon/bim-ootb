@@ -1,0 +1,1231 @@
+{
+ "checks": [
+  {
+   "id": "H16a",
+   "name": "pass-through group (opacity 1) == flat stack, f32 hash",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H16b",
+   "name": "two nested pass-through groups == flat stack, f32 hash",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H16c",
+   "name": "negative control: pass-through opacity 0.999 differs from flat (sensitivity)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H17",
+   "name": "isolated normal group, all-normal children == flat (max abs f32 diff)",
+   "value": 2.384185791015625e-7,
+   "cmp": "<=",
+   "limit": 0.00001,
+   "pass": true
+  },
+  {
+   "id": "H19",
+   "name": "negative control: non-normal layers inside an ISOLATED group differ from flat (levels)",
+   "value": 97,
+   "cmp": ">=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H18a",
+   "name": "clip unit alpha == base alpha and nothing outside the base (violating samples)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H18b",
+   "name": "non-vacuous: pixels inside the base where clipped layers changed colour",
+   "value": 12657,
+   "cmp": ">=",
+   "limit": 300,
+   "pass": true
+  },
+  {
+   "id": "H18c",
+   "name": "non-vacuous: pixels outside the base shape",
+   "value": 3727,
+   "cmp": ">=",
+   "limit": 3000,
+   "pass": true
+  },
+  {
+   "id": "H18d",
+   "name": "negative control: the SAME layers without clip DO draw outside the base (pixels)",
+   "value": 3727,
+   "cmp": ">=",
+   "limit": 500,
+   "pass": true
+  },
+  {
+   "id": "H21a",
+   "name": "empty groups (pass-through and isolated) are no-ops",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H21b",
+   "name": "pass-through opacity 0 == the document without those layers",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H21c",
+   "name": "isolated opacity 0 == the document without those layers",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H21d",
+   "name": "pass-through with an all-zero mask == the document without those layers",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H21e",
+   "name": "pass-through opacity 0.5 is the midpoint of before/after (max abs f32 diff)",
+   "value": 2.9802322387695312e-8,
+   "cmp": "<=",
+   "limit": 0.000001,
+   "pass": true
+  },
+  {
+   "id": "SCH0",
+   "name": "scene documents validate under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s1_srgb_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_srgb_encoded srgb mean levels",
+   "value": 0.0013,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_srgb_encoded srgb mean levels",
+   "value": 0.0013,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s1_p3_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_p3_encoded canonical+lcms vs float64 tree reference on p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_p3_encoded p3 mean levels",
+   "value": 0.0019,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_p3_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_p3_encoded srgb mean levels",
+   "value": 0.0017,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s1_adobe_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_adobe_encoded canonical+lcms vs float64 tree reference on adobe display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_adobe_encoded adobe mean levels",
+   "value": 0.0013,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_adobe_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_adobe_encoded srgb mean levels",
+   "value": 0.0016,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s2_srgb_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_srgb_encoded srgb mean levels",
+   "value": 0.0012,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_srgb_encoded srgb mean levels",
+   "value": 0.0012,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s2_p3_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_p3_encoded canonical+lcms vs float64 tree reference on p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_p3_encoded p3 mean levels",
+   "value": 0.0016,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_p3_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_p3_encoded srgb mean levels",
+   "value": 0.0016,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s2_adobe_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_adobe_encoded canonical+lcms vs float64 tree reference on adobe display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_adobe_encoded adobe mean levels",
+   "value": 0.0011,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s2_adobe_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s2_adobe_encoded srgb mean levels",
+   "value": 0.0014,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s3_srgb_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_srgb_encoded srgb mean levels",
+   "value": 0.0013,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_srgb_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_srgb_encoded srgb mean levels",
+   "value": 0.0013,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s3_p3_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_p3_encoded canonical+lcms vs float64 tree reference on p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_p3_encoded p3 mean levels",
+   "value": 0.0016,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_p3_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_p3_encoded srgb mean levels",
+   "value": 0.0017,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s3_adobe_encoded: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_adobe_encoded canonical+lcms vs float64 tree reference on adobe display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_adobe_encoded adobe mean levels",
+   "value": 0.0011,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s3_adobe_encoded canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s3_adobe_encoded srgb mean levels",
+   "value": 0.0015,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H23x",
+   "name": "s1_p3_linear: has tree (non-vacuous)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_p3_linear canonical+lcms vs float64 tree reference on p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_p3_linear p3 mean levels",
+   "value": 0.0019,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H20",
+   "name": "s1_p3_linear canonical+lcms vs float64 tree reference on srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H20m",
+   "name": "s1_p3_linear srgb mean levels",
+   "value": 0.0017,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H26a",
+   "name": "mutation: pass-through groups treated as isolated normal -> levels from reference",
+   "value": 71,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H26b",
+   "name": "mutation: clip flags dropped -> levels from reference",
+   "value": 148,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H26c",
+   "name": "mutation: group opacity ignored -> levels from reference",
+   "value": 37,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H26d",
+   "name": "unmutated control on the same document (levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "SCH1",
+   "name": "invalid v2 logs rejected (of 16); accepted: none",
+   "value": 16,
+   "cmp": "==",
+   "limit": 16,
+   "pass": true
+  },
+  {
+   "id": "SCH2",
+   "name": "valid nested group + 2-layer clip chain accepted (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "SCH3",
+   "name": "compositor throws on a clipped layer without a base instead of skipping it",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "PAR1",
+   "name": "Node vs Chromium: group documents with identical f32 hash and sRGB render hash",
+   "value": 20,
+   "cmp": "==",
+   "limit": 20,
+   "pass": true
+  },
+  {
+   "id": "H22a",
+   "name": "s1_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a2",
+   "name": "s1_srgb_encoded: imported doc is schema v2 and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H22b",
+   "name": "s1_srgb_encoded: export+import render vs quantised float64 tree reference, srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H22bm",
+   "name": "s1_srgb_encoded: mean levels",
+   "value": 0.0012,
+   "cmp": "<=",
+   "limit": 0.01,
+   "pass": true
+  },
+  {
+   "id": "H22c",
+   "name": "s1_srgb_encoded: export->import->export->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a",
+   "name": "s1_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a2",
+   "name": "s1_p3_encoded: imported doc is schema v2 and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H22b",
+   "name": "s1_p3_encoded: export+import render vs quantised float64 tree reference, p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H22bm",
+   "name": "s1_p3_encoded: mean levels",
+   "value": 0.0042,
+   "cmp": "<=",
+   "limit": 0.01,
+   "pass": true
+  },
+  {
+   "id": "H22c",
+   "name": "s1_p3_encoded: export->import->export->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a",
+   "name": "s2_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a2",
+   "name": "s2_srgb_encoded: imported doc is schema v2 and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H22b",
+   "name": "s2_srgb_encoded: export+import render vs quantised float64 tree reference, srgb display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H22bm",
+   "name": "s2_srgb_encoded: mean levels",
+   "value": 0.0019,
+   "cmp": "<=",
+   "limit": 0.01,
+   "pass": true
+  },
+  {
+   "id": "H22c",
+   "name": "s2_srgb_encoded: export->import->export->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a",
+   "name": "s2_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22a2",
+   "name": "s2_p3_encoded: imported doc is schema v2 and validates (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H22b",
+   "name": "s2_p3_encoded: export+import render vs quantised float64 tree reference, p3 display (max levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H22bm",
+   "name": "s2_p3_encoded: mean levels",
+   "value": 0.0016,
+   "cmp": "<=",
+   "limit": 0.01,
+   "pass": true
+  },
+  {
+   "id": "H22c",
+   "name": "s2_p3_encoded: export->import->export->import is a fixed point (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H22n",
+   "name": "PSD documents exercised",
+   "value": 4,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H22d",
+   "name": "unsupported PSD (CMYK mode) still rejected after the group refactor",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "s1_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "s1_srgb_encoded: non-vacuous: clipped layers present in the file (and groups)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H24",
+   "name": "s1_srgb_encoded: psd-tools own group/clipping composite vs ours, mean levels",
+   "value": 0.4827,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H24x",
+   "name": "s1_srgb_encoded: psd-tools own group/clipping composite vs ours, max levels",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H24p",
+   "name": "s1_srgb_encoded: pixels differing by more than 8 levels (info, limit is generous)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 16384,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "s1_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "s1_p3_encoded: non-vacuous: clipped layers present in the file (and groups)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H24",
+   "name": "s1_p3_encoded: psd-tools own group/clipping composite vs ours, mean levels",
+   "value": 0.4806,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H24x",
+   "name": "s1_p3_encoded: psd-tools own group/clipping composite vs ours, max levels",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H24p",
+   "name": "s1_p3_encoded: pixels differing by more than 8 levels (info, limit is generous)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 16384,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "s2_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "s2_srgb_encoded: non-vacuous: clipped layers present in the file (and groups)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H24",
+   "name": "s2_srgb_encoded: psd-tools own group/clipping composite vs ours, mean levels",
+   "value": 0.4652,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H24x",
+   "name": "s2_srgb_encoded: psd-tools own group/clipping composite vs ours, max levels",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H24p",
+   "name": "s2_srgb_encoded: pixels differing by more than 8 levels (info, limit is generous)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 16384,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "s2_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "s2_p3_encoded: non-vacuous: clipped layers present in the file (and groups)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H24",
+   "name": "s2_p3_encoded: psd-tools own group/clipping composite vs ours, mean levels",
+   "value": 0.4599,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H24x",
+   "name": "s2_p3_encoded: psd-tools own group/clipping composite vs ours, max levels",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 8,
+   "pass": true
+  },
+  {
+   "id": "H24p",
+   "name": "s2_p3_encoded: pixels differing by more than 8 levels (info, limit is generous)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 16384,
+   "pass": true
+  },
+  {
+   "id": "H28",
+   "name": "opaque clip base: rule K2 == source-atop (max abs diff, canonical f32 vs inline f64)",
+   "value": 1.450749210762936e-7,
+   "cmp": "<=",
+   "limit": 0.000001,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_chain3_multiplybase: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_masked_base_and_clip: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_passthrough_group_with_chain: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_isolated_group_nested_chains_p3: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_two_clip_units_in_a_row: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H27v",
+   "name": "ho_control_opaque_base: validates under schema v2 (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_chain3_multiplybase: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_chain3_multiplybase: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_chain3_multiplybase: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.286,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_chain3_multiplybase: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_chain3_multiplybase: HELD-OUT max levels (info)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_masked_base_and_clip: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_masked_base_and_clip: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_masked_base_and_clip: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.2776,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_masked_base_and_clip: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_masked_base_and_clip: HELD-OUT max levels (info)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_passthrough_group_with_chain: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_passthrough_group_with_chain: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_passthrough_group_with_chain: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.398,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_passthrough_group_with_chain: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_passthrough_group_with_chain: HELD-OUT max levels (info)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_isolated_group_nested_chains_p3: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_isolated_group_nested_chains_p3: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_isolated_group_nested_chains_p3: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.563,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_isolated_group_nested_chains_p3: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_isolated_group_nested_chains_p3: HELD-OUT max levels (info)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_two_clip_units_in_a_row: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_two_clip_units_in_a_row: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_two_clip_units_in_a_row: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.4023,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_two_clip_units_in_a_row: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_two_clip_units_in_a_row: HELD-OUT max levels (info)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H25",
+   "name": "ho_control_opaque_base: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H25n",
+   "name": "ho_control_opaque_base: non-vacuous: clipped layers present in the file",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H27",
+   "name": "ho_control_opaque_base: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
+   "value": 0.3318,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H27p",
+   "name": "ho_control_opaque_base: HELD-OUT pixels over 8 levels (percent)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H27x",
+   "name": "ho_control_opaque_base: HELD-OUT max levels (info)",
+   "value": 2,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "GOLD",
+   "name": "golden hashes changed",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  }
+ ],
+ "n_checks": 153,
+ "gate": "PASS",
+ "fails": []
+}

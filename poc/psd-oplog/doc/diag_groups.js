@@ -20,11 +20,13 @@ function doc(feature) {
     case 'clip_normal_op06': lay(1, 'normal', 1); lay(2, 'normal', 0.6, { clip: true }, true); break;
     case 'clip_base_op05': lay(1, 'normal', 0.5); lay(2, 'multiply', 1, { clip: true }, true); break;
     case 'clip_base_multiply': lay(1, 'multiply', 1); lay(2, 'normal', 1, { clip: true }, true); break;
+    case 'clip_chain2': lay(1, 'normal', 1); lay(2, 'multiply', 1, { clip: true }, true); lay(3, 'normal', 0.6, { clip: true }, true); break;
+    case 'clip_chain2_screen_overlay': lay(1, 'normal', 1); lay(2, 'screen', 0.9, { clip: true }, true); lay(3, 'overlay', 0.8, { clip: true }, true); break;
     case 'clip_in_group': ops.push(G(10, 'pass-through', 1)); lay(1, 'normal', 1, { parent: 10 }); lay(2, 'multiply', 1, { parent: 10, clip: true }, true); break;
   }
   return ops;
 }
-const features = ['flat', 'passthrough_op1', 'passthrough_op07', 'passthrough_mask', 'isolated_normal_op1', 'isolated_overlay_op08', 'clip_multiply', 'clip_normal_op06', 'clip_base_op05', 'clip_base_multiply', 'clip_in_group'];
+const features = ['flat', 'passthrough_op1', 'passthrough_op07', 'passthrough_mask', 'isolated_normal_op1', 'isolated_overlay_op08', 'clip_multiply', 'clip_normal_op06', 'clip_base_op05', 'clip_base_multiply', 'clip_in_group', 'clip_chain2', 'clip_chain2_screen_overlay'];
 (async () => { const L_ = await import('lcms-wasm'), lcms = await L_.instantiate(), ctx = { L: L_, lcms, blobs: new Map() };
   for (const f of features) { const ops = doc(f), ex = exportPsd(ops, { ...ctx, _profiles: undefined }); fs.writeFileSync(path.join(OUT, f + '.psd'), ex.bytes); fs.writeFileSync(path.join(OUT, f + '.work.rgba8'), ex.merged); }
   fs.writeFileSync(path.join(OUT, 'features.json'), JSON.stringify(features)); console.log('wrote', features.length, 'documents to', OUT); })();

@@ -25,8 +25,11 @@
     const layerSrc = (l) => { const C = new Float64Array(n * 3), A = new Float64Array(n); for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; A[i] = a; if (a > 0) for (let k = 0; k < 3; k++) C[i*3+k] = l.pix[i*4+k] / a; } return { C, A }; };
     const over64 = (dst, src, mode, op, mask) => { for (let i = 0; i < n; i++) { const as = src.A[i] * op * (mask ? mask[i] : 1); if (as <= 0) continue; const ab = dst.A[i], ar = as + ab * (1 - as);
       for (let k = 0; k < 3; k++) { const cs = src.C[i*3+k], cb = dst.C[i*3+k]; dst.C[i*3+k] = (1 - as / ar) * cb + (as / ar) * ((1 - ab) * cs + ab * Bf[mode](cb, cs)); } dst.A[i] = ar; } };
-    const atop64 = (dst, src, mode, op, mask) => { for (let i = 0; i < n; i++) { const as = src.A[i] * op * (mask ? mask[i] : 1), ab = dst.A[i]; if (as <= 0 || ab <= 0) continue; const ar = as + ab * (1 - as);
-      for (let k = 0; k < 3; k++) { const cs = src.C[i*3+k], cb = dst.C[i*3+k]; dst.C[i*3+k] = (1 - as / ar) * cb + (as / ar) * ((1 - ab) * cs + ab * Bf[mode](cb, cs)); } } };   // rule K: W3C over for the colour, base alpha kept
+    const clip64 = (base, chain) => { const iso = layerSrc(base), A = iso.A.slice();   // rule K2: alpha carried through the chain, base alpha reimposed at the end
+      for (const c of chain) { const src = layerSrc(c);
+        for (let i = 0; i < n; i++) { const as = src.A[i] * c.opacity * (c.mask ? c.mask[i] : 1), ab = A[i]; if (as <= 0 || ab <= 0) continue; const ar = as + ab * (1 - as);
+          for (let k = 0; k < 3; k++) { const cs = src.C[i*3+k], cb = iso.C[i*3+k]; iso.C[i*3+k] = (1 - as / ar) * cb + (as / ar) * ((1 - ab) * cs + ab * Bf[c.mode](cb, cs)); } A[i] = ar; } }
+      return iso; };   // iso.A still holds the base alpha
     const run = (ids, dst) => { let j = 0;
       while (j < ids.length) { const id = ids[j], g = st.G[id];
         if (g) { j++;
@@ -36,7 +39,7 @@
           else over64(dst, run(g.children, zero()), g.mode, g.opacity, g.mask);
           continue; }
         const l = st.L[id]; j++; const chain = []; while (j < ids.length && st.L[ids[j]] && st.L[ids[j]].clip) chain.push(st.L[ids[j++]]);
-        if (chain.length) { const iso = layerSrc(l); for (const c of chain) atop64(iso, layerSrc(c), c.mode, c.opacity, c.mask); over64(dst, iso, l.mode, l.opacity, l.mask); }
+        if (chain.length) over64(dst, clip64(l, chain), l.mode, l.opacity, l.mask);
         else over64(dst, layerSrc(l), l.mode, l.opacity, l.mask); }
       return dst; };
     return run(st.root, zero());

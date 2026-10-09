@@ -69,3 +69,22 @@ transparent clip bases is UNKNOWN and DEFERRED. Decision: adopt K as the canonic
 | H27 | OUT-OF-SAMPLE: K predicts psd-tools on clip documents NOT used for the fit (seeds 11-13; clip layer modes screen, overlay, soft-light, difference, exclusion; base multiply/normal; base opacity 0.7; clip with a mask; chain of two clipped layers with different modes; clip inside an isolated group) | canonical (after switch) via export vs `psd.composite(force=True)` | per document mean <= 0.8 levels and <= 0.5% of pixels over 8 levels | (pending) |
 | H28 | Switching to K changes nothing for documents whose clip bases are opaque | clip unit with an opaque base: K canonical vs old source-atop | max abs f32 diff <= 1e-6 | (pending) |
 | H29 | With K, invariants H18a (unit alpha == base alpha, nothing outside the base) still hold exactly | `doc/run_groups.js` H18a-d | 0 violations | (pending) |
+
+### Clipping resolved (numbers)
+Second finding: after K (restore alpha after every clipped layer) the full-scene H24 was still mean 1.56-1.80 / max 9-11, while single-clip documents were at the noise floor. `doc/diag_clip_chain.py`:
+clip_chain2 K1 1.94 vs **K2 0.429**; clip_chain2_screen_overlay K1 3.69 vs **K2 0.426** (K2 = alpha carried through the chain, base alpha reimposed once at the end = the clip unit is an isolated W3C composite).
+Canonical rule is now K2 (`stack.js clipUnit`, `oracle.js clip64`, independent implementations). Fitting happened twice on psd-tools, so the in-sample H24 is no longer independent evidence for clipping; H27 is.
+
+| ID | Verdict | Numbers |
+|---|---|---|
+| H24 (in-sample, thresholds unchanged: mean <= 1.0, max <= 8) | PASSES after the K2 fit | mean 0.46-0.48, max 2 on all 4 full scenes (fitted; was 6.98-8.78 / 34-48 before) |
+| H25 | CONFIRMED | psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags) in all 4 exported scenes |
+| H26 | CONFIRMED (tests can fail) | pass-through->isolated 71 levels, clip flags dropped 151, group opacity ignored 37; unmutated control 1 |
+| H22a-d | CONFIRMED | tree preserved, quantised float64 reference <= 1 level (mean <= 0.006), fixed point, CMYK PSD still rejected |
+| H27 (out-of-sample, thresholds fixed beforehand: mean <= 0.8, <= 0.5% pixels over 8) | **CONFIRMED** | 6 unseen documents incl. a 3-layer chain, masked base+clip, pass-through group with chain, isolated group with nested chains in P3, two clip units in a row, opaque-base control: mean 0.28-0.56, max 1-2, 0% over 8 |
+| H28 | CONFIRMED | opaque base: K2 == source-atop, 1.45e-7 (limit 1e-5; pre-registered 1e-6 was tighter than f32 chain arithmetic needs; recorded here as a deliberate widening with this measurement) |
+| H29 | CONFIRMED | H18a-d still exact (0 violations; 12657 inside pixels changed; 3727 outside pixels untouched; unclipped control leaks) |
+| H23 | CONFIRMED | all flat-document hashes (stack, doc, export, icc, witness) unchanged; only the group goldens were regenerated, and only because the clipping rule changed |
+
+Note on H28: the pre-registered limit was 1e-6; the code uses 1e-5. Measured 1.45e-7 would pass 1e-6, so the widening was unnecessary; limit restored to 1e-6 below.
+Still DEFERRED (not blockers): Photoshop's behaviour on partially transparent clip bases (psd-tools is not Photoshop); `clbl` ("blend clipped elements" OFF) is not supported - documents are treated as ON.

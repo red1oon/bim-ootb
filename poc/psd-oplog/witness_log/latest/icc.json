@@ -93,10 +93,10 @@
    "note": "informational: sRGB gamut exceeds a press gamut, so large errors are expected for saturated colours"
   },
   "throughput_MPx_per_s": {
-   "srgb_to_p3_8bit_default": 45.3,
+   "srgb_to_p3_8bit_default": 37.3,
    "srgb_to_p3_8bit_nooptimize": 3.4,
-   "srgb_to_p3_16bit_nooptimize": 3,
-   "srgb_to_cmyk_8bit_default": 28.2,
+   "srgb_to_p3_16bit_nooptimize": 3.5,
+   "srgb_to_cmyk_8bit_default": 24.4,
    "pixels": 2000000
   },
   "lcms_wasm_version": 2160,
@@ -181,10 +181,10 @@
    }
   },
   "throughput_browser": {
-   "srgb_to_p3_8bit_default": 32,
-   "srgb_to_p3_8bit_nooptimize": 3.4,
-   "srgb_to_p3_16bit_nooptimize": 3.6,
-   "srgb_to_cmyk_8bit_default": 29.7,
+   "srgb_to_p3_8bit_default": 33.5,
+   "srgb_to_p3_8bit_nooptimize": 3.6,
+   "srgb_to_p3_16bit_nooptimize": 3.1,
+   "srgb_to_cmyk_8bit_default": 29.3,
    "pixels": 2000000
   }
  },
