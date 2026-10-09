@@ -4,6 +4,18 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.76.0](https://github.com/red1oon/bim-ootb/compare/v1.75.0...v1.76.0) (2026-10-08)
+
+
+### ✨ Features
+
+* **civil:** Inspect EW + RW panels, inferred Cut & Fill overlay (orange cut / blue fill) ([#1952](https://github.com/red1oon/bim-ootb/issues/1952)) ([62ea691](https://github.com/red1oon/bim-ootb/commit/62ea69116f49329201425715ce58d925654c2279))
+
+
+### 🐛 Fixes
+
+* **civil:** re-land Cut & Fill scan fixes + EW/RW icons (squash of [#1952](https://github.com/red1oon/bim-ootb/issues/1952) dropped them) ([#1953](https://github.com/red1oon/bim-ootb/issues/1953)) ([19a030c](https://github.com/red1oon/bim-ootb/commit/19a030cf8f943719c21d344a1d8afaecfbb8905c))
+
 ## [1.75.0](https://github.com/red1oon/bim-ootb/compare/v1.74.0...v1.75.0) (2026-10-08)
 
 

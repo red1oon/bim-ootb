@@ -150,6 +150,8 @@ function setupEarthworksOverlay(A) {
   // ── panels ──────────────────────────────────────────────────────────────────────────────────────────────────────────
   var EW_ROWS = [['E2 Cost of earthworks', 'PENDING', 'E2a'], ['E2b Duration (owner output rate)', 'PENDING', 'E2b'], ['E2c Plant: excavator / truck / dozer / roller', 'PENDING', 'E2c'], ['E4 Resource caps', 'PENDING', 'E4'], ['Mass haul', 'PENDING', 'E1']];
   var RW_ROWS = [['Stopping sight distance', 'PENDING', 'R1/E-list'], ['Curve radius vs speed', 'PENDING', 'ATJ 8/86 T4.5'], ['Edge-line audit', 'PENDING', 'R1'], ['Road-furniture audit (studs, barriers, posts)', 'PENDING', 'F1'], ['Pavement layers (4D)', 'PENDING', 'E3'], ['Markings / no-passing', 'DEFERRED — single-carriageway road', 'R1']];
+  // §PANEL_COLLAPSED (user 2026-10-09): long lists fold into a closed group whose summary carries the count.
+  function fold(label, n, inner) { return '<details style="margin:4px 0"><summary style="cursor:pointer;color:#9ad;font-size:12px">' + label + ' (' + n + ')</summary>' + inner + '</details>'; }
   function rows(list) { return list.map(function (r) { return '<div style="display:flex;gap:6px;align-items:center;padding:3px 0;color:#888"><input type="checkbox" disabled><span style="flex:1">' + esc(r[0]) + '</span><span style="font-size:10px">' + esc(r[1]) + ' · ' + esc(r[2]) + '</span></div>'; }).join(''); }
   function panel(id, title, bodyHtml, bind) {
     var old = document.getElementById(id); if (old) old.remove();
@@ -163,13 +165,13 @@ function setupEarthworksOverlay(A) {
       var col = b.kind === 'CUT' ? c.color_cut : b.kind === 'FILL' ? c.color_fill : '#999';
       return '<div class="ew-band" data-s="' + b.s0 + '" style="padding:2px 6px;border-left:3px solid ' + col + ';margin:2px 0">' + esc(b.kind) + ' · ' + esc(RNG(b.s0, b.s1 + res.cfg.station_m)) + ' · cut ' + Math.round(b.cut) + ' m³ · fill ' + Math.round(b.fill) + ' m³</div>'; }).join('');
     return '<div style="margin:6px 0"><span style="color:' + c.color_cut + ';font-weight:700">■ CUT ' + Math.round(res.vols.cut) + ' m³</span> &nbsp; <span style="color:' + c.color_fill + ';font-weight:700">■ FILL ' + Math.round(res.vols.fill) + ' m³</span></div>' +
-      '<div style="color:#aaa;font-size:11px">INFERRED from the contour IFC (not extracted from the authoring tool): ground above the road on both sides = cut; ground falling away both sides = fill. Reach ≤ ' + c.reach_max_m + ' m each side (editable, std_values.json _cut_fill). Ground samples ' + res.groundSamples + (res.groundSamples < 30 ? ' — FLAT-ASSUMED' : '') + '. Volumes are rough prisms (|d| × ' + c.step_m + ' m × ' + c.station_m + ' m).</div>' + bl;
+      '<div style="color:#aaa;font-size:11px">INFERRED from the contour IFC (not extracted from the authoring tool): ground above the road on both sides = cut; ground falling away both sides = fill. Reach ≤ ' + c.reach_max_m + ' m each side (editable, std_values.json _cut_fill). Ground samples ' + res.groundSamples + (res.groundSamples < 30 ? ' — FLAT-ASSUMED' : '') + '. Volumes are rough prisms (|d| × ' + c.step_m + ' m × ' + c.station_m + ' m).</div>' + fold('Bands', res.bands.filter(function (b) { return b.kind !== 'NO-GROUND'; }).length, bl);
   }
   A.showEarthworksPanel = function () {
     if (!_civil()) { console.log('§EW_PANEL VACUOUS not a civil model'); return null; }
     var html = '<div style="color:#888;font-size:11px;margin-bottom:4px">Earthworks · inferred from the model</div>' +
       '<label style="display:flex;gap:6px;align-items:center;padding:4px 0;color:#eee;font-weight:700"><input type="checkbox" id="ew-cutfill-cb"' + (_mesh ? ' checked' : '') + '> Cut &amp; Fill overlay <span style="font-weight:400;color:#9ad;font-size:10px">LIVE · INFERRED</span></label>' +
-      '<div id="ew-cutfill-out">' + summary(_mesh ? _res : null) + '</div><div style="margin-top:6px;border-top:1px solid #444;padding-top:4px">' + rows(EW_ROWS) + '</div>';
+      '<div id="ew-cutfill-out">' + summary(_mesh ? _res : null) + '</div><div style="margin-top:6px;border-top:1px solid #444;padding-top:4px">' + fold('Pending features', EW_ROWS.length, rows(EW_ROWS)) + '</div>';
     console.log('§EW_PANEL open features=' + (1 + EW_ROWS.length) + ' live=1 pending=' + EW_ROWS.length);
     return panel(EW, 'Earthworks', html, function (b) {
       var cb = b.querySelector('#ew-cutfill-cb'), out = b.querySelector('#ew-cutfill-out');
@@ -183,7 +185,7 @@ function setupEarthworksOverlay(A) {
   A.showRoadworksPanel = function () {
     if (!_civil()) { console.log('§RW_PANEL VACUOUS not a civil model'); return null; }
     console.log('§RW_PANEL open features=' + RW_ROWS.length + ' live=0 pending=' + RW_ROWS.length);
-    return panel(RW, 'Roadworks', '<div style="color:#888;font-size:11px;margin-bottom:4px">Roadworks · all features pending (spec: CIVIL_HIGHWAY_JELAPANG.md §INSPECT_EARTH_ROAD)</div>' + rows(RW_ROWS));
+    return panel(RW, 'Roadworks', '<div style="color:#888;font-size:11px;margin-bottom:4px">Roadworks · all features pending (spec: CIVIL_HIGHWAY_JELAPANG.md §INSPECT_EARTH_ROAD)</div>' + fold('Pending features', RW_ROWS.length, rows(RW_ROWS)));
   };
   A.hideRoadworksPanel = function () { var p = document.getElementById(RW); if (p) p.remove(); };
   A.roadworksPanelOpen = function () { var p = document.getElementById(RW); return !!(p && p.style.display !== 'none'); };

@@ -971,6 +971,19 @@ async function setupScene(A) {
     if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
     var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
     var bytes;
+    // §SAVE_PICKER_FIRST (user 2026-10-09: "it should let me choose where to save to. It seems to auto save now"): showSaveFilePicker needs a LIVE user gesture
+    //   (~5 s of transient activation after the click). The export below takes seconds (light-field pack, civil weld + VACUUM ~13 s on Civil Works), so a picker
+    //   opened AFTER it threw SecurityError and the catch fell through to the silent <a download> = straight into Downloads. Open the picker FIRST, export after.
+    var handle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
+        console.log('§SAVE_PICKER first name=' + handle.name + ' userActive=' + (navigator.userActivation ? navigator.userActivation.isActive : 'n/a'));
+      } catch (e) {
+        if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; }
+        console.warn('§SAVE_PICKER_FAIL ' + e.name + ': ' + e.message + ' -> download fallback');
+      }
+    }
     // §LIGHT_FIELD_DB S5: pack + gzip the light field first (async, ~1-2 s on Hospital); _exportBuildingDb writes it synchronously
     if (window.LightZones && window.LightZones.dbPack) { try { await window.LightZones.dbPack(A); } catch (eLF) { console.warn('§LIGHT_FIELD_DB pack failed: ' + eLF.message); } }
     try { bytes = A._exportBuildingDb(); }
@@ -978,15 +991,13 @@ async function setupScene(A) {
     if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
     var blob = new Blob([bytes], { type: 'application/x-sqlite3' });
     // Native Save As… (Chromium FSA) — the traditional desktop dialog. Fallback = download.
-    if (window.showSaveFilePicker) {
+    if (handle) {
       try {
-        var handle = await window.showSaveFilePicker({ suggestedName: name,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
         var w = await handle.createWritable(); await w.write(blob); await w.close();
         if (A.status) A.status.textContent = 'Saved ' + handle.name;
         console.log('§SAVE_DONE mode=fsa name=' + handle.name + ' bytes=' + bytes.byteLength);
         return;
-      } catch (e) { if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; } /* else fall through to download */ }
+      } catch (e) { console.warn('§SAVE_WRITE_FAIL ' + e.name + ': ' + e.message + ' -> download fallback'); }
     }
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();

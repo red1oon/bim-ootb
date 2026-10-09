@@ -9,18 +9,22 @@ const fs = require('fs'), path = require('path'), http = require('http'), os = r
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const ROOT = path.resolve(path.join(__dirname, '..', '..'));
 const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC');
-const NAMES = [process.env.A || 'CivilWorksPath', process.env.B || 'CivilWorksPath.welded'], ROUNDS = +(process.env.ROUNDS || 2);
+const DIRS = process.env.WELD_DIR ? [process.env.ORIG_DIR || '/home/red1/bim-ootb/buildings', process.env.WELD_DIR] : null;
+const NAMES = DIRS ? [process.env.NAME + '|orig', process.env.NAME + '|weld'] : [process.env.A || 'CivilWorksPath', process.env.B || 'CivilWorksPath.welded'], ROUNDS = +(process.env.ROUNDS || 2);
 const PORT = +(process.env.PORT || 8597), LOG = process.env.LOG || '/tmp/witness_vertex_weld_load.log', REAL = process.env.GPU === 'real';
 const out = []; const log = l => { out.push(l); console.log(l); };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.css': 'text/css' };
+let useIdx = 0;
 const server = http.createServer((req, res) => { try {
   const u = decodeURIComponent(req.url.split('?')[0]); let fp = path.join(ROOT, u.replace(/^\/+/, ''));
+  if (DIRS && u.startsWith('/buildings/')) { for (const d of [DIRS[useIdx], DIRS[0]]) { const c = path.join(d, u.slice(11)); if (fs.existsSync(c) && fs.statSync(c).isFile()) { fp = c; break; } } }
   if (!fs.existsSync(fp) && u.startsWith('/buildings/')) fp = path.join(BLD_DIR, u.slice(11));
   if (!fs.existsSync(fp)) { const alt = path.join('/home/red1/bim-ootb', u); if (fs.existsSync(alt)) fp = alt; else { res.writeHead(404); res.end(); return; } }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream', 'Content-Length': fs.statSync(fp).size }); fs.createReadStream(fp).pipe(res);
 } catch (e) { res.writeHead(500); res.end(); } });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function one(name) {
+async function one(name0) {
+  const name = name0.split('|')[0]; if (DIRS) useIdx = name0.endsWith('|weld') ? 1 : 0;
   const b = await puppeteer.launch({ headless: true, userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'wvw-')), protocolTimeout: 1800000,
     env: Object.assign({}, process.env, REAL ? { __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' } : {}),
     args: ['--no-sandbox', '--js-flags=--max-old-space-size=8192 --expose-gc'].concat(REAL ? ['--use-angle=gl-egl', '--ignore-gpu-blocklist'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']) });
@@ -30,7 +34,7 @@ async function one(name) {
     await p.goto(`http://127.0.0.1:${PORT}/viewer/viewer.html?db=/buildings/${encodeURIComponent(name)}.db`, { waitUntil: 'domcontentloaded', timeout: 900000 });
     let ok = false;
     for (let i = 0; i < 1200 && !ok; i++) { await sleep(500); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && APP.scene && APP.collectMeshes(o => o.isMesh).length > 0)); } catch (e) {} }
-    const loadMs = Date.now() - t0; if (!ok) return { name, ok: false };
+    const loadMs = Date.now() - t0; if (!ok) return { name: name0, ok: false };
     await sleep(3000);
     const r = await p.evaluate(async () => {
       const G = () => { if (typeof window.gc === 'function') window.gc(); }; G(); G(); await new Promise(r => setTimeout(r, 500)); G();
@@ -41,7 +45,7 @@ async function one(name) {
       ft.sort((a, b) => a - b);
       return { heapMB: performance.memory.usedJSHeapSize / 1048576, verts, idx, frameMedMs: ft[ft.length >> 1], frameP95Ms: ft[Math.floor(ft.length * .95)] };
     });
-    return Object.assign({ name, ok: true, loadMs }, r);
+    return Object.assign({ name: name0, ok: true, loadMs }, r);
   } finally { try { await b.close(); } catch (e) {} }
 }
 (async () => {

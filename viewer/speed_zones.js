@@ -551,6 +551,21 @@
     function zoneFull(res, q) { return (q.speed != null ? q.speed + ' km/h' : 'no speed') + ' · ' + RNG(q.s0, q.s1) + ' · ' + (q.cls || '—') + ' · ' + q.label + (q.assumed.length ? ' · derived · assumed: ' + q.assumed.join('; ') : '') + (q.srcText ? ' · ' + (q.srcText.indexOf(q.label) === 0 ? q.srcText.slice(q.label.length).replace(/^ · /, '') : q.srcText) : '') + discNote(res, q); }
     function discNote(res, q) { var d = (res.discPlan || []).filter(function (x) { return x.zone === q.id && x.kind !== 'real' && x.zoneStart != null; })[0]; return d ? ' · disc: ' + d.label + (d.kind === 'other' ? ' (on sign ' + (d.guid || '').slice(0, 8) + ')' : ' (free-standing)') : ''; }
     // mount(std, container, card): builds the "Speed" section inside the Road standards panel (async: waits for the profile)
+    // §SPEED_ZONES_PREWARM (bim-compiler CIVIL_HIGHWAY_JELAPANG.md, MEASURED on Civil Works 2026-10-09): paint() gives each road mesh a white fog:false
+    //   material clone, so the FIRST toggle compiled new GL programs: first frame 900 ms after ON, 767 ms after OFF (programs 15 -> 18); every later toggle
+    //   17-33 ms, the paint code itself 42-56 ms. Fix = pay that compile once, when the panel opens: paint -> renderer.compile -> revert in ONE task, so no
+    //   frame is drawn with the tint (no flash). Skipped when zones are already on or no renderer. Logs the cost so it is visible.
+    function prewarm(res, std) {
+      try {
+        if (_on || !A.renderer || !A.scene || !A.camera || A._szPrewarmed) return null;
+        A._szPrewarmed = true;
+        var t0 = performance.now(), p0 = A.renderer.info.programs ? A.renderer.info.programs.length : -1;
+        paint(res, std); var tp = performance.now(); A.renderer.compile(A.scene, A.camera); var tc = performance.now(); revert();
+        console.log('§SPEED_ZONES_PREWARM paintMs=' + (tp - t0).toFixed(0) + ' compileMs=' + (tc - tp).toFixed(0) + ' totalMs=' + (performance.now() - t0).toFixed(0) +
+          ' programs=' + p0 + '->' + (A.renderer.info.programs ? A.renderer.info.programs.length : -1));
+        return true;
+      } catch (e) { console.warn('§SPEED_ZONES_PREWARM_ERR ' + e.message); try { revert(); } catch (e2) {} return null; }
+    }
     function mount(std, host, card) {
       var sec = document.createElement('div'); sec.className = 'sz-section'; sec.style.cssText = 'margin-top:10px;border-top:1px solid rgba(255,255,255,0.12);padding-top:8px';
       sec.innerHTML = '<div class="sz-title" style="color:#4fc3f7;font-weight:700;font-size:16px;margin-bottom:4px">Speed zones</div><div class="sz-body" style="color:#888;font-size:10px">computing long section&hellip;</div>';
@@ -569,7 +584,7 @@
         var miss = (res.discPlan || []).filter(function (x) { return x.kind !== 'real'; }), V = 'MISSING SPEED SIGN';
         res.missingRows = miss.map(function (x) { var z = res.zones.filter(function (q) { return q.id === x.zone; })[0];
           return { guid: x.guid, zone: x.zone, s0: z.s0, s1: z.s1, speed: z.speed, code: x.code, text: 'Zone ' + z.id + ' (' + RNG(z.s0, z.s1) + ', ' + z.speed + ' km/h) has no speed-limit sign \u2014 shown on ' + (x.guid ? (x.code || 'a sign board') : 'a free-standing marker') + ' for demo' }; });
-        if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '" open><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
+        if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '"><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
           return '<div class="sz-missing" data-i="' + i + '" data-guid="' + esc(m.guid || '') + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid #ffaa33;background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' + esc(m.text) + '</div>'; }).join('') + '</details>';
         // §SIGN_VS_SPEED group: ONLY the signs an advance-placement rule applies to (not all 138); CHECK first, NOT JUDGED = hazard position unknown (counted, not CHECK)
         var AD = res.advance, ADCOL = { CHECK: '#cc4444', OK: '#44cc44', NOT_JUDGED: '#888' };
@@ -577,7 +592,7 @@
           res.advRows = ['CHECK', 'OK', 'NOT_JUDGED'].reduce(function (a, v) { return a.concat(AD.rows.filter(function (r) { return r.verdict === v; })); }, []);
           h += '<div class="sz-adv-grp" style="margin-top:6px"><div style="font-size:11px;color:#9ad;margin-bottom:2px">Sign vs approach speed (' + AD.applicable + ' signs a rule applies to)</div>' +
             ['CHECK', 'OK', 'NOT_JUDGED'].map(function (v) { var rs = res.advRows.filter(function (r) { return r.verdict === v; }); if (!rs.length) return '';
-              return '<details class="sz-adv-v" data-verdict="' + v + '"' + (v === 'NOT_JUDGED' ? '' : ' open') + '><summary style="cursor:pointer;font-weight:600;font-size:11px;color:' + ADCOL[v] + ';margin:3px 0">' + v.replace('_', ' ') + ' (' + rs.length + ')</summary>' +
+              return '<details class="sz-adv-v" data-verdict="' + v + '"' + '' + '><summary style="cursor:pointer;font-weight:600;font-size:11px;color:' + ADCOL[v] + ';margin:3px 0">' + v.replace('_', ' ') + ' (' + rs.length + ')</summary>' +
                 rs.map(function (r) { var i = res.advRows.indexOf(r);
                   return '<div class="sz-adv" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.why) + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid ' + ADCOL[v] + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa"><b>' + esc(r.code || '') + '</b> · ' +
                     (r.dist != null ? r.dist.toFixed(0) + ' m to ' + esc(r.noun) + ' (need \u2265 ' + r.minM + ')' : esc(r.noun) + ' \u2014 not judged') + '</div>'; }).join('') + '</details>'; }).join('') +
@@ -616,10 +631,17 @@
         console.log('§SPEED_MISSING rows=' + miss.length + ' zones=' + miss.map(function (x) { return x.zone; }).join(','));
         body.querySelector('.sz-signs').addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-row'); if (!el) return; focusRow(res, std, res.listRows[+el.getAttribute('data-i')], card); });
         console.log('§SPEED_ZONES_PANEL zones=' + res.zones.length + ' signRows=' + res.signRows.length + ' mode=' + res.mode);
+        // §PANEL_COLLAPSED (user 2026-10-09: "panels … all expanded and thus cluttering long"): the on/off toggle stays on top, every other row/legend/list
+        //   sits in ONE closed group; summary carries the counts, so nothing is hidden, only folded.
+        var tgl = tg.closest('label') || tg.parentNode, det = document.createElement('details'); det.className = 'sz-more';
+        det.innerHTML = '<summary style="cursor:pointer;font-size:12px;color:#9ad;margin:4px 0">Zones, legend, signs (' + res.zones.length + ' zones, ' + res.listRows.length + ' speed signs)</summary>';
+        while (body.firstChild) det.appendChild(body.firstChild);
+        body.appendChild(tgl); body.appendChild(det);
+        setTimeout(function () { prewarm(res, std); }, 400);   // after the panel has painted its own frame
         return res;
       });
     }
-    A.speedZones = { mount: mount, paint: paint, revert: revert, gather: gather, active: function () { return _on; } };
+    A.speedZones = { prewarm: prewarm, mount: mount, paint: paint, revert: revert, gather: gather, active: function () { return _on; } };
   }
 
   var api = { derive: derive, advanceCheck: advanceCheck, selectClass: selectClass, speedAt: speedAt, maxGrade: maxGrade, laneWidth: laneWidth, projectToRoute: projectToRoute, pointAt: pointAt, routeLength: routeLength, terrainClass: terrainClass, colourFor: colourFor, hexOf: hexOf, setupSpeedZones: setupSpeedZones };
