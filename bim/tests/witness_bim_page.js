@@ -10,7 +10,7 @@ const out = []; const say = (s) => { out.push(s); console.log(s); };
 let fails = 0; const ok = (id, cond, msg) => { say((cond ? '§WITNESS PASS ' : '§WITNESS FAIL ') + id + ' ' + msg); if (!cond) fails++; };
 const inc = (id, msg) => say('§WITNESS INCONCLUSIVE ' + id + ' ' + msg);
 (async () => {
-  const cli = cp.spawn('node', [path.join(__dirname, '..', '..', 'bim-cli.js'), 'open', file], { env: Object.assign({}, process.env, { PATH: '/nonexistent' + (process.platform === 'win32' ? '' : ':/usr/bin') }) });
+  const cli = cp.spawn('node', [path.join(__dirname, '..', '..', 'bim-cli.js'), 'open', file], { env: Object.assign({}, process.env, { BIM_NO_OPEN: '1' }) });
   let url = ''; let cliOut = '';
   cli.stdout.on('data', (d) => { cliOut += d; const m = /§OPEN (http\S+)/.exec(cliOut); if (m) url = m[1]; });
   for (let i = 0; i < 50 && !url; i++) await new Promise((r) => setTimeout(r, 100));

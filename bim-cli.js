@@ -60,6 +60,7 @@ function openInteractive(file) {
   srv.listen(0, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${srv.address().port}/bim.html?tool=extract&served=1`;
     console.log('§OPEN ' + url);
+    if (process.env.BIM_NO_OPEN === '1') { console.log('§OPEN_SKIPPED BIM_NO_OPEN=1 (tests never launch a browser window)'); return; }
     const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
     cp.spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).on('error', () => console.log('open this URL in a browser: ' + url)).unref();
   });
