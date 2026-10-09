@@ -30,7 +30,7 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 #search{position:fixed;left:14px;top:62px;width:340px;max-height:70vh;display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;z-index:6;overflow:hidden}
 #search.open{display:flex}#search input{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;padding:10px 12px;outline:none}
 #sl{overflow:auto;flex:1}.row{padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13px}.row:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}.row.sel{color:var(--sel)}
-.row small{color:var(--mute)}#sf{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
+.row small{color:var(--mute)}.row .loc{border:1px solid var(--line);background:transparent;color:var(--mute);border-radius:6px;cursor:pointer;padding:0 6px}.row .loc:hover{color:var(--acc);border-color:var(--acc)}#sf{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
 #menu{position:fixed;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:10;min-width:190px;padding:4px}
 #menu div{padding:7px 12px;border-radius:6px;cursor:pointer}#menu div:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}
 #kit{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;z-index:12}
@@ -42,7 +42,7 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <body>
 <div id="drop"><h1>Drop an IFC</h1><p>Runs <span id="armed">…</span> straight away. Pick another tool on the right, or press its key. <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
 <canvas id="cv"></canvas>
-<div id="chip"><b id="fname" title="The file you have loaded"></b><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button><button class="btn alt" id="cls" title="Close this file and forget it">Close file</button></div>
+<div id="chip"><b id="fname" title="The file you have loaded"></b><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button><button class="btn alt" id="rv" title="Back to the starting view">Reset view</button><button class="btn alt" id="cls" title="Close this file and forget it">Close file</button></div>
 <div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
 <div id="kit"><b>Toolkit (zip)</b><p>Launchers you can drop IFC files on, for batch use. Needs Node.js 18+.</p><div id="kt"></div>
 <label>System <select id="kos"><option value="win">Windows</option><option value="mac">macOS</option><option value="sh">Linux</option></select></label>
@@ -200,11 +200,22 @@ async function ensureRenderer() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1)); const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(1, 2, 1.5); scene.add(dl);
   const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000); const ctl = new OrbitControls(cam, $('cv'));
+  ctl.zoomToCursor = true; ctl.screenSpacePanning = true; ctl.minPolarAngle = 0; ctl.maxPolarAngle = Math.PI;   // zoom TOWARD what the pointer is on, so any spot can be reached; no polar stop
   R = { renderer, scene, cam, ctl, group: null, meshes: [], ray: new THREE.Raycaster(), mouse: new THREE.Vector2(), hover: null };
   addEventListener('resize', fit); fit();
   // draw only when something changed (orbit, resize, selection): a continuous loop starves timers on software GL and wastes battery
   R.dirty = true; R.ctl.addEventListener('change', () => { R.dirty = true; });
   (function loop() { requestAnimationFrame(loop); if (document.body.classList.contains('view') && R.dirty) { R.dirty = false; R.ctl.update(); R.renderer.render(R.scene, R.cam); } })();
+  // Orbit/zoom pivot = what the pointer is ON (a selected item wins even behind a wall). Without this the wheel can only travel as far as the old
+  // pivot (the building centre) and stalls short of anything beyond it — the "border". The pivot is moved ALONG the view axis, so the picture does not jump.
+  const repivot = (e) => { if (!R || !R.meshes.length) return; const rc = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); R.ray.setFromCamera(R.mouse, R.cam);
+    const dir = new THREE.Vector3(); R.cam.getWorldDirection(dir); let depth = 0;
+    // 1) aiming at a SELECTED item (even through walls) pivots on that item: ray passes within its bounding sphere
+    let best = Infinity; for (const eid of selected) { const b = new THREE.Box3(); R.meshes.forEach((m) => { if (m.userData.eid === eid) b.expandByObject(m); }); if (b.isEmpty()) continue; const sp = b.getBoundingSphere(new THREE.Sphere()); if (R.ray.ray.distanceToPoint(sp.center) <= Math.max(sp.radius * 1.3, 0.4)) { const dd = sp.center.clone().sub(R.cam.position).dot(dir); if (dd > R.cam.near * 2 && dd < best) best = dd; } }
+    if (best < Infinity) depth = best;
+    else { const hits = R.ray.intersectObjects(R.meshes, false); if (!hits.length) return; depth = hits[0].point.clone().sub(R.cam.position).dot(dir); }   // 2) otherwise the surface under the pointer
+    if (depth > R.cam.near * 2) R.ctl.target.copy(R.cam.position).addScaledVector(dir, depth); };
+  $('cv').addEventListener('wheel', repivot, { capture: true, passive: true }); $('cv').addEventListener('pointerdown', repivot, { capture: true });
   $('cv').addEventListener('pointermove', onMove); $('cv').addEventListener('click', onPick); $('cv').addEventListener('pointerdown', (e) => { R.down = [e.clientX, e.clientY]; });
   return R;
 }
@@ -236,9 +247,18 @@ async function loadMeshes(c) {
   });
   api.CloseModel(id);
   // IFC is Z-up; three is Y-up
-  grp.rotation.x = -Math.PI / 2; r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
+  // Which local axis do the FLOORS / ROOFS face? (area-weighted |normal| of slab-like triangles; falls back to all geometry.) The scene's up must be Y.
+  const upShare = (only) => { const s = [0, 0, 0]; const a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(); for (const m of r.meshes) { if (only && !only.test(c.byId.get(m.userData.eid) ? c.byId.get(m.userData.eid).type : '')) continue; const pos = m.geometry.attributes.position, ix = m.geometry.index.array; for (let t = 0; t < ix.length; t += 3) { a.fromBufferAttribute(pos, ix[t]).applyMatrix4(m.matrix); b.fromBufferAttribute(pos, ix[t + 1]).applyMatrix4(m.matrix); d.fromBufferAttribute(pos, ix[t + 2]).applyMatrix4(m.matrix); const n = b.sub(a).cross(d.sub(a)); s[0] += Math.abs(n.x); s[1] += Math.abs(n.y); s[2] += Math.abs(n.z); } } return s; };
+  let sh = upShare(/^IFC(SLAB|ROOF|COVERING|PLATE|FOOTING)$/); if (sh[0] + sh[1] + sh[2] < 1e-6) sh = upShare(null);
+  const upAxis = sh[1] >= sh[0] && sh[1] >= sh[2] ? 'Y' : (sh[2] >= sh[0] ? 'Z' : 'X');
+  if (upAxis === 'Z') grp.rotation.x = -Math.PI / 2; else if (upAxis === 'X') grp.rotation.z = Math.PI / 2;
+  log('§BIM_UP axis=' + upAxis + ' rotated=' + (upAxis === 'Y' ? 'no' : 'yes') + ' shares=' + sh.map((x) => +(x / ((sh[0] + sh[1] + sh[2]) || 1)).toFixed(3)).join('/'));
+  r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(grp), ctr = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()).length() || 10;
-  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.modelDiag = sz; r.cam.near = sz / 1000; r.cam.far = sz * 20; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
+  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.modelDiag = sz; r.cam.near = sz / 1000; r.cam.far = sz * 40; r.ctl.maxDistance = sz * 8; r.ctl.minDistance = 0;
+  if (r.grid) r.scene.remove(r.grid);
+  r.grid = new THREE.GridHelper(Math.ceil(sz * 1.6), 24, 0x7c8794, 0x7c8794); r.grid.material.transparent = true; r.grid.material.opacity = 0.35; r.grid.position.set(ctr.x, box.min.y, ctr.z); r.scene.add(r.grid);
+  r.home = { pos: r.cam.position.clone(), tgt: ctr.clone() }; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
   c.rendered = true; c.renderedEids = seen;
   const inTable = c.prods.filter((p) => seen.has(p.id)).length;
   log('§BIM_RENDER meshes=' + r.meshes.length + ' elementsRendered=' + seen.size + ' productsWithGeometry=' + inTable + ' tris=' + tris + ' verdict=' + (seen.size ? 'PASS' : 'INCONCLUSIVE'));
@@ -251,7 +271,7 @@ async function showView() {
 function hideView() { document.body.classList.remove('view'); syncNote(); }
 function paint() {
   if (!R) return; R.dirty = true;
-  for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
+  for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.depthTest = !s; m.renderOrder = s ? 999 : 0; m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
 }
 function chip() { $('fname').textContent = cur ? cur.name + ' · ' + cur.model.schema + ' · ' + cur.prods.length + ' items' : ''; $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
 function pickAt(e) {
@@ -281,6 +301,7 @@ async function closeFile() {
   if (nm) toast('Closed ' + nm + '. Drop an IFC to start again.'); log('§BIM_CLOSE name=' + nm);
 }
 $('cls').onclick = closeFile;
+$('rv').onclick = () => { if (!R || !R.home) return; R.cam.position.copy(R.home.pos); R.ctl.target.copy(R.home.tgt); R.ctl.update(); R.dirty = true; log('§BIM_RESETVIEW'); };
 $('clr').onclick = () => { selected.clear(); paint(); chip(); renderList(); };
 async function exportSelected() {
   const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
@@ -302,7 +323,8 @@ function matches(q) {
 function renderList() {
   const q = $('sq').value, m = matches(q), box = $('sl'); box.innerHTML = '';
   if (!cur) { box.innerHTML = '<div class="row"><span>Drop an IFC first, then search it here.</span></div>'; $('sc').textContent = ''; return; }
-  m.slice(0, 400).forEach((p) => { const d = document.createElement('div'); d.className = 'row' + (selected.has(p.id) ? ' sel' : ''); d.innerHTML = '<span></span><small></small>'; d.firstChild.textContent = p.name || '(no name)'; d.lastChild.textContent = p.type.replace(/^IFC/, ''); d.onclick = () => { if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id); paint(); chip(); frame(p.id); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search eid=' + p.id); }; box.appendChild(d); });
+  m.slice(0, 400).forEach((p) => { const d = document.createElement('div'); d.className = 'row' + (selected.has(p.id) ? ' sel' : ''); d.innerHTML = '<span></span><small></small>'; d.firstChild.textContent = p.name || '(no name)'; d.lastChild.textContent = p.type.replace(/^IFC/, ''); d.onclick = () => { if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search eid=' + p.id); };   // highlight only: the camera stays where you put it
+    const loc = document.createElement('button'); loc.className = 'loc'; loc.title = 'Fly the camera to this item'; loc.textContent = '⌖'; loc.onclick = (ev) => { ev.stopPropagation(); frame(p.id); log('§BIM_LOCATE eid=' + p.id); }; d.insertBefore(loc, d.firstChild); box.appendChild(d); });
   $('sc').textContent = m.length + ' match' + (m.length === 1 ? '' : 'es'); log('§BIM_SEARCH q="' + q + '" matches=' + m.length); window.__bim.lastSearch = m.length;
 }
 function frame(eid) { if (!R) return; const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); if (b.isEmpty()) return; const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1; R.ctl.target.copy(c); const d = Math.max(s * 1.6, (R.modelDiag || 0) * 0.3);   // stay far enough back that the building around the item stays on screen
@@ -355,7 +377,7 @@ addEventListener('keydown', (e) => {
 });
 $('help').onclick = () => $('help').classList.remove('open');
 
-window.__bim = { get cur() { return cur; }, get selected() { return selected; }, get R() { return R; }, arm, onFile, matches, pickAt: (x, y) => pickAt({ clientX: x, clientY: y }), frame, renderList };
+window.__bim = { screenOf: (eid) => { const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); const c = b.getCenter(new THREE.Vector3()).project(R.cam); const r = $('cv').getBoundingClientRect(); return { x: r.left + (c.x + 1) / 2 * r.width, y: r.top + (1 - c.y) / 2 * r.height, depth: c.z }; }, itemCenter: (eid) => { const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); return b.getCenter(new THREE.Vector3()).toArray(); }, get cur() { return cur; }, get selected() { return selected; }, get R() { return R; }, arm, onFile, matches, pickAt: (x, y) => pickAt({ clientX: x, clientY: y }), frame, renderList };
 buildRail();
 if (params.get('kit') === '1') toggleKit(true);   // deep link from the manual: opens the toolkit-zip panel
 if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
