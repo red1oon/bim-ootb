@@ -22,6 +22,13 @@ body.view #cv{display:block}body.view #drop{display:none}
 .pill:hover,.pill:focus-visible{border-color:var(--acc)}.pill.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .pill kbd{position:absolute;right:-2px;bottom:-2px;font:600 10px system-ui;background:var(--bg);color:var(--mute);border:1px solid var(--line);border-radius:5px;padding:0 4px}
 .pill .pin{position:absolute;left:-2px;top:-2px;width:10px;height:10px;border-radius:50%;background:var(--ok);display:none}.pill.pinned .pin{display:block}
+#corner{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:4}
+#corner .cl{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--mute);background:color-mix(in srgb,var(--panel) 80%,transparent);border:1px solid var(--line);opacity:.55;transition:opacity .2s,box-shadow .2s,color .2s}
+#corner .cl svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#corner .cl img{width:26px;height:26px;image-rendering:auto}
+#corner .cl:hover,#corner .cl:focus-visible{opacity:1;color:var(--acc);outline:none}
+#redpill:hover,#redpill:focus-visible{box-shadow:0 0 0 2px #ff3b30aa,0 0 18px #ff3b30aa}
+@media (max-height:520px){#corner{display:none}}
 #tip{position:fixed;pointer-events:none;background:#000c;color:#fff;font-size:12px;padding:5px 8px;border-radius:6px;display:none;z-index:9;white-space:nowrap}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;display:none;z-index:9;max-width:80vw}
 #chip{position:fixed;left:14px;top:14px;display:none;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:6}
@@ -48,6 +55,10 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <label>System <select id="kos"><option value="win">Windows</option><option value="mac">macOS</option><option value="sh">Linux</option></select></label>
 <p id="kn">Unsigned scripts, plain text, no network calls. The zip includes SHA256SUMS.txt and a README with the Unblock / Open Anyway steps.</p>
 <div class="krow"><button class="btn" id="kgo">Create zip</button><button class="btn alt" id="kx">Close</button></div><p id="kh"></p></div>
+<div id="corner">
+  <a id="manual" class="cl" href="https://red1oon.github.io/BIMCompiler/BIMToolsGuide/" target="_blank" rel="noopener" title="User manual" aria-label="BIM Tools user manual (opens in a new tab)"><svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></a>
+  <a id="redpill" class="cl" href="https://red1oon.github.io/BIMCompiler/RED_PILL/" target="_blank" rel="noopener" title="Where does this come from?" aria-label="The red pill — where BIM Tools comes from (opens in a new tab)"><img src="viewer/redpill.png" alt="" width="40" height="40"></a>
+</div>
 <div id="rail"></div><div id="tip"></div><div id="toast"></div><div id="menu"></div>
 <div id="help"><div><b>Keys</b><table id="ht"></table><p style="color:var(--mute);margin:8px 0 0">Esc closes panels</p></div></div>
 
