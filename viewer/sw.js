@@ -190,7 +190,7 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1628';
+const CACHE_VERSION = 'v1629';
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
 // v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
 // v1627 (2026-10-09) §INSPECT_EARTH_ROAD: earthworks_overlay.js (Inspect EW + RW panels, inferred Cut & Fill overlay) added to PRECACHE_ASSETS; std_values.json gains _cut_fill; panels.js ew/rw rows.
@@ -986,6 +986,7 @@ const PRECACHE_ASSETS = [
   'db_resolve.js',
   'helpers.js',
   'silhouette_refine.js',
+  'vertex_weld.js',
   'surface_r10.js',
   'sky_portal.js',
   'sky_occlusion.js',

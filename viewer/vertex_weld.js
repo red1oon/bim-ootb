@@ -57,6 +57,20 @@
     for (var i = 0; i < A.length; i += 3) { if ((A[i]===0&&A[i+1]===0&&A[i+2]===0) || (B[i]===0&&B[i+1]===0&&B[i+2]===0)) continue; /* ill-defined (cancelling) normal: skip */ var d = A[i]*B[i] + A[i+1]*B[i+1] + A[i+2]*B[i+2]; if (d < m) m = d; }
     return Math.acos(Math.min(1, m)) * 180 / Math.PI;
   }
-  var api = { weld: weld, derive: cornerNormals, maxNormalDeltaDeg: maxNormalDeltaDeg, EPS: EPS, COS_MIN: COS_MIN };
+  // Weld every row of a sql.js DB's component_geometries in place (idempotent: an already-welded row is left alone).
+  function weldDb(db) {
+    var t0 = Date.now(), rows = 0, changed = 0, vb = 0, va = 0, sel = db.prepare('SELECT geometry_hash, vertices, faces FROM component_geometries'), todo = [];
+    while (sel.step()) {
+      var r = sel.get(); if (!r[1] || !r[2]) continue; rows++;
+      var v = new Float32Array(r[1].buffer.slice(r[1].byteOffset, r[1].byteOffset + r[1].byteLength)), f = new Uint32Array(r[2].buffer.slice(r[2].byteOffset, r[2].byteOffset + r[2].byteLength));
+      var w = weld(v, f); vb += v.length / 3; if (!w || w.after === w.before) { va += v.length / 3; continue; }
+      va += w.after; todo.push([r[0], new Uint8Array(w.vertices.buffer), new Uint8Array(w.faces.buffer)]);
+    }
+    sel.free();
+    var up = db.prepare('UPDATE component_geometries SET vertices=?, faces=? WHERE geometry_hash=?');
+    todo.forEach(function (t) { up.run([t[1], t[2], t[0]]); changed++; }); up.free();
+    return { rows: rows, changed: changed, vertsBefore: vb, vertsAfter: va, ms: Date.now() - t0 };
+  }
+  var api = { weldDb: weldDb, weld: weld, derive: cornerNormals, maxNormalDeltaDeg: maxNormalDeltaDeg, EPS: EPS, COS_MIN: COS_MIN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.VertexWeld = api;
 })(typeof window !== 'undefined' ? window : globalThis);
