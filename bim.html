@@ -200,11 +200,13 @@ async function ensureRenderer() {
   const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000); const ctl = new OrbitControls(cam, $('cv'));
   R = { renderer, scene, cam, ctl, group: null, meshes: [], ray: new THREE.Raycaster(), mouse: new THREE.Vector2(), hover: null };
   addEventListener('resize', fit); fit();
-  (function loop() { requestAnimationFrame(loop); if (document.body.classList.contains('view')) { R.ctl.update(); R.renderer.render(R.scene, R.cam); } })();
+  // draw only when something changed (orbit, resize, selection): a continuous loop starves timers on software GL and wastes battery
+  R.dirty = true; R.ctl.addEventListener('change', () => { R.dirty = true; });
+  (function loop() { requestAnimationFrame(loop); if (document.body.classList.contains('view') && R.dirty) { R.dirty = false; R.ctl.update(); R.renderer.render(R.scene, R.cam); } })();
   $('cv').addEventListener('pointermove', onMove); $('cv').addEventListener('click', onPick); $('cv').addEventListener('pointerdown', (e) => { R.down = [e.clientX, e.clientY]; });
   return R;
 }
-function fit() { if (!R) return; R.renderer.setSize(innerWidth, innerHeight, false); R.cam.aspect = innerWidth / innerHeight; R.cam.updateProjectionMatrix(); }
+function fit() { if (!R) return; R.dirty = true; R.renderer.setSize(innerWidth, innerHeight, false); R.cam.aspect = innerWidth / innerHeight; R.cam.updateProjectionMatrix(); }
 async function loadMeshes(c) {
   if (location.protocol === 'file:') { toast('3D view needs the launcher or a web address (file:// cannot load the IFC engine).'); log('§BIM_RENDER verdict=INCONCLUSIVE reason=file-protocol'); return false; }
   let r; try { r = await ensureRenderer(); } catch (e) {
@@ -242,11 +244,11 @@ async function loadMeshes(c) {
 }
 async function showView() {
   if (!(await loadMeshes(cur))) { hideView(); return; }
-  document.body.classList.add('view'); paint(); chip();
+  document.body.classList.add('view'); if (R) R.dirty = true; paint(); chip();
 }
 function hideView() { document.body.classList.remove('view'); }
 function paint() {
-  if (!R) return;
+  if (!R) return; R.dirty = true;
   for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
 }
 function chip() { $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
