@@ -16,7 +16,8 @@
     "export": "sh icc/fetch_profiles.sh && node doc/run_export.js",
     "samples": "node doc/run_export.js --no-python",
     "witness_all": "node witness_all.js",
-    "groups": "node doc/run_groups.js"
+    "groups": "node doc/run_groups.js",
+    "panel": "node panel/make_screenshot.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

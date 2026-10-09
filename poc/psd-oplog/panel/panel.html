@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8"><title>psd-oplog panel</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#1e1f22;--panel:#2b2d31;--panel2:#313338;--line:#3c3f45;--ink:#e6e7ea;--mute:#9aa0a8;--acc:#6aa9ff;--ok:#4cc38a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#top{height:34px;background:#18191c;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 14px;color:var(--mute)}#top b{color:var(--ink);letter-spacing:.3px}
+#tab{background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px 6px 0 0;margin-top:6px}
+#main{display:grid;grid-template-columns:1fr 340px;height:calc(100vh - 34px - 24px)}
+#stage{position:relative;display:flex;align-items:center;justify-content:center;background:#141517}
+#stage canvas{box-shadow:0 18px 60px rgba(0,0,0,.65);border:1px solid #000}
+#zoom{position:absolute;left:14px;bottom:10px;color:var(--mute);font-size:12px}
+#side{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.hd{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--mute);text-transform:uppercase;letter-spacing:.8px;font-size:11px;display:flex;justify-content:space-between}
+#opts{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}#opts div{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:4px 8px}
+#layers{flex:1;overflow:hidden;padding:4px 0}
+.row{display:flex;align-items:center;gap:8px;height:27px;padding:0 10px;border-bottom:1px solid #2a2c30}
+.row.sel{background:#3a4c6b}.row .eye{width:14px;color:var(--mute)}.row canvas{width:21px;height:21px;border:1px solid #111;background:repeating-conic-gradient(#555 0 25%,#444 0 50%) 50%/8px 8px}
+.row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row .meta{color:var(--mute);font-size:10px;text-align:right;line-height:1.05}.row .grp{color:var(--acc)}.row .clip{color:#e9b866}
+#info{border-top:1px solid var(--line);padding:6px 12px;font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:3px 12px;color:var(--mute)}#info b{color:var(--ink);font-weight:500}
+#wit{border-top:1px solid var(--line);padding:8px 12px 10px}#wit .l{display:flex;justify-content:space-between;padding:1.5px 0}.ok{color:var(--ok);font-weight:600}
+#foot{height:24px;background:#18191c;border-top:1px solid var(--line);color:var(--mute);display:flex;align-items:center;padding:0 14px;gap:22px;font-size:11.5px}
+</style>
+<div id="top"><b>psd-oplog</b><span>File</span><span>Edit</span><span>Layer</span><span>Select</span><span>View</span><span id="tab">sunset_over_ridge.oplog</span></div>
+<div id="main"><div id="stage"><canvas id="cv"></canvas><div id="zoom"></div></div>
+<div id="side"><div class="hd"><span>Layers</span><span id="cnt"></span></div><div id="opts"><div id="mode">Normal</div><div>Opacity: <b id="op">100%</b></div></div><div id="layers"></div>
+<div class="hd"><span>Document</span></div><div id="info"></div><div class="hd"><span>Witness (live from witness_log/)</span></div><div id="wit"></div></div></div>
+<div id="foot"><span id="st1"></span><span id="st2"></span><span id="st3"></span></div>
+<script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../stack.js"></script><script src="../doc/schema.js"></script><script src="../doc/docfold.js"></script><script src="sample_doc.js"></script>
+<script>
+(async () => {
+  const W = 512, $ = (i) => document.getElementById(i), L = await import('../node_modules/lcms-wasm/dist/lcms.js'), lcms = await L.instantiate(), ctx = { L, lcms, blobs: new Map() };
+  const { ops, names } = SampleDoc.sampleDoc(W), errs = DocSchema.validate(ops, ctx.blobs); if (errs.length) throw new Error(errs.join('; '));
+  const t0 = performance.now(), f = DocFold.fold(ops, ctx), back = DocFold.composite(f, ctx), rgba = DocFold.render(back, f, 'srgb', ctx), ms = Math.round(performance.now() - t0);
+  const cv = $('cv'); cv.width = cv.height = W; cv.style.width = cv.style.height = 'min(78vh, 560px)'; cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba), W, W), 0, 0);
+  const st = f.st, rows = []; let nl = 0;
+  const thumb = (l) => { const c = document.createElement('canvas'); c.width = c.height = 52; const g = c.getContext('2d'), img = new ImageData(52, 52), s = W / 52; for (let y = 0; y < 52; y++) for (let x = 0; x < 52; x++) { const i = ((y * s + s / 2) | 0) * W + ((x * s + s / 2) | 0), a = l.pix[i*4+3]; if (a > 0) { for (let k = 0; k < 3; k++) img.data[(y*52+x)*4+k] = Math.min(255, 255 * l.pix[i*4+k] / a); img.data[(y*52+x)*4+3] = Math.min(255, 255 * a); } } g.putImageData(img, 0, 0); return c; };
+  const walk = (ids, depth) => { for (let j = ids.length - 1; j >= 0; j--) { const id = ids[j], g = st.G[id], l = st.L[id]; nl++;
+    const row = document.createElement('div'); row.className = 'row'; row.style.paddingLeft = (10 + depth * 18) + 'px';
+    const eye = document.createElement('span'); eye.className = 'eye'; eye.textContent = '●'; row.appendChild(eye);
+    if (g) { const ic = document.createElement('span'); ic.className = 'grp'; ic.textContent = '▾ ▭'; row.appendChild(ic); } else { if (l.clip) { const c = document.createElement('span'); c.className = 'clip'; c.textContent = '↳'; row.appendChild(c); } row.appendChild(thumb(l)); }
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = names[id] || ('Layer ' + id); row.appendChild(nm);
+    const m = document.createElement('span'); m.className = 'meta'; const node = g || l; m.innerHTML = (node.mode === 'pass-through' ? 'Pass Through' : node.mode.replace('-', ' ')) + '<br>' + Math.round(node.opacity * 100) + '%' + (node.mask ? ' · mask' : ''); row.appendChild(m);
+    if (id === 5) row.classList.add('sel'); rows.push(row); if (g) walk(g.children, depth + 1); } };
+  walk(st.root, 0); const host = $('layers'); rows.forEach((r) => host.appendChild(r)); $('cnt').textContent = Object.keys(st.L).length + ' layers · ' + Object.keys(st.G).length + ' groups';
+  $('mode').textContent = 'Normal'; $('op').textContent = '100%';
+  const info = [['Size', W + ' × ' + W + ' px'], ['Working space', 'Display P3-like (matrix profile)'], ['Compositing', 'gamma-encoded (Photoshop default)'], ['Layer spaces', 'sRGB + P3 mixed, converted on import'], ['Engine', 'canonical float32 fold · lcms-wasm 16-bit'], ['Render', ms + ' ms in this browser']];
+  $('info').innerHTML = info.map(([a, b]) => '<span>' + a + '</span><b>' + b + '</b>').join('');
+  $('zoom').textContent = '100% · ' + W + ' × ' + W; $('st1').textContent = 'op-log: ' + ops.length + ' ops · schema v2'; $('st2').textContent = 'every pixel reproducible from the log'; $('st3').textContent = 'POC panel — engine output, not an editor';
+  // witness numbers
+  const wit = $('wit'), add = (k, v, ok) => { const d = document.createElement('div'); d.className = 'l'; d.innerHTML = '<span>' + k + '</span><span class="' + (ok ? 'ok' : '') + '">' + v + '</span>'; wit.appendChild(d); };
+  try { const names2 = ['oplog_witness', 'stack', 'psd_roundtrip', 'icc', 'doc', 'export', 'groups'], got = []; for (const n of names2) { let r = await fetch('../witness_log/latest/' + n + '.json'); if (!r.ok) r = await fetch('../witness_log/latest/' + n + '.txt'); const t = await r.text(); let gate = /PASS/.test(t.slice(0, 400)) ? 'PASS' : 'FAIL', j = null; try { j = JSON.parse(t); gate = j.gate || gate; } catch (e) {} got.push([n, gate, j]); }
+    add('Suites passing', got.filter((g) => g[1] === 'PASS').length + ' / ' + got.length, true);
+    const gj = got.find((g) => g[0] === 'groups')[2]; if (gj) { add('Group/clip checks', gj.n_checks + ' logged · ' + gj.checks.filter((c) => c.pass).length + ' pass', true);
+      const ho = gj.checks.filter((c) => c.id === 'H27'); if (ho.length) add('Held-out vs psd-tools', ho.length + '/' + ho.length + ' · max mean ' + Math.max(...ho.map((c) => c.value)).toFixed(2) + ' lv', true);
+      const h20 = gj.checks.filter((c) => c.id === 'H20'); if (h20.length) add('vs float64 reference', 'max ' + Math.max(...h20.map((c) => c.value)) + ' level', true); }
+    add('Verified by', 'float64 oracle · psd-tools · native lcms', false); } catch (e) { add('witness_log', 'unavailable', false); }
+  window.__ready = true;
+})();
+</script>

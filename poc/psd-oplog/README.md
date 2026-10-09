@@ -224,3 +224,8 @@ feature agreed to 0.43-0.48 before any change. Candidate formulas computed in fl
 cause to two points: the W3C over colour rule for partially transparent bases (0.42), and alpha growth carried through a chain (0.43 vs 1.9 / 3.7 for restoring after each layer). The rule is identical to
 source-atop whenever the base pixel is opaque (1.45e-7). **Caveats**: the rule was fitted twice to psd-tools, so in-sample agreement is not independent evidence (the held-out set is); psd-tools is
 not Photoshop, and Photoshop's behaviour on partially transparent clip bases is **unknown / deferred**; GPU twin (`glstack.js`) does not implement groups or clipping yet.
+
+## Panel screenshot (`panel/`, `npm run panel`)
+`panel/panel.html` is a small viewer that renders a 235-op sample document (`panel/sample_doc.js`: groups, clipped layers, a masked vignette, sRGB + P3 layers in a P3 working space) through the same engine
+(canonical fold + lcms-wasm) and shows the layer tree, document info and the live witness numbers from `witness_log/latest/`. `node panel/make_screenshot.js` captures it headlessly to
+`panel/out/panel_sample.png` (git-ignored). It is a POC viewer for engine output, **not an editor**: no tools, no editing, no Photoshop UI; the layout is generic.
