@@ -912,9 +912,14 @@ async function setupScene(A) {
     try {
       var r = db.exec("SELECT COUNT(*), COALESCE(SUM(LENGTH(normals)),0) FROM component_geometries WHERE normals IS NOT NULL");
       var n = r.length ? r[0].values[0][0] : 0, b = r.length ? r[0].values[0][1] : 0;
-      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); return; }
+      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); }
       var t0 = performance.now();
-      db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      if (n) db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      // §VERT_WELD (M4-A, CIVIL_HIGHWAY_JELAPANG.md §MEM_GROWTH): merge duplicate corners at data level, look-neutral. Needs normals gone
+      // (stored normals would no longer match the welded vertex list), so it runs only after the drop above.
+      if (window.VertexWeld) { var W = window.VertexWeld.weldDb(db);
+        console.log('§VERT_WELD_SAVE rows=' + W.rows + ' changed=' + W.changed + ' vertsBefore=' + W.vertsBefore + ' vertsAfter=' + W.vertsAfter + ' ms=' + W.ms + (W.changed ? '' : ' INCONCLUSIVE(nothing welded)')); }
+      else console.warn('§VERT_WELD_SAVE skipped: vertex_weld.js not loaded');
       db.run('VACUUM');
       console.log('§MESH_SLIM_SAVE normalsDropped=' + n + ' bytes=' + b + ' ms=' + (performance.now() - t0).toFixed(0));
     } catch (e) { console.warn('§MESH_SLIM_SAVE_ERR ' + e.message); }
