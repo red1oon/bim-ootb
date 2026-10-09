@@ -35,3 +35,27 @@ jobs:
         run: |
           node bim-cli.js kit --os ${{ matrix.os == 'windows-latest' && 'win' || (matrix.os == 'macos-latest' && 'mac' || 'sh') }} -o "$RUNNER_TEMP/kit.zip"
           python -c "import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print('§WITNESS PASS W-KIT-2 entries',len(z.infolist()))" "$RUNNER_TEMP/kit.zip"
+  page:
+    # The page itself (bim.html) in a headless Chromium on each OS: render, hover tip, search, export, reload-restore, drag-out payload.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install puppeteer outside the repo
+        shell: bash
+        run: npm install puppeteer --prefix "$RUNNER_TEMP/pp" --no-audit --no-fund
+      - name: Page witnesses (W-RUN-2, W-PICK-1..5, W-RELOAD, W-DRAG-1)
+        shell: bash
+        env:
+          BIM_NO_OPEN: '1'
+        run: |
+          export PUPPETEER="$RUNNER_TEMP/pp/node_modules/puppeteer"
+          node bim/tests/witness_bim_page.js IFC/Duplex_ARC.ifc
+          node bim/tests/witness_bim_reload.js IFC/Duplex_ARC.ifc
+          node bim/tests/witness_bim_dragout.js
