@@ -101,7 +101,7 @@
         }).join('');
       } else inner = codeNodes(rows);
       tree[v] = { n: rows.length, groups: groups };
-      html += '<details data-lvl="1" data-verdict="' + v + '"' + (v === 'OK' ? '' : ' open') + '><summary style="cursor:pointer;font-weight:600;font-size:12px;color:' + VCOL[v] + ';margin:6px 0 2px">' + v + ' (' + rows.length + ')</summary>' + inner + '</details>';
+      html += '<details data-lvl="1" data-verdict="' + v + '"' + '' + '><summary style="cursor:pointer;font-weight:600;font-size:12px;color:' + VCOL[v] + ';margin:6px 0 2px">' + v + ' (' + rows.length + ')</summary>' + inner + '</details>';
     });
     return { html: html, tree: tree };
   }

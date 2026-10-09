@@ -584,7 +584,7 @@
         var miss = (res.discPlan || []).filter(function (x) { return x.kind !== 'real'; }), V = 'MISSING SPEED SIGN';
         res.missingRows = miss.map(function (x) { var z = res.zones.filter(function (q) { return q.id === x.zone; })[0];
           return { guid: x.guid, zone: x.zone, s0: z.s0, s1: z.s1, speed: z.speed, code: x.code, text: 'Zone ' + z.id + ' (' + RNG(z.s0, z.s1) + ', ' + z.speed + ' km/h) has no speed-limit sign \u2014 shown on ' + (x.guid ? (x.code || 'a sign board') : 'a free-standing marker') + ' for demo' }; });
-        if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '" open><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
+        if (miss.length) h += '<details class="sz-missing-grp" data-verdict="' + V + '"><summary style="cursor:pointer;font-weight:600;font-size:12px;color:#ffaa33;margin:6px 0 2px">' + V + ' (' + miss.length + ')</summary>' + res.missingRows.map(function (m, i) {
           return '<div class="sz-missing" data-i="' + i + '" data-guid="' + esc(m.guid || '') + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid #ffaa33;background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa">' + esc(m.text) + '</div>'; }).join('') + '</details>';
         // §SIGN_VS_SPEED group: ONLY the signs an advance-placement rule applies to (not all 138); CHECK first, NOT JUDGED = hazard position unknown (counted, not CHECK)
         var AD = res.advance, ADCOL = { CHECK: '#cc4444', OK: '#44cc44', NOT_JUDGED: '#888' };
@@ -592,7 +592,7 @@
           res.advRows = ['CHECK', 'OK', 'NOT_JUDGED'].reduce(function (a, v) { return a.concat(AD.rows.filter(function (r) { return r.verdict === v; })); }, []);
           h += '<div class="sz-adv-grp" style="margin-top:6px"><div style="font-size:11px;color:#9ad;margin-bottom:2px">Sign vs approach speed (' + AD.applicable + ' signs a rule applies to)</div>' +
             ['CHECK', 'OK', 'NOT_JUDGED'].map(function (v) { var rs = res.advRows.filter(function (r) { return r.verdict === v; }); if (!rs.length) return '';
-              return '<details class="sz-adv-v" data-verdict="' + v + '"' + (v === 'NOT_JUDGED' ? '' : ' open') + '><summary style="cursor:pointer;font-weight:600;font-size:11px;color:' + ADCOL[v] + ';margin:3px 0">' + v.replace('_', ' ') + ' (' + rs.length + ')</summary>' +
+              return '<details class="sz-adv-v" data-verdict="' + v + '"' + '' + '><summary style="cursor:pointer;font-weight:600;font-size:11px;color:' + ADCOL[v] + ';margin:3px 0">' + v.replace('_', ' ') + ' (' + rs.length + ')</summary>' +
                 rs.map(function (r) { var i = res.advRows.indexOf(r);
                   return '<div class="sz-adv" data-i="' + i + '" data-guid="' + esc(r.guid) + '" title="' + esc(r.why) + '" style="margin:1px 0;padding:2px 6px;border-left:3px solid ' + ADCOL[v] + ';background:rgba(255,255,255,0.03);cursor:pointer;font-size:10px;color:#aaa"><b>' + esc(r.code || '') + '</b> · ' +
                     (r.dist != null ? r.dist.toFixed(0) + ' m to ' + esc(r.noun) + ' (need \u2265 ' + r.minM + ')' : esc(r.noun) + ' \u2014 not judged') + '</div>'; }).join('') + '</details>'; }).join('') +
@@ -631,6 +631,12 @@
         console.log('§SPEED_MISSING rows=' + miss.length + ' zones=' + miss.map(function (x) { return x.zone; }).join(','));
         body.querySelector('.sz-signs').addEventListener('click', function (ev) { var el = ev.target.closest && ev.target.closest('.sz-row'); if (!el) return; focusRow(res, std, res.listRows[+el.getAttribute('data-i')], card); });
         console.log('§SPEED_ZONES_PANEL zones=' + res.zones.length + ' signRows=' + res.signRows.length + ' mode=' + res.mode);
+        // §PANEL_COLLAPSED (user 2026-10-09: "panels … all expanded and thus cluttering long"): the on/off toggle stays on top, every other row/legend/list
+        //   sits in ONE closed group; summary carries the counts, so nothing is hidden, only folded.
+        var tgl = tg.closest('label') || tg.parentNode, det = document.createElement('details'); det.className = 'sz-more';
+        det.innerHTML = '<summary style="cursor:pointer;font-size:12px;color:#9ad;margin:4px 0">Zones, legend, signs (' + res.zones.length + ' zones, ' + res.listRows.length + ' speed signs)</summary>';
+        while (body.firstChild) det.appendChild(body.firstChild);
+        body.appendChild(tgl); body.appendChild(det);
         setTimeout(function () { prewarm(res, std); }, 400);   // after the panel has painted its own frame
         return res;
       });

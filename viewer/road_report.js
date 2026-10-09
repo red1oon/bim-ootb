@@ -189,7 +189,7 @@
       bySection(res).forEach(function (g) {
         var ls = g.lines.slice().sort(function (x, y) { return SEV.indexOf(x.sev) - SEV.indexOf(y.sev); }), bad = ls.filter(function (l) { return l.sev === 'CRITICAL' || l.sev === 'WARNING'; }).length;
         var dots = SEV.map(function (k) { var n = ls.filter(function (l) { return l.sev === k; }).length; return n ? '<span style="color:' + COL[k] + '">' + n + '</span>' : ''; }).filter(Boolean).join(' \u00b7 ');
-        h += '<details class="rr-sec" data-sec="' + g.id + '"' + (bad ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700;font-size:13px;color:#eee;margin:8px 0 2px">' + esc(g.name) + ' <span style="font-weight:400;font-size:11px">' + dots + '</span></summary>' +
+        h += '<details class="rr-sec" data-sec="' + g.id + '"' + '' + '><summary style="cursor:pointer;font-weight:700;font-size:13px;color:#eee;margin:8px 0 2px">' + esc(g.name) + ' <span style="font-weight:400;font-size:11px">' + dots + '</span></summary>' +
           ls.map(function (l) { var i = res.lines.indexOf(l); return '<div class="rr-line" data-i="' + i + '" data-sev="' + l.sev + '" style="margin:2px 0;padding:3px 6px;border-left:3px solid ' + COL[l.sev] + ';background:rgba(255,255,255,0.03);' + (l.s != null || l.guid ? 'cursor:pointer;' : '') + 'line-height:1.35"><b style="color:' + COL[l.sev] + ';font-size:10px">' + l.sev + '</b> ' + esc(l.text) + '</div>'; }).join('') + '</details>';
       });
       h += '<div style="display:flex;gap:6px;margin-top:8px"><button class="rr-copy" style="flex:1">Copy</button><button class="rr-dl" style="flex:1">Download .txt</button><button class="rr-pdf" style="flex:1">PDF</button></div>';
