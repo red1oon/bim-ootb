@@ -236,7 +236,7 @@ async function loadMeshes(c) {
   // IFC is Z-up; three is Y-up
   grp.rotation.x = -Math.PI / 2; r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(grp), ctr = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()).length() || 10;
-  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.cam.near = sz / 1000; r.cam.far = sz * 20; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
+  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.modelDiag = sz; r.cam.near = sz / 1000; r.cam.far = sz * 20; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
   c.rendered = true; c.renderedEids = seen;
   const inTable = c.prods.filter((p) => seen.has(p.id)).length;
   log('§BIM_RENDER meshes=' + r.meshes.length + ' elementsRendered=' + seen.size + ' productsWithGeometry=' + inTable + ' tris=' + tris + ' verdict=' + (seen.size ? 'PASS' : 'INCONCLUSIVE'));
@@ -291,11 +291,21 @@ function matches(q) {
 }
 function renderList() {
   const q = $('sq').value, m = matches(q), box = $('sl'); box.innerHTML = '';
+  if (!cur) { box.innerHTML = '<div class="row"><span>Drop an IFC first, then search it here.</span></div>'; $('sc').textContent = ''; return; }
   m.slice(0, 400).forEach((p) => { const d = document.createElement('div'); d.className = 'row' + (selected.has(p.id) ? ' sel' : ''); d.innerHTML = '<span></span><small></small>'; d.firstChild.textContent = p.name || '(no name)'; d.lastChild.textContent = p.type.replace(/^IFC/, ''); d.onclick = () => { if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id); paint(); chip(); frame(p.id); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search eid=' + p.id); }; box.appendChild(d); });
   $('sc').textContent = m.length + ' match' + (m.length === 1 ? '' : 'es'); log('§BIM_SEARCH q="' + q + '" matches=' + m.length); window.__bim.lastSearch = m.length;
 }
-function frame(eid) { if (!R) return; const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); if (b.isEmpty()) return; const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1; R.ctl.target.copy(c); R.cam.position.copy(c).add(new THREE.Vector3(s, s * 0.7, s)); R.ctl.update(); }
-function toggleSearch(open) { const s = $('search'); const o = open === undefined ? !s.classList.contains('open') : open; s.classList.toggle('open', o); if (o) { $('sq').focus(); renderList(); } }
+function frame(eid) { if (!R) return; const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); if (b.isEmpty()) return; const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1; R.ctl.target.copy(c); const d = Math.max(s * 1.6, (R.modelDiag || 0) * 0.3);   // stay far enough back that the building around the item stays on screen
+  R.cam.position.copy(c).add(new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(d)); R.ctl.update(); }
+function toggleSearch(open) {
+  const s = $('search'); const o = open === undefined ? !s.classList.contains('open') : open; s.classList.toggle('open', o);
+  if (o) {
+    // Search is for picking, and picking needs the model on screen. If a model is loaded but a background tool (Health, Split, Upgrade)
+    // hid the canvas, bring the model back and arm Extract — otherwise a click on a row selects something nobody can see.
+    if (cur && !document.body.classList.contains('view')) { arm('extract', true); showView(); }
+    $('sq').focus(); renderList();
+  }
+}
 $('sq').oninput = renderList;
 $('sa').onclick = () => { matches($('sq').value).forEach((p) => selected.add(p.id)); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search-all'); };
 
