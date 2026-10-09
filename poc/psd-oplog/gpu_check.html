@@ -1,0 +1,40 @@
+<!doctype html><meta charset="utf-8"><title>Step 5: real-GPU determinism check</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font:14px/1.45 system-ui,sans-serif;max-width:900px;margin:24px auto;padding:0 16px}code,pre,textarea{font:12px ui-monospace,monospace}
+table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #8884;padding:3px 8px;text-align:right}th:first-child,td:first-child{text-align:left}
+.pass{color:#0a7d2c;font-weight:700}.fail{color:#c0271b;font-weight:700}textarea{width:100%;height:220px}</style>
+<h2>Step 5: real-GPU determinism check</h2>
+<p>Open this file in your normal browser (double-click works). Click <b>Run</b>, then copy the result box and paste it to Claude.
+Repeat in a second browser (Firefox, Safari, Edge) and, if you can, on a second device.</p>
+<button id="run">Run</button> <span id="status"></span>
+<h3>Where it ran</h3><pre id="env"></pre>
+<h3>Verdict</h3><div id="verdict">not run</div>
+<h3>Scenes</h3><div id="scenes"></div>
+<h3>Copy this</h3><textarea id="json" readonly></textarea>
+<script src="stack.js"></script><script src="oracle.js"></script><script src="glstack.js"></script><script src="golden.js"></script>
+<script>
+const W = 128, lim = { gl32: { max: 2, mean: 0.1 }, gl16: { max: 3, mean: 0.3 } };
+const $ = (id) => document.getElementById(id), tick = () => new Promise((r) => setTimeout(r, 20));
+async function main() {
+  const S = Stack, O = Oracle, fails = [], rows = [], res = { env: {}, scenes: [] };
+  res.env = { renderer: GLStack.renderer(), userAgent: navigator.userAgent, platform: navigator.platform, when: new Date().toISOString() };
+  const soft = /swiftshader|llvmpipe|software|basic render/i.test(res.env.renderer);
+  $('env').textContent = res.env.renderer + '\n' + navigator.userAgent + (soft ? '\n\nWARNING: this looks like a SOFTWARE renderer, not a real GPU. Enable hardware acceleration and re-run.' : '');
+  const run = async (name, ops, golden) => {
+    $('status').textContent = 'running ' + name + ' ...'; await tick();
+    const st = S.fold(ops, W), back = S.composite(st), c8 = S.toRGBA8(back), r = { name, f32_hash: S.hashF32(back) };
+    if (golden) { r.cpu_matches_golden = r.f32_hash === golden.f32_hash && S.sha256(c8) === golden.rgba8_hash; if (!r.cpu_matches_golden) fails.push(name + ': CPU fold differs from golden hashes on this device'); }
+    for (const bits of [32, 16]) { const d = S.diff(c8, GLStack.run(ops, W, bits), true); r['gl' + bits] = d;
+      if (d.max > lim['gl' + bits].max || d.mean > lim['gl' + bits].mean) fails.push(name + ': GL f' + bits + ' ' + JSON.stringify(d)); }
+    r.canvas2d_info = S.diff(c8, O.canvas2d(st), true); res.scenes.push(r);
+    rows.push('<tr><td>' + name + '</td><td>' + (golden ? (r.cpu_matches_golden ? 'match' : '<span class=fail>DIFFERS</span>') : '-') + '</td><td>' + r.gl32.max + ' / ' + r.gl32.mean + '</td><td>' + r.gl16.max + ' / ' + r.gl16.mean + '</td><td>' + r.canvas2d_info.max + ' / ' + r.canvas2d_info.mean + '</td></tr>');
+  };
+  for (const s of [1, 2, 3]) await run('stack_seed' + s, S.makeScene(s, W), GOLDEN['scene' + s]);
+  for (const m of S.MODES.slice(1)) await run('mode_' + m, S.makeModeScene(m, 7, W), null);
+  $('scenes').innerHTML = '<table><tr><th>scene</th><th>CPU fold == golden hashes</th><th>GL f32 vs CPU (max/mean levels)</th><th>GL f16 vs CPU</th><th>Canvas2D (info)</th></tr>' + rows.join('') + '</table>';
+  res.gate = fails.length ? 'FAIL' : 'PASS'; res.fails = fails; res.software_renderer_suspected = soft;
+  $('verdict').innerHTML = '<span class="' + (fails.length ? 'fail' : 'pass') + '">' + res.gate + '</span>' + (soft ? ' <span class=fail>(software renderer: not a real-GPU result)</span>' : '') + (fails.length ? '<pre>' + fails.join('\n') + '</pre>' : '');
+  $('json').value = JSON.stringify(res, null, 1); $('status').textContent = 'done';
+}
+$('run').onclick = () => main().catch((e) => { $('status').textContent = 'error'; $('json').value = String(e && e.stack || e); });
+</script>

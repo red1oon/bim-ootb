@@ -5,7 +5,15 @@
   "scripts": {
     "precision": "node exp_precision_blend_speed.js",
     "tiles_psd": "node exp_tiles_psd.js",
-    "determinism": "node run.js"
+    "determinism": "node run.js",
+    "stack": "node run_stack.js",
+    "witness": "node witness_oplog.js",
+    "psd": "node psd_roundtrip.js",
+    "psd_independent": "EMIT_DIR=./.emit node psd_roundtrip.js >/dev/null && python3 -I check_psd_independent.py ./.emit",
+    "test": "npm run witness && npm run stack && npm run psd"
   },
-  "devDependencies": { "playwright-core": "^1.64.0", "ag-psd": "^31.0.3" }
+  "devDependencies": {
+    "playwright-core": "^1.64.0",
+    "ag-psd": "^31.0.3"
+  }
 }

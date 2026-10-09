@@ -31,6 +31,10 @@ tests the load-bearing assumptions before any UI.
 - Interchange: ag-psd import/export, scoped to layers, blend modes, masks.
 - Tests: W3C blend formulas, golden-image replay hashes, PSD round-trip corpus.
 
+## Status update
+Steps 1-4 (alpha/masks/layer stack, op-log witness, PSD round-trip incl. independent reader) are DONE; see README.
+Only step 5 (real GPU, needs a person) and later items remain. The list below is the original plan; items 2 and 4 are now partly done.
+
 ## Not proven (do these next, in order)
 1. Run `npm run determinism` on real GPUs (NVIDIA/AMD/Intel/Apple) and a second browser. Fast-math/FMA/driver
    compilers are the biggest risk to the "deterministic fold" claim.
