@@ -6,7 +6,7 @@
     darken: Math.min, lighten: Math.max, difference: (b, s) => Math.abs(b - s), exclusion: (b, s) => b + s - 2 * b * s,
     'soft-light': (cb, cs) => { if (cs <= 0.5) return cb - (1 - 2 * cs) * cb * (1 - cb); const D = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : Math.sqrt(cb); return cb + (2 * cs - 1) * (D - cb); } };
   // st: fold state from stack.js (layer pix premult f32, masks). Returns straight RGBA8.
-  function spec64(st) {
+  function spec64raw(st) {   // returns float64 straight colour C (n*3, 0..1) and alpha A
     const W = st.W, n = W * W, C = new Float64Array(n * 3), A = new Float64Array(n);
     for (const id of st.order) { const l = st.L[id];
       for (let i = 0; i < n; i++) {
@@ -15,7 +15,10 @@
         for (let k = 0; k < 3; k++) { const cs = l.pix[i*4+k] / la, cb = C[i*3+k]; C[i*3+k] = (1 - as / ar) * cb + (as / ar) * ((1 - ab) * cs + ab * B[l.mode](cb, cs)); }
         A[i] = ar;
       } }
-    const out = new Uint8Array(n * 4), q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
+    return { C, A };
+  }
+  function spec64(st) {
+    const { C, A } = spec64raw(st), n = A.length, out = new Uint8Array(n * 4), q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
     for (let i = 0; i < n; i++) { for (let k = 0; k < 3; k++) out[i*4+k] = A[i] > 0 ? q(C[i*3+k]) : 0; out[i*4+3] = q(A[i]); }
     return out;
   }
@@ -30,6 +33,6 @@
       mx.globalAlpha = l.opacity; mx.globalCompositeOperation = l.mode === 'normal' ? 'source-over' : l.mode; mx.drawImage(c, 0, 0); }
     return new Uint8Array(mx.getImageData(0, 0, W, W).data.buffer.slice(0));
   }
-  const api = { spec64, canvas2d };
+  const api = { spec64, spec64raw, canvas2d };
   if (typeof module !== 'undefined') module.exports = api; else root.Oracle = api;
 })(this);

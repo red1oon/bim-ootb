@@ -114,3 +114,24 @@ Findings that change the design:
 Limits: one CMYK profile (generic, not a certified press condition like FOGRA/SWOP); relative colorimetric and perceptual only; no
 gamut mapping beyond clipping; Display-P3 profile is generated, not Apple's file; Node and Chromium are both V8 on x86-64, so
 Firefox/Safari/ARM runs of the ICC hashes are still open; Lab/CMYK values were not compared to Photoshop's output.
+
+### Colour-managed document fold (`icc/color_fold.js`, runs inside `npm run icc`)
+Document model: each layer carries a source space (sRGB or Display-P3), the document has a working space, layers are converted on
+import (lcms, 16-bit, NOOPTIMIZE) into float, composited by the canonical stack fold, then exported to sRGB / P3 / CMYK. Two seeded
+10-layer scenes with masks, alternating sRGB- and P3-tagged layers.
+
+| Check | Result |
+|---|---|
+| Pipeline vs an independent float64 path (colour_math + spec compositor, no ICC engine), 2 scenes x 2 working spaces x 2 display spaces | **max 1 level, mean <= 0.002** in all 8 combinations |
+| Node vs Chromium | all outputs (displays, CMYK export, soft-proof) hash-identical; golden in `icc/golden_icc.json` |
+| Working space changes the result (same layers, composited in sRGB vs in P3, shown on sRGB) | dE2000 median 1.2, p95 5.8, max 12.8 (layers all sRGB-tagged: median 1.1, p95 4.2, max 11.2) |
+| Gamma-encoded vs linear-light compositing (sRGB, all 10 blend modes) | **dE2000 median 8.6, p95 17.0, max 31.0** |
+| Soft-proof through the CMYK profile (sRGB->CMYK->sRGB) | neutral ramp: 0% flagged (dE2000 max 2.3); saturated scene: 0.31% flagged (dE2000 > 5), max 6.3 |
+
+Findings:
+1. The ICC import/export plumbing is accurate: with 16-bit NOOPTIMIZE conversions, the colour-managed fold matches an independent float64 computation to 1 level.
+2. **The compositing space is a first-order product decision, not a detail.** Gamma vs linear light differs by dE2000 ~9 on average, and the working RGB primaries alone move results by ~1-6 dE2000. To look like Photoshop, composite gamma-encoded in the document's working space (its default); offer linear light as an explicit option. The space must be recorded in the document, or replay will not reproduce.
+3. A soft-proof gamut warning built from the CMYK round trip separates neutrals (never flagged) from out-of-gamut colours (flagged), but this scene is low-saturation after blending, so only 0.3% of pixels trip it. It needs a highly saturated test scene before trusting thresholds.
+
+Limits: layers are 8-bit tagged data; no 16-bit/float layer import, no embedded-profile reading from PSD yet, no per-layer rendering intent,
+no gamut mapping (clipping only), no black-point compensation test for RGB->RGB, one generic CMYK profile.

@@ -3,5 +3,11 @@
  "srgb_to_p3_16bit_nooptimize": "c1b80038fff52dd7d9ae55748b69b5e6f0887c16b5b526632ba6b5d9655d947e",
  "p3_back_to_srgb_16bit_nooptimize": "9b589a83a5f96b4e0ec753ff5820bc6ae7f44cb5d11f97b92110f6632a6b1d94",
  "srgb_to_cmyk": "d3ccccee40dba97b3b4052cde43b6da069c5c8e0c51730af0329608e6ad3da94",
- "cmyk_to_srgb_roundtrip": "d856d9cc1f25d35703992898c49beb2b12cca1e1700adf69e4eca95628fa25d4"
+ "cmyk_to_srgb_roundtrip": "d856d9cc1f25d35703992898c49beb2b12cca1e1700adf69e4eca95628fa25d4",
+ "display_seed1_work_srgb_display_srgb": "79d1034a11d522059b46ff1ad164909299d4c7311290dc249dc71db74a80fac3",
+ "display_seed1_work_srgb_display_p3": "15b828185eeee52386652c95594a15fdbe9d3c3bd99b4759d2de9675627b2a53",
+ "display_seed1_work_p3_display_srgb": "a4cf5526744c55ecbc10bfeb667d75b834a9ee586a6357aa15c5cb6d13e4c56b",
+ "display_seed1_work_p3_display_p3": "c2d65a384ad8f3e04e9866c1be9ed8f03324c4ed719dbfdfc6018855ee6bba7b",
+ "cmyk_export_seed1_work_p3": "e1b6c5b51d04c8e2be53a54866e659d319df858912114fa4d6c058910afd37a3",
+ "softproof_seed1": "0611922bbdaf4a4396084837117ad65544bf9a2072a6524bc269d09e44655abd"
 }
