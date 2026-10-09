@@ -247,3 +247,18 @@ Implemented straight from the W3C compositing definitions (Lum 0.3/0.59/0.11, Sa
 
 Method notes: the first run failed 3 pre-registered checks; two were my own test-design/diagnosis errors (a float-vs-8-bit picture comparison, and an explanation "16-bit rounding" that the numbers refuted). Both are recorded in `witness_log/HYPOTHESES.md`;
 the PSD importer also had a real bug (flat docs using these modes were stamped v1) that the schema gate caught. Limits: no GPU twin yet; Photoshop's own hue/color definitions may differ from W3C (unknown, deferred).
+
+## Tile store behind `raster` blobs (`tiles/`, `npm run tiles`; 17 logged checks, H32-H38)
+`tiles/tilestore.js`: a raster blob is split into 64x64 tiles, each stored once under the sha256 of its bytes in a SQLite file (sql.js); the blob id stays the sha256 of the WHOLE blob, so `raster` ops, hash chains and all
+golden hashes are unchanged. Reads re-verify every tile hash, tile size and the whole-blob hash, so corruption cannot yield a silently wrong image.
+
+| Check | Result |
+|---|---|
+| Round trip, 40 blobs incl. odd sizes (1x1, 63x65, 130x70), 1 and 4 channels; id == sha256(whole) | 0 mismatches |
+| Dedupe: 8 layers x 51 versions (50 edits of ~100x100), 512x512 | 829 unique / 26,112 logical tiles = **3.2%** (limit 4.0%) |
+| Persistence: exported SQLite reopened in a fresh sql.js (Node) and in Chromium | 100% byte-identical (58/58 in the browser, pure-JS sha256) |
+| `docfold` + schema validation backed by the tile store vs Map-backed blobs (flat P3; groups + clip + non-separable) | identical f32 and sRGB render hashes |
+| Corruption: 300 random (tile bit flip, swapped manifest ids, truncated manifest) | 300/300 detected, 0 silent wrong reads; wrong-tile-size control detected |
+| Region reads (200 random, 512x512 layer) | tiles touched exactly as predicted; bytes equal the slice |
+
+Limits: edits are synthetic, storage is uncompressed, single-file SQLite with no concurrency tests, hashing speed not benchmarked, no streaming into the fold yet (the fold still loads whole layers).

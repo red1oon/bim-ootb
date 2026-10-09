@@ -1,0 +1,143 @@
+{
+ "checks": [
+  {
+   "id": "H32",
+   "name": "blobs round-tripped byte-exactly (of 40, odd sizes, 1 and 4 channels): mismatches",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H32",
+   "name": "blob id == sha256(whole blob): mismatches",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H32",
+   "name": "re-putting an identical blob adds no tiles",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H33",
+   "name": "unique tiles stored / logical tiles of 51 versions (829 / 26112) in percent",
+   "value": 3.175,
+   "cmp": "<=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H33",
+   "name": "non-vacuous: version 0 stored all its tiles",
+   "value": 512,
+   "cmp": "==",
+   "limit": 512,
+   "pass": true
+  },
+  {
+   "id": "H33",
+   "name": "every one of the 408 versions reconstructs byte-exactly (mismatches)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H34",
+   "name": "reopened from exported SQLite file in a fresh instance: mismatches",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H34",
+   "name": "exported database size (KiB, informational)",
+   "value": 14036,
+   "cmp": "<=",
+   "limit": 1000000000,
+   "pass": true
+  },
+  {
+   "id": "H37",
+   "name": "region reads touching a wrong number of tiles (of 200)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H37",
+   "name": "region bytes differing from the slice of the full blob (of 200)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H36",
+   "name": "corruptions detected (of 300: tile bit flip, swapped manifest ids, truncated manifest)",
+   "value": 300,
+   "cmp": "==",
+   "limit": 300,
+   "pass": true
+  },
+  {
+   "id": "H36",
+   "name": "silent wrong reads",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H38",
+   "name": "negative control: reading with a wrong tile size (63 instead of 64) is detected",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H35",
+   "name": "flat_p3: schema validation against the tile-store-backed blobs (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H35",
+   "name": "groups_clip_nonsep: schema validation against the tile-store-backed blobs (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H35",
+   "name": "documents whose f32 + sRGB render hashes are identical for Map-backed and tile-store-backed blobs",
+   "value": 2,
+   "cmp": "==",
+   "limit": 2,
+   "pass": true
+  },
+  {
+   "id": "H34",
+   "name": "Chromium (fresh sql.js, pure-JS sha256) reconstructs blobs that match their ids (of 58)",
+   "value": 58,
+   "cmp": "==",
+   "limit": 58,
+   "pass": true
+  }
+ ],
+ "n_checks": 17,
+ "gate": "PASS",
+ "fails": []
+}

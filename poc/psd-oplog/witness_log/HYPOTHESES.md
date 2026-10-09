@@ -137,3 +137,22 @@ H30a CONFIRMED (<= 1.9e-7) | H30b CONFIRMED | H30c2 CONFIRMED (worst 1, 0 over) 
 H30c pipeline vs exact float64: limit replaced 1 -> 2 (worst observed 2, 1 of 10 documents) with the above justification | H30c3 REFUTED (rounding alone does not explain it) | H30d CONFIRMED like-for-like (mean ~0.50, max 1, 0% over 8; unfitted)
 H30e CONFIRMED (81/98/143 levels) | H30f CONFIRMED | H30g CONFIRMED | H30h CONFIRMED (Node == Chromium) | H31 CONFIRMED (stack, doc, export, groups suites unchanged, goldens intact)
 Not covered: GPU twin (`glstack.js`) has no non-separable modes; Photoshop may differ from the W3C definitions for these modes (Photoshop's own Hue/Color use a different luminance weighting in some versions): UNKNOWN, DEFERRED.
+
+## Tile store behind `raster` blobs (logged BEFORE implementation)
+Design: a raster blob (w*h*4 RGBA8, or w*h mask bytes) is split into tile x tile pieces (64), each stored once under the sha256 of its bytes; a manifest lists the tile ids. The blob id used by the
+`raster` op stays the sha256 of the WHOLE blob (so op-logs, hash chains and every golden hash are unchanged). Storage = SQLite via sql.js (already a bim-ootb dependency): `tiles(id, data)`, `blobs(id, w, h, ch, tile, manifest)`.
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H32 | put/get reconstructs every blob byte-exactly and the blob id equals the whole-blob sha256, for sizes that are not tile multiples, 1-channel and 4-channel | 40 random blobs incl. odd sizes (1x1, 63x65, 130x70) | 0 mismatches; ids equal `sha256(whole)` | (pending) |
+| H33 | Dedupe: 8 layers x 51 versions where each version edits one ~100x100 region of one layer stores few unique tiles | W=512, tile 64, 50 edits | unique tiles / logical tiles <= 4.0% | (pending) |
+| H34 | Persistence: export the SQLite file, reopen in a fresh sql.js instance AND in Chromium, reconstruct | all blobs from H33 | 100% byte-identical, both engines | (pending) |
+| H35 | Integration: `docfold` backed by the tile store gives the same result as the Map-backed blobs | imported PSD documents (flat, groups/clips, non-separable) | f32 hash and sRGB render hash identical to the Map-backed run | (pending) |
+| H36 | Corruption is always detected: flipping any byte of a stored tile, swapping two tile ids in a manifest, or truncating a manifest | 300 random corruptions | 100% detected (throws), 0 silent wrong reads | (pending) |
+| H37 | Region reads are cheap: reading a 100x100 region touches only the tiles that overlap it | 200 random regions on a 512x512 layer | tiles read <= ceil((x%64+w)/64)*ceil((y%64+h)/64) exactly; region bytes equal the slice of the full blob | (pending) |
+| H38 | Negative control: a store with a deliberately wrong tile size on read (63 vs 64) is detected, i.e. the tests can fail | construct and read mismatch | detected | (pending) |
+
+### Tile store: verdicts (`tiles/run_tiles.js`, 17 checks, all pre-registered thresholds unchanged)
+H32 CONFIRMED (40 blobs incl. 1x1, 63x65, 130x70, 1 and 4 channels: 0 mismatches; ids == sha256(whole); re-put adds 0 tiles) | **H33 CONFIRMED** (829 unique tiles / 26,112 logical = 3.175% <= 4.0%; version 0 stored all 512; all 408 versions exact)
+H34 CONFIRMED (fresh sql.js instance in Node: 0 mismatches; Chromium with a fresh sql.js and pure-JS sha256: 58/58) | H35 CONFIRMED (flat P3 doc and a groups+clip+non-separable doc: identical f32 and sRGB render hashes vs Map-backed blobs; schema validation against the store: 0 errors)
+H36 CONFIRMED (300/300 corruptions detected: tile bit flip, swapped manifest ids, truncated manifest; 0 silent wrong reads) | H37 CONFIRMED (200 random regions: tiles read exactly as predicted, bytes equal the slice) | H38 CONFIRMED (control: wrong tile size detected)
+Caveats: edits in H33 are synthetic (noise layers, 100x100 channel inversions), real brushwork will dedupe differently; storage is uncompressed (14 MB for 829 tiles), compression untested; one SQLite file, no concurrency/locking tests; pure-JS sha256 hashing speed not benchmarked.

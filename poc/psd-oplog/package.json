@@ -10,7 +10,7 @@
     "witness": "node witness_oplog.js",
     "psd": "node psd_roundtrip.js",
     "psd_independent": "EMIT_DIR=./.emit node psd_roundtrip.js >/dev/null && python3 -I check_psd_independent.py ./.emit",
-    "test": "npm run witness && npm run stack && npm run psd && npm run doc && npm run export && npm run groups && npm run nonsep && npm run icc",
+    "test": "npm run witness && npm run stack && npm run psd && npm run doc && npm run export && npm run groups && npm run nonsep && npm run tiles && npm run icc",
     "icc": "sh icc/fetch_profiles.sh && node icc/run_icc.js",
     "doc": "sh icc/fetch_profiles.sh && node doc/run_doc.js",
     "export": "sh icc/fetch_profiles.sh && node doc/run_export.js",
@@ -18,11 +18,13 @@
     "witness_all": "node witness_all.js",
     "groups": "node doc/run_groups.js",
     "panel": "node panel/make_screenshot.js",
-    "nonsep": "node doc/run_nonsep.js"
+    "nonsep": "node doc/run_nonsep.js",
+    "tiles": "node tiles/run_tiles.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",
     "ag-psd": "^31.0.3",
-    "lcms-wasm": "^1.0.5"
+    "lcms-wasm": "^1.0.5",
+    "sql.js": "^1.14.1"
   }
 }
