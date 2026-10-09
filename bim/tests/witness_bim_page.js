@@ -47,8 +47,9 @@ const inc = (id, msg) => say('§WITNESS INCONCLUSIVE ' + id + ' ' + msg);
   if (!engineN) inc('W-PICK-2', 'no ' + cls + ' in model'); else ok('W-PICK-2', panel === engineN, 'search "' + cls + '" panel=' + panel + ' engine=' + engineN);
   // W-PICK-3: select all matches, export, compare GlobalIds on disk (saved beside input by the served /__save)
   await pg.click('#sa'); const picked = await pg.evaluate(() => [...window.__bim.selected].map((id) => window.__bim.cur.byId.get(id).guid));
-  await pg.click('#exp'); await new Promise((r) => setTimeout(r, 800));
+  await pg.click('#exp');
   const saved = path.join(tmp, path.basename(file).replace(/\.ifc$/i, '') + '_extract.ifc');
+  for (let i = 0; i < 40 && !(fs.existsSync(saved) && fs.statSync(saved).size > 1000); i++) await new Promise((r) => setTimeout(r, 250));
   if (!fs.existsSync(saved)) ok('W-PICK-3', false, 'no export on disk at ' + saved);
   else {
     const m2 = S.parse(fs.readFileSync(saved, 'utf8')), outG = new Set(S.listProducts(m2).map((p) => p.guid));
