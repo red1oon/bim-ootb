@@ -10,7 +10,7 @@
     "witness": "node witness_oplog.js",
     "psd": "node psd_roundtrip.js",
     "psd_independent": "EMIT_DIR=./.emit node psd_roundtrip.js >/dev/null && python3 -I check_psd_independent.py ./.emit",
-    "test": "npm run witness && npm run stack && npm run psd && npm run doc && npm run export && npm run groups && npm run nonsep && npm run tiles && npm run adjust && npm run curves && npm run icc",
+    "test": "npm run witness && npm run stack && npm run psd && npm run doc && npm run export && npm run groups && npm run nonsep && npm run tiles && npm run adjust && npm run curves && npm run depth16 && npm run icc",
     "icc": "sh icc/fetch_profiles.sh && node icc/run_icc.js",
     "doc": "sh icc/fetch_profiles.sh && node doc/run_doc.js",
     "export": "sh icc/fetch_profiles.sh && node doc/run_export.js",
@@ -21,7 +21,8 @@
     "nonsep": "node doc/run_nonsep.js",
     "tiles": "node tiles/run_tiles.js",
     "adjust": "node doc/run_adjust.js",
-    "curves": "node doc/run_curves.js"
+    "curves": "node doc/run_curves.js",
+    "depth16": "node doc/run_depth16.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

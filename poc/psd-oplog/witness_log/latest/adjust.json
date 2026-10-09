@@ -267,10 +267,10 @@
   {
    "id": "H48",
    "name": "cont_s1_srgb: export->import preserves kinds, params, opacity, masks and nesting",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H48",
@@ -283,10 +283,10 @@
   {
    "id": "H48",
    "name": "cont_s2_p3: export->import preserves kinds, params, opacity, masks and nesting",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H48",
@@ -363,15 +363,15 @@
   {
    "id": "H48",
    "name": "cont_s1_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H44d",
    "name": "cont_s1_srgb: psd-tools vs our FLOAT picture truncated like psd-tools does, mean levels",
-   "value": 0.5512,
+   "value": 0.5505,
    "cmp": "<=",
    "limit": 0.7,
    "pass": true
@@ -379,7 +379,7 @@
   {
    "id": "H44d",
    "name": "cont_s1_srgb: truncation-aligned mean is lower than the rounded comparison (diff of means, positive = lower)",
-   "value": 0.4988,
+   "value": 0.502,
    "cmp": ">=",
    "limit": 0,
    "pass": true
@@ -387,7 +387,7 @@
   {
    "id": "H44dx",
    "name": "cont_s1_srgb: info: vs rounded float, mean levels",
-   "value": 1.05,
+   "value": 1.0525,
    "cmp": "<=",
    "limit": 255,
    "pass": true
@@ -403,7 +403,7 @@
   {
    "id": "H44ax",
    "name": "cont_s1_srgb: max levels (info)",
-   "value": 3,
+   "value": 4,
    "cmp": "<=",
    "limit": 255,
    "pass": true
@@ -411,15 +411,15 @@
   {
    "id": "H48",
    "name": "cont_s2_p3: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H44d",
    "name": "cont_s2_p3: psd-tools vs our FLOAT picture truncated like psd-tools does, mean levels",
-   "value": 0.5667,
+   "value": 0.5705,
    "cmp": "<=",
    "limit": 0.7,
    "pass": true
@@ -427,7 +427,7 @@
   {
    "id": "H44d",
    "name": "cont_s2_p3: truncation-aligned mean is lower than the rounded comparison (diff of means, positive = lower)",
-   "value": 0.5007,
+   "value": 0.4999,
    "cmp": ">=",
    "limit": 0,
    "pass": true
@@ -435,7 +435,7 @@
   {
    "id": "H44dx",
    "name": "cont_s2_p3: info: vs rounded float, mean levels",
-   "value": 1.0673,
+   "value": 1.0703,
    "cmp": "<=",
    "limit": 255,
    "pass": true
@@ -451,7 +451,7 @@
   {
    "id": "H44ax",
    "name": "cont_s2_p3: max levels (info)",
-   "value": 3,
+   "value": 4,
    "cmp": "<=",
    "limit": 255,
    "pass": true
@@ -611,13 +611,19 @@
   {
    "id": "GOLD",
    "name": "golden hashes changed",
-   "value": 0,
+   "value": 2,
    "cmp": "==",
    "limit": 0,
-   "pass": true
+   "pass": false
   }
  ],
  "n_checks": 77,
- "gate": "PASS",
- "fails": []
+ "gate": "FAIL",
+ "fails": [
+  "H48 cont_s1_srgb: export->import preserves kinds, params, opacity, masks and nesting: got false, need == true",
+  "H48 cont_s2_p3: export->import preserves kinds, params, opacity, masks and nesting: got false, need == true",
+  "H48 cont_s1_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes): got false, need == true",
+  "H48 cont_s2_p3: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes): got false, need == true",
+  "GOLD golden hashes changed: got 2, need == 0"
+ ]
 }

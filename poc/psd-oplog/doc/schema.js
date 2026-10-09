@@ -18,14 +18,15 @@
 //  {op:'adjust', id, kind, params, opacity, mask, parent?}   adjustment layer (v2, gamma 'encoded' only): transforms the composite beneath it within its parent, lerped by opacity*mask; alpha untouched.
 //                  kind 'invert' {} | 'levels' {in_black 0..254, in_white 1..255, gamma_x100 1..999, out_black 0..255, out_white 0..255} | 'threshold' {level 1..255} | 'posterize' {levels 2..255} | 'curves' {points: 2..16 integer [x,y] pairs, x strictly increasing}; all integers.
 //  mdab/set/maskraster may target a group or an adjustment (set: opacity only); fill/dab/raster may not.
+//  {op:'raster16', layer, pixels:<sha256>}                  v2 only: w*h*8 bytes, straight RGBA, 16 bits per channel, little-endian; {op:'maskraster16', ...}: w*h*2 bytes
 //  {op:'raster', layer, pixels:<sha256>}                    replaces layer pixels with a content-addressed blob: w*h*4 bytes straight RGBA8
 //  {op:'maskraster', layer, pixels:<sha256>}                mask from a blob of w*h bytes (requires mask:true)
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack;
   const MODES = S.MODES, NONSEP = S.NONSEP, ADJ = S.ADJ_KINDS, BUILTIN = ['srgb', 'p3', 'adobe'], SHA = /^[0-9a-f]{64}$/;
   const FIELDS = { doc: ['op', 'v', 'w', 'h', 'working', 'gamma'], layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space', 'parent', 'clip'], group: ['op', 'id', 'mode', 'opacity', 'mask', 'parent'], adjust: ['op', 'id', 'kind', 'params', 'opacity', 'mask', 'parent'], fill: ['op', 'layer', 'c', 'a'], dab: ['op', 'layer', 'x', 'y', 'r', 'c', 'a'],
-    mdab: ['op', 'layer', 'x', 'y', 'r', 'v', 'a'], set: ['op', 'layer', 'mode', 'opacity'], raster: ['op', 'layer', 'pixels'], maskraster: ['op', 'layer', 'pixels'] };
-  const REQUIRED = { doc: FIELDS.doc, layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space'], group: ['op', 'id', 'mode', 'opacity', 'mask'], adjust: ['op', 'id', 'kind', 'params', 'opacity', 'mask'], fill: FIELDS.fill, dab: FIELDS.dab, mdab: FIELDS.mdab, set: ['op', 'layer'], raster: FIELDS.raster, maskraster: FIELDS.maskraster };
+    mdab: ['op', 'layer', 'x', 'y', 'r', 'v', 'a'], set: ['op', 'layer', 'mode', 'opacity'], raster: ['op', 'layer', 'pixels'], maskraster: ['op', 'layer', 'pixels'], raster16: ['op', 'layer', 'pixels'], maskraster16: ['op', 'layer', 'pixels'] };
+  const REQUIRED = { doc: FIELDS.doc, layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space'], group: ['op', 'id', 'mode', 'opacity', 'mask'], adjust: ['op', 'id', 'kind', 'params', 'opacity', 'mask'], fill: FIELDS.fill, dab: FIELDS.dab, mdab: FIELDS.mdab, set: ['op', 'layer'], raster: FIELDS.raster, maskraster: FIELDS.maskraster, raster16: FIELDS.raster16, maskraster16: FIELDS.maskraster16 };
   const num = (x) => typeof x === 'number' && Number.isFinite(x), unit = (x) => num(x) && x >= 0 && x <= 1;
   const spaceOk = (s) => BUILTIN.includes(s) || (typeof s === 'string' && /^icc:[0-9a-f]{64}$/.test(s));
   // blobs: Map<sha256, Uint8Array> (optional: when given, referenced blobs are checked for existence, size and hash)
@@ -75,14 +76,15 @@
         return;
       }
       const l = nodes[o.layer]; if (!l) return e(i, 'unknown layer ' + o.layer);
-      if ((o.op === 'fill' || o.op === 'dab' || o.op === 'raster') && l.kind !== 'layer') e(i, o.op + ' needs a layer, not a group');
+      if ((o.op === 'raster16' || o.op === 'maskraster16') && !v2) e(i, o.op + ' needs doc.v 2');
+      if ((o.op === 'fill' || o.op === 'dab' || o.op === 'raster' || o.op === 'raster16') && l.kind !== 'layer') e(i, o.op + ' needs a layer, not a group');
       if (o.op === 'set') { if (l.kind === 'adjust' && o.mode !== undefined) e(i, 'adjustment layers have no blend mode'); if (o.mode !== undefined && l.kind !== 'adjust' && !(l.kind === 'group' ? [...MODES, ...(v2 ? NONSEP : []), 'pass-through'] : [...MODES, ...(v2 ? NONSEP : [])]).includes(o.mode)) e(i, 'bad blend mode'); if (o.opacity !== undefined && !unit(o.opacity)) e(i, 'opacity outside 0..1'); }
       if (o.op === 'fill' || o.op === 'dab') { if (!Array.isArray(o.c) || o.c.length !== 3 || !o.c.every(unit)) e(i, 'c must be 3 numbers in 0..1'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'dab' || o.op === 'mdab') { if (!num(o.x) || !num(o.y) || !num(o.r) || o.r <= 0) e(i, 'bad dab geometry'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'mdab') { if (!unit(o.v)) e(i, 'v outside 0..1'); if (!l.mask) e(i, 'layer has no mask'); }
-      if (o.op === 'raster' || o.op === 'maskraster') {
-        if (o.op === 'maskraster' && !l.mask) e(i, 'layer has no mask'); if (!SHA.test(o.pixels)) return e(i, 'pixels must be a sha256 hex');
-        if (blobs) { const b = blobs.get(o.pixels); if (!b) e(i, 'missing blob ' + o.pixels.slice(0, 8)); else { const want = doc ? doc.w * doc.h * (o.op === 'raster' ? 4 : 1) : -1; if (b.length !== want) e(i, 'blob size ' + b.length + ' != ' + want); if (S.sha256(b) !== o.pixels) e(i, 'blob hash mismatch'); } }
+      if (o.op === 'raster' || o.op === 'maskraster' || o.op === 'raster16' || o.op === 'maskraster16') {
+        if ((o.op === 'maskraster' || o.op === 'maskraster16') && !l.mask) e(i, 'layer has no mask'); if (!SHA.test(o.pixels)) return e(i, 'pixels must be a sha256 hex');
+        if (blobs) { const b = blobs.get(o.pixels); if (!b) e(i, 'missing blob ' + o.pixels.slice(0, 8)); else { const want = doc ? doc.w * doc.h * ({ raster: 4, maskraster: 1, raster16: 8, maskraster16: 2 })[o.op] : -1; if (b.length !== want) e(i, 'blob size ' + b.length + ' != ' + want); if (S.sha256(b) !== o.pixels) e(i, 'blob hash mismatch'); } }
       }
     });
     const spaces = []; ops.forEach((o) => { if (o && o.op === 'layer' && typeof o.space === 'string') spaces.push(o.space); });

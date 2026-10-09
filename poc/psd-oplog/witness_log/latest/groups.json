@@ -587,10 +587,10 @@
   {
    "id": "H22a",
    "name": "s1_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22a2",
@@ -611,10 +611,10 @@
   {
    "id": "H22bm",
    "name": "s1_srgb_encoded: mean levels",
-   "value": 0.0012,
+   "value": 0.0741,
    "cmp": "<=",
    "limit": 0.01,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22c",
@@ -627,10 +627,10 @@
   {
    "id": "H22a",
    "name": "s1_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22a2",
@@ -651,10 +651,10 @@
   {
    "id": "H22bm",
    "name": "s1_p3_encoded: mean levels",
-   "value": 0.0042,
+   "value": 0.0724,
    "cmp": "<=",
    "limit": 0.01,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22c",
@@ -667,10 +667,10 @@
   {
    "id": "H22a",
    "name": "s2_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22a2",
@@ -691,10 +691,10 @@
   {
    "id": "H22bm",
    "name": "s2_srgb_encoded: mean levels",
-   "value": 0.0019,
+   "value": 0.0656,
    "cmp": "<=",
    "limit": 0.01,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22c",
@@ -707,10 +707,10 @@
   {
    "id": "H22a",
    "name": "s2_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22a2",
@@ -731,10 +731,10 @@
   {
    "id": "H22bm",
    "name": "s2_p3_encoded: mean levels",
-   "value": 0.0016,
+   "value": 0.0566,
    "cmp": "<=",
    "limit": 0.01,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H22c",
@@ -763,10 +763,10 @@
   {
    "id": "H25",
    "name": "s1_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -779,7 +779,7 @@
   {
    "id": "H24",
    "name": "s1_srgb_encoded: psd-tools own group/clipping composite vs ours, mean levels",
-   "value": 0.4827,
+   "value": 0.5006,
    "cmp": "<=",
    "limit": 1,
    "pass": true
@@ -803,10 +803,10 @@
   {
    "id": "H25",
    "name": "s1_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -819,7 +819,7 @@
   {
    "id": "H24",
    "name": "s1_p3_encoded: psd-tools own group/clipping composite vs ours, mean levels",
-   "value": 0.4806,
+   "value": 0.4954,
    "cmp": "<=",
    "limit": 1,
    "pass": true
@@ -843,10 +843,10 @@
   {
    "id": "H25",
    "name": "s2_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -859,7 +859,7 @@
   {
    "id": "H24",
    "name": "s2_srgb_encoded: psd-tools own group/clipping composite vs ours, mean levels",
-   "value": 0.4652,
+   "value": 0.4977,
    "cmp": "<=",
    "limit": 1,
    "pass": true
@@ -883,10 +883,10 @@
   {
    "id": "H25",
    "name": "s2_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -899,7 +899,7 @@
   {
    "id": "H24",
    "name": "s2_p3_encoded: psd-tools own group/clipping composite vs ours, mean levels",
-   "value": 0.4599,
+   "value": 0.4849,
    "cmp": "<=",
    "limit": 1,
    "pass": true
@@ -979,10 +979,10 @@
   {
    "id": "H25",
    "name": "ho_chain3_multiplybase: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -995,7 +995,7 @@
   {
    "id": "H27",
    "name": "ho_chain3_multiplybase: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
-   "value": 0.286,
+   "value": 0.3739,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -1059,10 +1059,10 @@
   {
    "id": "H25",
    "name": "ho_passthrough_group_with_chain: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -1075,7 +1075,7 @@
   {
    "id": "H27",
    "name": "ho_passthrough_group_with_chain: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
-   "value": 0.398,
+   "value": 0.4413,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -1099,10 +1099,10 @@
   {
    "id": "H25",
    "name": "ho_isolated_group_nested_chains_p3: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -1115,7 +1115,7 @@
   {
    "id": "H27",
    "name": "ho_isolated_group_nested_chains_p3: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
-   "value": 0.563,
+   "value": 0.5655,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -1139,10 +1139,10 @@
   {
    "id": "H25",
    "name": "ho_two_clip_units_in_a_row: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -1155,7 +1155,7 @@
   {
    "id": "H27",
    "name": "ho_two_clip_units_in_a_row: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
-   "value": 0.4023,
+   "value": 0.364,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -1179,10 +1179,10 @@
   {
    "id": "H25",
    "name": "ho_control_opaque_base: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags)",
-   "value": true,
+   "value": false,
    "cmp": "==",
    "limit": true,
-   "pass": true
+   "pass": false
   },
   {
    "id": "H25n",
@@ -1195,7 +1195,7 @@
   {
    "id": "H27",
    "name": "ho_control_opaque_base: HELD-OUT psd-tools group/clipping composite vs ours, mean levels",
-   "value": 0.3318,
+   "value": 0.44,
    "cmp": "<=",
    "limit": 0.8,
    "pass": true
@@ -1219,13 +1219,32 @@
   {
    "id": "GOLD",
    "name": "golden hashes changed",
-   "value": 0,
+   "value": 4,
    "cmp": "==",
    "limit": 0,
-   "pass": true
+   "pass": false
   }
  ],
  "n_checks": 153,
- "gate": "PASS",
- "fails": []
+ "gate": "FAIL",
+ "fails": [
+  "H22a s1_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes): got false, need == true",
+  "H22bm s1_srgb_encoded: mean levels: got 0.0741, need <= 0.01",
+  "H22a s1_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes): got false, need == true",
+  "H22bm s1_p3_encoded: mean levels: got 0.0724, need <= 0.01",
+  "H22a s2_srgb_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes): got false, need == true",
+  "H22bm s2_srgb_encoded: mean levels: got 0.0656, need <= 0.01",
+  "H22a s2_p3_encoded: tree preserved by export+import (nesting, modes incl. pass-through, clip, mask flags, opacity bytes): got false, need == true",
+  "H22bm s2_p3_encoded: mean levels: got 0.0566, need <= 0.01",
+  "H25 s1_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 s1_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 s2_srgb_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 s2_p3_encoded: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 ho_chain3_multiplybase: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 ho_passthrough_group_with_chain: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 ho_isolated_group_nested_chains_p3: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 ho_two_clip_units_in_a_row: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "H25 ho_control_opaque_base: psd-tools reads the exact tree (nesting, PASS_THROUGH, modes, opacity bytes, masks, clip flags): got false, need == true",
+  "GOLD golden hashes changed: got 4, need == 0"
+ ]
 }
