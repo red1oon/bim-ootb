@@ -68,7 +68,7 @@ function openInteractive(file) {
   process.on('SIGHUP', () => console.log('§OPEN SIGHUP ignored'));
   process.on('SIGTERM', () => { console.log('§OPEN_EXIT SIGTERM'); process.exit(0); });
   process.on('uncaughtException', (e) => console.log('§OPEN_ERROR ' + (e && e.stack || e)));
-  setInterval(() => { if (Date.now() - lastPing > (seen ? 20000 : 120000)) { console.log('§OPEN_EXIT idle'); process.exit(0); } }, 5000);
+  setInterval(() => { if (Date.now() - lastPing > (seen ? 90000 : 300000)) { console.log('§OPEN_EXIT idle'); process.exit(0); } }, 5000);
 }
 
 function main() {
