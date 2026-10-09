@@ -1,0 +1,12 @@
+{
+ "psd_srgb_mixed": "4bf9e8537c497ddf804dd495a5616092497b2d159fcf754f3faaaebee54b26c1",
+ "render_srgb_mixed": "c77b2e4af005cfa05079f811fb3dc2f1b70e54092c55df87a5418abc64b694ea",
+ "psd_p3_mixed": "2d99213f20814749858ceed997a2303dfd45b594a45ffa255e65135a9f2ee68a",
+ "render_p3_mixed": "2fd6613d1a66560f80a84af13cb524b06e0c86adf4cb0c3a07636d8c6afe4e77",
+ "psd_adobe_mixed": "7dbba5c540254dc2d190f5b795d204fd626f064db6d4d1d2c97deaf1a0ed011d",
+ "render_adobe_mixed": "b4a6594b69214f422a05a88511a937cc8e6cf1ba6848ba1ae80b1d8e264133e7",
+ "psd_p3_pure": "634b6eeeb04f976932ee629d92c8d0742b1cf222a9098acd7defe754b20061d3",
+ "render_p3_pure": "ff130b49fed5c8affe76e062f998f1766de35870d4065273157792971d017844",
+ "psd_embedded_custom_working": "188c7d4f6f4c4d212c73c9d6a2e89a8c7ae5b36a21d2874e46a9b77f5f67dc53",
+ "render_embedded_custom_working": "ed8594942684b7ce76dd2b27f074bec3ccf95e52297f76830358d87ad534b5c9"
+}

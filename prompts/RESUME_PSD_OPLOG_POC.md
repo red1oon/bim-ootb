@@ -15,7 +15,10 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
   the doc schema: working space + gamma-vs-linear compositing flag (they change results by dE2000 1-9).
 - OP-LOG SCHEMA v1 + PSD ICC IMPORT DONE (`doc/`, `npm run doc`; README "Op-log schema v1 and PSD profile import"). Rules: doc op first, space
   and gamma recorded, rasters are sha256 blobs, unknown ops/fields rejected, untagged PSD = sRGB assumption.
-- NEXT (cloud-friendly): PSD export from the schema (+ embed profile), groups / clipping masks, non-separable blend modes, tile store behind `raster` blobs / clipping masks, non-separable modes, tile-store
+- PSD EXPORT DONE (`doc/psd_export.js`, `npm run export`; README "PSD export"): profile embedded (1039), merged image stored, linear docs refused, fixed point after 1st pass,
+  psd-tools applies our embedded profile within 1 level of the float64 oracle. Not yet opened in Photoshop itself.
+- NEXT: a person opens the exported PSDs in Photoshop/Krita/GIMP and reports colours + profile name (files: `cd poc/psd-oplog && npm i && npm run samples`, outputs in `doc/.emit_export/*.psd`; srgb_mixed, p3_mixed, adobe_mixed, p3_pure, embedded_custom_working),
+  then groups / clipping masks, non-separable blend modes, tile store behind `raster` blobs / clipping masks, non-separable modes, tile-store
   wired to the fold, op-log signing with bim-ootb's existing signed-log code. Step 7 (brush feel) needs a person.
 
 ## Extra devices, for the person (about 5 minutes each)

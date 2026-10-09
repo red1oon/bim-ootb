@@ -162,3 +162,28 @@ Limits: RGB 8-bit square documents only; no groups, adjustment layers or effects
 an assumption (Photoshop's colour settings could say otherwise); LUT-based RGB profiles are carried as `icc:` profiles and converted by lcms but
 have no float64 oracle; linear compositing only for built-in working spaces; the embedded-profile reference uses a generated gamma-1.8 profile,
 not a profile exported by Photoshop; no PSD *export* of the schema yet.
+
+## PSD export (`doc/psd_export.js`, `npm run export`)
+Op-log -> PSD: each layer is converted into the document's working space (a PSD has one profile per file), 8-bit straight RGBA + byte opacity + 8-bit mask are written,
+the working-space profile is embedded as image resource 1039 (built-in spaces use the generated matrix profile, `icc:` spaces embed the exact blob), and the merged
+composite is stored for viewers that ignore layers. **Linear-light documents and invalid logs are refused** (no verified PSD representation of linear compositing).
+
+| Check (5 documents: 3 working spaces with mixed-space layers, pure P3, embedded gamma-1.8 working space) | Result |
+|---|---|
+| Export is deterministic | identical bytes on repeat |
+| Embedded profile is the working space; import recognises it | 5 / 5 |
+| Export -> import -> fold vs an independent float64 reference that applies the same 8-bit quantisation (working-space display) | **max 1 level**, mean <= 0.002 |
+| Same, on an sRGB display | max 1-3 levels (3 on 4 of ~49k samples, embedded profile), mean <= 0.004: a 1-level flip in a wide-gamut 8-bit layer becomes up to ~3 sRGB levels near the gamut edge |
+| Fixed point | export -> import -> export -> import gives identical ops and blobs; PSD bytes identical from generation 2 on (generation 1 differs only in the stored merged preview, which is recomputed from the 8-bit layers) |
+| Drift vs the unquantised original (informational, sRGB display) | mean 0.16-0.20 level; max 1, 1, 2, 4, 6 levels. Inherent cost of 8-bit layers in a wide gamut |
+| Our lcms conversion of the stored picture to sRGB vs the float64 oracle | max <= 1 level |
+| **psd-tools** (independent parser) reads the file | embedded profile byte-identical, layer count and masks right, stored merged image exact (0 levels) when read raw |
+| psd-tools applies **our embedded profile** (Pillow/LittleCMS) to the stored picture vs the float64 oracle | **max 1, mean <= 0.011, 0% of samples over 2** in all 5 files |
+| psd-tools' own layer composite (raw) vs ours | max 2, mean ~0.5 |
+| psd-tools' layer composite after its profile conversion vs our sRGB render | max 1-8, mean ~0.5; the 8 is the 2-level raw composite difference amplified by the sRGB toe at the gamut edge |
+
+Note on method: an early hypothesis blamed the larger differences on LittleCMS' default 8-bit optimisation. Measuring against the float64 oracle on the *same stored picture* refuted it
+(psd-tools' conversion is within 1 level); the real cause was comparing two different pictures (merged image from float layers vs a recomposite of 8-bit layers).
+
+Limits: the embedded profile for built-in spaces is a generated matrix profile, not Adobe's/ICC's official profile, so Photoshop will show it as a custom profile; not opened in Photoshop itself
+(only ag-psd, psd-tools and our importer); RGB 8-bit only; no groups; golden PSD byte hashes depend on the pinned ag-psd version; a layer's original space is not kept (it is converted to the working space on export).
