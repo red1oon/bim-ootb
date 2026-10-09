@@ -43,5 +43,6 @@ Rules to keep: numbers decide, no human gates; new behaviour = pre-register hypo
 Open / DEFERRED (not blockers): Photoshop behaviour on partially transparent clip bases and `clbl` OFF; Safari/ARM/second GPU vendor for the determinism hashes; brush feel.
 NON-SEPARABLE MODES DONE (README section; `npm run nonsep`; H30/H31 resolved).
 TILE STORE DONE (README section; `npm run tiles`; H32-H38).
-NEXT candidates (cloud-friendly, numeric): GPU twin for groups/clipping/non-separable modes; streaming tiles into the fold;
+ADJUSTMENT LAYERS (invert/levels/threshold/posterize) DONE (README section; `npm run adjust`; H40-H49). Remember: psd-tools truncates its output, so comparisons against a rounded picture carry a ~0.5 level bias.
+NEXT candidates (cloud-friendly, numeric): curves (spline family is a choice: fit then hold out), hue/saturation, GPU twin for groups/clipping/non-separable/adjustments; streaming tiles into the fold; 16-bit/float layer import;
 adjustment layers (curves/levels) with a float64 oracle; 16-bit/float layer import. Run `node witness_all.js` to refresh `witness_log/ledger.jsonl` before and after any change.

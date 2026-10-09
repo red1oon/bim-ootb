@@ -4,3 +4,5 @@
 .emit_diag/
 .emit_groups_heldout/
 .emit_nonsep/
+.emit_adjust/
+.emit_adjust_diag/

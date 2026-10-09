@@ -44,8 +44,16 @@
         for (let i = 0; i < n; i++) { const as = src.A[i] * c.opacity * (c.mask ? c.mask[i] : 1), ab = A[i]; if (as <= 0 || ab <= 0) continue; const ar = as + ab * (1 - as);
           { const cs3 = [src.C[i*3], src.C[i*3+1], src.C[i*3+2]], cb3 = [iso.C[i*3], iso.C[i*3+1], iso.C[i*3+2]], bm = Bmix(c.mode, cb3, cs3); for (let k = 0; k < 3; k++) iso.C[i*3+k] = (1 - as / ar) * cb3[k] + (as / ar) * ((1 - ab) * cs3[k] + ab * bm[k]); } A[i] = ar; } }
       return iso; };   // iso.A still holds the base alpha
+    const adj64 = (dst, a) => { const P = a.params;
+      const f = a.kind === 'invert' ? (c) => 1 - c
+        : a.kind === 'levels' ? (c) => { const ib = P.in_black / 255, iw = P.in_white / 255, ob = P.out_black / 255, ow = P.out_white / 255; let x = (c - ib) / (iw - ib); x = Math.min(1, Math.max(0, x)); x = Math.pow(x, 100 / P.gamma_x100); return Math.min(1, Math.max(0, ob + x * (ow - ob))); }
+        : a.kind === 'posterize' ? (c) => Math.floor(c * (255 / 256) * P.levels) / (P.levels - 1) : null;
+      for (let i = 0; i < n; i++) { const al = dst.A[i]; if (al <= 0) continue; const k = a.opacity * (a.mask ? a.mask[i] : 1); if (k <= 0) continue; const c = [dst.C[i*3], dst.C[i*3+1], dst.C[i*3+2]];
+        const out = a.kind === 'threshold' ? (Math.round(255 * (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2])) >= P.level ? [1, 1, 1] : [0, 0, 0]) : c.map(f);
+        for (let q = 0; q < 3; q++) dst.C[i*3+q] = c[q] + (out[q] - c[q]) * k; } };
     const run = (ids, dst) => { let j = 0;
       while (j < ids.length) { const id = ids[j], g = st.G[id];
+        if (st.A && st.A[id]) { j++; adj64(dst, st.A[id]); continue; }
         if (g) { j++;
           if (g.mode === 'pass-through') { const inner = run(g.children, { C: dst.C.slice(), A: dst.A.slice() });
             for (let i = 0; i < n; i++) { const k = g.opacity * (g.mask ? g.mask[i] : 1), ab = dst.A[i], ai = inner.A[i], al = (1 - k) * ab + k * ai;

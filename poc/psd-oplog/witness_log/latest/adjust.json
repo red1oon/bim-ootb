@@ -1,0 +1,623 @@
+{
+ "checks": [
+  {
+   "id": "H40a",
+   "name": "deterministic pow vs Math.pow, max relative error over 1e6 random pairs",
+   "value": 4.9822919683263424e-14,
+   "cmp": "<=",
+   "limit": 1e-8,
+   "pass": true
+  },
+  {
+   "id": "H40a",
+   "name": "pow(0, 2) == 0 and pow(1, 50) == 1",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H42a",
+   "name": "posterize == PS integer mapping floor(v*n/256)/(n-1): violations over 254 n x 256 inputs",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H42b",
+   "name": "threshold on greys: white iff v >= level: violations over 255 levels x 256 inputs",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H42c",
+   "name": "invert twice == identity, max abs",
+   "value": 2.9802322387695312e-8,
+   "cmp": "<=",
+   "limit": 0.000001,
+   "pass": true
+  },
+  {
+   "id": "H41",
+   "name": "levels (0,255,100,0,255) at opacity 1 is an exact no-op",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H41",
+   "name": "invert / threshold / posterize at opacity 0 are exact no-ops",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H41",
+   "name": "invert with an all-zero mask is an exact no-op",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H41",
+   "name": "non-vacuous: invert at opacity 1 DOES change the picture",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H45a",
+   "name": "root adjustment == pointwise function of the composite beneath, max abs (f32 vs f64)",
+   "value": 1.1169961600110412e-7,
+   "cmp": "<=",
+   "limit": 0.000002,
+   "pass": true
+  },
+  {
+   "id": "H45b",
+   "name": "isolated group containing only an adjustment is a no-op",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H45c",
+   "name": "adjustment inside an isolated group changes 0 pixels outside the group content footprint",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H45c",
+   "name": "non-vacuous: it changes pixels inside the footprint",
+   "value": 16180,
+   "cmp": ">=",
+   "limit": 500,
+   "pass": true
+  },
+  {
+   "id": "H47",
+   "name": "valid adjustment ops of all four kinds accepted (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H47",
+   "name": "invalid adjustment logs rejected (of 20); accepted: none",
+   "value": 20,
+   "cmp": "==",
+   "limit": 20,
+   "pass": true
+  },
+  {
+   "id": "SCH0",
+   "name": "scene documents validate (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H43a",
+   "name": "cont_s1_srgb: pipeline vs float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H43a",
+   "name": "cont_s1_srgb: mean levels",
+   "value": 0.0007,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H43a",
+   "name": "cont_s2_p3: pipeline vs float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H43a",
+   "name": "cont_s2_p3: mean levels",
+   "value": 0.0023,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H43c",
+   "name": "thr_s3_srgb: whole pipeline vs exact float64, percent of samples over 1 level (step function flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.2,
+   "pass": true
+  },
+  {
+   "id": "H43b",
+   "name": "thr_s3_srgb: compositor-only on identical converted layers, percent of samples over 1 level",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H43c",
+   "name": "thr_s4_p3: whole pipeline vs exact float64, percent of samples over 1 level (step function flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.2,
+   "pass": true
+  },
+  {
+   "id": "H43b",
+   "name": "thr_s4_p3: compositor-only on identical converted layers, percent of samples over 1 level",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H43c",
+   "name": "post_s5_srgb: whole pipeline vs exact float64, percent of samples over 1 level (step function flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.2,
+   "pass": true
+  },
+  {
+   "id": "H43b",
+   "name": "post_s5_srgb: compositor-only on identical converted layers, percent of samples over 1 level",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H43c",
+   "name": "post_s6_p3: whole pipeline vs exact float64, percent of samples over 1 level (step function flips)",
+   "value": 0.0041,
+   "cmp": "<=",
+   "limit": 0.2,
+   "pass": true
+  },
+  {
+   "id": "H43b",
+   "name": "post_s6_p3: compositor-only on identical converted layers, percent of samples over 1 level",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H46",
+   "name": "control: unmutated continuous document (levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H46",
+   "name": "mutation: invert node made a no-op is detected (levels)",
+   "value": 132,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H46",
+   "name": "mutation: levels gamma ignored is detected (levels)",
+   "value": 62,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H46",
+   "name": "mutation: threshold level off by 20 is detected (max levels)",
+   "value": 255,
+   "cmp": ">=",
+   "limit": 100,
+   "pass": true
+  },
+  {
+   "id": "H46",
+   "name": "mutation: posterize n+1 is detected (levels)",
+   "value": 51,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s1_srgb: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s1_srgb: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s2_p3: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s2_p3: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s3_srgb: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s3_srgb: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s4_p3: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s4_p3: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s5_srgb: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s5_srgb: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s6_p3: export->import preserves kinds, params, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s6_p3: fixed point after the first pass (ops identical)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s1_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44d",
+   "name": "cont_s1_srgb: psd-tools vs our FLOAT picture truncated like psd-tools does, mean levels",
+   "value": 0.5512,
+   "cmp": "<=",
+   "limit": 0.7,
+   "pass": true
+  },
+  {
+   "id": "H44d",
+   "name": "cont_s1_srgb: truncation-aligned mean is lower than the rounded comparison (diff of means, positive = lower)",
+   "value": 0.4988,
+   "cmp": ">=",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H44dx",
+   "name": "cont_s1_srgb: info: vs rounded float, mean levels",
+   "value": 1.05,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H44a",
+   "name": "cont_s1_srgb: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H44ax",
+   "name": "cont_s1_srgb: max levels (info)",
+   "value": 3,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "cont_s2_p3: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44d",
+   "name": "cont_s2_p3: psd-tools vs our FLOAT picture truncated like psd-tools does, mean levels",
+   "value": 0.5667,
+   "cmp": "<=",
+   "limit": 0.7,
+   "pass": true
+  },
+  {
+   "id": "H44d",
+   "name": "cont_s2_p3: truncation-aligned mean is lower than the rounded comparison (diff of means, positive = lower)",
+   "value": 0.5007,
+   "cmp": ">=",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H44dx",
+   "name": "cont_s2_p3: info: vs rounded float, mean levels",
+   "value": 1.0673,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H44a",
+   "name": "cont_s2_p3: percent of pixels over 8 levels",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H44ax",
+   "name": "cont_s2_p3: max levels (info)",
+   "value": 3,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s3_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (1 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44b",
+   "name": "thr_s3_srgb: pixels where psd-tools and ours differ (>8 levels) and the pre-adjustment value is NOT near a boundary, percent",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H44bx",
+   "name": "thr_s3_srgb: info: percent of pixels differing >8 levels near a boundary (flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 100,
+   "pass": true
+  },
+  {
+   "id": "H44bn",
+   "name": "thr_s3_srgb: non-vacuous: percent of pixels within the boundary band",
+   "value": 1.593,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "thr_s4_p3: psd-tools reads the same adjustment kinds, parameters and opacities (1 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44b",
+   "name": "thr_s4_p3: pixels where psd-tools and ours differ (>8 levels) and the pre-adjustment value is NOT near a boundary, percent",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H44bx",
+   "name": "thr_s4_p3: info: percent of pixels differing >8 levels near a boundary (flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 100,
+   "pass": true
+  },
+  {
+   "id": "H44bn",
+   "name": "thr_s4_p3: non-vacuous: percent of pixels within the boundary band",
+   "value": 2.905,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s5_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (1 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44b",
+   "name": "post_s5_srgb: pixels where psd-tools and ours differ (>8 levels) and the pre-adjustment value is NOT near a boundary, percent",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H44bx",
+   "name": "post_s5_srgb: info: percent of pixels differing >8 levels near a boundary (flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 100,
+   "pass": true
+  },
+  {
+   "id": "H44bn",
+   "name": "post_s5_srgb: non-vacuous: percent of pixels within the boundary band",
+   "value": 15.704,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H48",
+   "name": "post_s6_p3: psd-tools reads the same adjustment kinds, parameters and opacities (1 nodes)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H44b",
+   "name": "post_s6_p3: pixels where psd-tools and ours differ (>8 levels) and the pre-adjustment value is NOT near a boundary, percent",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H44bx",
+   "name": "post_s6_p3: info: percent of pixels differing >8 levels near a boundary (flips)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 100,
+   "pass": true
+  },
+  {
+   "id": "H44bn",
+   "name": "post_s6_p3: non-vacuous: percent of pixels within the boundary band",
+   "value": 16.98,
+   "cmp": ">=",
+   "limit": 0.1,
+   "pass": true
+  },
+  {
+   "id": "H48b",
+   "name": "per-channel (red) levels are rejected with an explicit error",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H48b",
+   "name": "master-only levels (identity channel records) are accepted",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H40b",
+   "name": "Node vs Chromium: powDet hash and every document f32 + render hash identical",
+   "value": 13,
+   "cmp": "==",
+   "limit": 13,
+   "pass": true
+  },
+  {
+   "id": "GOLD",
+   "name": "golden hashes changed",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  }
+ ],
+ "n_checks": 77,
+ "gate": "PASS",
+ "fails": []
+}

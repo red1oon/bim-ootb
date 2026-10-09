@@ -19,7 +19,10 @@ function exportPsd(ops, ctx) {
     const child = { name: 'Layer ' + id, left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: Math.round(l.opacity * 255) / 255, imageData: { width: W, height: W, data: rgba } };
     if (l.clip) child.clipping = true; if (l.mask) child.mask = maskData(l.mask); return child;
   };
-  const mkNode = (id) => { const g = f.st.G[id]; if (!g) return mkLayer(id);
+  const mkAdjust = (id) => { const a = f.st.A[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
+      : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };
+    const c = { name: 'Adjustment ' + id, left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: Math.round(a.opacity * 255) / 255, adjustment: adj }; if (a.mask) c.mask = maskData(a.mask); return c; };
+  const mkNode = (id) => { if (f.st.A[id]) return mkAdjust(id); const g = f.st.G[id]; if (!g) return mkLayer(id);
     const c = { name: 'Group ' + id, opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: Math.round(g.opacity * 255) / 255, children: g.children.map(mkNode) }; if (g.mask) c.mask = maskData(g.mask); return c; };
   const children = f.st.root.map(mkNode);
   const working = DF.render(DF.composite(f, ctx), f, doc.working, ctx);   // merged image in the working space (identity conversion)

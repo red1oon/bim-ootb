@@ -15,15 +15,17 @@
 //  layer.parent? = id of an earlier group (nesting depth <= 16, bottom-to-top order within a parent); layer.clip? = true clips it to the nearest unclipped layer below it
 //                  in the same parent (source-atop; blended with the BASE layer's mode/opacity/mask). A clip base must be a layer, not a group.
 //  non-separable blend modes 'hue' | 'saturation' | 'color' | 'luminosity' are valid in v2 documents only.
-//  mdab/set/maskraster may target a group; fill/dab/raster may not.
+//  {op:'adjust', id, kind, params, opacity, mask, parent?}   adjustment layer (v2, gamma 'encoded' only): transforms the composite beneath it within its parent, lerped by opacity*mask; alpha untouched.
+//                  kind 'invert' {} | 'levels' {in_black 0..254, in_white 1..255, gamma_x100 1..999, out_black 0..255, out_white 0..255} | 'threshold' {level 1..255} | 'posterize' {levels 2..255}; all integers.
+//  mdab/set/maskraster may target a group or an adjustment (set: opacity only); fill/dab/raster may not.
 //  {op:'raster', layer, pixels:<sha256>}                    replaces layer pixels with a content-addressed blob: w*h*4 bytes straight RGBA8
 //  {op:'maskraster', layer, pixels:<sha256>}                mask from a blob of w*h bytes (requires mask:true)
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack;
-  const MODES = S.MODES, NONSEP = S.NONSEP, BUILTIN = ['srgb', 'p3', 'adobe'], SHA = /^[0-9a-f]{64}$/;
-  const FIELDS = { doc: ['op', 'v', 'w', 'h', 'working', 'gamma'], layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space', 'parent', 'clip'], group: ['op', 'id', 'mode', 'opacity', 'mask', 'parent'], fill: ['op', 'layer', 'c', 'a'], dab: ['op', 'layer', 'x', 'y', 'r', 'c', 'a'],
+  const MODES = S.MODES, NONSEP = S.NONSEP, ADJ = S.ADJ_KINDS, BUILTIN = ['srgb', 'p3', 'adobe'], SHA = /^[0-9a-f]{64}$/;
+  const FIELDS = { doc: ['op', 'v', 'w', 'h', 'working', 'gamma'], layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space', 'parent', 'clip'], group: ['op', 'id', 'mode', 'opacity', 'mask', 'parent'], adjust: ['op', 'id', 'kind', 'params', 'opacity', 'mask', 'parent'], fill: ['op', 'layer', 'c', 'a'], dab: ['op', 'layer', 'x', 'y', 'r', 'c', 'a'],
     mdab: ['op', 'layer', 'x', 'y', 'r', 'v', 'a'], set: ['op', 'layer', 'mode', 'opacity'], raster: ['op', 'layer', 'pixels'], maskraster: ['op', 'layer', 'pixels'] };
-  const REQUIRED = { doc: FIELDS.doc, layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space'], group: ['op', 'id', 'mode', 'opacity', 'mask'], fill: FIELDS.fill, dab: FIELDS.dab, mdab: FIELDS.mdab, set: ['op', 'layer'], raster: FIELDS.raster, maskraster: FIELDS.maskraster };
+  const REQUIRED = { doc: FIELDS.doc, layer: ['op', 'id', 'mode', 'opacity', 'mask', 'space'], group: ['op', 'id', 'mode', 'opacity', 'mask'], adjust: ['op', 'id', 'kind', 'params', 'opacity', 'mask'], fill: FIELDS.fill, dab: FIELDS.dab, mdab: FIELDS.mdab, set: ['op', 'layer'], raster: FIELDS.raster, maskraster: FIELDS.maskraster };
   const num = (x) => typeof x === 'number' && Number.isFinite(x), unit = (x) => num(x) && x >= 0 && x <= 1;
   const spaceOk = (s) => BUILTIN.includes(s) || (typeof s === 'string' && /^icc:[0-9a-f]{64}$/.test(s));
   // blobs: Map<sha256, Uint8Array> (optional: when given, referenced blobs are checked for existence, size and hash)
@@ -43,6 +45,19 @@
       }
       if (i === 0) return e(i, 'first op must be doc');
       const v2 = doc && doc.v === 2;
+      if (o.op === 'adjust') {
+        if (!v2) e(i, 'adjust needs doc.v 2'); if (doc && doc.gamma === 'linear') e(i, 'adjustment layers need gamma "encoded"');
+        if (!Number.isInteger(o.id) || o.id < 0) e(i, 'bad id'); else if (nodes[o.id]) e(i, 'duplicate id ' + o.id); if (!unit(o.opacity)) e(i, 'opacity outside 0..1'); if (typeof o.mask !== 'boolean') e(i, 'mask must be boolean');
+        const parent = o.parent === undefined ? -1 : o.parent; if (parent !== -1 && !(Number.isInteger(parent) && nodes[parent] && nodes[parent].kind === 'group')) e(i, 'parent ' + o.parent + ' is not an earlier group');
+        const P = o.params, ints = (keys) => P && typeof P === 'object' && Object.keys(P).sort().join() === [...keys].sort().join() && keys.every((k) => Number.isInteger(P[k])), inr = (k, a, b) => P[k] >= a && P[k] <= b;
+        if (!ADJ.includes(o.kind)) e(i, 'unknown adjustment kind ' + o.kind);
+        else if (o.kind === 'invert') { if (!ints([])) e(i, 'invert takes no params'); }
+        else if (o.kind === 'levels') { if (!ints(['in_black', 'in_white', 'gamma_x100', 'out_black', 'out_white'])) e(i, 'levels params must be exactly in_black, in_white, gamma_x100, out_black, out_white (integers)'); else if (!(inr('in_black', 0, 254) && inr('in_white', 1, 255) && P.in_black < P.in_white && inr('gamma_x100', 1, 999) && inr('out_black', 0, 255) && inr('out_white', 0, 255))) e(i, 'levels params out of range'); }
+        else if (o.kind === 'threshold') { if (!ints(['level']) || !inr('level', 1, 255)) e(i, 'threshold needs integer level 1..255'); }
+        else if (o.kind === 'posterize') { if (!ints(['levels']) || !inr('levels', 2, 255)) e(i, 'posterize needs integer levels 2..255'); }
+        const list = lists[parent] || (lists[parent] = []); if (Number.isInteger(o.id) && o.id >= 0 && !nodes[o.id]) { nodes[o.id] = { kind: 'adjust', parent, clip: false, mask: o.mask === true }; list.push(o.id); if (depthOf(o.id) > 16) e(i, 'group nesting deeper than 16'); }
+        return;
+      }
       if (o.op === 'group' || o.op === 'layer') {
         if (o.op === 'group' && !v2) e(i, 'group needs doc.v 2'); if (o.op === 'layer' && !v2 && ('parent' in o || 'clip' in o)) e(i, 'parent/clip need doc.v 2');
         if (!Number.isInteger(o.id) || o.id < 0) e(i, 'bad id'); else if (nodes[o.id]) e(i, 'duplicate id ' + o.id);
@@ -51,13 +66,13 @@
         if (parent !== -1 && !(Number.isInteger(parent) && nodes[parent] && nodes[parent].kind === 'group')) e(i, 'parent ' + o.parent + ' is not an earlier group');
         if (o.op === 'layer') { if (!spaceOk(o.space)) e(i, 'bad layer space'); if (o.clip !== undefined && typeof o.clip !== 'boolean') e(i, 'clip must be boolean'); }
         const list = lists[parent] || (lists[parent] = []);
-        if (o.op === 'layer' && o.clip === true) { let k = list.length - 1; while (k >= 0 && nodes[list[k]].clip) k--; if (k < 0) e(i, 'clipped layer has no base layer below it in its list'); else if (nodes[list[k]].kind !== 'layer') e(i, 'clip base must be a layer, not a group'); }
+        if (o.op === 'layer' && o.clip === true) { let k = list.length - 1; while (k >= 0 && nodes[list[k]].clip) k--; if (k < 0) e(i, 'clipped layer has no base layer below it in its list'); else if (nodes[list[k]].kind !== 'layer') e(i, 'clip base must be a layer, not a group or adjustment'); }
         if (Number.isInteger(o.id) && o.id >= 0 && !nodes[o.id]) { nodes[o.id] = { kind: o.op, parent, clip: o.op === 'layer' && o.clip === true, mask: o.mask === true }; list.push(o.id); if (o.op === 'group') lists[o.id] = []; if (depthOf(o.id) > 16) e(i, 'group nesting deeper than 16'); }
         return;
       }
       const l = nodes[o.layer]; if (!l) return e(i, 'unknown layer ' + o.layer);
       if ((o.op === 'fill' || o.op === 'dab' || o.op === 'raster') && l.kind !== 'layer') e(i, o.op + ' needs a layer, not a group');
-      if (o.op === 'set') { if (o.mode !== undefined && !(l.kind === 'group' ? [...MODES, ...(v2 ? NONSEP : []), 'pass-through'] : [...MODES, ...(v2 ? NONSEP : [])]).includes(o.mode)) e(i, 'bad blend mode'); if (o.opacity !== undefined && !unit(o.opacity)) e(i, 'opacity outside 0..1'); }
+      if (o.op === 'set') { if (l.kind === 'adjust' && o.mode !== undefined) e(i, 'adjustment layers have no blend mode'); if (o.mode !== undefined && l.kind !== 'adjust' && !(l.kind === 'group' ? [...MODES, ...(v2 ? NONSEP : []), 'pass-through'] : [...MODES, ...(v2 ? NONSEP : [])]).includes(o.mode)) e(i, 'bad blend mode'); if (o.opacity !== undefined && !unit(o.opacity)) e(i, 'opacity outside 0..1'); }
       if (o.op === 'fill' || o.op === 'dab') { if (!Array.isArray(o.c) || o.c.length !== 3 || !o.c.every(unit)) e(i, 'c must be 3 numbers in 0..1'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'dab' || o.op === 'mdab') { if (!num(o.x) || !num(o.y) || !num(o.r) || o.r <= 0) e(i, 'bad dab geometry'); if (!unit(o.a)) e(i, 'a outside 0..1'); }
       if (o.op === 'mdab') { if (!unit(o.v)) e(i, 'v outside 0..1'); if (!l.mask) e(i, 'layer has no mask'); }

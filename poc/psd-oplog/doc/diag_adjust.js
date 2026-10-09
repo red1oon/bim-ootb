@@ -1,0 +1,12 @@
+// Diagnostic for H44c: one adjustment per document; exports PSDs plus OUR pre-adjustment picture so python can compare psd-tools with the quantised-input and unquantised variants.
+const fs = require('fs'), path = require('path'); const S = require('../stack.js'), DF = require('./docfold.js'), { exportPsd } = require('./psd_export.js'), { importPsd } = require('./psd_import.js');
+const W = 128, OUT = path.join(__dirname, '.emit_adjust_diag'); fs.mkdirSync(OUT, { recursive: true });
+const rng = (seed) => { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }, r4 = (x) => Math.round(x * 1e4) / 1e4;
+const feats = { invert_only: ['invert', {}], levels_linear_20_230: ['levels', { in_black: 20, in_white: 230, gamma_x100: 100, out_black: 10, out_white: 245 }], levels_gamma13: ['levels', { in_black: 0, in_white: 255, gamma_x100: 130, out_black: 0, out_white: 255 }], levels_gamma06: ['levels', { in_black: 0, in_white: 255, gamma_x100: 60, out_black: 0, out_white: 255 }] };
+(async () => { const L = await import('lcms-wasm'), lcms = await L.instantiate(), ctx = { L, lcms, blobs: new Map() };
+  for (const [name, [kind, params]] of Object.entries(feats)) { const rnd = rng(11), ops = [{ op: 'doc', v: 2, w: W, h: W, working: 'srgb', gamma: 'encoded' }, { op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false, space: 'srgb' }, { op: 'fill', layer: 0, c: [0.5, 0.5, 0.5], a: 1 }];
+    for (let i = 0; i < 60; i++) ops.push({ op: 'dab', layer: 0, x: r4(rnd() * W), y: r4(rnd() * W), r: r4(10 + rnd() * 30), c: [r4(rnd()), r4(rnd()), r4(rnd())], a: r4(0.4 + rnd() * 0.6) });
+    const withAdj = [...ops, { op: 'adjust', id: 1, kind, params, opacity: 1, mask: false }], ex = exportPsd(withAdj, { ...ctx, _profiles: undefined }), imp = importPsd(ex.bytes), c2 = { L, lcms, blobs: new Map([...ctx.blobs, ...imp.blobs]) };
+    const f1 = DF.fold(imp.ops, c2), preOps = imp.ops.filter((o) => o.op !== 'adjust'), fp = DF.fold(preOps, c2);
+    fs.writeFileSync(path.join(OUT, name + '.psd'), ex.bytes); fs.writeFileSync(path.join(OUT, name + '.work.rgba8'), DF.render(DF.composite(f1, c2), f1, 'srgb', c2)); fs.writeFileSync(path.join(OUT, name + '.pre.rgba8'), DF.render(DF.composite(fp, c2), fp, 'srgb', c2)); }
+  fs.writeFileSync(path.join(OUT, 'feats.json'), JSON.stringify(feats)); console.log('wrote', Object.keys(feats).length, 'documents'); })();

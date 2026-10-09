@@ -156,3 +156,66 @@ H32 CONFIRMED (40 blobs incl. 1x1, 63x65, 130x70, 1 and 4 channels: 0 mismatches
 H34 CONFIRMED (fresh sql.js instance in Node: 0 mismatches; Chromium with a fresh sql.js and pure-JS sha256: 58/58) | H35 CONFIRMED (flat P3 doc and a groups+clip+non-separable doc: identical f32 and sRGB render hashes vs Map-backed blobs; schema validation against the store: 0 errors)
 H36 CONFIRMED (300/300 corruptions detected: tile bit flip, swapped manifest ids, truncated manifest; 0 silent wrong reads) | H37 CONFIRMED (200 random regions: tiles read exactly as predicted, bytes equal the slice) | H38 CONFIRMED (control: wrong tile size detected)
 Caveats: edits in H33 are synthetic (noise layers, 100x100 channel inversions), real brushwork will dedupe differently; storage is uncompressed (14 MB for 829 tiles), compression untested; one SQLite file, no concurrency/locking tests; pure-JS sha256 hashing speed not benchmarked.
+
+## Adjustment layers: invert, levels, threshold, posterize (logged BEFORE implementation)
+Schema v2 op `{op:'adjust', id, kind, params, opacity, mask, parent?}`; it transforms the composite beneath it within its parent context (pass-through: whole backdrop; isolated group: that group's content), then
+result = lerp(before, adjusted, opacity*mask) on the straight colour; alpha is never changed. Only in `gamma: "encoded"` documents (behaviour in linear light is unknown, so rejected). Definitions (from the PS integer model, NOT fitted):
+levels: x = clamp((c - ib/255) / ((iw - ib)/255)); x = x^(1/gamma); out = clamp(ob/255 + x*(ow - ob)/255), params in PS integer units, gamma_x100 in 1..999 (ag-psd/PSD store midtone as int16/100);
+threshold: white iff round(255*(0.3R+0.59G+0.11B)) >= level (level 1..255); posterize: out = floor(c*(255/256)*n)/(n-1), n in 2..255, which reproduces the PS 8-bit mapping floor(v*n/256)/(n-1) exactly (n=2 cuts at 128); invert: 1 - c.
+Canonical code may not use Math.pow (not bit-exact across engines), so x^y is a deterministic routine using only + - * / on doubles (exponent/mantissa split, atanh-series log2, Taylor exp2).
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H40a | the deterministic pow matches Math.pow | 1e6 random pairs x in [1e-6,1], y in [0.01,100]; plus pow(0,y)=0, pow(1,y)=1 | relative error <= 1e-8 where result > 1e-30; specials exact | (pending) |
+| H40b | it is bit-reproducible across engines | sha256 of 4000 fixed outputs, Node vs Chromium | identical | (pending) |
+| H41 | identity adjustments are exact no-ops: levels (0,255,100,0,255), any adjustment at opacity 0 or with an all-zero mask | f32 hash vs the document without the layer | equal | (pending) |
+| H42a | posterize reproduces the PS integer mapping on all 256 inputs for every n in 2..255 | property test | exact (max abs <= 1e-6) | (pending) |
+| H42b | threshold on grey inputs: white iff v >= level, all 256 x 255 combinations | property test | 0 violations | (pending) |
+| H42c | invert twice is the identity | f32 | max abs <= 1e-6 | (pending) |
+| H43 | canonical (+ lcms conversions) vs an independent float64 oracle in documents with all four kinds, masks, opacities, in P3 and sRGB working spaces, inside pass-through and isolated groups | docfold vs oracle (working space) | max <= 1 level, mean <= 0.05 | (pending) |
+| H44 | psd-tools' own compositor agrees with ours on exported PSDs with these adjustment layers, LIKE FOR LIKE (our render of the imported doc) | `psd.composite(force=True, apply_icc=False)` | mean <= 1.0 and <= 0.5% of pixels over 8 levels | (pending) |
+| H45 | scoping invariants: (a) an adjustment at the root equals the pointwise function applied to the composite beneath; (b) inside an isolated group with nothing below it, it is a no-op; (c) inside an isolated group it does not change the backdrop outside the group's footprint | f32 / f64 comparisons | (a) max abs <= 2e-6 (b) hash equal (c) 0 pixels changed | (pending) |
+| H46 | mutation controls: invert replaced by a no-op, levels gamma ignored, threshold level off by one level, posterize treated as n+1 are each detected | vs oracle | each >= 4 levels (threshold: >= 1 pixel changes by > 100 levels) | (pending) |
+| H47 | schema: adjust rejected in v1 and in linear documents; kinds/params validated (ranges, in_black < in_white, ints); a layer cannot be clipped to an adjustment; fill/dab/raster on it rejected | schema tests | all rejected / accepted as listed | (pending) |
+| H48 | PSD round trip preserves kind, params, opacity, mask, nesting; export->import->export->import is a fixed point; psd-tools reads the same kinds and parameters | structural | identical | (pending) |
+| H49 | nothing existing changes | witness_all hashes of earlier suites | unchanged | (pending) |
+
+### Amendments to H43 and H44, made BEFORE the first run (reason: step functions)
+threshold and posterize are discontinuous, so a pixel within ~1e-5 (f32/lcms rounding) of a boundary can flip by 64-255 levels. A flat "max <= 1 level" would measure rounding luck, not correctness. Replaced as follows (nothing is run yet):
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H43a | continuous kinds (invert, levels): pipeline vs float64 oracle | documents, working space | max <= 1 level, mean <= 0.05 (as before) | (pending) |
+| H43b | discontinuous kinds (threshold, posterize), compositor-only on identical converted layers | canonical f32 vs oracle on the same working-space layers | pixels over 1 level <= 0.05% of pixels (flips from f32 vs f64 only) | (pending) |
+| H43c | discontinuous kinds, whole pipeline (lcms conversion error ~1e-4 relative adds flips) | pipeline vs exact float64 | pixels over 1 level <= 0.2% | (pending) |
+| H44a | continuous kinds vs psd-tools, like for like | `psd.composite(force=True, apply_icc=False)` vs our render of the imported doc | mean <= 1.0 and <= 0.5% of pixels over 8 levels (unchanged). psd-tools applies adjustments through 256-entry LUTs, which may add error for steep curves; if it fails I will test that explanation (H44b) instead of loosening | (pending) |
+| H44b | tolerance-aware semantic agreement for discontinuous kinds: a pixel disagrees only if psd-tools and ours give different outputs while our pre-adjustment value is NOT within 1.5 levels (8-bit) of a boundary | python check with our pre-adjustment picture saved | disagreeing pixels outside the boundary band <= 0.1% of pixels | (pending) |
+
+### Adjustment layers: first run (run_adjust.js, 72 checks): 3 failed, everything else passed (registered BEFORE the follow-up tests)
+PASSED: H40a pow rel. error (limit 1e-8; after adding series terms 5e-14 over 1e6 pairs), H42a posterize == PS integer mapping on all 254 n x 256 inputs (0 violations: the 255/256 factor matters), H42b threshold on greys (0 violations of 65,280),
+H42c, H41 (no-ops exact, non-vacuous), H45 a/b/c (scoping), H47 schema (all rejected), H43a/b/c, H44b (tolerance-aware psd-tools agreement for step functions), H48 (kinds/params/nesting/fixed point; per-channel levels rejected), H40b Node==Chromium.
+Bugs found by the gates: (1) the importer rejected its own exported levels layer because ag-psd fills red/green/blue with identity records on read: now accepts identity per-channel records and still rejects real per-channel levels (H48b); (2) a syntax slip of mine (inline `//` swallowing a line).
+FAILED: (1) H46 "levels gamma ignored" = 3 levels vs >= 4. The mutation IS detected (control 1), but the mutated node (id 10) sits low in the stack and is mostly covered by later layers: weak TEST POWER, not a correctness issue.
+  Fix: mutate the node with the strongest gamma (id 12, gamma 0.60); threshold stays >= 4. (2) H44a mean 1.05 / 1.07 vs <= 1.0 (limit unchanged).
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H44c | the excess over 1.0 is psd-tools applying adjustments through 256-entry LUTs (input quantised to 8 bits); our function applied to 8-bit-quantised inputs reproduces psd-tools at the noise floor, while unquantised inputs reproduce the ~1.05 | single-feature documents (invert only, levels linear, levels gamma 1.3, levels gamma 0.6); python computes both variants from our pre-adjustment picture | quantised-input variant: mean <= 0.7; and invert-only (no LUT) must be at the baseline <= 0.6 | (pending) |
+
+H44c REFUTED AS DESIGNED / untestable: my diagnostic fed psd-tools' LUT hypothesis an already 8-bit pre-adjustment picture, so quantised and unquantised variants were identical. (Single-feature psd-tools agreement: levels linear 0.494, gamma 1.3 0.479, gamma 0.6 0.536, invert 0.787 which has no LUT at all.)
+Sharper hypothesis, registered before the test:
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H44d | psd-tools quantises its output by TRUNCATION (`astype(uint8)` after `255*color`), ours rounds; the pre-registered mean <= 1.0 against our ROUNDED picture therefore includes a ~0.5 level bias that is not an adjustment error. Compared with our FLOAT result truncated the same way, the 4 continuous documents agree far better than when compared with our rounded picture | write our straight working-space float picture; python compares psd-tools with floor(255*f) and with round(255*f) | truncation-aligned mean <= 0.7 for every continuous document AND it is lower than the rounded comparison for each | (pending) |
+
+### H44d CONFIRMED and H44a REPLACED (comparison-design flaw, same class as H13)
+H44d: truncation-aligned mean 0.5512 and 0.5667 (limit 0.7); (mean vs rounded) - (mean vs truncated) = 0.4988 and 0.5007 = half a level = exactly truncation vs rounding. psd-tools' output stage is `np.clip(255*color, 0, 255).astype(np.uint8)` (truncation).
+H44a's pre-registered "mean <= 1.0 against OUR ROUNDED picture" therefore hid a ~0.5 level comparison bias and failed at 1.05/1.07 although the real agreement is 0.55. REPLACED by H44d (mean <= 0.7 vs the truncation-aligned float picture); the "<= 0.5% of pixels over 8 levels" half of H44a is kept unchanged and passes (0%).
+**General finding for every earlier psd-tools comparison** (groups H24/H27, non-separable H30d, adjustments): psd-tools composites report ~0.5 level more than the true disagreement because of truncation; those suites passed anyway with margin, and their reported means (0.28-0.65) should be read as ~0.5 bias + residual.
+H46 repaired: mutated node 12 (gamma 0.60) instead of node 10; results: invert no-op 132, gamma ignored 62, threshold level +20 255, posterize n+1 51 levels (all >= their thresholds), control 1.
+
+### Adjustment layers: verdicts (`doc/run_adjust.js`, 76 checks; `npm run adjust`)
+H40a CONFIRMED (5e-14 max relative error over 1e6 pairs; specials exact) | H40b CONFIRMED (powDet hash and all 6 documents' f32 + render hashes identical Node vs Chromium) | H41 CONFIRMED (identity levels, opacity 0, zero mask exact; non-vacuous)
+H42a CONFIRMED (posterize == floor(v*n/256)/(n-1), 0 violations over 254 n x 256 inputs) | H42b CONFIRMED (threshold, 0 violations of 65,280) | H42c CONFIRMED (invert twice <= 1e-6)
+H43a CONFIRMED (continuous, <= 1 level, mean <= 0.05) | H43b CONFIRMED (step functions, compositor-only flips <= 0.05%) | H43c CONFIRMED (whole pipeline flips <= 0.2%)
+H44b CONFIRMED (tolerance-aware: outside the boundary band psd-tools disagrees on <= 0.1% of pixels) | H44d CONFIRMED, H44a replaced (see above) | H45a/b/c CONFIRMED (scoping: root = pointwise function, isolated-empty no-op, 0 pixels changed outside the group footprint)
+H46 CONFIRMED after strengthening the gamma mutation | H47 CONFIRMED (20 of 20 invalid logs rejected, valid kinds accepted) | H48/H48b CONFIRMED (kinds/params/opacity/masks/nesting preserved, fixed point; per-channel levels rejected, master-only accepted; psd-tools reads the same parameters)
+H49 verified by the full ledger run. Not covered: curves, hue/saturation, brightness/contrast, exposure, per-channel levels (rejected on import), adjustments in linear-light documents (rejected), adjustment blend modes other than normal, clipping an adjustment, GPU twin.
+Note: the step-function agreement (H43b/c, H44b) is a statement about semantics away from boundaries; pixels within rounding distance of a boundary can legitimately flip, and the numbers above quantify how many.

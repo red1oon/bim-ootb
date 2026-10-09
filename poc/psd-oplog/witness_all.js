@@ -1,7 +1,7 @@
 // Usage: node witness_all.js [--only icc,doc]   Runs every suite, appends one line per suite to witness_log/ledger.jsonl, keeps full output in witness_log/latest/.
 const { spawnSync } = require('child_process'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
 const SUITES = [['oplog_witness', ['node', 'witness_oplog.js']], ['stack', ['node', 'run_stack.js']], ['psd_roundtrip', ['node', 'psd_roundtrip.js']], ['icc', ['sh', '-c', 'sh icc/fetch_profiles.sh >/dev/null && node icc/run_icc.js']],
-  ['doc', ['node', 'doc/run_doc.js']], ['export', ['node', 'doc/run_export.js']], ['groups', ['node', 'doc/run_groups.js']], ['nonsep', ['node', 'doc/run_nonsep.js']], ['tiles', ['node', 'tiles/run_tiles.js']]];
+  ['doc', ['node', 'doc/run_doc.js']], ['export', ['node', 'doc/run_export.js']], ['groups', ['node', 'doc/run_groups.js']], ['nonsep', ['node', 'doc/run_nonsep.js']], ['tiles', ['node', 'tiles/run_tiles.js']], ['adjust', ['node', 'doc/run_adjust.js']]];
 const only = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean), dir = path.join(__dirname, 'witness_log');
 const git = (a) => { const r = spawnSync('git', a, { cwd: __dirname, encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : '?'; };
 const commit = git(['rev-parse', '--short', 'HEAD']), dirty = git(['status', '--porcelain', '--', '.']).split('\n').filter((l) => l && !l.includes('witness_log/')).length > 0;

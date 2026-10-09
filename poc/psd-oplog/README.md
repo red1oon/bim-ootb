@@ -262,3 +262,27 @@ golden hashes are unchanged. Reads re-verify every tile hash, tile size and the 
 | Region reads (200 random, 512x512 layer) | tiles touched exactly as predicted; bytes equal the slice |
 
 Limits: edits are synthetic, storage is uncompressed, single-file SQLite with no concurrency tests, hashing speed not benchmarked, no streaming into the fold yet (the fold still loads whole layers).
+
+## Adjustment layers: invert, levels, threshold, posterize (schema v2, gamma "encoded" only; `doc/run_adjust.js`, `npm run adjust`; 76 logged checks, H40-H49)
+`{op:'adjust', id, kind, params, opacity, mask, parent?}` transforms the composite beneath it within its parent context (pass-through group: the whole backdrop; isolated group: that group's content), lerped by opacity x mask on the
+straight colour; alpha is never changed. Definitions follow the Photoshop integer model and were **not fitted**: levels (in_black, in_white, gamma_x100, out_black, out_white; gamma x100 as PSD stores it), threshold (white iff
+round(255 * (0.3R + 0.59G + 0.11B)) >= level), posterize (floor(c * 255/256 * n) / (n-1), which equals the PS 8-bit mapping floor(v*n/256) exactly), invert. The canonical code cannot use `Math.pow` (not bit-exact across engines), so
+levels gamma uses a deterministic pow built from + - * / only (max relative error 5e-14 over 1e6 pairs; hash identical in Node and Chromium).
+
+| Check | Result |
+|---|---|
+| Posterize == PS integer mapping, all 256 inputs x every n in 2..255 | 0 violations |
+| Threshold on greys, all 255 levels x 256 inputs | 0 violations |
+| Identity levels / opacity 0 / zero mask are exact no-ops (and invert at opacity 1 is not) | exact |
+| Scoping: root adjustment == pointwise function of the composite beneath; inside an isolated group it changes 0 pixels outside the group's footprint | 2e-6 max abs; 0 pixels |
+| Continuous kinds (invert, levels) vs the independent float64 oracle in documents with masks, groups, P3 | max 1 level, mean <= 0.05 |
+| Step functions (threshold, posterize): compositor-only flips; whole-pipeline flips | <= 0.05% / <= 0.2% of samples over 1 level (flips next to a boundary are inherent) |
+| psd-tools reads the same kinds and parameters; continuous kinds vs psd-tools' compositor | exact parameters; mean 0.55 / 0.57 against our float picture truncated like psd-tools does; 0% of pixels over 8 |
+| Step functions vs psd-tools, tolerance-aware (pixels not within 1.5 levels of a boundary) | <= 0.1% disagree |
+| Mutation controls (invert no-op, gamma ignored, threshold +20, posterize n+1) | 132 / 62 / 255 / 51 levels detected |
+| Schema (v1 and linear-light rejected, ranges, ints, no clipping to an adjustment, no blend mode) | 20/20 invalid logs rejected |
+| PSD round trip (kinds, params, opacity, masks, nesting) and fixed point; per-channel levels rejected, master-only accepted | identical |
+
+**Finding about psd-tools (affects every earlier comparison):** its output stage truncates (`astype(uint8)` after `255*c`) where we round, which adds a ~0.5 level bias to any comparison with a rounded picture. The earlier groups, clipping and non-separable
+means (0.28-0.65) should be read as ~0.5 bias + residual; they passed with margin. The pre-registered adjustment check "mean <= 1.0 vs our rounded picture" failed at 1.05 for that reason and was replaced (ledger H44a -> H44d) by a truncation-aligned
+comparison (0.55). Limits: no curves / hue-saturation / brightness-contrast / exposure / per-channel levels; no adjustments in linear-light documents; adjustments have no blend mode and cannot be clipped; no GPU twin.

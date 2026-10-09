@@ -92,8 +92,38 @@
   };
   for (const m of NONSEP) { BLEND[m] = TRI[m]; BLEND[m].tri = true; }
 
+  // ---- deterministic x^y (x in [0,1], y > 0) using only + - * / on doubles and exact bit-level exponent handling (no Math.pow / Math.exp / Math.log: not bit-exact across engines)
+  const _f64 = new Float64Array(1), _u32 = new Uint32Array(_f64.buffer), LN2 = 0.6931471805599453, TWO_OVER_LN2 = 2.8853900817779268;
+  const pow2int = (n) => { _u32[0] = 0; _u32[1] = (n + 1023) << 20; return _f64[0]; };
+  function powDet(x, y) {
+    if (x <= 0) return 0; if (x === 1) return 1; _f64[0] = x; if (((_u32[1] >>> 20) & 0x7ff) === 0) return 0;   // subnormals never occur for f32 inputs
+    const e = ((_u32[1] >>> 20) & 0x7ff) - 1023, m = x / pow2int(e), t = (m - 1) / (m + 1), t2 = t * t;
+    let s = t, tp = t; for (const k of [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33]) { tp = tp * t2; s += tp / k; }
+    const z = y * (e + TWO_OVER_LN2 * s); if (z < -1000) return 0; if (z > 1000) return Infinity;
+    const n = Math.round(z), f = (z - n) * LN2; let term = 1, sum = 1; for (let k = 1; k <= 14; k++) { term = (term * f) / k; sum += term; }
+    return sum * pow2int(n);
+  }
+  // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize'];
+  function adjustFn(kind, p) {
+    if (kind === 'invert') return (c) => F(1 - c);
+    if (kind === 'levels') { const ib = F(p.in_black / 255), iw = F(p.in_white / 255), ob = F(p.out_black / 255), ow = F(p.out_white / 255), span = F(iw - ib), inv = 1 / Math.min(Math.max(p.gamma_x100, 1), 999) * 100, id = p.gamma_x100 === 100;
+      return (c) => { let x = F(F(c - ib) / span); x = x < 0 ? 0 : x > 1 ? 1 : x; if (!id) x = F(powDet(x, inv)); const o = F(ob + F(x * F(ow - ob))); return o < 0 ? 0 : o > 1 ? 1 : o; }; }
+    if (kind === 'posterize') { const n = p.levels, f = F(255 / 256); return (c) => { const q = Math.floor(F(F(c * f) * n)); return F(Math.min(q, n - 1) / (n - 1)); }; }
+    throw new Error('adjustment kind ' + kind);
+  }
+  function applyAdjust(back, a, n) {
+    const rgb = a.kind === 'threshold' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
+    for (let i = 0; i < n; i++) {
+      const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
+      const c0 = F(back[i*4] / al), c1 = F(back[i*4+1] / al), c2 = F(back[i*4+2] / al); let o0, o1, o2;
+      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
+      const ik = F(1 - k); back[i*4] = F(al * (k >= 1 ? o0 : F(F(c0 * ik) + F(o0 * k)))); back[i*4+1] = F(al * (k >= 1 ? o1 : F(F(c1 * ik) + F(o1 * k)))); back[i*4+2] = F(al * (k >= 1 ? o2 : F(F(c2 * ik) + F(o2 * k))));
+    }
+  }
+
   // ---------- fold ----------
-  function newState(W) { return { W, order: [], L: {}, G: {}, root: [], hasTree: false }; }
+  function newState(W) { return { W, order: [], L: {}, G: {}, A: {}, root: [], hasTree: false }; }
   function apply(st, o) {
     const W = st.W;
     if (o.op === 'layer') {
@@ -104,7 +134,8 @@
       const parent = o.parent === undefined ? -1 : o.parent;
       st.G[o.id] = { mode: o.mode, opacity: F(o.opacity), mask: o.mask ? new Float32Array(W*W).fill(1) : null, children: [], parent };
       (parent >= 0 ? st.G[parent].children : st.root).push(o.id); st.hasTree = true; return; }
-    const l = (o.op === 'set' || o.op === 'mdab') ? (st.L[o.layer] || st.G[o.layer]) : st.L[o.layer];
+    if (o.op === 'adjust') { const parent = o.parent === undefined ? -1 : o.parent; st.A[o.id] = { kind: o.kind, params: o.params, opacity: F(o.opacity), mask: o.mask ? new Float32Array(W*W).fill(1) : null, parent }; (parent >= 0 ? st.G[parent].children : st.root).push(o.id); st.hasTree = true; return; }
+    const l = (o.op === 'set' || o.op === 'mdab') ? (st.L[o.layer] || st.G[o.layer] || st.A[o.layer]) : st.L[o.layer];
     if (o.op === 'set') { if (o.mode) l.mode = o.mode; if (o.opacity !== undefined) l.opacity = F(o.opacity); return; }
     if (o.op === 'fill') { const a = F(o.a); for (let i = 0; i < W*W; i++) { l.pix[i*4] = F(F(o.c[0])*a); l.pix[i*4+1] = F(F(o.c[1])*a); l.pix[i*4+2] = F(F(o.c[2])*a); l.pix[i*4+3] = a; } return; }
     const r2 = F(o.r * o.r), x0 = Math.max(0, Math.floor(o.x - o.r)), x1 = Math.min(W-1, Math.ceil(o.x + o.r)), y0 = Math.max(0, Math.floor(o.y - o.r)), y1 = Math.min(W-1, Math.ceil(o.y + o.r));
@@ -158,7 +189,8 @@
   function renderList(st, ids, back) {
     const n = st.W * st.W; let j = 0;
     while (j < ids.length) {
-      const id = ids[j], g = st.G[id];
+      const id = ids[j], g = st.G[id], adj = st.A && st.A[id];
+      if (adj) { j++; applyAdjust(back, adj, n); continue; }
       if (g) {
         j++;
         if (g.mode === 'pass-through') {
@@ -211,6 +243,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, NONSEP, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, ADJ_KINDS, powDet, adjustFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);

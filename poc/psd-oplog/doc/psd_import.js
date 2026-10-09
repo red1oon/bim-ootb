@@ -17,6 +17,11 @@ function importPsd(bytes) {
     ops2.push({ op: 'maskraster', layer: id, pixels: put(mk) }); };
   const walk = (list, parent) => list.forEach((c) => {
     const id = nextId++, hasMask = !!(c.mask && c.mask.imageData), opacity = c.opacity === undefined ? 1 : c.opacity, pf = parent >= 0 ? { parent } : {};
+    if (c.adjustment) {   // adjustment layer
+      const A = c.adjustment; let kind, params; if (A.type === 'invert') { kind = 'invert'; params = {}; } else if (A.type === 'threshold') { kind = 'threshold'; params = { level: A.level }; } else if (A.type === 'posterize') { kind = 'posterize'; params = { levels: A.levels }; }
+      else if (A.type === 'levels' && A.rgb && [A.red, A.green, A.blue].every((ch) => !ch || (ch.shadowInput === 0 && ch.highlightInput === 255 && ch.shadowOutput === 0 && ch.highlightOutput === 255 && ch.midtoneInput === 1))) { kind = 'levels'; params = { in_black: A.rgb.shadowInput, in_white: A.rgb.highlightInput, gamma_x100: Math.round(A.rgb.midtoneInput * 100), out_black: A.rgb.shadowOutput, out_white: A.rgb.highlightOutput }; }
+      else throw new Error('unsupported adjustment layer "' + A.type + '"' + (A.type === 'levels' ? ' (per-channel levels)' : ''));
+      usesTree = true; ops.push({ op: 'adjust', id, kind, params, opacity, mask: hasMask, ...pf }); if (hasMask) maskOps(c, id, ops); return; }
     if (c.children) {   // group
       const mode = c.blendMode === 'pass through' ? 'pass-through' : MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported group blend mode "' + c.blendMode + '"'); usesTree = true;
       ops.push({ op: 'group', id, mode, opacity, mask: hasMask, ...pf }); if (hasMask) maskOps(c, id, ops); walk(c.children, id); return; }
