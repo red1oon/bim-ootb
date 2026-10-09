@@ -1,0 +1,281 @@
+{
+ "env": {
+  "renderer": "NVIDIA GeForce GTX 980, or similar",
+  "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+  "platform": "Linux x86_64",
+  "when": "2026-10-09T19:27:32.381Z",
+  "note": "Firefox masks the GPU name; timestamp 2 min after the RTX 4060 Chrome run, so almost certainly the same machine"
+ },
+ "scenes": [
+  {
+   "name": "stack_seed1",
+   "f32_hash": "dcd94d583cad2d22bd5530d014b3349b1910db533fc0adc670fc4e16aa190395",
+   "cpu_matches_golden": true,
+   "gl32": {
+    "max": 1,
+    "mean": 0.0228,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1589,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 5,
+    "mean": 0.6594,
+    "pct_over_1": 14.084,
+    "pct_over_2": 1.878
+   }
+  },
+  {
+   "name": "stack_seed2",
+   "f32_hash": "2a94695e9395930c2e1bbc902a22f9bee0ba7e2ff59df11c9020ec7c728ad00b",
+   "cpu_matches_golden": true,
+   "gl32": {
+    "max": 1,
+    "mean": 0.0226,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1181,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 5,
+    "mean": 0.601,
+    "pct_over_1": 11.273,
+    "pct_over_2": 1.208
+   }
+  },
+  {
+   "name": "stack_seed3",
+   "f32_hash": "b9a6079ec515914c86e826bec935b20fb89b59c9c135f7c8d8b1fdfa66b08917",
+   "cpu_matches_golden": true,
+   "gl32": {
+    "max": 1,
+    "mean": 0.0237,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1398,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 5,
+    "mean": 0.6152,
+    "pct_over_1": 12.018,
+    "pct_over_2": 1.291
+   }
+  },
+  {
+   "name": "mode_multiply",
+   "f32_hash": "eb97406ef5e0105d93019b25bf694d0c93d1538570ff2ac6e60f604ada440cd9",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0218,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.0866,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 2,
+    "mean": 0.3599,
+    "pct_over_1": 0.714,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "mode_screen",
+   "f32_hash": "708de00028c468fe2f2a2c31a0f8d8ef381061c83c5b91f40a6469a88989ad33",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0232,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1384,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 2,
+    "mean": 0.2616,
+    "pct_over_1": 0.22,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "mode_overlay",
+   "f32_hash": "60878d20377ce8d8e1d3d7eac4e508dd2193144965b596368ceb2a23cf5dbb0f",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0246,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1457,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 3,
+    "mean": 0.4218,
+    "pct_over_1": 3.2,
+    "pct_over_2": 0.026
+   }
+  },
+  {
+   "name": "mode_soft-light",
+   "f32_hash": "e3f2fad3e22d8ba2596d4a37d07944a219eed571e119ab0e36c51113a8be0ce3",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0237,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1389,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 1,
+    "mean": 0.2101,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "mode_hard-light",
+   "f32_hash": "d053c661043d4aca136eeff0512fc1bdc0fb054f9dae18cd81566e2b2b148f8d",
+   "gl32": {
+    "max": 1,
+    "mean": 0.024,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1266,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 4,
+    "mean": 0.5257,
+    "pct_over_1": 7.338,
+    "pct_over_2": 0.244
+   }
+  },
+  {
+   "name": "mode_darken",
+   "f32_hash": "7ac2e4a741ce360749fdaaa37df2282a9b885c5e921eac830918f778c0c95e5d",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0272,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.0899,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 3,
+    "mean": 0.1888,
+    "pct_over_1": 1.442,
+    "pct_over_2": 0.002
+   }
+  },
+  {
+   "name": "mode_lighten",
+   "f32_hash": "2085aade30deed4bc98e5eaf9c4010a07e6dae3ccdf919b41687612ec08c44ba",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0246,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.1092,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 2,
+    "mean": 0.1866,
+    "pct_over_1": 0.536,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "mode_difference",
+   "f32_hash": "823b573491dc0db338dd576bfb4696eb9ce8606dec11dd4ea0be8653056d7285",
+   "gl32": {
+    "max": 1,
+    "mean": 0.0233,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.0796,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 3,
+    "mean": 0.488,
+    "pct_over_1": 4.683,
+    "pct_over_2": 0.064
+   }
+  },
+  {
+   "name": "mode_exclusion",
+   "f32_hash": "7f832a6a7c1d59daa777806085bb4606ca400e6af0569b0fca18dafb96e138b2",
+   "gl32": {
+    "max": 1,
+    "mean": 0.03,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "gl16": {
+    "max": 1,
+    "mean": 0.0921,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "canvas2d_info": {
+    "max": 3,
+    "mean": 0.5327,
+    "pct_over_1": 8.195,
+    "pct_over_2": 0.092
+   }
+  }
+ ],
+ "gate": "PASS",
+ "fails": [],
+ "software_renderer_suspected": false
+}

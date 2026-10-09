@@ -74,4 +74,11 @@ Reading:
 - The GPU is **not** bit-identical to the CPU (mean 0.03 vs 0 on software), so it cannot be the canonical renderer. It stays within 1 level on every sample, so it is fine as the interactive preview. This is the planned split.
 - Canvas2D gets noticeably worse on the real GPU than on software (max 6, a quarter of samples off by more than 1). Do not use browser Canvas2D compositing for anything canonical; use it, if at all, as a loose sanity check.
 
-Still open: a second browser engine (Firefox/SpiderMonkey, Safari/JSC), a non-x86 device (Apple Silicon / ARM), and a second GPU vendor. One device does not prove portability.
+### Second engine: Firefox 157 (SpiderMonkey), `gpu_results/firefox157-linux.json`
+Same machine (Firefox hides the GPU name, "GTX 980, or similar" is its placeholder; run 2 min after the Chrome one). Gate PASS.
+- CPU f32 fold matches golden hashes on all 3 scenes, and all 12 scene hashes equal the Chrome run: **identical across V8 and SpiderMonkey**.
+- GL f32 vs CPU: max 1, mean 0.022-0.030, 0% over 1 level. GL f16: max 1, mean 0.08-0.16, 0% over 1 level.
+- Canvas2D (info): max 5, mean 0.6, 11-14% over 1 level on full stacks: again loose, but different numbers from Chrome, so it is engine-dependent.
+- The GL numbers are nonzero (software GL gave 0), which is consistent with hardware GL, but the masked renderer string means this is inference, not proof.
+
+Still open: Safari/JavaScriptCore, a non-x86 device (Apple Silicon / ARM), and a second GPU vendor. Two engines on one machine do not prove portability.
