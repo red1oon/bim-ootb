@@ -207,7 +207,11 @@ async function ensureRenderer() {
 function fit() { if (!R) return; R.renderer.setSize(innerWidth, innerHeight, false); R.cam.aspect = innerWidth / innerHeight; R.cam.updateProjectionMatrix(); }
 async function loadMeshes(c) {
   if (location.protocol === 'file:') { toast('3D view needs the launcher or a web address (file:// cannot load the IFC engine).'); log('§BIM_RENDER verdict=INCONCLUSIVE reason=file-protocol'); return false; }
-  const r = await ensureRenderer();
+  let r; try { r = await ensureRenderer(); } catch (e) {
+    // no WebGL (remote desktop, blocked GPU, old driver): the tool still works from the search list
+    R = null; log('§BIM_RENDER verdict=INCONCLUSIVE reason=no-webgl ' + String(e.message).slice(0, 80));
+    toast('3D view is not available on this computer. Use the search list to pick items, then press E.', 12000); c.renderedEids = null; c.rendered = false; document.body.classList.add('view'); chip(); toggleSearch(true); return true;
+  }
   if (c.rendered) return true;
   const api = new WebIFC.IfcAPI(); api.SetWasmPath(new URL('viewer/lib/', location.href).href, true); await api.Init();
   const id = api.OpenModel(c.bytes, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });

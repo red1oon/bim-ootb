@@ -6,7 +6,7 @@ const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.spl
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§WITNESS PASS ' : '§WITNESS FAIL ') + id + ' ' + m); if (!c) fails++; };
 srv.listen(0, '127.0.0.1', async () => {
   const url = 'http://127.0.0.1:' + srv.address().port + '/bim.html';
-  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] }); const pg = await br.newPage(); const errs = []; pg.on('pageerror', (e) => errs.push(e.message));
+  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }); const pg = await br.newPage(); const errs = []; pg.on('pageerror', (e) => errs.push(e.message));
   await pg.goto(url, { waitUntil: 'load' });
   const first0 = await pg.evaluate(async (b64) => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); window.__bim.arm('extract', true); await window.__bim.onFile('Duplex_ARC.ifc', u.buffer); for (let i = 0; i < 300 && !(window.__bim.cur && window.__bim.cur.rendered); i++) await new Promise((r) => setTimeout(r, 200)); const c = window.__bim.cur; return { name: c.name, n: c.prods.length }; }, fs.readFileSync(file).toString('base64'));
   // select through the REAL UI path: search panel -> "Select all matches" (this is what calls the persistence)
