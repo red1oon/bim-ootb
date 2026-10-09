@@ -145,15 +145,23 @@ function dragOut(e, t) {
   log('§BIM_DRAGOUT tool=' + t.id + ' file=' + f.name + ' kind=' + window.__bim.lastDrag.kind);
 }
 
+// ── remember the last model across reloads (IndexedDB; any failure just means "no memory", never an error) ──
+const idb = () => new Promise((res, rej) => { try { const q = indexedDB.open('bim-tools', 1); q.onupgradeneeded = () => q.result.createObjectStore('last'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch (e) { rej(e); } });
+async function idbPut(k, v) { try { const d = await idb(); await new Promise((res, rej) => { const t = d.transaction('last', 'readwrite'); t.objectStore('last').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); d.close(); return true; } catch (e) { log('§BIM_STORE put ' + k + ' failed: ' + e); return false; } }
+async function idbGet(k) { try { const d = await idb(); const v = await new Promise((res, rej) => { const q = d.transaction('last').objectStore('last').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); d.close(); return v; } catch (e) { return undefined; } }
+function saveSel() { if (!cur || SERVED) return; idbPut('sel', [...selected].map((id) => cur.byId.get(id)).filter(Boolean).map((p) => p.guid)); }
 // ── file in ─────────────────────────────────────────────────────────────────
 function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
 const base = (n) => n.replace(/\.ifc$/i, '');
-async function onFile(name, buf) {
+async function onFile(name, buf, opt) {
+  opt = opt || {};
   const bytes = new Uint8Array(buf);
   const text = new TextDecoder('utf-8').decode(bytes);
   let model; try { model = S.parse(text); } catch (e) { toast('Not an IFC (STEP) file: ' + e.message); log('§BIM_LOAD name=' + name + ' verdict=ERROR ' + e.message); return; }
   const prods = S.listProducts(model), byId = new Map(prods.map((p) => [p.id, p]));
   cur = { name, bytes, text, model, prods, byId }; selected.clear();
+  if (!opt.restore && !SERVED) { idbPut('file', { name, bytes }); idbPut('sel', []); }
+  if (opt.sel) { const g = new Set(opt.sel); prods.forEach((p) => { if (g.has(p.guid)) selected.add(p.id); }); }
   log('§BIM_LOAD name=' + name + ' bytes=' + bytes.length + ' schema=' + model.schema + ' entities=' + model.ents.size + ' products=' + prods.length);
   runOn(cur, T.find((t) => t.id === armed));
 }
@@ -236,7 +244,7 @@ function paint() {
   if (!R) return;
   for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
 }
-function chip() { $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; }
+function chip() { $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
 function pickAt(e) {
   const r = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   R.ray.setFromCamera(R.mouse, R.cam); const h = R.ray.intersectObjects(R.meshes, false); return h.length ? h[0].object.userData.eid : null;
@@ -322,6 +330,13 @@ window.__bim = { get cur() { return cur; }, get selected() { return selected; },
 buildRail();
 if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
 log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + armed);
+// plain page reload: bring back the last model (and what was selected) instead of an empty page
+if (!SERVED) (async () => {
+  const f = await idbGet('file'); if (!f || !f.bytes) { log('§BIM_RESTORE verdict=INCONCLUSIVE reason=nothing-stored'); return; }
+  const sel = (await idbGet('sel')) || [];
+  await onFile(f.name, f.bytes.buffer ? f.bytes.buffer.slice(f.bytes.byteOffset, f.bytes.byteOffset + f.bytes.byteLength) : f.bytes, { restore: true, sel });
+  toast('Restored your last file: ' + f.name + (sel.length ? ' (' + sel.length + ' selected)' : '')); log('§BIM_RESTORE name=' + f.name + ' selected=' + selected.size + ' verdict=PASS');
+})();
 // served by the CLI launcher: the model is waiting at /__file
 if (SERVED) {
   armed = params.get('tool') || 'extract'; syncArmed();
