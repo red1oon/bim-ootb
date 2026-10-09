@@ -14,7 +14,8 @@
     "icc": "sh icc/fetch_profiles.sh && node icc/run_icc.js",
     "doc": "sh icc/fetch_profiles.sh && node doc/run_doc.js",
     "export": "sh icc/fetch_profiles.sh && node doc/run_export.js",
-    "samples": "node doc/run_export.js --no-python"
+    "samples": "node doc/run_export.js --no-python",
+    "witness_all": "node witness_all.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

@@ -187,3 +187,12 @@ Note on method: an early hypothesis blamed the larger differences on LittleCMS' 
 
 Limits: the embedded profile for built-in spaces is a generated matrix profile, not Adobe's/ICC's official profile, so Photoshop will show it as a custom profile; not opened in Photoshop itself
 (only ag-psd, psd-tools and our importer); RGB 8-bit only; no groups; golden PSD byte hashes depend on the pinned ag-psd version; a layer's original space is not kept (it is converted to the working space on export).
+
+## Third-party readers on a Linux desktop (`app_results/red1-Vi-2026-10-10.md`, run by a terminal Claude Code session)
+Available: ImageMagick 6.9.12 (lcms2), Pillow (lcms) and psd-tools 1.24. Not installed, so **not checked**: Krita, GIMP, ImageMagick 7, exiftool, and Photoshop (does not run on Linux).
+- Both readers report the embedded profile, 10 layers, 3 masks, blend modes and opacities exactly as written; none rejected, warned or asked about any of the 5 files. ImageMagick labels every scene "sRGB" whatever the profile (a label, no conversion).
+- Profiles are named "...-like matrix profile (psd-oplog generated)" / "custom gamma-1.8 test profile": neither app maps them to a named standard profile (expected: they are generated).
+- The stored merged picture converted to sRGB through the embedded profile matches the float64 oracle within 1 level (dE2000 max <= 1.03) in both apps for all 5 files; unconverted it is off by up to 92 levels, so the profile is genuinely needed and used.
+- `srgb_mixed` vs `p3_mixed` after conversion differ (dE2000 median 1.41, p95 4.91, max 13.3). **This is expected, not a defect**: they hold the same layers composited in different working spaces, which matches the earlier working-space finding (median 1.2, p95 5.8, max 12.8); the oracle gives the same numbers. (An earlier checklist wrongly said they should look nearly identical.)
+- ImageMagick does not re-blend layers (it shows the merged preview and per-layer alpha with mask and opacity folded in); psd-tools' own layer re-render is within 2-11 levels. So these readers confirm profile, structure and the stored preview, not independent blending.
+- Still open for a person: Photoshop, Krita, GIMP; especially the convert-or-keep dialog for `embedded_custom_working.psd`.

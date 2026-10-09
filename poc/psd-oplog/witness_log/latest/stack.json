@@ -1,0 +1,172 @@
+{
+ "canvas": "128x128",
+ "gl_renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+ "scenes": [
+  {
+   "name": "stack_seed1",
+   "ops": 440,
+   "f32_hash": "dcd94d583cad2d22",
+   "node_eq_chromium": true,
+   "vs_spec64": {
+    "max": 0,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_canvas2d": {
+    "max": 3,
+    "mean": 0.3069,
+    "pct_over_1": 1.228,
+    "pct_over_2": 0.014
+   },
+   "vs_gl32": {
+    "max": 1,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_gl16": {
+    "max": 1,
+    "mean": 0.033,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "stack_seed2",
+   "ops": 440,
+   "f32_hash": "2a94695e9395930c",
+   "node_eq_chromium": true,
+   "vs_spec64": {
+    "max": 0,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_canvas2d": {
+    "max": 3,
+    "mean": 0.3127,
+    "pct_over_1": 1.433,
+    "pct_over_2": 0.026
+   },
+   "vs_gl32": {
+    "max": 1,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_gl16": {
+    "max": 1,
+    "mean": 0.0297,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "name": "stack_seed3",
+   "ops": 440,
+   "f32_hash": "b9a6079ec515914c",
+   "node_eq_chromium": true,
+   "vs_spec64": {
+    "max": 0,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_canvas2d": {
+    "max": 3,
+    "mean": 0.3074,
+    "pct_over_1": 1.299,
+    "pct_over_2": 0.015
+   },
+   "vs_gl32": {
+    "max": 0,
+    "mean": 0,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   },
+   "vs_gl16": {
+    "max": 1,
+    "mean": 0.0328,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  }
+ ],
+ "per_mode": {
+  "multiply": {
+   "vs_spec64_max": 1,
+   "vs_canvas2d_max": 1,
+   "vs_canvas2d_mean": 0.164,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "screen": {
+   "vs_spec64_max": 1,
+   "vs_canvas2d_max": 1,
+   "vs_canvas2d_mean": 0.162,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "overlay": {
+   "vs_spec64_max": 0,
+   "vs_canvas2d_max": 2,
+   "vs_canvas2d_mean": 0.2229,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "soft-light": {
+   "vs_spec64_max": 1,
+   "vs_canvas2d_max": 1,
+   "vs_canvas2d_mean": 0.1896,
+   "vs_gl32_max": 1,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "hard-light": {
+   "vs_spec64_max": 0,
+   "vs_canvas2d_max": 2,
+   "vs_canvas2d_mean": 0.2291,
+   "vs_gl32_max": 1,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "darken": {
+   "vs_spec64_max": 0,
+   "vs_canvas2d_max": 1,
+   "vs_canvas2d_mean": 0.0837,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "lighten": {
+   "vs_spec64_max": 0,
+   "vs_canvas2d_max": 2,
+   "vs_canvas2d_mean": 0.1102,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "difference": {
+   "vs_spec64_max": 0,
+   "vs_canvas2d_max": 2,
+   "vs_canvas2d_mean": 0.2166,
+   "vs_gl32_max": 0,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  },
+  "exclusion": {
+   "vs_spec64_max": 1,
+   "vs_canvas2d_max": 1,
+   "vs_canvas2d_mean": 0.0996,
+   "vs_gl32_max": 1,
+   "vs_gl16_max": 1,
+   "node_eq_chromium": true
+  }
+ },
+ "gate": "PASS",
+ "fails": []
+}

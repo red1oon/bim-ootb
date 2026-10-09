@@ -1,0 +1,272 @@
+{
+ "checks": {
+  "cases": {
+   "srgb_mixed": {
+    "export_deterministic": true,
+    "converted_layers": 6,
+    "psd_kib": 517,
+    "embedded_profile_is_working_space": true,
+    "export_import_vs_quantised_float64_reference_in_working_space": {
+     "max": 1,
+     "mean": 0.0012,
+     "pct_over_1": 0
+    },
+    "export_import_vs_quantised_float64_reference_on_sRGB_display": {
+     "max": 1,
+     "mean": 0.0012,
+     "pct_over_1": 0
+    },
+    "our_conversion_of_stored_picture_vs_float64_oracle": {
+     "max": 0,
+     "mean": 0,
+     "pct_over_1": 0
+    },
+    "drift_vs_unquantised_original_sRGB_display": {
+     "max": 1,
+     "mean": 0.1561,
+     "pct_over_1": 0
+    },
+    "imported_space_matches_working": true,
+    "second_generation_ops_identical": true,
+    "bytes_identical_from_generation_2": true,
+    "generation_1_vs_2_bytes_identical_info": false
+   },
+   "p3_mixed": {
+    "export_deterministic": true,
+    "converted_layers": 7,
+    "psd_kib": 524,
+    "embedded_profile_is_working_space": true,
+    "export_import_vs_quantised_float64_reference_in_working_space": {
+     "max": 1,
+     "mean": 0.0016,
+     "pct_over_1": 0
+    },
+    "export_import_vs_quantised_float64_reference_on_sRGB_display": {
+     "max": 2,
+     "mean": 0.0039,
+     "pct_over_1": 0.002
+    },
+    "our_conversion_of_stored_picture_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0017,
+     "pct_over_1": 0
+    },
+    "drift_vs_unquantised_original_sRGB_display": {
+     "max": 1,
+     "mean": 0.1693,
+     "pct_over_1": 0
+    },
+    "imported_space_matches_working": true,
+    "second_generation_ops_identical": true,
+    "bytes_identical_from_generation_2": true,
+    "generation_1_vs_2_bytes_identical_info": false
+   },
+   "adobe_mixed": {
+    "export_deterministic": true,
+    "converted_layers": 7,
+    "psd_kib": 524,
+    "embedded_profile_is_working_space": true,
+    "export_import_vs_quantised_float64_reference_in_working_space": {
+     "max": 1,
+     "mean": 0.0008,
+     "pct_over_1": 0
+    },
+    "export_import_vs_quantised_float64_reference_on_sRGB_display": {
+     "max": 1,
+     "mean": 0.0033,
+     "pct_over_1": 0
+    },
+    "our_conversion_of_stored_picture_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0017,
+     "pct_over_1": 0
+    },
+    "drift_vs_unquantised_original_sRGB_display": {
+     "max": 2,
+     "mean": 0.1811,
+     "pct_over_1": 0.022
+    },
+    "imported_space_matches_working": true,
+    "second_generation_ops_identical": true,
+    "bytes_identical_from_generation_2": true,
+    "generation_1_vs_2_bytes_identical_info": false
+   },
+   "p3_pure": {
+    "export_deterministic": true,
+    "converted_layers": 0,
+    "psd_kib": 543,
+    "embedded_profile_is_working_space": true,
+    "export_import_vs_quantised_float64_reference_in_working_space": {
+     "max": 0,
+     "mean": 0,
+     "pct_over_1": 0
+    },
+    "export_import_vs_quantised_float64_reference_on_sRGB_display": {
+     "max": 1,
+     "mean": 0.0017,
+     "pct_over_1": 0
+    },
+    "our_conversion_of_stored_picture_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0017,
+     "pct_over_1": 0
+    },
+    "drift_vs_unquantised_original_sRGB_display": {
+     "max": 4,
+     "mean": 0.1897,
+     "pct_over_1": 0.126
+    },
+    "imported_space_matches_working": true,
+    "second_generation_ops_identical": true,
+    "bytes_identical_from_generation_2": true,
+    "generation_1_vs_2_bytes_identical_info": false
+   },
+   "embedded_custom_working": {
+    "export_deterministic": true,
+    "converted_layers": 7,
+    "psd_kib": 539,
+    "embedded_profile_is_working_space": true,
+    "export_import_vs_quantised_float64_reference_in_working_space": {
+     "max": 1,
+     "mean": 0.0017,
+     "pct_over_1": 0
+    },
+    "export_import_vs_quantised_float64_reference_on_sRGB_display": {
+     "max": 3,
+     "mean": 0.0037,
+     "pct_over_1": 0.008
+    },
+    "our_conversion_of_stored_picture_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0009,
+     "pct_over_1": 0
+    },
+    "drift_vs_unquantised_original_sRGB_display": {
+     "max": 6,
+     "mean": 0.2038,
+     "pct_over_1": 0.423
+    },
+    "imported_space_matches_working": true,
+    "second_generation_ops_identical": true,
+    "bytes_identical_from_generation_2": true,
+    "generation_1_vs_2_bytes_identical_info": false
+   }
+  },
+  "linear_document_refused": true,
+  "invalid_oplog_refused": true,
+  "independent_reader_psd_tools": {
+   "srgb_mixed": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "masks_ok": true,
+    "stored_merged_image_raw_vs_ours": {
+     "max": 0,
+     "mean": 0
+    },
+    "psd_tools_own_layer_composite_raw_vs_ours": {
+     "max": 2,
+     "mean": 0.5521
+    },
+    "stored_picture_converted_by_psd_tools_vs_float64_oracle": {
+     "max": 0,
+     "mean": 0,
+     "pct_samples_over_2": 0
+    },
+    "psd_tools_layer_composite_converted_vs_our_srgb": {
+     "max": 1,
+     "mean": 0.5036
+    }
+   },
+   "p3_mixed": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "masks_ok": true,
+    "stored_merged_image_raw_vs_ours": {
+     "max": 0,
+     "mean": 0
+    },
+    "psd_tools_own_layer_composite_raw_vs_ours": {
+     "max": 2,
+     "mean": 0.5169
+    },
+    "stored_picture_converted_by_psd_tools_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0084,
+     "pct_samples_over_2": 0
+    },
+    "psd_tools_layer_composite_converted_vs_our_srgb": {
+     "max": 2,
+     "mean": 0.5042
+    }
+   },
+   "adobe_mixed": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "masks_ok": true,
+    "stored_merged_image_raw_vs_ours": {
+     "max": 0,
+     "mean": 0
+    },
+    "psd_tools_own_layer_composite_raw_vs_ours": {
+     "max": 2,
+     "mean": 0.531
+    },
+    "stored_picture_converted_by_psd_tools_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0103,
+     "pct_samples_over_2": 0
+    },
+    "psd_tools_layer_composite_converted_vs_our_srgb": {
+     "max": 8,
+     "mean": 0.5467
+    }
+   },
+   "p3_pure": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "masks_ok": true,
+    "stored_merged_image_raw_vs_ours": {
+     "max": 0,
+     "mean": 0
+    },
+    "psd_tools_own_layer_composite_raw_vs_ours": {
+     "max": 2,
+     "mean": 0.5077
+    },
+    "stored_picture_converted_by_psd_tools_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0111,
+     "pct_samples_over_2": 0
+    },
+    "psd_tools_layer_composite_converted_vs_our_srgb": {
+     "max": 4,
+     "mean": 0.5125
+    }
+   },
+   "embedded_custom_working": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "masks_ok": true,
+    "stored_merged_image_raw_vs_ours": {
+     "max": 0,
+     "mean": 0
+    },
+    "psd_tools_own_layer_composite_raw_vs_ours": {
+     "max": 2,
+     "mean": 0.5112
+    },
+    "stored_picture_converted_by_psd_tools_vs_float64_oracle": {
+     "max": 1,
+     "mean": 0.0066,
+     "pct_samples_over_2": 0
+    },
+    "psd_tools_layer_composite_converted_vs_our_srgb": {
+     "max": 8,
+     "mean": 0.5624
+    }
+   }
+  }
+ },
+ "gate": "PASS",
+ "fails": []
+}

@@ -1,0 +1,239 @@
+{
+ "checks": {
+  "pipeline_vs_float64_reference": {
+   "s1_srgb_encoded_srgb": {
+    "max": 1,
+    "mean": 0.0012
+   },
+   "s1_srgb_encoded_p3": {
+    "max": 1,
+    "mean": 0.0014
+   },
+   "s1_srgb_linear_srgb": {
+    "max": 1,
+    "mean": 0.0012
+   },
+   "s1_srgb_linear_p3": {
+    "max": 1,
+    "mean": 0.0015
+   },
+   "s1_p3_encoded_srgb": {
+    "max": 1,
+    "mean": 0.0011
+   },
+   "s1_p3_encoded_p3": {
+    "max": 1,
+    "mean": 0.0013
+   },
+   "s1_p3_linear_srgb": {
+    "max": 1,
+    "mean": 0.002
+   },
+   "s1_p3_linear_p3": {
+    "max": 1,
+    "mean": 0.0019
+   },
+   "s1_adobe_encoded_srgb": {
+    "max": 1,
+    "mean": 0.0016
+   },
+   "s1_adobe_encoded_p3": {
+    "max": 1,
+    "mean": 0.0019
+   },
+   "s1_adobe_linear_srgb": {
+    "max": 1,
+    "mean": 0.0018
+   },
+   "s1_adobe_linear_p3": {
+    "max": 1,
+    "mean": 0.0017
+   },
+   "s2_icc_encoded_srgb": {
+    "max": 1,
+    "mean": 0.002
+   },
+   "s2_srgb_encoded_icc": {
+    "max": 1,
+    "mean": 0.0018
+   }
+  },
+  "schema_rejections": {
+   "no doc op": true,
+   "doc not first": true,
+   "two doc ops": true,
+   "bad version": true,
+   "non-square": true,
+   "unknown working space": true,
+   "bad gamma value": true,
+   "linear with embedded profile": true,
+   "bad blend mode": true,
+   "opacity > 1": true,
+   "missing layer space": true,
+   "duplicate layer id": true,
+   "unknown op": true,
+   "unknown field": true,
+   "op on unknown layer": true,
+   "colour out of range": true,
+   "mask paint without mask": true,
+   "raster blob missing": true,
+   "NaN geometry": true,
+   "blob wrong size": true,
+   "blob hash mismatch": true
+  },
+  "semantics": {
+   "replay_twice_identical": true,
+   "json_roundtrip_identical": true,
+   "working_space_is_recorded": true,
+   "gamma_flag_is_recorded": true,
+   "layer_space_tag_is_recorded": true,
+   "chain_verifies": true,
+   "tamper_with_doc_op_detected_at_0": true,
+   "chain_head": "e7c59525bd995e8f"
+  },
+  "psd": {
+   "tagged_srgb": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "srgb",
+    "profile_decision": "colorants within 6.1e-6, curve within 4.2e-6",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 0,
+     "mean": 0
+    }
+   },
+   "tagged_p3": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "p3",
+    "profile_decision": "colorants within 7.3e-6, curve within 4.2e-6",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 1,
+     "mean": 0.0018
+    }
+   },
+   "tagged_adobe": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "adobe",
+    "profile_decision": "colorants within 7.5e-6, curve within 0.0e+0",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 1,
+     "mean": 0.0014
+    }
+   },
+   "tagged_custom18_embedded": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "icc:59c467fe…",
+    "profile_decision": "matches no built-in space (kept as an embedded profile)",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 1,
+     "mean": 0.0014
+    }
+   },
+   "untagged": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "srgb",
+    "profile_decision": "no embedded profile: assumed sRGB",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 0,
+     "mean": 0
+    }
+   },
+   "tagged_gs_default_rgb_v2": {
+    "icc_roundtrips_byte_identical": true,
+    "import_space": "srgb",
+    "profile_decision": "colorants within 1.8e-4, curve within 6.0e-6",
+    "import_pixel_mismatches": 0,
+    "render_vs_float64_reference": {
+     "max": 0,
+     "mean": 0
+    }
+   }
+  },
+  "negative_control_profile_ignored": {
+   "tagged_p3": {
+    "max": 48,
+    "mean": 2.5827
+   },
+   "tagged_adobe": {
+    "max": 117,
+    "mean": 3.8205
+   }
+  },
+  "psd_unsupported_rejected": {
+   "CMYK colour mode": true,
+   "16-bit depth": true,
+   "PSB (version 2)": true,
+   "bad signature": true
+  },
+  "node_equals_chromium": "20/20",
+  "independent_psd_reader_psd_tools": {
+   "tagged_srgb": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   },
+   "tagged_p3": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   },
+   "tagged_adobe": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   },
+   "tagged_custom18_embedded": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   },
+   "untagged": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   },
+   "tagged_gs_default_rgb_v2": {
+    "icc_sha_matches": true,
+    "layer_count_ok": true,
+    "modes_ok": true,
+    "opacity_ok": true,
+    "size": [
+     128,
+     128
+    ]
+   }
+  }
+ },
+ "hashes_count": 21,
+ "gate": "PASS",
+ "fails": []
+}

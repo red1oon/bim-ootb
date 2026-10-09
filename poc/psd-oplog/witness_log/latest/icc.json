@@ -1,0 +1,250 @@
+{
+ "node_checks": {
+  "deltaE2000_vs_Sharma_max_err": 0.0000403,
+  "p3_colorants_sum_to_D50": [
+   -1.1e-16,
+   2.2e-16,
+   2.2e-16
+  ],
+  "srgb_to_lab_dE2000_vs_oracle_default": {
+   "median": 0.002,
+   "p95": 0.003,
+   "max": 0.013,
+   "mean": 0.002
+  },
+  "srgb_to_lab_dE2000_vs_oracle_nooptimize": {
+   "median": 0.001,
+   "p95": 0.002,
+   "max": 0.002,
+   "mean": 0.001
+  },
+  "srgb_to_p3_default": {
+   "max_levels_vs_oracle": 0.52,
+   "roundtrip_8bit_max_levels": 4,
+   "oracle_8bit_roundtrip_max_levels": 4
+  },
+  "srgb_to_p3_nooptimize": {
+   "max_levels_vs_oracle": 0.5,
+   "roundtrip_8bit_max_levels": 4,
+   "oracle_8bit_roundtrip_max_levels": 4
+  },
+  "srgb_p3_srgb_roundtrip_16bit_max_levels": {
+   "default": 12.969,
+   "highres": 8.268,
+   "nooptimize": 0.039,
+   "finding": "default/highres lcms optimisation (precomputed CLUT) loses accuracy near the gamut edge; canonical path must use cmsFLAGS_NOOPTIMIZE"
+  },
+  "p3_primaries_clip_to_srgb_edge": {
+   "out": [
+    255,
+    0,
+    0,
+    0,
+    255,
+    0,
+    0,
+    0,
+    255
+   ],
+   "ok": true
+  },
+  "cmyk_probe_srgb": {
+   "paper": [
+    255,
+    255,
+    255
+   ],
+   "K100": [
+    35,
+    31,
+    32
+   ],
+   "C100": [
+    0,
+    174,
+    239
+   ],
+   "M100": [
+    236,
+    0,
+    140
+   ],
+   "Y100": [
+    255,
+    242,
+    0
+   ]
+  },
+  "k_ramp_monotonic": true,
+  "srgb_cmyk_srgb_roundtrip_dE2000": {
+   "all_4913": {
+    "median": 2.886,
+    "p95": 13.491,
+    "max": 16.098,
+    "mean": 4.413
+   },
+   "neutrals_17": {
+    "median": 1.167,
+    "p95": 1.999,
+    "max": 1.999,
+    "mean": 1.119
+   },
+   "pct_over_5": 36.4,
+   "note": "informational: sRGB gamut exceeds a press gamut, so large errors are expected for saturated colours"
+  },
+  "throughput_MPx_per_s": {
+   "srgb_to_p3_8bit_default": 45.3,
+   "srgb_to_p3_8bit_nooptimize": 3.4,
+   "srgb_to_p3_16bit_nooptimize": 3,
+   "srgb_to_cmyk_8bit_default": 28.2,
+   "pixels": 2000000
+  },
+  "lcms_wasm_version": 2160,
+  "color_fold": {
+   "pipeline_vs_float64_reference": {
+    "seed1_work_srgb_display_srgb": {
+     "max": 1,
+     "mean": 0.0003
+    },
+    "seed1_work_srgb_display_p3": {
+     "max": 1,
+     "mean": 0.0019
+    },
+    "seed1_work_p3_display_srgb": {
+     "max": 1,
+     "mean": 0.0014
+    },
+    "seed1_work_p3_display_p3": {
+     "max": 1,
+     "mean": 0.0011
+    },
+    "seed2_work_srgb_display_srgb": {
+     "max": 1,
+     "mean": 0.0007
+    },
+    "seed2_work_srgb_display_p3": {
+     "max": 1,
+     "mean": 0.0019
+    },
+    "seed2_work_p3_display_srgb": {
+     "max": 1,
+     "mean": 0.0016
+    },
+    "seed2_work_p3_display_p3": {
+     "max": 1,
+     "mean": 0.0009
+    }
+   },
+   "working_space_dependence_dE2000": {
+    "mixed_tags_srgb_vs_p3_working": {
+     "median": 1.201,
+     "p95": 5.821,
+     "max": 12.83,
+     "mean": 1.794
+    },
+    "all_layers_srgb_tagged_srgb_vs_p3_working": {
+     "median": 1.1,
+     "p95": 4.246,
+     "max": 11.203,
+     "mean": 1.558
+    },
+    "note": "same pixel data, blended in different RGB primaries: blend maths is not colorimetric, so the working space changes the result"
+   },
+   "gamma_vs_linear_light_compositing_dE2000": {
+    "all_blend_modes_scene": {
+     "median": 8.607,
+     "p95": 16.984,
+     "max": 30.996,
+     "mean": 8.825
+    },
+    "note": "informational: Photoshop composites gamma-encoded by default; linear light is the physically based alternative"
+   },
+   "softproof_cmyk": {
+    "saturated_scene": {
+     "proof_dE2000": {
+      "median": 0.625,
+      "p95": 1.149,
+      "max": 6.25,
+      "mean": 0.705
+     },
+     "gamut_warning_pct_dE_over_5": 0.31
+    },
+    "neutral_ramp": {
+     "proof_dE2000": {
+      "median": 1.209,
+      "p95": 1.702,
+      "max": 2.328,
+      "mean": 1.228
+     },
+     "gamut_warning_pct_dE_over_5": 0
+    }
+   }
+  },
+  "throughput_browser": {
+   "srgb_to_p3_8bit_default": 32,
+   "srgb_to_p3_8bit_nooptimize": 3.4,
+   "srgb_to_p3_16bit_nooptimize": 3.6,
+   "srgb_to_cmyk_8bit_default": 29.7,
+   "pixels": 2000000
+  }
+ },
+ "node_fails_total": 0,
+ "hashes_node_equal_chromium": true,
+ "hashes": {
+  "srgb_to_p3_8bit": "11fe4adc30e626bc",
+  "srgb_to_p3_16bit_nooptimize": "c1b80038fff52dd7",
+  "p3_back_to_srgb_16bit_nooptimize": "9b589a83a5f96b4e",
+  "srgb_to_cmyk": "d3ccccee40dba97b",
+  "cmyk_to_srgb_roundtrip": "d856d9cc1f25d357",
+  "display_seed1_work_srgb_display_srgb": "79d1034a11d52205",
+  "display_seed1_work_srgb_display_p3": "15b828185eeee523",
+  "display_seed1_work_p3_display_srgb": "a4cf5526744c55ec",
+  "display_seed1_work_p3_display_p3": "c2d65a384ad8f3e0",
+  "cmyk_export_seed1_work_p3": "e1b6c5b51d04c8e2",
+  "softproof_seed1": "0611922bbdaf4a43"
+ },
+ "native_vs_wasm": [
+  {
+   "case": "srgb_to_p3",
+   "samples": 2187,
+   "max_levels": 0,
+   "mean_levels": 0,
+   "pct_over_1": 0,
+   "pct_identical": 100
+  },
+  {
+   "case": "srgb_to_p3_nooptimize",
+   "samples": 2187,
+   "max_levels": 0,
+   "mean_levels": 0,
+   "pct_over_1": 0,
+   "pct_identical": 100
+  },
+  {
+   "case": "srgb_to_cmyk_relcol_bpc",
+   "samples": 2916,
+   "max_levels": 0,
+   "mean_levels": 0,
+   "pct_over_1": 0,
+   "pct_identical": 100
+  },
+  {
+   "case": "srgb_to_cmyk_perceptual_bpc",
+   "samples": 2916,
+   "max_levels": 0,
+   "mean_levels": 0,
+   "pct_over_1": 0,
+   "pct_identical": 100
+  },
+  {
+   "case": "cmyk_to_srgb_relcol_bpc",
+   "samples": 1875,
+   "max_levels": 0,
+   "mean_levels": 0,
+   "pct_over_1": 0,
+   "pct_identical": 100
+  }
+ ],
+ "gate": "PASS",
+ "fails": []
+}

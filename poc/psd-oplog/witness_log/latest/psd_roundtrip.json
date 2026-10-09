@@ -1,0 +1,51 @@
+{
+ "results": [
+  {
+   "seed": 1,
+   "layers": 10,
+   "psd_kib": 483,
+   "ms": 170,
+   "layer_param_or_pixel_mismatches": 0,
+   "mask_mismatches": 0,
+   "composite_hash_equal": true,
+   "interchange_cost_vs_float": {
+    "max": 1,
+    "mean": 0.1161,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "seed": 2,
+   "layers": 10,
+   "psd_kib": 496,
+   "ms": 118,
+   "layer_param_or_pixel_mismatches": 0,
+   "mask_mismatches": 0,
+   "composite_hash_equal": true,
+   "interchange_cost_vs_float": {
+    "max": 2,
+    "mean": 0.1241,
+    "pct_over_1": 0.002,
+    "pct_over_2": 0
+   }
+  },
+  {
+   "seed": 3,
+   "layers": 10,
+   "psd_kib": 468,
+   "ms": 81,
+   "layer_param_or_pixel_mismatches": 0,
+   "mask_mismatches": 0,
+   "composite_hash_equal": true,
+   "interchange_cost_vs_float": {
+    "max": 1,
+    "mean": 0.1233,
+    "pct_over_1": 0,
+    "pct_over_2": 0
+   }
+  }
+ ],
+ "gate": "PASS",
+ "fails": []
+}
