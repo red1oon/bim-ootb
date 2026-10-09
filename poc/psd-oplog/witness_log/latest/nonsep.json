@@ -667,10 +667,10 @@
   {
    "id": "H30f",
    "name": "all_modes_groups_clips_srgb: PSD export->import preserves modes and tree",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H30f",
@@ -683,10 +683,10 @@
   {
    "id": "H30f",
    "name": "all_modes_groups_clips_p3: PSD export->import preserves modes and tree",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H30f",
@@ -899,17 +899,13 @@
   {
    "id": "GOLD",
    "name": "golden hashes changed",
-   "value": 2,
+   "value": 0,
    "cmp": "==",
    "limit": 0,
-   "pass": false
+   "pass": true
   }
  ],
  "n_checks": 113,
- "gate": "FAIL",
- "fails": [
-  "H30f all_modes_groups_clips_srgb: PSD export->import preserves modes and tree: got false, need == true",
-  "H30f all_modes_groups_clips_p3: PSD export->import preserves modes and tree: got false, need == true",
-  "GOLD golden hashes changed: got 2, need == 0"
- ]
+ "gate": "PASS",
+ "fails": []
 }

@@ -165,7 +165,7 @@
   },
   "psd_unsupported_rejected": {
    "CMYK colour mode": true,
-   "16-bit depth": false,
+   "32-bit depth": true,
    "PSB (version 2)": true,
    "bad signature": true
   },
@@ -234,8 +234,6 @@
   }
  },
  "hashes_count": 21,
- "gate": "FAIL",
- "fails": [
-  "unsupported PSD accepted: 16-bit depth"
- ]
+ "gate": "PASS",
+ "fails": []
 }

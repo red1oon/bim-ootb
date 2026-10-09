@@ -267,10 +267,10 @@
   {
    "id": "H48",
    "name": "cont_s1_srgb: export->import preserves kinds, params, opacity, masks and nesting",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H48",
@@ -283,10 +283,10 @@
   {
    "id": "H48",
    "name": "cont_s2_p3: export->import preserves kinds, params, opacity, masks and nesting",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H48",
@@ -363,10 +363,10 @@
   {
    "id": "H48",
    "name": "cont_s1_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H44d",
@@ -411,10 +411,10 @@
   {
    "id": "H48",
    "name": "cont_s2_p3: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes)",
-   "value": false,
+   "value": true,
    "cmp": "==",
    "limit": true,
-   "pass": false
+   "pass": true
   },
   {
    "id": "H44d",
@@ -611,19 +611,13 @@
   {
    "id": "GOLD",
    "name": "golden hashes changed",
-   "value": 2,
+   "value": 0,
    "cmp": "==",
    "limit": 0,
-   "pass": false
+   "pass": true
   }
  ],
  "n_checks": 77,
- "gate": "FAIL",
- "fails": [
-  "H48 cont_s1_srgb: export->import preserves kinds, params, opacity, masks and nesting: got false, need == true",
-  "H48 cont_s2_p3: export->import preserves kinds, params, opacity, masks and nesting: got false, need == true",
-  "H48 cont_s1_srgb: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes): got false, need == true",
-  "H48 cont_s2_p3: psd-tools reads the same adjustment kinds, parameters and opacities (4 nodes): got false, need == true",
-  "GOLD golden hashes changed: got 2, need == 0"
- ]
+ "gate": "PASS",
+ "fails": []
 }
