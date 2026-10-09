@@ -37,3 +37,12 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
 ## Rules (repo conventions)
 - No `filter=lfs`, no binaries/DBs in the POC. Do not touch anything outside `poc/psd-oplog/` and `prompts/`.
 - Talk is cheap: every claim added to README needs a script that reproduces it. Canonical code uses + - * / sqrt only.
+
+## CHECKPOINT (groups + clipping, in progress; suite `doc/run_groups.js` is RED on purpose until H24/H27 are resolved)
+Read `witness_log/HYPOTHESES.md` (sections "Groups and clipping masks", "H24 result", "H27-H29") first. State:
+- Groups (pass-through, isolated, masks, opacity), schema v2, PSD export/import of the tree: DONE and corroborated by psd-tools (<= 2 levels); H25 structure exact.
+- Clipping: rule K adopted in `stack.js`/`oracle.js` (W3C over for the colour, restore base alpha) after source-atop disagreed with psd-tools on partially transparent bases.
+  After K, the full-scene H24 is mean 1.56-1.80 (limit 1.0) and max 9-11 (limit 8): single-feature documents are at the noise floor (0.42), so something else differs in combinations.
+  Leading hypothesis: psd-tools restores the unit alpha only at the END of a clip chain, mine after each clipped layer (scene has a 2-layer chain). Test with `doc/diag_groups.js` (add clip_chain2).
+- Golden hashes (`doc/golden_groups.json`) are stale until the semantics settle; do not `--update` before H24/H27 are decided.
+- DEFERRED (human/Photoshop): what Photoshop does on partially transparent clip bases. Numbers decide until then.

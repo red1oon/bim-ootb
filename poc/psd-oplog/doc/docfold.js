@@ -14,9 +14,10 @@
     const doc = ops[0], W = doc.w, st = S.newState(W), spaceOf = {};
     for (const o of ops.slice(1)) {
       if (o.op === 'layer') { spaceOf[o.id] = o.space; S.apply(st, o); }
+      else if (o.op === 'group') S.apply(st, o);
       else if (o.op === 'raster') { const b = ctx.blobs.get(o.pixels), l = st.L[o.layer];
         for (let i = 0; i < W*W; i++) { const a = F(b[i*4+3] / 255); l.pix[i*4+3] = a; for (let k = 0; k < 3; k++) l.pix[i*4+k] = F(F(b[i*4+k] / 255) * a); } }
-      else if (o.op === 'maskraster') { const b = ctx.blobs.get(o.pixels), l = st.L[o.layer]; l.mask = Float32Array.from(b, (v) => F(v / 255)); }
+      else if (o.op === 'maskraster') { const b = ctx.blobs.get(o.pixels), l = st.L[o.layer] || st.G[o.layer]; l.mask = Float32Array.from(b, (v) => F(v / 255)); }
       else S.apply(st, o);
     }
     return { doc, st, spaceOf };
@@ -24,14 +25,14 @@
   const workName = (doc) => doc.gamma === 'linear' ? doc.working + '_linear' : doc.working;
   // composite in the working space (encoded or linear light). Returns premultiplied float32 RGBA.
   function composite(f, ctx) {
-    const { doc, st, spaceOf } = f, W = doc.w, n = W*W, P = profiles(ctx), work = workName(doc), conv = {}, cst = { W, order: st.order.slice(), L: {} };
+    const { doc, st, spaceOf } = f, W = doc.w, n = W*W, P = profiles(ctx), work = workName(doc), conv = {}, cst = { W, order: st.order.slice(), L: {}, G: st.G, root: st.root, hasTree: st.hasTree };
     for (const id of st.order) { const l = st.L[id], sp = spaceOf[id];
       if (!conv[sp]) conv[sp] = ctx.lcms.cmsCreateTransform(P(sp), ctx.L.TYPE_RGB_16, P(work), ctx.L.TYPE_RGB_16, ctx.L.INTENT_RELATIVE_COLORIMETRIC, ctx.L.cmsFLAGS_NOOPTIMIZE);
       const in16 = new Uint16Array(n * 3), pix = new Float32Array(n * 4);
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; if (a > 0) for (let k = 0; k < 3; k++) in16[i*3+k] = Math.max(0, Math.min(65535, Math.floor(F(l.pix[i*4+k] / a) * 65535 + 0.5))); }
       const o = (sp === work) ? in16 : ctx.lcms.cmsDoTransform(conv[sp], in16, n);
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; pix[i*4+3] = a; for (let k = 0; k < 3; k++) pix[i*4+k] = F(F(o[i*3+k] / 65535) * a); }
-      cst.L[id] = { mode: l.mode, opacity: l.opacity, pix, mask: l.mask }; }
+      cst.L[id] = { mode: l.mode, opacity: l.opacity, pix, mask: l.mask, parent: l.parent, clip: l.clip }; }
     return S.composite(cst);
   }
   // working-space composite -> straight RGBA8 in the display space (encoded). display: built-in name or icc:<sha>

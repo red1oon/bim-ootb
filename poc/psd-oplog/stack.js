@@ -70,11 +70,18 @@
   };
 
   // ---------- fold ----------
-  function newState(W) { return { W, order: [], L: {} }; }
+  function newState(W) { return { W, order: [], L: {}, G: {}, root: [], hasTree: false }; }
   function apply(st, o) {
     const W = st.W;
-    if (o.op === 'layer') { st.L[o.id] = { mode: o.mode, opacity: F(o.opacity), pix: new Float32Array(W*W*4), mask: o.mask ? new Float32Array(W*W).fill(1) : null }; st.order.push(o.id); return; }
-    const l = st.L[o.layer];
+    if (o.op === 'layer') {
+      const parent = o.parent === undefined ? -1 : o.parent;
+      st.L[o.id] = { mode: o.mode, opacity: F(o.opacity), pix: new Float32Array(W*W*4), mask: o.mask ? new Float32Array(W*W).fill(1) : null, parent, clip: !!o.clip };
+      st.order.push(o.id); (parent >= 0 ? st.G[parent].children : st.root).push(o.id); if (parent >= 0 || o.clip) st.hasTree = true; return; }
+    if (o.op === 'group') {   // container with its own mode ('pass-through' or a blend mode), opacity and optional mask
+      const parent = o.parent === undefined ? -1 : o.parent;
+      st.G[o.id] = { mode: o.mode, opacity: F(o.opacity), mask: o.mask ? new Float32Array(W*W).fill(1) : null, children: [], parent };
+      (parent >= 0 ? st.G[parent].children : st.root).push(o.id); st.hasTree = true; return; }
+    const l = (o.op === 'set' || o.op === 'mdab') ? (st.L[o.layer] || st.G[o.layer]) : st.L[o.layer];
     if (o.op === 'set') { if (o.mode) l.mode = o.mode; if (o.opacity !== undefined) l.opacity = F(o.opacity); return; }
     if (o.op === 'fill') { const a = F(o.a); for (let i = 0; i < W*W; i++) { l.pix[i*4] = F(F(o.c[0])*a); l.pix[i*4+1] = F(F(o.c[1])*a); l.pix[i*4+2] = F(F(o.c[2])*a); l.pix[i*4+3] = a; } return; }
     const r2 = F(o.r * o.r), x0 = Math.max(0, Math.floor(o.x - o.r)), x1 = Math.min(W-1, Math.ceil(o.x + o.r)), y0 = Math.max(0, Math.floor(o.y - o.r)), y1 = Math.min(W-1, Math.ceil(o.y + o.r));
@@ -90,7 +97,58 @@
   }
   function fold(ops, W) { const st = newState(W); for (const o of ops) apply(st, o); return st; }
   // composite -> premultiplied backdrop Float32Array(W*W*4)
+  // ---- tree compositor (groups, clipping). `over` is the same arithmetic as the flat loop below, so flat documents are bit-identical.
+  function over(back, src, bf, opacity, mask, n) {
+    for (let i = 0; i < n; i++) {
+      const la = src[i*4+3]; if (la <= 0) continue;
+      const as = F(la * F(opacity * (mask ? mask[i] : 1))); if (as <= 0) continue;
+      const ab = back[i*4+3], oneMinusAb = F(1 - ab), oneMinusAs = F(1 - as);
+      for (let k = 0; k < 3; k++) {
+        const Cs = F(src[i*4+k] / la), Cb = ab > 0 ? F(back[i*4+k] / ab) : 0, B = bf(Cb, Cs);
+        back[i*4+k] = F(F(F(F(as * oneMinusAb) * Cs) + F(F(as * ab) * B)) + F(oneMinusAs * back[i*4+k]));
+      }
+      back[i*4+3] = F(F(as + ab) - F(as * ab));
+    }
+  }
+  // Clipping rule K (validated against an independent compositor, see witness_log/HYPOTHESES.md H24/H27): composite the clipped layer onto the clip unit with the ordinary
+  // W3C source-over formula (the unit's alpha would grow), keep the resulting straight colour, and restore the unit's alpha to the base layer's. Equal to source-atop on opaque bases.
+  function atop(iso, src, bf, opacity, mask, n) {
+    for (let i = 0; i < n; i++) {
+      const la = src[i*4+3]; if (la <= 0) continue;
+      const as = F(la * F(opacity * (mask ? mask[i] : 1))); if (as <= 0) continue;
+      const ab = iso[i*4+3]; if (ab <= 0) continue;
+      const ar = F(F(as + ab) - F(as * ab)), w = F(as / ar), iw = F(1 - w), iab = F(1 - ab);
+      for (let k = 0; k < 3; k++) {
+        const Cs = F(src[i*4+k] / la), Cb = F(iso[i*4+k] / ab), B = bf(Cb, Cs);
+        const Cr = F(F(iw * Cb) + F(w * F(F(iab * Cs) + F(ab * B))));
+        iso[i*4+k] = F(Cr * ab);
+      }
+    }
+  }
+  function renderList(st, ids, back) {
+    const n = st.W * st.W; let j = 0;
+    while (j < ids.length) {
+      const id = ids[j], g = st.G[id];
+      if (g) {
+        j++;
+        if (g.mode === 'pass-through') {
+          const inner = renderList(st, g.children, back.slice());
+          for (let i = 0; i < n; i++) { const k = F(g.opacity * (g.mask ? g.mask[i] : 1));
+            if (k >= 1) { for (let c = 0; c < 4; c++) back[i*4+c] = inner[i*4+c]; }
+            else if (k > 0) { const ik = F(1 - k); for (let c = 0; c < 4; c++) back[i*4+c] = F(F(back[i*4+c] * ik) + F(inner[i*4+c] * k)); } }
+        } else over(back, renderList(st, g.children, new Float32Array(n * 4)), BLEND[g.mode], g.opacity, g.mask, n);
+        continue;
+      }
+      const l = st.L[id]; if (l.clip) throw new Error('clipped layer ' + id + ' has no base layer before it in its list');
+      j++; const chain = []; while (j < ids.length && st.L[ids[j]] && st.L[ids[j]].clip) chain.push(st.L[ids[j++]]);
+      if (chain.length) { const iso = l.pix.slice(); for (const c of chain) atop(iso, c.pix, BLEND[c.mode], c.opacity, c.mask, n); over(back, iso, BLEND[l.mode], l.opacity, l.mask, n); }
+      else over(back, l.pix, BLEND[l.mode], l.opacity, l.mask, n);
+    }
+    return back;
+  }
+  function compositeTree(st) { return renderList(st, st.root, new Float32Array(st.W * st.W * 4)); }
   function composite(st) {
+    if (st.hasTree) return compositeTree(st);
     const W = st.W, back = new Float32Array(W*W*4);
     for (const id of st.order) {
       const l = st.L[id], bf = BLEND[l.mode];
@@ -122,6 +180,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);

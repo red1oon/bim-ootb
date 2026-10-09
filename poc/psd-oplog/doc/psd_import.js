@@ -12,16 +12,20 @@ function importPsd(bytes) {
   else { space = 'srgb'; info.profile = m.icc ? 'profile present but "untagged" flag set: assumed sRGB' : 'no embedded profile: assumed sRGB'; info.untagged = true; }
   info.space = space; const W = m.width, put = (b) => { const sha = S.sha256(b); blobs.set(sha, b); return sha; };
   const psd = readPsd(Buffer.from(bytes), { useImageData: true, skipCompositeImageData: true, skipThumbnail: true }), ops = [{ op: 'doc', v: 1, w: W, h: W, working: space, gamma: 'encoded' }];
-  (psd.children || []).forEach((c, i) => {
-    if (c.children) throw new Error('layer groups are not supported yet (layer "' + c.name + '")'); const mode = MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported blend mode "' + c.blendMode + '"');
-    ops.push({ op: 'layer', id: i, mode, opacity: c.opacity === undefined ? 1 : c.opacity, mask: !!(c.mask && c.mask.imageData), space });
+  let nextId = 0, usesTree = false; const maskOps = (c, id, ops2) => { const mk = new Uint8Array(W * W).fill(c.mask.defaultColor === undefined ? 255 : c.mask.defaultColor), md = c.mask.imageData;
+    for (let y = 0; y < md.height; y++) for (let x = 0; x < md.width; x++) { const X = (c.mask.left || 0) + x, Y = (c.mask.top || 0) + y; if (X >= 0 && Y >= 0 && X < W && Y < W) mk[Y * W + X] = md.data[(y * md.width + x) * 4]; }
+    ops2.push({ op: 'maskraster', layer: id, pixels: put(mk) }); };
+  const walk = (list, parent) => list.forEach((c) => {
+    const id = nextId++, hasMask = !!(c.mask && c.mask.imageData), opacity = c.opacity === undefined ? 1 : c.opacity, pf = parent >= 0 ? { parent } : {};
+    if (c.children) {   // group
+      const mode = c.blendMode === 'pass through' ? 'pass-through' : MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported group blend mode "' + c.blendMode + '"'); usesTree = true;
+      ops.push({ op: 'group', id, mode, opacity, mask: hasMask, ...pf }); if (hasMask) maskOps(c, id, ops); walk(c.children, id); return; }
+    const mode = MODE_BACK[c.blendMode || 'normal']; if (!mode) throw new Error('unsupported blend mode "' + c.blendMode + '"'); if (parent >= 0 || c.clipping) usesTree = true;
+    ops.push({ op: 'layer', id, mode, opacity, mask: hasMask, space, ...pf, ...(c.clipping ? { clip: true } : {}) });
     const full = new Uint8Array(W * W * 4), d = c.imageData, ox = c.left || 0, oy = c.top || 0;
     if (d) for (let y = 0; y < d.height; y++) for (let x = 0; x < d.width; x++) { const X = ox + x, Y = oy + y; if (X >= 0 && Y >= 0 && X < W && Y < W) full.set(d.data.subarray((y * d.width + x) * 4, (y * d.width + x) * 4 + 4), (Y * W + X) * 4); }
-    ops.push({ op: 'raster', layer: i, pixels: put(full) });
-    if (c.mask && c.mask.imageData) { const mk = new Uint8Array(W * W).fill(c.mask.defaultColor === undefined ? 255 : c.mask.defaultColor), md = c.mask.imageData;
-      for (let y = 0; y < md.height; y++) for (let x = 0; x < md.width; x++) { const X = (c.mask.left || 0) + x, Y = (c.mask.top || 0) + y; if (X >= 0 && Y >= 0 && X < W && Y < W) mk[Y * W + X] = md.data[(y * md.width + x) * 4]; }
-      ops.push({ op: 'maskraster', layer: i, pixels: put(mk) }); }
-  });
+    ops.push({ op: 'raster', layer: id, pixels: put(full) }); if (hasMask) maskOps(c, id, ops); });
+  walk(psd.children || [], -1); if (usesTree) ops[0].v = 2; info.groups = ops.filter((o) => o.op === 'group').length; info.clipped = ops.filter((o) => o.clip).length;
   return { ops, blobs, info };
 }
 module.exports = { importPsd, MODE_BACK };

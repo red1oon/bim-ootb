@@ -1,2 +1,4 @@
 .emit/
 .emit_export/
+.emit_groups/
+.emit_diag/
