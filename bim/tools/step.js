@@ -2,14 +2,18 @@
 // Implementing prompts/BIM_UTILITY_KNIFE.md §4 (one shared engine) — Witness: W-EX-*, W-UP-*, W-CLI-*.
 (function (g) {
   'use strict';
-  function parse(text) {
+  // The reader is a generator so it can be sliced: parse() drains it at full speed (Node/CLI); parseAsync() hands the thread back to the browser
+  // between slices so a page can paint a progress bar while a 200 MB file is read. Same loop, same result.
+  function* parseGen(text) {
     const di = text.search(/\bDATA\s*;/);
     if (di < 0) throw new Error('not a STEP file: no DATA section');
     const header = text.slice(0, di);
     const bodyStart = text.indexOf(';', di) + 1;
     const ents = new Map();
     let i = bodyStart, n = text.length, start = i, inStr = false, depthCom = false, bad = 0;
+    let nextTick = i + 262144;
     while (i < n) {
+      if (i >= nextTick) { nextTick = i + 262144; yield i / n; }
       const c = text.charCodeAt(i);
       if (inStr) { if (c === 39) { if (text.charCodeAt(i + 1) === 39) i++; else inStr = false; } }
       else if (depthCom) { if (c === 42 && text.charCodeAt(i + 1) === 47) { depthCom = false; i++; } }
@@ -30,6 +34,15 @@
     }
     const sm = /FILE_SCHEMA\s*\(\s*\(\s*'([^']*)'/.exec(header);
     return { header, schema: sm ? sm[1].toUpperCase() : '', ents, bad };
+  }
+  function parse(text) { const g = parseGen(text); for (;;) { const r = g.next(); if (r.done) return r.value; } }
+  const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  async function parseAsync(text, onProgress) {
+    const g = parseGen(text); let t0 = nowMs();
+    for (;;) {
+      const r = g.next(); if (r.done) { if (onProgress) onProgress(1); return r.value; }
+      if (nowMs() - t0 > api.PARSE_SLICE_MS) { if (onProgress) onProgress(r.value); await new Promise((res) => setTimeout(res, 0)); t0 = nowMs(); }
+    }
   }
   // split "a,(b,c),'x,y',#3" at depth 0 outside strings
   function splitTop(s) {
@@ -98,7 +111,7 @@
     }
     return seen;
   }
-  const api = { parse, splitTop, args, setArgs, refsOf, unq, quote, isRef, refId, write, isProduct, listProducts, closure };
+  const api = { PARSE_SLICE_MS: 30, parse, parseAsync, splitTop, args, setArgs, refsOf, unq, quote, isRef, refId, write, isProduct, listProducts, closure };
   g.BIM_STEP = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof self !== 'undefined' ? self : globalThis);
