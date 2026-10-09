@@ -51,7 +51,7 @@ function openInteractive(file) {
     if (u === '/__ping') { lastPing = Date.now(); seen = true; res.end('ok'); return; }
     if (u === '/__file') { res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'X-Name': encodeURIComponent(name) }); fs.createReadStream(abs).pipe(res); return; }
     if (u === '/__save') { // page posts the exported IFC; saved beside the input
-      const chunks = []; req.on('data', (c) => chunks.push(c)); req.on('end', () => { const f = outPath(abs, {}, 'extract'); const tmpf = f + '.part'; fs.writeFileSync(tmpf, Buffer.concat(chunks)); fs.renameSync(tmpf, f); console.log('§SAVE ' + f); res.end(f);   // write-then-rename: a reader never sees a half-written file }); return;
+      const chunks = []; req.on('data', (c) => chunks.push(c)); req.on('end', () => { const f = outPath(abs, {}, 'extract'); const tmpf = f + '.part';   /* write-then-rename: a reader never sees a half-written file */ fs.writeFileSync(tmpf, Buffer.concat(chunks)); fs.renameSync(tmpf, f); console.log('§SAVE ' + f); res.end(f); }); return;
     }
     const f = path.normalize(path.join(root, u === '/' ? 'bim.html' : u));
     if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end('not found'); return; }
