@@ -1,0 +1,32 @@
+name: BIM tools (bim.html / bim-cli)
+# Spec: bim-compiler prompts/BIM_UTILITY_KNIFE.md §"Windows must work". Proves the engine + generated launcher on all three OS.
+on:
+  push:
+    paths: ['bim/**', 'bim.html', 'bim-cli.js', '.github/workflows/bim-tools.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: IfcOpenShell (independent validity oracle; INCONCLUSIVE, never PASS, if it cannot install)
+        run: pip install ifcopenshell
+        continue-on-error: true
+      - name: Engine witnesses (W-UP, W-EX, W-SPLIT, W-CLI-1a)
+        env:
+          PUPPETEER_PAGE: '0'
+        run: node bim/tests/witness_bim_engine.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc
+      - name: Launcher stub from a path with spaces (W-WIN-2)
+        run: node bim/tests/witness_bim_launcher.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc

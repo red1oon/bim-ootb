@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BIM Tools</title>
+<!-- bim.html — drop an IFC, a single-job tool runs. Spec: prompts/BIM_UTILITY_KNIFE.md (bim-compiler). Witness hooks: §BIM_* console lines + window.__bim. -->
+<style>
+:root{--bg:#0f1318;--panel:#171d25;--ink:#e6edf3;--mute:#8b98a5;--line:#2a3340;--acc:#4ea1ff;--ok:#3fb950;--bad:#f85149;--sel:#ffb020}
+@media (prefers-color-scheme:light){:root{--bg:#f4f6f8;--panel:#fff;--ink:#16202a;--mute:#5b6875;--line:#d6dde5;--acc:#0b6bcb;--ok:#1a7f37;--bad:#cf222e;--sel:#d97706}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#drop{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px 72px 24px 24px}
+#drop h1{font-size:22px;font-weight:600;margin:0}#drop p{margin:0;color:var(--mute)}
+#armed{color:var(--acc);font-weight:600}
+body.over #drop{outline:3px dashed var(--acc);outline-offset:-14px}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:none}
+body.view #cv{display:block}body.view #drop{display:none}
+#rail{position:fixed;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;padding:8px;background:color-mix(in srgb,var(--panel) 85%,transparent);border:1px solid var(--line);border-radius:28px;backdrop-filter:blur(8px);z-index:5}
+.pill{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;position:relative;padding:0}
+.pill svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pill:hover,.pill:focus-visible{border-color:var(--acc)}.pill.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pill kbd{position:absolute;right:-2px;bottom:-2px;font:600 10px system-ui;background:var(--bg);color:var(--mute);border:1px solid var(--line);border-radius:5px;padding:0 4px}
+.pill .pin{position:absolute;left:-2px;top:-2px;width:10px;height:10px;border-radius:50%;background:var(--ok);display:none}.pill.pinned .pin{display:block}
+#tip{position:fixed;pointer-events:none;background:#000c;color:#fff;font-size:12px;padding:5px 8px;border-radius:6px;display:none;z-index:9;white-space:nowrap}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;display:none;z-index:9;max-width:80vw}
+#chip{position:fixed;left:14px;top:14px;display:none;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:6}
+body.view #chip{display:flex}
+button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}button.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+#search{position:fixed;left:14px;top:62px;width:340px;max-height:70vh;display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;z-index:6;overflow:hidden}
+#search.open{display:flex}#search input{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;padding:10px 12px;outline:none}
+#sl{overflow:auto;flex:1}.row{padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13px}.row:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}.row.sel{color:var(--sel)}
+.row small{color:var(--mute)}#sf{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
+#menu{position:fixed;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:10;min-width:190px;padding:4px}
+#menu div{padding:7px 12px;border-radius:6px;cursor:pointer}#menu div:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}
+#help{position:fixed;inset:0;display:none;place-items:center;background:#0008;z-index:11}#help.open{display:grid}#help div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;min-width:300px}
+#help td{padding:3px 12px 3px 0}
+</style>
+</head>
+<body>
+<div id="drop"><h1>Drop an IFC</h1><p>Runs <span id="armed">…</span> straight away. Pick another tool on the right, or press its key. <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
+<canvas id="cv"></canvas>
+<div id="chip"><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button></div>
+<div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
+<div id="rail"></div><div id="tip"></div><div id="toast"></div><div id="menu"></div>
+<div id="help"><div><b>Keys</b><table id="ht"></table><p style="color:var(--mute);margin:8px 0 0">Esc closes panels</p></div></div>
+
+<script type="importmap">{"imports":{"three":"./viewer/lib/three.module.min.js"}}</script>
+<script src="bim/tools/step.js"></script>
+<script src="bim/tools/upgrade_map.js"></script>
+<script src="bim/tools/upgrade.js"></script>
+<script src="bim/tools/extract.js"></script>
+<script src="bim/tools/split.js"></script>
+<script src="bim/tools/health.js"></script>
+<script src="bim/tools/table.js"></script>
+<script src="viewer/lib/web-ifc-api-iife.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './viewer/lib/OrbitControls.module.js';
+const S = BIM_STEP, T = BIM_TOOLS, $ = (id) => document.getElementById(id);
+const LIBS = { BIM_UPGRADE, BIM_EXTRACT, BIM_SPLIT, BIM_HEALTH };
+const params = new URLSearchParams(location.search), SERVED = params.get('served') === '1';
+const ICON = { // Lucide-style line icons, one idiom (feedback_pill_icon_consistency)
+  upgrade: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', extract: '<path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+  split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="m14.5 14.5 5.5 5.5"/><path d="M8.1 8.1 12 12"/>', health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' };
+let armed = (() => { try { return localStorage.getItem('bim.armed'); } catch (e) { return null; } })() || 'upgrade';
+if (!T.find((t) => t.id === armed)) armed = 'upgrade';
+let cur = null;       // {name, bytes(Uint8Array), model, prods, byId}
+let selected = new Set();
+const log = (s) => console.log(s);
+function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.display = 'none'), ms || 6000); }
+const pinned = (id) => { try { return localStorage.getItem('bim.pin.' + id) === '1'; } catch (e) { return false; } };
+
+// ── rail ────────────────────────────────────────────────────────────────────
+function pill(id, title, key, svg) {
+  const b = document.createElement('button'); b.className = 'pill'; b.dataset.id = id; b.title = title + (key ? ' (' + key + ')' : '');
+  b.innerHTML = '<svg viewBox="0 0 24 24">' + svg + '</svg>' + (key ? '<kbd>' + key.toUpperCase() + '</kbd>' : '') + '<i class="pin"></i>'; return b;
+}
+function buildRail() {
+  const r = $('rail'); r.innerHTML = '';
+  T.forEach((t) => { const b = pill(t.id, t.name + ' — ' + t.desc, t.key, ICON[t.id]); if (pinned(t.id)) b.classList.add('pinned'); b.onclick = () => arm(t.id); b.draggable = true; b.addEventListener('dragstart', (e) => dragOut(e, t)); b.oncontextmenu = (e) => { e.preventDefault(); openMenu(t, e.clientX, e.clientY); }; r.appendChild(b); });
+  const s = pill('search', 'Search (F)', 'f', ICON.search); s.onclick = () => toggleSearch(); r.appendChild(s);
+  syncArmed();
+}
+function syncArmed() {
+  document.querySelectorAll('#rail .pill').forEach((b) => b.classList.toggle('on', b.dataset.id === armed));
+  const t = T.find((x) => x.id === armed); $('armed').textContent = t.name + (t.mode === 'interactive' ? ' (opens the model so you can pick)' : ' (runs in the background)');
+}
+function arm(id, noRun) {
+  armed = id; try { localStorage.setItem('bim.armed', id); } catch (e) {} syncArmed();
+  log('§BIM_ARM tool=' + id);
+  if (cur && !noRun) runOn(cur, T.find((t) => t.id === id));
+}
+
+// ── pin menu (right-click) ──────────────────────────────────────────────────
+let deferredInstall = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
+const stub = (tool, os) => BIM_STUB(tool, os);
+function openMenu(t, x, y) {
+  const m = $('menu'); m.innerHTML = '';
+  const add = (label, fn) => { const d = document.createElement('div'); d.textContent = label; d.onclick = () => { m.style.display = 'none'; fn(); }; m.appendChild(d); };
+  add('Pin to desktop', async () => {
+    if (!deferredInstall) { toast('This browser cannot pin web apps. Use "Download launcher" instead.'); log('§BIM_PIN tool=' + t.id + ' result=unsupported'); return; }
+    deferredInstall.prompt(); const r = await deferredInstall.userChoice; deferredInstall = null;
+    if (r.outcome === 'accepted') { try { localStorage.setItem('bim.pin.' + t.id, '1'); } catch (e) {} buildRail(); }
+    log('§BIM_PIN tool=' + t.id + ' result=' + r.outcome);
+  });
+  const os = /Win/.test(navigator.platform) ? 'win' : 'sh';
+  add('Download launcher (' + (os === 'win' ? '.bat' : '.sh') + ')', () => { const s = stub(t, os); dl(new Blob([s.body], { type: 'text/plain' }), s.name); toast('Put ' + s.name + ' next to bim-cli.js, then drop IFC files on it.'); log('§BIM_PIN tool=' + t.id + ' result=launcher:' + s.name); });
+  m.style.left = Math.min(x, innerWidth - 210) + 'px'; m.style.top = y + 'px'; m.style.display = 'block';
+}
+addEventListener('click', () => { $('menu').style.display = 'none'; });
+// Drag a pill out of the browser window onto the desktop (user idea 2026-10-09). Chromium's "DownloadURL" drag format lets the OS
+// create a real file where it is dropped. Default = a web shortcut that opens this page with that tool armed (no toolkit needed);
+// hold Shift = the droplet launcher instead (needs bim-cli.js beside it). Firefox/Safari ignore DownloadURL: the pin menu remains.
+function shortcutFile(t, os) {
+  const url = location.origin + location.pathname + '?tool=' + t.id;
+  if (os === 'win') return { name: 'BIM ' + t.name + '.url', mime: 'application/internet-shortcut', body: '[InternetShortcut]\r\nURL=' + url + '\r\n' };
+  if (os === 'mac') return { name: 'BIM ' + t.name + '.webloc', mime: 'application/xml', body: '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>URL</key><string>' + url + '</string></dict></plist>\n' };
+  return { name: 'BIM ' + t.name + '.desktop', mime: 'application/x-desktop', body: '[Desktop Entry]\nType=Link\nName=BIM ' + t.name + '\nURL=' + url + '\n' };
+}
+function osOf() { return /Win/.test(navigator.platform) ? 'win' : /Mac/.test(navigator.platform) ? 'mac' : 'linux'; }
+function dragOut(e, t) {
+  const os = osOf(); let f;
+  if (e.shiftKey) { const s = stub(t, os === 'win' ? 'win' : 'sh'); f = { name: s.name, mime: 'application/octet-stream', body: s.body }; } else f = shortcutFile(t, os);
+  const data = f.mime + ':' + f.name + ':data:' + f.mime + ';charset=utf-8,' + encodeURIComponent(f.body);
+  e.dataTransfer.setData('DownloadURL', data); e.dataTransfer.setData('text/uri-list', location.origin + location.pathname + '?tool=' + t.id); e.dataTransfer.effectAllowed = 'copy';
+  window.__bim.lastDrag = { tool: t.id, name: f.name, kind: e.shiftKey ? 'launcher' : 'shortcut', body: f.body };
+  log('§BIM_DRAGOUT tool=' + t.id + ' file=' + f.name + ' kind=' + window.__bim.lastDrag.kind);
+}
+
+// ── file in ─────────────────────────────────────────────────────────────────
+function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+const base = (n) => n.replace(/\.ifc$/i, '');
+async function onFile(name, buf) {
+  const bytes = new Uint8Array(buf);
+  const text = new TextDecoder('utf-8').decode(bytes);
+  let model; try { model = S.parse(text); } catch (e) { toast('Not an IFC (STEP) file: ' + e.message); log('§BIM_LOAD name=' + name + ' verdict=ERROR ' + e.message); return; }
+  const prods = S.listProducts(model), byId = new Map(prods.map((p) => [p.id, p]));
+  cur = { name, bytes, text, model, prods, byId }; selected.clear();
+  log('§BIM_LOAD name=' + name + ' bytes=' + bytes.length + ' schema=' + model.schema + ' entities=' + model.ents.size + ' products=' + prods.length);
+  runOn(cur, T.find((t) => t.id === armed));
+}
+function runOn(c, tool) {
+  if (tool.mode === 'interactive') { showView(); return; }
+  hideView();
+  const lib = LIBS[tool.lib], t0 = performance.now(), res = lib.run(c.text, {});
+  const rep = res.report;
+  if (tool.id === 'split') res.parts.filter((p) => !p.empty).forEach((p) => dl(new Blob([p.bytes], { type: 'application/octet-stream' }), base(c.name) + '_' + p.name.replace(/[^\w.-]+/g, '_') + '.ifc'));
+  else if (tool.id === 'health') dl(new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' }), base(c.name) + '_health.json');
+  else if (res.bytes) dl(new Blob([res.bytes], { type: 'application/octet-stream' }), base(c.name) + '_' + tool.suffix + '.ifc');
+  const ms = Math.round(performance.now() - t0);
+  log('§' + tool.id.toUpperCase() + ' file=' + c.name + ' verdict=' + rep.verdict + ' ms=' + ms); log('§' + tool.id.toUpperCase() + '_REPORT ' + JSON.stringify(rep));
+  toast(oneLine(tool, rep, ms));
+}
+function oneLine(tool, r, ms) {
+  if (r.verdict === 'INCONCLUSIVE') return tool.name + ': nothing done — ' + (r.note || 'empty');
+  if (tool.id === 'upgrade') return 'Upgraded to IFC4.3: ' + r.entitiesIn + ' → ' + r.entitiesOut + ' entities' + (Object.keys(r.requiredEmpty).length ? ', ' + Object.values(r.requiredEmpty).reduce((a, b) => a + b, 0) + ' unrepresentable dropped' : '') + ' (' + ms + ' ms) — ' + r.verdict;
+  if (tool.id === 'split') return 'Split into ' + r.files + ' storey files — ' + r.verdict;
+  if (tool.id === 'health') return 'Health: ' + r.M3_elements + ' elements, ' + r.M15_duplicateGuids + ' duplicate GUIDs, ' + r.M14_orphans + ' orphans, psets ' + r.M7_psetPct + '%';
+  return tool.name + ': ' + r.verdict;
+}
+addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('over'); });
+addEventListener('dragleave', () => document.body.classList.remove('over'));
+addEventListener('drop', async (e) => { e.preventDefault(); document.body.classList.remove('over'); for (const f of e.dataTransfer.files) await onFile(f.name, await f.arrayBuffer()); });
+if ('launchQueue' in window) launchQueue.setConsumer(async (p) => { for (const h of p.files) { const f = await h.getFile(); await onFile(f.name, await f.arrayBuffer()); } });
+
+// ── interactive view (web-ifc + three) ──────────────────────────────────────
+let R = null;
+async function ensureRenderer() {
+  if (R) return R;
+  const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, preserveDrawingBuffer: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1)); const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(1, 2, 1.5); scene.add(dl);
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000); const ctl = new OrbitControls(cam, $('cv'));
+  R = { renderer, scene, cam, ctl, group: null, meshes: [], ray: new THREE.Raycaster(), mouse: new THREE.Vector2(), hover: null };
+  addEventListener('resize', fit); fit();
+  (function loop() { requestAnimationFrame(loop); if (document.body.classList.contains('view')) { R.ctl.update(); R.renderer.render(R.scene, R.cam); } })();
+  $('cv').addEventListener('pointermove', onMove); $('cv').addEventListener('click', onPick); $('cv').addEventListener('pointerdown', (e) => { R.down = [e.clientX, e.clientY]; });
+  return R;
+}
+function fit() { if (!R) return; R.renderer.setSize(innerWidth, innerHeight, false); R.cam.aspect = innerWidth / innerHeight; R.cam.updateProjectionMatrix(); }
+async function loadMeshes(c) {
+  if (location.protocol === 'file:') { toast('3D view needs the launcher or a web address (file:// cannot load the IFC engine).'); log('§BIM_RENDER verdict=INCONCLUSIVE reason=file-protocol'); return false; }
+  const r = await ensureRenderer();
+  if (c.rendered) return true;
+  const api = new WebIFC.IfcAPI(); api.SetWasmPath(new URL('viewer/lib/', location.href).href, true); await api.Init();
+  const id = api.OpenModel(c.bytes, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
+  if (r.group) r.scene.remove(r.group);
+  const grp = new THREE.Group(); r.meshes = []; const seen = new Set(); let tris = 0;
+  api.StreamAllMeshes(id, (fm) => {
+    const eid = fm.expressID, geoms = fm.geometries;
+    for (let i = 0; i < geoms.size(); i++) {
+      const pg = geoms.get(i), g = api.GetGeometry(id, pg.geometryExpressID);
+      const v = api.GetVertexArray(g.GetVertexData(), g.GetVertexDataSize()), ix = api.GetIndexArray(g.GetIndexData(), g.GetIndexDataSize());
+      const pos = new Float32Array(v.length / 2), nor = new Float32Array(v.length / 2);
+      for (let k = 0, j = 0; k < v.length; k += 6, j += 3) { pos[j] = v[k]; pos[j + 1] = v[k + 1]; pos[j + 2] = v[k + 2]; nor[j] = v[k + 3]; nor[j + 1] = v[k + 4]; nor[j + 2] = v[k + 5]; }
+      const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); bg.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); bg.setIndex(new THREE.BufferAttribute(new Uint32Array(ix), 1));
+      const col = pg.color, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(col.x, col.y, col.z), opacity: col.w, transparent: col.w < 1, side: THREE.DoubleSide, metalness: 0, roughness: 0.9 });
+      const m = new THREE.Mesh(bg, mat); m.matrixAutoUpdate = false; m.matrix.fromArray(pg.flatTransformation); m.userData.eid = eid; m.userData.base = mat.color.clone();
+      grp.add(m); r.meshes.push(m); seen.add(eid); tris += ix.length / 3; g.delete();
+    }
+  });
+  api.CloseModel(id);
+  // IFC is Z-up; three is Y-up
+  grp.rotation.x = -Math.PI / 2; r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(grp), ctr = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()).length() || 10;
+  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.cam.near = sz / 1000; r.cam.far = sz * 20; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
+  c.rendered = true; c.renderedEids = seen;
+  const inTable = c.prods.filter((p) => seen.has(p.id)).length;
+  log('§BIM_RENDER meshes=' + r.meshes.length + ' elementsRendered=' + seen.size + ' productsWithGeometry=' + inTable + ' tris=' + tris + ' verdict=' + (seen.size ? 'PASS' : 'INCONCLUSIVE'));
+  return true;
+}
+async function showView() {
+  if (!(await loadMeshes(cur))) { hideView(); return; }
+  document.body.classList.add('view'); paint(); chip();
+}
+function hideView() { document.body.classList.remove('view'); }
+function paint() {
+  if (!R) return;
+  for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
+}
+function chip() { $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; }
+function pickAt(e) {
+  const r = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  R.ray.setFromCamera(R.mouse, R.cam); const h = R.ray.intersectObjects(R.meshes, false); return h.length ? h[0].object.userData.eid : null;
+}
+let mvT = 0;
+function onMove(e) {
+  const now = performance.now(); if (now - mvT < 40) return; mvT = now;
+  const eid = pickAt(e), tip = $('tip');
+  if (eid == null) { tip.style.display = 'none'; return; }
+  const p = cur.byId.get(eid), cls = p ? p.type : '#' + eid, nm = p && p.name ? p.name : '(no name)';
+  tip.textContent = cls + ' · ' + nm + ' — click to select'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.style.display = 'block';
+  if (R.hover !== eid) { R.hover = eid; log('§BIM_HOVER eid=' + eid + ' class=' + cls + ' name=' + nm); }
+}
+function onPick(e) {
+  if (R.down && Math.hypot(e.clientX - R.down[0], e.clientY - R.down[1]) > 4) return;     // a drag, not a click
+  const eid = pickAt(e); if (eid == null) return;
+  if (selected.has(eid)) selected.delete(eid); else selected.add(eid);
+  paint(); chip(); log('§BIM_SELECT n=' + selected.size + ' last=' + eid);
+}
+$('clr').onclick = () => { selected.clear(); paint(); chip(); renderList(); };
+$('exp').onclick = async () => {
+  const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
+  if (r.empty) { toast('Nothing to export'); return; }
+  log('§BIM_EXPORT selected=' + r.report.selected + ' out=' + r.report.entitiesOut + ' dangling=' + r.report.dangling + ' verdict=' + r.report.verdict);
+  if (SERVED) { const rs = await fetch('/__save', { method: 'POST', body: r.bytes }); toast('Saved beside your file: ' + (await rs.text())); }
+  else { dl(new Blob([r.bytes], { type: 'application/octet-stream' }), base(cur.name) + '_extract.ifc'); toast('Exported ' + r.report.selected + ' items → ' + r.report.entitiesOut + ' entities — ' + r.report.verdict); }
+};
+
+// ── search ──────────────────────────────────────────────────────────────────
+function matches(q) {
+  q = q.trim().toLowerCase(); if (!cur) return [];
+  if (!q) return cur.prods.filter((p) => !cur.renderedEids || cur.renderedEids.has(p.id)).slice(0, 400);
+  return cur.prods.filter((p) => (p.type.toLowerCase().indexOf(q) >= 0 || (p.name || '').toLowerCase().indexOf(q) >= 0 || p.guid.toLowerCase().indexOf(q) >= 0) && (!cur.renderedEids || cur.renderedEids.has(p.id)));
+}
+function renderList() {
+  const q = $('sq').value, m = matches(q), box = $('sl'); box.innerHTML = '';
+  m.slice(0, 400).forEach((p) => { const d = document.createElement('div'); d.className = 'row' + (selected.has(p.id) ? ' sel' : ''); d.innerHTML = '<span></span><small></small>'; d.firstChild.textContent = p.name || '(no name)'; d.lastChild.textContent = p.type.replace(/^IFC/, ''); d.onclick = () => { if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id); paint(); chip(); frame(p.id); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search eid=' + p.id); }; box.appendChild(d); });
+  $('sc').textContent = m.length + ' match' + (m.length === 1 ? '' : 'es'); log('§BIM_SEARCH q="' + q + '" matches=' + m.length); window.__bim.lastSearch = m.length;
+}
+function frame(eid) { if (!R) return; const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); if (b.isEmpty()) return; const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1; R.ctl.target.copy(c); R.cam.position.copy(c).add(new THREE.Vector3(s, s * 0.7, s)); R.ctl.update(); }
+function toggleSearch(open) { const s = $('search'); const o = open === undefined ? !s.classList.contains('open') : open; s.classList.toggle('open', o); if (o) { $('sq').focus(); renderList(); } }
+$('sq').oninput = renderList;
+$('sa').onclick = () => { matches($('sq').value).forEach((p) => selected.add(p.id)); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search-all'); };
+
+// ── keys ────────────────────────────────────────────────────────────────────
+$('ht').innerHTML = T.map((t) => '<tr><td><kbd>' + t.key.toUpperCase() + '</kbd></td><td>' + t.name + '</td></tr>').join('') + '<tr><td><kbd>O</kbd></td><td>Show / hide the model</td></tr><tr><td><kbd>F</kbd></td><td>Search</td></tr><tr><td><kbd>?</kbd></td><td>This list</td></tr>';
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const inInput = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName);
+  if (e.key === 'Escape') { toggleSearch(false); $('help').classList.remove('open'); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur(); return; }
+  if (inInput) return;
+  const k = e.key.toLowerCase();
+  const t = T.find((x) => x.key === k);
+  if (t) { arm(t.id); return; }
+  if (k === 'o') { if (!cur) { toast('Drop an IFC first'); return; } if (document.body.classList.contains('view')) hideView(); else showView(); return; }
+  if (k === 'f') { e.preventDefault(); toggleSearch(true); return; }
+  if (e.key === '?') $('help').classList.toggle('open');
+});
+$('help').onclick = () => $('help').classList.remove('open');
+
+window.__bim = { get cur() { return cur; }, get selected() { return selected; }, get R() { return R; }, arm, onFile, matches, pickAt: (x, y) => pickAt({ clientX: x, clientY: y }), frame, renderList };
+buildRail();
+if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
+log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + armed);
+// served by the CLI launcher: the model is waiting at /__file
+if (SERVED) {
+  armed = params.get('tool') || 'extract'; syncArmed();
+  (async () => { const r = await fetch('/__file'); const name = decodeURIComponent(r.headers.get('X-Name') || 'model.ifc'); await onFile(name, await r.arrayBuffer()); })().catch((e) => log('§BIM_LOAD verdict=ERROR ' + e.message));
+  setInterval(() => fetch('/__ping').catch(() => {}), 5000);
+}
+</script>
+</body>
+</html>
