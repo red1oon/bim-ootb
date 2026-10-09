@@ -1,0 +1,11 @@
+{
+  "name": "psd-oplog-poc",
+  "private": true,
+  "description": "POC: op-log + content-addressed tiles as a PSD-replacement document model (see README)",
+  "scripts": {
+    "precision": "node exp_precision_blend_speed.js",
+    "tiles_psd": "node exp_tiles_psd.js",
+    "determinism": "node run.js"
+  },
+  "devDependencies": { "playwright-core": "^1.64.0", "ag-psd": "^31.0.3" }
+}
