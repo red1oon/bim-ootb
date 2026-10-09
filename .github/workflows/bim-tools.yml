@@ -30,6 +30,8 @@ jobs:
         run: node bim/tests/witness_bim_engine.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc
       - name: Launcher stub from a path with spaces (W-WIN-2)
         run: node bim/tests/witness_bim_launcher.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc
+      - name: Kit installer from an unzipped kit (W-INST; Windows runs INSTALL.bat with PowerShell shortcuts)
+        run: node bim/tests/witness_bim_install.js IFC/Duplex_ARC.ifc
       - name: Toolkit zip builds and is a valid zip (W-KIT; the Windows .bat flavour on windows-latest)
         shell: bash
         run: |

@@ -14,6 +14,9 @@ srv.listen(0, '127.0.0.1', async () => {
     const body = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
     ok('W-DRAG-1' + (shift ? 'b' : 'a'), name === r.last.name && body === r.last.body && (shift ? /bim-cli\.js upgrade/.test(body) : /URL=|<string>http|URL=http/.test(body) && /tool=upgrade/.test(body)), 'kind=' + r.last.kind + ' file=' + name + ' bodyHead=' + JSON.stringify(body.slice(0, 70)) + ' uri=' + r.uri);
   }
+  await pg.goto(url + '?kit=1', { waitUntil: 'load', timeout: 120000 });
+  const kitOpen = await pg.evaluate(() => document.getElementById('kit').classList.contains('open') && document.querySelectorAll('#kt input').length);
+  ok('W-KIT-LINK', kitOpen > 0, 'bim.html?kit=1 opens the toolkit panel with ' + kitOpen + ' tools ticked-able');
   ok('W-PAGE-ERRORS', errs.length === 0, 'pageerrors=' + errs.length); console.log('§WITNESS INCONCLUSIVE W-DRAG-2 OS-level drop onto a real desktop cannot be exercised headless — owner check once per OS');
   await br.close(); srv.close(); process.exit(fails ? 1 : 0);
 });

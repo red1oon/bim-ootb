@@ -335,6 +335,7 @@ $('help').onclick = () => $('help').classList.remove('open');
 
 window.__bim = { get cur() { return cur; }, get selected() { return selected; }, get R() { return R; }, arm, onFile, matches, pickAt: (x, y) => pickAt({ clientX: x, clientY: y }), frame, renderList };
 buildRail();
+if (params.get('kit') === '1') toggleKit(true);   // deep link from the manual: opens the toolkit-zip panel
 if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
 log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + armed);
 // plain page reload: bring back the last model (and what was selected) instead of an empty page
