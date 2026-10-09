@@ -100,6 +100,11 @@ function syncArmed() {
 function arm(id, noRun) {
   armed = id; try { localStorage.setItem('bim.armed', id); } catch (e) {} syncArmed();
   log('§BIM_ARM tool=' + id);
+  // Extract pressed while the model is open: that IS the "do it" — export what is selected (or say what to do first)
+  if (id === 'extract' && cur && !noRun && document.body.classList.contains('view')) {
+    if (selected.size) exportSelected(); else { toast('Nothing selected yet — click items in the model, or press F to search.'); log('§BIM_EXPORT verdict=INCONCLUSIVE reason=empty-selection'); }
+    return;
+  }
   if (cur && !noRun) runOn(cur, T.find((t) => t.id === id));
 }
 
@@ -252,13 +257,14 @@ function onPick(e) {
   paint(); chip(); log('§BIM_SELECT n=' + selected.size + ' last=' + eid);
 }
 $('clr').onclick = () => { selected.clear(); paint(); chip(); renderList(); };
-$('exp').onclick = async () => {
+async function exportSelected() {
   const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
   if (r.empty) { toast('Nothing to export'); return; }
   log('§BIM_EXPORT selected=' + r.report.selected + ' out=' + r.report.entitiesOut + ' dangling=' + r.report.dangling + ' verdict=' + r.report.verdict);
   if (SERVED) { const rs = await fetch('/__save', { method: 'POST', body: r.bytes }); toast('Saved beside your file: ' + (await rs.text())); }
   else { dl(new Blob([r.bytes], { type: 'application/octet-stream' }), base(cur.name) + '_extract.ifc'); toast('Exported ' + r.report.selected + ' items → ' + r.report.entitiesOut + ' entities — ' + r.report.verdict); }
-};
+}
+$('exp').onclick = exportSelected;
 
 // ── search ──────────────────────────────────────────────────────────────────
 function matches(q) {

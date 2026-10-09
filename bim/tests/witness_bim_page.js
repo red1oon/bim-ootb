@@ -55,6 +55,11 @@ const inc = (id, msg) => say('§WITNESS INCONCLUSIVE ' + id + ' ' + msg);
     const missing = picked.filter((g) => !outG.has(g)).length;
     ok('W-PICK-3', missing === 0 && picked.length > 0, 'picked=' + picked.length + ' missingInExport=' + missing + ' exportBytes=' + fs.statSync(saved).size + ' file=' + path.basename(saved));
   }
+  // W-PICK-4: the Extract key/pill itself exports the current selection (user report 2026-10-09: pressing it did nothing)
+  fs.unlinkSync(saved); await pg.evaluate(() => document.activeElement && document.activeElement.blur()); await pg.keyboard.press('Escape'); await pg.keyboard.press('e'); await new Promise((r) => setTimeout(r, 800));
+  ok('W-PICK-4a', fs.existsSync(saved) && fs.statSync(saved).size > 1000, 'pressing E with ' + picked.length + ' selected wrote ' + path.basename(saved));
+  await pg.click('#clr'); const before = logs.length; await pg.keyboard.press('e'); await new Promise((r) => setTimeout(r, 300));
+  ok('W-PICK-4b', logs.slice(before).some((l) => /empty-selection/.test(l)) && (await pg.$eval('#toast', (e) => e.textContent)).indexOf('Nothing selected') === 0, 'E with empty selection says what to do instead of silence');
   const errs = logs.filter((l) => /PAGEERROR/.test(l)); ok('W-PAGE-ERRORS', errs.length === 0, 'pageerrors=' + errs.length + (errs[0] ? ' first=' + errs[0].slice(0, 160) : ''));
   await br.close(); cli.kill();
   fs.writeFileSync(path.join(tmp, 'witness.log'), out.join('\n')); say('§WITNESS_LOG ' + path.join(tmp, 'witness.log'));
