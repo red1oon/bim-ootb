@@ -71,6 +71,15 @@ function main() {
   if (!cmd || cmd === '--help') { console.log('tools: ' + TABLE.map((t) => t.id + ' (' + t.mode + ')').join(', ') + ', open'); return; }
   const o = parseArgs(rest);
   if (cmd === 'open') { if (!o.files[0]) { console.error('usage: open <file.ifc>'); process.exit(2); } openInteractive(o.files[0]); return; }
+  if (cmd === 'kit') {
+    const KIT = require(path.join(D, 'kit.js'));   // only the kit BUILDER needs zip/kit; the shipped kit does not   // node bim-cli.js kit [tool …] [--os win|mac|sh] [-o out.zip]
+    const ids = o.files.filter((x) => TABLE.some((t) => t.id === x)), osArg = rest.indexOf('--os') >= 0 ? rest[rest.indexOf('--os') + 1] : (process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'sh');
+    const outZip = rest.indexOf('-o') >= 0 ? rest[rest.indexOf('-o') + 1] : 'bim-tools-kit.zip', crypto = require('crypto');
+    KIT.build((p) => Promise.resolve(fs.readFileSync(path.join(__dirname, p))), (b) => Promise.resolve(crypto.createHash('sha256').update(b).digest('hex')), { tools: ids.length ? ids : null, os: osArg })
+      .then((r) => { fs.writeFileSync(outZip, r.bytes); console.log('§KIT out=' + outZip + ' os=' + osArg + ' tools=' + r.tools.join(',') + ' files=' + r.names.length + ' bytes=' + r.bytes.length + ' sha256=' + crypto.createHash('sha256').update(r.bytes).digest('hex')); })
+      .catch((e) => { console.error(e.message); process.exit(1); });
+    return;
+  }
   const tool = TABLE.find((t) => t.id === cmd);
   if (!tool) { console.error('unknown tool: ' + cmd); process.exit(2); }
   if (!o.files.length) { console.error('no input file'); process.exit(2); }

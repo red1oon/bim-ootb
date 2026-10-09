@@ -12,7 +12,7 @@
   g.BIM_STUB = function (tool, os) {
     const flags = tool.mode === 'interactive' ? '' : '--notify ';
     if (os === 'win') return { name: 'BIM_' + tool.id + '.bat', body: '@echo off\r\ncd /d "%~dp0"\r\n' + (tool.mode === 'interactive' ? 'for %%f in (%*) do (node bim-cli.js open "%%~f")\r\n' : 'node bim-cli.js ' + tool.id + ' ' + flags + '%*\r\n') };
-    return { name: 'BIM_' + tool.id + '.sh', body: '#!/bin/sh\ncd "$(dirname "$0")"\n' + (tool.mode === 'interactive' ? 'for f in "$@"; do node bim-cli.js open "$f"; done\n' : 'node bim-cli.js ' + tool.id + ' ' + flags + '"$@"\n') };
+    return { name: 'BIM_' + tool.id + (os === 'mac' ? '.command' : '.sh'), body: '#!/bin/sh\ncd "$(dirname "$0")"\n' + (tool.mode === 'interactive' ? 'for f in "$@"; do node bim-cli.js open "$f"; done\n' : 'node bim-cli.js ' + tool.id + ' ' + flags + '"$@"\n') };
   };
   g.BIM_TOOLS = T;
   if (typeof module !== 'undefined') module.exports = T;

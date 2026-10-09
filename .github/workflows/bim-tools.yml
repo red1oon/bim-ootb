@@ -30,3 +30,8 @@ jobs:
         run: node bim/tests/witness_bim_engine.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc
       - name: Launcher stub from a path with spaces (W-WIN-2)
         run: node bim/tests/witness_bim_launcher.js IFC/Duplex_ARC.ifc IFC/SampleHouse_ARC.ifc
+      - name: Toolkit zip builds and is a valid zip (W-KIT; the Windows .bat flavour on windows-latest)
+        shell: bash
+        run: |
+          node bim-cli.js kit --os ${{ matrix.os == 'windows-latest' && 'win' || (matrix.os == 'macos-latest' && 'mac' || 'sh') }} -o "$RUNNER_TEMP/kit.zip"
+          python -c "import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print('§WITNESS PASS W-KIT-2 entries',len(z.infolist()))" "$RUNNER_TEMP/kit.zip"

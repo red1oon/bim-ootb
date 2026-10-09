@@ -33,6 +33,8 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 .row small{color:var(--mute)}#sf{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
 #menu{position:fixed;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:10;min-width:190px;padding:4px}
 #menu div{padding:7px 12px;border-radius:6px;cursor:pointer}#menu div:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}
+#kit{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;z-index:12}
+#kit.open{display:block}#kit p{color:var(--mute);margin:6px 0;font-size:13px}#kit label.t{display:flex;gap:8px;padding:3px 0}.krow{display:flex;gap:8px;margin-top:10px}#kh{word-break:break-all;font-family:ui-monospace,monospace;font-size:11px}
 #help{position:fixed;inset:0;display:none;place-items:center;background:#0008;z-index:11}#help.open{display:grid}#help div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;min-width:300px}
 #help td{padding:3px 12px 3px 0}
 </style>
@@ -42,6 +44,10 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <canvas id="cv"></canvas>
 <div id="chip"><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button></div>
 <div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
+<div id="kit"><b>Toolkit (zip)</b><p>Launchers you can drop IFC files on, for batch use. Needs Node.js 18+.</p><div id="kt"></div>
+<label>System <select id="kos"><option value="win">Windows</option><option value="mac">macOS</option><option value="sh">Linux</option></select></label>
+<p id="kn">Unsigned scripts, plain text, no network calls. The zip includes SHA256SUMS.txt and a README with the Unblock / Open Anyway steps.</p>
+<div class="krow"><button class="btn" id="kgo">Create zip</button><button class="btn alt" id="kx">Close</button></div><p id="kh"></p></div>
 <div id="rail"></div><div id="tip"></div><div id="toast"></div><div id="menu"></div>
 <div id="help"><div><b>Keys</b><table id="ht"></table><p style="color:var(--mute);margin:8px 0 0">Esc closes panels</p></div></div>
 
@@ -53,6 +59,8 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <script src="bim/tools/split.js"></script>
 <script src="bim/tools/health.js"></script>
 <script src="bim/tools/table.js"></script>
+<script src="bim/tools/zip.js"></script>
+<script src="bim/tools/kit.js"></script>
 <script src="viewer/lib/web-ifc-api-iife.js"></script>
 <script type="module">
 import * as THREE from 'three';
@@ -63,6 +71,7 @@ const params = new URLSearchParams(location.search), SERVED = params.get('served
 const ICON = { // Lucide-style line icons, one idiom (feedback_pill_icon_consistency)
   upgrade: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', extract: '<path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
   split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="m14.5 14.5 5.5 5.5"/><path d="M8.1 8.1 12 12"/>', health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  kit: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' };
 let armed = (() => { try { return localStorage.getItem('bim.armed'); } catch (e) { return null; } })() || 'upgrade';
 if (!T.find((t) => t.id === armed)) armed = 'upgrade';
@@ -81,6 +90,7 @@ function buildRail() {
   const r = $('rail'); r.innerHTML = '';
   T.forEach((t) => { const b = pill(t.id, t.name + ' — ' + t.desc, t.key, ICON[t.id]); if (pinned(t.id)) b.classList.add('pinned'); b.onclick = () => arm(t.id); b.draggable = true; b.addEventListener('dragstart', (e) => dragOut(e, t)); b.oncontextmenu = (e) => { e.preventDefault(); openMenu(t, e.clientX, e.clientY); }; r.appendChild(b); });
   const s = pill('search', 'Search (F)', 'f', ICON.search); s.onclick = () => toggleSearch(); r.appendChild(s);
+  const k = pill('kit', 'Toolkit zip — launchers for batch use (9)', '9', ICON.kit); k.onclick = () => toggleKit(); r.appendChild(k);
   syncArmed();
 }
 function syncArmed() {
@@ -266,18 +276,38 @@ function toggleSearch(open) { const s = $('search'); const o = open === undefine
 $('sq').oninput = renderList;
 $('sa').onclick = () => { matches($('sq').value).forEach((p) => selected.add(p.id)); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search-all'); };
 
+// ── toolkit zip ─────────────────────────────────────────────────────────────
+function toggleKit(open) {
+  const k = $('kit'), o = open === undefined ? !k.classList.contains('open') : open; k.classList.toggle('open', o); if (!o) return;
+  $('kt').innerHTML = T.map((t) => '<label class="t"><input type="checkbox" data-id="' + t.id + '"' + (t.tier === 'easy' ? ' checked' : '') + '> ' + t.name + ' <small style="color:var(--mute)">' + (t.mode === 'interactive' ? 'opens the model' : 'background') + '</small></label>').join('');
+  $('kos').value = osOf() === 'win' ? 'win' : osOf() === 'mac' ? 'mac' : 'sh'; $('kh').textContent = '';
+}
+$('kx').onclick = () => toggleKit(false);
+$('kgo').onclick = async () => {
+  if (location.protocol === 'file:') { toast('Building the zip needs a web address or the launcher (file:// cannot read its own files).'); log('§BIM_KIT verdict=INCONCLUSIVE reason=file-protocol'); return; }
+  const ids = [...document.querySelectorAll('#kt input:checked')].map((i) => i.dataset.id); if (!ids.length) { toast('Tick at least one tool'); return; }
+  const os = $('kos').value;
+  const sha = async (b) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', b))).map((x) => x.toString(16).padStart(2, '0')).join('');
+  try {
+    const r = await BIM_KIT.build(async (p) => { const rs = await fetch(p); if (!rs.ok) throw new Error('missing ' + p); return new Uint8Array(await rs.arrayBuffer()); }, sha, { tools: ids, os });
+    const zh = await sha(r.bytes); dl(new Blob([r.bytes], { type: 'application/zip' }), 'bim-tools-kit-' + os + '.zip');
+    $('kh').textContent = 'SHA-256 of this zip: ' + zh; log('§BIM_KIT os=' + os + ' tools=' + r.tools.join(',') + ' files=' + r.names.length + ' bytes=' + r.bytes.length + ' sha256=' + zh); toast('Zip downloaded. Read README.txt first.');
+  } catch (e) { toast('Could not build the zip: ' + e.message); log('§BIM_KIT verdict=ERROR ' + e.message); }
+};
+
 // ── keys ────────────────────────────────────────────────────────────────────
-$('ht').innerHTML = T.map((t) => '<tr><td><kbd>' + t.key.toUpperCase() + '</kbd></td><td>' + t.name + '</td></tr>').join('') + '<tr><td><kbd>O</kbd></td><td>Show / hide the model</td></tr><tr><td><kbd>F</kbd></td><td>Search</td></tr><tr><td><kbd>?</kbd></td><td>This list</td></tr>';
+$('ht').innerHTML = T.map((t) => '<tr><td><kbd>' + t.key.toUpperCase() + '</kbd></td><td>' + t.name + '</td></tr>').join('') + '<tr><td><kbd>O</kbd></td><td>Show / hide the model</td></tr><tr><td><kbd>F</kbd></td><td>Search</td></tr><tr><td><kbd>9</kbd></td><td>Toolkit zip</td></tr><tr><td><kbd>?</kbd></td><td>This list</td></tr>';
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const inInput = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName);
-  if (e.key === 'Escape') { toggleSearch(false); $('help').classList.remove('open'); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur(); return; }
+  if (e.key === 'Escape') { toggleSearch(false); $('help').classList.remove('open'); toggleKit(false); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur(); return; }
   if (inInput) return;
   const k = e.key.toLowerCase();
   const t = T.find((x) => x.key === k);
   if (t) { arm(t.id); return; }
   if (k === 'o') { if (!cur) { toast('Drop an IFC first'); return; } if (document.body.classList.contains('view')) hideView(); else showView(); return; }
   if (k === 'f') { e.preventDefault(); toggleSearch(true); return; }
+  if (k === '9') { toggleKit(); return; }
   if (e.key === '?') $('help').classList.toggle('open');
 });
 $('help').onclick = () => $('help').classList.remove('open');
