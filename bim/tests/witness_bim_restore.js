@@ -19,7 +19,7 @@ srv.listen(0, '127.0.0.1', async () => {
   logs.length = 0;   // only what the page logs AFTER the reload counts
   await pg.reload({ waitUntil: 'load', timeout: 120000 });
   await pg.waitForFunction(() => window.__bim && window.__bim.cur && window.__bim.cur.rendered, { timeout: 90000 }).catch(() => {}); await wait(3000);
-  const after = files(), st = await pg.evaluate(() => ({ name: window.__bim.cur && window.__bim.cur.name, view: document.body.classList.contains('view'), armed: document.querySelector('.pill.on').dataset.id }));
+  const after = files(), st = await pg.evaluate(() => ({ name: window.__bim.cur && window.__bim.cur.name, view: document.body.classList.contains('view'), armed: (document.querySelector('.pill.on') || { dataset: {} }).dataset.id }));
   // Chrome blocks repeat multi-file downloads, so a file count alone cannot prove nothing re-ran: also require NO tool run in the page log
   const reran = logs.filter((l) => /^§(SPLIT|UPGRADE|HEALTH|EXTRACT) file=/.test(l)).length;
   const label = await pg.$eval('#fname', (e) => e.textContent).catch(() => '(no label on this build)');
