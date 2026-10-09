@@ -286,3 +286,19 @@ levels gamma uses a deterministic pow built from + - * / only (max relative erro
 **Finding about psd-tools (affects every earlier comparison):** its output stage truncates (`astype(uint8)` after `255*c`) where we round, which adds a ~0.5 level bias to any comparison with a rounded picture. The earlier groups, clipping and non-separable
 means (0.28-0.65) should be read as ~0.5 bias + residual; they passed with margin. The pre-registered adjustment check "mean <= 1.0 vs our rounded picture" failed at 1.05 for that reason and was replaced (ledger H44a -> H44d) by a truncation-aligned
 comparison (0.55). Limits: no curves / hue-saturation / brightness-contrast / exposure / per-channel levels; no adjustments in linear-light documents; adjustments have no blend mode and cannot be clipped; no GPU twin.
+
+## Curves adjustment (`doc/run_curves.js`, `npm run curves`; 32 logged checks, H50-H56)
+`kind: "curves"`, `params: {points: [[x, y], ...]}` (2..16 integer pairs in 0..255, x strictly increasing; master curve only). Evaluation: **natural cubic spline** through the points in double precision (tridiagonal solve using only + - * /), constant outside the
+first and last point, clipped to [0,1]. The spline family is a compatibility choice (psd-tools and GIMP use natural cubic splines); **Photoshop's own spline is unknown and deferred**.
+
+| Check | Result |
+|---|---|
+| Spline math vs scipy `CubicSpline(natural)` (independent), 4000 random curves x 356 inputs | max abs diff 3e-8 (float32 rounding); the independent float64 oracle matches scipy to 5e-14 |
+| Control points interpolated exactly (double precision) / identity curve is an exact no-op | 0 error / hash-identical |
+| Documents (masks, nested groups, P3, mixed with levels) vs the float64 oracle | max 1 level, mean <= 0.05 |
+| psd-tools reads the same points; its compositor vs our float picture truncated like psd-tools | exact points; mean 0.53 / 0.52; 0% of pixels over 8 levels |
+| Mutation controls (x/y swapped, a point dropped, linear instead of spline) | 39 / 49 / 16 levels detected |
+| Schema (12 invalid curve logs) and PSD import (per-channel rejected, master-only accepted) | all rejected / accepted as listed |
+| PSD round trip and fixed point; Node vs Chromium | identical; 5/5 identical |
+
+Method notes: two of my own test-design errors surfaced and were fixed with logged predictions (the knot check fed a float32-rounded position into a steep curve; my first slope estimate under-estimated a steep cubic). Limits: no per-channel curves, no curves in linear-light documents, max 16 points, no GPU twin.

@@ -16,7 +16,7 @@
 //                  in the same parent (source-atop; blended with the BASE layer's mode/opacity/mask). A clip base must be a layer, not a group.
 //  non-separable blend modes 'hue' | 'saturation' | 'color' | 'luminosity' are valid in v2 documents only.
 //  {op:'adjust', id, kind, params, opacity, mask, parent?}   adjustment layer (v2, gamma 'encoded' only): transforms the composite beneath it within its parent, lerped by opacity*mask; alpha untouched.
-//                  kind 'invert' {} | 'levels' {in_black 0..254, in_white 1..255, gamma_x100 1..999, out_black 0..255, out_white 0..255} | 'threshold' {level 1..255} | 'posterize' {levels 2..255}; all integers.
+//                  kind 'invert' {} | 'levels' {in_black 0..254, in_white 1..255, gamma_x100 1..999, out_black 0..255, out_white 0..255} | 'threshold' {level 1..255} | 'posterize' {levels 2..255} | 'curves' {points: 2..16 integer [x,y] pairs, x strictly increasing}; all integers.
 //  mdab/set/maskraster may target a group or an adjustment (set: opacity only); fill/dab/raster may not.
 //  {op:'raster', layer, pixels:<sha256>}                    replaces layer pixels with a content-addressed blob: w*h*4 bytes straight RGBA8
 //  {op:'maskraster', layer, pixels:<sha256>}                mask from a blob of w*h bytes (requires mask:true)
@@ -55,6 +55,10 @@
         else if (o.kind === 'levels') { if (!ints(['in_black', 'in_white', 'gamma_x100', 'out_black', 'out_white'])) e(i, 'levels params must be exactly in_black, in_white, gamma_x100, out_black, out_white (integers)'); else if (!(inr('in_black', 0, 254) && inr('in_white', 1, 255) && P.in_black < P.in_white && inr('gamma_x100', 1, 999) && inr('out_black', 0, 255) && inr('out_white', 0, 255))) e(i, 'levels params out of range'); }
         else if (o.kind === 'threshold') { if (!ints(['level']) || !inr('level', 1, 255)) e(i, 'threshold needs integer level 1..255'); }
         else if (o.kind === 'posterize') { if (!ints(['levels']) || !inr('levels', 2, 255)) e(i, 'posterize needs integer levels 2..255'); }
+        else if (o.kind === 'curves') { const pts = P && Array.isArray(P.points) ? P.points : null;
+          if (!P || Object.keys(P).join() !== 'points' || !pts) e(i, 'curves needs exactly {points:[[x,y],...]}');
+          else if (pts.length < 2 || pts.length > 16 || !pts.every((q) => Array.isArray(q) && q.length === 2 && Number.isInteger(q[0]) && Number.isInteger(q[1]) && q[0] >= 0 && q[0] <= 255 && q[1] >= 0 && q[1] <= 255)) e(i, 'curves points must be 2..16 integer pairs in 0..255');
+          else if (!pts.every((q, k) => k === 0 || q[0] > pts[k - 1][0])) e(i, 'curves point x values must be strictly increasing'); }
         const list = lists[parent] || (lists[parent] = []); if (Number.isInteger(o.id) && o.id >= 0 && !nodes[o.id]) { nodes[o.id] = { kind: 'adjust', parent, clip: false, mask: o.mask === true }; list.push(o.id); if (depthOf(o.id) > 16) e(i, 'group nesting deeper than 16'); }
         return;
       }

@@ -219,3 +219,33 @@ H44b CONFIRMED (tolerance-aware: outside the boundary band psd-tools disagrees o
 H46 CONFIRMED after strengthening the gamma mutation | H47 CONFIRMED (20 of 20 invalid logs rejected, valid kinds accepted) | H48/H48b CONFIRMED (kinds/params/opacity/masks/nesting preserved, fixed point; per-channel levels rejected, master-only accepted; psd-tools reads the same parameters)
 H49 verified by the full ledger run. Not covered: curves, hue/saturation, brightness/contrast, exposure, per-channel levels (rejected on import), adjustments in linear-light documents (rejected), adjustment blend modes other than normal, clipping an adjustment, GPU twin.
 Note: the step-function agreement (H43b/c, H44b) is a statement about semantics away from boundaries; pixels within rounding distance of a boundary can legitimately flip, and the numbers above quantify how many.
+
+## Curves adjustment (logged BEFORE implementation)
+`{op:'adjust', kind:'curves', params:{points:[[x,y],...]}}`: master (RGB) curve, x = input and y = output in PS integer units 0..255, 2..16 points, x strictly increasing. Evaluation: natural cubic spline through the points in double
+precision (tridiagonal solve with + - * / only), constant outside [x_first, x_last] (value of the end point), result clipped to [0,1]. Choice basis: psd-tools (scipy CubicSpline, bc_type="natural") and GIMP use it; **what Photoshop itself does is UNKNOWN and DEFERRED**,
+so this is a documented compatibility choice, not a claim of Photoshop equivalence. Per-channel curves are rejected on import (as per-channel levels are). ag-psd stores points as {input, output} and also writes the duplicate `Crv ` block psd-tools reads.
+| ID | Hypothesis | Test | Threshold (fixed now) | Verdict |
+|---|---|---|---|---|
+| H50a | the canonical spline equals scipy `CubicSpline(bc_type="natural")` (independent implementation), as a pure function | 4000 random curves (2..12 points) x (256 grid + 100 random inputs) | max abs diff <= 2e-6 (f32 canonical output vs f64 scipy) | (pending) |
+| H50b | the float64 oracle (dense Gaussian elimination + per-interval Horner, written separately) equals scipy too | same curves | max abs diff <= 1e-9 | (pending) |
+| H50c | control points are interpolated exactly; an identity curve [(0,0),(255,255)] is an exact no-op in documents | all curves; hash equality | canonical <= 1e-6; no-op hash equal | (pending) |
+| H50d | bit-reproducible across engines | hash of 200 curves x 256 outputs, Node vs Chromium | identical | (pending) |
+| H51 | documents with curves (masks, groups, opacity, P3, mixed with levels) vs the float64 oracle | docfold vs oracle, working space | max <= 1 level, mean <= 0.05 | (pending) |
+| H52 | psd-tools' compositor agrees on exported PSDs, like for like, truncation-aligned (psd-tools truncates its output AND floors its LUT input to 8 bits) | `composite(force=True)` vs our float picture truncated | mean <= 0.8 levels and <= 0.5% of pixels over 8 levels. If it fails: H52b = our curve applied to floor(255c)/255 inputs reproduces psd-tools (mean <= 0.6), tested instead of loosening | (pending) |
+| H53 | schema: curves params validated (2..16 ints, x strictly increasing, 0..255, exact keys), rejected in v1/linear docs, per-channel rejected on import | negatives | all rejected; master-only accepted | (pending) |
+| H54 | mutation controls: linear interpolation instead of the spline, points swapped (x<->y), and a dropped control point are detected | vs oracle on a strongly curved document | each >= 4 levels | (pending) |
+| H55 | PSD round trip preserves points, opacity, masks, nesting; fixed point; psd-tools reads the same points | structural | identical | (pending) |
+| H56 | nothing existing changes | witness_all hashes of earlier suites | unchanged | (pending) |
+
+### Curves: first run (run_curves.js, 31 checks): 1 failure, diagnosed before any change
+H50c "control points interpolated exactly, canonical max abs error <= 1e-6" measured 6.95e-6. Hypothesis (registered before testing it): TEST FLAW, not a spline error. The check evaluated `f(F(x/255))`, i.e. the knot position rounded to float32 (error up to ~3e-8),
+and a steep random curve (slope up to ~255 per unit) multiplies that to ~7e-6. Prediction: evaluating the same spline at the EXACT knot x/255 in double precision gives <= 1e-12, and the f32-input error is explained by slope * 3e-8 (check: error <= slope * 6e-8 at every knot). Threshold stays 1e-6.
+Follow-up: exact-knot double-precision error = 0 (<= 1e-6 CONFIRMED): the spline interpolates its control points. The second prediction (f32 error <= finite-difference slope x 6e-8) failed on 1 knot of ~26,000: the slope ESTIMATE (central differences over +-0.5..2 levels) underestimates the true local slope when two knots are
+adjacent with a big jump. Sharper prediction, registered before re-running: |f32 result - y| <= max over the actual float32 rounding interval of |spline(t) - y| + 1.2e-7 (output rounding), exactly, for every knot.
+
+### Curves: verdicts (`doc/run_curves.js`, 32 checks; `npm run curves`)
+H50a CONFIRMED (canonical f32 vs scipy natural CubicSpline: max abs diff 3e-8 over 4000 random curves x 356 inputs; limit 2e-6) | H50b CONFIRMED (independent float64 oracle vs scipy: 5.3e-14; limit 1e-9) | H50c CONFIRMED after fixing my test: exact-knot double-precision error 0;
+the earlier 6.9e-6 was the float32 rounding of the knot POSITION times the local slope (0 knots out of ~26,000 exceed the spline's own change over the rounding interval + 1.2e-7); identity curve is an exact no-op; an S-curve is not.
+H50d CONFIRMED (200-curve LUT hash and 2 documents: Node == Chromium, 5/5) | H51 CONFIRMED (documents with masks, groups, P3, mixed with levels: <= 1 level, mean <= 0.05) | H52 CONFIRMED (psd-tools compositor vs our float picture truncated: mean 0.531 / 0.522 <= 0.8; 0% of pixels over 8 levels; H52b not needed)
+H53 CONFIRMED (12 of 12 invalid curve logs rejected; valid accepted; per-channel curves rejected on import, master-only accepted) | H54 CONFIRMED (controls: swapped x/y 39, dropped point 49, linear-instead-of-spline 16 levels; unmutated 1) | H55 CONFIRMED (points/opacity/masks/nesting, fixed point; psd-tools reads the same points)
+H56: see the ledger run. Two test-design flaws of mine were found and fixed (knot position rounding; slope estimate). Not covered: per-channel curves, curves in linear-light documents, Photoshop's actual spline (UNKNOWN: natural cubic is a compatibility choice shared with psd-tools and GIMP), more than 16 points, GPU twin.

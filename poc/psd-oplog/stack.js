@@ -104,8 +104,19 @@
     return sum * pow2int(n);
   }
   // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
-  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize'];
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves'];
+  // natural cubic spline through integer control points ([x,y] in 0..255), double precision with + - * / only; constant outside [x_first, x_last]; result clipped to [0,1]
+  function curveFn(points) {
+    const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), M = new Array(n).fill(0);
+    if (n > 2) { const a = [], b = [], c = [], d = [], h = []; for (let i = 0; i < n - 1; i++) h[i] = X[i + 1] - X[i];
+      for (let i = 1; i < n - 1; i++) { a[i] = h[i - 1]; b[i] = 2 * (h[i - 1] + h[i]); c[i] = h[i]; d[i] = 6 * ((Y[i + 1] - Y[i]) / h[i] - (Y[i] - Y[i - 1]) / h[i - 1]); }
+      for (let i = 2; i < n - 1; i++) { const w = a[i] / b[i - 1]; b[i] -= w * c[i - 1]; d[i] -= w * d[i - 1]; } M[n - 2] = d[n - 2] / b[n - 2]; for (let i = n - 3; i >= 1; i--) M[i] = (d[i] - c[i] * M[i + 1]) / b[i]; }
+    const clip = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    return (t) => { if (t <= X[0]) return clip(Y[0]); if (t >= X[n - 1]) return clip(Y[n - 1]); let i = 0; while (t > X[i + 1]) i++;
+      const h = X[i + 1] - X[i], A = (X[i + 1] - t) / h, B = (t - X[i]) / h; return clip(A * Y[i] + B * Y[i + 1] + ((A * A * A - A) * M[i] + (B * B * B - B) * M[i + 1]) * (h * h) / 6); };
+  }
   function adjustFn(kind, p) {
+    if (kind === 'curves') { const f = curveFn(p.points); return (c) => F(f(c)); }
     if (kind === 'invert') return (c) => F(1 - c);
     if (kind === 'levels') { const ib = F(p.in_black / 255), iw = F(p.in_white / 255), ob = F(p.out_black / 255), ow = F(p.out_white / 255), span = F(iw - ib), inv = 1 / Math.min(Math.max(p.gamma_x100, 1), 999) * 100, id = p.gamma_x100 === 100;
       return (c) => { let x = F(F(c - ib) / span); x = x < 0 ? 0 : x > 1 ? 1 : x; if (!id) x = F(powDet(x, inv)); const o = F(ob + F(x * F(ow - ob))); return o < 0 ? 0 : o > 1 ? 1 : o; }; }
@@ -243,6 +254,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, NONSEP, ADJ_KINDS, powDet, adjustFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, ADJ_KINDS, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);

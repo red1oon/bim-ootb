@@ -6,3 +6,4 @@
 .emit_nonsep/
 .emit_adjust/
 .emit_adjust_diag/
+.emit_curves/

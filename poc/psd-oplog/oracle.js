@@ -19,6 +19,17 @@
   B.hue = (cb, cs) => SetLum(SetSat(cs, SatOf(cb)), Lum(cb)); B.saturation = (cb, cs) => SetLum(SetSat(cb, SatOf(cs)), Lum(cb)); B.color = (cb, cs) => SetLum(cs, Lum(cb)); B.luminosity = (cb, cs) => SetLum(cb, Lum(cs));
   for (const m of ['hue', 'saturation', 'color', 'luminosity']) B[m].tri = true;
   const Bmix = (mode, cb3, cs3) => B[mode].tri ? B[mode](cb3, cs3) : [0, 1, 2].map((k) => B[mode](cb3[k], cs3[k]));   // returns the blend result as a triple
+
+  // independent natural cubic spline: dense system solved by Gaussian elimination with partial pivoting, evaluated per interval with Horner (a different formulation from stack.js)
+  const testHooks = { curve: null };   // test-only: lets a mutation control swap the reference curve evaluator
+  function curve64(points) {
+    const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), A = Array.from({ length: n }, () => new Array(n + 1).fill(0)), h = []; for (let i = 0; i < n - 1; i++) h[i] = X[i + 1] - X[i];
+    A[0][0] = 1; A[n - 1][n - 1] = 1; for (let i = 1; i < n - 1; i++) { A[i][i - 1] = h[i - 1]; A[i][i] = 2 * (h[i - 1] + h[i]); A[i][i + 1] = h[i]; A[i][n] = 6 * ((Y[i + 1] - Y[i]) / h[i] - (Y[i] - Y[i - 1]) / h[i - 1]); }
+    for (let c = 0; c < n; c++) { let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r; [A[c], A[p]] = [A[p], A[c]]; for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k]; } }
+    const M = new Array(n).fill(0); for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * M[k]; M[r] = s / A[r][r]; }
+    const seg = []; for (let i = 0; i < n - 1; i++) seg.push({ a: Y[i], b: (Y[i + 1] - Y[i]) / h[i] - (h[i] * (2 * M[i] + M[i + 1])) / 6, c: M[i] / 2, d: (M[i + 1] - M[i]) / (6 * h[i]) });
+    return (t) => { if (t <= X[0]) return Math.min(1, Math.max(0, Y[0])); if (t >= X[n - 1]) return Math.min(1, Math.max(0, Y[n - 1])); let i = 0; while (t > X[i + 1]) i++; const dt = t - X[i], s = seg[i]; return Math.min(1, Math.max(0, s.a + dt * (s.b + dt * (s.c + dt * s.d)))); };
+  }
   // st: fold state from stack.js (layer pix premult f32, masks). Returns straight RGBA8.
   function spec64raw(st) {   // returns float64 straight colour C (n*3, 0..1) and alpha A
     const W = st.W, n = W * W, C = new Float64Array(n * 3), A = new Float64Array(n);
@@ -47,7 +58,8 @@
     const adj64 = (dst, a) => { const P = a.params;
       const f = a.kind === 'invert' ? (c) => 1 - c
         : a.kind === 'levels' ? (c) => { const ib = P.in_black / 255, iw = P.in_white / 255, ob = P.out_black / 255, ow = P.out_white / 255; let x = (c - ib) / (iw - ib); x = Math.min(1, Math.max(0, x)); x = Math.pow(x, 100 / P.gamma_x100); return Math.min(1, Math.max(0, ob + x * (ow - ob))); }
-        : a.kind === 'posterize' ? (c) => Math.floor(c * (255 / 256) * P.levels) / (P.levels - 1) : null;
+        : a.kind === 'posterize' ? (c) => Math.floor(c * (255 / 256) * P.levels) / (P.levels - 1)
+        : a.kind === 'curves' ? (testHooks.curve || curve64)(P.points) : null;
       for (let i = 0; i < n; i++) { const al = dst.A[i]; if (al <= 0) continue; const k = a.opacity * (a.mask ? a.mask[i] : 1); if (k <= 0) continue; const c = [dst.C[i*3], dst.C[i*3+1], dst.C[i*3+2]];
         const out = a.kind === 'threshold' ? (Math.round(255 * (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2])) >= P.level ? [1, 1, 1] : [0, 0, 0]) : c.map(f);
         for (let q = 0; q < 3; q++) dst.C[i*3+q] = c[q] + (out[q] - c[q]) * k; } };
@@ -82,6 +94,6 @@
       mx.globalAlpha = l.opacity; mx.globalCompositeOperation = l.mode === 'normal' ? 'source-over' : l.mode; mx.drawImage(c, 0, 0); }
     return new Uint8Array(mx.getImageData(0, 0, W, W).data.buffer.slice(0));
   }
-  const api = { spec64, spec64raw, spec64tree, canvas2d };
+  const api = { spec64, spec64raw, spec64tree, curve64, testHooks, canvas2d };
   if (typeof module !== 'undefined') module.exports = api; else root.Oracle = api;
 })(this);

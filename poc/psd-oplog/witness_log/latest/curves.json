@@ -1,0 +1,271 @@
+{
+ "checks": [
+  {
+   "id": "H50a",
+   "name": "canonical (f32) vs scipy natural CubicSpline, 4000 random curves x 356 inputs: max abs diff",
+   "value": 2.9802322387695312e-8,
+   "cmp": "<=",
+   "limit": 0.000002,
+   "pass": true
+  },
+  {
+   "id": "H50b",
+   "name": "independent float64 oracle vs scipy: max abs diff",
+   "value": 5.3290705182007514e-14,
+   "cmp": "<=",
+   "limit": 1e-9,
+   "pass": true
+  },
+  {
+   "id": "H50c",
+   "name": "control points are interpolated exactly (canonical spline at the exact knot, double precision, max abs error over all knots)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.000001,
+   "pass": true
+  },
+  {
+   "id": "H50c",
+   "name": "float32-input error at knots is bounded by the spline change over the float32 rounding interval (+1.2e-7 output rounding): violating knots",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H50c",
+   "name": "identity curve [(0,0),(255,255)] at opacity 1 is an exact no-op",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H50c",
+   "name": "non-vacuous: a real S-curve changes the picture",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "SCH0",
+   "name": "scene documents validate (errors)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H51",
+   "name": "curves_s1_srgb: pipeline vs float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H51",
+   "name": "curves_s1_srgb: mean levels",
+   "value": 0.0006,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H51",
+   "name": "curves_s2_p3: pipeline vs float64 oracle (max levels, working space)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H51",
+   "name": "curves_s2_p3: mean levels",
+   "value": 0.0024,
+   "cmp": "<=",
+   "limit": 0.05,
+   "pass": true
+  },
+  {
+   "id": "H54",
+   "name": "control: unmutated curves document (levels)",
+   "value": 1,
+   "cmp": "<=",
+   "limit": 1,
+   "pass": true
+  },
+  {
+   "id": "H54",
+   "name": "mutation: control point swapped x<->y on the S-curve is detected (levels)",
+   "value": 39,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H54",
+   "name": "mutation: a control point dropped from the strong curve is detected (levels)",
+   "value": 49,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H54",
+   "name": "mutation: reference using LINEAR interpolation instead of the spline would be told apart (levels)",
+   "value": 16,
+   "cmp": ">=",
+   "limit": 4,
+   "pass": true
+  },
+  {
+   "id": "H53",
+   "name": "valid curves accepted (2 points, 16 points, S-curve)",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  },
+  {
+   "id": "H53",
+   "name": "invalid curves logs rejected (of 12); accepted: none",
+   "value": 12,
+   "cmp": "==",
+   "limit": 12,
+   "pass": true
+  },
+  {
+   "id": "H53",
+   "name": "per-channel (red) curves are rejected on import",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H53",
+   "name": "master-only curves are accepted on import",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s1_srgb: export->import preserves points, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s1_srgb: fixed point after the first pass",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s2_p3: export->import preserves points, opacity, masks and nesting",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s2_p3: fixed point after the first pass",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s1_srgb: psd-tools reads the same curve points and opacities (3 curves)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H52",
+   "name": "curves_s1_srgb: psd-tools compositor vs our FLOAT picture truncated like psd-tools, mean levels",
+   "value": 0.5308,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H52",
+   "name": "curves_s1_srgb: percent of pixels over 8 levels (vs our rounded picture)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H52x",
+   "name": "curves_s1_srgb: info: max levels",
+   "value": 3,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H55",
+   "name": "curves_s2_p3: psd-tools reads the same curve points and opacities (3 curves)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "H52",
+   "name": "curves_s2_p3: psd-tools compositor vs our FLOAT picture truncated like psd-tools, mean levels",
+   "value": 0.5222,
+   "cmp": "<=",
+   "limit": 0.8,
+   "pass": true
+  },
+  {
+   "id": "H52",
+   "name": "curves_s2_p3: percent of pixels over 8 levels (vs our rounded picture)",
+   "value": 0,
+   "cmp": "<=",
+   "limit": 0.5,
+   "pass": true
+  },
+  {
+   "id": "H52x",
+   "name": "curves_s2_p3: info: max levels",
+   "value": 3,
+   "cmp": "<=",
+   "limit": 255,
+   "pass": true
+  },
+  {
+   "id": "H50d",
+   "name": "Node vs Chromium: 200-curve LUT hash and document f32 + render hashes identical",
+   "value": 5,
+   "cmp": "==",
+   "limit": 5,
+   "pass": true
+  },
+  {
+   "id": "GOLD",
+   "name": "golden hashes changed",
+   "value": 0,
+   "cmp": "==",
+   "limit": 0,
+   "pass": true
+  }
+ ],
+ "n_checks": 33,
+ "gate": "PASS",
+ "fails": []
+}
