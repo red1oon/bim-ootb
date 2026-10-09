@@ -75,6 +75,7 @@ const ICON = { // Lucide-style line icons, one idiom (feedback_pill_icon_consist
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' };
 let armed = (() => { try { return localStorage.getItem('bim.armed'); } catch (e) { return null; } })() || 'upgrade';
 if (!T.find((t) => t.id === armed)) armed = 'upgrade';
+let serverUp = true;   // served mode only: false once the launcher's local server stops answering
 let cur = null;       // {name, bytes(Uint8Array), model, prods, byId}
 let selected = new Set();
 const log = (s) => console.log(s);
@@ -269,8 +270,10 @@ async function exportSelected() {
   const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
   if (r.empty) { toast('Nothing to export'); return; }
   log('§BIM_EXPORT selected=' + r.report.selected + ' out=' + r.report.entitiesOut + ' dangling=' + r.report.dangling + ' verdict=' + r.report.verdict);
-  if (SERVED) { const rs = await fetch('/__save', { method: 'POST', body: r.bytes }); toast('Saved beside your file: ' + (await rs.text())); }
-  else { dl(new Blob([r.bytes], { type: 'application/octet-stream' }), base(cur.name) + '_extract.ifc'); toast('Exported ' + r.report.selected + ' items → ' + r.report.entitiesOut + ' entities — ' + r.report.verdict); }
+  let saved = false;
+  if (SERVED && serverUp) { try { const rs = await fetch('/__save', { method: 'POST', body: r.bytes }); if (rs.ok) { toast('Saved beside your file: ' + (await rs.text())); saved = true; } } catch (e) { serverUp = false; log('§BIM_SAVE launcher unreachable: ' + e.message); } }
+  if (!saved) {
+    if (SERVED) toast('The launcher closed, so this downloads instead: ' + base(cur.name) + '_extract.ifc', 9000); dl(new Blob([r.bytes], { type: 'application/octet-stream' }), base(cur.name) + '_extract.ifc'); if (!SERVED) toast('Exported ' + r.report.selected + ' items → ' + r.report.entitiesOut + ' entities — ' + r.report.verdict); }
 }
 $('exp').onclick = exportSelected;
 
@@ -341,7 +344,7 @@ if (!SERVED) (async () => {
 if (SERVED) {
   armed = params.get('tool') || 'extract'; syncArmed();
   (async () => { const r = await fetch('/__file'); const name = decodeURIComponent(r.headers.get('X-Name') || 'model.ifc'); await onFile(name, await r.arrayBuffer()); })().catch((e) => log('§BIM_LOAD verdict=ERROR ' + e.message));
-  setInterval(() => fetch('/__ping').catch(() => {}), 5000);
+  let miss = 0; setInterval(() => { if (!serverUp) return; fetch('/__ping').then(() => { miss = 0; }).catch(() => { if (++miss >= 2) { serverUp = false; toast('The launcher closed. You can keep working; exports will download.', 9000); log('§BIM_SERVER gone after ' + miss + ' missed pings'); } }); }, 5000);
 }
 </script>
 </body>

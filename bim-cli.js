@@ -47,7 +47,7 @@ function openInteractive(file) {
   const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
   let lastPing = Date.now(), seen = false;
   const srv = http.createServer((req, res) => {
-    const u = decodeURIComponent(req.url.split('?')[0]);
+    let u; try { u = decodeURIComponent(req.url.split('?')[0]); } catch (e) { res.writeHead(400); res.end('bad url'); return; }
     if (u === '/__ping') { lastPing = Date.now(); seen = true; res.end('ok'); return; }
     if (u === '/__file') { res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'X-Name': encodeURIComponent(name) }); fs.createReadStream(abs).pipe(res); return; }
     if (u === '/__save') { // page posts the exported IFC; saved beside the input
@@ -63,6 +63,10 @@ function openInteractive(file) {
     const cmd = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
     cp.spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).on('error', () => console.log('open this URL in a browser: ' + url)).unref();
   });
+  // a closed terminal sends SIGHUP; this server idle-exits by itself, so do not die with the terminal. Log WHY we exit, never silently.
+  process.on('SIGHUP', () => console.log('§OPEN SIGHUP ignored'));
+  process.on('SIGTERM', () => { console.log('§OPEN_EXIT SIGTERM'); process.exit(0); });
+  process.on('uncaughtException', (e) => console.log('§OPEN_ERROR ' + (e && e.stack || e)));
   setInterval(() => { if (Date.now() - lastPing > (seen ? 20000 : 120000)) { console.log('§OPEN_EXIT idle'); process.exit(0); } }, 5000);
 }
 
