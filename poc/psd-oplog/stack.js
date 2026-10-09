@@ -122,6 +122,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, sha256, chain, verifyChain, makeScene, makeModeScene, fold, composite, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);

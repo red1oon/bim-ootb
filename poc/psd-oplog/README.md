@@ -135,3 +135,30 @@ Findings:
 
 Limits: layers are 8-bit tagged data; no 16-bit/float layer import, no embedded-profile reading from PSD yet, no per-layer rendering intent,
 no gamut mapping (clipping only), no black-point compensation test for RGB->RGB, one generic CMYK profile.
+
+## Op-log schema v1 and PSD profile import (`doc/`, `npm run doc`)
+`doc/schema.js` defines a strict, versioned op-log for a colour-managed document (header comment is the spec): a first `doc` op records
+`working` space (`srgb`|`p3`|`adobe`|`icc:<sha256>`) and `gamma` (`encoded` = Photoshop default | `linear`); every `layer` records its pixel
+`space`; `raster`/`maskraster` ops reference content-addressed pixel blobs by sha256 (the tile-store idea). Unknown ops and unknown fields
+are rejected, referenced blobs and profiles are verified by size and hash. `doc/docfold.js` folds it (canonical stack fold + lcms 16-bit
+NOOPTIMIZE conversions). `doc/psd_icc.js` parses PSD image resources directly (ICC = resource 1039, untagged flag = 1041) and identifies a
+profile by what it does (colorants + curve), not by name; `doc/psd_import.js` turns an RGB/8-bit PSD into ops + blobs.
+
+| Check | Result |
+|---|---|
+| Schema-driven fold vs independent float64 reference: 3 working spaces x encoded/linear x sRGB/P3 display (12) + embedded-profile docs (2) | **max 1 level, mean <= 0.002** in all 14 |
+| Schema rejects invalid logs | 21 of 21 cases rejected (missing/duplicate doc op, bad version/space/gamma/mode/opacity/colour/geometry, unknown op/field, unknown layer, mask paint without mask, linear + embedded profile, missing blob, wrong-size blob, blob with wrong hash) |
+| Replay / serialisation | replay twice identical; JSON round trip identical; changing `working`, `gamma` or one layer's `space` each changes the output (nothing colour-related is implied) |
+| Hash chain | verifies; editing the `doc` op is detected at entry 0 |
+| PSD ICC resource round trip | embedded profile comes back byte-identical in all 6 cases; psd-tools (independent parser) reads the identical profile, layer count, blend modes and opacities |
+| Profile identification | our sRGB / Display-P3 / Adobe RGB profiles recognised; Ghostscript's real v2 `default_rgb.icc` recognised as sRGB (colorants within 1.8e-4, curve within 6e-6); a gamma-1.8 profile matches nothing and is kept as an embedded `icc:` profile |
+| PSD import fidelity | 0 pixel or mask mismatches in all 6; imported render vs float64 reference max <= 1 level |
+| Untagged PSD | imported as sRGB (documented assumption, flagged in the import info) |
+| Unsupported PSDs | CMYK mode, 16-bit depth, PSB, bad signature: all rejected with an explicit error |
+| **Negative control** (ignore the embedded profile) | P3 file: max 48 levels, mean 2.6 off; Adobe RGB file: max 117 levels, mean 3.8 off, and the gate fails as it should |
+| Node vs Chromium | 20/20 documents hash-identical; golden in `doc/golden_doc.json` |
+
+Limits: RGB 8-bit square documents only; no groups, adjustment layers or effects; one profile per document (as in PSD), and "untagged = sRGB" is
+an assumption (Photoshop's colour settings could say otherwise); LUT-based RGB profiles are carried as `icc:` profiles and converted by lcms but
+have no float64 oracle; linear compositing only for built-in working spaces; the embedded-profile reference uses a generated gamma-1.8 profile,
+not a profile exported by Photoshop; no PSD *export* of the schema yet.

@@ -11,13 +11,20 @@
   function rgbToXyzMatrix(p, wxy) {   // p = {r:[x,y], g:[x,y], b:[x,y]}
     const P = [p.r, p.g, p.b].map(([x, y]) => xyY(x, y)), M = [0,1,2].map((r) => [P[0][r], P[1][r], P[2][r]]), W = xyY(wxy[0], wxy[1]), S = mv(inv(M), W);
     return M.map((r) => r.map((x, j) => x * S[j])); }
-  const PRIM = { srgb: { r: [0.64, 0.33], g: [0.30, 0.60], b: [0.15, 0.06] }, p3: { r: [0.680, 0.320], g: [0.265, 0.690], b: [0.150, 0.060] } };
+  const PRIM = { srgb: { r: [0.64, 0.33], g: [0.30, 0.60], b: [0.15, 0.06] }, p3: { r: [0.680, 0.320], g: [0.265, 0.690], b: [0.150, 0.060] }, adobe: { r: [0.64, 0.33], g: [0.21, 0.71], b: [0.15, 0.06] } };
+PRIM.custom18 = PRIM.adobe;   // test-only space: Adobe primaries with gamma 1.8, to exercise unrecognised embedded profiles
+const GAMMAS = { adobe: 563 / 256, custom18: 1.8 }, GAMMA_ADOBE = GAMMAS.adobe;   // Adobe RGB (1998) transfer curve
   const WXY = [0.3127, 0.3290], CAT = adapt(D65, D50);
   const toD50 = (space) => mul(CAT, rgbToXyzMatrix(PRIM[space], WXY));   // linear RGB -> XYZ D50
   const dec = (v) => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4), enc = (v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1/2.4) - 0.055;   // sRGB TRC (also used by Display-P3)
-  const M = { srgb: toD50('srgb'), p3: toD50('p3') };
-  const rgbToXyz = (space, c8) => mv(M[space], c8.map((v) => dec(v / 255)));
-  const xyzToRgb8 = (space, xyz) => mv(inv(M[space]), xyz).map((v) => 255 * enc(Math.max(0, Math.min(1, v))));   // clipped
+  const baseOf = (s) => s.replace(/_linear$/, ''), isLinear = (s) => /_linear$/.test(s);
+  const M = { srgb: toD50('srgb'), p3: toD50('p3'), adobe: toD50('adobe'), custom18: toD50('custom18') };
+  for (const k of Object.keys(M)) M[k + '_linear'] = M[k];
+  const trcDec = (space, v) => isLinear(space) ? v : GAMMAS[baseOf(space)] ? Math.pow(v, GAMMAS[baseOf(space)]) : dec(v), trcEnc = (space, v) => isLinear(space) ? v : GAMMAS[baseOf(space)] ? Math.pow(v, 1 / GAMMAS[baseOf(space)]) : enc(v);
+  const toXyz01 = (space, c) => mv(M[space], c.map((v) => trcDec(space, v)));                                  // c in 0..1 (may be float64)
+  const fromXyz01 = (space, xyz) => mv(inv(M[space]), xyz).map((v) => trcEnc(space, Math.max(0, Math.min(1, v))));   // clipped 0..1
+  const rgbToXyz = (space, c8) => toXyz01(space, c8.map((v) => v / 255));
+  const xyzToRgb8 = (space, xyz) => fromXyz01(space, xyz).map((v) => 255 * v);
   const f = (t) => t > 216/24389 ? Math.cbrt(t) : (24389/27 * t + 16) / 116;
   const xyzToLab = (xyz) => { const fx = f(xyz[0]/D50[0]), fy = f(xyz[1]/D50[1]), fz = f(xyz[2]/D50[2]); return [116*fy - 16, 500*(fx-fy), 200*(fy-fz)]; };
   function dE2000(l1, l2) {   // Sharma, Wu, Dalal 2005
@@ -36,6 +43,6 @@
     const P = [[[50,2.6772,-79.7751],[50,0,-82.7485],2.0425],[[50,3.1571,-77.2803],[50,0,-82.7485],2.8615],[[50,2.5,0],[50,0,-2.5],4.3065],[[50,2.5,0],[73,25,-18],27.1492],[[60.2574,-34.0099,36.2677],[60.4626,-34.1751,39.4387],1.2644]];
     return Math.max(...P.map(([a,b,e]) => Math.abs(dE2000(a,b) - e)));
   }
-  const api = { mul, mv, inv, D50, D65, adapt, rgbToXyzMatrix, PRIM, WXY, CAT, M, rgbToXyz, xyzToRgb8, xyzToLab, dE2000, selfTest, dec, enc };
+  const api = { mul, mv, inv, D50, D65, adapt, rgbToXyzMatrix, PRIM, WXY, CAT, M, rgbToXyz, xyzToRgb8, toXyz01, fromXyz01, baseOf, isLinear, GAMMAS, xyzToLab, dE2000, selfTest, dec, enc, GAMMA_ADOBE };
   if (typeof module !== 'undefined') module.exports = api; else root.ColorMath = api;
 })(this);

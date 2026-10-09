@@ -13,7 +13,9 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
   conversions use cmsFLAGS_NOOPTIMIZE; keep working space float/16-bit; matrix profiles can be done in-shader.
 - COLOUR-MANAGED FOLD DONE (README "Colour-managed document fold"): pipeline matches float64 reference to 1 level. Decision to record in
   the doc schema: working space + gamma-vs-linear compositing flag (they change results by dE2000 1-9).
-- NEXT (cloud-friendly): put `working_space` + `blend_gamma` into the op-log schema and witness, read embedded ICC from PSD, groups / clipping masks, non-separable modes, tile-store
+- OP-LOG SCHEMA v1 + PSD ICC IMPORT DONE (`doc/`, `npm run doc`; README "Op-log schema v1 and PSD profile import"). Rules: doc op first, space
+  and gamma recorded, rasters are sha256 blobs, unknown ops/fields rejected, untagged PSD = sRGB assumption.
+- NEXT (cloud-friendly): PSD export from the schema (+ embed profile), groups / clipping masks, non-separable blend modes, tile store behind `raster` blobs / clipping masks, non-separable modes, tile-store
   wired to the fold, op-log signing with bim-ootb's existing signed-log code. Step 7 (brush feel) needs a person.
 
 ## Extra devices, for the person (about 5 minutes each)
