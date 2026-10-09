@@ -42,7 +42,7 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <body>
 <div id="drop"><h1>Drop an IFC</h1><p>Runs <span id="armed">…</span> straight away. Pick another tool on the right, or press its key. <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
 <canvas id="cv"></canvas>
-<div id="chip"><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button></div>
+<div id="chip"><b id="fname" title="The file you have loaded"></b><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button><button class="btn alt" id="cls" title="Close this file and forget it">Close file</button></div>
 <div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
 <div id="kit"><b>Toolkit (zip)</b><p>Launchers you can drop IFC files on, for batch use. Needs Node.js 18+.</p><div id="kt"></div>
 <label>System <select id="kos"><option value="win">Windows</option><option value="mac">macOS</option><option value="sh">Linux</option></select></label>
@@ -164,7 +164,9 @@ async function onFile(name, buf, opt) {
   if (!opt.restore && !SERVED) { idbPut('file', { name, bytes }); idbPut('sel', []); }
   if (opt.sel) { const g = new Set(opt.sel); prods.forEach((p) => { if (g.has(p.guid)) selected.add(p.id); }); }
   log('§BIM_LOAD name=' + name + ' bytes=' + bytes.length + ' schema=' + model.schema + ' entities=' + model.ents.size + ' products=' + prods.length);
+  if (opt.restore) { showView(); return; }   // a reload brings the model back; it must NOT re-run Split/Upgrade/Health and save files again
   runOn(cur, T.find((t) => t.id === armed));
+  syncNote();
 }
 function runOn(c, tool) {
   if (tool.mode === 'interactive') { showView(); return; }
@@ -246,12 +248,12 @@ async function showView() {
   if (!(await loadMeshes(cur))) { hideView(); return; }
   document.body.classList.add('view'); if (R) R.dirty = true; paint(); chip();
 }
-function hideView() { document.body.classList.remove('view'); }
+function hideView() { document.body.classList.remove('view'); syncNote(); }
 function paint() {
   if (!R) return; R.dirty = true;
   for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
 }
-function chip() { $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
+function chip() { $('fname').textContent = cur ? cur.name + ' · ' + cur.model.schema + ' · ' + cur.prods.length + ' items' : ''; $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
 function pickAt(e) {
   const r = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   R.ray.setFromCamera(R.mouse, R.cam); const h = R.ray.intersectObjects(R.meshes, false); return h.length ? h[0].object.userData.eid : null;
@@ -271,6 +273,14 @@ function onPick(e) {
   if (selected.has(eid)) selected.delete(eid); else selected.add(eid);
   paint(); chip(); log('§BIM_SELECT n=' + selected.size + ' last=' + eid);
 }
+function syncNote() { const n = $('note'); if (!n) return; n.textContent = cur && !document.body.classList.contains('view') ? 'Loaded: ' + cur.name + ' — press O to see it, E to pick items. (Drop another file to replace it.)' : ''; }
+async function closeFile() {
+  const nm = cur && cur.name; cur = null; selected.clear(); document.body.classList.remove('view'); $('tip').style.display = 'none'; toggleSearch(false);
+  if (R && R.group) { R.scene.remove(R.group); R.group = null; R.meshes = []; R.dirty = true; }
+  await idbPut('file', null); await idbPut('sel', []); chip(); syncNote(); renderList();
+  if (nm) toast('Closed ' + nm + '. Drop an IFC to start again.'); log('§BIM_CLOSE name=' + nm);
+}
+$('cls').onclick = closeFile;
 $('clr').onclick = () => { selected.clear(); paint(); chip(); renderList(); };
 async function exportSelected() {
   const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
@@ -355,7 +365,7 @@ if (!SERVED) (async () => {
   const f = await idbGet('file'); if (!f || !f.bytes) { log('§BIM_RESTORE verdict=INCONCLUSIVE reason=nothing-stored'); return; }
   const sel = (await idbGet('sel')) || [];
   await onFile(f.name, f.bytes.buffer ? f.bytes.buffer.slice(f.bytes.byteOffset, f.bytes.byteOffset + f.bytes.byteLength) : f.bytes, { restore: true, sel });
-  toast('Restored your last file: ' + f.name + (sel.length ? ' (' + sel.length + ' selected)' : '')); log('§BIM_RESTORE name=' + f.name + ' selected=' + selected.size + ' verdict=PASS');
+  toast('Restored ' + f.name + (sel.length ? ' (' + sel.length + ' selected)' : '') + '. Nothing was re-run — press a tool key to run it, or Close file.', 9000); log('§BIM_RESTORE name=' + f.name + ' selected=' + selected.size + ' verdict=PASS');
 })();
 // served by the CLI launcher: the model is waiting at /__file
 if (SERVED) {
