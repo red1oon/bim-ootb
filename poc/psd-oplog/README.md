@@ -82,3 +82,35 @@ Same machine (Firefox hides the GPU name, "GTX 980, or similar" is its placehold
 - The GL numbers are nonzero (software GL gave 0), which is consistent with hardware GL, but the masked renderer string means this is inference, not proof.
 
 Still open: Safari/JavaScriptCore, a non-x86 device (Apple Silicon / ARM), and a second GPU vendor. Two engines on one machine do not prove portability.
+
+## ICC colour management (`icc/`, cloud session; `npm run icc`)
+LittleCMS compiled to WASM (`lcms-wasm`, lcms 2.16) is checked against (a) an independent float64 colour oracle
+(`color_math.js`: Bradford adaptation, XYZ/Lab, CIEDE2000 validated against Sharma's published test pairs, error 4e-5),
+(b) native LittleCMS 2.19 through Pillow, (c) itself across Node and Chromium. Display-P3 comes from our own ICC v4
+profile writer (`icc_write.js`), so no external RGB profile is needed. The CMYK profile is Ghostscript's generic
+`default_cmyk.icc`, fetched by `icc/fetch_profiles.sh` with a checksum and **not committed** (its licence is its owner's).
+
+| Check | Result |
+|---|---|
+| sRGB -> Lab vs float64 oracle (729 colours) | dE2000 max 0.013 (default flags), 0.002 (NOOPTIMIZE) |
+| sRGB -> Display-P3, 8-bit, vs oracle | max 0.52 level |
+| sRGB -> P3 -> sRGB, **8-bit** | 4 levels max, **identical to the oracle's own 8-bit round trip**: inherent loss of squeezing sRGB into a wider 8-bit gamut |
+| sRGB -> P3 -> sRGB, **16-bit**, lcms default flags | **12.97 levels** (worst: sRGB yellow 255,255,0 returns blue = 13, expected 0) |
+| same, HIGHRESPRECALC | 8.27 levels |
+| same, **cmsFLAGS_NOOPTIMIZE** | **0.039 levels** (exact) |
+| P3 primaries into sRGB | clip cleanly to the sRGB edge (relative colorimetric, no gamut mapping) |
+| CMYK press profile, sRGB-ified primaries | paper 255,255,255; K100 35,31,32; C100 0,174,239; M100 236,0,140; Y100 255,242,0; K ramp monotonic |
+| sRGB -> CMYK -> sRGB, 4913 colours, relcol + BPC | dE2000 median 2.9, p95 13.5, max 16.1; neutrals max 2.0; 36% over 5 (sRGB is wider than the press gamut) |
+| lcms-wasm vs native lcms 2.19 (Pillow) | **100% identical** on sRGB->P3 (default and NOOPTIMIZE), sRGB->CMYK (relcol, perceptual), CMYK->sRGB |
+| Node vs Chromium | all output hashes identical; `icc/golden_icc.json` holds them |
+| Throughput, 2 MPx, one core (Node / Chromium) | sRGB->P3 8-bit default 41 / 26; 8-bit NOOPTIMIZE 3.0 / 3.0; 16-bit NOOPTIMIZE 2.8 / 2.6; sRGB->CMYK default 27 / 21 MPx/s |
+
+Findings that change the design:
+1. **Never use lcms' default optimisation for 16-bit RGB->RGB.** Its precomputed CLUT is wrong by up to 13 levels near the gamut edge. The 8-bit default path is fine (matrix-shaper). The canonical path must use NOOPTIMIZE, which is exact but ~10x slower (about 3 MPx/s: a 24 MP photo takes ~8 s). Keep the optimised 8-bit path for interactive preview only.
+2. **Keep the working space float or 16-bit between conversions.** 8-bit P3 round trips lose up to 4 levels by themselves, independent of the CMM. This agrees with the earlier float16 finding.
+3. **Matrix/TRC RGB profiles do not need an ICC engine in the hot path.** They are a 3x3 matrix plus the sRGB curve, which is trivial on the GPU and was matched by the oracle to 0.5 level. Use lcms-wasm for LUT profiles (CMYK) and for reading arbitrary profiles. Caveat for the canonical CPU fold: `Math.pow` is not bit-exact across engines, so any curve in canonical code must come from WASM (as lcms does) or a table built with deterministic arithmetic.
+4. lcms-wasm giving identical bytes to native lcms despite different versions and compilers is strong evidence the WASM route is trustworthy for witnesses.
+
+Limits: one CMYK profile (generic, not a certified press condition like FOGRA/SWOP); relative colorimetric and perceptual only; no
+gamut mapping beyond clipping; Display-P3 profile is generated, not Apple's file; Node and Chromium are both V8 on x86-64, so
+Firefox/Safari/ARM runs of the ICC hashes are still open; Lab/CMYK values were not compared to Photoshop's output.

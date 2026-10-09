@@ -9,7 +9,9 @@ Branch: `claude/photoshop-clone-gaps-m5p5mz`. Code: `poc/psd-oplog/`. Results an
 - STEP 5 DONE on one device (RTX 4060, Chrome 154, Linux): CPU fold matches golden hashes, GPU within 1 level. See README
   "Step 5 result". Firefox 157 also passed (same machine, hashes identical to Chrome). STILL WANTED from a person: Safari (JavaScriptCore), an ARM/Apple device, a non-NVIDIA GPU via `gpu_check.html` (steps below);
   save each JSON under `poc/psd-oplog/gpu_results/`.
-- NEXT after step 5 (cloud-friendly): ICC (LittleCMS WASM), groups / clipping masks, non-separable modes, tile-store
+- ICC DONE (README "ICC colour management", `npm run icc`; needs `sh icc/fetch_profiles.sh`, profile not committed). Key rule: canonical
+  conversions use cmsFLAGS_NOOPTIMIZE; keep working space float/16-bit; matrix profiles can be done in-shader.
+- NEXT (cloud-friendly): wire ICC into the fold (layer working space, import/export conversion, soft-proof), groups / clipping masks, non-separable modes, tile-store
   wired to the fold, op-log signing with bim-ootb's existing signed-log code. Step 7 (brush feel) needs a person.
 
 ## Extra devices, for the person (about 5 minutes each)
