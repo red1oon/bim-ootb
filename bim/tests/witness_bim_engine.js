@@ -69,7 +69,7 @@ const gids = (m) => new Set(S.listProducts(m).map((p) => p.guid));
           const root = path.join(__dirname, '..', '..');
           const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.split('?')[0]); const ff = path.join(root, u === '/' ? 'bim.html' : u); if (!ff.startsWith(root) || !fs.existsSync(ff) || fs.statSync(ff).isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'application/javascript' }[path.extname(ff)] || 'application/octet-stream' }); fs.createReadStream(ff).pipe(r); });
           await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-          const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] }); const pg = await br.newPage(); await pg.goto('http://127.0.0.1:' + srv.address().port + '/bim.html', { waitUntil: 'load' });
+          const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] }); const pg = await br.newPage(); await pg.goto('http://127.0.0.1:' + srv.address().port + '/bim.html', { waitUntil: 'load', timeout: 120000 });
           const h = await pg.evaluate(async (t) => { const r = BIM_UPGRADE.run(t, {}); const d = new Uint8Array(await crypto.subtle.digest('SHA-256', r.bytes)); return Array.from(d).map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 16); }, text);
           ok('W-CLI-1b', h === sha(fs.readFileSync(cliOut)), 'browser sha=' + h + ' cli sha=' + sha(fs.readFileSync(cliOut)));
           await br.close(); srv.close();

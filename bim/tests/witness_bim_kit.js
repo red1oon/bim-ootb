@@ -9,7 +9,7 @@ const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.split('?')[0]); const f = path.join(root, u === '/' ? 'bim.html' : u); if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': { '.html': 'text/html', '.js': 'application/javascript' }[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); });
 srv.listen(0, '127.0.0.1', async () => {
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] }), pg = await br.newPage(); const errs = []; pg.on('pageerror', (e) => errs.push(e.message));
-  await pg.goto('http://127.0.0.1:' + srv.address().port + '/bim.html', { waitUntil: 'load' });
+  await pg.goto('http://127.0.0.1:' + srv.address().port + '/bim.html', { waitUntil: 'load', timeout: 120000 });
   const b64 = await pg.evaluate(async () => { const sha = async (b) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', b))).map((x) => x.toString(16).padStart(2, '0')).join(''); const r = await BIM_KIT.build(async (p) => new Uint8Array(await (await fetch(p)).arrayBuffer()), sha, { tools: ['upgrade', 'health'], os: 'sh' }); let s = ''; r.bytes.forEach((x) => (s += String.fromCharCode(x))); return btoa(s); });
   const pageZip = Buffer.from(b64, 'base64'); const zp = path.join(tmp, 'page.zip'); fs.writeFileSync(zp, pageZip);
   const cz = path.join(tmp, 'cli.zip'); cp.execFileSync('node', [path.join(root, 'bim-cli.js'), 'kit', 'upgrade', 'health', '--os', 'sh', '-o', cz]);

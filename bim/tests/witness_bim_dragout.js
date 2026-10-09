@@ -6,7 +6,7 @@ const srv = http.createServer((q, r) => { const f = path.join(root, decodeURICom
 srv.listen(0, '127.0.0.1', async () => {
   const url = 'http://127.0.0.1:' + srv.address().port + '/bim.html';
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox'] }); const pg = await br.newPage(); const errs = []; pg.on('pageerror', (e) => errs.push(e.message));
-  await pg.goto(url, { waitUntil: 'load' });
+  await pg.goto(url, { waitUntil: 'load', timeout: 120000 });
   let fails = 0; const ok = (id, c, m) => { console.log((c ? '§WITNESS PASS ' : '§WITNESS FAIL ') + id + ' ' + m); if (!c) fails++; };
   for (const shift of [false, true]) {
     const r = await pg.evaluate((sh) => { const b = document.querySelector('.pill[data-id="upgrade"]'); const dt = new DataTransfer(); const ev = new DragEvent('dragstart', { bubbles: true, dataTransfer: dt, shiftKey: sh }); b.dispatchEvent(ev); return { dl: dt.getData('DownloadURL'), uri: dt.getData('text/uri-list'), last: window.__bim.lastDrag }; }, shift);

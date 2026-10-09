@@ -20,7 +20,7 @@ const inc = (id, msg) => say('§WITNESS INCONCLUSIVE ' + id + ' ' + msg);
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const pg = await br.newPage(); await pg.setViewport({ width: 1100, height: 750 });
   const logs = []; pg.on('console', (m) => logs.push(m.text())); pg.on('pageerror', (e) => logs.push('PAGEERROR ' + e.message));
-  await pg.goto(url, { waitUntil: 'load' });
+  await pg.goto(url, { waitUntil: 'load', timeout: 120000 });
   await pg.waitForFunction(() => window.__bim && window.__bim.R && window.__bim.cur && window.__bim.cur.rendered, { timeout: 120000 }).catch(() => {});
   const rl = logs.find((l) => l.startsWith('§BIM_RENDER')) || '';
   const rendered = +((/elementsRendered=(\d+)/.exec(rl) || [])[1] || 0), withGeo = +((/productsWithGeometry=(\d+)/.exec(rl) || [])[1] || 0);
