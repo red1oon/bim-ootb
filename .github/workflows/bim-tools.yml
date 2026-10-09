@@ -67,4 +67,5 @@ jobs:
           node bim/tests/witness_bim_focus.js IFC/Duplex_ARC.ifc
           node bim/tests/witness_bim_corner.js IFC/Duplex_ARC.ifc
           node bim/tests/witness_bim_fidelity.js IFC/Duplex_ARC.ifc
+          node bim/tests/witness_bim_progress.js IFC/Duplex_ARC.ifc
           node bim/tests/witness_bim_dragout.js

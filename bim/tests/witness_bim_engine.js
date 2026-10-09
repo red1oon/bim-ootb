@@ -29,6 +29,10 @@ const gids = (m) => new Set(S.listProducts(m).map((p) => p.guid));
     const nm = path.basename(f), text = fs.readFileSync(f, 'utf8'), model = S.parse(text);
     console.log('§ENGINE file=' + nm + ' schema=' + model.schema + ' entities=' + model.ents.size + ' skippedStatements=' + model.bad);
     ok('W-PARSE', model.ents.size > 0 && model.bad === 0, 'statements unparsed=' + model.bad);
+    // sliced reader == plain reader (progress must not change the result)
+    S.PARSE_SLICE_MS = 0; let ticks = 0; const am = await S.parseAsync(text, () => ticks++); S.PARSE_SLICE_MS = 30;
+    const same = am.ents.size === model.ents.size && am.bad === model.bad && am.schema === model.schema && S.write(am.schema, am.header, am.ents) === S.write(model.schema, model.header, model.ents);
+    ok('W-PARSE-ASYNC', same && ticks >= 3, 'parseAsync == parse: entities ' + am.ents.size + '/' + model.ents.size + ', output text identical=' + same + ', progress callbacks=' + ticks);
     // ── upgrade
     const up = U.upgradeModel(model, {});
     if (up.skipped) inc('W-UP-1', nm + ' ' + up.report.note); else {
