@@ -273,13 +273,21 @@ async function loadMeshes(c) {
   if (upAxis === 'Z') grp.rotation.x = -Math.PI / 2; else if (upAxis === 'X') grp.rotation.z = Math.PI / 2;
   log('§BIM_UP axis=' + upAxis + ' rotated=' + (upAxis === 'Y' ? 'no' : 'yes') + ' shares=' + sh.map((x) => +(x / ((sh[0] + sh[1] + sh[2]) || 1)).toFixed(3)).join('/'));
   r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(grp), ctr = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()).length() || 10;
+  let box = new THREE.Box3().setFromObject(grp, true), ctr = box.getCenter(new THREE.Vector3());   // precise = from the vertices; the loose box is inflated far from the origin
+  // Georeferenced models (a road in map coordinates sits millions of metres from 0,0,0): float32 vertices jitter and the camera clips there.
+  // Same rule as the baseline loader (bim-compiler deploy/dev/import_worker.js §UNITS v3 / georef): any axis more than 10 km from the origin is moved to a local origin. Display only — exports never touch the meshes.
+  const off = [ctr.x, ctr.y, ctr.z].map((v) => (Math.abs(v) > 1e4 ? Math.round(v) : 0));
+  if (off.some((v) => v !== 0)) { grp.position.set(-off[0], -off[1], -off[2]); grp.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(grp, true); ctr = box.getCenter(new THREE.Vector3()); }
+  log('§BIM_REBASE ' + (off.some((v) => v !== 0) ? 'shifted by ' + off.join(',') + ' m to a local origin' : 'none (model is near the origin)') + ' centre=' + ctr.toArray().map((v) => Math.round(v)).join(','));
+  const sz = box.getSize(new THREE.Vector3()).length() || 10;
   r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.modelDiag = sz; r.cam.near = sz / 1000; r.cam.far = sz * 40; r.ctl.maxDistance = sz * 8; r.ctl.minDistance = 0;
   if (r.grid) r.scene.remove(r.grid);
   r.grid = new THREE.GridHelper(Math.ceil(sz * 1.6), 24, 0x7c8794, 0x7c8794); r.grid.material.transparent = true; r.grid.material.opacity = 0.35; r.grid.position.set(ctr.x, box.min.y, ctr.z); r.scene.add(r.grid);
   r.home = { pos: r.cam.position.clone(), tgt: ctr.clone() }; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
   c.rendered = true; c.renderedEids = seen;
   const inTable = c.prods.filter((p) => seen.has(p.id)).length;
+  const boxLike = r.meshes.filter((m) => (m.geometry.index ? m.geometry.index.count / 3 : 0) <= 12).length;
+  log('§BIM_FIDELITY trisPerMesh=' + (r.meshes.length ? (tris / r.meshes.length).toFixed(1) : 0) + ' boxLikeMeshes=' + boxLike + ' of ' + r.meshes.length + ' (fake geometry = EVERY mesh is a 12-triangle box; plain walls and slabs are legitimately 12)');
   log('§BIM_RENDER meshes=' + r.meshes.length + ' elementsRendered=' + seen.size + ' productsWithGeometry=' + inTable + ' tris=' + tris + ' verdict=' + (seen.size ? 'PASS' : 'INCONCLUSIVE'));
   return true;
 }
