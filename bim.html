@@ -40,7 +40,7 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 </style>
 </head>
 <body>
-<div id="drop"><h1>Drop an IFC</h1><p>Runs <span id="armed">…</span> straight away. Pick another tool on the right, or press its key. <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
+<div id="drop"><h1>Drop an IFC</h1><p><span id="lead"><span>Runs </span></span><span id="armed">…</span><span id="lead2"> straight away when you drop a file.</span> <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
 <canvas id="cv"></canvas>
 <div id="chip"><b id="fname" title="The file you have loaded"></b><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button><button class="btn alt" id="rv" title="Back to the starting view">Reset view</button><button class="btn alt" id="cls" title="Close this file and forget it">Close file</button></div>
 <div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
@@ -73,8 +73,7 @@ const ICON = { // Lucide-style line icons, one idiom (feedback_pill_icon_consist
   split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="m14.5 14.5 5.5 5.5"/><path d="M8.1 8.1 12 12"/>', health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   kit: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' };
-let armed = (() => { try { return localStorage.getItem('bim.armed'); } catch (e) { return null; } })() || 'upgrade';
-if (!T.find((t) => t.id === armed)) armed = 'upgrade';
+let armed = null;   // nothing is armed after a refresh: a drop never runs a tool you did not choose THIS visit
 let serverUp = true;   // served mode only: false once the launcher's local server stops answering
 let cur = null;       // {name, bytes(Uint8Array), model, prods, byId}
 let selected = new Set();
@@ -89,17 +88,22 @@ function pill(id, title, key, svg) {
 }
 function buildRail() {
   const r = $('rail'); r.innerHTML = '';
-  T.forEach((t) => { const b = pill(t.id, t.name + ' — ' + t.desc, t.key, ICON[t.id]); if (pinned(t.id)) b.classList.add('pinned'); b.onclick = () => arm(t.id); b.draggable = true; b.addEventListener('dragstart', (e) => dragOut(e, t)); b.oncontextmenu = (e) => { e.preventDefault(); openMenu(t, e.clientX, e.clientY); }; r.appendChild(b); });
+  T.forEach((t) => { const b = pill(t.id, t.name + ' — ' + t.desc, t.key, ICON[t.id]); if (pinned(t.id)) b.classList.add('pinned'); b.onclick = () => arm(t.id, false, true); b.draggable = true; b.addEventListener('dragstart', (e) => dragOut(e, t)); b.oncontextmenu = (e) => { e.preventDefault(); openMenu(t, e.clientX, e.clientY); }; r.appendChild(b); });
   const s = pill('search', 'Search (F)', 'f', ICON.search); s.onclick = () => toggleSearch(); r.appendChild(s);
   const k = pill('kit', 'Toolkit zip — launchers for batch use (9)', '9', ICON.kit); k.onclick = () => toggleKit(); r.appendChild(k);
   syncArmed();
 }
 function syncArmed() {
   document.querySelectorAll('#rail .pill').forEach((b) => b.classList.toggle('on', b.dataset.id === armed));
-  const t = T.find((x) => x.id === armed); $('armed').textContent = t.name + (t.mode === 'interactive' ? ' (opens the model so you can pick)' : ' (runs in the background)');
+  const t = T.find((x) => x.id === armed);
+  $('armed').textContent = t ? t.name + (t.mode === 'interactive' ? ' (opens the model so you can pick)' : ' (runs in the background)') : 'nothing yet — pick a tool on the right (or press its key); click it again or press Esc to clear it';
+  const lead = $('lead'); if (lead) lead.firstChild.textContent = t ? 'Runs ' : 'Armed: ';
+  const rest = $('lead2'); if (rest) rest.textContent = t ? ' straight away when you drop a file.' : '. With nothing armed, a dropped file only opens.';
 }
-function arm(id, noRun) {
-  armed = id; try { localStorage.setItem('bim.armed', id); } catch (e) {} syncArmed();
+function disarm() { if (!armed) return false; log('§BIM_DISARM tool=' + armed); armed = null; syncArmed(); toast('Tool cleared. A dropped file will just open.', 3500); return true; }
+function arm(id, noRun, fromPill) {
+  if (fromPill && armed === id && !(id === 'extract' && cur && selected.size && document.body.classList.contains('view'))) { disarm(); return; }   // a second click on the lit button clears it
+  armed = id; syncArmed();
   log('§BIM_ARM tool=' + id);
   // Extract pressed while the model is open: that IS the "do it" — export what is selected (or say what to do first)
   if (id === 'extract' && cur && !noRun && document.body.classList.contains('view')) {
@@ -165,7 +169,9 @@ async function onFile(name, buf, opt) {
   if (opt.sel) { const g = new Set(opt.sel); prods.forEach((p) => { if (g.has(p.guid)) selected.add(p.id); }); }
   log('§BIM_LOAD name=' + name + ' bytes=' + bytes.length + ' schema=' + model.schema + ' entities=' + model.ents.size + ' products=' + prods.length);
   if (opt.restore) { showView(); return; }   // a reload brings the model back; it must NOT re-run Split/Upgrade/Health and save files again
-  runOn(cur, T.find((t) => t.id === armed));
+  const tl = T.find((t) => t.id === armed);
+  if (!tl) { showView(); toast('Opened ' + name + '. Press U to upgrade, K to split, 6 for a health report, E to pick items.', 9000); log('§BIM_OPEN_ONLY name=' + name + ' (no tool armed)'); return; }
+  runOn(cur, tl);
   syncNote();
 }
 function runOn(c, tool) {
@@ -367,7 +373,12 @@ $('ht').innerHTML = T.map((t) => '<tr><td><kbd>' + t.key.toUpperCase() + '</kbd>
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const inInput = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName);
-  if (e.key === 'Escape') { toggleSearch(false); $('help').classList.remove('open'); toggleKit(false); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur(); return; }
+  if (e.key === 'Escape') {
+    const anyOpen = $('search').classList.contains('open') || $('help').classList.contains('open') || $('kit').classList.contains('open') || $('menu').style.display === 'block';
+    toggleSearch(false); $('help').classList.remove('open'); toggleKit(false); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur();
+    if (!anyOpen) disarm();   // nothing to close: Esc clears the lit tool
+    return;
+  }
   if (inInput) return;
   const k = e.key.toLowerCase();
   const t = T.find((x) => x.key === k);
@@ -383,7 +394,7 @@ window.__bim = { screenOf: (eid) => { const b = new THREE.Box3(); R.meshes.filte
 buildRail();
 if (params.get('kit') === '1') toggleKit(true);   // deep link from the manual: opens the toolkit-zip panel
 if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
-log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + armed);
+log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + (armed || 'none'));
 // plain page reload: bring back the last model (and what was selected) instead of an empty page
 if (!SERVED) (async () => {
   const f = await idbGet('file'); if (!f || !f.bytes) { log('§BIM_RESTORE verdict=INCONCLUSIVE reason=nothing-stored'); return; }

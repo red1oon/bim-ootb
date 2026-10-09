@@ -15,13 +15,13 @@ srv.listen(0, '127.0.0.1', async () => {
   // the video's state: Health armed, model dropped
   await pg.evaluate(async (b64) => { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); window.__bim.arm('health', true); await window.__bim.onFile('Duplex_ARC.ifc', u.buffer); }, fs.readFileSync(file).toString('base64'));
   await new Promise((r) => setTimeout(r, 600));
-  const before = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: document.querySelector('.pill.on').dataset.id }));
+  const before = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: (document.querySelector('.pill.on') || { dataset: {} }).dataset.id }));
   await pg.waitForFunction(() => window.__bim.cur && window.__bim.cur.rendered, { timeout: 60000 }).catch(() => {}); await new Promise((r) => setTimeout(r, 600));
-  const before2 = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: document.querySelector('.pill.on').dataset.id }));
+  const before2 = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: (document.querySelector('.pill.on') || { dataset: {} }).dataset.id }));
   ok('W-SEARCH-0', before2.armed === 'health' && before2.view, 'start state = the video (Health armed, model dropped): the model STAYS on the canvas: armed=' + before2.armed + ' canvas visible=' + before2.view);
   await pg.keyboard.press('f');
   await pg.waitForFunction(() => window.__bim.cur && window.__bim.cur.rendered, { timeout: 60000 }).catch(() => {}); await new Promise((r) => setTimeout(r, 800));
-  const afterF = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: document.querySelector('.pill.on').dataset.id, rows: document.querySelectorAll('#sl .row').length, panel: document.getElementById('search').classList.contains('open') }));
+  const afterF = await pg.evaluate(() => ({ view: document.body.classList.contains('view'), armed: (document.querySelector('.pill.on') || { dataset: {} }).dataset.id, rows: document.querySelectorAll('#sl .row').length, panel: document.getElementById('search').classList.contains('open') }));
   const cF = await cover();
   ok('W-SEARCH-1', afterF.panel && afterF.view && afterF.rows > 0 && cF.pct > 20, 'after F: panel=' + afterF.panel + ' canvas visible=' + afterF.view + ' armed=' + afterF.armed + ' rows=' + afterF.rows + ' drawn=' + cF.pct + '%');
   await pg.type('#sq', 'ifcdoor'); await new Promise((r) => setTimeout(r, 300));
