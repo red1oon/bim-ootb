@@ -170,7 +170,6 @@ async function onFile(name, buf, opt) {
 }
 function runOn(c, tool) {
   if (tool.mode === 'interactive') { showView(); return; }
-  hideView();
   const lib = LIBS[tool.lib], t0 = performance.now(), res = lib.run(c.text, {});
   const rep = res.report;
   if (tool.id === 'split') res.parts.filter((p) => !p.empty).forEach((p) => dl(new Blob([p.bytes], { type: 'application/octet-stream' }), base(c.name) + '_' + p.name.replace(/[^\w.-]+/g, '_') + '.ifc'));
@@ -179,6 +178,9 @@ function runOn(c, tool) {
   const ms = Math.round(performance.now() - t0);
   log('§' + tool.id.toUpperCase() + ' file=' + c.name + ' verdict=' + rep.verdict + ' ms=' + ms); log('§' + tool.id.toUpperCase() + '_REPORT ' + JSON.stringify(rep));
   toast(oneLine(tool, rep, ms));
+  // The tool has run and saved first (fast, no drawing needed). Then the loaded model stays/appears on the canvas so you always see what you are working on.
+  // Very large files are not drawn automatically (parsing the geometry costs memory): the page says so and O draws them.
+  if (!document.body.classList.contains('view')) { if (c.bytes.length < 60e6) showView(); else syncNote(); }
 }
 function oneLine(tool, r, ms) {
   if (r.verdict === 'INCONCLUSIVE') return tool.name + ': nothing done — ' + (r.note || 'empty');
