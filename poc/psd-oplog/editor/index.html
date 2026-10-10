@@ -3,53 +3,96 @@
 <style>
 :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e8ec; --mut:#9097a3; --acc:#4c8dff; color-scheme: dark; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#eef0f3; --panel:#fff; --line:#d5d9e0; --fg:#1b1f24; --mut:#5d6674; --acc:#2563eb; color-scheme: light; } }
-* { box-sizing: border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; display:grid; grid-template-columns: 76px 1fr 260px; grid-template-rows: auto 1fr; height:100vh; }
-header { grid-column:1/4; display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
-header label { display:flex; gap:6px; align-items:center; color:var(--mut); } input[type=range] { width:110px; }
+* { box-sizing: border-box; } html, body { height:100%; } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; display:grid; grid-template-columns: 76px 1fr 260px; grid-template-rows: auto 1fr auto; overflow:hidden; }
+header { grid-column:1/4; display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
+header label { display:flex; gap:6px; align-items:center; color:var(--mut); } input[type=range] { width:100px; }
 button, select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; cursor:pointer; } button:disabled { opacity:.4; cursor:default; } button.on { border-color:var(--acc); outline:1px solid var(--acc); }
-#tools { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:6px; padding:8px; } #tools button { padding:8px 2px; font-size:12px; }
-main { display:grid; place-items:center; overflow:auto; padding:12px; } canvas { width:min(100%, calc(100vh - 100px)); aspect-ratio:1; background:#fff; touch-action:none; cursor:crosshair; box-shadow:0 2px 14px #0006; }
+#tools { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:6px; padding:8px; overflow:auto; } #tools button { padding:8px 2px; font-size:12px; }
+#view { position:relative; overflow:hidden; background:repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0/20px 20px; touch-action:none; min-width:0; min-height:0; }
+canvas { position:absolute; left:0; top:0; transform-origin:0 0; background:#fff; touch-action:none; box-shadow:0 2px 14px #0006; image-rendering:auto; cursor:none; } #view.pick canvas { cursor:crosshair; } #view.pan canvas { cursor:grab; }
+#cursor { position:fixed; left:0; top:0; pointer-events:none; border:1px solid #fff; outline:1px solid #000; border-radius:50%; display:none; mix-blend-mode:normal; z-index:5; }
 aside { background:var(--panel); border-left:1px solid var(--line); padding:10px; overflow:auto; } aside h3 { margin:4px 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
 .layer { border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; } .layer.on { border-color:var(--acc); } .layer div { display:flex; gap:6px; align-items:center; margin-top:6px; } .layer b { flex:1; cursor:pointer; } .layer input[type=range], .layer select { flex:1; min-width:0; width:0; }
+footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4px 12px; background:var(--panel); border-top:1px solid var(--line); color:var(--mut); font-size:12px; } footer span { margin-left:auto; }
 #info { color:var(--mut); font-size:12px; margin-left:auto; }
-@media (max-width:760px) { body { grid-template-columns:1fr; grid-template-rows:auto auto 1fr auto; height:auto; } header { grid-column:1; } #tools { flex-direction:row; border-right:0; border-bottom:1px solid var(--line); } aside { border-left:0; border-top:1px solid var(--line); } }
+@media (max-width:760px) { body { grid-template-columns:1fr; grid-template-rows:auto auto 1fr auto auto; overflow:auto; height:auto; } header, footer { grid-column:1; } #tools { flex-direction:row; border-right:0; border-bottom:1px solid var(--line); } #view { height:70vh; } aside { border-left:0; border-top:1px solid var(--line); } }
 </style></head><body>
 <header>
-  <button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button>
+  <button id="undo" disabled title="Ctrl+Z">Undo</button><button id="redo" disabled title="Ctrl+Shift+Z">Redo</button>
   <label>Colour <input id="color" type="color" value="#1a3399"></label>
   <label>Size <input id="size" type="range" min="2" max="120" value="14"><span id="sizev">14</span></label>
   <label>Flow <input id="flow" type="range" min="5" max="100" value="100"><span id="flowv">100</span></label>
   <label>Smudge <input id="strength" type="range" min="5" max="100" value="70"><span id="strv">70</span></label>
-  <button id="save">Save log</button><button id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden>
+  <button id="zout" title="Zoom out">-</button><button id="zfit" title="Fit (0)">Fit</button><button id="z100" title="100%">100%</button><button id="zin" title="Zoom in">+</button>
+  <button id="png">Export PNG</button><button id="psd">Export PSD</button><button id="save" title="Ctrl+S">Save log</button><button id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden><button id="newc">New canvas</button>
   <span id="info"></span>
 </header>
-<nav id="tools"><button data-tool="hard" class="on" title="Hard brush">Hard</button><button data-tool="soft" title="Soft brush">Soft</button><button data-tool="smudge" title="Smudge">Smudge</button><button data-tool="erase" title="Eraser (uses Size and Flow)">Erase</button><button data-tool="blur" title="Click to blur a 128x128 area">Blur</button></nav>
-<main><canvas id="c"></canvas></main>
-<aside><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button><p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log.</p></aside>
-<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="editor.js"></script>
+<nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Click to blur a 128x128 area (5)">Blur</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
+<div id="view"><canvas id="c"></canvas></div>
+<aside><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button><p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log. Your painting is kept in this browser automatically.</p></aside>
+<footer><span id="status" style="margin-left:0"></span><span>1-5 tools · I pick · [ ] size · Ctrl+wheel zoom · wheel or Space+drag pan · 0 fit</span></footer>
+<div id="cursor"></div>
+<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="editor.js"></script>
 <script>
 (function () {
-  const $ = (id) => document.getElementById(id), canvas = $('c'), ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
+  const $ = (id) => document.getElementById(id), canvas = $('c'), view = $('view'), cursor = $('cursor'), KEY = 'psd-oplog-editor-v1', ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
+  const store = { get() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }, set(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }, del() { try { localStorage.removeItem(KEY); } catch (e) {} } };
+  const status = (t) => { $('status').textContent = t; };
+  // ---- view: fit size, scale, translation
+  const V = { bs: 600, s: 1, x: 0, y: 0 };
+  function applyView() { canvas.style.width = canvas.style.height = V.bs + 'px'; canvas.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.s})`; $('zfit').title = 'Fit (0) - now ' + Math.round(V.s * V.bs / ed.W * 100) + '%'; }
+  function fit() { const r = view.getBoundingClientRect(); V.bs = Math.max(120, Math.floor(Math.min(r.width, r.height) - 24)); V.s = 1; V.x = (r.width - V.bs) / 2; V.y = (r.height - V.bs) / 2; applyView(); }
+  function zoomAt(px, py, f) { const lo = 0.1 * ed.W / V.bs, hi = 16 * ed.W / V.bs, s2 = Math.max(lo, Math.min(hi, V.s * f)), k = s2 / V.s; V.x = px - (px - V.x) * k; V.y = py - (py - V.y) * k; V.s = s2; applyView(); status('Zoom ' + Math.round(V.s * V.bs / ed.W * 100) + '%'); }
+  const center = () => { const r = view.getBoundingClientRect(); return [r.width / 2, r.height / 2]; };
+  $('zfit').onclick = fit; $('zin').onclick = () => zoomAt(...center(), 1.25); $('zout').onclick = () => zoomAt(...center(), 0.8);
+  $('z100').onclick = () => { const [cx, cy] = center(); zoomAt(cx, cy, (ed.W / V.bs) / V.s); };
+  view.addEventListener('wheel', (e) => { e.preventDefault(); const r = view.getBoundingClientRect(); if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01)); else { V.x -= e.deltaX; V.y -= e.deltaY; applyView(); } }, { passive: false });
+  addEventListener('resize', fit);
+  // ---- pointer: paint, pan, cursor
+  let space = false, panning = null;
   const xy = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * ed.W / r.width, (e.clientY - r.top) * ed.W / r.height]; };
-  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); const [x, y] = xy(e); ed.begin(x, y); });
-  canvas.addEventListener('pointermove', (e) => { const [x, y] = xy(e); ed.move(x, y); });
-  for (const t of ['pointerup', 'pointercancel']) canvas.addEventListener(t, () => ed.end());
-  for (const b of document.querySelectorAll('#tools button')) b.onclick = () => { ed.params.tool = b.dataset.tool; document.querySelectorAll('#tools button').forEach((x) => x.classList.toggle('on', x === b)); };
+  function cursorAt(e) { const t = ed.params.tool, r = canvas.getBoundingClientRect(), k = r.width / ed.W; if (t === 'pick' || space || panning) { cursor.style.display = 'none'; return; }
+    const d = t === 'blur' ? 128 * k : 2 * ed.params.size * k; cursor.style.display = 'block'; cursor.style.width = cursor.style.height = d + 'px'; cursor.style.borderRadius = t === 'blur' ? '0' : '50%'; cursor.style.transform = `translate(${e.clientX - d / 2}px, ${e.clientY - d / 2}px)`; }
+  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); if (space || e.button === 1) { panning = { x: e.clientX, y: e.clientY, vx: V.x, vy: V.y }; view.classList.add('pan'); e.preventDefault(); return; } if (e.button !== 0) return; const [x, y] = xy(e); ed.begin(x, y); });
+  canvas.addEventListener('pointermove', (e) => { cursorAt(e); if (panning) { V.x = panning.vx + e.clientX - panning.x; V.y = panning.vy + e.clientY - panning.y; applyView(); return; } const [x, y] = xy(e); ed.move(x, y); });
+  for (const t of ['pointerup', 'pointercancel']) canvas.addEventListener(t, () => { if (panning) { panning = null; view.classList.remove('pan'); } else ed.end(); });
+  canvas.addEventListener('pointerleave', () => { cursor.style.display = 'none'; });
+  // ---- tools, sliders
+  function setTool(t) { ed.params.tool = t; document.querySelectorAll('#tools button').forEach((x) => x.classList.toggle('on', x.dataset.tool === t)); view.classList.toggle('pick', t === 'pick'); }
+  for (const b of document.querySelectorAll('#tools button')) b.onclick = () => setTool(b.dataset.tool);
+  const hex = (c) => '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
   $('color').oninput = (e) => { const h = e.target.value; ed.params.color = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); }; $('color').oninput({ target: $('color') });
-  $('size').oninput = (e) => { ed.params.size = +e.target.value; $('sizev').textContent = e.target.value; }; $('flow').oninput = (e) => { ed.params.flow = e.target.value / 100; $('flowv').textContent = e.target.value; }; $('strength').oninput = (e) => { ed.params.strength = e.target.value / 100; $('strv').textContent = e.target.value; };
+  const setSize = (v) => { v = Math.max(2, Math.min(120, Math.round(v))); ed.params.size = v; $('size').value = v; $('sizev').textContent = v; };
+  $('size').oninput = (e) => setSize(+e.target.value); $('flow').oninput = (e) => { ed.params.flow = e.target.value / 100; $('flowv').textContent = e.target.value; }; $('strength').oninput = (e) => { ed.params.strength = e.target.value / 100; $('strv').textContent = e.target.value; };
   $('undo').onclick = () => ed.undo(); $('redo').onclick = () => ed.redo(); $('addl').onclick = () => ed.addLayer();
-  $('save').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([ed.save()], { type: 'application/json' })); a.download = 'painting.oplog.json'; a.click(); };
-  $('loadb').onclick = () => $('loadf').click(); $('loadf').onchange = async (e) => { const f = e.target.files[0]; if (f) { try { ed.load(await f.text()); } catch (err) { alert(err.message); } } };
-  addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? ed.redo() : ed.undo(); } });
+  const download = (bytes, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+  const saveLog = () => download(ed.save(), 'painting.oplog.json', 'application/json');
+  $('save').onclick = saveLog; $('png').onclick = async () => { try { download(await ed.exportPNG(), 'painting.png', 'image/png'); status('PNG exported'); } catch (err) { status(err.message); } };
+  $('psd').onclick = () => { try { status('Writing PSD...'); setTimeout(() => { try { download(ed.exportPSD(), 'painting.psd', 'image/vnd.adobe.photoshop'); status('PSD exported'); } catch (err) { status('PSD export failed: ' + err.message); } }, 20); } catch (err) { status(err.message); } };
+  $('loadb').onclick = () => $('loadf').click(); $('loadf').onchange = async (e) => { const f = e.target.files[0]; if (f) { try { ed.load(await f.text()); status('Loaded ' + f.name); } catch (err) { status(err.message); } } };
+  let armed = 0; $('newc').onclick = () => { if (!armed) { $('newc').textContent = 'Click again to clear'; armed = setTimeout(() => { armed = 0; $('newc').textContent = 'New canvas'; }, 3000); return; } clearTimeout(armed); armed = 0; $('newc').textContent = 'New canvas'; ed.reset(); store.del(); status('New canvas'); };
+  // ---- keyboard
+  addEventListener('keydown', (e) => { const tag = (e.target.tagName || '').toLowerCase(), typing = tag === 'select' || (tag === 'input' && e.target.type !== 'range' && e.target.type !== 'color'); if (typing) return;
+    const k = e.key, mod = e.ctrlKey || e.metaKey;
+    if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? ed.redo() : ed.undo(); return; } if (mod && k.toLowerCase() === 's') { e.preventDefault(); saveLog(); return; } if (mod) return;
+    if (k === ' ') { space = true; view.classList.add('pan'); cursor.style.display = 'none'; e.preventDefault(); return; }
+    const tools = { 1: 'hard', 2: 'soft', 3: 'smudge', 4: 'erase', 5: 'blur', i: 'pick', I: 'pick' }; if (tools[k]) { setTool(tools[k]); return; }
+    if (k === '[') setSize(ed.params.size - Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === ']') setSize(ed.params.size + Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === '0') fit(); });
+  addEventListener('keyup', (e) => { if (e.key === ' ') { space = false; if (!panning) view.classList.remove('pan'); } });
+  // ---- layers panel and state
+  let saveTimer = 0;
   function ui() {
-    $('undo').disabled = !ed.canUndo(); $('redo').disabled = !ed.canRedo(); $('info').textContent = ed.ops.length + ' ops in the log';
+    $('undo').disabled = !ed.canUndo(); $('redo').disabled = !ed.canRedo(); $('info').textContent = ed.ops.length + ' ops in the log'; const c = hex(ed.params.color); if ($('color').value !== c) $('color').value = c;
     const box = $('layers'); box.textContent = '';
     for (const l of ed.layers().slice().reverse()) { const d = document.createElement('div'); d.className = 'layer' + (l.id === ed.params.layer ? ' on' : ''); const name = l.id === 0 ? 'Background' : 'Layer ' + l.id;
       d.innerHTML = '<div><b>' + name + '</b></div>'; d.firstChild.firstChild.onclick = () => { ed.params.layer = l.id; ui(); };
       if (l.id !== 0) { const row = document.createElement('div'), op = document.createElement('input'), md = document.createElement('select'); op.type = 'range'; op.min = 0; op.max = 100; op.value = Math.round(l.opacity * 100); op.onchange = () => ed.setLayer(l.id, 'opacity', op.value / 100);
         for (const m of ['normal', 'multiply', 'screen', 'overlay', 'soft-light', 'hard-light', 'darken', 'lighten', 'difference', 'exclusion']) { const o = document.createElement('option'); o.value = o.textContent = m; if (m === l.mode) o.selected = true; md.appendChild(o); } md.onchange = () => ed.setLayer(l.id, 'mode', md.value); row.append(op, md); d.appendChild(row); }
       box.appendChild(d); }
+    clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (ed.ops.length > 3) { const ok = store.set(ed.save()); window.__saved = ok ? ed.ops.length : -1; } }, 400);
   }
-  ed.onChange(ui); ui();
+  ed.onChange(ui);
+  const prev = store.get(); if (prev) { try { ed.load(prev); if (ed.ops.length > 3) status('Restored your last painting (' + ed.ops.length + ' ops)'); } catch (e) { ed.reset(); } }
+  fit(); ui();
 })();
 </script></body></html>

@@ -23,7 +23,10 @@
       W, params, moveMs, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
       layers() { return st.order.map((id) => ({ id, mode: st.L[id].mode, opacity: st.L[id].opacity })); },
-      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (!l || cur) return;
+      pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
+      exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
+      exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
+      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (!l || cur) return;
         if (p.tool === 'blur') { const rx = Math.max(0, Math.min(W - 128, Math.floor(x) - 64)), ry = Math.max(0, Math.min(W - 128, Math.floor(y) - 64)), o = { op: 'blur', layer: p.layer, sigma: p.sigma, rect: [rx, ry, 128, 128] }, b = [rx, ry, rx + 127, ry + 127], before = regionCopy(p.layer, b);
           applyOp(st, o); refresh(tilesOfBox(b)); ops.push(o); undo.push({ kind: 'px', layer: p.layer, bbox: b, before, op: o }); redo = []; emit(); return; }
         const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);

@@ -32,7 +32,9 @@
     "brush": "node filters/run_brush.js",
     "editor": "node editor/run_editor.js",
     "erase": "node filters/run_erase.js",
-    "editor_export": "node editor/run_export.js"
+    "editor_export": "node editor/run_export.js",
+    "editor_v01": "node editor/run_v01.js",
+    "editor_dist": "node editor/build_dist.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

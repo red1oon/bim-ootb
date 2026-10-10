@@ -1,0 +1,53 @@
+{
+ "n_checks": 15,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "G1": {
+   "picked": "#cc2211",
+   "displayed": "#cc2211"
+  },
+  "G2": {
+   "zoomPct": 1600,
+   "panDx": -60,
+   "d0": 0.0034664054892039517,
+   "d1": 0.0034924277186822185
+  },
+  "G7": {
+   "shown": "block",
+   "w": 115.356,
+   "want": 115.3564453125,
+   "hidden": "none"
+  },
+  "G10": {
+   "n": 59,
+   "median": 0,
+   "p95": 15.899999976158142,
+   "max": 16.899999976158142
+  },
+  "G5": {
+   "layers": 2,
+   "modes": [
+    "normal",
+    "normal"
+   ],
+   "opacity": [
+    255,
+    255
+   ],
+   "profile_resource": true,
+   "layer_max_diff": [
+    0,
+    0
+   ],
+   "layer_mean_diff": [
+    0,
+    0
+   ],
+   "merged_max_diff": 1,
+   "merged_mean_diff": 0.014325459798177084
+  }
+ },
+ "node": "v20.20.2",
+ "cpus": "13th Gen Intel(R) Core(TM) i5-13500HX"
+}
