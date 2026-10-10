@@ -25,7 +25,8 @@
     "depth16": "node doc/run_depth16.js",
     "perf": "node perf/run_perf.js",
     "dirty": "node perf/run_dirty.js",
-    "ckpt": "node --max-old-space-size=4096 perf/run_ckpt.js"
+    "ckpt": "node --max-old-space-size=4096 perf/run_ckpt.js",
+    "blur": "node filters/run_blur.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

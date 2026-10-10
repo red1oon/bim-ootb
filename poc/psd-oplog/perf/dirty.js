@@ -8,8 +8,11 @@ function makeDirty(st, T = 64) {
   const crop = (a, ch, tx, ty) => { const o = new Float32Array(T * T * ch); for (let y = 0; y < T; y++) { const s = ((ty * T + y) * W + tx * T) * ch; o.set(a.subarray(s, s + T * ch), y * T * ch); } return o; };
   // ids of every dab/mdab touch: same bounds as stack.apply; all other ops are non-local (null = every tile)
   function tilesOf(o) {
-    if (o.op !== 'dab' && o.op !== 'mdab') return null;
-    const x0 = Math.max(0, Math.floor(o.x - o.r)), x1 = Math.min(W - 1, Math.ceil(o.x + o.r)), y0 = Math.max(0, Math.floor(o.y - o.r)), y1 = Math.min(W - 1, Math.ceil(o.y + o.r)), out = [];
+    if (o.op === 'blur' && !o.rect) return null;   // a full-layer blur writes every pixel
+    if (o.op !== 'dab' && o.op !== 'mdab' && o.op !== 'blur') return null;
+    // blur with a rect writes only inside the rect (it READS neighbours outside, which does not matter for what changes)
+    const rr = o.op === 'blur' ? { x0: o.rect[0], x1: o.rect[0] + o.rect[2] - 1, y0: o.rect[1], y1: o.rect[1] + o.rect[3] - 1 } : null;
+    const x0 = rr ? rr.x0 : Math.max(0, Math.floor(o.x - o.r)), x1 = rr ? rr.x1 : Math.min(W - 1, Math.ceil(o.x + o.r)), y0 = rr ? rr.y0 : Math.max(0, Math.floor(o.y - o.r)), y1 = rr ? rr.y1 : Math.min(W - 1, Math.ceil(o.y + o.r)), out = [];
     if (x1 < x0 || y1 < y0) return out;
     for (let ty = Math.floor(y0 / T); ty <= Math.floor(y1 / T); ty++) for (let tx = Math.floor(x0 / T); tx <= Math.floor(x1 / T); tx++) out.push(ty * tn + tx);
     return out;
