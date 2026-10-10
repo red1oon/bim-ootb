@@ -30,7 +30,9 @@
     "cmfold": "node --max-old-space-size=6000 icc/run_cmfold.js",
     "sha": "node perf/run_sha.js",
     "brush": "node filters/run_brush.js",
-    "editor": "node editor/run_editor.js"
+    "editor": "node editor/run_editor.js",
+    "erase": "node filters/run_erase.js",
+    "editor_export": "node editor/run_export.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

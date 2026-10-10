@@ -27,7 +27,7 @@
         if (p.tool === 'blur') { const rx = Math.max(0, Math.min(W - 128, Math.floor(x) - 64)), ry = Math.max(0, Math.min(W - 128, Math.floor(y) - 64)), o = { op: 'blur', layer: p.layer, sigma: p.sigma, rect: [rx, ry, 128, 128] }, b = [rx, ry, rx + 127, ry + 127], before = regionCopy(p.layer, b);
           applyOp(st, o); refresh(tilesOfBox(b)); ops.push(o); undo.push({ kind: 'px', layer: p.layer, bbox: b, before, op: o }); redo = []; emit(); return; }
         const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);
-        const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : 'hard', pts: [], r: p.size, c: color, a: flow };
+        const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
         cur = { o, snap, last: null, tiles: new Set(), box: null };
         if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(l, W, o); } else cur.sb = Br.StrokeBuilder(st, o);
         ed.move(x, y, true); },

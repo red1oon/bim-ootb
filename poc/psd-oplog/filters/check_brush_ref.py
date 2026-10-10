@@ -17,6 +17,10 @@ def hdab(a, o):
     ys, xs = np.mgrid[y0:y1 + 1, x0:x1 + 1]; d = np.sqrt((xs + 0.5 - o['x']) ** 2 + (ys + 0.5 - o['y']) ** 2); cov = np.clip(o['r'] - d + 0.5, 0, 1) * o['a']
     sub = a[y0:y1 + 1, x0:x1 + 1]; c = np.array(o['c'])
     sub[..., :3] = c * cov[..., None] + sub[..., :3] * (1 - cov[..., None]); sub[..., 3] = cov + sub[..., 3] * (1 - cov)
+def edab(a, o):
+    W = a.shape[0]; x0 = max(0, math.floor(o['x'] - o['r'] - 1)); x1 = min(W - 1, math.ceil(o['x'] + o['r'] + 1)); y0 = max(0, math.floor(o['y'] - o['r'] - 1)); y1 = min(W - 1, math.ceil(o['y'] + o['r'] + 1))
+    ys, xs = np.mgrid[y0:y1 + 1, x0:x1 + 1]; d = np.sqrt((xs + 0.5 - o['x']) ** 2 + (ys + 0.5 - o['y']) ** 2); cov = np.clip(o['r'] - d + 0.5, 0, 1) * o['a']
+    a[y0:y1 + 1, x0:x1 + 1] *= (1 - cov)[..., None]
 def smudge(a, o):
     W = a.shape[0]; s = o['s']
     if not s > 0: return
@@ -40,9 +44,10 @@ for j in spec['jobs']:
     W = j['W']; a = np.fromfile(j['input'], np.float32).reshape(W, W, 4).astype(np.float64) if j.get('input') else np.zeros((W, W, 4))
     for o in j['ops']:
         if o['op'] == 'hdab': hdab(a, o)
+        elif o['op'] == 'edab': edab(a, o)
         elif o['op'] == 'smudge': smudge(a, o)
         elif o['op'] == 'stroke':
-            for (x, y) in positions(o['pts'], o['r'], o.get('spacing', 0.25)): hdab(a, {'x': x, 'y': y, 'r': o['r'], 'c': o['c'], 'a': o['a']})
+            for (x, y) in positions(o['pts'], o['r'], o.get('spacing', 0.25)): (edab if o.get('kind') == 'erase' else hdab)(a, {'x': x, 'y': y, 'r': o['r'], 'c': o['c'], 'a': o['a']})
     a.tofile(j['out'])
 if spec.get('cairo'):
     import cairocffi as cairo

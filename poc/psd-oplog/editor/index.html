@@ -23,7 +23,7 @@ aside { background:var(--panel); border-left:1px solid var(--line); padding:10px
   <button id="save">Save log</button><button id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden>
   <span id="info"></span>
 </header>
-<nav id="tools"><button data-tool="hard" class="on" title="Hard brush">Hard</button><button data-tool="soft" title="Soft brush">Soft</button><button data-tool="smudge" title="Smudge">Smudge</button><button data-tool="blur" title="Click to blur a 128x128 area">Blur</button></nav>
+<nav id="tools"><button data-tool="hard" class="on" title="Hard brush">Hard</button><button data-tool="soft" title="Soft brush">Soft</button><button data-tool="smudge" title="Smudge">Smudge</button><button data-tool="erase" title="Eraser (uses Size and Flow)">Erase</button><button data-tool="blur" title="Click to blur a 128x128 area">Blur</button></nav>
 <main><canvas id="c"></canvas></main>
 <aside><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button><p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log.</p></aside>
 <script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="editor.js"></script>

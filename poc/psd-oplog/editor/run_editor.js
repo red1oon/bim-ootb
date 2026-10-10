@@ -38,6 +38,7 @@ const newSt = (W) => { const st = S.newState(W); S.apply(st, { op: 'layer', id: 
   await pg.evaluate(() => { const c = document.getElementById('color'); c.value = '#cc3322'; c.dispatchEvent(new Event('input')); });
   await tool('hard'); await pg.fill('#size', '24'); await pg.dispatchEvent('#size', 'input'); await drag([[0.7, 0.15], [0.85, 0.3], [0.75, 0.45]]);
   await tool('soft'); await drag([[0.3, 0.85], [0.6, 0.9]]); await tool('smudge'); await drag([[0.72, 0.18], [0.8, 0.32], [0.78, 0.44]]);
+  await tool('erase'); await pg.fill('#size', '30'); await pg.dispatchEvent('#size', 'input'); await drag([[0.25, 0.28], [0.4, 0.34]]); const lastE = await pg.evaluate(() => window.__ed.ops.at(-1).kind); chk('E4', `the Erase tool adds one stroke entry with kind '${lastE}'`, lastE, '==', 'erase');
   const total = await nOps(); num.ops = total;
   // U4 canvas == engine display, 200 random pixels
   { const bad = await pg.evaluate(() => { const ed = window.__ed, c = document.getElementById('c').getContext('2d'); let s = 12345, bad = 0; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; for (let i = 0; i < 200; i++) { const x = (rnd() * ed.W) | 0, y = (rnd() * ed.W) | 0, a = [...c.getImageData(x, y, 1, 1).data], b = ed.displayRGBA8(x, y); if (a.some((v, k) => v !== b[k])) bad++; } return bad; });
@@ -45,7 +46,7 @@ const newSt = (W) => { const st = S.newState(W); S.apply(st, { op: 'layer', id: 
   chk('U4', 'no page errors while loading and drawing' + (errs.length ? ': ' + errs.join(' | ').slice(0, 300) : ''), errs.length, '==', 0);
   // U5 replay
   { const r = await pg.evaluate(() => { const ed = window.__ed, live = ed.hashes(), rf = Editor.refold(JSON.parse(JSON.stringify(ed.ops)), ed.W); return { live, rf, n: ed.ops.length }; });
-    chk('U5', `refolding the ${r.n}-op log from scratch equals the live state (composite and ${r.live.layers.length} layer hashes)`, r.live.comp === r.rf.comp && JSON.stringify(r.live.layers) === JSON.stringify(r.rf.layers), '==', true); num.hash = r.live.comp.slice(0, 12); chk('U5', 'the session has at least 9 user ops after the 3 initial ones', total - 3 >= 9, '==', true); }
+    chk('U5', `refolding the ${r.n}-op log from scratch equals the live state (composite and ${r.live.layers.length} layer hashes)`, r.live.comp === r.rf.comp && JSON.stringify(r.live.layers) === JSON.stringify(r.rf.layers), '==', true); num.hash = r.live.comp.slice(0, 12); chk('U5', 'the session has at least 10 user ops after the 3 initial ones', total - 3 >= 10, '==', true); }
   // U6 undo / redo exact at every step
   { const res = await pg.evaluate(() => { const ed = window.__ed, out = { undo: [], redo: [] }, same = () => { const a = ed.hashes(), b = Editor.refold(JSON.parse(JSON.stringify(ed.ops)), ed.W); return a.comp === b.comp && JSON.stringify(a.layers) === JSON.stringify(b.layers); };
       for (let i = 0; i < 4; i++) { ed.undo(); out.undo.push(same()); } for (let i = 0; i < 4; i++) { ed.redo(); out.redo.push(same()); } out.n = ed.ops.length; return out; });

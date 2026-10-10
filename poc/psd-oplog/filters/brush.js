@@ -12,6 +12,14 @@
       pix[i*4+3] = F(cov + F(pix[i*4+3] * ia));
     }
   }
+  // ---- eraser dab: same coverage as hdab, destination-out on all four premultiplied channels (`c` ignored)
+  function edab(l, W, o) {
+    const r = F(o.r), x0 = Math.max(0, Math.floor(o.x - o.r - 1)), x1 = Math.min(W - 1, Math.ceil(o.x + o.r + 1)), y0 = Math.max(0, Math.floor(o.y - o.r - 1)), y1 = Math.min(W - 1, Math.ceil(o.y + o.r + 1)), pix = l.pix, a = F(o.a);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const dx = F(F(x + 0.5) - F(o.x)), dy = F(F(y + 0.5) - F(o.y)), d = F(Math.sqrt(F(F(dx * dx) + F(dy * dy)))), t = F(F(r - d) + 0.5); if (t <= 0) continue;
+      const cov = F((t >= 1 ? 1 : t) * a), ia = F(1 - cov), i = (y * W + x) * 4; for (let k = 0; k < 4; k++) pix[i+k] = F(pix[i+k] * ia);
+    }
+  }
   // ---- deterministic expansion of a polyline into positions every `step` along it (first at the first point, remainder carried across vertices).
   // PositionBuilder takes points one at a time (live drawing); `positions` is the same code fed a whole polyline, so live == batch by construction.
   function PositionBuilder(r, spacing) {
@@ -39,17 +47,18 @@
   function smudge(l, W, o, defect) { const sb = SmudgeBuilder(l, W, o, defect), pb = PositionBuilder(o.r, 0.1); if (!sb.active) return; for (const p of o.pts) for (const q of pb.push(p[0], p[1])) sb.step(q); }
   // ---- stroke: dabs applied as positions arrive (live) or all at once (batch); same code
   function StrokeBuilder(st, o, defect) { const pb = PositionBuilder(o.r, o.spacing === undefined ? 0.25 : o.spacing);
-    return { push(x, y) { const ps = pb.push(x, y); for (const [px, py] of ps) { const d = { op: o.kind === 'hard' ? 'hdab' : 'dab', layer: o.layer, x: px, y: py, r: o.r, c: o.c, a: o.a }; if (d.op === 'hdab') hdab(st.L[o.layer], st.W, d, defect); else S.apply(st, d); } return ps; } }; }
+    return { push(x, y) { const ps = pb.push(x, y); for (const [px, py] of ps) { const d = { op: o.kind === 'erase' ? 'edab' : o.kind === 'hard' ? 'hdab' : 'dab', layer: o.layer, x: px, y: py, r: o.r, c: o.c, a: o.a }; if (d.op === 'edab') edab(st.L[o.layer], st.W, d); else if (d.op === 'hdab') hdab(st.L[o.layer], st.W, d, defect); else S.apply(st, d); } return ps; } }; }
   function applyOp(st, o, defect) {
     if (o.op === 'hdab') { const l = st.L[o.layer]; if (!l) throw new Error('hdab: unknown layer ' + o.layer); return hdab(l, st.W, o, defect); }
+    if (o.op === 'edab') { const l = st.L[o.layer]; if (!l) throw new Error('edab: unknown layer ' + o.layer); return edab(l, st.W, o); }
     if (o.op === 'stroke') { if (!st.L[o.layer]) throw new Error('stroke: unknown layer ' + o.layer); const sb = StrokeBuilder(st, o, defect); for (const p of o.pts) sb.push(p[0], p[1]); return; }
     if (o.op === 'smudge') { const l = st.L[o.layer]; if (!l) throw new Error('smudge: unknown layer ' + o.layer); return smudge(l, st.W, o, defect); }
     return S.apply(st, o);
   }
   // pixel bbox a stroke/smudge op can write (conservative), for the dirty-tile compositor
-  function bbox(o, W) { if (o.op === 'hdab' || o.op === 'dab') return [Math.max(0, Math.floor(o.x - o.r - 1)), Math.max(0, Math.floor(o.y - o.r - 1)), Math.min(W - 1, Math.ceil(o.x + o.r + 1)), Math.min(W - 1, Math.ceil(o.y + o.r + 1))];
+  function bbox(o, W) { if (o.op === 'hdab' || o.op === 'edab' || o.op === 'dab') return [Math.max(0, Math.floor(o.x - o.r - 1)), Math.max(0, Math.floor(o.y - o.r - 1)), Math.min(W - 1, Math.ceil(o.x + o.r + 1)), Math.min(W - 1, Math.ceil(o.y + o.r + 1))];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of o.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
     const m = Math.ceil(o.r) + 2; return [Math.max(0, Math.floor(x0) - m), Math.max(0, Math.floor(y0) - m), Math.min(W - 1, Math.ceil(x1) + m), Math.min(W - 1, Math.ceil(y1) + m)]; }
-  const api = { hdab, positions, expand, smudge, applyOp, bbox, PositionBuilder, SmudgeBuilder, StrokeBuilder };
+  const api = { hdab, edab, positions, expand, smudge, applyOp, bbox, PositionBuilder, SmudgeBuilder, StrokeBuilder };
   if (node) module.exports = api; else root.Brush = api;
 })(this);

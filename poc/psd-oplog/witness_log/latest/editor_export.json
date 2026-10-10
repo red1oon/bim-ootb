@@ -1,0 +1,58 @@
+{
+ "n_checks": 5,
+ "gate": "PASS",
+ "fails": [],
+ "skipped": [],
+ "numbers": {
+  "psdtools": {
+   "layers": 4,
+   "modes": [
+    "normal",
+    "normal",
+    "multiply",
+    "screen"
+   ],
+   "opacity": [
+    255,
+    255,
+    204,
+    153
+   ],
+   "profile_resource": true,
+   "layer_max_diff": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "layer_mean_diff": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "merged_max_diff": 1,
+   "merged_mean_diff": 0.016084671020507812
+  },
+  "krita_seconds": 1.3,
+  "krita": [
+   [
+    "normal",
+    255
+   ],
+   [
+    "normal",
+    255
+   ],
+   [
+    "multiply",
+    204
+   ],
+   [
+    "screen",
+    153
+   ]
+  ]
+ },
+ "node": "v20.20.2"
+}
