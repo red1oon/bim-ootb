@@ -59,3 +59,5 @@ Log is fine (98 B/stroke, replay linear, checkpoint+tail exact and 8.5x cheaper,
 ## Update: checkpoints as tile blobs DONE (terminal session; `npm run ckpt`, C1-C7): exact; localized edits 7x smaller; scattered edits no gain; pure-JS sha256 makes store resume 2.3x SLOWER than a fold, native sha256 0.35x. NEXT: Gaussian blur vs scipy (needs the venv with scipy on PATH), colour-managed fold at size, browser sha256 speed.
 
 ## Update: Gaussian blur op DONE (terminal session; `npm run blur`, B1-B8): scipy-exact to 5e-7, Node==Chromium, ~43 B/op, dirty-tile exact; full 2048^2 blur 6.8 s (needs workers/GPU), 256^2 rect ~110 ms. NOT yet a schema/stack op (lives in filters/blur.js). NEXT: colour-managed fold at size; browser sha256 speed; promote blur to schema v3 if wanted.
+
+## Update: colour-managed fold at size DONE (terminal session; `npm run cmfold`, E1-E5, in witness_all): 1-level match at 512/2048, tile export == whole export, dab+colour-managed display 27 ms at 2048^2. NEXT: browser sha256 speed (WebCrypto/WASM) for tile checkpoints; promote blur to schema v3; Safari/ARM + Krita/Photoshop PSD checks need a person.

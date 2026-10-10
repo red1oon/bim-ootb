@@ -1,0 +1,34 @@
+{
+ "n_checks": 8,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "E2a_p3_srgb": {
+   "max": 1,
+   "mean": 0.001613616943359375
+  },
+  "E2a_srgb_p3": {
+   "max": 1,
+   "mean": 0.0015958150227864583
+  },
+  "E1": {
+   "build_float_doc_ms": 2834.315743982792,
+   "import_one_layer_ms_median": 533.3142219781876,
+   "import_8_layers_ms": 1997.6957399845123,
+   "composite_ms": 1774.8194739818573,
+   "export_whole_ms_median": 1348.1114889979362
+  },
+  "E2b": {
+   "max": 1,
+   "mean": 0.0016276041666666667
+  },
+  "E4": {
+   "edit_ms_median": 27.102675020694733,
+   "edit_ms_max": 54.83864402770996,
+   "tiles_median": 9,
+   "export_whole_ms": 1348.1114889979362
+  }
+ },
+ "node": "v20.20.2",
+ "cpus": "13th Gen Intel(R) Core(TM) i5-13500HX"
+}
