@@ -184,36 +184,54 @@
     var ctx = Doc(trx, 'm_inout', io, { dateDoc: io.movementdate });
     var lines = trx.find('m_inoutline', { m_inout_id: io.m_inout_id }, ['line']).filter(function (l) { return !(Y(l.isdescription) || !nz(l.m_product_id) || D(l.movementqty).signum() === 0); })
       .map(function (l) { var dl = DocLine(trx, 'm_inoutline', l); dl.qty = dbt === 'MMS' ? D(l.movementqty).negate() : D(l.movementqty); dl.pcQty = D(l.movementqty); dl.reversalLine_ID = l.reversalline_id; return dl; });   // setQty(Qty, isShipment)
-    if (nz(io.reversal_id)) { F.err = 'Doc_InOut reversal (updateReverseLine of the original) — §MODEL-UNPORTED-DEP reverse posting path not ported in this pass'; return false; }
+    var revId = nz(io.reversal_id) ? io.reversal_id : 0;
+    function isReversalLine(l) { return !!revId && nz(l.reversalLine_ID) !== 0; }               // Doc_InOut.isReversal(line) :1143-1145
+    // :389/:417 `line.get_ID() > line.getReversalLine_ID()` (a line created in this Trx is '#new:i' — later than every stored id)
+    function laterThan(a, b) { var na = ML.isNewId(a) ? 1e15 + Number(String(a).slice(5)) : Number(a), nb = ML.isNewId(b) ? 1e15 + Number(String(b).slice(5)) : Number(b); return na > nb; }
     if (dbt === 'MMS' && so) {                                                               // *** Sales - Shipment :198-450
       for (var i = 0; i < lines.length; i++) {
-        var line = lines[i], p = T.product(trx, line.m_product_id), costs = null, mas = null, batchLot = M.costingLevel(trx, p, as) === 'B';
-        if (batchLot && !nz(line.m_attributesetinstance_id)) {
-          mas = trx.find('m_inoutlinema', { m_inoutline_id: line.id });
-          if (mas.length) { costs = Z; mas.forEach(function (ma) { line.pcQty = D(ma.movementqty); line.pcAsi = ma.m_attributesetinstance_id; var c = lineProductCosts(trx, F, ctx, line, true, true); ma._cost = c; costs = costs.add(c); }); }
-        } else costs = lineProductCosts(trx, F, ctx, line, true, true);
-        if (costs == null || costs.signum() === 0) {
-          if (T.isStocked(p)) {
-            var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id>0 OR c_invoiceline_id>0)", [p.m_product_id])[0];
-            if (cnt && Number(cnt.n) > 0) costs = Z; else { F.err = 'No Costs for ' + p.name; return false; }
-          } else continue;
+        var line = lines[i], p = T.product(trx, line.m_product_id), costs = null, mas = null, batchLot = M.costingLevel(trx, p, as) === 'B', rev = isReversalLine(line);
+        if (!rev) {                                                                            // :206-265
+          if (batchLot && !nz(line.m_attributesetinstance_id)) {
+            mas = trx.find('m_inoutlinema', { m_inoutline_id: line.id });
+            if (mas.length) { costs = Z; mas.forEach(function (ma) { line.pcQty = D(ma.movementqty); line.pcAsi = ma.m_attributesetinstance_id; var c = lineProductCosts(trx, F, ctx, line, true, true); ma._cost = c; costs = costs.add(c); }); }
+          } else costs = lineProductCosts(trx, F, ctx, line, true, true);
+          if (costs == null || costs.signum() === 0) {
+            if (T.isStocked(p)) {
+              var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id>0 OR c_invoiceline_id>0)", [p.m_product_id])[0];
+              if (cnt && Number(cnt.n) > 0) costs = Z; else { F.err = 'No Costs for ' + p.name; return false; }
+            } else continue;
+          }
+        } else {
+          costs = Z;                                                                           // :266-270 "temp to avoid NPE"
+          if (batchLot && !nz(line.m_attributesetinstance_id)) { F.err = 'Doc_InOut batch-lot reversal (findReversalCostDetailAmt, Doc_InOut.java:343-348) — §MODEL-UNPORTED-DEP'; return false; }
         }
         var dr = createLine(F, ctx, line, productAcct(trx, line.m_product_id, 'p_cogs_acct', as), as.c_currency_id, costs, null);
         if (!dr) { F.err = 'FactLine DR not created: ' + line.id; return false; }
         dr.m_locator_id = line.m_locator_id; locFromLocator(trx, dr, line.m_locator_id, true); locFromBPartner(trx, dr, io.c_bpartner_location_id, false);
         var ool = nz(line.c_orderline_id) ? trx.get('c_orderline', line.c_orderline_id) : null; dr.ad_org_id = ool && Number(ool.ad_org_id) > 0 ? ool.ad_org_id : line.ad_org_id;   // getOrder_Org_ID
         dr.qty = N(line.qty.negate());
+        if (rev && !updateReverseLine(F, dr, TABLE_ID.m_inout, revId, line.reversalLine_ID, 1)) {   // :288-301 Set AmtAcctDr from Original Shipment/Receipt
+          if (!T.isStocked(p)) { removeLine(F, dr); continue; }                                 // ignore service
+          F.err = 'Original Shipment/Receipt not posted yet'; return false;
+        }
         var cr = createLine(F, ctx, line, productAcct(trx, line.m_product_id, 'p_asset_acct', as), as.c_currency_id, null, costs);
         if (!cr) { F.err = 'FactLine CR not created: ' + line.id; return false; }
         cr.m_locator_id = line.m_locator_id; locFromLocator(trx, cr, line.m_locator_id, true); locFromBPartner(trx, cr, io.c_bpartner_location_id, false);
+        if (rev) {                                                                             // :317-327 Set AmtAcctCr from Original Shipment/Receipt
+          if (!updateReverseLine(F, cr, TABLE_ID.m_inout, revId, line.reversalLine_ID, 1, dr)) { F.err = 'Original Shipment/Receipt not posted yet'; return false; }
+          costs = acctBalance(cr);                                                             // get original cost
+        }
+        var refCd = 0;                                                                         // :389-395 / :417-423 Ref_CostDetail_ID = the original line's shipment detail
+        if (nz(line.reversalLine_ID) && laterThan(line.id, line.reversalLine_ID)) { var ocd = M.getShipment(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0); if (ocd) refCd = ocd.m_costdetail_id; }
         if (batchLot && !nz(line.m_attributesetinstance_id) && mas && mas.length) {
           for (var j = 0; j < mas.length; j++) { var ma = mas[j], q = D(ma.movementqty); if (q.signum() !== line.qty.signum()) q = q.negate();
             var amt = ma._cost; if (amt == null) amt = costs.divide(line.pcQty, costs.scale(), HU).multiply(q);
             else if (line.pcQty.signum() !== line.qty.signum() && amt.signum() !== costs.signum() * -1) amt = amt.negate();
             if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, ma.m_attributesetinstance_id, line.id, 0, amt, q, line.description, true, line.dateAcct || ctx.dateAcct, 0)) { F.err = 'Failed to create cost detail record'; return false; } }
         } else {
-          var amt2 = costs; if (line.pcQty.signum() !== line.qty.signum()) amt2 = amt2.negate();
-          if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, amt2, line.qty, line.description, true, line.dateAcct || ctx.dateAcct, 0)) { F.err = 'Failed to create cost detail record'; return false; }
+          var amt2 = costs; if (line.pcQty.signum() !== line.qty.signum() && !rev) amt2 = amt2.negate();   // :386-387 / :414-415 (not for a reversal)
+          if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, amt2, line.qty, line.description, true, line.dateAcct || ctx.dateAcct, refCd)) { F.err = 'Failed to create cost detail record'; return false; }
         }
       }
       if (Y(as.isaccrual) && Y(as.iscreatesocommitment)) trx.say('§MODEL-UNPORTED-DEP Doc_Order.getCommitmentSalesRelease (Doc_InOut.java:440) — SO commitment accounting');
@@ -272,7 +290,9 @@
     m_inout: function (trx, io, as, F) { return Doc_InOut(trx, io, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
-      var base = { ad_org_id: inv.ad_org_id, c_bpartner_id: inv.c_bpartner_id, c_locfrom_id: from, c_locto_id: to, description: inv.documentno };
+      // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
+      var hasDesc = function (v) { return v != null && String(v).length > 0; };
+      var base = { ad_org_id: inv.ad_org_id, c_bpartner_id: inv.c_bpartner_id, c_locfrom_id: from, c_locto_id: to, description: inv.documentno + (hasDesc(inv.description) ? ' (' + inv.description + ')' : '') };
       if (dt.docbasetype !== 'ARI') { F.err = 'Doc_Invoice ' + dt.docbasetype + ' not ported in model_post — named'; return false; }
       F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), cur, inv.grandtotal, null, Object.assign({ qty: 0 }, base));
       trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }).forEach(function (t) {
@@ -280,7 +300,7 @@
       trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).forEach(function (l) {
         if (!nz(l.m_product_id)) { F.err = 'charge/description invoice line posting not ported — named'; return; }
         F.line(ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id), cur, null, l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
-          c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line })); });
+          c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') })); });
       return !F.err;
     },
     c_payment: function (trx, p, as, F) {                                                    // Doc_Payment.createFacts — receipt: DR BankInTransit / CR UnallocatedCash
@@ -291,15 +311,20 @@
       else { F.line(un, p.c_currency_id, p.payamt, null, base); F.line(it, p.c_currency_id, null, p.payamt, base); }
       return true;
     },
-    c_allocationhdr: function (trx, h, as, F) {                                              // Doc_AllocationHdr — payment ↔ AR invoice, no discount/write-off/realized FX
-      var ok = true;
-      trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }).forEach(function (l) {
-        if (D(l.discountamt).signum() || D(l.writeoffamt).signum() || !nz(l.c_payment_id) || !nz(l.c_invoice_id)) { F.err = 'allocation discount/write-off/non-payment legs not ported — named'; ok = false; return; }
-        var p = trx.get('c_payment', l.c_payment_id), inv = trx.get('c_invoice', l.c_invoice_id);
+    c_allocationhdr: function (trx, h, as, F) {                                              // Doc_AllocationHdr — payment ↔ AR invoice, AR invoice ↔ AR invoice; no discount/write-off/realized FX
+      var ok = true, ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']);
+      if (ls.length === 2) {                                                                 // :199-213 "Do not create fact lines for reversal of invoice"
+        var l1 = ls[0], l2 = ls[1], only = function (l) { return !nz(l.c_payment_id) && !nz(l.c_order_id) && !nz(l.c_cashline_id) && nz(l.c_invoice_id) > 0; };
+        if (only(l1) && only(l2)) { var i1 = trx.get('c_invoice', l1.c_invoice_id), i2 = trx.get('c_invoice', l2.c_invoice_id);
+          if (i1 && i2 && D(i1.grandtotal).compareTo(D(i2.grandtotal).negate()) === 0 && String(i2.reversal_id) === String(i1.c_invoice_id)) return true; }   // (BigDecimal.equals: same value; the scale of a stored REAL is not observable here — named)
+      }
+      ls.forEach(function (l) {
+        if (D(l.discountamt).signum() || D(l.writeoffamt).signum() || nz(l.c_cashline_id) || !nz(l.c_invoice_id)) { F.err = 'allocation discount/write-off/cash/no-invoice legs not ported — named'; ok = false; return; }
+        var p = nz(l.c_payment_id) ? trx.get('c_payment', l.c_payment_id) : null, inv = trx.get('c_invoice', l.c_invoice_id);
         if (!Y(inv.issotrx)) { F.err = 'AP allocation not ported — named'; ok = false; return; }
         var base = { ad_org_id: h.ad_org_id, c_bpartner_id: l.c_bpartner_id, line_id: l.c_allocationline_id, qty: 0, description: h.documentno + ' #0' + (h.description ? ' (' + h.description + ')' : '') };
-        F.line(ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id), h.c_currency_id, l.amount, null, base);
-        F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), h.c_currency_id, null, l.amount, base);
+        if (p) F.line(ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id), h.c_currency_id, l.amount, null, Object.assign({}, base, { ad_org_id: p.ad_org_id }));   // :308-321 Payment DR at the payment org (only with a payment)
+        F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), h.c_currency_id, null, l.amount, Object.assign({}, base, { ad_org_id: inv.ad_org_id }));   // :347-357 AR CR at the invoice org
       });
       return ok;
     }
