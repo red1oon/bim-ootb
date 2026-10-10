@@ -192,14 +192,18 @@
       trx.update('c_order', o, { docaction: 'CL' });
       return 'CO';
     },
-    // MOrder.voidIt :2680-2760 — reversals of completed shipments/invoices (createReversals :2762, MInOut/MInvoice.reverseCorrectIt)
-    // are not ported: an order that HAS them is refused by name; an order without them voids exactly as iDempiere does.
+    // MOrder.voidIt :2680-2758 — SO: createReversals :2764-2842 (each completed shipment/invoice reverse-corrected, an unprocessed one voided)
+    // BEFORE the lines are zeroed, all in this Trx (a refusal anywhere returns false → ModelLayer.run discards every op: atomic).
+    // PO: createPOReversals :2848-2873 reverses the MatchPO rows (MMatchPO.reverse — P2P lane, not ported: refused BY NAME when there are any).
     voidIt: function (trx, o) {
       var m = fire(trx, 'BEFORE_VOID', 'c_order', o); if (m) { T.msg(trx, m); return false; }
       if (nz(o.link_order_id)) { var so = trx.get('c_order', o.link_order_id); if (so) trx.update('c_order', so, { link_order_id: null }); }
-      var live = trx.find('m_inout', { c_order_id: o.c_order_id }).concat(trx.find('c_invoice', { c_order_id: o.c_order_id })).filter(function (d) { return !/^(CL|RE|VO)$/.test(d.docstatus || ''); });
-      if (live.length) { T.msg(trx, 'createReversals (MOrder.java:2762 → reverseCorrectIt) not ported — ' + live.length + ' shipment/invoice to reverse; named'); return false; }
-      if (!Y(o.issotrx) && trx.find('m_matchpo', { c_orderline_id: null }).length) { /* deleteMatchPOCostDetail — P2P, named with the P2P lane */ }
+      if (Y(o.issotrx)) { if (!createReversals(trx, o)) return false; }                      // :2694-2696
+      else {                                                                                   // :2697-2700 createPOReversals
+        var mpo = 0; lines(trx, o).forEach(function (l) { mpo += trx.find('m_matchpo', { c_orderline_id: l.c_orderline_id }).filter(function (x) { return !nz(x.reversal_id); }).length; });
+        if (mpo) { T.msg(trx, 'createPOReversals → MMatchPO.reverse (MOrder.java:2848-2873) not ported — ' + mpo + ' PO matching row(s); named (P2P lane)'); return false; }
+      }
+      o = trx.get('c_order', o.c_order_id);
       var ls = lines(trx, o, ['m_product_id']), voided = T.msgText(trx, 'Voided');
       ls.forEach(function (l) {
         var old = D(l.qtyordered);
@@ -223,10 +227,73 @@
       trx.update('c_order', o, { docstatus: 'VO' });                                          // DocumentEngine.voidIt → STATUS_Voided
       return true;
     },
+    // MOrder.reverseCorrectIt :3003-3017 — "same as void": BEFORE/AFTER_REVERSECORRECT, then voidIt (DocumentEngine.reverseCorrectIt :648-663 → RE)
+    reverseCorrectIt: function (trx, o) {
+      var m = fire(trx, 'BEFORE_REVERSECORRECT', 'c_order', o) || fire(trx, 'AFTER_REVERSECORRECT', 'c_order', o); if (m) { T.msg(trx, m); return false; }
+      if (!MOrder.voidIt(trx, o)) return false;
+      trx.update('c_order', trx.get('c_order', o.c_order_id), { docstatus: 'RE' });
+      return true;
+    },
     approveIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'Y' }); return true; },
     rejectIt: function (trx, o) { trx.update('c_order', o, { isapproved: 'N' }); return true; },
     getSummary: function (trx, o) { return (o.documentno || '') + ': Grand Total=' + o.grandtotal + (o.description ? ' - ' + o.description : ''); }   // :3099-3112
   };
+  // ── the in-memory reversal flag (MInOut/MInvoice/MAllocationHdr.setReversal — an instance field, never a column): kept per Trx
+  function setReversal(trx, table, id) { (trx._reversals = trx._reversals || {})[table + ':' + id] = 1; }
+  function isReversal(trx, table, id) { return !!(trx._reversals && trx._reversals[table + ':' + id]); }
+  // record ids in creation order: a row created in this Trx ('#new:i') sorts after every stored one
+  function idNum(v) { return ML.isNewId(v) ? 1e15 + Number(String(v).slice(5)) : Number(v); }
+  // MAcctSchema.isBackDateTrxAllowed(ctx, dateAcct) :831-860 — AcctSchema1.BackDateDay (0/NULL = no limit)
+  function backDateAllowed(trx, dateAcct) {
+    if (dateAcct == null) return true;
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
+    if (!as || !Number(as.backdateday)) return true;
+    var t = new Date(String(trx.env.date || '').slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - Number(as.backdateday));
+    return !(String(dateAcct).slice(0, 10) < t.toISOString().slice(0, 10));
+  }
+  // MInOut.periodClosedCheckForBackDateTrx :3538 / stockCoverageCheckForBackDateTrx :3384 — both return true unless AcctSchema1 costs by
+  // Average PO/Invoice AND BackDateDay ≠ 0; that branch (back-date re-costing, F9) is not ported → refused BY NAME, never skipped.
+  function backDateCostingNamed(trx) {
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
+    if (as && (as.costingmethod === 'A' || as.costingmethod === 'I') && Number(as.backdateday)) return 'periodClosedCheckForBackDateTrx/stockCoverageCheckForBackDateTrx (MInOut.java:3384-3600, BackDateDay=' + as.backdateday + ') not ported — named';
+    return null;
+  }
+
+  // ══ MOrder.createReversals :2764-2842 ════════════════════════════════════════════════════════════════════════
+  // getShipments :1062-1074 / getInvoices :1031-1041 = the documents with a LINE on this order's lines, ORDER BY id DESC (loaded before the loop).
+  function docsOfOrder(trx, o, hdr, lineTable) {
+    var seen = {}, out = [];
+    trx.find('c_orderline', { c_order_id: o.c_order_id }).forEach(function (ol) {
+      trx.find(lineTable, { c_orderline_id: ol.c_orderline_id }).forEach(function (l) { var id = l[hdr + '_id']; if (!seen[id]) { seen[id] = 1; var d = trx.get(hdr, id); if (d) out.push(d); } });
+    });
+    return out.sort(function (a, b) { return idNum(b[hdr + '_id']) - idNum(a[hdr + '_id']); });
+  }
+  function createReversals(trx, o) {
+    if (!Y(o.issotrx)) return true;                                                            // :2767
+    var info = '@M_InOut_ID@:';
+    var ships = docsOfOrder(trx, o, 'm_inout', 'm_inoutline');
+    for (var i = 0; i < ships.length; i++) {
+      var ship = trx.get('m_inout', ships[i].m_inout_id);
+      if (/^(CL|RE|VO)$/.test(ship.docstatus || '')) continue;                                  // :2779-2784
+      if (ship.docstatus !== 'CO') { if (MInOut.voidIt(trx, ship)) trx.update('m_inout', trx.get('m_inout', ship.m_inout_id), { docstatus: 'VO' }); }   // :2788-2792
+      else if (MInOut.reverseCorrectIt(trx, ship)) { trx.update('m_inout', trx.get('m_inout', ship.m_inout_id), { docstatus: 'RE' }); info += ' ' + ship.documentno; }   // :2793-2797
+      else { T.msg(trx, 'Could not reverse Shipment ' + ship.documentno + (trx._msg ? ' - ' + trx._msg : '')); return false; }
+      trx.update('m_inout', trx.get('m_inout', ship.m_inout_id), { docaction: '--' });           // :2803-2804
+    }
+    info += ' - @C_Invoice_ID@:';
+    var MI = ML.docActionFor('c_invoice'), invs = docsOfOrder(trx, o, 'c_invoice', 'c_invoiceline');
+    for (var j = 0; j < invs.length; j++) {
+      var inv = trx.get('c_invoice', invs[j].c_invoice_id);
+      if (/^(CL|RE|VO)$/.test(inv.docstatus || '')) continue;                                   // :2814-2817
+      if (!MI) { T.msg(trx, 'MInvoice DocAction class not loaded (model_invoice.js) — cannot reverse Invoice ' + inv.documentno); return false; }
+      if (inv.docstatus !== 'CO') { if (MI.voidIt(trx, inv)) trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { docstatus: 'VO' }); }   // :2821-2825
+      else if (MI.reverseCorrectIt(trx, inv)) { trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { docstatus: 'RE' }); info += ' ' + inv.documentno; }
+      else { T.msg(trx, 'Could not reverse Invoice ' + inv.documentno + (trx._msg ? ' - ' + trx._msg : '')); return false; }
+      trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { docaction: '--' });     // :2836-2837
+    }
+    T.msg(trx, info);                                                                          // :2840 m_processMsg
+    return true;
+  }
   // MOrder.setProcessed :1127-1140 + PO.setProcessedOn (PO.java:1108-1138, env.now = the recorded clock)
   function setProcessed(trx, o, flag) {
     var ch = { processed: flag }; if (flag === 'Y' && !Number(o.processedon) && trx.env.nowMillis != null) ch.processedon = trx.env.nowMillis;
@@ -287,7 +354,7 @@
       var vol = Z, wt = Z;
       ls.forEach(function (l) { var p = T.product(trx, l.m_product_id); if (p) { vol = vol.add(D(p.volume).multiply(D(l.movementqty))); wt = wt.add(D(p.weight).multiply(D(l.movementqty))); } });
       trx.update('m_inout', io, { volume: N(vol), weight: N(wt) });                          // :1531-1532
-      if (Y(d.isshipconfirm) || Y(d.ispickqaconfirm)) { T.msg(trx, 'createConfirmation (MInOut.java) not ported — named'); return 'IN'; }
+      if (!isReversal(trx, 'm_inout', io.m_inout_id) && (Y(d.isshipconfirm) || Y(d.ispickqaconfirm))) { T.msg(trx, 'createConfirmation (MInOut.java) not ported — named'); return 'IN'; }   // :1549 not for a reversal
       m = fire(trx, 'AFTER_PREPARE', 'm_inout', io); if (m) { T.msg(trx, m); return 'IN'; }
       if (io.docaction !== 'CO') trx.update('m_inout', io, { docaction: 'CO' });
       trx._justPrepared = 'm_inout:' + io.m_inout_id;
@@ -298,7 +365,7 @@
       trx._justPrepared = null;
       var m = fire(trx, 'BEFORE_COMPLETE', 'm_inout', io); if (m) { T.msg(trx, m); return 'IN'; }
       if (!Y(io.isapproved)) trx.update('m_inout', io, { isapproved: 'Y' });
-      var mt = io.movementtype, out = mt.charAt(1) === '-', so = Y(io.issotrx);
+      var mt = io.movementtype, out = mt.charAt(1) === '-', so = Y(io.issotrx), rev = isReversal(trx, 'm_inout', io.m_inout_id);
       var ls = ioLines(trx, io);
       for (var li = 0; li < ls.length; li++) {
         var sl = ls[li], p = T.product(trx, sl.m_product_id);
@@ -306,9 +373,11 @@
         var ol = nz(sl.c_orderline_id) ? trx.get('c_orderline', sl.c_orderline_id) : null;
         var oh = ol ? trx.get('c_order', ol.c_order_id) : null, closed = oh && oh.docstatus === 'CL';
         if (T.isStocked(p)) {
-          checkMaterialPolicy(trx, io, sl, p, D(sl.movementqty));                            // :1714 (no manual MA tab rows ported)
-          var resv = D(sl.movementqty);
-          if (ol && resv.compareTo(D(ol.qtyreserved)) > 0) resv = D(ol.qtyreserved);          // :1736-1747
+          if (!rev) checkMaterialPolicy(trx, io, sl, p, D(sl.movementqty));                   // :1718-1733 (no manual MA tab rows ported); a reversal keeps the copied MA
+          var resv = D(sl.movementqty);                                                         // :1748-1760 storageReservationToUpdate
+          if (ol && !rev) { if (resv.compareTo(D(ol.qtyreserved)) > 0) resv = D(ol.qtyreserved); }
+          else if (ol && rev) { if (resv.negate().add(D(ol.qtyreserved)).compareTo(D(ol.qtyordered)) > 0) resv = D(ol.qtyordered).subtract(D(ol.qtyreserved)); }
+          var resvGate = ol && ((!rev && D(ol.qtyreserved).signum() > 0) || (rev && D(ol.qtyordered).signum() > 0));   // :1819-1820 / :1917-1918
           var mtrx = null;
           if (!nz(sl.m_attributesetinstance_id)) {
             trx.find('m_inoutlinema', { m_inoutline_id: sl.m_inoutline_id }).forEach(function (ma) {   // :1750-1790
@@ -317,13 +386,13 @@
               mtrx = trx.insert('m_transaction', ML.newPO(trx, 'm_transaction', { ad_org_id: sl.ad_org_id, movementtype: mt, m_locator_id: sl.m_locator_id, m_product_id: sl.m_product_id,
                 m_attributesetinstance_id: ma.m_attributesetinstance_id, movementqty: N(qma), movementdate: io.movementdate, m_inoutline_id: sl.m_inoutline_id }));
             });
-            if (ol && mtrx && !closed && D(ol.qtyreserved).signum() > 0 && nz(ol.m_product_id))
+            if (ol && mtrx && !closed && resvGate && nz(ol.m_product_id))
               T.reservationAdd(trx, ol.m_warehouse_id, ol.m_product_id, ol.m_attributesetinstance_id, resv.negate(), so,
                 { ad_table_id: 320, record_id: sl.m_inoutline_id, c_doctype_id: io.c_doctype_id, documentno: io.documentno, lineno: sl.line });
           }
           if (!mtrx) {                                                                        // :1817-1898 fallback (ASI set on the line)
             var e2 = T.storageAdd(trx, sl.m_locator_id, sl.m_product_id, sl.m_attributesetinstance_id, qty, io.movementdate); if (e2) throw new Error(e2);
-            if (ol && nz(ol.m_product_id) && !closed && D(ol.qtyreserved).signum() > 0)
+            if (ol && nz(ol.m_product_id) && !closed && resvGate)
               T.reservationAdd(trx, ol.m_warehouse_id, ol.m_product_id, ol.m_attributesetinstance_id, resv.negate(), so,
                 { ad_table_id: 320, record_id: sl.m_inoutline_id, c_doctype_id: io.c_doctype_id, documentno: io.documentno, lineno: sl.line });
             trx.insert('m_transaction', ML.newPO(trx, 'm_transaction', { ad_org_id: sl.ad_org_id, movementtype: mt, m_locator_id: sl.m_locator_id, m_product_id: sl.m_product_id,
@@ -338,8 +407,8 @@
         if (ol && (so || !nz(sl.m_product_id))) {                                             // :1974-1985
           trx.update('c_orderline', ol, { qtydelivered: N(so ? D(ol.qtydelivered).subtract(qty) : D(ol.qtydelivered).add(qty)), datedelivered: io.movementdate });
         }
-        if (p && so && Y(p.iscreateasset) && D(sl.movementqty).signum() > 0) { T.msg(trx, 'Create Asset for SO (MInOut.java:2016) — non-core, named'); return 'IN'; }
-        if (!so && nz(sl.m_product_id) && !trx._reversal) {                                    // :2047-2134 Matching
+        if (p && so && Y(p.iscreateasset) && D(sl.movementqty).signum() > 0 && !rev) { T.msg(trx, 'Create Asset for SO (MInOut.java:2016) — non-core, named'); return 'IN'; }
+        if (!so && nz(sl.m_product_id) && !rev) {                                              // :2047-2134 Matching (:2048 not for a reversal)
           var MM = matchMod(), matchQty = D(sl.movementqty);
           var iLine = trx.find('c_invoiceline', { m_inoutline_id: sl.m_inoutline_id }).sort(function (a, b) { return Number(a.c_invoiceline_id) - Number(b.c_invoiceline_id); })[0] || null;   // MInvoiceLine.getOfInOutLine
           if (iLine && nz(iLine.m_product_id)) {                                                 // Invoice - Receipt Match
@@ -376,9 +445,146 @@
       trx.find('m_inoutline', { m_inout_id: io.m_inout_id }).forEach(function (l) { trx.update('m_inoutline', l, { processed: 'Y' }); });   // MInOut.setProcessed
       return 'CO';
     },
+    // MInOut.voidIt :2605-2684
+    voidIt: function (trx, io) {
+      if (/^(CL|RE|VO)$/.test(io.docstatus || '')) { T.msg(trx, 'Document Closed: ' + io.docstatus); return false; }   // :2609-2615
+      if (/^(DR|IN|IP|AP|NA)$/.test(io.docstatus || 'DR')) {                                     // :2618-2648 not processed
+        var m = fire(trx, 'BEFORE_VOID', 'm_inout', io); if (m) { T.msg(trx, m); return false; }
+        ioLinesAll(trx, io).forEach(function (l) {                                              // getLines(false)
+          var old = D(l.movementqty);
+          if (old.signum() !== 0) { trx.update('m_inoutline', l, { qtyentered: 0, movementqty: 0 }); T.addDescription(trx, 'm_inoutline', trx.get('m_inoutline', l.m_inoutline_id), 'Void (' + old.toString() + ')'); }   // setQty(ZERO) :2637
+        });
+        trx.update('m_inout', trx.get('m_inout', io.m_inout_id), { docstatus: 'VO' });          // :2645-2646
+        var vc = voidConfirmations(trx, io); if (vc) { T.msg(trx, vc); return false; }
+      } else {                                                                                   // :2649-2674 processed → reverse
+        var d = T.dt(trx, io.c_doctype_id), accrual = !T.periodOpen(trx, io.dateacct, d.docbasetype) || !backDateAllowed(trx, io.dateacct);
+        return accrual ? MInOut.reverseAccrualIt(trx, io) : MInOut.reverseCorrectIt(trx, io);
+      }
+      var m2 = fire(trx, 'AFTER_VOID', 'm_inout', io); if (m2) { T.msg(trx, m2); return false; }   // :2676-2679
+      ioSetProcessed(trx, trx.get('m_inout', io.m_inout_id), 'Y');
+      trx.update('m_inout', trx.get('m_inout', io.m_inout_id), { docaction: '--' });
+      return true;
+    },
+    // MInOut.closeIt :2691-2707
+    closeIt: function (trx, io) {
+      var m = fire(trx, 'BEFORE_CLOSE', 'm_inout', io); if (m) { T.msg(trx, m); return false; }
+      ioSetProcessed(trx, trx.get('m_inout', io.m_inout_id), 'Y');
+      trx.update('m_inout', trx.get('m_inout', io.m_inout_id), { docaction: '--' });
+      m = fire(trx, 'AFTER_CLOSE', 'm_inout', io); if (m) { T.msg(trx, m); return false; }
+      return true;
+    },
+    // MInOut.reverseCorrectIt :2714-2736 / reverseAccrualIt :2941-2963
+    reverseCorrectIt: function (trx, io) { return reverseIt(trx, io, false); },
+    reverseAccrualIt: function (trx, io) { return reverseIt(trx, io, true); },
     approveIt: function (trx, io) { trx.update('m_inout', io, { isapproved: 'Y' }); return true; },
     getSummary: function (trx, io) { return (io.documentno || '') + (io.description ? ' - ' + io.description : ''); }
   };
+  function ioLinesAll(trx, io) { return trx.find('m_inoutline', { m_inout_id: io.m_inout_id }, ['line', 'm_inoutline_id']); }   // MInOut.getLines(false): ORDER BY Line, M_InOutLine_ID
+  // MInOut.setProcessed :? — header + "UPDATE M_InOutLine SET Processed=?"
+  function ioSetProcessed(trx, io, flag) {
+    trx.update('m_inout', io, { processed: flag });
+    trx.find('m_inoutline', { m_inout_id: io.m_inout_id }).forEach(function (l) { trx.update('m_inoutline', l, { processed: flag }); });
+  }
+  // MInOut.voidConfirmations :1232-1243 — an unprocessed confirmation is voided through its own DocAction (MInOutConfirm — not ported → named)
+  function voidConfirmations(trx, io) {
+    var open = trx.find('m_inoutconfirm', { m_inout_id: io.m_inout_id }).filter(function (c) { return !Y(c.processed); });
+    return open.length ? 'MInOutConfirm.voidIt (MInOut.java:1232-1243) not ported — ' + open.length + ' open confirmation(s); named' : null;
+  }
+  // the shared body of reverseCorrectIt :2714-2736 and reverseAccrualIt :2941-2963
+  function reverseIt(trx, io, accrual) {
+    var tb = accrual ? 'REVERSEACCRUAL' : 'REVERSECORRECT';
+    var m = fire(trx, 'BEFORE_' + tb, 'm_inout', io); if (m) { T.msg(trx, m); return false; }
+    var reversal = reverse(trx, io, accrual);
+    if (!reversal) return false;
+    m = fire(trx, 'AFTER_' + tb, 'm_inout', trx.get('m_inout', io.m_inout_id)); if (m) { T.msg(trx, m); return false; }
+    T.msg(trx, reversal.documentno);
+    var cur = trx.get('m_inout', io.m_inout_id);
+    ioSetProcessed(trx, cur, 'Y');
+    trx.update('m_inout', cur, { docstatus: 'RE', docaction: '--' });                           // :2733-2734 "may come from void"
+    return true;
+  }
+  // MInOut.reverse(accrual) :2743-2893
+  function reverse(trx, io, accrual) {
+    var dt = T.dt(trx, io.c_doctype_id);
+    var reversalDate = accrual ? trx.env.date : io.dateacct; if (reversalDate == null) reversalDate = trx.env.date;   // :2745-2748
+    var reversalMovementDate = accrual ? reversalDate : io.movementdate;
+    if (!T.periodOpen(trx, reversalDate, dt.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return null; }   // :2750-2754
+    if (!backDateAllowed(trx, reversalDate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return null; }       // :2755-2759
+    var bd = backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return null; }                // :2761-2773
+    if (!Y(io.issotrx)) { T.msg(trx, 'MInOut.reverseMatching → MMatchInv/MMatchPO.reverse (MInOut.java:2898-2934) not ported — receipt reversal named (P2P lane)'); return null; }   // :2776-2780
+    var C = ctorMod();
+    var rv = MInOut_copyFrom(trx, io, reversalMovementDate, reversalDate, io.c_doctype_id, Y(io.issotrx), false, true);   // :2783-2789 Deep Copy
+    if (!rv) { T.msg(trx, 'Could not create Ship Reversal'); return null; }
+    var revId = rv.m_inout_id; setReversal(trx, 'm_inout', revId);                              // :2790
+    var sLines = ioLinesAll(trx, io), rLines = ioLinesAll(trx, rv);
+    for (var i = 0; i < rLines.length; i++) {                                                   // :2793-2857
+      var rLine = rLines[i], sLine = sLines[i];
+      var r = ML.save(trx, 'm_inoutline', rLine, { qtyentered: N(D(rLine.qtyentered).negate()), movementqty: N(D(rLine.movementqty).negate()),
+        m_attributesetinstance_id: sLine.m_attributesetinstance_id == null ? 0 : sLine.m_attributesetinstance_id, reversalline_id: sLine.m_inoutline_id });
+      if (!r.ok) { T.msg(trx, 'Could not correct Ship Reversal Line'); return null; }
+      rLine = r.row;
+      if (!nz(rLine.m_attributesetinstance_id)) {                                               // :2808-2819 copy MA (negated)
+        trx.find('m_inoutlinema', { m_inoutline_id: sLine.m_inoutline_id }).forEach(function (ma) {
+          trx.insert('m_inoutlinema', ML.newPO(trx, 'm_inoutlinema', { ad_client_id: rLine.ad_client_id, ad_org_id: rLine.ad_org_id, m_inoutline_id: rLine.m_inoutline_id,
+            m_attributesetinstance_id: ma.m_attributesetinstance_id, movementqty: N(D(ma.movementqty).negate()), datematerialpolicy: ma.datematerialpolicy, isautogenerated: ma.isautogenerated }));
+        });
+      }
+      trx.find('a_asset', { m_inoutline_id: sLine.m_inoutline_id }).forEach(function (a) {     // :2820-2827 MAsset.getFromShipment → de-activate
+        var ra = ML.save(trx, 'a_asset', a, { isactive: 'N', description: a.description + ' (' + rv.documentno + ' #' + rLine.line + '<-)' }); if (!ra.ok) throw new Error('SaveError a_asset: ' + ra.error);
+      });
+      trx.find('c_invoiceline', { m_inoutline_id: sLine.m_inoutline_id }).forEach(function (il) {   // :2829-2856 un-link the invoice lines (setM_InOutLine_ID(0) → NULL)
+        var ri = ML.save(trx, 'c_invoiceline', il, { m_inoutline_id: null }); if (!ri.ok) throw new Error('SaveError c_invoiceline: ' + ri.error);
+      });
+    }
+    rv = trx.get('m_inout', revId);
+    var hr = ML.save(trx, 'm_inout', rv, { c_order_id: io.c_order_id, m_rma_id: io.m_rma_id, reversal_id: io.m_inout_id,     // :2858-2864
+      description: rv.description == null || rv.description === '' ? '{->' + io.documentno + ')' : rv.description + ' | {->' + io.documentno + ')' });
+    if (!hr.ok) throw new Error('SaveError m_inout: ' + hr.error);
+    var res = ML.processIt(trx, 'm_inout', revId, 'CO');                                       // :2869-2874
+    rv = trx.get('m_inout', revId);
+    if (!res.ok || rv.docstatus !== 'CO') { T.msg(trx, 'Reversal ERROR: ' + (res.msg || res.status)); return null; }
+    MInOut.closeIt(trx, rv);                                                                    // :2875-2879
+    trx.update('m_inout', trx.get('m_inout', revId), { processing: 'N', docstatus: 'RE', docaction: '--' });
+    var cur = trx.get('m_inout', io.m_inout_id);                                                // :2881-2889
+    T.addDescription(trx, 'm_inout', cur, '(' + rv.documentno + '<-)');
+    trx.update('m_inout', trx.get('m_inout', io.m_inout_id), { docstatus: 'RE', reversal_id: revId });
+    var vc = voidConfirmations(trx, io); if (vc) { T.msg(trx, vc); return null; }
+    return trx.get('m_inout', revId);
+  }
+  // MInOut.copyFrom(from, dateDoc, dateAcct, C_DocType_ID, isSOTrx, counter, trxName, setOrder) :436-522
+  function MInOut_copyFrom(trx, from, dateDoc, dateAcct, dtId, isSOTrx, counter, setOrder) {
+    if (counter) throw new Error('MInOut.copyFrom(counter=true) — counter documents not ported (named)');
+    var to = ML.newRecord(trx, 'm_inout', {});                                                  // new MInOut(ctx, 0) → setInitialDefaults
+    ML.copyValues(trx, 'm_inout', from, to, from.ad_client_id, from.ad_org_id);                 // :441
+    to.set('documentno', null);                                                                 // :442-443 (key + DocumentNo reset)
+    to.set('docstatus', 'DR').set('docaction', 'CO').set('c_doctype_id', dtId).set('issotrx', isSOTrx ? 'Y' : 'N');   // :445-449
+    to.set('dateordered', dateDoc).set('dateacct', dateAcct).set('movementdate', dateDoc).set('dateprinted', null).set('isprinted', 'N')   // :456-466
+      .set('datereceived', null).set('nopackages', 0).set('shipdate', null).set('pickdate', null).set('isintransit', 'N');
+    to.set('isapproved', 'N').set('c_invoice_id', null).set('trackingno', null).set('isindispute', 'N');   // :467-470
+    to.set('posted', 'N').set('processed', 'N').set('processing', 'N').set('c_order_id', null).set('m_rma_id', null);   // :472-477
+    to.set('ref_inout_id', null); if (setOrder) to.set('c_order_id', from.c_order_id).set('m_rma_id', from.m_rma_id);   // :503-511
+    if (!to.save()) throw new Error('Could not create Shipment');                               // :513-514
+    if (MInOut_copyLinesFrom(trx, trx.get('m_inout', to.id()), from, counter, setOrder) <= 0) throw new Error('Could not create Shipment Lines');   // :518-519
+    return trx.get('m_inout', to.id());
+  }
+  // MInOut.copyLinesFrom(otherShipment, counter, setOrder) :976-1050
+  function MInOut_copyLinesFrom(trx, to, other, counter, setOrder) {
+    if (Y(to.processed) || Y(to.posted) || other == null) return 0;                             // :978-979
+    var C = ctorMod(), fromLines = ioLinesAll(trx, other), count = 0;
+    for (var i = 0; i < fromLines.length; i++) {
+      var fl = fromLines[i], line = C.MInOutLine(trx, to);                                      // new MInOutLine(this)
+      ML.copyValues(trx, 'm_inoutline', fl, line, fl.ad_client_id, fl.ad_org_id);              // :987-990 (not counter)
+      line.set('m_inout_id', to.m_inout_id);                                                    // :991-992
+      if (!setOrder) line.set('c_orderline_id', null).set('m_rmaline_id', null);                // :994-998
+      if (!counter) line.set('m_attributesetinstance_id', 0);                                   // :999-1000
+      line.set('ref_inoutline_id', null).set('isinvoiced', 'N').set('confirmedqty', 0).set('pickedqty', 0).set('scrappedqty', 0).set('targetqty', 0);   // :1002-1008
+      if (String(to.m_warehouse_id) !== String(other.m_warehouse_id)) line.set('m_locator_id', null);   // :1010-1014 (locator re-derived — named: only same-warehouse copies reach here)
+      line.set('processed', 'N');                                                               // :1035
+      if (line.save()) count++;
+    }
+    if (fromLines.length !== count) { trx.say('§MODEL-SEVERE MInOut.copyLinesFrom Line difference - From=' + fromLines.length + ' <> Saved=' + count); count = -1; }   // :1045-1048
+    return count;
+  }
   // MInOut.checkMaterialPolicy — outgoing (C-/V-) FiFo/LiFo over positive storages of the line's locator; incoming V+
   // gets one MA at MovementDate (autoBalanceNegative not ported — named in the log when a negative storage exists).
   function checkMaterialPolicy(trx, io, sl, p, qty) {
@@ -654,5 +860,6 @@
     return S;
   })(ML);
 
-  return Object.assign({}, PXO, { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed });
+  return Object.assign({}, PXO, { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
+    setReversal: setReversal, isReversal: isReversal, idNum: idNum, backDateAllowed: backDateAllowed, backDateCostingNamed: backDateCostingNamed, MInOut_copyFrom: MInOut_copyFrom });
 });

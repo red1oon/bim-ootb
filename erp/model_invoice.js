@@ -44,7 +44,7 @@
     beforeSave: function (trx, l, isNew) {
       var inv = trx.get('c_invoice', l.c_invoice_id); if (!inv) return null;
       if (isNew && Y(inv.processed)) return 'parent processed';
-      if (Y(inv.processed)) return null;
+      if (Y(inv.processed) || MO.isReversal(trx, 'c_invoice', inv.c_invoice_id)) return null;   // :880-890 "Do not make changes if parent is complete or this is for reversal"
       if (nz(l.c_charge_id) && nz(l.m_product_id)) l.m_product_id = null;
       if (!Number(l.line)) { var mx = 0; trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }
       if (!nz(l.c_uom_id)) { var p = T.product(trx, l.m_product_id); if (p) l.c_uom_id = p.c_uom_id; }
@@ -229,9 +229,144 @@
       trx.update('c_invoice', inv, { docaction: 'CL' });
       return 'CO';
     },
+    // MInvoice.voidIt :2480-2569
+    voidIt: function (trx, inv) {
+      if (/^(CL|RE|VO)$/.test(inv.docstatus || '')) { trx.update('c_invoice', inv, { docaction: '--' }); T.msg(trx, 'Document Closed: ' + inv.docstatus); return false; }   // :2484-2491
+      if (/^(DR|IN|IP|AP|NA)$/.test(inv.docstatus || 'DR')) {                                    // :2494-2533 not processed
+        var m = fire(trx, 'BEFORE_VOID', 'c_invoice', inv); if (m) { T.msg(trx, m); return false; }
+        var voided = T.msgText(trx, 'Voided');
+        invLinesAll(trx, inv).forEach(function (l) {
+          var old = D(l.qtyinvoiced); if (old.signum() === 0) return;
+          var ch = { qtyentered: 0, qtyinvoiced: 0, taxamt: 0, linenetamt: 0, linetotalamt: 0, description: l.description == null || l.description === '' ? voided + ' (' + old.toString() + ')' : l.description + ' | ' + voided + ' (' + old.toString() + ')' };   // setQty(ZERO) + addDescription
+          if (nz(l.m_inoutline_id)) {                                                             // :2519-2525 unlink the shipment line
+            var r0 = ML.save(trx, 'm_inoutline', trx.get('m_inoutline', l.m_inoutline_id), { isinvoiced: 'N' }); if (!r0.ok) throw new Error('SaveError m_inoutline: ' + r0.error);
+            ch.m_inoutline_id = null;
+          }
+          var r1 = ML.save(trx, 'c_invoiceline', l, ch); if (!r1.ok) throw new Error('SaveError c_invoiceline: ' + r1.error);
+        });
+        var cur = trx.get('c_invoice', inv.c_invoice_id);
+        T.addDescription(trx, 'c_invoice', cur, voided);                                         // :2530-2532
+        trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { ispaid: 'Y', c_payment_id: null });
+      } else {                                                                                   // :2534-2559 processed → reverse
+        var d = T.dt(trx, inv.c_doctype_id), accrual = !T.periodOpen(trx, inv.dateacct, d.docbasetype) || !MO.backDateAllowed(trx, inv.dateacct);
+        return accrual ? MInvoice.reverseAccrualIt(trx, inv) : MInvoice.reverseCorrectIt(trx, inv);
+      }
+      var m2 = fire(trx, 'AFTER_VOID', 'c_invoice', inv); if (m2) { T.msg(trx, m2); return false; }   // :2561-2564
+      setProcessedInv(trx, trx.get('c_invoice', inv.c_invoice_id), 'Y');
+      trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { docaction: '--', docstatus: 'VO' });   // DocumentEngine.voidIt :594-611 → VO
+      return true;
+    },
+    // MInvoice.closeIt :2576-2592
+    closeIt: function (trx, inv) {
+      var m = fire(trx, 'BEFORE_CLOSE', 'c_invoice', inv); if (m) { T.msg(trx, m); return false; }
+      setProcessedInv(trx, trx.get('c_invoice', inv.c_invoice_id), 'Y');
+      trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { docaction: '--' });
+      m = fire(trx, 'AFTER_CLOSE', 'c_invoice', inv); if (m) { T.msg(trx, m); return false; }
+      return true;
+    },
+    // MInvoice.reverseCorrectIt :2599-2619 / reverseAccrualIt :2839-2859 — reverse() leaves this invoice RE (:2780)
+    reverseCorrectIt: function (trx, inv) { return PXI.inTrxRuntime(trx, function () { return invReverseIt(trx, inv, false); }); },   // MSysConfig / MProductPricing read through this Trx
+    reverseAccrualIt: function (trx, inv) { return PXI.inTrxRuntime(trx, function () { return invReverseIt(trx, inv, true); }); },
     approveIt: function (trx, i) { trx.update('c_invoice', i, { isapproved: 'Y' }); return true; },
     getSummary: function (trx, i) { return (i.documentno || '') + ': Grand Total=' + i.grandtotal + (i.description ? ' - ' + i.description : ''); }
   };
+  function invLinesAll(trx, i) { return trx.find('c_invoiceline', { c_invoice_id: i.c_invoice_id }, ['line', 'c_invoiceline_id']); }   // MInvoice.getLines(false) :883 ORDER BY Line, C_InvoiceLine_ID
+  function matchMod() { return (typeof module !== 'undefined' && module.exports) ? require('./model_match') : (typeof window !== 'undefined' ? window.ModelMatch : globalThis.ModelMatch); }
+  function invReverseIt(trx, inv, accrual) {
+    var tb = accrual ? 'REVERSEACCRUAL' : 'REVERSECORRECT';
+    var m = fire(trx, 'BEFORE_' + tb, 'c_invoice', inv); if (m) { T.msg(trx, m); return false; }
+    var reversal = invReverse(trx, inv, accrual);
+    if (!reversal) return false;
+    m = fire(trx, 'AFTER_' + tb, 'c_invoice', trx.get('c_invoice', inv.c_invoice_id)); if (m) { T.msg(trx, m); return false; }
+    T.msg(trx, reversal.documentno);
+    return true;
+  }
+  // MInvoice.reverse(accrual) :2626-2814
+  function invReverse(trx, inv, accrual) {
+    var so = Y(inv.issotrx), dtRow = T.dt(trx, inv.c_doctype_id);
+    var reversalDate = accrual ? trx.env.date : inv.dateacct; if (reversalDate == null) reversalDate = trx.env.date;   // :2627-2631
+    var reversalDateInvoiced = accrual ? reversalDate : inv.dateinvoiced;
+    if (!T.periodOpen(trx, reversalDate, dtRow.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return null; }       // :2633 MPeriod.testPeriodOpen (throws)
+    if (!MO.backDateAllowed(trx, reversalDate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return null; }           // :2634 testBackDateTrxAllowed (throws)
+    var bd = MO.backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return null; }            // :2636-2641 periodClosedCheckForBackDateTrx
+    var ra = reverseAllocations(trx, accrual, inv.c_invoice_id); if (ra) { T.msg(trx, ra); return null; }   // :2644
+    if (!so) { T.msg(trx, 'MInvoice.reverse AP matching (MatchPOAutoMatch.unmatch / MMatchInv.reverse / MMatchPO.reverse, MInvoice.java:2646-2692) not ported — named (P2P lane)'); return null; }
+    inv = trx.get('c_invoice', inv.c_invoice_id);                                              // :2694 load()
+    var docNo = T.sysConfigBool('Invoice_ReverseUseNewNumber', true, inv.ad_client_id) ? null : inv.documentno + '^';   // :2697-2700
+    var rv = MInvoice_copyFrom(trx, inv, reversalDateInvoiced, reversalDate, inv.c_doctype_id, so, false, true, docNo);
+    if (!rv) { T.msg(trx, 'Could not create Invoice Reversal'); return null; }
+    var revId = rv.c_invoice_id; MO.setReversal(trx, 'c_invoice', revId);                     // :2707
+    var oLines = invLinesAll(trx, inv), rLines = invLinesAll(trx, rv);
+    for (var i = 0; i < rLines.length; i++) {                                                   // :2710-2732 Reverse Line Qty
+      var o = oLines[i], r = ML.save(trx, 'c_invoiceline', rLines[i], { qtyentered: N(D(o.qtyentered).negate()), qtyinvoiced: N(D(o.qtyinvoiced).negate()),
+        linenetamt: N(D(o.linenetamt).negate()), taxamt: N(D(o.taxamt).negate()), linetotalamt: N(D(o.linetotalamt).negate()),
+        priceactual: o.priceactual, pricelist: o.pricelist, pricelimit: o.pricelimit, priceentered: o.priceentered, c_uom_id: o.c_uom_id });
+      if (!r.ok) { T.msg(trx, 'Could not correct Invoice Reversal Line'); return null; }
+    }
+    rv = trx.get('c_invoice', revId);
+    var hr = ML.save(trx, 'c_invoice', rv, { c_order_id: inv.c_order_id, reversal_id: inv.c_invoice_id,   // :2733-2738
+      description: rv.description == null || rv.description === '' ? '{->' + inv.documentno + ')' : rv.description + ' | {->' + inv.documentno + ')' });
+    if (!hr.ok) throw new Error('SaveError c_invoice: ' + hr.error);
+    var res = ML.processIt(trx, 'c_invoice', revId, 'CO');                                     // :2743-2747
+    if (!res.ok) { T.msg(trx, 'Reversal ERROR: ' + (res.msg || res.status)); return null; }
+    ra = reverseAllocations(trx, accrual, revId); if (ra) { T.msg(trx, ra); return null; }     // :2749
+    rv = trx.get('c_invoice', revId);
+    trx.update('c_invoice', rv, { c_payment_id: null, ispaid: 'Y' });                          // :2751-2752
+    MInvoice.closeIt(trx, trx.get('c_invoice', revId));                                         // :2753
+    trx.update('c_invoice', trx.get('c_invoice', revId), { processing: 'N', docstatus: 'RE', docaction: '--' });   // :2754-2757
+    rv = trx.get('c_invoice', revId);
+    invLinesAll(trx, inv).forEach(function (il) {                                               // :2762-2775 Clean up Reversed (this)
+      if (!nz(il.m_inoutline_id)) return;
+      var r0 = ML.save(trx, 'm_inoutline', trx.get('m_inoutline', il.m_inoutline_id), { isinvoiced: 'N' }); if (!r0.ok) throw new Error('SaveError m_inoutline: ' + r0.error);
+      var r1 = ML.save(trx, 'c_invoiceline', trx.get('c_invoiceline', il.c_invoiceline_id), { m_inoutline_id: null }); if (!r1.ok) throw new Error('SaveError c_invoiceline: ' + r1.error);
+    });
+    // :2785-2812 Create Allocation — the original's header changes (:2759-2783: description, Processed, Reversal_ID, RE, --, C_Payment_ID 0, IsPaid) are
+    // in-memory in Java and saved by the CALLER after this method; they are written below, after the allocation, in the same order.
+    var gt = isCM(trx, inv) ? D(inv.grandtotal).negate() : D(inv.grandtotal); if (!so) gt = gt.negate();   // getGrandTotal(true)
+    var label = (trx.q("SELECT name AS n FROM ad_element WHERE lower(columnname)='c_invoice_id'")[0] || {}).n || 'C_Invoice_ID';   // Msg.translate(ctx, "C_Invoice_ID")
+    var h = newAllocationHdr(trx, { ad_org_id: inv.ad_org_id, ismanual: 'N', datetrx: reversalDate, dateacct: reversalDate, c_currency_id: inv.c_currency_id, description: label + ': ' + inv.documentno + '/' + rv.documentno });
+    [[inv.c_invoice_id, gt], [revId, gt.negate()]].forEach(function (x) {                      // :2794-2806 MAllocationLine(alloc, amt, 0, 0, 0)
+      var rl = ML.save(trx, 'c_allocationline', null, ML.newPO(trx, 'c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id, ad_org_id: h.ad_org_id, amount: N(x[1]), discountamt: 0, writeoffamt: 0, overunderamt: 0, c_invoice_id: x[0] }));
+      if (!rl.ok) throw new Error('SaveError c_allocationline: ' + rl.error);
+    });
+    var ar = ML.processIt(trx, 'c_allocationhdr', h.c_allocationhdr_id, 'CO');                 // :2807-2809 (throws AdempiereException)
+    if (!ar.ok) { T.msg(trx, 'FailedProcessingDocument - ' + (ar.msg || ar.status)); return null; }
+    var cur = trx.get('c_invoice', inv.c_invoice_id);
+    T.addDescription(trx, 'c_invoice', cur, '(' + rv.documentno + '<-)');
+    setProcessedInv(trx, trx.get('c_invoice', inv.c_invoice_id), 'Y');
+    trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { reversal_id: revId, docstatus: 'RE', docaction: '--', c_payment_id: null, ispaid: 'Y' });
+    return trx.get('c_invoice', revId);
+  }
+  // MInvoice.reverseAllocations(accrual, invoiceID) :2821-2832 over MAllocationHdr.getOfInvoice :105-130 (active headers with a line on the invoice)
+  function reverseAllocations(trx, accrual, invId) {
+    var seen = {}, hs = [];
+    trx.find('c_allocationline', { c_invoice_id: invId }).forEach(function (l) { if (seen[l.c_allocationhdr_id]) return; seen[l.c_allocationhdr_id] = 1; var h = trx.get('c_allocationhdr', l.c_allocationhdr_id); if (h && h.isactive === 'Y') hs.push(h); });
+    hs.sort(function (a, b) { return MO.idNum(a.c_allocationhdr_id) - MO.idNum(b.c_allocationhdr_id); });
+    for (var i = 0; i < hs.length; i++) {
+      var h = trx.get('c_allocationhdr', hs[i].c_allocationhdr_id);
+      if (accrual) return 'MAllocationHdr.reverseAccrualIt → reverseIt(accrual) copyFrom path (MAllocationHdr.java:869-900) not ported — named';
+      trx.update('c_allocationhdr', h, { docaction: 'RC' });
+      if (!MAllocationHdr.reverseCorrectIt(trx, trx.get('c_allocationhdr', h.c_allocationhdr_id))) return 'Could not reverse allocation ' + h.documentno + (trx._msg ? ' - ' + trx._msg : '');   // the boolean is ignored in Java; a refusal here is a named not-ported path
+    }
+    return null;
+  }
+  // MInvoice.copyFrom(from, dateDoc, dateAcct, C_DocTypeTarget_ID, isSOTrx, counter, trxName, setOrder, documentNo) :255-330
+  function MInvoice_copyFrom(trx, from, dateDoc, dateAcct, dtTargetId, isSOTrx, counter, setOrder, documentNo) {
+    if (counter) throw new Error('MInvoice.copyFrom(counter=true) — counter documents not ported (named)');
+    var to = ML.newRecord(trx, 'c_invoice', {});                                                // new MInvoice(ctx, 0) → setInitialDefaults
+    ML.copyValues(trx, 'c_invoice', from, to, from.ad_client_id, from.ad_org_id);               // :259
+    to.set('documentno', documentNo == null ? null : documentNo);                              // :260-261
+    to.set('docstatus', 'DR').set('docaction', 'CO').set('c_doctype_id', 0).set('c_doctypetarget_id', dtTargetId).set('issotrx', isSOTrx ? 'Y' : 'N');   // :263-268
+    to.set('dateinvoiced', dateDoc).set('dateacct', dateAcct).set('dateprinted', null).set('isprinted', 'N');   // :270-273
+    to.set('isapproved', 'N').set('c_payment_id', null).set('c_cashline_id', null).set('ispaid', 'N').set('isindispute', 'N');   // :275-279
+    to.set('grandtotal', 0).set('totallines', 0).set('istransferred', 'N').set('posted', 'N').set('processed', 'N').set('processing', 'N').set('isselfservice', 'N');   // :282-292
+    if (!setOrder) to.set('c_order_id', null);
+    to.set('ref_invoice_id', null);                                                             // :315-316
+    if (!to.save()) throw new Error('SaveError c_invoice: ' + to.error);                       // :318 saveEx
+    var toRow = trx.get('c_invoice', to.id());
+    if (PXI.copyLinesForReversal(trx, toRow, from, counter, setOrder) === 0) throw new Error('Could not create Invoice Lines');   // :323-324 copyLinesFrom(from, counter, setOrder) (copyClientOrg=true :937-939)
+    return trx.get('c_invoice', to.id());
+  }
 
   // ══ MPayment ═════════════════════════════════════════════════════════════════════════════════════════════════
   function createPayment(trx, f) {
@@ -282,11 +417,7 @@
       var amt = D(p.payamt); if (D(p.overunderamt).signum() < 0 && amt.signum() > 0) amt = amt.add(D(p.overunderamt));
       var inv = trx.get('c_invoice', p.c_invoice_id);
       var dacct = String(inv.dateacct) > String(p.dateacct) ? inv.dateacct : p.dateacct;
-      var h = ML.newPO(trx, 'c_allocationhdr', { ad_org_id: p.ad_org_id, ismanual: 'N', datetrx: p.datetrx, dateacct: dacct, c_currency_id: p.c_currency_id,
-        description: 'Payment: ' + p.documentno + ' [1]', docstatus: 'DR', docaction: 'CO' });
-      var adt = trx.q("SELECT c_doctype_id FROM c_doctype WHERE ad_client_id=? AND docbasetype='CMA' ORDER BY isdefault DESC, c_doctype_id", [trx.env.client])[0];
-      if (adt && h.c_doctype_id == null) h.c_doctype_id = adt.c_doctype_id;
-      var hr = ML.save(trx, 'c_allocationhdr', null, h).row;
+      var hr = newAllocationHdr(trx, { ad_org_id: p.ad_org_id, ismanual: 'N', datetrx: p.datetrx, dateacct: dacct, c_currency_id: p.c_currency_id, description: 'Payment: ' + p.documentno + ' [1]' });
       var rc = Y(p.isreceipt);
       ML.save(trx, 'c_allocationline', null, ML.newPO(trx, 'c_allocationline', { c_allocationhdr_id: hr.c_allocationhdr_id, ad_org_id: hr.ad_org_id,
         amount: N(rc ? amt : amt.negate()), discountamt: N(rc ? D(p.discountamt) : D(p.discountamt).negate()), writeoffamt: N(rc ? D(p.writeoffamt) : D(p.writeoffamt).negate()),
@@ -299,6 +430,14 @@
     return false;
   }
 
+  // new MAllocationHdr(ctx, IsManual, DateTrx, C_Currency_ID, description) :213-226 ∘ setInitialDefaults :189-202 (C_DocType_ID = MDocType.getDocType("CMA")) + save
+  function newAllocationHdr(trx, f) {
+    var h = ML.newPO(trx, 'c_allocationhdr', Object.assign({ docstatus: 'DR', docaction: 'CO' }, f));
+    var adt = trx.q("SELECT c_doctype_id FROM c_doctype WHERE ad_client_id=? AND docbasetype='CMA' ORDER BY isdefault DESC, c_doctype_id", [trx.env.client])[0];
+    if (adt && h.c_doctype_id == null) h.c_doctype_id = adt.c_doctype_id;
+    var r = ML.save(trx, 'c_allocationhdr', null, h); if (!r.ok) throw new Error('SaveError c_allocationhdr: ' + r.error);
+    return r.row;
+  }
   // ══ MAllocationHdr (prepareIt :412-516, completeIt :518-560) + MAllocationLine.processIt :273-373 ═══════════════
   var MAllocationHdr = {
     prepareIt: function (trx, h) {
@@ -341,9 +480,67 @@
       trx.update('c_allocationhdr', h, { processed: 'Y', docaction: 'CL' });
       return 'CO';
     },
+    // MAllocationHdr.voidIt :567-640
+    voidIt: function (trx, h) {
+      if (/^(CL|RE|VO)$/.test(h.docstatus || '')) { trx.update('c_allocationhdr', h, { docaction: '--' }); T.msg(trx, 'Document Closed: ' + h.docstatus); return false; }   // :572-578
+      if (/^(DR|IN|IP|AP|NA)$/.test(h.docstatus || 'DR')) {                                      // :581-608 not processed
+        var m = fire(trx, 'BEFORE_VOID', 'c_allocationhdr', h); if (m) { T.msg(trx, m); return false; }
+        var ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']);
+        allocUpdateBP(trx, ls);                                                                   // :593 updateBP
+        ls.forEach(function (l) {
+          var r = ML.save(trx, 'c_allocationline', l, { amount: 0, discountamt: 0, writeoffamt: 0, overunderamt: 0 }); if (!r.ok) throw new Error('SaveError c_allocationline: ' + r.error);
+          PXI.inTrxRuntime(trx, function () { PXI.allocLineProcessIt(trx, r.row, true); });     // :603 Unlink invoices
+        });
+        T.addDescription(trx, 'c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), T.msgText(trx, 'Voided'));
+      } else {                                                                                   // :609-625 processed → reverse
+        var accrual = !T.periodOpen(trx, h.datetrx, 'CMA');
+        return accrual ? MAllocationHdr.reverseAccrualIt(trx, h) : MAllocationHdr.reverseCorrectIt(trx, h);
+      }
+      var m2 = fire(trx, 'AFTER_VOID', 'c_allocationhdr', h); if (m2) { T.msg(trx, m2); return false; }
+      trx.update('c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), { processed: 'Y', docaction: '--', docstatus: 'VO' });   // :634-636 + DocumentEngine.voidIt → VO
+      return true;
+    },
+    // MAllocationHdr.closeIt :647-664
+    closeIt: function (trx, h) {
+      var m = fire(trx, 'BEFORE_CLOSE', 'c_allocationhdr', h); if (m) { T.msg(trx, m); return false; }
+      trx.update('c_allocationhdr', h, { docaction: '--' });
+      m = fire(trx, 'AFTER_CLOSE', 'c_allocationhdr', h); if (m) { T.msg(trx, m); return false; }
+      return true;
+    },
+    // MAllocationHdr.reverseCorrectIt :670-691 → reverseIt(false)
+    reverseCorrectIt: function (trx, h) {
+      var m = fire(trx, 'BEFORE_REVERSECORRECT', 'c_allocationhdr', h); if (m) { T.msg(trx, m); return false; }
+      var ok = PXI.inTrxRuntime(trx, function () { return allocReverseIt(trx, h, false); });   // MSysConfig CASH_AS_PAYMENT read through this Trx
+      m = fire(trx, 'AFTER_REVERSECORRECT', 'c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id)); if (m) { T.msg(trx, m); return false; }
+      trx.update('c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), { docaction: '--' });
+      return ok;
+    },
+    // MAllocationHdr.reverseAccrualIt :694-715 → reverseIt(true): the accrual branch deep-copies the allocation (copyFrom :985-1010) — not ported, named
+    reverseAccrualIt: function (trx, h) { T.msg(trx, 'MAllocationHdr.reverseIt(accrual) copyFrom path (MAllocationHdr.java:866-901) not ported — named'); return false; },
     approveIt: function (trx, h) { trx.update('c_allocationhdr', h, { isapproved: 'Y' }); return true; },
     getSummary: function (trx, h) { return (h.documentno || '') + ': Total=' + h.approvalamt; }
   };
+  // MAllocationHdr.updateBP :954-968 — each distinct line BP: MBPartner.setTotalOpenBalance + save
+  function allocUpdateBP(trx, ls) { var bps = {}; ls.forEach(function (l) { if (!bps[l.c_bpartner_id]) { bps[l.c_bpartner_id] = 1; T.setTotalOpenBalance(trx, l.c_bpartner_id); } }); }
+  // MAllocationHdr.reverseIt(accrual=false) :845-947
+  function allocReverseIt(trx, h, accrual) {
+    if (h.isactive === 'N' || h.docstatus === 'VO' || h.docstatus === 'RE') { trx.say('§MODEL-WARN Allocation already reversed (not active) ' + h.c_allocationhdr_id); return true; }   // :847-857
+    var reversalDate = accrual ? trx.env.date : h.dateacct; if (reversalDate == null) reversalDate = trx.env.date;
+    if (!T.periodOpen(trx, reversalDate, 'CMA')) { T.msg(trx, '@PeriodClosed@'); return false; }   // :864 MPeriod.testPeriodOpen (throws)
+    if (accrual) { T.msg(trx, 'MAllocationHdr.reverseIt(accrual) copyFrom path (MAllocationHdr.java:866-901) not ported — named'); return false; }
+    var ch = { isactive: 'N', documentno: (h.documentno || '') + '^', docstatus: 'RE' }; if (!Y(h.posted)) ch.posted = 'Y';   // :904-911 de-activate (save)
+    var r = ML.save(trx, 'c_allocationhdr', h, ch); if (!r.ok) throw new Error('Cannot de-activate allocation');
+    matchMod().factDeleteEx(trx, ML.tableIdOf(trx, 'c_allocationhdr'), h.c_allocationhdr_id);  // :914 MFactAcct.deleteEx
+    var ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']);   // :917 getLines(true)
+    allocUpdateBP(trx, ls);                                                                     // :918-919
+    ls.forEach(function (l) {                                                                   // :921-939
+      var rl = ML.save(trx, 'c_allocationline', l, { isactive: 'N', amount: 0, discountamt: 0, writeoffamt: 0, overunderamt: 0 }); if (!rl.ok) throw new Error('SaveError c_allocationline: ' + rl.error);
+      PXI.allocLineProcessIt(trx, rl.row, true);
+    });
+    T.addDescription(trx, 'c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), T.msgText(trx, 'Voided'));   // :940
+    trx.update('c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), { processed: 'Y', docstatus: 'RE', docaction: '--' });   // :943-945
+    return true;
+  }
 
   // setInitialDefaults: MInvoice.java:438-465, MInvoiceLine.java:150-162, MPayment.java:147-177
   ML.registerModel('c_invoice', { initialDefaults: { docstatus: 'DR', docaction: 'CO', paymentrule: 'P', chargeamt: 0, totallines: 0, grandtotal: 0, issotrx: 'Y', istaxincluded: 'N', isapproved: 'N',
@@ -499,6 +696,19 @@
     return count;
   };
 
+  // MInvoice.copyFrom :323 → copyLinesFrom(from, counter, setOrder) = (…, copyClientOrg=true) :937-939, run from the DocAction path: the callout runtime bound to
+  // THIS Trx for the call (read-your-writes, as MOrderLine_beforeSavePricing does) and restored afterwards; ctx = the session client/org/role (MRole.getDefault)
+  S.inTrxRuntime = function (trx, fn) {
+    var a = A(), RT = R(), sDB = RT.DB, sPO = RT.PO, env = trx.env || {};
+    a.bind(function (sql, params) { return trx.q(sql, params); });
+    try {
+      var ctx = new a.Ctx();
+      a.Env.setContext(ctx, a.Env.AD_CLIENT_ID, env.client); a.Env.setContext(ctx, a.Env.AD_ORG_ID, env.org);
+      a.Env.setContext(ctx, a.Env.AD_ROLE_ID, env.role != null ? env.role : ((GL.APP && GL.APP.roleId) || 0));
+      return fn(ctx);
+    } finally { RT.DB = sDB; RT.PO = sPO; }
+  };
+  S.copyLinesForReversal = function (trx, to, from, counter, setOrder) { return S.inTrxRuntime(trx, function (ctx) { return S.MInvoice_copyLinesFrom(trx, ctx, to, from, counter, setOrder, true); }); };
   // MInvoice.isCreditMemo (MInvoice.java:1072-1077) — ONE copy (the older charAt(2) heuristic in isCM() was superseded by this exact DocBaseType test)
   S.docBaseType = function (trx, id) { var d = T.dt(trx, id); return d ? d.docbasetype : null; };          // MDocType.get(id).getDocBaseType()
   S.isCreditMemo = function (trx, inv) {
@@ -516,9 +726,15 @@
   };
 
   // ══ MAllocationHdr / MAllocationLine delete + reverse (was processes/support_pay.js) ═══════════════════════════════
-  // ── MAllocationLine.processIt(reverse=true) — MAllocationLine.java:273-373 (does not update the line)
+  // the two raw "UPDATE C_Order SET <col>=…" statements of processIt (:323-326, :356-359) through the Trx (one op in the group, read-your-writes;
+  // was RUNTIME.DB.executeUpdate, which only the process host binds — a DocAction-path reversal had no executeUpdate)
+  function orderSet(trx, invoice, col, reverse) {
+    var inv = trx.get('c_invoice', invoice.c_invoice_id), o = inv && nz(inv.c_order_id) ? trx.get('c_order', inv.c_order_id) : null; if (!o) return;
+    var ch = {}; ch[col] = reverse ? null : (nz(inv[col]) ? inv[col] : null); trx.update('c_order', o, ch);
+  }
+  // ── MAllocationLine.processIt(reverse) — MAllocationLine.java:273-373 (does not update the line)
   S.allocLineProcessIt = function (trx, line, reverse) {
-    var R_ = R(), invCh = {};
+    var invCh = {};
     var C_Invoice_ID = line.c_invoice_id, C_Payment_ID = line.c_payment_id, C_CashLine_ID = line.c_cashline_id;
     var invoice = nz(C_Invoice_ID) ? trx.get('c_invoice', C_Invoice_ID) : null;           // getInvoice()
     // :288-310 Update Payment
@@ -534,14 +750,12 @@
     if (nz(C_Payment_ID) && invoice != null) {
       if (reverse) invCh.c_payment_id = null;                                             // invoice.setC_Payment_ID(0)
       else if (T.Y(invoice.ispaid)) invCh.c_payment_id = C_Payment_ID;
-      R_.DB.executeUpdate('UPDATE C_Order SET C_Payment_ID=' + (reverse ? 'NULL ' : '(SELECT C_Payment_ID FROM C_Invoice WHERE C_Invoice_ID=' + C_Invoice_ID + ') ') +
-        'WHERE C_Order.C_Order_ID = (SELECT i.C_Order_ID FROM C_Invoice i WHERE i.C_Invoice_ID=' + C_Invoice_ID + ')', []);
+      orderSet(trx, invoice, 'c_payment_id', reverse);   // UPDATE C_Order SET C_Payment_ID=(NULL | the invoice's) WHERE C_Order_ID=(the invoice's order)
     }
     // :348-377 Cash - Invoice
     if (nz(C_CashLine_ID) && invoice != null) {
       if (reverse) invCh.c_cashline_id = null; else invCh.c_cashline_id = C_CashLine_ID;
-      R_.DB.executeUpdate('UPDATE C_Order SET C_CashLine_ID=' + (reverse ? 'NULL ' : '(SELECT C_CashLine_ID FROM C_Invoice WHERE C_Invoice_ID=' + C_Invoice_ID + ') ') +
-        'WHERE C_Order.C_Order_ID = (SELECT i.C_Order_ID FROM C_Invoice i WHERE i.C_Invoice_ID=' + C_Invoice_ID + ')', []);
+      orderSet(trx, invoice, 'c_cashline_id', reverse);  // UPDATE C_Order SET C_CashLine_ID=(NULL | the invoice's) WHERE C_Order_ID=(the invoice's order)
     }
     // :380-385 Update Balance / Credit used — invoice.testAllocation() && invoice.save() (the in-memory setC_Payment_ID(0) is
     // only persisted when IsPaid changed — Java quirk kept)
