@@ -1,0 +1,1 @@
+OplogPic (psd-oplog POC). Contains ag-psd 31.0.3 (MIT), see ag-psd.LICENSE. Open index.html in a browser; nothing to install.

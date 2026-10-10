@@ -283,13 +283,16 @@ function completeInvoice(invoice, lines, policy) {
 //   sale = { order:{c_order_id, description}, lines:[{c_orderline_id, qtyordered, description}],
 //            shipments:[{m_inout_id, docstatus, movementtype, lines:[{m_inoutline_id, m_product_id, movementqty, c_orderline_id}]}],
 //            invoices:[{c_invoice_id, docstatus, grandtotal, lines:[{c_invoiceline_id, m_product_id, qtyinvoiced, linenetamt, c_orderline_id}]}] }
-//   opts = { voidedMsg, newId: function(table) -> id }
+//   opts = { voidedMsg, newId: function(table) -> id, orderLines (optional: the order lines' current {c_orderline_id, qtyordered, qtyreserved, qtydelivered} for the shipment-reversal quantity rule) }
+//   sale.orderTaxes (optional) = [{c_tax_id}] — the order's C_OrderTax rows, zeroed after the lines (:2724-2728)
 // _reversalInvoiceDocOps — the reversal DOCUMENT of a completed invoice (MInvoice.reverse :2690-2760: deep copy, quantities / amounts / tax NEGATED, both 'RE', Reversal_ID both ways).
 // Shared by voidOrder (POS void, F4/F14) and reverseInvoice (Reverse-Correct, F22) — one implementation (AD-LAYER rule 5).
 function _neg(v) { return v == null ? v : -Number(v); }
 function _reversalInvoiceDocOps(iv, orderId, rid) {
   var ops = [];
-  ops.push({ op_type: 'CREATE_DOCUMENT', table: 'C_Invoice', source_id: orderId, c_invoice_id: rid, grandtotal: _neg(iv.grandtotal), reversal_id: iv.c_invoice_id });
+  var cdoc = { op_type: 'CREATE_DOCUMENT', table: 'C_Invoice', source_id: orderId, c_invoice_id: rid, grandtotal: _neg(iv.grandtotal), reversal_id: iv.c_invoice_id };
+  if (iv.iscreditmemo != null) cdoc.iscreditmemo = iv.iscreditmemo;   // §REVIEW-FIX D2: the reversal is a copy (MInvoice.copyFrom) — a credit memo reverses into a credit memo
+  ops.push(cdoc);
   (iv.lines || []).forEach(function (l) {
     ops.push({ op_type: 'CREATE_LINE', table: 'C_InvoiceLine', c_invoice_id: rid, m_product_id: l.m_product_id, qtyinvoiced: _neg(l.qtyinvoiced), linenetamt: _neg(l.linenetamt), c_orderline_id: l.c_orderline_id, reversalline_id: l.c_invoiceline_id });
   });
@@ -333,11 +336,12 @@ function reverseInvoice(iv, st, opts) {
   var rid = opts.newId('C_Invoice');
   ops = ops.concat(_reversalInvoiceDocOps(iv, iv.c_order_id, rid));
   var rLines = (iv.lines || []).map(function (l) { return { m_product_id: l.m_product_id, qtyinvoiced: _neg(l.qtyinvoiced), c_orderline_id: l.c_orderline_id }; });
-  if (opts.orderLines) ops = ops.concat(invoiceOrderLineEffects({ issotrx: iv.issotrx, iscreditmemo: 'N' }, rLines, opts.orderLines).ops);
+  if (opts.orderLines) ops = ops.concat(invoiceOrderLineEffects({ issotrx: iv.issotrx, iscreditmemo: String(iv.iscreditmemo) === 'Y' ? 'Y' : 'N' }, rLines, opts.orderLines).ops);
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: rid, field: 'ispaid', value: 'Y' });
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: iv.c_invoice_id, field: 'ispaid', value: 'Y' });
   (iv.lines || []).forEach(function (l) { if (l.m_inoutline_id) ops.push({ op_type: 'UPDATE_LINE', table: 'M_InOutLine', id: l.m_inoutline_id, isinvoiced: 'N' }); });
-  var gt = Number(iv.grandtotal) * (String(iv.issotrx) === 'N' ? -1 : 1), hid = opts.newId('C_AllocationHdr');
+  // §REVIEW-FIX-2026-10-11 D2: gt = getGrandTotal(true) (credit memo negated, MInvoice.java:844-853), then AP negated (MInvoice.java:2799-2802)
+  var gt = Number(iv.grandtotal) * (String(iv.iscreditmemo) === 'Y' ? -1 : 1) * (String(iv.issotrx) === 'N' ? -1 : 1), hid = opts.newId('C_AllocationHdr');
   ops.push({ op_type: 'CREATE_DOCUMENT', table: 'C_AllocationHdr', c_allocationhdr_id: hid, c_currency_id: iv.c_currency_id, dateacct: iv.dateacct });
   ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: hid * 10 + 1, c_allocationhdr_id: hid, c_invoice_id: iv.c_invoice_id, c_bpartner_id: iv.c_bpartner_id, amount: gt, discountamt: 0, writeoffamt: 0, overunderamt: 0 });
   ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: hid * 10 + 2, c_allocationhdr_id: hid, c_invoice_id: rid, c_bpartner_id: iv.c_bpartner_id, amount: -gt, discountamt: 0, writeoffamt: 0, overunderamt: 0 });
@@ -361,28 +365,39 @@ function _reversalInOutDocOps(s, orderId, rid) {
 // The reversal is COMPLETED (:2851) — completeIt with negated MovementQty: storage at the line locator −= signed qty (a C- reversal puts goods back), the order-line rule
 // (inoutOrderLineEffects: delivered back, reservation restored); invoice lines pointing at the original lines lose the link (:2812-2836); both 'RE'.
 // Costs/books are the posting layer's (Doc_InOut reversal copies the original's facts swapped, :287-300; cost quantities follow the posted reversal).
-// io = { m_inout_id, c_order_id, movementtype, issotrx, docstatus, lines:[{m_inoutline_id, m_product_id, movementqty, c_orderline_id, m_locator_id}] }
-// opts = { newId(table), orderLines (optional), invoiceLines (optional [{c_invoiceline_id, m_inoutline_id}]), periodOpen:{ok} (optional, :2750) }
+// io = { m_inout_id, c_order_id, movementtype, issotrx, docstatus, m_locator_id (optional, shipment-level), lines:[{m_inoutline_id, m_product_id, movementqty, c_orderline_id, m_locator_id}] }
+// opts = { newId(table), orderLines (optional), invoiceLines (optional [{c_invoiceline_id, m_inoutline_id}]), periodOpen:{ok} (optional, :2750), locatorOf(line, io) → M_Locator_ID (optional host resolver) }
+// §REVIEW2 R2: the storage effect needs the ORIGINAL line's locator (MInOut.reverse copies each line, MInOutLine.getM_Locator_ID; completeIt moves storage there). Resolution order: the line's own
+// m_locator_id, then the shipment's, then the host's locatorOf(line, io). A line that resolves to none is NOT emitted with an undefined locator: it is listed in the result's `unresolved`
+// ([{m_inoutline_id, m_product_id}]) so the host moves that storage itself — never a guess, never a silent drop.
 function reverseInOut(io, opts) {
   opts = opts || {};
   if (io.docstatus && io.docstatus !== 'CO' && io.docstatus !== 'CL') return { ok: false, reason: 'not-completed', docstatus: io.docstatus };
   if (opts.periodOpen && !opts.periodOpen.ok) return { ok: false, reason: 'PeriodClosed' };
-  var rid = opts.newId('M_InOut'), ops = _reversalInOutDocOps(io, io.c_order_id, rid), out = String(io.movementtype).charAt(1) === '-';
-  var rLines = (io.lines || []).map(function (l) { return { m_product_id: l.m_product_id, movementqty: _neg(l.movementqty), c_orderline_id: l.c_orderline_id, m_locator_id: l.m_locator_id }; });
-  rLines.forEach(function (l) { if (l.m_product_id) ops.push({ op_type: 'MOVE_STOCK', table: 'M_Storage', m_product_id: l.m_product_id, m_locator_id: l.m_locator_id, qty: out ? -Number(l.movementqty) : Number(l.movementqty) }); });
+  var rid = opts.newId('M_InOut'), ops = _reversalInOutDocOps(io, io.c_order_id, rid), out = String(io.movementtype).charAt(1) === '-', unresolved = [];
+  function locOf(l) { if (l.m_locator_id != null) return l.m_locator_id; if (io.m_locator_id != null) return io.m_locator_id; var h = typeof opts.locatorOf === 'function' ? opts.locatorOf(l, io) : null; return h == null ? null : h; }
+  var rLines = (io.lines || []).map(function (l) { return { m_product_id: l.m_product_id, movementqty: _neg(l.movementqty), c_orderline_id: l.c_orderline_id, m_locator_id: locOf(l), m_inoutline_id: l.m_inoutline_id }; });
+  rLines.forEach(function (l) {
+    if (!l.m_product_id) return;
+    if (l.m_locator_id == null) { unresolved.push({ m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id }); return; }
+    ops.push({ op_type: 'MOVE_STOCK', table: 'M_Storage', m_product_id: l.m_product_id, m_locator_id: l.m_locator_id, qty: out ? -Number(l.movementqty) : Number(l.movementqty) });
+  });
   if (opts.orderLines) ops = ops.concat(inoutOrderLineEffects({ issotrx: io.issotrx, movementtype: io.movementtype }, rLines, opts.orderLines).ops);
   var orig = {}; (io.lines || []).forEach(function (l) { orig[l.m_inoutline_id] = true; });
   (opts.invoiceLines || []).forEach(function (il) { if (orig[il.m_inoutline_id]) ops.push({ op_type: 'UPDATE_LINE', table: 'C_InvoiceLine', id: il.c_invoiceline_id, m_inoutline_id: null }); });
-  return { ok: true, ops: ops, reversalId: rid };
+  return { ok: true, ops: ops, reversalId: rid, unresolved: unresolved };
 }
 function voidOrder(sale, opts) {
-  var ops = [], skip = { CL: 1, RE: 1, VO: 1 };
-  function neg(v) { return v == null ? v : -Number(v); }
+  var ops = [], skip = { CL: 1, RE: 1, VO: 1 }, unresolved = [];
   function addDesc(old, txt) { return old == null || old === '' ? txt : old + ' | ' + txt; }
   (sale.shipments || []).forEach(function (s) {
     if (skip[s.docstatus]) return;
     if (s.docstatus !== 'CO') { ops.push({ op_type: 'SET_STATUS', table: 'M_InOut', id: s.m_inout_id, doc_status: 'VO' }); return; }
-    ops = ops.concat(_reversalInOutDocOps(s, sale.order.c_order_id, opts.newId('M_InOut')));   // §64.4: shared with reverseInOut (same ops, same order)
+    // §64.4: shared with reverseInOut (same ops, same order). §REVIEW-FIX-2026-10-11 D3: MInOut.reverse COMPLETES the reversal (MInOut.java:~2851) ⇒ the storage effect and the order-line
+    // quantity rule (delivered back, reservation restored) ride with the document, exactly as reverseInOut emits them — one implementation. MOVE_STOCK is the storage effect a host applies
+    // (document rows are not summed by storage hosts), so there is no double count; the order-line effect needs the line state, so it is emitted only when the host supplies opts.orderLines.
+    var rv = reverseInOut(Object.assign({}, s, { c_order_id: sale.order.c_order_id, issotrx: s.issotrx || 'Y' }), { newId: opts.newId, orderLines: opts.orderLines, locatorOf: opts.locatorOf });
+    ops = ops.concat(rv.ops); unresolved = unresolved.concat(rv.unresolved);   // §REVIEW2 R2: shipment lines whose locator could not be resolved ride on ops.unresolved
   });
   (sale.invoices || []).forEach(function (iv) {
     if (skip[iv.docstatus]) return;
@@ -393,13 +408,21 @@ function voidOrder(sale, opts) {
   });
   (sale.lines || []).forEach(function (l) {
     if (Number(l.qtyordered) === 0) return;
-    ops.push({ op_type: 'UPDATE_LINE', table: 'C_OrderLine', id: l.c_orderline_id, qtyordered: 0, linenetamt: 0,
-      description: addDesc(l.description, opts.voidedMsg + ' (' + l.qtyordered + ')') });
+    // line.setQty(0) = QtyEntered AND QtyOrdered (MOrderLine.setQty, MOrder.voidIt :2709); reserveStock(null) (:2735-2740) then releases whatever is still reserved (product lines only)
+    var up = { op_type: 'UPDATE_LINE', table: 'C_OrderLine', id: l.c_orderline_id, qtyordered: 0, qtyentered: 0, linenetamt: 0,
+      description: addDesc(l.description, opts.voidedMsg + ' (' + l.qtyordered + ')') };
+    if (l.m_product_id) up.qtyreserved = 0;
+    ops.push(up);
+  });
+  // MOrder.voidIt :2724-2728 — every C_OrderTax row is recalculated from the (now zero) lines. sale.orderTaxes = the order's tax rows [{c_tax_id}] when the host has them.
+  (sale.orderTaxes || []).forEach(function (t) {
+    ops.push({ op_type: 'UPDATE_LINE', table: 'C_OrderTax', c_order_id: sale.order.c_order_id, c_tax_id: t.c_tax_id, taxbaseamt: 0, taxamt: 0 });
   });
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: sale.order.c_order_id, field: 'description', value: addDesc(sale.order.description, opts.voidedMsg) });
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: sale.order.c_order_id, field: 'totallines', value: 0 });
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: sale.order.c_order_id, field: 'grandtotal', value: 0 });
   ops.push({ op_type: 'SET_STATUS', table: 'C_Order', id: sale.order.c_order_id, doc_status: 'VO' });
+  ops.unresolved = unresolved;
   return ops;
 }
 
@@ -423,7 +446,7 @@ function completeMovement(movement, lines, opts) {
 // completePayment — C_Payment CO with the invoice allocation. Implementing prompts/SQLiteIDEMPIERE.md §57 (F16) — Witness: M3 PAY1.
 // MPayment.completeIt → allocateIt (MPayment.java:2298-2304) → allocateInvoice (:2369-2420); MInvoice.testAllocation (:1433-1455); MPayment.testAllocation (:966-982).
 //   pay = { c_payment_id, c_bpartner_id, c_invoice_id, payamt, isreceipt, discountamt, writeoffamt, overunderamt, c_currency_id, dateacct }
-//   invoice = { c_invoice_id, grandtotal, issotrx ('Y' default), iscreditmemo, allocatedamt (already allocated, default 0), dateacct }   opts = { newId() }
+//   invoice = { c_invoice_id, grandtotal, issotrx ('Y' default), iscreditmemo, allocatedamt (the RAW SIGNED sum of the invoice's existing active allocation lines, AP negative — MInvoice.getAllocatedAmt :1393; default 0), dateacct }   opts = { newId() }
 function completePayment(pay, invoice, opts) {
   var c = function (v) { return Math.round(Number(v || 0) * 100); };
   var ops = [{ op_type: 'SET_STATUS', table: 'C_Payment', id: pay.c_payment_id, doc_status: 'CO' }];
@@ -438,9 +461,12 @@ function completePayment(pay, invoice, opts) {
   ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: hid * 10 + 1, c_allocationhdr_id: hid, c_payment_id: pay.c_payment_id, c_invoice_id: invoice.c_invoice_id,
     c_bpartner_id: pay.c_bpartner_id, amount: sign * amt / 100, discountamt: sign * c(pay.discountamt) / 100, writeoffamt: sign * c(pay.writeoffamt) / 100, overunderamt: sign * over / 100 });
   ops.push({ op_type: 'SET_STATUS', table: 'C_AllocationHdr', id: hid, doc_status: 'CO' });
-  var invAlloc = c(invoice.allocatedamt) + sign * (amt + c(pay.discountamt) + c(pay.writeoffamt)) * (String(invoice.issotrx) === 'N' ? -1 : 1);
+  // §REVIEW-FIX-2026-10-11 D6: MInvoice.testAllocation (MInvoice.java:1433-1455) compares the RAW SIGNED sum of the invoice's active allocation lines (getAllocatedAmt :1393 =
+  // Σ Amount+DiscountAmt+WriteOffAmt) with GrandTotal, negated for AP and for a credit memo. The allocation lines THIS verb creates are already sign-adjusted (AP payment ⇒ negative,
+  // :2386-2391), so `invoice.allocatedamt` is that same raw signed sum of the EXISTING lines (AP: negative) and the new line is added as written — no second AP flip, no abs().
+  var invAlloc = c(invoice.allocatedamt) + sign * (amt + c(pay.discountamt) + c(pay.writeoffamt));
   var total = c(invoice.grandtotal) * (String(invoice.issotrx) === 'N' ? -1 : 1) * (String(invoice.iscreditmemo) === 'Y' ? -1 : 1);
-  if (Math.abs(invAlloc) === Math.abs(total)) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: invoice.c_invoice_id, field: 'ispaid', value: 'Y' });
+  if (invAlloc === total) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: invoice.c_invoice_id, field: 'ispaid', value: 'Y' });
   if (amt === c(pay.payamt)) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Payment', id: pay.c_payment_id, field: 'isallocated', value: 'Y' });
   return { ok: true, ops: ops };
 }
@@ -643,7 +669,9 @@ function creditCheckOrder(order, bp, sys) {
   var st = bp.socreditstatus, lim = Number(bp.so_creditlimit || 0), open = Number(bp.totalopenbalance || 0), err = null;
   if (st === 'S') err = { reason: 'credit-stop', msg: 'BPartnerCreditStop' };
   if (st === 'H') err = { reason: 'credit-hold', msg: 'BPartnerCreditHold' };
-  var withAdd = (st === 'X' || st === 'S' || lim === 0) ? st : ((lim - gt) < open ? 'H' : st);
+  // getSOCreditStatus(add) (MBPartner.java:838-849): nothing-to-do ⇒ the BP's OWN status; otherwise Hold only when (limit − add) < open, else Watch/OK — never the BP's own Hold
+  // (§REVIEW-FIX-2026-10-11 D7: a BP already on Hold with headroom left keeps the BPartnerCreditHold message, CreditManagerOrder.java:75-85).
+  var withAdd = (st === 'X' || st === 'S' || lim === 0) ? st : ((lim - gt) < open ? 'H' : 'O');
   if (withAdd === 'H') err = { reason: 'credit-over-hold', msg: 'BPartnerOverOCreditHold' };
   return err ? { ok: false, reason: err.reason, msg: err.msg, totalOpenBalance: open, grandTotal: gt, creditLimit: lim } : { ok: true };
 }
@@ -860,7 +888,7 @@ function completeJournal(journal, lines, ctx) {
 // completeBankStatement — Bank Statement (spec §70, F34): MBankStatementLine.beforeSave (MBankStatementLine.java:180-262 @{u}), MBankStatement.beforeSave (:258-275), prepareIt (:322-364), completeIt (:395-460).
 // stmt = { c_bankstatement_id, c_bankaccount_id, dateacct, beginningbalance (decimal; 0/absent ⇒ the bank account's current balance) }; lines [{ c_bankstatementline_id, line, isactive, dateacct, stmtamt, trxamt, interestamt, c_charge_id, c_payment_id }]
 // ctx = { periodOpen:{ok} (DocBaseType CMB), postWithDateFromLine: bool (sysconfig BANK_STATEMENT_POST_WITH_DATE_FROM_LINE, default false), samePeriod(lineDate, headerDate) → bool,
-//         bankBalance (minor units, the account's CurrentBalance), paymentOf(id) → { isreconciled } }. Amounts in minor units out.
+//         bankBalance (minor units, the account's CurrentBalance), paymentOf(id) → { isreconciled } }. Result fields (lines, balances) are minor units; op values (UPDATE_FIELD delta) are COLUMN units, decimal strings (§REVIEW2 R10).
 function completeBankStatement(stmt, lines, ctx) {
   ctx = ctx || {};
   var m = function (v) { var d = _dec(v == null ? '0' : v); return Number(_rhu(d.n * 100n, 10n ** BigInt(d.k))); };
@@ -883,7 +911,7 @@ function completeBankStatement(stmt, lines, ctx) {
     if (p && p.isreconciled === 'Y') return { ok: false, reason: 'PaymentIsAlreadyReconciled' };
     ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Payment', id: pid, field: 'isreconciled', value: 'Y' });
   }
-  ops.push({ op_type: 'UPDATE_FIELD', table: 'C_BankAccount', id: stmt.c_bankaccount_id, field: 'currentbalance', delta: diff });   // :445-449
+  ops.push({ op_type: 'UPDATE_FIELD', table: 'C_BankAccount', id: stmt.c_bankaccount_id, field: 'currentbalance', delta: (diff / 100).toFixed(2) });   // :445-449 — §REVIEW2 R10: op values are COLUMN units (decimal string, as completeProjectIssue's projectbalanceamt delta); the verb's own result fields stay in minor units
   ops.push({ op_type: 'SET_STATUS', table: 'C_BankStatement', id: stmt.c_bankstatement_id, doc_status: 'CO' });
   return { ok: true, lines: out, beginningBalance: begin, statementDifference: diff, endingBalance: begin + diff, ops: ops };
 }

@@ -61,7 +61,7 @@ function deriveInvoice(db, R, invId, schema) {
   if (rcv) add('DR', rcv, hdr.grandtotal);
   lines.forEach(function (l) { var e = el(R.resolve(db, '{Product.Revenue}', num(l.m_product_id), schema)); if (e) add('CR', e, l.linenetamt); });
   taxes.forEach(function (t) { var e = el(R.resolve(db, '{Tax.Due}', num(t.c_tax_id), schema)); if (e) add('CR', e, t.taxamt); });
-  convertToSchema(db, by, absent, invId, schema);
+  convertToSchema(db, R, by, absent, invId, schema);
   return { by: by, absent: absent };
 }
 
@@ -90,7 +90,7 @@ function deriveAPInvoice(db, R, invId, schema) {
     add('DR', el(R.resolve(db, '{Product.InventoryClearing}', num(l.m_product_id), schema)), l.linenetamt);
   });
   add('CR', el(R.resolve(db, '{Vendor.V_Liability}', num(hdr.c_bpartner_id), schema)), hdr.grandtotal);
-  convertToSchema(db, by, absent, invId, schema);
+  convertToSchema(db, R, by, absent, invId, schema);
   return { by: by, absent: absent };
 }
 
@@ -102,7 +102,7 @@ function _rhuB(n, d) { var neg = n < 0n, a = neg ? -n : n, q = a / d; if ((a % d
 // §65.4 (F27): FactLine.convert works per FACT LINE (FactLine.java:819-900); the fold keeps each line's source amount next to the per-account sum so a second-currency schema
 // converts line by line (legacy) instead of converting the sum (rounding differs on multi-line documents — found by the captured-books oracle, invoices 103 / 106 schema 200000).
 function _part(acc, side, amt) { (acc.parts || (acc.parts = [])).push({ side: side, amt: amt }); }
-function convertToSchema(db, by, absent, invId, schema, table, opts) {
+function convertToSchema(db, R, by, absent, invId, schema, table, opts) {   // R = the post resolver the host handed to derivePostings (browser: window.PostResolver — no require there)
   table = table || 'c_invoice';
   // table/column-guarded like every §29-§38 addition: a posting db without c_currency/c_conversion_rate/c_acctschema keeps the old (unconverted) fold; the
   // c_currency table for the shared posting db ships as build/erp/patches/glassbowl_data.db.sql (patch text; host loader = open item, spec §46.1)
@@ -130,15 +130,15 @@ function convertToSchema(db, by, absent, invId, schema, table, opts) {
     else { x.dr = conv(x.dr); x.cr = conv(x.cr); }
     dr += x.dr; crs += x.cr;
   });
-  if (dr !== crs && table === 'c_allocationhdr' && opts && opts.allocBalance) _allocBalanceAccounting(db, by, absent, schema, dr - crs);   // §68 (F32): the clearing leg is missing (getCashAcct NONE)
+  if (dr !== crs && table === 'c_allocationhdr' && opts && opts.allocBalance) _allocBalanceAccounting(db, R, by, absent, schema, dr - crs);   // §68 (F32): the clearing leg is missing (getCashAcct NONE)
   else if (dr !== crs && table === 'c_allocationhdr') absent.push('allocation rounding correction not ported (Doc_AllocationHdr.java:1147-1900 runs before balanceAccounting; diff=' + (dr - crs) + ')');
-  else if (dr !== crs) balanceAccounting(db, by, absent, schema, dr - crs);
+  else if (dr !== crs) balanceAccounting(db, R, by, absent, schema, dr - crs);
 }
 // §68 (F32) Doc_AllocationHdr.balanceAccounting (Doc_AllocationHdr.java:1807-1828 @{u}; runs inside createFacts when the allocation currency ≠ the schema currency, :548-549):
 // diff = ΣAmtAcctDr − ΣAmtAcctCr; currency balancing on and |diff| < TOLERANCE 0.02 (:78) ⇒ createLine(null, CurrencyBalancing_Acct, −diff) (negative ⇒ CR, Fact.java:206-212);
 // else createLine(null, RealizedLoss, RealizedGain, schema currency, −diff): positive ⇒ DR loss, negative ⇒ CR gain (Fact.java:186-193); accounts from C_AcctSchema_Default. Missing config ⇒ absent by name.
-function _allocBalanceAccounting(db, by, absent, schema, diff) {
-  var R = _R(), amt = -diff, acct = null;
+function _allocBalanceAccounting(db, R, by, absent, schema, diff) {
+  R = R || _R(); var amt = -diff, acct = null;
   var gl = _hasCol(db, 'c_acctschema_gl', 'usecurrencybalancing') ? getRow(db, 'SELECT usecurrencybalancing AS u, currencybalancing_acct AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', num(schema)) : null;
   if (gl && String(gl.u) === 'Y' && Math.abs(diff) < 2) acct = R && R.elementOf ? R.elementOf(db, gl.a) : null;
   else {
@@ -184,10 +184,10 @@ function isClientAccountingImmediate(db, client) { return /^i$/i.test(sysConfig(
 // Fact.balanceAccounting (Fact.java:548-615) — currency-balancing branch: diff = DR−CR; a line on C_AcctSchema_GL.CurrencyBalancing_Acct, CR |diff| when DR exceeds, DR |diff| otherwise,
 // with sides switched (negative amount) when the biggest balance-sheet line's source balance is on the same side (:600-610). The "correct the biggest line" branch (no currency
 // balancing) is not ported ⇒ absent by name.
-function balanceAccounting(db, by, absent, schema, diff) {
+function balanceAccounting(db, R, by, absent, schema, diff) {
   var gl = _hasCol(db, 'c_acctschema_gl', 'usecurrencybalancing') ? getRow(db, 'SELECT usecurrencybalancing AS u, currencybalancing_acct AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', num(schema)) : null;
   if (!gl || String(gl.u) !== 'Y') { absent.push('currency correction of the biggest line not ported (Fact.balanceAccounting, diff=' + diff + ')'); return; }
-  var R = _R(), acct = R && R.elementOf ? R.elementOf(db, gl.a) : null;
+  R = R || _R(); var acct = R && R.elementOf ? R.elementOf(db, gl.a) : null;
   if (!acct) { absent.push('CurrencyBalancing_Acct unresolved'); return; }
   var bs = null, bsAmt = 0, isBS = function (id) { var e = getRow(db, 'SELECT accounttype FROM c_elementvalue WHERE c_elementvalue_id=?', num(id)); return e && ['A', 'L', 'O'].indexOf(String(e.accounttype)) >= 0; };
   Object.keys(by).forEach(function (k) { var x = by[k], amt = Math.abs(x.dr - x.cr); if (isBS(x.account_id) && amt > bsAmt) { bsAmt = amt; bs = x; } });
@@ -222,6 +222,22 @@ function currentCost(db, productId, schema) {
   var c = getRow(db, 'SELECT currentcostprice FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(productId), num(schema), num(as.m_costtype_id), num(el.m_costelement_id)]);
   return c ? { price: Number(c.currentcostprice), method: cm, element: el.m_costelement_id } : { price: null, why: 'no-m_cost-row' };
 }
+// §REVIEW-FIX-2026-10-11 D5 — the ORIGINAL document's posted books. Doc_InOut reverses by copying the original's facts with Dr/Cr swapped (FactLine.updateReverseLine,
+// FactLine.java:1357-1359; Doc_InOut.java:288-301): the amounts are what was POSTED, never a re-derive at today's cost. The SQLite books are fact_acct rows the host wrote when the original
+// posted (line-tagged). Returns null when the db carries no such rows (then the caller keeps its recompute and says so — reversalBasis). cents; per account and per original line.
+function _postedFacts(db, table_id, recordId, schema) {
+  if (!_hasCol(db, 'fact_acct', 'record_id') || !_hasCol(db, 'fact_acct', 'ad_table_id')) return null;
+  var rows = allRows(db, 'SELECT account_id, line_id, amtacctdr, amtacctcr FROM fact_acct WHERE ad_table_id=? AND record_id=? AND c_acctschema_id=?', [table_id, num(recordId), num(schema)]);
+  if (!rows.length) return null;
+  var byAcct = {}, byLine = {};
+  rows.forEach(function (r) {
+    var dr = cents(r.amtacctdr), cr = cents(r.amtacctcr), k = num(r.account_id);
+    if (!byAcct[k]) { var ev = _hasCol(db, 'c_elementvalue', 'c_elementvalue_id') ? getRow(db, 'SELECT value, name FROM c_elementvalue WHERE c_elementvalue_id=?', k) : null; byAcct[k] = { account_id: k, value: ev ? ev.value : null, name: ev ? ev.name : null, dr: 0, cr: 0 }; }
+    byAcct[k].dr += dr; byAcct[k].cr += cr;
+    var lk = num(r.line_id); if (lk) byLine[lk] = (byLine[lk] || 0) + dr;   // the line's cost amount = its Dr leg (Dr COGS / Cr Asset of a sales shipment)
+  });
+  return { by: byAcct, line: byLine };
+}
 function deriveInOut(db, R, ioId, schema, opt) {
   var hdr = getRow(db, 'SELECT m_inout_id,issotrx,movementtype FROM m_inout WHERE m_inout_id=?', num(ioId));
   if (!hdr) return null;
@@ -239,10 +255,18 @@ function deriveInOut(db, R, ioId, schema, opt) {
   if (rev && num(rev.reversal_id) && _hasCol(db, 'm_inoutline', 'reversalline_id')) {
     var rl = allRows(db, 'SELECT reversalline_id FROM m_inoutline WHERE m_inout_id=?', num(ioId));
     if (rl.length && rl.every(function (x) { return num(x.reversalline_id); })) {
-      var orig = deriveInOut(db, R, num(rev.reversal_id), schema, { amountsOnly: true });   // the original's AMOUNTS (legacy reads its posted books); no qty re-check (MCostDetail.java:1482-1485)
-      if (!orig || orig.absent.length) { absent.push('Original Shipment/Receipt not posted yet (' + rev.reversal_id + ')'); return { by: by, absent: absent }; }
-      Object.keys(orig.by).forEach(function (k) { var a = orig.by[k]; by[k] = { account_id: a.account_id, value: a.value, name: a.name, dr: a.cr, cr: a.dr }; });
-      return { by: by, absent: absent };
+      // §REVIEW-FIX D5: the original's POSTED books when the host holds them (fact_acct, table 319) — the amounts at the cost of the day it shipped. Only when none are available is the original
+      // re-derived (at today's cost — exact only while the cost has not moved) and the result says so (reversalBasis), never silently.
+      var posted = _postedFacts(db, 319, rev.reversal_id, schema), basis = 'posted-original', src;
+      if (posted) src = posted.by;
+      else {
+        basis = 'recomputed-current-cost';
+        var orig = deriveInOut(db, R, num(rev.reversal_id), schema, { amountsOnly: true });   // the original's AMOUNTS; no qty re-check (MCostDetail.java:1482-1485)
+        if (!orig || orig.absent.length) { absent.push('Original Shipment/Receipt not posted yet (' + rev.reversal_id + ')'); return { by: by, absent: absent }; }
+        src = orig.by;
+      }
+      Object.keys(src).forEach(function (k) { var a = src[k]; by[k] = { account_id: a.account_id, value: a.value, name: a.name, dr: a.cr, cr: a.dr }; });
+      return { by: by, absent: absent, reversalBasis: basis };
     }
   }
   // §38 (F6): the Average costed-qty refusal — whole document refused, nothing posted (MCost.java:1919-1930 via MCostDetail.process). Only when the posting db carries
@@ -350,12 +374,16 @@ function deriveMatchInv(db, R, id, schema) {
 function _decStr(v) { return _bigDec(v); }
 function _scaleTo(d, k) { return k >= d.k ? d.n * 10n ** BigInt(k - d.k) : _rhuB(d.n, 10n ** BigInt(d.k - k)); }
 function _fmtDec(n, k) { var neg = n < 0n, a = neg ? -n : n, t = a.toString().padStart(k + 1, '0'); return (neg ? '-' : '') + (k ? t.slice(0, -k) + '.' + t.slice(-k) : t); }
-function costUpdatesForMatchPO(db, matchPOId) {
-  var mp = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(matchPOId)); if (!mp || !num(mp.m_inoutline_id)) return [];
-  var ol = getRow(db, 'SELECT ol.*, o.c_currency_id AS ocur, o.ad_client_id AS oclient, o.ad_org_id AS oorg FROM c_orderline ol LEFT JOIN c_order o ON o.c_order_id=ol.c_order_id WHERE ol.c_orderline_id=?', num(mp.c_orderline_id)); if (!ol) return [];
+// the active accounting schemas the costing walks (every one posts; IsActive only where the column exists) — one definition for all of the cost-quantity code
+function _activeSchemas(db, withCur) {
+  return allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct' + (withCur ? ', c_currency_id AS cur' : '') + ' FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []);
+}
+function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost values], absent:[names] } — ONE shape (§REVIEW2 R6): a caller loops .updates, never meets a {absent} pseudo-record
+  var mp = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(matchPOId)); if (!mp || !num(mp.m_inoutline_id)) return { updates: [], absent: [] };
+  var ol = getRow(db, 'SELECT ol.*, o.c_currency_id AS ocur, o.ad_client_id AS oclient, o.ad_org_id AS oorg FROM c_orderline ol LEFT JOIN c_order o ON o.c_order_id=ol.c_order_id WHERE ol.c_orderline_id=?', num(mp.c_orderline_id)); if (!ol) return { updates: [], absent: [] };
   var io = getRow(db, 'SELECT h.dateacct, h.ad_client_id, h.ad_org_id FROM m_inoutline l JOIN m_inout h ON h.m_inout_id=l.m_inout_id WHERE l.m_inoutline_id=?', num(mp.m_inoutline_id));
   var out = [], absent = [];
-  allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct, c_currency_id AS cur FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []).forEach(function (sc) {
+  _activeSchemas(db, true).forEach(function (sc) {
     if (costingMethodOf(db, mp.m_product_id, sc.id) !== 'A') return;
     var el = getRow(db, "SELECT m_costelement_id FROM m_costelement WHERE costingmethod='A' ORDER BY m_costelement_id LIMIT 1", []); if (!el) return;
     var cp = getRow(db, 'SELECT ' + (_hasCol(db, 'c_currency', 'costingprecision') ? 'costingprecision' : 'NULL') + ' AS p FROM c_currency WHERE c_currency_id=?', num(sc.cur));
@@ -390,8 +418,8 @@ function costUpdatesForMatchPO(db, matchPOId) {
     out.push({ m_product_id: num(mp.m_product_id), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: num(el.m_costelement_id),
       currentcostprice: Number(_fmtDec(newPrice, S)), currentqty: Number(_fmtDec(cq12 + q12, S)), cumulatedamt: Number(_fmtDec(_scaleTo(ca, S) + amtS, S)), cumulatedqty: Number(_fmtDec(_scaleTo(cuq, S) + q12, S)) });
   });
-  if (absent.length) return [{ absent: absent }];
-  return out;
+  if (absent.length) return { updates: [], absent: absent };   // legacy throws / skips the whole document where a link is missing: no partial update list
+  return { updates: out, absent: [] };
 }
 
 // ── §38 (F6) costed quantity — MCostDetail.process (MCostDetail.java:1327-1400) + MCostElement.getCostingMethods (MCostElement.java:148-159) + MCost.setCurrentQty (:1919-1930)
@@ -412,7 +440,7 @@ function _curQty(db, pid, sch, ct, el) {
 function costQtyRefusal(db, lines) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return null;
   var els = _costingElements(db).filter(function (e) { return e.cm === 'A' || e.cm === 'I'; });
-  var schemas = allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []);
+  var schemas = _activeSchemas(db);
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i]; if (!_isStocked(db, l.m_product_id)) continue;
     for (var j = 0; j < schemas.length; j++) for (var k = 0; k < els.length; k++) {
@@ -465,13 +493,13 @@ function costAt(db, productId, qty, schema) {
 function costQtyUpdatesFor(db, table, id) {
   if (table === 'M_InOut') return costQtyUpdates(db, id);
   if (table === 'C_ProjectIssue' && _hasCol(db, 'm_cost', 'currentqty')) {   // §71 (F35): MCostDetail.createProjectIssue, qty −MovementQty ⇒ a decrease changes only CurrentQty (MCostDetail.process)
-    var els0 = _costingElements(db), sch0 = allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []), out0 = [], st0 = {};
+    var els0 = _costingElements(db), sch0 = _activeSchemas(db), out0 = [], st0 = {};
     var pi = getRow(db, 'SELECT m_product_id, movementqty FROM c_projectissue WHERE c_projectissue_id=?', num(id));
     if (pi && Number(pi.movementqty) && _isStocked(db, pi.m_product_id)) sch0.forEach(function (sc) { els0.forEach(function (e) { _avgUpdate(db, st0, out0, pi.m_product_id, sc, e, -Number(pi.movementqty), function () { return null; }); }); });
     return out0;
   }
   if (table !== 'M_Inventory' || !_hasCol(db, 'm_cost', 'currentqty')) return [];
-  var els = _costingElements(db), schemas = allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []), out = [], state = {};
+  var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
   allRows(db, 'SELECT m_product_id, qtybook, qtycount FROM m_inventoryline WHERE m_inventory_id=?', num(id)).forEach(function (l) {
     var d = Number(l.qtycount) - Number(l.qtybook); if (!d || !_isStocked(db, l.m_product_id)) return;
     // inventory gain: the cost detail amount = qty × current cost, HALF_UP at the costing precision (pilot history: 2 × 2.29763318 ⇒ 4.5953)
@@ -479,15 +507,34 @@ function costQtyUpdatesFor(db, table, id) {
   });
   return out;
 }
+// §REVIEW2 R3 — the sign follows the DOCUMENT TYPE, as Doc_InOut does: loadLines :139 DocLine.setQty(qty, isSOTrx = MatShipment) negates the qty of a shipment (MMS: C-, V-) and keeps a receipt's (MMR);
+// the cost detail (MCostDetail.createShipment, qty = line.getQty()) is created only in the shipment branches (:198-300, :922-) and the sales-RETURN receipt branch (:452-640, movement C+);
+// the PURCHASE receipt branch (:676, movement V+) creates none — the quantity reaches the cost row through MatchPO / MatchInv (Doc_MatchPO / Doc_MatchInv). movementtype absent ⇒ the C- default.
+function _costQtySign(movementtype) {
+  var mt = String(movementtype || 'C-');
+  if (mt === 'V+') return 0;                       // vendor receipt: no cost detail from Doc_InOut
+  return mt.charAt(1) === '+' ? 1 : -1;            // C+ sales return +qty; C- / V- shipments -qty
+}
 function costQtyUpdates(db, ioId) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return [];
-  var lines = allRows(db, 'SELECT m_product_id, movementqty FROM m_inoutline WHERE m_inout_id=?', num(ioId));
-  var els = _costingElements(db), schemas = allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []), out = [], state = {};
+  var lines = allRows(db, 'SELECT m_product_id, movementqty' + (_hasCol(db, 'm_inoutline', 'reversalline_id') ? ', reversalline_id' : '') + ' FROM m_inoutline WHERE m_inout_id=?', num(ioId));
+  var hcols = ['movementtype', 'reversal_id'].filter(function (c) { return _hasCol(db, 'm_inout', c); });
+  var hdr = hcols.length ? getRow(db, 'SELECT ' + hcols.join(', ') + ' FROM m_inout WHERE m_inout_id=?', num(ioId)) : null, origIo = hdr && num(hdr.reversal_id) ? num(hdr.reversal_id) : null;
+  var sign = _costQtySign(hdr && hdr.movementtype);
+  if (!sign) return [];
+  var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
+  // neither the posted facts (per schema) nor the current cost (per product, schema) depend on the costing element or the line count: read once per call (§REVIEW2 R7)
+  var pfCache = {}, ccCache = {};
+  function posted(schId) { if (!(schId in pfCache)) pfCache[schId] = _postedFacts(db, 319, origIo, schId); return pfCache[schId]; }
+  function costOf(pid, schId) { var k = pid + '|' + schId; if (!(k in ccCache)) ccCache[k] = currentCost(db, pid, schId); return ccCache[k]; }
   lines.forEach(function (l) {
     if (!_isStocked(db, l.m_product_id)) return;
     schemas.forEach(function (sc) { els.forEach(function (e) {
       // a reversal line (qty already negated ⇒ +qty) re-adds at its POSTED amount = the original line's cost amount in this schema, cent-rounded (Doc_InOut reversal facts; pilot history 1 × 2.2976 ⇒ 2.30)
-      _avgUpdate(db, state, out, l.m_product_id, sc, e, -Number(l.movementqty), function () { var cc = currentCost(db, l.m_product_id, sc.id); if (cc.price == null) return null;
+      _avgUpdate(db, state, out, l.m_product_id, sc, e, sign * Number(l.movementqty), function () {
+        // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
+        if (origIo && num(l.reversalline_id)) { var pf = posted(sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
+        var cc = costOf(l.m_product_id, sc.id); if (cc.price == null) return null;
         var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); });
     }); });
   });
@@ -509,7 +556,7 @@ function derivePayment(db, R, payId, schema) {
   var amt = cents(p.payamt);
   if (String(p.isreceipt) !== 'N') { var a = el(R.resolve(db, '{Bank.InTransit}', num(p.c_bankaccount_id), schema)), b = el(R.resolve(db, '{Bank.UnallocatedCash}', num(p.c_bankaccount_id), schema)); if (a) add('DR', a, amt); if (b) add('CR', b, amt); }
   else { var x = el(R.resolve(db, '{Bank.PaymentSelect}', num(p.c_bankaccount_id), schema)), y = el(R.resolve(db, '{Bank.InTransit}', num(p.c_bankaccount_id), schema)); if (x) add('DR', x, amt); if (y) add('CR', y, amt); }
-  convertToSchema(db, by, absent, payId, schema, 'c_payment');
+  convertToSchema(db, R, by, absent, payId, schema, 'c_payment');
   return { by: by, absent: absent };
 }
 // deriveAllocation = Doc_AllocationHdr.createFacts, SO-invoice branch (Doc_AllocationHdr.java:236-363 + Doc_AllocationTax; the fold proven against captured books in
@@ -586,10 +633,10 @@ function deriveAllocation(db, R, hdrId, schema, ref) {
       else if (!sus) absent.push('SuspenseBalancing_Acct');
       else add(bal < 0 ? 'DR' : 'CR', { id: sus.id, value: sus.value, name: sus.name }, Math.abs(bal));
     }
-    convertToSchema(db, by, absent, hdrId, schema, 'c_allocationhdr', { allocBalance: foreign });
+    convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr', { allocBalance: foreign });
     return { by: by, absent: absent };
   }
-  convertToSchema(db, by, absent, hdrId, schema, 'c_allocationhdr');
+  convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr');
   return { by: by, absent: absent };
 }
 
@@ -1004,7 +1051,7 @@ function deriveRequisition(db, id, schema) {
 // FUTURE active C_Cash doc) — its role HERE is only the falsifier: it computes REAL non-empty legs from
 // the real line data, proving the ∅ is an IsActive-gate fact (Doc.postIt, outside createFacts), not a
 // dead/no-op verb or a manifest bug. NEVER invents: IsActive is read, never flipped, on the real rows.
-function deriveCash(db, id, schema) {
+function deriveCash(db, R, id, schema) {
   // §66.2 (F30) — Doc_Cash.createFacts (Doc_Cash.java:150-249) as legacy posts it: a leg whose cash-book account is NOT configured is not created (Fact.createLine returns null for a null
   // account, Fact.java:116-122) — it is no longer reported absent; an unbalanced source is then balanced on the schema's SuspenseBalancing account (Doc.post → Fact.balanceSource
   // Fact.java:298-322, only when UseSuspenseBalancing='Y', else NotBalanced ⇒ absent); each line is converted to the schema currency on its own (FactLine.convert), then the currency
@@ -1053,7 +1100,7 @@ function deriveCash(db, id, schema) {
     if (amt == null) return d;
     d.add(p.side, p.el, amt); if (p.side === 'DR') dr += amt; else cr += amt;
   }
-  if (dr !== cr) balanceAccounting(db, d.by, d.absent, schema, dr - cr);
+  if (dr !== cr) balanceAccounting(db, R, d.by, d.absent, schema, dr - cr);
   return d;
 }
 
@@ -1208,7 +1255,7 @@ function finish(d, basis, glCat) {
   var sumDr = 0, sumCr = 0;
   Object.keys(d.by).forEach(function (k) { sumDr += d.by[k].dr; sumCr += d.by[k].cr; });
   return { lines: lines, balanced: lines.length > 0 && sumDr === sumCr, sumDr: sumDr, sumCr: sumCr, absent: d.absent, basis: basis,
-           gl_category_id: gl.id, gl_category_stage: gl.stage, postStatus: d.postStatus };   // §75: a legacy Doc status other than posted ('i' InvalidAccount), when the fold knows it
+           gl_category_id: gl.id, gl_category_stage: gl.stage, postStatus: d.postStatus, reversalBasis: d.reversalBasis };   // §75: a legacy Doc status other than posted ('i' InvalidAccount), when the fold knows it
 }
 
 /**
@@ -1247,7 +1294,7 @@ function derivePostings(db, recordRef, schema, R) {
   if (table === 'M_MatchPO') return finish(deriveMatchPO(db, id, schema), 'matchpo', glOf('m_matchpo', id));
   if (table === 'M_MatchInv') return finish(deriveMatchInv(db, R, id, schema), 'matchinv', glOf('m_matchinv', id));   // §65.2 (F25)
   if (table === 'M_Requisition') return finish(deriveRequisition(db, id, schema), 'requisition', glOf('m_requisition', id));
-  if (table === 'C_Cash') return finish(deriveCash(db, id, schema), 'cash', glOf('c_cash', id));
+  if (table === 'C_Cash') return finish(deriveCash(db, R, id, schema), 'cash', glOf('c_cash', id));
   if (table === 'GL_Journal') return finish(deriveGLJournal(db, id, schema), 'gl-journal', glOf('gl_journal', id));   // §69 (F33)
   if (table === 'M_Inventory') return finish(deriveInventory(db, id, schema), 'inventory', glOf('m_inventory', id));
   return { lines: [], balanced: false, sumDr: 0, sumCr: 0, absent: [], basis: 'none' };
