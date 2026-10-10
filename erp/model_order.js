@@ -508,14 +508,21 @@
     if (!R().M.MProductPricing) { say(trx, '§MODEL-UNPORTED-DEP MOrderLine.beforeSave pricing needs callouts/pricing.js, not loaded on this host — line saved unpriced'); return null; }
     var line = { get: function (c) { return row[c.toLowerCase()]; },
                  set: function (c, v) { row[c.toLowerCase()] = v instanceof a.BigDecimal ? MLo.N(v) : v; return line; } };
-    var RT = R(), sDB = RT.DB, sPO = RT.PO, env = trx.env || {};
+    // bind() rewrites RUNTIME.DB, .PO and Env.now (and .now/.log when given opts): every one of them is put back, whatever happens in between (§REVIEW2 R5).
+    var RT = R(), sDB = RT.DB, sPO = RT.PO, sNow = RT.now, sEnvNow = a.Env.now, env = trx.env || {};
     a.bind(function (sql, params) { return trx.q(sql, params); });
     try {
       var ctx = new a.Ctx();                                                            // only #AD_Role_ID is read here (MRole.getDefault, :834)
       a.Env.setContext(ctx, a.Env.AD_CLIENT_ID, env.client); a.Env.setContext(ctx, a.Env.AD_ORG_ID, env.org);
       a.Env.setContext(ctx, a.Env.AD_ROLE_ID, env.role != null ? env.role : ((GL.APP && GL.APP.roleId) || 0));
       return olBeforeSavePricing(trx, ctx, line, order);
-    } finally { RT.DB = sDB; RT.PO = sPO; }
+    } catch (e) {
+      // PO.save wraps beforeSave in try/catch (PO.java:2486-2512): an exception there (setPrice() → IllegalStateException "PriceList unknown!", MOrderLine.java:293-296; a pricing SQL error)
+      // is logged and save() returns FALSE. The model layer's contract for a refused save is the returned error string — never an exception out of the hook.
+      var msg = (e && e.message) || String(e);
+      say(trx, '§MODEL-SEVERE MOrderLine.beforeSave ' + msg);
+      return msg;
+    } finally { RT.DB = sDB; RT.PO = sPO; RT.now = sNow; a.Env.now = sEnvNow; }
   };
 
   // ══ MOrder.copyLinesFrom(otherOrder, counter, copyASI) (MOrder.java:795-851) ═════════════════════════════════

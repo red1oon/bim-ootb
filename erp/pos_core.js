@@ -158,16 +158,16 @@
     }
     return { ok: true };
   }
-  // §45 (F11): line tax + C_OrderTax rows + GrandTotal (+ the same on the in-group invoice), only when the host supplies ctx.taxOf(productId) → C_Tax_ID
-  // (erp_engine.taxLookup), ctx.taxById(id) → c_tax row, ctx.taxIncluded, ctx.taxChildren(id). Legacy: MOrderLine.beforeSave setTax (:866-867) → StandardTaxProvider.
   // §REVIEW-FIX-2026-10-11 D1/D4 — line tax resolution split out of applyTax so it can run BEFORE the credit gate (legacy order: MOrderLine.beforeSave setTax :866-867 at line save,
   // MOrder.prepareIt calculateTaxTotal :1666, THEN the credit manager :1689 on GrandTotal). Fills c_tax_id on the lines it is given (callers pass their OWN copies) and reports which lines
   // it assigned, so applyTax can write c_tax_id onto lines that already exist (a recalled held order has no CREATE_LINE ops to carry it).
-  function resolveLineTax(ctx, soLines) {
+  // §REVIEW2 R4: the lookup date is the ORDER's DateOrdered (MOrderLine.setTax :348 passes getDateOrdered() for both bill and ship date) — `date` rides as taxOf's 2nd argument; absent ⇒ the host's default.
+  function _taxDate(opts, order) { return (opts && opts.dateAcct) || (order && order.dateordered) || undefined; }
+  function resolveLineTax(ctx, soLines, date) {
     var assigned = [];
     for (var i = 0; i < soLines.length; i++) {
       var l = soLines[i];
-      if (l.c_tax_id == null) { var t = ctx.taxOf(l.m_product_id); if (!t || !t.ok) return { ok: false, assigned: assigned, reason: 'tax-not-found', m_product_id: l.m_product_id, detail: t && t.reason }; l.c_tax_id = t.c_tax_id; assigned.push(i); }
+      if (l.c_tax_id == null) { var t = ctx.taxOf(l.m_product_id, date); if (!t || !t.ok) return { ok: false, assigned: assigned, reason: 'tax-not-found', m_product_id: l.m_product_id, detail: t && t.reason }; l.c_tax_id = t.c_tax_id; assigned.push(i); }
     }
     return { ok: true, assigned: assigned };
   }
@@ -181,7 +181,7 @@
   // `pre` = the resolveLineTax result already computed for the credit gate (its assigned list is kept).
   function applyTax(ctx, g, opts, pre) {
     if (!ctx || typeof ctx.taxOf !== 'function' || !g.ok) return g;
-    var rt = resolveLineTax(ctx, g.soLines);
+    var rt = resolveLineTax(ctx, g.soLines, _taxDate(opts, g.order));
     if (!rt.ok) return { ok: false, reason: rt.reason, m_product_id: rt.m_product_id, detail: rt.detail };
     var assigned = (pre && pre.assigned ? pre.assigned : []).concat(rt.assigned);
     var byLine = {}; g.soLines.forEach(function (l) { byLine[l.c_orderline_id] = l.c_tax_id; });
@@ -215,7 +215,7 @@
     var r = E.creditCheckOrder({ issotrx: 'Y', docsubtypeso: docsubtypeso, paymentrule: paymentrule, grandtotal: gt / 100 }, c.bp, c.sys);
     return r.ok ? r : { ok: false, reason: r.reason, msg: r.msg, credit: r };
   }
-  function _taxPre(ctx, soLines) { return (ctx && typeof ctx.taxOf === 'function') ? resolveLineTax(ctx, soLines) : null; }
+  function _taxPre(ctx, soLines, date) { return (ctx && typeof ctx.taxOf === 'function') ? resolveLineTax(ctx, soLines, date) : null; }
   function buildSaleGroup(ctx, cart, opts) {
     var built = buildOrderOps(ctx, cart, opts);
     if (!built.ok) return built;
@@ -223,7 +223,7 @@
     if (!pg.ok) return pg;
     var ag = acctGate(ctx, built.soLines);
     if (!ag.ok) return ag;
-    var tp = _taxPre(ctx, built.soLines);
+    var tp = _taxPre(ctx, built.soLines, _taxDate(opts, built.order));
     var cg = creditGate(ctx, built.soLines, opts.c_bpartner_id, ctx.docsubtypeso || 'WR', opts.paymentrule, tp);
     if (!cg.ok) return cg;
     var tail = completionOps(ctx, built.order, built.soLines, opts);
@@ -254,7 +254,7 @@
     var ag = acctGate(ctx, heldLines);
     if (!ag.ok) return ag;
     var lines = heldLines.map(function (l) { return Object.assign({}, l); });   // §REVIEW-FIX D4: tax is stamped on OUR copies — the caller's rows are never mutated
-    var tp = _taxPre(ctx, lines);
+    var tp = _taxPre(ctx, lines, _taxDate(opts, heldOrder));
     var cg = creditGate(ctx, lines, heldOrder.c_bpartner_id, ctx.docsubtypeso || 'WR', opts && opts.paymentrule, tp);
     if (!cg.ok) return cg;
     var tail = completionOps(ctx, heldOrder, lines, opts);
@@ -308,7 +308,7 @@
     if (!pg.ok) return pg;
     var ag = acctGate(ctx, built.soLines);
     if (!ag.ok) return ag;
-    var tp = _taxPre(ctx, built.soLines);
+    var tp = _taxPre(ctx, built.soLines, _taxDate(opts, built.order));
     var cg = creditGate(ctx, built.soLines, opts.c_bpartner_id, opts.doctype.docsubtypeso, opts.paymentrule, tp);
     if (!cg.ok) return cg;
     // complete the ORDER with the dictionary flags VERBATIM (N/N ⇒ the bare SET_STATUS C_Order CO)

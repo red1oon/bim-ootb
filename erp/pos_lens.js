@@ -414,22 +414,29 @@
       var oi = q1(b3, 'SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=?', pos.ad_org_id), wl = q1(b3, 'SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=?', pos.m_warehouse_id);
       var dv = q1(b3, "SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'");
       var today = new Date().toISOString().slice(0, 10);
-      return function (pid) {
+      return function (pid, date) {   // §REVIEW2 R4: `date` = the order's DateOrdered (MOrderLine.setTax :348 getDateOrdered()); absent ⇒ today
         var p = q1(b3, 'SELECT c_taxcategory_id AS c FROM m_product WHERE m_product_id=?', pid);
-        var r = Eng.taxLookup({ taxes: taxes, taxCategoryId: p && p.c, isSOTrx: true, billDate: today, billFrom: loc(oi && oi.l), billTo: loc(bl && bl.l), warehouse: loc(wl && wl.l),
+        var r = Eng.taxLookup({ taxes: taxes, taxCategoryId: p && p.c, isSOTrx: true, billDate: date ? String(date).slice(0, 10) : today, billFrom: loc(oi && oi.l), billTo: loc(bl && bl.l), warehouse: loc(wl && wl.l),
           deliveryViaRule: bp.deliveryviarule || (dv && dv.d), bpTaxExempt: bp.istaxexempt });
         console.log('§POS-TAX product=' + pid + ' bp=' + bpId + ' tax=' + (r.ok ? r.c_tax_id + ' via=' + r.via : 'NONE reason=' + r.reason));
         return r;
       };
     } catch (e) { console.log('§POS-TAX inputs-missing ' + (e && e.message)); return function () { return { ok: false, reason: 'tax-inputs-missing' }; }; }
   }
+  // §REVIEW2 R8: the sysconfig reads go through DocPoster.sysConfigBool = MSysConfig.getValue semantics (AD_Client_ID IN (0,client), AD_Org_ID IN (0,org), IsActive, client DESC, org DESC),
+  // not a bare `WHERE name=?`. DocPoster reads db.prepare(sql).get(paramsArray), the lens b3 takes spread arguments — a one-line adapter.
+  function _dpDb(b3) {
+    function sp(p) { return Array.isArray(p) ? p : (p === undefined ? [] : [p]); }
+    return { prepare: function (sql) { var st = b3.prepare(sql); return { get: function (p) { return st.get.apply(st, sp(p)); }, all: function (p) { return st.all.apply(st, sp(p)); } }; } };
+  }
+  function _docPoster() { return root.DocPoster || (typeof require !== 'undefined' ? (function () { try { return require('./doc_poster'); } catch (e) { try { return require('../../scripts/doc_poster'); } catch (e2) { return null; } } })() : null); }
   function _posGlue(b3, pos, plv) {
     return {
       priceOf: function (pid) { return q1(b3, 'SELECT pricestd FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=?', plv.v, pid) || null; },
       // §36 F5 (prompts/SQLiteIDEMPIERE.md): the SO credit gate inputs — bill-BP credit row + sysconfig (absent table/row ⇒ legacy default true)
       creditOf: function (bpId) {
-        var sys = {};
-        ['CHECK_CREDIT_ON_CASH_POS_ORDER', 'CHECK_CREDIT_ON_PREPAY_ORDER'].forEach(function (k) { try { var r = q1(b3, 'SELECT value AS v FROM ad_sysconfig WHERE name=?', k); if (r) sys[k] = r.v; } catch (e) { /* no ad_sysconfig in this db ⇒ default */ } });
+        var sys = {}, DPx = _docPoster();
+        ['CHECK_CREDIT_ON_CASH_POS_ORDER', 'CHECK_CREDIT_ON_PREPAY_ORDER'].forEach(function (k) { try { if (DPx) sys[k] = DPx.sysConfigBool(_dpDb(b3), k, true, pos.ad_client_id, pos.ad_org_id) ? 'Y' : 'N'; } catch (e) { /* no ad_sysconfig in this db ⇒ default */ } });
         return { bp: q1(b3, 'SELECT socreditstatus, so_creditlimit, totalopenbalance FROM c_bpartner WHERE c_bpartner_id=?', bpId), sys: sys };
       },
       // §45 F11: tax inputs (c_tax rows, taxIncluded of the POS price list); ctx.taxOf is bound per sale to the chosen partner (lensTaxOf)

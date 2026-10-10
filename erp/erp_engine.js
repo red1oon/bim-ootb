@@ -365,23 +365,30 @@ function _reversalInOutDocOps(s, orderId, rid) {
 // The reversal is COMPLETED (:2851) — completeIt with negated MovementQty: storage at the line locator −= signed qty (a C- reversal puts goods back), the order-line rule
 // (inoutOrderLineEffects: delivered back, reservation restored); invoice lines pointing at the original lines lose the link (:2812-2836); both 'RE'.
 // Costs/books are the posting layer's (Doc_InOut reversal copies the original's facts swapped, :287-300; cost quantities follow the posted reversal).
-// io = { m_inout_id, c_order_id, movementtype, issotrx, docstatus, lines:[{m_inoutline_id, m_product_id, movementqty, c_orderline_id, m_locator_id}] }
-// opts = { newId(table), orderLines (optional), invoiceLines (optional [{c_invoiceline_id, m_inoutline_id}]), periodOpen:{ok} (optional, :2750) }
+// io = { m_inout_id, c_order_id, movementtype, issotrx, docstatus, m_locator_id (optional, shipment-level), lines:[{m_inoutline_id, m_product_id, movementqty, c_orderline_id, m_locator_id}] }
+// opts = { newId(table), orderLines (optional), invoiceLines (optional [{c_invoiceline_id, m_inoutline_id}]), periodOpen:{ok} (optional, :2750), locatorOf(line, io) → M_Locator_ID (optional host resolver) }
+// §REVIEW2 R2: the storage effect needs the ORIGINAL line's locator (MInOut.reverse copies each line, MInOutLine.getM_Locator_ID; completeIt moves storage there). Resolution order: the line's own
+// m_locator_id, then the shipment's, then the host's locatorOf(line, io). A line that resolves to none is NOT emitted with an undefined locator: it is listed in the result's `unresolved`
+// ([{m_inoutline_id, m_product_id}]) so the host moves that storage itself — never a guess, never a silent drop.
 function reverseInOut(io, opts) {
   opts = opts || {};
   if (io.docstatus && io.docstatus !== 'CO' && io.docstatus !== 'CL') return { ok: false, reason: 'not-completed', docstatus: io.docstatus };
   if (opts.periodOpen && !opts.periodOpen.ok) return { ok: false, reason: 'PeriodClosed' };
-  var rid = opts.newId('M_InOut'), ops = _reversalInOutDocOps(io, io.c_order_id, rid), out = String(io.movementtype).charAt(1) === '-';
-  var rLines = (io.lines || []).map(function (l) { return { m_product_id: l.m_product_id, movementqty: _neg(l.movementqty), c_orderline_id: l.c_orderline_id, m_locator_id: l.m_locator_id }; });
-  rLines.forEach(function (l) { if (l.m_product_id) ops.push({ op_type: 'MOVE_STOCK', table: 'M_Storage', m_product_id: l.m_product_id, m_locator_id: l.m_locator_id, qty: out ? -Number(l.movementqty) : Number(l.movementqty) }); });
+  var rid = opts.newId('M_InOut'), ops = _reversalInOutDocOps(io, io.c_order_id, rid), out = String(io.movementtype).charAt(1) === '-', unresolved = [];
+  function locOf(l) { if (l.m_locator_id != null) return l.m_locator_id; if (io.m_locator_id != null) return io.m_locator_id; var h = typeof opts.locatorOf === 'function' ? opts.locatorOf(l, io) : null; return h == null ? null : h; }
+  var rLines = (io.lines || []).map(function (l) { return { m_product_id: l.m_product_id, movementqty: _neg(l.movementqty), c_orderline_id: l.c_orderline_id, m_locator_id: locOf(l), m_inoutline_id: l.m_inoutline_id }; });
+  rLines.forEach(function (l) {
+    if (!l.m_product_id) return;
+    if (l.m_locator_id == null) { unresolved.push({ m_inoutline_id: l.m_inoutline_id, m_product_id: l.m_product_id }); return; }
+    ops.push({ op_type: 'MOVE_STOCK', table: 'M_Storage', m_product_id: l.m_product_id, m_locator_id: l.m_locator_id, qty: out ? -Number(l.movementqty) : Number(l.movementqty) });
+  });
   if (opts.orderLines) ops = ops.concat(inoutOrderLineEffects({ issotrx: io.issotrx, movementtype: io.movementtype }, rLines, opts.orderLines).ops);
   var orig = {}; (io.lines || []).forEach(function (l) { orig[l.m_inoutline_id] = true; });
   (opts.invoiceLines || []).forEach(function (il) { if (orig[il.m_inoutline_id]) ops.push({ op_type: 'UPDATE_LINE', table: 'C_InvoiceLine', id: il.c_invoiceline_id, m_inoutline_id: null }); });
-  return { ok: true, ops: ops, reversalId: rid };
+  return { ok: true, ops: ops, reversalId: rid, unresolved: unresolved };
 }
 function voidOrder(sale, opts) {
-  var ops = [], skip = { CL: 1, RE: 1, VO: 1 };
-  function neg(v) { return v == null ? v : -Number(v); }
+  var ops = [], skip = { CL: 1, RE: 1, VO: 1 }, unresolved = [];
   function addDesc(old, txt) { return old == null || old === '' ? txt : old + ' | ' + txt; }
   (sale.shipments || []).forEach(function (s) {
     if (skip[s.docstatus]) return;
@@ -389,7 +396,8 @@ function voidOrder(sale, opts) {
     // §64.4: shared with reverseInOut (same ops, same order). §REVIEW-FIX-2026-10-11 D3: MInOut.reverse COMPLETES the reversal (MInOut.java:~2851) ⇒ the storage effect and the order-line
     // quantity rule (delivered back, reservation restored) ride with the document, exactly as reverseInOut emits them — one implementation. MOVE_STOCK is the storage effect a host applies
     // (document rows are not summed by storage hosts), so there is no double count; the order-line effect needs the line state, so it is emitted only when the host supplies opts.orderLines.
-    ops = ops.concat(reverseInOut(Object.assign({}, s, { c_order_id: sale.order.c_order_id, issotrx: s.issotrx || 'Y' }), { newId: opts.newId, orderLines: opts.orderLines }).ops);
+    var rv = reverseInOut(Object.assign({}, s, { c_order_id: sale.order.c_order_id, issotrx: s.issotrx || 'Y' }), { newId: opts.newId, orderLines: opts.orderLines, locatorOf: opts.locatorOf });
+    ops = ops.concat(rv.ops); unresolved = unresolved.concat(rv.unresolved);   // §REVIEW2 R2: shipment lines whose locator could not be resolved ride on ops.unresolved
   });
   (sale.invoices || []).forEach(function (iv) {
     if (skip[iv.docstatus]) return;
@@ -414,6 +422,7 @@ function voidOrder(sale, opts) {
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: sale.order.c_order_id, field: 'totallines', value: 0 });
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: sale.order.c_order_id, field: 'grandtotal', value: 0 });
   ops.push({ op_type: 'SET_STATUS', table: 'C_Order', id: sale.order.c_order_id, doc_status: 'VO' });
+  ops.unresolved = unresolved;
   return ops;
 }
 
@@ -879,7 +888,7 @@ function completeJournal(journal, lines, ctx) {
 // completeBankStatement — Bank Statement (spec §70, F34): MBankStatementLine.beforeSave (MBankStatementLine.java:180-262 @{u}), MBankStatement.beforeSave (:258-275), prepareIt (:322-364), completeIt (:395-460).
 // stmt = { c_bankstatement_id, c_bankaccount_id, dateacct, beginningbalance (decimal; 0/absent ⇒ the bank account's current balance) }; lines [{ c_bankstatementline_id, line, isactive, dateacct, stmtamt, trxamt, interestamt, c_charge_id, c_payment_id }]
 // ctx = { periodOpen:{ok} (DocBaseType CMB), postWithDateFromLine: bool (sysconfig BANK_STATEMENT_POST_WITH_DATE_FROM_LINE, default false), samePeriod(lineDate, headerDate) → bool,
-//         bankBalance (minor units, the account's CurrentBalance), paymentOf(id) → { isreconciled } }. Amounts in minor units out.
+//         bankBalance (minor units, the account's CurrentBalance), paymentOf(id) → { isreconciled } }. Result fields (lines, balances) are minor units; op values (UPDATE_FIELD delta) are COLUMN units, decimal strings (§REVIEW2 R10).
 function completeBankStatement(stmt, lines, ctx) {
   ctx = ctx || {};
   var m = function (v) { var d = _dec(v == null ? '0' : v); return Number(_rhu(d.n * 100n, 10n ** BigInt(d.k))); };
@@ -902,7 +911,7 @@ function completeBankStatement(stmt, lines, ctx) {
     if (p && p.isreconciled === 'Y') return { ok: false, reason: 'PaymentIsAlreadyReconciled' };
     ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Payment', id: pid, field: 'isreconciled', value: 'Y' });
   }
-  ops.push({ op_type: 'UPDATE_FIELD', table: 'C_BankAccount', id: stmt.c_bankaccount_id, field: 'currentbalance', delta: diff });   // :445-449
+  ops.push({ op_type: 'UPDATE_FIELD', table: 'C_BankAccount', id: stmt.c_bankaccount_id, field: 'currentbalance', delta: (diff / 100).toFixed(2) });   // :445-449 — §REVIEW2 R10: op values are COLUMN units (decimal string, as completeProjectIssue's projectbalanceamt delta); the verb's own result fields stay in minor units
   ops.push({ op_type: 'SET_STATUS', table: 'C_BankStatement', id: stmt.c_bankstatement_id, doc_status: 'CO' });
   return { ok: true, lines: out, beginningBalance: begin, statementDifference: diff, endingBalance: begin + diff, ops: ops };
 }
