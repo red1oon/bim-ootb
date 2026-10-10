@@ -1,0 +1,229 @@
+{
+ "n_checks": 18,
+ "gate": "FAIL",
+ "fails": [
+  "P1 composite 8 layers: t(2048)/t(1024) (t=174.2→496.3 ms): got 2.85, need in [3,5]",
+  "P1 per-pixel-per-layer cost spread (max/min), values ns 23.12/22.53/20.77/14.79: got 1.56, need <= 1.5",
+  "P5 hash-chain overhead bytes per op (161.9): got 161.9, need in [120,160]",
+  "P5 gzip(raw)/raw (0.284): got 0.284, need <= 0.25"
+ ],
+ "numbers": {
+  "P1_composite_ms": {
+   "256": 12.119246000002022,
+   "512": 47.257279999990715,
+   "1024": 174.2321319999901,
+   "2048": 496.25176500000816
+  },
+  "P2_full_refold_ms": 2978.2602990000014,
+  "P2_fold_only_ms": 927.9439929999935,
+  "P3_cached_edit_ms": 972.4229720000003,
+  "P4_dab_ms": {
+   "512": {
+    "10": 0.012747174999822164,
+    "20": 0.05101075000020501,
+    "40": 0.2019082499999058,
+    "80": 0.7705317500000092
+   },
+   "2048": {
+    "10": 0.012752625000211992,
+    "20": 0.04865705000011076,
+    "40": 0.2218347999998514,
+    "80": 0.7562973000000056
+   }
+  },
+  "P6_verify_ok": true,
+  "P5": {
+   "raw_bytes": 9794369,
+   "per_op_raw": 97.93781373117613,
+   "chain_bytes": 25984237,
+   "per_op_chain": 259.8267803931764,
+   "gzip_bytes": 2786421,
+   "chain_ms": 1603.4751890000043,
+   "verify_ms": 1653.8200579999975
+  },
+  "P7_fold_ms": {
+   "10000": 1065.0397819999926,
+   "25000": 2235.793411000006,
+   "50000": 4050.4806580000004,
+   "100000": 8472.519105999992
+  },
+  "P8": {
+   "full_ms": 8196.192871000007,
+   "resume_ms": 963.2214840000088,
+   "checkpoint_bytes": 67108864,
+   "log_bytes_raw": 9794369,
+   "layer_blob_ids": [
+    "9bf491c2",
+    "2cb891be",
+    "45f98d06",
+    "bff6d2f4"
+   ]
+  }
+ },
+ "checks": [
+  {
+   "id": "P1",
+   "name": "composite 8 layers: t(2048)/t(1024) (t=174.2→496.3 ms)",
+   "value": 2.85,
+   "cmp": "in",
+   "limit": [
+    3,
+    5
+   ],
+   "pass": false
+  },
+  {
+   "id": "P1",
+   "name": "per-pixel-per-layer cost spread (max/min), values ns 23.12/22.53/20.77/14.79",
+   "value": 1.56,
+   "cmp": "<=",
+   "limit": 1.5,
+   "pass": false
+  },
+  {
+   "id": "P2",
+   "name": "full refold + composite at 2048^2, 8 layers x 40 dabs (2978 ms; fold 928 + composite 2050)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "P3",
+   "name": "cached path (apply one dab in place + composite) is byte-identical to the full refold (f32 hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "P3",
+   "name": "speedup of the cached edit over the full refold (972 vs 2978 ms)",
+   "value": 3.06,
+   "cmp": ">=",
+   "limit": 3,
+   "pass": true
+  },
+  {
+   "id": "P4",
+   "name": "dab cost ratio r=80 / r=40 at W=512 (ideal 4)",
+   "value": 3.82,
+   "cmp": "in",
+   "limit": [
+    3,
+    5
+   ],
+   "pass": true
+  },
+  {
+   "id": "P4",
+   "name": "dab cost at W=2048 vs W=512, r=40 (ratio, should be ~1)",
+   "value": 1.1,
+   "cmp": "in",
+   "limit": [
+    0.77,
+    1.3
+   ],
+   "pass": true
+  },
+  {
+   "id": "P5",
+   "name": "raw bytes per dab op (97.9; 9.79 MB for 100000)",
+   "value": 97.9,
+   "cmp": "in",
+   "limit": [
+    80,
+    130
+   ],
+   "pass": true
+  },
+  {
+   "id": "P5",
+   "name": "hash-chain overhead bytes per op (161.9)",
+   "value": 161.9,
+   "cmp": "in",
+   "limit": [
+    120,
+    160
+   ],
+   "pass": false
+  },
+  {
+   "id": "P5",
+   "name": "gzip(raw)/raw (0.284)",
+   "value": 0.284,
+   "cmp": "<=",
+   "limit": 0.25,
+   "pass": false
+  },
+  {
+   "id": "P6",
+   "name": "chain build 1603 ms for 100000 ops",
+   "value": 1603.4751890000043,
+   "cmp": "<=",
+   "limit": 2000,
+   "pass": true
+  },
+  {
+   "id": "P6",
+   "name": "chain verify 1654 ms (and verifies clean)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "P7",
+   "name": "fold time linear in log length: t(100k)/t(50k) (4050→8473 ms; absolute for 100k = 8.5 s)",
+   "value": 2.09,
+   "cmp": "in",
+   "limit": [
+    1.7,
+    2.3
+   ],
+   "pass": true
+  },
+  {
+   "id": "P8",
+   "name": "checkpoint + tail reproduces the full fold exactly (f32 hash)",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "P8",
+   "name": "resume cost / full fold cost (963 vs 8196 ms)",
+   "value": 0.118,
+   "cmp": "<=",
+   "limit": 0.2,
+   "pass": true
+  },
+  {
+   "id": "P8",
+   "name": "info: checkpoint = 67.1 MB of layer state vs 9.8 MB of raw log (4 layers x 1024^2 x 16 B)",
+   "value": 67108864,
+   "cmp": "info",
+   "limit": null,
+   "pass": true
+  },
+  {
+   "id": "P9",
+   "name": "negative control: dropping one op after the checkpoint changes the hash",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  },
+  {
+   "id": "P9",
+   "name": "negative control: a corrupted checkpoint blob (one sample +0.001) changes the hash",
+   "value": true,
+   "cmp": "==",
+   "limit": true,
+   "pass": true
+  }
+ ],
+ "node": "v22.22.0",
+ "cpus": "Intel(R) Xeon(R) Processor @ 2.10GHz"
+}

@@ -22,7 +22,8 @@
     "tiles": "node tiles/run_tiles.js",
     "adjust": "node doc/run_adjust.js",
     "curves": "node doc/run_curves.js",
-    "depth16": "node doc/run_depth16.js"
+    "depth16": "node doc/run_depth16.js",
+    "perf": "node perf/run_perf.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

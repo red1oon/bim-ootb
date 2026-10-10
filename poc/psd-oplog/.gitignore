@@ -1,2 +1,3 @@
 .emit/
 package-lock.json
+perf/out/

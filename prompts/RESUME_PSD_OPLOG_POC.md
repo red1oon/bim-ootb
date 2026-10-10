@@ -50,3 +50,6 @@ adjustment layers (curves/levels) with a float64 oracle; 16-bit/float layer impo
 
 ## Update: 16-bit layers DONE (suite `depth16`, 82 checks)
 Patched ag-psd writer in `poc/psd-oplog/vendor/ag-psd16`; ops `raster16`/`maskraster16`; `exportPsd(..., {depth:16})`. Exporter opacity bug (float32 0.9 -> 229) fixed with tie-up rounding; older tests used the same flawed formula and were corrected (ledger H61). Remaining candidates: GPU twin for groups/clip/non-sep/adjustments, streaming tiles into the fold, blur filters (scipy reference), affine resampling, hue/saturation, per-channel levels/curves. Photoshop-behaviour checks and Safari/ARM runs need a human.
+
+## Update: design-risk measurements DONE (`npm run perf`, ledger P1-P9)
+Log is fine (98 B/stroke, replay linear, checkpoint+tail exact and 8.5x cheaper, chain verify 1.6 s per 100k). Naive full recomposite per edit is NOT interactive at 2048^2 (1-3 s). NEXT design steps (numeric, cloud): dirty-tile compositing with hash-equality gate vs full composite; checkpoint as tile blobs (dedup); then Gaussian blur op (scipy reference) for the filter question; colour-managed fold at size.
