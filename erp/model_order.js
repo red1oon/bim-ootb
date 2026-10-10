@@ -49,8 +49,9 @@
 
   // ══ MOrderLine — beforeSave (LineNetAmt) + afterSave :967-985 → recalculateTax → updateHeaderTax :1070 ═════════
   ML.registerModel('c_orderline', {
-    // MOrderLine.beforeSave :790-940 — header copy (setOrder :227-238), line no, UOM, LineNetAmt (:365-372), Discount (:681-691).
-    // Pricing (getProductPricing / price-limit enforcement) stays with the callout layer — named, not re-derived here.
+    // MOrderLine.beforeSave :790-940 — header copy (setOrder :227-238), product pricing (:821-850), line no, UOM, LineNetAmt (:365-372), Discount (:681-691).
+    // Pricing runs on EVERY save like legacy (bim-compiler prompts/SQLiteIDEMPIERE.md §39 S2b): server-side setPrice when PriceActual = PriceList = 0,
+    // UnderLimitPrice, and ProductNotOnPriceList even when the price was keyed — a save that bypasses the window callout (import, process, sync) is refused the same way.
     beforeSave: function (trx, l, isNew) {
       var o = trx.get('c_order', l.c_order_id); if (!o) return null;
       if (isNew && Y(o.processed)) return 'parent processed';
@@ -60,6 +61,7 @@
       }
       if (nz(l.c_charge_id) && nz(l.m_product_id)) l.m_product_id = null;
       if (!nz(l.m_product_id)) l.m_attributesetinstance_id = 0;
+      else { var perr = PXO.MOrderLine_beforeSavePricing(trx, l, o); if (perr) return perr; }                // :821-850 (S2b)
       if (!nz(l.c_uom_id)) { var p = T.product(trx, l.m_product_id); if (p) l.c_uom_id = p.c_uom_id; }
       if (!Number(l.line)) { var mx = 0; trx.find('c_orderline', { c_order_id: o.c_order_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }
       var prec = T.precisionOf(trx, o.c_currency_id), bd = D(l.priceentered).multiply(D(l.qtyentered));
@@ -465,6 +467,7 @@
     return { getM_Product_ID: function () { return nz(line.get('m_product_id')); }, getC_Order_ID: function () { return nz(line.get('c_order_id')); },
       getC_BPartner_ID: function () { return nz(line.get('c_bpartner_id')); }, getQtyOrdered: function () { return bd(line.get('qtyordered')); }, getDateOrdered: function () { return dayTS(line.get('dateordered')); } };
   }
+  function bdz(v) { return v == null ? ZERO() : bd(v); }                    // X_C_OrderLine BigDecimal getters: a NULL column reads as Env.ZERO
   function olBeforeSavePricing(trx, ctx, line, order) {
     var Mm = R().M, plId = nz(order.m_pricelist_id), Env = A().Env;
     if (nz(line.get('c_charge_id')) !== 0 && nz(line.get('m_product_id')) !== 0) line.set('m_product_id', null);       // :816-817
@@ -472,20 +475,20 @@
     if (Y(line.get('processed'))) return null;                                                                          // :821 else if (!isProcessed())
     var mpp = null;
     function getProductPricing() { mpp = new Mm.MProductPricing(); mpp.setOrderLine(olPricingObj(line), trx); mpp.setM_PriceList_ID(plId); mpp.calculatePrice(); return mpp; }   // :326-334
-    if (bd(line.get('priceactual')).compareTo(Env.ZERO) === 0 && bd(line.get('pricelist')).compareTo(Env.ZERO) === 0) {  // :824-826 setPrice() :290-322
+    if (bdz(line.get('priceactual')).compareTo(Env.ZERO) === 0 && bdz(line.get('pricelist')).compareTo(Env.ZERO) === 0) {  // :824-826 setPrice() :290-322
       if (plId === 0) throw new Error('PriceList unknown!');
       getProductPricing();
       line.set('priceactual', mpp.getPriceStd()).set('pricelist', mpp.getPriceList()).set('pricelimit', mpp.getPriceLimit());
-      var qe = bd(line.get('qtyentered')), qo = bd(line.get('qtyordered'));
+      var qe = bdz(line.get('qtyentered')), qo = bdz(line.get('qtyordered'));
       if (qe.compareTo(qo) === 0) line.set('priceentered', line.get('priceactual'));
-      else line.set('priceentered', bd(line.get('priceactual')).multiply(qo.divide(qe, 12, HU())));
+      else line.set('priceentered', bdz(line.get('priceactual')).multiply(qo.divide(qe, 12, HU())));
       line.set('discount', mpp.getDiscount());
       if (nz(line.get('c_uom_id')) === 0) line.set('c_uom_id', mpp.getC_UOM_ID());
     }
     if (mpp == null) getProductPricing();                                                                               // :827-828
     var pl = trx.get('m_pricelist', order.m_pricelist_id), enforce = Y(order.issotrx) && pl && Y(pl.enforcepricelimit);   // :831-833
     if (enforce) { var role = trx.get('ad_role', Env.getAD_Role_ID(ctx)); if (role && Y(role.isoverwritepricelimit)) enforce = false; }   // :834-835
-    if (enforce && bd(line.get('pricelimit')).compareTo(Env.ZERO) !== 0 && bd(line.get('priceactual')).compareTo(bd(line.get('pricelimit'))) < 0) {   // :836-840
+    if (enforce && bdz(line.get('pricelimit')).compareTo(Env.ZERO) !== 0 && bdz(line.get('priceactual')).compareTo(bdz(line.get('pricelimit'))) < 0) {   // :836-840
       say(trx, '§MODEL-SEVERE MOrderLine.save UnderLimitPrice PriceEntered=' + line.get('priceentered') + ', PriceLimit=' + line.get('pricelimit')); return 'UnderLimitPrice';
     }
     var dtId = nz(order.c_doctype_id) === 0 ? nz(order.c_doctypetarget_id) : nz(order.c_doctype_id);                   // :843 getParent().getDocTypeID()
@@ -496,6 +499,24 @@
     }
     return null;
   }
+
+  // the registered C_OrderLine beforeSave (above) runs the same pricing part on a plain row: a PO-shaped view over the row, the callout runtime bound to THIS
+  // trx for the call (read-your-writes, like ad_process.runJava) and restored afterwards, the session role for MRole.getDefault().isOverwritePriceLimit.
+  S.MOrderLine_beforeSavePricing = function (trx, row, order) {
+    var a = A();
+    if (!R().M.MProductPricing && NODE) ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });   // idempiere.html's script order
+    if (!R().M.MProductPricing) { say(trx, '§MODEL-UNPORTED-DEP MOrderLine.beforeSave pricing needs callouts/pricing.js, not loaded on this host — line saved unpriced'); return null; }
+    var line = { get: function (c) { return row[c.toLowerCase()]; },
+                 set: function (c, v) { row[c.toLowerCase()] = v instanceof a.BigDecimal ? MLo.N(v) : v; return line; } };
+    var RT = R(), sDB = RT.DB, sPO = RT.PO, env = trx.env || {};
+    a.bind(function (sql, params) { return trx.q(sql, params); });
+    try {
+      var ctx = new a.Ctx();                                                            // only #AD_Role_ID is read here (MRole.getDefault, :834)
+      a.Env.setContext(ctx, a.Env.AD_CLIENT_ID, env.client); a.Env.setContext(ctx, a.Env.AD_ORG_ID, env.org);
+      a.Env.setContext(ctx, a.Env.AD_ROLE_ID, env.role != null ? env.role : ((GL.APP && GL.APP.roleId) || 0));
+      return olBeforeSavePricing(trx, ctx, line, order);
+    } finally { RT.DB = sDB; RT.PO = sPO; }
+  };
 
   // ══ MOrder.copyLinesFrom(otherOrder, counter, copyASI) (MOrder.java:795-851) ═════════════════════════════════
   S.MOrder_copyLinesFrom = function (trx, ctx, to, other, counter, copyASI) {
@@ -523,8 +544,7 @@
       line.set('link_orderline_id', null);                                                        // :833
       if (String(nz(to.c_bpartner_id)) !== String(nz(other.c_bpartner_id))) olSetTax(trx, ctx, line, to);       // :835-836
       line.set('processed', 'N');                                                                 // :839
-      var perr = olBeforeSavePricing(trx, ctx, line, to);                                         // PO.save → beforeSave :790-850
-      var ok = perr ? false : line.save(); if (ok) count++;                                        // :840-841
+      var ok = line.save(); if (ok) count++;                                                      // :840-841 (PO.save → the registered MOrderLine.beforeSave prices the line, :790-850)
       if (counter) {                                                                              // :843-847 cross link
         var fresh = trx.get('c_orderline', fl.c_orderline_id);
         var r2 = ML().save(trx, 'c_orderline', fresh, { ref_orderline_id: line.id() }); if (!r2.ok) throw new Error('SaveError c_orderline: ' + r2.error);

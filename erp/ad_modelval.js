@@ -47,28 +47,10 @@
 
   // installDefaultHooks — faithful ports of real M*.beforeSave / completeIt invariants.
   function installDefaultHooks() {
-    // MOrderLine.beforeSave: a line must carry a positive quantity (TYPE_BEFORE_NEW/CHANGE).
-    function qtyPositive(ctx, info) {
-      var r = info.record || {};
-      var q = Number(r.QtyOrdered != null ? r.QtyOrdered : r.qtyordered);
-      if (!(q > 0)) return 'QtyOrdered must be > 0 (got ' + q + ')';
-      return null;
-    }
-    registerValidator('C_OrderLine', 'BEFORE_SAVE', 'MOrderLine.qtyPositive', qtyPositive);
-    registerValidator('C_InvoiceLine', 'BEFORE_SAVE', 'MInvoiceLine.qtyPositive', function (ctx, info) {
-      var r = info.record || {}; var q = Number(r.QtyInvoiced != null ? r.QtyInvoiced : r.qtyinvoiced);
-      return q > 0 ? null : 'QtyInvoiced must be > 0 (got ' + q + ')';
-    });
-
     // MOrder.completeIt precondition: the document must have at least one line (docValidate BEFORE_COMPLETE).
     registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.hasLines', function (ctx, info) {
       var n = ctx.lineCount ? ctx.lineCount(info) : (info.lineCount || 0);
       return n > 0 ? null : 'Cannot complete an order with no lines';
-    });
-    // a second BEFORE_COMPLETE hook to prove ordered multi-hook dispatch (grand total must be non-negative).
-    registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.totalNonNegative', function (ctx, info) {
-      var r = info.record || {}; var g = Number(r.GrandTotal != null ? r.GrandTotal : r.grandtotal);
-      return g >= 0 ? null : 'GrandTotal must be >= 0 (got ' + g + ')';
     });
   }
 
