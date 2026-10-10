@@ -44,8 +44,10 @@
   // Witness W-POS-RING. §FALSIFIER: a product absent from the price list must refuse —
   // "every ringed line traces to a c_poskey→m_product→m_productprice row" (no invented price).
   function ringLine(ctx, productId, qty) {
-    if (!(qty > 0)) return { ok: false, reason: 'bad-qty', m_product_id: productId };
-    var p = ctx.priceOf(productId);
+    // §47 (F13): legacy MOrderLine.beforeSave (MOrderLine.java:790-917) has NO sign check — 0 and negative quantities are accepted and completed (pilot S14a/b/c);
+    // only a non-numeric quantity is refused (it could not even be keyed / parsed).
+    if (qty === null || qty === '' || !isFinite(Number(qty))) return { ok: false, reason: 'bad-qty', m_product_id: productId };
+    var p = ctx.priceOf(productId, ctx.priceDate);   // §41 (F8): the host picks the price-list VERSION valid at the order date (erp_engine.priceAt); hosts without a date ignore the 2nd arg
     if (!p || p.pricestd == null) return { ok: false, reason: 'no-price', m_product_id: productId };
     var price = bd(p.pricestd).setScale(2, HALF_UP);
     return {
@@ -95,7 +97,11 @@
     var POS_ORDER_SPEC = {
       docTable: 'C_Order', lineTable: 'C_OrderLine', parentId: 'c_pos_id', lineParentId: 'c_orderline_id',
       qtyTo: 'qtyordered', qtyFrom: 'qtyordered',
-      header: function () { return { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: dtId, m_warehouse_id: wh, c_bpartner_id: bp, c_pos_id: ctx.pos.c_pos_id }; }
+      header: function () {
+        var h = { c_order_id: opts.orderId, issotrx: 'Y', c_doctype_id: dtId, m_warehouse_id: wh, c_bpartner_id: bp, c_pos_id: ctx.pos.c_pos_id };
+        if (opts.dateAcct) { h.dateordered = opts.dateAcct; h.dateacct = opts.dateAcct; }   // §42: business dates ride the order when the host gives one (absent ⇒ op unchanged)
+        return h;
+      }
     };
     var ops = E.buildDoc(POS_ORDER_SPEC, { c_pos_id: ctx.pos.c_pos_id }, soLines);
     // annotate each CREATE_LINE with the sealed master price (annotation of the verb's output, not a verb)
@@ -133,11 +139,69 @@
     return { ops: ops, consumed: consumed };
   }
 
+  // §36 (F5): the SO credit gate legacy runs in MOrder.prepareIt (CreditManagerOrder.java:48-98) — active when the host supplies ctx.creditOf(bpId)
+  // → { bp, sys }; refusal happens before any op is emitted (legacy: STATUS_Invalid, nothing completes). No creditOf ⇒ unchanged behaviour.
+  // §42 (F7): the period test MOrder.prepareIt runs BEFORE the credit test (MOrder.java:1544-1548) — only when the host supplies ctx.periodCheck AND the order carries a date.
+  function periodGate(ctx, opts) {
+    if (!ctx || typeof ctx.periodCheck !== 'function' || !opts || !opts.dateAcct) return { ok: true };
+    var r = ctx.periodCheck(opts.dateAcct, ctx.docbasetype || 'SOO') || { ok: false, reason: 'period-closed' };
+    return r.ok ? r : { ok: false, reason: r.reason || 'period-closed', why: r.why };
+  }
+  // §43 (F10): every active accounting schema must carry product-category accounting for each line's product (legacy NPEs otherwise, MProduct.java:1066-1067);
+  // runs between the period and the credit test (MOrder.java:1544 → 1633 → 1689) when the host supplies ctx.acctSetupOf(productId) → [missing schema ids].
+  function acctGate(ctx, lines) {
+    if (!ctx || typeof ctx.acctSetupOf !== 'function') return { ok: true };
+    for (var i = 0; i < lines.length; i++) {
+      var miss = ctx.acctSetupOf(lines[i].m_product_id) || [];
+      if (miss.length) return { ok: false, reason: 'no-product-category-acct', m_product_id: lines[i].m_product_id, schemas: miss };
+    }
+    return { ok: true };
+  }
+  // §45 (F11): line tax + C_OrderTax rows + GrandTotal (+ the same on the in-group invoice), only when the host supplies ctx.taxOf(productId) → C_Tax_ID
+  // (erp_engine.taxLookup), ctx.taxById(id) → c_tax row, ctx.taxIncluded, ctx.taxChildren(id). Legacy: MOrderLine.beforeSave setTax (:866-867) → StandardTaxProvider.
+  function applyTax(ctx, g, opts) {
+    if (!ctx || typeof ctx.taxOf !== 'function' || !g.ok) return g;
+    for (var i = 0; i < g.soLines.length; i++) {
+      var l = g.soLines[i];
+      if (l.c_tax_id == null) { var t = ctx.taxOf(l.m_product_id); if (!t || !t.ok) return { ok: false, reason: 'tax-not-found', m_product_id: l.m_product_id, detail: t && t.reason }; l.c_tax_id = t.c_tax_id; }
+    }
+    var byLine = {}; g.soLines.forEach(function (l) { byLine[l.c_orderline_id] = l.c_tax_id; });
+    var olIdx = 0;
+    g.ops.forEach(function (op) {
+      if (op.op_type === 'CREATE_LINE' && op.table === 'C_OrderLine') { var sl = g.soLines[olIdx++]; if (sl) op.c_tax_id = sl.c_tax_id; }
+      if (op.op_type === 'CREATE_LINE' && op.table === 'C_InvoiceLine') { var tid = byLine[op.source_line_id]; if (tid != null) op.c_tax_id = tid; }
+    });
+    var r = E.orderTaxes(g.soLines, ctx.taxById, !!ctx.taxIncluded, ctx.taxChildren);
+    var bad = r.rows.filter(function (x) { return x.error; })[0]; if (bad) return { ok: false, reason: 'tax-error', detail: bad.error };
+    var oid = g.order.c_order_id;
+    r.rows.forEach(function (x) { g.ops.push({ op_type: 'CREATE_LINE', table: 'C_OrderTax', c_order_id: oid, c_tax_id: x.c_tax_id, taxbaseamt: x.taxbaseamt / 100, taxamt: x.taxamt / 100 }); });
+    g.ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Order', id: oid, field: 'grandtotal', value: r.grandTotal / 100 });
+    var inv = g.ops.filter(function (op) { return op.op_type === 'CREATE_DOCUMENT' && op.table === 'C_Invoice'; })[0];
+    if (inv) {   // invoice lines = the order lines (WR on-the-fly invoice) ⇒ StandardTaxProvider.calculateInvoiceTaxTotal gives the same rows
+      r.rows.forEach(function (x) { g.ops.push({ op_type: 'CREATE_LINE', table: 'C_InvoiceTax', c_invoice_id: inv.c_invoice_id, c_tax_id: x.c_tax_id, taxbaseamt: x.taxbaseamt / 100, taxamt: x.taxamt / 100 }); });
+      g.ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: inv.c_invoice_id, field: 'grandtotal', value: r.grandTotal / 100 });
+    }
+    g.orderTax = r.rows; g.grandTotal = r.grandTotal;
+    return g;
+  }
+  function creditGate(ctx, soLines, bpId, docsubtypeso, paymentrule) {
+    if (!ctx || typeof ctx.creditOf !== 'function') return { ok: true };
+    var c = ctx.creditOf(bpId) || {};
+    var gt = 0; soLines.forEach(function (l) { gt += Math.round(Number(l.linenetamt || 0) * 100); });
+    var r = E.creditCheckOrder({ issotrx: 'Y', docsubtypeso: docsubtypeso, paymentrule: paymentrule, grandtotal: gt / 100 }, c.bp, c.sys);
+    return r.ok ? r : { ok: false, reason: r.reason, msg: r.msg, credit: r };
+  }
   function buildSaleGroup(ctx, cart, opts) {
     var built = buildOrderOps(ctx, cart, opts);
     if (!built.ok) return built;
+    var pg = periodGate(ctx, opts);
+    if (!pg.ok) return pg;
+    var ag = acctGate(ctx, built.soLines);
+    if (!ag.ok) return ag;
+    var cg = creditGate(ctx, built.soLines, opts.c_bpartner_id, ctx.docsubtypeso || 'WR', opts.paymentrule);
+    if (!cg.ok) return cg;
     var tail = completionOps(ctx, built.order, built.soLines, opts);
-    return { ok: true, ops: built.ops.concat(tail.ops), order: built.order, soLines: built.soLines, consumed: tail.consumed, newVerbs: [], verbsUsed: ALLOWED_VERBS.slice(0, 2).concat(['completeOrder', 'completeInvoice']) };
+    return applyTax(ctx, { ok: true, ops: built.ops.concat(tail.ops), order: built.order, soLines: built.soLines, consumed: tail.consumed, newVerbs: [], verbsUsed: ALLOWED_VERBS.slice(0, 2).concat(['completeOrder', 'completeInvoice']) }, opts);
   }
 
   // ── §P-13 hold: park the in-progress cart as a real DR C_Order — the ORDER half alone ──────────
@@ -159,8 +223,14 @@
       return { ok: false, reason: 'not-draft', docstatus: heldOrder.docstatus };   // only a DR order recalls
     }
     if (!heldLines || !heldLines.length) return { ok: false, reason: 'no-held-lines' };
+    var pg = periodGate(ctx, opts);
+    if (!pg.ok) return pg;
+    var ag = acctGate(ctx, heldLines);
+    if (!ag.ok) return ag;
+    var cg = creditGate(ctx, heldLines, heldOrder.c_bpartner_id, ctx.docsubtypeso || 'WR', opts && opts.paymentrule);
+    if (!cg.ok) return cg;
     var tail = completionOps(ctx, heldOrder, heldLines, opts);
-    return { ok: true, ops: tail.ops, order: heldOrder, soLines: heldLines, consumed: tail.consumed, newVerbs: [], verbsUsed: ['completeOrder', 'completeInvoice'] };
+    return applyTax(ctx, { ok: true, ops: tail.ops, order: heldOrder, soLines: heldLines, consumed: tail.consumed, newVerbs: [], verbsUsed: ['completeOrder', 'completeInvoice'] }, opts);
   }
 
   // ── §P-12 deliver-later sale — the PICKABLE variant (engine note banked TWICE 2026-06-12:
@@ -185,6 +255,17 @@
     };
   }
 
+  // ── DECISION 2026-10-09 (twin gap F1/S6, prompts/SQLiteIDEMPIERE.md §23/§25/§27) — user: "fix this way, i.e. SQLite" ──────────
+  // LEGACY (measured on the pilot, M3 S6): completing a Standard Order (IsAutoGenerateInout='N') creates NO shipment; the shipment
+  // appears only when "Generate Shipments" is run later. Before this change buildDeliverLaterGroup ALSO birthed a DR M_InOut in the
+  // same group (the §P-12 "pickable shipment"), so SQLite's result for the same facts differed (shipments 1 vs 0).
+  // Now split into the two legacy acts, composed — exactly the order-half/completion-half pattern buildSaleGroup already uses:
+  //   buildDeliverLaterGroup(...)        = ORDER HALF ONLY (order CO, N/N flags verbatim) — twin-equal to legacy; shipment:null.
+  //   buildGenerateShipmentOps(...)      = the "Generate Shipments" act: the DR shipment (same buildDoc spec, same ids/doctype link as before).
+  //   buildDeliverLaterWithShipment(...) = order half + generate in ONE group = the OLD output byte-for-byte; the convenience the
+  //                                        kitchen / warehouse-pick lanes use. NOT twin-equal until their UI commits the two halves as
+  //                                        two groups (follow-up, UX lane) — recorded, not hidden.
+  // BACKTRACK: revert the single commit carrying this block; callers switched to the wrapper are listed in §27.
   // opts = { orderId, inoutId, c_bpartner_id, doctype: <the SALE doctype's c_doctype row, host-read>,
   //          invoiceRule: <C_Order.InvoiceRule AD_Column defaultvalue, host-EXTRACTED ('I' in seed)> }
   // NO backflush and NO invoice here: §P-3 CONSUME and the C- movement belong to the act that moves
@@ -195,19 +276,39 @@
     if (!pol.ok) return pol;
     var built = buildOrderOps(ctx, cart, Object.assign({}, opts, { doctypeId: opts.doctype.c_doctype_id }));
     if (!built.ok) return built;
+    var pg = periodGate(ctx, opts);
+    if (!pg.ok) return pg;
+    var ag = acctGate(ctx, built.soLines);
+    if (!ag.ok) return ag;
+    var cg = creditGate(ctx, built.soLines, opts.c_bpartner_id, opts.doctype.docsubtypeso, opts.paymentrule);
+    if (!cg.ok) return cg;
     // complete the ORDER with the dictionary flags VERBATIM (N/N ⇒ the bare SET_STATUS C_Order CO)
     var ops = built.ops.concat(E.completeOrder(built.order, built.soLines, pol));
-    // the pickable shipment: the SAME buildDoc spec the WR path rides (replay-equal), born DR by
-    // absence of SET_STATUS — the engine's own convention (buildDoc creates, SET_STATUS transitions)
-    var ship = E.VERBS.createShipment(built.order, built.soLines);
-    ship[0].m_inout_id = opts.inoutId; ship[0].m_warehouse_id = built.order.m_warehouse_id;
-    if (pol.shipDoctypeId != null) ship[0].c_doctype_id = pol.shipDoctypeId;
-    ops = ops.concat(ship);
-    return {
+    return applyTax(ctx, {
       ok: true, ops: ops, order: built.order, soLines: built.soLines,
-      shipment: { m_inout_id: opts.inoutId, docstatus: 'DR' },
+      shipment: null, shipmentDeferred: true, shipDoctypeId: pol.shipDoctypeId,
       invoiceTiming: { inGroup: false, rule: opts.invoiceRule != null ? opts.invoiceRule : null, source: 'C_Order.InvoiceRule dictionary default' },
       newVerbs: [], verbsUsed: ['buildDoc', 'completeOrder']
+    }, opts);
+  }
+
+  // The "Generate Shipments" act for an already-completed deliver-later order: the pickable DR shipment, via the SAME buildDoc spec the
+  // WR path rides (replay-equal), born DR by absence of SET_STATUS — the engine's own convention (buildDoc creates, SET_STATUS transitions).
+  function buildGenerateShipmentOps(order, soLines, opts) {
+    var ship = E.VERBS.createShipment(order, soLines);
+    ship[0].m_inout_id = opts.inoutId; ship[0].m_warehouse_id = order.m_warehouse_id;
+    if (opts.shipDoctypeId != null) ship[0].c_doctype_id = opts.shipDoctypeId;
+    return { ok: true, ops: ship, shipment: { m_inout_id: opts.inoutId, docstatus: 'DR' }, newVerbs: [], verbsUsed: ['buildDoc'] };
+  }
+
+  // OLD behaviour, byte-for-byte (order CO + DR shipment in one group) for the lanes that need the pickable shipment at sale time.
+  function buildDeliverLaterWithShipment(ctx, cart, opts) {
+    var g = buildDeliverLaterGroup(ctx, cart, opts);
+    if (!g.ok) return g;
+    var gs = buildGenerateShipmentOps(g.order, g.soLines, { inoutId: opts.inoutId, shipDoctypeId: g.shipDoctypeId });
+    return {
+      ok: true, ops: g.ops.concat(gs.ops), order: g.order, soLines: g.soLines, shipment: gs.shipment,
+      invoiceTiming: g.invoiceTiming, newVerbs: [], verbsUsed: ['buildDoc', 'completeOrder']
     };
   }
 
@@ -504,6 +605,7 @@
     buildRegisterGroup: buildRegisterGroup, buildEditGroup: buildEditGroup,
     buildHoldGroup: buildHoldGroup, buildRecallCompleteGroup: buildRecallCompleteGroup,
     deliverLaterPolicy: deliverLaterPolicy, buildDeliverLaterGroup: buildDeliverLaterGroup,
+    buildGenerateShipmentOps: buildGenerateShipmentOps, buildDeliverLaterWithShipment: buildDeliverLaterWithShipment,
     completeShipmentOps: completeShipmentOps,
     registerNextIds: registerNextIds, dataUrlBytes: dataUrlBytes, IMAGE_CAP_BYTES: IMAGE_CAP_BYTES,
     ALLOWED_VERBS: ALLOWED_VERBS

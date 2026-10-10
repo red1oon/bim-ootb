@@ -428,12 +428,42 @@
       if (p.upc)   productByCode[String(p.upc).trim()]   = p.m_product_id;
       if (p.value) productByCode[String(p.value).trim()] = p.m_product_id;
     });
+    // §45 F11: the line-tax lookup for ONE sale (Tax.getProduct inputs from this db: org/warehouse/BP bill location, BP exemption, DeliveryViaRule = BP's else the
+    // C_Order dictionary default). Missing inputs ⇒ null + a §POS-TAX line (the sale is then refused 'tax-not-found', never silently untaxed).
+    function lensTaxOf(bpId) {
+      try {
+        var taxes = qa(b3, 'SELECT * FROM c_tax WHERE ad_client_id=?', pos.ad_client_id);
+        var loc = function (id) { return id ? q1(b3, 'SELECT c_country_id, c_region_id, postal FROM c_location WHERE c_location_id=?', id) : null; };
+        var bp = q1(b3, 'SELECT istaxexempt, deliveryviarule FROM c_bpartner WHERE c_bpartner_id=?', bpId) || {};
+        var bl = q1(b3, "SELECT c_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=? AND isbillto='Y' AND isactive='Y' ORDER BY c_bpartner_location_id", bpId);
+        var oi = q1(b3, 'SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=?', pos.ad_org_id), wl = q1(b3, 'SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=?', pos.m_warehouse_id);
+        var dv = q1(b3, "SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'");
+        var today = new Date().toISOString().slice(0, 10);
+        return function (pid) {
+          var p = q1(b3, 'SELECT c_taxcategory_id AS c FROM m_product WHERE m_product_id=?', pid);
+          var r = E.taxLookup({ taxes: taxes, taxCategoryId: p && p.c, isSOTrx: true, billDate: today, billFrom: loc(oi && oi.l), billTo: loc(bl && bl.l), warehouse: loc(wl && wl.l),
+            deliveryViaRule: bp.deliveryviarule || (dv && dv.d), bpTaxExempt: bp.istaxexempt });
+          console.log('§POS-TAX product=' + pid + ' bp=' + bpId + ' tax=' + (r.ok ? r.c_tax_id + ' via=' + r.via : 'NONE reason=' + r.reason));
+          return r;
+        };
+      } catch (e) { console.log('§POS-TAX inputs-missing ' + (e && e.message)); return function () { return { ok: false, reason: 'tax-inputs-missing' }; }; }
+    }
     var tileByPid = {};
     tiles.forEach(function (t) { tileByPid[t.m_product_id] = t; });
 
     var ctx = {
       pos: pos,
       priceOf: function (pid) { return q1(b3, 'SELECT pricestd FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=?', plv.v, pid) || null; },
+      // §36 F5 (prompts/SQLiteIDEMPIERE.md): the SO credit gate inputs — bill-BP credit row + sysconfig (absent table/row ⇒ legacy default true)
+      creditOf: function (bpId) {
+        var sys = {};
+        ['CHECK_CREDIT_ON_CASH_POS_ORDER', 'CHECK_CREDIT_ON_PREPAY_ORDER'].forEach(function (k) { try { var r = q1(b3, 'SELECT value AS v FROM ad_sysconfig WHERE name=?', k); if (r) sys[k] = r.v; } catch (e) { /* no ad_sysconfig in this db ⇒ default */ } });
+        return { bp: q1(b3, 'SELECT socreditstatus, so_creditlimit, totalopenbalance FROM c_bpartner WHERE c_bpartner_id=?', bpId), sys: sys };
+      },
+      // §45 F11: tax inputs (c_tax rows, taxIncluded of the POS price list); ctx.taxOf is bound per sale to the chosen partner (lensTaxOf below)
+      taxById: function (id) { return q1(b3, 'SELECT * FROM c_tax WHERE c_tax_id=?', id); },
+      taxChildren: function (id) { return qa(b3, "SELECT * FROM c_tax WHERE parent_tax_id=? AND isactive='Y'", id); },
+      taxIncluded: (function () { try { var r = q1(b3, 'SELECT istaxincluded AS t FROM m_pricelist WHERE m_pricelist_id=?', pos.m_pricelist_id); return !!(r && r.t === 'Y'); } catch (e) { return false; } })(),
       bomOf: function (pid) { return qa(b3, 'SELECT bl.m_product_id AS comp_id, bl.qtybom AS qtybom FROM pp_product_bomline bl JOIN pp_product_bom b ON b.pp_product_bom_id=bl.pp_product_bom_id WHERE b.m_product_id=? ORDER BY bl.m_product_id', pid); },
       wrPolicy: (function () {
         var dt = q1(b3, 'SELECT docsubtypeso AS s FROM c_doctype WHERE c_doctype_id=?', pos.c_doctype_id);
@@ -1441,6 +1471,7 @@
       if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); console.log('§POS-PAY refused reason=no-partner'); return; }
       var saleCart = cart.map(function (c) { return Object.assign({}, c); }); // snapshot for receipt
       var ids = nextIds(cfg.opDb);
+      ctx.taxOf = lensTaxOf(Number(bpSel.value));   // §45 F11
       var g = POS.buildSaleGroup(ctx, cart, { orderId: ids.orderId, inoutId: ids.inoutId, invoiceId: ids.invoiceId, c_bpartner_id: Number(bpSel.value) });
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-LIVE complete REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
@@ -1491,7 +1522,8 @@
       var ids = nextIds(cfg.opDb);
       // invoice timing NAMED from the dictionary (the witness's extraction query, verbatim)
       var invR = q1(b3, "SELECT c.defaultvalue AS v FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='InvoiceRule'");
-      var g = POS.buildDeliverLaterGroup(ctx, cart, {
+      ctx.taxOf = lensTaxOf(Number(bpSel.value));   // §45 F11
+      var g = POS.buildDeliverLaterWithShipment(ctx, cart, {
         orderId: ids.orderId, inoutId: ids.inoutId, c_bpartner_id: Number(bpSel.value),
         doctype: dtSO, invoiceRule: invR ? invR.v : null
       });
