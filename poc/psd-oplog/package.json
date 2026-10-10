@@ -27,7 +27,8 @@
     "dirty": "node perf/run_dirty.js",
     "ckpt": "node --max-old-space-size=4096 perf/run_ckpt.js",
     "blur": "node filters/run_blur.js",
-    "cmfold": "node --max-old-space-size=6000 icc/run_cmfold.js"
+    "cmfold": "node --max-old-space-size=6000 icc/run_cmfold.js",
+    "sha": "node perf/run_sha.js"
   },
   "devDependencies": {
     "playwright-core": "^1.64.0",

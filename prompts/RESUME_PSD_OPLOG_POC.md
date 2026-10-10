@@ -61,3 +61,5 @@ Log is fine (98 B/stroke, replay linear, checkpoint+tail exact and 8.5x cheaper,
 ## Update: Gaussian blur op DONE (terminal session; `npm run blur`, B1-B8): scipy-exact to 5e-7, Node==Chromium, ~43 B/op, dirty-tile exact; full 2048^2 blur 6.8 s (needs workers/GPU), 256^2 rect ~110 ms. NOT yet a schema/stack op (lives in filters/blur.js). NEXT: colour-managed fold at size; browser sha256 speed; promote blur to schema v3 if wanted.
 
 ## Update: colour-managed fold at size DONE (terminal session; `npm run cmfold`, E1-E5, in witness_all): 1-level match at 512/2048, tile export == whole export, dab+colour-managed display 27 ms at 2048^2. NEXT: browser sha256 speed (WebCrypto/WASM) for tile checkpoints; promote blur to schema v3; Safari/ARM + Krita/Photoshop PSD checks need a person.
+
+## Update: browser sha256 DONE (terminal session; `npm run sha`, S1-S6, in witness_all): Chromium resume from tile checkpoint 0.38x of replay via WebCrypto, 0.62x via fast sync JS sha (perf/fastsha.js). Chromium only. NEXT: promote blur to schema v3; Krita CLI check of the exported PSDs (AppImage in ~/.local/opt/krita); Safari/ARM + Photoshop need a person.

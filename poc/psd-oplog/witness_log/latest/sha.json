@@ -1,0 +1,48 @@
+{
+ "n_checks": 12,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "node": {
+   "fast_MBps": 161.92427570765463,
+   "pure_MBps": 26.23221118956446
+  },
+  "chromium_speed": {
+   "secure": true,
+   "cmp": {
+    "n": 2000,
+    "fastMismatch": 0,
+    "subtleMismatch": 0
+   },
+   "pure64k_ms": 826.6999999880791,
+   "fast64k_ms": 216.5999999642372,
+   "pure16m_ms": 420.4000000357628,
+   "fast16m_ms": 112.5,
+   "subtle_1024x64k_ms": 60.39999997615814,
+   "subtle16m_ms": 19.100000023841858
+  },
+  "chromium_store": {
+   "S4": {
+    "idsEqual": true,
+    "syncReadsAsyncDb": true
+   },
+   "S5": {
+    "detected": 20,
+    "silent": 0
+   },
+   "S6": {
+    "tFull": 2963.600000023842,
+    "hFull": "bc930d9f0fe9",
+    "putA": 589.1000000238419,
+    "resA": 1081.0999999642372,
+    "hEqA": true,
+    "putB": 1312,
+    "resB": 1833.4000000357628,
+    "hEqB": true,
+    "idsSame": true
+   }
+  }
+ },
+ "node": "v20.20.2",
+ "cpus": "13th Gen Intel(R) Core(TM) i5-13500HX"
+}
