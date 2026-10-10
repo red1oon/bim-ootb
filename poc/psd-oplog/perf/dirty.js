@@ -1,7 +1,8 @@
 // Dirty-tile compositor. Keeps a persistent premultiplied backdrop; after an op, recomposites only the TxT tiles the op can change, by cropping every layer / mask /
 // group / adjustment to the tile and running the UNCHANGED canonical S.composite on the crop (per-pixel arithmetic is the same code). W must be a multiple of T.
 // Spec and thresholds: witness_log/HYPOTHESES.md "Dirty-tile compositing" (D1-D6).
-const S = require('../stack.js');
+(function (root) {
+const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, Brush = () => (node ? require('../filters/brush.js') : root.Brush);
 function makeDirty(st, T = 64) {
   const W = st.W, tn = W / T; if (W % T) throw new Error(`dirty tiles need W multiple of ${T}, got ${W}`);
   const back = new Float32Array(W * W * 4);
@@ -9,7 +10,7 @@ function makeDirty(st, T = 64) {
   // ids of every dab/mdab touch: same bounds as stack.apply; all other ops are non-local (null = every tile)
   function tilesOf(o) {
     if (o.op === 'hdab' || o.op === 'stroke' || o.op === 'smudge') {   // brush ops: tiles of the stroke bbox (filters/brush.js bbox is conservative)
-      const [bx0, by0, bx1, by1] = require('../filters/brush.js').bbox(o, W), out = [];
+      const [bx0, by0, bx1, by1] = Brush().bbox(o, W), out = [];
       for (let ty = Math.floor(by0 / T); ty <= Math.floor(by1 / T); ty++) for (let tx = Math.floor(bx0 / T); tx <= Math.floor(bx1 / T); tx++) out.push(ty * tn + tx);
       return out; }
     if (o.op === 'blur' && !o.rect) return null;   // a full-layer blur writes every pixel
@@ -35,4 +36,5 @@ function makeDirty(st, T = 64) {
   function after(o) { const t = tilesOf(o) || all(); for (const i of t) renderTile(i); return t; }
   return { back, T, tn, tilesOf, cropState, blit, renderTile, after, full: () => { for (const i of all()) renderTile(i); } };
 }
-module.exports = { makeDirty };
+if (node) module.exports = { makeDirty }; else root.Dirty = { makeDirty };
+})(this);

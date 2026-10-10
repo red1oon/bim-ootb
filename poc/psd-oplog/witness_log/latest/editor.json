@@ -1,0 +1,22 @@
+{
+ "n_checks": 13,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "ops": 12,
+  "hash": "1435cb608424",
+  "save": {
+   "bytes": 1993,
+   "ops": 12
+  },
+  "moveMs": {
+   "n": 78,
+   "median": 2.399999976158142,
+   "p95": 4.100000023841858,
+   "max": 5.300000011920929
+  },
+  "screenshot": "/home/red1/oplog_compare/editor_session.png"
+ },
+ "node": "v20.20.2",
+ "cpus": "13th Gen Intel(R) Core(TM) i5-13500HX"
+}
