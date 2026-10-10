@@ -517,7 +517,7 @@ H60o measured max 31.961002944129632 mean 1.0919
   {
    "id": "H60e",
    "name": "rich_srgb: psd-tools FLOAT composite vs our float picture, mean abs diff (8-bit levels)",
-   "value": 0.00111,
+   "value": 0.0011,
    "cmp": "<=",
    "limit": 0.1,
    "pass": true

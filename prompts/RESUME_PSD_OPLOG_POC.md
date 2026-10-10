@@ -53,3 +53,5 @@ Patched ag-psd writer in `poc/psd-oplog/vendor/ag-psd16`; ops `raster16`/`maskra
 
 ## Update: design-risk measurements DONE (`npm run perf`, ledger P1-P9)
 Log is fine (98 B/stroke, replay linear, checkpoint+tail exact and 8.5x cheaper, chain verify 1.6 s per 100k). Naive full recomposite per edit is NOT interactive at 2048^2 (1-3 s). NEXT design steps (numeric, cloud): dirty-tile compositing with hash-equality gate vs full composite; checkpoint as tile blobs (dedup); then Gaussian blur op (scipy reference) for the filter question; colour-managed fold at size.
+
+## Update: dirty-tile compositing DONE (terminal session; `npm run dirty`, H D1-D6): ~10 ms per dab at 2048^2, bit-identical. Terminal setup: Node 20 (`npm i node@20` in a scratch dir) + `CHROMIUM=/usr/bin/google-chrome` + a venv with psd-tools scipy numpy pillow on PATH. NEXT: tile-blob checkpoints with dedup (67 MB vs 9.8 MB log), Gaussian blur vs scipy, colour-managed fold at size.
