@@ -30,12 +30,21 @@ var TOKENS = {
   '{Tax.Credit}':          { table: 'c_tax_acct',               col: 't_credit_acct',     keyCol: 'c_tax_id' },
   '{Bank.InTransit}':      { table: 'c_bankaccount_acct',       col: 'b_intransit_acct',  keyCol: 'c_bankaccount_id' },
   '{Bank.UnallocatedCash}':{ table: 'c_bankaccount_acct',       col: 'b_unallocatedcash_acct', keyCol: 'c_bankaccount_id' },
+  '{Bank.PaymentSelect}':  { table: 'c_bankaccount_acct',       col: 'b_paymentselect_acct', keyCol: 'c_bankaccount_id' },   // §65.3 (F26): Doc.ACCTTYPE_PaymentSelect (AP payment, Doc_Payment / Doc_AllocationHdr.getPaymentAcct)
   // Doc_AllocationHdr deps: discount/write-off are keyed by the BPartner's GROUP; cash-transfer by the cash book.
   '{BPGroup.PayDiscount}': { table: 'c_bp_group_acct',          col: 'paydiscount_exp_acct', keyCol: 'c_bp_group_id', via: 'bpartner->group' },
   '{BPGroup.WriteOff}':    { table: 'c_bp_group_acct',          col: 'writeoff_acct',        keyCol: 'c_bp_group_id', via: 'bpartner->group' },
   // M_MatchInv posting: Not-Invoiced-Receipts is the vendor BP-group clearing account (matches receipt NIR booking).
   '{BPGroup.NotInvoicedReceipts}': { table: 'c_bp_group_acct',   col: 'notinvoicedreceipts_acct', keyCol: 'c_bp_group_id', via: 'bpartner->group' },
-  '{CashBook.CashTransfer}':{ table: 'c_cashbook_acct',         col: 'cb_cashtransfer_acct', keyCol: 'c_cashbook_id' }
+  '{CashBook.CashTransfer}':{ table: 'c_cashbook_acct',         col: 'cb_cashtransfer_acct', keyCol: 'c_cashbook_id' },
+  // Doc_Bank (C_BankStatement) posting tokens — keyed by c_bankaccount_id (per line) or c_acctschema_id
+  '{Bank.Asset}':           { table: 'c_bankaccount_acct',       col: 'b_asset_acct',          keyCol: 'c_bankaccount_id' },
+  '{Bank.InterestExp}':     { table: 'c_bankaccount_acct',       col: 'b_interestexp_acct',    keyCol: 'c_bankaccount_id' },
+  '{Bank.InterestRev}':     { table: 'c_bankaccount_acct',       col: 'b_interestrev_acct',    keyCol: 'c_bankaccount_id' },
+  // Charge posting — keyed by c_charge_id
+  '{Charge.Expense}':       { table: 'c_charge_acct',            col: 'ch_expense_acct',       keyCol: 'c_charge_id' },
+  // Currency balancing line — keyed by c_acctschema_id (from c_acctschema_gl.currencybalancing_acct)
+  '{AcctSchema.CurrencyBalance}': { table: 'c_acctschema_gl',   col: 'currencybalancing_acct', keyCol: 'c_acctschema_id' }
 };
 
 function one(db, sql, params) { var r = db.prepare(sql).get(params || {}); return r || null; }
