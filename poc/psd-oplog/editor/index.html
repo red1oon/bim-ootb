@@ -1,76 +1,127 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OpLog Paint</title><link rel="icon" href="data:,">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><title>OplogPic</title><link rel="icon" href="data:,">
 <style>
 :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e8ec; --mut:#9097a3; --acc:#4c8dff; color-scheme: dark; }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#eef0f3; --panel:#fff; --line:#d5d9e0; --fg:#1b1f24; --mut:#5d6674; --acc:#2563eb; color-scheme: light; } }
-* { box-sizing: border-box; } html, body { height:100%; } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; display:grid; grid-template-columns: 76px 1fr 260px; grid-template-rows: auto 1fr auto; overflow:hidden; }
+:root[data-theme="light"] { --bg:#eef0f3; --panel:#fff; --line:#d5d9e0; --fg:#1b1f24; --mut:#5d6674; --acc:#2563eb; color-scheme: light; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; } html, body { height:100%; } html { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; display:grid; grid-template-columns: 76px 1fr 260px; grid-template-rows: auto 1fr auto; overflow:hidden; user-select:none; -webkit-user-select:none; }
 header { grid-column:1/4; display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); }
 header label { display:flex; gap:6px; align-items:center; color:var(--mut); } input[type=range] { width:100px; }
-button, select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; cursor:pointer; } button:disabled { opacity:.4; cursor:default; } button.on { border-color:var(--acc); outline:1px solid var(--acc); }
+button, select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font:inherit; cursor:pointer; } button:disabled { opacity:.4; cursor:default; } button.on { border-color:var(--acc); outline:1px solid var(--acc); }
 #tools { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:6px; padding:8px; overflow:auto; } #tools button { padding:8px 2px; font-size:12px; }
 #view { position:relative; overflow:hidden; background:repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0/20px 20px; touch-action:none; min-width:0; min-height:0; }
-canvas { position:absolute; left:0; top:0; transform-origin:0 0; background:#fff; touch-action:none; box-shadow:0 2px 14px #0006; image-rendering:auto; cursor:none; } #view.pick canvas { cursor:crosshair; } #view.pan canvas { cursor:grab; }
-#cursor { position:fixed; left:0; top:0; pointer-events:none; border:1px solid #fff; outline:1px solid #000; border-radius:50%; display:none; mix-blend-mode:normal; z-index:5; }
+canvas { position:absolute; left:0; top:0; transform-origin:0 0; background:#fff; touch-action:none; box-shadow:0 2px 14px #0006; cursor:none; } #view.pick canvas { cursor:crosshair; } #view.pan canvas { cursor:grab; }
+#cursor { position:fixed; left:0; top:0; pointer-events:none; border:1px solid #fff; outline:1px solid #000; border-radius:50%; display:none; z-index:5; }
 aside { background:var(--panel); border-left:1px solid var(--line); padding:10px; overflow:auto; } aside h3 { margin:4px 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
 .layer { border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; } .layer.on { border-color:var(--acc); } .layer div { display:flex; gap:6px; align-items:center; margin-top:6px; } .layer b { flex:1; cursor:pointer; } .layer input[type=range], .layer select { flex:1; min-width:0; width:0; }
 footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4px 12px; background:var(--panel); border-top:1px solid var(--line); color:var(--mut); font-size:12px; } footer span { margin-left:auto; }
 #info { color:var(--mut); font-size:12px; margin-left:auto; }
-@media (max-width:760px) { body { grid-template-columns:1fr; grid-template-rows:auto auto 1fr auto auto; overflow:auto; height:auto; } header, footer { grid-column:1; } #tools { flex-direction:row; border-right:0; border-bottom:1px solid var(--line); } #view { height:70vh; } aside { border-left:0; border-top:1px solid var(--line); } }
+.mob, #dock { display:none; }
+#saver { position:fixed; inset:0; background:#000c; z-index:50; display:grid; place-items:center; padding:16px; } #saver[hidden] { display:none; } #saver .box { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; max-width:min(92vw,520px); max-height:92%; overflow:auto; display:flex; flex-direction:column; gap:10px; } #saver img { width:100%; height:auto; border-radius:8px; background:#fff; -webkit-touch-callout:default; user-select:auto; -webkit-user-select:auto; } #saver .row { display:flex; gap:12px; align-items:center; justify-content:space-between; } #saver a { color:var(--acc); } #saver p { margin:0; }
+.more { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0; } .more label { grid-column:1/3; display:flex; gap:8px; align-items:center; color:var(--mut); } .more label input { flex:1; width:0; } .more button { padding:12px 8px; }
+@media (max-width:760px) {
+  body { display:flex; flex-direction:column; height:100%; }
+  header { order:0; flex-wrap:nowrap; padding:6px 8px; gap:8px; border-bottom:1px solid var(--line); } header .desk { display:none !important; } .mob { display:inline-block; }
+  header button { min-height:44px; min-width:44px; } #m-share { margin-left:auto; } #view { order:1; flex:1; }
+  #tools { order:2; flex-direction:row; border-right:0; border-top:1px solid var(--line); padding:6px 8px 0; overflow-x:auto; } #tools button { min-width:56px; min-height:44px; font-size:13px; flex:1; }
+  #dock { order:3; display:flex; align-items:center; gap:8px; padding:6px 8px 8px; background:var(--panel); overflow-x:auto; } #sw { display:flex; gap:6px; } #sw button { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; border:2px solid var(--line); }
+  #dock input[type=color] { width:44px; height:44px; min-width:44px; padding:0; border:2px solid var(--line); border-radius:50%; background:none; } #msize { flex:1; min-width:110px; height:44px; } #msizev { min-width:28px; color:var(--mut); }
+  footer { display:none; } aside { position:fixed; left:0; right:0; bottom:0; max-height:78vh; max-height:78dvh; z-index:20; border-left:0; border-top:1px solid var(--line); border-radius:16px 16px 0 0; transform:translateY(110%); transition:transform .18s ease; padding-bottom:calc(14px + env(safe-area-inset-bottom)); box-shadow:0 -6px 24px #0006; } aside.open { transform:none; }
+  .layer { padding:10px; } .layer input[type=range] { height:36px; } .layer select { min-height:40px; } #addl { min-height:44px; }
+}
 </style></head><body>
 <header>
   <button id="undo" disabled title="Ctrl+Z">Undo</button><button id="redo" disabled title="Ctrl+Shift+Z">Redo</button>
-  <label>Colour <input id="color" type="color" value="#1a3399"></label>
-  <label>Size <input id="size" type="range" min="2" max="120" value="14"><span id="sizev">14</span></label>
-  <label>Flow <input id="flow" type="range" min="5" max="100" value="100"><span id="flowv">100</span></label>
-  <label>Smudge <input id="strength" type="range" min="5" max="100" value="70"><span id="strv">70</span></label>
-  <button id="zout" title="Zoom out">-</button><button id="zfit" title="Fit (0)">Fit</button><button id="z100" title="100%">100%</button><button id="zin" title="Zoom in">+</button>
-  <button id="png">Export PNG</button><button id="psd">Export PSD</button><button id="save" title="Ctrl+S">Save log</button><button id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden><button id="newc">New canvas</button>
-  <span id="info"></span>
+  <label class="desk">Colour <input id="color" type="color" value="#1a3399"></label>
+  <label class="desk">Size <input id="size" type="range" min="2" max="120" value="14"><span id="sizev">14</span></label>
+  <label class="desk">Flow <input id="flow" type="range" min="5" max="100" value="100"><span id="flowv">100</span></label>
+  <label class="desk">Smudge <input id="strength" type="range" min="5" max="100" value="70"><span id="strv">70</span></label>
+  <button class="desk" id="zout" title="Zoom out">-</button><button class="desk" id="zfit" title="Fit (0)">Fit</button><button class="desk" id="z100" title="100%">100%</button><button class="desk" id="zin" title="Zoom in">+</button>
+  <button class="desk" id="png">Export PNG</button><button class="desk" id="psd">Export PSD</button><button class="desk" id="save" title="Ctrl+S">Save log</button><button class="desk" id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden><button class="desk" id="newc">New canvas</button>
+  <span id="info" class="desk"></span>
+  <button class="mob" id="m-share">Share</button><button class="mob" id="m-menu">Menu</button>
 </header>
 <nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Click to blur a 128x128 area (5)">Blur</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
 <div id="view"><canvas id="c"></canvas></div>
-<aside><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button><p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log. Your painting is kept in this browser automatically.</p></aside>
+<aside id="side"><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button>
+  <div class="mob more" style="display:none"><label>Flow <input id="m-flow" type="range" min="5" max="100" value="100"></label><label>Smudge <input id="m-str" type="range" min="5" max="100" value="70"></label>
+    <button id="m-png">Export PNG</button><button id="m-psd">Export PSD</button><button id="m-save">Save log</button><button id="m-load">Load log</button><button id="m-fit">Fit view</button><button id="m-new">New canvas</button><button id="m-close" style="grid-column:1/3">Close</button></div>
+  <p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log. Your painting is kept in this browser automatically.</p></aside>
+<div id="dock"><div id="sw"></div><input id="mcolor" type="color" value="#1a3399" aria-label="Custom colour"><input id="msize" type="range" min="2" max="120" value="14" aria-label="Brush size"><span id="msizev">14</span></div>
 <footer><span id="status" style="margin-left:0"></span><span>1-5 tools · I pick · [ ] size · Ctrl+wheel zoom · wheel or Space+drag pan · 0 fit</span></footer>
 <div id="cursor"></div>
+<div id="saver" hidden><div class="box"><p><b>Save your painting</b><br>Touch and hold the picture, then choose Save image or Add to Photos.</p><img id="saveimg" alt="Your painting"><div class="row"><a id="savelink" href="#" download="painting.png">Download file</a><button id="saveclose">Close</button></div></div></div>
 <script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="editor.js"></script>
 <script>
 (function () {
-  const $ = (id) => document.getElementById(id), canvas = $('c'), view = $('view'), cursor = $('cursor'), KEY = 'psd-oplog-editor-v1', ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
+  const $ = (id) => document.getElementById(id), canvas = $('c'), view = $('view'), cursor = $('cursor'), side = $('side'), KEY = 'psd-oplog-editor-v1', ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
   const store = { get() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }, set(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }, del() { try { localStorage.removeItem(KEY); } catch (e) {} } };
   const status = (t) => { $('status').textContent = t; };
-  // ---- view: fit size, scale, translation
-  const V = { bs: 600, s: 1, x: 0, y: 0 };
+  const V = { bs: 600, s: 1, x: 0, y: 0 }; window.__V = V;
   function applyView() { canvas.style.width = canvas.style.height = V.bs + 'px'; canvas.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.s})`; $('zfit').title = 'Fit (0) - now ' + Math.round(V.s * V.bs / ed.W * 100) + '%'; }
-  function fit() { const r = view.getBoundingClientRect(); V.bs = Math.max(120, Math.floor(Math.min(r.width, r.height) - 24)); V.s = 1; V.x = (r.width - V.bs) / 2; V.y = (r.height - V.bs) / 2; applyView(); }
-  function zoomAt(px, py, f) { const lo = 0.1 * ed.W / V.bs, hi = 16 * ed.W / V.bs, s2 = Math.max(lo, Math.min(hi, V.s * f)), k = s2 / V.s; V.x = px - (px - V.x) * k; V.y = py - (py - V.y) * k; V.s = s2; applyView(); status('Zoom ' + Math.round(V.s * V.bs / ed.W * 100) + '%'); }
+  function fit() { const r = view.getBoundingClientRect(); V.bs = Math.max(120, Math.floor(Math.min(r.width, r.height) - 16)); V.s = 1; V.x = (r.width - V.bs) / 2; V.y = (r.height - V.bs) / 2; applyView(); }
+  const clampS = (s) => Math.max(0.1 * ed.W / V.bs, Math.min(16 * ed.W / V.bs, s));
+  function zoomAt(px, py, f) { const s2 = clampS(V.s * f), k = s2 / V.s; V.x = px - (px - V.x) * k; V.y = py - (py - V.y) * k; V.s = s2; applyView(); status('Zoom ' + Math.round(V.s * V.bs / ed.W * 100) + '%'); }
   const center = () => { const r = view.getBoundingClientRect(); return [r.width / 2, r.height / 2]; };
-  $('zfit').onclick = fit; $('zin').onclick = () => zoomAt(...center(), 1.25); $('zout').onclick = () => zoomAt(...center(), 0.8);
-  $('z100').onclick = () => { const [cx, cy] = center(); zoomAt(cx, cy, (ed.W / V.bs) / V.s); };
+  $('zfit').onclick = fit; $('zin').onclick = () => zoomAt(...center(), 1.25); $('zout').onclick = () => zoomAt(...center(), 0.8); $('z100').onclick = () => { const [cx, cy] = center(); zoomAt(cx, cy, (ed.W / V.bs) / V.s); };
   view.addEventListener('wheel', (e) => { e.preventDefault(); const r = view.getBoundingClientRect(); if (e.ctrlKey || e.metaKey) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01)); else { V.x -= e.deltaX; V.y -= e.deltaY; applyView(); } }, { passive: false });
-  addEventListener('resize', fit);
-  // ---- pointer: paint, pan, cursor
-  let space = false, panning = null;
+  let lastW = 0, lastH = 0; addEventListener('resize', () => { const r = view.getBoundingClientRect(); if (V.s === 1 || Math.abs(r.width - lastW) > 80 || Math.abs(r.height - lastH) > 160) { lastW = r.width; lastH = r.height; fit(); } });
+  // ---- pointers: mouse/pen paint; touch paints with one finger, pinch/pan with two, two-finger tap = undo, three-finger tap = redo
+  let space = false, panning = null; const touches = new Map(); let gest = null, blocked = false, strokeTouch = null, maxF = 0;
   const xy = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * ed.W / r.width, (e.clientY - r.top) * ed.W / r.height]; };
-  function cursorAt(e) { const t = ed.params.tool, r = canvas.getBoundingClientRect(), k = r.width / ed.W; if (t === 'pick' || space || panning) { cursor.style.display = 'none'; return; }
+  function cursorAt(e) { if (e.pointerType === 'touch') { cursor.style.display = 'none'; return; } const t = ed.params.tool, r = canvas.getBoundingClientRect(), k = r.width / ed.W; if (t === 'pick' || space || panning) { cursor.style.display = 'none'; return; }
     const d = t === 'blur' ? 128 * k : 2 * ed.params.size * k; cursor.style.display = 'block'; cursor.style.width = cursor.style.height = d + 'px'; cursor.style.borderRadius = t === 'blur' ? '0' : '50%'; cursor.style.transform = `translate(${e.clientX - d / 2}px, ${e.clientY - d / 2}px)`; }
-  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); if (space || e.button === 1) { panning = { x: e.clientX, y: e.clientY, vx: V.x, vy: V.y }; view.classList.add('pan'); e.preventDefault(); return; } if (e.button !== 0) return; const [x, y] = xy(e); ed.begin(x, y); });
-  canvas.addEventListener('pointermove', (e) => { cursorAt(e); if (panning) { V.x = panning.vx + e.clientX - panning.x; V.y = panning.vy + e.clientY - panning.y; applyView(); return; } const [x, y] = xy(e); ed.move(x, y); });
-  for (const t of ['pointerup', 'pointercancel']) canvas.addEventListener(t, () => { if (panning) { panning = null; view.classList.remove('pan'); } else ed.end(); });
+  const two = () => { const it = [...touches.values()]; return { a: it[0], b: it[1] }; };
+  function gestureState() { const { a, b } = two(), r = view.getBoundingClientRect(); return { d: Math.hypot(b.x - a.x, b.y - a.y) || 1, cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top }; }
+  canvas.addEventListener('pointerdown', (e) => { side.classList.remove('open');
+    if (e.pointerType === 'touch') { touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); canvas.setPointerCapture(e.pointerId);
+      if (touches.size >= 2) { if (ed.busy) ed.cancel(); blocked = true; maxF = Math.max(maxF, touches.size); if (!gest) { const g = gestureState(); gest = { d0: g.d, c0x: g.cx, c0y: g.cy, V0: { s: V.s, x: V.x, y: V.y }, t0: performance.now(), moved: false }; } return; }
+      if (blocked) return; strokeTouch = e.pointerId; const [x, y] = xy(e); ed.begin(x, y); return; }
+    canvas.setPointerCapture(e.pointerId); if (space || e.button === 1) { panning = { x: e.clientX, y: e.clientY, vx: V.x, vy: V.y }; view.classList.add('pan'); e.preventDefault(); return; } if (e.button !== 0) return; const [x, y] = xy(e); ed.begin(x, y); });
+  canvas.addEventListener('pointermove', (e) => { cursorAt(e);
+    if (e.pointerType === 'touch') { if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (gest && touches.size >= 2) { const g = gestureState(), k = clampS(gest.V0.s * g.d / gest.d0) / gest.V0.s; V.s = gest.V0.s * k; V.x = g.cx - (gest.c0x - gest.V0.x) * k; V.y = g.cy - (gest.c0y - gest.V0.y) * k; applyView(); if (Math.hypot(g.cx - gest.c0x, g.cy - gest.c0y) > 10 || Math.abs(g.d / gest.d0 - 1) > 0.1) gest.moved = true; return; }
+      if (e.pointerId === strokeTouch && !blocked) { const [x, y] = xy(e); ed.move(x, y); } return; }
+    if (panning) { V.x = panning.vx + e.clientX - panning.x; V.y = panning.vy + e.clientY - panning.y; applyView(); return; } const [x, y] = xy(e); ed.move(x, y); });
+  function up(e) { if (e.pointerType === 'touch') { touches.delete(e.pointerId);
+      if (e.pointerId === strokeTouch) { strokeTouch = null; if (!gest) ed.end(); }
+      if (touches.size === 0) { if (gest && !gest.moved && performance.now() - gest.t0 < 300) { if (maxF === 2) ed.undo(); else if (maxF >= 3) ed.redo(); } gest = null; blocked = false; maxF = 0; strokeTouch = null; }
+      return; }
+    if (panning) { panning = null; view.classList.remove('pan'); } else ed.end(); }
+  for (const t of ['pointerup', 'pointercancel']) canvas.addEventListener(t, up);
   canvas.addEventListener('pointerleave', () => { cursor.style.display = 'none'; });
-  // ---- tools, sliders
+  // ---- tools, colour, size
   function setTool(t) { ed.params.tool = t; document.querySelectorAll('#tools button').forEach((x) => x.classList.toggle('on', x.dataset.tool === t)); view.classList.toggle('pick', t === 'pick'); }
   for (const b of document.querySelectorAll('#tools button')) b.onclick = () => setTool(b.dataset.tool);
-  const hex = (c) => '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
-  $('color').oninput = (e) => { const h = e.target.value; ed.params.color = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); }; $('color').oninput({ target: $('color') });
-  const setSize = (v) => { v = Math.max(2, Math.min(120, Math.round(v))); ed.params.size = v; $('size').value = v; $('sizev').textContent = v; };
-  $('size').oninput = (e) => setSize(+e.target.value); $('flow').oninput = (e) => { ed.params.flow = e.target.value / 100; $('flowv').textContent = e.target.value; }; $('strength').oninput = (e) => { ed.params.strength = e.target.value / 100; $('strv').textContent = e.target.value; };
+  const hex = (c) => '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), fromHex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  $('color').oninput = (e) => { ed.params.color = fromHex(e.target.value); ui(); }; $('mcolor').oninput = (e) => { ed.params.color = fromHex(e.target.value); ui(); };
+  const SW = ['#000000', '#ffffff', '#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa']; for (const c of SW) { const b = document.createElement('button'); b.style.background = c; b.setAttribute('aria-label', 'Colour ' + c); b.dataset.c = c; b.onclick = () => { ed.params.color = fromHex(c); ui(); }; $('sw').appendChild(b); }
+  const setSize = (v) => { v = Math.max(2, Math.min(120, Math.round(v))); ed.params.size = v; $('size').value = v; $('msize').value = v; $('sizev').textContent = v; $('msizev').textContent = v; };
+  $('size').oninput = (e) => setSize(+e.target.value); $('msize').oninput = (e) => setSize(+e.target.value);
+  const setFlow = (v) => { ed.params.flow = v / 100; $('flow').value = v; $('m-flow').value = v; $('flowv').textContent = v; }, setStr = (v) => { ed.params.strength = v / 100; $('strength').value = v; $('m-str').value = v; $('strv').textContent = v; };
+  $('flow').oninput = (e) => setFlow(+e.target.value); $('m-flow').oninput = (e) => setFlow(+e.target.value); $('strength').oninput = (e) => setStr(+e.target.value); $('m-str').oninput = (e) => setStr(+e.target.value);
   $('undo').onclick = () => ed.undo(); $('redo').onclick = () => ed.redo(); $('addl').onclick = () => ed.addLayer();
+  // ---- output
   const download = (bytes, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
   const saveLog = () => download(ed.save(), 'painting.oplog.json', 'application/json');
-  $('save').onclick = saveLog; $('png').onclick = async () => { try { download(await ed.exportPNG(), 'painting.png', 'image/png'); status('PNG exported'); } catch (err) { status(err.message); } };
-  $('psd').onclick = () => { try { status('Writing PSD...'); setTimeout(() => { try { download(ed.exportPSD(), 'painting.psd', 'image/vnd.adobe.photoshop'); status('PSD exported'); } catch (err) { status('PSD export failed: ' + err.message); } }, 20); } catch (err) { status(err.message); } };
-  $('loadb').onclick = () => $('loadf').click(); $('loadf').onchange = async (e) => { const f = e.target.files[0]; if (f) { try { ed.load(await f.text()); status('Loaded ' + f.name); } catch (err) { status(err.message); } } };
-  let armed = 0; $('newc').onclick = () => { if (!armed) { $('newc').textContent = 'Click again to clear'; armed = setTimeout(() => { armed = 0; $('newc').textContent = 'New canvas'; }, 3000); return; } clearTimeout(armed); armed = 0; $('newc').textContent = 'New canvas'; ed.reset(); store.del(); status('New canvas'); };
+  const doPNG = async () => { try { const png = await ed.exportPNG(); if (coarse) { showSaver(png); status('Touch and hold the picture to save it'); } else { download(png, 'painting.png', 'image/png'); status('PNG exported'); } } catch (err) { status(err.message); } };
+  const doPSD = () => { status('Writing PSD...'); setTimeout(() => { try { download(ed.exportPSD(), 'painting.psd', 'image/vnd.adobe.photoshop'); status('PSD exported'); } catch (err) { status('PSD export failed: ' + err.message); } }, 20); };
+  const coarse = matchMedia('(pointer: coarse)').matches; let lastBlobUrl = '';
+  function showSaver(png) { if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = URL.createObjectURL(new Blob([png], { type: 'image/png' })); $('saveimg').src = lastBlobUrl; $('savelink').href = lastBlobUrl; $('saver').hidden = false; window.__shared = 'saver'; }
+  $('saveclose').onclick = () => { $('saver').hidden = true; };
+  async function doShare() { try { const png = await ed.exportPNG(), file = new File([png], 'painting.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) { await navigator.share({ files: [file], title: 'My painting' }); status('Shared'); window.__shared = 'share'; }
+      else if (coarse) { showSaver(png); status('Touch and hold the picture to save it'); } else { download(png, 'painting.png', 'image/png'); status('Saved PNG'); window.__shared = 'download'; } }
+    catch (err) { if (err && err.name === 'AbortError') status('Share cancelled'); else status('Share failed: ' + (err && err.message)); } }
+  const loadClick = () => $('loadf').click(); $('loadf').onchange = async (e) => { const f = e.target.files[0]; if (f) { try { ed.load(await f.text()); status('Loaded ' + f.name); side.classList.remove('open'); } catch (err) { status(err.message); } } };
+  let armed = 0; function newCanvas(btn, label) { if (!armed) { btn.textContent = 'Tap again to clear'; armed = setTimeout(() => { armed = 0; btn.textContent = label; }, 3000); return; } clearTimeout(armed); armed = 0; btn.textContent = label; ed.reset(); store.del(); status('New canvas'); side.classList.remove('open'); }
+  $('save').onclick = saveLog; $('png').onclick = doPNG; $('psd').onclick = doPSD; $('loadb').onclick = loadClick; $('newc').onclick = () => newCanvas($('newc'), 'New canvas');
+  $('m-save').onclick = saveLog; $('m-png').onclick = doPNG; $('m-psd').onclick = doPSD; $('m-load').onclick = loadClick; $('m-new').onclick = () => newCanvas($('m-new'), 'New canvas'); $('m-fit').onclick = () => { fit(); side.classList.remove('open'); };
+  $('m-share').onclick = doShare; $('m-menu').onclick = () => side.classList.toggle('open'); $('m-close').onclick = () => side.classList.remove('open');
+  // ---- reliable touch taps on buttons: act on touch release (Chrome can swallow the click of a tap that follows a fast drag); the browser's own click that may follow is ignored
+  { let downBtn = null; document.addEventListener('pointerdown', (e) => { downBtn = e.pointerType === 'touch' ? e.target.closest('button') : null; }, true);
+    document.addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch' || !downBtn) return; const b = e.target.closest('button'); if (b === downBtn && !b.disabled) { b.__tapAt = performance.now(); b.click(); } downBtn = null; }, true);
+    document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button'); if (b && e.isTrusted && b.__tapAt && performance.now() - b.__tapAt < 700) { e.stopImmediatePropagation(); e.preventDefault(); } }, true); }
   // ---- keyboard
   addEventListener('keydown', (e) => { const tag = (e.target.tagName || '').toLowerCase(), typing = tag === 'select' || (tag === 'input' && e.target.type !== 'range' && e.target.type !== 'color'); if (typing) return;
     const k = e.key, mod = e.ctrlKey || e.metaKey;
@@ -79,10 +130,11 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
     const tools = { 1: 'hard', 2: 'soft', 3: 'smudge', 4: 'erase', 5: 'blur', i: 'pick', I: 'pick' }; if (tools[k]) { setTool(tools[k]); return; }
     if (k === '[') setSize(ed.params.size - Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === ']') setSize(ed.params.size + Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === '0') fit(); });
   addEventListener('keyup', (e) => { if (e.key === ' ') { space = false; if (!panning) view.classList.remove('pan'); } });
-  // ---- layers panel and state
+  // ---- layers panel, autosave
   let saveTimer = 0;
   function ui() {
-    $('undo').disabled = !ed.canUndo(); $('redo').disabled = !ed.canRedo(); $('info').textContent = ed.ops.length + ' ops in the log'; const c = hex(ed.params.color); if ($('color').value !== c) $('color').value = c;
+    $('undo').disabled = !ed.canUndo(); $('redo').disabled = !ed.canRedo(); $('info').textContent = ed.ops.length + ' ops in the log'; const c = hex(ed.params.color); if ($('color').value !== c) $('color').value = c; if ($('mcolor').value !== c) $('mcolor').value = c;
+    for (const b of $('sw').children) b.style.borderColor = b.dataset.c === c ? 'var(--acc)' : 'var(--line)';
     const box = $('layers'); box.textContent = '';
     for (const l of ed.layers().slice().reverse()) { const d = document.createElement('div'); d.className = 'layer' + (l.id === ed.params.layer ? ' on' : ''); const name = l.id === 0 ? 'Background' : 'Layer ' + l.id;
       d.innerHTML = '<div><b>' + name + '</b></div>'; d.firstChild.firstChild.onclick = () => { ed.params.layer = l.id; ui(); };
@@ -93,6 +145,8 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   }
   ed.onChange(ui);
   const prev = store.get(); if (prev) { try { ed.load(prev); if (ed.ops.length > 3) status('Restored your last painting (' + ed.ops.length + ' ops)'); } catch (e) { ed.reset(); } }
+  const sw = document.querySelector('meta[name=oplog-sw]'); if (sw && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker: ' + e.message));
+  const mq = matchMedia('(max-width:760px)'); const more = document.querySelector('.more'); const showMore = () => { more.style.display = mq.matches ? 'grid' : 'none'; }; showMore(); mq.addEventListener('change', showMore);
   fit(); ui();
 })();
 </script></body></html>

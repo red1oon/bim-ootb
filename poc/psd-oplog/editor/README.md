@@ -10,3 +10,6 @@ A small browser painting app whose document is an op log. Nothing to install: op
 
 Known limits (v0.1): no pen pressure, no selections, no layer delete/reorder/rename/hide, no groups or masks, sRGB only, 1024x1024 canvas, tested in Chromium only, touch gestures untested, no Photoshop check of the exported PSD, and nobody has judged how it feels yet.
 Third-party: `vendor/ag-psd.js` is ag-psd 31.0.3 (MIT), see `vendor/ag-psd.LICENSE`.
+
+## Phone use (v0.2)
+One finger paints; two fingers pinch-zoom and pan; a two-finger tap undoes, a three-finger tap redoes. Bottom dock: tools, colour swatches, brush size. Share/Save in the top bar (shows a hold-to-save picture where the browser cannot share files). The built folder (`npm run editor_dist`) is an installable, offline-capable PWA when served over https; `npm run editor_dist_single` writes one self-contained HTML file.

@@ -4,8 +4,8 @@
  "fails": [],
  "numbers": {
   "node": {
-   "fast_MBps": 197.00937551611068,
-   "pure_MBps": 31.71358698468047
+   "fast_MBps": 196.9635023183343,
+   "pure_MBps": 31.999506695604783
   },
   "chromium_speed": {
    "secure": true,
@@ -14,11 +14,11 @@
     "fastMismatch": 0,
     "subtleMismatch": 0
    },
-   "pure64k_ms": 658.2000000476837,
-   "fast64k_ms": 173.79999995231628,
-   "pure16m_ms": 334.5,
-   "fast16m_ms": 88,
-   "subtle_1024x64k_ms": 44.90000003576279,
+   "pure64k_ms": 667.5,
+   "fast64k_ms": 173.19999998807907,
+   "pure16m_ms": 340.5,
+   "fast16m_ms": 86.59999996423721,
+   "subtle_1024x64k_ms": 44.80000001192093,
    "subtle16m_ms": 16.5
   },
   "chromium_store": {
@@ -31,13 +31,13 @@
     "silent": 0
    },
    "S6": {
-    "tFull": 2320,
+    "tFull": 2320.100000023842,
     "hFull": "bc930d9f0fe9",
-    "putA": 475.5,
+    "putA": 471.5,
     "resA": 862.3000000119209,
     "hEqA": true,
-    "putB": 1056.800000011921,
-    "resB": 1465.1000000238419,
+    "putB": 1047.3999999761581,
+    "resB": 1457.800000011921,
     "hEqB": true,
     "idsSame": true
    }

@@ -4,16 +4,16 @@
  "fails": [],
  "numbers": {
   "ops": 13,
-  "hash": "1435cb608424",
+  "hash": "69f7df7445bd",
   "save": {
-   "bytes": 2176,
+   "bytes": 2172,
    "ops": 13
   },
   "moveMs": {
    "n": 84,
    "median": 4.5,
    "p95": 7,
-   "max": 7.600000023841858
+   "max": 9.300000011920929
   },
   "screenshot": "/home/red1/oplog_compare/editor_session.png"
  },

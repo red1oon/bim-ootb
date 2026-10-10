@@ -41,6 +41,8 @@
       end() { if (!cur) return; const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
         const b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * 4); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * 4, (y * W + b[2] + 1) * 4), (y - b[1]) * sw * 4);
         ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o }); redo = []; emit(); },
+      get busy() { return !!cur; },
+      cancel() { if (!cur) return; const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
       addLayer() { const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
       setLayer(id, field, value) { const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? l.opacity : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') l.opacity = prev; else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
       undo() { if (!ed.canUndo()) return; const e = undo.pop(); ops.pop(); redo.push(e);

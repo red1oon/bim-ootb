@@ -94,7 +94,7 @@
   },
   "throughput_MPx_per_s": {
    "srgb_to_p3_8bit_default": 52.2,
-   "srgb_to_p3_8bit_nooptimize": 4.2,
+   "srgb_to_p3_8bit_nooptimize": 4.3,
    "srgb_to_p3_16bit_nooptimize": 4.2,
    "srgb_to_cmyk_8bit_default": 34.9,
    "pixels": 2000000
@@ -181,10 +181,10 @@
    }
   },
   "throughput_browser": {
-   "srgb_to_p3_8bit_default": 41.4,
+   "srgb_to_p3_8bit_default": 41.2,
    "srgb_to_p3_8bit_nooptimize": 4.2,
    "srgb_to_p3_16bit_nooptimize": 4.2,
-   "srgb_to_cmyk_8bit_default": 36.8,
+   "srgb_to_cmyk_8bit_default": 36.6,
    "pixels": 2000000
   }
  },
