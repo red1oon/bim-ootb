@@ -45,8 +45,23 @@
           P[pi] = defect === 'nodecay' ? Pv : F(F(Pv * s) + F(B * is)); } } } };
   }
   function smudge(l, W, o, defect) { const sb = SmudgeBuilder(l, W, o, defect), pb = PositionBuilder(o.r, 0.1); if (!sb.active) return; for (const p of o.pts) for (const q of pb.push(p[0], p[1])) sb.step(q); }
+  // ---- blur brush: per dab, blur the surrounding square into a separate buffer and mix it back with the soft falloff * strength
+  function BlurBrushBuilder(l, W, o, defect) {
+    const Bl = node ? require('./blur.js') : root.Blur, s = F(o.s), R = Math.ceil(o.r), r2 = F(o.r * o.r), sigma = Math.max(1, F(0.2 * o.r)), pix = l.pix, pb = PositionBuilder(o.r, 0.15), n = 2 * R + 1, f = new Float32Array(n * n);
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) { const d2 = F(F(i * i) + F(j * j)), t = F(1 - F(d2 / r2)); f[(j + R) * n + i + R] = t > 0 ? F(t * t) : 0; }
+    function dab(pos) {
+      const ax = Math.floor(pos[0]), ay = Math.floor(pos[1]), x0 = Math.max(0, ax - R), y0 = Math.max(0, ay - R), x1 = Math.min(W - 1, ax + R), y1 = Math.min(W - 1, ay + R); if (x1 < x0 || y1 < y0) return;
+      const rw = x1 - x0 + 1, rh = y1 - y0 + 1, out = Bl.blurRectTo(pix, W, defect === 'sigma' ? sigma * 2 : sigma, [x0, y0, rw, rh]);
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const fi = f[(y - ay + R) * n + (x - ax + R)]; if (fi <= 0) continue; const w = F(s * fi), iw = F(1 - w), i = (y * W + x) * 4, k0 = ((y - y0) * rw + (x - x0)) * 4; for (let k = 0; k < 4; k++) pix[i+k] = F(F(pix[i+k] * iw) + F(out[k0+k] * w)); }
+    }
+    // push: plan AND apply at once (batch / replay). queue + drain: plan now, apply later within a time budget (live drawing on slow devices); the sequence of applied dabs is identical, so results do not depend on the schedule
+    const q = []; let head = 0;
+    return { active: s > 0, push(x, y) { const ps = pb.push(x, y); for (const p of ps) if (s > 0) dab(p); return ps; },
+      queue(x, y) { const ps = pb.push(x, y); if (s > 0) for (const p of ps) q.push(p); return ps; }, pending() { return q.length - head; },
+      drain(budgetMs, clock) { const t0 = (clock || Date.now)(), done = []; while (head < q.length) { if (done.length > 0 && (clock || Date.now)() - t0 >= budgetMs) break; const p = q[head++]; dab(p); done.push(p); } if (head === q.length) { q.length = 0; head = 0; } return done; } };
+  }
   // ---- stroke: dabs applied as positions arrive (live) or all at once (batch); same code
-  function StrokeBuilder(st, o, defect) { const pb = PositionBuilder(o.r, o.spacing === undefined ? 0.25 : o.spacing);
+  function StrokeBuilder(st, o, defect) { if (o.kind === 'blur') { if (!st.L[o.layer]) throw new Error('stroke: unknown layer ' + o.layer); return BlurBrushBuilder(st.L[o.layer], st.W, o, defect); } const pb = PositionBuilder(o.r, o.spacing === undefined ? 0.25 : o.spacing);
     return { push(x, y) { const ps = pb.push(x, y); for (const [px, py] of ps) { const d = { op: o.kind === 'erase' ? 'edab' : o.kind === 'hard' ? 'hdab' : 'dab', layer: o.layer, x: px, y: py, r: o.r, c: o.c, a: o.a }; if (d.op === 'edab') edab(st.L[o.layer], st.W, d); else if (d.op === 'hdab') hdab(st.L[o.layer], st.W, d, defect); else S.apply(st, d); } return ps; } }; }
   function applyOp(st, o, defect) {
     if (o.op === 'hdab') { const l = st.L[o.layer]; if (!l) throw new Error('hdab: unknown layer ' + o.layer); return hdab(l, st.W, o, defect); }
@@ -59,6 +74,6 @@
   function bbox(o, W) { if (o.op === 'hdab' || o.op === 'edab' || o.op === 'dab') return [Math.max(0, Math.floor(o.x - o.r - 1)), Math.max(0, Math.floor(o.y - o.r - 1)), Math.min(W - 1, Math.ceil(o.x + o.r + 1)), Math.min(W - 1, Math.ceil(o.y + o.r + 1))];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of o.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
     const m = Math.ceil(o.r) + 2; return [Math.max(0, Math.floor(x0) - m), Math.max(0, Math.floor(y0) - m), Math.min(W - 1, Math.ceil(x1) + m), Math.min(W - 1, Math.ceil(y1) + m)]; }
-  const api = { hdab, edab, positions, expand, smudge, applyOp, bbox, PositionBuilder, SmudgeBuilder, StrokeBuilder };
+  const api = { hdab, edab, positions, expand, smudge, applyOp, bbox, PositionBuilder, SmudgeBuilder, StrokeBuilder, BlurBrushBuilder };
   if (node) module.exports = api; else root.Brush = api;
 })(this);

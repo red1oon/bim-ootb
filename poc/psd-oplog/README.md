@@ -336,3 +336,6 @@ Erase = `stroke` with `kind:'erase'` (destination-out on all four premultiplied 
 
 ## Editor v0.1 (`editor/`, `npm run editor_v01`; bar and verdicts G1-G10 in `witness_log/HYPOTHESES.md`; terminal session)
 Open `poc/psd-oplog/editor/index.html` in a browser; see `editor/README.md`. v0.1 adds to the earlier editor: eyedropper, zoom/pan, autosave and restore, PNG export, PSD export from the page (byte-identical to the Node exporter), brush cursor, shortcuts, and a build step for a self-contained folder (`npm run editor_dist`). Checked in Chromium with real input, from file:// and from the built folder. Limits: see `editor/README.md`.
+
+## Blur brush (`filters/brush.js` kind 'blur', `filters/run_blurbrush.js`, `npm run blurbrush`; BB1-BB8 in `witness_log/HYPOTHESES.md`; terminal session)
+Found by the owner's phone test ("working except the blur"): the old Blur tool was one fixed 128 px square per tap. Now Blur is a brush: `{op:'stroke', kind:'blur', pts, r, s}`; each dab blurs its surrounding square and mixes it back with a soft falloff (no square edge). Matches scipy to 1e-07, deterministic across engines, time-sliced in the editor so the pointer handler stays at 13 ms median on an emulated 4x CPU (the blur trails the finger on slow devices; flush after a back-to-back 60-move burst 335 ms at 4x). The old rect `blur` op stays for existing logs.

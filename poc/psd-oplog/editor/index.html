@@ -35,16 +35,16 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   <label class="desk">Colour <input id="color" type="color" value="#1a3399"></label>
   <label class="desk">Size <input id="size" type="range" min="2" max="120" value="14"><span id="sizev">14</span></label>
   <label class="desk">Flow <input id="flow" type="range" min="5" max="100" value="100"><span id="flowv">100</span></label>
-  <label class="desk">Smudge <input id="strength" type="range" min="5" max="100" value="70"><span id="strv">70</span></label>
+  <label class="desk">Smudge / blur <input id="strength" type="range" min="5" max="100" value="70"><span id="strv">70</span></label>
   <button class="desk" id="zout" title="Zoom out">-</button><button class="desk" id="zfit" title="Fit (0)">Fit</button><button class="desk" id="z100" title="100%">100%</button><button class="desk" id="zin" title="Zoom in">+</button>
   <button class="desk" id="png">Export PNG</button><button class="desk" id="psd">Export PSD</button><button class="desk" id="save" title="Ctrl+S">Save log</button><button class="desk" id="loadb">Load log</button><input id="loadf" type="file" accept=".json,.oplog" hidden><button class="desk" id="newc">New canvas</button>
   <span id="info" class="desk"></span>
   <button class="mob" id="m-share">Share</button><button class="mob" id="m-menu">Menu</button>
 </header>
-<nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Click to blur a 128x128 area (5)">Blur</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
+<nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Blur brush: drag to soften (5)">Blur</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
 <div id="view"><canvas id="c"></canvas></div>
 <aside id="side"><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button>
-  <div class="mob more" style="display:none"><label>Flow <input id="m-flow" type="range" min="5" max="100" value="100"></label><label>Smudge <input id="m-str" type="range" min="5" max="100" value="70"></label>
+  <div class="mob more" style="display:none"><label>Flow <input id="m-flow" type="range" min="5" max="100" value="100"></label><label>Smudge / blur <input id="m-str" type="range" min="5" max="100" value="70"></label>
     <button id="m-png">Export PNG</button><button id="m-psd">Export PSD</button><button id="m-save">Save log</button><button id="m-load">Load log</button><button id="m-fit">Fit view</button><button id="m-new">New canvas</button><button id="m-close" style="grid-column:1/3">Close</button></div>
   <p style="color:var(--mut);font-size:12px">Every action is one entry in an op log. Undo/redo, save and replay all come from that log. Your painting is kept in this browser automatically.</p></aside>
 <div id="dock"><div id="sw"></div><input id="mcolor" type="color" value="#1a3399" aria-label="Custom colour"><input id="msize" type="range" min="2" max="120" value="14" aria-label="Brush size"><span id="msizev">14</span></div>
@@ -70,7 +70,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   let space = false, panning = null; const touches = new Map(); let gest = null, blocked = false, strokeTouch = null, maxF = 0;
   const xy = (e) => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * ed.W / r.width, (e.clientY - r.top) * ed.W / r.height]; };
   function cursorAt(e) { if (e.pointerType === 'touch') { cursor.style.display = 'none'; return; } const t = ed.params.tool, r = canvas.getBoundingClientRect(), k = r.width / ed.W; if (t === 'pick' || space || panning) { cursor.style.display = 'none'; return; }
-    const d = t === 'blur' ? 128 * k : 2 * ed.params.size * k; cursor.style.display = 'block'; cursor.style.width = cursor.style.height = d + 'px'; cursor.style.borderRadius = t === 'blur' ? '0' : '50%'; cursor.style.transform = `translate(${e.clientX - d / 2}px, ${e.clientY - d / 2}px)`; }
+    const d = 2 * ed.params.size * k; cursor.style.display = 'block'; cursor.style.width = cursor.style.height = d + 'px'; cursor.style.borderRadius = '50%'; cursor.style.transform = `translate(${e.clientX - d / 2}px, ${e.clientY - d / 2}px)`; }
   const two = () => { const it = [...touches.values()]; return { a: it[0], b: it[1] }; };
   function gestureState() { const { a, b } = two(), r = view.getBoundingClientRect(); return { d: Math.hypot(b.x - a.x, b.y - a.y) || 1, cx: (a.x + b.x) / 2 - r.left, cy: (a.y + b.y) / 2 - r.top }; }
   canvas.addEventListener('pointerdown', (e) => { side.classList.remove('open');

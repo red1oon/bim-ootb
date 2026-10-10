@@ -21,6 +21,17 @@ def edab(a, o):
     W = a.shape[0]; x0 = max(0, math.floor(o['x'] - o['r'] - 1)); x1 = min(W - 1, math.ceil(o['x'] + o['r'] + 1)); y0 = max(0, math.floor(o['y'] - o['r'] - 1)); y1 = min(W - 1, math.ceil(o['y'] + o['r'] + 1))
     ys, xs = np.mgrid[y0:y1 + 1, x0:x1 + 1]; d = np.sqrt((xs + 0.5 - o['x']) ** 2 + (ys + 0.5 - o['y']) ** 2); cov = np.clip(o['r'] - d + 0.5, 0, 1) * o['a']
     a[y0:y1 + 1, x0:x1 + 1] *= (1 - cov)[..., None]
+def blurbrush(a, o):
+    from scipy.ndimage import gaussian_filter
+    W = a.shape[0]; s = o['s']; R = math.ceil(o['r']); sigma = max(1.0, float(np.float32(0.2 * o['r']))); jj, ii = np.mgrid[-R:R + 1, -R:R + 1]; t = 1 - (ii * ii + jj * jj) / (o['r'] * o['r']); f = np.where(t > 0, t * t, 0.0)
+    if not s > 0: return
+    for (x, y) in positions(o['pts'], o['r'], 0.15):
+        ax, ay = math.floor(x), math.floor(y); bl = gaussian_filter(a, sigma=(sigma, sigma, 0), mode='reflect', truncate=4.0)
+        for j in range(-R, R + 1):
+            for i in range(-R, R + 1):
+                px, py = ax + i, ay + j
+                if 0 <= px < W and 0 <= py < W and f[j + R, i + R] > 0:
+                    w = s * f[j + R, i + R]; a[py, px] = a[py, px] * (1 - w) + bl[py, px] * w
 def smudge(a, o):
     W = a.shape[0]; s = o['s']
     if not s > 0: return
@@ -46,6 +57,7 @@ for j in spec['jobs']:
         if o['op'] == 'hdab': hdab(a, o)
         elif o['op'] == 'edab': edab(a, o)
         elif o['op'] == 'smudge': smudge(a, o)
+        elif o['op'] == 'stroke' and o.get('kind') == 'blur': blurbrush(a, o)
         elif o['op'] == 'stroke':
             for (x, y) in positions(o['pts'], o['r'], o.get('spacing', 0.25)): (edab if o.get('kind') == 'erase' else hdab)(a, {'x': x, 'y': y, 'r': o['r'], 'c': o['c'], 'a': o['a']})
     a.tofile(j['out'])

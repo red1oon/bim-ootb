@@ -1,0 +1,22 @@
+{
+ "n_checks": 18,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "BB1": {
+   "one": 5.537444403014291e-8,
+   "stroke": 1.481545852666244e-7,
+   "negative": 0.07329949302749406
+  },
+  "BB3": {
+   "line_peak_darkness_after": 0.09973907470703125,
+   "edge_gradient_before": 1,
+   "edge_gradient_after": 0.03881174325942993
+  },
+  "BB6a": {
+   "dabs": 109,
+   "apply_ms_median": 109.29726600646973
+  }
+ },
+ "node": "v20.20.2"
+}

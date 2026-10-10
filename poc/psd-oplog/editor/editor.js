@@ -5,7 +5,7 @@
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    let st, D, ops, undo, redo, cur = null; const moveMs = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    let st, D, ops, undo, redo, cur = null; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list) { const back = D.back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -19,30 +19,32 @@
     function regionPut(layer, b, data) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * 4, (y - y0 + 1) * w * 4), (y * W + x0) * 4); }
     const tilesOfBox = (b) => { const set = new Set(); for (let ty = Math.floor(b[1] / T); ty <= Math.floor(b[3] / T); ty++) for (let tx = Math.floor(b[0] / T); tx <= Math.floor(b[2] / T); tx++) set.add(ty * tn + tx); return [...set]; };
     function refresh(list) { for (const t of list) D.renderTile(t); paintTiles(list); }
+    // time-sliced drawing for expensive brushes: apply queued dabs within a budget, show them, continue next frame; end() flushes the rest
+    function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) for (const t of tilesOfBox(Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W))) set.add(t); if (set.size) refresh([...set]); }
+    function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
     const ed = {
-      W, params, moveMs, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
+      W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
       layers() { return st.order.map((id) => ({ id, mode: st.L[id].mode, opacity: st.L[id].opacity })); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
       begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (!l || cur) return;
-        if (p.tool === 'blur') { const rx = Math.max(0, Math.min(W - 128, Math.floor(x) - 64)), ry = Math.max(0, Math.min(W - 128, Math.floor(y) - 64)), o = { op: 'blur', layer: p.layer, sigma: p.sigma, rect: [rx, ry, 128, 128] }, b = [rx, ry, rx + 127, ry + 127], before = regionCopy(p.layer, b);
-          applyOp(st, o); refresh(tilesOfBox(b)); ops.push(o); undo.push({ kind: 'px', layer: p.layer, bbox: b, before, op: o }); redo = []; emit(); return; }
         const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);
-        const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
+        const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : p.tool === 'blur' ? { op: 'stroke', layer: p.layer, kind: 'blur', pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
         cur = { o, snap, last: null, tiles: new Set(), box: null };
         if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(l, W, o); } else cur.sb = Br.StrokeBuilder(st, o);
         ed.move(x, y, true); },
       move(x, y, first) { if (!cur) return; x = r2(x); y = r2(y); const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
-        const ps = cur.o.op === 'smudge' ? cur.pb.push(x, y) : cur.sb.push(x, y), set = new Set();
-        for (const pos of ps) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; for (const t of tilesOfBox(b)) set.add(t); }
-        if (set.size) refresh([...set]); if (!first) moveMs.push(performance.now() - t0); },
-      end() { if (!cur) return; const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
+        const sliced = !!cur.sb && !!cur.sb.queue, planned = cur.o.op === 'smudge' ? cur.pb.push(x, y) : sliced ? cur.sb.queue(x, y) : cur.sb.push(x, y);
+        for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
+        if (sliced) { drainSlice(6); cur.maxPending = Math.max(cur.maxPending || 0, cur.sb.pending()); if (cur.sb.pending() && !cur.raf) cur.raf = requestAnimationFrame(frame); } else if (cur.tiles.size) { refresh([...cur.tiles]); cur.tiles.clear(); }
+        if (!first) moveMs.push(performance.now() - t0); },
+      end() { if (!cur) return; if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
         const b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * 4); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * 4, (y * W + b[2] + 1) * 4), (y - b[1]) * sw * 4);
         ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o }); redo = []; emit(); },
       get busy() { return !!cur; },
-      cancel() { if (!cur) return; const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
+      cancel() { if (!cur) return; if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
       addLayer() { const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
       setLayer(id, field, value) { const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? l.opacity : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') l.opacity = prev; else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
       undo() { if (!ed.canUndo()) return; const e = undo.pop(); ops.pop(); redo.push(e);
