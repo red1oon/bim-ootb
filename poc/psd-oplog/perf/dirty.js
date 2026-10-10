@@ -8,6 +8,10 @@ function makeDirty(st, T = 64) {
   const crop = (a, ch, tx, ty) => { const o = new Float32Array(T * T * ch); for (let y = 0; y < T; y++) { const s = ((ty * T + y) * W + tx * T) * ch; o.set(a.subarray(s, s + T * ch), y * T * ch); } return o; };
   // ids of every dab/mdab touch: same bounds as stack.apply; all other ops are non-local (null = every tile)
   function tilesOf(o) {
+    if (o.op === 'hdab' || o.op === 'stroke' || o.op === 'smudge') {   // brush ops: tiles of the stroke bbox (filters/brush.js bbox is conservative)
+      const [bx0, by0, bx1, by1] = require('../filters/brush.js').bbox(o, W), out = [];
+      for (let ty = Math.floor(by0 / T); ty <= Math.floor(by1 / T); ty++) for (let tx = Math.floor(bx0 / T); tx <= Math.floor(bx1 / T); tx++) out.push(ty * tn + tx);
+      return out; }
     if (o.op === 'blur' && !o.rect) return null;   // a full-layer blur writes every pixel
     if (o.op !== 'dab' && o.op !== 'mdab' && o.op !== 'blur') return null;
     // blur with a rect writes only inside the rect (it READS neighbours outside, which does not matter for what changes)
