@@ -222,6 +222,22 @@ function currentCost(db, productId, schema) {
   var c = getRow(db, 'SELECT currentcostprice FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(productId), num(schema), num(as.m_costtype_id), num(el.m_costelement_id)]);
   return c ? { price: Number(c.currentcostprice), method: cm, element: el.m_costelement_id } : { price: null, why: 'no-m_cost-row' };
 }
+// §REVIEW-FIX-2026-10-11 D5 — the ORIGINAL document's posted books. Doc_InOut reverses by copying the original's facts with Dr/Cr swapped (FactLine.updateReverseLine,
+// FactLine.java:1357-1359; Doc_InOut.java:288-301): the amounts are what was POSTED, never a re-derive at today's cost. The SQLite books are fact_acct rows the host wrote when the original
+// posted (line-tagged). Returns null when the db carries no such rows (then the caller keeps its recompute and says so — reversalBasis). cents; per account and per original line.
+function _postedFacts(db, table_id, recordId, schema) {
+  if (!_hasCol(db, 'fact_acct', 'record_id') || !_hasCol(db, 'fact_acct', 'ad_table_id')) return null;
+  var rows = allRows(db, 'SELECT account_id, line_id, amtacctdr, amtacctcr FROM fact_acct WHERE ad_table_id=? AND record_id=? AND c_acctschema_id=?', [table_id, num(recordId), num(schema)]);
+  if (!rows.length) return null;
+  var byAcct = {}, byLine = {};
+  rows.forEach(function (r) {
+    var dr = cents(r.amtacctdr), cr = cents(r.amtacctcr), k = num(r.account_id);
+    if (!byAcct[k]) { var ev = _hasCol(db, 'c_elementvalue', 'c_elementvalue_id') ? getRow(db, 'SELECT value, name FROM c_elementvalue WHERE c_elementvalue_id=?', k) : null; byAcct[k] = { account_id: k, value: ev ? ev.value : null, name: ev ? ev.name : null, dr: 0, cr: 0 }; }
+    byAcct[k].dr += dr; byAcct[k].cr += cr;
+    var lk = num(r.line_id); if (lk) byLine[lk] = (byLine[lk] || 0) + dr;   // the line's cost amount = its Dr leg (Dr COGS / Cr Asset of a sales shipment)
+  });
+  return { by: byAcct, line: byLine };
+}
 function deriveInOut(db, R, ioId, schema, opt) {
   var hdr = getRow(db, 'SELECT m_inout_id,issotrx,movementtype FROM m_inout WHERE m_inout_id=?', num(ioId));
   if (!hdr) return null;
@@ -239,10 +255,18 @@ function deriveInOut(db, R, ioId, schema, opt) {
   if (rev && num(rev.reversal_id) && _hasCol(db, 'm_inoutline', 'reversalline_id')) {
     var rl = allRows(db, 'SELECT reversalline_id FROM m_inoutline WHERE m_inout_id=?', num(ioId));
     if (rl.length && rl.every(function (x) { return num(x.reversalline_id); })) {
-      var orig = deriveInOut(db, R, num(rev.reversal_id), schema, { amountsOnly: true });   // the original's AMOUNTS (legacy reads its posted books); no qty re-check (MCostDetail.java:1482-1485)
-      if (!orig || orig.absent.length) { absent.push('Original Shipment/Receipt not posted yet (' + rev.reversal_id + ')'); return { by: by, absent: absent }; }
-      Object.keys(orig.by).forEach(function (k) { var a = orig.by[k]; by[k] = { account_id: a.account_id, value: a.value, name: a.name, dr: a.cr, cr: a.dr }; });
-      return { by: by, absent: absent };
+      // §REVIEW-FIX D5: the original's POSTED books when the host holds them (fact_acct, table 319) — the amounts at the cost of the day it shipped. Only when none are available is the original
+      // re-derived (at today's cost — exact only while the cost has not moved) and the result says so (reversalBasis), never silently.
+      var posted = _postedFacts(db, 319, rev.reversal_id, schema), basis = 'posted-original', src;
+      if (posted) src = posted.by;
+      else {
+        basis = 'recomputed-current-cost';
+        var orig = deriveInOut(db, R, num(rev.reversal_id), schema, { amountsOnly: true });   // the original's AMOUNTS; no qty re-check (MCostDetail.java:1482-1485)
+        if (!orig || orig.absent.length) { absent.push('Original Shipment/Receipt not posted yet (' + rev.reversal_id + ')'); return { by: by, absent: absent }; }
+        src = orig.by;
+      }
+      Object.keys(src).forEach(function (k) { var a = src[k]; by[k] = { account_id: a.account_id, value: a.value, name: a.name, dr: a.cr, cr: a.dr }; });
+      return { by: by, absent: absent, reversalBasis: basis };
     }
   }
   // §38 (F6): the Average costed-qty refusal — whole document refused, nothing posted (MCost.java:1919-1930 via MCostDetail.process). Only when the posting db carries
@@ -481,13 +505,17 @@ function costQtyUpdatesFor(db, table, id) {
 }
 function costQtyUpdates(db, ioId) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return [];
-  var lines = allRows(db, 'SELECT m_product_id, movementqty FROM m_inoutline WHERE m_inout_id=?', num(ioId));
+  var lines = allRows(db, 'SELECT m_product_id, movementqty' + (_hasCol(db, 'm_inoutline', 'reversalline_id') ? ', reversalline_id' : '') + ' FROM m_inoutline WHERE m_inout_id=?', num(ioId));
+  var hdr = _hasCol(db, 'm_inout', 'reversal_id') ? getRow(db, 'SELECT reversal_id FROM m_inout WHERE m_inout_id=?', num(ioId)) : null, origIo = hdr && num(hdr.reversal_id) ? num(hdr.reversal_id) : null;
   var els = _costingElements(db), schemas = allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []), out = [], state = {};
   lines.forEach(function (l) {
     if (!_isStocked(db, l.m_product_id)) return;
     schemas.forEach(function (sc) { els.forEach(function (e) {
       // a reversal line (qty already negated ⇒ +qty) re-adds at its POSTED amount = the original line's cost amount in this schema, cent-rounded (Doc_InOut reversal facts; pilot history 1 × 2.2976 ⇒ 2.30)
-      _avgUpdate(db, state, out, l.m_product_id, sc, e, -Number(l.movementqty), function () { var cc = currentCost(db, l.m_product_id, sc.id); if (cc.price == null) return null;
+      _avgUpdate(db, state, out, l.m_product_id, sc, e, -Number(l.movementqty), function () {
+        // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
+        if (origIo && num(l.reversalline_id)) { var pf = _postedFacts(db, 319, origIo, sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
+        var cc = currentCost(db, l.m_product_id, sc.id); if (cc.price == null) return null;
         var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); });
     }); });
   });
@@ -1208,7 +1236,7 @@ function finish(d, basis, glCat) {
   var sumDr = 0, sumCr = 0;
   Object.keys(d.by).forEach(function (k) { sumDr += d.by[k].dr; sumCr += d.by[k].cr; });
   return { lines: lines, balanced: lines.length > 0 && sumDr === sumCr, sumDr: sumDr, sumCr: sumCr, absent: d.absent, basis: basis,
-           gl_category_id: gl.id, gl_category_stage: gl.stage, postStatus: d.postStatus };   // §75: a legacy Doc status other than posted ('i' InvalidAccount), when the fold knows it
+           gl_category_id: gl.id, gl_category_stage: gl.stage, postStatus: d.postStatus, reversalBasis: d.reversalBasis };   // §75: a legacy Doc status other than posted ('i' InvalidAccount), when the fold knows it
 }
 
 /**
