@@ -747,15 +747,76 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 })(this);
 
 ;
+/* ===== perf/fastsha.js ===== */
+// Fast synchronous SHA-256: reads the input bytes in place (no buffer copy), same hex output as Stack.sha256. Spec: witness_log/HYPOTHESES.md "Browser sha256 speed" (S2).
+(function (root) {
+  const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+  const w = new Int32Array(64), HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+  function sha256(data) {
+    const u8 = typeof data === 'string' ? new TextEncoder().encode(data) : data instanceof Uint8Array ? data : new Uint8Array(data.buffer, data.byteOffset, data.byteLength), l = u8.length;
+    let h0 = 0x6a09e667 | 0, h1 = 0xbb67ae85 | 0, h2 = 0x3c6ef372 | 0, h3 = 0xa54ff53a | 0, h4 = 0x510e527f | 0, h5 = 0x9b05688c | 0, h6 = 0x1f83d9ab | 0, h7 = 0x5be0cd19 | 0;
+    const full = l >> 6, tailLen = l - (full << 6), padLen = tailLen < 56 ? 64 : 128, tail = new Uint8Array(padLen); tail.set(u8.subarray(full << 6)); tail[tailLen] = 0x80;
+    const dv = new DataView(tail.buffer); dv.setUint32(padLen - 4, (l * 8) >>> 0); dv.setUint32(padLen - 8, Math.floor(l / 0x20000000));
+    const blocks = full + (padLen >> 6);
+    for (let b = 0; b < blocks; b++) {
+      const src = b < full ? u8 : tail, o = b < full ? b << 6 : (b - full) << 6;
+      for (let i = 0; i < 16; i++) { const p = o + (i << 2); w[i] = (src[p] << 24) | (src[p + 1] << 16) | (src[p + 2] << 8) | src[p + 3]; }
+      for (let i = 16; i < 64; i++) { const a = w[i - 15], c = w[i - 2]; w[i] = (w[i - 16] + (((a >>> 7) | (a << 25)) ^ ((a >>> 18) | (a << 14)) ^ (a >>> 3)) + w[i - 7] + (((c >>> 17) | (c << 15)) ^ ((c >>> 19) | (c << 13)) ^ (c >>> 10))) | 0; }
+      let a = h0, bb = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0, t2 = ((((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) + ((a & bb) ^ (a & c) ^ (bb & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + bb) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0; h5 = (h5 + f) | 0; h6 = (h6 + g) | 0; h7 = (h7 + h) | 0;
+    }
+    let out = ''; for (const v of [h0, h1, h2, h3, h4, h5, h6, h7]) out += HEX[(v >>> 24) & 255] + HEX[(v >>> 16) & 255] + HEX[(v >>> 8) & 255] + HEX[v & 255]; return out;
+  }
+  const api = { sha256 };
+  if (typeof module !== 'undefined') module.exports = api; else root.FastSha = api;
+})(this);
+
+;
+/* ===== editor/ckpt.js ===== */
+// Checkpoints for the editor: raw float32 layer pixels + metadata, content-checked, keyed by the log's hash-chain head. Spec: witness_log/HYPOTHESES.md "Level 1e" (K1-K8).
+(function (root) {
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, HO = node ? require('./history_ops.js') : root.HistoryOps, SO = node ? require('./select_ops.js') : root.SelectOps, FS = node ? require('../perf/fastsha.js') : root.FastSha;
+  const sumOf = (f32) => FS.sha256(new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength));
+  function snapshot(st, ops, k) {
+    if (st.hasTree || Object.keys(st.G).length || Object.keys(st.A).length) throw new Error('checkpoint: groups/adjustments are not supported'); const layers = {}, bufs = [];
+    for (const id of st.order) { const l = st.L[id]; if (l.mask) throw new Error('checkpoint: masks are not supported'); layers[id] = { mode: l.mode, opacity: l.opacity, hid: !!l.hid, keep: l.keep, name: l.name, parent: l.parent, clip: !!l.clip }; bufs.push(new Float32Array(l.pix)); }
+    const sel = st.sel ? { kind: st.sel.kind, box: st.sel.box.slice(), inv: !!st.sel.inv } : null;
+    return { v: 1, k, W: st.W, head: HO.head(ops.slice(0, k)), meta: { order: st.order.slice(), root: st.root.slice(), layers, sel }, bufs, sums: bufs.map(sumOf) };
+  }
+  function usable(ck, ops, opt = {}) {
+    if (!ck || ck.v !== 1) throw new Error('not a checkpoint'); if (ck.k > ops.length) throw new Error('checkpoint is ahead of the log (k ' + ck.k + ' > ' + ops.length + ')');
+    if (HO.head(ops.slice(0, ck.k)) !== ck.head) throw new Error('log head mismatch: entries before ' + ck.k + ' differ from the checkpoint');
+    for (let i = ck.k; i < ops.length; i++) if (ops[i].op === 'amend' && ops[i].i < ck.k) throw new Error('an amend at entry ' + (i + 1) + ' rewrites entry ' + (ops[i].i + 1) + ' before the checkpoint');
+    if (ck.bufs.length !== ck.meta.order.length) throw new Error('buffer count mismatch');
+    if (opt.verify !== false) ck.bufs.forEach((b, i) => { if (!(b instanceof Float32Array) || b.length !== ck.W * ck.W * 4) throw new Error('buffer ' + i + ' has the wrong size'); if (sumOf(b) !== ck.sums[i]) throw new Error('buffer ' + i + ' fails its sha256 (corrupt)'); });
+    return true;
+  }
+  function resume(ck, ops, applyOp, W, blobs) {
+    if (ck.W !== W) throw new Error('canvas size differs'); const st = S.newState(W); st.blobs = blobs;
+    ck.meta.order.forEach((id, i) => { S.apply(st, { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }); const l = st.L[id], m = ck.meta.layers[id]; l.mode = m.mode; l.opacity = m.opacity; if (m.hid) { l.hid = true; l.keep = m.keep; } if (m.name !== undefined) l.name = m.name; l.pix.set(ck.bufs[i]); });
+    st.order = ck.meta.order.slice(); st.root = ck.meta.root.slice();
+    if (ck.meta.sel) { const s = ck.meta.sel, b = s.box; SO.apply(st, { op: 'sel', kind: s.kind, x0: b[0], y0: b[1], x1: b[2], y1: b[3] }, null); if (s.inv) SO.apply(st, { op: 'sel', kind: 'invert' }, null); }
+    const ex = HO.expand(ops); for (let i = ck.k; i < ops.length; i++) applyOp(st, ex[i]); return st;
+  }
+  const bytes = (ck) => ck.bufs.reduce((a, b) => a + b.byteLength, 0);
+  const api = { snapshot, usable, resume, bytes };
+  if (node) module.exports = api; else root.Ckpt = api;
+})(this);
+
+;
 /* ===== editor/editor.js ===== */
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, CK = root.Ckpt, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -763,7 +824,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
           if (a > 0) { d[o] = q(F(back[p] / a)); d[o + 1] = q(F(back[p + 1] / a)); d[o + 2] = q(F(back[p + 2] / a)); } else d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = q(a); }
         ctx.putImageData(tileImg, tx * T, ty * T); } }
     const allTiles = () => Array.from({ length: tn * tn }, (_, i) => i);
-    function build(list) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
+    function build(list, fromLog) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); if (fromLog) undo = ops.slice(3).map((op) => ({ kind: 'rebuild', op })); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
     const initial = () => [{ op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false }, { op: 'fill', layer: 0, c: [1, 1, 1], a: 1 }, { op: 'layer', id: 1, mode: 'normal', opacity: 1, mask: false }];
     function regionCopy(layer, b) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * 4); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * 4, (y * W + x1 + 1) * 4), (y - y0) * w * 4); return out; }
     function regionPut(layer, b, data) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * 4, (y - y0 + 1) * w * 4), (y * W + x0) * 4); }
@@ -773,7 +834,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
     function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
     // history: full refold keeping the undo/redo stacks (used after an amend and by 'rebuild' entries)
-    function rebuildKeep() { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
+    function rebuildKeep() { let done = false; if (memCk) { try { CK.usable(memCk, ops, { verify: false }); st = CK.resume(memCk, ops, applyOp, W, blobs); done = true; ed.lastRebuild = { ckpt: memCk.k }; } catch (e) { ed.lastRebuild = { ckpt: null, why: e.message }; } } if (!done) { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); } D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
     const scratch = () => { const s2 = S.newState(W); s2.blobs = blobs; return { st: s2, D: root.Dirty.makeDirty(s2) }; };
     const isPix = (o) => o.op === 'stroke' || o.op === 'smudge', quiet = (o) => o.op === 'sel' || o.op === 'name' || o.op === 'amend';
     function stepScratch(sc, o, acc) { applyOp(sc.st, o); if (quiet(o)) return; if (isPix(o)) for (const t of tilesOfBox(Br.bbox(o, W))) { sc.D.renderTile(t); acc.add(t); } else { sc.D.full(); for (const t of allTiles()) acc.add(t); } }
@@ -824,13 +885,21 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
           const frame = () => { if (stopped) return finish(); const target = Math.min(n, 3 + Math.floor((performance.now() - t0) / msPer)), acc = new Set(); while (i < target) stepScratch(sc, ex[i++], acc); if (acc.size) paintTiles([...acc], sc.D); emit(); if (i >= n) return finish(); raf = requestAnimationFrame(frame); }; raf = requestAnimationFrame(frame); });
         replaying = ctl; ctl.progress = () => i; emit(); return ctl; },
       verify() { const t0 = performance.now(), r = refold(ops, W, blobs), a = ed.hashes(), head = HO.head(ops); return { ok: r.comp === a.comp && JSON.stringify(r.layers) === JSON.stringify(a.layers), head, fp: head.slice(0, 12), comp: a.comp, n: ops.length, ms: performance.now() - t0 }; },
+      checkpoint() { if (prevw || replaying || cur || ops.length < 4) return null; memCk = CK.snapshot(st, ops, ops.length); return memCk; },
+      get memCheckpoint() { return memCk; }, set memCheckpoint(c) { memCk = c; },
+      loadFast(json, cks) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); const reasons = [];
+        for (const ck of (cks || []).filter(Boolean).sort((a, b) => b.k - a.k)) { try { CK.usable(ck, j.ops, { verify: true }); const t0 = performance.now(); prevw = null; cur = null; const s2 = CK.resume(ck, j.ops, applyOp, W, blobs); st = s2; ops = j.ops.slice(); redo = []; undo = ops.slice(3).map((op) => ({ kind: 'rebuild', op })); D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); memCk = ck; emit(); return { used: true, k: ck.k, tail: j.ops.length - ck.k, ms: performance.now() - t0 }; } catch (e) { reasons.push('k=' + ck.k + ': ' + e.message); } }
+        memCk = null; build(j.ops, true); return { used: false, reasons }; },
+      rewindTo(k) { if (replaying || readOnly) return false; prevw = null; k = Math.max(3, Math.min(ops.length, k)); let rebuilt = false;
+        while (ops.length > k && undo.length) { const e = undo[undo.length - 1]; if (e.kind === 'rebuild') { while (ops.length > k && undo.length) { const x = undo.pop(); ops.pop(); redo.push(x); } rebuilt = true; break; } ed.undo(); }
+        if (rebuilt) rebuildKeep(); emit(); return ops.length === k; },
       undo() { if (!ed.canUndo() || prevw || replaying || readOnly) return; const e = undo.pop(); ops.pop(); redo.push(e); if (e.kind === 'rebuild') { rebuildKeep(); emit(); return; }
         if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
       redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
       save() { const j = { format: 'psd-oplog-editor', v: 1, W, ops }; if (ed.hasBlobs()) j.blobs = IO.packBlobs(blobs, ops); return JSON.stringify(j); },
       hasBlobs: () => ops.some((o) => o.op === 'img'), get blobs() { return blobs; },
       importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = Math.max(...st.order) + 1; blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
-      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); build(j.ops); },
+      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); memCk = null; build(j.ops, true); },
       hashes() { return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; },
       displayRGBA8(x, y) { const p = (y * W + x) * 4, b = D.back, a = b[p + 3]; return a > 0 ? [q(F(b[p] / a)), q(F(b[p + 1] / a)), q(F(b[p + 2] / a)), q(a)] : [0, 0, 0, q(a)]; },
     };
