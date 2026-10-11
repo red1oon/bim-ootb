@@ -30,7 +30,7 @@
     const ed = {
       W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { blobs.clear(); build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
-      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask }; }); },
+      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask, clip: !!l.clip }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
@@ -64,6 +64,7 @@
       select(kind, x0, y0, x1, y1) { ed.selOp({ op: 'sel', kind, x0, y0, x1, y1 }); }, invertSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'invert' }); }, clearSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'none' }); },
       commitSelDrag(a, b) { const c = (v) => Math.max(0, Math.min(W, v)), x0 = c(Math.floor(Math.min(a[0], b[0]))), x1 = c(Math.ceil(Math.max(a[0], b[0]))), y0 = c(Math.floor(Math.min(a[1], b[1]))), y1 = c(Math.ceil(Math.max(a[1], b[1])));
         if (x1 - x0 < 2 || y1 - y0 < 2) ed.clearSel(); else ed.select(params.selShape === 'ellipse' ? 'ellipse' : 'rect', x0, y0, x1, y1); emit(); },
+      clipLayer(id, v) { if (!st.L[id] || id === 0) return; ed.structural({ op: 'clip', layer: id, v: !!v }, () => applyOp(st, { op: 'clip', layer: id, v: !v })); },
       maskOp(id, kind) { const l = st.L[id]; if (!l) return; const prevMask = l.mask ? new Float32Array(l.mask) : null, prevPix = kind === 'apply' ? new Float32Array(l.pix) : null;
         ed.structural({ op: 'mask', layer: id, kind }, () => { l.mask = prevMask; if (prevPix) l.pix.set(prevPix); }); if (!st.L[id].mask && params.target === 'mask' && params.layer === id) { params.target = 'layer'; emit(); } },
       get previewing() { return prevw ? prevw.k : null; }, get replaying() { return !!replaying; }, get readOnly() { return readOnly; }, set readOnly(v) { readOnly = !!v; emit(); },

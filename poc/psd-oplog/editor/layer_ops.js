@@ -3,11 +3,13 @@
 (function (root) {
   const F = Math.fround;
   function need(st, o) { const l = st.L[o.layer]; if (!l) throw new Error(o.op + ': unknown layer ' + o.layer); return l; }
+  const retree = (st) => { st.hasTree = st.order.some((id) => st.L[id].clip); };   // a document without clipped layers stays on the flat compositor
   function apply(st, o) {   // returns true when it handled the op
-    if (o.op === 'del') { need(st, o); if (o.layer === 0) throw new Error('del: the Background cannot be deleted'); delete st.L[o.layer]; for (const a of [st.order, st.root]) { const i = a.indexOf(o.layer); if (i >= 0) a.splice(i, 1); } return true; }
+    if (o.op === 'del') { need(st, o); if (o.layer === 0) throw new Error('del: the Background cannot be deleted'); delete st.L[o.layer]; for (const a of [st.order, st.root]) { const i = a.indexOf(o.layer); if (i >= 0) a.splice(i, 1); } retree(st); return true; }
+    if (o.op === 'clip') { const l = need(st, o); if (o.layer === 0) throw new Error('clip: the Background cannot be clipped'); if (typeof o.v !== 'boolean') throw new Error('clip: v must be boolean'); l.clip = o.v; retree(st); return true; }
     if (o.op === 'mv') { need(st, o); const n = st.order.length, i = st.order.indexOf(o.layer);
       if (o.layer === 0) throw new Error('mv: the Background cannot move'); if (!Number.isInteger(o.to) || o.to < 1 || o.to > n - 1) throw new Error('mv: index ' + o.to + ' out of range 1..' + (n - 1));
-      for (const a of [st.order, st.root]) { const j = a.indexOf(o.layer); a.splice(j, 1); a.splice(o.to, 0, o.layer); } return true; }
+      for (const a of [st.order, st.root]) { const j = a.indexOf(o.layer); a.splice(j, 1); a.splice(o.to, 0, o.layer); } retree(st); return true; }
     if (o.op === 'vis') { const l = need(st, o); if (typeof o.v !== 'boolean') throw new Error('vis: v must be boolean');
       if (!o.v && !l.hid) { l.keep = l.opacity; l.opacity = 0; l.hid = true; } else if (o.v && l.hid) { l.opacity = l.keep; delete l.keep; delete l.hid; } return true; }
     if (o.op === 'name') { const l = need(st, o), s = typeof o.name === 'string' ? o.name.trim() : ''; if (s.length < 1 || s.length > 40) throw new Error('name: 1..40 characters'); l.name = s; return true; }
