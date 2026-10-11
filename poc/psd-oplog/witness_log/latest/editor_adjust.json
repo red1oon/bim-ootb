@@ -1,0 +1,117 @@
+{
+ "n_checks": 36,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "AJ3": {
+   "opacityMaxDiff": 5.960464477539063e-8
+  },
+  "AJ4": {
+   "ok": 4620,
+   "thrown": 2580,
+   "unchanged": 2580
+  },
+  "AJ7": {
+   "nodes": [
+    {
+     "kind": "pixel",
+     "name": "Background",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "pixel",
+     "name": "Layer 1",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "levels",
+     "name": "Warm levels",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "pixel",
+     "name": "Layer 2",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "pixel",
+     "name": "Layer 3",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "curves",
+     "name": "Curves 5",
+     "visible": false,
+     "opacity": 255
+    },
+    {
+     "kind": "threshold",
+     "name": "Threshold 6",
+     "visible": true,
+     "opacity": 255
+    },
+    {
+     "kind": "posterize",
+     "name": "Posterize 7",
+     "visible": true,
+     "opacity": 128
+    },
+    {
+     "kind": "invert",
+     "name": "Invert 8",
+     "visible": true,
+     "opacity": 255
+    }
+   ],
+   "merged_max_diff": 255,
+   "merged_over1": 18
+  },
+  "AJ9": {
+   "previewMs": 121.19999998807907
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   AJ1 adjustment BELOW an opaque layer: that layer's 1024 opaque pixels are bitwise unchanged vs the document without the adjustment
+ok   AJ1 the layers below are changed (2048 of 2048 pixels differ), and the half-transparent layer lets the adjusted backdrop through (1024 pixels differ)
+ok   AJ1 moved ABOVE everything (created last): the top layer is inverted too (its pixels now differ)
+ok   AJ2 7 adjset edits over 5 kinds: composite bitwise == the document authored with those parameters from the start
+ok   AJ2 negative control: the non-invert edits changed the picture relative to the defaults
+ok   AJ2 14 invalid parameter sets (wrong keys, out of range, equal / unsorted points, 17 points, non-integers) all throw and leave the state unchanged
+ok   AJ2 adjset on a missing adjustment and an unknown kind in `adjust` throw
+ok   AJ3 invert at strength 0.25: max difference to 0.75c + 0.25(1-c) is 5.96e-8 (limit 2e-6)
+ok   AJ3 a hidden adjustment == the adjustment never existed (bitwise)
+ok   AJ3 shown again: differs from the never-existed picture (it inverts again)
+ok   AJ4 300 random sequences incl. adjust / adjset / groups / clips (4620 accepted, 2580 refused): all invariants hold after every accepted op []
+ok   AJ4 every refused op left the state exactly unchanged
+ok   AJ5 five adjustments added (levels, curves, threshold, posterize, invert): live == refold, log has 5 `adjust` entries
+ok   AJ5 dragging a setting (8 live previews) logs exactly ONE `adjset` entry; live == refold after each; the entry carries the final value
+ok   AJ5 a drag that ends where it began logs nothing
+ok   AJ5 an invalid preview (threshold 0) is refused and changes nothing
+ok   AJ5 hide / show, move, rename, strength 0.5, amend of a stroke BELOW the adjustments: live == refold
+ok   AJ5 dirty compositor bit-equal to the full tree composite with adjustments
+ok   AJ5 delete an adjustment: live == refold
+ok   AJ5 undo all (21 steps) / redo all through adjustments, drags and an amend: hashes == refold at every step, back to 24 entries
+ok   AJ5 save -> load: hashes and the whole tree (kinds, params, names, strength) equal
+ok   AJ6 a checkpoint with 4 adjustments (levels, curves hidden, threshold, posterize, renamed, strength 0.5) resumes: hashes and the tree equal
+ok   AJ7 page PSD bytes (366861) == Node exporter bytes with 5 adjustments (one hidden)
+ok   AJ7 psd-tools reads the same stack bottom to top: kinds pixel/pixel/levels/pixel/pixel/curves/threshold/posterize/invert, names, visibility
+ok   AJ7 the stored merged image: 18 of 1,048,576 pixels differ from the editor composite by more than 1 level (max 255); limit 105 = 0.01 % (AMENDED, see AJ7 AMENDMENT)
+ok   AJ9 one live preview refresh of a 4-point curve at 1024^2 takes 121 ms (limit 400)
+ok   AJ5 no page errors (desktop)
+ok   AJ8 Advanced OFF: no Add adjustment menu and no scroll
+ok   AJ8 Advanced ON: Add adjustment menu 159x44 px (>= 44)
+ok   AJ8 choosing Levels adds an adjustment row with 5 sliders (+1 entry)
+ok   AJ8 all Levels sliders >= 44 px high
+ok   AJ8 moving the Gamma slider logs exactly 1 `adjset` with gamma_x100 180
+ok   AJ8 choosing Curves adds a curve graph (+1 entry)
+ok   AJ8 a touch drag on the curve (add a middle point and pull it up) logs exactly 1 `adjset` with 3 points
+ok   AJ8 two-finger tap undoes the curve edit (-1 entry)
+ok   AJ8 no page errors (phone)

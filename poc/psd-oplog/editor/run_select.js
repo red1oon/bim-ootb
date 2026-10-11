@@ -3,7 +3,7 @@ const fs = require('fs'), path = require('path'), http = require('http'), crypto
 const S = require('../stack.js'), Br = require('../filters/brush.js'), Bl = require('../filters/blur.js'), LO = require('./layer_ops.js'), SO = require('./select_ops.js'), GOLD = require('./golden_s3.json'), GLOG = require('./golden_s3_log.js');
 const ROOT = path.join(__dirname, '..'), OUT = path.join(__dirname, 'out'), rec = [], fails = [], num = {}; fs.mkdirSync(OUT, { recursive: true });
 const chk = (id, name, value, cmp, limit) => { const pass = cmp === '<=' ? value <= limit : cmp === '>=' ? value >= limit : value === limit; rec.push({ id, name, value, cmp, limit, pass }); if (!pass) fails.push({ id, name, value, cmp, limit }); console.error((pass ? 'ok   ' : 'FAIL ') + id + ' ' + name); };
-const rng = (seed) => { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, J = JSON.stringify;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms)), rng = (seed) => { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, J = JSON.stringify;
 const base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
 const hashes = (st) => ({ comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) });
 (async () => {

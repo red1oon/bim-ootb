@@ -80,7 +80,7 @@ ok   M7 psd-tools: each mask within 1 level of the editor mask (max diffs {"Laye
 ok   M7 psd-tools: the merged image is within 1 level of the composite made with the file's own 8-bit masks (AMENDED, see M7 AMENDMENT); vs the float-mask editor composite it differs by 2 (reported)
 ok   M5 no page errors (desktop)
 ok   M8 Advanced OFF: no mask control is visible and the page does not scroll
-ok   M8 Advanced ON: mask controls appear (2) and are >= 44 px both ways
+ok   M8 Advanced ON: mask controls appear (3) and are >= 44 px both ways
 ok   M8 tap Add mask: +1 entry, layer has a mask, more controls appear
 ok   M8 Mask target + Hide selected
 ok   M8 a touch stroke with the Hide brush on the mask is logged with t:'mask' and hides the red stroke (composite green 0.20 -> 1.00)

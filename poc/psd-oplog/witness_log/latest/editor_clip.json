@@ -1,0 +1,57 @@
+{
+ "n_checks": 25,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "CL1": {
+   "outsidePixels": 13556,
+   "insidePixels": 2828,
+   "halfOpacityMaxDiff": 0
+  },
+  "CL6": {
+   "names": [
+    "Background",
+    "Layer 3",
+    "Layer 1",
+    "Layer 2"
+   ],
+   "clipping": [
+    false,
+    true,
+    false,
+    true
+   ],
+   "merged_max_diff": 1,
+   "psdtools_composite_max_diff": 1,
+   "psdtools_composite_mean_diff": 0.0008961359659830729
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   CL1 13556 pixels where the base alpha is 0: composite == the composite without the clipped layer, bitwise (channel values differing)
+ok   CL1 2828 pixels where the base alpha is 1: composite == the unclipped composite, bitwise
+ok   CL1 negative control: clipping changed the picture outside the disc relative to the unclipped one
+ok   CL1 base opacity 0.5: inside the disc 0.5*green + 0.5*white, outside white; max diff 0.00e+0
+ok   CL2 clip then unclip: every hash bitwise == before, hasTree back to false
+ok   CL2 a document without clips: flat compositor == tree compositor bitwise
+ok   CL2 clip, move the clipped layer to the bottom, delete the old base: still composites (re-based on the Background), hasTree true
+ok   CL2 deleting the last clipped layer sets hasTree false
+ok   CL3 clip on the Background, non-boolean v, unknown layer all throw
+ok   CL4 session with 2 clipped layers, masked base, hide/show base, reorder, unclip/reclip, amend: live == refold; hasTree true
+ok   CL4 dirty compositor bit-equal to the full (tree) composite
+ok   CL4 undo all (16 steps) / redo all around clip toggles, mask, reorder, amend: hashes == refold at every step
+ok   CL4 save -> load: hashes equal and the clip flags are back
+ok   CL5 a checkpoint with clipped layers + a mask (k=19) resumes and the hashes equal the full refold
+ok   CL6 page PSD bytes (403135) == Node exporter bytes with 2 clipped layers + a masked base
+ok   CL6 psd-tools reads the clipping flags exactly (false,true,false,true vs editor false,true,false,true)
+ok   CL6 psd-tools' OWN composite() vs the editor composite: max 1 levels, mean 0.001 (limit 2, reported)
+ok   CL6 the stored merged image is within 1 level of the editor composite
+ok   CL4 no page errors (desktop)
+ok   CL7 Advanced OFF: no Clip control visible
+ok   CL7 Advanced ON: Clip toggles (2, one per non-Background layer) >= 44 px both ways
+ok   CL7 tap Clip on the top layer: +1 entry, the look changes (red now only where the blue stroke is), layer marked clipped
+ok   CL7 tap again: +1 entry, the original look is back (hash equal)
+ok   CL7 two-finger tap undoes the clip (-1 entry, original look)
+ok   CL7 no page errors (phone)
