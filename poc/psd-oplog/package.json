@@ -40,6 +40,7 @@
     "editor_select": "node editor/run_select.js",
     "editor_photo": "node editor/run_photo.js",
     "editor_history": "node editor/run_history.js",
+    "editor_ckpt": "node editor/run_ckpt_editor.js",
     "editor_dist_single": "node editor/build_dist.js editor/out/single --single",
     "blurbrush": "node filters/run_blurbrush.js"
   },

@@ -1,11 +1,11 @@
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, CK = root.Ckpt, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -13,7 +13,7 @@
           if (a > 0) { d[o] = q(F(back[p] / a)); d[o + 1] = q(F(back[p + 1] / a)); d[o + 2] = q(F(back[p + 2] / a)); } else d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = q(a); }
         ctx.putImageData(tileImg, tx * T, ty * T); } }
     const allTiles = () => Array.from({ length: tn * tn }, (_, i) => i);
-    function build(list) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
+    function build(list, fromLog) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); if (fromLog) undo = ops.slice(3).map((op) => ({ kind: 'rebuild', op })); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
     const initial = () => [{ op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false }, { op: 'fill', layer: 0, c: [1, 1, 1], a: 1 }, { op: 'layer', id: 1, mode: 'normal', opacity: 1, mask: false }];
     function regionCopy(layer, b) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * 4); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * 4, (y * W + x1 + 1) * 4), (y - y0) * w * 4); return out; }
     function regionPut(layer, b, data) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * 4, (y - y0 + 1) * w * 4), (y * W + x0) * 4); }
@@ -23,7 +23,7 @@
     function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
     function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
     // history: full refold keeping the undo/redo stacks (used after an amend and by 'rebuild' entries)
-    function rebuildKeep() { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
+    function rebuildKeep() { let done = false; if (memCk) { try { CK.usable(memCk, ops, { verify: false }); st = CK.resume(memCk, ops, applyOp, W, blobs); done = true; ed.lastRebuild = { ckpt: memCk.k }; } catch (e) { ed.lastRebuild = { ckpt: null, why: e.message }; } } if (!done) { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); } D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
     const scratch = () => { const s2 = S.newState(W); s2.blobs = blobs; return { st: s2, D: root.Dirty.makeDirty(s2) }; };
     const isPix = (o) => o.op === 'stroke' || o.op === 'smudge', quiet = (o) => o.op === 'sel' || o.op === 'name' || o.op === 'amend';
     function stepScratch(sc, o, acc) { applyOp(sc.st, o); if (quiet(o)) return; if (isPix(o)) for (const t of tilesOfBox(Br.bbox(o, W))) { sc.D.renderTile(t); acc.add(t); } else { sc.D.full(); for (const t of allTiles()) acc.add(t); } }
@@ -74,13 +74,21 @@
           const frame = () => { if (stopped) return finish(); const target = Math.min(n, 3 + Math.floor((performance.now() - t0) / msPer)), acc = new Set(); while (i < target) stepScratch(sc, ex[i++], acc); if (acc.size) paintTiles([...acc], sc.D); emit(); if (i >= n) return finish(); raf = requestAnimationFrame(frame); }; raf = requestAnimationFrame(frame); });
         replaying = ctl; ctl.progress = () => i; emit(); return ctl; },
       verify() { const t0 = performance.now(), r = refold(ops, W, blobs), a = ed.hashes(), head = HO.head(ops); return { ok: r.comp === a.comp && JSON.stringify(r.layers) === JSON.stringify(a.layers), head, fp: head.slice(0, 12), comp: a.comp, n: ops.length, ms: performance.now() - t0 }; },
+      checkpoint() { if (prevw || replaying || cur || ops.length < 4) return null; memCk = CK.snapshot(st, ops, ops.length); return memCk; },
+      get memCheckpoint() { return memCk; }, set memCheckpoint(c) { memCk = c; },
+      loadFast(json, cks) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); const reasons = [];
+        for (const ck of (cks || []).filter(Boolean).sort((a, b) => b.k - a.k)) { try { CK.usable(ck, j.ops, { verify: true }); const t0 = performance.now(); prevw = null; cur = null; const s2 = CK.resume(ck, j.ops, applyOp, W, blobs); st = s2; ops = j.ops.slice(); redo = []; undo = ops.slice(3).map((op) => ({ kind: 'rebuild', op })); D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); memCk = ck; emit(); return { used: true, k: ck.k, tail: j.ops.length - ck.k, ms: performance.now() - t0 }; } catch (e) { reasons.push('k=' + ck.k + ': ' + e.message); } }
+        memCk = null; build(j.ops, true); return { used: false, reasons }; },
+      rewindTo(k) { if (replaying || readOnly) return false; prevw = null; k = Math.max(3, Math.min(ops.length, k)); let rebuilt = false;
+        while (ops.length > k && undo.length) { const e = undo[undo.length - 1]; if (e.kind === 'rebuild') { while (ops.length > k && undo.length) { const x = undo.pop(); ops.pop(); redo.push(x); } rebuilt = true; break; } ed.undo(); }
+        if (rebuilt) rebuildKeep(); emit(); return ops.length === k; },
       undo() { if (!ed.canUndo() || prevw || replaying || readOnly) return; const e = undo.pop(); ops.pop(); redo.push(e); if (e.kind === 'rebuild') { rebuildKeep(); emit(); return; }
         if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
       redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
       save() { const j = { format: 'psd-oplog-editor', v: 1, W, ops }; if (ed.hasBlobs()) j.blobs = IO.packBlobs(blobs, ops); return JSON.stringify(j); },
       hasBlobs: () => ops.some((o) => o.op === 'img'), get blobs() { return blobs; },
       importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = Math.max(...st.order) + 1; blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
-      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); build(j.ops); },
+      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); memCk = null; build(j.ops, true); },
       hashes() { return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; },
       displayRGBA8(x, y) { const p = (y * W + x) * 4, b = D.back, a = b[p + 3]; return a > 0 ? [q(F(b[p] / a)), q(F(b[p + 1] / a)), q(F(b[p + 2] / a)), q(a)] : [0, 0, 0, q(a)]; },
     };
