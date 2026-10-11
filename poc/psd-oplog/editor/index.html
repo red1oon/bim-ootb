@@ -10,6 +10,7 @@ header label { display:flex; gap:6px; align-items:center; color:var(--mut); } in
 button, select { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font:inherit; cursor:pointer; } button:disabled { opacity:.4; cursor:default; } button.on { border-color:var(--acc); outline:1px solid var(--acc); }
 #tools { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:6px; padding:8px; overflow:auto; } #tools button { padding:8px 2px; font-size:12px; }
 #view { position:relative; overflow:hidden; background:repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0/20px 20px; touch-action:none; min-width:0; min-height:0; }
+#selc { background:transparent !important; box-shadow:none !important; pointer-events:none; z-index:2; } #selbar { position:absolute; left:8px; top:8px; display:none; gap:6px; z-index:3; } #selbar.show { display:flex; } #selbar button { min-height:36px; min-width:44px; } #selbar button.on { border-color:var(--acc); }
 canvas { position:absolute; left:0; top:0; transform-origin:0 0; background:#fff; touch-action:none; box-shadow:0 2px 14px #0006; cursor:none; } #view.pick canvas { cursor:crosshair; } #view.pan canvas { cursor:grab; }
 #cursor { position:fixed; left:0; top:0; pointer-events:none; border:1px solid #fff; outline:1px solid #000; border-radius:50%; display:none; z-index:5; }
 aside { background:var(--panel); border-left:1px solid var(--line); padding:10px; overflow:auto; } aside h3 { margin:4px 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
@@ -27,7 +28,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   #dock { order:3; display:flex; align-items:center; gap:8px; padding:6px 8px 8px; background:var(--panel); overflow-x:auto; } #sw { display:flex; gap:6px; } #sw button { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; border:2px solid var(--line); }
   #dock input[type=color] { width:44px; height:44px; min-width:44px; padding:0; border:2px solid var(--line); border-radius:50%; background:none; } #msize { flex:1; min-width:110px; height:44px; } #msizev { min-width:28px; color:var(--mut); }
   footer { display:none; } aside { position:fixed; left:0; right:0; bottom:0; max-height:78vh; max-height:78dvh; z-index:20; border-left:0; border-top:1px solid var(--line); border-radius:16px 16px 0 0; transform:translateY(110%); transition:transform .18s ease; padding-bottom:calc(14px + env(safe-area-inset-bottom)); box-shadow:0 -6px 24px #0006; } aside.open { transform:none; }
-  .lb { min-width:44px; min-height:44px; } .layer input.rn { min-height:44px; } .layer { padding:10px; } .layer input[type=range] { height:36px; } .layer select { min-height:40px; } #addl { min-height:44px; }
+  #selbar button { min-height:44px; }   .lb { min-width:44px; min-height:44px; } .layer input.rn { min-height:44px; } .layer { padding:10px; } .layer input[type=range] { height:36px; } .layer select { min-height:40px; } #addl { min-height:44px; }
 }
 </style></head><body>
 <header>
@@ -41,8 +42,8 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   <span id="info" class="desk"></span>
   <button class="mob" id="m-share">Share</button><button class="mob" id="m-menu">Menu</button>
 </header>
-<nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Blur brush: drag to soften (5)">Blur</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
-<div id="view"><canvas id="c"></canvas></div>
+<nav id="tools"><button data-tool="hard" class="on" title="Hard brush (1)">Hard</button><button data-tool="soft" title="Soft brush (2)">Soft</button><button data-tool="smudge" title="Smudge (3)">Smudge</button><button data-tool="erase" title="Eraser (4)">Erase</button><button data-tool="blur" title="Blur brush: drag to soften (5)">Blur</button><button data-tool="select" title="Select a region: drag; click clears (6)">Select</button><button data-tool="pick" title="Eyedropper (I)">Pick</button></nav>
+<div id="view"><canvas id="c"></canvas><canvas id="selc"></canvas><div id="selbar"><button id="s-rect" class="on" title="Rectangle selection">Rect</button><button id="s-ell" title="Ellipse selection">Ellipse</button><button id="s-inv" title="Invert selection">Invert</button><button id="s-clr" title="Clear selection">Clear</button></div></div>
 <aside id="side"><h3>Layers</h3><div id="layers"></div><button id="addl">Add layer</button>
   <div class="mob more" style="display:none"><label>Flow <input id="m-flow" type="range" min="5" max="100" value="100"></label><label>Smudge / blur <input id="m-str" type="range" min="5" max="100" value="70"></label>
     <button id="m-png">Export PNG</button><button id="m-psd">Export PSD</button><button id="m-save">Save log</button><button id="m-load">Load log</button><button id="m-fit">Fit view</button><button id="m-new">New canvas</button><button id="m-close" style="grid-column:1/3">Close</button></div>
@@ -51,14 +52,19 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
 <footer><span id="status" style="margin-left:0"></span><span>1-5 tools · I pick · [ ] size · Ctrl+wheel zoom · wheel or Space+drag pan · 0 fit</span></footer>
 <div id="cursor"></div>
 <div id="saver" hidden><div class="box"><p><b>Save your painting</b><br>Touch and hold the picture, then choose Save image or Add to Photos.</p><img id="saveimg" alt="Your painting"><div class="row"><a id="savelink" href="#" download="painting.png">Download file</a><button id="saveclose">Close</button></div></div></div>
-<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="layer_ops.js"></script><script src="editor.js"></script>
+<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="layer_ops.js"></script><script src="select_ops.js"></script><script src="editor.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id), canvas = $('c'), view = $('view'), cursor = $('cursor'), side = $('side'), KEY = 'psd-oplog-editor-v1', ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
   const store = { get() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }, set(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }, del() { try { localStorage.removeItem(KEY); } catch (e) {} } };
   const status = (t) => { $('status').textContent = t; };
   const V = { bs: 600, s: 1, x: 0, y: 0 }; window.__V = V;
-  function applyView() { canvas.style.width = canvas.style.height = V.bs + 'px'; canvas.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.s})`; $('zfit').title = 'Fit (0) - now ' + Math.round(V.s * V.bs / ed.W * 100) + '%'; }
+  const selc = $('selc'); selc.width = selc.height = ed.W;
+  function drawSel() { const g = selc.getContext('2d'), W = ed.W, k = V.bs / W * V.s; g.clearRect(0, 0, W, W); const lw = Math.max(1, 2 / k), shape = (kind, b) => { g.beginPath(); if (kind === 'ellipse') g.ellipse((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, (b[2] - b[0]) / 2, (b[3] - b[1]) / 2, 0, 0, 6.2832); else g.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]); };
+    const prev = ed.selPreview, items = []; if (ed.st.sel) { const s = ed.st.sel; items.push([s.kind, s.box]); if (s.inv) items.push(['rect', [0, 0, W, W]]); } if (prev) { const a = prev[0], b = prev[1]; items.push([ed.params.selShape === 'ellipse' ? 'ellipse' : 'rect', [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]]); }
+    for (const [kind, b] of items) { shape(kind, b); g.lineWidth = lw; g.setLineDash([]); g.strokeStyle = '#fff'; g.stroke(); g.setLineDash([6 / k, 6 / k]); g.strokeStyle = '#000'; g.stroke(); }
+    $('selbar').classList.toggle('show', ed.params.tool === 'select' || !!ed.st.sel); $('s-rect').classList.toggle('on', ed.params.selShape !== 'ellipse'); $('s-ell').classList.toggle('on', ed.params.selShape === 'ellipse'); }
+  function applyView() { canvas.style.width = canvas.style.height = selc.style.width = selc.style.height = V.bs + 'px'; canvas.style.transform = selc.style.transform = `translate(${V.x}px, ${V.y}px) scale(${V.s})`; drawSel(); $('zfit').title = 'Fit (0) - now ' + Math.round(V.s * V.bs / ed.W * 100) + '%'; }
   function fit() { const r = view.getBoundingClientRect(); V.bs = Math.max(120, Math.floor(Math.min(r.width, r.height) - 16)); V.s = 1; V.x = (r.width - V.bs) / 2; V.y = (r.height - V.bs) / 2; applyView(); }
   const clampS = (s) => Math.max(0.1 * ed.W / V.bs, Math.min(16 * ed.W / V.bs, s));
   function zoomAt(px, py, f) { const s2 = clampS(V.s * f), k = s2 / V.s; V.x = px - (px - V.x) * k; V.y = py - (py - V.y) * k; V.s = s2; applyView(); status('Zoom ' + Math.round(V.s * V.bs / ed.W * 100) + '%'); }
@@ -91,7 +97,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   for (const t of ['pointerup', 'pointercancel']) canvas.addEventListener(t, up);
   canvas.addEventListener('pointerleave', () => { cursor.style.display = 'none'; });
   // ---- tools, colour, size
-  function setTool(t) { ed.params.tool = t; document.querySelectorAll('#tools button').forEach((x) => x.classList.toggle('on', x.dataset.tool === t)); view.classList.toggle('pick', t === 'pick'); }
+  function setTool(t) { ed.params.tool = t; if (typeof drawSel === 'function') drawSel(); document.querySelectorAll('#tools button').forEach((x) => x.classList.toggle('on', x.dataset.tool === t)); view.classList.toggle('pick', t === 'pick'); }
   for (const b of document.querySelectorAll('#tools button')) b.onclick = () => setTool(b.dataset.tool);
   const hex = (c) => '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join(''), fromHex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
   $('color').oninput = (e) => { ed.params.color = fromHex(e.target.value); ui(); }; $('mcolor').oninput = (e) => { ed.params.color = fromHex(e.target.value); ui(); };
@@ -127,7 +133,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
     const k = e.key, mod = e.ctrlKey || e.metaKey;
     if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? ed.redo() : ed.undo(); return; } if (mod && k.toLowerCase() === 's') { e.preventDefault(); saveLog(); return; } if (mod) return;
     if (k === ' ') { space = true; view.classList.add('pan'); cursor.style.display = 'none'; e.preventDefault(); return; }
-    const tools = { 1: 'hard', 2: 'soft', 3: 'smudge', 4: 'erase', 5: 'blur', i: 'pick', I: 'pick' }; if (tools[k]) { setTool(tools[k]); return; }
+    const tools = { 1: 'hard', 2: 'soft', 3: 'smudge', 4: 'erase', 5: 'blur', 6: 'select', i: 'pick', I: 'pick' }; if (tools[k]) { setTool(tools[k]); return; }
     if (k === '[') setSize(ed.params.size - Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === ']') setSize(ed.params.size + Math.max(1, Math.round(ed.params.size * 0.1))); else if (k === '0') fit(); });
   addEventListener('keyup', (e) => { if (e.key === ' ') { space = false; if (!panning) view.classList.remove('pan'); } });
   // ---- layers panel, autosave
@@ -151,7 +157,8 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
       box.appendChild(d); }
     clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (ed.ops.length > 3) { const ok = store.set(ed.save()); window.__saved = ok ? ed.ops.length : -1; } }, 400);
   }
-  ed.onChange(ui);
+  ed.onChange(ui); ed.onChange(drawSel);
+  $('s-rect').onclick = () => { ed.params.selShape = 'rect'; setTool('select'); drawSel(); }; $('s-ell').onclick = () => { ed.params.selShape = 'ellipse'; setTool('select'); drawSel(); }; $('s-inv').onclick = () => ed.invertSel(); $('s-clr').onclick = () => ed.clearSel();
   const prev = store.get(); if (prev) { try { ed.load(prev); if (ed.ops.length > 3) status('Restored your last painting (' + ed.ops.length + ' ops)'); } catch (e) { ed.reset(); } }
   const sw = document.querySelector('meta[name=oplog-sw]'); if (sw && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch((e) => console.warn('service worker: ' + e.message));
   const mq = matchMedia('(max-width:760px)'); const more = document.querySelector('.more'); const showMore = () => { more.style.display = mq.matches ? 'grid' : 'none'; }; showMore(); mq.addEventListener('change', showMore);

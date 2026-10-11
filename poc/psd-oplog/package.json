@@ -37,6 +37,7 @@
     "editor_dist": "node editor/build_dist.js",
     "editor_mobile": "node editor/run_mobile.js",
     "editor_layers": "node editor/run_layers.js",
+    "editor_select": "node editor/run_select.js",
     "editor_dist_single": "node editor/build_dist.js editor/out/single --single",
     "blurbrush": "node filters/run_blurbrush.js"
   },

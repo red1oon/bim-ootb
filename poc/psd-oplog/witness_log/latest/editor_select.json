@@ -1,0 +1,67 @@
+{
+ "n_checks": 29,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "S1": {
+   "ops": 40,
+   "insidePixelsThatChanged": 569277
+  },
+  "S5": [
+   65536,
+   51468,
+   190,
+   328,
+   20888,
+   245,
+   617,
+   7612,
+   5992,
+   12892,
+   50696,
+   1
+  ],
+  "S8": {
+   "hard": [
+    14.870725999999195,
+    17.526577999999063
+   ],
+   "smudge": [
+    47.79808799999955,
+    56.660759999998845
+   ]
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   S3 fixed 12-op log without selection == golden hashes recorded before this change
+ok   S1 40 strokes (hard/soft/erase/blur/smudge) x 4 selections: channel values differing from the unselected result INSIDE
+ok   S1 channel values differing from the untouched layer OUTSIDE
+ok   S1 negative control: the ops do change pixels inside the selection (test can see a change)
+ok   S5 12 boxes (full canvas, 1-px wide, off-centre): mask count + sha256 equal the independent numpy float64 implementation
+ok   S8 1024^2 100-point hard stroke: 14.9 ms without vs 17.5 ms with selection (limit 3x + 25 ms floor for the layer copy)
+ok   S8 smudge: 47.8 vs 56.7 ms
+ok   S2 live strokes of all 5 tools crossing a rect selection boundary: layer + composite hashes == refold(log)
+ok   S2 rect: dirty compositor bit-equal to full composite
+ok   S2 live strokes of all 5 tools crossing a ellipse selection boundary: layer + composite hashes == refold(log)
+ok   S2 ellipse: dirty compositor bit-equal to full composite
+ok   S4 a selection alone changes no pixel
+ok   S4 a stroke fully outside the selection is logged but changes 0 pixels
+ok   S4 undo x3 (stroke, outside stroke, selection) == pre-selection hashes and no selection
+ok   S4 redo x3 == hashes after the stroke, selection restored
+ok   S4 save -> load: hashes equal, selection present, log length equal
+ok   S4 invert then paint inside the old region logs and refolds equal
+ok   S7 PSD bytes (286024) identical with and without an active selection
+ok   S2 no page errors (desktop)
+ok   S6 Select tool button is visible on the phone layout
+ok   S6 a one-finger drag with Select logs exactly one sel entry
+ok   S6 selection box matches the finger path within 3 canvas px
+ok   S6 Rect / Ellipse / Invert / Clear buttons >= 44 px both ways
+ok   S6 a following stroke respects the selection (alpha outside 0, inside 1.00)
+ok   S6 Invert tap logs +1 and flips the mask
+ok   S6 Clear tap logs +1 and removes the selection
+ok   S6 two-finger tap undoes the Clear (-1 entry, selection back)
+ok   S6 no page scroll
+ok   S6 no page errors (phone)

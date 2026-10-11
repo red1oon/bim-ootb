@@ -2,7 +2,7 @@
 // Folds the log with the same engine as the page, writes every layer as an 8-bit straight RGBA raster in an sRGB / gamma-encoded schema-v1 document, keeps each layer's mode and opacity, and calls doc/psd_export.exportPsd.
 const fs = require('fs'), S = require('../stack.js'), Br = require('../filters/brush.js'), Bl = require('../filters/blur.js'), Sch = require('../doc/schema.js'), { exportPsd } = require('../doc/psd_export.js');
 const F = Math.fround, q8 = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5))), r4 = (x) => Math.round(x * 1e4) / 1e4;
-const LO = require('./layer_ops.js'), applyOp = (st, o) => (LO.apply(st, o) ? undefined : o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o));
+const LO = require('./layer_ops.js'), SO = require('./select_ops.js'), base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
 function foldLog(j) { if (j.format !== 'psd-oplog-editor' || j.v !== 1) throw new Error('not an editor log'); const st = S.newState(j.W); for (const o of j.ops) applyOp(st, o); return st; }
 function layerRGBA8(l, n) { const out = new Uint8Array(n * 4); for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; out[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) out[i*4+k] = q8(F(l.pix[i*4+k] / a)); } return out; }
 async function exportLog(json) {
