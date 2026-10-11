@@ -5,7 +5,7 @@
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    const blobs = new Map(), J2 = JSON.stringify; let adjDrag = null, st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { target: 'layer', maskValue: 1, tol: 33, contig: true, wandMode: 'new', tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(), J2 = JSON.stringify; let adjDrag = null, st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { feather: 0, target: 'layer', maskValue: 1, tol: 33, contig: true, wandMode: 'new', tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -83,8 +83,8 @@
       ungroupNode(gid) { const g = st.G[gid]; if (!g) return; const idx = st.root.indexOf(gid), meta = { mode: g.mode, opacity: g.opacity, hid: g.hid, keep: g.keep, name: g.name }, kids = g.children.slice();
         ed.structural({ op: 'ungroup', group: gid }, () => { applyOp(st, { op: 'group', id: gid, mode: meta.mode, opacity: 1, mask: false }); const n = st.G[gid]; n.opacity = meta.opacity; if (meta.hid) { n.hid = true; n.keep = meta.keep; } if (meta.name !== undefined) n.name = meta.name; kids.forEach((c, k) => applyOp(st, { op: 'parent', layer: c, group: gid, to: k })); applyOp(st, { op: 'mv', layer: gid, to: idx }); }); },
       clipLayer(id, v) { if (!st.L[id] || id === 0) return; ed.structural({ op: 'clip', layer: id, v: !!v }, () => applyOp(st, { op: 'clip', layer: id, v: !v })); },
-      maskOp(id, kind) { const l = st.L[id] || st.A[id]; if (!l) return; const prevMask = l.mask ? new Float32Array(l.mask) : null, prevPix = kind === 'apply' && l.pix ? new Float32Array(l.pix) : null;
-        ed.structural({ op: 'mask', layer: id, kind }, () => { l.mask = prevMask; if (prevPix) l.pix.set(prevPix); }); if (!l.mask && params.target === 'mask' && params.layer === id) { params.target = 'layer'; emit(); } },
+      maskOp(id, kind, feather) { const l = st.L[id] || st.A[id]; if (!l) return; const prevMask = l.mask ? new Float32Array(l.mask) : null, prevPix = kind === 'apply' && l.pix ? new Float32Array(l.pix) : null;
+        ed.structural({ op: 'mask', layer: id, kind, ...(kind === 'sel' && feather > 0 ? { feather } : {}) }, () => { l.mask = prevMask; if (prevPix) l.pix.set(prevPix); }); if (!l.mask && params.target === 'mask' && params.layer === id) { params.target = 'layer'; emit(); } },
       get previewing() { return prevw ? prevw.k : null; }, get replaying() { return !!replaying; }, get readOnly() { return readOnly; }, set readOnly(v) { readOnly = !!v; emit(); },
       amend(i, set) { if (prevw || replaying || readOnly) return; const o = { op: 'amend', i, set }; HO.expand([...ops, o]); undo = undo.map((e) => ({ kind: 'rebuild', op: e.op })); ops.push(o); undo.push({ kind: 'rebuild', op: o }); redo = []; rebuildKeep(); emit(); },
       preview(k) { if (replaying) return; k = Math.max(3, Math.min(ops.length, k)); const sc = scratch(), ex = HO.expand(ops.slice(0, k)); for (let i = 0; i < k; i++) applyOp(sc.st, ex[i]); sc.D.full(); paintTiles(allTiles(), sc.D); prevw = { k, sc }; emit(); return { k, comp: S.hashF32(S.composite(sc.st)), layers: Object.keys(sc.st.L).map((id) => S.hashF32(sc.st.L[id].pix)) }; },
