@@ -452,6 +452,10 @@
         // the host has ALREADY written the record (its own CRUD op in the same group): make it visible to the Trx
         // without re-emitting it, then run PO.afterSave + the AFTER_NEW|CHANGE validators exactly as save() would.
         var rec = {}; for (var rk in spec.record) rec[rk.toLowerCase()] = spec.record[rk];
+        // the host's op carries only the FORM values; Client/Org are stamped later from op.stdDefaults (crud_core.js CRUD_CREATE fold, PO.setStandardDefaults
+        // PO.java:1973-2000 = the session Env) -- the model must see them now, from the same session env, or every client-scoped afterSave lookup answers "no rows"
+        if (rec.ad_client_id == null && trx.env.client != null) rec.ad_client_id = trx.env.client;
+        if (rec.ad_org_id == null && trx.env.org != null) rec.ad_org_id = trx.env.org;
         trx._p(table)[String(rec[trx.idCol(table)])] = { row: rec, orig: Object.assign({}, rec), isNew: false, opIdx: null };
         var M = MODEL[table] || {}, e = M.afterSave ? M.afterSave(trx, rec, !!spec.isNew, spec.old || null) : null;
         if (!e) e = fire(trx, spec.isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, rec, { recordOld: spec.old || null }) || fire(trx, 'AFTER_SAVE', table, rec, { recordOld: spec.old || null });
