@@ -1,0 +1,56 @@
+
+--- stderr ---
+Traceback (most recent call last):
+  File "/home/red1/bim-ootb-psd/poc/psd-oplog/doc/check_curves_scipy.py", line 3, in <module>
+    import sys, json, numpy as np
+ModuleNotFoundError: No module named 'numpy'
+node:internal/errors:984
+  const err = new Error(message);
+              ^
+
+Error: Command failed: python3 -I /home/red1/bim-ootb-psd/poc/psd-oplog/doc/check_curves_scipy.py /home/red1/bim-ootb-psd/poc/psd-oplog/doc/.emit_curves/curves_in.json /home/red1/bim-ootb-psd/poc/psd-oplog/doc/.emit_curves/scipy.bin
+Traceback (most recent call last):
+  File "/home/red1/bim-ootb-psd/poc/psd-oplog/doc/check_curves_scipy.py", line 3, in <module>
+    import sys, json, numpy as np
+ModuleNotFoundError: No module named 'numpy'
+
+    at genericNodeError (node:internal/errors:984:15)
+    at wrappedFn (node:internal/errors:538:14)
+    at checkExecSyncError (node:child_process:891:11)
+    at execFileSync (node:child_process:927:15)
+    at /home/red1/bim-ootb-psd/poc/psd-oplog/doc/run_curves.js:25:90 {
+  status: 1,
+  signal: null,
+  output: [
+    null,
+    Buffer(0) [Uint8Array] [],
+    Buffer(208) [Uint8Array] [
+       84, 114,  97,  99, 101,  98,  97,  99, 107,  32,  40, 109,
+      111, 115, 116,  32, 114, 101,  99, 101, 110, 116,  32,  99,
+       97, 108, 108,  32, 108,  97, 115, 116,  41,  58,  10,  32,
+       32,  70, 105, 108, 101,  32,  34,  47, 104, 111, 109, 101,
+       47, 114, 101, 100,  49,  47,  98, 105, 109,  45, 111, 111,
+      116,  98,  45, 112, 115, 100,  47, 112, 111,  99,  47, 112,
+      115, 100,  45, 111, 112, 108, 111, 103,  47, 100, 111,  99,
+       47,  99, 104, 101,  99, 107,  95,  99, 117, 114, 118, 101,
+      115,  95, 115,  99,
+      ... 108 more items
+    ]
+  ],
+  pid: 2571200,
+  stdout: Buffer(0) [Uint8Array] [],
+  stderr: Buffer(208) [Uint8Array] [
+     84, 114,  97,  99, 101,  98,  97,  99, 107,  32,  40, 109,
+    111, 115, 116,  32, 114, 101,  99, 101, 110, 116,  32,  99,
+     97, 108, 108,  32, 108,  97, 115, 116,  41,  58,  10,  32,
+     32,  70, 105, 108, 101,  32,  34,  47, 104, 111, 109, 101,
+     47, 114, 101, 100,  49,  47,  98, 105, 109,  45, 111, 111,
+    116,  98,  45, 112, 115, 100,  47, 112, 111,  99,  47, 112,
+    115, 100,  45, 111, 112, 108, 111, 103,  47, 100, 111,  99,
+     47,  99, 104, 101,  99, 107,  95,  99, 117, 114, 118, 101,
+    115,  95, 115,  99,
+    ... 108 more items
+  ]
+}
+
+Node.js v20.20.2

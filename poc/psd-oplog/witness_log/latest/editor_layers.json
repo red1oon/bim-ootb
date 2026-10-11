@@ -1,0 +1,74 @@
+{
+ "n_checks": 43,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "L6": {
+   "names": [
+    "Background",
+    "Layer 3",
+    "Roof",
+    "Layer 2"
+   ],
+   "visible": [
+    true,
+    true,
+    true,
+    false
+   ],
+   "opacity": [
+    255,
+    255,
+    255,
+    179
+   ],
+   "merged_max_diff": 1
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   L2 sanity: loaded base log == refold
+ok   L2 hide(2) composite == log without layer 2
+ok   L2 hide: dirty compositor bit-equal to full composite
+ok   L2 hide changed the picture (negative control)
+ok   L2 opacity edit while hidden keeps it hidden
+ok   L2 show after opacity edit == opacity-0.5 log
+ok   L2 show: dirty compositor bit-equal
+ok   L2 hide then show restores the exact hashes
+ok   L7 painting on a hidden layer logs nothing
+ok   L3 mv(3 -> bottom) composite == log built in order 3,1,2
+ok   L3 reorder changes the picture (negative control)
+ok   L3 reorder: dirty compositor bit-equal
+ok   L3 undo of mv restores the exact hashes
+ok   L3 Background cannot move, nothing below it, out of range, del Background, unknown layer all throw
+ok   L4 del(2) layer + composite hashes == log without layer 2
+ok   L4 del: dirty compositor bit-equal
+ok   L4 undo of del restores every hash (pixels bit-exact)
+ok   L4 undo of del: dirty bit-equal
+ok   L4 redo of del == post-delete hashes
+ok   L4 add layer + stroke after a delete: live == refold(ops)
+ok   L5 rename does not change pixels
+ok   L5 undo restores the previous name
+ok   L5 second undo restores the default name
+ok   L5 names survive save -> load
+ok   L5 empty / blank / 41-char names rejected, 40 accepted
+ok   L1 live hashes == refold of its 17-entry log (4 new op kinds: name/mv/vis/del)
+ok   L1 save -> load: hashes equal
+ok   L1 dirty compositor bit-equal after the session
+ok   L1 undo x4 then redo x4 == original hashes
+ok   L1 no page errors
+ok   L6 page PSD bytes == Node exporter bytes (381282 bytes)
+ok   L6 psd-tools: names bottom->top (Background, Layer 3, Roof, Layer 2)
+ok   L6 psd-tools: visibility flags
+ok   L6 psd-tools: hidden layer keeps its real opacity 0.7 -> byte 179
+ok   L6 merged image == composite of the visible layers (max level diff <= 1)
+ok   L7 all 15 layer buttons >= 44 px both ways
+ok   L7 no page scroll (scrollHeight <= innerHeight)
+ok   L7 tap Hide -> +1 log entry, layer hidden
+ok   L7 tap Show -> +1 entry
+ok   L7 tap Move down -> +1 entry, top layer id now 1 or 2 below
+ok   L7 tap Rename + type + Enter -> +1 entry, name shown
+ok   L7 two-finger tap undoes the last layer op (-1 entry)
+ok   L7 no page errors on the phone
