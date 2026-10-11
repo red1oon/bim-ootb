@@ -20,7 +20,8 @@ function exportPsd(ops, ctx, opts = {}) {
     let pixels = rgba;
     if (depth === 16) { pixels = new Uint16Array(n * 4); for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; pixels[i*4+3] = Math.max(0, Math.min(65535, Math.floor(a * 65535 + 0.5))); if (pixels[i*4+3] > 0) for (let k = 0; k < 3; k++) pixels[i*4+k] = out[i*3+k]; } debugLayers[id] = pixels; }
     else for (let i = 0; i < n; i++) if (rgba[i*4+3] > 0) for (let k = 0; k < 3; k++) rgba[i*4+k] = Math.floor(out[i*3+k] / 257 + 0.5);
-    const child = { name: 'Layer ' + id, left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(l.opacity), imageData: { width: W, height: W, data: pixels } };
+    const mt = opts.meta && opts.meta[id], child = { name: mt ? mt.name : 'Layer ' + id, left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(l.opacity), imageData: { width: W, height: W, data: pixels } };
+    if (mt && mt.hidden) child.hidden = true;
     if (l.clip) child.clipping = true; if (l.mask) child.mask = maskData(l.mask); return child;
   };
   const mkAdjust = (id) => { const a = f.st.A[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
@@ -30,6 +31,7 @@ function exportPsd(ops, ctx, opts = {}) {
   const mkNode = (id) => { if (f.st.A[id]) return mkAdjust(id); const g = f.st.G[id]; if (!g) return mkLayer(id);
     const c = { name: 'Group ' + id, opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: q255(g.opacity), children: g.children.map(mkNode) }; if (g.mask) c.mask = maskData(g.mask); return c; };
   const children = f.st.root.map(mkNode);
+  if (opts.meta) for (const id of Object.keys(opts.meta)) if (opts.meta[id].hidden && f.st.L[id]) f.st.L[id].opacity = 0;   // hidden layers are in the file but not in the merged image
   const back = DF.composite(f, ctx), working = depth === 16 ? DF.render16(back, f, doc.working, ctx) : DF.render(back, f, doc.working, ctx);   // merged image in the working space (identity conversion)
   let bytes = new Uint8Array(w16({ width: W, height: W, ...(depth === 16 ? { bitsPerChannel: 16 } : {}), children, imageData: { width: W, height: W, data: depth === 16 ? working : new Uint8ClampedArray(working) } }, { generateThumbnail: false }));
   const prof = doc.working.startsWith('icc:') ? ctx.blobs.get(doc.working.slice(4)) : IW.matrixProfile(doc.working, DESC[doc.working]);

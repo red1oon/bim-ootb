@@ -1,7 +1,7 @@
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const applyOp = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o));
+  const LO = root.LayerOps, applyOp = (st, o) => (LO.apply(st, o) ? undefined : o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
@@ -25,11 +25,11 @@
     const ed = {
       W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
-      layers() { return st.order.map((id) => ({ id, mode: st.L[id].mode, opacity: st.L[id].opacity })); },
+      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l) }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
-      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (!l || cur) return;
+      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (!l || cur || l.hid) return;
         const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);
         const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : p.tool === 'blur' ? { op: 'stroke', layer: p.layer, kind: 'blur', pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
         cur = { o, snap, last: null, tiles: new Set(), box: null };
@@ -46,7 +46,12 @@
       get busy() { return !!cur; },
       cancel() { if (!cur) return; if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
       addLayer() { const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
-      setLayer(id, field, value) { const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? l.opacity : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') l.opacity = prev; else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
+      setLayer(id, field, value) { const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? (l.hid ? l.keep : l.opacity) : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') { if (l.hid) l.keep = prev; else l.opacity = prev; } else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
+      structural(o, inv) { applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv }); redo = []; if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); emit(); },
+      delLayer(id) { const l = st.L[id], oi = st.order.indexOf(id), ri = st.root.indexOf(id); ed.structural({ op: 'del', layer: id }, () => { st.L[id] = l; st.order.splice(oi, 0, id); st.root.splice(ri, 0, id); }); },
+      moveLayer(id, to) { const from = st.order.indexOf(id); ed.structural({ op: 'mv', layer: id, to }, () => applyOp(st, { op: 'mv', layer: id, to: from })); },
+      hideLayer(id, hide) { const v = !hide; ed.structural({ op: 'vis', layer: id, v }, () => applyOp(st, { op: 'vis', layer: id, v: !v })); },
+      renameLayer(id, name) { const l = st.L[id], prev = l.name; ed.structural({ op: 'name', layer: id, name }, () => { if (prev === undefined) delete l.name; else l.name = prev; }); },
       undo() { if (!ed.canUndo()) return; const e = undo.pop(); ops.pop(); redo.push(e);
         if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); } emit(); },
       redo() { if (!ed.canRedo()) return; const e = redo.pop(); if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); D.full(); paintTiles(allTiles()); } ops.push(e.op); undo.push(e); emit(); },

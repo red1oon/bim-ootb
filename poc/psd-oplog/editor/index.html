@@ -13,7 +13,7 @@ button, select { background:var(--bg); color:var(--fg); border:1px solid var(--l
 canvas { position:absolute; left:0; top:0; transform-origin:0 0; background:#fff; touch-action:none; box-shadow:0 2px 14px #0006; cursor:none; } #view.pick canvas { cursor:crosshair; } #view.pan canvas { cursor:grab; }
 #cursor { position:fixed; left:0; top:0; pointer-events:none; border:1px solid #fff; outline:1px solid #000; border-radius:50%; display:none; z-index:5; }
 aside { background:var(--panel); border-left:1px solid var(--line); padding:10px; overflow:auto; } aside h3 { margin:4px 0 8px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--mut); }
-.layer { border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; } .layer.on { border-color:var(--acc); } .layer div { display:flex; gap:6px; align-items:center; margin-top:6px; } .layer b { flex:1; cursor:pointer; } .layer input[type=range], .layer select { flex:1; min-width:0; width:0; }
+.layer { border:1px solid var(--line); border-radius:8px; padding:8px; margin-bottom:8px; } .layer.on { border-color:var(--acc); } .layer div { display:flex; gap:6px; align-items:center; margin-top:6px; } .layer b { flex:1; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .layer.hid b { opacity:.5; text-decoration:line-through; } .lb { min-width:32px; min-height:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; } .lb:disabled { opacity:.3; } .layer input.rn { flex:1; min-width:0; width:0; } .layer input[type=range], .layer select { flex:1; min-width:0; width:0; }
 footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4px 12px; background:var(--panel); border-top:1px solid var(--line); color:var(--mut); font-size:12px; } footer span { margin-left:auto; }
 #info { color:var(--mut); font-size:12px; margin-left:auto; }
 .mob, #dock { display:none; }
@@ -27,7 +27,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   #dock { order:3; display:flex; align-items:center; gap:8px; padding:6px 8px 8px; background:var(--panel); overflow-x:auto; } #sw { display:flex; gap:6px; } #sw button { width:44px; height:44px; min-width:44px; padding:0; border-radius:50%; border:2px solid var(--line); }
   #dock input[type=color] { width:44px; height:44px; min-width:44px; padding:0; border:2px solid var(--line); border-radius:50%; background:none; } #msize { flex:1; min-width:110px; height:44px; } #msizev { min-width:28px; color:var(--mut); }
   footer { display:none; } aside { position:fixed; left:0; right:0; bottom:0; max-height:78vh; max-height:78dvh; z-index:20; border-left:0; border-top:1px solid var(--line); border-radius:16px 16px 0 0; transform:translateY(110%); transition:transform .18s ease; padding-bottom:calc(14px + env(safe-area-inset-bottom)); box-shadow:0 -6px 24px #0006; } aside.open { transform:none; }
-  .layer { padding:10px; } .layer input[type=range] { height:36px; } .layer select { min-height:40px; } #addl { min-height:44px; }
+  .lb { min-width:44px; min-height:44px; } .layer input.rn { min-height:44px; } .layer { padding:10px; } .layer input[type=range] { height:36px; } .layer select { min-height:40px; } #addl { min-height:44px; }
 }
 </style></head><body>
 <header>
@@ -51,7 +51,7 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
 <footer><span id="status" style="margin-left:0"></span><span>1-5 tools · I pick · [ ] size · Ctrl+wheel zoom · wheel or Space+drag pan · 0 fit</span></footer>
 <div id="cursor"></div>
 <div id="saver" hidden><div class="box"><p><b>Save your painting</b><br>Touch and hold the picture, then choose Save image or Add to Photos.</p><img id="saveimg" alt="Your painting"><div class="row"><a id="savelink" href="#" download="painting.png">Download file</a><button id="saveclose">Close</button></div></div></div>
-<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="editor.js"></script>
+<script src="../stack.js"></script><script src="../filters/blur.js"></script><script src="../filters/brush.js"></script><script src="../perf/dirty.js"></script><script src="../icc/color_math.js"></script><script src="../icc/icc_write.js"></script><script src="../doc/psd_icc.js"></script><script src="vendor/ag-psd.js"></script><script src="psd_web.js"></script><script src="layer_ops.js"></script><script src="editor.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id), canvas = $('c'), view = $('view'), cursor = $('cursor'), side = $('side'), KEY = 'psd-oplog-editor-v1', ed = Editor.createEditor(canvas, 1024); window.__ed = ed;
@@ -119,9 +119,9 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
   $('m-save').onclick = saveLog; $('m-png').onclick = doPNG; $('m-psd').onclick = doPSD; $('m-load').onclick = loadClick; $('m-new').onclick = () => newCanvas($('m-new'), 'New canvas'); $('m-fit').onclick = () => { fit(); side.classList.remove('open'); };
   $('m-share').onclick = doShare; $('m-menu').onclick = () => side.classList.toggle('open'); $('m-close').onclick = () => side.classList.remove('open');
   // ---- reliable touch taps on buttons: act on touch release (Chrome can swallow the click of a tap that follows a fast drag); the browser's own click that may follow is ignored
-  { let downBtn = null; document.addEventListener('pointerdown', (e) => { downBtn = e.pointerType === 'touch' ? e.target.closest('button') : null; }, true);
-    document.addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch' || !downBtn) return; const b = e.target.closest('button'); if (b === downBtn && !b.disabled) { b.__tapAt = performance.now(); b.click(); } downBtn = null; }, true);
-    document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button'); if (b && e.isTrusted && b.__tapAt && performance.now() - b.__tapAt < 700) { e.stopImmediatePropagation(); e.preventDefault(); } }, true); }
+  { let downBtn = null, tapAt = -1e9; /* global: the layer panel re-renders its buttons on tap, so the trailing click lands on a NEW element */ document.addEventListener('pointerdown', (e) => { downBtn = e.pointerType === 'touch' ? e.target.closest('button') : null; }, true);
+    document.addEventListener('pointerup', (e) => { if (e.pointerType !== 'touch' || !downBtn) return; const b = e.target.closest('button'); if (b === downBtn && !b.disabled) { tapAt = performance.now(); b.click(); } downBtn = null; }, true);
+    document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('button'); if (b && e.isTrusted && performance.now() - tapAt < 700) { e.stopImmediatePropagation(); e.preventDefault(); } }, true); }
   // ---- keyboard
   addEventListener('keydown', (e) => { const tag = (e.target.tagName || '').toLowerCase(), typing = tag === 'select' || (tag === 'input' && e.target.type !== 'range' && e.target.type !== 'color'); if (typing) return;
     const k = e.key, mod = e.ctrlKey || e.metaKey;
@@ -136,8 +136,16 @@ footer { grid-column:1/4; display:flex; gap:12px; align-items:center; padding:4p
     $('undo').disabled = !ed.canUndo(); $('redo').disabled = !ed.canRedo(); $('info').textContent = ed.ops.length + ' ops in the log'; const c = hex(ed.params.color); if ($('color').value !== c) $('color').value = c; if ($('mcolor').value !== c) $('mcolor').value = c;
     for (const b of $('sw').children) b.style.borderColor = b.dataset.c === c ? 'var(--acc)' : 'var(--line)';
     const box = $('layers'); box.textContent = '';
-    for (const l of ed.layers().slice().reverse()) { const d = document.createElement('div'); d.className = 'layer' + (l.id === ed.params.layer ? ' on' : ''); const name = l.id === 0 ? 'Background' : 'Layer ' + l.id;
-      d.innerHTML = '<div><b>' + name + '</b></div>'; d.firstChild.firstChild.onclick = () => { ed.params.layer = l.id; ui(); };
+    const ICON = { eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.2 3.9M6.6 7.6A16.6 16.6 0 0 0 2 12s3.6 7 10 7a10 10 0 0 0 4.4-1"/>', up: '<path d="M12 19V5M5 12l7-7 7 7"/>', down: '<path d="M12 5v14M5 12l7 7 7-7"/>', trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>', pen: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>' };
+    const btn = (icon, label, on, dis) => { const x = document.createElement('button'); x.className = 'lb'; x.title = x.ariaLabel = label; x.disabled = !!dis; x.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICON[icon] + '</svg>'; x.onclick = on; return x; };
+    const lay = ed.layers(), top = lay.length - 1;
+    for (const l of lay.slice().reverse()) { const d = document.createElement('div'); d.className = 'layer' + (l.id === ed.params.layer ? ' on' : '') + (l.hidden ? ' hid' : ''); d.dataset.id = l.id;
+      const head = document.createElement('div'), nm = document.createElement('b'); nm.textContent = l.name; nm.onclick = () => { ed.params.layer = l.id; ui(); }; head.appendChild(nm);
+      if (l.id !== 0) { const idx = lay.findIndex((x) => x.id === l.id);
+        head.append(btn(l.hidden ? 'eyeoff' : 'eye', l.hidden ? 'Show layer' : 'Hide layer', () => ed.hideLayer(l.id, !l.hidden)), btn('up', 'Move layer up', () => ed.moveLayer(l.id, idx + 1), idx === top), btn('down', 'Move layer down', () => ed.moveLayer(l.id, idx - 1), idx === 1),
+          btn('pen', 'Rename layer', () => { const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.value = l.name; inp.className = 'rn'; head.replaceChild(inp, nm); inp.focus(); inp.select(); let done = false; const fin = (ok) => { if (done) return; done = true; const v = inp.value.trim(); if (ok && v && v !== l.name) ed.renameLayer(l.id, v); else ui(); }; inp.onkeydown = (e) => { if (e.key === 'Enter') fin(true); else if (e.key === 'Escape') fin(false); }; const t0 = performance.now(); inp.onblur = () => { if (performance.now() - t0 < 500) setTimeout(() => inp.focus(), 0); else fin(true); }; /* the tap's trailing events steal focus once; ignore that blur */ }), btn('trash', 'Delete layer', () => ed.delLayer(l.id)));
+      }
+      d.appendChild(head);
       if (l.id !== 0) { const row = document.createElement('div'), op = document.createElement('input'), md = document.createElement('select'); op.type = 'range'; op.min = 0; op.max = 100; op.value = Math.round(l.opacity * 100); op.onchange = () => ed.setLayer(l.id, 'opacity', op.value / 100);
         for (const m of ['normal', 'multiply', 'screen', 'overlay', 'soft-light', 'hard-light', 'darken', 'lighten', 'difference', 'exclusion']) { const o = document.createElement('option'); o.value = o.textContent = m; if (m === l.mode) o.selected = true; md.appendChild(o); } md.onchange = () => ed.setLayer(l.id, 'mode', md.value); row.append(op, md); d.appendChild(row); }
       box.appendChild(d); }
