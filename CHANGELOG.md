@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.77.0](https://github.com/red1oon/bim-ootb/compare/v1.76.0...v1.77.0) (2026-10-11)
+
+
+### ✨ Features
+
+* **oplogpic:** add OplogPic, a serverless op-log painting app (static folder, installable PWA) ([#1973](https://github.com/red1oon/bim-ootb/issues/1973)) ([2958495](https://github.com/red1oon/bim-ootb/commit/29584957bcf27d05a235b695174dbf026d9ad859))
+* **oplogpic:** layers (delete/hide/reorder/rename), selection, photo import, history panel, share-as-link ([#1975](https://github.com/red1oon/bim-ootb/issues/1975)) ([62561b3](https://github.com/red1oon/bim-ootb/commit/62561b3b4bbb52582a04579731fe6aba27b367b1))
+
 ## [1.76.0](https://github.com/red1oon/bim-ootb/compare/v1.75.0...v1.76.0) (2026-10-08)
 
 
