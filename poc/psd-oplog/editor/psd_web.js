@@ -10,8 +10,11 @@
     const mkAdj = (id) => { const a = st.A[id], am = meta[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
       : a.kind === 'hsl' ? { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: P.hue, saturation: P.sat, lightness: P.light } }
       : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) } : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };   // same fields as doc/psd_export.js mkAdjust
-      S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (am.hidden) hiddenAdj.push(id);
-      return { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj }; };
+      S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (a.mask) fs.A[id].mask = Float32Array.from(a.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a maskraster
+      if (am.hidden) hiddenAdj.push(id);
+      const ac = { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj };
+      if (a.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(a.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ac.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
+      return ac; };
     const mkNode = (id, parent) => {
       if (st.A[id]) return mkAdj(id);
       if (st.G[id]) { const g = st.G[id], gm = meta[id]; S.apply(fs, { op: 'group', id, mode: g.mode, opacity: r4(gm.opacity), mask: false }); const kids = g.children.map((c) => mkNode(c, id)); if (gm.hidden) hiddenGroups.push(id);

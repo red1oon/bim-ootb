@@ -47,6 +47,7 @@
     "editor_groups": "node editor/run_groups_editor.js",
     "editor_adjust": "node editor/run_adjust_editor.js",
     "editor_hsl": "node editor/run_hsl.js",
+    "editor_admask": "node editor/run_admask.js",
     "editor_dist_single": "node editor/build_dist.js editor/out/single --single",
     "blurbrush": "node filters/run_blurbrush.js"
   },
