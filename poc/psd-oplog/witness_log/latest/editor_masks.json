@@ -1,0 +1,88 @@
+{
+ "n_checks": 40,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "M1": {
+   "applyCompositeMaxDiff": 1.1920928955078125e-7,
+   "invertTwiceDiffering": 5373,
+   "invertTwiceMaxAbs": 2.9802322387695312e-8
+  },
+  "M2": {
+   "softVsMdab": 1.1920928955078125e-7
+  },
+  "M4": {
+   "halfMaskDiff": 0
+  },
+  "M7": {
+   "names": [
+    "Background",
+    "Layer 1",
+    "Layer 2",
+    "Layer 3"
+   ],
+   "has_mask": [
+    false,
+    true,
+    true,
+    true
+   ],
+   "visible": [
+    true,
+    true,
+    false,
+    true
+   ],
+   "mask_max_diff": {
+    "Layer 1": 0,
+    "Layer 2": 0,
+    "Layer 3": 0
+   },
+   "merged_max_diff": 1,
+   "merged_max_diff_float": 2
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   M1 apply removes the mask
+ok   M1 composite of the masked layer vs of the applied layer: max diff 1.19e-7
+ok   M1 apply: pixels bitwise equal to numpy float32 pix*mask
+ok   M1 invert: bitwise equal to numpy float32 (1 - mask)
+ok   M1 mask from an inverted rect selection == numpy mask
+ok   M1 mask from an ellipse selection == numpy mask
+ok   M1 invert twice (AMENDED after the first run, see HYPOTHESES M1 AMENDMENT): 5373 of 16384 values differ from the original, max abs 2.98e-8 (limit 6e-8, half an ulp at 1.0)
+ok   M1 add twice, delete/invert/apply without a mask, mask from selection without one: all throw
+ok   M2 soft mask stroke (v=0, a=0.8, 12 points) vs the engine's own mdab dabs: max abs diff 1.19e-7
+ok   M2 hard mask stroke r=20: inside r-1.5 every value is exactly 0
+ok   M2 hard mask stroke: beyond r+1.5 every value is untouched (1)
+ok   M2 blur on a step-edge mask (rows 60..68, through the brush path): max gradient 1.00 -> 0.05 (drop >= 30%) and values stay in [0,1]
+ok   M2 smudge on a mask keeps values in [0,1] and changes some
+ok   M2 erase on a mask throws
+ok   M3 20 mask strokes (hard/soft/blur/smudge) x 4 selections: values differing from the unselected result inside
+ok   M3 values differing from the untouched mask outside
+ok   M3 negative control: strokes do change the mask inside the selection
+ok   M4 mask 0 region == the backdrop alone, bitwise
+ok   M4 mask 1 region == the same layer without a mask, bitwise
+ok   M4 mask 0.5 region within 2e-6 of the formula (max diff 0.00e+0)
+ok   M5 'mask from selection' without a selection is refused and the log is unchanged
+ok   M5 the session holds 3 mask strokes (hard, soft, blur on the mask) and 2 mask ops
+ok   M5 live hashes (layers + composite) == refold of the log; masks present on layers 1 and 2
+ok   M5 dirty compositor bit-equal to the full composite with masks
+ok   M5 undo all (13 steps) and redo all around mask ops, mask strokes and an amend: hashes == refold at every step, back to 16 entries
+ok   M5 save -> load: layer hashes, mask hashes equal
+ok   M6 a checkpoint with masks (k=16) resumes and the hashes equal the full refold
+ok   M6 a flipped byte in a MASK buffer is rejected (k=16: buffer 3 fails its sha256 (corrupt)) and the refold ends on the same hashes
+ok   M7 page PSD bytes (6671104) == Node exporter bytes for 3 masked layers (one hidden, one photo)
+ok   M7 psd-tools: masks on exactly layers 1, 2, 3 (has_mask by layer: false,true,true,true)
+ok   M7 psd-tools: each mask within 1 level of the editor mask (max diffs {"Layer 1":0,"Layer 2":0,"Layer 3":0})
+ok   M7 psd-tools: the merged image is within 1 level of the composite made with the file's own 8-bit masks (AMENDED, see M7 AMENDMENT); vs the float-mask editor composite it differs by 2 (reported)
+ok   M5 no page errors (desktop)
+ok   M8 Advanced OFF: no mask control is visible and the page does not scroll
+ok   M8 Advanced ON: mask controls appear (2) and are >= 44 px both ways
+ok   M8 tap Add mask: +1 entry, layer has a mask, more controls appear
+ok   M8 Mask target + Hide selected
+ok   M8 a touch stroke with the Hide brush on the mask is logged with t:'mask' and hides the red stroke (composite green 0.20 -> 1.00)
+ok   M8 two-finger tap undoes the mask stroke (-1 entry, pixel back)
+ok   M8 no page errors (phone)

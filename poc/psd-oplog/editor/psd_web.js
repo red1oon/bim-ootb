@@ -10,11 +10,13 @@
     for (const id of st.order) {
       const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; rgba8[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) rgba8[i*4+k] = q8(F(l.pix[i*4+k] / a)); }
-      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false }); const fl = fs.L[id];   // refold as docfold does for a raster op
+      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false }); const fl = fs.L[id]; if (l.mask) fl.mask = Float32Array.from(l.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a raster op
       for (let i = 0; i < n; i++) { const a = F(rgba8[i*4+3] / 255); fl.pix[i*4+3] = a; for (let k = 0; k < 3; k++) fl.pix[i*4+k] = F(F(rgba8[i*4+k] / 255) * a); }
       const out = new Uint8ClampedArray(n * 4);   // docfold -> psd_export mkLayer: float -> 16-bit -> 8-bit (identity conversion, sRGB working == layer space)
       for (let i = 0; i < n; i++) { const a = fl.pix[i*4+3]; out[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(fl.pix[i*4+k] / a) * 65535 + 0.5))); out[i*4+k] = Math.floor(v16 / 257 + 0.5); } }
-      if (meta[id].hidden) hiddenIds.push(id); children.push({ name: meta[id].name, ...(meta[id].hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
+      if (meta[id].hidden) hiddenIds.push(id); const ch = ({ name: meta[id].name, ...(meta[id].hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
+      if (fl.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(fl.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ch.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
+      children.push(ch);
     }
     for (const id of hiddenIds) fs.L[id].opacity = 0;   // hidden: in the file, not in the merged image
     const back = S.composite(fs), res = new Uint8Array(n * 4);   // merged preview, same as DF.render with an identity transform
