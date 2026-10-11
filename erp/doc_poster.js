@@ -214,13 +214,78 @@ function costingMethodOf(db, productId, schema) {
   if (!m) { var as = schemaRow(db, schema); m = as && as.costingmethod ? as.costingmethod : null; }
   return m;
 }
-function currentCost(db, productId, schema) {
+// §78 (F9): dateAcct (optional, 'YYYY-MM-DD…') = the document's DateAcct. With a cost history in the db the price is the history's NewCostPrice at that date, replacing a NON-ZERO current price
+// (MCost.getCost :290-300 `historyCostPrice` — a back-dated shipment is booked at the cost of its day, not today's). No history table/rows or no date ⇒ the m_cost price, as before.
+function currentCost(db, productId, schema, dateAcct) {
   var cm = costingMethodOf(db, productId, schema), as = schemaRow(db, schema);
   if (!cm || !as) return { price: null, why: 'no-costing-method' };
   var el = getRow(db, 'SELECT m_costelement_id FROM m_costelement WHERE costingmethod=? ORDER BY m_costelement_id LIMIT 1', cm);
   if (!el) return { price: null, why: 'no-cost-element-for-' + cm };
   var c = getRow(db, 'SELECT currentcostprice FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(productId), num(schema), num(as.m_costtype_id), num(el.m_costelement_id)]);
-  return c ? { price: Number(c.currentcostprice), method: cm, element: el.m_costelement_id } : { price: null, why: 'no-m_cost-row' };
+  if (!c) return { price: null, why: 'no-m_cost-row' };
+  var price = Number(c.currentcostprice), src = 'm_cost';
+  if (dateAcct && price !== 0) { var h = costHistoryAt(db, productId, schema, as.m_costtype_id, el.m_costelement_id, dateAcct); if (h && h.hid != null) { price = Number(h.newcostprice); src = 'history'; } }
+  return { price: price, method: cm, element: el.m_costelement_id, source: src };
+}
+// ── §78 (F9) COST HISTORY — MCostHistory.get(by DateAcct) (MCostHistory.java:193-290) + MCost.getCostInfo (MCost.java:1542-1573).
+// Table m_costhistory (handover; columns of M_CostHistory + c_acctschema_id taken from its cost detail, processed details only). Rule: the history of (product, schema, cost type, element, ASI 0)
+// with the HIGHEST M_CostHistory_ID whose DateAcct ≤ the date; none ⇒ the EARLIEST one (DateAcct asc, id asc) with New* := Old*; none/absent table ⇒ null (the plain m_cost row is the base).
+function _dayOf(d) { return String(d).slice(0, 10); }
+function costHistoryAt(db, productId, schema, costType, element, dateAcct) {
+  if (!dateAcct || !_hasCol(db, 'm_costhistory', 'm_costhistory_id')) return null;
+  var k = [num(productId), num(schema), num(costType), num(element)], day = _dayOf(dateAcct);
+  // F9.4: the shipped ad_seed m_costhistory (model layer, erp/model_cost.js) has no c_acctschema_id column — the schema is that of its cost detail (MCostHistory.get "of the detail", spec §78 rule 3).
+  var T = 'm_costhistory';
+  if (!_hasCol(db, 'm_costhistory', 'c_acctschema_id')) { if (!_hasCol(db, 'm_costdetail', 'c_acctschema_id')) return null; T = '(SELECT x.*, d.c_acctschema_id AS c_acctschema_id FROM m_costhistory x JOIN m_costdetail d ON d.m_costdetail_id=x.m_costdetail_id)'; }
+  var h = getRow(db, 'SELECT * FROM ' + T + ' WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=? AND COALESCE(m_attributesetinstance_id,0)=0 AND substr(dateacct,1,10)<=? ORDER BY m_costhistory_id DESC LIMIT 1', k.concat([day]));
+  if (!h) {
+    h = getRow(db, 'SELECT * FROM ' + T + ' WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=? AND COALESCE(m_attributesetinstance_id,0)=0 ORDER BY substr(dateacct,1,10) ASC, m_costhistory_id ASC LIMIT 1', k);
+    if (!h) return null;
+    h.newqty = h.oldqty; h.newcostprice = h.oldcostprice; h.newcamt = h.oldcamt; h.newcqty = h.oldcqty;   // "simulate": the first record after the date, before its own effect
+  }
+  return { hid: h.m_costhistory_id, dateacct: h.dateacct, newqty: Number(h.newqty), newcostprice: h.newcostprice, newcqty: Number(h.newcqty), newcamt: h.newcamt };
+}
+// The state a cost detail starts from (MCostDetail.process :1424-1441): the history's New* values when a history applies (Standard costing: qty and cumulated qty always, price / cumulated amt only when
+// non-zero), else the m_cost row. cm = the element's costing method. Strings keep full decimal precision.
+function _costBase(db, pid, sch, ct, el, cm, dateAcct) {
+  var r = getRow(db, 'SELECT currentqty, currentcostprice, cumulatedqty, cumulatedamt FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(pid), num(sch), num(ct), num(el)]);
+  var b = { qty: r && r.currentqty != null ? Number(r.currentqty) : 0, price: r && r.currentcostprice != null ? String(r.currentcostprice) : '0', cumqty: r && r.cumulatedqty != null ? Number(r.cumulatedqty) : 0, cumamt: r && r.cumulatedamt != null ? String(r.cumulatedamt) : '0', source: 'm_cost' };
+  var h = costHistoryAt(db, pid, sch, ct, el, dateAcct);
+  if (!h) return b;
+  b.source = 'history'; b.hid = h.hid; b.qty = h.newqty; b.cumqty = h.newcqty;
+  if (cm === 'S') { if (Number(h.newcostprice) !== 0) b.price = String(h.newcostprice); if (Number(h.newcamt) !== 0) b.cumamt = String(h.newcamt); }
+  else { b.price = String(h.newcostprice); b.cumamt = String(h.newcamt); }
+  return b;
+}
+// ONE way a host applies a cost update (§78): absolute new values (u.set) when present, else the legacy delta shape; and APPENDS the history row (MCostHistory, written by MCostDetail.process) so a
+// later date lookup sees this change. Without the history append, any host would make costHistoryAt stale — every witness host calls this, none writes m_cost by hand.
+function applyCostUpdate(db, u, dateAcct) {
+  var w = u.set, hasCostCols = _hasCol(db, 'm_cost', 'cumulatedqty');
+  var key = [num(u.m_product_id), num(u.c_acctschema_id), num(u.m_costtype_id), num(u.m_costelement_id)];
+  var row = getRow(db, 'SELECT 1 AS x FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', key);
+  if (!row) db.prepare('INSERT INTO m_cost(m_product_id,c_acctschema_id,m_costtype_id,m_costelement_id,currentcostprice,cumulatedamt,cumulatedqty,currentqty) VALUES(?,?,?,?,0,0,0,0)').run(key);
+  if (w) db.prepare('UPDATE m_cost SET currentqty=?, currentcostprice=?' + (hasCostCols ? ', cumulatedqty=?, cumulatedamt=?' : '') + ' WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?')
+    .run([w.currentqty, w.currentcostprice].concat(hasCostCols ? [w.cumulatedqty, w.cumulatedamt] : [], key));
+  else db.prepare('UPDATE m_cost SET currentqty=COALESCE(currentqty,0)+?, currentcostprice=COALESCE(?, currentcostprice) WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?').run([u.delta, u.currentcostprice == null ? null : u.currentcostprice].concat(key));
+  var h = u.history;
+  if (h && dateAcct && _hasCol(db, 'm_costhistory', 'm_costhistory_id') && _hasCol(db, 'm_costhistory', 'c_acctschema_id')) {   // F9.4: the model-layer host appends its own history rows (model_cost.js :507)
+    var id = (getRow(db, 'SELECT COALESCE(MAX(m_costhistory_id),0) AS m FROM m_costhistory', []) || { m: 0 }).m + 1;
+    db.prepare('INSERT INTO m_costhistory(m_costhistory_id,m_costdetail_id,c_acctschema_id,m_product_id,m_costtype_id,m_costelement_id,m_attributesetinstance_id,ad_org_id,dateacct,oldqty,newqty,oldcostprice,newcostprice,oldcamt,newcamt,oldcqty,newcqty) VALUES(?,?,?,?,?,?,0,0,?,?,?,?,?,?,?,?,?)')
+      .run([id, 0, num(u.c_acctschema_id), num(u.m_product_id), num(u.m_costtype_id), num(u.m_costelement_id), _dayOf(dateAcct) + ' 00:00:00', h.oldqty, h.newqty, h.oldcostprice, h.newcostprice, h.oldcamt, h.newcamt, h.oldcqty, h.newcqty]);
+  }
+}
+// F9.2 (numbered gap, spec §78): inside the BackDateDay window legacy RE-POSTS every later document (DocManager.startBackDateProcess :640-900). Not ported — named, so the posting is refused
+// instead of silently diverging. BackDateDay NULL/0 (every pilot schema) ⇒ never inside the window ⇒ null. today = the host calendar day ('YYYY-MM-DD').
+function costBackDateGap(db, dateAcct, today) {
+  if (!today) { var n = new Date(); today = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }   // host calendar day (the legacy server's local day)
+  if (!dateAcct || !_hasCol(db, 'c_acctschema', 'backdateday') || _dayOf(dateAcct) >= _dayOf(today)) return null;
+  var sch = allRows(db, 'SELECT c_acctschema_id AS id, backdateday AS bd FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : ''), []);
+  for (var i = 0; i < sch.length; i++) {
+    var bd = Number(sch[i].bd) || 0; if (bd <= 0) continue;
+    var lim = new Date(_dayOf(today) + 'T00:00:00Z'); lim.setUTCDate(lim.getUTCDate() - bd);
+    if (_dayOf(dateAcct) >= lim.toISOString().slice(0, 10)) return 'back-date re-processing within BackDateDay=' + bd + ' not ported (DocManager.startBackDateProcess; spec §78 F9.2), Schema=' + sch[i].id;
+  }
+  return null;
 }
 // §REVIEW-FIX-2026-10-11 D5 — the ORIGINAL document's posted books. Doc_InOut reverses by copying the original's facts with Dr/Cr swapped (FactLine.updateReverseLine,
 // FactLine.java:1357-1359; Doc_InOut.java:288-301): the amounts are what was POSTED, never a re-derive at today's cost. The SQLite books are fact_acct rows the host wrote when the original
@@ -239,7 +304,7 @@ function _postedFacts(db, table_id, recordId, schema) {
   return { by: byAcct, line: byLine };
 }
 function deriveInOut(db, R, ioId, schema, opt) {
-  var hdr = getRow(db, 'SELECT m_inout_id,issotrx,movementtype FROM m_inout WHERE m_inout_id=?', num(ioId));
+  var hdr = getRow(db, 'SELECT m_inout_id,issotrx,movementtype' + (_hasCol(db, 'm_inout', 'dateacct') ? ', dateacct' : '') + ' FROM m_inout WHERE m_inout_id=?', num(ioId));
   if (!hdr) return null;
   if (String(hdr.issotrx) === 'N' && String(hdr.movementtype) === 'V+') return deriveReceipt(db, R, ioId, schema);   // §65.1 (F24): the vendor receipt
   if (!(String(hdr.issotrx) === 'Y' && String(hdr.movementtype) === 'C-')) return null;       // only the sales-shipment class is built
@@ -271,12 +336,14 @@ function deriveInOut(db, R, ioId, schema, opt) {
   }
   // §38 (F6): the Average costed-qty refusal — whole document refused, nothing posted (MCost.java:1919-1930 via MCostDetail.process). Only when the posting db carries
   // m_cost.currentqty (schema patch §37); otherwise unchanged. Reversal shipments skip the check (MCostDetail.java:1482-1485) — they returned above.
-  var neg = (opt && opt.amountsOnly) ? null : costQtyRefusal(db, lines);
+  var neg = (opt && opt.amountsOnly) ? null : costQtyRefusal(db, lines, hdr.dateacct);
   if (neg) { absent.push(neg); return { by: by, absent: absent }; }
+  var bdGap = (opt && opt.amountsOnly) ? null : costBackDateGap(db, hdr.dateacct, opt && opt.today);   // §78 F9.2 (named gap)
+  if (bdGap) { absent.push(bdGap); return { by: by, absent: absent }; }
   lines.forEach(function (l) {
     // IsStocked decides service-vs-item ONLY when the cost is missing; a seed without the column cannot tell, so it is treated as an item and reported (never guessed)
     var prod = _hasCol(db, 'm_product', 'isstocked') ? getRow(db, 'SELECT isstocked FROM m_product WHERE m_product_id=?', num(l.m_product_id)) : null;
-    var cc = currentCost(db, l.m_product_id, schema);
+    var cc = currentCost(db, l.m_product_id, schema, hdr.dateacct);
     var amt = 0; if (cc.price != null) { var pd0 = _bigDec(cc.price), qd0 = _bigDec(l.movementqty); amt = Number(_rhuB(pd0.n * qd0.n * 100n, 10n ** BigInt(pd0.k + qd0.k))); }   // exact HALF_UP (§56.1; float × could misround a .5 tie)
     if (cc.price == null || amt === 0) {
       if (prod && String(prod.isstocked) === 'N') return;                                      // service: ignored (Doc_InOut.java:257)
@@ -398,9 +465,8 @@ function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost v
     var others = allRows(db, 'SELECT m_matchpo_id FROM m_matchpo WHERE c_orderline_id=? AND m_matchpo_id<>? AND m_inoutline_id IS NOT NULL', [num(mp.c_orderline_id), num(matchPOId)]);
     if (others.length) { absent.push('partial MatchPO accumulation not ported (Doc_MatchPO.java:596-640)'); return; }
     if (amtK > prec) { amtN = _rhuB(amtN, 10n ** BigInt(amtK - prec)); amtK = prec; }
-    var c = getRow(db, 'SELECT * FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(mp.m_product_id), sc.id, sc.ct, num(el.m_costelement_id)]);
-    var cq = _decStr(c && c.currentqty != null ? c.currentqty : 0), cpz = _decStr(c && c.currentcostprice != null ? c.currentcostprice : 0);
-    var ca = _decStr(c && c.cumulatedamt != null ? c.cumulatedamt : 0), cuq = _decStr(c && c.cumulatedqty != null ? c.cumulatedqty : 0);
+    var c = _costBase(db, mp.m_product_id, sc.id, sc.ct, el.m_costelement_id, 'A', io && io.dateacct);   // §78: base = cost history at the receipt's DateAcct, else the m_cost row
+    var cq = _decStr(c.qty), cpz = _decStr(c.price), ca = _decStr(c.cumamt), cuq = _decStr(c.cumqty);
     var S = 12, q12 = _scaleTo(qd, S), cq12 = _scaleTo(cq, S), sum = cq12 + q12;
     if (qd.n === 0n && cq.n <= 0n) { absent.push('AverageCostingZeroQty'); return; }
     if (sum < 0n) { absent.push('AverageCostingNegativeQty'); return; }
@@ -415,8 +481,11 @@ function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost v
       if (S > prec * 2) newPrice = _rhuB(newPrice, 10n ** BigInt(S - prec * 2)) * 10n ** BigInt(S - prec * 2);
     }
     var amtS = amtN * 10n ** BigInt(S - amtK);
-    out.push({ m_product_id: num(mp.m_product_id), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: num(el.m_costelement_id),
-      currentcostprice: Number(_fmtDec(newPrice, S)), currentqty: Number(_fmtDec(cq12 + q12, S)), cumulatedamt: Number(_fmtDec(_scaleTo(ca, S) + amtS, S)), cumulatedqty: Number(_fmtDec(_scaleTo(cuq, S) + q12, S)) });
+    var uo = { m_product_id: num(mp.m_product_id), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: num(el.m_costelement_id),
+      currentcostprice: Number(_fmtDec(newPrice, S)), currentqty: Number(_fmtDec(cq12 + q12, S)), cumulatedamt: Number(_fmtDec(_scaleTo(ca, S) + amtS, S)), cumulatedqty: Number(_fmtDec(_scaleTo(cuq, S) + q12, S)) };
+    _extra(uo, { currentqty: uo.currentqty, currentcostprice: uo.currentcostprice, cumulatedqty: uo.cumulatedqty, cumulatedamt: uo.cumulatedamt },
+      { oldqty: Number(c.qty), newqty: uo.currentqty, oldcostprice: Number(c.price), newcostprice: uo.currentcostprice, oldcqty: Number(c.cumqty), newcqty: uo.cumulatedqty, oldcamt: Number(c.cumamt), newcamt: uo.cumulatedamt }, c.source);
+    out.push(uo);
   });
   if (absent.length) return { updates: [], absent: absent };   // legacy throws / skips the whole document where a link is missing: no partial update list
   return { updates: out, absent: [] };
@@ -437,14 +506,14 @@ function _curQty(db, pid, sch, ct, el) {
   return r && r.currentqty != null ? Number(r.currentqty) : 0;     // MCost.get creates a missing row at 0
 }
 // lines = [{m_product_id, movementqty}] of a NON-reversal sales shipment; returns the refusal text or null
-function costQtyRefusal(db, lines) {
+function costQtyRefusal(db, lines, dateAcct) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return null;
   var els = _costingElements(db).filter(function (e) { return e.cm === 'A' || e.cm === 'I'; });
   var schemas = _activeSchemas(db);
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i]; if (!_isStocked(db, l.m_product_id)) continue;
     for (var j = 0; j < schemas.length; j++) for (var k = 0; k < els.length; k++) {
-      var cur = _curQty(db, l.m_product_id, schemas[j].id, schemas[j].ct, els[k].id), nq = cur - Number(l.movementqty);
+      var cur = _costBase(db, l.m_product_id, schemas[j].id, schemas[j].ct, els[k].id, els[k].cm, dateAcct).qty, nq = cur - Number(l.movementqty);   // §78: the HISTORY qty at the date (MCostDetail.process :1424 then MCost.setCurrentQty :1919)
       if (nq < 0) return 'AverageCostingNegativeQty: Product=' + l.m_product_id + ', Current Qty=' + cur + ', New Current Qty=' + nq + ', CostElement=' + els[k].id + ', Schema=' + schemas[j].id;
     }
   }
@@ -467,20 +536,28 @@ function _wavg(price, curQty, amtDec, qtyDec, prec) {   // all decimal strings/n
   if (S > prec * 2) p = _rhuB(p, 10n ** BigInt(S - prec * 2)) * 10n ** BigInt(S - prec * 2);
   return Number(_fmtDec(p, S));
 }
-function _costRow(db, state, pid, sch, ct, el) {
+function _costRow(db, state, pid, sch, ct, el, cm, dateAcct) {
   var k = [pid, sch, ct, el].join('|');
-  if (!state[k]) { var r = getRow(db, 'SELECT currentqty, currentcostprice FROM m_cost WHERE m_product_id=? AND c_acctschema_id=? AND m_costtype_id=? AND m_costelement_id=?', [num(pid), num(sch), num(ct), num(el)]);
-    state[k] = { qty: r && r.currentqty != null ? Number(r.currentqty) : 0, price: r && r.currentcostprice != null ? String(r.currentcostprice) : '0' }; }
+  if (!state[k]) state[k] = _costBase(db, pid, sch, ct, el, cm, dateAcct);   // §78: base = the cost history at the detail's DateAcct, else the m_cost row
   return state[k];
 }
-function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf) {
+// The §78 additions (u.set absolute new state, u.history the MCostHistory row, u.baseSource 'history'|'m_cost') are NON-ENUMERABLE: the update's serialised shape (JSON, goldens such as
+// poc_review2 R6/R7) stays byte-identical to before; applyCostUpdate reads them as plain properties.
+function _extra(u, set, history, baseSource) {
+  Object.defineProperty(u, 'set', { value: set, enumerable: false }); Object.defineProperty(u, 'history', { value: history, enumerable: false });
+  Object.defineProperty(u, 'baseSource', { value: baseSource, enumerable: false });
+}
+function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf, dateAcct) {
   var u = { m_product_id: num(pid), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: e.id, delta: delta };
-  var c = _costRow(db, state, pid, sc.id, sc.ct, e.id);
+  var c = _costRow(db, state, pid, sc.id, sc.ct, e.id, e.cm, dateAcct), old = { qty: c.qty, price: c.price, cumqty: c.cumqty, cumamt: c.cumamt };
   if (delta > 0 && (e.cm === 'A' || e.cm === 'I')) {
     var prec = _costingPrecision(db, sc.id), amt = prec == null ? null : amtDecOf(c, prec);
     if (amt != null) { u.currentcostprice = _wavg(c.price, c.qty, amt, delta, prec); c.price = String(u.currentcostprice); }
   }
   c.qty += delta;
+  // absolute new state + the MCostHistory row (old = the base this detail started from) — applied by applyCostUpdate (§78)
+  _extra(u, { currentqty: c.qty, currentcostprice: Number(c.price), cumulatedqty: c.cumqty, cumulatedamt: Number(c.cumamt) },
+    { oldqty: old.qty, newqty: c.qty, oldcostprice: Number(old.price), newcostprice: Number(c.price), oldcqty: old.cumqty, newcqty: c.cumqty, oldcamt: Number(old.cumamt), newcamt: Number(c.cumamt) }, c.source);
   out.push(u);
 }
 // §71 (F35) MCost.getCurrentCost (MCost.java:286-330 @{u}): current cost × qty, HALF_UP at the schema COSTING precision — decimal string, null without a cost (the host's MCost.getCost)
@@ -518,7 +595,7 @@ function _costQtySign(movementtype) {
 function costQtyUpdates(db, ioId) {
   if (!_hasCol(db, 'm_cost', 'currentqty')) return [];
   var lines = allRows(db, 'SELECT m_product_id, movementqty' + (_hasCol(db, 'm_inoutline', 'reversalline_id') ? ', reversalline_id' : '') + ' FROM m_inoutline WHERE m_inout_id=?', num(ioId));
-  var hcols = ['movementtype', 'reversal_id'].filter(function (c) { return _hasCol(db, 'm_inout', c); });
+  var hcols = ['movementtype', 'reversal_id', 'dateacct'].filter(function (c) { return _hasCol(db, 'm_inout', c); });
   var hdr = hcols.length ? getRow(db, 'SELECT ' + hcols.join(', ') + ' FROM m_inout WHERE m_inout_id=?', num(ioId)) : null, origIo = hdr && num(hdr.reversal_id) ? num(hdr.reversal_id) : null;
   var sign = _costQtySign(hdr && hdr.movementtype);
   if (!sign) return [];
@@ -526,7 +603,8 @@ function costQtyUpdates(db, ioId) {
   // neither the posted facts (per schema) nor the current cost (per product, schema) depend on the costing element or the line count: read once per call (§REVIEW2 R7)
   var pfCache = {}, ccCache = {};
   function posted(schId) { if (!(schId in pfCache)) pfCache[schId] = _postedFacts(db, 319, origIo, schId); return pfCache[schId]; }
-  function costOf(pid, schId) { var k = pid + '|' + schId; if (!(k in ccCache)) ccCache[k] = currentCost(db, pid, schId); return ccCache[k]; }
+  var dAcct = hdr && hdr.dateacct ? hdr.dateacct : null;   // §78: the shipment's DateAcct selects the cost history
+  function costOf(pid, schId) { var k = pid + '|' + schId; if (!(k in ccCache)) ccCache[k] = currentCost(db, pid, schId, dAcct); return ccCache[k]; }
   lines.forEach(function (l) {
     if (!_isStocked(db, l.m_product_id)) return;
     schemas.forEach(function (sc) { els.forEach(function (e) {
@@ -535,7 +613,7 @@ function costQtyUpdates(db, ioId) {
         // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
         if (origIo && num(l.reversalline_id)) { var pf = posted(sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
         var cc = costOf(l.m_product_id, sc.id); if (cc.price == null) return null;
-        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); });
+        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct);
     }); });
   });
   return out;
@@ -1303,7 +1381,7 @@ function derivePostings(db, recordRef, schema, R) {
 function _R() { try { return (typeof require !== 'undefined') ? require('./post_resolver') : null; } catch (e) { return null; } }
 
 var _api = { derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
-             glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
+             glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 if (typeof module !== 'undefined' && module.exports) { module.exports = _api; }
 if (typeof window !== 'undefined') { window.DocPoster = _api; }
