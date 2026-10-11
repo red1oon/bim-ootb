@@ -50,6 +50,7 @@
     "editor_admask": "node editor/run_admask.js",
     "editor_fill": "node editor/run_fill.js",
     "editor_feather": "node editor/run_feather.js",
+    "editor_text": "node editor/run_text.js",
     "editor_dist_single": "node editor/build_dist.js editor/out/single --single",
     "blurbrush": "node filters/run_blurbrush.js"
   },
