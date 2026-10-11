@@ -21,6 +21,7 @@
   function label(o) {
     switch (o.op) {
       case 'layer': return o.id === 0 ? 'Background layer' : 'Add layer ' + o.id; case 'fill': return 'Fill layer ' + o.layer; case 'set': return 'Layer ' + o.layer + (o.opacity !== undefined ? ' opacity ' + pct(o.opacity) : '') + (o.mode ? ' mode ' + o.mode : '');
+      case 'adjust': return 'Add ' + o.kind + ' adjustment ' + o.id; case 'adjset': { const AJ = node ? require('./adjust_ops.js') : root.AdjustOps, P = o.params, kind = P.points ? 'curves' : P.in_black !== undefined ? 'levels' : P.level !== undefined ? 'threshold' : P.levels !== undefined ? 'posterize' : 'invert'; return AJ.label(o, kind); }
       case 'group': return 'Add group ' + o.id; case 'ungroup': return 'Ungroup group ' + o.group; case 'parent': return o.group >= 0 ? 'Move layer ' + o.layer + ' into group ' + o.group : 'Move layer ' + o.layer + ' out of its group';
       case 'clip': return (o.v ? 'Clip layer ' + o.layer + ' to the layer below' : 'Release clipping of layer ' + o.layer);
       case 'mask': return ({ add: 'Add mask to', delete: 'Delete mask of', invert: 'Invert mask of', apply: 'Apply mask of', sel: 'Mask from selection for' })[o.kind] + ' layer ' + o.layer;
@@ -34,7 +35,7 @@
   function raw(o) { if (o && Array.isArray(o.pts) && o.pts.length > 4) { const first = o.pts.slice(0, 4).map((p) => JSON.stringify(p)).join(','); return JSON.stringify({ ...o, pts: '@@' }).replace('"@@"', '[' + first + ',"+' + (o.pts.length - 4) + ' more"]'); } return JSON.stringify(o); }
   const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
   const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
-  async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
+  async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8).catch(() => {}); w.close().catch(() => {}); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
   async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
   async function parseLink(hash) {
     const m = /^#v1=([A-Za-z0-9_-]+)&h=([0-9a-f]{16})$/.exec(hash || ''); if (!m) throw new Error('not a painting link');

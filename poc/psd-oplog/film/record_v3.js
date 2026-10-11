@@ -92,10 +92,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await click(page.locator('[data-tool="select"]'), 600); await click(page.locator('#s-rect'), 600);
   await drag(await at(.995, .995), await at(.005, .005), 1400); { const sl = await page.evaluate(() => JSON.stringify(__ed.st.sel && { kind: __ed.st.sel.kind, box: __ed.st.sel.box })); log('whole-canvas selection st.sel=' + sl); fact('2a', 'selection_state', sl); if (sl === 'null') throw new Error('selection not made'); } await factsNow('2a-sel', true);
   await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#0e9d9b'); await setv('#size', '120'); await sleep(500);
-  for (const y of [.14, .38, .62, .86]) { await stroke([await at(.0, y), await at(.35, y + .04), await at(.7, y - .04), await at(1.0, y)], 12); }
+  for (const y of [.62, .78, .46, .30]) { await stroke([await at(.0, y), await at(.35, y + .04), await at(.7, y - .04), await at(1.0, y)], 12); }
   await sleep(1500); await factsNow('2a-teal', true); await click(page.locator('#s-clr'), 1200);
   const gid = await page.evaluate(() => __ed.layers()[__ed.layers().length - 1].id);
-  const gsel = topLayer().locator('select'); await point(gsel); await sleep(500); await gsel.selectOption('soft-light'); await sleep(1800); await factsNow('2a-mode', true);
+  const gsel = topLayer().locator('select'); await point(gsel); await sleep(500); await gsel.selectOption('overlay'); await sleep(1800); await factsNow('2a-mode', true);
   { const op = topLayer().locator('input[type=range]'); const b = await op.boundingBox(); await glide(b.x + b.width - 6, b.y + b.height / 2); await sleep(200); await page.mouse.down(); await glide(b.x + 8 + (b.width - 16) * .45, b.y + b.height / 2, 700); await page.mouse.up(); await sleep(400);
     const v = await op.inputValue(); log('opacity slider value ' + v); if (Math.abs(+v - 45) > 6) { await setv('#layers .layer:first-child input[type=range]', 45); } await sleep(1800); await factsNow('2a-opacity', true); }
   await click(topLayer().locator('button.mb', { hasText: /^Clip$/ }), 1800); await factsNow('2a-clip', true);
@@ -110,16 +110,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await click(page.locator('#addl'), 900); await click(topLayer().locator('button[title="Rename layer"]'), 600); await page.keyboard.type('Vignette', { delay: 150 }); await sleep(300); await page.keyboard.press('Enter'); await sleep(1000);
   await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-ell'), 500); await drag(await at(.10, .22), await at(.90, .78), 1300); await click(page.locator('#s-inv'), 1000); await factsNow('2b-sel', true);
   await click(page.locator('[data-tool="soft"]'), 400); await setv('#color', '#000000'); await setv('#size', '110'); await sleep(400);
-  await stroke([await at(.02, .15), await at(.02, .5), await at(.04, .88)], 14); await stroke([await at(.0, .86), await at(.5, .88), await at(1.0, .86)], 14); await stroke([await at(.98, .86), await at(.97, .5), await at(.98, .14)], 14); await stroke([await at(1.0, .16), await at(.5, .16), await at(.0, .16)], 14);
+  await stroke([await at(.02, .19), await at(.02, .5), await at(.04, .82)], 14); await stroke([await at(.0, .82), await at(.5, .84), await at(1.0, .82)], 14); await stroke([await at(.98, .82), await at(.97, .5), await at(.98, .19)], 14); await stroke([await at(1.0, .19), await at(.5, .18), await at(.0, .19)], 14);
   await factsNow('2b-strokes', true);
   { const sel = topLayer().locator('select'); await point(sel); await sleep(400); await sel.selectOption('multiply'); await sleep(1400); }
   { const op = topLayer().locator('input[type=range]'); const b = await op.boundingBox(); await glide(b.x + b.width - 6, b.y + b.height / 2); await sleep(200); await page.mouse.down(); await glide(b.x + 8 + (b.width - 16) * .6, b.y + b.height / 2, 600); await page.mouse.up(); await sleep(400); const v = await op.inputValue(); log('vignette opacity ' + v); if (Math.abs(+v - 60) > 6) await setv('#layers .layer:first-child input[type=range]', 60); await sleep(1500); }
   await click(topLayer().locator('button.mb', { hasText: /^Clip$/ }), 1500); await click(page.locator('#s-clr'), 1500); await factsNow('2b-done', true); end();
   begin('2c', 'Glow layer: ellipse around the towers, one soft warm stroke, screen, opacity 35, Clear');
   await click(page.locator('#addl'), 900); await click(topLayer().locator('button[title="Rename layer"]'), 600); await page.keyboard.type('Glow', { delay: 150 }); await sleep(300); await page.keyboard.press('Enter'); await sleep(900);
-  await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-ell'), 500); await drag(await at(.27, .34), await at(.56, .66), 1200);
+  await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-ell'), 500); await drag(await at(.18, .24), await at(.66, .74), 1200);
   await click(page.locator('[data-tool="soft"]'), 400); await setv('#color', '#ff9a3c'); await setv('#size', '90'); await sleep(400);
-  await stroke([await at(.30, .52), await at(.41, .47), await at(.52, .52)], 16);
+  await stroke([await at(.35, .50), await at(.42, .46), await at(.49, .50)], 16);
   { const sel = topLayer().locator('select'); await point(sel); await sleep(400); await sel.selectOption('screen'); await sleep(1200); }
   { const op = topLayer().locator('input[type=range]'); const b = await op.boundingBox(); await glide(b.x + b.width - 6, b.y + b.height / 2); await sleep(200); await page.mouse.down(); await glide(b.x + 8 + (b.width - 16) * .35, b.y + b.height / 2, 600); await page.mouse.up(); await sleep(400); const v = await op.inputValue(); log('glow opacity ' + v); if (Math.abs(+v - 35) > 6) await setv('#layers .layer:first-child input[type=range]', 35); await sleep(1500); }
   await click(page.locator('#s-clr'), 1500); await click(page.locator('[data-tool="hard"]'), 300);
@@ -139,9 +139,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await toHist(); await scrollHist('bottom'); { const r = await histToBottomRow(gIdx + 1); await sleep(800);
     const eb = page.locator('#hist .hrow', { has: page.locator('.hgo', { hasText: new RegExp('^' + (gIdx + 1) + '\\.') }) }).first().locator('button[title="Re-edit this stroke"]'); await click(eb, 1000);
     const ed = page.locator('#hist .hedit'); await ed.scrollIntoViewIfNeeded(); await sleep(600);
-    const range = ed.locator('input[type=range]').first(); const rb2 = await range.boundingBox(); await glide(rb2.x + rb2.width * .95, rb2.y + rb2.height / 2); await page.mouse.down(); await glide(rb2.x + rb2.width * .6, rb2.y + rb2.height / 2, 900); await page.mouse.up(); await sleep(500);
+    const range = ed.locator('input[type=range]').first(); const rb2 = await range.boundingBox(); await glide(rb2.x + rb2.width * .95, rb2.y + rb2.height / 2); await page.mouse.down(); await glide(rb2.x + rb2.width * .5, rb2.y + rb2.height / 2, 900); await page.mouse.up(); await sleep(500);
     const cb = await ed.locator('input[type=color]').boundingBox(); await glide(cb.x + cb.width / 2, cb.y + cb.height / 2); await sleep(700);
-    await page.evaluate(() => { const c = document.querySelector('#hist .hedit input[type=color]'); c.value = '#ff7a1a'; c.dispatchEvent(new Event('input', { bubbles: true })); }); await sleep(1000);
+    await page.evaluate(() => { const c = document.querySelector('#hist .hedit input[type=color]'); c.value = '#ff2fa0'; c.dispatchEvent(new Event('input', { bubbles: true })); }); await sleep(1000);
     await click(ed.locator('button', { hasText: 'Apply' }), 800); }
   await sleep(2500); await factsNow('3b-applied', true);
   const amendOp = await page.evaluate(() => { const o = __ed.ops[__ed.ops.length - 1]; return JSON.stringify(o); }); fact('3b', 'last_op_json', amendOp);
@@ -180,7 +180,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-rect'), 500); await drag(await at(.45, .12), await at(.95, .62), 1000);
   await click(page.locator('#addl'), 900);
   await click(topLayer().locator('button[title="Mask from selection"]'), 1200);
-  await setv('#color', '#43a047'); await setv('#size', '60'); await stroke([await at(.35, .5), await at(.65, .75), await at(.9, .55)], 16);
+  await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#43a047'); await setv('#size', '60'); await stroke([await at(.35, .5), await at(.65, .75), await at(.9, .55)], 16);
   await click(page.locator('#s-clr'), 1000);
   await click(topLayer().locator('button[title="Hide layer"]'), 1500); await click(topLayer().locator('button[title="Show layer"]'), 1500);
   await scrollSide('bottom'); await sleep(2500); await factsNow('3g2-piece', true); end();

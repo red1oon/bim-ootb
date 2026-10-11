@@ -6,8 +6,13 @@
   const MODE_OUT = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft-light': 'soft light', 'hard-light': 'hard light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity' };
   const DESC = 'sRGB-like matrix profile (psd-oplog generated)';
   function exportEditorPsd(st, W) {
-    const n = W * W, fs = S.newState(W), hiddenGroups = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
+    const n = W * W, fs = S.newState(W), hiddenGroups = [], hiddenAdj = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
+    const mkAdj = (id) => { const a = st.A[id], am = meta[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
+      : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) } : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };   // same fields as doc/psd_export.js mkAdjust
+      S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (am.hidden) hiddenAdj.push(id);
+      return { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj }; };
     const mkNode = (id, parent) => {
+      if (st.A[id]) return mkAdj(id);
       if (st.G[id]) { const g = st.G[id], gm = meta[id]; S.apply(fs, { op: 'group', id, mode: g.mode, opacity: r4(gm.opacity), mask: false }); const kids = g.children.map((c) => mkNode(c, id)); if (gm.hidden) hiddenGroups.push(id);
         return { name: gm.name, ...(gm.hidden ? { hidden: true } : {}), opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: q255(fs.G[id].opacity), children: kids }; }
       const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
@@ -21,7 +26,7 @@
       return ch;
     };
     const children = st.root.map((id) => mkNode(id, -1));
-    for (const id of hiddenIds) fs.L[id].opacity = 0; for (const id of hiddenGroups) fs.G[id].opacity = 0;   // hidden: in the file, not in the merged image
+    for (const id of hiddenIds) fs.L[id].opacity = 0; for (const id of hiddenGroups) fs.G[id].opacity = 0; for (const id of hiddenAdj) fs.A[id].opacity = 0;   // hidden: in the file, not in the merged image
     const back = S.composite(fs), res = new Uint8Array(n * 4);   // merged preview, same as DF.render with an identity transform
     for (let i = 0; i < n; i++) { const a = back[i*4+3]; if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(back[i*4+k] / a) * 65535 + 0.5))); res[i*4+k] = Math.floor(v16 / 257 + 0.5); } res[i*4+3] = q8(a); }
     let bytes = new Uint8Array(AG.writePsd({ width: W, height: W, children, imageData: { width: W, height: W, data: new Uint8ClampedArray(res) } }, { generateThumbnail: false }));
