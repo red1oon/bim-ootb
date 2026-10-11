@@ -386,10 +386,42 @@ function _fxConvertCents(db, cents, curFrom, schema, dateAcct, client, org, abse
   if (rate == null) { absent.push('NoCurrencyConversion ' + curFrom + '->' + as.c_currency_id); return null; }
   var r = _bigDec(rate); return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k)));
 }
-function _poLineCost(db, ol, absent) {   // order line PriceCost, else PriceActual; tax corrections not ported (named)
-  var price = ol.pricecost != null && Number(ol.pricecost) !== 0 ? ol.pricecost : ol.priceactual;
-  if (num(ol.c_tax_id)) { var t = getRow(db, 'SELECT rate FROM c_tax WHERE c_tax_id=?', num(ol.c_tax_id)); if (!t) { absent.push('c_tax#' + ol.c_tax_id); return null; } if (Number(t.rate) !== 0) { absent.push('tax-corrected purchase cost not ported (Doc_InOut.java:719-783)'); return null; } }
-  return price;
+// MTax.calculateTax (MTax.java:340-367) on scaled integers: amt12 = amount at scale 12, returns the tax at `scale`. Summary => the sum over its active child taxes (a summary parent has rate 0 => isZeroTax first).
+function _mtaxCalc(t, kids, amt12, incl, scale) {
+  if (Number(t.rate) === 0) return 0n;
+  var list = String(t.issummary) === 'Y' ? kids : [t], tax = 0n, P = 10n ** 12n;
+  list.forEach(function (c) {
+    var m12 = _rhuB(_scaleTo(_bigDec(c.rate), 12), 100n);                                   // Rate / 100, scale 12 HALF_UP
+    if (!incl) tax += _rhuB(amt12 * m12, 10n ** BigInt(24 - scale));                         // amount x multiplier, setScale(scale, HALF_UP)
+    else { var base12 = _rhuB(amt12 * P, m12 + P); tax += _rhuB(amt12 - base12, 10n ** BigInt(12 - scale)); }   // amount - amount/(1+m)
+  });
+  return tax;
+}
+// Doc_InOut.createFacts:719-783 (@{u} org.compiere.acct): the per-unit receipt cost of an order line = PriceCost, else PriceActual corrected for tax: included tax is taken OUT unless the tax is
+// distributed with the line item (TaxPostingIndicator '1'); an excluded tax is ADDED only when distributed (calculated at scale 12, not rounded to the currency before x Qty). Returns a decimal string.
+function _poLineCost(db, ol, absent) {
+  var hasCost = ol.pricecost != null && Number(ol.pricecost) !== 0, price = hasCost ? ol.pricecost : ol.priceactual;
+  if (hasCost || !num(ol.c_tax_id)) return price;
+  var t = getRow(db, 'SELECT * FROM c_tax WHERE c_tax_id=?', num(ol.c_tax_id)); if (!t) { absent.push('c_tax#' + ol.c_tax_id); return null; }
+  var dist = function (x) { return String(x.taxpostingindicator) === '1'; };
+  var kids = String(t.issummary) === 'Y' ? allRows(db, "SELECT * FROM c_tax WHERE parent_tax_id=?" + (_hasCol(db, 'c_tax', 'isactive') ? " AND isactive='Y'" : ''), [num(ol.c_tax_id)]) : [];
+  var o = num(ol.c_order_id) ? getRow(db, 'SELECT * FROM c_order WHERE c_order_id=?', num(ol.c_order_id)) : null, incl = false;
+  if (o && num(o.m_pricelist_id) && _hasCol(db, 'm_pricelist', 'istaxincluded')) { var pl = getRow(db, 'SELECT istaxincluded FROM m_pricelist WHERE m_pricelist_id=?', num(o.m_pricelist_id)); incl = !!pl && String(pl.istaxincluded) === 'Y'; }   // MOrderLine.isTaxIncluded :697-707
+  else if (o && o.istaxincluded != null) incl = String(o.istaxincluded) === 'Y';
+  var cur = ol.c_currency_id != null ? ol.c_currency_id : (o && o.c_currency_id), sp = cur != null && _hasCol(db, 'c_currency', 'stdprecision') ? getRow(db, 'SELECT stdprecision AS p FROM c_currency WHERE c_currency_id=?', num(cur)) : null;
+  var std = sp && sp.p != null ? num(sp.p) : 2, up = function (x, sc) { return x * 10n ** BigInt(12 - sc); }, costs = _scaleTo(_bigDec(price), 12);
+  if (incl) {
+    if (Number(t.rate) !== 0) {
+      var costTax = up(_mtaxCalc(t, kids, costs, true, std), std);
+      if (String(t.issummary) === 'Y') {
+        var sub = kids.filter(function (c) { return !dist(c); });
+        if (sub.length) { var base = costs - costTax; sub.forEach(function (c) { costs -= up(_mtaxCalc(c, [], base, false, std), std); }); }
+      } else if (!dist(t)) costs -= costTax;
+    }
+  } else if (String(t.issummary) === 'Y') {
+    var base0 = costs; kids.forEach(function (c) { if (dist(c)) costs += _mtaxCalc(c, [], base0, false, 12); });
+  } else if (dist(t)) costs += _mtaxCalc(t, [], costs, false, 12);
+  return _fmtDec(costs, 12);
 }
 function deriveReceipt(db, R, ioId, schema) {
   var hdr = getRow(db, 'SELECT * FROM m_inout WHERE m_inout_id=?', num(ioId));
@@ -558,12 +590,16 @@ function _costRow(db, state, pid, sch, ct, el, cm, dateAcct) {
 // spread still carries them, so applyCostUpdate applies the same state (a host that cloned an update and silently lost them used to fall into the delta path). Goldens that print whole updates
 // strip them (poc_review2 R6/R7 `J(...)` helpers).
 function _extra(u, set, history, baseSource) { u.set = set; u.history = history; u.baseSource = baseSource; }
-function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf, dateAcct) {
+function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf, dateAcct, noCum) {   // noCum: MCostDetail.isShipment() (SO trx + inout line) -- a customer-shipment reversal/return does NOT accumulate (MCostDetail.java:1728-1734, 1759-1765)
   var u = { m_product_id: num(pid), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: e.id, delta: delta };
   var c = _costRow(db, state, pid, sc.id, sc.ct, e.id, e.cm, dateAcct), old = { qty: Number(c.qty), price: c.price, cumqty: Number(c.cumqty), cumamt: c.cumamt };
   if (delta > 0 && (e.cm === 'A' || e.cm === 'I')) {
     var prec = _costingPrecision(db, sc.id), amt = prec == null ? null : amtDecOf(c, prec);
-    if (amt != null) { u.currentcostprice = _wavg(c.price, c.qty, amt, delta, prec); c.price = String(u.currentcostprice); }
+    if (amt != null) {
+      u.currentcostprice = _wavg(c.price, c.qty, amt, delta, prec); c.price = String(u.currentcostprice);
+      // MCost.setWeightedAverage (MCost.java:1740-1741): CumulatedAmt += amt, CumulatedQty += qty (Physical Inventory gain, project/other additions; found by the shop-day P2P cost key 30@20/600 vs 30@20/0)
+      if (!noCum) { var S12 = 12, add = function (a, b) { return Number(_fmtDec(_scaleTo(_bigDec(a), S12) + _scaleTo(_bigDec(b), S12), S12)); }; c.cumamt = add(c.cumamt, amt); c.cumqty = add(c.cumqty, delta); }
+    }
   }
   c.qty = Number(c.qty) + delta;
   // absolute new state + the MCostHistory row (old = the base this detail started from) — applied by applyCostUpdate (§78)
@@ -587,6 +623,7 @@ function costQtyUpdatesFor(db, table, id) {
     return out0;
   }
   if (table !== 'M_Inventory' || !_hasCol(db, 'm_cost', 'currentqty')) return [];
+  if (inventoryPostRefused(db, id)) return [];   // §SHOPDAY-RUN-2 R2.1: posting refused ("No Costs", Posted=E) => no cost detail, cost state unchanged
   var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
   allRows(db, 'SELECT m_product_id, qtybook, qtycount FROM m_inventoryline WHERE m_inventory_id=?', num(id)).forEach(function (l) {
     var d = Number(l.qtycount) - Number(l.qtybook); if (!d || !_isStocked(db, l.m_product_id)) return;
@@ -624,7 +661,7 @@ function costQtyUpdates(db, ioId) {
         // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
         if (origIo && num(l.reversalline_id)) { var pf = posted(sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
         var cc = costOf(l.m_product_id, sc.id); if (cc.price == null) return null;
-        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct);
+        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct, true);
     }); });
   });
   return out;
@@ -1227,6 +1264,28 @@ function deriveGLJournal(db, id, schema) {
 // refused doc 100 exactly this way (§TAILORACLE postErr="No Costs for TShirt - Red Large"). This manifest
 // reproduces that SAME refusal (0==0, a genuine match, not a vacuous one) and the falsifier flips the
 // blessing count to prove the gate — not the manifest — is what closes to ∅.
+// Doc_Inventory.createFacts:300-335 -- the line's cost = the schema-costing-method material element's CurrentCostPrice; zero AND no zero-cost-blessing M_CostDetail => "No Costs for <product>".
+function _inventoryLineCost(db, l, schema) {
+  var as = schemaRow(db, schema);
+  return getRow(db,
+    "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
+    " AND e.costelementtype='M' AND e.costingmethod=? WHERE c.m_product_id=? AND c.c_acctschema_id=? AND c.m_costtype_id=?",
+    [as ? String(as.costingmethod) : '', num(l.m_product_id), num(schema), as ? num(as.m_costtype_id) : 0]);
+}
+function _inventoryNoCosts(db, l, schema) {
+  var cost = _inventoryLineCost(db, l, schema);
+  if (cents(cost ? cost.p : 0) !== 0) return false;
+  var bless = getRow(db,
+    "SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0.00 AND qty>0" +
+    " AND (c_orderline_id>0 OR c_invoiceline_id>0)", num(l.m_product_id));
+  return !bless || Number(bless.n) === 0;
+}
+// §SHOPDAY-RUN-2 R2.1: Doc.post rolls the whole document back when ANY active schema's createFacts fails, and the MCostDetail (cost qty/amt) is created at the END of
+// Doc_Inventory.createFacts (never reached on "No Costs") => a refused Physical Inventory changes NO cost state. true when any line is refused in any active schema.
+function inventoryPostRefused(db, id) {
+  var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id)), sch = _activeSchemas(db);
+  return lines.some(function (l) { return sch.some(function (sc) { return _inventoryNoCosts(db, l, sc.id); }); });
+}
 function deriveInventory(db, id, schema) {
   var hdr = getRow(db, 'SELECT * FROM m_inventory WHERE m_inventory_id=?', num(id));
   if (!hdr) return null;
@@ -1234,19 +1293,9 @@ function deriveInventory(db, id, schema) {
   var d = b3New();
   if (lines.length === 0) { d.absent.push('@NoLines@#' + id); return d; }   // MInventory.prepareIt:401-406
   lines.forEach(function (l) {
-    var as = schemaRow(db, schema);
-    var cost = getRow(db,
-      "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
-      " AND e.costelementtype='M' AND e.costingmethod=? WHERE c.m_product_id=? AND c.c_acctschema_id=? AND c.m_costtype_id=?",
-      [as ? String(as.costingmethod) : '', num(l.m_product_id), num(schema), as ? num(as.m_costtype_id) : 0]);
+    var cost = _inventoryLineCost(db, l, schema);
     var qtyDiff = Number(l.qtycount) - Number(l.qtybook);                  // PI branch :164-165
-    var costCents = cents(cost ? cost.p : 0);
-    if (costCents === 0) {
-      var bless = getRow(db,
-        "SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0.00 AND qty>0" +
-        " AND (c_orderline_id>0 OR c_invoiceline_id>0)", num(l.m_product_id));
-      if (!bless || Number(bless.n) === 0) { d.absent.push('{Product.NoCosts}#' + l.m_product_id); return; }  // :332-335 refusal
-    }
+    if (_inventoryNoCosts(db, l, schema)) { d.absent.push('{Product.NoCosts}#' + l.m_product_id); return; }  // :332-335 refusal
     // §59 (F18): the LINE is rounded, not the unit cost (Doc_Inventory costs = ProductCost qty × current cost; same rule as poc_movement_fx) — exact HALF_UP
     var amt = cost ? (function () { var pd = _bigDec(cost.p), qd = _bigDec(qtyDiff); return Number(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k))); })() : 0;
     var prod = getRow(db, 'SELECT producttype, m_product_category_id FROM m_product WHERE m_product_id=?', num(l.m_product_id));
@@ -1401,7 +1450,7 @@ function derivePostings(db, recordRef, schema, R) {
 
 function _R() { try { return (typeof require !== 'undefined') ? require('./post_resolver') : null; } catch (e) { return null; } }
 
-var _api = { derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
+var _api = { poLineCost: _poLineCost, inventoryPostRefused: inventoryPostRefused, derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, deriveMovement: deriveMovement, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 if (typeof module !== 'undefined' && module.exports) { module.exports = _api; }
