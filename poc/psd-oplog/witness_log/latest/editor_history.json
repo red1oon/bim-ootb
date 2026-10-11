@@ -1,0 +1,60 @@
+{
+ "n_checks": 38,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "L1": {
+   "urlChars": 13927,
+   "ops": 103
+  },
+  "verify": {
+   "ok": true,
+   "head": "70caef9dcbff307ddb653e7a27a8ff63f8e1732f400aa99702013664a99eba2f",
+   "fp": "70caef9dcbff",
+   "comp": "b8348935f9d84406932c81868789052119204bffc3a26319924f988086bc59c3",
+   "n": 40,
+   "ms": 4175.900000035763
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   A1 10 amends over 5 kinds (colour / size / opacity / strength) with a dependent stroke and a smudge after: hashes == log authored with the new values
+ok   A1 negative control: every amend changed the picture
+ok   A1 two amends on one target: last wins
+ok   A1 invalid amends (non-stroke target, later index, unknown key, c out of range, r 0, a 0, empty, s on a hard brush) all throw
+ok   L1 link round trip: decoded ops deep-equal the log (101+2 entries)
+ok   L1 100-stroke session link is 13927 characters (prediction <= 40000)
+ok   L1 a log with a photo is refused
+ok   V1 a link with one payload character changed is refused
+ok   V1 one coordinate changed (+0.01 px) in one stroke: chain head differs
+ok   V1 head is stable across two calls
+ok   V1 swapping two entries changes the head (order is part of the truth)
+ok   A3 live amend: hashes == refold of the log
+ok   A2 undo all the way (8 steps, log 11 -> 3) around an amend: hashes == refold of the prefix at every step
+ok   A2 redo all the way (8 steps): same, and back to 11 entries
+ok   A3 save -> load of a log with an amend: hashes equal
+ok   A3 the amend is one log entry, the target entry is unchanged in the log
+ok   R2 preview(k) for k in {3, 4, 5, mid, n-1, n}: state hashes == refold of the first k entries
+ok   R2 painting / undo / layer ops while previewing log nothing
+ok   R2 after endPreview the dirty compositor equals the full composite and the canvas shows it
+ok   R1 full replay of 40 entries finished in 7.1 s (2..8 s +-0.5)
+ok   R1 replay end state hashes == live hashes
+ok   R1 replay left the log and the live state untouched
+ok   R1 a replay stopped after 1.3 s ended unfinished at 19 of 40
+ok   R1 after the stopped replay the canvas shows the live picture (200 sampled pixels) and the log is untouched
+ok   V1 verify() on the live editor: ok (40 entries, 4176 ms), fingerprint 70caef9dcbff stable
+ok   A2 no page errors (desktop)
+ok   L2 the opened link shows the same picture as the sender (hashes equal) and the banner
+ok   L2 painting in the view-only page is blocked (log length unchanged)
+ok   L2 the owner's autosave is untouched after the link was opened and left for 1 s
+ok   L2 "Edit a copy" allows painting (+1 entry) and then autosaves (storage now differs)
+ok   L2 an altered link is refused with a message and nothing is loaded
+ok   U Replay / Verify / Share link buttons >= 44 px both ways
+ok   U tapping a history row previews that step (read-only)
+ok   U Back to now returns to the live picture
+ok   U Edit -> size slider -> Apply adds one amend entry
+ok   U Verify tap reports a verified log
+ok   U no page scroll
+ok   U no page errors (phone)

@@ -51,9 +51,9 @@ ok   I7 psd-tools: 3 layers (Background, Layer 1, photo) and merged image within
 ok   I4 autosave reported 5 ops; after reload the page has the same ops count and hashes (localStorage 6 MB write throws here: true; one noise photo = 5.6 MB of JSON)
 ok   I3 no page errors (desktop)
 ok   I5 landscape 12 MP (4000x3000) fits by "contain" with transparent bars exactly where the geometry says
-ok   I5 landscape import wall time 456 ms
+ok   I5 landscape import wall time 344 ms
 ok   I5 portrait 12 MP (3000x4000) fits by "contain" with transparent bars exactly where the geometry says
-ok   I5 portrait import wall time 378 ms
+ok   I5 portrait import wall time 312 ms
 ok   I5 no page errors (12 MP)
 ok   I6 Add photo button 91x44 >= 44 px both ways
 ok   I6 choosing a photo on the phone adds +1 log entry and a layer

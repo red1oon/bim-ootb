@@ -8,6 +8,8 @@ A small browser painting app whose document is an op log. Nothing to install: op
 - Out: Export PNG, Export PSD (layers, blend modes, opacity, sRGB profile), Save log (the op log as JSON; Load log reads it back).
 - Every action is one log entry, so undo, save, load and replay are exact. See `poc/psd-oplog/README.md` and `witness_log/HYPOTHESES.md` for what was measured.
 
+Level 1 additions: History panel (preview, replay, verify, re-edit a past stroke, share-as-link).
+
 Known limits (v0.1): no pen pressure, no groups, no moving the selection or the photo after import or masks, sRGB only, 1024x1024 canvas, tested in Chromium only, touch gestures untested, no Photoshop check of the exported PSD, and nobody has judged how it feels yet.
 Third-party: `vendor/ag-psd.js` is ag-psd 31.0.3 (MIT), see `vendor/ag-psd.LICENSE`.
 
