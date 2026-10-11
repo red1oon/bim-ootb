@@ -39,7 +39,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ---------- helpers
   const glide = async (x, y, ms) => { const d = Math.hypot(x - cx, y - cy), n = Math.max(10, Math.round(d / 10)), per = ms ? ms / n : 14; for (let i = 1; i <= n; i++) { const k = i / n, e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; await page.mouse.move(cx + (x - cx) * e, cy + (y - cy) * e); await sleep(per); } cx = x; cy = y; };
   const centre = async (loc) => { const b = await loc.boundingBox(); if (!b) throw new Error('no box'); return [b.x + b.width / 2, b.y + b.height / 2]; };
-  const point = async (loc) => { const [x, y] = await centre(loc); await glide(x, y); };
+  const point = async (loc) => { await loc.scrollIntoViewIfNeeded(); await sleep(250); const [x, y] = await centre(loc); await glide(x, y); };
   const click = async (loc, pause = 900) => { await point(loc); await sleep(180); await page.mouse.down(); await sleep(90); await page.mouse.up(); await sleep(pause); };
   const stroke = async (pts, pace = 16) => { await glide(pts[0][0], pts[0][1]); await sleep(150); await page.mouse.down(); for (let i = 1; i < pts.length; i++) { const [x, y] = pts[i], n = Math.max(2, Math.round(Math.hypot(x - cx, y - cy) / 9)); for (let k = 1; k <= n; k++) { await page.mouse.move(cx + (x - cx) * k / n, cy + (y - cy) * k / n); await sleep(pace); } cx = x; cy = y; } await sleep(120); await page.mouse.up(); await sleep(900); };
   const drag = async (a, b, ms = 1200) => { await glide(a[0], a[1]); await sleep(200); await page.mouse.down(); await glide(b[0], b[1], ms); await page.mouse.up(); await sleep(1000); };
@@ -90,19 +90,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await scrollSide(0); await click(page.locator('#adv'), 800);
   await click(page.locator('#addl'), 900); await click(topLayer().locator('button[title="Rename layer"]'), 600); await page.keyboard.type('Grade', { delay: 150 }); await sleep(300); await page.keyboard.press('Enter'); await sleep(1200); await factsNow('2a-layer', true);
   await click(page.locator('[data-tool="select"]'), 600); await click(page.locator('#s-rect'), 600);
-  await drag(await at(.003, .003), await at(.997, .997), 1400); await factsNow('2a-sel', true);
+  await drag(await at(.995, .995), await at(.005, .005), 1400); { const sl = await page.evaluate(() => JSON.stringify(__ed.st.sel)); log('whole-canvas selection st.sel=' + sl); fact('2a', 'selection_state', sl); if (sl === 'null') throw new Error('selection not made'); } await factsNow('2a-sel', true);
   await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#0e9d9b'); await setv('#size', '120'); await sleep(500);
   for (const y of [.14, .38, .62, .86]) { await stroke([await at(.0, y), await at(.35, y + .04), await at(.7, y - .04), await at(1.0, y)], 12); }
-  await sleep(1500); await factsNow('2a-teal', true);
+  await sleep(1500); await factsNow('2a-teal', true); await click(page.locator('#s-clr'), 1200);
   const gid = await page.evaluate(() => __ed.layers()[__ed.layers().length - 1].id);
   const gsel = topLayer().locator('select'); await point(gsel); await sleep(500); await gsel.selectOption('soft-light'); await sleep(1800); await factsNow('2a-mode', true);
   { const op = topLayer().locator('input[type=range]'); const b = await op.boundingBox(); await glide(b.x + b.width - 6, b.y + b.height / 2); await sleep(200); await page.mouse.down(); await glide(b.x + 8 + (b.width - 16) * .45, b.y + b.height / 2, 700); await page.mouse.up(); await sleep(400);
     const v = await op.inputValue(); log('opacity slider value ' + v); if (Math.abs(+v - 45) > 6) { await setv('#layers .layer:first-child input[type=range]', 45); } await sleep(1800); await factsNow('2a-opacity', true); }
   await click(topLayer().locator('button.mb', { hasText: /^Clip$/ }), 1800); await factsNow('2a-clip', true);
   await click(topLayer().locator('button[title="Add mask"]'), 1500); await factsNow('2a-mask', true);
-  await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-rect'), 500);
-  await drag(await at(.003, .165), await at(.997, .49), 1300); await click(page.locator('#s-inv'), 1200); await factsNow('2a-skysel', true);
-  await click(topLayer().locator('button[title="Replace mask with selection"]'), 2200); await factsNow('2a-maskfromsel', true); await click(page.locator('#s-clr'), 1500); await factsNow('2a-clear', true); end();
+  await click(topLayer().locator('button.mb', { hasText: /^Mask$/ }), 900); { const lab = await topLayer().locator('button.mb').nth(2).textContent(); log('mask brush label ' + lab); if (lab !== 'Hide') await click(topLayer().locator('button.mb').nth(2), 700); fact('2a', 'mask_brush_label', await topLayer().locator('button.mb').nth(2).textContent()); }
+  await click(page.locator('[data-tool="soft"]'), 400); await setv('#size', '120'); await sleep(500);
+  for (const y of [.17, .23, .29, .36]) { await stroke([await at(.0, y), await at(.35, y + .03), await at(.7, y - .03), await at(1.0, y)], 12); }
+  await sleep(2000); await factsNow('2a-skymask', true);
+  await click(topLayer().locator('button.mb', { hasText: /^Layer$/ }), 900); await sleep(2500); await factsNow('2a-done', true); end();
   const nBeforeVig = await page.evaluate(() => __ed.ops.length);
   begin('2b', 'Layer Vignette: ellipse selection, Invert, soft black strokes along the edges, multiply, Clip, opacity 60, Clear selection');
   await click(page.locator('#addl'), 900); await click(topLayer().locator('button[title="Rename layer"]'), 600); await page.keyboard.type('Vignette', { delay: 150 }); await sleep(300); await page.keyboard.press('Enter'); await sleep(1000);
@@ -151,7 +153,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await toHist(); const nTotal = await page.evaluate(() => __ed.ops.length); fact('3c', 'entries_before_goback', nTotal);
   await scrollHist('bottom'); { const r = await histToBottomRow(nBeforeVig); await click(r, 3000); await factsNow('3c-preview', false); }
   await click(page.locator('#pv-rewind'), 3500); await factsNow('3c-wentback', false);
-  for (let i = 0; i < 4; i++) { await page.keyboard.press('Control+Shift+Z'); await sleep(1500); if (i === 0) await factsNow('3c-redo1', false); }
+  for (let i = 0; i < 4; i++) { await page.keyboard.press('Control+Shift+Z'); await sleep(1500); await factsNow('3c-redo' + (i + 1), false); }
   for (let i = 0; i < 80 && await page.evaluate(() => __ed.canRedo()); i++) { await page.keyboard.press('Control+Shift+Z'); await sleep(350); }
   await sleep(2500); await factsNow('3c-allback', false); fact('3c', 'entries_after_redo_all', await page.evaluate(() => __ed.ops.length)); end();
   // d
@@ -175,7 +177,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#e53935'); await setv('#size', '46'); await stroke([await at(.02, .2), await at(.3, .4), await at(.6, .35)], 16);
   await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-ell'), 500); await drag(await at(.4, .4), await at(.92, .9), 1000);
   await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#1e88e5'); await setv('#size', '50'); await stroke([await at(.3, .85), await at(.6, .6), await at(.95, .55)], 16);
-  await scrollSide(0); await click(page.locator('#addl'), 900);
+  await click(page.locator('[data-tool="select"]'), 500); await click(page.locator('#s-rect'), 500); await drag(await at(.45, .12), await at(.95, .62), 1000);
+  await click(page.locator('#addl'), 900);
   await click(topLayer().locator('button[title="Mask from selection"]'), 1200);
   await setv('#color', '#43a047'); await setv('#size', '60'); await stroke([await at(.35, .5), await at(.65, .75), await at(.9, .55)], 16);
   await click(page.locator('#s-clr'), 1000);

@@ -26,7 +26,7 @@
       case 'stroke': return ({ hard: 'Hard brush', soft: 'Soft brush', erase: 'Eraser', blur: 'Blur brush' })[o.kind] + (o.t === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ', size ' + o.r + (o.c && o.kind !== 'blur' && o.kind !== 'erase' ? ', ' + hex(o.c) : '') + ', ' + o.pts.length + ' pts';
       case 'smudge': return 'Smudge on ' + (o.t === 'mask' ? 'mask of ' : '') + 'layer ' + o.layer + ', size ' + o.r + ', ' + o.pts.length + ' pts'; case 'blur': return 'Blur layer ' + o.layer;
       case 'del': return 'Delete layer ' + o.layer; case 'mv': return 'Move layer ' + o.layer + ' to ' + o.to; case 'vis': return (o.v ? 'Show' : 'Hide') + ' layer ' + o.layer; case 'name': return 'Rename layer ' + o.layer + ' to ' + o.name;
-      case 'sel': return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
+      case 'sel': if (o.kind === 'wand') return 'Magic wand at (' + Math.floor(o.x) + ', ' + Math.floor(o.y) + '), tolerance ' + o.tol + (o.contiguous ? ', contiguous' : ', all pixels') + (o.mode && o.mode !== 'new' ? ', ' + o.mode : ''); if (o.kind === 'grow') return (o.n > 0 ? 'Grow' : 'Shrink') + ' selection by ' + Math.abs(o.n); return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
       case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }
   const bytesOf = (o) => new TextEncoder().encode(JSON.stringify(o)).length;
