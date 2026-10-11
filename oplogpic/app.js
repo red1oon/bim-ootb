@@ -600,16 +600,17 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   const MODE_OUT = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft-light': 'soft light', 'hard-light': 'hard light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity' };
   const DESC = 'sRGB-like matrix profile (psd-oplog generated)';
   function exportEditorPsd(st, W) {
-    const n = W * W, fs = S.newState(W), children = [];
+    const n = W * W, fs = S.newState(W), children = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
     for (const id of st.order) {
       const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; rgba8[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) rgba8[i*4+k] = q8(F(l.pix[i*4+k] / a)); }
-      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(l.opacity), mask: false }); const fl = fs.L[id];   // refold as docfold does for a raster op
+      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false }); const fl = fs.L[id];   // refold as docfold does for a raster op
       for (let i = 0; i < n; i++) { const a = F(rgba8[i*4+3] / 255); fl.pix[i*4+3] = a; for (let k = 0; k < 3; k++) fl.pix[i*4+k] = F(F(rgba8[i*4+k] / 255) * a); }
       const out = new Uint8ClampedArray(n * 4);   // docfold -> psd_export mkLayer: float -> 16-bit -> 8-bit (identity conversion, sRGB working == layer space)
       for (let i = 0; i < n; i++) { const a = fl.pix[i*4+3]; out[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(fl.pix[i*4+k] / a) * 65535 + 0.5))); out[i*4+k] = Math.floor(v16 / 257 + 0.5); } }
-      children.push({ name: 'Layer ' + id, left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
+      if (meta[id].hidden) hiddenIds.push(id); children.push({ name: meta[id].name, ...(meta[id].hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
     }
+    for (const id of hiddenIds) fs.L[id].opacity = 0;   // hidden: in the file, not in the merged image
     const back = S.composite(fs), res = new Uint8Array(n * 4);   // merged preview, same as DF.render with an identity transform
     for (let i = 0; i < n; i++) { const a = back[i*4+3]; if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(back[i*4+k] / a) * 65535 + 0.5))); res[i*4+k] = Math.floor(v16 / 257 + 0.5); } res[i*4+3] = q8(a); }
     let bytes = new Uint8Array(AG.writePsd({ width: W, height: W, children, imageData: { width: W, height: W, data: new Uint8ClampedArray(res) } }, { generateThumbnail: false }));
@@ -620,67 +621,222 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 })(this);
 
 ;
+/* ===== editor/layer_ops.js ===== */
+// Layer management ops for the editor log: del, mv, vis, name. Spec: witness_log/HYPOTHESES.md "Level 1a" (L1-L8). Shared by the page, the Node exporter and the tests; stack.js is not edited.
+// Hide = opacity 0 with the real opacity kept in l.keep, so the unchanged compositor skips the layer.
+(function (root) {
+  const F = Math.fround;
+  function need(st, o) { const l = st.L[o.layer]; if (!l) throw new Error(o.op + ': unknown layer ' + o.layer); return l; }
+  function apply(st, o) {   // returns true when it handled the op
+    if (o.op === 'del') { need(st, o); if (o.layer === 0) throw new Error('del: the Background cannot be deleted'); delete st.L[o.layer]; for (const a of [st.order, st.root]) { const i = a.indexOf(o.layer); if (i >= 0) a.splice(i, 1); } return true; }
+    if (o.op === 'mv') { need(st, o); const n = st.order.length, i = st.order.indexOf(o.layer);
+      if (o.layer === 0) throw new Error('mv: the Background cannot move'); if (!Number.isInteger(o.to) || o.to < 1 || o.to > n - 1) throw new Error('mv: index ' + o.to + ' out of range 1..' + (n - 1));
+      for (const a of [st.order, st.root]) { const j = a.indexOf(o.layer); a.splice(j, 1); a.splice(o.to, 0, o.layer); } return true; }
+    if (o.op === 'vis') { const l = need(st, o); if (typeof o.v !== 'boolean') throw new Error('vis: v must be boolean');
+      if (!o.v && !l.hid) { l.keep = l.opacity; l.opacity = 0; l.hid = true; } else if (o.v && l.hid) { l.opacity = l.keep; delete l.keep; delete l.hid; } return true; }
+    if (o.op === 'name') { const l = need(st, o), s = typeof o.name === 'string' ? o.name.trim() : ''; if (s.length < 1 || s.length > 40) throw new Error('name: 1..40 characters'); l.name = s; return true; }
+    if (o.op === 'set' && o.opacity !== undefined && st.L[o.layer] && st.L[o.layer].hid) { const l = st.L[o.layer]; l.keep = F(o.opacity); if (o.mode) l.mode = o.mode; return true; }
+    return false;
+  }
+  const displayName = (id, l) => (l && l.name) || (id === 0 ? 'Background' : 'Layer ' + id);
+  const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } return m; };
+  const api = { apply, displayName, meta };
+  if (typeof module !== 'undefined') module.exports = api; else root.LayerOps = api;
+})(this);
+
+;
+/* ===== editor/select_ops.js ===== */
+// Selection for the editor log: op 'sel' (rect | ellipse | invert | none) and selection-respecting painting. Spec: witness_log/HYPOTHESES.md "Level 1c" (S1-S8).
+// A painting op under a selection runs on a SHADOW copy of the layer; the result is written back per pixel by SELECT (inside: shadow, outside: original). Masks are binary, so no arithmetic.
+(function (root) {
+  const PAINT = { stroke: 1, smudge: 1 };
+  function maskOf(kind, x0, y0, x1, y1, W) {
+    const m = new Uint8Array(W * W);
+    if (kind === 'rect') { for (let y = y0; y < y1; y++) m.fill(1, y * W + x0, y * W + x1); return m; }
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = (x1 - x0) / 2, ry = (y1 - y0) / 2;
+    for (let y = y0; y < y1; y++) { const dy = (y + 0.5 - cy) / ry, dy2 = dy * dy; for (let x = x0; x < x1; x++) { const dx = (x + 0.5 - cx) / rx; if (dx * dx + dy2 <= 1) m[y * W + x] = 1; } }
+    return m;
+  }
+  function setSel(st, o) {
+    const W = st.W;
+    if (o.kind === 'none') { st.sel = null; return; }
+    if (o.kind === 'invert') { if (!st.sel) throw new Error('sel: nothing to invert'); const m = new Uint8Array(st.sel.mask.length); for (let i = 0; i < m.length; i++) m[i] = st.sel.mask[i] ^ 1; st.sel = { ...st.sel, inv: !st.sel.inv, mask: m }; return; }
+    if (o.kind !== 'rect' && o.kind !== 'ellipse') throw new Error('sel: unknown kind ' + o.kind);
+    const { x0, y0, x1, y1 } = o; for (const v of [x0, y0, x1, y1]) if (!Number.isInteger(v)) throw new Error('sel: integer box needed');
+    if (!(x0 >= 0 && y0 >= 0 && x1 <= W && y1 <= W && x0 < x1 && y0 < y1)) throw new Error('sel: box outside the canvas or empty');
+    st.sel = { kind: o.kind, box: [x0, y0, x1, y1], inv: false, mask: maskOf(o.kind, x0, y0, x1, y1, W) };
+  }
+  // copy the shadow's pixels into the real layer where the mask is 1, inside pixel box b = [x0,y0,x1,y1] inclusive
+  function merge(real, work, mask, W, b) { const [x0, y0, x1, y1] = b; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = y * W + x; if (mask[i]) { const p = i * 4; real[p] = work[p]; real[p + 1] = work[p + 1]; real[p + 2] = work[p + 2]; real[p + 3] = work[p + 3]; } } }
+  function shadow(st, layer) { const l = st.L[layer]; if (!l) throw new Error('unknown layer ' + layer); const work = new Float32Array(l.pix); return { work, sh: { pix: work }, shSt: { W: st.W, L: { [layer]: { pix: work } } } }; }
+  function apply(st, o, base) {   // true when handled here
+    if (o.op === 'sel') { setSel(st, o); return true; }
+    if (st.sel && PAINT[o.op]) { const { work, shSt } = shadow(st, o.layer); base(shSt, o); merge(st.L[o.layer].pix, work, st.sel.mask, st.W, [0, 0, st.W - 1, st.W - 1]); return true; }
+    return false;
+  }
+  const api = { apply, maskOf, merge, shadow };
+  if (typeof module !== 'undefined') module.exports = api; else root.SelectOps = api;
+})(this);
+
+;
+/* ===== editor/img_ops.js ===== */
+// Photo layer op for the editor log: {op:'img', id, sha}. Spec: witness_log/HYPOTHESES.md "Level 1d" (I1-I8). The blob (W*W*4 straight RGBA8, already scaled to the canvas) lives in st.blobs, keyed by its sha256.
+(function (root) {
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, F = Math.fround;
+  function apply(st, o) {
+    if (o.op !== 'img') return false;
+    const W = st.W, blob = st.blobs && st.blobs.get(o.sha);
+    if (!blob) throw new Error('img: missing blob ' + String(o.sha).slice(0, 12)); if (blob.length !== W * W * 4) throw new Error('img: blob has ' + blob.length + ' bytes, expected ' + W * W * 4);
+    if (st.L[o.id]) throw new Error('img: layer ' + o.id + ' already exists');
+    S.apply(st, { op: 'layer', id: o.id, mode: 'normal', opacity: 1, mask: false }); const pix = st.L[o.id].pix;
+    for (let i = 0; i < W * W; i++) { const a = F(blob[i * 4 + 3] / 255); pix[i * 4 + 3] = a; for (let k = 0; k < 3; k++) pix[i * 4 + k] = F(F(blob[i * 4 + k] / 255) * a); }
+    return true;
+  }
+  // contain-fit placement of an iw x ih picture into a W x W canvas
+  function fit(iw, ih, W) { const sc = Math.min(W / iw, W / ih), dw = Math.max(1, Math.round(iw * sc)), dh = Math.max(1, Math.round(ih * sc)); return { dw, dh, dx: Math.floor((W - dw) / 2), dy: Math.floor((W - dh) / 2) }; }
+  const b64 = { enc(u8) { if (node) return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64'); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); },
+    dec(str) { if (node) return new Uint8Array(Buffer.from(str, 'base64')); const s = atob(str), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; } };
+  function packBlobs(blobs, ops) { const used = {}; for (const o of ops) if (o.op === 'img') used[o.sha] = b64.enc(blobs.get(o.sha)); return used; }
+  function unpackBlobs(obj) { const m = new Map(); for (const sha of Object.keys(obj || {})) { const u = b64.dec(obj[sha]); if (S.sha256(u) !== sha) throw new Error('blob sha mismatch for ' + sha.slice(0, 12)); m.set(sha, u); } return m; }
+  const api = { apply, fit, b64, packBlobs, unpackBlobs };
+  if (node) module.exports = api; else root.ImgOps = api;
+})(this);
+
+;
+/* ===== editor/history_ops.js ===== */
+// History for the editor log: amend (re-edit a past stroke), labels, share-as-link, fingerprint. Spec: witness_log/HYPOTHESES.md "Level 1b" (A1-A3, R1-R2, V1, L1-L2).
+(function (root) {
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, IO = node ? require('./img_ops.js') : root.ImgOps;
+  const KEYS = { hard: ['c', 'a', 'r'], soft: ['c', 'a', 'r'], erase: ['c', 'a', 'r'], blur: ['s', 'r'], smudge: ['s', 'r'] };
+  const inR = (v, lo, hi, loEx) => typeof v === 'number' && isFinite(v) && (loEx ? v > lo : v >= lo) && v <= hi;
+  function checkSet(t, set) {
+    const k = t.op === 'smudge' ? 'smudge' : t.kind; if (!KEYS[k]) throw new Error('amend: target kind ' + k + ' cannot be amended');
+    if (!set || typeof set !== 'object' || !Object.keys(set).length) throw new Error('amend: empty set');
+    for (const key of Object.keys(set)) { if (!KEYS[k].includes(key)) throw new Error('amend: key "' + key + '" not allowed for ' + k); const v = set[key];
+      if (key === 'c' && !(Array.isArray(v) && v.length === 3 && v.every((x) => inR(x, 0, 1)))) throw new Error('amend: c must be 3 numbers in [0,1]');
+      if (key === 'a' && !inR(v, 0, 1, true)) throw new Error('amend: a must be in (0,1]'); if (key === 's' && !inR(v, 0, 1, true)) throw new Error('amend: s must be in (0,1]'); if (key === 'r' && !inR(v, 1, 200)) throw new Error('amend: r must be in [1,200]'); }
+  }
+  // pure: returns the list with every amended target replaced by {...target, ...merged sets}; amend entries stay (they are no-ops when folded)
+  function expand(list) {
+    const patch = new Map();
+    list.forEach((o, idx) => { if (o.op !== 'amend') return; if (!Number.isInteger(o.i) || o.i < 0 || o.i >= idx) throw new Error('amend: target index ' + o.i + ' must be an earlier entry'); const t = list[o.i]; if (!t || (t.op !== 'stroke' && t.op !== 'smudge')) throw new Error('amend: entry ' + o.i + ' is not a stroke or smudge'); checkSet(t, o.set); patch.set(o.i, { ...(patch.get(o.i) || {}), ...o.set }); });
+    return patch.size ? list.map((o, i) => (patch.has(i) ? { ...o, ...patch.get(i) } : o)) : list;
+  }
+  const apply = (st, o) => o.op === 'amend';
+  const pct = (v) => Math.round(v * 100) + '%', hex = (c) => '#' + c.map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+  function label(o) {
+    switch (o.op) {
+      case 'layer': return o.id === 0 ? 'Background layer' : 'Add layer ' + o.id; case 'fill': return 'Fill layer ' + o.layer; case 'set': return 'Layer ' + o.layer + (o.opacity !== undefined ? ' opacity ' + pct(o.opacity) : '') + (o.mode ? ' mode ' + o.mode : '');
+      case 'stroke': return ({ hard: 'Hard brush', soft: 'Soft brush', erase: 'Eraser', blur: 'Blur brush' })[o.kind] + ' on layer ' + o.layer + ', size ' + o.r + (o.c && o.kind !== 'blur' && o.kind !== 'erase' ? ', ' + hex(o.c) : '') + ', ' + o.pts.length + ' pts';
+      case 'smudge': return 'Smudge on layer ' + o.layer + ', size ' + o.r + ', ' + o.pts.length + ' pts'; case 'blur': return 'Blur layer ' + o.layer;
+      case 'del': return 'Delete layer ' + o.layer; case 'mv': return 'Move layer ' + o.layer + ' to ' + o.to; case 'vis': return (o.v ? 'Show' : 'Hide') + ' layer ' + o.layer; case 'name': return 'Rename layer ' + o.layer + ' to ' + o.name;
+      case 'sel': return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
+      case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
+  }
+  const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
+  const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
+  async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
+  async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
+  async function parseLink(hash) {
+    const m = /^#v1=([A-Za-z0-9_-]+)&h=([0-9a-f]{16})$/.exec(hash || ''); if (!m) throw new Error('not a painting link');
+    let j; try { j = JSON.parse(new TextDecoder().decode(await pipe(b64u.dec(m[1]), DecompressionStream))); } catch (e) { throw new Error('the link is damaged'); }
+    if (!j || !Array.isArray(j.ops) || !Number.isInteger(j.W)) throw new Error('the link is damaged'); if (head(j.ops).slice(0, 16) !== m[2]) throw new Error('the link was altered (fingerprint mismatch)'); return j;
+  }
+  const api = { expand, apply, label, head, makeLink, parseLink, checkSet };
+  if (node) module.exports = api; else root.HistoryOps = api;
+})(this);
+
+;
 /* ===== editor/editor.js ===== */
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const applyOp = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    let st, D, ops, undo, redo, cur = null; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
-    function paintTiles(list) { const back = D.back, d = tileImg.data;
+    function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
         for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) { const p = ((ty * T + y) * W + tx * T + x) * 4, o = (y * T + x) * 4, a = back[p + 3];
           if (a > 0) { d[o] = q(F(back[p] / a)); d[o + 1] = q(F(back[p + 1] / a)); d[o + 2] = q(F(back[p + 2] / a)); } else d[o] = d[o + 1] = d[o + 2] = 0; d[o + 3] = q(a); }
         ctx.putImageData(tileImg, tx * T, ty * T); } }
     const allTiles = () => Array.from({ length: tn * tn }, (_, i) => i);
-    function build(list) { st = S.newState(W); ops = []; undo = []; redo = []; cur = null; for (const o of list) { applyOp(st, o); ops.push(o); } D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
+    function build(list) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
     const initial = () => [{ op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false }, { op: 'fill', layer: 0, c: [1, 1, 1], a: 1 }, { op: 'layer', id: 1, mode: 'normal', opacity: 1, mask: false }];
     function regionCopy(layer, b) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * 4); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * 4, (y * W + x1 + 1) * 4), (y - y0) * w * 4); return out; }
     function regionPut(layer, b, data) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * 4, (y - y0 + 1) * w * 4), (y * W + x0) * 4); }
     const tilesOfBox = (b) => { const set = new Set(); for (let ty = Math.floor(b[1] / T); ty <= Math.floor(b[3] / T); ty++) for (let tx = Math.floor(b[0] / T); tx <= Math.floor(b[2] / T); tx++) set.add(ty * tn + tx); return [...set]; };
     function refresh(list) { for (const t of list) D.renderTile(t); paintTiles(list); }
     // time-sliced drawing for expensive brushes: apply queued dabs within a budget, show them, continue next frame; end() flushes the rest
-    function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) for (const t of tilesOfBox(Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W))) set.add(t); if (set.size) refresh([...set]); }
+    function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
     function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
+    // history: full refold keeping the undo/redo stacks (used after an amend and by 'rebuild' entries)
+    function rebuildKeep() { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
+    const scratch = () => { const s2 = S.newState(W); s2.blobs = blobs; return { st: s2, D: root.Dirty.makeDirty(s2) }; };
+    const isPix = (o) => o.op === 'stroke' || o.op === 'smudge', quiet = (o) => o.op === 'sel' || o.op === 'name' || o.op === 'amend';
+    function stepScratch(sc, o, acc) { applyOp(sc.st, o); if (quiet(o)) return; if (isPix(o)) for (const t of tilesOfBox(Br.bbox(o, W))) { sc.D.renderTile(t); acc.add(t); } else { sc.D.full(); for (const t of allTiles()) acc.add(t); } }
     const ed = {
       W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
-      reset() { build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
-      layers() { return st.order.map((id) => ({ id, mode: st.L[id].mode, opacity: st.L[id].opacity })); },
+      reset() { blobs.clear(); build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
+      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l) }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
-      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (!l || cur) return;
+      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (prevw || replaying || readOnly) return;
+        if (p.tool === 'select') { if (!cur) { cur = { selDrag: [x, y], pv: null }; emit(); } return; }
+        if (!l || cur || l.hid) return;
         const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);
         const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : p.tool === 'blur' ? { op: 'stroke', layer: p.layer, kind: 'blur', pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
-        cur = { o, snap, last: null, tiles: new Set(), box: null };
-        if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(l, W, o); } else cur.sb = Br.StrokeBuilder(st, o);
+        const sel = st.sel ? SO.shadow(st, p.layer) : null; cur = { o, snap, last: null, tiles: new Set(), box: null, sel };
+        if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(sel ? sel.sh : l, W, o); } else cur.sb = Br.StrokeBuilder(sel ? sel.shSt : st, o);
         ed.move(x, y, true); },
-      move(x, y, first) { if (!cur) return; x = r2(x); y = r2(y); const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
+      move(x, y, first) { if (!cur) return; x = r2(x); y = r2(y); if (cur.selDrag) { cur.pv = [x, y]; emit(); return; } const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
         const sliced = !!cur.sb && !!cur.sb.queue, planned = cur.o.op === 'smudge' ? cur.pb.push(x, y) : sliced ? cur.sb.queue(x, y) : cur.sb.push(x, y);
-        for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
+        for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel && !sliced) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, b); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
         if (sliced) { drainSlice(6); cur.maxPending = Math.max(cur.maxPending || 0, cur.sb.pending()); if (cur.sb.pending() && !cur.raf) cur.raf = requestAnimationFrame(frame); } else if (cur.tiles.size) { refresh([...cur.tiles]); cur.tiles.clear(); }
         if (!first) moveMs.push(performance.now() - t0); },
-      end() { if (!cur) return; if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
+      end() { if (!cur) return; if (cur.selDrag) { const d = cur; cur = null; if (d.pv) ed.commitSelDrag(d.selDrag, d.pv); else emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
         const b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * 4); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * 4, (y * W + b[2] + 1) * 4), (y - b[1]) * sw * 4);
         ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o }); redo = []; emit(); },
       get busy() { return !!cur; },
-      cancel() { if (!cur) return; if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
-      addLayer() { const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
-      setLayer(id, field, value) { const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? l.opacity : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') l.opacity = prev; else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
-      undo() { if (!ed.canUndo()) return; const e = undo.pop(); ops.pop(); redo.push(e);
-        if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); } emit(); },
-      redo() { if (!ed.canRedo()) return; const e = redo.pop(); if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); D.full(); paintTiles(allTiles()); } ops.push(e.op); undo.push(e); emit(); },
-      save() { return JSON.stringify({ format: 'psd-oplog-editor', v: 1, W, ops }); },
-      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); build(j.ops); },
+      cancel() { if (!cur) return; if (cur.selDrag) { cur = null; emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
+      addLayer() { if (prevw || replaying || readOnly) return; const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
+      setLayer(id, field, value) { if (prevw || replaying || readOnly) return; const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? (l.hid ? l.keep : l.opacity) : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') { if (l.hid) l.keep = prev; else l.opacity = prev; } else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
+      structural(o, inv) { if (prevw || replaying || readOnly) return; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv }); redo = []; if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); emit(); },
+      delLayer(id) { const l = st.L[id], oi = st.order.indexOf(id), ri = st.root.indexOf(id); ed.structural({ op: 'del', layer: id }, () => { st.L[id] = l; st.order.splice(oi, 0, id); st.root.splice(ri, 0, id); }); },
+      moveLayer(id, to) { const from = st.order.indexOf(id); ed.structural({ op: 'mv', layer: id, to }, () => applyOp(st, { op: 'mv', layer: id, to: from })); },
+      hideLayer(id, hide) { const v = !hide; ed.structural({ op: 'vis', layer: id, v }, () => applyOp(st, { op: 'vis', layer: id, v: !v })); },
+      renameLayer(id, name) { const l = st.L[id], prev = l.name; ed.structural({ op: 'name', layer: id, name }, () => { if (prev === undefined) delete l.name; else l.name = prev; }); },
+      get selPreview() { return cur && cur.selDrag && cur.pv ? [cur.selDrag, cur.pv] : null; },
+      selOp(o) { if (prevw || replaying || readOnly) return; const prev = st.sel; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', noPix: true, op: o, inv() { st.sel = prev; } }); redo = []; emit(); },
+      select(kind, x0, y0, x1, y1) { ed.selOp({ op: 'sel', kind, x0, y0, x1, y1 }); }, invertSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'invert' }); }, clearSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'none' }); },
+      commitSelDrag(a, b) { const c = (v) => Math.max(0, Math.min(W, v)), x0 = c(Math.floor(Math.min(a[0], b[0]))), x1 = c(Math.ceil(Math.max(a[0], b[0]))), y0 = c(Math.floor(Math.min(a[1], b[1]))), y1 = c(Math.ceil(Math.max(a[1], b[1])));
+        if (x1 - x0 < 2 || y1 - y0 < 2) ed.clearSel(); else ed.select(params.selShape === 'ellipse' ? 'ellipse' : 'rect', x0, y0, x1, y1); emit(); },
+      get previewing() { return prevw ? prevw.k : null; }, get replaying() { return !!replaying; }, get readOnly() { return readOnly; }, set readOnly(v) { readOnly = !!v; emit(); },
+      amend(i, set) { if (prevw || replaying || readOnly) return; const o = { op: 'amend', i, set }; HO.expand([...ops, o]); undo = undo.map((e) => ({ kind: 'rebuild', op: e.op })); ops.push(o); undo.push({ kind: 'rebuild', op: o }); redo = []; rebuildKeep(); emit(); },
+      preview(k) { if (replaying) return; k = Math.max(3, Math.min(ops.length, k)); const sc = scratch(), ex = HO.expand(ops.slice(0, k)); for (let i = 0; i < k; i++) applyOp(sc.st, ex[i]); sc.D.full(); paintTiles(allTiles(), sc.D); prevw = { k, sc }; emit(); return { k, comp: S.hashF32(S.composite(sc.st)), layers: Object.keys(sc.st.L).map((id) => S.hashF32(sc.st.L[id].pix)) }; },
+      endPreview() { if (!prevw) return; prevw = null; paintTiles(allTiles()); emit(); },
+      replay(opt = {}) { if (replaying) return replaying; prevw = null; const total = Math.max(2000, Math.min(8000, opt.totalMs || 6000)), ex = HO.expand(ops), n = ex.length, sc = scratch(), msPer = total / Math.max(1, n - 3), t0 = performance.now(); let i = 0, stopped = false, raf = 0;
+        for (; i < 3 && i < n; i++) applyOp(sc.st, ex[i]); sc.D.full(); paintTiles(allTiles(), sc.D);
+        const ctl = { stop() { stopped = true; }, done: null }; ctl.done = new Promise((res) => { const finish = () => { cancelAnimationFrame(raf); const r = { finished: i >= n && !stopped, steps: i, n, ms: performance.now() - t0, comp: S.hashF32(S.composite(sc.st)), layers: Object.keys(sc.st.L).map((id) => S.hashF32(sc.st.L[id].pix)) }; replaying = null; paintTiles(allTiles()); ed.lastReplay = r; emit(); res(r); };
+          const frame = () => { if (stopped) return finish(); const target = Math.min(n, 3 + Math.floor((performance.now() - t0) / msPer)), acc = new Set(); while (i < target) stepScratch(sc, ex[i++], acc); if (acc.size) paintTiles([...acc], sc.D); emit(); if (i >= n) return finish(); raf = requestAnimationFrame(frame); }; raf = requestAnimationFrame(frame); });
+        replaying = ctl; ctl.progress = () => i; emit(); return ctl; },
+      verify() { const t0 = performance.now(), r = refold(ops, W, blobs), a = ed.hashes(), head = HO.head(ops); return { ok: r.comp === a.comp && JSON.stringify(r.layers) === JSON.stringify(a.layers), head, fp: head.slice(0, 12), comp: a.comp, n: ops.length, ms: performance.now() - t0 }; },
+      undo() { if (!ed.canUndo() || prevw || replaying || readOnly) return; const e = undo.pop(); ops.pop(); redo.push(e); if (e.kind === 'rebuild') { rebuildKeep(); emit(); return; }
+        if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
+      redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
+      save() { const j = { format: 'psd-oplog-editor', v: 1, W, ops }; if (ed.hasBlobs()) j.blobs = IO.packBlobs(blobs, ops); return JSON.stringify(j); },
+      hasBlobs: () => ops.some((o) => o.op === 'img'), get blobs() { return blobs; },
+      importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = Math.max(...st.order) + 1; blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
+      load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); build(j.ops); },
       hashes() { return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; },
       displayRGBA8(x, y) { const p = (y * W + x) * 4, b = D.back, a = b[p + 3]; return a > 0 ? [q(F(b[p] / a)), q(F(b[p + 1] / a)), q(F(b[p + 2] / a)), q(a)] : [0, 0, 0, q(a)]; },
     };
     ed.reset(); return ed;
   }
   // pure refold of an op list (no UI): hashes of the result
-  function refold(list, W) { const st = S.newState(W || 1024); for (const o of list) applyOp(st, o); return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; }
+  function refold(list, W, blobs) { const st = S.newState(W || 1024); st.blobs = blobs || new Map(); for (const o of HO.expand(list)) applyOp(st, o); return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; }
   root.Editor = { createEditor, refold, applyOp };
 })(this);
