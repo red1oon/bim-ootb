@@ -25,6 +25,7 @@ function exportPsd(ops, ctx, opts = {}) {
     if (l.clip) child.clipping = true; if (l.mask) child.mask = maskData(l.mask); return child;
   };
   const mkAdjust = (id) => { const a = f.st.A[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
+      : a.kind === 'hsl' ? { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: P.hue, saturation: P.sat, lightness: P.light } }
       : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) }
       : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };
     const am = opts.meta && opts.meta[id], c = { name: am ? am.name : 'Adjustment ' + id, ...(am && am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(a.opacity), adjustment: adj }; if (a.mask) c.mask = maskData(a.mask); return c; };

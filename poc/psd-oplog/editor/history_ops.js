@@ -21,7 +21,7 @@
   function label(o) {
     switch (o.op) {
       case 'layer': return o.id === 0 ? 'Background layer' : 'Add layer ' + o.id; case 'fill': return 'Fill layer ' + o.layer; case 'set': return 'Layer ' + o.layer + (o.opacity !== undefined ? ' opacity ' + pct(o.opacity) : '') + (o.mode ? ' mode ' + o.mode : '');
-      case 'adjust': return 'Add ' + o.kind + ' adjustment ' + o.id; case 'adjset': { const AJ = node ? require('./adjust_ops.js') : root.AdjustOps, P = o.params, kind = P.points ? 'curves' : P.in_black !== undefined ? 'levels' : P.level !== undefined ? 'threshold' : P.levels !== undefined ? 'posterize' : 'invert'; return AJ.label(o, kind); }
+      case 'adjust': return 'Add ' + o.kind + ' adjustment ' + o.id; case 'adjset': { const AJ = node ? require('./adjust_ops.js') : root.AdjustOps, P = o.params, kind = P.points ? 'curves' : P.hue !== undefined ? 'hsl' : P.in_black !== undefined ? 'levels' : P.level !== undefined ? 'threshold' : P.levels !== undefined ? 'posterize' : 'invert'; return AJ.label(o, kind); }
       case 'group': return 'Add group ' + o.id; case 'ungroup': return 'Ungroup group ' + o.group; case 'parent': return o.group >= 0 ? 'Move layer ' + o.layer + ' into group ' + o.group : 'Move layer ' + o.layer + ' out of its group';
       case 'clip': return (o.v ? 'Clip layer ' + o.layer + ' to the layer below' : 'Release clipping of layer ' + o.layer);
       case 'mask': return ({ add: 'Add mask to', delete: 'Delete mask of', invert: 'Invert mask of', apply: 'Apply mask of', sel: 'Mask from selection for' })[o.kind] + ' layer ' + o.layer;

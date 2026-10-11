@@ -104,7 +104,7 @@
     return sum * pow2int(n);
   }
   // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
-  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves'];
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
   // natural cubic spline through integer control points ([x,y] in 0..255), double precision with + - * / only; constant outside [x_first, x_last]; result clipped to [0,1]
   function curveFn(points) {
     const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), M = new Array(n).fill(0);
@@ -123,12 +123,25 @@
     if (kind === 'posterize') { const n = p.levels, f = F(255 / 256); return (c) => { const q = Math.floor(F(F(c * f) * n)); return F(Math.min(q, n - 1) / (n - 1)); }; }
     throw new Error('adjustment kind ' + kind);
   }
+  // hue / saturation / lightness on a straight colour (Level 2f definition in HYPOTHESES.md); float32, + - * / min max floor only; {0,0,0} returns the input
+  function hslRGB(c0, c1, c2, P) {
+    if (!P.hue && !P.sat && !P.light) return [c0, c1, c2];
+    const mx = Math.max(c0, c1, c2), mn = Math.min(c0, c1, c2), d = F(mx - mn); let l = F(F(mx + mn) / 2), s = 0, h = 0;
+    if (d > 0) { const den = F(1 - Math.abs(F(F(2 * l) - 1))); s = den > 0 ? F(d / den) : 0; if (s > 1) s = 1;
+      if (mx === c0) { h = F(F(c1 - c2) / d); if (h < 0) h = F(h + 6); } else if (mx === c1) h = F(F(F(c2 - c0) / d) + 2); else h = F(F(F(c0 - c1) / d) + 4); h = F(h / 6);
+      h = F(h + F(P.hue / 360)); h = F(h - Math.floor(h)); }
+    const sp = P.sat >= 0 ? F(s + F(F(1 - s) * F(P.sat / 100))) : F(s * F(1 + F(P.sat / 100))), lp = P.light >= 0 ? F(l + F(F(1 - l) * F(P.light / 100))) : F(l * F(1 + F(P.light / 100)));
+    if (d <= 0) { const g = lp < 0 ? 0 : lp > 1 ? 1 : lp; return [g, g, g]; }
+    const cc = F(F(1 - Math.abs(F(F(2 * lp) - 1))) * sp), h6 = F(h * 6), sec = Math.min(Math.floor(h6), 5), x = F(cc * F(1 - Math.abs(F(F(h6 - 2 * Math.floor(F(h6 / 2))) - 1)))), m = F(lp - F(cc / 2));
+    const t = [[cc, x, 0], [x, cc, 0], [0, cc, x], [0, x, cc], [x, 0, cc], [cc, 0, x]][sec], q = (v) => { v = F(v + m); return v < 0 ? 0 : v > 1 ? 1 : v; };
+    return [q(t[0]), q(t[1]), q(t[2])];
+  }
   function applyAdjust(back, a, n) {
-    const rgb = a.kind === 'threshold' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
+    const rgb = a.kind === 'threshold' || a.kind === 'hsl' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
     for (let i = 0; i < n; i++) {
       const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
       const c0 = F(back[i*4] / al), c1 = F(back[i*4+1] / al), c2 = F(back[i*4+2] / al); let o0, o1, o2;
-      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
+      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
       const ik = F(1 - k); back[i*4] = F(al * (k >= 1 ? o0 : F(F(c0 * ik) + F(o0 * k)))); back[i*4+1] = F(al * (k >= 1 ? o1 : F(F(c1 * ik) + F(o1 * k)))); back[i*4+2] = F(al * (k >= 1 ? o2 : F(F(c2 * ik) + F(o2 * k))));
     }
   }
