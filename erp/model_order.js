@@ -45,7 +45,21 @@
   }
 
   // MOrder.beforeSave :1202-1203 `if (getC_DocType_ID() == 0) setC_DocType_ID(0)` — stored as 0, not NULL
-  ML.registerModel('c_order', { beforeSave: function (trx, o) { if (!nz(o.c_doctype_id)) o.c_doctype_id = 0; return null; } });
+  // MOrder.beforeSave :1282-1291 default price list, then setM_PriceList_ID :908-917 (Currency + IsTaxIncluded follow the list). ONE implementation of the choice: ERPEngine.orderPriceListDefault
+  // (pure; the same function the bim-compiler twin runs). No active list of the order's SO/PO kind => legacy NPE "pl is null" => the save is refused.
+  function engineMod() { return (typeof module !== 'undefined' && module.exports) ? require('./erp_engine') : (typeof window !== 'undefined' ? window.ERPEngine : globalThis.ERPEngine); }
+  ML.registerModel('c_order', { beforeSave: function (trx, o) {
+    if (!nz(o.c_doctype_id)) o.c_doctype_id = 0;
+    if (!nz(o.m_pricelist_id)) {
+      var EE = engineMod(); if (!EE || typeof EE.orderPriceListDefault !== 'function') { if (trx.say) trx.say('§MODEL-UNPORTED-DEP MOrder.beforeSave:1282-1291 needs erp_engine.orderPriceListDefault, not loaded on this host'); return null; }
+      var client = nz(o.ad_client_id) ? o.ad_client_id : trx.env.client;
+      var r = EE.orderPriceListDefault({ m_pricelist_id: 0, issotrx: o.issotrx, ad_client_id: client }, trx.q('SELECT m_pricelist_id, issopricelist, isactive, isdefault, ad_client_id FROM m_pricelist WHERE ad_client_id=?', [client]));
+      if (!r.ok) return r.msg;
+      var pl = trx.get('m_pricelist', r.m_pricelist_id);
+      o.m_pricelist_id = r.m_pricelist_id; if (pl) { o.c_currency_id = pl.c_currency_id; o.istaxincluded = pl.istaxincluded; }
+    }
+    return null;
+  } });
 
   // ══ MOrderLine — beforeSave (LineNetAmt) + afterSave :967-985 → recalculateTax → updateHeaderTax :1070 ═════════
   ML.registerModel('c_orderline', {

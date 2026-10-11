@@ -449,8 +449,6 @@ function completeMovement(movement, lines, opts) {
 //   invoice = { c_invoice_id, grandtotal, issotrx ('Y' default), iscreditmemo, allocatedamt (the RAW SIGNED sum of the invoice's existing active allocation lines, AP negative — MInvoice.getAllocatedAmt :1393; default 0), dateacct }   opts = { newId() }
 function completePayment(pay, invoice, opts) {
   var c = function (v) { return Math.round(Number(v || 0) * 100); };
-  // MPayment.prepareIt:1917-1923: MPeriod.isOpen(DateAcct, ARR|APP, org) else "@PeriodClosed@" (Invalid) -- Implementing prompts/SQLiteIDEMPIERE.md §SHOPDAY-RUN-2 R2.5/SD-23 -- Witness: SD-23c
-  if (opts && opts.periodOpen && !opts.periodOpen.ok) return { ok: false, reason: 'PeriodClosed' };
   var ops = [{ op_type: 'SET_STATUS', table: 'C_Payment', id: pay.c_payment_id, doc_status: 'CO' }];
   if (!pay.c_invoice_id) return { ok: true, ops: ops };                        // payment-selection / order / multi-allocation paths not ported (stated)
   if (!invoice) return { ok: false, reason: 'invoice not found' };
@@ -751,8 +749,6 @@ function invoiceOrderLineEffects(invoice, iLines, orderLines) {
 // io = { m_inout_id, issotrx, movementtype, docstatus, reversal_id }; lines [{m_inoutline_id, m_product_id, movementqty, c_orderline_id, m_locator_id}]; opts = { orderLines, newId(table) }
 function completeInOut(io, lines, opts) {
   opts = opts || {};
-  // MInOut.prepareIt:1453-1457: MPeriod.isOpen(DateAcct, MMS|MMR, org) else "@PeriodClosed@" -- Implementing prompts/SQLiteIDEMPIERE.md §SHOPDAY-RUN-2 R2.5/SD-23 -- Witness: SD-23b
-  if (opts.periodOpen && !opts.periodOpen.ok) return { ok: false, reason: 'PeriodClosed' };
   if (io.docstatus && io.docstatus !== 'DR' && io.docstatus !== 'IP') return { ok: false, reason: 'not-open', docstatus: io.docstatus };
   if (!lines || !lines.length) return { ok: false, reason: 'NoLines' };
   var out = String(io.movementtype).charAt(1) === '-', ops = [];
