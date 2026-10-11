@@ -653,6 +653,20 @@ function priceAt(rows, date) {
   return null;
 }
 
+// orderPriceListDefault — MOrder.beforeSave:1282-1291 (@{u} org.compiere.model). Implementing prompts/SQLiteIDEMPIERE.md §SHOPDAY-RUN-2 R2.4 (G-SD6) — Witness: W-SHOPDAY-RUN2 + SD-12z.
+// An order WITHOUT a price list takes the client's first ACTIVE price list whose IsSOPriceList equals the order's IsSOTrx, ORDER BY IsDefault DESC (ties: the database's order = lowest id here).
+// DB.getSQLValueEx returns -1 when no row matches, and `ii != 0` lets -1 through to MOrder.setM_PriceList_ID (:908-917), whose MPriceList.get(ctx,-1) is null => NullPointerException "pl is null"
+// => the save is refused. So "no such list" is a REFUSAL (legacy's text is a Java NPE; the reason here is the clear one). An explicit price list is kept as is.
+// order = { m_pricelist_id, issotrx ('Y'|'N'), ad_client_id }, lists = [{ m_pricelist_id, issopricelist, isactive, isdefault, ad_client_id }] -> { ok, m_pricelist_id } | { ok:false, reason, msg }
+function orderPriceListDefault(order, lists) {
+  if (Number(order.m_pricelist_id) > 0) return { ok: true, m_pricelist_id: Number(order.m_pricelist_id), explicit: true };
+  var want = String(order.issotrx) === 'Y' ? 'Y' : 'N';
+  var c = (lists || []).filter(function (l) { return String(l.isactive) === 'Y' && String(l.issopricelist) === want && (order.ad_client_id == null || Number(l.ad_client_id) === Number(order.ad_client_id)); })
+    .sort(function (a, b) { return (String(b.isdefault) === 'Y' ? 1 : 0) - (String(a.isdefault) === 'Y' ? 1 : 0) || Number(a.m_pricelist_id) - Number(b.m_pricelist_id); });
+  if (!c.length) return { ok: false, reason: 'no-price-list', msg: 'No active ' + (want === 'Y' ? 'sales' : 'purchase') + ' price list for the client (legacy: NullPointerException "pl is null", MOrder.java:910-911)' };
+  return { ok: true, m_pricelist_id: Number(c[0].m_pricelist_id), explicit: false };
+}
+
 // creditCheckOrder — the SO credit gate of MOrder.prepareIt. Implementing prompts/SQLiteIDEMPIERE.md §36 (S13, fix F5) — Witness: M3 S13a/b/c.
 // Port of CreditManagerOrder.checkCreditStatus (CreditManagerOrder.java:48-98) + MBPartner.getSOCreditStatus(additionalAmt) (MBPartner.java:826-850).
 //   order = { issotrx, docsubtypeso, paymentrule, grandtotal (base currency) }, bp = { socreditstatus, so_creditlimit, totalopenbalance },
@@ -1284,7 +1298,7 @@ function completeReceipt(receipt, lines, policy) {
 return {
   completeCash: completeCash, completeJournal: completeJournal, completeBankStatement: completeBankStatement, completeProjectIssue: completeProjectIssue, completeDDOrder: completeDDOrder, prepareRequisition: prepareRequisition, matchFromInvoice: matchFromInvoice, completeInOut: completeInOut, reverseInOut: reverseInOut, reverseInvoice: reverseInvoice, bpOpenBalance: bpOpenBalance, orderReserve: orderReserve, inoutOrderLineEffects: inoutOrderLineEffects, invoiceOrderLineEffects: invoiceOrderLineEffects,
   faRegisterAsset: faRegisterAsset, faCompleteAddition: faCompleteAddition, faBuildDepreciation: faBuildDepreciation, faCompleteDepreciationEntry: faCompleteDepreciationEntry, faCompleteDisposal: faCompleteDisposal, faCompleteReval: faCompleteReval, faMonthEnd: _faMonthEnd,
-  resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
+  resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
   match: match, buildDoc: buildDoc, DOC_SPECS: DOC_SPECS, explodeBOM: explodeBOM,
   movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting,
   VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt,

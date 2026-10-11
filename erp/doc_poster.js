@@ -386,10 +386,52 @@ function _fxConvertCents(db, cents, curFrom, schema, dateAcct, client, org, abse
   if (rate == null) { absent.push('NoCurrencyConversion ' + curFrom + '->' + as.c_currency_id); return null; }
   var r = _bigDec(rate); return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k)));
 }
-function _poLineCost(db, ol, absent) {   // order line PriceCost, else PriceActual; tax corrections not ported (named)
-  var price = ol.pricecost != null && Number(ol.pricecost) !== 0 ? ol.pricecost : ol.priceactual;
-  if (num(ol.c_tax_id)) { var t = getRow(db, 'SELECT rate FROM c_tax WHERE c_tax_id=?', num(ol.c_tax_id)); if (!t) { absent.push('c_tax#' + ol.c_tax_id); return null; } if (Number(t.rate) !== 0) { absent.push('tax-corrected purchase cost not ported (Doc_InOut.java:719-783)'); return null; } }
-  return price;
+// MTax.calculateTax (MTax.java:340-367) on scaled integers: amt12 = amount at scale 12, returns the tax at `scale`. Summary => the sum over its active child taxes (a summary parent has rate 0 => isZeroTax first).
+function _mtaxCalc(t, kids, amt12, incl, scale) {
+  if (Number(t.rate) === 0) return 0n;
+  var list = String(t.issummary) === 'Y' ? kids : [t], tax = 0n, P = 10n ** 12n;
+  list.forEach(function (c) {
+    var m12 = _rhuB(_scaleTo(_bigDec(c.rate), 12), 100n);                                   // Rate / 100, scale 12 HALF_UP
+    if (!incl) tax += _rhuB(amt12 * m12, 10n ** BigInt(24 - scale));                         // amount x multiplier, setScale(scale, HALF_UP)
+    else { var base12 = _rhuB(amt12 * P, m12 + P); tax += _rhuB(amt12 - base12, 10n ** BigInt(12 - scale)); }   // amount - amount/(1+m)
+  });
+  return tax;
+}
+// Doc_InOut.createFacts:719-783 (@{u} org.compiere.acct): the per-unit receipt cost of an order line = PriceCost, else PriceActual corrected for tax: included tax is taken OUT unless the tax is
+// distributed with the line item (TaxPostingIndicator '1'); an excluded tax is ADDED only when distributed (calculated at scale 12, not rounded to the currency before x Qty). Returns a decimal string.
+function _poLineCost(db, ol, absent) {
+  var hasCost = ol.pricecost != null && Number(ol.pricecost) !== 0, price = hasCost ? ol.pricecost : ol.priceactual;
+  if (hasCost || !num(ol.c_tax_id)) return price;
+  var t = getRow(db, 'SELECT * FROM c_tax WHERE c_tax_id=?', num(ol.c_tax_id)); if (!t) { absent.push('c_tax#' + ol.c_tax_id); return null; }
+  var dist = function (x) { return String(x.taxpostingindicator) === '1'; };
+  // MTax.getChildTaxes:254-259: parent_tax_id=?, setOnlyActiveRecords(true), setClient_ID() (the line's client)
+  var kidSql = "SELECT * FROM c_tax WHERE parent_tax_id=?", kidArgs = [num(ol.c_tax_id)];
+  if (_hasCol(db, 'c_tax', 'isactive')) kidSql += " AND isactive='Y'";
+  if (_hasCol(db, 'c_tax', 'ad_client_id') && ol.ad_client_id != null) { kidSql += ' AND ad_client_id=?'; kidArgs.push(num(ol.ad_client_id)); }
+  var kids = String(t.issummary) === 'Y' ? allRows(db, kidSql, kidArgs) : [];
+  // MOrderLine.isTaxIncluded:697-707 -- ONLY the order's price list (IsTaxIncluded); no price list / no row => legacy NPE => refused (absent), never a guessed flag
+  var o = num(ol.c_order_id) ? getRow(db, 'SELECT m_pricelist_id, c_currency_id FROM c_order WHERE c_order_id=?', num(ol.c_order_id)) : null;
+  if (!o || !num(o.m_pricelist_id) || !_hasCol(db, 'm_pricelist', 'istaxincluded')) { absent.push('order price list (MOrderLine.isTaxIncluded:697-707)'); return null; }
+  var pl = getRow(db, 'SELECT istaxincluded FROM m_pricelist WHERE m_pricelist_id=?', num(o.m_pricelist_id));
+  if (!pl) { absent.push('m_pricelist#' + o.m_pricelist_id); return null; }
+  var incl = String(pl.istaxincluded) === 'Y';
+  // Doc_InOut:727 MCurrency.getStdPrecision(orderLine.getC_Currency_ID()) -- no currency / no precision => absent (no invented 2)
+  var cur = ol.c_currency_id != null ? ol.c_currency_id : (ol.ocur != null ? ol.ocur : o.c_currency_id);
+  var sp = cur != null && _hasCol(db, 'c_currency', 'stdprecision') ? getRow(db, 'SELECT stdprecision AS p FROM c_currency WHERE c_currency_id=?', num(cur)) : null;
+  if (!sp || sp.p == null) { absent.push('currency std precision (c_currency#' + cur + ')'); return null; }
+  var std = num(sp.p), up = function (x, sc) { return x * 10n ** BigInt(12 - sc); }, costs = _scaleTo(_bigDec(price), 12);
+  if (incl) {
+    if (Number(t.rate) !== 0) {
+      var costTax = up(_mtaxCalc(t, kids, costs, true, std), std);
+      if (String(t.issummary) === 'Y') {
+        var sub = kids.filter(function (c) { return !dist(c); });
+        if (sub.length) { var base = costs - costTax; sub.forEach(function (c) { costs -= up(_mtaxCalc(c, [], base, false, std), std); }); }
+      } else if (!dist(t)) costs -= costTax;
+    }
+  } else if (String(t.issummary) === 'Y') {
+    var base0 = costs; kids.forEach(function (c) { if (dist(c)) costs += _mtaxCalc(c, [], base0, false, 12); });
+  } else if (dist(t)) costs += _mtaxCalc(t, [], costs, false, 12);
+  return _fmtDec(costs, 12);
 }
 function deriveReceipt(db, R, ioId, schema) {
   var hdr = getRow(db, 'SELECT * FROM m_inout WHERE m_inout_id=?', num(ioId));
@@ -466,13 +508,13 @@ function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost v
   var mp = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(matchPOId)); if (!mp || !num(mp.m_inoutline_id)) return { updates: [], absent: [] };
   var ol = getRow(db, 'SELECT ol.*, o.c_currency_id AS ocur, o.ad_client_id AS oclient, o.ad_org_id AS oorg FROM c_orderline ol LEFT JOIN c_order o ON o.c_order_id=ol.c_order_id WHERE ol.c_orderline_id=?', num(mp.c_orderline_id)); if (!ol) return { updates: [], absent: [] };
   var io = getRow(db, 'SELECT h.dateacct, h.ad_client_id, h.ad_org_id FROM m_inoutline l JOIN m_inout h ON h.m_inout_id=l.m_inout_id WHERE l.m_inoutline_id=?', num(mp.m_inoutline_id));
-  var out = [], absent = [];
+  var out = [], absent = [], poPrice, poPriceDone = false;   // _poLineCost does not depend on the schema: once per order line
   _activeSchemas(db, true).forEach(function (sc) {
     if (costingMethodOf(db, mp.m_product_id, sc.id) !== 'A') return;
     var el = getRow(db, "SELECT m_costelement_id FROM m_costelement WHERE costingmethod='A' ORDER BY m_costelement_id LIMIT 1", []); if (!el) return;
     var cp = getRow(db, 'SELECT ' + (_hasCol(db, 'c_currency', 'costingprecision') ? 'costingprecision' : 'NULL') + ' AS p FROM c_currency WHERE c_currency_id=?', num(sc.cur));
     if (!cp || cp.p == null) { absent.push('currency costing precision'); return; }
-    var prec = num(cp.p), price = _poLineCost(db, ol, absent); if (price == null) return;
+    var prec = num(cp.p); if (!poPriceDone) { poPrice = _poLineCost(db, ol, absent); poPriceDone = true; } var price = poPrice; if (price == null) return;
     var po = _decStr(price), cur = ol.c_currency_id != null ? ol.c_currency_id : ol.ocur;
     if (num(cur) !== num(sc.cur)) {   // Doc_MatchPO.java:391-408
       var rate = fxRate(db, cur, sc.cur, io && io.dateacct, ol.oclient || 11, ol.oorg || 0); if (rate == null) { absent.push('PurchaseOrderNotConvertible'); return; }
@@ -558,12 +600,16 @@ function _costRow(db, state, pid, sch, ct, el, cm, dateAcct) {
 // spread still carries them, so applyCostUpdate applies the same state (a host that cloned an update and silently lost them used to fall into the delta path). Goldens that print whole updates
 // strip them (poc_review2 R6/R7 `J(...)` helpers).
 function _extra(u, set, history, baseSource) { u.set = set; u.history = history; u.baseSource = baseSource; }
-function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf, dateAcct) {
+function _avgUpdate(db, state, out, pid, sc, e, delta, amtDecOf, dateAcct, noCum) {   // noCum: MCostDetail.isShipment() (SO trx + inout line) -- a customer-shipment reversal/return does NOT accumulate (MCostDetail.java:1728-1734, 1759-1765)
   var u = { m_product_id: num(pid), c_acctschema_id: sc.id, m_costtype_id: sc.ct, m_costelement_id: e.id, delta: delta };
   var c = _costRow(db, state, pid, sc.id, sc.ct, e.id, e.cm, dateAcct), old = { qty: Number(c.qty), price: c.price, cumqty: Number(c.cumqty), cumamt: c.cumamt };
   if (delta > 0 && (e.cm === 'A' || e.cm === 'I')) {
     var prec = _costingPrecision(db, sc.id), amt = prec == null ? null : amtDecOf(c, prec);
-    if (amt != null) { u.currentcostprice = _wavg(c.price, c.qty, amt, delta, prec); c.price = String(u.currentcostprice); }
+    if (amt != null) {
+      u.currentcostprice = _wavg(c.price, c.qty, amt, delta, prec); c.price = String(u.currentcostprice);
+      // MCost.setWeightedAverage (MCost.java:1740-1741): CumulatedAmt += amt, CumulatedQty += qty (Physical Inventory gain, project/other additions; found by the shop-day P2P cost key 30@20/600 vs 30@20/0)
+      if (!noCum) { var S12 = 12, add = function (a, b) { return Number(_fmtDec(_scaleTo(_bigDec(a), S12) + _scaleTo(_bigDec(b), S12), S12)); }; c.cumamt = add(c.cumamt, amt); c.cumqty = add(c.cumqty, delta); }
+    }
   }
   c.qty = Number(c.qty) + delta;
   // absolute new state + the MCostHistory row (old = the base this detail started from) — applied by applyCostUpdate (§78)
@@ -587,6 +633,7 @@ function costQtyUpdatesFor(db, table, id) {
     return out0;
   }
   if (table !== 'M_Inventory' || !_hasCol(db, 'm_cost', 'currentqty')) return [];
+  if (inventoryPostRefused(db, id)) return [];   // §SHOPDAY-RUN-2 R2.1: posting refused ("No Costs", Posted=E) => no cost detail, cost state unchanged
   var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
   allRows(db, 'SELECT m_product_id, qtybook, qtycount FROM m_inventoryline WHERE m_inventory_id=?', num(id)).forEach(function (l) {
     var d = Number(l.qtycount) - Number(l.qtybook); if (!d || !_isStocked(db, l.m_product_id)) return;
@@ -624,7 +671,7 @@ function costQtyUpdates(db, ioId) {
         // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
         if (origIo && num(l.reversalline_id)) { var pf = posted(sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
         var cc = costOf(l.m_product_id, sc.id); if (cc.price == null) return null;
-        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct);
+        var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct, true);
     }); });
   });
   return out;
@@ -1227,6 +1274,37 @@ function deriveGLJournal(db, id, schema) {
 // refused doc 100 exactly this way (§TAILORACLE postErr="No Costs for TShirt - Red Large"). This manifest
 // reproduces that SAME refusal (0==0, a genuine match, not a vacuous one) and the falsifier flips the
 // blessing count to prove the gate — not the manifest — is what closes to ∅.
+// Doc_Inventory.createFacts:300-335 -- the line's cost = the schema-costing-method material element's CurrentCostPrice; zero AND no zero-cost-blessing M_CostDetail => "No Costs for <product>".
+function _inventoryLineCost(db, l, schema) {
+  var as = schemaRow(db, schema);
+  return getRow(db,
+    "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
+    " AND e.costelementtype='M' AND e.costingmethod=? WHERE c.m_product_id=? AND c.c_acctschema_id=? AND c.m_costtype_id=?",
+    [as ? String(as.costingmethod) : '', num(l.m_product_id), num(schema), as ? num(as.m_costtype_id) : 0]);
+}
+// Doc_Inventory.createFacts: `costs == null || costs.signum() == 0` (exact decimal sign, a sub-cent price is NOT zero) => only `product.isStocked()` lines refuse; a service is ignored (`continue`).
+// MProduct.isStocked:602-605 = IsStocked AND isItem (ProductType 'I'); a missing column is read as stocked (nothing to test it with).
+function _legacyStocked(db, pid) {
+  var hs = _hasCol(db, 'm_product', 'isstocked'), ht = _hasCol(db, 'm_product', 'producttype');
+  if (!hs && !ht) return true;
+  var r = getRow(db, 'SELECT ' + (hs ? 'isstocked' : "'Y' AS isstocked") + ', ' + (ht ? 'producttype' : "'I' AS producttype") + ' FROM m_product WHERE m_product_id=?', num(pid));
+  return !r || (String(r.isstocked) === 'Y' && String(r.producttype) === 'I');
+}
+function _inventoryNoCosts(db, l, schema) {
+  var cost = _inventoryLineCost(db, l, schema);
+  if (cost && cost.p != null && _bigDec(cost.p).n !== 0n) return false;
+  if (!_legacyStocked(db, l.m_product_id)) return false;     // service / non-stocked: ignored, never refused
+  var bless = getRow(db,
+    "SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0.00 AND qty>0" +
+    " AND (c_orderline_id>0 OR c_invoiceline_id>0)", num(l.m_product_id));
+  return !bless || Number(bless.n) === 0;
+}
+// §SHOPDAY-RUN-2 R2.1: Doc.post rolls the whole document back when ANY active schema's createFacts fails, and the MCostDetail (cost qty/amt) is created at the END of
+// Doc_Inventory.createFacts (never reached on "No Costs") => a refused Physical Inventory changes NO cost state. true when any line is refused in any active schema.
+function inventoryPostRefused(db, id) {
+  var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id)), sch = _activeSchemas(db);
+  return lines.some(function (l) { return sch.some(function (sc) { return _inventoryNoCosts(db, l, sc.id); }); });
+}
 function deriveInventory(db, id, schema) {
   var hdr = getRow(db, 'SELECT * FROM m_inventory WHERE m_inventory_id=?', num(id));
   if (!hdr) return null;
@@ -1234,19 +1312,9 @@ function deriveInventory(db, id, schema) {
   var d = b3New();
   if (lines.length === 0) { d.absent.push('@NoLines@#' + id); return d; }   // MInventory.prepareIt:401-406
   lines.forEach(function (l) {
-    var as = schemaRow(db, schema);
-    var cost = getRow(db,
-      "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
-      " AND e.costelementtype='M' AND e.costingmethod=? WHERE c.m_product_id=? AND c.c_acctschema_id=? AND c.m_costtype_id=?",
-      [as ? String(as.costingmethod) : '', num(l.m_product_id), num(schema), as ? num(as.m_costtype_id) : 0]);
+    var cost = _inventoryLineCost(db, l, schema);
     var qtyDiff = Number(l.qtycount) - Number(l.qtybook);                  // PI branch :164-165
-    var costCents = cents(cost ? cost.p : 0);
-    if (costCents === 0) {
-      var bless = getRow(db,
-        "SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0.00 AND qty>0" +
-        " AND (c_orderline_id>0 OR c_invoiceline_id>0)", num(l.m_product_id));
-      if (!bless || Number(bless.n) === 0) { d.absent.push('{Product.NoCosts}#' + l.m_product_id); return; }  // :332-335 refusal
-    }
+    if (_inventoryNoCosts(db, l, schema)) { d.absent.push('{Product.NoCosts}#' + l.m_product_id); return; }  // :332-335 refusal
     // §59 (F18): the LINE is rounded, not the unit cost (Doc_Inventory costs = ProductCost qty × current cost; same rule as poc_movement_fx) — exact HALF_UP
     var amt = cost ? (function () { var pd = _bigDec(cost.p), qd = _bigDec(qtyDiff); return Number(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k))); })() : 0;
     var prod = getRow(db, 'SELECT producttype, m_product_category_id FROM m_product WHERE m_product_id=?', num(l.m_product_id));
@@ -1286,17 +1354,22 @@ function deriveInventory(db, id, schema) {
 //   d. still 0 → iDempiere logs SEVERE "No default GL_Category" (:1085-1086) and POSTS ANYWAY with 0.
 // GL_Category_ID is a 0-SENTINEL, never NULL (Doc.java:411 `int m_GL_Category_ID = 0`); the seed agrees — 14 of
 // its 52 c_doctype rows carry 0. So every guard below tests `> 0`, the same idiom ad_modelval.js:561 already uses.
-// Column probe. PRESENT columns are cached per (db, table, col) — they cannot vanish within a posting; ABSENT results are re-probed every time, so a column a patch adds mid-run is found.
-// resetSchemaCache(db) drops the cache for a host that DROPs/re-creates tables.
+// Column probe, cached per (db, table, col) -- positives AND negatives -- and invalidated whenever the database's schema_version changes (ANY DDL, e.g. a patch adding a column mid-run),
+// so a negative can never go stale. A db that cannot report schema_version caches positives only (the old behaviour). resetSchemaCache(db) drops the cache for a host that wants it explicitly.
 var _colCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 function resetSchemaCache(db) { if (_colCache && db && typeof db === 'object') _colCache.delete(db); }
+function _schemaVersion(db) { try { var r = db.prepare('PRAGMA schema_version').get(); return r ? r.schema_version : null; } catch (e) { return null; } }
 function _hasCol(db, table, col) {
-  var m = null, k = table + '.' + col;
-  if (_colCache && db && typeof db === 'object') { m = _colCache.get(db); if (!m) { m = {}; _colCache.set(db, m); } if (m[k]) return true; }
+  var m = null, k = table + '.' + col, sv = null;
+  if (_colCache && db && typeof db === 'object') {
+    sv = _schemaVersion(db); m = _colCache.get(db);
+    if (!m || (sv != null && m.__sv !== sv)) { m = { __sv: sv }; _colCache.set(db, m); }
+    if (m[k] === true || (m[k] === false && sv != null)) return m[k];
+  }
   var ok;
   try { ok = (db.prepare('PRAGMA table_info(' + table + ')').all() || []).some(function (r) { return String(r.name).toLowerCase() === col; }); }
   catch (e) { ok = false; }
-  if (ok && m) m[k] = true;
+  if (m && (ok || sv != null)) m[k] = ok;
   return ok;
 }
 function glCategoryFor(db, table, id) {
@@ -1404,5 +1477,6 @@ function _R() { try { return (typeof require !== 'undefined') ? require('./post_
 var _api = { derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, deriveMovement: deriveMovement, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
-if (typeof module !== 'undefined' && module.exports) { module.exports = _api; }
+// Internal helpers for witnesses, exposed on the Node module ONLY (never on window.DocPoster): the public _api is not widened.
+if (typeof module !== 'undefined' && module.exports) { module.exports = Object.assign({}, _api, { _test: { poLineCost: _poLineCost, inventoryPostRefused: inventoryPostRefused } }); }
 if (typeof window !== 'undefined') { window.DocPoster = _api; }
