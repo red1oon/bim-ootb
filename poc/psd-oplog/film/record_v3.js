@@ -12,8 +12,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const srv = http.createServer((q, r) => { let u = decodeURIComponent(q.url.split('?')[0]); if (u.endsWith('/')) u += 'index.html'; const f = path.join(DIST, u); if (!fs.existsSync(f)) { r.writeHead(404); return r.end(); }
     const t = { '.js': 'text/javascript', '.html': 'text/html', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/json' }[path.extname(f)] || 'application/octet-stream'; r.writeHead(200, { 'content-type': t }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1');
   await new Promise((r) => srv.on('listening', r)); const base = 'http://127.0.0.1:' + srv.address().port + '/index.html';
-  const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
-  const ctx = await br.newContext({ viewport: { width: VW, height: VH }, recordVideo: { dir: W + '/vid3', size: { width: 1920, height: 1080 } }, permissions: ['clipboard-read', 'clipboard-write'] });
+  const br = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--force-device-scale-factor=1.40625', '--window-size=1366,853'] });
+  const ctx = await br.newContext({ viewport: null, recordVideo: { dir: W + '/vid3', size: { width: 1920, height: 1080 } }, permissions: ['clipboard-read', 'clipboard-write'] });
   await ctx.addInitScript((HV) => { addEventListener('DOMContentLoaded', () => {
     const st = document.createElement('style'); st.textContent = '@keyframes fcring{from{transform:translate(-50%,-50%) scale(.4);opacity:.95}to{transform:translate(-50%,-50%) scale(2.6);opacity:0}} #hist{max-height:' + HV + ' !important}';
     document.head.appendChild(st); const dot = document.createElement('div'); dot.id = 'fcdot'; dot.style.cssText = 'position:fixed;left:-50px;top:-50px;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:#ff3b1f;border:3px solid #fff;box-shadow:0 0 0 1.5px #000,0 2px 8px rgba(0,0,0,.6);z-index:2147483647;pointer-events:none'; document.body.appendChild(dot);
@@ -25,7 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ---------- SLATE
   await page.evaluate(() => { const o = document.createElement('div'); o.id = 'slate'; o.style.cssText = 'position:fixed;inset:0;background:#0b0d11;z-index:2147483600;display:flex;flex-direction:column;justify-content:center;padding:0 9vw;font-family:system-ui,sans-serif;color:#f1f3f6;transition:opacity 1s';
     const L = (t, sz, col, mt) => { const d = document.createElement('div'); d.textContent = t; d.style.cssText = 'opacity:0;transition:opacity 1.1s;font-size:' + sz + 'px;color:' + col + ';margin-top:' + mt + 'px;line-height:1.25'; o.appendChild(d); return d; };
-    window.__sl = [L("What we have that others don't", 60, '#ffffff', 0), L('The history is the file.', 30, '#e6e8ec', 40), L('Change the past: re-edit an old stroke, everything after follows.', 30, '#e6e8ec', 20), L('Prove it: replay from scratch, check the fingerprint.', 30, '#e6e8ec', 20), L('Send the whole history as a link.', 30, '#e6e8ec', 20), L('Close it. Undo still works.', 30, '#e6e8ec', 20), L('Open source (MIT). Runs in the browser. No server.', 18, '#8d95a3', 46)];
+    window.__sl = [L("What we have that others don't", 60, '#ffffff', 0), L('The history is the file.', 28, '#e6e8ec', 40), L('Change the past: re-edit an old stroke, everything after follows.', 28, '#e6e8ec', 20), L('Prove it: replay from scratch, check the fingerprint.', 28, '#e6e8ec', 20), L('Send the whole history as a link.', 28, '#e6e8ec', 20), L('Close it. Undo still works.', 28, '#e6e8ec', 20), L('Open source (MIT). Runs in the browser. No server.', 18, '#8d95a3', 46)];
     document.body.appendChild(o); });
   await sleep(300); cut = (Date.now() - t0) / 1000; log('CUT (video s before slate) = ' + cut.toFixed(2));
   const TSLATE = [0.6, 2.4, 4.4, 6.4, 8.4, 10.2, 11.8];
@@ -90,7 +90,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await scrollSide(0); await click(page.locator('#adv'), 800);
   await click(page.locator('#addl'), 900); await click(topLayer().locator('button[title="Rename layer"]'), 600); await page.keyboard.type('Grade', { delay: 150 }); await sleep(300); await page.keyboard.press('Enter'); await sleep(1200); await factsNow('2a-layer', true);
   await click(page.locator('[data-tool="select"]'), 600); await click(page.locator('#s-rect'), 600);
-  await drag(await at(.995, .995), await at(.005, .005), 1400); { const sl = await page.evaluate(() => JSON.stringify(__ed.st.sel)); log('whole-canvas selection st.sel=' + sl); fact('2a', 'selection_state', sl); if (sl === 'null') throw new Error('selection not made'); } await factsNow('2a-sel', true);
+  await drag(await at(.995, .995), await at(.005, .005), 1400); { const sl = await page.evaluate(() => JSON.stringify(__ed.st.sel && { kind: __ed.st.sel.kind, box: __ed.st.sel.box })); log('whole-canvas selection st.sel=' + sl); fact('2a', 'selection_state', sl); if (sl === 'null') throw new Error('selection not made'); } await factsNow('2a-sel', true);
   await click(page.locator('[data-tool="hard"]'), 400); await setv('#color', '#0e9d9b'); await setv('#size', '120'); await sleep(500);
   for (const y of [.14, .38, .62, .86]) { await stroke([await at(.0, y), await at(.35, y + .04), await at(.7, y - .04), await at(1.0, y)], 12); }
   await sleep(1500); await factsNow('2a-teal', true); await click(page.locator('#s-clr'), 1200);

@@ -44,6 +44,7 @@
     "editor_masks": "node editor/run_masks.js",
     "editor_clip": "node editor/run_clip.js",
     "editor_wand": "node editor/run_wand.js",
+    "editor_groups": "node editor/run_groups_editor.js",
     "editor_dist_single": "node editor/build_dist.js editor/out/single --single",
     "blurbrush": "node filters/run_blurbrush.js"
   },

@@ -21,6 +21,7 @@
   function label(o) {
     switch (o.op) {
       case 'layer': return o.id === 0 ? 'Background layer' : 'Add layer ' + o.id; case 'fill': return 'Fill layer ' + o.layer; case 'set': return 'Layer ' + o.layer + (o.opacity !== undefined ? ' opacity ' + pct(o.opacity) : '') + (o.mode ? ' mode ' + o.mode : '');
+      case 'group': return 'Add group ' + o.id; case 'ungroup': return 'Ungroup group ' + o.group; case 'parent': return o.group >= 0 ? 'Move layer ' + o.layer + ' into group ' + o.group : 'Move layer ' + o.layer + ' out of its group';
       case 'clip': return (o.v ? 'Clip layer ' + o.layer + ' to the layer below' : 'Release clipping of layer ' + o.layer);
       case 'mask': return ({ add: 'Add mask to', delete: 'Delete mask of', invert: 'Invert mask of', apply: 'Apply mask of', sel: 'Mask from selection for' })[o.kind] + ' layer ' + o.layer;
       case 'stroke': return ({ hard: 'Hard brush', soft: 'Soft brush', erase: 'Eraser', blur: 'Blur brush' })[o.kind] + (o.t === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ', size ' + o.r + (o.c && o.kind !== 'blur' && o.kind !== 'erase' ? ', ' + hex(o.c) : '') + ', ' + o.pts.length + ' pts';

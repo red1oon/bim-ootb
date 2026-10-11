@@ -12,8 +12,8 @@
   const validList = (st, list) => { let base = false; for (const id of list) { if (st.G[id]) base = false; else if (st.L[id].clip) { if (!base) return false; } else base = true; } return true; };
   const validAll = (st) => validList(st, st.root) && Object.keys(st.G).every((g) => validList(st, st.G[g].children));
   function tx(st, fn) {   // run a structural change; on any failure restore the lists and parents exactly
-    const bak = { root: st.root.slice(), order: st.order.slice(), ch: {}, par: {}, hasTree: st.hasTree }; for (const g of Object.keys(st.G)) bak.ch[g] = st.G[g].children.slice(); for (const id of Object.keys(st.L)) bak.par[id] = st.L[id].parent;
-    try { fn(); reflow(st); retree(st); if (!validAll(st)) throw new Error('a clipped layer would have no base layer below it in its list'); } catch (e) { st.root = bak.root; st.order = bak.order; for (const g of Object.keys(bak.ch)) st.G[g].children = bak.ch[g]; for (const id of Object.keys(bak.par)) if (st.L[id]) st.L[id].parent = bak.par[id]; st.hasTree = bak.hasTree; throw e; }
+    const bak = { root: st.root.slice(), order: st.order.slice(), ch: {}, par: {}, hasTree: st.hasTree }; for (const g of Object.keys(st.G)) bak.ch[g] = st.G[g].children.slice(); bak.clip = {}; for (const id of Object.keys(st.L)) { bak.par[id] = st.L[id].parent; bak.clip[id] = st.L[id].clip; }
+    try { fn(); reflow(st); retree(st); if (!validAll(st)) throw new Error('a clipped layer would have no base layer below it in its list'); } catch (e) { st.root = bak.root; st.order = bak.order; for (const g of Object.keys(bak.ch)) st.G[g].children = bak.ch[g]; for (const id of Object.keys(bak.par)) if (st.L[id]) { st.L[id].parent = bak.par[id]; st.L[id].clip = bak.clip[id]; } st.hasTree = bak.hasTree; throw e; }
   }
   function apply(st, o) {   // returns true when it handled the op
     if (o.op === 'group') { if (nodeOf(st, o.id)) throw new Error('group: id ' + o.id + ' already used'); S.apply(st, o); reflow(st); retree(st); return true; }
@@ -36,6 +36,6 @@
   const displayName = (id, l, isGroup) => (l && l.name) || (id === 0 ? 'Background' : (isGroup ? 'Group ' : 'Layer ') + id);
   const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } for (const id of Object.keys(st.G)) { const g = st.G[id]; m[id] = { name: displayName(+id, g, true), hidden: !!g.hid, opacity: g.hid ? g.keep : g.opacity, group: true }; } return m; };
   const nextId = (st) => Math.max(-1, ...Object.keys(st.L).map(Number), ...Object.keys(st.G).map(Number)) + 1;
-  const api = { apply, displayName, meta, nextId, reflow, validAll };
+  const api = { apply, displayName, meta, nextId, reflow, retree, validAll, listOf };
   if (node) module.exports = api; else root.LayerOps = api;
 })(this);
