@@ -1,0 +1,61 @@
+{
+ "n_checks": 24,
+ "gate": "PASS",
+ "fails": [],
+ "numbers": {
+  "I1": {
+   "semiPixels": 19950,
+   "maxSemiDiff": 0
+  },
+  "I4size": 5592993,
+  "I7": {
+   "names": [
+    "Background",
+    "Layer 1",
+    "Layer 2"
+   ],
+   "visible": [
+    true,
+    true,
+    true
+   ],
+   "opacity": [
+    255,
+    255,
+    255
+   ],
+   "merged_max_diff": 0
+  },
+  "I4": {
+   "saveJsonChars": 5592993,
+   "localStorage6MBThrows": true
+  }
+ },
+ "node": "v20.20.2"
+}
+
+--- stderr ---
+ok   I1 every float pixel equals the formula bitwise (128^2 random incl. alpha 0 / 255 / semi-transparent)
+ok   I1 quantised back to RGBA8: total difference on alpha 0 / 255 pixels
+ok   I1 quantised back: max difference on 19950 semi-transparent pixels
+ok   I1 missing blob / existing id / wrong size all throw
+ok   I2 same photo imported twice: save file has 1 blob and 2 img ops
+ok   I2 tampered blob rejected (blob sha mismatch for b947d0128e60)
+ok   I2 missing blob rejected (img: missing blob b947d0128e60)
+ok   I3 loaded log with 2 photo layers: hashes == refold(ops, blobs)
+ok   I3 photo layer painted on + hidden + moved: live == refold
+ok   I3 undo x3 / redo x3 (stroke on photo, hide, move): bit-exact
+ok   I3 undo of the import removes the layer (layers: 2), redo restores bit-exact
+ok   I7 page PSD bytes (6501432) == Node exporter bytes for a log with a photo layer (blobs decoded from the save file)
+ok   I7 psd-tools: 3 layers (Background, Layer 1, photo) and merged image within 1 level
+ok   I4 autosave reported 5 ops; after reload the page has the same ops count and hashes (localStorage 6 MB write throws here: true; one noise photo = 5.6 MB of JSON)
+ok   I3 no page errors (desktop)
+ok   I5 landscape 12 MP (4000x3000) fits by "contain" with transparent bars exactly where the geometry says
+ok   I5 landscape import wall time 456 ms
+ok   I5 portrait 12 MP (3000x4000) fits by "contain" with transparent bars exactly where the geometry says
+ok   I5 portrait import wall time 378 ms
+ok   I5 no page errors (12 MP)
+ok   I6 Add photo button 91x44 >= 44 px both ways
+ok   I6 choosing a photo on the phone adds +1 log entry and a layer
+ok   I6 two-finger tap undoes the photo (-1 entry)
+ok   I6 no page errors (phone)
