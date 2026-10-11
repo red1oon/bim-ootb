@@ -29,6 +29,8 @@
       case 'sel': return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
       case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }
+  const bytesOf = (o) => new TextEncoder().encode(JSON.stringify(o)).length;
+  function raw(o) { if (o && Array.isArray(o.pts) && o.pts.length > 4) { const first = o.pts.slice(0, 4).map((p) => JSON.stringify(p)).join(','); return JSON.stringify({ ...o, pts: '@@' }).replace('"@@"', '[' + first + ',"+' + (o.pts.length - 4) + ' more"]'); } return JSON.stringify(o); }
   const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
   const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
   async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
@@ -38,6 +40,6 @@
     let j; try { j = JSON.parse(new TextDecoder().decode(await pipe(b64u.dec(m[1]), DecompressionStream))); } catch (e) { throw new Error('the link is damaged'); }
     if (!j || !Array.isArray(j.ops) || !Number.isInteger(j.W)) throw new Error('the link is damaged'); if (head(j.ops).slice(0, 16) !== m[2]) throw new Error('the link was altered (fingerprint mismatch)'); return j;
   }
-  const api = { expand, apply, label, head, makeLink, parseLink, checkSet };
+  const api = { expand, apply, label, raw, bytesOf, head, makeLink, parseLink, checkSet };
   if (node) module.exports = api; else root.HistoryOps = api;
 })(this);
