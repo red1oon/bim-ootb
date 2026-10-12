@@ -1304,8 +1304,11 @@ function completeReceipt(receipt, lines, policy) {
 // rmaCheckQty — MRMALine.checkQty (MRMALine.java checkQty): the shipment line must hold at least the RMA qty, and the qty of the OTHER RMA lines of that shipment line that belong to a
 // COMPLETED/CLOSED RMA (Processed='Y' AND DocStatus IN ('CO','CL'), this line excluded) plus this qty must not exceed it. shipQty/qty/othersCompletedQty are numbers.
 function rmaCheckQty(shipQty, qty, othersCompletedQty) {
-  if (Number(shipQty) < Number(qty)) return false;
-  return Number(shipQty) >= Number(othersCompletedQty || 0) + Number(qty);
+  try {   // exact decimals (0.1 + 0.2 must equal 0.3): scaled BigInt compare, never float addition
+    var a = _dec(shipQty), b = _dec(qty), c = _dec(othersCompletedQty || 0), K = Math.max(a.k, b.k, c.k), sc = function (x) { return x.n * (10n ** BigInt(K - x.k)); };
+    if (sc(a) < sc(b)) return false;
+    return sc(a) >= sc(c) + sc(b);
+  } catch (e) { return false; }
 }
 // _minorStr — an integer count of minor units at `p` decimals as an exact decimal string.
 function _minorStr(n, p) { var neg = n < 0, a = String(Math.abs(Number(n))); if (p > 0) { while (a.length <= p) a = '0' + a; a = a.slice(0, a.length - p) + '.' + a.slice(a.length - p); } return (neg ? '-' : '') + a; }

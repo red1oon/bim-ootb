@@ -203,7 +203,7 @@
         if (!pr.ok) { T.msg(trx, 'Cannot Complete the Payment : [' + (pr.msg || '') + ']'); return 'IN'; }
       }
       inv = trx.get('c_invoice', inv.c_invoice_id);
-      var so = Y(inv.issotrx), cmf = isCM(trx, inv);
+      var so = Y(inv.issotrx), cmf = isCM(trx, inv), rmaFail = null;
       invLines(trx, inv).forEach(function (l) {
         if (!so && nz(l.m_inoutline_id) && nz(l.m_product_id)) {                             // :2083-2108 Inv-Receipt match
           var rl = trx.get('m_inoutline', l.m_inoutline_id), rcv = rl ? trx.get('m_inout', rl.m_inout_id) : null;
@@ -220,9 +220,10 @@
         } else if (nz(l.c_orderline_id) && !so && nz(l.m_product_id)) trx.say('§MODEL-NAMED MMatchPO.create(invoice-first) MInvoice.java:2128 not ported line=' + l.c_invoiceline_id);
         if (nz(l.m_rmaline_id)) {                                                             // :2171-2185 Update QtyInvoiced RMA Line
           var rml = trx.get('m_rmaline', l.m_rmaline_id);
-          if (rml) { var rr = ML.save(trx, 'm_rmaline', rml, { qtyinvoiced: N(D(rml.qtyinvoiced).add(D(l.qtyinvoiced))) }); if (!rr.ok) throw new Error('Could not update RMA Line: ' + rr.error); }
+          if (rml) { var rr = ML.save(trx, 'm_rmaline', rml, { qtyinvoiced: N(D(rml.qtyinvoiced).add(D(l.qtyinvoiced))) }); if (!rr.ok && !rmaFail) rmaFail = 'Could not update RMA Line: ' + rr.error; }   // :2178-2182 m_processMsg + Invalid (reported after the loop)
         }
       });
+      if (rmaFail) { T.msg(trx, rmaFail); return 'IN'; }
       var ce = creditInvoice(trx, inv, 'CO'); if (ce) { T.msg(trx, ce); return 'IN'; }
       if (nz(inv.ad_user_id) && trx.env.now) { var u = trx.get('ad_user', inv.ad_user_id);   // :2193-2203 user last contact
         if (u) trx.update('ad_user', u, { lastcontact: trx.env.now, lastresult: 'Invoice: ' + inv.documentno }); }

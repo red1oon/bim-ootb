@@ -24,15 +24,16 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
 (async function main() {
   var SQL = await initSqlJs();
   var db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
-  var pOk = 0, pFail = 0;                                                    // idempiere.html's FS-15 self-heal loader, statement by statement
-  fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); pOk++; } catch (e) { pFail++; } });
+  var pOk = 0, pFail = 0, setupBad = [];                                                    // idempiere.html's FS-15 self-heal loader, statement by statement
+  fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); pOk++; } catch (e) { pFail++; log('§RW-SETUP patch statement failed: ' + String(e.message).slice(0, 120)); } });
+  if (pFail) setupBad.push('patches/ad_seed.db.sql ' + pFail + ' statements failed');
   log('§RW-SEED ad_seed.db + patches/ad_seed.db.sql statements=' + pOk + ' failed=' + pFail + ' today=' + TODAY);
   var A = require(path.join(ERP, 'ad_callout.js'));
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require(path.join(ERP, 'callouts', m + '.js')); });
   A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });
   var ML = require(path.join(ERP, 'model_layer.js'));
   var mods = ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_master'];
-  if (fs.existsSync(path.join(ERP, 'model_rma.js'))) mods.push('model_rma');
+  if (fs.existsSync(path.join(ERP, 'model_rma.js'))) mods.push('model_rma'); else log('§RW-NOTE erp/model_rma.js absent: the cases below judge the code as shipped without it');
   mods.push('model_post');
   mods.forEach(function (m) { require(path.join(ERP, m + '.js')); });
   var MV = require(path.join(ERP, 'ad_modelval.js'));
@@ -47,8 +48,10 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   function one(sql, p) { return q(sql, p || [])[0] || null; }
   // b3 shim (crud_overlay._mvB3): the BEFORE_SAVE validators read the db through .prepare().get()/.all()
   var b3 = { prepare: function (sql) { return { get: function () { return q(sql, [].slice.call(arguments))[0]; }, all: function () { return q(sql, [].slice.call(arguments)); } }; } };
-  Object.keys(MV).forEach(function (m) { if (/^install[A-Z].*SaveHooks$/.test(m) && typeof MV[m] === 'function') { try { MV[m](b3); } catch (e) {} } });
-  if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); } catch (e) {} }
+  var hooksOk = {};
+  Object.keys(MV).forEach(function (m) { if (/^install[A-Z].*SaveHooks$/.test(m) && typeof MV[m] === 'function') { try { MV[m](b3); hooksOk[m] = true; } catch (e) { log('§RW-SETUP hook installer ' + m + ' threw: ' + String(e.message).slice(0, 100)); } } });
+  ['installMRMASaveHooks', 'installMInOutSaveHooks', 'installMInvoiceSaveHooks'].forEach(function (m) { if (!hooksOk[m]) setupBad.push('validator installer ' + m + ' not installed'); });
+  if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); } catch (e) { setupBad.push('installDefaultHooks threw: ' + e.message); } }
 
   var uu = 0, clock = Date.parse(DAY.replace(' ', 'T') + 'Z') + 9 * 3600 * 1000;
   function env() { clock += 1000; return { client: 11, org: 11, user: 100, role: 102, date: DAY, now: TODAY + ' 09:00:00', nowMillis: clock, uuid: function () { uu++; return '00000000-0000-4000-8000-' + ('000000000000' + uu).slice(-12); } }; }
@@ -115,14 +118,14 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   if (mc) db.run('UPDATE m_cost SET currentcostprice=70, currentqty=0 WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [PROD]);
   else { var base = one('SELECT * FROM m_cost WHERE m_product_id=? AND c_acctschema_id=101 LIMIT 1', [PROD]); insertRow('m_cost', Object.assign({}, base, { m_costelement_id: 103, currentcostprice: 70, currentqty: 0, m_cost_uu: null })); }
   var cnt = 0;
-  function sale(qty, price, vendor) {
+  function sale(qty, price, vendor, cur) {
     cnt++; var SO = vendor ? 'N' : 'Y';
     var o = insertRow('c_order', { ad_client_id: 11, ad_org_id: 11, issotrx: SO, documentno: 'RWO' + cnt, docstatus: 'CO', docaction: 'CL', processed: 'Y', c_doctype_id: vendor ? 0 : 132, c_doctypetarget_id: vendor ? 126 : 132, c_bpartner_id: BP, c_bpartner_location_id: BPL, bill_bpartner_id: BP, bill_location_id: BPL,
-      m_warehouse_id: WH, m_pricelist_id: 101, c_currency_id: 100, c_paymentterm_id: 105, dateordered: DAY, dateacct: DAY, grandtotal: qty * price * 1.1, totallines: qty * price, isapproved: 'Y' });
-    var ol = insertRow('c_orderline', { ad_client_id: 11, ad_org_id: 11, c_order_id: o, line: 10, m_product_id: PROD, c_uom_id: 100, qtyordered: qty, qtyentered: qty, qtydelivered: qty, qtyinvoiced: qty, priceactual: price, priceentered: price, c_tax_id: TAX10, linenetamt: qty * price, c_currency_id: 100, m_warehouse_id: WH });
+      m_warehouse_id: WH, m_pricelist_id: 101, c_currency_id: cur || 100, c_paymentterm_id: 105, dateordered: DAY, dateacct: DAY, grandtotal: qty * price * 1.1, totallines: qty * price, isapproved: 'Y' });
+    var ol = insertRow('c_orderline', { ad_client_id: 11, ad_org_id: 11, c_order_id: o, line: 10, m_product_id: PROD, c_uom_id: 100, qtyordered: qty, qtyentered: qty, qtydelivered: qty, qtyinvoiced: qty, priceactual: price, priceentered: price, c_tax_id: TAX10, linenetamt: qty * price, c_currency_id: cur || 100, m_warehouse_id: WH });
     var io = insertRow('m_inout', { ad_client_id: 11, ad_org_id: 11, issotrx: SO, documentno: 'RWS' + cnt, docstatus: 'CO', docaction: 'CL', processed: 'Y', c_doctype_id: vendor ? DT_MMRV : DT_MMS, movementtype: vendor ? 'V+' : 'C-', c_bpartner_id: BP, c_bpartner_location_id: BPL, m_warehouse_id: WH, c_order_id: o, movementdate: DAY, dateacct: DAY, posted: 'N', isapproved: 'Y', deliveryrule: 'A', deliveryviarule: 'P', priorityrule: '5', freightcostrule: 'I' });
     var il = insertRow('m_inoutline', { ad_client_id: 11, ad_org_id: 11, m_inout_id: io, line: 10, m_product_id: PROD, c_orderline_id: ol, c_uom_id: 100, m_locator_id: LOC, movementqty: qty, qtyentered: qty, processed: 'Y', isinvoiced: 'Y', m_attributesetinstance_id: 0 });
-    var iv = insertRow('c_invoice', { ad_client_id: 11, ad_org_id: 11, issotrx: SO, documentno: 'RWI' + cnt, docstatus: 'CO', docaction: 'CL', processed: 'Y', c_doctype_id: vendor ? DT_API : DT_ARI, c_doctypetarget_id: vendor ? DT_API : DT_ARI, c_bpartner_id: BP, c_bpartner_location_id: BPL, c_order_id: o, c_currency_id: 100, m_pricelist_id: 101, c_paymentterm_id: 105,
+    var iv = insertRow('c_invoice', { ad_client_id: 11, ad_org_id: 11, issotrx: SO, documentno: 'RWI' + cnt, docstatus: 'CO', docaction: 'CL', processed: 'Y', c_doctype_id: vendor ? DT_API : DT_ARI, c_doctypetarget_id: vendor ? DT_API : DT_ARI, c_bpartner_id: BP, c_bpartner_location_id: BPL, c_order_id: o, c_currency_id: cur || 100, m_pricelist_id: 101, c_paymentterm_id: 105,
       dateinvoiced: DAY, dateacct: DAY, grandtotal: qty * price * 1.1, totallines: qty * price, ispaid: 'N', isapproved: 'Y', posted: 'N', paymentrule: 'P', istaxincluded: 'N' });
     var ivl = insertRow('c_invoiceline', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: iv, line: 10, m_product_id: PROD, c_orderline_id: ol, m_inoutline_id: il, c_uom_id: 100, qtyentered: qty, qtyinvoiced: qty, priceentered: price, priceactual: price, linenetamt: qty * price, c_tax_id: TAX10 });
     return { order: o, shipment: io, shipline: il, invoice: iv, invline: ivl };
@@ -216,6 +219,62 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   verdict('RW-VENDOR', cov ? [eq('over_refused', 'vendor RMA line 4 > received 3 refused (AmtReturned>Shipped)', [lv.ok, /AmtReturned>Shipped/.test(String(lv.error))], [false, true]), eq('completed', 'vendor RMA CO', [cov.ok, cov.status], [true, 'CO']),
     eq('amt', 'Amt = 2 x 50 + 10% = 110.00 (the order price list is tax-excluded)', n(rm(hv.id).amt), 110)] : []);
 
+
+  // ── RW-AMT-EDIT: MRMALine.beforeSave :365-377 re-sets Amt = getUnitAmt() on EVERY save of a shipment-line row (legacy overwrites a user-entered Amt); completions keep it ──
+  var s4 = sale(2, 50), h4 = drive('RW-AMT-EDIT', function () { var h = rmaHeader(s4); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, s4, 2); return l.ok ? { h: h.id, l: l.id } : { err: 'line ' + l.error }; });
+  var ed = h4 && uiSave('m_rmaline', { amt: 40 }, h4.l);
+  var afterEdit = h4 ? n(rl(h4.l).amt) : null;
+  var co4 = h4 && docact('m_rma', h4.h, 'CO'), rc4 = co4 && co4.status === 'CO' ? drive('RW-AMT-EDIT', function () { return receipt(h4.h, h4.l, 2); }) : null, rc4co = rc4 && docact('m_inout', rc4.id, 'CO');
+  var cm4 = rc4co && rc4co.status === 'CO' ? drive('RW-AMT-EDIT', function () { return creditMemo(h4.h, s4, h4.l, rc4.line, 2, 50); }) : null, cm4co = cm4 && docact('c_invoice', cm4.id, 'CO');
+  verdict('RW-AMT-EDIT', cm4co && cm4co.status === 'CO' ? [eq('edit_saved', 'the edit of Amt to 40 saves', ed.ok, true), eq('legacy_reprice', 'Amt is re-derived from the invoice line on save (legacy :365-377): 50, not 40', afterEdit, 50),
+    eq('survives', 'Amt/LineNetAmt unchanged by the return receipt and credit memo completions (their rmaLine.save re-runs beforeSave, same answer)', [n(rl(h4.l).amt), n(rl(h4.l).linenetamt), n(rm(h4.h).amt)], [50, 100, 110]),
+    eq('qty_flow', 'QtyDelivered 2 / QtyInvoiced 2 after both completions', [n(rl(h4.l).qtydelivered), n(rl(h4.l).qtyinvoiced)], [2, 2])] : []);
+
+  // ── RW-MULTITAX: two tax rates on one RMA, re-prepare deletes the old M_RMATax rows exactly (StandardTaxProvider.calculateRMATaxTotal :293-364, MRMA.calculateTaxTotal :395) ──
+  var TAX5 = insertRow('c_tax', { c_tax_id: 9100002, ad_client_id: 11, ad_org_id: 0, name: 'RW 5%', rate: 5, isdocumentlevel: 'Y', issummary: 'N', c_taxcategory_id: (one('SELECT c_taxcategory_id AS c FROM c_tax WHERE c_tax_id=104') || {}).c, validfrom: '2000-01-01', isactive: 'Y', istaxexempt: 'N', sopotype: 'B', requirestaxcertificate: 'N', isdefault: 'N' });
+  var s5 = sale(2, 50), il2 = insertRow('m_inoutline', { ad_client_id: 11, ad_org_id: 11, m_inout_id: s5.shipment, line: 20, m_product_id: PROD, c_uom_id: 100, m_locator_id: LOC, movementqty: 2, qtyentered: 2, processed: 'Y', isinvoiced: 'Y', m_attributesetinstance_id: 0 });
+  insertRow('c_invoiceline', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: s5.invoice, line: 20, m_product_id: PROD, m_inoutline_id: il2, c_uom_id: 100, qtyentered: 2, qtyinvoiced: 2, priceentered: 30, priceactual: 30, linenetamt: 60, c_tax_id: TAX5 });
+  var h5 = drive('RW-MULTITAX', function () { var h = rmaHeader(s5); if (!h.ok) return { err: 'hdr' }; var a = rmaLine(h.id, s5, 2), b = uiSave('m_rmaline', { m_rma_id: h.id, m_inoutline_id: il2, qty: 2, processed: 'N' }); return a.ok && b.ok ? { h: h.id } : { err: 'lines ' + a.error + b.error }; });
+  var pr1 = h5 && docact('m_rma', h5.h, 'PR'), pr2 = h5 && docact('m_rma', h5.h, 'PR');
+  var taxRows = function () { return q('SELECT c_tax_id, taxbaseamt, taxamt FROM m_rmatax WHERE m_rma_id=? ORDER BY c_tax_id', [h5.h]).map(function (t) { return t.c_tax_id + ':' + n(t.taxbaseamt) + '/' + n(t.taxamt); }); };
+  var rowsAfterPR2 = h5 ? taxRows() : null, co5 = h5 && docact('m_rma', h5.h, 'CO');
+  verdict('RW-MULTITAX', co5 ? [eq('prepared_twice', 'PR twice -> IP (re-prepare)', [pr1.status, pr2.status], ['IP', 'IP']), eq('rows_after_reprepare', 'exactly two M_RMATax rows after two prepares (old rows deleted exactly, no key collision)', rowsAfterPR2, [TAX10 + ':100/10', TAX5 + ':60/3']),
+    eq('completed', 'CO', [co5.ok, co5.status], [true, 'CO']), eq('rows_after_co', 'still two rows after CO', taxRows(), [TAX10 + ':100/10', TAX5 + ':60/3']), eq('amt', 'Amt = 100 + 60 + 10 + 3 = 173.00', n(rm(h5.h).amt), 173)] : []);
+
+  // ── RW-DECIMALS: exact decimal arithmetic (no float money), checkQty exact (0.1 + 0.2 == 0.3), 0- and 3-decimal currencies ──
+  var s6 = sale(1, 1.005), h6 = drive('RW-DEC-HALFUP', function () { var h = rmaHeader(s6); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, s6, 1); return l.ok ? { h: h.id, l: l.id } : { err: 'line ' + l.error }; });
+  var co6 = h6 && docact('m_rma', h6.h, 'CO');
+  verdict('RW-DEC-HALFUP', co6 ? [eq('linenet', '1 x 1.005 -> 1.01 HALF_UP (a float Math.round(1.005*100) gives 1.00)', n(rl(h6.l).linenetamt), 1.01), eq('amt', 'Amt = 1.01 + 10% of 1.01 (0.10) = 1.11', n(rm(h6.h).amt), 1.11)] : []);
+  var s7 = sale(0.3, 50), h7a = drive('RW-DEC-CUM', function () { var h = rmaHeader(s7); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, s7, 0.1); return l.ok ? { h: h.id } : { err: 'line ' + l.error }; });
+  var co7 = h7a && docact('m_rma', h7a.h, 'CO'), h7b = co7 && co7.status === 'CO' ? rmaHeader(s7) : null, l7b = h7b && h7b.ok ? rmaLine(h7b.id, s7, 0.2) : null, l7c = h7b && h7b.ok ? uiSave('m_rmaline', { m_rma_id: h7b.id, m_inoutline_id: s7.shipline, qty: 0.3, processed: 'N' }) : null;
+  verdict('RW-DEC-CUM', l7b ? [eq('accepted', '0.1 returned + 0.2 more of 0.3 shipped is accepted (float 0.1+0.2 > 0.3 would refuse)', l7b.ok, true), eq('neg', 'NEG-CONTROL 0.3 more (0.1 + 0.3 > 0.3) is refused', [l7c.ok, /AmtReturned>Shipped/.test(String(l7c.error))], [false, true])] : []);
+  var curFix = function (id, p) { db.run('UPDATE c_currency SET stdprecision=? WHERE c_currency_id=?', [p, id]); };
+  [[300, 0, 100, 'RW-DEC-PREC0'], [321, 3, 100, 'RW-DEC-PREC3']].forEach(function (c) {
+    var sx = sale(3, 33.3333, false, c[0]), hx = drive(c[3], function () { var h = rmaHeader(sx); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, sx, 3); return l.ok ? { h: h.id, l: l.id } : { err: 'line ' + l.error }; });
+    var cx = hx && docact('m_rma', hx.h, 'CO'), px = hx ? n(one('SELECT stdprecision AS p FROM c_currency WHERE c_currency_id=?', [c[0]]).p) : null;
+    verdict(c[3], cx ? [eq('precision', 'currency StdPrecision ' + c[1], px, c[1]), eq('linenet', '3 x 33.3333 = 99.9999 rounds HALF_UP to ' + c[1] + ' decimals = 100', n(rl(hx.l).linenetamt), 100), eq('amt', '10% tax on 100 -> Amt 110', n(rm(hx.h).amt), 110)] : []);
+  });
+
+  // ── RW-REVERSE: reversal receipt / reversal credit memo carry the NEGATIVE qty into QtyDelivered / QtyInvoiced (MInOut.completeIt Qty = MovementQty, reversal line negated; MInvoice reverse completeIt adds the negated QtyInvoiced) ──
+  var stockBeforeRv = onhand(), rvRc = rcCo && rcCo.status === 'CO' ? docact('m_inout', rc1.id, 'RC') : null;
+  verdict('RW-REVERSE-RECEIPT', rvRc ? [eq('reversed', 'receipt reverse-corrected', [rvRc.ok, rvRc.status], [true, 'RE']), eq('qtydelivered', 'QtyDelivered 2 + (-2) = 0 (reversal line is -2)', n(rl(L1.m_rmaline_id).qtydelivered), 0), eq('stock', 'stock -2 (the reversal receipt moves the returned 2 back out)', onhand() - stockBeforeRv, -2)] : []);
+  var rvCm = cmCo && cmCo.status === 'CO' ? docact('c_invoice', cm1.id, 'RC') : null;
+  verdict('RW-REVERSE-CM', rvCm ? [eq('reversed', 'credit memo reverse-corrected', [rvCm.ok, rvCm.status], [true, 'RE']), eq('qtyinvoiced', 'QtyInvoiced 2 + (-2) = 0', n(rl(L1.m_rmaline_id).qtyinvoiced), 0)] : []);
+
+  // ── RW-VOID / RW-CLOSE / RW-NOIMPL: MRMA.voidIt :681-754, closeIt :494-507, reverseCorrectIt/reverseAccrualIt/reActivateIt "not implemented, return false" ──
+  var vOpen = r3co && r3co.status === 'CO' ? docact('m_rma', h3.h, 'VO') : null;   // h3 has a completed (not reversed) return receipt
+  verdict('RW-VOID-REFUSED', vOpen ? [eq('refused', 'void refused while a return receipt of the RMA is not VO/RE (RMACannotBeVoided)', [vOpen.ok, vOpen.status], [false, 'CO']), eq('reason', 'message names the refusal', /RMACannotBeVoided|cannot be voided/i.test(String(vOpen.msg)), true)] : []);
+  var s8 = sale(3, 50), h8 = drive('RW-VOID', function () { var h = rmaHeader(s8); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, s8, 2); return l.ok ? { h: h.id, l: l.id } : { err: 'line ' + l.error }; });
+  var co8 = h8 && docact('m_rma', h8.h, 'CO'), vo8 = co8 && co8.status === 'CO' ? docact('m_rma', h8.h, 'VO') : null;
+  verdict('RW-VOID', vo8 ? [eq('voided', 'RMA with no receipt voids -> VO', [vo8.ok, vo8.status], [true, 'VO']), eq('line_zero', 'line Qty 0, Amt 0, LineNetAmt 0', [n(rl(h8.l).qty), n(rl(h8.l).amt), n(rl(h8.l).linenetamt)], [0, 0, 0]),
+    eq('header_zero', 'header Amt 0; M_RMATax amounts 0', [n(rm(h8.h).amt), q('SELECT taxbaseamt+taxamt AS t FROM m_rmatax WHERE m_rma_id=?', [h8.h]).map(function (t) { return n(t.t); })], [0, [0]]),
+    eq('description', 'line + header descriptions carry "Voided"', [/Voided \(2\)/.test(rl(h8.l).description), /Voided/.test(rm(h8.h).description)], [true, true]), eq('processed', 'Processed Y, DocAction --', [rm(h8.h).processed, rm(h8.h).docaction], ['Y', '--'])] : []);
+  var s9 = sale(3, 50), h9 = drive('RW-CLOSE', function () { var h = rmaHeader(s9); if (!h.ok) return { err: 'hdr' }; var l = rmaLine(h.id, s9, 2); return l.ok ? { h: h.id } : { err: 'line ' + l.error }; });
+  var co9 = h9 && docact('m_rma', h9.h, 'CO'), cl9 = co9 && co9.status === 'CO' ? docact('m_rma', h9.h, 'CL') : null;
+  var rc9 = cl9 && docact('m_rma', h9.h, 'RC'), ra9 = cl9 && docact('m_rma', h9.h, 'RA'), re9 = cl9 && docact('m_rma', h9.h, 'RE');
+  verdict('RW-CLOSE', cl9 ? [eq('closed', 'RMA close -> CL', [cl9.ok, cl9.status], [true, 'CL']), eq('amt_kept', 'close keeps the lines and Amt (closeIt only fires the validators)', n(rm(h9.h).amt), 110),
+    eq('not_implemented', 'reverseCorrect / reverseAccrual / reActivate return false like MRMA (not implemented)', [rc9.ok, ra9.ok, re9.ok], [false, false, false]), eq('status_kept', 'and leave the status CL', rm(h9.h).docstatus, 'CL')] : []);
+
   // ── RW-DENOM: the dictionary's RMA-related windows through the generic grid-tab layer (ad_parser + ad_gridtab), WITHOUT Save: rows and parent id per tab (AD-LAYER LAW witness-what-the-user-sees) ──
   global.window = global.window || {};
   var ADParser = require(path.join(ERP, 'ad_parser.js')), GT = require(path.join(ERP, 'ad_gridtab.js'));
@@ -251,6 +310,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var dp = tabRows.filter(function (r) { return r.verdict === 'PASS'; }).length, dg = tabRows.filter(function (r) { return r.verdict === 'GAP'; }).length, di = tabRows.filter(function (r) { return r.verdict === 'INCONCLUSIVE'; }).length;
   log('§RW-DENOM-TOTAL windows=' + WINS.length + ' tabs=' + tabRows.length + ' pass=' + dp + ' gap=' + dg + ' inconclusive=' + di + ' (X of N: ' + dp + ' of ' + tabRows.length + ')');
   verdict('RW-DENOM', tabRows.length ? [eq('no_gap', 'no RMA-related tab is a GAP (link/rows/parent id wrong, or table absent)', dg, 0), eq('judged', 'the sweep judged >= 8 tabs PASS (not vacuous)', dp >= 8, true), eq('windows_open', 'all 5 dictionary windows resolved tabs', tabRows.reduce(function (a, r) { a[r.window] = 1; return a; }, {}) && Object.keys(tabRows.reduce(function (a, r) { a[r.window] = 1; return a; }, {})).length, 5)] : []);
+  if (setupBad.length) { log('§RW-SETUP-BAD ' + setupBad.join(' | ')); log('§RW_VERDICT INCONCLUSIVE setup=' + setupBad.length + ' (nothing above may be read as PASS)'); process.exit(2); }
   var bad = results.filter(function (r) { return r.v === 'FAIL'; }).length, inc = results.filter(function (r) { return r.v === 'INCONCLUSIVE'; }).length;
   log('§RW_VERDICT ' + (bad ? 'FAIL' : inc ? 'INCONCLUSIVE' : 'PASS') + ' cases=' + results.length + ' fail=' + bad + ' inconclusive=' + inc);
   process.exit(bad ? 1 : inc ? 2 : 0);
