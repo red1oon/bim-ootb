@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OplogPic user guide</title><style>
+:root{--bg:#eef0f3;--panel:#fff;--line:#d5d9e0;--fg:#1b1f24;--mut:#5d6674;--acc:#2563eb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161a;--panel:#1d2026;--line:#2c313a;--fg:#e6e8ec;--mut:#9097a3;--acc:#4c8dff;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:1rem 1rem 3rem}
+nav{padding:.75rem 1rem;border-bottom:1px solid var(--line);background:var(--panel)} nav a{color:var(--acc);font-weight:600}
+h1{font-size:1.6rem;margin:1.2rem 0 .6rem} h2{font-size:1.2rem;margin:1.8rem 0 .4rem;border-bottom:1px solid var(--line);padding-bottom:.2rem} h3{font-size:1.05rem}
+code{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 .3em;font-size:.9em;overflow-wrap:anywhere} a{color:var(--acc)} li{margin:.3rem 0} p,li{overflow-wrap:anywhere}
+</style></head><body><nav><a href="./">&larr; Back to the editor</a> &middot; <a href="https://red1oon.github.io/bim-ootb/oplogpic/">https://red1oon.github.io/bim-ootb/oplogpic/</a></nav><main>
+<h1>OplogPic: a photo editor with history (user guide)</h1>
+<p>A browser editor whose document is an op log: every action is one line in a log, and the picture is the replay of that log. Nothing to install: open <code>index.html</code> in a browser, or run <code>node editor/build_dist.js &lt;folder&gt;</code> and put the folder on any static host (https gives you the offline-capable installable PWA). Live: https://red1oon.github.io/bim-ootb/oplogpic/ (the red pill in the top bar links back to the main page). Proof of concept, MIT licensed.</p>
+<h2>The basics</h2>
+<ul>
+<li><strong>Tools</strong> (left bar, keys in brackets): Hard brush (1), Soft brush (2), Smudge (3), Erase (4), Blur (5), Select (6: rectangle or ellipse, Invert, Clear), Wand (7), Move (8), Pick colour (I). Size <code>[</code> <code>]</code>, flow, smudge / blur strength and colour are in the top bar.</li>
+<li><strong>Layers</strong> (side panel): add, hide / show (eye), reorder (arrows), rename (pencil), delete (bin), opacity slider, ten blend modes (normal, multiply, screen, overlay, soft-light, hard-light, darken, lighten, difference, exclusion). Tap a layer name to make it the active layer.</li>
+<li><strong>View:</strong> Ctrl+wheel or pinch zooms, wheel pans, Space+drag pans, <code>0</code> fits; buttons Fit / 100% / + / -.</li>
+<li><strong>Undo / redo:</strong> Ctrl+Z / Ctrl+Shift+Z (phone: two-finger tap undoes, three-finger tap redoes). The work is saved in the browser automatically and restored on reload ("New canvas" clears it).</li>
+<li><strong>Top-right icons:</strong> the book opens this guide in a new tab; the red pill goes back to the main page.</li>
+<li><strong>Out:</strong> Export PNG (exactly what is on screen, 1024x1024), Export PSD (layers, masks, adjustment layers and a merged picture; Photoshop draws its own hue / saturation from the three numbers, so a recomposite there differs slightly), Save log / Load log (the op log as JSON).</li>
+</ul>
+<h2>Photos and text</h2>
+<ul>
+<li><strong>Add photo</strong> takes a picture from the device. The <strong>Fill select</strong> next to it chooses the placement: <em>Fit whole</em> (the default; the whole picture, transparent bars where it does not fill the square), or <em>Fill</em> (the picture covers the canvas and the overflow is cropped away for good): centre, top / left, 1/4 along, 3/4 along, bottom / right. Pick the crop that keeps what matters; the cropped-away pixels are not stored. (The 1/4 and 3/4 choices arrive with the next deploy of the live site.)</li>
+<li><strong>Add text</strong> opens a small panel: the words, size (24-300 px), colour, position (top / middle / bottom) and an optional shadow. It becomes a normal layer named "Text: ...". To change the words, delete the layer and add it again.</li>
+</ul>
+<h2>Advanced (tick the Advanced box at the top of the layer panel)</h2>
+<ul>
+<li><strong>Masks</strong> on layers: add, from selection, invert, apply, delete, paint on the mask (Layer / Mask buttons, Reveal / Hide).</li>
+<li><strong>Clip</strong> a layer to the one below it; <strong>groups</strong> (one level).</li>
+<li><strong>Magic wand:</strong> tap to select an area of similar colour on the active layer. Tolerance slider, Contiguous / All pixels, New / Add / Sub, Grow and Shrink (by 2 px).</li>
+<li><strong>Feather</strong> slider (selection bar, 0-20 px): the next "Mask from selection" gets a soft edge. Use it, with Grow, to cut a subject out of a sky cleanly.</li>
+<li><strong>Adjustment layers</strong> (the "Add adjustment" menu): Hue / Saturation, Levels, Curves, Threshold, Posterize, Invert. Each is a live setting: drag its sliders any time, hide it, reorder it, change its strength. An adjustment changes everything below it; give it a <strong>mask from a selection</strong> (buttons on its row) to limit it to one area, for example one panel of a balloon.</li>
+<li><strong>Move tool:</strong> with a layer active, drag on the canvas to move it; the Scale slider (10-400 %) resizes it; <strong>Apply</strong> records ONE history entry, <strong>Cancel</strong> records nothing. The layer's mask moves with it. Until you Apply, the picture is recomputed from the original layer, so scaling up (the top slips out of frame) and back down brings everything back; after Apply, pixels moved outside the canvas are gone from the layer (undo restores them). Whole layer only: no rotation, no moving of just a selection.</li>
+</ul>
+<h2>History (the panel under the layers)</h2>
+<p>Every entry is listed. Tap an entry to preview the picture at that step; <strong>Back to now</strong> returns; <strong>Go back to here</strong> rewinds to it. <strong>Replay</strong> plays the edit back. <strong>Verify</strong> rebuilds the picture from the log from scratch and checks it equals what is shown. <strong>Show raw entries</strong> lists the log lines with their sizes. <strong>Edit</strong> re-edits a past stroke (the log stays append-only). <strong>Share link</strong> copies the whole history as a link (no photos in it); a link opens view-only.</p>
+<h2>Phone</h2>
+<p>One finger paints; two fingers pinch-zoom and pan; a two-finger tap undoes, a three-finger tap redoes. Bottom dock: tools, colour swatches, brush size; Menu opens the layer panel. A shared link or a hold-to-save picture is offered where the browser cannot share files.</p>
+<h2>Limits</h2>
+<p>1024x1024 canvas, sRGB, 8-bit export; no pen pressure, no rotation, no export size control, no feather of the selection itself, no editing of caption words; photos and captions are stored raw (4 MB each) in the saved log until blob compression exists, so a share link carries no photos; tested in Chromium (desktop and emulated phone), NOT on iOS Safari or a real phone. Memory (measured on a laptop in Chrome): a finished five-layer file takes about 0.5 GB in all (213 MB for an empty editor); a layer is 16 MB; phone numbers are not measured. Verification: <code>node witness_all.js</code> (37 suites) and per-feature suites <code>npm run editor_&lt;name&gt;</code>; every feature has a pre-registered spec and verdicts in <code>witness_log/HYPOTHESES.md</code>.</p>
+<h2>Build and third-party</h2>
+<p><code>node editor/build_dist.js &lt;dir&gt;</code> (PWA folder), <code>--single</code> (one HTML file), <code>--artifact</code> (body only, for a viewer). <code>vendor/ag-psd.js</code> is ag-psd 31.0.3 (MIT), see <code>vendor/ag-psd.LICENSE</code>.</p>
+</main></body></html>
