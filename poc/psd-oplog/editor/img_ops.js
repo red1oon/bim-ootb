@@ -12,8 +12,8 @@
   }
   // contain-fit placement of an iw x ih picture into a W x W canvas
   function fit(iw, ih, W) { const sc = Math.min(W / iw, W / ih), dw = Math.max(1, Math.round(iw * sc)), dh = Math.max(1, Math.round(ih * sc)); return { dw, dh, dx: Math.floor((W - dw) / 2), dy: Math.floor((W - dh) / 2) }; }
-  // fill placement: the source rectangle to draw over the whole canvas; only the longer axis is cropped (anchor 'start' | 'centre' | 'end')
-  function cover(iw, ih, W, anchor) { const s = Math.min(iw, ih), off = (long) => (anchor === 'start' ? 0 : anchor === 'end' ? long - s : Math.floor((long - s) / 2)); return iw >= ih ? { sx: off(iw), sy: 0, sw: s, sh: s } : { sx: 0, sy: off(ih), sw: s, sh: s }; }
+  // fill placement: the source rectangle to draw over the whole canvas; only the longer axis is cropped (anchor 'start' | 'q1' | 'centre' | 'q3' | 'end')
+  function cover(iw, ih, W, anchor) { const s = Math.min(iw, ih), off = (long) => (anchor === 'start' ? 0 : anchor === 'end' ? long - s : anchor === 'q1' ? Math.floor((long - s) / 4) : anchor === 'q3' ? Math.floor(3 * (long - s) / 4) : Math.floor((long - s) / 2)); return iw >= ih ? { sx: off(iw), sy: 0, sw: s, sh: s } : { sx: 0, sy: off(ih), sw: s, sh: s }; }
   const b64 = { enc(u8) { if (node) return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64'); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); },
     dec(str) { if (node) return new Uint8Array(Buffer.from(str, 'base64')); const s = atob(str), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; } };
   function packBlobs(blobs, ops) { const used = {}; for (const o of ops) if (o.op === 'img') used[o.sha] = b64.enc(blobs.get(o.sha)); return used; }

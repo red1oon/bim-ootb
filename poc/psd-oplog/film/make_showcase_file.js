@@ -1,5 +1,5 @@
 // Usage: node film/make_showcase_file.js <clouds.jpg> <balloon.jpg> <outdir>   Builds the finished balloon showcase file through the real editor page (nothing is deployed):
-// Background + Paint (empty) + Clouds (Fill centre) + Balloon (Fill bottom/right, sky wand tol 45, Grow 1, Feather 3, mask inverted) + "Text: Up, up and away" (white, bottom, shadow).
+// Background + Paint (empty) + Clouds (Fill centre) + Balloon (Fill 3/4 along, sky wand tol 45, Grow 1, Feather 3, mask inverted) + "Text: Up, up and away" (white, bottom, size 72, shadow); finally Paint is moved up to sit just below the caption.
 // Writes <outdir>/balloon_showcase.oplog.json (the editor's "Save log"), balloon_showcase.psd, balloon_showcase.png, facts_showcase.tsv (log size, entries, reload check). The photos are NOT in the repo (Unsplash licence, credit lines in the resume doc).
 const fs = require('fs'), path = require('path'), http = require('http');
 const [clouds, balloon, outdir] = process.argv.slice(2); if (!clouds || !balloon || !outdir) { console.error('usage: node film/make_showcase_file.js clouds.jpg balloon.jpg outdir'); process.exit(2); }
@@ -12,9 +12,10 @@ const srv = http.createServer((q, r) => { const f = path.join(ROOT, decodeURICom
   const add = async (file, mode) => { const n0 = await pg.evaluate(() => window.__ed.ops.length); await pg.selectOption('#pfit', mode); await pg.setInputFiles('#photo', file); await pg.waitForFunction((k) => window.__ed.ops.length > k, n0, { timeout: 60000 }); };
   await pg.evaluate(() => window.__ed.renameLayer(1, 'Paint'));
   await add(clouds, 'centre'); await pg.evaluate(() => window.__ed.renameLayer(2, 'Clouds'));
-  await add(balloon, 'end'); await pg.evaluate(() => window.__ed.renameLayer(3, 'Balloon'));
+  await add(balloon, 'q3'); await pg.evaluate(() => window.__ed.renameLayer(3, 'Balloon'));
   await pg.evaluate(() => { const e = window.__ed; e.params.layer = 3; e.params.tool = 'wand'; e.params.tol = 45; e.params.contig = true; e.params.wandMode = 'new'; e.wandAt(60, 40); e.growSel(1); e.maskOp(3, 'sel', 3); e.maskOp(3, 'invert'); e.clearSel(); e.params.tool = 'hard'; e.params.layer = 1; });
-  await pg.evaluate(() => document.getElementById('addt').click()); await pg.fill('#t-text', 'Up, up and away'); await pg.click('#t-add'); await pg.waitForTimeout(800);
+  await pg.evaluate(() => document.getElementById('addt').click()); await pg.fill('#t-text', 'Up, up and away'); await pg.evaluate(() => { document.getElementById('t-size').value = 72; document.getElementById('t-size').dispatchEvent(new Event('input')); }); await pg.click('#t-add'); await pg.waitForTimeout(800);
+  await pg.evaluate(() => window.__ed.moveLayer(1, 3));   // Paint above the photos (below the caption), so strokes on it are visible
   const log = await pg.evaluate(() => window.__ed.save()), h = await pg.evaluate(() => window.__ed.hashes()), names = await pg.evaluate(() => window.__ed.tree().map((n) => n.name)), nOps = await pg.evaluate(() => window.__ed.ops.length);
   fs.writeFileSync(path.join(outdir, 'balloon_showcase.oplog.json'), log); fs.writeFileSync(path.join(outdir, 'balloon_showcase.psd'), Buffer.from(await pg.evaluate(async () => Array.from(await window.__ed.exportPSD()))));
   await pg.screenshot({ path: path.join(outdir, 'balloon_showcase.png'), clip: { x: 186, y: 100, width: 764, height: 764 } });
