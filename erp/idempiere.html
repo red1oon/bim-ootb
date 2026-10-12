@@ -1699,8 +1699,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     cands.forEach(function (c) {
       if (!_tableExists(c.table) || !_colExists(c.table, KC)) return;   // honest: table absent from the seed → skip
       var n = 0;
-      try { var cr = db.exec('SELECT COUNT(*) FROM ' + c.table + ' WHERE ' + KC + '=' + _lit(K)); n = (cr.length && cr[0].values.length) ? cr[0].values[0][0] : 0; }
-      catch (e) { return; }
+      try {
+        // Count through the TIP-SHADOWED reader (crud_overlay.withModelTrx): a document typed/generated THIS session lives in the signed
+        // sidecar, not the bundle — counting the bare bundle showed "destinations=0" for the Shipment/Invoice a POS Order had just
+        // generated (§ERP-DEPTH-FILM P1, measured 2026-10-13). Same reader the model layer uses, so Zoom sees what the user sees.
+        var tip = (window.__crud && typeof window.__crud.withModelTrx === 'function')
+          ? window.__crud.withModelTrx(function (q) { return q('SELECT COUNT(*) AS n FROM ' + c.table + ' WHERE ' + KC + '=' + _lit(K)); }) : null;
+        if (tip && tip.length) n = Number(tip[0].n) || 0;
+        else { var cr = db.exec('SELECT COUNT(*) FROM ' + c.table + ' WHERE ' + KC + '=' + _lit(K)); n = (cr.length && cr[0].values.length) ? cr[0].values[0][0] : 0; }
+      } catch (e) { return; }
       if (n > 0) out.push({ table: c.table, windowId: c.windowId, name: c.name, col: KC, val: K, count: n });
     });
     return out;
