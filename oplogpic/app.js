@@ -105,7 +105,7 @@
     return sum * pow2int(n);
   }
   // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
-  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves'];
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
   // natural cubic spline through integer control points ([x,y] in 0..255), double precision with + - * / only; constant outside [x_first, x_last]; result clipped to [0,1]
   function curveFn(points) {
     const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), M = new Array(n).fill(0);
@@ -124,12 +124,25 @@
     if (kind === 'posterize') { const n = p.levels, f = F(255 / 256); return (c) => { const q = Math.floor(F(F(c * f) * n)); return F(Math.min(q, n - 1) / (n - 1)); }; }
     throw new Error('adjustment kind ' + kind);
   }
+  // hue / saturation / lightness on a straight colour (Level 2f definition in HYPOTHESES.md); float32, + - * / min max floor only; {0,0,0} returns the input
+  function hslRGB(c0, c1, c2, P) {
+    if (!P.hue && !P.sat && !P.light) return [c0, c1, c2];
+    const mx = Math.max(c0, c1, c2), mn = Math.min(c0, c1, c2), d = F(mx - mn); let l = F(F(mx + mn) / 2), s = 0, h = 0;
+    if (d > 0) { const den = F(1 - Math.abs(F(F(2 * l) - 1))); s = den > 0 ? F(d / den) : 0; if (s > 1) s = 1;
+      if (mx === c0) { h = F(F(c1 - c2) / d); if (h < 0) h = F(h + 6); } else if (mx === c1) h = F(F(F(c2 - c0) / d) + 2); else h = F(F(F(c0 - c1) / d) + 4); h = F(h / 6);
+      h = F(h + F(P.hue / 360)); h = F(h - Math.floor(h)); }
+    const sp = P.sat >= 0 ? F(s + F(F(1 - s) * F(P.sat / 100))) : F(s * F(1 + F(P.sat / 100))), lp = P.light >= 0 ? F(l + F(F(1 - l) * F(P.light / 100))) : F(l * F(1 + F(P.light / 100)));
+    if (d <= 0) { const g = lp < 0 ? 0 : lp > 1 ? 1 : lp; return [g, g, g]; }
+    const cc = F(F(1 - Math.abs(F(F(2 * lp) - 1))) * sp), h6 = F(h * 6), sec = Math.min(Math.floor(h6), 5), x = F(cc * F(1 - Math.abs(F(F(h6 - 2 * Math.floor(F(h6 / 2))) - 1)))), m = F(lp - F(cc / 2));
+    const t = [[cc, x, 0], [x, cc, 0], [0, cc, x], [0, x, cc], [x, 0, cc], [cc, 0, x]][sec], q = (v) => { v = F(v + m); return v < 0 ? 0 : v > 1 ? 1 : v; };
+    return [q(t[0]), q(t[1]), q(t[2])];
+  }
   function applyAdjust(back, a, n) {
-    const rgb = a.kind === 'threshold' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
+    const rgb = a.kind === 'threshold' || a.kind === 'hsl' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
     for (let i = 0; i < n; i++) {
       const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
       const c0 = F(back[i*4] / al), c1 = F(back[i*4+1] / al), c2 = F(back[i*4+2] / al); let o0, o1, o2;
-      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
+      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
       const ik = F(1 - k); back[i*4] = F(al * (k >= 1 ? o0 : F(F(c0 * ik) + F(o0 * k)))); back[i*4+1] = F(al * (k >= 1 ? o1 : F(F(c1 * ik) + F(o1 * k)))); back[i*4+2] = F(al * (k >= 1 ? o2 : F(F(c2 * ik) + F(o2 * k))));
     }
   }
@@ -600,17 +613,31 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   const MODE_OUT = { normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', 'soft-light': 'soft light', 'hard-light': 'hard light', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity' };
   const DESC = 'sRGB-like matrix profile (psd-oplog generated)';
   function exportEditorPsd(st, W) {
-    const n = W * W, fs = S.newState(W), children = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
-    for (const id of st.order) {
+    const n = W * W, fs = S.newState(W), hiddenGroups = [], hiddenAdj = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
+    const mkAdj = (id) => { const a = st.A[id], am = meta[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
+      : a.kind === 'hsl' ? { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: P.hue, saturation: P.sat, lightness: P.light } }
+      : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) } : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };   // same fields as doc/psd_export.js mkAdjust
+      S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (a.mask) fs.A[id].mask = Float32Array.from(a.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a maskraster
+      if (am.hidden) hiddenAdj.push(id);
+      const ac = { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj };
+      if (a.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(a.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ac.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
+      return ac; };
+    const mkNode = (id, parent) => {
+      if (st.A[id]) return mkAdj(id);
+      if (st.G[id]) { const g = st.G[id], gm = meta[id]; S.apply(fs, { op: 'group', id, mode: g.mode, opacity: r4(gm.opacity), mask: false }); const kids = g.children.map((c) => mkNode(c, id)); if (gm.hidden) hiddenGroups.push(id);
+        return { name: gm.name, ...(gm.hidden ? { hidden: true } : {}), opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: q255(fs.G[id].opacity), children: kids }; }
       const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; rgba8[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) rgba8[i*4+k] = q8(F(l.pix[i*4+k] / a)); }
-      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false }); const fl = fs.L[id];   // refold as docfold does for a raster op
+      S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false, ...(l.clip ? { clip: true } : {}), ...(parent >= 0 ? { parent } : {}) }); const fl = fs.L[id]; if (l.mask) fl.mask = Float32Array.from(l.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a raster op
       for (let i = 0; i < n; i++) { const a = F(rgba8[i*4+3] / 255); fl.pix[i*4+3] = a; for (let k = 0; k < 3; k++) fl.pix[i*4+k] = F(F(rgba8[i*4+k] / 255) * a); }
       const out = new Uint8ClampedArray(n * 4);   // docfold -> psd_export mkLayer: float -> 16-bit -> 8-bit (identity conversion, sRGB working == layer space)
       for (let i = 0; i < n; i++) { const a = fl.pix[i*4+3]; out[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(fl.pix[i*4+k] / a) * 65535 + 0.5))); out[i*4+k] = Math.floor(v16 / 257 + 0.5); } }
-      if (meta[id].hidden) hiddenIds.push(id); children.push({ name: meta[id].name, ...(meta[id].hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
-    }
-    for (const id of hiddenIds) fs.L[id].opacity = 0;   // hidden: in the file, not in the merged image
+      if (meta[id].hidden) hiddenIds.push(id); const ch = ({ ...(l.clip ? { clipping: true } : {}), name: meta[id].name, ...(meta[id].hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: MODE_OUT[l.mode], opacity: q255(fl.opacity), imageData: { width: W, height: W, data: out } });
+      if (fl.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(fl.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ch.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
+      return ch;
+    };
+    const children = st.root.map((id) => mkNode(id, -1));
+    for (const id of hiddenIds) fs.L[id].opacity = 0; for (const id of hiddenGroups) fs.G[id].opacity = 0; for (const id of hiddenAdj) fs.A[id].opacity = 0;   // hidden: in the file, not in the merged image
     const back = S.composite(fs), res = new Uint8Array(n * 4);   // merged preview, same as DF.render with an identity transform
     for (let i = 0; i < n; i++) { const a = back[i*4+3]; if (a > 0) for (let k = 0; k < 3; k++) { const v16 = Math.max(0, Math.min(65535, Math.floor(F(back[i*4+k] / a) * 65535 + 0.5))); res[i*4+k] = Math.floor(v16 / 257 + 0.5); } res[i*4+3] = q8(a); }
     let bytes = new Uint8Array(AG.writePsd({ width: W, height: W, children, imageData: { width: W, height: W, data: new Uint8ClampedArray(res) } }, { generateThumbnail: false }));
@@ -622,26 +649,75 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 
 ;
 /* ===== editor/layer_ops.js ===== */
-// Layer management ops for the editor log: del, mv, vis, name. Spec: witness_log/HYPOTHESES.md "Level 1a" (L1-L8). Shared by the page, the Node exporter and the tests; stack.js is not edited.
-// Hide = opacity 0 with the real opacity kept in l.keep, so the unchanged compositor skips the layer.
+// Layer management ops for the editor log: del, mv, vis, name, clip, group, parent, ungroup. Spec: witness_log/HYPOTHESES.md "Level 1a" (L1-L8), "Level 2b" (CL), "Level 2c" (G1-G8).
+// Shared by the page, the Node exporter and the tests; stack.js is not edited. Hide = opacity 0 with the real opacity kept in .keep, so the unchanged compositor skips the node.
+// Tree model: st.root = top-level node ids bottom->top (layers and groups); st.G[g].children = that group's layer ids; groups do not nest; st.order = every LAYER id in display order (a walk of root), recomputed here.
 (function (root) {
-  const F = Math.fround;
-  function need(st, o) { const l = st.L[o.layer]; if (!l) throw new Error(o.op + ': unknown layer ' + o.layer); return l; }
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, F = Math.fround;
+  const nodeOf = (st, id) => st.L[id] || st.G[id] || st.A[id];
+  function need(st, o, key) { const id = o[key || 'layer'], n = nodeOf(st, id); if (!n) throw new Error(o.op + ': unknown layer ' + id); return n; }
+  const listOf = (st, id) => { const l = st.L[id]; return l && l.parent >= 0 ? st.G[l.parent].children : st.root; };
+  const reflow = (st) => { const out = []; for (const id of st.root) { if (st.G[id]) out.push(...st.G[id].children); else if (st.L[id]) out.push(id); } st.order = out; };   // adjustments are in root but not in order
+  const retree = (st) => { st.hasTree = Object.keys(st.G).length > 0 || Object.keys(st.A).length > 0 || st.order.some((id) => st.L[id].clip); };   // no groups and no clips: the flat compositor, as before
+  // a clipped layer needs an unclipped LAYER before it in its list (a group in between breaks the chain)
+  const validList = (st, list) => { let base = false; for (const id of list) { if (st.G[id] || st.A[id]) base = false; else if (st.L[id].clip) { if (!base) return false; } else base = true; } return true; };
+  const validAll = (st) => validList(st, st.root) && Object.keys(st.G).every((g) => validList(st, st.G[g].children));
+  function tx(st, fn) {   // run a structural change; on any failure restore the lists and parents exactly
+    const bak = { root: st.root.slice(), order: st.order.slice(), ch: {}, par: {}, hasTree: st.hasTree, L: { ...st.L }, G: { ...st.G }, A: { ...st.A } }; for (const g of Object.keys(st.G)) bak.ch[g] = st.G[g].children.slice(); bak.clip = {}; for (const id of Object.keys(st.L)) { bak.par[id] = st.L[id].parent; bak.clip[id] = st.L[id].clip; }
+    try { fn(); reflow(st); retree(st); if (!validAll(st)) throw new Error('a clipped layer would have no base layer below it in its list'); } catch (e) { for (const k of ['L', 'G', 'A']) { for (const id of Object.keys(st[k])) if (!(id in bak[k])) delete st[k][id]; Object.assign(st[k], bak[k]); } st.root = bak.root; st.order = bak.order; for (const g of Object.keys(bak.ch)) st.G[g].children = bak.ch[g]; for (const id of Object.keys(bak.par)) if (st.L[id]) { st.L[id].parent = bak.par[id]; st.L[id].clip = bak.clip[id]; } st.hasTree = bak.hasTree; throw e; }
+  }
   function apply(st, o) {   // returns true when it handled the op
-    if (o.op === 'del') { need(st, o); if (o.layer === 0) throw new Error('del: the Background cannot be deleted'); delete st.L[o.layer]; for (const a of [st.order, st.root]) { const i = a.indexOf(o.layer); if (i >= 0) a.splice(i, 1); } return true; }
-    if (o.op === 'mv') { need(st, o); const n = st.order.length, i = st.order.indexOf(o.layer);
-      if (o.layer === 0) throw new Error('mv: the Background cannot move'); if (!Number.isInteger(o.to) || o.to < 1 || o.to > n - 1) throw new Error('mv: index ' + o.to + ' out of range 1..' + (n - 1));
-      for (const a of [st.order, st.root]) { const j = a.indexOf(o.layer); a.splice(j, 1); a.splice(o.to, 0, o.layer); } return true; }
+    if (o.op === 'group') { if (nodeOf(st, o.id)) throw new Error('group: id ' + o.id + ' already used'); S.apply(st, o); reflow(st); retree(st); return true; }
+    if (o.op === 'del') { const n = need(st, o); if (o.layer === 0) throw new Error('del: the Background cannot be deleted'); const isG = !!st.G[o.layer], isA = !!st.A[o.layer]; if (isG && st.G[o.layer].children.length) throw new Error('del: the group is not empty (ungroup it first)');
+      const L0 = st.L[o.layer], G0 = st.G[o.layer]; tx(st, () => { const list = isG || isA ? st.root : listOf(st, o.layer), i = list.indexOf(o.layer); list.splice(i, 1); if (isG) delete st.G[o.layer]; else if (isA) delete st.A[o.layer]; else delete st.L[o.layer]; }); void n; void L0; void G0; return true; }
+    if (o.op === 'clip') { const l = need(st, o); if (st.G[o.layer] || st.A[o.layer]) throw new Error('clip: only a layer can be clipped'); if (o.layer === 0) throw new Error('clip: the Background cannot be clipped'); if (typeof o.v !== 'boolean') throw new Error('clip: v must be boolean'); const was = l.clip; tx(st, () => { l.clip = o.v; }); void was; return true; }
+    if (o.op === 'mv') { need(st, o); if (o.layer === 0) throw new Error('mv: the Background cannot move'); const list = listOf(st, o.layer), isRoot = list === st.root, n = list.length, lo = isRoot ? 1 : 0;
+      if (!Number.isInteger(o.to) || o.to < lo || o.to > n - 1) throw new Error('mv: index ' + o.to + ' out of range ' + lo + '..' + (n - 1));
+      tx(st, () => { const j = list.indexOf(o.layer); list.splice(j, 1); list.splice(o.to, 0, o.layer); }); return true; }
+    if (o.op === 'parent') { const l = st.L[o.layer]; if (!l) throw new Error('parent: unknown layer ' + o.layer); if (o.layer === 0) throw new Error('parent: the Background cannot be grouped'); if (o.group !== -1 && !st.G[o.group]) throw new Error('parent: unknown group ' + o.group);
+      const dest = o.group === -1 ? st.root : st.G[o.group].children, lo = o.group === -1 ? 1 : 0; if (!Number.isInteger(o.to) || o.to < lo || o.to > dest.length - (listOf(st, o.layer) === dest ? 1 : 0)) throw new Error('parent: index ' + o.to + ' out of range');
+      tx(st, () => { const src = listOf(st, o.layer); src.splice(src.indexOf(o.layer), 1); dest.splice(o.to, 0, o.layer); l.parent = o.group; }); return true; }
+    if (o.op === 'ungroup') { const g = st.G[o.group]; if (!g) throw new Error('ungroup: unknown group ' + o.group); tx(st, () => { const i = st.root.indexOf(o.group); for (const c of g.children) st.L[c].parent = -1; st.root.splice(i, 1, ...g.children); delete st.G[o.group]; }); return true; }
     if (o.op === 'vis') { const l = need(st, o); if (typeof o.v !== 'boolean') throw new Error('vis: v must be boolean');
       if (!o.v && !l.hid) { l.keep = l.opacity; l.opacity = 0; l.hid = true; } else if (o.v && l.hid) { l.opacity = l.keep; delete l.keep; delete l.hid; } return true; }
     if (o.op === 'name') { const l = need(st, o), s = typeof o.name === 'string' ? o.name.trim() : ''; if (s.length < 1 || s.length > 40) throw new Error('name: 1..40 characters'); l.name = s; return true; }
-    if (o.op === 'set' && o.opacity !== undefined && st.L[o.layer] && st.L[o.layer].hid) { const l = st.L[o.layer]; l.keep = F(o.opacity); if (o.mode) l.mode = o.mode; return true; }
+    if (o.op === 'set' && o.opacity !== undefined && nodeOf(st, o.layer) && nodeOf(st, o.layer).hid) { const l = nodeOf(st, o.layer); l.keep = F(o.opacity); if (o.mode) l.mode = o.mode; return true; }
     return false;
   }
-  const displayName = (id, l) => (l && l.name) || (id === 0 ? 'Background' : 'Layer ' + id);
-  const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } return m; };
-  const api = { apply, displayName, meta };
-  if (typeof module !== 'undefined') module.exports = api; else root.LayerOps = api;
+  const displayName = (id, l, type) => (l && l.name) || (id === 0 ? 'Background' : type === 'adjust' ? (l && l.kind ? l.kind[0].toUpperCase() + l.kind.slice(1) : 'Adjustment') + ' ' + id : (type ? 'Group ' : 'Layer ') + id);
+  const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } for (const id of Object.keys(st.G)) { const g = st.G[id]; m[id] = { name: displayName(+id, g, true), hidden: !!g.hid, opacity: g.hid ? g.keep : g.opacity, group: true }; } for (const id of Object.keys(st.A)) { const a = st.A[id]; m[id] = { name: displayName(+id, a, 'adjust'), hidden: !!a.hid, opacity: a.hid ? a.keep : a.opacity, adjust: true }; } return m; };
+  const nextId = (st) => Math.max(-1, ...Object.keys(st.L).map(Number), ...Object.keys(st.G).map(Number), ...Object.keys(st.A).map(Number)) + 1;
+  const api = { apply, displayName, meta, nextId, reflow, retree, validAll, listOf };
+  if (node) module.exports = api; else root.LayerOps = api;
+})(this);
+
+;
+/* ===== editor/adjust_ops.js ===== */
+// Adjustment layers for the editor log: op 'adjust' (engine op, validated here) and 'adjset' (replace the parameters). Spec: witness_log/HYPOTHESES.md "Level 2d" (AJ1-AJ10).
+// Parameter rules are the doc schema's (doc/schema.js); the engine (stack.js applyAdjust) does the maths.
+(function (root) {
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, LO = node ? require('./layer_ops.js') : root.LayerOps;
+  const KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
+  const DEFAULTS = { invert: () => ({}), levels: () => ({ in_black: 0, in_white: 255, gamma_x100: 100, out_black: 0, out_white: 255 }), threshold: () => ({ level: 128 }), posterize: () => ({ levels: 4 }), curves: () => ({ points: [[0, 0], [255, 255]] }), hsl: () => ({ hue: 0, sat: 0, light: 0 }) };
+  function validate(kind, P) {
+    if (!KINDS.includes(kind)) throw new Error('adjust: unknown kind ' + kind); const ints = (keys) => P && typeof P === 'object' && !Array.isArray(P) && Object.keys(P).sort().join() === [...keys].sort().join() && keys.every((k) => Number.isInteger(P[k])), inr = (k, a, b) => P[k] >= a && P[k] <= b;
+    if (kind === 'invert') { if (!ints([])) throw new Error('adjust: invert takes no parameters'); }
+    else if (kind === 'levels') { if (!ints(['in_black', 'in_white', 'gamma_x100', 'out_black', 'out_white'])) throw new Error('adjust: levels needs exactly in_black, in_white, gamma_x100, out_black, out_white (integers)'); if (!(inr('in_black', 0, 254) && inr('in_white', 1, 255) && P.in_black < P.in_white && inr('gamma_x100', 1, 999) && inr('out_black', 0, 255) && inr('out_white', 0, 255))) throw new Error('adjust: levels parameter out of range'); }
+    else if (kind === 'threshold') { if (!ints(['level']) || !inr('level', 1, 255)) throw new Error('adjust: threshold needs an integer level 1..255'); }
+    else if (kind === 'hsl') { if (!ints(['hue', 'sat', 'light']) || !inr('hue', -180, 180) || !inr('sat', -100, 100) || !inr('light', -100, 100)) throw new Error('adjust: hsl needs integer hue -180..180, sat -100..100, light -100..100'); }
+    else if (kind === 'posterize') { if (!ints(['levels']) || !inr('levels', 2, 255)) throw new Error('adjust: posterize needs an integer levels 2..255'); }
+    else { const pts = P && P.points; if (!P || Object.keys(P).join() !== 'points' || !Array.isArray(pts) || pts.length < 2 || pts.length > 16) throw new Error('adjust: curves needs points: 2..16 [x,y] pairs'); let px = -1;
+      for (const p of pts) { if (!Array.isArray(p) || p.length !== 2 || !Number.isInteger(p[0]) || !Number.isInteger(p[1]) || p[0] < 0 || p[0] > 255 || p[1] < 0 || p[1] > 255) throw new Error('adjust: curve points are integer [x,y] in 0..255'); if (p[0] <= px) throw new Error('adjust: curve x must be strictly increasing'); px = p[0]; } }
+  }
+  const clone = (P) => JSON.parse(JSON.stringify(P));
+  function apply(st, o) {
+    if (o.op === 'adjust') { if (st.L[o.id] || st.G[o.id] || st.A[o.id]) throw new Error('adjust: id ' + o.id + ' already used'); validate(o.kind, o.params); if (!(typeof o.opacity === 'number' && o.opacity >= 0 && o.opacity <= 1) || o.mask !== false) throw new Error('adjust: opacity 0..1 and mask false'); S.apply(st, { ...o, params: clone(o.params) }); LO.reflow(st); LO.retree(st); return true; }
+    if (o.op === 'adjset') { const a = st.A[o.id]; if (!a) throw new Error('adjset: unknown adjustment ' + o.id); validate(a.kind, o.params); a.params = clone(o.params); return true; }
+    return false;
+  }
+  function label(o, kind) { const P = o.params; if (kind === 'curves') return 'Adjust curves ' + o.id + ': ' + P.points.length + ' points'; if (kind === 'levels') return 'Adjust levels ' + o.id + ': in ' + P.in_black + '-' + P.in_white + ', gamma ' + (P.gamma_x100 / 100) + ', out ' + P.out_black + '-' + P.out_white; if (kind === 'threshold') return 'Adjust threshold ' + o.id + ': ' + P.level; if (kind === 'hsl') return 'Adjust hue/saturation ' + o.id + ': hue ' + P.hue + ', sat ' + P.sat + ', light ' + P.light; if (kind === 'posterize') return 'Adjust posterize ' + o.id + ': ' + P.levels + ' levels'; return 'Adjust ' + o.id; }
+  const api = { apply, validate, DEFAULTS, KINDS, label, clone };
+  if (node) module.exports = api; else root.AdjustOps = api;
 })(this);
 
 ;
@@ -657,8 +733,31 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     for (let y = y0; y < y1; y++) { const dy = (y + 0.5 - cy) / ry, dy2 = dy * dy; for (let x = x0; x < x1; x++) { const dx = (x + 0.5 - cx) / rx; if (dx * dx + dy2 <= 1) m[y * W + x] = 1; } }
     return m;
   }
+  const F = Math.fround;
+  function bboxOf(m, W) { let x0 = W, y0 = W, x1 = -1, y1 = -1; for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return x1 < 0 ? [0, 0, 0, 0] : [x0, y0, x1 + 1, y1 + 1]; }
+  // magic wand: spec "Level 2e" (W1-W9). Colour of a pixel = straight RGBA float32 of the layer's own pixels; match = max channel difference <= tol/255 (double arithmetic).
+  function wandMask(st, o) {
+    const W = st.W, l = st.L[o.layer]; if (!l) throw new Error('sel: unknown layer ' + o.layer); if (!Number.isFinite(o.x) || !Number.isFinite(o.y)) throw new Error('sel: wand needs x and y');
+    const sx = Math.floor(o.x), sy = Math.floor(o.y); if (sx < 0 || sy < 0 || sx >= W || sy >= W) throw new Error('sel: wand seed outside the canvas');
+    if (!Number.isInteger(o.tol) || o.tol < 0 || o.tol > 255) throw new Error('sel: tol must be an integer 0..255'); if (typeof o.contiguous !== 'boolean') throw new Error('sel: contiguous must be boolean');
+    const tol = o.tol / 255, pix = l.pix, col = (i, k) => { const a = pix[i*4+3]; return k === 3 ? (a > 0 ? a : 0) : (a > 0 ? F(pix[i*4+k] / a) : 0); }, s0 = sy * W + sx, c0 = [col(s0, 0), col(s0, 1), col(s0, 2), col(s0, 3)];
+    const match = (i) => { for (let k = 0; k < 4; k++) if (Math.abs(c0[k] - col(i, k)) > tol) return false; return true; }, m = new Uint8Array(W * W);
+    if (!o.contiguous) { for (let i = 0; i < W * W; i++) if (match(i)) m[i] = 1; return m; }
+    const q = new Int32Array(W * W); let h = 0, t = 0; m[s0] = 1; q[t++] = s0; const seen = new Uint8Array(W * W); seen[s0] = 1;
+    while (h < t) { const i = q[h++], x = i % W, y = (i / W) | 0; for (let d = 0; d < 4; d++) { const nx = x + (d === 0 ? -1 : d === 1 ? 1 : 0), ny = y + (d === 2 ? -1 : d === 3 ? 1 : 0); if (nx < 0 || ny < 0 || nx >= W || ny >= W) continue; const j = ny * W + nx; if (seen[j]) continue; seen[j] = 1; if (match(j)) { m[j] = 1; q[t++] = j; } } }
+    return m;
+  }
+  function growMask(m, W, n) {
+    const up = n > 0; let cur = m; for (let it = 0; it < Math.abs(n); it++) { const nx = new Uint8Array(W * W);
+      for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const i = y * W + x, a = x > 0 ? cur[i - 1] : (up ? 0 : 1), b = x < W - 1 ? cur[i + 1] : (up ? 0 : 1), c = y > 0 ? cur[i - W] : (up ? 0 : 1), d = y < W - 1 ? cur[i + W] : (up ? 0 : 1); nx[i] = up ? (cur[i] | a | b | c | d) : (cur[i] & a & b & c & d); }
+      cur = nx; } return cur;
+  }
   function setSel(st, o) {
     const W = st.W;
+    if (o.kind === 'wand') { const mode = o.mode === undefined ? 'new' : o.mode; if (mode !== 'new' && mode !== 'add' && mode !== 'sub') throw new Error('sel: mode must be new, add or sub'); if (mode === 'sub' && !st.sel) throw new Error('sel: nothing to subtract from');
+      let m = wandMask(st, o); if (st.sel && mode !== 'new') { const p = st.sel.mask, r = new Uint8Array(W * W); for (let i = 0; i < W * W; i++) r[i] = mode === 'add' ? (p[i] | m[i]) : (p[i] & (m[i] ^ 1)); m = r; }
+      st.sel = { kind: 'wand', box: bboxOf(m, W), inv: st.sel && mode !== 'new' ? st.sel.inv : false, mask: m }; return; }
+    if (o.kind === 'grow') { if (!st.sel) throw new Error('sel: nothing to grow'); if (!Number.isInteger(o.n) || o.n === 0 || Math.abs(o.n) > 32) throw new Error('sel: n must be an integer with 1 <= |n| <= 32'); const m = growMask(st.sel.mask, W, o.n); st.sel = { kind: 'mask', box: bboxOf(m, W), inv: st.sel.inv, mask: m }; return; }
     if (o.kind === 'none') { st.sel = null; return; }
     if (o.kind === 'invert') { if (!st.sel) throw new Error('sel: nothing to invert'); const m = new Uint8Array(st.sel.mask.length); for (let i = 0; i < m.length; i++) m[i] = st.sel.mask[i] ^ 1; st.sel = { ...st.sel, inv: !st.sel.inv, mask: m }; return; }
     if (o.kind !== 'rect' && o.kind !== 'ellipse') throw new Error('sel: unknown kind ' + o.kind);
@@ -674,7 +773,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     if (st.sel && PAINT[o.op]) { const { work, shSt } = shadow(st, o.layer); base(shSt, o); merge(st.L[o.layer].pix, work, st.sel.mask, st.W, [0, 0, st.W - 1, st.W - 1]); return true; }
     return false;
   }
-  const api = { apply, maskOf, merge, shadow };
+  const api = { apply, maskOf, merge, shadow, wandMask, growMask, bboxOf };
   if (typeof module !== 'undefined') module.exports = api; else root.SelectOps = api;
 })(this);
 
@@ -694,12 +793,117 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   }
   // contain-fit placement of an iw x ih picture into a W x W canvas
   function fit(iw, ih, W) { const sc = Math.min(W / iw, W / ih), dw = Math.max(1, Math.round(iw * sc)), dh = Math.max(1, Math.round(ih * sc)); return { dw, dh, dx: Math.floor((W - dw) / 2), dy: Math.floor((W - dh) / 2) }; }
+  // fill placement: the source rectangle to draw over the whole canvas; only the longer axis is cropped (anchor 'start' | 'centre' | 'end')
+  function cover(iw, ih, W, anchor) { const s = Math.min(iw, ih), off = (long) => (anchor === 'start' ? 0 : anchor === 'end' ? long - s : Math.floor((long - s) / 2)); return iw >= ih ? { sx: off(iw), sy: 0, sw: s, sh: s } : { sx: 0, sy: off(ih), sw: s, sh: s }; }
   const b64 = { enc(u8) { if (node) return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64'); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); },
     dec(str) { if (node) return new Uint8Array(Buffer.from(str, 'base64')); const s = atob(str), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; } };
   function packBlobs(blobs, ops) { const used = {}; for (const o of ops) if (o.op === 'img') used[o.sha] = b64.enc(blobs.get(o.sha)); return used; }
   function unpackBlobs(obj) { const m = new Map(); for (const sha of Object.keys(obj || {})) { const u = b64.dec(obj[sha]); if (S.sha256(u) !== sha) throw new Error('blob sha mismatch for ' + sha.slice(0, 12)); m.set(sha, u); } return m; }
-  const api = { apply, fit, b64, packBlobs, unpackBlobs };
+  const api = { apply, fit, cover, b64, packBlobs, unpackBlobs };
   if (node) module.exports = api; else root.ImgOps = api;
+})(this);
+
+;
+/* ===== editor/xform_ops.js ===== */
+// Move / scale of a whole layer (pixels + mask) for the editor log: op 'xform'. Spec: witness_log/HYPOTHESES.md "Level 1g" (X1-X9).
+// {op:'xform', layer, s (per mille 100..4000), cx, cy (pivot 0..W), dx, dy (shift -2048..2048)}; bilinear, premultiplied float32, double arithmetic with + - * / and floor only; mask outside = 1.
+(function (root) {
+  const F = Math.fround, KEYS = ['op', 'layer', 's', 'cx', 'cy', 'dx', 'dy'].sort().join();
+  // src: Float32Array W*W*ch; returns a new Float32Array. outside = the value of neighbours beyond the canvas (0 for pixels, 1 for masks).
+  function resample(src, W, ch, s, cx, cy, dx, dy, outside) {
+    const k = s / 1000, out = new Float32Array(W * W * ch), o = F(outside);
+    for (let y = 0; y < W; y++) {
+      const v = (y + 0.5 - dy - cy) / k + cy - 0.5, j0 = Math.floor(v), fy = v - j0, ry = j0 >= 0 && j0 < W, ry1 = j0 + 1 >= 0 && j0 + 1 < W;
+      for (let x = 0; x < W; x++) {
+        const u = (x + 0.5 - dx - cx) / k + cx - 0.5, i0 = Math.floor(u), fx = u - i0, d = (y * W + x) * ch, in0 = i0 >= 0 && i0 < W, in1 = i0 + 1 >= 0 && i0 + 1 < W;
+        if (fx === 0 && fy === 0) { if (in0 && ry) for (let c = 0; c < ch; c++) out[d + c] = src[(j0 * W + i0) * ch + c]; else if (outside !== 0) for (let c = 0; c < ch; c++) out[d + c] = o; continue; }
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        for (let c = 0; c < ch; c++) {
+          const a = in0 && ry ? src[(j0 * W + i0) * ch + c] : outside, b = in1 && ry ? src[(j0 * W + i0 + 1) * ch + c] : outside, e = in0 && ry1 ? src[((j0 + 1) * W + i0) * ch + c] : outside, f = in1 && ry1 ? src[((j0 + 1) * W + i0 + 1) * ch + c] : outside;
+          out[d + c] = F(w00 * a + w10 * b + w01 * e + w11 * f);
+        }
+      }
+    }
+    return out;
+  }
+  const isInt = Number.isInteger;
+  function validate(st, o) {
+    if (Object.keys(o).sort().join() !== KEYS) throw new Error('xform: needs exactly op, layer, s, cx, cy, dx, dy');
+    const W = st.W; if (!isInt(o.layer) || !st.L[o.layer]) throw new Error('xform: ' + (st.G[o.layer] ? 'a group' : st.A[o.layer] ? 'an adjustment' : 'unknown layer ' + o.layer) + ' cannot be moved here');
+    if (!isInt(o.s) || o.s < 100 || o.s > 4000) throw new Error('xform: s must be an integer 100..4000 (per mille)');
+    if (!isInt(o.cx) || !isInt(o.cy) || o.cx < 0 || o.cx > W || o.cy < 0 || o.cy > W) throw new Error('xform: the pivot must be integers 0..' + W);
+    if (!isInt(o.dx) || !isInt(o.dy) || Math.abs(o.dx) > 2048 || Math.abs(o.dy) > 2048) throw new Error('xform: dx and dy must be integers within +-2048');
+  }
+  function apply(st, o) {
+    if (o.op !== 'xform') return false; validate(st, o); const l = st.L[o.layer], W = st.W;
+    const pix = resample(l.pix, W, 4, o.s, o.cx, o.cy, o.dx, o.dy, 0), mask = l.mask ? resample(l.mask, W, 1, o.s, o.cx, o.cy, o.dx, o.dy, 1) : null;
+    l.pix.set(pix); if (mask) l.mask.set(mask); return true;
+  }
+  // centre of the non-transparent bounding box (integers); the canvas centre for an empty layer
+  function pivotOf(pix, W) { let x0 = W, y0 = W, x1 = -1, y1 = -1; for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) if (pix[(y * W + x) * 4 + 3] > 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return x1 < 0 ? [W >> 1, W >> 1] : [(x0 + x1 + 1) >> 1, (y0 + y1 + 1) >> 1]; }
+  const api = { apply, validate, resample, pivotOf };
+  if (typeof module !== 'undefined') module.exports = api; else root.XformOps = api;
+})(this);
+
+;
+/* ===== editor/text_raster.js ===== */
+// Caption drawing for the editor (page only: needs a canvas). Spec: witness_log/HYPOTHESES.md "Level 1f" (T1-T9). Returns straight-alpha RGBA8 of a W x W transparent canvas with the caption drawn on it; the log stores these pixels (img op), so replay is exact on every device even though the glyph drawing is not.
+(function (root) {
+  const FONT = 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  function wrap(ctx, text, maxW) {
+    const lines = []; for (const para of String(text).split('\n')) { let line = '';
+      for (const word of para.split(/\s+/).filter(Boolean)) {
+        let w = word; while (ctx.measureText(w).width > maxW) { let k = w.length - 1; while (k > 1 && ctx.measureText(w.slice(0, k)).width > maxW) k--; if (line) { lines.push(line); line = ''; } lines.push(w.slice(0, k)); w = w.slice(k); }
+        const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width <= maxW) line = t; else { lines.push(line); line = w; } }
+      lines.push(line); }
+    return lines.filter((l, i, a) => l || (i > 0 && i < a.length - 1));
+  }
+  // opts: { text, size (24..300), color [r,g,b] 0..255, anchor 'top'|'middle'|'bottom', shadow bool }
+  function render(W, opts) {
+    const size = Math.max(24, Math.min(300, Math.round(opts.size))), cv = document.createElement('canvas'); cv.width = cv.height = W; const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.font = 'bold ' + size + 'px ' + FONT; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    const lines = wrap(ctx, opts.text, W * 0.9), lh = Math.round(size * 1.2), bh = lines.length * lh, m = Math.round(W * 0.06), y0 = opts.anchor === 'top' ? m : opts.anchor === 'bottom' ? W - m - bh : Math.round((W - bh) / 2);
+    ctx.fillStyle = 'rgb(' + opts.color.map((v) => Math.round(v)).join(',') + ')';
+    if (opts.shadow) { ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = Math.round(size * 0.08); ctx.shadowOffsetX = ctx.shadowOffsetY = Math.round(size * 0.04); }
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, y0 + i * lh));
+    return new Uint8Array(ctx.getImageData(0, 0, W, W).data.buffer);
+  }
+  const api = { render, wrap };
+  if (typeof module !== 'undefined') module.exports = api; else root.TextRaster = api;
+})(this);
+
+;
+/* ===== editor/mask_ops.js ===== */
+// Layer masks for the editor log: op 'mask' (add | delete | invert | apply | sel) and mask painting (stroke/smudge with t:'mask'). Spec: witness_log/HYPOTHESES.md "Level 2a" (M1-M9).
+// Painting on a mask runs the SAME brush code on a grayscale surrogate layer (m,m,m,1); channel 0 is copied back (only where the selection is 1, when there is one).
+(function (root) {
+  const F = Math.fround, PAINT = { stroke: 1, smudge: 1 };
+  const layerOf = (st, o) => { const l = st.L[o.layer]; if (!l) throw new Error(o.op + ': unknown layer ' + o.layer); return l; };
+  function surrogate(st, layer) { const l = st.L[layer], W = st.W, pix = new Float32Array(W * W * 4); for (let i = 0; i < W * W; i++) { const m = l.mask[i]; pix[i*4] = pix[i*4+1] = pix[i*4+2] = m; pix[i*4+3] = 1; } return { work: pix, sh: { pix }, shSt: { W, L: { [layer]: { pix } } } }; }
+  function merge(real, work, selMask, W, b) { const [x0, y0, x1, y1] = b; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = y * W + x; if (!selMask || selMask[i]) real[i] = work[i*4]; } }
+  // soft mask edge: two passes of a separable box blur of width 2r+1 (rows then columns, twice), edges clamped to the nearest cell; double arithmetic with + - * / only, one float32 rounding at the end (spec Level 2h)
+  function featherMask(src, W, r) {
+    const w = 2 * r + 1; let a = Float64Array.from(src), b = new Float64Array(W * W);
+    const line = (get, set) => { for (let c = 0; c < W; c++) { let s = 0; for (let k = -r; k <= r; k++) s += get(c, Math.min(W - 1, Math.max(0, k))); for (let i = 0; i < W; i++) { set(c, i, s / w); s += get(c, Math.min(W - 1, i + r + 1)) - get(c, Math.max(0, i - r)); } } };
+    for (let pass = 0; pass < 2; pass++) { line((y, x) => a[y * W + x], (y, x, v) => { b[y * W + x] = v; }); line((x, y) => b[y * W + x], (x, y, v) => { a[y * W + x] = v; }); }
+    return Float32Array.from(a, (v) => F(v < 1e-9 ? 0 : v > 1 - 1e-9 ? 1 : v));   // snap the ~1e-17 residue of the running sums, so far-outside is exactly 0 and deep-inside exactly 1 (spec amendment F5)
+  }
+  function apply(st, o, base) {
+    const W = st.W;
+    if (o.op === 'mask') { const l = st.L[o.layer] || st.A[o.layer]; if (!l) throw new Error('mask: unknown layer ' + o.layer); const isAdj = !st.L[o.layer]; if ('feather' in o && (o.kind !== 'sel' || !Number.isInteger(o.feather) || o.feather < 1 || o.feather > 32)) throw new Error('mask: feather must be an integer 1..32 and only goes with kind sel');
+      switch (o.kind) {
+        case 'add': if (l.mask) throw new Error('mask: layer ' + o.layer + ' already has a mask'); l.mask = new Float32Array(W * W).fill(1); return true;
+        case 'delete': if (!l.mask) throw new Error('mask: layer ' + o.layer + ' has no mask'); l.mask = null; return true;
+        case 'invert': if (!l.mask) throw new Error('mask: layer ' + o.layer + ' has no mask'); for (let i = 0; i < W * W; i++) l.mask[i] = F(1 - l.mask[i]); return true;
+        case 'apply': if (isAdj) throw new Error('mask: apply does not work on an adjustment (nothing to bake)'); if (!l.mask) throw new Error('mask: layer ' + o.layer + ' has no mask'); for (let i = 0; i < W * W; i++) { const m = l.mask[i]; for (let k = 0; k < 4; k++) l.pix[i*4+k] = F(l.pix[i*4+k] * m); } l.mask = null; return true;
+        case 'sel': if (!st.sel) throw new Error('mask: no selection'); l.mask = o.feather ? featherMask(st.sel.mask, W, o.feather) : Float32Array.from(st.sel.mask, (v) => v); return true;
+        default: throw new Error('mask: unknown kind ' + o.kind); } }
+    if (o.t === 'mask' && PAINT[o.op]) { if (st.A[o.layer]) throw new Error(o.op + ': painting on an adjustment mask is not supported'); const l = layerOf(st, o); if (!l.mask) throw new Error(o.op + ': layer ' + o.layer + ' has no mask'); if (o.op === 'stroke' && o.kind === 'erase') throw new Error('erase does not work on a mask');
+      const { work, shSt } = surrogate(st, o.layer); base(shSt, o); merge(l.mask, work, st.sel ? st.sel.mask : null, W, [0, 0, W - 1, W - 1]); return true; }
+    return false;
+  }
+  const api = { apply, surrogate, merge, featherMask };
+  if (typeof module !== 'undefined') module.exports = api; else root.MaskOps = api;
 })(this);
 
 ;
@@ -727,22 +931,28 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   function label(o) {
     switch (o.op) {
       case 'layer': return o.id === 0 ? 'Background layer' : 'Add layer ' + o.id; case 'fill': return 'Fill layer ' + o.layer; case 'set': return 'Layer ' + o.layer + (o.opacity !== undefined ? ' opacity ' + pct(o.opacity) : '') + (o.mode ? ' mode ' + o.mode : '');
-      case 'stroke': return ({ hard: 'Hard brush', soft: 'Soft brush', erase: 'Eraser', blur: 'Blur brush' })[o.kind] + ' on layer ' + o.layer + ', size ' + o.r + (o.c && o.kind !== 'blur' && o.kind !== 'erase' ? ', ' + hex(o.c) : '') + ', ' + o.pts.length + ' pts';
-      case 'smudge': return 'Smudge on layer ' + o.layer + ', size ' + o.r + ', ' + o.pts.length + ' pts'; case 'blur': return 'Blur layer ' + o.layer;
+      case 'adjust': return 'Add ' + o.kind + ' adjustment ' + o.id; case 'adjset': { const AJ = node ? require('./adjust_ops.js') : root.AdjustOps, P = o.params, kind = P.points ? 'curves' : P.hue !== undefined ? 'hsl' : P.in_black !== undefined ? 'levels' : P.level !== undefined ? 'threshold' : P.levels !== undefined ? 'posterize' : 'invert'; return AJ.label(o, kind); }
+      case 'group': return 'Add group ' + o.id; case 'ungroup': return 'Ungroup group ' + o.group; case 'parent': return o.group >= 0 ? 'Move layer ' + o.layer + ' into group ' + o.group : 'Move layer ' + o.layer + ' out of its group';
+      case 'clip': return (o.v ? 'Clip layer ' + o.layer + ' to the layer below' : 'Release clipping of layer ' + o.layer);
+      case 'mask': return ({ add: 'Add mask to', delete: 'Delete mask of', invert: 'Invert mask of', apply: 'Apply mask of', sel: 'Mask from selection for' })[o.kind] + ' layer ' + o.layer + (o.feather ? ', feather ' + o.feather + ' px' : '');
+      case 'stroke': return ({ hard: 'Hard brush', soft: 'Soft brush', erase: 'Eraser', blur: 'Blur brush' })[o.kind] + (o.t === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ', size ' + o.r + (o.c && o.kind !== 'blur' && o.kind !== 'erase' ? ', ' + hex(o.c) : '') + ', ' + o.pts.length + ' pts';
+      case 'smudge': return 'Smudge on ' + (o.t === 'mask' ? 'mask of ' : '') + 'layer ' + o.layer + ', size ' + o.r + ', ' + o.pts.length + ' pts'; case 'blur': return 'Blur layer ' + o.layer;
       case 'del': return 'Delete layer ' + o.layer; case 'mv': return 'Move layer ' + o.layer + ' to ' + o.to; case 'vis': return (o.v ? 'Show' : 'Hide') + ' layer ' + o.layer; case 'name': return 'Rename layer ' + o.layer + ' to ' + o.name;
-      case 'sel': return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
-      case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
+      case 'sel': if (o.kind === 'wand') return 'Magic wand at (' + Math.floor(o.x) + ', ' + Math.floor(o.y) + '), tolerance ' + o.tol + (o.contiguous ? ', contiguous' : ', all pixels') + (o.mode && o.mode !== 'new' ? ', ' + o.mode : ''); if (o.kind === 'grow') return (o.n > 0 ? 'Grow' : 'Shrink') + ' selection by ' + Math.abs(o.n); return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
+      case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }
+  const bytesOf = (o) => new TextEncoder().encode(JSON.stringify(o)).length;
+  function raw(o) { if (o && Array.isArray(o.pts) && o.pts.length > 4) { const first = o.pts.slice(0, 4).map((p) => JSON.stringify(p)).join(','); return JSON.stringify({ ...o, pts: '@@' }).replace('"@@"', '[' + first + ',"+' + (o.pts.length - 4) + ' more"]'); } return JSON.stringify(o); }
   const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
   const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
-  async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8); w.close(); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
+  async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8).catch(() => {}); w.close().catch(() => {}); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
   async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
   async function parseLink(hash) {
     const m = /^#v1=([A-Za-z0-9_-]+)&h=([0-9a-f]{16})$/.exec(hash || ''); if (!m) throw new Error('not a painting link');
     let j; try { j = JSON.parse(new TextDecoder().decode(await pipe(b64u.dec(m[1]), DecompressionStream))); } catch (e) { throw new Error('the link is damaged'); }
     if (!j || !Array.isArray(j.ops) || !Number.isInteger(j.W)) throw new Error('the link is damaged'); if (head(j.ops).slice(0, 16) !== m[2]) throw new Error('the link was altered (fingerprint mismatch)'); return j;
   }
-  const api = { expand, apply, label, head, makeLink, parseLink, checkSet };
+  const api = { expand, apply, label, raw, bytesOf, head, makeLink, parseLink, checkSet };
   if (node) module.exports = api; else root.HistoryOps = api;
 })(this);
 
@@ -782,24 +992,27 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, HO = node ? require('./history_ops.js') : root.HistoryOps, SO = node ? require('./select_ops.js') : root.SelectOps, FS = node ? require('../perf/fastsha.js') : root.FastSha;
   const sumOf = (f32) => FS.sha256(new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength));
   function snapshot(st, ops, k) {
-    if (st.hasTree || Object.keys(st.G).length || Object.keys(st.A).length) throw new Error('checkpoint: groups/adjustments are not supported'); const layers = {}, bufs = [];
-    for (const id of st.order) { const l = st.L[id]; if (l.mask) throw new Error('checkpoint: masks are not supported'); layers[id] = { mode: l.mode, opacity: l.opacity, hid: !!l.hid, keep: l.keep, name: l.name, parent: l.parent, clip: !!l.clip }; bufs.push(new Float32Array(l.pix)); }
-    const sel = st.sel ? { kind: st.sel.kind, box: st.sel.box.slice(), inv: !!st.sel.inv } : null;
-    return { v: 1, k, W: st.W, head: HO.head(ops.slice(0, k)), meta: { order: st.order.slice(), root: st.root.slice(), layers, sel }, bufs, sums: bufs.map(sumOf) };
+    const layers = {}, bufs = [], mbufs = [], abufs = [], groups = {}, adjust = {}; for (const a of Object.keys(st.A)) { const o = st.A[a]; if (o.mask) abufs.push(new Float32Array(o.mask)); adjust[a] = { mask: !!o.mask, kind: o.kind, params: JSON.parse(JSON.stringify(o.params)), opacity: o.opacity, hid: !!o.hid, keep: o.keep, name: o.name }; } for (const g of Object.keys(st.G)) { const o = st.G[g]; if (o.mask) throw new Error('checkpoint: group masks are not supported'); groups[g] = { mode: o.mode, opacity: o.opacity, hid: !!o.hid, keep: o.keep, name: o.name, children: o.children.slice() }; }
+    for (const id of st.order) { const l = st.L[id]; if (l.mask) mbufs.push(new Float32Array(l.mask)); layers[id] = { mask: !!l.mask, mode: l.mode, opacity: l.opacity, hid: !!l.hid, keep: l.keep, name: l.name, parent: l.parent, clip: !!l.clip }; bufs.push(new Float32Array(l.pix)); } bufs.push(...mbufs, ...abufs);
+    const sel = st.sel ? { kind: st.sel.kind, box: st.sel.box.slice(), inv: !!st.sel.inv } : null, selMask = st.sel ? new Uint8Array(st.sel.mask) : null;
+    return { v: 1, k, W: st.W, head: HO.head(ops.slice(0, k)), meta: { order: st.order.slice(), root: st.root.slice(), layers, groups, adjust, sel }, bufs, sums: bufs.map(sumOf), selMask, selSum: selMask ? FS.sha256(selMask) : null };
   }
   function usable(ck, ops, opt = {}) {
     if (!ck || ck.v !== 1) throw new Error('not a checkpoint'); if (ck.k > ops.length) throw new Error('checkpoint is ahead of the log (k ' + ck.k + ' > ' + ops.length + ')');
     if (HO.head(ops.slice(0, ck.k)) !== ck.head) throw new Error('log head mismatch: entries before ' + ck.k + ' differ from the checkpoint');
     for (let i = ck.k; i < ops.length; i++) if (ops[i].op === 'amend' && ops[i].i < ck.k) throw new Error('an amend at entry ' + (i + 1) + ' rewrites entry ' + (ops[i].i + 1) + ' before the checkpoint');
-    if (ck.bufs.length !== ck.meta.order.length) throw new Error('buffer count mismatch');
-    if (opt.verify !== false) ck.bufs.forEach((b, i) => { if (!(b instanceof Float32Array) || b.length !== ck.W * ck.W * 4) throw new Error('buffer ' + i + ' has the wrong size'); if (sumOf(b) !== ck.sums[i]) throw new Error('buffer ' + i + ' fails its sha256 (corrupt)'); });
+    const nm = ck.meta.order.filter((id) => ck.meta.layers[id].mask).length, na = Object.keys(ck.meta.adjust || {}).filter((a) => ck.meta.adjust[a].mask).length; if (ck.bufs.length !== ck.meta.order.length + nm + na) throw new Error('buffer count mismatch');
+    if (opt.verify !== false) ck.bufs.forEach((b, i) => { if (!(b instanceof Float32Array) || b.length !== ck.W * ck.W * (i < ck.meta.order.length ? 4 : 1)) throw new Error('buffer ' + i + ' has the wrong size'); if (sumOf(b) !== ck.sums[i]) throw new Error('buffer ' + i + ' fails its sha256 (corrupt)'); });
+    if (ck.meta.sel) { if (!(ck.selMask instanceof Uint8Array) || ck.selMask.length !== ck.W * ck.W) throw new Error('selection mask has the wrong size'); if (opt.verify !== false && FS.sha256(ck.selMask) !== ck.selSum) throw new Error('selection mask fails its sha256 (corrupt)'); }
     return true;
   }
   function resume(ck, ops, applyOp, W, blobs) {
     if (ck.W !== W) throw new Error('canvas size differs'); const st = S.newState(W); st.blobs = blobs;
-    ck.meta.order.forEach((id, i) => { S.apply(st, { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }); const l = st.L[id], m = ck.meta.layers[id]; l.mode = m.mode; l.opacity = m.opacity; if (m.hid) { l.hid = true; l.keep = m.keep; } if (m.name !== undefined) l.name = m.name; l.pix.set(ck.bufs[i]); });
-    st.order = ck.meta.order.slice(); st.root = ck.meta.root.slice();
-    if (ck.meta.sel) { const s = ck.meta.sel, b = s.box; SO.apply(st, { op: 'sel', kind: s.kind, x0: b[0], y0: b[1], x1: b[2], y1: b[3] }, null); if (s.inv) SO.apply(st, { op: 'sel', kind: 'invert' }, null); }
+    ck.meta.order.forEach((id, i) => { S.apply(st, { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }); const l = st.L[id], m = ck.meta.layers[id]; if (m.mask) l.mask = new Float32Array(ck.bufs[ck.meta.order.length + ck.meta.order.filter((x) => ck.meta.layers[x].mask).indexOf(id)]); l.mode = m.mode; l.opacity = m.opacity; if (m.clip) l.clip = true; if (m.hid) { l.hid = true; l.keep = m.keep; } if (m.name !== undefined) l.name = m.name; l.pix.set(ck.bufs[i]); });
+    st.root = ck.meta.root.slice(); for (const g of Object.keys(ck.meta.groups || {})) { const m = ck.meta.groups[g]; st.G[g] = { mode: m.mode, opacity: m.opacity, mask: null, children: m.children.slice(), parent: -1 }; if (m.hid) { st.G[g].hid = true; st.G[g].keep = m.keep; } if (m.name !== undefined) st.G[g].name = m.name; for (const c of m.children) st.L[c].parent = +g; }
+    let ai = ck.meta.order.length + ck.meta.order.filter((x) => ck.meta.layers[x].mask).length; for (const a of Object.keys(ck.meta.adjust || {})) { const m = ck.meta.adjust[a]; st.A[a] = { kind: m.kind, params: JSON.parse(JSON.stringify(m.params)), opacity: m.opacity, mask: m.mask ? new Float32Array(ck.bufs[ai++]) : null, parent: -1 }; if (m.hid) { st.A[a].hid = true; st.A[a].keep = m.keep; } if (m.name !== undefined) st.A[a].name = m.name; }
+    st.order = []; for (const id of st.root) { if (st.G[id]) st.order.push(...st.G[id].children); else if (st.L[id]) st.order.push(id); } st.hasTree = Object.keys(st.G).length > 0 || Object.keys(st.A).length > 0 || st.order.some((id) => st.L[id].clip);
+    if (ck.meta.sel) { const s = ck.meta.sel; st.sel = { kind: s.kind, box: s.box.slice(), inv: !!s.inv, mask: new Uint8Array(ck.selMask) }; }
     const ex = HO.expand(ops); for (let i = ck.k; i < ops.length; i++) applyOp(st, ex[i]); return st;
   }
   const bytes = (ck) => ck.bufs.reduce((a, b) => a + b.byteLength, 0);
@@ -812,11 +1025,11 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, HO = root.HistoryOps, CK = root.Ckpt, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || SO.apply(st, o, base) ? undefined : base(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, AO = root.AdjustOps, HO = root.HistoryOps, CK = root.Ckpt, MO = root.MaskOps, XO = root.XformOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || XO.apply(st, o) || AO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || MO.apply(st, o, base) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    const blobs = new Map(); let st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(), J2 = JSON.stringify; let xf = null, xfRaf = 0, xfPend = null, adjDrag = null, st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { feather: 0, target: 'layer', maskValue: 1, tol: 33, contig: true, wandMode: 'new', tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -826,12 +1039,12 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     const allTiles = () => Array.from({ length: tn * tn }, (_, i) => i);
     function build(list, fromLog) { prevw = null; st = S.newState(W); st.blobs = blobs; ops = []; undo = []; redo = []; cur = null; const ex = HO.expand(list); list.forEach((o, i) => { applyOp(st, ex[i]); ops.push(o); }); if (fromLog) undo = ops.slice(3).map((op) => ({ kind: 'rebuild', op })); D = root.Dirty.makeDirty(st); D.full(); paintTiles(allTiles()); emit(); }
     const initial = () => [{ op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false }, { op: 'fill', layer: 0, c: [1, 1, 1], a: 1 }, { op: 'layer', id: 1, mode: 'normal', opacity: 1, mask: false }];
-    function regionCopy(layer, b) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * 4); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * 4, (y * W + x1 + 1) * 4), (y - y0) * w * 4); return out; }
-    function regionPut(layer, b, data) { const l = st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * 4, (y - y0 + 1) * w * 4), (y * W + x0) * 4); }
+    function regionCopy(layer, b, mk) { const ch = mk ? 1 : 4, l = mk ? st.L[layer].mask : st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * ch); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * ch, (y * W + x1 + 1) * ch), (y - y0) * w * ch); return out; }
+    function regionPut(layer, b, data, mk) { const ch = mk ? 1 : 4, l = mk ? st.L[layer].mask : st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * ch, (y - y0 + 1) * w * ch), (y * W + x0) * ch); }
     const tilesOfBox = (b) => { const set = new Set(); for (let ty = Math.floor(b[1] / T); ty <= Math.floor(b[3] / T); ty++) for (let tx = Math.floor(b[0] / T); tx <= Math.floor(b[2] / T); tx++) set.add(ty * tn + tx); return [...set]; };
     function refresh(list) { for (const t of list) D.renderTile(t); paintTiles(list); }
     // time-sliced drawing for expensive brushes: apply queued dabs within a budget, show them, continue next frame; end() flushes the rest
-    function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
+    function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); if (cur.mk) MO.merge(st.L[cur.o.layer].mask, cur.mk.work, st.sel ? st.sel.mask : null, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
     function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
     // history: full refold keeping the undo/redo stacks (used after an amend and by 'rebuild' entries)
     function rebuildKeep() { let done = false; if (memCk) { try { CK.usable(memCk, ops, { verify: false }); st = CK.resume(memCk, ops, applyOp, W, blobs); done = true; ed.lastRebuild = { ckpt: memCk.k }; } catch (e) { ed.lastRebuild = { ckpt: null, why: e.message }; } } if (!done) { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); } D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
@@ -841,40 +1054,70 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     const ed = {
       W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { blobs.clear(); build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
-      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l) }; }); },
+      layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask, clip: !!l.clip, parent: l.parent }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
-      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (prevw || replaying || readOnly) return;
+      begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (prevw || replaying || readOnly) return; if (xf && p.tool !== 'move') ed.xfApply();
+        if (p.tool === 'move') { if (!cur && l && !l.hid) { if (xf && xf.layer !== p.layer) ed.xfApply(); cur = { mv: { x0: x, y0: y, dx0: xf ? xf.dx : 0, dy0: xf ? xf.dy : 0 } }; } return; }   /* the session starts on the first movement, so a tap (or the first finger of a two-finger tap) opens nothing */
+        if (p.tool === 'wand') { if (!cur && st.L[p.layer]) cur = { wand: [x, y] }; return; }   /* acts on release, so a second finger can cancel it */
         if (p.tool === 'select') { if (!cur) { cur = { selDrag: [x, y], pv: null }; emit(); } return; }
         if (!l || cur || l.hid) return;
-        const snap = new Float32Array(l.pix), color = p.color.map(r4), flow = r4(p.flow);
+        const mk = p.target === 'mask' && l.mask ? MO.surrogate(st, p.layer) : null; if (mk && p.tool === 'erase') return; const snap = new Float32Array(mk ? l.mask : l.pix), v = r4(p.maskValue), color = mk ? [v, v, v] : p.color.map(r4), flow = r4(p.flow);
         const o = p.tool === 'smudge' ? { op: 'smudge', layer: p.layer, pts: [], r: p.size, s: r4(p.strength) } : p.tool === 'blur' ? { op: 'stroke', layer: p.layer, kind: 'blur', pts: [], r: p.size, s: r4(p.strength) } : { op: 'stroke', layer: p.layer, kind: p.tool === 'soft' ? 'soft' : p.tool === 'erase' ? 'erase' : 'hard', pts: [], r: p.size, c: color, a: flow };
-        const sel = st.sel ? SO.shadow(st, p.layer) : null; cur = { o, snap, last: null, tiles: new Set(), box: null, sel };
-        if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(sel ? sel.sh : l, W, o); } else cur.sb = Br.StrokeBuilder(sel ? sel.shSt : st, o);
+        if (mk) o.t = 'mask'; const sel = st.sel && !mk ? SO.shadow(st, p.layer) : null; cur = { o, snap, last: null, tiles: new Set(), box: null, sel, mk };
+        if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(mk ? mk.sh : sel ? sel.sh : l, W, o); } else cur.sb = Br.StrokeBuilder(mk ? mk.shSt : sel ? sel.shSt : st, o);
         ed.move(x, y, true); },
-      move(x, y, first) { if (!cur) return; x = r2(x); y = r2(y); if (cur.selDrag) { cur.pv = [x, y]; emit(); return; } const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
+      move(x, y, first) { if (!cur || cur.wand) return; x = r2(x); y = r2(y); if (cur.mv) { const m = cur.mv; xfPend = [Math.round(m.dx0 + x - m.x0), Math.round(m.dy0 + y - m.y0)]; if (!xfRaf) xfRaf = requestAnimationFrame(() => { xfRaf = 0; if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; }); return; } if (cur.selDrag) { cur.pv = [x, y]; emit(); return; } const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
         const sliced = !!cur.sb && !!cur.sb.queue, planned = cur.o.op === 'smudge' ? cur.pb.push(x, y) : sliced ? cur.sb.queue(x, y) : cur.sb.push(x, y);
-        for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel && !sliced) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, b); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
+        for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel && !sliced) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, b); if (cur.mk && !sliced) MO.merge(st.L[cur.o.layer].mask, cur.mk.work, st.sel ? st.sel.mask : null, W, b); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
         if (sliced) { drainSlice(6); cur.maxPending = Math.max(cur.maxPending || 0, cur.sb.pending()); if (cur.sb.pending() && !cur.raf) cur.raf = requestAnimationFrame(frame); } else if (cur.tiles.size) { refresh([...cur.tiles]); cur.tiles.clear(); }
         if (!first) moveMs.push(performance.now() - t0); },
-      end() { if (!cur) return; if (cur.selDrag) { const d = cur; cur = null; if (d.pv) ed.commitSelDrag(d.selDrag, d.pv); else emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
-        const b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * 4); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * 4, (y * W + b[2] + 1) * 4), (y - b[1]) * sw * 4);
-        ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o }); redo = []; emit(); },
+      end() { if (!cur) return; if (cur.mv) { if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; cur = null; emit(); return; } if (cur.wand) { const d = cur.wand; cur = null; ed.wandAt(d[0], d[1]); return; } if (cur.selDrag) { const d = cur; cur = null; if (d.pv) ed.commitSelDrag(d.selDrag, d.pv); else emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box, mk } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
+        const ch = mk ? 1 : 4, b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * ch); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * ch, (y * W + b[2] + 1) * ch), (y - b[1]) * sw * ch);
+        ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o, mask: !!mk }); redo = []; emit(); },
       get busy() { return !!cur; },
-      cancel() { if (!cur) return; if (cur.selDrag) { cur = null; emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o } = cur; cur = null; if (box) { const pix = st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * 4, (y * W + box[2] + 1) * 4), (y * W + box[0]) * 4); refresh(tilesOfBox(box)); } },
-      addLayer() { if (prevw || replaying || readOnly) return; const id = Math.max(...st.order) + 1, o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
-      setLayer(id, field, value) { if (prevw || replaying || readOnly) return; const l = st.L[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? (l.hid ? l.keep : l.opacity) : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') { if (l.hid) l.keep = prev; else l.opacity = prev; } else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
-      structural(o, inv) { if (prevw || replaying || readOnly) return; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv }); redo = []; if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); emit(); },
-      delLayer(id) { const l = st.L[id], oi = st.order.indexOf(id), ri = st.root.indexOf(id); ed.structural({ op: 'del', layer: id }, () => { st.L[id] = l; st.order.splice(oi, 0, id); st.root.splice(ri, 0, id); }); },
-      moveLayer(id, to) { const from = st.order.indexOf(id); ed.structural({ op: 'mv', layer: id, to }, () => applyOp(st, { op: 'mv', layer: id, to: from })); },
+      cancel() { if (!cur) return; if (cur.mv) { const m = cur.mv; if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } xfPend = null; cur = null; if (xf) ed.xfPreview(m.dx0, m.dy0, xf.s); return; } if (cur.wand) { cur = null; return; } if (cur.selDrag) { cur = null; emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); const { snap, box, o, mk } = cur; cur = null; if (box) { const ch = mk ? 1 : 4, pix = mk ? st.L[o.layer].mask : st.L[o.layer].pix; for (let y = box[1]; y <= box[3]; y++) pix.set(snap.subarray((y * W + box[0]) * ch, (y * W + box[2] + 1) * ch), (y * W + box[0]) * ch); refresh(tilesOfBox(box)); } },
+      addLayer() { if (prevw || replaying || readOnly) return; const id = LO.nextId(st), o = { op: 'layer', id, mode: 'normal', opacity: 1, mask: false }; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { delete st.L[id]; st.order.pop(); st.root.pop(); } }); redo = []; params.layer = id; emit(); },
+      setLayer(id, field, value) { if (prevw || replaying || readOnly) return; const l = st.L[id] || st.G[id] || st.A[id], o = { op: 'set', layer: id, [field]: field === 'opacity' ? r4(value) : value }, prev = field === 'opacity' ? (l.hid ? l.keep : l.opacity) : l.mode; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv() { if (field === 'opacity') { if (l.hid) l.keep = prev; else l.opacity = prev; } else l.mode = prev; } }); redo = []; refresh(allTiles()); emit(); },
+      structural(o, inv) { if (prevw || replaying || readOnly) return; if (xf && o.op !== 'xform') ed.xfApply(); applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', op: o, inv }); redo = []; if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; D.full(); paintTiles(allTiles()); emit(); },
+      delLayer(id) { const isG = !!st.G[id], isA = !!st.A[id], node = st.L[id] || st.G[id] || st.A[id]; if (!node) return; const parent = isG || isA ? -1 : node.parent, idx = (parent >= 0 ? st.G[parent].children : st.root).indexOf(id);
+        ed.structural({ op: 'del', layer: id }, () => { if (isG) st.G[id] = node; else if (isA) st.A[id] = node; else st.L[id] = node; (parent >= 0 ? st.G[parent].children : st.root).splice(idx, 0, id); LO.reflow(st); LO.retree(st); }); },
+      moveLayer(id, to) { const from = LO.listOf(st, id).indexOf(id); ed.structural({ op: 'mv', layer: id, to }, () => applyOp(st, { op: 'mv', layer: id, to: from })); },
       hideLayer(id, hide) { const v = !hide; ed.structural({ op: 'vis', layer: id, v }, () => applyOp(st, { op: 'vis', layer: id, v: !v })); },
-      renameLayer(id, name) { const l = st.L[id], prev = l.name; ed.structural({ op: 'name', layer: id, name }, () => { if (prev === undefined) delete l.name; else l.name = prev; }); },
+      renameLayer(id, name) { const l = st.L[id] || st.G[id] || st.A[id], prev = l.name; ed.structural({ op: 'name', layer: id, name }, () => { if (prev === undefined) delete l.name; else l.name = prev; }); },
       get selPreview() { return cur && cur.selDrag && cur.pv ? [cur.selDrag, cur.pv] : null; },
       selOp(o) { if (prevw || replaying || readOnly) return; const prev = st.sel; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', noPix: true, op: o, inv() { st.sel = prev; } }); redo = []; emit(); },
+      wandAt(x, y, mode) { const o = { op: 'sel', kind: 'wand', layer: params.layer, x: Math.floor(x), y: Math.floor(y), tol: params.tol, contiguous: !!params.contig }; const m = mode || params.wandMode; if (m && m !== 'new') o.mode = m; if (m === 'sub' && !st.sel) return false; ed.selOp(o); return true; },
+      growSel(n) { if (st.sel) ed.selOp({ op: 'sel', kind: 'grow', n }); },
       select(kind, x0, y0, x1, y1) { ed.selOp({ op: 'sel', kind, x0, y0, x1, y1 }); }, invertSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'invert' }); }, clearSel() { if (st.sel) ed.selOp({ op: 'sel', kind: 'none' }); },
       commitSelDrag(a, b) { const c = (v) => Math.max(0, Math.min(W, v)), x0 = c(Math.floor(Math.min(a[0], b[0]))), x1 = c(Math.ceil(Math.max(a[0], b[0]))), y0 = c(Math.floor(Math.min(a[1], b[1]))), y1 = c(Math.ceil(Math.max(a[1], b[1])));
         if (x1 - x0 < 2 || y1 - y0 < 2) ed.clearSel(); else ed.select(params.selShape === 'ellipse' ? 'ellipse' : 'rect', x0, y0, x1, y1); emit(); },
+      tree() { const adj = (id) => { const a = st.A[id]; return { adjust: true, id, kind: a.kind, params: AO.clone(a.params), hasMask: !!a.mask, opacity: a.hid ? a.keep : a.opacity, hidden: !!a.hid, name: LO.displayName(id, a, 'adjust') }; }; const info = (id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask, clip: !!l.clip, parent: l.parent }; };
+        return st.root.slice().reverse().map((id) => (st.A[id] ? adj(id) : st.G[id] ? { group: true, id, mode: st.G[id].mode, opacity: st.G[id].hid ? st.G[id].keep : st.G[id].opacity, hidden: !!st.G[id].hid, name: LO.displayName(id, st.G[id], true), children: st.G[id].children.slice().reverse().map(info) } : info(id))); },
+      // move / scale session (Level 1g): one session = one `xform` entry, resampled once from the layer as it was when the session began
+      get xfActive() { return xf ? { layer: xf.layer, dx: xf.dx, dy: xf.dy, s: xf.s } : null; },
+      xfBegin() { const l = st.L[params.layer]; if (!l || xf || prevw || replaying || readOnly || (cur && !cur.mv)) return false; const [cx, cy] = XO.pivotOf(l.pix, W); xf = { layer: params.layer, pix: new Float32Array(l.pix), mask: l.mask ? new Float32Array(l.mask) : null, cx, cy, dx: 0, dy: 0, s: 1000 }; emit(); return true; },
+      xfPreview(dx, dy, s) { if (!xf) return false; dx = Math.max(-2048, Math.min(2048, Math.round(dx))); dy = Math.max(-2048, Math.min(2048, Math.round(dy))); s = Math.max(100, Math.min(4000, Math.round(s))); const l = st.L[xf.layer]; xf.dx = dx; xf.dy = dy; xf.s = s;
+        if (dx === 0 && dy === 0 && s === 1000) { l.pix.set(xf.pix); if (xf.mask) l.mask.set(xf.mask); } else { l.pix.set(XO.resample(xf.pix, W, 4, s, xf.cx, xf.cy, dx, dy, 0)); if (xf.mask) l.mask.set(XO.resample(xf.mask, W, 1, s, xf.cx, xf.cy, dx, dy, 1)); } D.full(); paintTiles(allTiles()); emit(); return true; },
+      xfCancel() { if (!xf) return; const l = st.L[xf.layer]; l.pix.set(xf.pix); if (xf.mask) l.mask.set(xf.mask); xf = null; if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } xfPend = null; D.full(); paintTiles(allTiles()); emit(); },
+      xfApply() { if (!xf) return; const x = xf; if (x.dx === 0 && x.dy === 0 && x.s === 1000) { ed.xfCancel(); return; } const l = st.L[x.layer]; l.pix.set(x.pix); if (x.mask) l.mask.set(x.mask); xf = null; if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } xfPend = null;
+        ed.structural({ op: 'xform', layer: x.layer, s: x.s, cx: x.cx, cy: x.cy, dx: x.dx, dy: x.dy }, () => { const ll = st.L[x.layer]; ll.pix.set(x.pix); if (x.mask) ll.mask.set(x.mask); }); },
+      addAdjust(kind) { if (prevw || replaying || readOnly) return; const id = LO.nextId(st); ed.structural({ op: 'adjust', id, kind, params: AO.DEFAULTS[kind](), opacity: 1, mask: false }, () => applyOp(st, { op: 'del', layer: id })); return id; },
+      setAdjust(id, params) { const a = st.A[id]; if (!a) return; const prev = AO.clone(a.params); ed.structural({ op: 'adjset', id, params: AO.clone(params) }, () => { a.params = prev; }); },
+      // live editing of settings: preview changes the state and the picture WITHOUT logging; commit logs ONE adjset entry (undo restores the settings before the drag)
+      adjBegin(id) { const a = st.A[id]; if (a && !adjDrag) adjDrag = { id, prev: AO.clone(a.params) }; },
+      adjPreview(id, params) { const a = st.A[id]; if (!a || prevw || replaying || readOnly) return false; try { AO.validate(a.kind, params); } catch (e) { return false; } if (!adjDrag) adjDrag = { id, prev: AO.clone(a.params) }; a.params = AO.clone(params); D.full(); paintTiles(allTiles()); return true; },
+      adjCommit(id) { const d = adjDrag; adjDrag = null; const a = st.A[id]; if (!d || !a || d.id !== id) return; if (J2(d.prev) === J2(a.params)) return; const now = AO.clone(a.params); a.params = AO.clone(d.prev); ed.structural({ op: 'adjset', id, params: now }, () => { a.params = d.prev; }); },
+      adjCancel() { if (!adjDrag) return; const a = st.A[adjDrag.id]; if (a) { a.params = adjDrag.prev; D.full(); paintTiles(allTiles()); } adjDrag = null; },
+      addGroup() { if (prevw || replaying || readOnly) return; const id = LO.nextId(st); ed.structural({ op: 'group', id, mode: 'pass-through', opacity: 1, mask: false }, () => applyOp(st, { op: 'ungroup', group: id })); return id; },
+      groupLayer(id, group, to) { const l = st.L[id]; if (!l) return; const prevG = l.parent, prevI = LO.listOf(st, id).indexOf(id), dest = group === -1 ? st.root : st.G[group].children, at = to === undefined ? dest.length : to;
+        ed.structural({ op: 'parent', layer: id, group, to: at }, () => applyOp(st, { op: 'parent', layer: id, group: prevG, to: prevI })); },
+      ungroupNode(gid) { const g = st.G[gid]; if (!g) return; const idx = st.root.indexOf(gid), meta = { mode: g.mode, opacity: g.opacity, hid: g.hid, keep: g.keep, name: g.name }, kids = g.children.slice();
+        ed.structural({ op: 'ungroup', group: gid }, () => { applyOp(st, { op: 'group', id: gid, mode: meta.mode, opacity: 1, mask: false }); const n = st.G[gid]; n.opacity = meta.opacity; if (meta.hid) { n.hid = true; n.keep = meta.keep; } if (meta.name !== undefined) n.name = meta.name; kids.forEach((c, k) => applyOp(st, { op: 'parent', layer: c, group: gid, to: k })); applyOp(st, { op: 'mv', layer: gid, to: idx }); }); },
+      clipLayer(id, v) { if (!st.L[id] || id === 0) return; ed.structural({ op: 'clip', layer: id, v: !!v }, () => applyOp(st, { op: 'clip', layer: id, v: !v })); },
+      maskOp(id, kind, feather) { const l = st.L[id] || st.A[id]; if (!l) return; const prevMask = l.mask ? new Float32Array(l.mask) : null, prevPix = kind === 'apply' && l.pix ? new Float32Array(l.pix) : null;
+        ed.structural({ op: 'mask', layer: id, kind, ...(kind === 'sel' && feather > 0 ? { feather } : {}) }, () => { l.mask = prevMask; if (prevPix) l.pix.set(prevPix); }); if (!l.mask && params.target === 'mask' && params.layer === id) { params.target = 'layer'; emit(); } },
       get previewing() { return prevw ? prevw.k : null; }, get replaying() { return !!replaying; }, get readOnly() { return readOnly; }, set readOnly(v) { readOnly = !!v; emit(); },
       amend(i, set) { if (prevw || replaying || readOnly) return; const o = { op: 'amend', i, set }; HO.expand([...ops, o]); undo = undo.map((e) => ({ kind: 'rebuild', op: e.op })); ops.push(o); undo.push({ kind: 'rebuild', op: o }); redo = []; rebuildKeep(); emit(); },
       preview(k) { if (replaying) return; k = Math.max(3, Math.min(ops.length, k)); const sc = scratch(), ex = HO.expand(ops.slice(0, k)); for (let i = 0; i < k; i++) applyOp(sc.st, ex[i]); sc.D.full(); paintTiles(allTiles(), sc.D); prevw = { k, sc }; emit(); return { k, comp: S.hashF32(S.composite(sc.st)), layers: Object.keys(sc.st.L).map((id) => S.hashF32(sc.st.L[id].pix)) }; },
@@ -893,12 +1136,12 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       rewindTo(k) { if (replaying || readOnly) return false; prevw = null; k = Math.max(3, Math.min(ops.length, k)); let rebuilt = false;
         while (ops.length > k && undo.length) { const e = undo[undo.length - 1]; if (e.kind === 'rebuild') { while (ops.length > k && undo.length) { const x = undo.pop(); ops.pop(); redo.push(x); } rebuilt = true; break; } ed.undo(); }
         if (rebuilt) rebuildKeep(); emit(); return ops.length === k; },
-      undo() { if (!ed.canUndo() || prevw || replaying || readOnly) return; const e = undo.pop(); ops.pop(); redo.push(e); if (e.kind === 'rebuild') { rebuildKeep(); emit(); return; }
-        if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox); regionPut(e.layer, e.bbox, e.before); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
-      redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
+      undo() { if (xf) { const changed = xf.dx !== 0 || xf.dy !== 0 || xf.s !== 1000; ed.xfCancel(); if (changed) return; } if (!ed.canUndo() || prevw || replaying || readOnly) return; const e = undo.pop(); ops.pop(); redo.push(e); if (e.kind === 'rebuild') { rebuildKeep(); emit(); return; }
+        if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox, e.mask); regionPut(e.layer, e.bbox, e.before, e.mask); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
+      redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after, e.mask); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
       save() { const j = { format: 'psd-oplog-editor', v: 1, W, ops }; if (ed.hasBlobs()) j.blobs = IO.packBlobs(blobs, ops); return JSON.stringify(j); },
       hasBlobs: () => ops.some((o) => o.op === 'img'), get blobs() { return blobs; },
-      importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = Math.max(...st.order) + 1; blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
+      importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = LO.nextId(st); blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
       load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); memCk = null; build(j.ops, true); },
       hashes() { return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; },
       displayRGBA8(x, y) { const p = (y * W + x) * 4, b = D.back, a = b[p + 3]; return a > 0 ? [q(F(b[p] / a)), q(F(b[p + 1] / a)), q(F(b[p + 2] / a)), q(a)] : [0, 0, 0, q(a)]; },
