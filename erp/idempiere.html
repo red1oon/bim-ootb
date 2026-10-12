@@ -4640,6 +4640,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     b.addEventListener('click', function (e) { e.stopPropagation(); _openPostedAffordance(i); });
     return b;
   }
+  // _factPostings — Fact_Acct of one record (tip-shadowed), first accounting schema, shaped like a readPostings result. null when none.
+  function _factPostings(ref) {
+    if (!(window.__crud && typeof window.__crud.withModelTrx === 'function')) return null;
+    var tid = null; try { var t = _adQ('SELECT ad_table_id AS i FROM ad_table WHERE UPPER(tablename)=UPPER(?) LIMIT 1', [ref.table]); tid = t.length ? t[0].i : null; } catch (e) {}
+    if (tid == null) return null;
+    var rows = window.__crud.withModelTrx(function (q) { return q('SELECT c_acctschema_id AS sch, account_id AS acct, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=? AND record_id=? ORDER BY c_acctschema_id, fact_acct_id', [tid, Number(ref.record_id)]); });
+    if (!rows || !rows.length) return null;
+    var sch = rows[0].sch, mine = rows.filter(function (r) { return r.sch === sch; }), nSch = {}; rows.forEach(function (r) { nSch[r.sch] = 1; });
+    var lines = mine.map(function (r) {
+      var a = {}; try { var e = _adQ('SELECT value AS v, name AS n FROM c_elementvalue WHERE c_elementvalue_id=? LIMIT 1', [r.acct]); if (e.length) a = e[0]; } catch (e2) {}
+      return { account_id: r.acct, value: a.v || String(r.acct), name: a.n || '', amtacctdr: Number(r.dr || 0), amtacctcr: Number(r.cr || 0) };
+    });
+    var cents = function (x) { return Math.round(x * 100); }, dr = lines.reduce(function (a, l) { return a + cents(l.amtacctdr); }, 0), cr = lines.reduce(function (a, l) { return a + cents(l.amtacctcr); }, 0);
+    console.log('§POSTED-FACTS table=' + ref.table + ' rec=' + ref.record_id + ' schema=' + sch + ' lines=' + lines.length + ' schemas=' + Object.keys(nSch).length + ' dr=' + (dr / 100) + ' cr=' + (cr / 100) + ' balanced=' + (dr === cr));
+    return { visible: true, posted: true, lines: lines, balanced: dr === cr, source: 'fact_acct', coverage: 'complete',
+             note: Object.keys(nSch).length > 1 ? 'Accounting schema ' + sch + ' (' + (Object.keys(nSch).length - 1) + ' more schema(s) posted)' : null, reason: null };
+  }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
     var tab = _curTab(), rec = _records[_recIdx];
@@ -4648,6 +4665,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
                 ad_org_id: recVal(rec, 'AD_Org_ID') || recVal(rec, 'ad_org_id') };
     var ctx = window.AcctsPosted.buildCtx(_session);
     var result = window.ERPPostings.readPostings(ref, ctx, { adQ: _adQ, projQ: function () { return []; }, factQ: null });
+    // readPostings folds the older POST-op journal. A document completed through the MODEL layer (model_post.js, Doc_* port) writes
+    // its Fact_Acct rows directly into the signed sidecar — read those through the tip-shadowed reader so the Posted button shows
+    // the books of a document generated THIS session (a POS Order's Shipment/Invoice) instead of "absent". Role gate stays with
+    // readPostings (only replaced when it said visible); the frozen seam is not forked, only supplemented.
+    if (result && result.visible && result.coverage === 'absent') { var fr = _factPostings(ref); if (fr) result = fr; }
     var vm = window.AcctsPosted.buildPostedVM(result);
     var ui = window.AcctsPosted.mountAccordion(vm, { doc: document, open: true,
       onInstall: function () { status('Install: run the local install on your machine (QR pairing) — POC'); },

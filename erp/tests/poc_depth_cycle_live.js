@@ -93,6 +93,13 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const st = await pg.$eval('#idmp-status', e => e.innerText).catch(() => ''), row = await pg.$$eval('.idmp-grid tbody tr[data-ad-record]', e => e.map(x => x.innerText.replace(/\s+/g, ' ')));
   ok('D5', 'the Shipment window opens filtered to this order: 1 record, Completed, Posted button', /Shipment \(Customer\)/.test(st) && row.length === 1 && /Completed/.test(row[0]) && /Posted/.test(row[0]), st + ' | ' + (row[0] || '').slice(0, 90));
 
+  // ── D7 · the Posted button on the generated Shipment shows its books (was source=none coverage=absent: readPostings folds the older POST journal)
+  await pg.locator('.idmp-posted-btn.is-posted').first().click(); await pg.waitForTimeout(1800);
+  const pv = await pg.evaluate(() => ({ lines: [...document.querySelectorAll('#posted-overlay .posted-line')].map(x => x.innerText.replace(/\s+/g, ' ')),
+    bal: (document.querySelector('#posted-overlay .posted-balance') || {}).innerText, cov: (document.querySelector('#posted-overlay .posted-cov-chip') || {}).innerText }));
+  ok('D7', 'Posted on the generated Shipment: COGS Dr 2.70 / Inventory asset Cr 2.70, Balanced, coverage complete',
+    pv.lines.some(l => /^51100 .*2\.70 *0?\.?0*$|^51100 .* 2\.70 0\.00$/.test(l) || /51100.*2\.70 0\.00/.test(l)) && pv.lines.some(l => /14120.*0\.00 2\.70/.test(l)) && pv.bal === 'Balanced' && pv.cov === 'complete', JSON.stringify(pv));
+
   // ── D6 · stock + books
   const oh1 = await onhand(), tx = await tip("SELECT movementtype,movementqty FROM m_transaction WHERE m_product_id=" + PROD + " AND m_transaction_id<0");
   console.log('§DEPTH after onhand(' + PROD + ')=' + oh1 + ' newTransactions=' + JSON.stringify(tx));
