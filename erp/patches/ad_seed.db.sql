@@ -2981,3 +2981,6 @@ INSERT INTO ad_ddl_default SELECT 'ws_webservicetypeaccess','isactive','Y' WHERE
 INSERT INTO ad_ddl_default SELECT 'ws_webservicetypeaccess','isreadwrite','Y' WHERE NOT EXISTS (SELECT 1 FROM ad_ddl_default WHERE tablename='ws_webservicetypeaccess' AND columnname='isreadwrite');
 INSERT INTO ad_ddl_default SELECT 'c_periodcontrol','periodaction','N' WHERE NOT EXISTS (SELECT 1 FROM ad_ddl_default WHERE tablename='c_periodcontrol' AND columnname='periodaction');
 INSERT INTO ad_ddl_default SELECT 'c_periodcontrol','periodstatus','N' WHERE NOT EXISTS (SELECT 1 FROM ad_ddl_default WHERE tablename='c_periodcontrol' AND columnname='periodstatus');
+
+-- §RMA-WINDOW-PORT: M_RMATax (AD_Table 200055, tab "RMA Tax" of Customer RMA / Vendor RMA) had a dictionary row but no table in the bundle; MRMA.prepareIt writes it (StandardTaxProvider.calculateRMATaxTotal).
+CREATE TABLE IF NOT EXISTS m_rmatax (m_rma_id NUMERIC, c_tax_id NUMERIC, ad_client_id NUMERIC, ad_org_id NUMERIC, isactive TEXT, created TEXT, createdby NUMERIC, updated TEXT, updatedby NUMERIC, taxbaseamt NUMERIC, taxamt NUMERIC, processed TEXT, istaxincluded TEXT, c_taxprovider_id NUMERIC, m_rmatax_uu TEXT, PRIMARY KEY (m_rma_id, c_tax_id));

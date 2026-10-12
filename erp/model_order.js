@@ -421,6 +421,13 @@
         if (ol && (so || !nz(sl.m_product_id))) {                                             // :1974-1985
           trx.update('c_orderline', ol, { qtydelivered: N(so ? D(ol.qtydelivered).subtract(qty) : D(ol.qtydelivered).add(qty)), datedelivered: io.movementdate });
         }
+        else if (!nz(sl.c_orderline_id) && nz(sl.m_rmaline_id)) {                                               // :1984-2002 Update RMA Line Qty Delivered -> E.rmaReceiptEffects (SD-16)
+          var rLine = trx.get('m_rmaline', sl.m_rmaline_id), EE = engineMod();
+          if (rLine && EE && EE.rmaReceiptEffects) {
+            var eff = EE.rmaReceiptEffects(io, [{ m_rmaline_id: sl.m_rmaline_id, c_orderline_id: null, movementqty: sl.movementqty }], [{ m_rmaline_id: rLine.m_rmaline_id, qtydelivered: rLine.qtydelivered }]);
+            for (var ei = 0; ei < eff.ops.length; ei++) { var er = ML.save(trx, 'm_rmaline', trx.get('m_rmaline', sl.m_rmaline_id), { qtydelivered: eff.ops[ei].qtydelivered }); if (!er.ok) { T.msg(trx, 'Could not update RMA Line: ' + er.error); return 'IN'; } }
+          } else trx.say('§MODEL-UNPORTED-DEP RMA line qty delivered needs erp_engine.rmaReceiptEffects, not loaded on this host');
+        }
         if (p && so && Y(p.iscreateasset) && D(sl.movementqty).signum() > 0 && !rev) { T.msg(trx, 'Create Asset for SO (MInOut.java:2016) — non-core, named'); return 'IN'; }
         if (!so && nz(sl.m_product_id) && !rev) {                                              // :2047-2134 Matching (:2048 not for a reversal)
           var MM = matchMod(), matchQty = D(sl.movementqty);
