@@ -1,0 +1,8 @@
+
+--- stderr ---
+PASS P1 exactly one #redpill, href https://red1oon.github.io/bim-ootb/, target _blank, rel noopener, aria-label "Back to the main page", inline svg true, img count 0 = true (== true)
+PASS P2 desktop: nothing covers the pill (elementFromPoint) and it lies inside the viewport = true (== true)
+PASS P5 computed colour rgb(229,57,53) is red (r >= 200, g <= 90, b <= 90) = true (== true)
+PASS P2 phone: nothing covers the pill and it lies inside the viewport = true (== true)
+PASS P3 phone: the pill is 44 x 44 px (>= 44 x 44), no horizontal overflow, Undo / Redo / Share / Menu fully visible and >= 44 px (undo:true redo:true m-share:true m-menu:true) = true (== true)
+ALL PASS 5

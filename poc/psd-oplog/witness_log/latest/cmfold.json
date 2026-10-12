@@ -12,21 +12,21 @@
    "mean": 0.0015958150227864583
   },
   "E1": {
-   "build_float_doc_ms": 2261.594451010227,
-   "import_one_layer_ms_median": 442.1506259441376,
-   "import_8_layers_ms": 1605.884425997734,
-   "composite_ms": 1360.1606050133705,
-   "export_whole_ms_median": 1105.950923025608
+   "build_float_doc_ms": 2415.3160779476166,
+   "import_one_layer_ms_median": 463.3105900287628,
+   "import_8_layers_ms": 1717.0244550704956,
+   "composite_ms": 1442.433014035225,
+   "export_whole_ms_median": 1139.9730470180511
   },
   "E2b": {
    "max": 1,
    "mean": 0.0016276041666666667
   },
   "E4": {
-   "edit_ms_median": 21.955349028110504,
-   "edit_ms_max": 44.85774600505829,
+   "edit_ms_median": 21.919932007789612,
+   "edit_ms_max": 45.85489308834076,
    "tiles_median": 9,
-   "export_whole_ms": 1105.950923025608
+   "export_whole_ms": 1139.9730470180511
   }
  },
  "node": "v20.20.2",

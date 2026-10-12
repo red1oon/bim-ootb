@@ -1,0 +1,21 @@
+
+--- stderr ---
+PASS C1 36 size x anchor cases: rect inside the picture, side = min(iw, ih), offsets exactly as defined = 0 (== 0)
+PASS C1 square pictures: the whole picture for every anchor = 0 (== 0)
+PASS C1 negative control: start != end for a non-square picture = true (== true)
+PASS C2 portrait, Fill start: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = red/green/green = true (== true)
+PASS C2 portrait, Fill centre: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = green/green/green = true (== true)
+PASS C2 portrait, Fill end: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = green/green/blue = true (== true)
+PASS C3 portrait, Fit whole: blob bytes equal the pre-change placement; bar pixel transparent (alpha 0) = true (== true)
+PASS C2 landscape, Fill start: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = red/green/green = true (== true)
+PASS C2 landscape, Fill centre: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = green/green/green = true (== true)
+PASS C2 landscape, Fill end: every canvas pixel opaque (min alpha 1); probes [start edge, middle, end edge] = green/green/blue = true (== true)
+PASS C3 landscape, Fit whole: blob bytes equal the pre-change placement; bar pixel transparent (alpha 0) = true (== true)
+PASS C4 log entry is exactly {op, id, sha} (id,op,sha), blob has W*W*4 bytes (4194304) = true (== true)
+PASS C4 live == refold = true (== true)
+PASS C4 save -> reset -> load: hashes equal = true (== true)
+PASS C4 undo removes the photo layer, redo brings it back, live == refold = true (== true)
+PASS C4 no page errors = 0 (== 0)
+PASS C5 phone: the Fill select is 44 px high (>= 44) and the page has no horizontal overflow = true (== true)
+C6 (reported) Fill import of a 400x800 picture through the file input: 260 ms
+ALL PASS 18

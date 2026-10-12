@@ -1,0 +1,28 @@
+
+--- stderr ---
+PASS F1 30 shape x radius cases: max abs difference vs the independent scipy reference = 2.9776763943445417e-8 (<= 0.000002)
+PASS F1 all values in [0, 1] = true (== true)
+PASS F1 mass conserved within 1e-4 relative for 12 interior shapes = 0 (== 0)
+PASS F1 a single pixel blurs symmetrically with its peak at the pixel (r=5) = true (== true)
+PASS F2 no feather key: the mask equals the plain selection copy (bitwise) = 0 (== 0)
+PASS F2/F3 6 invalid feather values (0, 0.5, -1, 33, "3", null) throw = 6 (== 6)
+PASS F3 and leave the state unchanged = 6 (== 6)
+PASS F3 feather on kind add / invert / delete throws, state unchanged = true (== true)
+PASS F4 adjustment: pixels deeper inside than ceil(2*sqrt2*r)+2 == the unfeathered result (bitwise) = 0 (== 0)
+PASS F4 adjustment: pixels farther outside than ceil(2*sqrt2*r)+2 == no adjustment (bitwise) = 0 (== 0)
+PASS F4 there are graded edge pixels (2296, > 0) = true (== true)
+PASS F5 layer mask: graded edge (2296 px), deep inside all 1 (529/529), far outside all 0 (473/473) = true (== true)
+F8 (reported) feather r=32 on 1024^2: 302 ms
+PASS F6 the Feather slider sets params.feather (3) = 3 (== 3)
+PASS F6 mask from selection on the adjustment logs exactly 1 entry with feather 3 = true (== true)
+PASS F6 slider at 0: the entry has no feather key = ["kind","layer","op"] (== ["kind","layer","op"])
+PASS F6 layer mask from selection with feather: live == refold = true (== true)
+PASS F6 dirty compositor bit-equal to the full tree composite = true (== true)
+PASS F6 save -> reset -> load: hashes equal = true (== true)
+PASS F6 checkpoint with feathered masks resumes with equal hashes = true (== true)
+PASS F6 undo all (9) / redo all: live == refold at every step = true (== true)
+PASS F6 page PSD bytes (277508) == Node exporter bytes with feathered masks = true (== true)
+PASS F6 psd-tools: a mask has graded edge values strictly between 0 and 255 (12372 px) = true (== true)
+PASS F6 no page errors (desktop) = 0 (== 0)
+PASS F7 phone: the Feather slider is 44 px high (>= 44), the selection bar is shown, no horizontal overflow = true (== true)
+ALL PASS 25

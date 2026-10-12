@@ -1,0 +1,23 @@
+
+--- stderr ---
+PASS T1 blob W*W*4, text present, horizontally centred (3 px), vertical position per anchor (top: bbox 159,64,866,148 | middle: bbox 159,449,866,533 | bottom: bbox 159,834,866,918) = true (== true)
+PASS T2 median colour of the opaque pixels equals the chosen colour within 2 levels (255/255/255 230/0/0 30/120/200) = true (== true)
+PASS T3 shadow adds non-zero-alpha pixels (25989 -> 58574, >= 5 % more) = true (== true)
+PASS T3 the extra pixels are dark (mean 0 < 80) and the alpha-weighted centre moves down-right by ~the offset (dx 1.4, dy 1.3, offset 4; each in [1, 2 x offset]) = true (== true)
+PASS T3 without shadow, no soft pixel is farther than 3 px from a fully opaque one = 0 (== 0)
+PASS T4 sentence wraps: width 864 <= 972, height 696 > 1.5 x one line (92) = true (== true)
+PASS T4 a 34-letter word is broken: width 894 <= 972; nothing clipped on the outer 2 px (0/0) = true (== true)
+PASS T5 Add text opens the panel = true (== true)
+PASS T6 Add with empty text: refused, no entry, a message is shown = true (== true)
+PASS T6 Add with whitespace only: refused, no entry = true (== true)
+PASS T5 exactly 2 new entries: img then name "Text: Hello balloon"; blob 4194304 bytes = true (== true)
+PASS T5 live == refold = true (== true)
+PASS T5 long text: layer name is cut to 28 characters + "..." (<= 40) = true (== true)
+PASS T5 save -> reset -> load: hashes equal = true (== true)
+PASS T5 undo x4 removes both captions, redo x4 restores them; live == refold = true (== true)
+PASS T5 page PSD bytes (1118768) == Node exporter bytes with two caption layers = true (== true)
+PASS T5 no page errors (desktop) = 0 (== 0)
+PASS T7 phone: Add text button and panel controls >= 44 px high (44/44/44/44/44/44/44), no horizontal overflow = true (== true)
+PASS T7 tapping Add logs 2 entries (img, name), no page errors = true (== true)
+T8 (reported) Add caption: size 110 353 ms, size 300 346 ms; blob 4 MB each
+ALL PASS 20

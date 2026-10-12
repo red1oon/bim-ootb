@@ -1,0 +1,40 @@
+
+--- stderr ---
+PASS AM1 hsl: inside the wand mask (197 px) == the unmasked adjustment (bitwise); outside == no adjustment (bitwise) = 0 (== 0)
+PASS AM1 levels: inside the wand mask (197 px) == the unmasked adjustment (bitwise); outside == no adjustment (bitwise) = 0 (== 0)
+PASS AM1 invert: inside the wand mask (197 px) == the unmasked adjustment (bitwise); outside == no adjustment (bitwise) = 0 (== 0)
+PASS AM1 negative control: masked and unmasked differ outside the disc = true (== true)
+PASS AM2 graded mask 0.25 / 0.5 / 1: composite == (1-m)*unadjusted + m*adjusted (max diff) = 5.960464477539063e-8 (<= 0.000002)
+PASS AM3 7 illegal mask ops on an adjustment (double add, delete / invert / sel / apply without mask or selection, painting, unknown id) all throw = 7 (== 7)
+PASS AM3 and each leaves the state unchanged = 7 (== 7)
+PASS AM4 all-ones mask: composite bitwise == the unmasked adjustment = 0 (== 0)
+PASS AM4 inverted all-ones mask (all zeros): composite bitwise == the document without the adjustment = 0 (== 0)
+PASS AM8 balloon (197 px) recoloured red -> green: max diff vs the independent colorsys reference = 2.2351741790771484e-8 (<= 0.000002)
+PASS AM8 sky pixels bitwise unchanged = 0 (== 0)
+PASS AM6 a checkpoint with a masked adjustment is accepted by the rule (no "not supported" throw) = true (== true)
+PASS AM6 a flipped value in the adjustment-mask buffer is rejected by name = true (== true)
+PASS AM6 a checkpoint missing the adjustment-mask buffer is rejected (buffer count) = true (== true)
+PASS AM6 resume gives an equal composite and an equal adjustment mask = true (== true)
+LAYER pixel False
+LAYER pixel True
+ADJ True (32, 32) [255, 0, 255, 0, 255]
+ 
+PASS AM7 psd-tools: the hue/saturation layer carries a mask of the canvas size = true (== true)
+PASS AM7 mask values at 5 probe pixels equal the selection (1 inside the ellipse, 0 outside) = true (== true)
+PASS AM5 wand click on the balloon makes a selection = true (== true)
+PASS AM5 mask from selection logs exactly 1 `mask` entry on the adjustment; live == refold = true (== true)
+PASS AM5 balloon centre is green-dominant (26,229,26), sky outside unchanged (white page, 255,255,255) = true (== true)
+PASS AM5 invert mask: balloon back to red-dominant, outside now adjusted; live == refold = true (== true)
+PASS AM5 delete mask: adjustment applies everywhere again; live == refold = true (== true)
+PASS AM5 hide / show masked adjustment: live == refold = true (== true)
+PASS AM5 dirty compositor bit-equal to the full tree composite = true (== true)
+PASS AM5 save -> reset -> load: hashes equal and the mask is back = true (== true)
+PASS AM6 page: checkpoint with a masked adjustment resumes (used) with equal hashes = true (== true)
+PASS AM5 undo all (10 steps) / redo all through mask ops: live == refold at every step, back to 13 entries = true (== true)
+PASS AM7 page PSD bytes (217240) == Node exporter bytes with a masked adjustment = true (== true)
+PASS AM5 no page errors (desktop) = 0 (== 0)
+PASS AM9 mask-from-selection button present, >= 44 px (44) = true (== true)
+PASS AM9 tapping it logs exactly 1 `mask` entry = true (== true)
+PASS AM9 after masking: Replace / Invert / Delete buttons all >= 44 px (44/44/44) = true (== true)
+PASS AM9 no horizontal overflow, no page errors (phone) = true (== true)
+ALL PASS 33

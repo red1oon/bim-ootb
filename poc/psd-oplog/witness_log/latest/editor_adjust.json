@@ -7,9 +7,9 @@
    "opacityMaxDiff": 5.960464477539063e-8
   },
   "AJ4": {
-   "ok": 4620,
-   "thrown": 2580,
-   "unchanged": 2580
+   "ok": 4544,
+   "thrown": 2656,
+   "unchanged": 2656
   },
   "AJ7": {
    "nodes": [
@@ -72,7 +72,7 @@
    "merged_over1": 18
   },
   "AJ9": {
-   "previewMs": 121.19999998807907
+   "previewMs": 118.89999997615814
   }
  },
  "node": "v20.20.2"
@@ -89,7 +89,7 @@ ok   AJ2 adjset on a missing adjustment and an unknown kind in `adjust` throw
 ok   AJ3 invert at strength 0.25: max difference to 0.75c + 0.25(1-c) is 5.96e-8 (limit 2e-6)
 ok   AJ3 a hidden adjustment == the adjustment never existed (bitwise)
 ok   AJ3 shown again: differs from the never-existed picture (it inverts again)
-ok   AJ4 300 random sequences incl. adjust / adjset / groups / clips (4620 accepted, 2580 refused): all invariants hold after every accepted op []
+ok   AJ4 300 random sequences incl. adjust / adjset / groups / clips (4544 accepted, 2656 refused): all invariants hold after every accepted op []
 ok   AJ4 every refused op left the state exactly unchanged
 ok   AJ5 five adjustments added (levels, curves, threshold, posterize, invert): live == refold, log has 5 `adjust` entries
 ok   AJ5 dragging a setting (8 live previews) logs exactly ONE `adjset` entry; live == refold after each; the entry carries the final value
@@ -104,7 +104,7 @@ ok   AJ6 a checkpoint with 4 adjustments (levels, curves hidden, threshold, post
 ok   AJ7 page PSD bytes (366861) == Node exporter bytes with 5 adjustments (one hidden)
 ok   AJ7 psd-tools reads the same stack bottom to top: kinds pixel/pixel/levels/pixel/pixel/curves/threshold/posterize/invert, names, visibility
 ok   AJ7 the stored merged image: 18 of 1,048,576 pixels differ from the editor composite by more than 1 level (max 255); limit 105 = 0.01 % (AMENDED, see AJ7 AMENDMENT)
-ok   AJ9 one live preview refresh of a 4-point curve at 1024^2 takes 121 ms (limit 400)
+ok   AJ9 one live preview refresh of a 4-point curve at 1024^2 takes 119 ms (limit 400)
 ok   AJ5 no page errors (desktop)
 ok   AJ8 Advanced OFF: no Add adjustment menu and no scroll
 ok   AJ8 Advanced ON: Add adjustment menu 159x44 px (>= 44)
