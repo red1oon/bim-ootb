@@ -541,6 +541,7 @@
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=1"></script>
+<script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
@@ -1637,9 +1638,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
       btn(ic('search', '🔍') + _T('tb.zoom', 'Zoom'), _Ttl('tb.zoom', 'Zoom Across — windows that reference this record'),
-        hasRec, function () { _zoomAcross(tab, rec); });
+        hasRec, function () { _zoomAcross(tab, (_records && _records[_recIdx]) || rec); });   // the record CURRENT at click time — `rec` is the one the toolbar was last drawn for (stale after ◀ ▶ / Last: Zoom showed the FIRST record's referencers)
       sep();
     })();
+    // Product Info — ADWindowToolbar.java:282-286 btnProductInfo ("Product", always present when the role may open Info Product) →
+    //   AbstractADWindowContent.onProductInfo:3533 InfoPanel.showPanel("M_Product"). The generic Info Window (ad_infowin.js) reads AD_InfoWindow.
+    btn((window.OverlayKit && OverlayKit.ico ? OverlayKit.ico('package', 15) + ' ' : '📦 ') + _T('tb.product', 'Product'), _Ttl('tb.product', 'Product Info — stock, price and availability of a product'), !!window.AdInfoWindow,
+      function () { window.AdInfoWindow.open({ tableName: 'M_Product', clientId: window.APP && window.APP.clientId, orgId: window.APP && window.APP.orgId }); }).setAttribute('data-tb', 'productinfo');
+    sep();
     // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
     //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
     //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the
@@ -1679,29 +1685,49 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   COUNT rows in that table WHERE KC=K (skip tables absent from the seed). Keep count>0 → the windows that
   //   reference this record. Pure fold of AD + data: no invented destinations. (matches iDempiere onZoomAcross.)
   function _zoomDestinations(tab, rec) {
+    // Port of GenericZoomProvider.retrieveZoomInfos + evaluateQuery (org.adempiere.model.GenericZoomProvider.java:60-290), non-detailed mode:
+    //   every ACTIVE, writable, non-sort first tab (SeqNo=10, not "Used in…") of EVERY active window whose table is a real table, whose
+    //   column named KC (not key/parent/virtual) is a DISPLAYED field of that tab → count rows WHERE <tab WhereClause> AND KC=K AND client
+    //   in (0,mine); count>0 → one destination per window. (The earlier version looked only at each TABLE's default window.)
     var T = tab.tableName, KC = _keyCol(tab); if (!T || !KC) return [];
     var K = rec ? recVal(rec, KC) : null; if (K == null || K === '') return [];
     var cands = [];
     try {
       var r = db.exec(
-        "SELECT DISTINCT t.TableName, t.AD_Window_ID, w.Name " +
-        "FROM AD_Column col " +
-        "JOIN AD_Table t ON col.AD_Table_ID=t.AD_Table_ID " +
-        "JOIN AD_Window w ON t.AD_Window_ID=w.AD_Window_ID " +
-        "JOIN AD_Tab tb ON tb.AD_Table_ID=t.AD_Table_ID AND tb.AD_Window_ID=t.AD_Window_ID " +
-        "          AND COALESCE(tb.TabLevel,0)=0 AND COALESCE(tb.IsActive,'Y')='Y' " +
-        "WHERE UPPER(col.ColumnName)=UPPER(?) AND UPPER(t.TableName)!=UPPER(?) " +
-        "  AND COALESCE(t.IsActive,'Y')='Y' AND COALESCE(w.IsActive,'Y')='Y' " +
-        "ORDER BY w.Name", [KC, T]);
-      if (r.length) r[0].values.forEach(function (v) { cands.push({ table: v[0], windowId: v[1], name: v[2] }); });
+        "SELECT DISTINCT w.AD_Window_ID, w.Name, t.TableName, c.ColumnName, tt.AD_Tab_ID, tt.WhereClause, tt.SeqNo " +
+        "FROM AD_Table t " +
+        "JOIN AD_Tab tt ON tt.AD_Table_ID=t.AD_Table_ID AND COALESCE(tt.IsActive,'Y')='Y' AND tt.Name NOT LIKE 'Used in%' " +
+        "                  AND COALESCE(tt.IsReadOnly,'N')='N' AND COALESCE(tt.IsSortTab,'N')='N' AND tt.SeqNo=10 " +
+        "JOIN AD_Window w ON tt.AD_Window_ID=w.AD_Window_ID AND COALESCE(w.IsActive,'Y')='Y' " +
+        "JOIN AD_Column c ON t.AD_Table_ID=c.AD_Table_ID AND COALESCE(c.IsActive,'Y')='Y' AND COALESCE(c.IsKey,'N')='N' AND COALESCE(c.IsParent,'N')='N' AND c.ColumnSQL IS NULL " +
+        "JOIN AD_Field f ON f.AD_Column_ID=c.AD_Column_ID AND f.AD_Tab_ID=tt.AD_Tab_ID AND COALESCE(f.IsActive,'Y')='Y' AND COALESCE(f.IsDisplayed,'Y')='Y' " +
+        "WHERE COALESCE(t.IsActive,'Y')='Y' AND COALESCE(t.IsView,'N')='N' AND t.TableName NOT LIKE 'I|_%' ESCAPE '|' AND t.TableName NOT LIKE 'T|_%' ESCAPE '|' " +
+        "  AND UPPER(c.ColumnName)=UPPER(?) " +
+        "ORDER BY w.Name, tt.SeqNo", [KC]);
+      if (r.length) r[0].values.forEach(function (v) { cands.push({ windowId: v[0], name: v[1], table: v[2], col: v[3], tabId: v[4], where: v[5] }); });
     } catch (e) { return []; }
-    var out = [];
+    var A = window.APP || {}, out = [], seen = {};
     cands.forEach(function (c) {
-      if (!_tableExists(c.table) || !_colExists(c.table, KC)) return;   // honest: table absent from the seed → skip
+      if (!_tableExists(c.table) || !_colExists(c.table, c.col)) return;   // honest: table absent from the seed → skip
+      var w = '';
+      if (c.where && String(c.where).trim()) {                              // evaluateQuery: tab where, @vars@ from the record / login context; unresolved → no destination
+        w = String(c.where).replace(/@([#A-Za-z0-9_$]+)@/g, function (m, v) {
+          if (v.charAt(0) === '#') { var cv = ({ '#AD_Client_ID': A.clientId, '#AD_Org_ID': A.orgId, '#AD_User_ID': A.actor })[v]; return cv != null ? String(cv) : m; }
+          var rv = rec ? recVal(rec, v) : null; return rv == null || rv === '' ? m : (isFinite(Number(rv)) ? String(Number(rv)) : _lit(rv));
+        });
+        if (w.indexOf('@') !== -1) return;
+        w = '(' + w + ') AND ';
+      }
+      var sql = 'SELECT COUNT(*) AS n FROM ' + c.table + ' WHERE ' + w + c.table + '.' + c.col + '=' + _lit(K) + (A.clientId != null && _colExists(c.table, 'AD_Client_ID') ? ' AND ' + c.table + '.AD_Client_ID IN (0,' + Number(A.clientId) + ')' : '');
       var n = 0;
-      try { var cr = db.exec('SELECT COUNT(*) FROM ' + c.table + ' WHERE ' + KC + '=' + _lit(K)); n = (cr.length && cr[0].values.length) ? cr[0].values[0][0] : 0; }
-      catch (e) { return; }
-      if (n > 0) out.push({ table: c.table, windowId: c.windowId, name: c.name, col: KC, val: K, count: n });
+      try {
+        // Count through the TIP-SHADOWED reader (crud_overlay.withModelTrx): a document typed/generated THIS session lives in the signed
+        // sidecar, not the bundle (§ERP-DEPTH-FILM P1: bare-bundle count gave destinations=0 for a just-generated Shipment/Invoice).
+        var tip = (window.__crud && typeof window.__crud.withModelTrx === 'function') ? window.__crud.withModelTrx(function (q) { return q(sql); }) : null;
+        if (tip && tip.length) n = Number(tip[0].n) || 0;
+        else { var cr = db.exec(sql); n = (cr.length && cr[0].values.length) ? cr[0].values[0][0] : 0; }
+      } catch (e) { return; }
+      if (n > 0 && !seen[c.windowId + ':' + c.tabId]) { seen[c.windowId + ':' + c.tabId] = 1; out.push({ table: c.table, windowId: c.windowId, name: c.name, col: c.col, val: K, count: n }); }
     });
     return out;
   }
@@ -2654,6 +2680,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
   // raw sql.js exec → array of lowercase-keyed row objects; an ABSENT table (seed slice) → [] + §-named, never a throw.
+  // _tipSql — _sqlRows over the TIP: the bundle PLUS every row this session's signed ops wrote (crud_overlay.withModelTrx shadows the written tables).
+  //   Reports/processes read through it so a document completed a moment ago is in them; falls back to the bare bundle when the overlay is absent.
+  function _tipSql(sql) {
+    try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }); if (r) return r; } } catch (e) {}
+    return _sqlRows(sql);
+  }
   function _sqlRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);
@@ -2794,11 +2826,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var as = p.C_AcctSchema_ID != null ? p.C_AcctSchema_ID : p.c_acctschema_id;
         if (as != null && String(as).trim() !== '' && !isNaN(Number(as))) w.push('c_acctschema_id=' + Number(as));
         console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
-        return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));
+        return _tipSql('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));   // tip-shadowed: includes the books posted this session
       },
       // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
       // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
-      query: function (sql) { return _sqlRows(sql); },
+      query: function (sql) { return _tipSql(sql); },   // tip-shadowed (bundle + this session's signed ops): Aging must see the invoice completed a moment ago
       // FS-16 (§FS2n): the TIP of a table (bundle + this session's signed CRUD ops), keys lower-cased — ImportBPartner reads
       // the staging rows the File Loader committed, and matches BPs / users / locations created in the session too.
       tipRows: function (table) {
@@ -4627,6 +4659,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     b.addEventListener('click', function (e) { e.stopPropagation(); _openPostedAffordance(i); });
     return b;
   }
+  // _factPostings — Fact_Acct of one record (tip-shadowed), first accounting schema, shaped like a readPostings result. null when none.
+  function _factPostings(ref) {
+    if (!(window.__crud && typeof window.__crud.withModelTrx === 'function')) return null;
+    var tid = null; try { var t = _adQ('SELECT ad_table_id AS i FROM ad_table WHERE UPPER(tablename)=UPPER(?) LIMIT 1', [ref.table]); tid = t.length ? t[0].i : null; } catch (e) {}
+    if (tid == null) return null;
+    var rows = window.__crud.withModelTrx(function (q) { return q('SELECT c_acctschema_id AS sch, account_id AS acct, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=? AND record_id=? ORDER BY c_acctschema_id, fact_acct_id', [tid, Number(ref.record_id)]); });
+    if (!rows || !rows.length) return null;
+    var sch = rows[0].sch, mine = rows.filter(function (r) { return r.sch === sch; }), nSch = {}; rows.forEach(function (r) { nSch[r.sch] = 1; });
+    var lines = mine.map(function (r) {
+      var a = {}; try { var e = _adQ('SELECT value AS v, name AS n FROM c_elementvalue WHERE c_elementvalue_id=? LIMIT 1', [r.acct]); if (e.length) a = e[0]; } catch (e2) {}
+      return { account_id: r.acct, value: a.v || String(r.acct), name: a.n || '', amtacctdr: Number(r.dr || 0), amtacctcr: Number(r.cr || 0) };
+    });
+    var cents = function (x) { return Math.round(x * 100); }, dr = lines.reduce(function (a, l) { return a + cents(l.amtacctdr); }, 0), cr = lines.reduce(function (a, l) { return a + cents(l.amtacctcr); }, 0);
+    console.log('§POSTED-FACTS table=' + ref.table + ' rec=' + ref.record_id + ' schema=' + sch + ' lines=' + lines.length + ' schemas=' + Object.keys(nSch).length + ' dr=' + (dr / 100) + ' cr=' + (cr / 100) + ' balanced=' + (dr === cr));
+    return { visible: true, posted: true, lines: lines, balanced: dr === cr, source: 'fact_acct', coverage: 'complete',
+             note: Object.keys(nSch).length > 1 ? 'Accounting schema ' + sch + ' (' + (Object.keys(nSch).length - 1) + ' more schema(s) posted)' : null, reason: null };
+  }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
     var tab = _curTab(), rec = _records[_recIdx];
@@ -4635,6 +4684,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
                 ad_org_id: recVal(rec, 'AD_Org_ID') || recVal(rec, 'ad_org_id') };
     var ctx = window.AcctsPosted.buildCtx(_session);
     var result = window.ERPPostings.readPostings(ref, ctx, { adQ: _adQ, projQ: function () { return []; }, factQ: null });
+    // readPostings folds the older POST-op journal. A document completed through the MODEL layer (model_post.js, Doc_* port) writes
+    // its Fact_Acct rows directly into the signed sidecar — read those through the tip-shadowed reader so the Posted button shows
+    // the books of a document generated THIS session (a POS Order's Shipment/Invoice) instead of "absent". Role gate stays with
+    // readPostings (only replaced when it said visible); the frozen seam is not forked, only supplemented.
+    if (result && result.visible && result.coverage === 'absent') { var fr = _factPostings(ref); if (fr) result = fr; }
     var vm = window.AcctsPosted.buildPostedVM(result);
     var ui = window.AcctsPosted.mountAccordion(vm, { doc: document, open: true,
       onInstall: function () { status('Install: run the local install on your machine (QR pairing) — POC'); },

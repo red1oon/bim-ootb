@@ -173,6 +173,10 @@
         if (f.admitted && !Object.prototype.hasOwnProperty.call(f.admitted, String(val))) return 'valrule:not-admitted';
         break;
       case 'string':
+        // PO.saveNew:3571-3572 — a DocumentNo of the form "<n>" is the not-yet-allocated PREVIEW iDempiere shows on a New and is
+        // treated as EMPTY (the number is allocated at save: crud_overlay._allocDocNo already does exactly that). The numeric
+        // pin must not judge the preview, or no New order can be saved by leaving the number as shown (§ERP-DEPTH-FILM P1).
+        if (V.regex && String(f.col).toLowerCase() === 'documentno' && /^<.*>$/.test(String(val))) break;
         if (V.regex && !new RegExp(V.regex).test(String(val))) return 'regex:' + (V.valRule || V.regex);
         break;
     }

@@ -33,6 +33,8 @@ rows('ad_workflow', WF); rows('ad_wf_node', WF)
 rows('ad_wf_nodenext', 'ad_wf_node_id in (select ad_wf_node_id from ad_wf_node where %s)' % WF)
 rows('ad_message', "value in ('Voided')")   # Msg.getMsg texts the model writes into documents (MOrder.voidIt)
 rows('c_conversiontype', 'true'); rows('m_costqueue', 'ad_client_id=11')
+# Info Product window (bim-compiler prompts/ERP_DEPTH_FILM.md §7): the dictionary rows InfoProductWindow is driven by (AD_InfoWindow 200000 + its AD_InfoColumns)
+rows('ad_infowindow', 'ad_infowindow_id=200000'); rows('ad_infocolumn', 'ad_infowindow_id=200000')
 # M_StorageOnHand / M_StorageReservation: the bundle carries a subset (reservation 2 of the reference's rows) captured earlier —
 # the model's MStorage*.add must start from the reference quantities. Insert missing rows by UU, re-sync quantities by UU.
 for t, qcols in (('m_storageonhand', ['qtyonhand']), ('m_storagereservation', ['qty'])):

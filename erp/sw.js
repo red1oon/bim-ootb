@@ -92,6 +92,7 @@ const PRECACHE_ASSETS = [
   // module on every install that could never run. Dormant-by-design, per TRILOGY_STALE_CODE_AUDIT.md —
   // so the FILE stays; only the unconditional download goes. Whoever turns the bridge on has to add a
   // script tag anyway, and puts this line back in the same PR.
+  'ad_infowin.js',   // Info Window engine (Info Product) — ERP_DEPTH_FILM.md §7
   'ad_gridtab.js',   // §GT — GridTab layer: one AD-driven tab contract (link/WhereClause/current row) for every window (W-GRIDTAB-LIVE)
   'ad_valrule.js',   // §P3 — AD_Val_Rule interpreter feeding the live FK pickers (W-PARITY-VALRULE)
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)

@@ -49,7 +49,13 @@
   function installDefaultHooks() {
     // MOrder.completeIt precondition: the document must have at least one line (docValidate BEFORE_COMPLETE).
     registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.hasLines', function (ctx, info) {
-      var n = ctx.lineCount ? ctx.lineCount(info) : (info.lineCount || 0);
+      // The model layer (model_layer.fire) hands the hook ctx.trx — the transaction the order is being completed in — and no lineCount
+      // accessor; counting through it sees the lines the user typed THIS session (tip-shadowed) as well as the bundle's. Without this the
+      // hook read 0 and refused EVERY UI Complete with "no lines" (§ERP-DEPTH-FILM P1, measured 2026-10-13: order typed in the window + line).
+      var rec = info && info.record || {};
+      var n = ctx.lineCount ? ctx.lineCount(info)
+            : (ctx.trx && typeof ctx.trx.find === 'function' ? ctx.trx.find('c_orderline', { c_order_id: rec.c_order_id }).filter(function (l) { return l.isactive !== 'N'; }).length
+            : (info.lineCount || 0));
       return n > 0 ? null : 'Cannot complete an order with no lines';
     });
   }

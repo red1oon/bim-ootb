@@ -143,7 +143,9 @@
   // FactLine.updateReverseLine :1301-1424 — copy the referenced document's posted line (reversed), times multiplier
   function updateReverseLine(F, fl, adTableId, recordId, lineId, mult, other) {
     var trx = F.trx, rows = trx.find('fact_acct', { c_acctschema_id: F.as.c_acctschema_id, ad_table_id: adTableId, record_id: recordId, account_id: fl.account_id }).filter(function (f) {
-      if (Number(lineId) > 0) { if (String(f.line_id) !== String(lineId)) return false; } else if (f.line_id != null && f.line_id !== '') return false;
+      // a line id is PRESENT when non-zero: a row created this session carries a NEGATIVE pk (−opId), which `> 0` read as "no line" and so never
+      // found the original's posted line → the reversal Shipment of a Void stayed unposted (§ERP-DEPTH-FILM D9g, measured 2026-10-13)
+      if (lineId != null && lineId !== '' && Number(lineId) !== 0) { if (String(f.line_id) !== String(lineId)) return false; } else if (f.line_id != null && f.line_id !== '') return false;
       if (adTableId === 323 && String(f.m_locator_id) !== String(fl.m_locator_id)) return false;   // MMovement.Table_ID
       if (other) { if (D(other.amtacctdr).signum() === 0 && D(other.amtacctcr).signum() !== 0) return D(f.amtacctdr).signum() === 0 && D(f.amtacctcr).signum() !== 0;
         if (D(other.amtacctdr).signum() !== 0 && D(other.amtacctcr).signum() === 0) return D(f.amtacctcr).signum() === 0 && D(f.amtacctdr).signum() !== 0; }
