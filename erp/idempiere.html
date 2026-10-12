@@ -541,6 +541,7 @@
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=1"></script>
+<script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
@@ -1640,6 +1641,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         hasRec, function () { _zoomAcross(tab, rec); });
       sep();
     })();
+    // Product Info — ADWindowToolbar.java:282-286 btnProductInfo ("Product", always present when the role may open Info Product) →
+    //   AbstractADWindowContent.onProductInfo:3533 InfoPanel.showPanel("M_Product"). The generic Info Window (ad_infowin.js) reads AD_InfoWindow.
+    btn((window.OverlayKit && OverlayKit.ico ? OverlayKit.ico('package', 15) + ' ' : '📦 ') + _T('tb.product', 'Product'), _Ttl('tb.product', 'Product Info — stock, price and availability of a product'), !!window.AdInfoWindow,
+      function () { window.AdInfoWindow.open({ tableName: 'M_Product', clientId: window.APP && window.APP.clientId, orgId: window.APP && window.APP.orgId }); }).setAttribute('data-tb', 'productinfo');
+    sep();
     // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
     //   (iDempiere-faithful: the form/grid IS the editable surface, never a read→Edit→modal). Save/Ignore live in the
     //   inline verb bar (dirty-gated), New/Delete on the form pills. The Glass/Gravity ring stays Glass-only (the

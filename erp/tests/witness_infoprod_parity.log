@@ -1,0 +1,4 @@
+# sample legacy (pilot) row for Mulch 137: bomQtyOnHand|Reserved|Ordered|Available @wh103, OnHand @wh104 (last line of this log)
+§INFOPROD-PARITY products=17 warehouses=103,104 cells=187 mismatches=0 nonzeroReservedCells=3
+§INFOPROD-PARITY PASS
+51.0|134.0|0|-83.0|112.0
