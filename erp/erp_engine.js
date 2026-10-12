@@ -304,6 +304,11 @@ function _reversalInvoiceDocOps(iv, orderId, rid) {
   ops.push({ op_type: 'SET_STATUS', table: 'C_Invoice', id: iv.c_invoice_id, doc_status: 'RE' });
   return ops;
 }
+// ONE owner of the invoice allocation sign rule (MInvoice.testAllocation, MInvoice.java:1433-1455: GrandTotal negated for AP and for a credit memo; getGrandTotal(true) :844-853 + :2799-2802 is the same product).
+// _d12 = an exact decimal string at scale 12 (any currency precision, no float); _invAllocTotal = the signed total an invoice's raw allocation sum is compared with.
+function _invSign(inv) { return (String(inv.issotrx) === 'N' ? -1 : 1) * (String(inv.iscreditmemo) === 'Y' ? -1 : 1); }
+function _d12(v) { var r = _dec(v); return r.n * (10n ** BigInt(12 - r.k)); }
+function _invAllocTotal(inv) { return _d12(inv.grandtotal) * BigInt(_invSign(inv)); }
 // reverseInvoice — Reverse-Correct of a COMPLETED invoice (MInvoice.reverseCorrectIt :2599-2619 → reverse(accrual=false) :2627-2815). Implementing prompts/SQLiteIDEMPIERE.md §64.3 (F22) — Witness: M3 O2C5-RC-INV.
 //   1. the invoice's ACTIVE allocations are reversed first (reverseAllocations :2821-2833 → MAllocationHdr.reverseIt non-accrual :845-935): header inactive + 'RE', every line amount /
 //      discount / write-off 0 and inactive (its books are deleted, MFactAcct.deleteEx :906); the payments on those lines are re-tested (MPayment.testAllocation: allocated = payamt ⇒ Y);
@@ -341,7 +346,7 @@ function reverseInvoice(iv, st, opts) {
   ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: iv.c_invoice_id, field: 'ispaid', value: 'Y' });
   (iv.lines || []).forEach(function (l) { if (l.m_inoutline_id) ops.push({ op_type: 'UPDATE_LINE', table: 'M_InOutLine', id: l.m_inoutline_id, isinvoiced: 'N' }); });
   // §REVIEW-FIX-2026-10-11 D2: gt = getGrandTotal(true) (credit memo negated, MInvoice.java:844-853), then AP negated (MInvoice.java:2799-2802)
-  var gt = Number(iv.grandtotal) * (String(iv.iscreditmemo) === 'Y' ? -1 : 1) * (String(iv.issotrx) === 'N' ? -1 : 1), hid = opts.newId('C_AllocationHdr');
+  var gt = Number(iv.grandtotal) * _invSign(iv), hid = opts.newId('C_AllocationHdr');
   ops.push({ op_type: 'CREATE_DOCUMENT', table: 'C_AllocationHdr', c_allocationhdr_id: hid, c_currency_id: iv.c_currency_id, dateacct: iv.dateacct });
   ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: hid * 10 + 1, c_allocationhdr_id: hid, c_invoice_id: iv.c_invoice_id, c_bpartner_id: iv.c_bpartner_id, amount: gt, discountamt: 0, writeoffamt: 0, overunderamt: 0 });
   ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: hid * 10 + 2, c_allocationhdr_id: hid, c_invoice_id: rid, c_bpartner_id: iv.c_bpartner_id, amount: -gt, discountamt: 0, writeoffamt: 0, overunderamt: 0 });
@@ -465,8 +470,7 @@ function completePayment(pay, invoice, opts) {
   // Σ Amount+DiscountAmt+WriteOffAmt) with GrandTotal, negated for AP and for a credit memo. The allocation lines THIS verb creates are already sign-adjusted (AP payment ⇒ negative,
   // :2386-2391), so `invoice.allocatedamt` is that same raw signed sum of the EXISTING lines (AP: negative) and the new line is added as written — no second AP flip, no abs().
   var invAlloc = c(invoice.allocatedamt) + sign * (amt + c(pay.discountamt) + c(pay.writeoffamt));
-  var total = c(invoice.grandtotal) * (String(invoice.issotrx) === 'N' ? -1 : 1) * (String(invoice.iscreditmemo) === 'Y' ? -1 : 1);
-  if (invAlloc === total) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: invoice.c_invoice_id, field: 'ispaid', value: 'Y' });
+  if (BigInt(invAlloc) * 10n ** 10n === _invAllocTotal(invoice)) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: invoice.c_invoice_id, field: 'ispaid', value: 'Y' });
   if (amt === c(pay.payamt)) ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Payment', id: pay.c_payment_id, field: 'isallocated', value: 'Y' });
   return { ok: true, ops: ops };
 }
@@ -580,9 +584,10 @@ function taxLookup(inp) {
   return { ok: false, reason: 'TaxNotFound' };
 }
 // orderTaxes — StandardTaxProvider.calculateOrderTaxTotal (StandardTaxProvider.java:38-110) + MOrderTax.calculateTaxFromLines (MOrderTax.java:312-372).
-//   lines [{c_tax_id, linenetamt (decimal string)}], taxById(id) → c_tax row, included = price list IsTaxIncluded. Amounts out in minor units (precision 2).
-function orderTaxes(lines, taxById, included, children) {
-  var c = function (v) { var r = _dec(v); return Number(r.k <= 2 ? r.n * (10n ** BigInt(2 - r.k)) : _rhu(r.n, 10n ** BigInt(r.k - 2))); };
+//   lines [{c_tax_id, linenetamt (decimal string)}], taxById(id) → c_tax row, included = price list IsTaxIncluded. Amounts out in minor units (precision `prec`, default 2).
+function orderTaxes(lines, taxById, included, children, prec) {   // prec (optional, default 2): the currency StdPrecision the amounts are in minor units of (§SD16: calcTax is linear in the minor unit, so 0-/3-decimal currencies work)
+  var P = prec == null ? 2 : prec;
+  var c = function (v) { var r = _dec(v); return Number(r.k <= P ? r.n * (10n ** BigInt(P - r.k)) : _rhu(r.n, 10n ** BigInt(r.k - P))); };
   var totalLines = 0, seen = [], rows = [];
   lines.forEach(function (l) { totalLines += c(l.linenetamt); var id = Number(l.c_tax_id); if (seen.indexOf(id) < 0) seen.push(id); });
   seen.forEach(function (id) {
@@ -1295,7 +1300,88 @@ function completeReceipt(receipt, lines, policy) {
   return ops;
 }
 
+// ── CUSTOMER RETURN (RMA) — §SD16 (prompts/SQLiteIDEMPIERE.md §SD16; Witness: scripts/bridge/shopday_return.js SD-16) ────────────────────────────────────────
+// rmaCheckQty — MRMALine.checkQty (MRMALine.java checkQty): the shipment line must hold at least the RMA qty, and the qty of the OTHER RMA lines of that shipment line that belong to a
+// COMPLETED/CLOSED RMA (Processed='Y' AND DocStatus IN ('CO','CL'), this line excluded) plus this qty must not exceed it. shipQty/qty/othersCompletedQty are numbers.
+function rmaCheckQty(shipQty, qty, othersCompletedQty) {
+  if (Number(shipQty) < Number(qty)) return false;
+  return Number(shipQty) >= Number(othersCompletedQty || 0) + Number(qty);
+}
+// _minorStr — an integer count of minor units at `p` decimals as an exact decimal string.
+function _minorStr(n, p) { var neg = n < 0, a = String(Math.abs(Number(n))); if (p > 0) { while (a.length <= p) a = '0' + a; a = a.slice(0, a.length - p) + '.' + a.slice(a.length - p); } return (neg ? '-' : '') + a; }
+// rmaLineSave — MRMALine.beforeSave (MRMALine.java:305-398). Refusals, in the Java order: none of shipment line / charge / product => "FillShipLineOrProductOrCharge" (:313-318); product AND charge => "JustProductOrCharge" (:320-325);
+// a shipment-line row: the qty must fit the shipped/returned quantity ("AmtReturned>Shipped", checkQty :402) and the shipment line may appear once per RMA ("InOutLineAlreadyEntered", :338-348); it takes product/charge from the
+// shipment line, Amt = the unit price of the invoice line (else the order line) of it (init :130-230; none => legacy IllegalStateException, named ABSENT here), Qty = the line's own qty (the original qty only when 0 on a NEW line :376-377).
+// A line WITHOUT a shipment line (product-only or charge-only) has NO qty/duplicate check; Qty <= 0 and 0 => 1, Amt 0 => getUnitAmt (:350-367) = src.unitamt (the product price / charge amount the host resolves; missing => named ABSENT, never guessed).
+// LineNetAmt = Amt x Qty rounded HALF_UP at `precision` only when its scale is larger (getTotalAmt). line = { m_inoutline_id, qty, m_product_id, c_charge_id, amt, c_tax_id };
+// src = { m_product_id, c_charge_id, shipqty, priceactual, c_tax_id, origqty, othersCompletedQty, unitamt }; sameRmaLines = other lines of this RMA. Result line carries `precision`.
+function rmaLineSave(line, src, sameRmaLines, precision) {
+  var prec = precision == null ? 2 : precision, ship = Number(line.m_inoutline_id || 0) !== 0, prod = Number(line.m_product_id || 0), chg = Number(line.c_charge_id || 0);
+  if (!ship && !chg && !prod) return { ok: false, reason: 'FillShipLineOrProductOrCharge' };
+  if (prod && chg) return { ok: false, reason: 'JustProductOrCharge' };
+  src = src || {};
+  var qty = line.qty == null ? 0 : line.qty, amtStr, out;
+  if (ship) {
+    if (src.shipqty == null) return { ok: false, reason: 'ABSENT:shipment line quantity (MRMALine.checkQty)' };
+    if (src.priceactual == null) return { ok: false, reason: 'ABSENT:invoice/order line unit price (MRMALine.init :130-230)' };
+    if (Number(qty) === 0) qty = src.origqty;
+    if (!rmaCheckQty(src.shipqty, qty, src.othersCompletedQty)) return { ok: false, reason: 'AmtReturned>Shipped' };
+    if ((sameRmaLines || []).some(function (o) { return Number(o.m_inoutline_id || 0) === Number(line.m_inoutline_id); })) return { ok: false, reason: 'InOutLineAlreadyEntered' };
+    amtStr = String(src.priceactual);
+    out = { m_inoutline_id: line.m_inoutline_id, m_product_id: src.m_product_id || null, c_charge_id: src.c_charge_id || null, c_tax_id: src.c_tax_id };
+  } else {
+    if (Number(qty) === 0) qty = 1;
+    var own = line.amt == null ? '0' : String(line.amt);
+    amtStr = _dec(own).n !== 0n ? own : (src.unitamt == null ? null : String(src.unitamt));
+    if (amtStr == null) return { ok: false, reason: 'ABSENT:unit amount (MProduct price / MCharge.ChargeAmt, MRMALine.getUnitAmt)' };
+    out = { m_inoutline_id: null, m_product_id: prod || null, c_charge_id: chg || null, c_tax_id: line.c_tax_id != null ? line.c_tax_id : src.c_tax_id };
+  }
+  var pd = _dec(amtStr), qd = _dec(qty), k = pd.k + qd.k, n = pd.n * qd.n;
+  var net = k > prec ? _rhu(n, 10n ** BigInt(k - prec)) : n * (10n ** BigInt(prec - k));   // minor units at `precision`
+  out.qty = qty; out.amt = amtStr; out.linenetamt = Number(net); out.precision = prec;
+  return { ok: true, line: out };
+}
+// completeRMA — MRMA.prepareIt/completeIt (MRMA.java): no lines => "NoLines"; every line with a shipment line re-checks the qty ("AmtReturned>Shipped"); the tax total (StandardTaxProvider.calculateRMATaxTotal :293-365 —
+// MRMATax per tax, summary taxes split per child) gives Amt = lines + taxes (taxes only when not tax-included); completeIt books NOTHING and moves NO stock/cost: it only approves, sets Processed and the status.
+// lines = rmaLineSave results ({ok, line:{...}}) or the flat line, each + {shipqty, othersCompletedQty} for a shipment-line row; ctx = { taxById, taxChildren, taxIncluded, precision (default 2, must equal the lines') }.
+// Returns { ok, docstatus, amt (minor units at precision), precision, taxes:[{c_tax_id, taxbaseamt, taxamt}] (minor units), ops }.
+function completeRMA(rma, lines, ctx) {
+  if (!lines || !lines.length) return { ok: false, reason: 'NoLines' };
+  var P = ctx.precision == null ? 2 : ctx.precision, div = Math.pow(10, P), ls = [];
+  for (var i = 0; i < lines.length; i++) {
+    var x = Object.assign({}, lines[i].line || {}, lines[i]);
+    if (x.ok === false) return { ok: false, reason: x.reason || 'line-refused' };
+    if (x.precision != null && Number(x.precision) !== P) return { ok: false, reason: 'precision-mismatch line=' + x.precision + ' ctx=' + P };
+    if (x.linenetamt == null || isNaN(Number(x.linenetamt))) return { ok: false, reason: 'ABSENT:linenetamt on RMA line ' + (i + 1) };
+    if (Number(x.m_inoutline_id || 0)) {
+      if (x.shipqty == null) return { ok: false, reason: 'ABSENT:shipqty on RMA line ' + (i + 1) };
+      if (!rmaCheckQty(x.shipqty, x.qty, x.othersCompletedQty)) return { ok: false, reason: 'AmtReturned>Shipped' };
+    }
+    ls.push(x);
+  }
+  var t = orderTaxes(ls.map(function (l) { return { linenetamt: _minorStr(l.linenetamt, P), c_tax_id: l.c_tax_id }; }), ctx.taxById, !!ctx.taxIncluded, ctx.taxChildren, P);
+  var bad = t.rows.filter(function (x) { return x.error; })[0]; if (bad) return { ok: false, reason: 'tax-error', detail: bad.error };
+  var ops = t.rows.map(function (x) { return { op_type: 'CREATE_LINE', table: 'M_RMATax', m_rma_id: rma.m_rma_id, c_tax_id: x.c_tax_id, taxbaseamt: x.taxbaseamt / div, taxamt: x.taxamt / div }; });
+  ops.push({ op_type: 'UPDATE_FIELD', table: 'M_RMA', id: rma.m_rma_id, field: 'amt', value: t.grandTotal / div });
+  ops.push({ op_type: 'SET_STATUS', table: 'M_RMA', id: rma.m_rma_id, doc_status: 'CO' });
+  return { ok: true, docstatus: 'CO', amt: t.grandTotal, precision: P, taxes: t.rows, ops: ops };
+}
+// rmaReceiptEffects — MInOut.completeIt "Update RMA Line Qty Delivered" (MInOut.java:1984-2002): a receipt/shipment line WITHOUT an order line but WITH an RMA line adds its qty to
+// the RMA line's QtyDelivered when SOTrx (subtracts it otherwise). lines = [{m_rmaline_id, c_orderline_id, movementqty}]; rmaLines = [{m_rmaline_id, qtydelivered}].
+function rmaReceiptEffects(inout, lines, rmaLines) {
+  var by = {}, ops = [];
+  (rmaLines || []).forEach(function (r) { by[r.m_rmaline_id] = { m_rmaline_id: r.m_rmaline_id, qtydelivered: Number(r.qtydelivered || 0) }; });
+  (lines || []).forEach(function (l) {
+    if (l.c_orderline_id || !l.m_rmaline_id || !by[l.m_rmaline_id]) return;
+    var q = Number(l.movementqty || 0), sx = String(inout.movementtype).charAt(1) === '-' ? -q : q;     // MovementType C+ keeps the sign, C- negates (Qty = MovementQty x polarity)
+    by[l.m_rmaline_id].qtydelivered += String(inout.issotrx) === 'Y' ? sx : -sx;
+    ops.push({ op_type: 'UPDATE_LINE', table: 'M_RMALine', id: l.m_rmaline_id, qtydelivered: by[l.m_rmaline_id].qtydelivered });
+  });
+  return { ok: true, ops: ops };
+}
+
 return {
+  rmaCheckQty: rmaCheckQty, rmaLineSave: rmaLineSave, completeRMA: completeRMA, rmaReceiptEffects: rmaReceiptEffects,
   completeCash: completeCash, completeJournal: completeJournal, completeBankStatement: completeBankStatement, completeProjectIssue: completeProjectIssue, completeDDOrder: completeDDOrder, prepareRequisition: prepareRequisition, matchFromInvoice: matchFromInvoice, completeInOut: completeInOut, reverseInOut: reverseInOut, reverseInvoice: reverseInvoice, bpOpenBalance: bpOpenBalance, orderReserve: orderReserve, inoutOrderLineEffects: inoutOrderLineEffects, invoiceOrderLineEffects: invoiceOrderLineEffects,
   faRegisterAsset: faRegisterAsset, faCompleteAddition: faCompleteAddition, faBuildDepreciation: faBuildDepreciation, faCompleteDepreciationEntry: faCompleteDepreciationEntry, faCompleteDisposal: faCompleteDisposal, faCompleteReval: faCompleteReval, faMonthEnd: _faMonthEnd,
   resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,

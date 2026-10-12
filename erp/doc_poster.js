@@ -43,6 +43,15 @@ function allRows(db, sql, params) { return (db.prepare(sql).all(params) || []).m
 
 // ── INVOICE sales manifest — EXTRACTED VERBATIM from poc_fold_complete.deriveInvoice (W-FOLD-COMPLETE) ──
 // DR {BPartner.Receivable}=grandtotal / CR {Product.Revenue}=linenetamt per line / CR {Tax.Due}=taxamt.
+// §SD16: is this invoice an AR Credit Memo? The invoice row's document type (target type while drafting, C_DocType_ID once completed) has DocBaseType ARC. No doctype column / no row => false (ARI as before).
+function _isARCredit(db, invId) {
+  // a DRAFT invoice has C_DocType_ID=0 and its type in C_DocTypeTarget_ID (MInvoice.beforeSave / completeIt sets C_DocType_ID from the target): COALESCE(NULLIF(C_DocType_ID,0), C_DocTypeTarget_ID)
+  var hasT = _hasCol(db, 'c_invoice', 'c_doctype_id'), hasG = _hasCol(db, 'c_invoice', 'c_doctypetarget_id');
+  var col = hasT && hasG ? 'COALESCE(NULLIF(i.c_doctype_id,0), i.c_doctypetarget_id)' : hasT ? 'i.c_doctype_id' : hasG ? 'i.c_doctypetarget_id' : null;
+  if (!col || !_hasCol(db, 'c_doctype', 'docbasetype')) return false;   // a posting db without the document-type table (older handover seeds) is ARI as before
+  var r = getRow(db, 'SELECT d.docbasetype AS t FROM c_invoice i JOIN c_doctype d ON d.c_doctype_id=' + col + ' WHERE i.c_invoice_id=?', num(invId));
+  return !!(r && r.t === 'ARC');
+}
 function deriveInvoice(db, R, invId, schema) {
   var hdr = getRow(db, 'SELECT c_invoice_id,c_bpartner_id,grandtotal,issotrx FROM c_invoice WHERE c_invoice_id=?', num(invId));
   if (!hdr) return null;
@@ -57,10 +66,12 @@ function deriveInvoice(db, R, invId, schema) {
     _part(by[k], side, cents(amt));   // §65.4 (F27): each fact line is converted on its own (FactLine.convert)
   }
   function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
+  // §SD16 (R-CM4): ARC = the mirror of ARI — Doc_Invoice.createFacts DOCTYPE_ARCredit (Doc_Invoice.java:522-575): Dr TaxDue per tax, Dr Revenue per line, Cr Receivable grand total.
+  var cm = _isARCredit(db, invId), S1 = cm ? 'CR' : 'DR', S2 = cm ? 'DR' : 'CR';
   var rcv = el(R.resolve(db, '{BPartner.Receivable}', num(hdr.c_bpartner_id), schema));
-  if (rcv) add('DR', rcv, hdr.grandtotal);
-  lines.forEach(function (l) { var e = el(R.resolve(db, '{Product.Revenue}', num(l.m_product_id), schema)); if (e) add('CR', e, l.linenetamt); });
-  taxes.forEach(function (t) { var e = el(R.resolve(db, '{Tax.Due}', num(t.c_tax_id), schema)); if (e) add('CR', e, t.taxamt); });
+  if (rcv) add(S1, rcv, hdr.grandtotal);
+  lines.forEach(function (l) { var e = el(R.resolve(db, '{Product.Revenue}', num(l.m_product_id), schema)); if (e) add(S2, e, l.linenetamt); });
+  taxes.forEach(function (t) { var e = el(R.resolve(db, '{Tax.Due}', num(t.c_tax_id), schema)); if (e) add(S2, e, t.taxamt); });
   convertToSchema(db, R, by, absent, invId, schema);
   return { by: by, absent: absent };
 }
@@ -320,10 +331,26 @@ function _postedFacts(db, table_id, recordId, schema) {
   });
   return { by: byAcct, line: byLine };
 }
+// ONE owner of the per-line cost amount of a stock MOVEMENT document (sales shipment C- and sales-return receipt C+): Doc_InOut.createFacts shipment :253-257 / return :535-545 -- costs = qty x the product's CURRENT cost
+// at the document's DateAcct (DocLine.getProductCosts :791-842), cents HALF_UP; zero/no cost on a STOCKED product is the posting error "No Costs for <product>" (pushed on `absent`, returns null), on a service it is ignored
+// (returns null, nothing pushed). Returns cents (> 0) or null.
+function _stockLineAmt(db, schema, l, dateAcct, absent) {
+  // IsStocked decides service-vs-item ONLY when the cost is missing; a seed without the column cannot tell, so it is treated as an item and reported (never guessed)
+  var prod = _hasCol(db, 'm_product', 'isstocked') ? getRow(db, 'SELECT isstocked FROM m_product WHERE m_product_id=?', num(l.m_product_id)) : null;
+  var cc = currentCost(db, l.m_product_id, schema, dateAcct);
+  var amt = 0; if (cc.price != null) { var pd0 = _bigDec(cc.price), qd0 = _bigDec(l.movementqty); amt = Number(_rhuB(pd0.n * qd0.n * 100n, 10n ** BigInt(pd0.k + qd0.k))); }   // exact HALF_UP (§56.1; float x could misround a .5 tie)
+  if (cc.price == null || amt === 0) {
+    if (prod && String(prod.isstocked) === 'N') return null;                                      // service: ignored (Doc_InOut.java:257)
+    absent.push('No Costs for product ' + l.m_product_id + (cc.why ? ' (' + cc.why + ')' : ''));  // Doc_InOut.java:253 posting error
+    return null;
+  }
+  return amt;
+}
 function deriveInOut(db, R, ioId, schema, opt) {
   var hdr = getRow(db, 'SELECT m_inout_id,issotrx,movementtype' + (_hasCol(db, 'm_inout', 'dateacct') ? ', dateacct' : '') + ' FROM m_inout WHERE m_inout_id=?', num(ioId));
   if (!hdr) return null;
   if (String(hdr.issotrx) === 'N' && String(hdr.movementtype) === 'V+') return deriveReceipt(db, R, ioId, schema);   // §65.1 (F24): the vendor receipt
+  if (String(hdr.issotrx) === 'Y' && String(hdr.movementtype) === 'C+') return deriveSalesReturn(db, R, ioId, schema, hdr, opt);   // §SD16: the customer return receipt
   if (!(String(hdr.issotrx) === 'Y' && String(hdr.movementtype) === 'C-')) return null;       // only the sales-shipment class is built
   // Doc_InOut.loadLines (Doc_InOut.java:126-134): lines with no product or MovementQty 0 are not posted (§47, S14c)
   var lines = allRows(db, 'SELECT m_product_id,movementqty FROM m_inoutline WHERE m_inout_id=?', num(ioId)).filter(function (l) { return num(l.m_product_id) && Number(l.movementqty) !== 0; });
@@ -358,19 +385,33 @@ function deriveInOut(db, R, ioId, schema, opt) {
   var bdGap = (opt && opt.amountsOnly) ? null : costBackDateGap(db, hdr.dateacct, opt && opt.today);   // §78 F9.2 (named gap)
   if (bdGap) { absent.push(bdGap); return { by: by, absent: absent }; }
   lines.forEach(function (l) {
-    // IsStocked decides service-vs-item ONLY when the cost is missing; a seed without the column cannot tell, so it is treated as an item and reported (never guessed)
-    var prod = _hasCol(db, 'm_product', 'isstocked') ? getRow(db, 'SELECT isstocked FROM m_product WHERE m_product_id=?', num(l.m_product_id)) : null;
-    var cc = currentCost(db, l.m_product_id, schema, hdr.dateacct);
-    var amt = 0; if (cc.price != null) { var pd0 = _bigDec(cc.price), qd0 = _bigDec(l.movementqty); amt = Number(_rhuB(pd0.n * qd0.n * 100n, 10n ** BigInt(pd0.k + qd0.k))); }   // exact HALF_UP (§56.1; float × could misround a .5 tie)
-    if (cc.price == null || amt === 0) {
-      if (prod && String(prod.isstocked) === 'N') return;                                      // service: ignored (Doc_InOut.java:257)
-      absent.push('No Costs for product ' + l.m_product_id + (cc.why ? ' (' + cc.why + ')' : ''));  // Doc_InOut.java:253 posting error
-      return;
-    }
+    var amt = _stockLineAmt(db, schema, l, hdr.dateacct, absent); if (amt == null) return;
     var cogs = el(R.resolve(db, '{Product.Cogs}', num(l.m_product_id), schema));
     var asset = el(R.resolve(db, '{Product.Asset}', num(l.m_product_id), schema));
     if (cogs) add('DR', cogs, amt);
     if (asset) add('CR', asset, amt);
+  });
+  return { by: by, absent: absent };
+}
+
+// ── CUSTOMER RETURN RECEIPT (MMR, IsSOTrx=Y, C+) — §SD16 (R-MMR4), Doc_InOut.createFacts "Sales - Return" (Doc_InOut.java:451-640) ──────────────────────────────────────
+// per product line (movement qty != 0): costs = DocLine.getProductCosts(as, org, true, "M_InOutLine_ID=?") (DocLine.java:791-842) = qty x the product's CURRENT cost (the new line has no cost detail
+// yet, so the where-clause lookup falls through to ProductCost.getProductCosts) — NOT the cost of the original shipment; zero cost: a stocked product is the posting error "No Costs for X"
+// (:535-545), a service is ignored; Dr {Product.Asset} costs / Cr {Product.Cogs} costs (:552-620). A reversal of a return (Reversal_ID) is named absent, never invented.
+function deriveSalesReturn(db, R, ioId, schema, hdr, opt) {
+  var by = {}, absent = [];
+  function add(side, el, amt) { var k = el.id; if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 }; if (side === 'DR') by[k].dr += amt; else by[k].cr += amt; }
+  function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
+  var rev = _hasCol(db, 'm_inout', 'reversal_id') ? getRow(db, 'SELECT reversal_id FROM m_inout WHERE m_inout_id=?', num(ioId)) : null;
+  if (rev && num(rev.reversal_id)) { absent.push('customer return reversal not ported (G-SD10; Doc_InOut.java:497-513 updateReverseLine)'); return { by: by, absent: absent }; }
+  var bdGap = (opt && opt.amountsOnly) ? null : costBackDateGap(db, hdr.dateacct, opt && opt.today);
+  if (bdGap) { absent.push(bdGap); return { by: by, absent: absent }; }
+  var lines = allRows(db, 'SELECT m_product_id,movementqty FROM m_inoutline WHERE m_inout_id=?', num(ioId)).filter(function (l) { return num(l.m_product_id) && Number(l.movementqty) !== 0; });
+  lines.forEach(function (l) {
+    var amt = _stockLineAmt(db, schema, l, hdr.dateacct, absent); if (amt == null) return;
+    var asset = el(R.resolve(db, '{Product.Asset}', num(l.m_product_id), schema)), cogs = el(R.resolve(db, '{Product.Cogs}', num(l.m_product_id), schema));
+    if (asset) add('DR', asset, amt);
+    if (cogs) add('CR', cogs, amt);
   });
   return { by: by, absent: absent };
 }
@@ -657,11 +698,19 @@ function costQtyUpdates(db, ioId) {
   var hdr = hcols.length ? getRow(db, 'SELECT ' + hcols.join(', ') + ' FROM m_inout WHERE m_inout_id=?', num(ioId)) : null, origIo = hdr && num(hdr.reversal_id) ? num(hdr.reversal_id) : null;
   var sign = _costQtySign(hdr && hdr.movementtype);
   if (!sign) return [];
+  // §SD16 (finding 10): a customer-return REVERSAL (C+ with Reversal_ID) has no books (deriveSalesReturn names it absent, gap G-SD10), so it must move no cost either -- books and cost detail agree.
+  if (sign > 0 && origIo) return [];
   var els = _costingElements(db), schemas = _activeSchemas(db), out = [], state = {};
   // neither the posted facts (per schema) nor the current cost (per product, schema) depend on the costing element or the line count: read once per call (§REVIEW2 R7)
   var pfCache = {}, ccCache = {};
   function posted(schId) { if (!(schId in pfCache)) pfCache[schId] = _postedFacts(db, 319, origIo, schId); return pfCache[schId]; }
   var dAcct = hdr && hdr.dateacct ? hdr.dateacct : null;   // §78: the shipment's DateAcct selects the cost history
+  // §SD16 (finding 6): a customer-return receipt (C+) whose stocked line has NO current cost is the posting error "No Costs for X" (Doc_InOut.java:535-545) -- the document is not posted, so legacy creates NO cost detail;
+  // the cost update agrees with the books (deriveSalesReturn -> _stockLineAmt). Only C+ is touched; every other movement keeps its previous path.
+  if (sign > 0) {
+    var refused = lines.some(function (l) { return Number(l.movementqty) !== 0 && _isStocked(db, l.m_product_id) && schemas.some(function (sc) { var c0 = currentCost(db, l.m_product_id, sc.id, dAcct); return c0.price == null || Number(c0.price) === 0; }); });
+    if (refused) return [];
+  }
   function costOf(pid, schId) { var k = pid + '|' + schId; if (!(k in ccCache)) ccCache[k] = currentCost(db, pid, schId, dAcct); return ccCache[k]; }
   lines.forEach(function (l) {
     if (!_isStocked(db, l.m_product_id)) return;
@@ -670,6 +719,8 @@ function costQtyUpdates(db, ioId) {
       _avgUpdate(db, state, out, l.m_product_id, sc, e, sign * Number(l.movementqty), function () {
         // §REVIEW-FIX D5: a reversal line re-adds at the amount the ORIGINAL line POSTED (its books), not at today's cost; no posted original ⇒ the previous recompute
         if (origIo && num(l.reversalline_id)) { var pf = posted(sc.id); if (pf && pf.line[num(l.reversalline_id)]) return _fmtDec(BigInt(pf.line[num(l.reversalline_id)]), 2); }
+        // §SD16 (R-MMR5): an ADDITION (customer return, C+) moves the weighted average by the cost detail amount = qty x current cost at the schema COSTING precision (MCost.getCost, costAt), not the 2-decimal books amount
+        if (sign > 0) { var ca = costAt(db, l.m_product_id, Math.abs(Number(l.movementqty)), sc.id, dAcct); if (ca != null) return ca; }   // null (no costing precision): fall through to the previous 2-decimal amount
         var cc = costOf(l.m_product_id, sc.id); if (cc.price == null) return null;
         var pd = _bigDec(cc.price), qd = _bigDec(Math.abs(Number(l.movementqty))); return _fmtDec(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)), 2); }, dAcct, true);
     }); });
