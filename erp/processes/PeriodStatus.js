@@ -33,8 +33,7 @@
         }
       }
     };
-    // MPeriod.hasUnpostedDocs :1024-1072 lives once, in model_trade.js (also used by PeriodControlStatus)
-    function hasUnpostedDocs(ctx, period, pcId) { return (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade).hasUnpostedDocs(ctx, period, pcId); }
+    var MT = (typeof module !== 'undefined' && module.exports) ? require('../model_trade') : global.ModelTrade;      // MPeriod.hasUnpostedDocs :1024-1072 lives once, in model_trade.js (also used by PeriodControlStatus)
     // doIt :86-166
     PeriodStatus.prototype.doIt = function () {
       var no = 0, self = this;
@@ -44,9 +43,9 @@
       // :100-117 FORCE_POSTING_PRIOR_TO_PERIOD_CLOSE (MSysConfig default true)
       if (('C' === String(this.p_PeriodAction).toUpperCase() || 'P' === String(this.p_PeriodAction).toUpperCase()) && sysConfigBool('FORCE_POSTING_PRIOR_TO_PERIOD_CLOSE', true, this.getAD_Client_ID())) {
         if (this.p_C_Period_IDs != null) {
-          this.p_C_Period_IDs.forEach(function (periodID) { var p = R.PO.get('C_Period', periodID); if (hasUnpostedDocs(self.getCtx(), p, 0)) throw A.AdempiereException(Msg.getMsg(self.getCtx(), 'PostUnpostedDocs')); });
+          this.p_C_Period_IDs.forEach(function (periodID) { var p = R.PO.get('C_Period', periodID); if (MT.hasUnpostedDocs(self.getCtx(), p, 0)) throw A.AdempiereException(Msg.getMsg(self.getCtx(), 'PostUnpostedDocs')); });
         } else {
-          this.p_C_PeriodControl_IDs.forEach(function (pcId) { var pc = R.PO.get('C_PeriodControl', pcId); var p = R.PO.get('C_Period', pc.getC_Period_ID()); if (hasUnpostedDocs(self.getCtx(), p, pcId)) throw A.AdempiereException(Msg.getMsg(self.getCtx(), 'PostUnpostedDocs')); });
+          this.p_C_PeriodControl_IDs.forEach(function (pcId) { var pc = R.PO.get('C_PeriodControl', pcId); var p = R.PO.get('C_Period', pc.getC_Period_ID()); if (MT.hasUnpostedDocs(self.getCtx(), p, pcId)) throw A.AdempiereException(Msg.getMsg(self.getCtx(), 'PostUnpostedDocs')); });
         }
       }
       var sql = "UPDATE C_PeriodControl SET PeriodStatus=?, PeriodAction='N', Updated=getDate(), UpdatedBy=? WHERE ";

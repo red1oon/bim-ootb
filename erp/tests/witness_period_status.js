@@ -80,16 +80,18 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
     var r = P.runJava(q, env(), { AD_Process_ID: pid, className: row.classname, title: row.name, Record_ID: rec || 0, Table_ID: tid || 0, params: params || {} });
     (r.log || []).forEach(function (l) { if (/§(PROC|UNPORTED|MODEL-(ERR|SEVERE|UNPORTED))/.test(l)) log('    ' + String(l).slice(0, 220)); });
     if (r.ok) apply(r.ops || []);
-    return { ok: !!r.ok, summary: String(r.summary || ''), nops: (r.ops || []).length };
+    return { ok: !!r.ok, summary: String(r.summary || ''), nops: (r.ops || []).length, lines: r.log || [] };
   }
 
   // ── independent expectations ──
-  function unposted(periodId) {                                              // own count of the legacy view rows for one period (client 11)
+  function ts(v) { v = String(v); return Date.parse((v.length === 10 ? v + ' 00:00:00' : v).replace(' ', 'T') + 'Z'); }   // timestamps, as the Java binds them (Timestamp BETWEEN Timestamp AND Timestamp)
+  function unposted(periodId) {                                              // own count of the legacy view rows for one period: rv_unposted (join c_doctype, posted<>'Y', docstatus) + the Java's BETWEEN
     var p = one('SELECT startdate, enddate FROM c_period WHERE c_period_id=?', [periodId]), n = 0, by = {};
     VIEW.forEach(function (v) {
-      var t = v[0], dc = v[1], sql = 'SELECT COUNT(*) AS n FROM ' + t + " x WHERE x.ad_client_id=11 AND x.posted<>'Y' AND date(x." + dc + ') BETWEEN date(?) AND date(?)'
-        + (v[3] ? " AND x.docstatus<>'VO' AND x.docstatus IN ('CO','CL','RE','VO')" : '');
-      var c; try { c = one(sql, [p.startdate, p.enddate]).n; } catch (e) { c = 0; } if (c) by[t] = c; n += c;
+      var t = v[0], dc = v[1], cs = colsOf(t); if (!cs.length) return;
+      var sql = 'SELECT x.' + dc + ' AS d FROM ' + t + ' x' + (v[2] ? '' : ' JOIN c_doctype dt ON dt.c_doctype_id=x.c_doctype_id') + " WHERE x.ad_client_id=11 AND x.posted<>'Y'" + (v[3] && cs.indexOf('docstatus') >= 0 ? " AND x.docstatus<>'VO' AND x.docstatus IN ('CO','CL','RE','VO')" : '') + ' AND substr(x.' + dc + ",1,10) BETWEEN date(?,'-1 day') AND date(?,'+1 day')";   // coarse SQL prefilter only; the judgement is the JS timestamp compare below
+      var c = q(sql, [p.startdate, p.enddate]).filter(function (r) { return r.d != null && ts(r.d) >= ts(p.startdate) && ts(r.d) <= ts(p.enddate); }).length;
+      if (c) by[t] = c; n += c;
     });
     return { n: n, by: by };
   }
@@ -100,8 +102,8 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   function inject(t, dateStr, over) {                                        // a minimal unposted-candidate document row (own SQL, no model layer)
     var cs = colsOf(t), dc = VIEW.filter(function (v) { return v[0] === t; })[0][1], f = Object.assign({ ad_client_id: 11, ad_org_id: 11, isactive: 'Y', posted: 'N', docstatus: 'CO' }, over || {});
     f[dc] = dateStr; f[t + '_id'] = newId(t);
-    if (cs.indexOf('c_doctype_id') >= 0 && f.c_doctype_id == null) f.c_doctype_id = (one("SELECT c_doctype_id AS i FROM c_doctype WHERE ad_client_id=11 AND docbasetype=? ORDER BY c_doctype_id", [f.__dbt || 'ARI']) || {}).i;
-    delete f.__dbt;
+    if (cs.indexOf('c_doctype_id') >= 0 && f.c_doctype_id == null && !f.__nodt) f.c_doctype_id = (one("SELECT c_doctype_id AS i FROM c_doctype WHERE ad_client_id=11 AND docbasetype=? ORDER BY c_doctype_id", [f.__dbt || 'ARI']) || {}).i;
+    delete f.__dbt; delete f.__nodt;
     var ks = Object.keys(f).filter(function (k) { return cs.indexOf(k) >= 0; });
     db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k]; }));
     injected.push([t, f[t + '_id']]); return f[t + '_id'];
@@ -196,6 +198,47 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
       eq('arr_closes', 'NEG-CONTROL the ARR row (no unposted ARR document) closes (DocBaseType filter, hasUnpostedDocs periodControlID>0)', [rA.ok, sA.s], [true, 'C'])]);
     cleanup();
   }
+
+  // ── PS-DATE: the Java compares Timestamps; date-only and time-of-day values must land where a timestamp compare puts them ──
+  function closeWith(table, dateStr, over, expectBlock, id, why) {
+    setAll(PC, 'O', 'N'); inject(table, dateStr, over); var exp = unposted(PC).n >= 1, r = proc(167, { PeriodAction: 'C' }, PC, 142), blocked = !r.ok && REFUSE.test(r.summary);
+    cleanup(); setAll(PC, 'O', 'N');
+    verdict(id, [eq('oracle', 'independent timestamp oracle says ' + (expectBlock ? 'counted' : 'not counted'), exp, expectBlock), eq('process', why, blocked, expectBlock)]);
+  }
+  var pcRow = one('SELECT startdate AS s, enddate AS e FROM c_period WHERE c_period_id=?', [PC]), dS = pcRow.s.slice(0, 10), dE = pcRow.e.slice(0, 10);
+  closeWith('c_invoice', dS, null, true, 'PS-DATE-FIRSTDAY-DATEONLY', 'a date-only DateAcct on the FIRST day equals StartDate 00:00:00 and blocks (raw string compare put it below)');
+  closeWith('c_invoice', dE + ' 00:00:00', null, true, 'PS-DATE-LASTDAY-MIDNIGHT', 'DateAcct = EndDate 00:00:00 blocks');
+  closeWith('c_invoice', dE, null, true, 'PS-DATE-LASTDAY-DATEONLY', 'a date-only DateAcct on the LAST day equals EndDate and blocks');
+  closeWith('c_invoice', dE + ' 10:30:00', null, false, 'PS-DATE-LASTDAY-TIMEOFDAY', 'NEG-CONTROL a time-of-day on the last day is after EndDate 00:00:00 (timestamp BETWEEN, MPeriod.java:1052-1053) and is not counted');
+  closeWith('c_invoice', dS + ' 10:30:00', null, true, 'PS-DATE-FIRSTDAY-TIMEOFDAY', 'a time-of-day on the first day is inside the period and blocks');
+  // ── PS-ORPHAN: the view JOINs c_doctype -- a row without a doctype is not in the view ──
+  closeWith('c_invoice', dS, { c_doctype_id: 9999999 }, false, 'PS-ORPHAN-DOCTYPE-ZERO', 'NEG-CONTROL c_doctype_id=9999999 (no c_doctype row): the INNER JOIN drops the row, not counted');
+  closeWith('c_invoice', dS, { c_doctype_id: null, __nodt: 1 }, false, 'PS-ORPHAN-DOCTYPE-NULL', 'NEG-CONTROL c_doctype_id NULL: not counted');
+  closeWith('c_cash' in {} ? 'c_cash' : 'c_projectissue', dS, null, true, 'PS-FIXED-PJI-NODOCTYPE', 'c_projectissue has a fixed DocBaseType PJI and NO c_doctype join: counted without any doctype');
+  // ── PS-VO: every table whose view branch tests docstatus<>VO ignores a voided unposted document; PJI/MXI/MXP carry a fixed CO and no VO test (rv_unposted definition) ──
+  var voTested = 0, voOk = 0;
+  VIEW.forEach(function (v) {
+    var t = v[0]; if (!v[3] || colsOf(t).indexOf('docstatus') < 0) return; voTested++;
+    setAll(PC, 'O', 'N'); inject(t, pdate(PC), { docstatus: 'VO' }); var r = proc(167, { PeriodAction: 'C' }, PC, 142), good = r.ok && unposted(PC).n === 0; if (good) voOk++; else log('§PS-VO-MISS ' + t);
+    cleanup(); setAll(PC, 'O', 'N');
+  });
+  verdict('PS-NEG-VOIDED-ALL-TABLES', voTested ? [eq('void_never_blocks', 'a VO unposted document never blocks, on each of the ' + voTested + ' tables that carry docstatus (view: docstatus<>VO)', voOk, voTested)] : []);
+  // ── PS-PARTIAL: a table that EXISTS but cannot be judged must refuse by name, never count as "no unposted documents" ──
+  function partial(id, ddl, undo, why, mustName) {
+    setAll(PC, 'O', 'N'); db.run(ddl); var r;
+    try { r = proc(167, { PeriodAction: 'C' }, PC, 142); } finally { db.run(undo); }
+    var st = states(PC); setAll(PC, 'O', 'N');
+    verdict(id, [eq('refused', why, [r.ok, st], [false, { O: 23 }]), eq('named', 'the refusal names the table/column (' + mustName + ')', new RegExp(mustName, 'i').test(r.summary), true)]);
+  }
+  partial('PS-PARTIAL-NO-POSTED', 'ALTER TABLE c_invoice RENAME COLUMN posted TO posted_x', 'ALTER TABLE c_invoice RENAME COLUMN posted_x TO posted', 'c_invoice lacks the posted column: the close is REFUSED, not accepted', 'c_invoice');
+  partial('PS-PARTIAL-NO-DOCBASETYPE', 'ALTER TABLE c_doctype RENAME COLUMN docbasetype TO docbasetype_x', 'ALTER TABLE c_doctype RENAME COLUMN docbasetype_x TO docbasetype', 'c_doctype.docbasetype missing: refused by name', 'c_doctype');
+  partial('PS-PARTIAL-NO-YEAR-CAL', 'ALTER TABLE c_year RENAME COLUMN c_calendar_id TO c_calendar_id_x', 'ALTER TABLE c_year RENAME COLUMN c_calendar_id_x TO c_calendar_id', 'c_year.c_calendar_id missing: refused by name, no raw SQL error', 'c_year');
+  partial('PS-PARTIAL-NO-ORGINFO-CAL', 'ALTER TABLE ad_orginfo RENAME COLUMN c_calendar_id TO c_calendar_id_x', 'ALTER TABLE ad_orginfo RENAME COLUMN c_calendar_id_x TO c_calendar_id', 'ad_orginfo.c_calendar_id missing: refused by name', 'ad_orginfo');
+  // NEG-CONTROL for the partial cases: a genuinely ABSENT table (c_cash is not in the bundle) is not a refusal
+  verdict('PS-ABSENT-TABLE-NOT-A-REFUSAL', [eq('c_cash_absent', 'c_cash is not in the shipped bundle', colsOf('c_cash').length, 0), eq('closes', 'NEG-CONTROL the clean period still closes with c_cash absent', (function () { setAll(PC, 'O', 'N'); var r = proc(167, { PeriodAction: 'C' }, PC, 142); setAll(PC, 'O', 'N'); return r.ok; })(), true)]);
+  // ── PS-MEMO: the view prefix is built once per process run (one DB handle), not per call ──
+  (function () { setAll(PC, 'O', 'N'); var r = proc(167, { PeriodAction: 'C' }, PC, 142); var n = r.lines.filter(function (l) { return /§PERIOD-UNPOSTED/.test(l); }).length; setAll(PC, 'O', 'N');
+    verdict('PS-MEMO-ONCE-PER-RUN', [eq('one_line', '§PERIOD-UNPOSTED is logged once for the run (view built once per DB handle)', n, 1)]); })();
 
   // ── PS-CHAIN: END OF THE CHAIN — after the processes ran, the model layer sees the new status ──
   db.run("UPDATE c_acctschema SET autoperiodcontrol='N' WHERE ad_client_id=11");
