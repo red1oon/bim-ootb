@@ -1295,7 +1295,87 @@ function completeReceipt(receipt, lines, policy) {
   return ops;
 }
 
+// ── CUSTOMER RETURN (RMA) — §SD16 (prompts/SQLiteIDEMPIERE.md §SD16; Witness: scripts/bridge/shopday_return.js SD-16) ────────────────────────────────────────
+// rmaCheckQty — MRMALine.checkQty (MRMALine.java checkQty): the shipment line must hold at least the RMA qty, and the qty of the OTHER RMA lines of that shipment line that belong to a
+// COMPLETED/CLOSED RMA (Processed='Y' AND DocStatus IN ('CO','CL'), this line excluded) plus this qty must not exceed it. shipQty/qty/othersCompletedQty are numbers.
+function rmaCheckQty(shipQty, qty, othersCompletedQty) {
+  if (Number(shipQty) < Number(qty)) return false;
+  return Number(shipQty) >= Number(othersCompletedQty || 0) + Number(qty);
+}
+// rmaLineSave — MRMALine.beforeSave (MRMALine.java beforeSave): a line with a shipment line takes product/charge from it, Amt = the unit price of the invoice line (else the order line)
+// of that shipment line, Qty = the line's own qty (the original qty only when the qty is 0 on a NEW line), C_Tax_ID from the same source, LineNetAmt = Amt x Qty rounded HALF_UP at `precision`
+// only when its scale is larger (getTotalAmt). Refusals: qty over the shipped/returned quantity ("AmtReturned>Shipped"), a second line for the same shipment line of ONE RMA
+// ("InOutLineAlreadyEntered"). line = { m_inoutline_id, qty }; src = { m_product_id, shipqty, priceactual, c_tax_id, origqty, othersCompletedQty }; sameRmaLines = other lines of this RMA.
+function rmaLineSave(line, src, sameRmaLines, precision) {
+  var qty = line.qty == null ? 0 : line.qty;
+  if (Number(qty) === 0) qty = src.origqty;
+  if (!rmaCheckQty(src.shipqty, qty, src.othersCompletedQty)) return { ok: false, reason: 'AmtReturned>Shipped' };
+  if ((sameRmaLines || []).some(function (o) { return Number(o.m_inoutline_id) === Number(line.m_inoutline_id); })) return { ok: false, reason: 'InOutLineAlreadyEntered' };
+  var pd = _dec(src.priceactual), qd = _dec(qty), k = pd.k + qd.k, n = pd.n * qd.n, prec = precision == null ? 2 : precision;
+  var net = k > prec ? _rhu(n, 10n ** BigInt(k - prec)) : n * (10n ** BigInt(prec - k));   // minor units at `precision`
+  return { ok: true, line: { m_inoutline_id: line.m_inoutline_id, m_product_id: src.m_product_id, qty: qty, amt: String(src.priceactual), c_tax_id: src.c_tax_id, linenetamt: Number(net) } };
+}
+// completeRMA — MRMA.prepareIt/completeIt (MRMA.java prepareIt/completeIt): no lines => "NoLines"; every line with a shipment line re-checks the qty ("AmtReturned>Shipped");
+// the tax total (StandardTaxProvider.calculateRMATaxTotal :293-365 — MRMATax per tax, summary taxes split per child) gives Amt = lines + taxes (taxes only when not tax-included);
+// completeIt books NOTHING and moves NO stock/cost: it only approves, sets Processed and the status. lines = rmaLineSave results ({line}) + {shipqty, othersCompletedQty};
+// ctx = { taxById, taxChildren, taxIncluded }. Returns { ok, docstatus, amt (minor units), taxes:[{c_tax_id, taxbaseamt, taxamt}], ops }.
+function completeRMA(rma, lines, ctx) {
+  if (!lines || !lines.length) return { ok: false, reason: 'NoLines' };
+  for (var i = 0; i < lines.length; i++) if (lines[i].m_inoutline_id && !rmaCheckQty(lines[i].shipqty, lines[i].qty, lines[i].othersCompletedQty)) return { ok: false, reason: 'AmtReturned>Shipped' };
+  var t = orderTaxes(lines.map(function (l) { return { linenetamt: (l.linenetamt / 100).toFixed(2), c_tax_id: l.c_tax_id }; }), ctx.taxById, !!ctx.taxIncluded, ctx.taxChildren);
+  var bad = t.rows.filter(function (x) { return x.error; })[0]; if (bad) return { ok: false, reason: 'tax-error', detail: bad.error };
+  var ops = t.rows.map(function (x) { return { op_type: 'CREATE_LINE', table: 'M_RMATax', m_rma_id: rma.m_rma_id, c_tax_id: x.c_tax_id, taxbaseamt: x.taxbaseamt / 100, taxamt: x.taxamt / 100 }; });
+  ops.push({ op_type: 'UPDATE_FIELD', table: 'M_RMA', id: rma.m_rma_id, field: 'amt', value: t.grandTotal / 100 });
+  ops.push({ op_type: 'SET_STATUS', table: 'M_RMA', id: rma.m_rma_id, doc_status: 'CO' });
+  return { ok: true, docstatus: 'CO', amt: t.grandTotal, taxes: t.rows, ops: ops };
+}
+// rmaReceiptEffects — MInOut.completeIt "Update RMA Line Qty Delivered" (MInOut.java:1984-2002): a receipt/shipment line WITHOUT an order line but WITH an RMA line adds its qty to
+// the RMA line's QtyDelivered when SOTrx (subtracts it otherwise). lines = [{m_rmaline_id, c_orderline_id, movementqty}]; rmaLines = [{m_rmaline_id, qtydelivered}].
+function rmaReceiptEffects(inout, lines, rmaLines) {
+  var by = {}, ops = [];
+  (rmaLines || []).forEach(function (r) { by[r.m_rmaline_id] = { m_rmaline_id: r.m_rmaline_id, qtydelivered: Number(r.qtydelivered || 0) }; });
+  (lines || []).forEach(function (l) {
+    if (l.c_orderline_id || !l.m_rmaline_id || !by[l.m_rmaline_id]) return;
+    var q = Number(l.movementqty || 0), sx = String(inout.movementtype).charAt(1) === '-' ? -q : q;     // MovementType C+ keeps the sign, C- negates (Qty = MovementQty x polarity)
+    by[l.m_rmaline_id].qtydelivered += String(inout.issotrx) === 'Y' ? sx : -sx;
+    ops.push({ op_type: 'UPDATE_LINE', table: 'M_RMALine', id: l.m_rmaline_id, qtydelivered: by[l.m_rmaline_id].qtydelivered });
+  });
+  return { ok: true, ops: ops };
+}
+
+// completeAllocation — a MANUAL allocation document (MAllocationHdr.prepareIt :~350-420, completeIt :~430-470; MAllocationLine.processIt; MInvoice.testAllocation MInvoice.java:1433-1455), the
+// part the credit-memo refund needs (§SD16 SD-16d: the AR credit memo allocated against the original invoice). prepareIt refuses: no lines ("NoLines"); a line without a business partner
+// ("No Business Partner"); an invoice that is ALREADY paid with a positive line amount ("ValidationError IsPaid"); an invoice dated after the allocation ("Wrong allocation date").
+// completeIt: lines are processed => every invoice's IsPaid = (raw signed sum of its allocation lines [Amount+DiscountAmt+WriteOffAmt] incl. this document == GrandTotal, negated for AP and for a credit memo).
+// alloc = { c_allocationhdr_id, dateacct, c_currency_id }; lines = [{ c_allocationline_id, c_invoice_id, c_payment_id, c_bpartner_id, amount, discountamt, writeoffamt }];
+// invoices = [{ c_invoice_id, issotrx, iscreditmemo, grandtotal, dateacct, ispaid, allocatedamt }] (allocatedamt = signed sum of the invoice's EXISTING active allocation lines).
+function completeAllocation(alloc, lines, invoices) {
+  var c = function (v) { return Math.round(Number(v || 0) * 100); }, byInv = {};
+  (invoices || []).forEach(function (i) { byInv[i.c_invoice_id] = i; });
+  if (!lines || !lines.length) return { ok: false, reason: 'NoLines' };
+  for (var k = 0; k < lines.length; k++) {
+    var l = lines[k], inv = l.c_invoice_id ? byInv[l.c_invoice_id] : null;
+    if (inv && String(inv.ispaid) === 'Y' && c(l.amount) > 0) return { ok: false, reason: 'ValidationError IsPaid' };
+    if (!l.c_bpartner_id) return { ok: false, reason: 'No Business Partner' };
+    if (inv && inv.dateacct && alloc.dateacct && String(inv.dateacct).slice(0, 10) > String(alloc.dateacct).slice(0, 10)) return { ok: false, reason: 'Wrong allocation date' };
+  }
+  var ops = [{ op_type: 'CREATE_DOCUMENT', table: 'C_AllocationHdr', c_allocationhdr_id: alloc.c_allocationhdr_id, c_currency_id: alloc.c_currency_id, dateacct: alloc.dateacct }], sums = {};
+  lines.forEach(function (l) {
+    ops.push({ op_type: 'CREATE_LINE', table: 'C_AllocationLine', c_allocationline_id: l.c_allocationline_id, c_allocationhdr_id: alloc.c_allocationhdr_id, c_payment_id: l.c_payment_id || null, c_invoice_id: l.c_invoice_id || null,
+      c_bpartner_id: l.c_bpartner_id, amount: l.amount, discountamt: l.discountamt || 0, writeoffamt: l.writeoffamt || 0 });
+    if (l.c_invoice_id) sums[l.c_invoice_id] = (sums[l.c_invoice_id] || 0) + c(l.amount) + c(l.discountamt) + c(l.writeoffamt);
+  });
+  Object.keys(sums).forEach(function (id) {
+    var inv = byInv[id]; if (!inv) return;
+    var alloc2 = c(inv.allocatedamt) + sums[id], total = c(inv.grandtotal) * (String(inv.issotrx) === 'N' ? -1 : 1) * (String(inv.iscreditmemo) === 'Y' ? -1 : 1);
+    ops.push({ op_type: 'UPDATE_FIELD', table: 'C_Invoice', id: Number(id), field: 'ispaid', value: alloc2 === total ? 'Y' : 'N' });
+  });
+  ops.push({ op_type: 'SET_STATUS', table: 'C_AllocationHdr', id: alloc.c_allocationhdr_id, doc_status: 'CO' });
+  return { ok: true, ops: ops };
+}
+
 return {
+  completeAllocation: completeAllocation, rmaCheckQty: rmaCheckQty, rmaLineSave: rmaLineSave, completeRMA: completeRMA, rmaReceiptEffects: rmaReceiptEffects,
   completeCash: completeCash, completeJournal: completeJournal, completeBankStatement: completeBankStatement, completeProjectIssue: completeProjectIssue, completeDDOrder: completeDDOrder, prepareRequisition: prepareRequisition, matchFromInvoice: matchFromInvoice, completeInOut: completeInOut, reverseInOut: reverseInOut, reverseInvoice: reverseInvoice, bpOpenBalance: bpOpenBalance, orderReserve: orderReserve, inoutOrderLineEffects: inoutOrderLineEffects, invoiceOrderLineEffects: invoiceOrderLineEffects,
   faRegisterAsset: faRegisterAsset, faCompleteAddition: faCompleteAddition, faBuildDepreciation: faBuildDepreciation, faCompleteDepreciationEntry: faCompleteDepreciationEntry, faCompleteDisposal: faCompleteDisposal, faCompleteReval: faCompleteReval, faMonthEnd: _faMonthEnd,
   resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
