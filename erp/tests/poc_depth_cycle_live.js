@@ -108,6 +108,50 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('D6b', 'an M_Transaction C- of −1 exists for the product', tx.some(t => t.movementtype === 'C-' && Number(t.movementqty) === -1), JSON.stringify(tx));
   const bal = await tip("SELECT ad_table_id,record_id,c_acctschema_id,ROUND(SUM(amtacctdr),2) dr,ROUND(SUM(amtacctcr),2) cr FROM fact_acct WHERE fact_acct_id<0 OR record_id<0 GROUP BY ad_table_id,record_id,c_acctschema_id");
   ok('D6c', 'every generated document balances in every schema (ΣDR = ΣCR) and there is at least one', bal.length > 0 && bal.every(b => b.dr === b.cr), JSON.stringify(bal).slice(0, 260));
+  // ── D8 · same sale ON CREDIT (PaymentRule P): legacy (parity round 2, pilot order 1002927) creates NO payment, the invoice stays unpaid, and
+  //        GenericZoomProvider lists THREE windows (Invoice Payment Schedule 1 · Sales Invoice and Credit/Debit Note 1 · Shipment (Customer) 1)
+  await pg.evaluate(() => { const o = document.querySelector('#idmp-zoom-ov'); if (o) o.remove(); const p = document.querySelector('#posted-overlay'); if (p) p.remove(); });
+  await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + mid + '"]'); await pg.waitForSelector(NEWB); await pg.waitForTimeout(800);
+  await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
+  await pick('c_doctypetarget_id', /^POS Order/); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
+  await pg.fill(F('paymentrule'), 'P'); await pg.locator(F('paymentrule')).first().blur().catch(() => {}); await pg.waitForTimeout(400);
+  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · C_OrderLine"]'); await pg.waitForTimeout(1200);
+  await hc(NEWB); await pg.waitForTimeout(900); await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
+  await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
+  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
+  await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
+  await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900);
+  n0 = logs.length; await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
+  const d8 = logs.slice(n0).filter(l => /§MODEL-DOCACTION table=c_order/.test(l)).pop() || '';
+  await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1800);
+  const z8 = logs.filter(l => /§ZOOM-ACROSS table=C_Order/.test(l)).pop() || '';
+  const inv8 = await tip("SELECT ispaid,paymentrule FROM c_invoice WHERE c_invoice_id<0 AND paymentrule='P'"), pay8 = await tip('SELECT COUNT(*) AS n FROM c_payment WHERE c_payment_id<0 AND c_invoice_id IN (SELECT c_invoice_id FROM c_invoice WHERE paymentrule=\'P\' AND c_invoice_id<0)');
+  ok('D8a', 'on-credit POS sale completes', /ok=true status=CO/.test(d8), d8.slice(0, 90));
+  ok('D8b', 'legacy parity: no payment is created for PaymentRule P, the invoice is unpaid', pay8[0].n === 0 && inv8.length === 1 && inv8[0].ispaid === 'N', JSON.stringify([pay8, inv8]));
+  ok('D8c', 'Zoom Across = legacy GenericZoomProvider list: Invoice Payment Schedule(1), Sales Invoice and Credit/Debit Note(1), Shipment (Customer)(1)',
+    /Invoice Payment Schedule\(1\)/.test(z8) && /Sales Invoice and Credit\/Debit Note\(1\)/.test(z8) && /Shipment \(Customer\)\(1\)/.test(z8) && /destinations=3 /.test(z8), z8.slice(0, 220));
+  // ── D9 · VOID the on-credit order — legacy measured (parity round 2, pilot order 1002927 → r2_C.txt): order VO; original shipment + invoice RE;
+  //        reversal shipment RE (C-, line qty +1) and reversal invoice RE (grandtotal −3) each pointing back; stock restored; reversal books:
+  //        invoice 12110 DR −3 / 41000 CR −3 (negative amounts), shipment 14120 DR 2.70 / 51100 CR 2.70 (swapped).
+  const oh8a = await onhand();
+  n0 = logs.length; await pg.evaluate(() => { const o = document.querySelector('#idmp-zoom-ov'); if (o) o.remove(); });
+  await hc('[data-doc-action="VO"]'); await pg.waitForTimeout(4500);
+  const vo = logs.slice(n0).filter(l => /§MODEL-DOCACTION table=c_order/.test(l)).pop() || '';
+  ok('D9a', 'Void succeeds through the model layer', /action=VO ok=true status=VO/.test(vo), vo.slice(0, 100));
+  const invs = await tip("SELECT c_invoice_id AS id,docstatus,grandtotal AS gt,reversal_id FROM c_invoice WHERE c_invoice_id<0 AND paymentrule='P' ORDER BY c_invoice_id DESC");
+  const ios = await tip("SELECT m_inout_id AS id,docstatus,movementtype,reversal_id FROM m_inout WHERE m_inout_id<0 AND reversal_id IS NOT NULL AND m_inout_id<-60 ORDER BY m_inout_id DESC");
+  ok('D9b', 'both invoices RE (original +3, reversal −3, linked back to each other)', invs.length === 2 && invs.every(i => i.docstatus === 'RE') && invs.some(i => Number(i.gt) === 3) && invs.some(i => Number(i.gt) === -3) && invs.every(i => i.reversal_id != null), JSON.stringify(invs));
+  ok('D9c', 'both shipments RE, movement type C-, linked back to each other', ios.length === 2 && ios.every(i => i.docstatus === 'RE' && i.movementtype === 'C-' && i.reversal_id != null), JSON.stringify(ios));
+  const rl = await tip('SELECT movementqty FROM m_inoutline WHERE m_inout_id IN (' + ios.map(i => i.id).join(',') + ') ORDER BY m_inoutline_id');
+  ok('D9d', 'the two shipment lines are −1 (the sale) and +1 (the reversal)', rl.length === 2 && rl.map(r => Number(r.movementqty)).sort().join() === '-1,1', JSON.stringify(rl));
+  const oh9 = await onhand();
+  ok('D9e', 'stock restored by the void: on-hand rose by exactly +1', oh9 - oh8a === 1, 'before-void=' + oh8a + ' after-void=' + oh9);
+  const rinv = invs.find(i => Number(i.gt) === -3), rio = ios.find(i => i.id === Math.min.apply(null, ios.map(x => x.id)));   // reversal = the later op = the MORE negative pk of the pair (pk = −opId)
+  const fx = async (tid, rid) => tip('SELECT ev.value AS v, ROUND(f.amtacctdr,2) AS dr, ROUND(f.amtacctcr,2) AS cr FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=' + tid + ' AND f.record_id=' + rid + ' AND f.c_acctschema_id=101 ORDER BY f.fact_acct_id');
+  const fi = await fx(318, rinv.id), fo = await fx(319, rio.id);
+  ok('D9f', 'reversal invoice books (schema 101): 12110 DR −3 / 41000 CR −3 — negative amounts, as legacy', fi.some(f => f.v === '12110' && f.dr === -3) && fi.some(f => f.v === '41000' && f.cr === -3), JSON.stringify(fi));
+  ok('D9g', 'reversal shipment books (schema 101): 14120 DR 2.70 / 51100 CR 2.70 — swapped, as legacy', fo.some(f => f.v === '14120' && f.dr === 2.7) && fo.some(f => f.v === '51100' && f.cr === 2.7), JSON.stringify(fo));
   ok('D0', '0 page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   const verdict = fail ? 'FAIL' : (inconclusive ? 'INCONCLUSIVE' : 'PASS');
   console.log('\n§DEPTH-CYCLE ' + verdict + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inconclusive);
