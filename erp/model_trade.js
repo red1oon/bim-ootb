@@ -357,18 +357,52 @@
     };
     S.sysConfigBool = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt ? 'Y' : 'N', client, org); return v == null ? dflt : 'Y' === String(v); };
     S.sysConfigInt = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt == null ? null : String(dflt), client, org); return v == null ? dflt : parseInt(v, 10); };
-  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072)
+  // RV_UnPosted (postgres view rv_unposted, read from the legacy DB): UNION over 15 document tables, each `posted<>'Y'` and (except the three marked) `docstatus<>'VO'`.
+  //   [table, DateAcct column, DocBaseType (null = JOIN c_doctype), fixed DocStatus (null = the column, VO excluded)]
+  var RV_UNPOSTED = [['gl_journal', 'dateacct', null, null], ['c_projectissue', 'movementdate', 'PJI', 'CO'], ['c_invoice', 'dateacct', null, null], ['m_inout', 'dateacct', null, null],
+    ['m_inventory', 'movementdate', null, null], ['m_movement', 'movementdate', null, null], ['m_production', 'movementdate', 'MMP', null], ['c_cash', 'dateacct', 'CMC', null],
+    ['c_payment', 'dateacct', null, null], ['c_allocationhdr', 'dateacct', null, null], ['c_bankstatement', 'statementdate', 'CMB', null], ['m_matchinv', 'dateacct', 'MXI', 'CO'],
+    ['m_matchpo', 'dateacct', 'MXP', 'CO'], ['c_order', 'dateacct', null, null], ['m_requisition', 'datedoc', null, null]];
+  S.RV_UNPOSTED = RV_UNPOSTED;
+  // rvUnposted() -> a `WITH rv_unposted AS (...)` prefix over the tables this bundle carries. A table the bundle does NOT have holds no rows, so it cannot hold an unposted document (skipped, counted).
+  //   A table that EXISTS but cannot be judged (a column the view reads is missing, or c_doctype / its docbasetype is) must NOT count as "no unposted documents": legacy would have judged it, so
+  //   the process refuses by name (throw => the process fails, nothing is committed). Memoised per DB handle (R().DB is one per process run / Trx), logged once per handle.
+  var RVU_MEMO = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  function tableCols(DB, t) { try { return DB.query('SELECT name FROM pragma_table_info(?)', [t]).map(function (r) { return String(r.name || r.NAME).toLowerCase(); }); } catch (e) { return []; } }
+  function needCols(DB, t, cols) { var cs = tableCols(DB, t), miss = cols.filter(function (c) { return cs.indexOf(c) < 0; }); return { present: cs.length > 0, miss: miss }; }
+  S.rvUnposted = function () {
+    var DB = R().DB, hit = RVU_MEMO && RVU_MEMO.get(DB); if (hit) return hit.sql;
+    var parts = [], present = 0, dtc = null;
+    RV_UNPOSTED.forEach(function (v) {
+      var t = v[0], need = ['ad_client_id', 'ad_org_id', 'posted', v[1]].concat(v[3] ? [] : ['docstatus']).concat(v[2] ? [] : ['c_doctype_id']), n = needCols(DB, t, need);
+      if (!n.present) return; present++;
+      if (n.miss.length) throw new Error('RV_UnPosted cannot be evaluated: table ' + t + ' exists but lacks column(s) ' + n.miss.join(',') + ' (legacy rv_unposted reads them) -- refusing rather than counting it as no unposted documents');
+      if (!v[2]) { if (dtc == null) dtc = needCols(DB, 'c_doctype', ['c_doctype_id', 'docbasetype']);
+        if (!dtc.present || dtc.miss.length) throw new Error('RV_UnPosted cannot be evaluated: table ' + t + ' needs c_doctype.' + (dtc.present ? dtc.miss.join(',') : '(table absent)') + ' -- refusing rather than counting it as no unposted documents'); }
+      parts.push('SELECT x.ad_client_id, x.ad_org_id, x.' + v[1] + ' AS dateacct, ' + (v[3] ? "'" + v[3] + "'" : 'x.docstatus') + ' AS docstatus, ' + (v[2] ? "'" + v[2] + "'" : 'dt.docbasetype') + ' AS docbasetype FROM ' + t + ' x'
+        + (v[2] ? '' : ' JOIN c_doctype dt ON dt.c_doctype_id=x.c_doctype_id') + " WHERE x.posted<>'Y'" + (v[3] ? '' : " AND x.docstatus<>'VO'"));
+    });
+    var sql = parts.length ? 'WITH rv_unposted AS (' + parts.join(' UNION ALL ') + ') ' : null;
+    R().log('§PERIOD-UNPOSTED RV_UnPosted tables=' + parts.length + '/' + RV_UNPOSTED.length + ' (absent from the bundle: ' + (RV_UNPOSTED.length - present) + ')');
+    if (RVU_MEMO) RVU_MEMO.set(DB, { sql: sql });
+    return sql;
+  };
+  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072) -- the ONE implementation (processes 167 and 168 both call it).
+  //   Dates: the Java binds Timestamps (setTimestamp StartDate/EndDate) against the view's timestamp DateAcct, so the comparison is on full timestamps: datetime() on both sides makes a date-only
+  //   value equal to its 00:00:00 (a raw string compare sorts 'YYYY-MM-DD' below 'YYYY-MM-DD 00:00:00'). A time-of-day on the LAST day is therefore after EndDate (00:00:00) and is not counted -- as in legacy.
   S.hasUnpostedDocs = function (ctx, period, periodControlID) {
-    var Env = A().Env, DB = R().DB;
+    var Env = A().Env, DB = R().DB, pre = S.rvUnposted();
+    if (pre == null) return false;                                              // none of the 15 tables is in the bundle: nothing can be unposted (named by the §PERIOD-UNPOSTED line)
+    [['c_year', ['c_year_id', 'c_calendar_id']], ['ad_clientinfo', ['ad_client_id', 'c_calendar_id']], ['ad_orginfo', ['ad_org_id', 'ad_client_id', 'c_calendar_id']]].forEach(function (x) {
+      var n = needCols(DB, x[0], x[1]); if (!n.present || n.miss.length) throw new Error('RV_UnPosted check cannot run: ' + x[0] + (n.present ? ' lacks column(s) ' + n.miss.join(',') : ' is absent') + ' -- refusing rather than accepting the close'); });
     var cal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM C_Year WHERE C_Year_ID=?', period.getC_Year_ID());
     var clientCal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM AD_ClientInfo WHERE AD_Client_ID=?', Env.getAD_Client_ID(ctx));
-    var sql = "SELECT 1 FROM RV_UnPosted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND up.DateAcct BETWEEN ? AND ? " +
+    var sql = pre + "SELECT 1 FROM rv_unposted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND datetime(up.DateAcct) BETWEEN datetime(?) AND datetime(?) " +
       ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
     var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
     if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
     sql += ' LIMIT 1';
-    try { return DB.query(sql, args).length > 0; }
-    catch (e) { R().unportedDep('MPeriod.hasUnpostedDocs', 'view RV_UnPosted (absent from the bundle) — treated as no unposted docs'); return false; }
+    return DB.query(sql, args).length > 0;
   };
 
   // ══ GL Journal ═══════════════════════════════════════════════════════════════════════════════════════════════
