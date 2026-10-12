@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.78.0](https://github.com/red1oon/bim-ootb/compare/v1.77.0...v1.78.0) (2026-10-12)
+
+
+### ✨ Features
+
+* **oplogpic:** checkpoints (fast reopen), undo after reopen, go back to here ([#1976](https://github.com/red1oon/bim-ootb/issues/1976)) ([18d5c5b](https://github.com/red1oon/bim-ootb/commit/18d5c5b5e0db6559c0fdc23ebd486cc37e84f156))
+* **oplogpic:** masks, adjustment layers + masks, hue/saturation, feather, magic wand, text, photo Fill, move/scale, red pill ([#1982](https://github.com/red1oon/bim-ootb/issues/1982)) ([542f357](https://github.com/red1oon/bim-ootb/commit/542f3578653ed34c91f89ea2e6bc42cbaa3d27e2))
+
 ## [1.77.0](https://github.com/red1oon/bim-ootb/compare/v1.76.0...v1.77.0) (2026-10-11)
 
 
