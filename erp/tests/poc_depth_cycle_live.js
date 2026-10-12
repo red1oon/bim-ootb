@@ -108,6 +108,16 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('D6b', 'an M_Transaction C- of −1 exists for the product', tx.some(t => t.movementtype === 'C-' && Number(t.movementqty) === -1), JSON.stringify(tx));
   const bal = await tip("SELECT ad_table_id,record_id,c_acctschema_id,ROUND(SUM(amtacctdr),2) dr,ROUND(SUM(amtacctcr),2) cr FROM fact_acct WHERE fact_acct_id<0 OR record_id<0 GROUP BY ad_table_id,record_id,c_acctschema_id");
   ok('D6c', 'every generated document balances in every schema (ΣDR = ΣCR) and there is at least one', bal.length > 0 && bal.every(b => b.dr === b.cr), JSON.stringify(bal).slice(0, 260));
+  // ── D7b · Zoom Across acts on the record CURRENT at click time (was the record the toolbar was last drawn for: after Last/▶ it zoomed the first record)
+  const ordId = Number((/id=(-?\d+) action=CO/.exec(da) || [])[1]);
+  await pg.evaluate(() => { const o = document.querySelector('#posted-overlay'); if (o) o.remove(); });
+  await hc('.idmp-wintab:has(.lbl:text-is("Sales Order"))'); await pg.waitForTimeout(900);
+  if (/Grid/.test(await pg.$eval('#idmp-toolbar [data-tb="toggle"]', e => e.innerText).catch(() => ''))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(700); }
+  await hc('#idmp-toolbar button[title="Last record"]'); await pg.waitForTimeout(700);
+  n0 = logs.length; await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1500);
+  const z7 = logs.slice(n0).filter(l => /§ZOOM-ACROSS table=C_Order/.test(l)).pop() || '';
+  ok('D7b', 'after Last record, Zoom Across zooms THAT record (' + ordId + '), not the first one', new RegExp('key=C_Order_ID=' + ordId + ' ').test(z7) && /destinations=2 /.test(z7), z7.slice(0, 200));
+
   // ── D8 · same sale ON CREDIT (PaymentRule P): legacy (parity round 2, pilot order 1002927) creates NO payment, the invoice stays unpaid, and
   //        GenericZoomProvider lists THREE windows (Invoice Payment Schedule 1 · Sales Invoice and Credit/Debit Note 1 · Shipment (Customer) 1)
   await pg.evaluate(() => { const o = document.querySelector('#idmp-zoom-ov'); if (o) o.remove(); const p = document.querySelector('#posted-overlay'); if (p) p.remove(); });

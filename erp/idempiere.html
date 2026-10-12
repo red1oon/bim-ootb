@@ -1638,7 +1638,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
       btn(ic('search', '🔍') + _T('tb.zoom', 'Zoom'), _Ttl('tb.zoom', 'Zoom Across — windows that reference this record'),
-        hasRec, function () { _zoomAcross(tab, rec); });
+        hasRec, function () { _zoomAcross(tab, (_records && _records[_recIdx]) || rec); });   // the record CURRENT at click time — `rec` is the one the toolbar was last drawn for (stale after ◀ ▶ / Last: Zoom showed the FIRST record's referencers)
       sep();
     })();
     // Product Info — ADWindowToolbar.java:282-286 btnProductInfo ("Product", always present when the role may open Info Product) →
