@@ -7,6 +7,7 @@ A browser editor whose document is an op log: every action is one line in a log,
 - **Layers** (side panel): add, hide / show (eye), reorder (arrows), rename (pencil), delete (bin), opacity slider, ten blend modes (normal, multiply, screen, overlay, soft-light, hard-light, darken, lighten, difference, exclusion). Tap a layer name to make it the active layer.
 - **View:** Ctrl+wheel or pinch zooms, wheel pans, Space+drag pans, `0` fits; buttons Fit / 100% / + / -.
 - **Undo / redo:** Ctrl+Z / Ctrl+Shift+Z (phone: two-finger tap undoes, three-finger tap redoes). The work is saved in the browser automatically and restored on reload ("New canvas" clears it).
+- **Top-right icons:** the book opens this guide in a new tab; the red pill goes back to the main page.
 - **Out:** Export PNG (exactly what is on screen, 1024x1024), Export PSD (layers, masks, adjustment layers and a merged picture; Photoshop draws its own hue / saturation from the three numbers, so a recomposite there differs slightly), Save log / Load log (the op log as JSON).
 
 ## Photos and text
