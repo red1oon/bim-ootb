@@ -218,6 +218,10 @@
           var ol = trx.get('c_orderline', l.c_orderline_id);
           if (ol && l.qtyinvoiced != null) trx.update('c_orderline', ol, { qtyinvoiced: N(D(ol.qtyinvoiced).add(cmf ? D(l.qtyinvoiced).negate() : D(l.qtyinvoiced))) });
         } else if (nz(l.c_orderline_id) && !so && nz(l.m_product_id)) trx.say('§MODEL-NAMED MMatchPO.create(invoice-first) MInvoice.java:2128 not ported line=' + l.c_invoiceline_id);
+        if (nz(l.m_rmaline_id)) {                                                             // :2171-2185 Update QtyInvoiced RMA Line
+          var rml = trx.get('m_rmaline', l.m_rmaline_id);
+          if (rml) { var rr = ML.save(trx, 'm_rmaline', rml, { qtyinvoiced: N(D(rml.qtyinvoiced).add(D(l.qtyinvoiced))) }); if (!rr.ok) throw new Error('Could not update RMA Line: ' + rr.error); }
+        }
       });
       var ce = creditInvoice(trx, inv, 'CO'); if (ce) { T.msg(trx, ce); return 'IN'; }
       if (nz(inv.ad_user_id) && trx.env.now) { var u = trx.get('ad_user', inv.ad_user_id);   // :2193-2203 user last contact
