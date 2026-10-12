@@ -686,7 +686,11 @@
       var srcs = rowsOf(db.exec("SELECT c_elementvalue_id ev FROM pa_reportsource WHERE pa_reportline_id=" + l.pa_reportline_id + " AND isactive='Y'"));
       sourcesByLine[l.pa_reportline_id] = srcs.map(function (s) { return { account_ids: ev.leaves(s.ev) }; });
     });
-    var factRows = rowsOf(db.exec('SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct'));
+    // Fact_Acct = the bundle's rows PLUS those posted this session (the model layer writes them into the signed sidecar). The tip-shadowed reader
+    // returns both; reading the bare bundle left every financial statement blind to a document completed a moment ago (§ERP-DEPTH-FILM reporting clip).
+    var factSql = 'SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct';
+    var tipFacts = (typeof window !== 'undefined' && window.__crud && typeof window.__crud.withModelTrx === 'function') ? window.__crud.withModelTrx(function (q) { return q(factSql); }) : null;
+    var factRows = (tipFacts && tipFacts.length) ? tipFacts : rowsOf(db.exec(factSql));
     // R-T2 default + history fall-through is the PURE CORE.resolveScope — the browser path and the headless
     // witness run the SAME code (REPORTING_UI_DEFAULT_FALLTHROUGH.md). No user period yet -> coverage=default→history.
     var sc = CORE.resolveScope(periodsOf(db), factRows, cols);

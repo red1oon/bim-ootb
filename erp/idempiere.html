@@ -2680,6 +2680,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
   // raw sql.js exec → array of lowercase-keyed row objects; an ABSENT table (seed slice) → [] + §-named, never a throw.
+  // _tipSql — _sqlRows over the TIP: the bundle PLUS every row this session's signed ops wrote (crud_overlay.withModelTrx shadows the written tables).
+  //   Reports/processes read through it so a document completed a moment ago is in them; falls back to the bare bundle when the overlay is absent.
+  function _tipSql(sql) {
+    try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }); if (r) return r; } } catch (e) {}
+    return _sqlRows(sql);
+  }
   function _sqlRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);
@@ -2820,11 +2826,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var as = p.C_AcctSchema_ID != null ? p.C_AcctSchema_ID : p.c_acctschema_id;
         if (as != null && String(as).trim() !== '' && !isNaN(Number(as))) w.push('c_acctschema_id=' + Number(as));
         console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
-        return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));
+        return _tipSql('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));   // tip-shadowed: includes the books posted this session
       },
       // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
       // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
-      query: function (sql) { return _sqlRows(sql); },
+      query: function (sql) { return _tipSql(sql); },   // tip-shadowed (bundle + this session's signed ops): Aging must see the invoice completed a moment ago
       // FS-16 (§FS2n): the TIP of a table (bundle + this session's signed CRUD ops), keys lower-cased — ImportBPartner reads
       // the staging rows the File Loader committed, and matches BPs / users / locations created in the session too.
       tipRows: function (table) {
