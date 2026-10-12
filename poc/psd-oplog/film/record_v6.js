@@ -41,6 +41,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = (m) => consol
     await shot('E6', 'drag Hue to +150, then again to -90: it stays a live setting', async () => { await sliderTo('.layer.adj .adjrow label:nth-child(1) input[type=range]', 150, 1500); await sleep(1500); await sliderTo('.layer.adj .adjrow label:nth-child(1) input[type=range]', -90, 1500); await sleep(1500); });
     const f = await page.evaluate(() => ({ ops: window.__ed.ops.length, last: window.__ed.ops.slice(-4).map((o) => o.op + (o.kind ? ':' + o.kind : '')).join(', ') })); fact('final_entries', f.ops); fact('last_entries', f.last);
   }
+  if (TAKE === 'splice') {
+    const rowTop = async () => page.evaluate(() => { const e = window.__ed, l = e.st.L[e.tree().find((n) => n.name === 'Balloon').id], W = e.W; let n = 0; for (let x = 0; x < W; x++) if (l.mask[x] > 0.5 && l.pix[x * 4 + 3] > 0) n++; return n; });
+    await shot('S1', 'select the Balloon layer and the Move tool (same state as the start of the Two edits chapter)', async () => { const r = await rowOf('Balloon'); await glide(r[0], r[1], 600); await page.mouse.down(); await sleep(90); await page.mouse.up(); await sleep(400); await click('#tools button[data-tool="move"]'); await sleep(1200); });
+    fact('balloon_pixels_in_top_row_at_100pct', await rowTop());
+    await shot('S2', 'scale up to 125 %: the top of the balloon goes out of frame', async () => { await sliderTo('#m-scale', 125, 1500); await sleep(2200); });
+    fact('balloon_pixels_in_top_row_at_125pct', await rowTop());
+    await shot('S3', 'scale down to 75 %: the whole balloon, cap included, is back in frame', async () => { await sliderTo('#m-scale', 75, 1800); await sleep(2400); });
+    fact('balloon_pixels_in_top_row_at_75pct', await rowTop());
+    await shot('S4', 'Cancel: nothing is logged, back to the starting state', async () => { await click('#m-cancel'); await sleep(900); fact('entries_after_cancel', await page.evaluate(() => window.__ed.ops.length)); });
+  }
   if (TAKE === 'tour') {
     await shot('T1', 'the finished picture and the five layers', async () => { await glide(1180, 215, 600); for (const n of ['Text: Up, up and away', 'Balloon', 'Clouds', 'Paint', 'Background']) { const r = await rowOf(n); await glide(r[0], r[1], 700); await sleep(500); } await sleep(600); });
     await shot('T2', 'hide and show the caption', async () => { await click('#layers .layer:nth-of-type(1) button[title="Hide layer"]'); await sleep(1300); await click('#layers .layer:nth-of-type(1) button[title="Show layer"]'); await sleep(900); });
