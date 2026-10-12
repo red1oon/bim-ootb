@@ -357,18 +357,41 @@
     };
     S.sysConfigBool = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt ? 'Y' : 'N', client, org); return v == null ? dflt : 'Y' === String(v); };
     S.sysConfigInt = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt == null ? null : String(dflt), client, org); return v == null ? dflt : parseInt(v, 10); };
-  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072)
+  // RV_UnPosted (postgres view rv_unposted, read from the legacy DB): UNION over 15 document tables, each `posted<>'Y'` and (except the three marked) `docstatus<>'VO'`.
+  //   [table, DateAcct column, DocBaseType (null = JOIN c_doctype), fixed DocStatus (null = the column, VO excluded)]
+  var RV_UNPOSTED = [['gl_journal', 'dateacct', null, null], ['c_projectissue', 'movementdate', 'PJI', 'CO'], ['c_invoice', 'dateacct', null, null], ['m_inout', 'dateacct', null, null],
+    ['m_inventory', 'movementdate', null, null], ['m_movement', 'movementdate', null, null], ['m_production', 'movementdate', 'MMP', null], ['c_cash', 'dateacct', 'CMC', null],
+    ['c_payment', 'dateacct', null, null], ['c_allocationhdr', 'dateacct', null, null], ['c_bankstatement', 'statementdate', 'CMB', null], ['m_matchinv', 'dateacct', 'MXI', 'CO'],
+    ['m_matchpo', 'dateacct', 'MXP', 'CO'], ['c_order', 'dateacct', null, null], ['m_requisition', 'datedoc', null, null]];
+  // rvUnposted() -> a `WITH rv_unposted AS (...)` prefix over the tables this bundle carries (a table the bundle lacks has no rows to be unposted; a table present but missing a column the view
+  //   needs is NAMED, never skipped silently). Columns: ad_client_id, ad_org_id, dateacct, docstatus, docbasetype (what MPeriod.hasUnpostedDocs reads).
+  S.rvUnposted = function () {
+    var DB = R().DB, parts = [], present = 0, have = function (t) { try { return DB.query('SELECT name FROM pragma_table_info(?)', [t]).map(function (r) { return String(r.name || r.NAME).toLowerCase(); }); } catch (e) { return []; } };
+    var dtCols = null;
+    RV_UNPOSTED.forEach(function (v) {
+      var t = v[0], cs = have(t); if (!cs.length) return; present++;
+      var need = ['ad_client_id', 'ad_org_id', 'posted', v[1]].concat(v[3] ? [] : ['docstatus']).concat(v[2] ? [] : ['c_doctype_id']), miss = need.filter(function (c) { return cs.indexOf(c) < 0; });
+      if (miss.length) { R().unportedDep('RV_UnPosted ' + t, 'column(s) ' + miss.join(',') + ' absent from the bundle — table skipped'); return; }
+      if (!v[2] && dtCols == null) dtCols = have('c_doctype');
+      if (!v[2] && (!dtCols.length)) { R().unportedDep('RV_UnPosted ' + t, 'table c_doctype absent — table skipped'); return; }
+      parts.push('SELECT x.ad_client_id, x.ad_org_id, x.' + v[1] + ' AS dateacct, ' + (v[3] ? "'" + v[3] + "'" : 'x.docstatus') + ' AS docstatus, ' + (v[2] ? "'" + v[2] + "'" : 'dt.docbasetype') + ' AS docbasetype FROM ' + t + ' x'
+        + (v[2] ? '' : ' JOIN c_doctype dt ON dt.c_doctype_id=x.c_doctype_id') + " WHERE x.posted<>'Y'" + (v[3] ? '' : " AND x.docstatus<>'VO'"));
+    });
+    R().log('§PERIOD-UNPOSTED RV_UnPosted tables=' + parts.length + '/' + RV_UNPOSTED.length + ' (absent from the bundle: ' + (RV_UNPOSTED.length - present) + ')');
+    return parts.length ? 'WITH rv_unposted AS (' + parts.join(' UNION ALL ') + ') ' : null;
+  };
+  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072) -- the ONE implementation (processes 167 and 168 both call it)
   S.hasUnpostedDocs = function (ctx, period, periodControlID) {
-    var Env = A().Env, DB = R().DB;
+    var Env = A().Env, DB = R().DB, pre = S.rvUnposted();
+    if (pre == null) return false;                                              // no document table in the bundle at all: nothing can be unposted (named by the line above)
     var cal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM C_Year WHERE C_Year_ID=?', period.getC_Year_ID());
     var clientCal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM AD_ClientInfo WHERE AD_Client_ID=?', Env.getAD_Client_ID(ctx));
-    var sql = "SELECT 1 FROM RV_UnPosted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND up.DateAcct BETWEEN ? AND ? " +
+    var sql = pre + "SELECT 1 FROM rv_unposted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND up.DateAcct BETWEEN ? AND ? " +
       ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
     var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
     if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
     sql += ' LIMIT 1';
-    try { return DB.query(sql, args).length > 0; }
-    catch (e) { R().unportedDep('MPeriod.hasUnpostedDocs', 'view RV_UnPosted (absent from the bundle) — treated as no unposted docs'); return false; }
+    return DB.query(sql, args).length > 0;                                      // a SQL fault now surfaces (no more "treated as no unposted docs")
   };
 
   // ══ GL Journal ═══════════════════════════════════════════════════════════════════════════════════════════════

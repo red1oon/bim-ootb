@@ -33,17 +33,8 @@
         }
       }
     };
-    function hasUnpostedDocs(ctx, period, periodControlID) {                            // MPeriod.hasUnpostedDocs :1024-1072
-      var cal = R.DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM C_Year WHERE C_Year_ID=?', period.getC_Year_ID());
-      var clientCal = R.DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM AD_ClientInfo WHERE AD_Client_ID=?', Env.getAD_Client_ID(ctx));
-      var sql = "SELECT 1 FROM RV_UnPosted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND up.DateAcct BETWEEN ? AND ? " +
-        ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
-      var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
-      if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R.PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
-      sql += ' LIMIT 1';
-      try { return R.DB.query(sql, args).length > 0; }
-      catch (e) { R.unportedDep('MPeriod.hasUnpostedDocs', 'view RV_UnPosted (absent from the bundle) — treated as no unposted docs'); return false; }
-    }
+    // MPeriod.hasUnpostedDocs :1024-1072 lives once, in model_trade.js (also used by PeriodControlStatus)
+    function hasUnpostedDocs(ctx, period, pcId) { return (typeof module !== 'undefined' && module.exports ? require('../model_trade') : global.ModelTrade).hasUnpostedDocs(ctx, period, pcId); }
     // doIt :86-166
     PeriodStatus.prototype.doIt = function () {
       var no = 0, self = this;
