@@ -40,7 +40,8 @@ Q() { docker exec postgres psql -U adempiere -d idempiere -At -c "set search_pat
   for T in pa_dashboardcontent pa_dashboardcontent_access pa_dashboardpreference pa_goal pa_goalrestriction pa_measure pa_measurecalc pa_colorschema pa_ratio ad_note ad_recentitem; do
     echo "CREATE TABLE IF NOT EXISTS $T ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'"));"
     DCOLS=$(Q "select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'")
-    Q "select 'INSERT OR IGNORE INTO $T ($DCOLS) VALUES (' || (select string_agg(quote_nullable(j.v), ',' order by j.ord) from json_each_text(row_to_json(x)) with ordinality as j(k, v, ord)) || ');' from $T x"
+    DCAST=$(Q "select string_agg(column_name || '::text AS ' || column_name, ',' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'")   # text cast first: row_to_json would render timestamps in ISO 'T' form
+    Q "select 'INSERT OR IGNORE INTO $T ($DCOLS) VALUES (' || (select string_agg(quote_nullable(j.v), ',' order by j.ord) from json_each_text(row_to_json(x)) with ordinality as j(k, v, ord)) || ');' from (select $DCAST from $T) x"
   done
   python3 "$(dirname "$0")/build_model_patch.py" "$OUT"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
 } > "$OUT"
