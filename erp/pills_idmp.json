@@ -5,6 +5,14 @@
   "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
   "pills": [
     {
+      "id": "setuplens",
+      "name": "Setup check",
+      "key": "",
+      "icon": "check",
+      "order": 1.3,
+      "note": "SETUP-LENS (ERP_DEPTH_FILM.md §SETUP-LENS): READ-ONLY lens listing what the logged-in client still lacks before a first invoice - one SQL per line (setup_lens.js), legacy mechanism cited per line, INCONCLUSIVE when the table is absent. Changes no window."
+    },
+    {
       "id": "reports",
       "name": "Reports",
       "key": "",
