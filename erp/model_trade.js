@@ -694,7 +694,7 @@
       for (var month = 0; month < 12; month++) {                                        // :250
         var start = new Date(Date.UTC(y, m, d));
         var name = PXS_.formatDate(trx, dateFormat, start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-        var endD = new Date(Date.UTC(y, m + 1, d - 1));                                 // :256-258 +1 month, -1 day
+        var endD = addMonthClamp(start); endD = new Date(endD.getTime() - 86400000);   // :256-258 cal.add(MONTH,1) CLAMPS to the target month's last day (GregorianCalendar), then add(DAY_OF_YEAR,-1)
         var startS = ts(start), endS = ts(endD);
         // MPeriod.findByCalendar(ctx, start, calendar, trx) :169 — the period of this calendar that contains the date
         var found = trx.q('SELECT p.c_period_id AS id FROM C_Period p INNER JOIN C_Year y ON (p.C_Year_ID=y.C_Year_ID) WHERE y.C_Calendar_ID=? AND p.IsActive=? AND p.PeriodType=? AND date(?) BETWEEN date(p.StartDate) AND date(p.EndDate) ORDER BY p.C_Period_ID',
@@ -706,11 +706,12 @@
           var cur = trx.get('c_period', found.id);                                    // :267-272 MPeriod.getCopy + setters
           S.MPeriod_save(trx, cur.row || cur, { c_year_id: year.getC_Year_ID(), periodno: month + 1, name: name, startdate: startS, enddate: endS }, year);
         }
-        y = start.getUTCFullYear(); m = start.getUTCMonth();
-        var nx = new Date(Date.UTC(y, m + 1, d)); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 first day of next month (end+1)
+        var nx = new Date(endD.getTime() + 86400000); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 cal.add(DAY_OF_YEAR,1): the day after this period's end
       }
       return true;
     };
+    // GregorianCalendar.add(MONTH,1): same day-of-month, clamped to the last day of the next month (Jan-31 -> Feb-28/29)
+    function addMonthClamp(dt) { var y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate(), last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(d, last))); }
     function ts(dt) { function p(n) { return n < 10 ? '0' + n : '' + n; } return dt.getUTCFullYear() + '-' + p(dt.getUTCMonth() + 1) + '-' + p(dt.getUTCDate()) + ' 00:00:00'; }
     // MPeriod.saveEx = beforeSave :799-846 → write → afterSave :849-873 (new: one C_PeriodControl per distinct DocBaseType of the client's active doc types)
     S.MPeriod_save = function (trx, row, fields, year) {
