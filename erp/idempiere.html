@@ -3391,7 +3391,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   });
 
   // openProcess — the entry for menu P/R leaves + the ?process= deep link (procSet-gated in applySession).
-  function openProcess(processId, name) {
+  function openProcess(processId, name, rec) {
+    _procRecord = rec || null;   // a button-launched process carries its record (Record_ID); a menu launch carries none
     if (!window.AdProcess) { status('Process engine not loaded'); return; }
     _ensureProcHandlers();
     var b = _b3(window.__idmpDb), proc;
@@ -3423,7 +3424,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // witness_p2p_invoice_match.js Stage 3/4 (§CF.3).
     if (proc.classname === 'org.compiere.process.CreateFromInvoice') { renderCreateFromPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
-    else runProcess(proc, {});
+    else runProcess(proc, {}, _procRecord ? _procRecord.recordId : undefined);
   }
   function renderOrderPicker(proc) {
     // Shared CO Sales Order picker for the two KIND-2 order-to-cash generators: Generate Shipments
@@ -3857,7 +3858,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return;
       }
       console.log('§PROC_PARAM_VALIDATE proc=' + proc.AD_Process_ID + ' ok required=[' + v.required.join(',') + '] supplied=[' + v.supplied.join(',') + ']');
-      runProcess(proc, params);
+      runProcess(proc, params, _procRecord ? _procRecord.recordId : undefined);
     });
     cancel.addEventListener('click', function () {
       $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
@@ -4205,6 +4206,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var wrap = el('div', 'val'); wrap.appendChild(_postedButton(rec, _recIdx)); fld.appendChild(wrap);
     formEl.appendChild(fld);
   }
+  // AD-LAYER — Button fields bound to a process (WButtonEditor → ADTabpanel.actionButton → ProcessModalDialog): every displayed
+  // AD_Field whose column is Reference 28 (Button) with AD_Process_ID renders a labelled button that runs THAT process with
+  // Record_ID = this record. DocAction (the Process bar) and Posted (_appendPostedField) are the two buttons with their own surface.
+  // §NC1-BUTTON — Witness: W-NC1-UI (Year tab "Create Periods", AD_Process 100).
+  var _procRecord = null;   // {recordId, table} of the button that opened the process pane; consumed by runProcess calls from the param form
+  function _appendButtonFields(formEl, tab, rec, pk) {
+    if (!rec || pk == null || String(pk) === '' || !tab.id) return;
+    var btns = _sqlRows("SELECT f.name AS fname, c.columnname AS col, c.ad_process_id AS pid FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id " +
+      "WHERE f.ad_tab_id=" + Number(tab.id) + " AND COALESCE(f.isactive,'Y')='Y' AND COALESCE(f.isdisplayed,'Y')='Y' AND c.ad_reference_id=28 AND c.ad_process_id IS NOT NULL " +
+      "AND c.columnname NOT IN ('DocAction','Posted') ORDER BY f.seqno");
+    btns.forEach(function (bt) {
+      var fld = el('div', 'idmp-fld idmp-btn-fld');
+      fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', bt.col);
+      fld.appendChild(el('label', null, ''));
+      var wrap = el('div', 'val'), b = el('button', 'idmp-procbtn', String(bt.fname).trim());
+      b.setAttribute('data-proc-btn', bt.col); b.title = 'AD_Process ' + bt.pid;
+      b.addEventListener('click', function () {
+        console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' table=' + tab.tableName + ' record=' + pk);
+        _saveAndNavigate(function () { openProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName }); }, 'process');
+      });
+      wrap.appendChild(b); fld.appendChild(wrap); formEl.appendChild(fld);
+    });
+    if (btns.length) console.log('§AD-BUTTON form tab=' + tab.tableName + ' buttons=' + btns.map(function (x) { return x.col + '→' + x.pid; }).join(','));
+  }
   function buildForm(tab) {
     var rec = _records[_recIdx];
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
@@ -4252,6 +4277,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
       var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
       _withFoldedEntry(tn, 'update', function () { window.__crud.editInline(tn, pk, mountEl, _inlineOptsFor(tn, ef)); });
+      _appendButtonFields(ef, tab, rec, pk);
       _appendPostedField(ef, tab, rec);
       return ef;
     }
