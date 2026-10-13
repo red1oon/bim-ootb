@@ -127,7 +127,7 @@
     if (D(fl.amtsourcedr).signum() === 0 && D(fl.amtsourcecr).signum() === 0 && (!dl || dl.qty == null || D(dl.qty).signum() === 0)) return null;
     if (String(cur) === String(as.c_currency_id)) { fl.amtacctdr = fl.amtsourcedr; fl.amtacctcr = fl.amtsourcecr; }
     else {
-      var ct = (dl && nz(dl.c_conversiontype_id)) ? dl.c_conversiontype_id : ctx.c_conversiontype_id, r = rate(trx, cur, as.c_currency_id, fl.dateacct, ct), prec = T.precisionOf(trx, as.c_currency_id);
+      var ct = (dl && nz(dl.c_conversiontype_id)) ? dl.c_conversiontype_id : ctx.c_conversiontype_id, r = rate(trx, cur, as.c_currency_id, fl.dateacct, ct, fl.ad_org_id), prec = T.precisionOf(trx, as.c_currency_id);
       if (!r) { F.err = 'No conversion from ' + cur + ' to ' + as.c_currency_id; return null; }
       fl.amtacctdr = N(D(fl.amtsourcedr).multiply(r).setScale(prec, HU)); fl.amtacctcr = N(D(fl.amtsourcecr).multiply(r).setScale(prec, HU));
     }

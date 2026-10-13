@@ -278,11 +278,12 @@
     return amt.setScale(precisionOf(trx, p.c_currency_id), HU);
   }
   // MConversionRate.getRate — client/org specific first, latest ValidFrom (conversion type: the document's, else the default)
-  function rate(trx, from, to, date, convType) {
+  // optional 6th arg = the document/fact line's org (MConversionRate.getRate(…, AD_Client_ID, AD_Org_ID)): rows of org 0 or THAT org, ORDER BY client DESC, org DESC, ValidFrom DESC; default = the session org
+  function rate(trx, from, to, date, convType, org) {
     if (String(from) === String(to)) return BigDecimal.ONE;
     var ct = convType;
     if (!nz(ct)) { var d = trx.q("SELECT c_conversiontype_id AS c FROM c_conversiontype WHERE isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0]; ct = d ? d.c : null; }
-    var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client])[0];
+    var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client, nz(org) ? org : (trx.env.org || 0)])[0];
     return r ? D(r.m) : null;
   }
   // currencyBase(amt, cur, date, client, org) (PG function) — into the client's accounting currency (AD_ClientInfo.C_AcctSchema1_ID)
