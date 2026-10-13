@@ -121,30 +121,41 @@ function convertToSchema(db, R, by, absent, invId, schema, table, opts) {   // R
   var ctCol = _hasCol(db, table, 'c_conversiontype_id') ? 'c_conversiontype_id' : 'NULL AS c_conversiontype_id';
   var h = getRow(db, 'SELECT c_currency_id, dateacct, ' + ctCol + ', ad_client_id, ad_org_id FROM ' + table + ' WHERE ' + table + '_id=?', num(invId));
   var sc = getRow(db, 'SELECT c_currency_id FROM c_acctschema WHERE c_acctschema_id=?', num(schema));
-  if (!h || h.c_currency_id == null || !sc || num(h.c_currency_id) === num(sc.c_currency_id)) return;
-  var ct = num(h.c_conversiontype_id);
-  if (!ct) { var dt = getRow(db, "SELECT c_conversiontype_id FROM c_conversiontype WHERE isdefault='Y' ORDER BY c_conversiontype_id", []); ct = dt ? num(dt.c_conversiontype_id) : 0; }
-  var date = String(h.dateacct || '').slice(0, 10);
-  var rates = allRows(db, "SELECT multiplyrate, validfrom, validto, ad_client_id, ad_org_id FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND isactive='Y'", [num(h.c_currency_id), num(sc.c_currency_id), ct])
-    .filter(function (r) { return String(r.validfrom).slice(0, 10) <= date && date <= String(r.validto).slice(0, 10) && [0, num(h.ad_client_id || 0)].indexOf(num(r.ad_client_id)) >= 0 && [0, num(h.ad_org_id || 0)].indexOf(num(r.ad_org_id || 0)) >= 0; })
-    .sort(function (a, b) { return (num(b.ad_client_id) - num(a.ad_client_id)) || (num(b.ad_org_id || 0) - num(a.ad_org_id || 0)) || String(b.validfrom).localeCompare(String(a.validfrom)); });
-  if (!rates.length) { absent.push('NoCurrencyConversion ' + h.c_currency_id + '->' + sc.c_currency_id + ' type=' + ct + ' date=' + date); return; }
-  var cr = getRow(db, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', num(sc.c_currency_id)), prec = cr ? num(cr.stdprecision) : null;
-  if (prec == null) { absent.push('NoCurrencyPrecision ' + sc.c_currency_id); return; }
-  var r = _bigDec(rates[0].multiplyrate);
-  var conv = function (cents) { return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k)) ); };   // cents × rate, HALF_UP at precision 2
-  if (prec !== 2) { absent.push('currency precision ' + prec + ' not ported'); return; }
-  var dr = 0, crs = 0;
-  Object.keys(by).forEach(function (k) {
+  if (!h || h.c_currency_id == null || !sc) return;
+  var same = num(h.c_currency_id) === num(sc.c_currency_id), rgl = opts && opts.rgl;   // rgl: §NC5bcd allocation realised gain/loss hook, also needed when the allocation is already in the schema currency
+  if (same && !rgl) return;
+  var rate = null, cr = getRow(db, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', num(sc.c_currency_id)), prec = cr ? num(cr.stdprecision) : null;
+  if (!same) {
+    rate = _rateFor(db, h.c_currency_id, sc.c_currency_id, h.dateacct, h.c_conversiontype_id, h.ad_client_id, h.ad_org_id);
+    if (rate == null) { absent.push('NoCurrencyConversion ' + h.c_currency_id + '->' + sc.c_currency_id + ' type=' + (num(h.c_conversiontype_id) || 'default') + ' date=' + String(h.dateacct || '').slice(0, 10)); return; }
+    if (prec == null) { absent.push('NoCurrencyPrecision ' + sc.c_currency_id); return; }
+    if (prec !== 2) { absent.push('currency precision ' + prec + ' not ported'); return; }
+  }
+  var conv = function (cents) { return same ? cents : _mulCents(cents, rate); };   // cents × rate, HALF_UP at precision 2
+  if (!same) Object.keys(by).forEach(function (k) {
     var x = by[k];
     if (x.parts && x.parts.length) { var d0 = 0, c0 = 0; x.parts.forEach(function (p) { if (p.side === 'DR') d0 += conv(p.amt); else c0 += conv(p.amt); }); x.dr = d0; x.cr = c0; }   // §65.4 (F27) per fact line
     else { x.dr = conv(x.dr); x.cr = conv(x.cr); }
-    dr += x.dr; crs += x.cr;
   });
+  if (rgl) rgl(conv, by);
+  if (same) return;
+  var dr = 0, crs = 0; Object.keys(by).forEach(function (k) { dr += by[k].dr; crs += by[k].cr; });
   if (dr !== crs && table === 'c_allocationhdr' && opts && opts.allocBalance) _allocBalanceAccounting(db, R, by, absent, schema, dr - crs);   // §68 (F32): the clearing leg is missing (getCashAcct NONE)
   else if (dr !== crs && table === 'c_allocationhdr') absent.push('allocation rounding correction not ported (Doc_AllocationHdr.java:1147-1900 runs before balanceAccounting; diff=' + (dr - crs) + ')');
   else if (dr !== crs) balanceAccounting(db, R, by, absent, schema, dr - crs);
 }
+// MConversionRate.getRate (MConversionRate.java:237-252): active row of the conversion type (null/0 = the default type) valid on the date, client 0 or the document's, org 0 or the document's;
+// ORDER BY client DESC, org DESC, ValidFrom DESC (pg currencyRate()). → the multiply rate, or null when none.
+function _rateFor(db, curFrom, curTo, dateAcct, convType, clientId, orgId) {
+  var ct = num(convType);
+  if (!ct) { var dt = getRow(db, "SELECT c_conversiontype_id FROM c_conversiontype WHERE isdefault='Y' ORDER BY c_conversiontype_id", []); ct = dt ? num(dt.c_conversiontype_id) : 0; }
+  var date = String(dateAcct || '').slice(0, 10);
+  var rates = allRows(db, "SELECT multiplyrate, validfrom, validto, ad_client_id, ad_org_id FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND isactive='Y'", [num(curFrom), num(curTo), ct])
+    .filter(function (r) { return String(r.validfrom).slice(0, 10) <= date && date <= String(r.validto).slice(0, 10) && [0, num(clientId || 0)].indexOf(num(r.ad_client_id)) >= 0 && [0, num(orgId || 0)].indexOf(num(r.ad_org_id || 0)) >= 0; })
+    .sort(function (a, b) { return (num(b.ad_client_id) - num(a.ad_client_id)) || (num(b.ad_org_id || 0) - num(a.ad_org_id || 0)) || String(b.validfrom).localeCompare(String(a.validfrom)); });
+  return rates.length ? rates[0].multiplyrate : null;
+}
+function _mulCents(cents, rate) { var r = _bigDec(rate); return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k))); }
 // §68 (F32) Doc_AllocationHdr.balanceAccounting (Doc_AllocationHdr.java:1807-1828 @{u}; runs inside createFacts when the allocation currency ≠ the schema currency, :548-549):
 // diff = ΣAmtAcctDr − ΣAmtAcctCr; currency balancing on and |diff| < TOLERANCE 0.02 (:78) ⇒ createLine(null, CurrencyBalancing_Acct, −diff) (negative ⇒ CR, Fact.java:206-212);
 // else createLine(null, RealizedLoss, RealizedGain, schema currency, −diff): positive ⇒ DR loss, negative ⇒ CR gain (Fact.java:186-193); accounts from C_AcctSchema_Default. Missing config ⇒ absent by name.
@@ -782,7 +793,7 @@ function deriveAllocation(db, R, hdrId, schema, ref) {
   var cashNone = !!(ref && ref.cashJournalSameTrx) && isClientAccountingImmediate(db, _clientOf(db, 'c_allocationhdr', hdrId)), noCashAcct = false;
   var sch = getRow(db, 'SELECT taxcorrectiontype, ispostifclearingequal FROM c_acctschema WHERE c_acctschema_id=?', num(schema)) || {};
   var tcD = sch.taxcorrectiontype === 'B' || sch.taxcorrectiontype === 'D', tcW = sch.taxcorrectiontype === 'B' || sch.taxcorrectiontype === 'W', pice = sch.ispostifclearingequal === 'Y';
-  var by = {}, absent = [];
+  var by = {}, absent = [], recs = [];
   function add(side, el, amt) { if (!el || amt === 0) return; var k = el.id; if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 }; if (side === 'DR') by[k].dr += amt; else by[k].cr += amt; }
   function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
   lines.forEach(function (l) {
@@ -798,6 +809,7 @@ function deriveAllocation(db, R, hdrId, schema, ref) {
     if (disc) add('DR', el(R.resolve(db, '{BPGroup.PayDiscount}', num(l.c_bpartner_id), schema)), disc);
     if (wo) add('DR', el(R.resolve(db, '{BPGroup.WriteOff}', num(l.c_bpartner_id), schema)), wo);
     add('CR', receivable, src);
+    recs.push({ l: l, inv: inv, src: src, amount: amount, receivable: receivable });
     if (inv && ((tcD && disc) || (tcW && wo))) {
       var total = cents(inv.grandtotal), taxes = allRows(db, 'SELECT c_tax_id, taxamt FROM c_invoicetax WHERE c_invoice_id=?', num(inv.c_invoice_id));
       taxes.forEach(function (t) {
@@ -809,6 +821,56 @@ function deriveAllocation(db, R, hdrId, schema, ref) {
       });
     }
   });
+  // §NC5bcd Doc_AllocationHdr.createInvoiceGainLoss (:893-1030) + createPaymentGainLoss (:1044-1135): measured on the legacy pilot (scripts/bridge/nc5bcd_legacy.js: EUR invoice at R1, receipt at R2).
+  // Runs AFTER the allocation lines are in the schema currency (conv). Ported: accrual schema, SO invoice that is not a credit memo (hasDebitTradeAmt :1896), a RECEIPT payment, no reversal.
+  // Anything else that would fire the gain/loss condition is named absent, never invented. allocation ≠ schema currency or ≠ invoice currency ⇒ invoice gain/loss; allocation ≠ schema currency ⇒ payment gain/loss.
+  function rglOf(conv, byc) {
+    var sc = schemaRow(db, schema), ah = getRow(db, 'SELECT * FROM c_allocationhdr WHERE c_allocationhdr_id=?', num(hdrId));
+    if (!sc || !ah || ah.c_currency_id == null) return;
+    var allocCur = num(ah.c_currency_id), schCur = num(sc.c_currency_id), accrual = !_hasCol(db, 'c_acctschema', 'isaccrual') || String(sc.isaccrual || 'Y') !== 'N', tol = 2;
+    var dft = _hasCol(db, 'c_acctschema_default', 'realizedloss_acct') ? getRow(db, 'SELECT realizedgain_acct AS g, realizedloss_acct AS l FROM c_acctschema_default WHERE c_acctschema_id=?', num(schema)) : null;
+    function put(side, e, amt) { if (!e || !amt) return; if (!byc[e.id]) byc[e.id] = { account_id: e.id, value: e.value, name: e.name, dr: 0, cr: 0 }; if (side === 'DR') byc[e.id].dr += amt; else byc[e.id].cr += amt; }
+    function line2(e, amt) { put(amt > 0 ? 'DR' : 'CR', e, Math.abs(amt)); }                                // Fact.createLine(line, acct, cur, amt): amt>0 ⇒ DR
+    function line4(loss, gain, amt) { if (amt > 0) put('DR', loss, amt); else if (amt < 0) put('CR', gain, -amt); }   // Fact.createLine(line, debitAcct, creditAcct, cur, amt)
+    function gl(which) { var r = dft && R && R.elementOf ? R.elementOf(db, which === 'g' ? dft.g : dft.l) : null; if (!r) absent.push('C_AcctSchema_Default.Realized' + (which === 'g' ? 'Gain' : 'Loss') + '_Acct'); return r; }
+    recs.forEach(function (r) {
+      var inv = r.inv, pay = num(r.l.c_payment_id) ? getRow(db, 'SELECT * FROM c_payment WHERE c_payment_id=?', num(r.l.c_payment_id)) : null;
+      var invCur = inv && _hasCol(db, 'c_invoice', 'c_currency_id') ? num((getRow(db, 'SELECT c_currency_id AS c FROM c_invoice WHERE c_invoice_id=?', num(inv.c_invoice_id)) || {}).c) : 0;
+      var fireInv = inv && (allocCur !== schCur || (invCur && allocCur !== invCur)), firePay = pay && allocCur !== schCur;
+      if (!fireInv && !firePay) return;
+      if (!accrual) { absent.push('realized gain/loss of a cash-based schema not ported'); return; }
+      if (fireInv && invCur) {
+        var ih = getRow(db, 'SELECT * FROM c_invoice WHERE c_invoice_id=?', num(inv.c_invoice_id));
+        if (String(inv.issotrx) !== 'Y' || _isARCredit(db, inv.c_invoice_id) || Number(ih.grandtotal) < 0 || num(ih.reversal_id)) { absent.push('realized gain/loss of an AP / credit memo / reversed invoice not ported'); }
+        else {
+          var invFold = deriveInvoice(db, R, inv.c_invoice_id, schema), rec = invFold && r.receivable ? invFold.by[r.receivable.id] : null;
+          if (!rec) { absent.push('Gain/Loss - Invoice not posted yet'); }
+          else {
+            var invSrc = cents(ih.grandtotal), invAcc = rec.dr, allocSrc = r.src, allocAcc = conv(allocSrc), diff;
+            if (Math.abs(allocSrc) === Math.abs(invSrc)) diff = Math.abs(invAcc) - Math.abs(allocAcc);   // full payment in currency: gain is negative (:944)
+            else {                                                                                           // partial or multi-currency (:952-957)
+              var rt = allocCur === schCur ? null : _rateFor(db, allocCur, schCur, ih.dateacct, ih.c_conversiontype_id, ih.ad_client_id, ih.ad_org_id);
+              if (allocCur !== schCur && rt == null) { absent.push('NoCurrencyConversion ' + allocCur + '->' + schCur + ' (invoice date)'); return; }
+              var a0 = allocCur === schCur ? allocSrc : _mulCents(allocSrc, rt); diff = Math.abs(a0) - Math.abs(allocAcc); if (Math.abs(diff) < tol) diff = 0;
+            }
+            if (diff !== 0) { var loss = gl('l'), gain = gl('g'); line4(loss, gain, diff); line2(r.receivable, -diff); }
+          }
+        }
+      }
+      if (firePay) {
+        if (String(pay.isreceipt) !== 'Y' || cents(pay.payamt) < 0) { absent.push('realized gain/loss of an AP / negative payment not ported'); return; }
+        var pacct = (R.resolve(db, '{Bank.UnallocatedCash}', num(pay.c_bankaccount_id), schema) || {}).element, pf = pacct ? derivePayment(db, R, pay.c_payment_id, schema) : null, px = pf && pf.by[pacct.id];
+        if (!px) return;   // "Payment not posted yet" returns null (:1074)
+        var paySrc = cents(pay.payamt), payAcc = px.dr || px.cr, pSrcAmt = r.amount, pAcc = conv(pSrcAmt), pd;
+        if (Math.abs(pSrcAmt) === Math.abs(paySrc)) pd = Math.abs(pAcc) - Math.abs(payAcc);
+        else {
+          var rp = allocCur === schCur ? null : _rateFor(db, allocCur, schCur, pay.dateacct, pay.c_conversiontype_id, pay.ad_client_id, pay.ad_org_id);
+          var pa0 = allocCur === schCur ? pSrcAmt : _mulCents(pSrcAmt, rp); pd = Math.abs(pAcc) - Math.abs(pa0); if (Math.abs(pd) < tol) pd = 0;
+        }
+        if (pd !== 0) { var l2 = gl('l'), g2 = gl('g'); line2(pacct, -pd); line4(l2, g2, pd); }
+      }
+    });
+  }
   if (noCashAcct) {   // §68 (F32): the source is unbalanced by the missing clearing leg
     var bal = 0; Object.keys(by).forEach(function (k) { bal += by[k].dr - by[k].cr; });
     var hc = _hasCol(db, 'c_allocationhdr', 'c_currency_id') ? getRow(db, 'SELECT c_currency_id FROM c_allocationhdr WHERE c_allocationhdr_id=?', num(hdrId)) : null, scc = schemaRow(db, schema);
@@ -820,10 +882,10 @@ function deriveAllocation(db, R, hdrId, schema, ref) {
       else if (!sus) absent.push('SuspenseBalancing_Acct');
       else add(bal < 0 ? 'DR' : 'CR', { id: sus.id, value: sus.value, name: sus.name }, Math.abs(bal));
     }
-    convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr', { allocBalance: foreign });
+    convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr', { allocBalance: foreign, rgl: rglOf });
     return { by: by, absent: absent };
   }
-  convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr');
+  convertToSchema(db, R, by, absent, hdrId, schema, 'c_allocationhdr', { rgl: rglOf });
   return { by: by, absent: absent };
 }
 
