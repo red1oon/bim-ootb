@@ -168,6 +168,13 @@
   .idmp-adtab.active { background:#fff; color:var(--idmp-blue); font-weight:600; border-bottom:1px solid #fff; }
   /* body */
   #idmp-content { flex:1; overflow:auto; padding:14px; min-height:0; }
+  #idmp-home { display:flex; gap:12px; padding:12px; align-items:flex-start; flex-wrap:wrap; }
+  #idmp-home .idmp-hcol { flex:1 1 260px; min-width:240px; display:flex; flex-direction:column; gap:12px; }
+  #idmp-home .idmp-gadget { border:1px solid var(--idmp-border,#d0d7de); border-radius:6px; background:var(--idmp-bg2,#fff); }
+  #idmp-home .idmp-gadget > .gh { padding:6px 10px; font-weight:600; font-size:13px; border-bottom:1px solid var(--idmp-border,#d0d7de); }
+  #idmp-home .idmp-gadget > .gb { padding:10px; font-size:12px; color:var(--idmp-muted); }
+  #idmp-home .pi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  #idmp-home .pi { text-align:center; color:var(--idmp-fg,inherit); } #idmp-home .pi svg { width:100%; max-width:130px; } #idmp-home .pi .pt { font-size:11px; }
   #idmp-placeholder { color:var(--idmp-muted); text-align:center; margin-top:14vh; font-size:14px; }
   #idmp-placeholder .big { font-size:34px; margin-bottom:10px; opacity:.5; }
   /* form */
@@ -580,6 +587,9 @@
 <script src="kanban_lens.js?v=4"></script>
 <script src="setup_lens.js?v=1"></script>
 <script src="window_lens.js?v=1"></script>
+<script src="goal_engine.js?v=1"></script>
+<script src="dashboard_home.js?v=1"></script>
+<script src="dashboard_gadgets.js?v=1"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -1355,7 +1365,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // a role change can revoke window access — close any open windows, reset to placeholder
     _openWins = {}; _activeWin = null; renderWinTabs();
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
+    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>'; _renderHome();
     buildMenu();   // role-scoped
     console.log('§IDEMPIERE-LOGIN user=' + _session.user.name + ' roles=' + (_session.roles ? _session.roles.length : '?') +
       ' client=' + _session.client.name + '(' + _session.client.id + ')' +
@@ -1424,7 +1434,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         } else { renderToolbar(); renderBody(); body = _viewMode; }   // toolbar FIRST: renderBody→refreshForm fills its record nav
       } else {
         var ph = document.querySelector('#idmp-content > #idmp-placeholder');
-        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
+        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
       }
     }
     console.log('§I18N-RERENDER lang=' + code + ' login=' + (loginOn ? 'step' + _loginStepNow : 'off') + ' session=' + (_session ? 'kept' : 'none') +
@@ -1544,7 +1554,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (windowId === _activeWin) {
       if (ids.length) openWindow(Number(ids[ids.length - 1]));
       else { _activeWin = null; renderWinTabs(); $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready'); _mobileSurfaceMenu(false); }
+        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready'); _mobileSurfaceMenu(false); }
     } else renderWinTabs();
   }
   function renderWinTabs() {
@@ -2707,6 +2717,47 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§WINDOW-LENS window=' + res.windowId + ' tabs=' + res.tabs + ' fields=' + res.fields + ' displayed=' + res.displayed + ' verdict=' + res.verdict + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
   }
+  // §HOME-DASHBOARD (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2c - Witness: poc_home_dashboard_live): the legacy Home. Gadgets = DashboardHome.select (MDashboardContentAccess.get +
+  //   DashboardController main/side, ColumnNo/Line order). PORTED so far: performance (DashboardGadgets.performance over the goal engine). Every other selected gadget is shown with a NAMED placeholder and a
+  //   `§DASH-UNPORTED` line - never dropped, never faked.
+  function _homeQ(sql, p) { var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }
+  var _homeEngineOn = false;
+  function _renderHome() {
+    var host = $('idmp-content'), ph = host && host.querySelector('#idmp-placeholder');
+    if (!ph || host.querySelector('#idmp-home') || !_session || !window.DashboardHome || !window.DashboardGadgets || !window.GoalEngine || !window.__idmpDb) return;
+    var cl = _session.client.id, role = _session.role.id, usr = _session.user.id;
+    var sel = window.DashboardHome.select(_homeQ, { client: cl, role: role, user: usr });
+    if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
+    if (!_homeEngineOn) { try { window.GoalEngine.install(window.__idmpDb); _homeEngineOn = true; } catch (e) { console.log('§DASH-HOME engine install failed ' + e.message); } }
+    var all = _homeQ("SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?", [role])[0], orgIds = null;
+    if (!all || String(all.a) !== 'Y') orgIds = [0].concat((_session.orgs || []).map(function (o) { return Number(o.id); }));
+    var d = new Date(), today = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var sess = { client: cl, user: usr, role: role, today: today, access: { clientIds: [0, cl], orgIds: orgIds } };
+    var home = el('div'); home.id = 'idmp-home'; var cols = [], rendered = 0, unported = 0;
+    sel.main.forEach(function (g) {
+      var col = cols[g.effColumn]; if (!col) { col = cols[g.effColumn] = el('div', 'idmp-hcol'); home.appendChild(col); }
+      var box = el('div', 'idmp-gadget'); box.setAttribute('data-gadget-id', g.id); box.setAttribute('data-gadget-kind', g.kind); box.setAttribute('data-gadget-name', g.name);
+      box.appendChild(el('div', 'gh', g.name)); var body = el('div', 'gb'); box.appendChild(body);
+      if (g.kind === 'performance') {
+        var items = window.DashboardGadgets.performance(_homeQ, sess, window.GoalEngine), grid = el('div', 'pi-grid');
+        if (!items.length) { console.log('§DASH-EMPTY id=' + g.id + ' name="' + g.name + '" kind=performance goals=0 (a lazy gadget with nothing to show is detached: DashboardController.java:483-492)'); return; }
+        items.forEach(function (it) {
+          var pi = el('div', 'pi'); pi.setAttribute('data-goal-id', it.id); pi.setAttribute('data-percent', it.percent); pi.setAttribute('data-color', it.color); pi.title = it.tooltip;
+          var frac = Math.max(0, Math.min(1, it.percent / 100)), R = 40, C = Math.PI * R;                    // half-dial: arc length = pi*R
+          pi.innerHTML = '<svg viewBox="0 0 100 58"><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="#e3e6ea" stroke-width="12"/><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="' + it.color +
+            '" stroke-width="12" stroke-dasharray="' + (C * frac).toFixed(2) + ' ' + C.toFixed(2) + '"/></svg>';
+          pi.appendChild(el('div', 'pt', it.title)); grid.appendChild(pi);
+        });
+        body.appendChild(grid); rendered++;
+        console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
+      } else { body.textContent = 'Not ported yet (' + g.kind + ').'; unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=main'); }
+      col.appendChild(box);
+    });
+    sel.side.forEach(function (g) { unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=side'); });
+    [].slice.call(home.querySelectorAll('.idmp-hcol')).forEach(function (c) { if (!c.children.length) c.parentNode.removeChild(c); });   // a column whose only gadget was detached as empty
+    ph.style.display = 'none'; host.appendChild(home);
+    console.log('§DASH-HOME client=' + cl + ' role=' + role + ' user=' + usr + ' main=' + sel.main.length + ' side=' + sel.side.length + ' cols=' + sel.cols + ' rendered=' + rendered + ' unported=' + unported + ' ids=[' + sel.main.map(function (g) { return g.id; }) + ']');
+  }
   function _openSetupLens() {
     var pane = el('div', 'idmp-procpane idmp-procform'), cl = _session && _session.client ? _session.client : null;
     pane.appendChild(el('h3', null, 'Setup check'));
@@ -3019,7 +3070,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
     _showProcPane(pane);
@@ -3142,7 +3193,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-match-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     function paintTo() {
       var opts = _matchToOptions(fromSel.value);
@@ -3384,7 +3435,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-trx-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     [orgSel, locSel, prdSel, mtSel].forEach(function (s) { s.addEventListener('change', run); });
     d1.addEventListener('change', run); d2.addEventListener('change', run);
@@ -3521,7 +3572,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3576,7 +3627,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     _showProcPane(pane);
 
@@ -3701,7 +3752,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, {}, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3800,7 +3851,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     var out = el('div', 'sub');
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
     });
     run.addEventListener('click', function () {
       var opt = ccy.options[ccy.selectedIndex];
@@ -3959,7 +4010,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     cancel.addEventListener('click', function () {
       if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
       status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel);
@@ -4233,7 +4284,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
