@@ -126,6 +126,18 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   var pv = save('m_pricelist_version', { m_pricelist_id: 101, m_discountschema_id: one('SELECT m_discountschema_id AS d FROM m_discountschema WHERE ad_client_id=11 ORDER BY 1').d, validfrom: '2042-03-05 00:00:00' }), pvRow = one("SELECT name FROM m_pricelist_version WHERE date(validfrom)='2042-03-05'");
   verdict('NC6-PV1', [eq('ok', 'save accepted', pv.r.ok, true), eq('name', 'Name omitted -> ValidFrom formatted (legacy ' + L.PV1.name + ')', pvRow && pvRow.name, L.PV1.name)]);
   refused('YR1', save('c_year', { c_calendar_id: one('SELECT c_calendar_id AS c FROM c_calendar ORDER BY 1').c, fiscalyear: 'abc' }));
+  // NC-8 organization (nc8_legacy.js): a new org gets AD_OrgInfo, role org access for every non-manual role, and the tree node
+  if (fs.existsSync(path.join(path.dirname(LJ), 'nc8_legacy.json'))) {
+    var L8 = JSON.parse(fs.readFileSync(path.join(path.dirname(LJ), 'nc8_legacy.json'), 'utf8')).org;
+    var og = save('ad_org', { value: 'NC8T', name: 'NC8-ORG', issummary: 'N' }), oRow = one("SELECT ad_org_id AS id FROM ad_org WHERE name='NC8-ORG'");
+    var oi = oRow && one('SELECT duns AS d, taxid AS t FROM ad_orginfo WHERE ad_org_id=?', [oRow.id]);
+    var racc = oRow ? q('SELECT ad_role_id AS r FROM ad_role_orgaccess WHERE ad_org_id=? ORDER BY ad_role_id', [oRow.id]).map(function (x) { return x.r; }) : [];
+    var nonManual = q("SELECT ad_role_id AS r FROM ad_role WHERE ad_client_id=11 AND ismanual='N' AND isactive='Y' ORDER BY ad_role_id").map(function (x) { return x.r; });
+    var tnode = oRow && one('SELECT parent_id AS p, seqno AS s FROM ad_treenode WHERE node_id=? AND ad_tree_id=(SELECT ad_tree_id FROM ad_tree WHERE ad_client_id=11 AND treetype=\'OO\' ORDER BY 1)', [oRow.id]);
+    verdict('NC8-ORG1', [eq('ok', 'save accepted', og.r.ok, true), eq('info', 'AD_OrgInfo created with DUNS/TaxID "?" (legacy ' + JSON.stringify(L8.info && [L8.info.duns, L8.info.taxid]) + ')', oi && [oi.d, oi.t], [L8.info.duns, L8.info.taxid]),
+      eq('access', 'Role_OrgAccess for EVERY non-manual role (legacy ' + L8.roleAccess.length + ' of ' + L8.nonManualRoles.length + ')', [racc.length, racc.join(',') === nonManual.join(',')], [L8.roleAccess.length, true]),
+      eq('tree', 'Organization tree node parent 0, seq 999 (legacy ' + JSON.stringify(L8.treeNode) + ')', tnode && [tnode.p, tnode.s], [L8.treeNode.parent, L8.treeNode.seq])]);
+  } else log('§NC6 NC8-ORG1 INCONCLUSIVE no nc8_legacy.json');
   var bad2 = results.filter(function (r) { return r.v !== 'PASS'; });
   log('§NC6-VERDICT ' + (bad2.length ? 'FAIL ' + bad2.map(function (r) { return r.id + '=' + r.v; }).join(',') : 'PASS') + ' cases=' + results.length);
   process.exit(bad2.length ? 1 : 0);

@@ -17,7 +17,7 @@
   function same(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); }
 
   // MTree_Base.getNodeTableName(treeType) (MTree_Base.java) -- the standard master trees
-  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr' };
+  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr', OO: 'ad_treenode' };
 
   // PO.insert_Accounting(acctTable, baseTable, where) PO.java:4907-4990 -- for every row of the base table of the client (optionally
   // restricted by `by` = {col: value}, the Java "p.<col>=<id>" clause) copy the Account-type columns (AD_Column.AD_Reference_ID=25,
@@ -166,6 +166,7 @@
     m_pricelist_version: { before: function (trx, r) { if (!r.validfrom) r.validfrom = trx.env.date; if (!r.name) r.name = fmtDateUS(r.validfrom); return null; } },                   // MPriceListVersion.setName :177-187 (en_US DisplayType.Date)
     c_uom_conversion: { before: function (trx, r) { return uomConversionBefore(trx, r); } },                                                                                         // MUOMConversion.beforeSave
     c_year: { before: function (trx, r) { return yearBefore(r); } },                                                                                                                  // MYear.beforeSave
+    ad_org: { afterNew: [function (trx, r) { orgAfterNew(trx, r); }] },                                                                                                               // MOrg.afterSave (new org block)
     ad_sequence: { before: function (trx, r) { if (r.startnewmonth === 'Y' && r.startnewyear !== 'Y') r.startnewmonth = 'N'; return null; } },                                       // MSequence.beforeSave
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
     c_bankaccount: { afterNew: [bankAcct] },                                                                                                                            // MBankAccount.afterSave :220-226
@@ -286,6 +287,21 @@
     var fy = String(r.fiscalyear || ''), y = 0;
     if (/^\s*-?\d+\s*$/.test(fy)) y = parseInt(fy, 10); else { var tok = fy.split(/[\/\-, \t\n\r\f]+/).filter(Boolean)[0]; if (tok && /^\d+$/.test(tok)) { y = parseInt(tok, 10); if (tok.length === 2) y += 2000; } }
     return y === 0 ? 'Fill mandatory fields: Year' : null;
+  }
+
+
+  // MOrg.afterSave for a NEW org: AD_OrgInfo (MOrgInfo(MOrg): DUNS '?', TaxID '?'), AD_Role_OrgAccess for every non-manual role of the client (MRoleOrgAccess.createForOrg :99-114),
+  // the Organization tree node (insert_Tree(TREETYPE_Organization): parent 0, seq 999). Measured on the pilot (scripts/bridge/nc8_legacy.js). Value-change update_Tree and the
+  // C_ValidCombination description refresh are not ported (named).
+  function orgAfterNew(trx, r) {
+    var oi = { ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id, duns: '?', taxid: '?' };
+    trx.insert('ad_orginfo', oi);
+    trx.q("SELECT ad_role_id AS id FROM ad_role WHERE ad_client_id=? AND ismanual='N' AND isactive='Y' ORDER BY ad_role_id", [r.ad_client_id]).forEach(function (ro) {
+      var f = { ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id, ad_role_id: ro.id, isreadonly: 'N' };
+      if (trx.env.uuid) f.ad_role_orgaccess_uu = trx.env.uuid();
+      trx.insert('ad_role_orgaccess', f);
+    });
+    insertTree(trx, 'ad_org', r, 'OO');
   }
 
   function install(registry) {
