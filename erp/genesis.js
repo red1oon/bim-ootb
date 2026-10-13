@@ -559,7 +559,29 @@
     return { tip: head, sig: await S.signTip(priv, head), pub: pub, verify: function (t, s) { return S.verifyTip(t, s, pub); } };
   }
 
-  var _api = { birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
+
+  // §QUICKSETUP (bim-compiler prompts/ERP_DEPTH_FILM.md §QUICKSETUP — Witness: W-QUICKSETUP-EQUALS-WIZARD). OPTIONAL path beside the legacy-identical wizard: the user types only the company name
+  // and the country; every other InitialClientSetup answer (process 53161) is DERIVED from the dictionary, never invented, and ASKED when the dictionary has none:
+  //   currency  = C_Country.C_Currency_ID of the chosen country (must be an active C_Currency; ~18 countries carry none => ask 'currency'),
+  //   adminUser = AD_Process_Para(53161, AdminUserName).DefaultValue ('clientAdmin'),   chart = the iDempiere default (UseDefaultCoA),   year = the date's year (MYear.java:110-115).
+  // PURE: ctx = { countries:{id:{currencyId}}, currencies:{id:{iso,prec,active}}, processDefaults:{AdminUserName} } read by the host from the dictionary. Returns the SAME input shape birthTenant takes.
+  function quickInput(ctx, ans) {
+    ctx = ctx || {}; ans = ans || {};
+    var ask = [], name = String(ans.clientName == null ? '' : ans.clientName).trim(), cid = ans.countryId != null ? Number(ans.countryId) : null;
+    if (!name) ask.push('clientName');
+    var ctry = cid != null && ctx.countries ? ctx.countries[cid] : null;
+    if (!ctry) ask.push('countryId');
+    var cur = ctry && ctry.currencyId != null && ctx.currencies ? ctx.currencies[ctry.currencyId] : null;
+    if (ctry && !(cur && cur.active)) ask.push('currency');
+    var admin = ctx.processDefaults && ctx.processDefaults.AdminUserName;
+    if (!admin) ask.push('adminUser');
+    if (ask.length) return { ok: false, ask: ask, input: null, typed: ['clientName', 'countryId'], source: null };
+    return { ok: true, ask: [], typed: ['clientName', 'countryId'],
+      input: { clientName: name, currencyId: ctry.currencyId, currencyIso: cur.iso, currencyPrecision: cur.prec, adminUser: admin, dateAcct: ans.dateAcct, countryId: cid },
+      source: { currency: 'C_Country.C_Currency_ID', adminUser: 'AD_Process_Para 53161 AdminUserName DefaultValue', chart: 'default (UseDefaultCoA)', year: 'dateAcct' } };
+  }
+
+  var _api = { quickInput: quickInput, birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
     rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
     grantFullAccess: grantFullAccess };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;

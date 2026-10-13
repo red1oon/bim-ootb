@@ -578,6 +578,7 @@
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
 <script src="kanban_lens.js?v=4"></script>
+<script src="setup_lens.js?v=1"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -2686,6 +2687,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }); if (r) return r; } } catch (e) {}
     return _sqlRows(sql);
   }
+  // §SETUP-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §SETUP-LENS — Witness: W-SETUP-LENS + poc_quicksetup_live): READ-ONLY overlay of what the logged-in client still lacks before its first invoice.
+  //   One SQL per line from setup_lens.js; this host only adapts the db and renders the rows in the same process pane the wizard uses. Writes nothing.
+  function _openSetupLens() {
+    var pane = el('div', 'idmp-procpane idmp-procform'), cl = _session && _session.client ? _session.client : null;
+    pane.appendChild(el('h3', null, 'Setup check'));
+    if (!window.SetupLens || !cl || !window.__idmpDb) { pane.appendChild(el('div', 'sub', 'Log in to a client first.')); _showProcPane(pane); return; }
+    var d = new Date(), today = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var res = window.SetupLens.compute(function (sql, p) {
+      var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out;
+    }, cl.id, today);
+    pane.appendChild(el('div', 'sub', (cl.name || ('Client ' + cl.id)) + ' · ' + res.verdict + ' · ' + res.ok + ' ready, ' + res.missing + ' missing, ' + res.inconclusive + ' not judged · read-only'));
+    res.rows.forEach(function (r) {
+      var row = el('div', 'fld'); row.setAttribute('data-setuplens-row', r.id); row.setAttribute('data-status', r.status);
+      row.appendChild(el('label', null, (r.status === 'OK' ? '✔ ' : r.status === 'MISSING' ? '✖ ' : '? ') + r.label));
+      row.appendChild(el('div', 'sub', r.detail + ' — ' + r.cite)); pane.appendChild(row);
+    });
+    _showProcPane(pane);
+    console.log('§SETUP-LENS client=' + cl.id + ' verdict=' + res.verdict + ' ok=' + res.ok + ' missing=' + res.missing + ' inconclusive=' + res.inconclusive + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
+  }
   function _sqlRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);
@@ -3713,6 +3733,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     } catch (eT) {}
     console.log('§GENESIS-WIZARD countries=' + nCty + ' default=' + ctyDef + " (param 53161 C_Country_ID default SQL, AD_Language='en_US')");
     fCty.appendChild(cty); pane.appendChild(fCty);
+    // §QUICKSETUP (bim-compiler prompts/ERP_DEPTH_FILM.md §QUICKSETUP — Witness: W-QUICKSETUP-EQUALS-WIZARD + poc_quicksetup_live): OPTIONAL, OFF by default (the legacy-identical form above is the default path).
+    //   ON = type only name + country; currency / admin / chart are DERIVED from the dictionary by Genesis.quickInput and the SAME birthTenant runs. A country with no currency asks (no invention).
+    var fQuick = el('div', 'fld'); var quick = document.createElement('input'); quick.type = 'checkbox'; quick.setAttribute('data-genesis-quick', '1');
+    var qLbl = el('label', null, ' Quick setup — only company name and country; the rest comes from the dictionary'); qLbl.insertBefore(quick, qLbl.firstChild); fQuick.appendChild(qLbl);
+    var qSum = el('div', 'sub', ''); qSum.setAttribute('data-genesis-quicksum', '1'); fQuick.appendChild(qSum); pane.insertBefore(fQuick, fCcy);
+    function _quickCtx() {
+      var c = { countries: {}, currencies: {}, processDefaults: {} };
+      _sqlRows("SELECT C_Country_ID AS id, C_Currency_ID AS cur FROM C_Country WHERE IsActive='Y'").forEach(function (r) { c.countries[r.id] = { currencyId: r.cur }; });
+      _sqlRows("SELECT C_Currency_ID AS id, ISO_Code AS iso, StdPrecision AS prec, IsActive AS act FROM C_Currency").forEach(function (r) { c.currencies[r.id] = { iso: r.iso, prec: r.prec, active: r.act === 'Y' }; });
+      _sqlRows("SELECT ColumnName AS cn, DefaultValue AS dv FROM AD_Process_Para WHERE AD_Process_ID=53161").forEach(function (r) { c.processDefaults[r.cn] = r.dv; });
+      return c;
+    }
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
@@ -3736,6 +3768,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }; rd.readAsText(f);
     });
     fCoa.appendChild(coaSel); fCoa.appendChild(coaFile); fCoa.appendChild(coaInfo); pane.appendChild(fCoa);
+    function _quickSync() {
+      var on = quick.checked; [fCcy, fAdmin, fCoa].forEach(function (f) { f.style.display = on ? 'none' : ''; });
+      if (!on) { qSum.textContent = ''; return; }
+      var qi = window.Genesis.quickInput(_quickCtx(), { clientName: (name.value || '').trim(), countryId: Number(cty.value), dateAcct: '1970-01-01' });
+      qSum.textContent = qi.ok ? 'Currency ' + qi.input.currencyIso + ' (from the country) · administrator ' + qi.input.adminUser + ' (process default) · iDempiere default chart · this year\'s calendar'
+        : 'Needs more than name and country: ' + qi.ask.join(', ') + ' — untick Quick setup to enter it.';
+      console.log('§QUICKSETUP preview ok=' + qi.ok + ' ask=' + JSON.stringify(qi.ask) + (qi.ok ? ' currency=' + qi.input.currencyIso + ' admin=' + qi.input.adminUser : ''));
+    }
+    quick.addEventListener('change', _quickSync); cty.addEventListener('change', _quickSync); name.addEventListener('input', _quickSync);
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Create tenant'); run.setAttribute('data-genesis-create', '1');
     var cancel = el('button', null, 'Cancel');
@@ -3747,10 +3788,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var opt = ccy.options[ccy.selectedIndex];
       // FS-2: the setup year is TODAY's (MYear.java:110-115 reads the clock); genesis takes it as its explicit dateAcct.
       var dNow = new Date(), today = dNow.getFullYear() + '-' + ('0' + (dNow.getMonth() + 1)).slice(-2) + '-' + ('0' + dNow.getDate()).slice(-2);
-      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
-        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
-      if (cty.value) input.countryId = Number(cty.value);                    // FS-12
-      if (coaSel.value === 'file') {                                         // FS-18
+      var input;
+      if (quick.checked) {                                                   // §QUICKSETUP: derived, never invented
+        var qi = window.Genesis.quickInput(_quickCtx(), { clientName: (name.value || '').trim(), countryId: Number(cty.value), dateAcct: today });
+        if (!qi.ok) { out.textContent = 'Quick setup needs: ' + qi.ask.join(', ') + ' — untick Quick setup to enter it.'; console.log('§QUICKSETUP refused ask=' + JSON.stringify(qi.ask)); return; }
+        input = qi.input; console.log('§QUICKSETUP use typed=' + qi.typed.length + ' currency=' + input.currencyIso + ' admin=' + input.adminUser + ' country=' + input.countryId);
+      } else {
+        input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
+          currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
+        if (cty.value) input.countryId = Number(cty.value);                  // FS-12
+      }
+      if (!quick.checked && coaSel.value === 'file') {                                         // FS-18
         if (!coaParsed) { out.textContent = 'Choose a chart of accounts file first.'; return; }
         input.coa = coaParsed;
         input.requiredKeys = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName IN " +
@@ -6069,6 +6117,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
+      setuplens: function () { _openSetupLens(); },
       // editmode pill RETIRED (Leg 5, FUNDAMENTAL LAW): the Glass/Gravity CRUD ring is Glass-only on the iDempiere
       //   surface (W-RING-LEAK) — a ring-toggle pill is vestigial here. The classic toolbar is the CRUD surface.
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
