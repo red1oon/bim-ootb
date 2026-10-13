@@ -4,6 +4,18 @@ Question: could the bim-ootb pattern (signed op-log is the document, geometry/pi
 fold, witnesses are the oracle) carry over to a layered image editor? Run each script; every number below
 comes from these files. `npm i` here first, set `CHROMIUM=` if Chromium is not at `/opt/pw-browsers/chromium`.
 
+## Features (OplogPic, `editor/`; live at https://red1oon.github.io/bim-ootb/oplogpic/; usage in `editor/README.md`)
+Every action is one line in an op log; the picture is the deterministic replay of that log. Serverless, runs in the browser, phone-ready.
+- **Paint:** hard and soft brush, smudge, erase, blur brush, colour picker; flow, size, strength.
+- **Layers:** add, hide, reorder, rename, delete, opacity, ten blend modes; groups (one level), clipping to the layer below, masks (from selection, paint, invert, apply).
+- **Selection:** rectangle, ellipse, magic wand (tolerance, contiguous, add / subtract), grow / shrink, invert, feather on mask-from-selection.
+- **Adjustment layers** (live, re-editable, maskable): Hue / Saturation, Levels, Curves, Threshold, Posterize, Invert.
+- **Photos and text:** add a photo (Fit or Fill placement with centre / quarter anchors), caption text layer with optional shadow, Move / Scale with Apply / Cancel.
+- **History:** every entry listed, preview any step, go back to it, replay, Verify (rebuild from the log and compare), undo / redo, autosave, save / load the log, checkpoints.
+- **Out:** PNG, PSD (layers, masks, adjustment layers, merged image; checked by independent readers), the log itself.
+- **Planned (specified, not built):** gradient tool and Gradient Map, Gaussian blur and Sharpen filter layers: `prompts/OPLOGPIC_GRADIENT_FILTERS.md`.
+- **Not done:** real-phone and iOS tests, phone memory figures, native-speaker review of the Malay film wording.
+
 | Script | Question | Result (headless Chromium, SwiftShader software GL) |
 |---|---|---|
 | `exp_precision_blend_speed.js` | 8-bit Canvas2D vs float working format | Ramp darken x0.25 then x4: Canvas2D keeps 64/256 levels; WebGL RGBA8 65; **RGBA16F 256, RGBA32F 256** |
