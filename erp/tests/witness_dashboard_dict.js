@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — W-DASH-DICT (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY step D0). READ THE LOG: §DD lines; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the legacy Home dashboard + Performance Measurement dictionary (PA_DashboardContent/_Access/Preference, PA_Goal/GoalRestriction, PA_Measure/MeasureCalc, PA_ColorSchema,
 //   PA_Ratio, AD_Note, AD_RecentItem) is in the SEED AS LOADED (ad_seed.db + patches/ad_seed.db.sql applied statement by statement, as idempiere.html does) cell for cell equal to the legacy pilot.
-//   Denominator = 11 tables / every row of each. Expected BEFORE the patch: 3 of 11 tables carry all their rows (RED). INCONCLUSIVE when the legacy dump is missing.
+//   Denominator = 15 tables / every row of each (D0b added PrintColor, StatusLine, Chart, ChartDataSource). Expected BEFORE the patch: 3 of 11 tables carry all their rows (RED). INCONCLUSIVE when the legacy dump is missing.
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
