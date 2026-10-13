@@ -54,6 +54,7 @@
     "editor_filters": "node editor/run_filters.js",
     "editor_shapes": "node editor/run_shapes.js",
     "editor_fx": "node editor/run_fx.js",
+    "editor_textedit": "node editor/run_textedit.js",
     "editor_text": "node editor/run_text.js",
     "editor_xform": "node editor/run_xform.js",
     "editor_redpill": "node editor/run_redpill.js",

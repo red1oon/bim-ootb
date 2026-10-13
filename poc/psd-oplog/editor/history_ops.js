@@ -34,14 +34,14 @@
       case 'grad': return 'Gradient ' + o.kind + (o.target === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ' (' + o.x0 + ',' + o.y0 + ') to (' + o.x1 + ',' + o.y1 + ')';
       case 'fx': return (root.FxOps || require('./fx_ops.js')).label(o);
       case 'shape': return (root.ShapeOps || require('./shape_ops.js')).label(o);
-      case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
+      case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return o.txt ? 'Add text as layer ' + o.id : 'Add photo as layer ' + o.id; case 'imgset': return 'Edit text on layer ' + o.layer; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }
   const bytesOf = (o) => new TextEncoder().encode(JSON.stringify(o)).length;
   function raw(o) { if (o && Array.isArray(o.pts) && o.pts.length > 4) { const first = o.pts.slice(0, 4).map((p) => JSON.stringify(p)).join(','); return JSON.stringify({ ...o, pts: '@@' }).replace('"@@"', '[' + first + ',"+' + (o.pts.length - 4) + ' more"]'); } return JSON.stringify(o); }
   const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
   const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
   async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8).catch(() => {}); w.close().catch(() => {}); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
-  async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
+  async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img' || o.op === 'imgset')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
   async function parseLink(hash) {
     const m = /^#v1=([A-Za-z0-9_-]+)&h=([0-9a-f]{16})$/.exec(hash || ''); if (!m) throw new Error('not a painting link');
     let j; try { j = JSON.parse(new TextDecoder().decode(await pipe(b64u.dec(m[1]), DecompressionStream))); } catch (e) { throw new Error('the link is damaged'); }

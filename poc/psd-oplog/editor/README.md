@@ -12,7 +12,7 @@ A browser editor whose document is an op log: every action is one line in a log,
 
 ## Photos and text
 - **Add photo** takes a picture from the device. The **Fill select** next to it chooses the placement: *Fit whole* (the default; the whole picture, transparent bars where it does not fill the square), or *Fill* (the picture covers the canvas and the overflow is cropped away for good): centre, top / left, 1/4 along, 3/4 along, bottom / right. Pick the crop that keeps what matters; the cropped-away pixels are not stored. (The 1/4 and 3/4 choices arrive with the next deploy of the live site.)
-- **Add text** opens a small panel: the words, size (24-300 px), colour, position (top / middle / bottom) and an optional shadow. It becomes a normal layer named "Text: ...". To change the words, delete the layer and add it again.
+- **Add text** opens a small panel: the words, size (24-300 px), colour, position (top / middle / bottom), alignment (left / centre / right), font (sans / serif / mono), an optional shadow and an optional outline (width and colour). It becomes a normal layer named "Text: ...". **Edit text** (shows when a caption layer is active) reopens the panel with that caption's settings: change the words, size, colour, font or outline and press Apply; the layer keeps its place, its mask and its opacity, a name you typed is kept, and Undo brings back the previous look exactly. Each edit stores a new picture of the caption (about 4 MB), like adding a photo does.
 
 ## Advanced (tick the Advanced box at the top of the layer panel)
 - **Masks** on layers: add, from selection, invert, apply, delete, paint on the mask (Layer / Mask buttons, Reveal / Hide).

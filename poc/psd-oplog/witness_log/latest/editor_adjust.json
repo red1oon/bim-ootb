@@ -72,7 +72,7 @@
    "merged_over1": 18
   },
   "AJ9": {
-   "previewMs": 124.29999999701977
+   "previewMs": 128.69999998807907
   }
  },
  "node": "v20.20.2"
@@ -104,7 +104,7 @@ ok   AJ6 a checkpoint with 4 adjustments (levels, curves hidden, threshold, post
 ok   AJ7 page PSD bytes (366861) == Node exporter bytes with 5 adjustments (one hidden)
 ok   AJ7 psd-tools reads the same stack bottom to top: kinds pixel/pixel/levels/pixel/pixel/curves/threshold/posterize/invert, names, visibility
 ok   AJ7 the stored merged image: 18 of 1,048,576 pixels differ from the editor composite by more than 1 level (max 255); limit 105 = 0.01 % (AMENDED, see AJ7 AMENDMENT)
-ok   AJ9 one live preview refresh of a 4-point curve at 1024^2 takes 124 ms (limit 400)
+ok   AJ9 one live preview refresh of a 4-point curve at 1024^2 takes 129 ms (limit 400)
 ok   AJ5 no page errors (desktop)
 ok   AJ8 Advanced OFF: no Add adjustment menu and no scroll
 ok   AJ8 Advanced ON: Add adjustment menu 159x44 px (>= 44)

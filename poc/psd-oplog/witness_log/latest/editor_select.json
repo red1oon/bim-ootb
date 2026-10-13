@@ -23,12 +23,12 @@
   ],
   "S8": {
    "hard": [
-    12.168900000000576,
-    18.828317999999854
+    11.95722299999943,
+    18.433904999999868
    ],
    "smudge": [
-    40.573028000000704,
-    44.462885999999344
+    39.453975999998875,
+    43.16516099999899
    ]
   }
  },
@@ -41,8 +41,8 @@ ok   S1 40 strokes (hard/soft/erase/blur/smudge) x 4 selections: channel values 
 ok   S1 channel values differing from the untouched layer OUTSIDE
 ok   S1 negative control: the ops do change pixels inside the selection (test can see a change)
 ok   S5 12 boxes (full canvas, 1-px wide, off-centre): mask count + sha256 equal the independent numpy float64 implementation
-ok   S8 1024^2 100-point hard stroke: 12.2 ms without vs 18.8 ms with selection (limit 3x + 25 ms floor for the layer copy)
-ok   S8 smudge: 40.6 vs 44.5 ms
+ok   S8 1024^2 100-point hard stroke: 12.0 ms without vs 18.4 ms with selection (limit 3x + 25 ms floor for the layer copy)
+ok   S8 smudge: 39.5 vs 43.2 ms
 ok   S2 live strokes of all 5 tools crossing a rect selection boundary: layer + composite hashes == refold(log)
 ok   S2 rect: dirty compositor bit-equal to full composite
 ok   S2 live strokes of all 5 tools crossing a ellipse selection boundary: layer + composite hashes == refold(log)
