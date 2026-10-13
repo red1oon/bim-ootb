@@ -2930,7 +2930,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (/^@.*@$/.test(s)) return '';
     return s;
   }
-  function _showProcPane(pane) {
+  // ProcessModalDialog (ADTabpanel.actionButton → ProcessModalDialog): a process launched from a record's Button field opens as a MODAL DIALOG over the
+  // window — the window, its tab strip and toolbar stay put; OK closes the dialog and refreshes the tab. Menu-launched processes keep the full pane.
+  function _closeProcDialog(refresh) {
+    var o = document.getElementById('idmp-procdlg'); if (o) o.remove(); _procRecord = null;
+    if (refresh) { try { renderActiveTab(); } catch (e) { console.log('§AD-BUTTON refresh failed ' + e.message); } }
+  }
+  function _showProcDialog(pane, isResult) {
+    var o = document.getElementById('idmp-procdlg');
+    if (!o) { o = el('div', null); o.id = 'idmp-procdlg'; o.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+      document.body.appendChild(o); }
+    o.innerHTML = ''; pane.style.cssText = 'margin:0;max-height:88vh;overflow:auto;min-width:420px;box-shadow:0 8px 28px rgba(0,0,0,.4)';
+    if (isResult) { var ok = el('button', 'run', 'OK'); ok.setAttribute('data-procdlg-ok', '1'); ok.style.marginTop = '12px'; ok.addEventListener('click', function () { _closeProcDialog(true); }); pane.appendChild(ok); }
+    o.appendChild(pane);
+    console.log('§AD-BUTTON dialog ' + (isResult ? 'result' : 'params') + ' modal=Y window-kept=Y');
+  }
+  function _showProcPane(pane, isResult) {
+    if (_procRecord) { _showProcDialog(pane, isResult); return; }
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
     var c = $('idmp-content'); c.innerHTML = ''; c.appendChild(pane);
   }
@@ -3861,6 +3877,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params, _procRecord ? _procRecord.recordId : undefined);
     });
     cancel.addEventListener('click', function () {
+      if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
       $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
@@ -4129,7 +4146,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
-    _showProcPane(pane);
+    _showProcPane(pane, true);
   }
 
   // P3 (CRUD_INPLACE_EDIT_SESSION.md) — new-record mode: when New/Copy is invoked, the form view mounts a blank

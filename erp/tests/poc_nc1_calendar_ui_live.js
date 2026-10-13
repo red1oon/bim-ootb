@@ -87,6 +87,12 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   const chip = await pg.$eval('.idmp-procresult .ok-chip', e => e.textContent).catch(() => '?'), msg = await pg.$eval('.idmp-procresult .msg', e => e.textContent).catch(() => '?');
   console.log('§NC1-UI process result chip=' + chip + ' msg=' + JSON.stringify(msg));
 
+  // U6 L&F: ProcessModalDialog — the window stays under a modal dialog; OK closes it
+  const kept = await pg.evaluate(() => ({ dlg: !!document.querySelector('#idmp-procdlg .idmp-procresult'), tabs: document.querySelectorAll('#idmp-tabstrip .idmp-adtab').length, tb: getComputedStyle(document.querySelector('#idmp-toolbar')).display !== 'none', ts: getComputedStyle(document.querySelector('#idmp-tabstrip')).display !== 'none' }));
+  console.log('§NC1-UI dialog ' + JSON.stringify(kept));
+  ok('U6', 'result shows in a modal dialog over the window (tab strip ' + kept.tabs + ' tabs + toolbar kept), like ProcessModalDialog', kept.dlg && kept.tabs === 5 && kept.tb && kept.ts);
+  await hc('[data-procdlg-ok]'); await pg.waitForTimeout(800);
+  ok('U7', 'OK closes the dialog and the Year window is still there', await pg.evaluate(() => !document.querySelector('#idmp-procdlg') && !!document.querySelector('#idmp-tabstrip .idmp-adtab.active')));
   // U3/U4 rows
   const got = await tip("SELECT periodno AS no, name, substr(startdate,1,10) AS s, substr(enddate,1,10) AS e, periodtype AS t FROM c_period WHERE c_year_id=" + yid + " ORDER BY periodno");
   const want = model('2031-07-01', 'MMM yyyy');

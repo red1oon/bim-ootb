@@ -103,6 +103,7 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   var dbt = one("SELECT COUNT(DISTINCT docbasetype) AS n FROM c_doctype WHERE ad_client_id=11 AND isactive='Y'").n;
   log('§NC1-ENV client11 distinct active DocBaseTypes=' + dbt + ' oracle=JAVA-SEMANTICS');
 
+  var TWIN = {};
   function rowCase(id, claim, fy, start, f, clamp, calId) {
     var cal = calId || newCal('NC1-' + id + '-' + (++seq)), yr = newYear(cal, fy);
     var p = {}; if (start) p.StartDate = start + ' 00:00:00'; if (f) p.DateFormat = f;
@@ -110,6 +111,7 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
     var v = verdict(id, [eq('ran', 'process ok (' + r.summary.slice(0, 60) + ')', r.ok, true), eq('count', '12 periods', got.length, 12), eq('rows', claim + ' (name/PeriodNo/Start/End vs GregorianCalendar model)', bad.length, 0),
       eq('type', "PeriodType 'S' (MPeriod.java:541-543)", got.every(function (g) { return g.t === 'S'; }), true), eq('ctl', 'C_PeriodControl = 12 x distinct active DocBaseType (afterSave :849-873)', ctlCount(yr), 12 * dbt)]);
     log('§NC1 row=' + id + ' oracle=JAVA-SEMANTICS twin_periods=' + got.length + ' diff=' + bad.length + (bad[0] ? ' first=' + JSON.stringify(bad[0]) : ''));
+    TWIN[id] = got;
     return { yr: yr, cal: cal, got: got, bad: bad };
   }
   rowCase('NC1.1', 'Jan-start year 2027', 2027, null, null, true);
@@ -138,6 +140,21 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   log('§NC1-ADJ err=' + rs.err.slice(0, 160));
   verdict('NC1.7-ADJUSTING', [eq('accepted', "PeriodType 'A' over a standard period is accepted (overlap is per PeriodType)", rs.ok, true)]);
 
+  // ── LEGACY-MEASURED: rows the pilot produced for the same cases (scripts/bridge/nc1_legacy.js -> out/nc1_legacy.json) ──
+  var LJ = process.env.NC1_LEGACY || path.join(ERP, '..', '..', '..', 'bim-compiler', 'scripts', 'bridge', 'out', 'nc1_legacy.json');
+  if (!fs.existsSync(LJ)) { log('§NC1-LEGACY INCONCLUSIVE no legacy file ' + LJ); verdict('NC1-LEGACY', []); }
+  else {
+    var L = JSON.parse(fs.readFileSync(LJ, 'utf8')).cases, key = function (p) { return p.no + '|' + p.name + '|' + p.s + '|' + p.e + '|' + p.t; };
+    ['NC1.1', 'NC1.1b', 'NC1.2', 'NC1.3', 'NC1.4a'].forEach(function (id) {
+      var lg = (L[id] || {}).periods || [], tw = TWIN[id] || [], d = 0, first = null;
+      for (var i = 0; i < Math.max(lg.length, tw.length); i++) if (!lg[i] || !tw[i] || key(lg[i]) !== key(tw[i])) { d++; first = first || { legacy: lg[i], twin: tw[i] }; }
+      log('§NC1-LEGACY row=' + id + ' legacy=' + lg.length + ' twin=' + tw.length + ' diff=' + d + (first ? ' first=' + JSON.stringify(first) : '') + ' oracle=LEGACY-MEASURED');
+      verdict('LEGACY-' + id, [eq('rows', 'twin periods == legacy periods (PeriodNo|Name|Start|End|Type)', [lg.length, d], [12, 0])]);
+    });
+    verdict('LEGACY-OVERLAP', [eq('both_refuse', 'legacy and twin both refuse with "Period overlaps with: Jul-27"', [(L['NC1.4-OVERLAP'] || {}).ok, /Period overlaps with: Jul-27/.test((L['NC1.4-OVERLAP'] || {}).summary || ''), ro.ok, /overlaps with: Jul-27/.test(ro.summary)], [false, true, false, true])]);
+    verdict('LEGACY-ADJUSTING', [eq('accepted', 'legacy accepts the adjusting period like the twin', [(L['NC1.7-ADJUSTING'] || {}).ok, rs.ok], [true, true])]);
+    verdict('LEGACY-CTL', [eq('ctl', 'control rows per year: legacy == twin == 12 x DocBaseTypes', [(L['NC1.1'] || {}).ctl, JSON.parse(fs.readFileSync(LJ, 'utf8')).dbt * 12], [12 * dbt, 12 * dbt])]);
+  }
   var bad = results.filter(function (r) { return r.v !== 'PASS'; });
   log('§NC1-VERDICT ' + (bad.length ? 'FAIL ' + bad.map(function (r) { return r.id + '=' + r.v; }).join(',') : 'PASS') + ' cases=' + results.length);
   process.exit(bad.length ? 1 : 0);
