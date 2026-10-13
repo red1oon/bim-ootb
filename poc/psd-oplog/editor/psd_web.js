@@ -9,17 +9,20 @@
     const n = W * W, fs = S.newState(W), hiddenGroups = [], hiddenAdj = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
     const mkAdj = (id) => { const a = st.A[id], am = meta[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
       : a.kind === 'hsl' ? { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: P.hue, saturation: P.sat, lightness: P.light } }
+      : a.kind === 'gradmap' ? { type: 'gradient map', gradientType: 'solid', reverse: false, dither: false, name: 'Gradient Map', colorStops: P.stops.map(([p, r, g, b]) => ({ location: p / 255, midpoint: 0.5, color: { r, g, b } })), opacityStops: [{ location: 0, midpoint: 0.5, opacity: 1 }, { location: 1, midpoint: 0.5, opacity: 1 }], smoothness: 1 }   // same fields as doc/psd_export.js mkAdjust
       : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) } : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };   // same fields as doc/psd_export.js mkAdjust
       S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (a.mask) fs.A[id].mask = Float32Array.from(a.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a maskraster
       if (am.hidden) hiddenAdj.push(id);
       const ac = { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj };
       if (a.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(a.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ac.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
       return ac; };
+    // filter layers (Level 2j, B.3): written as a BAKED normal pixel layer, exactly as editor/export_psd.js does
+    const bake = (id) => { const a = st.A[id], j = st.root.indexOf(id), comp = S.composite({ ...st, root: st.root.slice(0, j + 1), hasTree: true, A: { ...st.A, [id]: { ...a, opacity: 1, mask: null } } }); meta[id] = { ...meta[id], name: (a.name || (a.kind === 'gblur' ? 'Gaussian blur ' + id : 'Sharpen ' + id)) + ' (baked)' }; return { pix: comp, mode: 'normal', mask: a.mask, clip: false }; };
     const mkNode = (id, parent) => {
-      if (st.A[id]) return mkAdj(id);
+      if (st.A[id] && !S.FILTER_KINDS.includes(st.A[id].kind)) return mkAdj(id);
       if (st.G[id]) { const g = st.G[id], gm = meta[id]; S.apply(fs, { op: 'group', id, mode: g.mode, opacity: r4(gm.opacity), mask: false }); const kids = g.children.map((c) => mkNode(c, id)); if (gm.hidden) hiddenGroups.push(id);
         return { name: gm.name, ...(gm.hidden ? { hidden: true } : {}), opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: q255(fs.G[id].opacity), children: kids }; }
-      const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
+      const l = st.L[id] || bake(id), rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; rgba8[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) rgba8[i*4+k] = q8(F(l.pix[i*4+k] / a)); }
       S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false, ...(l.clip ? { clip: true } : {}), ...(parent >= 0 ? { parent } : {}) }); const fl = fs.L[id]; if (l.mask) fl.mask = Float32Array.from(l.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a raster op
       for (let i = 0; i < n; i++) { const a = F(rgba8[i*4+3] / 255); fl.pix[i*4+3] = a; for (let k = 0; k < 3; k++) fl.pix[i*4+k] = F(F(rgba8[i*4+k] / 255) * a); }

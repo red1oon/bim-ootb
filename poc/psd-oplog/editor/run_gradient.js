@@ -104,6 +104,10 @@ const G = (kind, x0, y0, x1, y1, a0 = 1, a1 = 1, c0 = [1, 0, 0], c1 = [0, 0, 1],
     { const json = await ev(() => window.__ed.save()), j = JSON.parse(json), nst = S.newState(1024); nst.blobs = new Map(); for (const o of HO.expand(j.ops)) applyOp(nst, o);
       chk('GD4', 'the page layer pixels == the Node engine replay of the saved log (sha256)', (await ev(() => Stack.sha256(window.__ed.st.L[1].pix))) === S.sha256(nst.L[1].pix) && (await ev(() => Stack.sha256(window.__ed.st.L[1].mask))) === S.sha256(nst.L[1].mask), '==', true);
       const before = J(await cur()); await ev((js) => window.__ed.load(js), json); chk('GD4', 'save -> load gives the same hashes', J(await cur()) === before, '==', true); }
+    // GD6: the page exporter (psd_web.js) must write the same bytes as the Node exporter for a document with gradient maps
+    await ev(() => { const e = window.__ed; e.addAdjust('gradmap'); const id = e.ops.at(-1).id; e.adjBegin(id); e.adjPreview(id, { stops: [[0, 10, 20, 30], [128, 200, 100, 50], [255, 255, 255, 200]] }); e.adjCommit(id); e.addAdjust('gradmap'); const id2 = e.ops.at(-1).id; e.setLayer(id2, 'opacity', 0.4); e.hideLayer(id2, true); });
+    { const json = await ev(() => window.__ed.save()), pageBytes = Buffer.from(await ev(async () => Array.from(await window.__ed.exportPSD()))), nodeEx = await require('./export_psd.js').exportLog(json);
+      chk('GD6', `page PSD bytes (${pageBytes.length}) == Node exporter bytes with two gradient maps (one edited, one hidden at opacity 0.4)`, Buffer.compare(pageBytes, Buffer.from(nodeEx.bytes)) === 0, '==', true); }
     chk('GD4', 'no page errors', pg.errs.length, '==', 0); await pg.context().close(); }
   { const pg = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }), ev = (f, a) => pg.evaluate(f, a);
     await ev(() => { window.__ed.reset(); window.__ed.params.layer = 1; });

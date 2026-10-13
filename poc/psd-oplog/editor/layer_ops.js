@@ -33,7 +33,7 @@
     if (o.op === 'set' && o.opacity !== undefined && nodeOf(st, o.layer) && nodeOf(st, o.layer).hid) { const l = nodeOf(st, o.layer); l.keep = F(o.opacity); if (o.mode) l.mode = o.mode; return true; }
     return false;
   }
-  const displayName = (id, l, type) => (l && l.name) || (id === 0 ? 'Background' : type === 'adjust' ? (l && l.kind ? l.kind[0].toUpperCase() + l.kind.slice(1) : 'Adjustment') + ' ' + id : (type ? 'Group ' : 'Layer ') + id);
+  const displayName = (id, l, type) => (l && l.name) || (id === 0 ? 'Background' : type === 'adjust' ? (l && l.kind ? (l.kind === 'gblur' ? 'Blur' : l.kind[0].toUpperCase() + l.kind.slice(1)) : 'Adjustment') + ' ' + id : (type ? 'Group ' : 'Layer ') + id);
   const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } for (const id of Object.keys(st.G)) { const g = st.G[id]; m[id] = { name: displayName(+id, g, true), hidden: !!g.hid, opacity: g.hid ? g.keep : g.opacity, group: true }; } for (const id of Object.keys(st.A)) { const a = st.A[id]; m[id] = { name: displayName(+id, a, 'adjust'), hidden: !!a.hid, opacity: a.hid ? a.keep : a.opacity, adjust: true }; } return m; };
   const nextId = (st) => Math.max(-1, ...Object.keys(st.L).map(Number), ...Object.keys(st.G).map(Number), ...Object.keys(st.A).map(Number)) + 1;
   const api = { apply, displayName, meta, nextId, reflow, retree, validAll, listOf };

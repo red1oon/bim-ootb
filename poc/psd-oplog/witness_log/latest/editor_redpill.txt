@@ -10,5 +10,5 @@ PASS G2 desktop: nothing covers the guide link and it lies inside the viewport =
 PASS G2 phone: guide link 44 x 44 px (>= 44), not covered, inside, no horizontal overflow, Undo / Redo / Share / Menu / red pill fully visible and >= 44 px (undo:true redo:true m-share:true m-menu:true redpill:true) = true (== true)
 PASS G3 guide.html is built with the headings The basics / Photos and text / Advanced / History / Phone / Limits, the live app link, no script; sw.js caches it = true (== true)
 PASS G4 the served guide is HTTP 200, text/html, and its text contains Move tool / Feather / Fill select / Show raw entries / Hue / Saturation / Verify (derived from README.md) = true (== true)
-PASS G5 sw version: README-only change differs (0252540047 vs c16af5c627), index.html-only change differs (051625d2f2), identical sources give the same version (c16af5c627) = true (== true)
+PASS G5 sw version: README-only change differs (a0496f676e vs 03a305ef77), index.html-only change differs (9b0472a3ed), identical sources give the same version (03a305ef77) = true (== true)
 ALL PASS 11

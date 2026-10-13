@@ -143,7 +143,11 @@
       for (let k = 0; k < 3; k++) { const p = F(s0[k + 1] / 255), q = F(s1[k + 1] / 255); lut[v * 3 + k] = F(p + F(f * F(q - p))); } }
     return lut;
   }
+  // filter layers (Level 2j): kinds that read the NEIGHBOURS of a pixel. Registered by filters/filter_layers.js (stack.js cannot require blur.js: blur.js requires stack.js).
+  // spatial[kind] = { apply(back, a, W), radius(params) }: apply works on the premultiplied float32 RGBA backdrop of the whole canvas; radius = how far a pixel reads (for the tile halo).
+  const FILTER_KINDS = ['gblur', 'sharpen'], spatial = {}, preview = { scale: 1 };   // preview.scale > 1 only while a slider is dragged in the editor (coarse filter preview, FL9); the committed / refolded picture is always exact
   function applyAdjust(back, a, n) {
+    if (FILTER_KINDS.includes(a.kind)) { const sp = spatial[a.kind]; if (!sp) throw new Error('filter layer ' + a.kind + ': filters/filter_layers.js is not loaded'); sp.apply(back, a, Math.round(Math.sqrt(n))); return; }
     const rgb = a.kind === 'threshold' || a.kind === 'hsl' || a.kind === 'gradmap' ? null : adjustFn(a.kind, a.params), lvl = a.params.level, lut = a.kind === 'gradmap' ? gradmapLUT(a.params.stops) : null;
     for (let i = 0; i < n; i++) {
       const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
@@ -274,6 +278,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, NONSEP, ADJ_KINDS, gradmapLUT, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, ADJ_KINDS, FILTER_KINDS, spatial, preview, gradmapLUT, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);
