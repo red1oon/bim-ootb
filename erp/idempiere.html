@@ -2837,6 +2837,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return _foldRowsSync(table, table + '_id', _sqlRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
       },
       stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
+      finReport: function (rid, opts) { return (window.__report && window.__report.fold) ? window.__report.fold(rid, opts) : null; },
       today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
       clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
@@ -3798,7 +3799,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
-  function _procTableDirSelect(pp, dflt) {
+  function _procTableDirSelect(pp, dflt, orderBy) {
     var tbl = String(pp.columnName).replace(/_ID$/i, ''), key = pp.columnName, sel = document.createElement('select');
     var blank = el('option', null, ''); blank.value = ''; sel.appendChild(blank);
     var ids = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower('" +
@@ -3807,7 +3808,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var disp = ids.map(function (c) { return "COALESCE(CAST(" + c + " AS TEXT),'')"; }).join(" || '_' || ");
     var cli = (_session && _session.client) ? Number(_session.client.id) : null, acc = '';
     if (cli != null && _colExists(tbl, 'AD_Client_ID')) acc = ' AND ' + (cli === 0 ? 'AD_Client_ID=0' : 'AD_Client_ID IN (0,' + cli + ')');
-    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY 2');
+    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY ' + (orderBy || '2'));
     rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (dflt != null && String(dflt) === String(r.k)) o.selected = true; sel.appendChild(o); });
     console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
     return sel;
@@ -3837,6 +3838,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         inp = document.createElement('select');
         ['', 'Y', 'N'].forEach(function (v) { var o = el('option', null, v || '—'); o.value = v; inp.appendChild(o); });
         inp.value = defaults[pp.columnName] === 'Y' || defaults[pp.columnName] === 'N' ? defaults[pp.columnName] : '';
+      } else if (Number(pp.ad_reference_id) === 18 && pp.ad_reference_value_id != null) {
+        // Table reference (WTableDirEditor over MLookupFactory.getLookup_Table): the AD_Ref_Table's key column of its table, identifiers shown, its OrderByClause kept.
+        var rt = _sqlRows("SELECT k.columnname AS kc, o.orderbyclause AS ob, lower(t.tablename) AS tn FROM ad_ref_table o JOIN ad_table t ON t.ad_table_id=o.ad_table_id JOIN ad_column k ON k.ad_column_id=o.ad_key WHERE o.ad_reference_id=" + Number(pp.ad_reference_value_id))[0];
+        if (rt && String(rt.kc).toLowerCase() === String(pp.columnName).toLowerCase()) {
+          var ob = rt.ob ? String(rt.ob).replace(new RegExp('^' + rt.tn + '\\.', 'i'), '').replace(/\b[A-Za-z_]+\./g, '') : null;
+          inp = _procTableDirSelect(pp, defaults[pp.columnName], ob);
+        }
       } else if (Number(pp.ad_reference_id) === 19 && !(pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '')) {
         // FS-9 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2i — Witness: W-ERP-FIRST-SETUP S24b). TableDir =
         // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
@@ -4016,6 +4024,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
     // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
     // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
+    // FinReport (Create Report): the PA_Report statement for the chosen period — a column per PA_ReportColumn, a row per PA_ReportLine.
+    if (!absent && r && r.statement) {
+      var st = r.statement, stt = document.createElement('table'); stt.setAttribute('data-statement', '1'); var str = el('tr');
+      pane.appendChild(el('div', 'msg', st.title + ' · ' + (st.period ? 'Period ' + st.period.name : 'no period') + ' · Fact_Acct ' + st.scopeFacts + ' of ' + st.totalFacts + ' rows in scope'));
+      str.appendChild(el('th', null, ''));
+      st.cols.forEach(function (cn) { str.appendChild(el('th', 'r', cn)); }); stt.appendChild(str);
+      st.lines.forEach(function (ln) { var tr2 = el('tr'); if (ln.calc) tr2.style.fontWeight = '600'; tr2.appendChild(el('td', null, ln.name));
+        ln.cells.forEach(function (c) { var td = el('td', 'r', c == null ? '' : c); tr2.appendChild(td); }); stt.appendChild(tr2); });
+      pane.appendChild(stt);
+    }
     if (!absent && r && r.headerOnly && r.amounts) {
       var vt = document.createElement('table'), vtr = el('tr');
       ['Amount', 'Value'].forEach(function (h, i) { vtr.appendChild(el('th', i >= 1 ? 'r' : null, h)); }); vt.appendChild(vtr);

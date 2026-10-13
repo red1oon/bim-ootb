@@ -85,6 +85,16 @@
     var RC = reportCore || null;
 
     // report:c_order / report:c_invoice — fold ONE document's receipt via report_overlay.foldReceipt.
+    // org.compiere.report.FinReport (AD_Process 202 "Create Report", PA_Report window button): Record_ID = PA_Report_ID, optional C_Period_ID
+    // (FinReport.prepare :134-135 + setPeriods :296-343: no period -> the one containing today, else the last).
+    registerHandler('org.compiere.report.FinReport', function (ctx, info) {
+      var p = (info && info.params) || {}, rid = Number(info && info.Record_ID);
+      if (!(rid > 0) || typeof ctx.finReport !== 'function') return { ok: false, message: rid > 0 ? 'FinReport: no report fold available' : '@FillMandatory@ PA_Report_ID', rows: 0 };
+      var res = ctx.finReport(rid, { periodId: Number(p.C_Period_ID) > 0 ? Number(p.C_Period_ID) : 0, today: ctx.today });
+      if (!res) return { ok: false, message: 'FinReport: report ' + rid + ' not in the bundle', rows: 0 };
+      return { ok: true, message: '@OK@', rows: res.lines.length, result: { statement: res } };
+    }, { kind: 'report' });
+
     function receiptHandler(reportKey) {
       return function (ctx, info) {
         if (!RC || typeof RC.foldReceipt !== 'function') return { ok: false, message: 'report core unavailable', rows: 0 };
