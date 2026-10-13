@@ -18,8 +18,8 @@ PASS SP4 save -> load (JSON round trip) gives the same hash = 46ad33ae00f69ebf63
 PASS SP4 checkpoint then replay of later shape ops gives an equal composite = true (== true)
 PASS SP5 amend of a rect (box, colour) and an ellipse (stroke, alpha): the amended log folds to the document authored with the new params from the start = true (== true)
 PASS SP5 bad amends are refused (changing the kind, a float coordinate, a target that is not a stroke / smudge / shape) = true (== true)
-SP7 REPORTED at 1024^2: rounded rect + outline 61 ms, full-canvas ellipse 49 ms
-PASS SP7 1024^2 rounded rect + outline (61 ms) and full-canvas ellipse (49 ms) = true (== true)
+SP7 REPORTED at 1024^2: rounded rect + outline 59 ms, full-canvas ellipse 47 ms
+PASS SP7 1024^2 rounded rect + outline (59 ms) and full-canvas ellipse (47 ms) = true (== true)
 PASS SP4 a Shape-tool drag (real mouse events) logs ONE `shape` entry with integer corners, fill colour and alpha = true (== true)
 PASS SP4 5 drags (rect, rounded + outline, Shift-circle outline only, line, rect + outline) logged 5 shape entries, each <= 256 bytes (max 142); the rounded one has r 40, the Shift ellipse is square-boxed, the line has a stroke = true (== true)
 PASS SP4 live hashes == refold of the log = true (== true)

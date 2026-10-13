@@ -13,7 +13,7 @@
    "fp": "70caef9dcbff",
    "comp": "b8348935f9d84406932c81868789052119204bffc3a26319924f988086bc59c3",
    "n": 40,
-   "ms": 4169.4000000059605
+   "ms": 4170.199999988079
   }
  },
  "node": "v20.20.2"
@@ -44,7 +44,7 @@ ok   R1 replay end state hashes == live hashes
 ok   R1 replay left the log and the live state untouched
 ok   R1 a replay stopped after 1.3 s ended unfinished at 19 of 40
 ok   R1 after the stopped replay the canvas shows the live picture (200 sampled pixels) and the log is untouched
-ok   V1 verify() on the live editor: ok (40 entries, 4169 ms), fingerprint 70caef9dcbff stable
+ok   V1 verify() on the live editor: ok (40 entries, 4170 ms), fingerprint 70caef9dcbff stable
 ok   A2 no page errors (desktop)
 ok   RV1 raw view on: 6 rows (incl. 7-point strokes shown with elided pts) show the stored JSON and its byte size exactly
 ok   RV2 summary line "9 entries, 1.0 KB" == "9 entries, 1.0 KB"

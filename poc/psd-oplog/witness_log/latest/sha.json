@@ -4,8 +4,8 @@
  "fails": [],
  "numbers": {
   "node": {
-   "fast_MBps": 192.3012830353623,
-   "pure_MBps": 31.70481259596378
+   "fast_MBps": 197.0798627466858,
+   "pure_MBps": 31.965800812616205
   },
   "chromium_speed": {
    "secure": true,
@@ -14,12 +14,12 @@
     "fastMismatch": 0,
     "subtleMismatch": 0
    },
-   "pure64k_ms": 666,
+   "pure64k_ms": 671.7999999970198,
    "fast64k_ms": 175.5,
-   "pure16m_ms": 344.70000000298023,
-   "fast16m_ms": 91.90000000596046,
-   "subtle_1024x64k_ms": 45.29999999701977,
-   "subtle16m_ms": 16.799999997019768
+   "pure16m_ms": 342.20000000298023,
+   "fast16m_ms": 91.5,
+   "subtle_1024x64k_ms": 45.099999994039536,
+   "subtle16m_ms": 16
   },
   "chromium_store": {
    "S4": {
@@ -31,13 +31,13 @@
     "silent": 0
    },
    "S6": {
-    "tFull": 2372.7000000029802,
+    "tFull": 2323.4000000059605,
     "hFull": "bc930d9f0fe9",
-    "putA": 494.90000000596046,
-    "resA": 874.0999999940395,
+    "putA": 445.8999999910593,
+    "resA": 850.3000000119209,
     "hEqA": true,
-    "putB": 1137,
-    "resB": 1524.1000000089407,
+    "putB": 1029.2999999970198,
+    "resB": 1496.4000000059605,
     "hEqB": true,
     "idsSame": true
    }

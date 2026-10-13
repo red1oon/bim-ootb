@@ -27,8 +27,8 @@
    "nonSkyChannels": 43616
   },
   "W8": {
-   "contiguousMs": 21.35575899999992,
-   "globalMs": 17.124972999999954
+   "contiguousMs": 20.98289699999998,
+   "globalMs": 16.06747299999995
   }
  },
  "node": "v20.20.2"
@@ -45,7 +45,7 @@ ok   W4 wand + grow(1) selection is a strict superset of the wand selection
 ok   W4 after wand(sky, tol 40) -> invert -> mask from selection: 5480 sky pixels show the red layer beneath, bitwise
 ok   W4 the buildings are unchanged (bitwise == the unmasked composite)
 ok   W4 the wand selected most of the sky and none of the buildings (sky pixels 5000..11000 of 16384; building / window pixels not selected)
-ok   W8 1024^2 contiguous (half the canvas) 21 ms, global 17 ms (limit 250 each)
+ok   W8 1024^2 contiguous (half the canvas) 21 ms, global 16 ms (limit 250 each)
 ok   W6 a Wand-tool click logs one `sel` entry with layer, floored x/y, tol, contiguous (and no mode for new)
 ok   W6 the page selection mask == the mask the Node engine produces from the page log (same sha256)
 ok   W5 live selection after wand new / add / sub / grow / shrink / invert == the Node engine on the same log

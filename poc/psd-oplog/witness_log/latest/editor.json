@@ -11,9 +11,9 @@
   },
   "moveMs": {
    "n": 84,
-   "median": 3.7999999970197678,
-   "p95": 6,
-   "max": 8
+   "median": 4.5999999940395355,
+   "p95": 7.399999991059303,
+   "max": 8.099999994039536
   },
   "screenshot": "/home/red1/oplog_compare/editor_session.png"
  },

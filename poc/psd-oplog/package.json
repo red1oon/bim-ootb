@@ -56,6 +56,7 @@
     "editor_fx": "node editor/run_fx.js",
     "editor_textedit": "node editor/run_textedit.js",
     "editor_imgexport": "node editor/run_imgexport.js",
+    "editor_carry": "node editor/run_carry.js",
     "editor_text": "node editor/run_text.js",
     "editor_xform": "node editor/run_xform.js",
     "editor_redpill": "node editor/run_redpill.js",
