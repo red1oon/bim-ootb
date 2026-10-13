@@ -811,6 +811,16 @@
   // rec (§P3) = the row under edit, the window context the @token@ feed reads. opts.valRuleOnly re-runs ONLY
   // the val-rule'd fk pickers (a dependent lookup refresh, e.g. C_BPartner_ID → C_BPartner_Location_ID) —
   // a full re-run would reset every list select back to its render-time data-cur and lose the user's choice.
+  // Display column of a table lookup. Name when the table has one (unchanged); else the table's FIRST IsIdentifier column by SeqNo (MLookupFactory.getLookup_TableDir: the identifiers ARE the label —
+  // C_Currency shows ISO_Code "USD", not its id); else DocumentNo; else the key.
+  function refNameCol(db, t, pk) {
+    if (recHasCol(db, t, 'name')) return 'name';
+    try {
+      var r = db.exec("SELECT c.columnname FROM ad_column c JOIN ad_table tb ON tb.ad_table_id=c.ad_table_id WHERE lower(tb.tablename)=lower('" + String(t).replace(/'/g, '') + "') AND c.isidentifier='Y' AND c.isactive='Y' ORDER BY c.seqno");
+      if (r.length) { for (var i = 0; i < r[0].values.length; i++) { var cn = String(r[0].values[i][0]); if (recHasCol(db, t, cn.toLowerCase())) return cn.toLowerCase(); } }
+    } catch (e) { /* no dictionary in this bundle -> old fallback */ }
+    return recHasCol(db, t, 'documentno') ? 'documentno' : pk;
+  }
   function populateRefs(e, rec, opts) {
     var only = !!(opts && opts.valRuleOnly);
     (e.fields || []).forEach(function (f) {
@@ -865,7 +875,7 @@
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
-              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = refNameCol(db, t, pk);
               var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
               var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
               el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
@@ -877,7 +887,7 @@
           try {
             // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
             // (MLookupFactory.getLookup_Table), else the TableDIR convention.
-            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = refNameCol(db, t, pk);
             // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
             // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
             // ValidationCode, appended to the lookup query; that is all this does.
