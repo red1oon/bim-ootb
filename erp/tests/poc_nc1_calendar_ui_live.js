@@ -102,6 +102,17 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   const dbt = (await seed("SELECT COUNT(DISTINCT docbasetype) FROM c_doctype WHERE ad_client_id=11 AND isactive='Y'"))[0][0];
   const pc = await tip("SELECT COUNT(*) AS n, SUM(periodstatus='N') AS never FROM c_periodcontrol WHERE c_period_id IN (SELECT c_period_id FROM c_period WHERE c_year_id=" + yid + ")");
   ok('U4', 'C_PeriodControl = 12 x ' + dbt + ' DocBaseTypes, all PeriodStatus N', pc[0].n === 12 * dbt && pc[0].never === pc[0].n, JSON.stringify(pc[0]));
+  // U8 field parity (NC1.8): per tab, the form's fields == the dictionary's displayed, non-button fields (X of N)
+  for (const t of dictTabs) {
+    await hc('#idmp-tabstrip .idmp-adtab:text-is("' + t + '")'); await pg.waitForTimeout(1200);
+    const hasForm = await pg.locator('#idmp-inline-mount [data-col]').count();
+    if (!hasForm) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }
+    const dom = [...new Set(await pg.$$eval('#idmp-inline-mount [data-col]', e => e.map(x => x.getAttribute('data-col'))))].sort();
+    const want = (await seed("SELECT lower(c.columnname) FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id JOIN ad_tab t ON t.ad_tab_id=f.ad_tab_id WHERE t.ad_window_id=117 AND t.name='" + t + "' AND f.isactive='Y' AND f.isdisplayed='Y' AND c.ad_reference_id<>28 AND c.columnname NOT LIKE '%\\_UU' ESCAPE '\\'")).map(r => r[0]).sort();
+    const missing = want.filter(x => !dom.includes(x)), extra = dom.filter(x => !want.includes(x));
+    console.log('§NC1-UI fields tab=' + t + ' dom=' + dom.length + ' dict=' + want.length + ' missing=' + JSON.stringify(missing) + ' extra=' + JSON.stringify(extra));
+    ok('U8-' + t, 'form fields on "' + t + '": ' + (want.length - missing.length) + ' of ' + want.length + ' dictionary fields present', want.length > 0 && missing.length === 0, JSON.stringify({ missing, extra }));
+  }
   ok('U5', 'no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
   for (const l of logs.filter(l => /§AD-BUTTON|§PROC-COMMIT|§AD-PROC-LIVE proc=100|YearCreate/.test(l)).slice(0, 8)) console.log('   page: ' + l.slice(0, 200));
   console.log('§NC1-UI VERDICT ' + (fail ? 'FAIL' : 'PASS') + ' ' + pass + '/' + (pass + fail));
