@@ -103,6 +103,8 @@
       '<input id="np-file" type="file" accept=".xlsx" style="display:none;">' +
       '<div style="margin-top:8px;font-size:12px;"><a id="np-sample" ' +
         'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample workbook (GardenWorld invoice summary — runnable as-is)</a></div>' +
+      '<div style="margin-top:6px;font-size:12px;"><a id="np-sample-tb" ' +
+        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report template (Thai trial balance — pick dates, run, get .xlsx + PDF)</a></div>' +
       '<div id="np-out" style="margin-top:12px;font-size:12px;"></div>';
     p.appendChild(box);
     document.body.appendChild(p);
@@ -119,6 +121,11 @@
     });
     file.addEventListener('change', function () { if (file.files.length) _onFile(file.files[0]); });
     box.querySelector('#np-sample').addEventListener('click', fetchSample);
+    box.querySelector('#np-sample-tb').addEventListener('click', function () {
+      fetch('ninja_tb_sample.xlsx').then(function (r) { if (!r.ok) throw new Error('ninja_tb_sample.xlsx HTTP ' + r.status); return r.arrayBuffer(); })
+        .then(function (buf) { reportFlow(buf, 'ninja_tb_sample.xlsx', document.getElementById('np-out')); })
+        .catch(function (e) { document.getElementById('np-out').innerHTML = '<span style="color:#ff9b9b;">' + _escHtml(String(e.message || e)) + '</span>'; });
+    });
     console.log('§NINJA-PILL open db=Y engine=' + (global.NinjaExcel ? 'Y' : 'MISSING'));
   }
 
@@ -169,13 +176,21 @@
     var out = document.getElementById('np-out');
     out.innerHTML = '<span style="opacity:0.7;">reading ' + _escHtml(f.name) + '…</span>';
     ensureXlsx().then(function (XLSX) {
-      return f.arrayBuffer().then(function (buf) { handleWorkbook(XLSX.read(buf, { type: 'array' }), f.name); });
+      return f.arrayBuffer().then(function (buf) {
+        var wb = XLSX.read(buf, { type: 'array' });
+        if (isReportTemplate(wb)) return reportFlow(buf, f.name, out);
+        handleWorkbook(wb, f.name);
+      });
     }).catch(function (e) { out.innerHTML = '<span style="color:#ff9b9b;">' + String(e.message || e) + '</span>'; });
   }
 
   // exposed seam for the witness (same path _onFile takes, minus the File object)
   function handleBuffer(buf, name) {
-    return ensureXlsx().then(function (XLSX) { return handleWorkbook(XLSX.read(buf, { type: 'array' }), name || 'witness.xlsx'); });
+    return ensureXlsx().then(function (XLSX) {
+      var wb = XLSX.read(buf, { type: 'array' });
+      if (isReportTemplate(wb)) return reportFlow(buf, name || 'witness.xlsx', document.getElementById('np-out'));
+      return handleWorkbook(wb, name || 'witness.xlsx');
+    });
   }
 
   function handleWorkbook(wb, name) {
@@ -187,6 +202,60 @@
     console.log('§NINJA-PILL refused file=' + name + ' (no BACKUP, no Input+Process)');
     out.innerHTML = '<span style="color:#ff9b9b;">No <b>BACKUP</b> sheet (sample) and no <b>Input</b>+<b>Process</b> sheets — nothing to make or run.</span>';
     return { mode: 'refused' };
+  }
+
+  // REPORT TEMPLATE — a full Input/Process/Output/BACKUP template (the legacy ExpenseReport grammar): dates in, painted .xlsx + one-page PDF out (ninja_report.js).
+  // Distinguished from the older scalar-binder workbooks by the presence of an Output sheet. Spec: bim-compiler prompts/NINJAEXCEL_TEMPLATE_ENGINE.md §TB-DEMO / §TB-FILM.
+  function isReportTemplate(wb) { var n = wb.SheetNames; return n.indexOf('Output') >= 0 && n.indexOf('BACKUP') >= 0 && n.indexOf('Process') >= 0 && n.indexOf('Input') >= 0; }
+  function previewHtml(m, X) {
+    var ws = m.Sheets.Output, styles = m._styles || {}, R = 0, C = 0, keys = Object.keys(ws).filter(function (k) { return k[0] !== '!'; });
+    keys.forEach(function (k) { var p = X.utils.decode_cell(k); if (ws[k].t !== 'z' && !(ws[k].t === 's' && ws[k].v === '')) { if (p.r > R) R = p.r; if (p.c > C) C = p.c; } });
+    var rows = [];
+    for (var r = 0; r <= R; r++) {
+      var tds = '';
+      for (var c = 0; c <= C; c++) {
+        var cell = ws[X.utils.encode_cell({ r: r, c: c })], txt = '', al = 'left';
+        if (cell && cell.t !== 'z') {
+          if (cell.t === 'n') { var st = cell.s != null ? styles[cell.s] : null; txt = X.SSF.format((st && st.numFmt) || cell.z || 'General', cell.v); al = 'right'; }
+          else txt = String(cell.v == null ? '' : cell.v);
+        }
+        tds += '<td style="padding:1px 6px;text-align:' + al + ';border-bottom:1px solid rgba(255,255,255,0.07);white-space:nowrap;">' + _escHtml(txt) + '</td>';
+      }
+      rows.push('<tr>' + tds + '</tr>');
+    }
+    return '<div style="max-height:240px;overflow:auto;margin-top:8px;border:1px solid rgba(255,255,255,0.12);border-radius:6px;"><table id="np-preview" style="border-collapse:collapse;font-size:11.5px;">' + rows.join('') + '</table></div>';
+  }
+  function blobLink(bytes, mime, fname, label, iconName) {
+    var url = URL.createObjectURL(new Blob([bytes], { type: mime })), a = el('a', { href: url, download: fname });
+    a.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin:10px 8px 0 0;padding:7px 14px;border-radius:8px;' +
+      'background:#2d3550;color:#cdd6e4;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,0.12);';
+    a.innerHTML = ico(iconName, 14) + ' ' + _escHtml(label);
+    return a;
+  }
+  function reportFlow(buf, name, out) {
+    var y = 2000;
+    try { var r0 = _db.exec('SELECT substr(max(dateacct),1,4) FROM fact_acct'); if (r0.length && r0[0].values[0][0]) y = r0[0].values[0][0]; } catch (e) { /* no fact_acct: dates stay at the default */ }
+    console.log('§NINJA-PILL report template=' + name + ' bytes=' + buf.byteLength);
+    out.innerHTML =
+      '<div style="border-left:3px solid #7fb3ff;padding-left:10px;"><b>Report template</b> — ' + _escHtml(name) + '<br>' +
+        '<label style="font-size:12px;">From <input id="np-from" type="date" value="' + y + '-01-01" style="margin:0 8px 0 4px;"></label>' +
+        '<label style="font-size:12px;">To <input id="np-to" type="date" value="' + y + '-12-31" style="margin:0 8px 0 4px;"></label>' +
+        '<button id="np-run" style="padding:5px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:#2d3550;color:#cdd6e4;cursor:pointer;">Run report</button>' +
+        '<div id="np-rep" style="margin-top:8px;"></div></div>';
+    out.querySelector('#np-run').addEventListener('click', function () {
+      var rep = out.querySelector('#np-rep'), from = out.querySelector('#np-from').value, to = out.querySelector('#np-to').value;
+      rep.innerHTML = '<span style="opacity:0.7;">running…</span>';
+      ensureXlsx().then(function (X) {
+        return global.NinjaReport.run({ db: _db, template: buf, from: from, to: to, base: '', XLSX: X }).then(function (res) {
+          var f = res.facts, stem = name.replace(/\.xlsx$/i, '');
+          rep.innerHTML = '<div id="np-rep-sum"><b>Report ready</b> — ' + f.statements + ' queries, ' + f.runMs + ' ms, ' + f.formulas + ' formulas (' + f.formulaErrors + ' errors), PDF ' + Math.round(f.pdfBytes / 1024) + ' KB.</div>' + previewHtml(res.model, X);
+          rep.appendChild(blobLink(res.xlsx, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', stem + '_report.xlsx', 'download ' + stem + '_report.xlsx', 'save'));
+          rep.appendChild(blobLink(res.pdf, 'application/pdf', stem + '_report.pdf', 'download ' + stem + '_report.pdf', 'save'));
+          console.log('§NINJA-PILL report done statements=' + f.statements + ' ms=' + f.runMs + ' formulaErrors=' + f.formulaErrors);
+        });
+      }).catch(function (e) { console.log('§NINJA-PILL report ERROR ' + String(e.message || e)); rep.innerHTML = '<span style="color:#ff9b9b;">' + _escHtml(String(e.message || e)) + '</span>'; });
+    });
+    return { mode: 'report' };
   }
 
   // MAKE — analyze the sample, scaffold, hand back (the user finishes in Excel)
