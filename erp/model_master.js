@@ -150,6 +150,9 @@
         if (changed(old, r, 'value') || changed(old, r, 'name')) notPorted(trx, 'NP-2', 'MAccount.updateValueDescription C_BPartner_ID', 'c_validcombination', 'c_bpartner_id=?', [r.c_bpartner_id]); }] },
     m_cost: { init: { m_attributesetinstance_id: 0, currentcostprice: 0, futurecostprice: 0, currentqty: 0, cumulatedamt: 0, cumulatedqty: 0 } },                     // MCost.setInitialDefaults :1619-1627
     c_location: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                    // MLocation.beforeSave :721-722 (unconditional: setAD_Org_ID(0) when != 0)
+    c_acctschema: { init: { autoperiodcontrol: 'Y', period_openfuture: 2, period_openhistory: 2, costingmethod: 'S', costinglevel: 'C', isadjustcogs: 'N', gaap: 'UN', hasalias: 'Y', hascombination: 'N',
+                            isaccrual: 'Y', commitmenttype: 'N', isdiscountcorrectstax: 'N', taxcorrectiontype: 'N', istradediscountposted: 'N', ispostservices: 'N', isexplicitcostadjustment: 'N', separator: '-' },   // MAcctSchema.setInitialDefaults :221-239
+                    before: function (trx, r, isNew, old) { return acctSchemaBefore(trx, r, isNew, old); } },                                                                                       // MAcctSchema.beforeSave :711-742
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
     c_bankaccount: { afterNew: [bankAcct] },                                                                                                                            // MBankAccount.afterSave :220-226
     c_tax: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_tax', r, 'c_tax_acct', 'c_acctschema_default', null); }] },                                       // MTax.afterSave :400-407 (result ignored in Java)
@@ -164,6 +167,40 @@
         if (changed(old, r, 'name') || changed(old, r, 'description')) notPorted(trx, 'NP-3', 'A_Asset Name/Description', 'a_asset', "isactive='Y' AND m_product_id=?", [r.m_product_id]);              // :872-883
         if (changed(old, r, 'm_product_category_id')) mcostCreate(trx, r); }] }                                                                                        // :902-903
   };
+
+
+  // MAcctSchema.beforeSave (MAcctSchema.java:711-742) + checkCosting (:577-600). Messages = AD_Message EndDateAfterStartDate / ChangeCostingLevelError (legacy wording, measured on the pilot).
+  function acctSchemaBefore(trx, r, isNew, old) {
+    r.ad_org_id = 0;                                                                            // :713-714
+    if (r.taxcorrectiontype == null || r.taxcorrectiontype === '') r.taxcorrectiontype = r.isdiscountcorrectstax === 'Y' ? 'B' : 'N';   // :715-717 ('B' = Write_OffAndDiscount, 'N' = None: X_C_AcctSchema.java:896-902)
+    // checkCosting :577-600
+    if (!nz(r.m_costtype_id)) {                                                                 // :581-588 Cost Type named like the schema
+      var ct = trx.insert('m_costtype', { ad_client_id: r.ad_client_id, ad_org_id: 0, name: r.name });
+      r.m_costtype_id = ct.m_costtype_id;
+    }
+    var method = r.costingmethod;
+    if (method) {                                                                               // MCostElement.getMaterialCostElement(po, method) :56-85 (get or create)
+      var have = trx.q("SELECT m_costelement_id FROM m_costelement WHERE ad_client_id=? AND costingmethod=? AND costelementtype='M' ORDER BY ad_org_id", [r.ad_client_id, method])[0];
+      if (!have) {
+        var nm = trx.q("SELECT name FROM ad_ref_list WHERE ad_reference_id=122 AND value=?", [method])[0];
+        trx.insert('m_costelement', { ad_client_id: r.ad_client_id, ad_org_id: 0, name: (nm && nm.name) || method, costelementtype: 'M', costingmethod: method });
+      }
+    }
+    if (r.costinglevel == null || r.costinglevel === '') r.costinglevel = 'C';                  // :594-599
+    if (r.costingmethod == null || r.costingmethod === '') r.costingmethod = 'S';
+    if (r.gaap == null || r.gaap === '') r.gaap = 'UN';
+    if (nz(r.ad_orgonly_id)) {                                                                  // :719-724 the primary schema is never org-only
+      var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [r.ad_client_id])[0];
+      if (ci && String(ci.a) === String(r.c_acctschema_id)) r.ad_orgonly_id = 0;
+    }
+    if (!isNew && old && String(old.costinglevel) !== String(r.costinglevel)) {                 // :726-733 + getProductsWithCost :745-765
+      var prods; try { prods = trx.q("SELECT DISTINCT p.value AS v FROM m_product p JOIN m_costdetail d ON p.m_product_id=d.m_product_id JOIN m_product_category_acct pc ON p.m_product_category_id=pc.m_product_category_id AND d.c_acctschema_id=pc.c_acctschema_id " +
+        "WHERE p.isactive='Y' AND pc.isactive='Y' AND pc.costinglevel IS NULL AND d.c_acctschema_id=? LIMIT 50", [r.c_acctschema_id]).map(function (x) { return x.v; }); } catch (e) { prods = []; trx.say('§MODEL-UNPORTED-DEP MAcctSchema.getProductsWithCost: no m_costdetail table in this bundle - no cost details to protect'); }
+      if (prods.length) return "Costing level can't be changed if there are product cost details created with current costing level. Products: " + prods.join(',');
+    }
+    if (r.startdate && r.enddate && String(r.startdate).slice(0, 10) > String(r.enddate).slice(0, 10)) return 'End Date must be after Start Date';   // :735-739
+    return null;
+  }
 
   function install(registry) {
     Object.keys(registry).forEach(function (table) {
