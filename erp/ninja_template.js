@@ -191,7 +191,11 @@
 
     function executeSQL(sql) {
       S.sqls.push(sql);
-      var res = exec(sql);
+      var res;
+      try { res = exec(sql); }
+      catch (e) {                                                  // the REAL database message goes to the user, with the statement that failed (the legacy plugin's error formatter hid it)
+        var err = new Error('SQL ERROR: ' + (e && e.message ? e.message : e) + '\n  statement: ' + sql); err.cause = e; err.sql = sql; throw err;
+      }
       if (!res || !res.length) { log(sql + ' RETURNS NOTHING'); S.nothingReturned++; return null; }
       if (res.length === 1 && res[0].length === 1 && res[0][0] && res[0][0].k === 'n' && res[0][0].s === '0.00') { log(sql + ' RETURNS NOTHING'); S.nothingReturned++; return null; }
       return res;
