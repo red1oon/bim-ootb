@@ -8,7 +8,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), L = null;
-try { L = require(path.join(ERP, 'window_lens.js')); } catch (e) { L = null; }
+try { L = require(path.join(ERP, 'overlay', 'window_lens.js')); } catch (e) { L = null; }
 var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
 var LEG = process.env.WL_LEGACY || '/home/red1/bim-compiler/scripts/bridge/out/window_anatomy_legacy.json';
 var log = console.log, fails = 0, judged = 0;

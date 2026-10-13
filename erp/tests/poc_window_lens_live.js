@@ -4,7 +4,7 @@
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-var ROOT = path.join(__dirname, '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
+var ROOT = path.join(__dirname, '..', '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) { var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); fs.readFile(f, function (e, buf) { if (e) { res.writeHead(404); return res.end('404'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); res.end(buf); }); });
 var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fails++; console.log('  §WLL-CHECK ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {
@@ -12,9 +12,9 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
   var base = 'http://localhost:' + server.address().port, logs = [], errs = [];
   var browser = await chromium.launch({ args: ['--no-sandbox'] }), page = await browser.newPage();
   page.on('console', function (m) { var t = m.text(); if (t.indexOf('§') === 0) logs.push(t); }); page.on('pageerror', function (e) { errs.push(String(e)); });
-  await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+  await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
   await page.evaluate(function () { return new Promise(function (r) { var q = indexedDB.deleteDatabase('erp_cache'); q.onsuccess = q.onerror = q.onblocked = function () { r(); }; }); });
-  await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+  await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
   await page.waitForFunction(function () { return !!window.__idmpDb; }, null, { timeout: 30000 });
   await page.waitForFunction(function () { return document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0; }, null, { timeout: 20000 });
   var res = { rows: [] };
@@ -24,7 +24,7 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
     await page.waitForFunction(function () { return document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; }, null, { timeout: 10000 });
     // 0. no window open -> the pill says so (nothing invented)
     await page.evaluate(function () { window.IdmpPillActions.windowlens(); }); await page.waitForTimeout(300);
-    var msg0 = await page.evaluate(function () { return document.querySelector('.idmp-procpane') ? document.querySelector('.idmp-procpane').textContent : ''; });
+    var msg0 = await page.evaluate(function () { return document.querySelector('.idmp-ovl-pane') ? document.querySelector('.idmp-ovl-pane').textContent : ''; });
     ck(/Open a window first/.test(msg0), 'no window open: the pill says "Open a window first"', msg0.slice(0, 80));
     // windows the role can open = the menu's window leaves; sample by clicking leaves
     await page.evaluate(function () { document.querySelectorAll('#idmp-tree .idmp-row:not(.leaf)').forEach(function (r) { if (!r.parentElement.classList.contains('open')) r.click(); }); });
@@ -36,7 +36,7 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
       var strip = await page.evaluate(function () { var s = document.getElementById('idmp-tabstrip'); return s && s.style.display !== 'none' ? [].map.call(s.children, function (c) { return c.textContent.trim(); }) : null; });
       if (!strip) continue;   // a process / form / report leaf, not a window
       await page.evaluate(function () { window.IdmpPillActions.windowlens(); });
-      var lens = await page.evaluate(function () { var r = {}; document.querySelectorAll('[data-windowlens-row]').forEach(function (e) { r[e.getAttribute('data-windowlens-row')] = e.querySelector('.sub').textContent; }); var h = document.querySelector('.idmp-procpane .sub'); return { rows: r, head: h ? h.textContent : '' }; });
+      var lens = await page.evaluate(function () { var r = {}; document.querySelectorAll('[data-windowlens-row]').forEach(function (e) { r[e.getAttribute('data-windowlens-row')] = e.querySelector('.sub').textContent; }); var h = document.querySelector('.idmp-ovl-pane .sub'); return { rows: r, head: h ? h.textContent : '' }; });
       var m = /(\d+) tabs/.exec(lens.head), lt = m ? +m[1] : -1, names = (lens.rows.tabs || '').split(' — ')[0].replace(/^\d+:\s*/, '').split(' › ').map(function (x) { return x.replace(/\(L\d+\)$/, ''); });
       res.rows.push({ leaf: info.name, rendered: strip.length, lens: lt, same: strip.length === lt && JSON.stringify(strip) === JSON.stringify(names), strip: strip, names: names });
       await page.evaluate(function () { /* leave the pane; the next leaf click re-opens a window */ });
@@ -48,7 +48,7 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
       await page.waitForTimeout(600);
       var pstrip = await page.evaluate(function () { var s = document.getElementById('idmp-tabstrip'); return s ? [].map.call(s.children, function (c) { return c.textContent.trim(); }) : []; });
       await page.evaluate(function () { window.IdmpPillActions.windowlens(); });
-      var phead = await page.evaluate(function () { var h = document.querySelector('.idmp-procpane .sub'); return h ? h.textContent : ''; });
+      var phead = await page.evaluate(function () { var h = document.querySelector('.idmp-ovl-pane .sub'); return h ? h.textContent : ''; });
       ck(pstrip.length === 8 && pstrip.indexOf('BIM') >= 0 && /8 tabs/.test(phead), 'Project window renders 8 tabs including BIM, lens agrees (legacy: 8)', { strip: pstrip, head: phead });
     }
   } catch (e) { errs.push('flow: ' + e.message); }

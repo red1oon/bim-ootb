@@ -1263,7 +1263,6 @@
   }
 
   var API = {
-    invoiceOpen: _agInvoiceOpen, conversionRate: _agRate,   // §DASH-D1: the goal engine's invoiceopen()/currencybase() SQL functions reuse these - no third copy
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
     registerProjectGenOrder: registerProjectGenOrder, projectGenGate: projectGenGate,

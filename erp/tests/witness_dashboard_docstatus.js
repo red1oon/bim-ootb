@@ -10,7 +10,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), DS = null;
-try { DS = require(path.join(ERP, 'dashboard_docstatus.js')); } catch (e) { DS = null; }
+try { DS = require(path.join(ERP, 'overlay', 'dashboard_docstatus.js')); } catch (e) { DS = null; }
 var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
 var ORA = process.env.DST_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/docstatus_legacy.json', log = console.log, fails = 0, judged = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §DDS-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }

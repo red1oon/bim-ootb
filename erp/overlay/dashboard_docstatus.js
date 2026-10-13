@@ -27,8 +27,10 @@
   function install(db, q) {
     var inc = [], omit = [], parts = [];
     RVU.forEach(function (b) { if (has(q, b[0])) { inc.push(b[0]); parts.push(b[1]); } else omit.push(b[0]); });
-    db.run('DROP VIEW IF EXISTS rv_unprocessed');
-    if (parts.length) db.run('CREATE VIEW rv_unprocessed AS ' + parts.join(' UNION '));
+    // TEMP view (never in db.export()); a rv_unprocessed the core itself ships in the main schema is used as-is.
+    if (has(q, 'rv_unprocessed') && q("SELECT 1 AS x FROM sqlite_master WHERE name='rv_unprocessed'").length) return { included: ['(core view)'], omitted: [] };
+    db.run('DROP VIEW IF EXISTS temp.rv_unprocessed');
+    if (parts.length) db.run('CREATE TEMP VIEW rv_unprocessed AS ' + parts.join(' UNION '));
     return { included: inc, omitted: omit };
   }
   // PG -> SQLite for the stored WhereClauses: SysDate-N, TRUNC(SysDate), TRUNC(col), SysDate

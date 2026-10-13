@@ -168,14 +168,6 @@
   .idmp-adtab.active { background:#fff; color:var(--idmp-blue); font-weight:600; border-bottom:1px solid #fff; }
   /* body */
   #idmp-content { flex:1; overflow:auto; padding:14px; min-height:0; }
-  #idmp-home { display:flex; gap:12px; padding:12px; align-items:flex-start; flex-wrap:wrap; }
-  #idmp-home .idmp-hcol { flex:1 1 260px; min-width:240px; display:flex; flex-direction:column; gap:12px; }
-  #idmp-home .idmp-gadget { border:1px solid var(--idmp-border,#d0d7de); border-radius:6px; background:var(--idmp-bg2,#fff); }
-  #idmp-home .idmp-gadget > .gh { padding:6px 10px; font-weight:600; font-size:13px; border-bottom:1px solid var(--idmp-border,#d0d7de); }
-  #idmp-home .idmp-gadget > .gb { padding:10px; font-size:12px; color:var(--idmp-muted); }
-  #idmp-home .ds-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; } #idmp-home .ds { border:1px solid var(--idmp-border,#d0d7de); border-radius:6px; padding:8px; text-align:center; cursor:pointer; } #idmp-home .ds .dn { font-size:22px; font-weight:700; } #idmp-home .ds .dl { font-size:11px; color:var(--idmp-muted); }
-  #idmp-home .pi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-  #idmp-home .pi { text-align:center; color:var(--idmp-fg,inherit); } #idmp-home .pi svg { width:100%; max-width:130px; } #idmp-home .pi .pt { font-size:11px; }
   #idmp-placeholder { color:var(--idmp-muted); text-align:center; margin-top:14vh; font-size:14px; }
   #idmp-placeholder .big { font-size:34px; margin-bottom:10px; opacity:.5; }
   /* form */
@@ -586,12 +578,6 @@
 <script src="erp_kernel.js?v=1"></script>
 <script src="erp_seam.js?v=1"></script>
 <script src="kanban_lens.js?v=4"></script>
-<script src="setup_lens.js?v=1"></script>
-<script src="window_lens.js?v=1"></script>
-<script src="goal_engine.js?v=1"></script>
-<script src="dashboard_home.js?v=1"></script>
-<script src="dashboard_gadgets.js?v=1"></script>
-<script src="dashboard_docstatus.js?v=1"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -1367,7 +1353,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // a role change can revoke window access — close any open windows, reset to placeholder
     _openWins = {}; _activeWin = null; renderWinTabs();
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>'; _renderHome();
+    $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '<br>Menu + data scoped to <b>' + _session.role.name + '</b>.</div>';
     buildMenu();   // role-scoped
     console.log('§IDEMPIERE-LOGIN user=' + _session.user.name + ' roles=' + (_session.roles ? _session.roles.length : '?') +
       ' client=' + _session.client.name + '(' + _session.client.id + ')' +
@@ -1436,7 +1422,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         } else { renderToolbar(); renderBody(); body = _viewMode; }   // toolbar FIRST: renderBody→refreshForm fills its record nav
       } else {
         var ph = document.querySelector('#idmp-content > #idmp-placeholder');
-        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
+        if (ph && !ph.querySelector('[data-i18n]')) $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       }
     }
     console.log('§I18N-RERENDER lang=' + code + ' login=' + (loginOn ? 'step' + _loginStepNow : 'off') + ' session=' + (_session ? 'kept' : 'none') +
@@ -1556,7 +1542,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (windowId === _activeWin) {
       if (ids.length) openWindow(Number(ids[ids.length - 1]));
       else { _activeWin = null; renderWinTabs(); $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
-        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready'); _mobileSurfaceMenu(false); }
+        $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready'); _mobileSurfaceMenu(false); }
     } else renderWinTabs();
   }
   function renderWinTabs() {
@@ -2700,95 +2686,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }); if (r) return r; } } catch (e) {}
     return _sqlRows(sql);
   }
-  // §SETUP-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §SETUP-LENS — Witness: W-SETUP-LENS + poc_quicksetup_live): READ-ONLY overlay of what the logged-in client still lacks before its first invoice.
-  //   One SQL per line from setup_lens.js; this host only adapts the db and renders the rows in the same process pane the wizard uses. Writes nothing.
-  // §WINDOW-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §WINDOW-LENS - Witness: W-WINDOW-LENS + poc_window_lens_live): READ-ONLY "what is the open window made of", straight from the dictionary.
-  //   Renders window_lens.js rows in the process pane; the open window and its tabs are NOT touched (the pane replaces the content area only while shown - re-open the window from the tab strip).
-  function _openWindowLens() {
-    var pane = el('div', 'idmp-procpane idmp-procform'); pane.appendChild(el('h3', null, 'Window anatomy'));
-    if (!window.WindowLens || _activeWin == null || !window.__idmpDb) { pane.appendChild(el('div', 'sub', 'Open a window first.')); _showProcPane(pane); return; }
-    var res = window.WindowLens.compute(function (sql, p) {
-      var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out;
-    }, _activeWin, _session && _session.role ? _session.role.id : null, _session && _session.client ? _session.client.id : null);
-    pane.appendChild(el('div', 'sub', (res.name || ('Window ' + res.windowId)) + ' · ' + res.tabs + ' tabs · ' + res.fields + ' fields (' + res.displayed + ' displayed) · ' + res.verdict + ' · read-only'));
-    res.rows.forEach(function (r) {
-      var row = el('div', 'fld'); row.setAttribute('data-windowlens-row', r.id); row.setAttribute('data-status', r.status);
-      row.appendChild(el('label', null, (r.status === 'OK' ? '✔ ' : r.status === 'MISSING' ? '✖ ' : '? ') + r.label));
-      row.appendChild(el('div', 'sub', r.detail + ' — ' + r.cite)); pane.appendChild(row);
-    });
-    _showProcPane(pane);
-    console.log('§WINDOW-LENS window=' + res.windowId + ' tabs=' + res.tabs + ' fields=' + res.fields + ' displayed=' + res.displayed + ' verdict=' + res.verdict + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
-  }
-  // §HOME-DASHBOARD (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2c - Witness: poc_home_dashboard_live): the legacy Home. Gadgets = DashboardHome.select (MDashboardContentAccess.get +
-  //   DashboardController main/side, ColumnNo/Line order). PORTED so far: performance (DashboardGadgets.performance over the goal engine). Every other selected gadget is shown with a NAMED placeholder and a
-  //   `§DASH-UNPORTED` line - never dropped, never faked.
-  function _homeQ(sql, p) { var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }
-  var _homeEngineOn = false, _homeDsOn = false;
-  function _renderHome() {
-    var host = $('idmp-content'), ph = host && host.querySelector('#idmp-placeholder');
-    if (!ph || host.querySelector('#idmp-home') || !_session || !window.DashboardHome || !window.DashboardGadgets || !window.GoalEngine || !window.__idmpDb) return;
-    var cl = _session.client.id, role = _session.role.id, usr = _session.user.id;
-    var sel = window.DashboardHome.select(_homeQ, { client: cl, role: role, user: usr });
-    if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
-    if (!_homeEngineOn) { try { window.GoalEngine.install(window.__idmpDb); _homeEngineOn = true; } catch (e) { console.log('§DASH-HOME engine install failed ' + e.message); } }
-    var all = _homeQ("SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?", [role])[0], orgIds = null;
-    if (!all || String(all.a) !== 'Y') orgIds = [0].concat((_session.orgs || []).map(function (o) { return Number(o.id); }));
-    var d = new Date(), today = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-    var sess = { client: cl, user: usr, role: role, today: today, access: { clientIds: [0, cl], orgIds: orgIds } };
-    var home = el('div'); home.id = 'idmp-home'; var cols = [], rendered = 0, unported = 0;
-    sel.main.forEach(function (g) {
-      var col = cols[g.effColumn]; if (!col) { col = cols[g.effColumn] = el('div', 'idmp-hcol'); home.appendChild(col); }
-      var box = el('div', 'idmp-gadget'); box.setAttribute('data-gadget-id', g.id); box.setAttribute('data-gadget-kind', g.kind); box.setAttribute('data-gadget-name', g.name);
-      box.appendChild(el('div', 'gh', g.name)); var body = el('div', 'gb'); box.appendChild(body);
-      if (g.kind === 'performance') {
-        var items = window.DashboardGadgets.performance(_homeQ, sess, window.GoalEngine), grid = el('div', 'pi-grid');
-        if (!items.length) { console.log('§DASH-EMPTY id=' + g.id + ' name="' + g.name + '" kind=performance goals=0 (a lazy gadget with nothing to show is detached: DashboardController.java:483-492)'); return; }
-        items.forEach(function (it) {
-          var pi = el('div', 'pi'); pi.setAttribute('data-goal-id', it.id); pi.setAttribute('data-percent', it.percent); pi.setAttribute('data-color', it.color); pi.title = it.tooltip;
-          var frac = Math.max(0, Math.min(1, it.percent / 100)), R = 40, C = Math.PI * R;                    // half-dial: arc length = pi*R
-          pi.innerHTML = '<svg viewBox="0 0 100 58"><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="#e3e6ea" stroke-width="12"/><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="' + it.color +
-            '" stroke-width="12" stroke-dasharray="' + (C * frac).toFixed(2) + ' ' + C.toFixed(2) + '"/></svg>';
-          pi.appendChild(el('div', 'pt', it.title)); grid.appendChild(pi);
-        });
-        body.appendChild(grid); rendered++;
-        console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
-      } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
-        if (!_homeDsOn) { try { window.DashboardDocStatus.install(window.__idmpDb, _homeQ); _homeDsOn = true; } catch (e) { console.log('§DASH-HOME docstatus install failed ' + e.message); } }
-        var dsess = { client: cl, user: usr, role: role, now: today + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2), access: { clientIds: cl === 0 ? [0] : [0, cl], orgIds: orgIds } };
-        var inds = window.DashboardDocStatus.indicators(_homeQ, dsess), dg = el('div', 'ds-grid');
-        inds.forEach(function (i) {
-          var t = el('div', 'ds'); t.setAttribute('data-ds-id', i.id); t.setAttribute('data-ds-count', i.count == null ? '' : i.count); t.title = i.error ? i.error : i.name;
-          t.appendChild(el('div', 'dn', i.count == null ? '?' : String(i.count))); t.appendChild(el('div', 'dl', i.name));
-          if (i.windowId) t.addEventListener('click', function () { try { openWindow(i.windowId, i.name); } catch (e) { console.log('§DASH-HOME zoom failed ' + e.message); } });
-          dg.appendChild(t);
-        });
-        body.appendChild(dg); rendered++;
-        console.log('§DASH-GADGET docstatus indicators=' + inds.length + ' ' + inds.map(function (i) { return i.name + '=' + i.count; }).join(' | ') + ' (click zooms to the window WITHOUT the indicator filter: §DASH-UNPORTED zoom-filter)');
-      } else { body.textContent = 'Not ported yet (' + g.kind + ').'; unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=main'); }
-      col.appendChild(box);
-    });
-    sel.side.forEach(function (g) { unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=side'); });
-    [].slice.call(home.querySelectorAll('.idmp-hcol')).forEach(function (c) { if (!c.children.length) c.parentNode.removeChild(c); });   // a column whose only gadget was detached as empty
-    ph.style.display = 'none'; host.appendChild(home);
-    console.log('§DASH-HOME client=' + cl + ' role=' + role + ' user=' + usr + ' main=' + sel.main.length + ' side=' + sel.side.length + ' cols=' + sel.cols + ' rendered=' + rendered + ' unported=' + unported + ' ids=[' + sel.main.map(function (g) { return g.id; }) + ']');
-  }
-  function _openSetupLens() {
-    var pane = el('div', 'idmp-procpane idmp-procform'), cl = _session && _session.client ? _session.client : null;
-    pane.appendChild(el('h3', null, 'Setup check'));
-    if (!window.SetupLens || !cl || !window.__idmpDb) { pane.appendChild(el('div', 'sub', 'Log in to a client first.')); _showProcPane(pane); return; }
-    var d = new Date(), today = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-    var res = window.SetupLens.compute(function (sql, p) {
-      var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out;
-    }, cl.id, today);
-    pane.appendChild(el('div', 'sub', (cl.name || ('Client ' + cl.id)) + ' · ' + res.verdict + ' · ' + res.ok + ' ready, ' + res.missing + ' missing, ' + res.inconclusive + ' not judged · read-only'));
-    res.rows.forEach(function (r) {
-      var row = el('div', 'fld'); row.setAttribute('data-setuplens-row', r.id); row.setAttribute('data-status', r.status);
-      row.appendChild(el('label', null, (r.status === 'OK' ? '✔ ' : r.status === 'MISSING' ? '✖ ' : '? ') + r.label));
-      row.appendChild(el('div', 'sub', r.detail + ' — ' + r.cite)); pane.appendChild(row);
-    });
-    _showProcPane(pane);
-    console.log('§SETUP-LENS client=' + cl.id + ' verdict=' + res.verdict + ' ok=' + res.ok + ' missing=' + res.missing + ' inconclusive=' + res.inconclusive + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
-  }
   function _sqlRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);
@@ -3084,7 +2981,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
     _showProcPane(pane);
@@ -3207,7 +3104,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-match-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     function paintTo() {
       var opts = _matchToOptions(fromSel.value);
@@ -3449,7 +3346,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     actions.appendChild(runBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
     var host = el('div', null); host.setAttribute('data-trx-host', '1'); pane.appendChild(host);
     closeBtn.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     [orgSel, locSel, prdSel, mtSel].forEach(function (s) { s.addEventListener('change', run); });
     d1.addEventListener('change', run); d2.addEventListener('change', run);
@@ -3586,7 +3483,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, params, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3641,7 +3538,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var cancel = el('button', null, 'Cancel');
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     _showProcPane(pane);
 
@@ -3766,7 +3663,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       runProcess(proc, {}, id);
     });
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel); pane.appendChild(actions);
     _showProcPane(pane);
@@ -3816,18 +3713,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     } catch (eT) {}
     console.log('§GENESIS-WIZARD countries=' + nCty + ' default=' + ctyDef + " (param 53161 C_Country_ID default SQL, AD_Language='en_US')");
     fCty.appendChild(cty); pane.appendChild(fCty);
-    // §QUICKSETUP (bim-compiler prompts/ERP_DEPTH_FILM.md §QUICKSETUP — Witness: W-QUICKSETUP-EQUALS-WIZARD + poc_quicksetup_live): OPTIONAL, OFF by default (the legacy-identical form above is the default path).
-    //   ON = type only name + country; currency / admin / chart are DERIVED from the dictionary by Genesis.quickInput and the SAME birthTenant runs. A country with no currency asks (no invention).
-    var fQuick = el('div', 'fld'); var quick = document.createElement('input'); quick.type = 'checkbox'; quick.setAttribute('data-genesis-quick', '1');
-    var qLbl = el('label', null, ' Quick setup — only company name and country; the rest comes from the dictionary'); qLbl.insertBefore(quick, qLbl.firstChild); fQuick.appendChild(qLbl);
-    var qSum = el('div', 'sub', ''); qSum.setAttribute('data-genesis-quicksum', '1'); fQuick.appendChild(qSum); pane.insertBefore(fQuick, fCcy);
-    function _quickCtx() {
-      var c = { countries: {}, currencies: {}, processDefaults: {} };
-      _sqlRows("SELECT C_Country_ID AS id, C_Currency_ID AS cur FROM C_Country WHERE IsActive='Y'").forEach(function (r) { c.countries[r.id] = { currencyId: r.cur }; });
-      _sqlRows("SELECT C_Currency_ID AS id, ISO_Code AS iso, StdPrecision AS prec, IsActive AS act FROM C_Currency").forEach(function (r) { c.currencies[r.id] = { iso: r.iso, prec: r.prec, active: r.act === 'Y' }; });
-      _sqlRows("SELECT ColumnName AS cn, DefaultValue AS dv FROM AD_Process_Para WHERE AD_Process_ID=53161").forEach(function (r) { c.processDefaults[r.cn] = r.dv; });
-      return c;
-    }
     var fAdmin = el('div', 'fld'); fAdmin.appendChild(el('label', null, 'Administrator user'));
     var admin = document.createElement('input'); admin.value = 'jdoe'; admin.setAttribute('autocomplete', 'off');
     admin.setAttribute('data-genesis-admin', '1'); fAdmin.appendChild(admin); pane.appendChild(fAdmin);
@@ -3851,37 +3736,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       }; rd.readAsText(f);
     });
     fCoa.appendChild(coaSel); fCoa.appendChild(coaFile); fCoa.appendChild(coaInfo); pane.appendChild(fCoa);
-    function _quickSync() {
-      var on = quick.checked; [fCcy, fAdmin, fCoa].forEach(function (f) { f.style.display = on ? 'none' : ''; });
-      if (!on) { qSum.textContent = ''; return; }
-      var qi = window.Genesis.quickInput(_quickCtx(), { clientName: (name.value || '').trim(), countryId: Number(cty.value), dateAcct: '1970-01-01' });
-      qSum.textContent = qi.ok ? 'Currency ' + qi.input.currencyIso + ' (from the country) · administrator ' + qi.input.adminUser + ' (process default) · iDempiere default chart · this year\'s calendar'
-        : 'Needs more than name and country: ' + qi.ask.join(', ') + ' — untick Quick setup to enter it.';
-      console.log('§QUICKSETUP preview ok=' + qi.ok + ' ask=' + JSON.stringify(qi.ask) + (qi.ok ? ' currency=' + qi.input.currencyIso + ' admin=' + qi.input.adminUser : ''));
-    }
-    quick.addEventListener('change', _quickSync); cty.addEventListener('change', _quickSync); name.addEventListener('input', _quickSync);
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Create tenant'); run.setAttribute('data-genesis-create', '1');
     var cancel = el('button', null, 'Cancel');
     var out = el('div', 'sub');
     cancel.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome(); status('Ready');
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
     });
     run.addEventListener('click', function () {
       var opt = ccy.options[ccy.selectedIndex];
       // FS-2: the setup year is TODAY's (MYear.java:110-115 reads the clock); genesis takes it as its explicit dateAcct.
       var dNow = new Date(), today = dNow.getFullYear() + '-' + ('0' + (dNow.getMonth() + 1)).slice(-2) + '-' + ('0' + dNow.getDate()).slice(-2);
-      var input;
-      if (quick.checked) {                                                   // §QUICKSETUP: derived, never invented
-        var qi = window.Genesis.quickInput(_quickCtx(), { clientName: (name.value || '').trim(), countryId: Number(cty.value), dateAcct: today });
-        if (!qi.ok) { out.textContent = 'Quick setup needs: ' + qi.ask.join(', ') + ' — untick Quick setup to enter it.'; console.log('§QUICKSETUP refused ask=' + JSON.stringify(qi.ask)); return; }
-        input = qi.input; console.log('§QUICKSETUP use typed=' + qi.typed.length + ' currency=' + input.currencyIso + ' admin=' + input.adminUser + ' country=' + input.countryId);
-      } else {
-        input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
-          currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
-        if (cty.value) input.countryId = Number(cty.value);                  // FS-12
-      }
-      if (!quick.checked && coaSel.value === 'file') {                                         // FS-18
+      var input = { clientName: (name.value || '').trim() || 'NewCo', currencyId: Number(opt.value), currencyIso: opt.getAttribute('data-iso') || 'USD',
+        currencyPrecision: Number(opt.getAttribute('data-prec')), adminUser: (admin.value || '').trim() || 'admin', dateAcct: today };
+      if (cty.value) input.countryId = Number(cty.value);                    // FS-12
+      if (coaSel.value === 'file') {                                         // FS-18
         if (!coaParsed) { out.textContent = 'Choose a chart of accounts file first.'; return; }
         input.coa = coaParsed;
         input.requiredKeys = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE t.TableName IN " +
@@ -4024,7 +3893,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     cancel.addEventListener('click', function () {
       if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     actions.appendChild(run); actions.appendChild(cancel);
@@ -4298,7 +4167,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var back = el('div', null); var bb = el('button', null, 'Close');
     bb.style.cssText = 'margin-top:12px;font-size:12.5px;padding:5px 16px;border:1px solid var(--idmp-border);border-radius:6px;background:var(--idmp-panel);cursor:pointer';
     bb.addEventListener('click', function () {
-      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; _renderHome();
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
@@ -6200,8 +6069,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       formdel: function () { _openDelete(); },
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
-      setuplens: function () { _openSetupLens(); },
-      windowlens: function () { _openWindowLens(); },
       // editmode pill RETIRED (Leg 5, FUNDAMENTAL LAW): the Glass/Gravity CRUD ring is Glass-only on the iDempiere
       //   surface (W-RING-LEAK) — a ring-toggle pill is vestigial here. The classic toolbar is the CRUD surface.
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
@@ -6810,5 +6677,6 @@ if ('serviceWorker' in navigator) {
     .catch(function (e) { console.warn('§SW_REG_FAIL', e); });
 }
 </script>
+<script src="overlay/boot.js"></script><!-- OVERLAY seam (ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW): the only reference to erp/overlay/ ; ?overlay=0 = pure core -->
 </body>
 </html>

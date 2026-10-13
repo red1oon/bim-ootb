@@ -7,7 +7,7 @@
 //   before/after compute). Population = the 10 lens lines x {born tenant, born tenant minus one master, resident GardenWorld, a client id with no rows}.
 'use strict';
 var fs = require('fs'), path = require('path');
-var ERP = path.join(__dirname, '..'), G = require(path.join(ERP, 'genesis.js')), L = require(path.join(ERP, 'setup_lens.js'));
+var ERP = path.join(__dirname, '..'), G = require(path.join(ERP, 'genesis.js')), L = require(path.join(ERP, 'overlay', 'setup_lens.js'));
 var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
 var log = console.log, fails = 0, judged = 0, TODAY = '2026-10-14';
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §SL-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }

@@ -9,7 +9,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..'), DH = null;
-try { DH = require(path.join(ERP, 'dashboard_home.js')); } catch (e) { DH = null; }
+try { DH = require(path.join(ERP, 'overlay', 'dashboard_home.js')); } catch (e) { DH = null; }
 var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
 var ORA = process.env.DS_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/dashboard_select_legacy.json', log = console.log, fails = 0, judged = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §DS-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }

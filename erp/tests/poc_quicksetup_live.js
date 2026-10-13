@@ -6,7 +6,7 @@
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-var ROOT = path.join(__dirname, '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
+var ROOT = path.join(__dirname, '..', '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var server = http.createServer(function (req, res) { var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); fs.readFile(f, function (e, buf) { if (e) { res.writeHead(404); return res.end('404'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); res.end(buf); }); });
 var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fails++; console.log('  §QSL-CHECK ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {
@@ -14,9 +14,9 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
   var base = 'http://localhost:' + server.address().port, logs = [], errs = [];
   var browser = await chromium.launch({ args: ['--no-sandbox'] }), page = await browser.newPage();
   page.on('console', function (m) { var t = m.text(); if (t.indexOf('§') === 0) logs.push(t); }); page.on('pageerror', function (e) { errs.push(String(e)); });
-  await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+  await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
   await page.evaluate(function () { return new Promise(function (r) { var q = indexedDB.deleteDatabase('erp_cache'); q.onsuccess = q.onerror = q.onblocked = function () { r(); }; }); });
-  await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+  await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
   await page.waitForFunction(function () { return !!window.__idmpDb; }, null, { timeout: 30000 });
   await page.waitForFunction(function () { return document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0; }, null, { timeout: 20000 });
   var q = function (sql) { return page.evaluate(function (s) { try { var r = window.__idmpDb.exec(s); return r.length ? r[0].values : []; } catch (e) { return []; } }, sql); };
