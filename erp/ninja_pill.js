@@ -105,6 +105,8 @@
         'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample workbook (GardenWorld invoice summary — runnable as-is)</a></div>' +
       '<div style="margin-top:6px;font-size:12px;"><a id="np-sample-tb" ' +
         'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report template (Thai trial balance — pick dates, run, get .xlsx + PDF)</a></div>' +
+      '<div style="margin-top:6px;font-size:12px;"><a id="np-sample-reg" ' +
+        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report template (Thai sales register — one row per sales invoice, grows as you sell)</a></div>' +
       '<div id="np-out" style="margin-top:12px;font-size:12px;"></div>';
     p.appendChild(box);
     document.body.appendChild(p);
@@ -121,10 +123,13 @@
     });
     file.addEventListener('change', function () { if (file.files.length) _onFile(file.files[0]); });
     box.querySelector('#np-sample').addEventListener('click', fetchSample);
-    box.querySelector('#np-sample-tb').addEventListener('click', function () {
-      fetch('ninja_tb_sample.xlsx').then(function (r) { if (!r.ok) throw new Error('ninja_tb_sample.xlsx HTTP ' + r.status); return r.arrayBuffer(); })
-        .then(function (buf) { reportFlow(buf, 'ninja_tb_sample.xlsx', document.getElementById('np-out')); })
-        .catch(function (e) { document.getElementById('np-out').innerHTML = '<span style="color:#ff9b9b;">' + _escHtml(String(e.message || e)) + '</span>'; });
+    ['tb', 'reg'].forEach(function (k) {                          // the two shipped report templates (public, GardenWorld data)
+      var file = k === 'tb' ? 'ninja_tb_sample.xlsx' : 'ninja_register_sample.xlsx';
+      box.querySelector('#np-sample-' + k).addEventListener('click', function () {
+        fetch(file).then(function (r) { if (!r.ok) throw new Error(file + ' HTTP ' + r.status); return r.arrayBuffer(); })
+          .then(function (buf) { reportFlow(buf, file, document.getElementById('np-out')); })
+          .catch(function (e) { document.getElementById('np-out').innerHTML = '<span style="color:#ff9b9b;">' + _escHtml(String(e.message || e)) + '</span>'; });
+      });
     });
     console.log('§NINJA-PILL open db=Y engine=' + (global.NinjaExcel ? 'Y' : 'MISSING'));
   }
@@ -232,6 +237,8 @@
     a.innerHTML = ico(iconName, 14) + ' ' + _escHtml(label);
     return a;
   }
+  // documents entered THIS session live in the signed op-log tip, not the base db: read through the ERP's own tip shadow (crud_overlay withTipDb) when it exists
+  function tipDb(fn) { var c = global.__crud; return (c && typeof c.withTipDb === 'function') ? c.withTipDb(fn) : fn(_db); }
   function reportFlow(buf, name, out) {
     var y = 2000;
     try { var r0 = _db.exec('SELECT substr(max(dateacct),1,4) FROM fact_acct'); if (r0.length && r0[0].values[0][0]) y = r0[0].values[0][0]; } catch (e) { /* no fact_acct: dates stay at the default */ }
@@ -246,7 +253,7 @@
       var rep = out.querySelector('#np-rep'), from = out.querySelector('#np-from').value, to = out.querySelector('#np-to').value;
       rep.innerHTML = '<span style="opacity:0.7;">running…</span>';
       ensureXlsx().then(function (X) {
-        return global.NinjaReport.run({ db: _db, template: buf, from: from, to: to, base: '', XLSX: X }).then(function (res) {
+        return global.NinjaReport.run({ db: _db, template: buf, from: from, to: to, base: '', XLSX: X, withDb: tipDb }).then(function (res) {
           var f = res.facts, stem = name.replace(/\.xlsx$/i, '');
           rep.innerHTML = '<div id="np-rep-sum"><b>Report ready</b> — ' + f.statements + ' queries, ' + f.runMs + ' ms, ' + f.formulas + ' formulas (' + f.formulaErrors + ' errors), PDF ' + Math.round(f.pdfBytes / 1024) + ' KB.</div>' + previewHtml(res.model, X);
           rep.appendChild(blobLink(res.xlsx, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', stem + '_report.xlsx', 'download ' + stem + '_report.xlsx', 'save'));

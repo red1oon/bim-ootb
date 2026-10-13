@@ -2877,6 +2877,8 @@
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
                     withModelTrx: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
                       try { var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
+                    // withTipDb — same shadow as withModelTrx but hands fn the RAW (shadowed) sql.js db, for engines that need a statement/array API (NinjaExcel Report: ninja_report.js). Read-only by convention.
+                    withTipDb: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : []; try { r = fn(db); } finally { _tipShadowOff(db, sh); } }); return r; },
                     // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
                     //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
                     //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside

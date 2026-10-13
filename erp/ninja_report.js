@@ -75,13 +75,16 @@
     return Promise.all([ensureLibs(base), ensureFonts(base)]).then(function (all) {
       var F = all[1], H = global.NinjaTemplateXlsx, T = global.NinjaTemplate, C = global.NinjaCalc, R = global.NinjaPdf;
       var tpl = opts.template instanceof Uint8Array ? opts.template : new Uint8Array(opts.template);
-      var db = shim(opts.db); T.registerPgBuiltins(function (n, f) { db.function(n, { varargs: true }, f); });
-      var client = opts.clientId != null ? opts.clientId : clientOf(opts.db);
+      var withDb = opts.withDb || function (fn) { return fn(opts.db); };       // pill passes __crud.withTipDb so documents entered THIS session (signed op-log tip) are visible to the report's SQL
+      var client = opts.clientId != null ? opts.clientId : clientOf(opts.db);   // ad_client rows are not touched by sales: main is enough
       if (client == null) throw new Error('no client in the open database (ad_client has no row > 0)');
       var from = opts.from + ' 00:00:00.0', to = opts.to + ' 00:00:00.0';
       return H.loadModel(global.ExcelJS, tpl).then(function (m) {
         var t1 = Date.now();
-        var S = T.runTemplate(m, T.sqliteExecutor(db, global.BigDecimal), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
+        var S = withDb(function (raw) {
+          var db = shim(raw); T.registerPgBuiltins(function (n, f) { db.function(n, { varargs: true }, f); });
+          return T.runTemplate(m, T.sqliteExecutor(db, global.BigDecimal), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
+        });
         var runMs = Date.now() - t1;
         console.log('§NINJA_REPORT_RUN client=' + client + ' from=' + opts.from + ' to=' + opts.to + ' statements=' + S.sqlcount + ' ms=' + runMs);
         var cs = C.evaluateSheet(m, 'Output');

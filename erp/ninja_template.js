@@ -13,6 +13,7 @@
 // Typed value: {k:'n',s:'123.45'} number | {k:'s',s:'text'} string | {k:'t',s:'2006-12-15 00:00:00.0'} timestamp | null.
 (function (global) {
   'use strict';
+  var MAXC = 16383;   // last usable Process column (.xlsx XFD). The legacy .xls host stopped at column 255, i.e. a V/> list was SILENTLY cut at 248 items; this host does not cut (prompts/NINJAEXCEL_TEMPLATE_ENGINE.md §UC-SET)
   var VCOL = 8, END = 'END', DOWN = 'V', RIGHT = '>', PLUS = '+';
 
   // ── A1 codec ────────────────────────────────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@
         var ca = getC(pws, r, 6); if (ca) setBlank(ca);
         for (;;) {
           var cp = getC(pws, r, col); col++;
-          if (col > 255) break;
+          if (col > MAXC) break;
           if (!cp) break;
           if (ctype(cp) === 'NUMERIC') setBlank(cp);
           if (strVal(cp) === END) break;
@@ -339,10 +340,10 @@
         if (ctype(outcell) === 'FORMULA') {
           var ori = downrow - 1, last = lastRowNum(outs);
           shiftRows(outs, downrow, last, 1);
-          for (var st = 0; st < 255; st++) {
+          rowCells(outs, ori).forEach(function (st) {                // only the columns the source row really has (was: all 255 columns, which made every pushed row create 255 blank cells -> quadratic)
             var o = getC(outs, ori, st), n = mkC(outs, downrow, st);
             if (o) { if (o.s) n.s = o.s; if (ctype(o) === 'FORMULA') setFormula(n, copyFormula(o.f, 0, 1)); }
-          }
+          });
           outcell = getC(outs, downrow, c);
         }
       }
@@ -387,7 +388,7 @@
       for (var x = 0; x < xaxis.length; x++) matrix[x][1] = xaxis[x];
       for (var y = 0; y < yaxis.length; y++) matrix[y][0] = yaxis[y];
       var prValue = getC(prs, r, nc);
-      for (var p = VCOL; p < 255; p++) {
+      for (var p = VCOL; p < MAXC; p++) {
         if (!prValue) break; if (toStr(prValue) === END) break;
         if (toStr(prValue) === 'NULL') setBlank(prValue);
         var intRowNo = rows[rows.indexOf(r)], xm = 0, ym = 0, breakflag = 0;
@@ -433,7 +434,7 @@
         var outcell = mkC(outs, ref.r, ref.c), downrow = ref.r, oR = ref.r, oC = ref.c;
         var prValue = getC(prs, r, nc);
         for (;;) {
-          if (!outcell) break; if (nc > 255) break; if (!prValue) break;
+          if (!outcell) break; if (nc > MAXC) { log('LIST TRUNCATED at Process column ' + nc + ' (more values than the sheet can hold)'); break; } if (!prValue) break;
           if (toStr(prValue) === END) break;
           if (toStr(prValue) === 'NULL') { nc++; prValue = getC(prs, r, nc); continue; }
           if (ctype(prValue) === 'BLANK' || ctype(prValue) === 'FORMULA') { nc++; prValue = getC(prs, r, nc); continue; }
