@@ -4,6 +4,16 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.79.0](https://github.com/red1oon/bim-ootb/compare/v1.78.0...v1.79.0) (2026-10-13)
+
+
+### ✨ Features
+
+* **erp:** Customer/Vendor RMA through the generic model path (§RMA-WINDOW-PORT) ([#1985](https://github.com/red1oon/bim-ootb/issues/1985)) ([ca3c117](https://github.com/red1oon/bim-ootb/commit/ca3c117671d5d8846018fe0d99350034265dbfda))
+* **erp:** POS Order cycle depth — 6 twin gaps fixed + Info Product port (W-DEPTH-CYCLE 23/23, W-INFOPROD 12/12 + parity 187 cells) ([#1988](https://github.com/red1oon/bim-ootb/issues/1988)) ([814e43e](https://github.com/red1oon/bim-ootb/commit/814e43ed3f83ddbf26195b67861874d2941f1b81))
+* **oplogpic:** Fill anchors 1/4 and 3/4 along (crop just enough to keep the whole subject) ([#1984](https://github.com/red1oon/bim-ootb/issues/1984)) ([048e2de](https://github.com/red1oon/bim-ootb/commit/048e2de25846441c306b4bd600df03fdde6433b5))
+* **oplogpic:** Guide link before the red pill + generated guide.html ([#1986](https://github.com/red1oon/bim-ootb/issues/1986)) ([f296912](https://github.com/red1oon/bim-ootb/commit/f296912a87bce6daa1a66603c7fc7b7902d01e8a))
+
 ## [1.78.0](https://github.com/red1oon/bim-ootb/compare/v1.77.0...v1.78.0) (2026-10-12)
 
 
