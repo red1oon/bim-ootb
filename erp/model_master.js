@@ -17,7 +17,7 @@
   function same(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); }
 
   // MTree_Base.getNodeTableName(treeType) (MTree_Base.java) -- the standard master trees
-  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr' };
+  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr', OO: 'ad_treenode' };
 
   // PO.insert_Accounting(acctTable, baseTable, where) PO.java:4907-4990 -- for every row of the base table of the client (optionally
   // restricted by `by` = {col: value}, the Java "p.<col>=<id>" clause) copy the Account-type columns (AD_Column.AD_Reference_ID=25,
@@ -153,6 +153,21 @@
     c_acctschema: { init: { autoperiodcontrol: 'Y', period_openfuture: 2, period_openhistory: 2, costingmethod: 'S', costinglevel: 'C', isadjustcogs: 'N', gaap: 'UN', hasalias: 'Y', hascombination: 'N',
                             isaccrual: 'Y', commitmenttype: 'N', isdiscountcorrectstax: 'N', taxcorrectiontype: 'N', istradediscountposted: 'N', ispostservices: 'N', isexplicitcostadjustment: 'N', separator: '-' },   // MAcctSchema.setInitialDefaults :221-239
                     before: function (trx, r, isNew, old) { return acctSchemaBefore(trx, r, isNew, old); } },                                                                                       // MAcctSchema.beforeSave :711-742
+    // ── setup masters (NC-6/7/8; every message is the AD_Message text measured on the legacy pilot by scripts/bridge/nc6_legacy.js) ──
+    c_conversion_rate: { before: function (trx, r, isNew, old) { return convRateBefore(trx, r, isNew); },                                                                             // MConversionRate.beforeSave
+                         afterNew: [convRateReciprocal], afterChange: [convRateReciprocal] },                                                                                         // MConversionRate.afterSave (reverse rate)
+    m_warehouse: { before: function (trx, r, isNew, old) { return warehouseBefore(trx, r, isNew, old); },                                                                             // MWarehouse.beforeSave
+                   afterNew: [function (trx, r) { insertAccounting(trx, 'm_warehouse', r, 'm_warehouse_acct', 'c_acctschema_default', null); }] },                                      // MWarehouse.afterSave
+    m_product_category: { before: function (trx, r, isNew) { return productCategoryBefore(trx, r, isNew); },                                                                         // MProductCategory.beforeSave
+                          afterNew: [function (trx, r) { insertAccounting(trx, 'm_product_category', r, 'm_product_category_acct', 'c_acctschema_default', null); }] },               // MProductCategory.afterSave
+    c_bp_group: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_bp_group', r, 'c_bp_group_acct', 'c_acctschema_default', null); }] },                                       // MBPGroup.afterSave
+    c_charge: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_charge', r, 'c_charge_acct', 'c_acctschema_default', null); }] },                                             // MCharge.afterSave
+    c_paymentterm: { before: function (trx, r, isNew) { return paymentTermBefore(trx, r, isNew); } },                                                                                 // MPaymentTerm.beforeSave
+    m_pricelist_version: { before: function (trx, r) { if (!r.validfrom) r.validfrom = trx.env.date; if (!r.name) r.name = fmtDateUS(r.validfrom); return null; } },                   // MPriceListVersion.setName :177-187 (en_US DisplayType.Date)
+    c_uom_conversion: { before: function (trx, r) { return uomConversionBefore(trx, r); } },                                                                                         // MUOMConversion.beforeSave
+    c_year: { before: function (trx, r) { return yearBefore(r); } },                                                                                                                  // MYear.beforeSave
+    ad_org: { afterNew: [function (trx, r) { orgAfterNew(trx, r); }] },                                                                                                               // MOrg.afterSave (new org block)
+    ad_sequence: { before: function (trx, r) { if (r.startnewmonth === 'Y' && r.startnewyear !== 'Y') r.startnewmonth = 'N'; return null; } },                                       // MSequence.beforeSave
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
     c_bankaccount: { afterNew: [bankAcct] },                                                                                                                            // MBankAccount.afterSave :220-226
     c_tax: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_tax', r, 'c_tax_acct', 'c_acctschema_default', null); }] },                                       // MTax.afterSave :400-407 (result ignored in Java)
@@ -200,6 +215,93 @@
     }
     if (r.startdate && r.enddate && String(r.startdate).slice(0, 10) > String(r.enddate).slice(0, 10)) return 'End Date must be after Start Date';   // :735-739
     return null;
+  }
+
+
+  // ── setup-master save rules (see MASTER entries above). Messages: pilot AD_Message / AD_Element texts, measured. ──
+  function fmtDateUS(d) { var x = String(d).slice(0, 10).split('-'); return x[1] + '/' + x[2] + '/' + x[0]; }          // DisplayType.getDateFormat(Date) in en_US = MM/dd/yyyy
+  function ts0(d) { var t = String(d); return t.length === 10 ? t + ' 00:00:00' : t; }
+  function convRateBefore(trx, r, isNew) {
+    if (String(r.c_currency_id) === String(r.c_currency_id_to)) return 'Currency = Currency';                           // :  @C_Currency_ID@ = @C_Currency_ID@
+    if (!(Number(r.multiplyrate) > 0)) return 'Multiply Rate <= 0';
+    if (!r.validto) return 'Fill mandatory fields: Valid to';
+    var from = r.validfrom, to = r.validto;
+    if (String(to).slice(0, 10) < String(from).slice(0, 10)) return fmtDateUS(to) + ' < ' + fmtDateUS(from);
+    if (r.isactive !== 'N') {
+      var ov = trx.q("SELECT c_conversion_rate_id AS id, validfrom AS vf FROM c_conversion_rate WHERE ((date(?) BETWEEN date(validfrom) AND date(validto)) OR (date(?) BETWEEN date(validfrom) AND date(validto))) AND c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND ad_client_id=? AND ad_org_id=? AND isactive='Y'",
+        [from, to, r.c_currency_id, r.c_currency_id_to, r.c_conversiontype_id, r.ad_client_id, r.ad_org_id || 0]).filter(function (x) { return String(x.id) !== String(r.c_conversion_rate_id); });
+      if (ov.length) return 'Conversion rate overlaps with: ' + ts0(ov[0].vf) + '.0';
+    }
+    return null;
+  }
+  function convRateReciprocal(trx, r, old) {                                                                              // MConversionRate.afterSave: the reverse rate (guarded: the reciprocal's own save does not recurse)
+    if (trx._fxRecip) return null;
+    var rev = trx.q('SELECT c_conversion_rate_id AS id FROM c_conversion_rate WHERE date(validfrom)=date(?) AND date(validto)=date(?) AND c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND ad_client_id=? AND ad_org_id=?',
+      [r.validfrom, r.validto, r.c_currency_id_to, r.c_currency_id, r.c_conversiontype_id, r.ad_client_id, r.ad_org_id || 0])[0];
+    var div = r.dividerate != null && Number(r.dividerate) !== 0 ? r.dividerate : Math.round((1 / Number(r.multiplyrate)) * 1e12) / 1e12;
+    trx._fxRecip = true;
+    try {
+      if (rev) trx.update('c_conversion_rate', trx.get('c_conversion_rate', rev.id), { dividerate: r.multiplyrate, multiplyrate: div });
+      else trx.insert('c_conversion_rate', { ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id || 0, c_conversiontype_id: r.c_conversiontype_id, validfrom: r.validfrom, validto: r.validto,
+        c_currency_id: r.c_currency_id_to, c_currency_id_to: r.c_currency_id, dividerate: r.multiplyrate, multiplyrate: div });
+    } finally { trx._fxRecip = false; }
+    return null;
+  }
+  function warehouseBefore(trx, r, isNew, old) {
+    if (r.isdisallownegativeinv === 'Y' && (!old || old.isdisallownegativeinv !== 'Y')) {                               // :  negative on-hand exists
+      var neg; try { neg = trx.q('SELECT m_product_id FROM m_storageonhand s WHERE s.m_locator_id IN (SELECT m_locator_id FROM m_locator l WHERE m_warehouse_id=?) GROUP BY m_product_id, m_locator_id, m_attributesetinstance_id HAVING SUM(s.qtyonhand) < 0 LIMIT 1', [r.m_warehouse_id])[0]; } catch (e) { neg = null; }
+      if (neg) return 'Negative on hand exists in this warehouse';
+    }
+    if (!Number(r.ad_org_id)) {                                                                                         // org 0 -> the context org, else refused
+      if (Number(trx.env.org)) r.ad_org_id = trx.env.org; else return 'Organization * (0) not allowed';
+    }
+    return null;
+  }
+  function productCategoryBefore(trx, r, isNew) {                                                                       // hasLoopInTree: follow the parent chain back to this category
+    var seen = {}, cur = r.m_product_category_parent_id, me = String(r.m_product_category_id);
+    while (cur != null && cur !== '' && Number(cur) !== 0 && !seen[cur]) {
+      if (String(cur) === me) return 'A loop in the product category tree has been detected - the old value will be restored';
+      seen[cur] = 1; var p = trx.q('SELECT m_product_category_parent_id AS p FROM m_product_category WHERE m_product_category_id=?', [cur])[0]; cur = p ? p.p : null;
+    }
+    return null;
+  }
+  function paymentTermBefore(trx, r, isNew) {
+    if (r.isduefixed === 'Y') {
+      var dd = Number(r.fixmonthday || 0); if (dd < 1 || dd > 31) return 'Invalid: Fix month day';
+      dd = Number(r.fixmonthcutoff || 0); if (dd < 1 || dd > 31) return 'Invalid: Fix month cutoff';
+    }
+    if (Number(r.netdays || 0) < 0) return 'Net Days Must be a positive number!';
+    var n = 0; if (r.c_paymentterm_id != null && !/^#new/.test(String(r.c_paymentterm_id))) { try { n = trx.q('SELECT COUNT(*) AS n FROM c_paymentschedule WHERE c_paymentterm_id=?', [r.c_paymentterm_id])[0].n; } catch (e) { n = 0; } }
+    if (!n) r.isvalid = 'Y';                                                                                            // MPaymentTerm.validate(): no schedule => valid
+    return null;
+  }
+  function uomConversionBefore(trx, r) {
+    if (String(r.c_uom_id) === String(r.c_uom_to_id)) return 'UOM = UoM To';
+    var mul = Number(r.multiplyrate || 0), div = Number(r.dividerate || 0);
+    function opp(x) { return Math.round((1 / x) * 1e12) / 1e12; }                                                       // getOppositeRate: scale 12
+    if (mul !== 0) { if (div === 0) r.dividerate = opp(mul); } else if (div !== 0) { r.multiplyrate = opp(div); mul = Number(r.multiplyrate); }
+    if (!(Number(r.multiplyrate || 0) > 0)) return 'Multiply Rate <= 0';
+    return null;
+  }
+  function yearBefore(r) {                                                                                              // MYear.getYearAsInt: parseInt, else the first token's digits (2 digits -> 20xx)
+    var fy = String(r.fiscalyear || ''), y = 0;
+    if (/^\s*-?\d+\s*$/.test(fy)) y = parseInt(fy, 10); else { var tok = fy.split(/[\/\-, \t\n\r\f]+/).filter(Boolean)[0]; if (tok && /^\d+$/.test(tok)) { y = parseInt(tok, 10); if (tok.length === 2) y += 2000; } }
+    return y === 0 ? 'Fill mandatory fields: Year' : null;
+  }
+
+
+  // MOrg.afterSave for a NEW org: AD_OrgInfo (MOrgInfo(MOrg): DUNS '?', TaxID '?'), AD_Role_OrgAccess for every non-manual role of the client (MRoleOrgAccess.createForOrg :99-114),
+  // the Organization tree node (insert_Tree(TREETYPE_Organization): parent 0, seq 999). Measured on the pilot (scripts/bridge/nc8_legacy.js). Value-change update_Tree and the
+  // C_ValidCombination description refresh are not ported (named).
+  function orgAfterNew(trx, r) {
+    var oi = { ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id, duns: '?', taxid: '?' };
+    trx.insert('ad_orginfo', oi);
+    trx.q("SELECT ad_role_id AS id FROM ad_role WHERE ad_client_id=? AND ismanual='N' AND isactive='Y' ORDER BY ad_role_id", [r.ad_client_id]).forEach(function (ro) {
+      var f = { ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id, ad_role_id: ro.id, isreadonly: 'N' };
+      if (trx.env.uuid) f.ad_role_orgaccess_uu = trx.env.uuid();
+      trx.insert('ad_role_orgaccess', f);
+    });
+    insertTree(trx, 'ad_org', r, 'OO');
   }
 
   function install(registry) {
