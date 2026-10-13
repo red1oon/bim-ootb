@@ -2740,6 +2740,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       box.appendChild(el('div', 'gh', g.name)); var body = el('div', 'gb'); box.appendChild(body);
       if (g.kind === 'performance') {
         var items = window.DashboardGadgets.performance(_homeQ, sess, window.GoalEngine), grid = el('div', 'pi-grid');
+        if (!items.length) { console.log('§DASH-EMPTY id=' + g.id + ' name="' + g.name + '" kind=performance goals=0 (a lazy gadget with nothing to show is detached: DashboardController.java:483-492)'); return; }
         items.forEach(function (it) {
           var pi = el('div', 'pi'); pi.setAttribute('data-goal-id', it.id); pi.setAttribute('data-percent', it.percent); pi.setAttribute('data-color', it.color); pi.title = it.tooltip;
           var frac = Math.max(0, Math.min(1, it.percent / 100)), R = 40, C = Math.PI * R;                    // half-dial: arc length = pi*R
@@ -2753,6 +2754,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       col.appendChild(box);
     });
     sel.side.forEach(function (g) { unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=side'); });
+    [].slice.call(home.querySelectorAll('.idmp-hcol')).forEach(function (c) { if (!c.children.length) c.parentNode.removeChild(c); });   // a column whose only gadget was detached as empty
     ph.style.display = 'none'; host.appendChild(home);
     console.log('§DASH-HOME client=' + cl + ' role=' + role + ' user=' + usr + ' main=' + sel.main.length + ' side=' + sel.side.length + ' cols=' + sel.cols + ' rendered=' + rendered + ' unported=' + unported + ' ids=[' + sel.main.map(function (g) { return g.id; }) + ']');
   }

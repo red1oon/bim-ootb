@@ -29,7 +29,10 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
       var perf = [].map.call(document.querySelectorAll('#idmp-home .pi'), function (p) { return { goal: Number(p.getAttribute('data-goal-id')), title: p.querySelector('.pt').textContent, tip: p.title, color: p.getAttribute('data-color') }; });
       return { present: !!document.getElementById('idmp-home'), cols: cols, perf: perf, placeholderHidden: (document.getElementById('idmp-placeholder') || {}).style && document.getElementById('idmp-placeholder').style.display === 'none' };
     });
-    var flat = [].concat.apply([], dom.cols), want = ORA.cases.filter(function (c) { return c.name.indexOf(expectCase) === 0; })[0];
+    var flat = [].concat.apply([], dom.cols), want0 = ORA.cases.filter(function (c) { return c.name.indexOf(expectCase) === 0; })[0];
+    var empty = logs.filter(function (l) { return l.indexOf('§DASH-EMPTY') === 0; }).map(function (l) { return Number(/id=(\d+)/.exec(l)[1]); });   // legacy detaches a lazy gadget that has nothing to show (DashboardController.java:483-492)
+    var want = { name: want0.name, side: want0.side, detail: want0.detail, main: want0.main.filter(function (id) { return empty.indexOf(id) < 0; }) };
+    ck(empty.every(function (id) { return want0.detail.filter(function (d) { return d.id === id; })[0].zul.indexOf('performance.zul') >= 0; }), expectCase + ': only the Performance gadget may be detached as empty (' + (empty.join(',') || 'none') + ')', empty);
     var wantNames = want.main.map(function (id) { return want.detail.filter(function (d) { return d.id === id; })[0].name; });
     ck(dom.present && flat.length === want.main.length, expectCase + ': Home shows ' + want.main.length + ' gadgets (main dashboard)', { got: flat.length });
     ck(JSON.stringify(flat.map(function (g) { return g.id; })) === JSON.stringify(want.main), expectCase + ': gadget ids in legacy column/line order', { got: flat.map(function (g) { return g.id; }), want: want.main });
@@ -38,6 +41,7 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
     ck(nonPerfMain.every(function (g) { return /Not ported yet/.test(g.text) && unp.some(function (l) { return l.indexOf('id=' + g.id + ' ') > 0 && l.indexOf('placement=main') > 0; }); }), expectCase + ': every non-performance main gadget is a named "Not ported yet" panel with a §DASH-UNPORTED line (zero silent drops)', unp.slice(0, 3));
     ck(want.side.every(function (id) { return unp.some(function (l) { return l.indexOf('id=' + id + ' ') > 0 && l.indexOf('placement=side') > 0; }); }), expectCase + ': side-panel gadgets (' + want.side + ') each named in a §DASH-UNPORTED line', unp.map(function (l) { return l.slice(0, 60); }));
     var hasPerf = flat.some(function (g) { return g.kind === 'performance'; });
+    if (!hasPerf) ck(empty.length === 1 && dom.perf.length === 0, expectCase + ': no goals for this client -> the Performance gadget is detached, not shown empty', { empty: empty });
     if (hasPerf) ck(dom.perf.length === 4 && dom.perf.every(function (p) { return /^[^:]+: (\d+%|[\d,]+)$/.test(p.title) && /^#[0-9a-f]{6}$/.test(p.color) && p.tip; }) && new Set(dom.perf.map(function (p) { return p.goal; })).size === 4, expectCase + ': Performance gadget = 4 indicators with title, tooltip and colour', dom.perf);
     ck(errs.length === 0, expectCase + ': no page errors', errs.slice(0, 2));
     await page.close();
