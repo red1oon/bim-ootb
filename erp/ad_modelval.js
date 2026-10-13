@@ -549,10 +549,13 @@
   // shared cent-exact add (REAL columns; the balances are 2dp money columns)
   function addMoney(a, b) { return (Math.round(Number(a || 0) * 100) + Math.round(Number(b || 0) * 100)) / 100; }
   // shared standard-period lookup (MPeriod.getC_Period_ID: the client-calendar period containing the date)
-  function periodOf(db, date) {
+  function periodOf(db, date, org, client) {
     if (date == null || date === '') return null;
-    var d = String(date).slice(0, 10);
-    return db.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);
+    var d = String(date).slice(0, 10), cal = 0;                                   // MPeriod.getC_Calendar_ID :981-997 — org's own calendar wins, else the client's
+    if (Number(org) > 0) { var oi = db.prepare('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=?').get(Number(org)); cal = oi && oi.c ? Number(oi.c) : 0; }
+    if (!cal && Number(client) > 0) { var ci = db.prepare('SELECT c_calendar_id AS c FROM ad_clientinfo WHERE ad_client_id=?').get(Number(client)); cal = ci && ci.c ? Number(ci.c) : 0; }
+    if (!cal) return db.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);   // no calendar known: the old unscoped lookup (named)
+    return db.prepare("SELECT p.c_period_id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id WHERE y.c_calendar_id=? AND p.isactive='Y' AND p.periodtype='S' AND date(?)>=date(p.startdate) AND date(?)<=date(p.enddate) ORDER BY p.c_period_id").get(cal, d, d);
   }
 
   // installMJournalSaveHooks(db) — faithful port of MJournal.beforeSave (MJournal.java:298-380).
@@ -580,7 +583,7 @@
         var r = info.record;
         if (r.processed === 'Y') return null;
         var da = (info.derived && info.derived.dateacct) != null ? info.derived.dateacct : r.dateacct;
-        var p = periodOf(db, da);
+        var p = periodOf(db, da, r.ad_org_id, r.ad_client_id);
         if (!p) return 'PeriodNotFound: ' + da;
         if (Number(p.c_period_id) !== Number(r.c_period_id)) {  // :333-337 reassign ONLY off a standard period
           var cur = db.prepare('SELECT periodtype FROM c_period WHERE c_period_id=?').get(Number(r.c_period_id));
@@ -641,7 +644,7 @@
         var r = info.record;
         if (r.processed === 'Y') return null;
         var da = (info.derived && info.derived.dateacct) != null ? info.derived.dateacct : r.dateacct;
-        var p = periodOf(db, da);
+        var p = periodOf(db, da, r.ad_org_id, r.ad_client_id);
         if (!p) return 'PeriodNotFound: ' + da;
         if (Number(p.c_period_id) !== Number(r.c_period_id)) {
           var cur = db.prepare('SELECT periodtype FROM c_period WHERE c_period_id=?').get(Number(r.c_period_id));

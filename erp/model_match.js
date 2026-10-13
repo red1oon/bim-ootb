@@ -214,7 +214,7 @@
   function matchBeforeDelete(table, tableId, dbt) {
     return function (trx, r) {
       if (Y(r.posted)) {
-        if (!T.periodOpen(trx, r.datetrx, dbt)) return '@PeriodClosed@';
+        if (!T.periodOpen(trx, r.datetrx, dbt, r.ad_org_id)) return '@PeriodClosed@';
         trx.update(table, r, { posted: 'N' });
         factDeleteEx(trx, tableId, r[table + '_id']);
       }

@@ -170,7 +170,7 @@
     prepareIt: function (trx, inv) {
       var m = fire(trx, 'BEFORE_PREPARE', 'c_invoice', inv); if (m) { T.msg(trx, m); return 'IN'; }
       var d = T.dt(trx, inv.c_doctypetarget_id);
-      if (!d || !T.periodOpen(trx, inv.dateacct, d.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }   // testPeriodOpen throws
+      if (!d || !T.periodOpen(trx, inv.dateacct, d.docbasetype, inv.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }   // testPeriodOpen throws
       if (!invLines(trx, inv).length) { T.msg(trx, '@NoLines@'); return 'IN'; }
       if (String(inv.c_doctype_id || 0) !== String(inv.c_doctypetarget_id)) trx.update('c_invoice', inv, { c_doctype_id: inv.c_doctypetarget_id });
       if (!nz(inv.c_doctype_id)) { T.msg(trx, 'No Document Type'); return 'IN'; }
@@ -253,7 +253,7 @@
         T.addDescription(trx, 'c_invoice', cur, voided);                                         // :2530-2532
         trx.update('c_invoice', trx.get('c_invoice', inv.c_invoice_id), { ispaid: 'Y', c_payment_id: null });
       } else {                                                                                   // :2534-2559 processed → reverse
-        var d = T.dt(trx, inv.c_doctype_id), accrual = !T.periodOpen(trx, inv.dateacct, d.docbasetype) || !MO.backDateAllowed(trx, inv.dateacct);
+        var d = T.dt(trx, inv.c_doctype_id), accrual = !T.periodOpen(trx, inv.dateacct, d.docbasetype, inv.ad_org_id) || !MO.backDateAllowed(trx, inv.dateacct);
         return accrual ? MInvoice.reverseAccrualIt(trx, inv) : MInvoice.reverseCorrectIt(trx, inv);
       }
       var m2 = fire(trx, 'AFTER_VOID', 'c_invoice', inv); if (m2) { T.msg(trx, m2); return false; }   // :2561-2564
@@ -291,7 +291,7 @@
     var so = Y(inv.issotrx), dtRow = T.dt(trx, inv.c_doctype_id);
     var reversalDate = accrual ? trx.env.date : inv.dateacct; if (reversalDate == null) reversalDate = trx.env.date;   // :2627-2631
     var reversalDateInvoiced = accrual ? reversalDate : inv.dateinvoiced;
-    if (!T.periodOpen(trx, reversalDate, dtRow.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return null; }       // :2633 MPeriod.testPeriodOpen (throws)
+    if (!T.periodOpen(trx, reversalDate, dtRow.docbasetype, inv.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return null; }       // :2633 MPeriod.testPeriodOpen (throws)
     if (!MO.backDateAllowed(trx, reversalDate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return null; }           // :2634 testBackDateTrxAllowed (throws)
     var bd = MO.backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return null; }            // :2636-2641 periodClosedCheckForBackDateTrx
     var ra = reverseAllocations(trx, accrual, inv.c_invoice_id); if (ra) { T.msg(trx, ra); return null; }   // :2644
@@ -383,7 +383,7 @@
   var MPayment = {
     prepareIt: function (trx, p) {                                                          // :1905-2036
       var m = fire(trx, 'BEFORE_PREPARE', 'c_payment', p); if (m) { T.msg(trx, m); return 'IN'; }
-      if (!T.periodOpen(trx, p.dateacct, Y(p.isreceipt) ? 'ARR' : 'APP')) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
+      if (!T.periodOpen(trx, p.dateacct, Y(p.isreceipt) ? 'ARR' : 'APP', p.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
       if (nz(p.c_order_id) && !nz(p.c_invoice_id)) { var o = trx.get('c_order', p.c_order_id); if (o && o.docstatus === 'WP') { T.msg(trx, 'WebOrder WaitingPayment completion (MPayment.java:1930) not ported — named'); return 'IN'; } }
       if (!Y(p.isreceipt)) { var bp = trx.get('c_bpartner', p.c_bpartner_id); if (bp && (bp.socreditstatus === 'S' || bp.socreditstatus === 'H')) { T.msg(trx, bp.socreditstatus === 'S' ? '@BPartnerCreditStop@' : '@BPartnerCreditHold@'); return 'IN'; } }
       m = fire(trx, 'AFTER_PREPARE', 'c_payment', p); if (m) { T.msg(trx, m); return 'IN'; }
@@ -447,7 +447,7 @@
   var MAllocationHdr = {
     prepareIt: function (trx, h) {
       var m = fire(trx, 'BEFORE_PREPARE', 'c_allocationhdr', h); if (m) { T.msg(trx, m); return 'IN'; }
-      if (!T.periodOpen(trx, h.dateacct, 'CMA')) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
+      if (!T.periodOpen(trx, h.dateacct, 'CMA', h.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
       var ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }); if (!ls.length) { T.msg(trx, '@NoLines@'); return 'IN'; }
       var appr = Z;
       for (var i = 0; i < ls.length; i++) { var l = ls[i];
@@ -498,7 +498,7 @@
         });
         T.addDescription(trx, 'c_allocationhdr', trx.get('c_allocationhdr', h.c_allocationhdr_id), T.msgText(trx, 'Voided'));
       } else {                                                                                   // :609-625 processed → reverse
-        var accrual = !T.periodOpen(trx, h.datetrx, 'CMA');
+        var accrual = !T.periodOpen(trx, h.datetrx, 'CMA', h.ad_org_id);
         return accrual ? MAllocationHdr.reverseAccrualIt(trx, h) : MAllocationHdr.reverseCorrectIt(trx, h);
       }
       var m2 = fire(trx, 'AFTER_VOID', 'c_allocationhdr', h); if (m2) { T.msg(trx, m2); return false; }
@@ -531,7 +531,7 @@
   function allocReverseIt(trx, h, accrual) {
     if (h.isactive === 'N' || h.docstatus === 'VO' || h.docstatus === 'RE') { trx.say('§MODEL-WARN Allocation already reversed (not active) ' + h.c_allocationhdr_id); return true; }   // :847-857
     var reversalDate = accrual ? trx.env.date : h.dateacct; if (reversalDate == null) reversalDate = trx.env.date;
-    if (!T.periodOpen(trx, reversalDate, 'CMA')) { T.msg(trx, '@PeriodClosed@'); return false; }   // :864 MPeriod.testPeriodOpen (throws)
+    if (!T.periodOpen(trx, reversalDate, 'CMA', h.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return false; }   // :864 MPeriod.testPeriodOpen (throws)
     if (accrual) { T.msg(trx, 'MAllocationHdr.reverseIt(accrual) copyFrom path (MAllocationHdr.java:866-901) not ported — named'); return false; }
     var ch = { isactive: 'N', documentno: (h.documentno || '') + '^', docstatus: 'RE' }; if (!Y(h.posted)) ch.posted = 'Y';   // :904-911 de-activate (save)
     var r = ML.save(trx, 'c_allocationhdr', h, ch); if (!r.ok) throw new Error('Cannot de-activate allocation');
@@ -776,7 +776,7 @@
       // MAllocationHdr.beforeDelete :319-349
       beforeDelete: function (trx, h) {
         if (T.Y(h.posted)) {
-          if (!T.periodOpen(trx, h.datetrx, 'CMA')) throw new Error('@PeriodClosed@');   // MPeriod.testPeriodOpen(DateTrx, CMA, Org)
+          if (!T.periodOpen(trx, h.datetrx, 'CMA', h.ad_org_id)) throw new Error('@PeriodClosed@');   // MPeriod.testPeriodOpen(DateTrx, CMA, Org)
           trx.update('c_allocationhdr', h, { posted: 'N' });
           MM().factDeleteEx(trx, trx.q("SELECT ad_table_id AS t FROM ad_table WHERE lower(tablename)='c_allocationhdr'")[0].t, h.c_allocationhdr_id);
         }

@@ -132,7 +132,7 @@
     prepareIt: function (trx, o) {                                                           // :1536-1721
       var m = fire(trx, 'BEFORE_PREPARE', 'c_order', o); if (m) { T.msg(trx, m); return 'IN'; }
       var d = T.dt(trx, o.c_doctypetarget_id); if (!d) { T.msg(trx, 'No Document Type'); return 'IN'; }
-      if (!T.periodOpen(trx, o.dateacct, d.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }              // :1544-1549
+      if (!T.periodOpen(trx, o.dateacct, d.docbasetype, o.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }              // :1544-1549
       if (Y(o.issotrx) && o.deliveryviarule === 'S') {
         if (!nz(o.m_shipper_id)) { T.msg(trx, '@FillMandatory@ M_Shipper_ID'); return 'IN'; }
         T.msg(trx, 'calculateFreightCharge (MOrder.java:1726) not ported — named, refused rather than skipped'); return 'IN';
@@ -363,7 +363,7 @@
       var m = fire(trx, 'BEFORE_PREPARE', 'm_inout', io); if (m) { T.msg(trx, m); return 'IN'; }
       var d = T.dt(trx, io.c_doctype_id);
       if (nz(io.c_order_id) && nz(io.m_rma_id)) { T.msg(trx, '@OrderOrRMA@'); return 'IN'; }
-      if (!T.periodOpen(trx, io.dateacct, d.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
+      if (!T.periodOpen(trx, io.dateacct, d.docbasetype, io.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
       var ls = ioLines(trx, io); if (!ls.length) { T.msg(trx, '@NoLines@'); return 'IN'; }
       var vol = Z, wt = Z;
       ls.forEach(function (l) { var p = T.product(trx, l.m_product_id); if (p) { vol = vol.add(D(p.volume).multiply(D(l.movementqty))); wt = wt.add(D(p.weight).multiply(D(l.movementqty))); } });
@@ -478,7 +478,7 @@
         trx.update('m_inout', trx.get('m_inout', io.m_inout_id), { docstatus: 'VO' });          // :2645-2646
         var vc = voidConfirmations(trx, io); if (vc) { T.msg(trx, vc); return false; }
       } else {                                                                                   // :2649-2674 processed → reverse
-        var d = T.dt(trx, io.c_doctype_id), accrual = !T.periodOpen(trx, io.dateacct, d.docbasetype) || !backDateAllowed(trx, io.dateacct);
+        var d = T.dt(trx, io.c_doctype_id), accrual = !T.periodOpen(trx, io.dateacct, d.docbasetype, io.ad_org_id) || !backDateAllowed(trx, io.dateacct);
         return accrual ? MInOut.reverseAccrualIt(trx, io) : MInOut.reverseCorrectIt(trx, io);
       }
       var m2 = fire(trx, 'AFTER_VOID', 'm_inout', io); if (m2) { T.msg(trx, m2); return false; }   // :2676-2679
@@ -529,7 +529,7 @@
     var dt = T.dt(trx, io.c_doctype_id);
     var reversalDate = accrual ? trx.env.date : io.dateacct; if (reversalDate == null) reversalDate = trx.env.date;   // :2745-2748
     var reversalMovementDate = accrual ? reversalDate : io.movementdate;
-    if (!T.periodOpen(trx, reversalDate, dt.docbasetype)) { T.msg(trx, '@PeriodClosed@'); return null; }   // :2750-2754
+    if (!T.periodOpen(trx, reversalDate, dt.docbasetype, io.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return null; }   // :2750-2754
     if (!backDateAllowed(trx, reversalDate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return null; }       // :2755-2759
     var bd = backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return null; }                // :2761-2773
     if (!Y(io.issotrx)) { T.msg(trx, 'MInOut.reverseMatching → MMatchInv/MMatchPO.reverse (MInOut.java:2898-2934) not ported — receipt reversal named (P2P lane)'); return null; }   // :2776-2780

@@ -133,6 +133,16 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   var ro = proc(100, { StartDate: '2027-06-15 00:00:00' }, yb, 177), after = one('SELECT COUNT(*) AS n FROM c_period WHERE c_year_id IN (SELECT c_year_id FROM c_year WHERE c_calendar_id=?)', [cal5]).n;
   verdict('NC1.4-OVERLAP', [eq('refused', 'overlapping StartDate is refused (MPeriod.beforeSave :824-843: "Period overlaps with: Jul-27")', [ro.ok, /overlaps with/i.test(ro.summary)], [false, true]), eq('no_ops', 'one Trx, nothing committed', [ro.nops, after], [0, before])]);
   log('§NC1-OVERLAP summary=' + ro.summary.slice(0, 120));
+  // NC1.6 org -> calendar (MPeriod.getC_Calendar_ID :981-997; findByCalendar :170-190): org 12 gets its own calendar B whose Dec-2026 period is INACTIVE;
+  //   the client calendar (102) has an active Dec-2026 period. AutoPeriodControl=Y (GW schemas, history 10000d / future 100d) => open iff a period is found.
+  var calB = newCal('NC1-orgcal'), yB = newYear(calB, 2026); proc(100, {}, yB, 177);
+  var decB = one("SELECT c_period_id AS id FROM c_period WHERE c_year_id=? AND periodno=12", [yB]); db.run("UPDATE c_period SET isactive='N' WHERE c_period_id=?", [decB.id]);
+  var oi12 = one('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=12'); db.run('UPDATE ad_orginfo SET c_calendar_id=? WHERE ad_org_id=12', [calB]);
+  var tr = new ML.Trx(q, env()), dayX = '2026-12-01 00:00:00';
+  var o11 = MT.periodOpen(tr, dayX, 'SOO', 11), o12 = MT.periodOpen(tr, dayX, 'SOO', 12), o0 = MT.periodOpen(tr, dayX, 'SOO', 0);
+  verdict('NC1.6-ORG-CALENDAR', [eq('org11_client_cal', 'org without own calendar uses the CLIENT calendar (period found, open)', o11, true), eq('org12_own_cal', 'org 12 uses ITS calendar: period inactive -> not found -> closed', o12, false), eq('org0', 'org 0 uses the client calendar', o0, true)]);
+  log('§NC1 row=NC1.6 oracle=JAVA-SEMANTICS(MPeriod.java:981-997) org11=' + o11 + ' org12=' + o12 + ' org0=' + o0);
+  db.run('UPDATE ad_orginfo SET c_calendar_id=? WHERE ad_org_id=12', [oi12 ? oi12.c : null]);
   // NC1.7 special period type A inside a standard period is accepted (overlap test is per PeriodType)
   var spec = one("SELECT c_period_id AS id, startdate AS s, enddate AS e FROM c_period WHERE c_year_id=? AND periodno=12", [ya]);
   var yst = { getC_Calendar_ID: function () { return cal5; }, getAD_Client_ID: function () { return 11; }, getAD_Org_ID: function () { return 0; }, getC_Year_ID: function () { return ya; } }, rs = { ok: true, err: '' };

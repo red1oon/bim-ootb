@@ -44,14 +44,22 @@
   // primary schema has AutoPeriodControl='Y' the gate is today−Period_OpenHistory ≤ date ≤ today+Period_OpenFuture (today =
   // the recorded env.date) and the schema's C_Period_ID follows today's period (:740-748 — a WRITE); else C_PeriodControl 'O'.
   function addDays(d, n) { var t = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
-  function periodOf(trx, d) {
-    try { return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN ad_clientinfo ci ON ci.c_calendar_id=y.c_calendar_id WHERE ci.ad_client_id=? AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [trx.env.client, d, d])[0] || null; }
+  // MPeriod.getC_Calendar_ID(ctx, AD_Org_ID) :981-997 — the org's own calendar (AD_OrgInfo.C_Calendar_ID) wins, else the client's; findByCalendar :170-190
+  function calendarOf(trx, org) {
+    var cal = 0;
+    if (org) { var oi = trx.q('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=?', [org])[0]; cal = oi && oi.c ? Number(oi.c) : 0; }
+    if (!cal) { var ci = trx.q('SELECT c_calendar_id AS c FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0]; cal = ci && ci.c ? Number(ci.c) : 0; }
+    return cal;
+  }
+  function periodOf(trx, d, org) {
+    try { var cal = calendarOf(trx, org);
+      return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id WHERE y.c_calendar_id=? AND p.isactive='Y' AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?) ORDER BY p.c_period_id", [cal, d, d])[0] || null; }
     catch (e) { return undefined; }
   }
-  function periodOpen(trx, date, dbt) {
+  function periodOpen(trx, date, dbt, org) {
     var d = String(date || '').slice(0, 10);
     if (!d || !dbt) return false;
-    var per = periodOf(trx, d);
+    var per = periodOf(trx, d, org);
     if (per === undefined) { trx.say('§MODEL-PERIOD calendar tables absent → gate not evaluable (named)'); return true; }
     if (!per || per.isactive === 'N') return false;
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -59,7 +67,7 @@
     if (as && Y(as.autoperiodcontrol) && trx.env.date) {
       var today = String(trx.env.date).slice(0, 10);
       if (d < addDays(today, -Number(as.period_openhistory || 0)) || d > addDays(today, Number(as.period_openfuture || 0))) return false;
-      var tp = periodOf(trx, today);
+      var tp = periodOf(trx, today, org);
       if (tp && tp.c_period_id === per.c_period_id && String(as.c_period_id) !== String(per.c_period_id)) trx.update('c_acctschema', as, { c_period_id: per.c_period_id });
       return true;
     }
