@@ -17,7 +17,7 @@ function check(name, ok, info) { judged++; if (!ok) fails++; log('  §WL-CHECK '
   if (!L) { check('WL0 window_lens.js exists', false, 'missing'); log('§WL-VERDICT FAIL judged=' + judged + ' failed=' + fails); process.exit(1); }
   var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) }), db = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   var pstmts = 0, pfail = 0;   // the seed AS LOADED: idempiere.html applies patches/ad_seed.db.sql statement by statement on every load (FS-15)
-  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split('\n').forEach(function (l) { if (!/^(INSERT|CREATE|UPDATE|ALTER|DROP)/i.test(l)) return; try { db.run(l); pstmts++; } catch (e) { pfail++; } });
+  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); pstmts++; } catch (e) { pfail++; } });   // the loader's exact split
   log('§WL seed-as-loaded: patch statements ok=' + pstmts + ' failed=' + pfail);
   var q = function (sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; };
   var wins = q("SELECT ad_window_id AS id FROM ad_window WHERE isactive='Y' ORDER BY 1").map(function (r) { return r.id; });
