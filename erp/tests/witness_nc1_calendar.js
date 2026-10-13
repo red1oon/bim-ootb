@@ -151,7 +151,7 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   verdict('NC1.7-ADJUSTING', [eq('accepted', "PeriodType 'A' over a standard period is accepted (overlap is per PeriodType)", rs.ok, true)]);
 
   // ── LEGACY-MEASURED: rows the pilot produced for the same cases (scripts/bridge/nc1_legacy.js -> out/nc1_legacy.json) ──
-  var LJ = process.env.NC1_LEGACY || path.join(ERP, '..', '..', '..', 'bim-compiler', 'scripts', 'bridge', 'out', 'nc1_legacy.json');
+  var LJ = process.env.NC1_LEGACY || require('os').homedir() + '/bim-compiler/scripts/bridge/out/nc1_legacy.json';
   if (!fs.existsSync(LJ)) { log('§NC1-LEGACY INCONCLUSIVE no legacy file ' + LJ); verdict('NC1-LEGACY', []); }
   else {
     var L = JSON.parse(fs.readFileSync(LJ, 'utf8')).cases, key = function (p) { return p.no + '|' + p.name + '|' + p.s + '|' + p.e + '|' + p.t; };

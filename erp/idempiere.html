@@ -2503,7 +2503,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows;
         var _ki = window.AdGridTab ? AdGridTab.indexOfKey(rows, pkCol, _curKeyByTab[_activeTabIdx]) : -1;   // §GT keep-by-key
-        _recIdx = _ki >= 0 ? _ki : Math.min(_recIdx, Math.max(0, rows.length - 1));
+        _recIdx = _ki >= 0 ? _ki : (_curKeyByTab[_activeTabIdx] == null ? 0 : Math.min(_recIdx, Math.max(0, rows.length - 1)));   // no current key on THIS tab yet (child tab just entered) → row 0 (GridTab.query → setCurrentRow(0)); never the previous tab's row index
         if (tab === _curTab()) _setSel(tab);
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
@@ -3842,6 +3842,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
         // by SeqNo joined '_', ORDER BY display, + MRole.addAccessSQL's client clause (:902; the FS-5 clause).
         inp = _procTableDirSelect(pp, defaults[pp.columnName]);
+      }
+      else if (Number(pp.ad_reference_id) === 17 && pp.ad_reference_value_id != null) {
+        // WTableDirEditor over MLookupFactory.getLookup_List (ORDER BY Name): a List parameter is a combo of the reference's AD_Ref_List (name shown, value kept).
+        inp = document.createElement('select');
+        var o0 = el('option', null, ''); o0.value = ''; inp.appendChild(o0);   // blank first, as the ZK combo shows an unset value (a mandatory one is then refused by validateParams)
+        _sqlRows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=" + Number(pp.ad_reference_value_id) + " AND upper(isactive)='Y' ORDER BY name").forEach(function (r) { var o = el('option', null, r.name); o.value = r.value; inp.appendChild(o); });
+        inp.value = defaults[pp.columnName] != null ? defaults[pp.columnName] : '';
       }
       if (!inp) {
         inp = document.createElement('input');
