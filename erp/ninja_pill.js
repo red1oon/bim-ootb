@@ -104,9 +104,9 @@
       '<div style="margin-top:8px;font-size:12px;"><a id="np-sample" ' +
         'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample workbook (GardenWorld invoice summary — runnable as-is)</a></div>' +
       '<div style="margin-top:6px;font-size:12px;"><a id="np-sample-tb" ' +
-        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report template (Thai trial balance — pick dates, run, get .xlsx + PDF)</a></div>' +
+        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report: Thai trial balance (opening, movement, closing)</a></div>' +
       '<div style="margin-top:6px;font-size:12px;"><a id="np-sample-reg" ' +
-        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report template (Thai sales register — one row per sales invoice, grows as you sell)</a></div>' +
+        'style="color:#7fb3ff;text-decoration:none;cursor:pointer;">' + ico('doc', 13) + ' sample report: Thai sales register (grows as you sell)</a></div>' +
       '<div id="np-out" style="margin-top:12px;font-size:12px;"></div>';
     p.appendChild(box);
     document.body.appendChild(p);
