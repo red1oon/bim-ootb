@@ -23,7 +23,7 @@
   var VIEWS = [
     // adempiere.c_invoice_v (pg_get_viewdef): per invoice, or per VALID pay schedule row when IsPayScheduleValid='Y'; credit memo (3rd DocBaseType letter 'C') negates, AP (2nd letter 'P') multiplierAP -1.
     // Columns the dictionary SQL needs are kept; duedate (paymenttermduedate) is NOT ported (§DASH-UNPORTED duedate) - no PA_MeasureCalc row reads it.
-    "CREATE VIEW IF NOT EXISTS c_invoice_v AS " +
+    "CREATE TEMP VIEW IF NOT EXISTS c_invoice_v AS " +
     "SELECT i.c_invoice_id, i.ad_client_id, i.ad_org_id, i.isactive, i.issotrx, i.docstatus, i.processed, i.c_doctype_id, i.dateinvoiced, i.dateacct, i.c_bpartner_id, i.c_currency_id, i.c_conversiontype_id, i.ispaid, i.ispayschedulevalid, " +
     "NULL AS c_invoicepayschedule_id, CASE WHEN substr(d.docbasetype,3,1)='C' THEN i.grandtotal*-1 ELSE i.grandtotal END AS grandtotal, CASE WHEN substr(d.docbasetype,3,1)='C' THEN -1.0 ELSE 1.0 END AS multiplier, " +
     "CASE WHEN substr(d.docbasetype,2,1)='P' THEN -1.0 ELSE 1.0 END AS multiplierap, d.docbasetype FROM c_invoice i JOIN c_doctype d ON i.c_doctype_id=d.c_doctype_id WHERE i.ispayschedulevalid <> 'Y' " +
@@ -31,12 +31,12 @@
     "ips.c_invoicepayschedule_id, CASE WHEN substr(d.docbasetype,3,1)='C' THEN ips.dueamt*-1 ELSE ips.dueamt END, CASE WHEN substr(d.docbasetype,3,1)='C' THEN -1 ELSE 1 END, CASE WHEN substr(d.docbasetype,2,1)='P' THEN -1 ELSE 1 END, d.docbasetype " +
     "FROM c_invoice i JOIN c_doctype d ON i.c_doctype_id=d.c_doctype_id JOIN c_invoicepayschedule ips ON i.c_invoice_id=ips.c_invoice_id WHERE i.ispayschedulevalid='Y' AND ips.isvalid='Y'",
     // adempiere.rv_c_invoice: c_invoice LEFT JOIN doctype (bpartner / location joins are LEFT too, so they never drop an invoice); GrandTotal sign-corrected for credit memos.
-    "CREATE VIEW IF NOT EXISTS rv_c_invoice AS SELECT i.c_invoice_id, i.ad_client_id, i.ad_org_id, i.isactive, i.issotrx, i.docstatus, i.processed, i.c_doctype_id, i.dateinvoiced, i.dateacct, i.c_bpartner_id, i.c_currency_id, " +
+    "CREATE TEMP VIEW IF NOT EXISTS rv_c_invoice AS SELECT i.c_invoice_id, i.ad_client_id, i.ad_org_id, i.isactive, i.issotrx, i.docstatus, i.processed, i.c_doctype_id, i.dateinvoiced, i.dateacct, i.c_bpartner_id, i.c_currency_id, " +
     "CASE WHEN substr(d.docbasetype,3,1)='C' THEN i.grandtotal*-1 ELSE i.grandtotal END AS grandtotal, d.docbasetype FROM c_invoice i LEFT JOIN c_doctype d ON i.c_doctype_id=d.c_doctype_id"
   ];
   function mkq(db) { return function (sql, p) { var st = db.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }; }
   function install(db) {
-    var q = mkq(db), AP = (typeof module !== 'undefined' && module.exports) ? require('./ad_process.js') : global.AdProcess;
+    var q = mkq(db), AP = (typeof module !== 'undefined' && module.exports) ? require('./invoice_open.js') : global.OverlayInvoiceOpen;
     db.create_function('trunc', function (v, f) { return trunc(v, f); });
     db.create_function('invoiceopen', function (id, ips) {                      // adempiere.invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) over the SHARED transcription in ad_process
       var inv = q('SELECT i.*, d.docbasetype FROM c_invoice i LEFT JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE i.c_invoice_id=?', [id])[0];
@@ -47,7 +47,8 @@
       var r = AP.conversionRate(q, cur, ci.c, date, client, org); if (r == null) return null;
       var pr = q('SELECT stdprecision AS p FROM c_currency WHERE c_currency_id=?', [ci.c])[0], f = Math.pow(10, pr ? Number(pr.p) : 2);
       return Math.round(Number(amt) * r * f) / f; });
-    VIEWS.forEach(function (v) { db.run(v); });
+    // TEMP views: they live in the connection's temp schema and are NEVER part of db.export() / the saved database; a view the core itself ships (main schema) is left alone.
+    VIEWS.forEach(function (v) { var nm = /VIEW IF NOT EXISTS (\w+)/.exec(v)[1]; if (!has(q, nm, 'main')) db.run(v); });
     return db;
   }
   // MRole client / org where (getClientWhere(false) / getOrgWhere(false)): access = { clientIds:[0,client,...], orgIds:null (all orgs) | [0, org, ...] }
@@ -58,7 +59,7 @@
     return s;
   }
   function aliasOf(sql) { var m = /\bFROM\s+(\w+)(?:\s+(\w+))?/i.exec(sql); return m ? (m[2] && !/^(WHERE|JOIN|LEFT|INNER|ON)$/i.test(m[2]) ? m[2] : m[1]) : null; }
-  function has(q, t) { try { return q("SELECT 1 AS x FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=?", [t]).length > 0; } catch (e) { return false; } }
+  function has(q, t, schema) { try { return q("SELECT 1 AS x FROM " + (schema === 'main' ? 'sqlite_master' : 'sqlite_master') + " WHERE type IN ('table','view') AND lower(name)=?", [t]).length > 0; } catch (e) { return false; } }
   function restrictionSql(q, goalId, orgColumn) {   // MMeasureCalc.addRestrictions org part (:405-444); every other restriction type is named unported (zero rows on the pilot)
     if (!has(q, 'pa_goalrestriction')) return { sql: '' };
     var rows = q("SELECT goalrestrictiontype AS t, org_id AS o FROM pa_goalrestriction WHERE pa_goal_id=? AND isactive='Y'", [goalId]), orgs = [];

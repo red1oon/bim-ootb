@@ -6,7 +6,7 @@
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
-var ROOT = path.join(__dirname, '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
+var ROOT = path.join(__dirname, '..', '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
 var DST = JSON.parse(fs.readFileSync(process.env.DST_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/docstatus_legacy.json', 'utf8'));
 var ORA = JSON.parse(fs.readFileSync(process.env.DS_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/dashboard_select_legacy.json', 'utf8'));
 var server = http.createServer(function (req, res) { var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); fs.readFile(f, function (e, buf) { if (e) { res.writeHead(404); return res.end('404'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); res.end(buf); }); });
@@ -17,9 +17,9 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
   async function session(clientName, userName, expectCase) {
     var page = await browser.newPage(), logs = [], errs = [];
     page.on('console', function (m) { var t = m.text(); if (t.indexOf('§') === 0) logs.push(t); }); page.on('pageerror', function (e) { errs.push(String(e)); });
-    await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+    await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
     await page.evaluate(function () { return new Promise(function (r) { var q = indexedDB.deleteDatabase('erp_cache'); q.onsuccess = q.onerror = q.onblocked = function () { r(); }; }); });
-    await page.goto(base + '/idempiere.html', { waitUntil: 'networkidle' });
+    await page.goto(base + '/erp/idempiere.html', { waitUntil: 'networkidle' });
     await page.waitForFunction(function () { return !!window.__idmpDb; }, null, { timeout: 30000 });
     await page.waitForFunction(function () { return document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0; }, null, { timeout: 20000 });
     await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('" + clientName + "'))", { timeout: 6000 }); await page.waitForSelector('#idmp-login-step1:visible', { timeout: 8000 });
