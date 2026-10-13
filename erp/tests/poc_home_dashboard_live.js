@@ -7,6 +7,7 @@
 var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 var ROOT = path.join(__dirname, '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
+var DST = JSON.parse(fs.readFileSync(process.env.DST_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/docstatus_legacy.json', 'utf8'));
 var ORA = JSON.parse(fs.readFileSync(process.env.DS_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/dashboard_select_legacy.json', 'utf8'));
 var server = http.createServer(function (req, res) { var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); fs.readFile(f, function (e, buf) { if (e) { res.writeHead(404); return res.end('404'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); res.end(buf); }); });
 var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fails++; console.log('  §HDL-CHECK ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' ' + JSON.stringify(info))); }
@@ -26,8 +27,9 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
     await page.waitForSelector('#idmp-home', { timeout: 15000 }).catch(function () {});
     var dom = await page.evaluate(function () {
       var cols = [].map.call(document.querySelectorAll('#idmp-home .idmp-hcol'), function (c) { return [].map.call(c.querySelectorAll('.idmp-gadget'), function (g) { return { id: Number(g.getAttribute('data-gadget-id')), name: g.getAttribute('data-gadget-name'), kind: g.getAttribute('data-gadget-kind'), text: g.querySelector('.gb').textContent.slice(0, 40) }; }); });
+      var ds = [].map.call(document.querySelectorAll('#idmp-home .ds'), function (d) { return { id: Number(d.getAttribute('data-ds-id')), name: d.querySelector('.dl').textContent, count: d.getAttribute('data-ds-count') }; });
       var perf = [].map.call(document.querySelectorAll('#idmp-home .pi'), function (p) { return { goal: Number(p.getAttribute('data-goal-id')), title: p.querySelector('.pt').textContent, tip: p.title, color: p.getAttribute('data-color') }; });
-      return { present: !!document.getElementById('idmp-home'), cols: cols, perf: perf, placeholderHidden: (document.getElementById('idmp-placeholder') || {}).style && document.getElementById('idmp-placeholder').style.display === 'none' };
+      return { present: !!document.getElementById('idmp-home'), cols: cols, perf: perf, ds: ds, placeholderHidden: (document.getElementById('idmp-placeholder') || {}).style && document.getElementById('idmp-placeholder').style.display === 'none' };
     });
     var flat = [].concat.apply([], dom.cols), want0 = ORA.cases.filter(function (c) { return c.name.indexOf(expectCase) === 0; })[0];
     var empty = logs.filter(function (l) { return l.indexOf('§DASH-EMPTY') === 0; }).map(function (l) { return Number(/id=(\d+)/.exec(l)[1]); });   // legacy detaches a lazy gadget that has nothing to show (DashboardController.java:483-492)
@@ -37,12 +39,19 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
     ck(dom.present && flat.length === want.main.length, expectCase + ': Home shows ' + want.main.length + ' gadgets (main dashboard)', { got: flat.length });
     ck(JSON.stringify(flat.map(function (g) { return g.id; })) === JSON.stringify(want.main), expectCase + ': gadget ids in legacy column/line order', { got: flat.map(function (g) { return g.id; }), want: want.main });
     ck(JSON.stringify(flat.map(function (g) { return g.name; })) === JSON.stringify(wantNames), expectCase + ': gadget names ' + wantNames.join(' | '), flat.map(function (g) { return g.name; }));
-    var unp = logs.filter(function (l) { return l.indexOf('§DASH-UNPORTED') === 0; }), nonPerfMain = flat.filter(function (g) { return g.kind !== 'performance'; });
-    ck(nonPerfMain.every(function (g) { return /Not ported yet/.test(g.text) && unp.some(function (l) { return l.indexOf('id=' + g.id + ' ') > 0 && l.indexOf('placement=main') > 0; }); }), expectCase + ': every non-performance main gadget is a named "Not ported yet" panel with a §DASH-UNPORTED line (zero silent drops)', unp.slice(0, 3));
+    var unp = logs.filter(function (l) { return l.indexOf('§DASH-UNPORTED') === 0; }), nonPerfMain = flat.filter(function (g) { return g.kind !== 'performance' && g.kind !== 'docstatus'; });
+    ck(nonPerfMain.every(function (g) { return /Not ported yet/.test(g.text) && unp.some(function (l) { return l.indexOf('id=' + g.id + ' ') > 0 && l.indexOf('placement=main') > 0; }); }), expectCase + ': every main gadget other than performance / docstatus is a named "Not ported yet" panel with a §DASH-UNPORTED line (zero silent drops)', unp.slice(0, 3));
     ck(want.side.every(function (id) { return unp.some(function (l) { return l.indexOf('id=' + id + ' ') > 0 && l.indexOf('placement=side') > 0; }); }), expectCase + ': side-panel gadgets (' + want.side + ') each named in a §DASH-UNPORTED line', unp.map(function (l) { return l.slice(0, 60); }));
     var hasPerf = flat.some(function (g) { return g.kind === 'performance'; });
     if (!hasPerf) ck(empty.length === 1 && dom.perf.length === 0, expectCase + ': no goals for this client -> the Performance gadget is detached, not shown empty', { empty: empty });
     if (hasPerf) ck(dom.perf.length === 4 && dom.perf.every(function (p) { return /^[^:]+: (\d+%|[\d,]+)$/.test(p.title) && /^#[0-9a-f]{6}$/.test(p.color) && p.tip; }) && new Set(dom.perf.map(function (p) { return p.goal; })).size === 4, expectCase + ': Performance gadget = 4 indicators with title, tooltip and colour', dom.perf);
+    var dcase = DST.cases.filter(function (c) { return c.name.indexOf(expectCase) === 0; })[0], wantDs = dcase.indicators.filter(function (i) { return i.shown; }).map(function (i) { return i.name; });
+    // HARNESS: the indicators shown are the legacy ones in legacy order; FINDING: the System tenant overlay carries no role-0 form/process access (SYSTEM_ADMIN_LANE keeps it minimal), so an indicator that
+    // legacy opens through a FORM (Workflow Activities, form 117) is missing there - named below, never hidden.
+    var gotNames = dom.ds.map(function (d) { return d.name; }), missingDs = wantDs.filter(function (n) { return gotNames.indexOf(n) < 0; });
+    missingDs.forEach(function (n) { console.log('§DASH-GAP case=' + expectCase + ' indicator="' + n + '" shown on legacy, absent here: the twin dictionary lacks the role access it needs (AD_Form_Access role 0 / form 117)'); });
+    var subseq = gotNames.every(function (n) { return wantDs.indexOf(n) >= 0; }) && JSON.stringify(gotNames) === JSON.stringify(wantDs.filter(function (n) { return gotNames.indexOf(n) >= 0; }));
+    ck(subseq && dom.ds.every(function (d) { return /^\d+$/.test(d.count); }) && (expectCase === 'System' ? missingDs.length <= 1 : missingDs.length === 0), expectCase + ': Activities gadget = the legacy indicators in legacy order with numeric counts' + (missingDs.length ? ' (missing, reported as §DASH-GAP: ' + missingDs.join(',') + ')' : ' (' + wantDs.length + ' of ' + wantDs.length + ')'), { got: dom.ds, missing: missingDs });
     ck(errs.length === 0, expectCase + ': no page errors', errs.slice(0, 2));
     await page.close();
   }
