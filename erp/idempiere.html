@@ -173,6 +173,7 @@
   #idmp-home .idmp-gadget { border:1px solid var(--idmp-border,#d0d7de); border-radius:6px; background:var(--idmp-bg2,#fff); }
   #idmp-home .idmp-gadget > .gh { padding:6px 10px; font-weight:600; font-size:13px; border-bottom:1px solid var(--idmp-border,#d0d7de); }
   #idmp-home .idmp-gadget > .gb { padding:10px; font-size:12px; color:var(--idmp-muted); }
+  #idmp-home .ds-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; } #idmp-home .ds { border:1px solid var(--idmp-border,#d0d7de); border-radius:6px; padding:8px; text-align:center; cursor:pointer; } #idmp-home .ds .dn { font-size:22px; font-weight:700; } #idmp-home .ds .dl { font-size:11px; color:var(--idmp-muted); }
   #idmp-home .pi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
   #idmp-home .pi { text-align:center; color:var(--idmp-fg,inherit); } #idmp-home .pi svg { width:100%; max-width:130px; } #idmp-home .pi .pt { font-size:11px; }
   #idmp-placeholder { color:var(--idmp-muted); text-align:center; margin-top:14vh; font-size:14px; }
@@ -590,6 +591,7 @@
 <script src="goal_engine.js?v=1"></script>
 <script src="dashboard_home.js?v=1"></script>
 <script src="dashboard_gadgets.js?v=1"></script>
+<script src="dashboard_docstatus.js?v=1"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -2721,7 +2723,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   DashboardController main/side, ColumnNo/Line order). PORTED so far: performance (DashboardGadgets.performance over the goal engine). Every other selected gadget is shown with a NAMED placeholder and a
   //   `§DASH-UNPORTED` line - never dropped, never faked.
   function _homeQ(sql, p) { var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; }
-  var _homeEngineOn = false;
+  var _homeEngineOn = false, _homeDsOn = false;
   function _renderHome() {
     var host = $('idmp-content'), ph = host && host.querySelector('#idmp-placeholder');
     if (!ph || host.querySelector('#idmp-home') || !_session || !window.DashboardHome || !window.DashboardGadgets || !window.GoalEngine || !window.__idmpDb) return;
@@ -2750,6 +2752,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
         body.appendChild(grid); rendered++;
         console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
+      } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
+        if (!_homeDsOn) { try { window.DashboardDocStatus.install(window.__idmpDb, _homeQ); _homeDsOn = true; } catch (e) { console.log('§DASH-HOME docstatus install failed ' + e.message); } }
+        var dsess = { client: cl, user: usr, role: role, now: today + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2), access: { clientIds: cl === 0 ? [0] : [0, cl], orgIds: orgIds } };
+        var inds = window.DashboardDocStatus.indicators(_homeQ, dsess), dg = el('div', 'ds-grid');
+        inds.forEach(function (i) {
+          var t = el('div', 'ds'); t.setAttribute('data-ds-id', i.id); t.setAttribute('data-ds-count', i.count == null ? '' : i.count); t.title = i.error ? i.error : i.name;
+          t.appendChild(el('div', 'dn', i.count == null ? '?' : String(i.count))); t.appendChild(el('div', 'dl', i.name));
+          if (i.windowId) t.addEventListener('click', function () { try { openWindow(i.windowId, i.name); } catch (e) { console.log('§DASH-HOME zoom failed ' + e.message); } });
+          dg.appendChild(t);
+        });
+        body.appendChild(dg); rendered++;
+        console.log('§DASH-GADGET docstatus indicators=' + inds.length + ' ' + inds.map(function (i) { return i.name + '=' + i.count; }).join(' | ') + ' (click zooms to the window WITHOUT the indicator filter: §DASH-UNPORTED zoom-filter)');
       } else { body.textContent = 'Not ported yet (' + g.kind + ').'; unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=main'); }
       col.appendChild(box);
     });
