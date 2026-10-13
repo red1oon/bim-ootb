@@ -2503,7 +2503,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (created.length || hidden.length || updated.length || nStatus || rows.length !== recs.length) {
         _records = rows;
         var _ki = window.AdGridTab ? AdGridTab.indexOfKey(rows, pkCol, _curKeyByTab[_activeTabIdx]) : -1;   // §GT keep-by-key
-        _recIdx = _ki >= 0 ? _ki : Math.min(_recIdx, Math.max(0, rows.length - 1));
+        _recIdx = _ki >= 0 ? _ki : (_curKeyByTab[_activeTabIdx] == null ? 0 : Math.min(_recIdx, Math.max(0, rows.length - 1)));   // no current key on THIS tab yet (child tab just entered) → row 0 (GridTab.query → setCurrentRow(0)); never the previous tab's row index
         if (tab === _curTab()) _setSel(tab);
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
@@ -2837,6 +2837,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return _foldRowsSync(table, table + '_id', _sqlRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
       },
       stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
+      finReport: function (rid, opts) { return (window.__report && window.__report.fold) ? window.__report.fold(rid, opts) : null; },
       today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
       clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
@@ -2930,7 +2931,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (/^@.*@$/.test(s)) return '';
     return s;
   }
-  function _showProcPane(pane) {
+  // ProcessModalDialog (ADTabpanel.actionButton → ProcessModalDialog): a process launched from a record's Button field opens as a MODAL DIALOG over the
+  // window — the window, its tab strip and toolbar stay put; OK closes the dialog and refreshes the tab. Menu-launched processes keep the full pane.
+  function _closeProcDialog(refresh) {
+    var o = document.getElementById('idmp-procdlg'); if (o) o.remove(); _procRecord = null;
+    if (refresh) { try { renderActiveTab(); } catch (e) { console.log('§AD-BUTTON refresh failed ' + e.message); } }
+  }
+  function _showProcDialog(pane, isResult) {
+    var o = document.getElementById('idmp-procdlg');
+    if (!o) { o = el('div', null); o.id = 'idmp-procdlg'; o.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+      document.body.appendChild(o); }
+    o.innerHTML = ''; pane.style.cssText = 'margin:0;max-height:88vh;overflow:auto;min-width:420px;box-shadow:0 8px 28px rgba(0,0,0,.4)';
+    if (isResult) { var ok = el('button', 'run', 'OK'); ok.setAttribute('data-procdlg-ok', '1'); ok.style.marginTop = '12px'; ok.addEventListener('click', function () { _closeProcDialog(true); }); pane.appendChild(ok); }
+    o.appendChild(pane);
+    console.log('§AD-BUTTON dialog ' + (isResult ? 'result' : 'params') + ' modal=Y window-kept=Y');
+  }
+  function _showProcPane(pane, isResult) {
+    if (_procRecord) { _showProcDialog(pane, isResult); return; }
     $('idmp-toolbar').style.display = 'none'; $('idmp-tabstrip').style.display = 'none';
     var c = $('idmp-content'); c.innerHTML = ''; c.appendChild(pane);
   }
@@ -3391,7 +3408,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   });
 
   // openProcess — the entry for menu P/R leaves + the ?process= deep link (procSet-gated in applySession).
-  function openProcess(processId, name) {
+  function openProcess(processId, name, rec) {
+    _procRecord = rec || null;   // a button-launched process carries its record (Record_ID); a menu launch carries none
     if (!window.AdProcess) { status('Process engine not loaded'); return; }
     _ensureProcHandlers();
     var b = _b3(window.__idmpDb), proc;
@@ -3423,7 +3441,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // witness_p2p_invoice_match.js Stage 3/4 (§CF.3).
     if (proc.classname === 'org.compiere.process.CreateFromInvoice') { renderCreateFromPicker(proc); return; }
     if (proc.paras.length) renderProcParamForm(proc);
-    else runProcess(proc, {});
+    else runProcess(proc, {}, _procRecord ? _procRecord.recordId : undefined);
   }
   function renderOrderPicker(proc) {
     // Shared CO Sales Order picker for the two KIND-2 order-to-cash generators: Generate Shipments
@@ -3781,7 +3799,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
-  function _procTableDirSelect(pp, dflt) {
+  function _procTableDirSelect(pp, dflt, orderBy) {
     var tbl = String(pp.columnName).replace(/_ID$/i, ''), key = pp.columnName, sel = document.createElement('select');
     var blank = el('option', null, ''); blank.value = ''; sel.appendChild(blank);
     var ids = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower('" +
@@ -3790,7 +3808,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var disp = ids.map(function (c) { return "COALESCE(CAST(" + c + " AS TEXT),'')"; }).join(" || '_' || ");
     var cli = (_session && _session.client) ? Number(_session.client.id) : null, acc = '';
     if (cli != null && _colExists(tbl, 'AD_Client_ID')) acc = ' AND ' + (cli === 0 ? 'AD_Client_ID=0' : 'AD_Client_ID IN (0,' + cli + ')');
-    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY 2');
+    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY ' + (orderBy || '2'));
     rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (dflt != null && String(dflt) === String(r.k)) o.selected = true; sel.appendChild(o); });
     console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
     return sel;
@@ -3820,11 +3838,25 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         inp = document.createElement('select');
         ['', 'Y', 'N'].forEach(function (v) { var o = el('option', null, v || '—'); o.value = v; inp.appendChild(o); });
         inp.value = defaults[pp.columnName] === 'Y' || defaults[pp.columnName] === 'N' ? defaults[pp.columnName] : '';
+      } else if (Number(pp.ad_reference_id) === 18 && pp.ad_reference_value_id != null) {
+        // Table reference (WTableDirEditor over MLookupFactory.getLookup_Table): the AD_Ref_Table's key column of its table, identifiers shown, its OrderByClause kept.
+        var rt = _sqlRows("SELECT k.columnname AS kc, o.orderbyclause AS ob, lower(t.tablename) AS tn FROM ad_ref_table o JOIN ad_table t ON t.ad_table_id=o.ad_table_id JOIN ad_column k ON k.ad_column_id=o.ad_key WHERE o.ad_reference_id=" + Number(pp.ad_reference_value_id))[0];
+        if (rt && String(rt.kc).toLowerCase() === String(pp.columnName).toLowerCase()) {
+          var ob = rt.ob ? String(rt.ob).replace(new RegExp('^' + rt.tn + '\\.', 'i'), '').replace(/\b[A-Za-z_]+\./g, '') : null;
+          inp = _procTableDirSelect(pp, defaults[pp.columnName], ob);
+        }
       } else if (Number(pp.ad_reference_id) === 19 && !(pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '')) {
         // FS-9 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2i — Witness: W-ERP-FIRST-SETUP S24b). TableDir =
         // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
         // by SeqNo joined '_', ORDER BY display, + MRole.addAccessSQL's client clause (:902; the FS-5 clause).
         inp = _procTableDirSelect(pp, defaults[pp.columnName]);
+      }
+      else if (Number(pp.ad_reference_id) === 17 && pp.ad_reference_value_id != null) {
+        // WTableDirEditor over MLookupFactory.getLookup_List (ORDER BY Name): a List parameter is a combo of the reference's AD_Ref_List (name shown, value kept).
+        inp = document.createElement('select');
+        var o0 = el('option', null, ''); o0.value = ''; inp.appendChild(o0);   // blank first, as the ZK combo shows an unset value (a mandatory one is then refused by validateParams)
+        _sqlRows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=" + Number(pp.ad_reference_value_id) + " AND upper(isactive)='Y' ORDER BY name").forEach(function (r) { var o = el('option', null, r.name); o.value = r.value; inp.appendChild(o); });
+        inp.value = defaults[pp.columnName] != null ? defaults[pp.columnName] : '';
       }
       if (!inp) {
         inp = document.createElement('input');
@@ -3857,9 +3889,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return;
       }
       console.log('§PROC_PARAM_VALIDATE proc=' + proc.AD_Process_ID + ' ok required=[' + v.required.join(',') + '] supplied=[' + v.supplied.join(',') + ']');
-      runProcess(proc, params);
+      runProcess(proc, params, _procRecord ? _procRecord.recordId : undefined);
     });
     cancel.addEventListener('click', function () {
+      if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
       $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>';
       status('Ready');
     });
@@ -3991,6 +4024,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §AD-PROC-LIVE — a HEADER-ONLY voucher (report:c_payment, AD_PROCESS_FOLD_LANE §P2-tail-leg5): a payment has NO
     // lines, so it renders an Amount→Value breakdown (PayAmt/Discount/Write-off/…) instead of a line-item table.
     // r.headerOnly is set ONLY by foldVoucher; r has no `.lines` key so the receipt branch above never fires for it.
+    // FinReport (Create Report): the PA_Report statement for the chosen period — a column per PA_ReportColumn, a row per PA_ReportLine.
+    if (!absent && r && r.statement) {
+      var st = r.statement, stt = document.createElement('table'); stt.setAttribute('data-statement', '1'); var str = el('tr');
+      pane.appendChild(el('div', 'msg', st.title + ' · ' + (st.period ? 'Period ' + st.period.name : 'no period') + ' · Fact_Acct ' + st.scopeFacts + ' of ' + st.totalFacts + ' rows in scope'));
+      str.appendChild(el('th', null, ''));
+      st.cols.forEach(function (cn) { str.appendChild(el('th', 'r', cn)); }); stt.appendChild(str);
+      st.lines.forEach(function (ln) { var tr2 = el('tr'); if (ln.calc) tr2.style.fontWeight = '600'; tr2.appendChild(el('td', null, ln.name));
+        ln.cells.forEach(function (c) { var td = el('td', 'r', c == null ? '' : c); tr2.appendChild(td); }); stt.appendChild(tr2); });
+      pane.appendChild(stt);
+    }
     if (!absent && r && r.headerOnly && r.amounts) {
       var vt = document.createElement('table'), vtr = el('tr');
       ['Amount', 'Value'].forEach(function (h, i) { vtr.appendChild(el('th', i >= 1 ? 'r' : null, h)); }); vt.appendChild(vtr);
@@ -4128,7 +4171,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       status('Ready');
     });
     back.appendChild(bb); pane.appendChild(back);
-    _showProcPane(pane);
+    _showProcPane(pane, true);
   }
 
   // P3 (CRUD_INPLACE_EDIT_SESSION.md) — new-record mode: when New/Copy is invoked, the form view mounts a blank
@@ -4205,6 +4248,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var wrap = el('div', 'val'); wrap.appendChild(_postedButton(rec, _recIdx)); fld.appendChild(wrap);
     formEl.appendChild(fld);
   }
+  // AD-LAYER — Button fields bound to a process (WButtonEditor → ADTabpanel.actionButton → ProcessModalDialog): every displayed
+  // AD_Field whose column is Reference 28 (Button) with AD_Process_ID renders a labelled button that runs THAT process with
+  // Record_ID = this record. DocAction (the Process bar) and Posted (_appendPostedField) are the two buttons with their own surface.
+  // §NC1-BUTTON — Witness: W-NC1-UI (Year tab "Create Periods", AD_Process 100).
+  var _procRecord = null;   // {recordId, table} of the button that opened the process pane; consumed by runProcess calls from the param form
+  function _appendButtonFields(formEl, tab, rec, pk) {
+    if (!rec || pk == null || String(pk) === '' || !tab.id) return;
+    var btns = _sqlRows("SELECT f.name AS fname, c.columnname AS col, c.ad_process_id AS pid FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id " +
+      "WHERE f.ad_tab_id=" + Number(tab.id) + " AND COALESCE(f.isactive,'Y')='Y' AND COALESCE(f.isdisplayed,'Y')='Y' AND c.ad_reference_id=28 AND c.ad_process_id IS NOT NULL " +
+      "AND c.columnname NOT IN ('DocAction','Posted') ORDER BY f.seqno");
+    btns.forEach(function (bt) {
+      var fld = el('div', 'idmp-fld idmp-btn-fld');
+      fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', bt.col);
+      fld.appendChild(el('label', null, ''));
+      var wrap = el('div', 'val'), b = el('button', 'idmp-procbtn', String(bt.fname).trim());
+      b.setAttribute('data-proc-btn', bt.col); b.title = 'AD_Process ' + bt.pid;
+      b.addEventListener('click', function () {
+        console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' table=' + tab.tableName + ' record=' + pk);
+        _saveAndNavigate(function () { openProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName }); }, 'process');
+      });
+      wrap.appendChild(b); fld.appendChild(wrap); formEl.appendChild(fld);
+    });
+    if (btns.length) console.log('§AD-BUTTON form tab=' + tab.tableName + ' buttons=' + btns.map(function (x) { return x.col + '→' + x.pid; }).join(','));
+  }
   function buildForm(tab) {
     var rec = _records[_recIdx];
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
@@ -4252,6 +4319,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var fsmBar = buildDocActionBar(tab, rec); if (fsmBar) ef.appendChild(fsmBar);   // Process bar stays SEPARATE (T2)
       var mountEl = el('div', null); mountEl.id = 'idmp-inline-mount'; ef.appendChild(mountEl);
       _withFoldedEntry(tn, 'update', function () { window.__crud.editInline(tn, pk, mountEl, _inlineOptsFor(tn, ef)); });
+      _appendButtonFields(ef, tab, rec, pk);
       _appendPostedField(ef, tab, rec);
       return ef;
     }

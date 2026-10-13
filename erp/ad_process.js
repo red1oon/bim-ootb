@@ -85,6 +85,16 @@
     var RC = reportCore || null;
 
     // report:c_order / report:c_invoice — fold ONE document's receipt via report_overlay.foldReceipt.
+    // org.compiere.report.FinReport (AD_Process 202 "Create Report", PA_Report window button): Record_ID = PA_Report_ID, optional C_Period_ID
+    // (FinReport.prepare :134-135 + setPeriods :296-343: no period -> the one containing today, else the last).
+    registerHandler('org.compiere.report.FinReport', function (ctx, info) {
+      var p = (info && info.params) || {}, rid = Number(info && info.Record_ID);
+      if (!(rid > 0) || typeof ctx.finReport !== 'function') return { ok: false, message: rid > 0 ? 'FinReport: no report fold available' : '@FillMandatory@ PA_Report_ID', rows: 0 };
+      var res = ctx.finReport(rid, { periodId: Number(p.C_Period_ID) > 0 ? Number(p.C_Period_ID) : 0, today: ctx.today });
+      if (!res) return { ok: false, message: 'FinReport: report ' + rid + ' not in the bundle', rows: 0 };
+      return { ok: true, message: '@OK@', rows: res.lines.length, result: { statement: res } };
+    }, { kind: 'report' });
+
     function receiptHandler(reportKey) {
       return function (ctx, info) {
         if (!RC || typeof RC.foldReceipt !== 'function') return { ok: false, message: 'report core unavailable', rows: 0 };
@@ -592,7 +602,7 @@
   function readProcess(db, ad_process_id) {
     var p = db.prepare('SELECT ad_process_id,value,name,classname,isreport,procedurename,jasperreport,ad_reportview_id FROM ad_process WHERE ad_process_id=?').get(ad_process_id);
     if (!p) throw new Error('no ad_process row for ' + ad_process_id);
-    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
+    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id,ad_reference_value_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
     return {
       AD_Process_ID: p.ad_process_id, value: p.value, name: p.name,
       classname: p.classname || '', isReport: p.isreport === 'Y',
@@ -602,6 +612,7 @@
           name: r.name, columnName: r.columnname, mandatory: r.ismandatory === 'Y',
           ad_reference_id: r.ad_reference_id, type: refType(r.ad_reference_id),
           isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno,
+          ad_reference_value_id: r.ad_reference_value_id,   // List (17) parameter -> its AD_Ref_List set
           ad_val_rule_id: r.ad_val_rule_id   // FS-9: a TableDir param with a val rule keeps its text box (named)
         };
       })

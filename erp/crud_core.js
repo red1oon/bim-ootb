@@ -805,12 +805,13 @@
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
-      return f && f.isDisplayed && !f.isKey && type !== 'button' && type !== 'id' ? { f: f, type: type } : null;
+      // DefaultEditorFactory:121-123 — an ID (Reference 13) field that the dictionary DISPLAYS gets a WNumberEditor (read-only: the key is never updateable); undisplayed keys stay out.
+      return f && f.isDisplayed && type !== 'button' && (!f.isKey || type === 'id') ? { f: f, type: type } : null;
     }).filter(Boolean).map(function (ft) {
-      var f = ft.f, type = ft.type;
+      var f = ft.f, type = ft.type, idField = type === 'id'; if (idField) type = 'number';
       // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
       // read-only table/tab are always read-only.
-      var readonly = !!f.isReadOnly || roTable || !!f.isVirtual || (forVerb === 'update' && f.isUpdateable === false);
+      var readonly = idField || !!f.isReadOnly || roTable || !!f.isVirtual || (forVerb === 'update' && f.isUpdateable === false);
       // §P7 P7.1 — GridField.isMandatory():377-385's window exemptions, before anything else reads `required`.
       var exempt = gridFieldMandatoryExempt(f.columnName, !!f.isKey);
       if (exempt) exemptLog.push(String(f.columnName) + ':' + exempt);

@@ -44,14 +44,22 @@
   // primary schema has AutoPeriodControl='Y' the gate is today−Period_OpenHistory ≤ date ≤ today+Period_OpenFuture (today =
   // the recorded env.date) and the schema's C_Period_ID follows today's period (:740-748 — a WRITE); else C_PeriodControl 'O'.
   function addDays(d, n) { var t = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
-  function periodOf(trx, d) {
-    try { return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN ad_clientinfo ci ON ci.c_calendar_id=y.c_calendar_id WHERE ci.ad_client_id=? AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [trx.env.client, d, d])[0] || null; }
+  // MPeriod.getC_Calendar_ID(ctx, AD_Org_ID) :981-997 — the org's own calendar (AD_OrgInfo.C_Calendar_ID) wins, else the client's; findByCalendar :170-190
+  function calendarOf(trx, org) {
+    var cal = 0;
+    if (org) { var oi = trx.q('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=?', [org])[0]; cal = oi && oi.c ? Number(oi.c) : 0; }
+    if (!cal) { var ci = trx.q('SELECT c_calendar_id AS c FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0]; cal = ci && ci.c ? Number(ci.c) : 0; }
+    return cal;
+  }
+  function periodOf(trx, d, org) {
+    try { var cal = calendarOf(trx, org);
+      return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id WHERE y.c_calendar_id=? AND p.isactive='Y' AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?) ORDER BY p.c_period_id", [cal, d, d])[0] || null; }
     catch (e) { return undefined; }
   }
-  function periodOpen(trx, date, dbt) {
+  function periodOpen(trx, date, dbt, org) {
     var d = String(date || '').slice(0, 10);
     if (!d || !dbt) return false;
-    var per = periodOf(trx, d);
+    var per = periodOf(trx, d, org);
     if (per === undefined) { trx.say('§MODEL-PERIOD calendar tables absent → gate not evaluable (named)'); return true; }
     if (!per || per.isactive === 'N') return false;
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -59,7 +67,7 @@
     if (as && Y(as.autoperiodcontrol) && trx.env.date) {
       var today = String(trx.env.date).slice(0, 10);
       if (d < addDays(today, -Number(as.period_openhistory || 0)) || d > addDays(today, Number(as.period_openfuture || 0))) return false;
-      var tp = periodOf(trx, today);
+      var tp = periodOf(trx, today, org);
       if (tp && tp.c_period_id === per.c_period_id && String(as.c_period_id) !== String(per.c_period_id)) trx.update('c_acctschema', as, { c_period_id: per.c_period_id });
       return true;
     }
@@ -694,7 +702,7 @@
       for (var month = 0; month < 12; month++) {                                        // :250
         var start = new Date(Date.UTC(y, m, d));
         var name = PXS_.formatDate(trx, dateFormat, start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-        var endD = new Date(Date.UTC(y, m + 1, d - 1));                                 // :256-258 +1 month, -1 day
+        var endD = addMonthClamp(start); endD = new Date(endD.getTime() - 86400000);   // :256-258 cal.add(MONTH,1) CLAMPS to the target month's last day (GregorianCalendar), then add(DAY_OF_YEAR,-1)
         var startS = ts(start), endS = ts(endD);
         // MPeriod.findByCalendar(ctx, start, calendar, trx) :169 — the period of this calendar that contains the date
         var found = trx.q('SELECT p.c_period_id AS id FROM C_Period p INNER JOIN C_Year y ON (p.C_Year_ID=y.C_Year_ID) WHERE y.C_Calendar_ID=? AND p.IsActive=? AND p.PeriodType=? AND date(?) BETWEEN date(p.StartDate) AND date(p.EndDate) ORDER BY p.C_Period_ID',
@@ -706,11 +714,12 @@
           var cur = trx.get('c_period', found.id);                                    // :267-272 MPeriod.getCopy + setters
           S.MPeriod_save(trx, cur.row || cur, { c_year_id: year.getC_Year_ID(), periodno: month + 1, name: name, startdate: startS, enddate: endS }, year);
         }
-        y = start.getUTCFullYear(); m = start.getUTCMonth();
-        var nx = new Date(Date.UTC(y, m + 1, d)); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 first day of next month (end+1)
+        var nx = new Date(endD.getTime() + 86400000); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 cal.add(DAY_OF_YEAR,1): the day after this period's end
       }
       return true;
     };
+    // GregorianCalendar.add(MONTH,1): same day-of-month, clamped to the last day of the next month (Jan-31 -> Feb-28/29)
+    function addMonthClamp(dt) { var y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate(), last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(d, last))); }
     function ts(dt) { function p(n) { return n < 10 ? '0' + n : '' + n; } return dt.getUTCFullYear() + '-' + p(dt.getUTCMonth() + 1) + '-' + p(dt.getUTCDate()) + ' 00:00:00'; }
     // MPeriod.saveEx = beforeSave :799-846 → write → afterSave :849-873 (new: one C_PeriodControl per distinct DocBaseType of the client's active doc types)
     S.MPeriod_save = function (trx, row, fields, year) {
