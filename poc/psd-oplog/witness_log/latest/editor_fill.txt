@@ -19,5 +19,5 @@ PASS C4 save -> reset -> load: hashes equal = true (== true)
 PASS C4 undo removes the photo layer, redo brings it back, live == refold = true (== true)
 PASS C4 no page errors = 0 (== 0)
 PASS C5 phone: the Fill select is 44 px high (>= 44) and the page has no horizontal overflow = true (== true)
-C6 (reported) Fill import of a 400x800 picture through the file input: 243 ms
+C6 (reported) Fill import of a 400x800 picture through the file input: 242 ms
 ALL PASS 20

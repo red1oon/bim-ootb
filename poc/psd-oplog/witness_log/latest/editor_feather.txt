@@ -12,7 +12,7 @@ PASS F4 adjustment: pixels deeper inside than ceil(2*sqrt2*r)+2 == the unfeather
 PASS F4 adjustment: pixels farther outside than ceil(2*sqrt2*r)+2 == no adjustment (bitwise) = 0 (== 0)
 PASS F4 there are graded edge pixels (2296, > 0) = true (== true)
 PASS F5 layer mask: graded edge (2296 px), deep inside all 1 (529/529), far outside all 0 (473/473) = true (== true)
-F8 (reported) feather r=32 on 1024^2: 342 ms
+F8 (reported) feather r=32 on 1024^2: 287 ms
 PASS F6 the Feather slider sets params.feather (3) = 3 (== 3)
 PASS F6 mask from selection on the adjustment logs exactly 1 entry with feather 3 = true (== true)
 PASS F6 slider at 0: the entry has no feather key = ["kind","layer","op"] (== ["kind","layer","op"])

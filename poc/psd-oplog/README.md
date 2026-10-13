@@ -10,12 +10,13 @@ Every action is one line in an op log; the picture is the deterministic replay o
 - **Layers:** add, hide, reorder, rename, delete, opacity, ten blend modes; groups (one level), clipping to the layer below, masks (from selection, paint, invert, apply).
 - **Selection:** rectangle, ellipse, magic wand (tolerance, contiguous, add / subtract), grow / shrink, invert, feather on mask-from-selection.
 - **Adjustment layers** (live, re-editable, maskable): Hue / Saturation, Levels, Curves, Threshold, Posterize, Invert, Gradient map; live **filter layers**: Gaussian blur and Sharpen (maskable, re-editable; baked pixel layers in PSD).
+- **Effects:** drop shadow (offset, blur, colour, opacity) and outside outline for the active layer; one Apply = one ~85-byte log entry; baked into the layer's pixels; amendable.
 - **Shape tool:** rectangle, rounded rectangle, ellipse and line with fill and/or outline, anti-aliased, limited to the selection; one drag = one ~140-byte log entry.
 - **Gradient tool:** linear and radial, colour to colour or to transparent, onto pixels or onto a layer mask; limited to the selection; one drag = one ~110-byte log entry.
 - **Photos and text:** add a photo (Fit or Fill placement with centre / quarter anchors), caption text layer with optional shadow, Move / Scale with Apply / Cancel.
 - **History:** every entry listed, preview any step, go back to it, replay, Verify (rebuild from the log and compare), undo / redo, autosave, save / load the log, checkpoints.
 - **Out:** PNG, PSD (layers, masks, adjustment layers, merged image; checked by independent readers), the log itself.
-- **Built, not yet deployed:** the Gradient tool, Gradient map, filter layers and the Shape tool (suites `npm run editor_gradient` 49 checks, `npm run editor_filters` 48 checks, `npm run editor_shapes` 34 checks; specs `prompts/OPLOGPIC_GRADIENT_FILTERS.md`, `prompts/OPLOGPIC_DESIGN_KIT.md`).
+- **Built, not yet deployed:** the Gradient tool, Gradient map, filter layers, the Shape tool and Effects (suites `npm run editor_gradient` 49 checks, `npm run editor_filters` 48 checks, `npm run editor_shapes` 34 checks, `npm run editor_fx` 34 checks; specs `prompts/OPLOGPIC_GRADIENT_FILTERS.md`, `prompts/OPLOGPIC_DESIGN_KIT.md`).
 - **Not done:** real-phone and iOS tests, phone memory figures, native-speaker review of the Malay film wording.
 
 | Script | Question | Result (headless Chromium, SwiftShader software GL) |

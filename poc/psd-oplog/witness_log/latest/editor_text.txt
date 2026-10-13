@@ -19,5 +19,5 @@ PASS T5 page PSD bytes (1118768) == Node exporter bytes with two caption layers 
 PASS T5 no page errors (desktop) = 0 (== 0)
 PASS T7 phone: Add text button and panel controls >= 44 px high (44/44/44/44/44/44/44), no horizontal overflow = true (== true)
 PASS T7 tapping Add logs 2 entries (img, name), no page errors = true (== true)
-T8 (reported) Add caption: size 110 362 ms, size 300 339 ms; blob 4 MB each
+T8 (reported) Add caption: size 110 348 ms, size 300 344 ms; blob 4 MB each
 ALL PASS 20

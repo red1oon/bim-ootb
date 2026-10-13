@@ -1,0 +1,14 @@
+
+--- stderr ---
+ok   G1 two layers (multiply, screen) in a pass-through group at opacity 1: composite bitwise == the same document without the group (0 differing values)
+ok   G2 hiding the group == the group's layers never existed (bitwise)
+ok   G2 showing it again restores the original composite bitwise
+ok   G2 negative control: a multiply (isolated) group differs from the pass-through group when a child has a blend mode
+ok   G2 group opacity 0.5, mode "pass-through", over white with a half-width opaque layer and a half-height 50 % layer: max difference to the hand-computed values 0.00e+0 (limit 2e-6)
+ok   G2 group opacity 0.5, mode "normal", over white with a half-width opaque layer and a half-height 50 % layer: max difference to the hand-computed values 0.00e+0 (limit 2e-6)
+ok   G3 300 random sequences (4040 accepted ops, 3160 refused): invariants hold after every accepted op (each layer in exactly one list, order == walk(root), unique ids, parents consistent, clip bases, hasTree) []
+ok   G3 every refused op left the state exactly unchanged
+ok   G4 session (add group, 2 layers in, clip inside, group opacity/mode/name, mask on a child, hide/show group, move group, layer in and out, amend): live == refold
+ok   G4 dirty compositor bit-equal to the full tree composite with a group
+ok   G4 tree() shows the group "Sky" with its children and the invariants hold in the page state
+ok   G4 ungroup, then add + delete an empty group: live == refold

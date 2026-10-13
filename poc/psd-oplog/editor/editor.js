@@ -1,7 +1,7 @@
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, AO = root.AdjustOps, HO = root.HistoryOps, CK = root.Ckpt, MO = root.MaskOps, GO = root.GradOps, SPO = root.ShapeOps, XO = root.XformOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || XO.apply(st, o) || AO.apply(st, o) || IO.apply(st, o) || GO.apply(st, o) || SPO.apply(st, o) || HO.apply(st, o) || MO.apply(st, o, base) || SO.apply(st, o, base) ? undefined : base(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, AO = root.AdjustOps, HO = root.HistoryOps, CK = root.Ckpt, MO = root.MaskOps, GO = root.GradOps, SPO = root.ShapeOps, FXO = root.FxOps, XO = root.XformOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || XO.apply(st, o) || AO.apply(st, o) || IO.apply(st, o) || GO.apply(st, o) || SPO.apply(st, o) || FXO.apply(st, o) || HO.apply(st, o) || MO.apply(st, o, base) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
@@ -68,6 +68,8 @@
       shapeBox(a, b) { const p = params, c = (v) => Math.max(0, Math.min(W, Math.round(v))); let x0 = c(a[0]), y0 = c(a[1]), x1 = c(b[0]), y1 = c(b[1]);
         if (p.shift) { const dx = x1 - x0, dy = y1 - y0; if (p.skind === 'line') { const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), len = Math.hypot(dx, dy); x1 = c(x0 + Math.cos(ang) * len); y1 = c(y0 + Math.sin(ang) * len); } else { const s = Math.max(Math.abs(dx), Math.abs(dy)); x1 = c(x0 + Math.sign(dx || 1) * s); y1 = c(y0 + Math.sign(dy || 1) * s); } }
         if (p.skind !== 'line') { const t0 = Math.min(x0, x1), t1 = Math.max(x0, x1), u0 = Math.min(y0, y1), u1 = Math.max(y0, y1); x0 = t0; x1 = t1; y0 = u0; y1 = u1; } return { x0, y0, x1, y1 }; },
+      // Effects panel (Level 2l): Apply logs ONE fx entry on the active layer; returns '' or an error message
+      applyFx(o) { if (prevw || replaying || readOnly) return 'Not now.'; const l = st.L[o.layer]; if (!l) return 'Pick a layer first.'; try { FXO.validateFx(o); } catch (err) { return err.message; } const id = o.layer, snap = new Float32Array(l.pix); ed.structural(o, () => { st.L[id].pix.set(snap); }); return ''; },
       get shapePreview() { return cur && cur.shp && cur.pv ? { kind: params.skind, ...ed.shapeBox(cur.shp, cur.pv), r: params.sradius } : null; },
       commitShape(a, b) { if (prevw || replaying || readOnly) return; const p = params, l = st.L[p.layer]; if (!l || l.hid) { emit(); return; } const bx = ed.shapeBox(a, b), line = p.skind === 'line'; if (!line && (bx.x0 >= bx.x1 || bx.y0 >= bx.y1)) { emit(); return; } if (line && bx.x0 === bx.x1 && bx.y0 === bx.y1) { emit(); return; }
         const o = { op: 'shape', layer: p.layer, kind: line ? 'line' : p.skind === 'ellipse' ? 'ellipse' : 'rect', ...bx };

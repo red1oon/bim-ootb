@@ -1,11 +1,12 @@
 // History for the editor log: amend (re-edit a past stroke), labels, share-as-link, fingerprint. Spec: witness_log/HYPOTHESES.md "Level 1b" (A1-A3, R1-R2, V1, L1-L2).
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, IO = node ? require('./img_ops.js') : root.ImgOps;
-  const KEYS = { hard: ['c', 'a', 'r'], soft: ['c', 'a', 'r'], erase: ['c', 'a', 'r'], blur: ['s', 'r'], smudge: ['s', 'r'], shape: ['x0', 'y0', 'x1', 'y1', 'r', 'c', 'a', 'stroke'] };
+  const KEYS = { hard: ['c', 'a', 'r'], soft: ['c', 'a', 'r'], erase: ['c', 'a', 'r'], blur: ['s', 'r'], smudge: ['s', 'r'], shape: ['x0', 'y0', 'x1', 'y1', 'r', 'c', 'a', 'stroke'], fx: ['dx', 'dy', 'blur_x10', 'w', 'c', 'a'] };
   const inR = (v, lo, hi, loEx) => typeof v === 'number' && isFinite(v) && (loEx ? v > lo : v >= lo) && v <= hi;
   function checkSet(t, set) {
-    const k = t.op === 'smudge' ? 'smudge' : t.op === 'shape' ? 'shape' : t.kind; if (!KEYS[k]) throw new Error('amend: target kind ' + k + ' cannot be amended');
+    const k = t.op === 'smudge' ? 'smudge' : t.op === 'shape' ? 'shape' : t.op === 'fx' ? 'fx' : t.kind; if (!KEYS[k]) throw new Error('amend: target kind ' + k + ' cannot be amended');
     if (!set || typeof set !== 'object' || !Object.keys(set).length) throw new Error('amend: empty set');
+    if (k === 'fx') { const FXO = node ? require('./fx_ops.js') : root.FxOps, m = { ...t, ...set }; for (const key of Object.keys(set)) if (!KEYS.fx.includes(key)) throw new Error('amend: key "' + key + '" not allowed for fx'); try { FXO.validateFx(m); } catch (e) { throw new Error('amend: ' + e.message); } return; }
     if (k === 'shape') { const SPO = node ? require('./shape_ops.js') : root.ShapeOps, m = { ...t, ...set }; for (const key of Object.keys(set)) if (!KEYS.shape.includes(key)) throw new Error('amend: key "' + key + '" not allowed for shape'); try { SPO.validateShape(m, 16384); } catch (e) { throw new Error('amend: ' + e.message); } return; }   // canvas bounds are checked in editor.amend
     for (const key of Object.keys(set)) { if (!KEYS[k].includes(key)) throw new Error('amend: key "' + key + '" not allowed for ' + k); const v = set[key];
       if (key === 'c' && !(Array.isArray(v) && v.length === 3 && v.every((x) => inR(x, 0, 1)))) throw new Error('amend: c must be 3 numbers in [0,1]');
@@ -14,7 +15,7 @@
   // pure: returns the list with every amended target replaced by {...target, ...merged sets}; amend entries stay (they are no-ops when folded)
   function expand(list) {
     const patch = new Map();
-    list.forEach((o, idx) => { if (o.op !== 'amend') return; if (!Number.isInteger(o.i) || o.i < 0 || o.i >= idx) throw new Error('amend: target index ' + o.i + ' must be an earlier entry'); const t = list[o.i]; if (!t || (t.op !== 'stroke' && t.op !== 'smudge' && t.op !== 'shape')) throw new Error('amend: entry ' + o.i + ' is not a stroke, smudge or shape'); checkSet(t, o.set); patch.set(o.i, { ...(patch.get(o.i) || {}), ...o.set }); });
+    list.forEach((o, idx) => { if (o.op !== 'amend') return; if (!Number.isInteger(o.i) || o.i < 0 || o.i >= idx) throw new Error('amend: target index ' + o.i + ' must be an earlier entry'); const t = list[o.i]; if (!t || (t.op !== 'stroke' && t.op !== 'smudge' && t.op !== 'shape' && t.op !== 'fx')) throw new Error('amend: entry ' + o.i + ' is not a stroke, smudge, shape or effect'); checkSet(t, o.set); patch.set(o.i, { ...(patch.get(o.i) || {}), ...o.set }); });
     return patch.size ? list.map((o, i) => (patch.has(i) ? { ...o, ...patch.get(i) } : o)) : list;
   }
   const apply = (st, o) => o.op === 'amend';
@@ -31,6 +32,7 @@
       case 'del': return 'Delete layer ' + o.layer; case 'mv': return 'Move layer ' + o.layer + ' to ' + o.to; case 'vis': return (o.v ? 'Show' : 'Hide') + ' layer ' + o.layer; case 'name': return 'Rename layer ' + o.layer + ' to ' + o.name;
       case 'sel': if (o.kind === 'wand') return 'Magic wand at (' + Math.floor(o.x) + ', ' + Math.floor(o.y) + '), tolerance ' + o.tol + (o.contiguous ? ', contiguous' : ', all pixels') + (o.mode && o.mode !== 'new' ? ', ' + o.mode : ''); if (o.kind === 'grow') return (o.n > 0 ? 'Grow' : 'Shrink') + ' selection by ' + Math.abs(o.n); return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
       case 'grad': return 'Gradient ' + o.kind + (o.target === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ' (' + o.x0 + ',' + o.y0 + ') to (' + o.x1 + ',' + o.y1 + ')';
+      case 'fx': return (root.FxOps || require('./fx_ops.js')).label(o);
       case 'shape': return (root.ShapeOps || require('./shape_ops.js')).label(o);
       case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }

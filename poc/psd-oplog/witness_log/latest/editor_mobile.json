@@ -4,7 +4,7 @@
  "fails": [
   {
    "id": "M8",
-   "name": "blur-20 lag (reported): positions still pending at pointer-up 1x: 0, 4x: 103, 6x: 219; flush time 1x: 0 ms, 4x: 440 ms, 6x: 1389 ms (prediction: <= 400 ms at 4x)",
+   "name": "blur-20 lag (reported): positions still pending at pointer-up 1x: 0, 4x: 165, 6x: 238; flush time 1x: 0 ms, 4x: 834 ms, 6x: 1618 ms (prediction: <= 400 ms at 4x)",
    "value": false,
    "cmp": "==",
    "limit": true
@@ -145,27 +145,27 @@
    "1": {
     "hard14": {
      "median": 1.5,
-     "p95": 2.0999999940395355,
-     "max": 2.2000000029802322,
+     "p95": 2.300000011920929,
+     "max": 2.800000011920929,
      "n": 60
     },
     "soft60": {
-     "median": 3.7000000029802322,
-     "p95": 5.9000000059604645,
-     "max": 8.400000005960464,
+     "median": 4.5999999940395355,
+     "p95": 6.5,
+     "max": 7.799999997019768,
      "n": 60
     },
     "smudge30": {
-     "median": 3.199999988079071,
-     "p95": 5,
-     "max": 5.5,
+     "median": 3.5,
+     "p95": 4.799999997019768,
+     "max": 7.5,
      "n": 60
     },
     "blur20": {
-     "median": 7.300000011920929,
-     "p95": 8.899999991059303,
-     "max": 9.900000005960464,
-     "n": 104,
+     "median": 7.699999988079071,
+     "p95": 10,
+     "max": 11.099999994039536,
+     "n": 105,
      "flush": {
       "pending": 0,
       "ms": 0.10000000894069672,
@@ -175,63 +175,63 @@
    },
    "4": {
     "hard14": {
-     "median": 5.800000011920929,
-     "p95": 7.699999988079071,
-     "max": 8.5,
+     "median": 6.899999991059303,
+     "p95": 8.5,
+     "max": 9.700000002980232,
      "n": 60
     },
     "soft60": {
-     "median": 13.100000008940697,
-     "p95": 17.700000002980232,
-     "max": 18.700000002980232,
+     "median": 15.600000008940697,
+     "p95": 22.200000002980232,
+     "max": 24.5,
      "n": 60
     },
     "smudge30": {
-     "median": 10.299999997019768,
-     "p95": 14.899999991059303,
-     "max": 18.399999991059303,
+     "median": 11.400000005960464,
+     "p95": 17.200000002980232,
+     "max": 21.200000002980232,
      "n": 60
     },
     "blur20": {
-     "median": 13.100000008940697,
-     "p95": 17.299999997019768,
-     "max": 19.599999994039536,
-     "n": 180,
+     "median": 15.099999994039536,
+     "p95": 19.099999994039536,
+     "max": 22.600000008940697,
+     "n": 181,
      "flush": {
-      "pending": 103,
-      "ms": 440,
-      "maxPending": 107
+      "pending": 165,
+      "ms": 833.7000000029802,
+      "maxPending": 167
      }
     }
    },
    "6": {
     "hard14": {
-     "median": 8.099999994039536,
-     "p95": 9.599999994039536,
-     "max": 10,
+     "median": 11.299999997019768,
+     "p95": 15.399999991059303,
+     "max": 17,
      "n": 60
     },
     "soft60": {
-     "median": 22.799999997019768,
-     "p95": 34.1000000089407,
-     "max": 38.79999999701977,
+     "median": 26.599999994039536,
+     "p95": 35,
+     "max": 52.599999994039536,
      "n": 60
     },
     "smudge30": {
-     "median": 15.099999994039536,
-     "p95": 22.5,
-     "max": 38.79999999701977,
+     "median": 19.700000002980232,
+     "p95": 27.400000005960464,
+     "max": 32.5,
      "n": 60
     },
     "blur20": {
-     "median": 16.899999991059303,
-     "p95": 21.30000001192093,
-     "max": 30,
+     "median": 18.5,
+     "p95": 25.700000002980232,
+     "max": 30.700000002980232,
      "n": 180,
      "flush": {
-      "pending": 219,
-      "ms": 1388.6000000089407,
-      "maxPending": 223
+      "pending": 238,
+      "ms": 1617.5,
+      "maxPending": 241
      }
     }
    }
@@ -243,14 +243,14 @@
     "maxPending": 7
    },
    "4": {
-    "pending": 103,
-    "ms": 440,
-    "maxPending": 107
+    "pending": 165,
+    "ms": 833.7000000029802,
+    "maxPending": 167
    },
    "6": {
-    "pending": 219,
-    "ms": 1388.6000000089407,
-    "maxPending": 223
+    "pending": 238,
+    "ms": 1617.5,
+    "maxPending": 241
    }
   }
  },
@@ -259,38 +259,38 @@
 }
 
 --- stderr ---
-[12:11:09] section  M1 / M2 / M3
-[12:11:11] M1 pinch (finger distance x2.0) zoomed the view x2.000 (limit 2.0 +-5%)
-[12:11:11] M1 two-finger drag of (48, 30) px panned the view by (48.00, 30.00) px (limit 1 px)
-[12:11:11] M1 the whole pinch+pan gesture added no log entry
-[12:11:13] M2 a second finger cancels a live stroke: busy true -> false, layer hashes equal the pre-stroke ones, no log entr
-[12:11:13] M2 the finger left over after the gesture draws nothing
-[12:11:13] M2 after all fingers lifted, one finger draws again: exactly 1 stroke logged
-[12:11:19] M3 two-finger tap undoes one entry (7 -> 6), hashes equal a refold
-[12:11:19] M3 three-finger tap redoes it (6 -> 7), hashes equal a refold
-[12:11:19] M3 a slow (450 ms) two-finger touch (7) and a two-finger drag (7) do NOT undo
-[12:11:19] M1 no page errors during the gesture tests
-[12:11:19] section  M4 layout at
-[12:11:20] M4 390x844: page height 844 <= screen 844; workspace 80% of height (>= 50%); canvas 96% of width (>= 90%)
-[12:11:20] M4 390x844: smallest tool/swatch/top-bar touch target 44 px (>= 44); dock top at 93% of the screen height (>= 65%
-[12:11:20] M4 390x844: Menu opens a sheet that ends at the screen bottom (844/844) and shows the layers and export buttons i
-[12:11:20] M5 tapping the red swatch and setting size 30 in the dock: logged colour 229,57,53 (expected 229,57,53), size 30
-[12:11:20] M4 390x844: no page errors
-[12:11:21] M4 360x640: page height 640 <= screen 640; workspace 73% of height (>= 40%); canvas 96% of width (>= 90%)
-[12:11:21] M4 360x640: smallest tool/swatch/top-bar touch target 44 px (>= 44); dock top at 90% of the screen height (>= 65%
-[12:11:22] M4 360x640: Menu opens a sheet that ends at the screen bottom (640/640) and shows the layers and export buttons i
-[12:11:22] M4 360x640: no page errors
-[12:11:22] section  M6 share
-[12:11:23] M6 Share passes one PNG file (painting.png, 37441 bytes, image/png) to navigator.share; it equals the canvas for 
-[12:11:25] M6 without the Share API a touch device gets a "touch and hold to save" overlay showing the PNG (1024 px, equals 
-[12:11:25] M6 the overlay closes
-[12:11:26] M6 on a desktop (mouse) the Export PNG button downloads a file (painting.png)
-[12:11:27] section  M7 PWA insta
-[12:11:27] M7 manifest: name OplogPic, display standalone, start_url ./index.html, icons 192x192:200 512x512:200
-[12:11:29] M7 offline (a network fetch of an uncached URL fails: true; service worker controls the page): reload works, a st
-[12:11:29] M7 no page errors on the built page (online and offline)
-[12:11:29] section  M8 emulated 
-[12:11:54] M8 emulated 4x slower CPU: pointermove handler median <= 13.1 ms, p95 <= 17.7 ms across hard / soft-60 / smudge-3
-[12:11:54] M8 blur-20 lag (reported): positions still pending at pointer-up 1x: 0, 4x: 103, 6x: 219; flush time 1x: 0 ms, 4x
-[12:11:54] section  M9 single fi
-[12:11:57] M9 single-file build (532463 bytes) from file://: paints, 0 page errors, PSD identical to the Node exporter's
+[13:30:11] section  M1 / M2 / M3
+[13:30:13] M1 pinch (finger distance x2.0) zoomed the view x2.000 (limit 2.0 +-5%)
+[13:30:13] M1 two-finger drag of (48, 30) px panned the view by (48.00, 30.00) px (limit 1 px)
+[13:30:13] M1 the whole pinch+pan gesture added no log entry
+[13:30:15] M2 a second finger cancels a live stroke: busy true -> false, layer hashes equal the pre-stroke ones, no log entr
+[13:30:15] M2 the finger left over after the gesture draws nothing
+[13:30:15] M2 after all fingers lifted, one finger draws again: exactly 1 stroke logged
+[13:30:22] M3 two-finger tap undoes one entry (7 -> 6), hashes equal a refold
+[13:30:22] M3 three-finger tap redoes it (6 -> 7), hashes equal a refold
+[13:30:22] M3 a slow (450 ms) two-finger touch (7) and a two-finger drag (7) do NOT undo
+[13:30:22] M1 no page errors during the gesture tests
+[13:30:22] section  M4 layout at
+[13:30:23] M4 390x844: page height 844 <= screen 844; workspace 80% of height (>= 50%); canvas 96% of width (>= 90%)
+[13:30:23] M4 390x844: smallest tool/swatch/top-bar touch target 44 px (>= 44); dock top at 93% of the screen height (>= 65%
+[13:30:23] M4 390x844: Menu opens a sheet that ends at the screen bottom (844/844) and shows the layers and export buttons i
+[13:30:24] M5 tapping the red swatch and setting size 30 in the dock: logged colour 229,57,53 (expected 229,57,53), size 30
+[13:30:24] M4 390x844: no page errors
+[13:30:24] M4 360x640: page height 640 <= screen 640; workspace 73% of height (>= 40%); canvas 96% of width (>= 90%)
+[13:30:24] M4 360x640: smallest tool/swatch/top-bar touch target 44 px (>= 44); dock top at 90% of the screen height (>= 65%
+[13:30:25] M4 360x640: Menu opens a sheet that ends at the screen bottom (640/640) and shows the layers and export buttons i
+[13:30:25] M4 360x640: no page errors
+[13:30:25] section  M6 share
+[13:30:26] M6 Share passes one PNG file (painting.png, 37441 bytes, image/png) to navigator.share; it equals the canvas for 
+[13:30:28] M6 without the Share API a touch device gets a "touch and hold to save" overlay showing the PNG (1024 px, equals 
+[13:30:28] M6 the overlay closes
+[13:30:29] M6 on a desktop (mouse) the Export PNG button downloads a file (painting.png)
+[13:30:30] section  M7 PWA insta
+[13:30:30] M7 manifest: name OplogPic, display standalone, start_url ./index.html, icons 192x192:200 512x512:200
+[13:30:33] M7 offline (a network fetch of an uncached URL fails: true; service worker controls the page): reload works, a st
+[13:30:33] M7 no page errors on the built page (online and offline)
+[13:30:33] section  M8 emulated 
+[13:31:02] M8 emulated 4x slower CPU: pointermove handler median <= 15.6 ms, p95 <= 22.2 ms across hard / soft-60 / smudge-3
+[13:31:02] M8 blur-20 lag (reported): positions still pending at pointer-up 1x: 0, 4x: 165, 6x: 238; flush time 1x: 0 ms, 4x
+[13:31:03] section  M9 single fi
+[13:31:05] M9 single-file build (542498 bytes) from file://: paints, 0 page errors, PSD identical to the Node exporter's
