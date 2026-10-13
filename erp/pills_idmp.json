@@ -5,6 +5,14 @@
   "note": "SIBLING manifest for the iDempiere renderer surface (idempiere.html) — DECIDED separate from erp.html's pills.json (GATE-1, ERP_BOTTOM_BAR_AND_LIFECYCLE.md §RESUME): the action sets differ. fn bound BY ID in idmp_pills.js to the REAL existing idempiere.html handlers (window.IdmpPillActions — functions are not JSON). icon = a glyph in icons.js (verbatim from viewer/panels.js); nothing inlined, nothing hand-drawn. Retires the hand-rolled #idmp-pillrail (§PILL-REGISTRY principle: no controls outside the pill).",
   "pills": [
     {
+      "id": "windowlens",
+      "name": "Window anatomy",
+      "key": "",
+      "icon": "table",
+      "order": 1.35,
+      "note": "WINDOW-LENS (ERP_DEPTH_FILM.md §WINDOW-LENS): READ-ONLY - what the open window is made of (tabs, fields, buttons+process, access, numbering) from the dictionary, one SQL per line (window_lens.js), INCONCLUSIVE when a table is absent. Changes no window."
+    },
+    {
       "id": "setuplens",
       "name": "Setup check",
       "key": "",
