@@ -31,9 +31,9 @@ PASS GD6 (a) 8-bit-exact content: stored merged image within 1 level of the edit
 PASS GD6 (b) float content: merged max diff 8 (pixels over 1 level: 2972, REPORTED) <= steepest segment + 1 = 9 = true (== true)
 PASS GD6 ag-psd read-back: the stops of both layers equal the log (positions, rgb) = true (== true)
 PASS GD6 import: the PSD yields two `adjust` gradmap ops with the same stops, opacities 1 and 0.4 = true (== true)
-GD8 REPORTED at 1024^2: gradient-map composite (best of 5) 49 ms; one grad op 53 ms
-PASS GD8 1024^2 one grad op (53 ms) = true (== true)
-PASS GD8 1024^2 gradient-map full composite (best of 5, 49 ms, includes the flatten of one layer) = true (== true)
+GD8 REPORTED at 1024^2: gradient-map composite (best of 5) 46 ms; one grad op 55 ms
+PASS GD8 1024^2 one grad op (55 ms) = true (== true)
+PASS GD8 1024^2 gradient-map full composite (best of 5, 46 ms, includes the flatten of one layer) = true (== true)
 PASS GD4 a Gradient-tool drag (real mouse events) logs ONE `grad` entry with integer points, colours and alphas = true (== true)
 PASS GD4 4 drags (linear, radial to clear, mask, linear) logged 4 grad entries, each <= 256 bytes (max 115) = true (== true)
 PASS GD4 live hashes == refold of the log = true (== true)

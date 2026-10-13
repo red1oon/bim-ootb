@@ -20,8 +20,8 @@ PASS FX4 bad amends are refused (a key of the other kind, blur 401, w 0, a non-f
 PASS FX4 14 invalid fx ops (unknown kind, dx / dy / blur / w out of range or float, bad alpha / colour, a key of the other kind, unknown field / layer) throw = 14 (== 14)
 PASS FX4 and leave the state unchanged = 14 (== 14)
 PASS FX4 checkpoint then replay of later fx ops gives an equal composite = true (== true)
-FX7 REPORTED at 1024^2: shadow blur 10 3543 ms, outline w 8 78 ms
-PASS FX7 cost at 1024^2 REPORTED: shadow blur 10 3543 ms, outline w 8 78 ms (no limit pre-registered) = true (== true)
+FX7 REPORTED at 1024^2: shadow blur 10 2063 ms, outline w 8 42 ms
+PASS FX7 cost at 1024^2 REPORTED: shadow blur 10 2063 ms, outline w 8 42 ms (no limit pre-registered) = true (== true)
 PASS FX4 the Effects panel: Drop shadow Apply (real clicks) logs ONE `fx` entry with the chosen offset, blur, opacity and the active layer = true (== true)
 PASS FX4 Outline Apply logs ONE `fx` entry with width 9, white, opacity 1 = true (== true)
 PASS FX4 both entries <= 256 bytes and live hashes == refold = true (== true)

@@ -1,0 +1,22 @@
+
+--- stderr ---
+PASS EX2 ed.exportImage({format:png}) at the native size is byte-identical to the existing exportPNG() = true (== true)
+PASS EX2 the PNG pixels equal the Node composite of the saved log (REPORTED max diff 0, pixels over 1 level 0); the transparent corner is alpha 0 = true (== true)
+PASS EX1 JPEG starts FFD8FF (ffd8ff), WebP is RIFF....WEBP (RIFF / WEBP); decoded 1024x1024 (1024x1024, 1024x1024) = true (== true)
+PASS EX1 JPEG q90 vs the PNG export (both on white): mean abs error 0.51 (<= 3), 99th percentile 7.0 (<= 12); size 59 KB vs PNG 271 KB = true (== true)
+PASS EX1 WebP q90 vs the PNG export (both on white): mean abs error 0.53 (<= 3), 99th percentile 5.0 (<= 12); size 29 KB = true (== true)
+PASS EX3 PNG sizes decode to exactly 256 / 512 / 1024 / 2048 (256x256, 512x512, 1024x1024, 2048x2048) = true (== true)
+PASS EX3 1024 is native: the bytes equal the EX2 export (no resampling) = true (== true)
+PASS EX3 an unsupported size (300) and an unknown format (gif) are refused with a specific message = true (== true)
+PASS EX4 JPEG corner pixels equal the chosen background within 3 levels: white 255,255,255, black 0,0,0, colour (51,153,26) -> 51,153,26 = true (== true)
+PASS EX4 PNG and WebP keep transparency: alpha at the empty corner is 0 (PNG) and 0 (WebP), both 0; alpha at a painted pixel is 255 / 255 = true (== true)
+PASS EX5 after all those exports the log length (10) and the document hashes are unchanged = true (== true)
+PASS EX5 the Export panel (real clicks: JPEG, 512 px, quality 70) downloads "painting-512.jpg" which decodes to 512x512 JPEG; the log length is unchanged = true (== true)
+PASS EX5 the Quality slider and the Background list follow the format (PNG hides both, WebP hides Background) = true (== true)
+PASS EX5 no page errors (desktop) = 0 (== 0)
+PASS EX6 a browser that cannot encode WebP (toBlob stubbed): the option is hidden (png,jpeg), exportImage refuses with "WEBP is not supported by this browser", JPEG still works = true (== true)
+PASS EX6 phone 390x844: Export image controls >= 44 px high and inside the viewport (exim:44 ex-fmt:44 ex-q:44 ex-size:44 ex-bg:44 ex-go:44 ex-close:44), no horizontal overflow, page does not scroll = true (== true)
+PASS EX6 tapping Export on the phone (no file sharing in this browser) opens the hold-to-save view with the JPEG (painting.jpg, image/jpeg); nothing is logged = true (== true)
+PASS EX6 no page errors (phone) = 0 (== 0)
+
+all 18 checks pass

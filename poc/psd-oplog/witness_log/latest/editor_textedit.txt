@@ -24,8 +24,8 @@ PASS TE3 undo all (7 steps) / redo all: hashes == refold at every step, log leng
 PASS TE5 a caption made the old way (img without `txt`): the log entry has no `txt`, textOf is null and the Edit text button is hidden = true (== true)
 PASS TE5 it saves and loads with equal hashes and live == refold = true (== true)
 PASS TE3 no page errors (desktop) = 0 (== 0)
-TE6 REPORTED: {"size110":{"render_ms":4.5,"edit_ms":472.09999999403954,"blob_bytes":4194304},"size300":{"render_ms":15.700000002980232,"edit_ms":413.29999999701977,"blob_bytes":4194304}}
-PASS TE6 cost REPORTED: an edit at size 110 renders in 5 ms and applies in 472 ms, at size 300 16 / 413 ms; each edit adds a 4 MB blob to the log (no limit pre-registered) = true (== true)
+TE6 REPORTED: {"size110":{"render_ms":4.700000002980232,"edit_ms":250.5,"blob_bytes":4194304},"size300":{"render_ms":9.5,"edit_ms":225.20000000298023,"blob_bytes":4194304}}
+PASS TE6 cost REPORTED: an edit at size 110 renders in 5 ms and applies in 251 ms, at size 300 10 / 225 ms; each edit adds a 4 MB blob to the log (no limit pre-registered) = true (== true)
 PASS TE6 phone 390x844: the caption panel controls (text, size, colour, position, align, font, outline width / colour, Add, Cancel) are >= 44 px high and inside the viewport (addt:44 t-text:44 t-size:44 t-col:44 t-pos:44 t-align:44 t-family:44 t-ow:44 t-oc:44 t-add:44 t-cancel:44), no horizontal overflow, page does not scroll = true (== true)
 PASS TE6 tapping Add logs exactly 2 entries (img with the settings, name) = true (== true)
 PASS TE6 the Edit text button shows for the caption on the phone and is >= 44 px (44) = true (== true)

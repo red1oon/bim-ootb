@@ -33,6 +33,13 @@
       layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask, clip: !!l.clip, parent: l.parent }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
+      // image export (Level 1l): PNG / JPEG / WebP at a chosen size; logs nothing. PNG at the native size IS the old export.
+      async exportImage(o = {}) { const fmt = o.format || 'png', size = o.size || W, q = Math.max(0.1, Math.min(1, (o.quality || 90) / 100)); if (![256, 512, 1024, 2048, W].includes(size)) throw new Error('size must be 256, 512, 1024 or 2048'); if (!['png', 'jpeg', 'webp'].includes(fmt)) throw new Error('format must be png, jpeg or webp');
+        if (fmt === 'png' && size === W) return { bytes: await ed.exportPNG(), type: 'image/png', ext: 'png' };
+        const mime = 'image/' + fmt, cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d');
+        if (fmt === 'jpeg') { const bg = o.bg === 'black' ? [0, 0, 0] : Array.isArray(o.bg) ? o.bg.map((v) => Math.round(v * 255)) : [255, 255, 255]; g.fillStyle = 'rgb(' + bg.join(',') + ')'; g.fillRect(0, 0, size, size); }
+        g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(canvas, 0, 0, size, size);
+        const blob = await new Promise((res) => cv.toBlob(res, mime, q)); if (!blob || blob.type !== mime) throw new Error(fmt.toUpperCase() + ' is not supported by this browser'); return { bytes: new Uint8Array(await blob.arrayBuffer()), type: mime, ext: fmt === 'jpeg' ? 'jpg' : fmt }; },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
       begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (prevw || replaying || readOnly) return; if (xf && p.tool !== 'move') ed.xfApply();
         if (p.tool === 'move') { if (!cur && l && !l.hid) { if (xf && xf.layer !== p.layer) ed.xfApply(); cur = { mv: { x0: x, y0: y, dx0: xf ? xf.dx : 0, dy0: xf ? xf.dy : 0 } }; } return; }   /* the session starts on the first movement, so a tap (or the first finger of a two-finger tap) opens nothing */

@@ -15,8 +15,8 @@ Every action is one line in an op log; the picture is the deterministic replay o
 - **Gradient tool:** linear and radial, colour to colour or to transparent, onto pixels or onto a layer mask; limited to the selection; one drag = one ~110-byte log entry.
 - **Photos and text:** add a photo (Fit or Fill placement with centre / quarter anchors), caption text layer (alignment, serif / sans / mono, shadow, outline) that can be re-edited later (Edit text), Move / Scale with Apply / Cancel.
 - **History:** every entry listed, preview any step, go back to it, replay, Verify (rebuild from the log and compare), undo / redo, autosave, save / load the log, checkpoints.
-- **Out:** PNG, PSD (layers, masks, adjustment layers, merged image; checked by independent readers), the log itself.
-- **Built, not yet deployed:** the Gradient tool, Gradient map, filter layers, the Shape tool, Effects and editable text (suites `npm run editor_gradient` 49 checks, `npm run editor_filters` 48 checks, `npm run editor_shapes` 34 checks, `npm run editor_fx` 34 checks, `npm run editor_textedit` 30 checks; specs `prompts/OPLOGPIC_GRADIENT_FILTERS.md`, `prompts/OPLOGPIC_DESIGN_KIT.md`).
+- **Out:** PNG, JPEG and WebP at 256 / 512 / 1024 / 2048 px (JPEG background and quality choosable), PSD (layers, masks, adjustment layers, merged image; checked by independent readers), the log itself.
+- **Built, not yet deployed:** the Gradient tool, Gradient map, filter layers, the Shape tool, Effects, editable text and image export (suites `npm run editor_gradient` 49 checks, `npm run editor_filters` 48 checks, `npm run editor_shapes` 34 checks, `npm run editor_fx` 34 checks, `npm run editor_textedit` 30 checks, `npm run editor_imgexport` 18 checks; specs `prompts/OPLOGPIC_GRADIENT_FILTERS.md`, `prompts/OPLOGPIC_DESIGN_KIT.md`).
 - **Not done:** real-phone and iOS tests, phone memory figures, native-speaker review of the Malay film wording.
 
 | Script | Question | Result (headless Chromium, SwiftShader software GL) |

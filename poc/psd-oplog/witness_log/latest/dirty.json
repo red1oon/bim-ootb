@@ -25,23 +25,23 @@
   },
   "D5": {
    "name": "flat 8 layers",
-   "dirty_ms_median": 18.17732200026512,
-   "dirty_ms_max": 37.21977199614048,
-   "full_ms_median": 1405.9244090020657,
+   "dirty_ms_median": 7.686487004160881,
+   "dirty_ms_max": 16.921142011880875,
+   "full_ms_median": 677.7341919988394,
    "tiles_median": 9,
    "tiles_total": 1024,
-   "init_all_tiles_ms": 1628.0265650004148,
-   "speedup": 77.3449691314023
+   "init_all_tiles_ms": 810.6544429957867,
+   "speedup": 88.1721639068622
   },
   "D6": {
    "name": "tree doc",
-   "dirty_ms_median": 21.510161995887756,
-   "dirty_ms_max": 54.295554995536804,
-   "full_ms_median": 2054.7429990023375,
+   "dirty_ms_median": 9.75661601126194,
+   "dirty_ms_max": 37.73938599228859,
+   "full_ms_median": 1070.450353011489,
    "tiles_median": 6,
    "tiles_total": 1024,
-   "init_all_tiles_ms": 2258.972065001726,
-   "speedup": 95.52429216456653
+   "init_all_tiles_ms": 1137.0133629888296,
+   "speedup": 109.71533078434997
   }
  },
  "node": "v20.20.2",
