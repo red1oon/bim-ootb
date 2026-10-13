@@ -166,6 +166,7 @@
     m_pricelist_version: { before: function (trx, r) { if (!r.validfrom) r.validfrom = trx.env.date; if (!r.name) r.name = fmtDateUS(r.validfrom); return null; } },                   // MPriceListVersion.setName :177-187 (en_US DisplayType.Date)
     c_uom_conversion: { before: function (trx, r) { return uomConversionBefore(trx, r); } },                                                                                         // MUOMConversion.beforeSave
     c_year: { before: function (trx, r) { return yearBefore(r); } },                                                                                                                  // MYear.beforeSave
+    ad_role: { before: function (trx, r) { return roleBefore(r); }, afterNew: [function (trx, r) { roleAfterNew(trx, r); }] },                                                          // MRole.beforeSave / afterSave (new role)
     ad_org: { afterNew: [function (trx, r) { orgAfterNew(trx, r); }] },                                                                                                               // MOrg.afterSave (new org block)
     ad_sequence: { before: function (trx, r) { if (r.startnewmonth === 'Y' && r.startnewyear !== 'Y') r.startnewmonth = 'N'; return null; } },                                       // MSequence.beforeSave
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
@@ -302,6 +303,41 @@
       trx.insert('ad_role_orgaccess', f);
     });
     insertTree(trx, 'ad_org', r, 'OO');
+  }
+
+
+  // MRole.beforeSave :  a client role may not carry User Level System (AD_Message AccessTableNoUpdate, shown by the WS as "User Level"); measured.
+  function roleBefore(r) {
+    if (r.ismasterrole === 'Y') return null;
+    if (Number(r.ad_client_id) === 0) { r.userlevel = 'S  '; return null; }
+    if (r.userlevel === 'S  ') return 'User Level';
+    if (r.userlevel == null || String(r.userlevel).trim() === '') return 'Fill mandatory fields: User Level';
+    return null;
+  }
+  // MRole.afterSave (new role) :480-505 + updateAccessRecords :529-640: assign the role to SuperUser (100), then INSERT the window / process / form / workflow / document-action / info-window
+  // access rows the role's User Level allows (the six SELECTs of the Java, evaluated on the twin's dictionary; each access row is a CRUD op in the role's own op group).
+  // AD_Workflow is not in the slim seed (named). Pilot counts for ' CO' (331 / 383 / 41 / 40 / 840 / 15) equal the same predicates evaluated on the pilot (nc9_legacy.js predicateEqualsMeasured).
+  function roleAfterNew(trx, r) {
+    if (r.ismasterrole === 'Y') return;
+    function ins(t, f) { if (trx.env.uuid) f[t + '_uu'] = trx.env.uuid(); f.ad_client_id = r.ad_client_id; f.isactive = 'Y'; trx.insert(t, f); }
+    ins('ad_user_roles', { ad_org_id: 0, ad_user_id: 100, ad_role_id: r.ad_role_id });
+    if (r.ismanual === 'Y') return;
+    var lv = r.userlevel, al = lv === 'S  ' ? "('4','7','6')" : lv === ' C ' ? "('7','6','3','2')" : lv === ' CO' ? "('7','6','3','2','1')" : "('3','1','7')";
+    var alw = (lv !== 'S  ' && lv !== ' C ' && lv !== ' CO') ? al + " AND w.name NOT LIKE '%(all)%'" : al, n = {};
+    function tab(t) { try { return trx.q('SELECT 1 AS x FROM ' + t + ' LIMIT 1') && true; } catch (e) { return false; } }
+    function has(t, rid) { return trx.q('SELECT 1 AS x FROM ' + t + ' WHERE ad_role_id=? AND ' + rid.col + '=?', [r.ad_role_id, rid.id]).length > 0; }
+    if (tab('ad_window_access')) { n.window = 0; trx.q("SELECT DISTINCT w.ad_window_id AS id FROM ad_window w JOIN ad_tab t ON w.ad_window_id=t.ad_window_id JOIN ad_table tt ON t.ad_table_id=tt.ad_table_id WHERE w.isactive='Y' AND t.seqno=(SELECT MIN(seqno) FROM ad_tab xt WHERE xt.ad_window_id=w.ad_window_id) AND tt.accesslevel IN " + alw + ' ORDER BY w.ad_window_id')
+      .forEach(function (x) { if (!has('ad_window_access', { col: 'ad_window_id', id: x.id })) { ins('ad_window_access', { ad_org_id: r.ad_org_id, ad_window_id: x.id, ad_role_id: r.ad_role_id, isreadwrite: 'Y' }); n.window++; } }); }
+    if (tab('ad_process_access')) { n.process = 0; trx.q("SELECT DISTINCT p.ad_process_id AS id FROM ad_process p WHERE p.isactive='Y' AND accesslevel IN " + al + ' ORDER BY p.ad_process_id')
+      .forEach(function (x) { if (!has('ad_process_access', { col: 'ad_process_id', id: x.id })) { ins('ad_process_access', { ad_org_id: r.ad_org_id, ad_process_id: x.id, ad_role_id: r.ad_role_id, isreadwrite: 'Y' }); n.process++; } }); }
+    if (tab('ad_form_access')) { n.form = 0; trx.q("SELECT f.ad_form_id AS id FROM ad_form f WHERE f.isactive='Y' AND accesslevel IN " + al + ' ORDER BY f.ad_form_id')
+      .forEach(function (x) { if (!has('ad_form_access', { col: 'ad_form_id', id: x.id })) { ins('ad_form_access', { ad_org_id: r.ad_org_id, ad_form_id: x.id, ad_role_id: r.ad_role_id, isreadwrite: 'Y' }); n.form++; } }); }
+    if (tab('ad_document_action_access')) { n.docaction = 0;
+      trx.q("SELECT d.c_doctype_id AS dt, a.ad_ref_list_id AS act FROM c_doctype d JOIN ad_ref_list a ON a.ad_reference_id=135 WHERE d.isactive='Y' AND d.ad_client_id=? ORDER BY d.c_doctype_id, a.ad_ref_list_id", [r.ad_client_id])
+        .forEach(function (x) { if (!trx.q('SELECT 1 AS x FROM ad_document_action_access WHERE ad_role_id=? AND c_doctype_id=? AND ad_ref_list_id=?', [r.ad_role_id, x.dt, x.act]).length) { ins('ad_document_action_access', { ad_org_id: 0, c_doctype_id: x.dt, ad_ref_list_id: x.act, ad_role_id: r.ad_role_id }); n.docaction++; } }); }
+    if (tab('ad_infowindow_access')) { n.info = 0; trx.q("SELECT i.ad_infowindow_id AS id FROM ad_infowindow i JOIN ad_table tt ON i.ad_table_id=tt.ad_table_id WHERE i.isactive='Y' AND i.ad_client_id IN (0,?) AND tt.accesslevel IN " + al + ' ORDER BY i.ad_infowindow_id', [r.ad_client_id])
+      .forEach(function (x) { if (!has('ad_infowindow_access', { col: 'ad_infowindow_id', id: x.id })) { ins('ad_infowindow_access', { ad_org_id: r.ad_org_id, ad_infowindow_id: x.id, ad_role_id: r.ad_role_id }); n.info++; } }); }
+    trx.say('§MASTER-ROLE-ACCESS role=' + r.ad_role_id + ' level=' + lv + ' ' + JSON.stringify(n) + ' (AD_Workflow_Access not in this bundle)');
   }
 
   function install(registry) {
