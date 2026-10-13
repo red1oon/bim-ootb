@@ -35,6 +35,13 @@ Q() { docker exec postgres psql -U adempiere -d idempiere -At -c "set search_pat
   #   Same live-DB extraction, the seed's own ad_tab columns, idempotent on the primary key.
   BIMCOLS="ad_tab_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby,name,description,help,ad_table_id,ad_window_id,seqno,tablevel,issinglerow,isinfotab,istranslationtab,isreadonly,ad_column_id,hastree,whereclause,orderbyclause,commitwarning,ad_process_id,processing,ad_image_id,importfields,ad_columnsortorder_id,ad_columnsortyesno_id,issorttab,entitytype,included_tab_id,readonlylogic,displaylogic,isinsertrecord,isadvancedtab,parent_column_id,ad_tab_uu,ad_ctxhelp_id,treedisplayedon,maxqueryrecords,islookuponlyselection,isallowadvancedlookup,ad_tabtype,ishighvolume,deleteconfirmationlogic"
   Q "select format('INSERT OR IGNORE INTO ad_tab ($(echo "$BIMCOLS" | sed 's/\([a-z_0-9]*\)/\"\1\"/g')) VALUES ($(echo "$BIMCOLS" | sed 's/[a-z_0-9]*/%L/g'));', $BIMCOLS) from ad_tab where ad_tab_id=200500"
+  # §DASH-D0 (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY step D0; Witness W-DASH-DICT): the Home-dashboard + Performance Measurement dictionary the seed lacked or half-carried.
+  #   Same live-DB extraction: DDL from information_schema when the table is absent, every row INSERT OR IGNORE on the table's own columns (the seed's column set equals Postgres's for the tables it has).
+  for T in pa_dashboardcontent pa_dashboardcontent_access pa_dashboardpreference pa_goal pa_goalrestriction pa_measure pa_measurecalc pa_colorschema pa_ratio ad_note ad_recentitem; do
+    echo "CREATE TABLE IF NOT EXISTS $T ($(Q "select string_agg(column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end, ', ' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'"));"
+    DCOLS=$(Q "select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_schema='adempiere' and table_name='$T'")
+    Q "select 'INSERT OR IGNORE INTO $T ($DCOLS) VALUES (' || (select string_agg(quote_nullable(j.v), ',' order by j.ord) from json_each_text(row_to_json(x)) with ordinality as j(k, v, ord)) || ');' from $T x"
+  done
   python3 "$(dirname "$0")/build_model_patch.py" "$OUT"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
 } > "$OUT"
 echo "§AD-SEED-PATCH built $(grep -c '^INSERT' "$OUT") statements → $OUT"
