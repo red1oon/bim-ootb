@@ -16,6 +16,9 @@ function check(name, ok, info) { judged++; if (!ok) fails++; log('  §WL-CHECK '
 (async function () {
   if (!L) { check('WL0 window_lens.js exists', false, 'missing'); log('§WL-VERDICT FAIL judged=' + judged + ' failed=' + fails); process.exit(1); }
   var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) }), db = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
+  var pstmts = 0, pfail = 0;   // the seed AS LOADED: idempiere.html applies patches/ad_seed.db.sql statement by statement on every load (FS-15)
+  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split('\n').forEach(function (l) { if (!/^(INSERT|CREATE|UPDATE|ALTER|DROP)/i.test(l)) return; try { db.run(l); pstmts++; } catch (e) { pfail++; } });
+  log('§WL seed-as-loaded: patch statements ok=' + pstmts + ' failed=' + pfail);
   var q = function (sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; };
   var wins = q("SELECT ad_window_id AS id FROM ad_window WHERE isactive='Y' ORDER BY 1").map(function (r) { return r.id; });
   // independent recount: ONE grouped query from the field side (the lens goes window -> tab -> field)
@@ -49,6 +52,7 @@ function check(name, ok, info) { judged++; if (!ok) fails++; log('  §WL-CHECK '
     var lg = JSON.parse(fs.readFileSync(LEG, 'utf8')).windows, eq = 0, diff = [], onlySeed = [];
     wins.forEach(function (w) { var a = lg[w]; if (!a) { onlySeed.push(w); return; } var m = mine[w]; if (a.tabs === m.tabs && a.fields === m.fields && a.displayed === m.displayed) eq++; else diff.push({ w: w, legacy: [a.tabs, a.fields, a.displayed], seed: [m.tabs, m.fields, m.displayed], legacyOnlyTabs: a.tabList.filter(function (t) { return !q('SELECT 1 AS x FROM ad_tab WHERE ad_tab_id=? AND isactive=\'Y\'', [t.id]).length; }).map(function (t) { return t.id + ':' + t.name + '@' + t.created; }) }); });
     log('§WL-FINDINGS legacy windows=' + Object.keys(lg).length + ' equal=' + eq + ' differ=' + diff.length + ' onlyInSeed=' + onlySeed.length);
+    check('WL7 FINDINGS closed: seed-as-loaded equals the legacy pilot on tabs/fields/displayed for every legacy window', diff.length === 0, diff.map(function (d) { return d.w; }));
     diff.forEach(function (d) { log('§WL-GAP window=' + d.w + ' legacy[tabs,fields,displayed]=' + d.legacy + ' seed=' + d.seed + ' legacy-only tabs=' + JSON.stringify(d.legacyOnlyTabs)); });
   }
   var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§WL-VERDICT ' + v + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);

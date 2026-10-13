@@ -41,6 +41,16 @@ var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fail
       res.rows.push({ leaf: info.name, rendered: strip.length, lens: lt, same: strip.length === lt && JSON.stringify(strip) === JSON.stringify(names), strip: strip, names: names });
       await page.evaluate(function () { /* leave the pane; the next leaf click re-opens a window */ });
     }
+    // Project window (130): legacy has 8 tabs incl. the pilot's BIM tab (G-WL1, mirrored in patches/ad_seed.db.sql)
+    var pj = await page.evaluate(function () { var r = [].filter.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf'), function (x) { return x.querySelector('.nm').textContent.trim() === 'Project'; })[0]; if (!r) return false; r.click(); return true; });
+    if (!pj) console.log('§WLL project-window INCONCLUSIVE (no "Project" menu leaf for this role)');
+    else {
+      await page.waitForTimeout(600);
+      var pstrip = await page.evaluate(function () { var s = document.getElementById('idmp-tabstrip'); return s ? [].map.call(s.children, function (c) { return c.textContent.trim(); }) : []; });
+      await page.evaluate(function () { window.IdmpPillActions.windowlens(); });
+      var phead = await page.evaluate(function () { var h = document.querySelector('.idmp-procpane .sub'); return h ? h.textContent : ''; });
+      ck(pstrip.length === 8 && pstrip.indexOf('BIM') >= 0 && /8 tabs/.test(phead), 'Project window renders 8 tabs including BIM, lens agrees (legacy: 8)', { strip: pstrip, head: phead });
+    }
   } catch (e) { errs.push('flow: ' + e.message); }
   var bad = res.rows.filter(function (r) { return !r.same; });
   console.log('§WLL sampled windows=' + res.rows.length + ' same=' + (res.rows.length - bad.length) + ' differ=' + bad.length);
