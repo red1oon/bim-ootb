@@ -19,20 +19,20 @@
    "mb": 33.554432
   },
   "K3 heavy 40 (10 blur + 10 smudge + 20 hard/soft)": {
-   "fullMs": 2874,
-   "ckptMs": 358,
-   "ratio": 0.12,
+   "fullMs": 2821,
+   "ckptMs": 385,
+   "ratio": 0.14,
    "used": true
   },
   "K3 light 60 (hard/soft only)": {
    "fullMs": 340,
-   "ckptMs": 370,
-   "ratio": 1.09,
+   "ckptMs": 377,
+   "ratio": 1.11,
    "used": true
   },
   "K7": {
-   "withCkptMs": 990,
-   "withoutMs": 2907,
+   "withCkptMs": 1139,
+   "withoutMs": 3000,
    "used": true
   }
  },
@@ -49,13 +49,13 @@ ok   K6 three writes later exactly 2 slots are filled (k = 41, 29) and the marke
 ok   K4 reopen restored 41 entries from the checkpoint (used=true, k=41, tail 0)
 ok   K4 canUndo is true right after the reopen
 ok   K4 undo x3 then redo x3 after the reopen: hashes == refold of the log at every step, and back to the pre-close hashes
-ok   K5 rewindTo(33) from 41 (2165 ms): hashes == refold of the first 33 entries
+ok   K5 rewindTo(33) from 41 (2168 ms): hashes == refold of the first 33 entries
 ok   K5 redo x8 walks forward to the original state bit-exact
 ok   K5 a new stroke after rewinding clears redo and the log is the rewound prefix + 1
-ok   K3 heavy 40 (10 blur + 10 smudge + 20 hard/soft): reopen from a checkpoint at n-3 = 358 ms (IndexedDB read + sha256 verify + 3 tail entries) vs full refold 2874 ms (ratio 0.12), limit 0.35
+ok   K3 heavy 40 (10 blur + 10 smudge + 20 hard/soft): reopen from a checkpoint at n-3 = 385 ms (IndexedDB read + sha256 verify + 3 tail entries) vs full refold 2821 ms (ratio 0.14), limit 0.35
 ok   K3 heavy 40 (10 blur + 10 smudge + 20 hard/soft): the checkpoint reopen gives the same hashes as the full refold
-ok   K3 light 60 (hard/soft only): reopen from a checkpoint at n-3 = 370 ms (IndexedDB read + sha256 verify + 3 tail entries) vs full refold 340 ms (ratio 1.09), reported
+ok   K3 light 60 (hard/soft only): reopen from a checkpoint at n-3 = 377 ms (IndexedDB read + sha256 verify + 3 tail entries) vs full refold 340 ms (ratio 1.11), reported
 ok   K3 light 60 (hard/soft only): the checkpoint reopen gives the same hashes as the full refold
-ok   K7 real reload of a 40-entry heavy painting: 990 ms with a checkpoint (used=true) vs 2907 ms without; hashes equal in both
+ok   K7 real reload of a 40-entry heavy painting: 1139 ms with a checkpoint (used=true) vs 3000 ms without; hashes equal in both
 ok   K2 page: a corrupted stored checkpoint is rejected (k=17: buffer 1 fails its sha256 (corrupt)) and the full refold gives the same hashes
 ok   K1 no page errors

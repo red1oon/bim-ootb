@@ -52,6 +52,7 @@
     "editor_feather": "node editor/run_feather.js",
     "editor_gradient": "node editor/run_gradient.js",
     "editor_filters": "node editor/run_filters.js",
+    "editor_shapes": "node editor/run_shapes.js",
     "editor_text": "node editor/run_text.js",
     "editor_xform": "node editor/run_xform.js",
     "editor_redpill": "node editor/run_redpill.js",
