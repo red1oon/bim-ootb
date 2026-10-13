@@ -579,6 +579,7 @@
 <script src="erp_seam.js?v=1"></script>
 <script src="kanban_lens.js?v=4"></script>
 <script src="setup_lens.js?v=1"></script>
+<script src="window_lens.js?v=1"></script>
 <script src="kanban_host.js?v=1"></script>
 <!-- The ONE gesture — edit one rule → K records re-fold live, signed + reversible (docs/RULE_EDIT_SPEC.md). -->
 <script src="bigdecimal.js?v=1"></script>
@@ -2689,6 +2690,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   // §SETUP-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §SETUP-LENS — Witness: W-SETUP-LENS + poc_quicksetup_live): READ-ONLY overlay of what the logged-in client still lacks before its first invoice.
   //   One SQL per line from setup_lens.js; this host only adapts the db and renders the rows in the same process pane the wizard uses. Writes nothing.
+  // §WINDOW-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §WINDOW-LENS - Witness: W-WINDOW-LENS + poc_window_lens_live): READ-ONLY "what is the open window made of", straight from the dictionary.
+  //   Renders window_lens.js rows in the process pane; the open window and its tabs are NOT touched (the pane replaces the content area only while shown - re-open the window from the tab strip).
+  function _openWindowLens() {
+    var pane = el('div', 'idmp-procpane idmp-procform'); pane.appendChild(el('h3', null, 'Window anatomy'));
+    if (!window.WindowLens || _activeWin == null || !window.__idmpDb) { pane.appendChild(el('div', 'sub', 'Open a window first.')); _showProcPane(pane); return; }
+    var res = window.WindowLens.compute(function (sql, p) {
+      var st = window.__idmpDb.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out;
+    }, _activeWin, _session && _session.role ? _session.role.id : null, _session && _session.client ? _session.client.id : null);
+    pane.appendChild(el('div', 'sub', (res.name || ('Window ' + res.windowId)) + ' · ' + res.tabs + ' tabs · ' + res.fields + ' fields (' + res.displayed + ' displayed) · ' + res.verdict + ' · read-only'));
+    res.rows.forEach(function (r) {
+      var row = el('div', 'fld'); row.setAttribute('data-windowlens-row', r.id); row.setAttribute('data-status', r.status);
+      row.appendChild(el('label', null, (r.status === 'OK' ? '✔ ' : r.status === 'MISSING' ? '✖ ' : '? ') + r.label));
+      row.appendChild(el('div', 'sub', r.detail + ' — ' + r.cite)); pane.appendChild(row);
+    });
+    _showProcPane(pane);
+    console.log('§WINDOW-LENS window=' + res.windowId + ' tabs=' + res.tabs + ' fields=' + res.fields + ' displayed=' + res.displayed + ' verdict=' + res.verdict + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
+  }
   function _openSetupLens() {
     var pane = el('div', 'idmp-procpane idmp-procform'), cl = _session && _session.client ? _session.client : null;
     pane.appendChild(el('h3', null, 'Setup check'));
@@ -6118,6 +6136,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       formsave: function () { _formSave(); },
       reports: function () { if (window.__report && window.__report.menu) window.__report.menu(); },
       setuplens: function () { _openSetupLens(); },
+      windowlens: function () { _openWindowLens(); },
       // editmode pill RETIRED (Leg 5, FUNDAMENTAL LAW): the Glass/Gravity CRUD ring is Glass-only on the iDempiere
       //   surface (W-RING-LEAK) — a ring-toggle pill is vestigial here. The classic toolbar is the CRUD surface.
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
