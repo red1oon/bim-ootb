@@ -138,6 +138,25 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
       eq('access', 'Role_OrgAccess for EVERY non-manual role (legacy ' + L8.roleAccess.length + ' of ' + L8.nonManualRoles.length + ')', [racc.length, racc.join(',') === nonManual.join(',')], [L8.roleAccess.length, true]),
       eq('tree', 'Organization tree node parent 0, seq 999 (legacy ' + JSON.stringify(L8.treeNode) + ')', tnode && [tnode.p, tnode.s], [L8.treeNode.parent, L8.treeNode.seq])]);
   } else log('§NC6 NC8-ORG1 INCONCLUSIVE no nc8_legacy.json');
+  // NC-9 role (nc9_legacy.js): a new role receives the access rows its User Level allows. Rule validated on the pilot (predicateEqualsMeasured), applied to the twin's dictionary.
+  var N9p = path.join(path.dirname(LJ), 'nc9_legacy.json');
+  if (fs.existsSync(N9p)) {
+    var L9 = JSON.parse(fs.readFileSync(N9p, 'utf8')).cases, LV9 = { ' C ': "('7','6','3','2')", ' CO': "('7','6','3','2','1')", '  O': "('3','1','7')" };
+    function pred9(lv) { var al = LV9[lv], alw = lv === '  O' ? al + " AND w.name NOT LIKE '%(all)%'" : al, c = function (sql) { return one(sql).n; };
+      return { window: c("SELECT COUNT(DISTINCT w.ad_window_id) AS n FROM ad_window w JOIN ad_tab t ON w.ad_window_id=t.ad_window_id JOIN ad_table tt ON t.ad_table_id=tt.ad_table_id WHERE w.isactive='Y' AND t.seqno=(SELECT MIN(seqno) FROM ad_tab xt WHERE xt.ad_window_id=w.ad_window_id) AND tt.accesslevel IN " + alw),
+        process: c("SELECT COUNT(DISTINCT p.ad_process_id) AS n FROM ad_process p WHERE p.isactive='Y' AND accesslevel IN " + al), form: c("SELECT COUNT(*) AS n FROM ad_form f WHERE f.isactive='Y' AND accesslevel IN " + al),
+        docaction: c("SELECT COUNT(*) AS n FROM c_doctype d JOIN ad_ref_list a ON a.ad_reference_id=135 WHERE d.isactive='Y' AND d.ad_client_id=11"),
+        info: c("SELECT COUNT(*) AS n FROM ad_infowindow i JOIN ad_table tt ON i.ad_table_id=tt.ad_table_id WHERE i.isactive='Y' AND i.ad_client_id IN (0,11) AND tt.accesslevel IN " + al) }; }
+    [' CO', ' C ', '  O'].forEach(function (lv, ix) {
+      var nm = 'NC9-ROLE-' + ix, r9 = save('ad_role', { name: nm, userlevel: lv, ismanual: 'N' }), rid = (one('SELECT ad_role_id AS id FROM ad_role WHERE name=?', [nm]) || {}).id, P = pred9(lv);
+      var got = rid ? { window: nAcct('ad_window_access', 'ad_role_id', rid), process: nAcct('ad_process_access', 'ad_role_id', rid), form: nAcct('ad_form_access', 'ad_role_id', rid), docaction: nAcct('ad_document_action_access', 'ad_role_id', rid), info: nAcct('ad_infowindow_access', 'ad_role_id', rid) } : {};
+      verdict('NC9-ROLE-' + JSON.stringify(lv).replace(/\W/g, '_'), [eq('ok', 'save accepted', r9.r.ok, true), eq('rule_on_pilot', 'the access predicates reproduce the legacy pilot\'s measured counts for level ' + JSON.stringify(lv) + ' (window ' + L9[lv].window + ', process ' + L9[lv].process + ', form ' + L9[lv].form + ', doc actions ' + L9[lv].docaction + ', info ' + L9[lv].info + ')', L9[lv].predicateEqualsMeasured, true),
+        eq('twin_counts', 'twin rows per access table == the same predicates on the twin dictionary ' + JSON.stringify(P), got, P), eq('superuser', 'role assigned to SuperUser 100 (legacy ' + JSON.stringify(L9[lv].userRoles) + ')', rid ? q('SELECT ad_user_id AS u FROM ad_user_roles WHERE ad_role_id=? ORDER BY 1', [rid]).map(function (x) { return x.u; }) : null, L9[lv].userRoles)]);
+      log('§NC6 role level=' + JSON.stringify(lv) + ' twin=' + JSON.stringify(got));
+    });
+    var rs = save('ad_role', { name: 'NC9-ROLE-S', userlevel: 'S  ', ismanual: 'N' });
+    verdict('NC9-ROLE-SYSTEM', [eq('refused', 'a client role with User Level System is refused like legacy', [rs.r.ok, String(rs.r.error || '')], [false, L9['S  '].err.replace(/^.*AD_Role: /, '')])]);
+  } else log('§NC6 NC9 INCONCLUSIVE no nc9_legacy.json');
   var bad2 = results.filter(function (r) { return r.v !== 'PASS'; });
   log('§NC6-VERDICT ' + (bad2.length ? 'FAIL ' + bad2.map(function (r) { return r.id + '=' + r.v; }).join(',') : 'PASS') + ' cases=' + results.length);
   process.exit(bad2.length ? 1 : 0);
