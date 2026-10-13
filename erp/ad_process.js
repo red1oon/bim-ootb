@@ -699,10 +699,11 @@
     try { var F = R.M && R.M.SqlFn; if (!F) throw new Error('Aging: callouts/sqlfn.js (paymenttermduedate/paymenttermduedays) not loaded'); return fn(F); }
     finally { R.DB = prevDB; R.PO = prevPO; }
   }
-  function _agRate(q, from, to, when) {                     // MConversionRate.getRate, same ORDER BY as crud_overlay _rate
+  function _agRate(q, from, to, when, client, org) {          // MConversionRate.getRate(…, default type, client, org) == currencyRate(): the SAME pick as model_trade.rate / doc_poster.fxRate (W-NC5-RATES, legacy-measured)
     if (!Number(from) || !Number(to) || Number(from) === Number(to)) return 1;
-    var r = q('SELECT multiplyrate FROM c_conversion_rate WHERE c_currency_id=' + Number(from) + ' AND c_currency_id_to=' + Number(to) +
-      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(validfrom) AND date(validto) AND upper(isactive)='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC LIMIT 1")[0];
+    var r = q('SELECT cr.multiplyrate FROM c_conversion_rate cr JOIN c_conversiontype ct ON ct.c_conversiontype_id=cr.c_conversiontype_id AND ct.isdefault=' + "'Y'" + ' WHERE cr.c_currency_id=' + Number(from) + ' AND cr.c_currency_id_to=' + Number(to) +
+      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(cr.validfrom) AND date(cr.validto) AND upper(cr.isactive)='Y'" +
+      (client != null ? ' AND cr.ad_client_id IN (0,' + Number(client) + ')' : '') + ' AND cr.ad_org_id IN (0,' + Number(org || 0) + ') ORDER BY cr.ad_client_id DESC, cr.ad_org_id DESC, cr.validfrom DESC LIMIT 1')[0];
     return r && r.multiplyrate != null ? Number(r.multiplyrate) : null;
   }
   // invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) — the live function, transcribed.
@@ -717,7 +718,7 @@
     q("SELECT al.amount, al.discountamt, al.writeoffamt, a.c_currency_id, a.datetrx FROM c_allocationline al JOIN c_allocationhdr a ON a.c_allocationhdr_id=al.c_allocationhdr_id " +
       "WHERE al.c_invoice_id=" + Number(inv.c_invoice_id) + " AND a.isactive='Y'").forEach(function (a) {
       var t = (Number(a.amount || 0) + Number(a.discountamt || 0) + Number(a.writeoffamt || 0)) * mulAP;
-      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx); paid += rt == null ? t : t * rt;
+      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx, inv.ad_client_id, inv.ad_org_id); paid += rt == null ? t : t * rt;
     });
     var open;
     if (Number(ipsId) > 0 && sched) {
