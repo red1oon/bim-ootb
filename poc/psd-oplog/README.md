@@ -9,11 +9,13 @@ Every action is one line in an op log; the picture is the deterministic replay o
 - **Paint:** hard and soft brush, smudge, erase, blur brush, colour picker; flow, size, strength.
 - **Layers:** add, hide, reorder, rename, delete, opacity, ten blend modes; groups (one level), clipping to the layer below, masks (from selection, paint, invert, apply).
 - **Selection:** rectangle, ellipse, magic wand (tolerance, contiguous, add / subtract), grow / shrink, invert, feather on mask-from-selection.
-- **Adjustment layers** (live, re-editable, maskable): Hue / Saturation, Levels, Curves, Threshold, Posterize, Invert.
+- **Adjustment layers** (live, re-editable, maskable): Hue / Saturation, Levels, Curves, Threshold, Posterize, Invert, Gradient map.
+- **Gradient tool:** linear and radial, colour to colour or to transparent, onto pixels or onto a layer mask; limited to the selection; one drag = one ~110-byte log entry.
 - **Photos and text:** add a photo (Fit or Fill placement with centre / quarter anchors), caption text layer with optional shadow, Move / Scale with Apply / Cancel.
 - **History:** every entry listed, preview any step, go back to it, replay, Verify (rebuild from the log and compare), undo / redo, autosave, save / load the log, checkpoints.
 - **Out:** PNG, PSD (layers, masks, adjustment layers, merged image; checked by independent readers), the log itself.
-- **Planned (specified, not built):** gradient tool and Gradient Map, Gaussian blur and Sharpen filter layers: `prompts/OPLOGPIC_GRADIENT_FILTERS.md`.
+- **Planned (specified, not built):** Gaussian blur and Sharpen filter layers: `prompts/OPLOGPIC_GRADIENT_FILTERS.md` Part B.
+- **Built, not yet deployed:** the Gradient tool and Gradient map (suite `npm run editor_gradient`, 48 checks).
 - **Not done:** real-phone and iOS tests, phone memory figures, native-speaker review of the Malay film wording.
 
 | Script | Question | Result (headless Chromium, SwiftShader software GL) |

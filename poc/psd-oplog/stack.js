@@ -104,7 +104,7 @@
     return sum * pow2int(n);
   }
   // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
-  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl', 'gradmap'];
   // natural cubic spline through integer control points ([x,y] in 0..255), double precision with + - * / only; constant outside [x_first, x_last]; result clipped to [0,1]
   function curveFn(points) {
     const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), M = new Array(n).fill(0);
@@ -136,12 +136,19 @@
     const t = [[cc, x, 0], [x, cc, 0], [0, cc, x], [0, x, cc], [x, 0, cc], [cc, 0, x]][sec], q = (v) => { v = F(v + m); return v < 0 ? 0 : v > 1 ? 1 : v; };
     return [q(t[0]), q(t[1]), q(t[2])];
   }
+  // gradient map (Level 2i, A.2): luminance (the threshold weights, rounded to 8 bits) indexes a 256-entry table made from integer stops [pos, r, g, b] (r g b 0..255), linear between stops
+  function gradmapLUT(stops) {
+    const lut = new Float32Array(768); let j = 0;
+    for (let v = 0; v < 256; v++) { while (j < stops.length - 2 && v > stops[j + 1][0]) j++; const s0 = stops[j], s1 = stops[j + 1], f = F(F(v - s0[0]) / (s1[0] - s0[0]));
+      for (let k = 0; k < 3; k++) { const p = F(s0[k + 1] / 255), q = F(s1[k + 1] / 255); lut[v * 3 + k] = F(p + F(f * F(q - p))); } }
+    return lut;
+  }
   function applyAdjust(back, a, n) {
-    const rgb = a.kind === 'threshold' || a.kind === 'hsl' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
+    const rgb = a.kind === 'threshold' || a.kind === 'hsl' || a.kind === 'gradmap' ? null : adjustFn(a.kind, a.params), lvl = a.params.level, lut = a.kind === 'gradmap' ? gradmapLUT(a.params.stops) : null;
     for (let i = 0; i < n; i++) {
       const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
       const c0 = F(back[i*4] / al), c1 = F(back[i*4+1] / al), c2 = F(back[i*4+2] / al); let o0, o1, o2;
-      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
+      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else if (a.kind === 'gradmap') { const l8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = lut[l8 * 3]; o1 = lut[l8 * 3 + 1]; o2 = lut[l8 * 3 + 2]; } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
       const ik = F(1 - k); back[i*4] = F(al * (k >= 1 ? o0 : F(F(c0 * ik) + F(o0 * k)))); back[i*4+1] = F(al * (k >= 1 ? o1 : F(F(c1 * ik) + F(o1 * k)))); back[i*4+2] = F(al * (k >= 1 ? o2 : F(F(c2 * ik) + F(o2 * k))));
     }
   }
@@ -267,6 +274,6 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, NONSEP, ADJ_KINDS, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, ADJ_KINDS, gradmapLUT, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);

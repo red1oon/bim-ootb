@@ -5,4 +5,10 @@ PASS P2 desktop: nothing covers the pill (elementFromPoint) and it lies inside t
 PASS P5 computed colour rgb(229,57,53) is red (r >= 200, g <= 90, b <= 90) = true (== true)
 PASS P2 phone: nothing covers the pill and it lies inside the viewport = true (== true)
 PASS P3 phone: the pill is 44 x 44 px (>= 44 x 44), no horizontal overflow, Undo / Redo / Share / Menu fully visible and >= 44 px (undo:true redo:true m-share:true m-menu:true) = true (== true)
-ALL PASS 5
+PASS G1 exactly one #guidelink, directly before #redpill (next sibling redpill), href https://red1oon.github.io/bim-ootb/oplogpic/guide.html, target _blank, rel noopener, aria-label "User guide", inline svg true, img 0 = true (== true)
+PASS G2 desktop: nothing covers the guide link and it lies inside the viewport = true (== true)
+PASS G2 phone: guide link 44 x 44 px (>= 44), not covered, inside, no horizontal overflow, Undo / Redo / Share / Menu / red pill fully visible and >= 44 px (undo:true redo:true m-share:true m-menu:true redpill:true) = true (== true)
+PASS G3 guide.html is built with the headings The basics / Photos and text / Advanced / History / Phone / Limits, the live app link, no script; sw.js caches it = true (== true)
+PASS G4 the served guide is HTTP 200, text/html, and its text contains Move tool / Feather / Fill select / Show raw entries / Hue / Saturation / Verify (derived from README.md) = true (== true)
+PASS G5 sw version: README-only change differs (0252540047 vs c16af5c627), index.html-only change differs (051625d2f2), identical sources give the same version (c16af5c627) = true (== true)
+ALL PASS 11

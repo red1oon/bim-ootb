@@ -1,0 +1,40 @@
+
+--- stderr ---
+
+PASS GD1 8 linear / radial / colour->transparent cases: max abs diff vs the independent numpy float32 reference = 0 (<= 0.000002)
+PASS GD1 negative control: the reference with t rounded to 8 bits differs from the op by MORE than the threshold = true (== true)
+PASS GD1 10 invalid ops (same point, outside canvas, bad colour / alpha / layer / field / kind, float coordinate) throw = 10 (== 10)
+PASS GD1 and leave the state unchanged = 10 (== 10)
+PASS GD2 4 selections (rect, ellipse, wand, inverted rect): pixels outside the selection differing from before = 0 (== 0)
+PASS GD2 pixels inside differing from the unselected result = 0 (== 0)
+PASS GD3 mask values vs the closed form 1 - t (float32) = 4.411682374971804e-8 (<= 0.000002)
+PASS GD3 composite equals lerp of the photo layer over the layer below by the gradient mask = 0 (<= 0.000002)
+PASS GD3 a layer without a mask throws = true (== true)
+PASS GD3 a mask gradient carrying c0 throws = true (== true)
+PASS GD4 three replays of a log with 2 linear, 1 radial, 1 mask gradient give identical hashes = 1 (== 1)
+PASS GD4 incremental application equals a fresh refold after every entry (undo-all / redo-all is prefix refolds) = 6 (== 6)
+PASS GD4 every gradient entry is at most 256 bytes of JSON = 112 (<= 256)
+PASS GD4 save -> load (JSON round trip) gives the same hash = deab68b3f1a4fb3e4b61c5d226e8f69c0e78f1b7d5b911e3a2e60810857dedd8 (== deab68b3f1a4fb3e4b61c5d226e8f69c0e78f1b7d5b911e3a2e60810857dedd8)
+
+PASS GD5 6 maps (identity, 3, 8 stops, extremes, hard step, sepia) on a random colour field + grey ramp: max abs diff vs numpy (observed 6.895439286225269e-8) = true (== true)
+PASS GD5 identity map (black -> white) leaves the neutral grey ramp within 1 level (observed 0.476 levels) = true (== true)
+PASS GD5 negative control: the sepia map changes the picture by more than 20 levels somewhere = true (== true)
+PASS GD5 8 invalid maps (1 stop, 9 stops, positions not increasing, first != 0, last != 255, channel 256, float, 3-number stop) throw = 8 (== 8)
+PASS GD5 and leave the state unchanged = 8 (== 8)
+PASS GD6 `adjset` to a 3-stop map == the document authored with that map from the start (composite hash) = true (== true)
+PASS GD6 `adjset` with invalid stops throws = true (== true)
+PASS GD6 opacity 0.5 within 2e-6 of the half mix (observed 2.98e-8) = true (== true)
+PASS GD6 hidden == the adjustment never existed (bitwise) = true (== true)
+GD6 (a) psd-tools read: {"nodes":[{"kind":"pixel","name":"Background","visible":true,"opacity":255},{"kind":"gradientmap","name":"Gradmap 5","visible":true,"opacity":255},{"kind":"gradientmap","name":"Gradmap 6","visible":false,"opacity":102}],"merged_max_diff":0,"merged_over1":0}
+PASS GD6 psd-tools reads two gradient-map layers (kinds gradientmap,gradientmap), the hidden one hidden, opacity 0.4 -> 102 -- REPORTED kinds = true (== true)
+PASS GD6 (a) 8-bit-exact content: stored merged image within 1 level of the editor composite (max diff 0, pixels over 1: 0) = 0 (== 0)
+PASS GD6 (b) float content: merged max diff 8 (pixels over 1 level: 2972, REPORTED) <= steepest segment + 1 = 9 = true (== true)
+PASS GD6 ag-psd read-back: the stops of both layers equal the log (positions, rgb) = true (== true)
+PASS GD6 import: the PSD yields two `adjust` gradmap ops with the same stops, opacities 1 and 0.4 = true (== true)
+GD8 REPORTED at 1024^2: gradient-map composite (best of 5) 45 ms; one grad op 43 ms
+PASS GD8 1024^2 one grad op (43 ms) = true (== true)
+PASS GD8 1024^2 gradient-map full composite (best of 5, 45 ms, includes the flatten of one layer) = true (== true)
+PASS GD4 a Gradient-tool drag (real mouse events) logs ONE `grad` entry with integer points, colours and alphas = true (== true)
+PASS GD4 4 drags (linear, radial to clear, mask, linear) logged 4 grad entries, each <= 256 bytes (max 115) = true (== true)
+PASS GD4 live hashes == refold of the log = true (== true)
+PASS GD4 undo all (6 steps) / redo all: hashes == refold at every step, log length restored = true (== tr
