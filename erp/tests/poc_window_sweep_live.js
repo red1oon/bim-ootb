@@ -20,7 +20,7 @@ const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.spl
   await pg.waitForFunction(() => !!window.__idmpDb, null, { timeout: 30000 });
   await pg.waitForFunction(() => document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0);
   await pg.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await pg.waitForSelector('#idmp-login-step1:visible');
-  await pg.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await pg.waitForSelector('#idmp-login-step2:visible'); await pg.click('#idmp-login-ok');
+  await pg.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('" + (process.env.SWEEP_USER || 'GardenAdmin') + "'))"); await pg.waitForSelector('#idmp-login-step2:visible'); await pg.click('#idmp-login-ok');
   await pg.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0);
   const seed = (sql) => pg.evaluate(s => { const r = window.__idmpDb.exec(s); return r.length ? r[0].values : []; }, sql);
   const hc = async (sel) => { const l = pg.locator(sel).first(); await l.scrollIntoViewIfNeeded().catch(() => {}); await l.click({ timeout: 8000 }); await pg.waitForTimeout(250); };
@@ -33,6 +33,7 @@ const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.spl
     const t0 = Date.now(); let line;
     try {
       const reach = await pg.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); return !!leaf; }, w.menu);
+      if (reach && process.env.TREE_ONLY) { console.log('§SWEEP win=' + w.id + ' "' + w.name + '" LEAF'); continue; }
       if (!reach) { tot.noLeaf++; console.log('§SWEEP win=' + w.id + ' "' + w.name + '" NOLEAF (menu ' + w.menu + ' not in this role\'s tree)'); continue; }
       const chain = await pg.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); const out = []; let n = leaf.parentElement.parentElement;
         while (n && n.id !== 'idmp-tree') { if (n.classList.contains('idmp-node')) out.unshift(n.querySelector(':scope > .idmp-row').getAttribute('data-menu-id')); n = n.parentElement; } return out; }, w.menu);
