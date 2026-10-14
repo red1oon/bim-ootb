@@ -79,7 +79,10 @@
   var baseReg = R.registerSqlFunctions;
   R.registerSqlFunctions = function (reg) {
     var names = typeof baseReg === 'function' ? baseReg(reg) : [];
-    reg('currencyconvertinvoice', function (a, b, c, d) { var v = M.currencyConvertInvoice(a, b, c, d); return v == null ? null : (v instanceof R.BD ? v.toString() : (v && v.toString ? v.toString() : v)); });
+    var cci = function (a, b, c, d) { var v = M.currencyConvertInvoice(a, b, c, d); return v == null ? null : (v instanceof R.BD ? v.toString() : (v && v.toString ? v.toString() : v)); };
+    reg('currencyconvertinvoice', function (a, b) { return cci(a, b); });                              // the PL/pgSQL has DEFAULT NULL for p_amt and p_conversiondate: SQLite binds by arity,
+    reg('currencyconvertinvoice', function (a, b, c) { return cci(a, b, c); });                          // so each legal call shape needs its own registration (W-DICT-SQL-EXEC: a status line calls the 3-arg form)
+    reg('currencyconvertinvoice', function (a, b, c, d) { return cci(a, b, c, d); });
     return (names || []).concat(['currencyconvertinvoice']);
   };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

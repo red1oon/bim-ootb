@@ -353,6 +353,13 @@
   // A New runs GridTab.dataNew's callout fan (M/GridTab.java:1179-1181). Generic over the dictionary: no table or column
   // is named here. Supersedes the 14 hand-written host handlers + 9 bundle accessors this block used to carry.
   var _co = null, _coLogin = null, _coLoginKey = null, _coUdfDb = null;
+  // bind the AD runtime to this db AND register the stored-function UDFs on it (once per db). Shared by the callout path and every model transaction (withModelTrx), so an
+  // @SQL default, an info window or a process port can call bomQtyOnHand()/invoiceOpen()/... exactly as the legacy DB lets any SQL call its PL/pgSQL functions.
+  function _coBindUdf(db) {
+    var A = global.AdCallout; if (!A || !A.bind) return;
+    A.bind(_modelQuery(db), { now: function () { return Date.now(); } });
+    if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+  }
   function _coDb(fn) {
     var A = global.AdCallout;
     if (!A || !A.bind || typeof withBundle !== 'function') return;
@@ -360,8 +367,7 @@
       if (!db) return;
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
       try {
-        A.bind(_modelQuery(db), { now: function () { return Date.now(); } });
-        if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+        _coBindUdf(db);
         fn(A);
       } catch (e) { console.log('§CALLOUT-ERR ' + ((e && e.message) || e)); }
       finally { _tipShadowOff(db, sh); }
@@ -2911,7 +2917,7 @@
                     calloutTab: function () { return _co ? _co.tab : null; },
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
                     withModelTrx: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
-                      try { var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
+                      try { _coBindUdf(db); var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
                     // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
                     //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
                     //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside

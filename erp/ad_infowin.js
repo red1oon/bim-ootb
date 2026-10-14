@@ -13,74 +13,45 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function sqlStr(s) { return "'" + String(s).replace(/'/g, "''") + "'"; }
 
-  // ── PL/pgSQL bom* functions → SQLite templates (ONE registry). Source: `\df+` of the reference DB (bomqtyonhand / bomqtyreserved /
-  //    bomqtyordered / bomqtyavailable / bompricelist|std|limit). Stocked item → the SUM; non-stocked non-BOM → 99999 / 0 / 0; warehouse
-  //    NULL → 0 (first branch of every one of them). BOM-assembly rollup is NAMED-DEFERRED (ERP_DEPTH_FILM.md §7): isBOM='Y' → NULL, never a wrong number.
-  function prodGuard(A, stockedExpr, nonStockedExpr) {
-    return '(CASE WHEN (SELECT isbom FROM m_product x WHERE x.m_product_id=' + A + ")='N' AND ((SELECT producttype FROM m_product x WHERE x.m_product_id=" + A +
-      ")<>'I' OR (SELECT isstocked FROM m_product x WHERE x.m_product_id=" + A + ")='N') THEN " + nonStockedExpr +
-      ' WHEN (SELECT isstocked FROM m_product x WHERE x.m_product_id=' + A + ")='Y' THEN " + stockedExpr + ' ELSE NULL END)';
-  }
-  function onHandSql(A, W) { return 'COALESCE((SELECT SUM(s.qtyonhand) FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + A + ' AND l.m_warehouse_id=' + W + '),0)'; }
-  function resSql(A, W, sot) { return 'COALESCE((SELECT SUM(r.qty) FROM m_storagereservation r WHERE r.m_product_id=' + A + ' AND r.m_warehouse_id=' + W + " AND r.issotrx='" + sot + "' AND r.isactive='Y'),0)"; }
-  function priceSql(col) { return function (a) { var A = a[0], V = a[1]; return 'COALESCE((SELECT SUM(pp.' + col + ') FROM m_productprice pp WHERE pp.isactive=\'Y\' AND pp.m_pricelist_version_id=' + V + ' AND pp.m_product_id=' + A + '),0)'; }; }
-  var SQLFN = {
-    bomqtyonhand:    function (a) { return prodGuard(a[0], onHandSql(a[0], a[1]), '99999'); },
-    bomqtyreserved:  function (a) { return prodGuard(a[0], resSql(a[0], a[1], 'Y'), '0'); },
-    bomqtyordered:   function (a) { return prodGuard(a[0], resSql(a[0], a[1], 'N'), '0'); },
-    // bomQtyAvailable = bomQtyOnHandForReservation − bomQtyReserved; ForReservation = on hand of locators whose M_LocatorType is available for
-    // reservation — M_LocatorType is absent from the seed, so every locator counts (identical until a type is flagged unavailable: named-deferred).
-    bomqtyavailable: function (a) { return prodGuard(a[0], '(' + onHandSql(a[0], a[1]) + ' - ' + resSql(a[0], a[1], 'Y') + ')', '99999'); },
-    bompricelist: priceSql('pricelist'), bompricestd: priceSql('pricestd'), bompricelimit: priceSql('pricelimit')
-  };
-  // split top-level args of a call starting at s[i]=='('; returns {args, end}
-  function parseArgs(s, i) {
-    var depth = 0, cur = '', args = [], q = false;
-    for (var j = i; j < s.length; j++) {
-      var c = s[j];
-      if (q) { cur += c; if (c === "'") q = false; continue; }
-      if (c === "'") { q = true; cur += c; continue; }
-      if (c === '(') { depth++; if (depth > 1) cur += c; continue; }
-      if (c === ')') { depth--; if (depth === 0) { args.push(cur.trim()); return { args: args, end: j + 1 }; } cur += c; continue; }
-      if (c === ',' && depth === 1) { args.push(cur.trim()); cur = ''; continue; }
-      cur += c;
+  // Env.parseContextForSql (Env.java:1672-1760): every @Var@ / @WinNo|Var@ becomes a '?' with the value bound as a PARAMETER (Integer for *_ID, else string); an unresolvable
+  //   token returns "" (the legacy caller logs "Failed to parsed sql" and runs nothing) unless ignoreUnparsable, which keeps the @Var@ text. '@@' = a literal '@'.
+  //   Returns {sql, params} or null when unparsable. The SQL text otherwise reaches the DB UNTOUCHED - the stored functions run in the DB (here: the registered UDFs).
+  function parseContextForSql(sql, ctx, ignoreUnparsable) {
+    var out = '', params = [], inStr = String(sql == null ? '' : sql), i = inStr.indexOf('@');
+    while (i !== -1) {
+      out += inStr.slice(0, i); inStr = inStr.slice(i + 1);
+      var j = inStr.indexOf('@'); if (j < 0) { out += '@'; break; }
+      if (j === 0) { out += '@'; inStr = inStr.slice(1); i = inStr.indexOf('@'); continue; }
+      var token = inStr.slice(0, j), name = token.replace(/^\d+\|/, '').replace(/:[^@]*$/, ''), v = ctx[name];
+      if (v == null || String(v) === '') { if (!ignoreUnparsable) return null; out += '@' + token + '@'; }
+      else { out += '?'; params.push(/_ID$/.test(name) && !isNaN(Number(v)) ? Number(v) : String(v)); }
+      inStr = inStr.slice(j + 1); i = inStr.indexOf('@');
     }
-    return null;
+    return { sql: out + inStr, params: params };
   }
-  function rewriteFns(sql) {
-    var out = '', i = 0, re = /\b(bom\w+)\s*\(/gi, m;
-    while ((m = re.exec(sql)) !== null) {
-      var fn = SQLFN[m[1].toLowerCase()]; if (!fn) continue;
-      var pa = parseArgs(sql, m.index + m[0].length - 1); if (!pa) continue;
-      out += sql.slice(i, m.index);
-      var a = pa.args.map(function (x) { return rewriteFns(x); });
-      // warehouse/PLV argument unresolved ('' or NULL) → the function's first branch: 0
-      out += (a[1] === '' || /^null$/i.test(a[1])) ? '0' : fn(a);
-      i = pa.end; re.lastIndex = pa.end;
-    }
-    return out + sql.slice(i);
-  }
-  // @1113|M_Warehouse_ID@ / @M_Warehouse_ID@ → the info context value ('' when unset), Env.parseContext semantic
-  function parseCtx(sql, ctx) { return sql.replace(/@(?:\d+\|)?([\w+:]+?)(?::[^@]*)?@/g, function (_, n) { var v = ctx[n]; return v == null ? '' : String(v); }); }
 
   // ── data access: the tip-shadowed reader (bundle + this session's signed sidecar)
+  function conv(sql) { return g.AdCallout && g.AdCallout.convertSql ? g.AdCallout.convertSql(sql) : sql; }   // the legacy Convert layer applies to every statement (Convert_PostgreSQL)
   function tipQ(sql, params) {
+    sql = conv(sql);
     if (g.__crud && typeof g.__crud.withModelTrx === 'function') {
-      var r = g.__crud.withModelTrx(function (q) { try { return { rows: q(sql, params || []) }; } catch (e) { return { err: e }; } });
+      var r = g.__crud.withModelTrx(function (q) { try { return { rows: q(sql, params || []) }; } catch (e) { return { err: e }; } });   // withModelTrx binds the stored-function UDFs (crud_overlay _coBindUdf)
       if (r && r.err) throw r.err;
       if (r && r.rows) return r.rows;
     }
     log('§INFOWIN tip=UNAVAILABLE (bundle-only read — figures from this session would be MISSING)');
-    var d = g.__idmpDb.exec(sql, params || []); if (!d.length) return [];
+    var A = g.AdCallout, db = g.__idmpDb;
+    if (A && A.RUNTIME && A.RUNTIME.registerSqlFunctions && db && !db.__udfBound) { try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; } catch (e) { log('§INFOWIN udf-register failed ' + e); } }
+    var d = db.exec(sql, params || []); if (!d.length) return [];
     return d[0].values.map(function (v) { var o = {}; d[0].columns.forEach(function (c, i) { o[c.toLowerCase()] = v[i]; }); return o; });
   }
   function adQ(sql, params) { var d = g.__idmpDb.exec(sql, params || []); if (!d.length) return []; return d[0].values.map(function (v) { var o = {}; d[0].columns.forEach(function (c, i) { o[c.toLowerCase()] = v[i]; }); return o; }); }
 
   function stripAs(sel) { var u = sel.toUpperCase(), k = u.lastIndexOf(' AS '); return k > 0 && sel.slice(k + 4).indexOf(')') < 0 ? sel.slice(0, k) : sel; }
   var _probe = {};   // selectclause+from → ok bool
-  function colOk(expr, from) {
+  function colOk(expr, from, params) {
     var key = expr + '||' + from; if (key in _probe) return _probe[key];
-    var ok = true; try { tipQ('SELECT ' + expr + ' AS x FROM ' + from + ' LIMIT 1'); } catch (e) { ok = false; log('§INFOWIN-COL-SKIP expr=' + expr.slice(0, 80) + ' (' + String(e.message || e).slice(0, 70) + ') → blank, named-deferred'); }
+    var ok = true; try { tipQ('SELECT ' + expr + ' AS x FROM ' + from + ' LIMIT 1', params || []); } catch (e) { ok = false; log('§INFOWIN-COL-SKIP expr=' + expr.slice(0, 80) + ' (' + String(e.message || e).slice(0, 70) + ') → blank, named-deferred'); }
     _probe[key] = ok; return ok;
   }
 
@@ -95,6 +66,37 @@
     var cols = adQ('SELECT * FROM ad_infocolumn WHERE ad_infowindow_id=? AND isactive=\'Y\' ORDER BY seqno', [iw.ad_infowindow_id]);
     var m = /^\s*(\w+)\s+(\w+)/.exec(iw.fromclause || '');
     return { iw: iw, cols: cols, table: m ? m[1] : tableName, alias: m ? m[2] : '', keycol: tableName + '_ID' };
+  }
+
+  // InfoWindow.getSQLFilter (InfoWindow.java:1385-1500) -> criteria WHERE; selectclause '0' columns only publish context. PURE (no DOM): the window and W-INFOWIN-SQL both call it.
+  //   Assembly follows InfoWindow.java:1757-1773 - the dictionary SelectClause/FromClause/WhereClause text is concatenated as written and the context variables become bound '?' parameters.
+  //   Returns {sql, params}, or null when a context variable is unresolvable (legacy: nothing runs). `probe` = true skips a column the twin cannot resolve (named-deferred, blank).
+  function buildInfoSql(def, c, critVals, hook, client, disp) {
+    var where = [], cparams = [];
+    critVals.forEach(function (x) {
+      var cc = x.def, v = x.value;
+      if (v == null || String(v).trim() === '' || cc.selectclause === '0') return;
+      var col = stripAs(cc.selectclause), op = cc.queryoperator || '=', fnc = cc.queryfunction, clause = col;
+      if (fnc && fnc.trim()) clause = fnc.indexOf('?') >= 0 ? fnc.replace('?', col) : fnc + '(' + col + ')';
+      var up = clause.toUpperCase().indexOf('UPPER(') === 0, val = v;
+      if (op === 'Like' || op === 'LIKE') { op = 'LIKE'; if (!/%$/.test(val)) val += '%'; }
+      else if (op === 'FullLike') { op = 'LIKE'; if (!/^%/.test(val)) val = '%' + val; if (!/%$/.test(val)) val += '%'; }
+      where.push(clause + ' ' + op + (up ? ' UPPER(?)' : ' ?')); cparams.push(val);
+    });
+    var extra = hook.baseFilter ? hook.baseFilter(c, def) : '';
+    var fromP = parseContextForSql(def.iw.fromclause, c); if (!fromP) return null;
+    var fromSql = fromP.sql.replace(/\s+/g, ' ');
+    var baseTxt = [def.alias + '.ad_client_id IN (0,' + (Number(client) || 0) + ')'].concat(def.iw.whereclause ? ['(' + def.iw.whereclause + ')'] : [], extra ? [extra] : []).join(' AND ');
+    var baseP = parseContextForSql(baseTxt, c); if (!baseP) return null;
+    var cols = [def.alias + '.' + def.keycol + ' AS k'], colParams = [];
+    for (var i = 0; i < disp.length; i++) {
+      var pc = parseContextForSql(stripAs(disp[i].selectclause), c); if (!pc) return null;
+      var ok = colOk(pc.sql, fromSql, pc.params.concat(fromP.params));
+      if (ok) { cols.push(pc.sql + ' AS c' + i); colParams = colParams.concat(pc.params); } else cols.push('NULL AS c' + i);
+    }
+    var order = def.iw.orderbyclause || (hook.defaultOrder ? hook.defaultOrder(c, def, disp) : ''), ordP = parseContextForSql(order, c); if (!ordP) return null;
+    var sql = 'SELECT ' + cols.join(', ') + ' FROM ' + fromSql + ' WHERE ' + baseP.sql + (where.length ? ' AND (' + where.join(' AND ') + ')' : '') + (ordP.sql ? ' ORDER BY ' + ordP.sql : '') + ' LIMIT ' + (Number(def.iw.maxqueryrecords) || 1000);
+    return { sql: sql, params: colParams.concat(fromP.params, baseP.params, cparams, ordP.params) };   // textual order of the '?' in the final statement
   }
 
   // ── open
@@ -158,34 +160,13 @@
       Object.keys(editors).forEach(function (k) { c[k] = editors[k].el.value; });
       return c;
     }
-    // InfoWindow.getSQLFilter (1385-1500) → WHERE; selectclause '0' columns only publish context
     function buildSql(c) {
-      var where = [], params = [];
-      crit.forEach(function (cc) {
-        var ed = editors[cc.columnname]; if (!ed) return; var v = ed.el.value;
-        if (v == null || String(v).trim() === '' || cc.selectclause === '0') return;
-        var col = stripAs(cc.selectclause), op = cc.queryoperator || '=', fnc = cc.queryfunction, clause = col;
-        if (fnc && fnc.trim()) clause = fnc.indexOf('?') >= 0 ? fnc.replace('?', col) : fnc + '(' + col + ')';
-        var up = clause.toUpperCase().indexOf('UPPER(') === 0;
-        var val = v;
-        if (op === 'Like' || op === 'LIKE') { op = 'LIKE'; if (!/%$/.test(val)) val += '%'; }
-        else if (op === 'FullLike') { op = 'LIKE'; if (!/^%/.test(val)) val = '%' + val; if (!/%$/.test(val)) val += '%'; }
-        where.push(clause + ' ' + op + (up ? ' UPPER(?)' : ' ?')); params.push(val);
-      });
-      var extra = hook.baseFilter ? hook.baseFilter(c, def) : '';
-      var cl = def.alias + '.ad_client_id IN (0,' + (Number(client) || 0) + ')';
-      var w = [cl].concat(def.iw.whereclause ? ['(' + def.iw.whereclause + ')'] : [], extra ? [extra] : [], where.length ? ['(' + where.join(' AND ') + ')'] : []).join(' AND ');
-      var cols = [def.alias + '.' + def.keycol + ' AS k'], used = [];
-      disp.forEach(function (d, i) {
-        var e = rewriteFns(parseCtx(stripAs(d.selectclause), c));
-        var ok = colOk(e, parseCtx(def.iw.fromclause, c)); cols.push(ok ? e + ' AS c' + i : 'NULL AS c' + i); used.push(ok);
-      });
-      var order = def.iw.orderbyclause || (hook.defaultOrder ? hook.defaultOrder(c, def, disp) : '');
-      var sql = 'SELECT ' + cols.join(', ') + ' FROM ' + parseCtx(def.iw.fromclause, c).replace(/\s+/g, ' ') + ' WHERE ' + w + (order ? ' ORDER BY ' + order : '') + ' LIMIT ' + (Number(def.iw.maxqueryrecords) || 1000);
-      return { sql: sql, params: params };
+      return buildInfoSql(def, c, crit.map(function (cc) { var ed = editors[cc.columnname]; return { def: cc, value: ed ? ed.el.value : '' }; }), hook, client, disp);
     }
     function refresh() {
-      var c = currentCtx(), b = buildSql(c); state.lastSql = b.sql;
+      var c = currentCtx(), b = buildSql(c);
+      if (!b) { log('§INFOWIN parse-FAILED unresolved context variable (Env.parseContextForSql returned "") ctx=' + JSON.stringify(c)); state.lastSql = ''; state.rows = []; resWrap.innerHTML = ''; cnt.textContent = '0 record(s)'; return; }
+      state.lastSql = b.sql;
       var rows; try { rows = tipQ(b.sql, b.params); } catch (e) { log('§INFOWIN query-ERROR ' + String(e.message || e).slice(0, 160) + ' sql=' + b.sql.slice(0, 200)); rows = []; }
       state.rows = rows; state.sel = null;
       var h = '<table class="idmp-infowin-grid" style="border-collapse:collapse;width:100%"><thead><tr>' + disp.map(function (d) { return '<th style="text-align:' + (d.ad_reference_id === 29 || d.ad_reference_id === 37 ? 'right' : 'left') + ';padding:3px 8px;border-bottom:1px solid #aaa;position:sticky;top:0;background:var(--idmp-panel,#fff)">' + esc(d.name) + '</th>'; }).join('') + '</tr></thead><tbody>';
@@ -278,5 +259,5 @@
     ]
   };
 
-  g.AdInfoWindow = { open: open, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, rewriteFns: rewriteFns, parseCtx: parseCtx, SQLFN: SQLFN, M_STORAGE: M_STORAGE, definition: definition };
+  g.AdInfoWindow = { open: open, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, parseContextForSql: parseContextForSql, buildInfoSql: buildInfoSql, hook: function (t) { return HOOKS[String(t).toUpperCase()] || {}; }, M_STORAGE: M_STORAGE, definition: definition };
 })(typeof window !== 'undefined' ? window : globalThis);
