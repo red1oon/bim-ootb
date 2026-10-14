@@ -105,7 +105,7 @@
     return sum * pow2int(n);
   }
   // ---- adjustment layers (applied to the straight colour of the backdrop; alpha untouched)
-  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
+  const ADJ_KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl', 'gradmap'];
   // natural cubic spline through integer control points ([x,y] in 0..255), double precision with + - * / only; constant outside [x_first, x_last]; result clipped to [0,1]
   function curveFn(points) {
     const n = points.length, X = points.map((p) => p[0] / 255), Y = points.map((p) => p[1] / 255), M = new Array(n).fill(0);
@@ -137,12 +137,23 @@
     const t = [[cc, x, 0], [x, cc, 0], [0, cc, x], [0, x, cc], [x, 0, cc], [cc, 0, x]][sec], q = (v) => { v = F(v + m); return v < 0 ? 0 : v > 1 ? 1 : v; };
     return [q(t[0]), q(t[1]), q(t[2])];
   }
+  // gradient map (Level 2i, A.2): luminance (the threshold weights, rounded to 8 bits) indexes a 256-entry table made from integer stops [pos, r, g, b] (r g b 0..255), linear between stops
+  function gradmapLUT(stops) {
+    const lut = new Float32Array(768); let j = 0;
+    for (let v = 0; v < 256; v++) { while (j < stops.length - 2 && v > stops[j + 1][0]) j++; const s0 = stops[j], s1 = stops[j + 1], f = F(F(v - s0[0]) / (s1[0] - s0[0]));
+      for (let k = 0; k < 3; k++) { const p = F(s0[k + 1] / 255), q = F(s1[k + 1] / 255); lut[v * 3 + k] = F(p + F(f * F(q - p))); } }
+    return lut;
+  }
+  // filter layers (Level 2j): kinds that read the NEIGHBOURS of a pixel. Registered by filters/filter_layers.js (stack.js cannot require blur.js: blur.js requires stack.js).
+  // spatial[kind] = { apply(back, a, W), radius(params) }: apply works on the premultiplied float32 RGBA backdrop of the whole canvas; radius = how far a pixel reads (for the tile halo).
+  const FILTER_KINDS = ['gblur', 'sharpen'], spatial = {}, preview = { scale: 1 };   // preview.scale > 1 only while a slider is dragged in the editor (coarse filter preview, FL9); the committed / refolded picture is always exact
   function applyAdjust(back, a, n) {
-    const rgb = a.kind === 'threshold' || a.kind === 'hsl' ? null : adjustFn(a.kind, a.params), lvl = a.params.level;
+    if (FILTER_KINDS.includes(a.kind)) { const sp = spatial[a.kind]; if (!sp) throw new Error('filter layer ' + a.kind + ': filters/filter_layers.js is not loaded'); sp.apply(back, a, Math.round(Math.sqrt(n))); return; }
+    const rgb = a.kind === 'threshold' || a.kind === 'hsl' || a.kind === 'gradmap' ? null : adjustFn(a.kind, a.params), lvl = a.params.level, lut = a.kind === 'gradmap' ? gradmapLUT(a.params.stops) : null;
     for (let i = 0; i < n; i++) {
       const al = back[i*4+3]; if (al <= 0) continue; const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue;
       const c0 = F(back[i*4] / al), c1 = F(back[i*4+1] / al), c2 = F(back[i*4+2] / al); let o0, o1, o2;
-      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
+      if (a.kind === 'threshold') { const lum8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = o1 = o2 = lum8 >= lvl ? 1 : 0; } else if (a.kind === 'hsl') { [o0, o1, o2] = hslRGB(c0, c1, c2, a.params); } else if (a.kind === 'gradmap') { const l8 = Math.round(F(255 * F(F(F(0.3 * c0) + F(0.59 * c1)) + F(0.11 * c2)))); o0 = lut[l8 * 3]; o1 = lut[l8 * 3 + 1]; o2 = lut[l8 * 3 + 2]; } else { o0 = rgb(c0); o1 = rgb(c1); o2 = rgb(c2); }
       const ik = F(1 - k); back[i*4] = F(al * (k >= 1 ? o0 : F(F(c0 * ik) + F(o0 * k)))); back[i*4+1] = F(al * (k >= 1 ? o1 : F(F(c1 * ik) + F(o1 * k)))); back[i*4+2] = F(al * (k >= 1 ? o2 : F(F(c2 * ik) + F(o2 * k))));
     }
   }
@@ -268,7 +279,7 @@
     }
     return { max, mean: +(sum / n).toFixed(4), pct_over_1: +(100*over1/n).toFixed(3), pct_over_2: +(100*over2/n).toFixed(3) };
   }
-  const api = { MODES, NONSEP, ADJ_KINDS, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
+  const api = { MODES, NONSEP, ADJ_KINDS, FILTER_KINDS, spatial, preview, gradmapLUT, powDet, adjustFn, curveFn, sha256, chain, verifyChain, makeScene, makeModeScene, fold, newState, apply, composite, compositeTree, toRGBA8, hashF32, diff, BLEND };
   if (typeof module !== 'undefined') module.exports = api; else root.Stack = api;
 })(this);
 
@@ -323,6 +334,47 @@
   }
   const api = { kernel, blurLayer, blurRectTo, blurRectToRef, applyOp };
   if (node) module.exports = api; else root.Blur = api;
+})(this);
+
+;
+/* ===== filters/filter_layers.js ===== */
+// Filter layers for the canonical layer stack (Level 2j; spec prompts/OPLOGPIC_GRADIENT_FILTERS.md Part B, witness_log/HYPOTHESES.md "Level 2j", FL1-FL10).
+// Kinds `gblur` {sigma_x10: 1..400} and `sharpen` {amount: 1..500, radius_x10: 1..100, threshold: 0..255}, all integers. They act on the PREMULTIPLIED float32 RGBA of the backdrop (alpha is filtered too), then
+// lerp with the backdrop by k = opacity * mask in premultiplied space. The blur is filters/blur.js blurRectTo over the whole canvas. Registered in Stack.spatial (stack.js cannot require blur.js).
+(function (root) {
+  const F = Math.fround, node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, Bl = node ? require('./blur.js') : root.Blur;
+  const KEYS = { gblur: ['sigma_x10'], sharpen: ['amount', 'radius_x10', 'threshold'] }, RANGE = { sigma_x10: [1, 400], amount: [1, 500], radius_x10: [1, 100], threshold: [0, 255] };
+  const DEFAULTS = { gblur: () => ({ sigma_x10: 30 }), sharpen: () => ({ amount: 100, radius_x10: 10, threshold: 0 }) };
+  function validate(kind, P) {
+    const keys = KEYS[kind]; if (!keys) throw new Error('adjust: unknown filter kind ' + kind);
+    if (!P || typeof P !== 'object' || Array.isArray(P) || Object.keys(P).sort().join() !== [...keys].sort().join()) throw new Error('adjust: ' + kind + ' needs exactly ' + keys.join(', ') + ' (integers)');
+    for (const k of keys) if (!Number.isInteger(P[k]) || P[k] < RANGE[k][0] || P[k] > RANGE[k][1]) throw new Error('adjust: ' + kind + ' ' + k + ' must be an integer ' + RANGE[k][0] + '..' + RANGE[k][1]);
+  }
+  const sigmaOf = (kind, P) => (kind === 'gblur' ? P.sigma_x10 : P.radius_x10) / 10;
+  const radius = (kind, P) => Math.floor(4 * sigmaOf(kind, P) + 0.5);
+  const full = (W) => [0, 0, W, W];
+  function lerpInto(back, out, a, W) {   // back = lerp(back, out, opacity * mask) on all four premultiplied channels
+    const n = W * W; for (let i = 0; i < n; i++) { const k = F(a.opacity * (a.mask ? a.mask[i] : 1)); if (k <= 0) continue; const ik = F(1 - k);
+      for (let c = 0; c < 4; c++) { const p = i * 4 + c; back[p] = k >= 1 ? out[p] : F(F(back[p] * ik) + F(out[p] * k)); } }
+  }
+  // coarse preview (Stack.preview.scale > 1, set by the editor only while a slider is dragged): box-downsample, blur with sigma / scale, bilinear upsample. NOT part of the definition; never used by a fold.
+  function down(back, W, s) { const Wc = W / s, out = new Float32Array(Wc * Wc * 4), inv = F(1 / (s * s)); for (let y = 0; y < Wc; y++) for (let x = 0; x < Wc; x++) for (let c = 0; c < 4; c++) { let sum = 0; for (let j = 0; j < s; j++) for (let i = 0; i < s; i++) sum += back[((y * s + j) * W + x * s + i) * 4 + c]; out[(y * Wc + x) * 4 + c] = F(sum * inv); } return out; }
+  function up(c, Wc, W, s) { const out = new Float32Array(W * W * 4); for (let y = 0; y < W; y++) { const fy = Math.min(Math.max((y + 0.5) / s - 0.5, 0), Wc - 1), y0 = Math.floor(fy), y1 = Math.min(y0 + 1, Wc - 1), ty = fy - y0;
+      for (let x = 0; x < W; x++) { const fx = Math.min(Math.max((x + 0.5) / s - 0.5, 0), Wc - 1), x0 = Math.floor(fx), x1 = Math.min(x0 + 1, Wc - 1), tx = fx - x0; for (let k = 0; k < 4; k++) { const a = c[(y0 * Wc + x0) * 4 + k] * (1 - tx) + c[(y0 * Wc + x1) * 4 + k] * tx, b = c[(y1 * Wc + x0) * 4 + k] * (1 - tx) + c[(y1 * Wc + x1) * 4 + k] * tx; out[(y * W + x) * 4 + k] = a * (1 - ty) + b * ty; } } } return out; }
+  const blurred = (back, W, sigma) => { const s = S.preview.scale; if (s > 1 && W % s === 0) { const Wc = W / s; return up(Bl.blurRectTo(down(back, W, s), Wc, sigma / s, full(Wc)), Wc, W, s); } return Bl.blurRectTo(back, W, sigma, full(W)); };
+  function applyBlur(back, a, W) { if (!(a.opacity > 0)) return; const out = blurred(back, W, a.params.sigma_x10 / 10); lerpInto(back, out, a, W); }
+  function applySharpen(back, a, W) {
+    if (!(a.opacity > 0)) return; const P = a.params, pb = blurred(back, W, P.radius_x10 / 10), amt = F(P.amount / 100), thr = P.threshold, n = W * W, out = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { const al = back[i * 4 + 3]; out[i * 4 + 3] = al;
+      for (let c = 0; c < 3; c++) { const p = back[i * 4 + c], d = F(p - pb[i * 4 + c]); if (F(Math.abs(d) * 255) < thr) { out[i * 4 + c] = p; continue; } let o = F(p + F(amt * d)); o = o < 0 ? 0 : o > al ? al : o; out[i * 4 + c] = o; } }
+    lerpInto(back, out, a, W);
+  }
+  S.spatial.gblur = { apply: applyBlur, radius: (P) => radius('gblur', P) };
+  S.spatial.sharpen = { apply: applySharpen, radius: (P) => radius('sharpen', P) };
+  const label = (kind, o) => (kind === 'gblur' ? 'Adjust blur ' + o.id + ': radius ' + (o.params.sigma_x10 / 10) : 'Adjust sharpen ' + o.id + ': ' + o.params.amount + '%, ' + (o.params.radius_x10 / 10) + ' px' + (o.params.threshold ? ', threshold ' + o.params.threshold : ''));
+  const scaleFor = (h) => (h <= 12 ? 1 : h <= 48 ? 2 : 4);   // preview scale from the total filter radius
+  const api = { validate, DEFAULTS, radius, label, scaleFor, KINDS: ['gblur', 'sharpen'] };
+  if (node) module.exports = api; else root.FilterLayers = api;
 })(this);
 
 ;
@@ -418,34 +470,43 @@ function makeDirty(st, T = 64) {
   const W = st.W, tn = W / T; if (W % T) throw new Error(`dirty tiles need W multiple of ${T}, got ${W}`);
   const back = new Float32Array(W * W * 4);
   const crop = (a, ch, tx, ty) => { const o = new Float32Array(T * T * ch); for (let y = 0; y < T; y++) { const s = ((ty * T + y) * W + tx * T) * ch; o.set(a.subarray(s, s + T * ch), y * T * ch); } return o; };
+  // Filter layers (Level 2j, spec B.2): a tile depends on the backdrop within R = the sum of the radii of all visible filter layers. halo() = R (0 when there is no filter layer).
+  const halo = () => { let h = 0; for (const id of Object.keys(st.A)) { const a = st.A[id], sp = S.spatial[a.kind]; if (sp && a.opacity > 0) h += sp.radius(a.params); } return h; };
+  const nfil = () => { let n = 0; for (const id of Object.keys(st.A)) { const a = st.A[id]; if (S.spatial[a.kind] && a.opacity > 0) n++; } return n; };   // visible filter layers
+  const refl = (i) => { if (i >= 0 && i < W) return i; const n2 = 2 * W, m = ((i % n2) + n2) % n2; return m < W ? m : n2 - 1 - m; };   // the blur's own edge rule (filters/blur.js idx, 'reflect')
+  const tilesOfBox = (x0, y0, x1, y1) => { const h = halo(), out = []; x0 = Math.max(0, x0 - h); y0 = Math.max(0, y0 - h); x1 = Math.min(W - 1, x1 + h); y1 = Math.min(W - 1, y1 + h); if (x1 < x0 || y1 < y0) return out;
+    for (let ty = Math.floor(y0 / T); ty <= Math.floor(y1 / T); ty++) for (let tx = Math.floor(x0 / T); tx <= Math.floor(x1 / T); tx++) out.push(ty * tn + tx); return out; };
   // ids of every dab/mdab touch: same bounds as stack.apply; all other ops are non-local (null = every tile)
   function tilesOf(o) {
-    if (o.op === 'hdab' || o.op === 'stroke' || o.op === 'smudge') {   // brush ops: tiles of the stroke bbox (filters/brush.js bbox is conservative)
-      const [bx0, by0, bx1, by1] = Brush().bbox(o, W), out = [];
-      for (let ty = Math.floor(by0 / T); ty <= Math.floor(by1 / T); ty++) for (let tx = Math.floor(bx0 / T); tx <= Math.floor(bx1 / T); tx++) out.push(ty * tn + tx);
-      return out; }
+    if (o.op === 'hdab' || o.op === 'stroke' || o.op === 'smudge') { const [bx0, by0, bx1, by1] = Brush().bbox(o, W); return tilesOfBox(bx0, by0, bx1, by1); }   // brush ops: tiles of the stroke bbox (filters/brush.js bbox is conservative)
     if (o.op === 'blur' && !o.rect) return null;   // a full-layer blur writes every pixel
     if (o.op !== 'dab' && o.op !== 'mdab' && o.op !== 'blur') return null;
     // blur with a rect writes only inside the rect (it READS neighbours outside, which does not matter for what changes)
     const rr = o.op === 'blur' ? { x0: o.rect[0], x1: o.rect[0] + o.rect[2] - 1, y0: o.rect[1], y1: o.rect[1] + o.rect[3] - 1 } : null;
-    const x0 = rr ? rr.x0 : Math.max(0, Math.floor(o.x - o.r)), x1 = rr ? rr.x1 : Math.min(W - 1, Math.ceil(o.x + o.r)), y0 = rr ? rr.y0 : Math.max(0, Math.floor(o.y - o.r)), y1 = rr ? rr.y1 : Math.min(W - 1, Math.ceil(o.y + o.r)), out = [];
-    if (x1 < x0 || y1 < y0) return out;
-    for (let ty = Math.floor(y0 / T); ty <= Math.floor(y1 / T); ty++) for (let tx = Math.floor(x0 / T); tx <= Math.floor(x1 / T); tx++) out.push(ty * tn + tx);
-    return out;
+    const x0 = rr ? rr.x0 : Math.max(0, Math.floor(o.x - o.r)), x1 = rr ? rr.x1 : Math.min(W - 1, Math.ceil(o.x + o.r)), y0 = rr ? rr.y0 : Math.max(0, Math.floor(o.y - o.r)), y1 = rr ? rr.y1 : Math.min(W - 1, Math.ceil(o.y + o.r));
+    return tilesOfBox(x0, y0, x1, y1);
   }
-  function cropState(tx, ty) {
-    const L = {}, G = {}, A = {};
-    for (const id of Object.keys(st.L)) { const l = st.L[id]; L[id] = { mode: l.mode, opacity: l.opacity, pix: crop(l.pix, 4, tx, ty), mask: l.mask ? crop(l.mask, 1, tx, ty) : null, parent: l.parent, clip: l.clip }; }
-    for (const id of Object.keys(st.G)) { const g = st.G[id]; G[id] = { mode: g.mode, opacity: g.opacity, mask: g.mask ? crop(g.mask, 1, tx, ty) : null, children: g.children, parent: g.parent }; }
-    for (const id of Object.keys(st.A)) { const a = st.A[id]; A[id] = { kind: a.kind, params: a.params, opacity: a.opacity, mask: a.mask ? crop(a.mask, 1, tx, ty) : null, parent: a.parent }; }
-    return { W: T, order: st.order, L, G, A, root: st.root, hasTree: st.hasTree };
+  function cropState(tx, ty, h = 0) {
+    const L = {}, G = {}, A = {}, Sz = T + 2 * h, ix = new Int32Array(Sz), iy = new Int32Array(Sz); for (let i = 0; i < Sz; i++) { ix[i] = refl(tx * T - h + i); iy[i] = refl(ty * T - h + i); }
+    const cr = (a, ch) => { if (!h) return crop(a, ch, tx, ty); const o = new Float32Array(Sz * Sz * ch); for (let y = 0; y < Sz; y++) for (let x = 0; x < Sz; x++) { const s = (iy[y] * W + ix[x]) * ch, d = (y * Sz + x) * ch; for (let c = 0; c < ch; c++) o[d + c] = a[s + c]; } return o; };
+    for (const id of Object.keys(st.L)) { const l = st.L[id]; L[id] = { mode: l.mode, opacity: l.opacity, pix: cr(l.pix, 4), mask: l.mask ? cr(l.mask, 1) : null, parent: l.parent, clip: l.clip }; }
+    for (const id of Object.keys(st.G)) { const g = st.G[id]; G[id] = { mode: g.mode, opacity: g.opacity, mask: g.mask ? cr(g.mask, 1) : null, children: g.children, parent: g.parent }; }
+    for (const id of Object.keys(st.A)) { const a = st.A[id]; A[id] = { kind: a.kind, params: a.params, opacity: a.opacity, mask: a.mask ? cr(a.mask, 1) : null, parent: a.parent }; }
+    return { W: Sz, order: st.order, L, G, A, root: st.root, hasTree: st.hasTree };
   }
   function blit(tx, ty, out) { for (let y = 0; y < T; y++) back.set(out.subarray(y * T * 4, (y + 1) * T * 4), ((ty * T + y) * W + tx * T) * 4); }
-  const renderTile = (idx) => { const tx = idx % tn, ty = (idx / tn) | 0; blit(tx, ty, S.composite(cropState(tx, ty))); };
+  const blitFrom = (tx, ty, comp, Wc, ox, oy) => { for (let y = 0; y < T; y++) back.set(comp.subarray(((oy + y) * Wc + ox) * 4, ((oy + y) * Wc + ox + T) * 4), ((ty * T + y) * W + tx * T) * 4); };
+  const renderTile = (idx, fullComp) => { const tx = idx % tn, ty = (idx / tn) | 0, h = halo();
+    if (!h) return blit(tx, ty, S.composite(cropState(tx, ty)));
+    const edge = tx * T - h < 0 || ty * T - h < 0 || tx * T + T + h > W || ty * T + T + h > W;   // FL6 amendment: with more than one filter, a crop that crosses the canvas edge is not bitwise equal (mirrored summation order), so it uses the full frame
+    if (fullComp || T + 2 * h >= W || (edge && nfil() > 1)) return blitFrom(tx, ty, fullComp || S.composite(st), W, tx * T, ty * T);   // the halo reaches across the whole canvas: one full-frame composite is the cheaper, identical thing
+    blitFrom(tx, ty, S.composite(cropState(tx, ty, h)), T + 2 * h, h, h); };   // the centre T x T of a crop that carries the halo (reflect-extended at the canvas edge)
   const all = () => Array.from({ length: tn * tn }, (_, i) => i);
+  // a batch of tiles: with filter layers, if the halo crops would cost more than one full frame, composite the full frame once
+  function renderTiles(list) { const h = halo(); if (!h) { for (const i of list) renderTile(i); return; } const cost = list.length * (T + 2 * h) * (T + 2 * h); const m = nfil() > 1 && list.some((i) => { const tx = i % tn, ty = (i / tn) | 0; return tx * T - h < 0 || ty * T - h < 0 || tx * T + T + h > W || ty * T + T + h > W; }), fc = cost >= W * W || T + 2 * h >= W || m ? S.composite(st) : null; for (const i of list) renderTile(i, fc); }
   // call AFTER S.apply(st, o); returns the tile ids it recomposited
-  function after(o) { const t = tilesOf(o) || all(); for (const i of t) renderTile(i); return t; }
-  return { back, T, tn, tilesOf, cropState, blit, renderTile, after, full: () => { for (const i of all()) renderTile(i); } };
+  function after(o) { const t = tilesOf(o) || all(); renderTiles(t); return t; }
+  return { back, T, tn, tilesOf, cropState, blit, renderTile, renderTiles, halo, after, full: () => { if (halo()) { const fc = S.composite(st); for (const i of all()) renderTile(i, fc); } else for (const i of all()) renderTile(i); } };
 }
 if (node) module.exports = { makeDirty }; else root.Dirty = { makeDirty };
 })(this);
@@ -616,17 +677,20 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     const n = W * W, fs = S.newState(W), hiddenGroups = [], hiddenAdj = [], LO = node ? require('./layer_ops.js') : root.LayerOps, meta = LO.meta(st), hiddenIds = [];
     const mkAdj = (id) => { const a = st.A[id], am = meta[id], P = a.params, adj = a.kind === 'invert' ? { type: 'invert' } : a.kind === 'threshold' ? { type: 'threshold', level: P.level } : a.kind === 'posterize' ? { type: 'posterize', levels: P.levels }
       : a.kind === 'hsl' ? { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: P.hue, saturation: P.sat, lightness: P.light } }
+      : a.kind === 'gradmap' ? { type: 'gradient map', gradientType: 'solid', reverse: false, dither: false, name: 'Gradient Map', colorStops: P.stops.map(([p, r, g, b]) => ({ location: p / 255, midpoint: 0.5, color: { r, g, b } })), opacityStops: [{ location: 0, midpoint: 0.5, opacity: 1 }, { location: 1, midpoint: 0.5, opacity: 1 }], smoothness: 1 }   // same fields as doc/psd_export.js mkAdjust
       : a.kind === 'curves' ? { type: 'curves', rgb: P.points.map(([x, y]) => ({ input: x, output: y })) } : { type: 'levels', rgb: { shadowInput: P.in_black, highlightInput: P.in_white, shadowOutput: P.out_black, highlightOutput: P.out_white, midtoneInput: P.gamma_x100 / 100 } };   // same fields as doc/psd_export.js mkAdjust
       S.apply(fs, { op: 'adjust', id, kind: a.kind, params: JSON.parse(JSON.stringify(P)), opacity: r4(am.opacity), mask: false }); if (a.mask) fs.A[id].mask = Float32Array.from(a.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a maskraster
       if (am.hidden) hiddenAdj.push(id);
       const ac = { name: am.name, ...(am.hidden ? { hidden: true } : {}), left: 0, top: 0, right: W, bottom: W, blendMode: 'normal', opacity: q255(fs.A[id].opacity), adjustment: adj };
       if (a.mask) { const md = new Uint8ClampedArray(n * 4); for (let i = 0; i < n; i++) { const v = q8(a.mask[i]); md[i*4] = md[i*4+1] = md[i*4+2] = v; md[i*4+3] = 255; } ac.mask = { left: 0, top: 0, right: W, bottom: W, defaultColor: 255, imageData: { width: W, height: W, data: md } }; }   // same as doc/psd_export.js maskData (8-bit)
       return ac; };
+    // filter layers (Level 2j, B.3): written as a BAKED normal pixel layer, exactly as editor/export_psd.js does
+    const bake = (id) => { const a = st.A[id], j = st.root.indexOf(id), comp = S.composite({ ...st, root: st.root.slice(0, j + 1), hasTree: true, A: { ...st.A, [id]: { ...a, opacity: 1, mask: null } } }); meta[id] = { ...meta[id], name: (a.name || (a.kind === 'gblur' ? 'Gaussian blur ' + id : 'Sharpen ' + id)) + ' (baked)' }; return { pix: comp, mode: 'normal', mask: a.mask, clip: false }; };
     const mkNode = (id, parent) => {
-      if (st.A[id]) return mkAdj(id);
+      if (st.A[id] && !S.FILTER_KINDS.includes(st.A[id].kind)) return mkAdj(id);
       if (st.G[id]) { const g = st.G[id], gm = meta[id]; S.apply(fs, { op: 'group', id, mode: g.mode, opacity: r4(gm.opacity), mask: false }); const kids = g.children.map((c) => mkNode(c, id)); if (gm.hidden) hiddenGroups.push(id);
         return { name: gm.name, ...(gm.hidden ? { hidden: true } : {}), opened: true, blendMode: g.mode === 'pass-through' ? 'pass through' : MODE_OUT[g.mode], opacity: q255(fs.G[id].opacity), children: kids }; }
-      const l = st.L[id], rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
+      const l = st.L[id] || bake(id), rgba8 = new Uint8ClampedArray(n * 4);   // editor layer -> straight RGBA8 (what the Node exporter writes as a raster blob)
       for (let i = 0; i < n; i++) { const a = l.pix[i*4+3]; rgba8[i*4+3] = q8(a); if (a > 0) for (let k = 0; k < 3; k++) rgba8[i*4+k] = q8(F(l.pix[i*4+k] / a)); }
       S.apply(fs, { op: 'layer', id, mode: l.mode, opacity: r4(meta[id].opacity), mask: false, ...(l.clip ? { clip: true } : {}), ...(parent >= 0 ? { parent } : {}) }); const fl = fs.L[id]; if (l.mask) fl.mask = Float32Array.from(l.mask, (v) => F(q8(v) / 255));   // refold as docfold does for a raster op
       for (let i = 0; i < n; i++) { const a = F(rgba8[i*4+3] / 255); fl.pix[i*4+3] = a; for (let k = 0; k < 3; k++) fl.pix[i*4+k] = F(F(rgba8[i*4+k] / 255) * a); }
@@ -684,7 +748,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     if (o.op === 'set' && o.opacity !== undefined && nodeOf(st, o.layer) && nodeOf(st, o.layer).hid) { const l = nodeOf(st, o.layer); l.keep = F(o.opacity); if (o.mode) l.mode = o.mode; return true; }
     return false;
   }
-  const displayName = (id, l, type) => (l && l.name) || (id === 0 ? 'Background' : type === 'adjust' ? (l && l.kind ? l.kind[0].toUpperCase() + l.kind.slice(1) : 'Adjustment') + ' ' + id : (type ? 'Group ' : 'Layer ') + id);
+  const displayName = (id, l, type) => (l && l.name) || (id === 0 ? 'Background' : type === 'adjust' ? (l && l.kind ? (l.kind === 'gblur' ? 'Blur' : l.kind[0].toUpperCase() + l.kind.slice(1)) : 'Adjustment') + ' ' + id : (type ? 'Group ' : 'Layer ') + id);
   const meta = (st) => { const m = {}; for (const id of st.order) { const l = st.L[id]; m[id] = { name: displayName(id, l), hidden: !!l.hid, opacity: l.hid ? l.keep : l.opacity }; } for (const id of Object.keys(st.G)) { const g = st.G[id]; m[id] = { name: displayName(+id, g, true), hidden: !!g.hid, opacity: g.hid ? g.keep : g.opacity, group: true }; } for (const id of Object.keys(st.A)) { const a = st.A[id]; m[id] = { name: displayName(+id, a, 'adjust'), hidden: !!a.hid, opacity: a.hid ? a.keep : a.opacity, adjust: true }; } return m; };
   const nextId = (st) => Math.max(-1, ...Object.keys(st.L).map(Number), ...Object.keys(st.G).map(Number), ...Object.keys(st.A).map(Number)) + 1;
   const api = { apply, displayName, meta, nextId, reflow, retree, validAll, listOf };
@@ -696,16 +760,20 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 // Adjustment layers for the editor log: op 'adjust' (engine op, validated here) and 'adjset' (replace the parameters). Spec: witness_log/HYPOTHESES.md "Level 2d" (AJ1-AJ10).
 // Parameter rules are the doc schema's (doc/schema.js); the engine (stack.js applyAdjust) does the maths.
 (function (root) {
-  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, LO = node ? require('./layer_ops.js') : root.LayerOps;
-  const KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl'];
-  const DEFAULTS = { invert: () => ({}), levels: () => ({ in_black: 0, in_white: 255, gamma_x100: 100, out_black: 0, out_white: 255 }), threshold: () => ({ level: 128 }), posterize: () => ({ levels: 4 }), curves: () => ({ points: [[0, 0], [255, 255]] }), hsl: () => ({ hue: 0, sat: 0, light: 0 }) };
+  const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, LO = node ? require('./layer_ops.js') : root.LayerOps, FL = node ? require('../filters/filter_layers.js') : root.FilterLayers;
+  const KINDS = ['invert', 'levels', 'threshold', 'posterize', 'curves', 'hsl', 'gradmap', ...FL.KINDS];
+  const DEFAULTS = { invert: () => ({}), levels: () => ({ in_black: 0, in_white: 255, gamma_x100: 100, out_black: 0, out_white: 255 }), threshold: () => ({ level: 128 }), posterize: () => ({ levels: 4 }), curves: () => ({ points: [[0, 0], [255, 255]] }), hsl: () => ({ hue: 0, sat: 0, light: 0 }), gradmap: () => ({ stops: [[0, 0, 0, 0], [255, 255, 255, 255]] }), gblur: FL.DEFAULTS.gblur, sharpen: FL.DEFAULTS.sharpen };
   function validate(kind, P) {
     if (!KINDS.includes(kind)) throw new Error('adjust: unknown kind ' + kind); const ints = (keys) => P && typeof P === 'object' && !Array.isArray(P) && Object.keys(P).sort().join() === [...keys].sort().join() && keys.every((k) => Number.isInteger(P[k])), inr = (k, a, b) => P[k] >= a && P[k] <= b;
+    if (FL.KINDS.includes(kind)) return FL.validate(kind, P);
     if (kind === 'invert') { if (!ints([])) throw new Error('adjust: invert takes no parameters'); }
     else if (kind === 'levels') { if (!ints(['in_black', 'in_white', 'gamma_x100', 'out_black', 'out_white'])) throw new Error('adjust: levels needs exactly in_black, in_white, gamma_x100, out_black, out_white (integers)'); if (!(inr('in_black', 0, 254) && inr('in_white', 1, 255) && P.in_black < P.in_white && inr('gamma_x100', 1, 999) && inr('out_black', 0, 255) && inr('out_white', 0, 255))) throw new Error('adjust: levels parameter out of range'); }
     else if (kind === 'threshold') { if (!ints(['level']) || !inr('level', 1, 255)) throw new Error('adjust: threshold needs an integer level 1..255'); }
     else if (kind === 'hsl') { if (!ints(['hue', 'sat', 'light']) || !inr('hue', -180, 180) || !inr('sat', -100, 100) || !inr('light', -100, 100)) throw new Error('adjust: hsl needs integer hue -180..180, sat -100..100, light -100..100'); }
     else if (kind === 'posterize') { if (!ints(['levels']) || !inr('levels', 2, 255)) throw new Error('adjust: posterize needs an integer levels 2..255'); }
+    else if (kind === 'gradmap') { const st = P && P.stops; if (!P || Object.keys(P).join() !== 'stops' || !Array.isArray(st) || st.length < 2 || st.length > 8) throw new Error('adjust: gradmap needs stops: 2..8 [pos,r,g,b] integer arrays');
+      for (let k = 0; k < st.length; k++) { const q = st[k]; if (!Array.isArray(q) || q.length !== 4 || !q.every((v) => Number.isInteger(v) && v >= 0 && v <= 255)) throw new Error('adjust: gradmap stops are integer [pos,r,g,b] in 0..255'); if (k > 0 && q[0] <= st[k - 1][0]) throw new Error('adjust: gradmap stop positions must strictly increase'); }
+      if (st[0][0] !== 0 || st[st.length - 1][0] !== 255) throw new Error('adjust: gradmap stops must start at 0 and end at 255'); }
     else { const pts = P && P.points; if (!P || Object.keys(P).join() !== 'points' || !Array.isArray(pts) || pts.length < 2 || pts.length > 16) throw new Error('adjust: curves needs points: 2..16 [x,y] pairs'); let px = -1;
       for (const p of pts) { if (!Array.isArray(p) || p.length !== 2 || !Number.isInteger(p[0]) || !Number.isInteger(p[1]) || p[0] < 0 || p[0] > 255 || p[1] < 0 || p[1] > 255) throw new Error('adjust: curve points are integer [x,y] in 0..255'); if (p[0] <= px) throw new Error('adjust: curve x must be strictly increasing'); px = p[0]; } }
   }
@@ -715,7 +783,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     if (o.op === 'adjset') { const a = st.A[o.id]; if (!a) throw new Error('adjset: unknown adjustment ' + o.id); validate(a.kind, o.params); a.params = clone(o.params); return true; }
     return false;
   }
-  function label(o, kind) { const P = o.params; if (kind === 'curves') return 'Adjust curves ' + o.id + ': ' + P.points.length + ' points'; if (kind === 'levels') return 'Adjust levels ' + o.id + ': in ' + P.in_black + '-' + P.in_white + ', gamma ' + (P.gamma_x100 / 100) + ', out ' + P.out_black + '-' + P.out_white; if (kind === 'threshold') return 'Adjust threshold ' + o.id + ': ' + P.level; if (kind === 'hsl') return 'Adjust hue/saturation ' + o.id + ': hue ' + P.hue + ', sat ' + P.sat + ', light ' + P.light; if (kind === 'posterize') return 'Adjust posterize ' + o.id + ': ' + P.levels + ' levels'; return 'Adjust ' + o.id; }
+  function label(o, kind) { const P = o.params; if (kind === 'curves') return 'Adjust curves ' + o.id + ': ' + P.points.length + ' points'; if (kind === 'levels') return 'Adjust levels ' + o.id + ': in ' + P.in_black + '-' + P.in_white + ', gamma ' + (P.gamma_x100 / 100) + ', out ' + P.out_black + '-' + P.out_white; if (kind === 'threshold') return 'Adjust threshold ' + o.id + ': ' + P.level; if (kind === 'hsl') return 'Adjust hue/saturation ' + o.id + ': hue ' + P.hue + ', sat ' + P.sat + ', light ' + P.light; if (FL.KINDS.includes(kind)) return FL.label(kind, o); if (kind === 'gradmap') return 'Adjust gradient map ' + o.id + ': ' + P.stops.length + ' stops'; if (kind === 'posterize') return 'Adjust posterize ' + o.id + ': ' + P.levels + ' levels'; return 'Adjust ' + o.id; }
   const api = { apply, validate, DEFAULTS, KINDS, label, clone };
   if (node) module.exports = api; else root.AdjustOps = api;
 })(this);
@@ -778,12 +846,170 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 })(this);
 
 ;
+/* ===== editor/grad_ops.js ===== */
+// Gradient paint op for the editor log: {op:'grad', layer, kind:'linear'|'radial', x0, y0, x1, y1, c0:[r,g,b], c1:[r,g,b], a0, a1, target?:'pixels'|'mask'}.
+// Spec: prompts/OPLOGPIC_GRADIENT_FILTERS.md A.1; witness_log/HYPOTHESES.md "Level 2i" (GD1-GD4). Only + - * / Math.sqrt, every step through Math.fround.
+// Limited to the active selection (st.sel.mask, final 0/1 per pixel); target 'mask' REPLACES the layer mask value inside the selection.
+(function (root) {
+  const F = Math.fround, node = typeof require !== 'undefined';
+  const KEYS = ['op', 'layer', 'kind', 'x0', 'y0', 'x1', 'y1', 'c0', 'c1', 'a0', 'a1', 'target'];
+  const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1, col = (c) => Array.isArray(c) && c.length === 3 && c.every(unit);
+  function validate(st, o) {
+    const W = st.W, bad = (m) => { throw new Error('grad: ' + m); };
+    for (const k of Object.keys(o)) if (!KEYS.includes(k)) bad('unknown field ' + k);
+    const l = st.L[o.layer]; if (!l) bad('unknown layer ' + o.layer);
+    if (o.kind !== 'linear' && o.kind !== 'radial') bad('kind must be linear or radial');
+    for (const k of ['x0', 'y0', 'x1', 'y1']) if (!Number.isInteger(o[k]) || o[k] < 0 || o[k] >= W) bad(k + ' must be an integer inside the canvas');
+    if (o.x0 === o.x1 && o.y0 === o.y1) bad('start and end point are the same');
+    if (!unit(o.a0) || !unit(o.a1)) bad('a0 and a1 must be numbers in 0..1');
+    const target = o.target === undefined ? 'pixels' : o.target; if (target !== 'pixels' && target !== 'mask') bad('target must be pixels or mask');
+    if (target === 'pixels') { if (!col(o.c0) || !col(o.c1)) bad('c0 and c1 must be [r,g,b] in 0..1'); } else { if ('c0' in o || 'c1' in o) bad('a mask gradient takes no colours'); if (!l.mask) bad('layer ' + o.layer + ' has no mask'); }
+    return { l, target };
+  }
+  function apply(st, o) {
+    if (o.op !== 'grad') return false;
+    const W = st.W, { l, target } = validate(st, o), sel = st.sel ? st.sel.mask : null;
+    const x0 = F(o.x0), y0 = F(o.y0), dx = F(F(o.x1) - x0), dy = F(F(o.y1) - y0), den = F(F(dx * dx) + F(dy * dy)), rad = F(Math.sqrt(den)), radial = o.kind === 'radial';
+    const a0 = F(o.a0), da = F(F(o.a1) - a0), c0 = target === 'pixels' ? o.c0.map(F) : null, dc = target === 'pixels' ? [0, 1, 2].map((k) => F(F(o.c1[k]) - c0[k])) : null;
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (sel && !sel[i]) continue;
+      const px = F(x + 0.5), py = F(y + 0.5), ex = F(px - x0), ey = F(py - y0); let t;
+      if (radial) t = F(F(Math.sqrt(F(F(ex * ex) + F(ey * ey)))) / rad); else t = F(F(F(ex * dx) + F(ey * dy)) / den);
+      t = t < 0 ? 0 : t > 1 ? 1 : t; const a = F(a0 + F(t * da));
+      if (target === 'mask') { l.mask[i] = a; continue; }
+      if (a <= 0) continue; const ia = F(1 - a), p = i * 4;
+      for (let k = 0; k < 3; k++) l.pix[p + k] = F(F(F(c0[k] + F(t * dc[k])) * a) + F(l.pix[p + k] * ia));
+      l.pix[p + 3] = F(a + F(l.pix[p + 3] * ia));
+    }
+    return true;
+  }
+  const label = (o) => 'Gradient ' + o.kind + (o.target === 'mask' ? ' on mask' : '') + ' (' + o.x0 + ',' + o.y0 + ')->(' + o.x1 + ',' + o.y1 + ')';
+  const api = { apply, validate, label };
+  if (node) module.exports = api; else root.GradOps = api;
+})(this);
+
+;
+/* ===== editor/shape_ops.js ===== */
+// Shape paint op for the editor log: {op:'shape', layer, kind:'rect'|'ellipse'|'line', x0, y0, x1, y1, r?, fill?, c?, a?, stroke?:{w, c, a}}.
+// Spec: prompts/OPLOGPIC_DESIGN_KIT.md S.1; witness_log/HYPOTHESES.md "Level 2k" (SP1-SP8). Signed distance -> coverage clamp(0.5 - d); only + - * / Math.sqrt, every step through Math.fround.
+// Limited to the active selection (st.sel.mask, final 0/1 per pixel) exactly as the brush ops are.
+(function (root) {
+  const F = Math.fround, node = typeof require !== 'undefined';
+  const KEYS = ['op', 'layer', 'kind', 'x0', 'y0', 'x1', 'y1', 'r', 'fill', 'c', 'a', 'stroke'];
+  const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1, col = (c) => Array.isArray(c) && c.length === 3 && c.every(unit);
+  // pure validation of the op against a canvas size W (also used by amend); throws 'shape: ...'
+  function validateShape(o, W) {
+    const bad = (m) => { throw new Error('shape: ' + m); };
+    for (const k of Object.keys(o)) if (!KEYS.includes(k)) bad('unknown field ' + k);
+    if (o.kind !== 'rect' && o.kind !== 'ellipse' && o.kind !== 'line') bad('kind must be rect, ellipse or line');
+    for (const k of ['x0', 'y0', 'x1', 'y1']) if (!Number.isInteger(o[k]) || o[k] < 0 || o[k] > W) bad(k + ' must be an integer in 0..' + W);
+    const line = o.kind === 'line';
+    if (!line && (o.x0 >= o.x1 || o.y0 >= o.y1)) bad('the box needs x0 < x1 and y0 < y1');
+    if (o.r !== undefined) { if (o.kind !== 'rect') bad('r only goes with rect'); if (!Number.isInteger(o.r) || o.r < 0 || o.r > Math.floor(Math.min(o.x1 - o.x0, o.y1 - o.y0) / 2)) bad('r must be an integer 0..floor(min(w, h) / 2)'); }
+    if (line && 'fill' in o) bad('a line has no fill');
+    const fill = line ? false : o.fill === undefined ? true : o.fill; if (typeof fill !== 'boolean') bad('fill must be a boolean');
+    if (fill) { if (!col(o.c) || !unit(o.a)) bad('fill needs c [r,g,b] in 0..1 and a in 0..1'); } else if ('c' in o || 'a' in o) bad('c and a only go with a fill');
+    if (o.stroke !== undefined) { const s = o.stroke; if (!s || typeof s !== 'object' || Array.isArray(s) || Object.keys(s).sort().join() !== 'a,c,w' || !Number.isInteger(s.w) || s.w < 1 || s.w > 64 || !col(s.c) || !unit(s.a)) bad('stroke must be exactly {w: integer 1..64, c: [r,g,b], a}'); }
+    if (!fill && o.stroke === undefined) bad(line ? 'a line needs a stroke' : 'nothing to paint: no fill and no stroke');
+    if (line && o.x0 === o.x1 && o.y0 === o.y1 && !(o.stroke && o.stroke.w >= 1)) bad('a zero-length line needs a stroke');
+    return fill;
+  }
+  function apply(st, o) {
+    if (o.op !== 'shape') return false;
+    const W = st.W, l = st.L[o.layer]; if (!l) throw new Error('shape: unknown layer ' + o.layer);
+    const fill = validateShape(o, W), sel = st.sel ? st.sel.mask : null, line = o.kind === 'line', S = o.stroke, w2 = S ? F(S.w / 2) : 0;
+    const cx = F(F(o.x0 + o.x1) / 2), cy = F(F(o.y0 + o.y1) / 2), hw = F(F(o.x1 - o.x0) / 2), hh = F(F(o.y1 - o.y0) / 2), rr = o.r === undefined ? 0 : o.r, ex = F(hw - rr), ey = F(hh - rr), minh = F(Math.min(hw, hh));
+    const lx = F(o.x1 - o.x0), ly = F(o.y1 - o.y0), ll = F(F(lx * lx) + F(ly * ly));
+    // region: the shape box grown by the stroke margin + 1 (everything outside has coverage 0)
+    const m = Math.ceil((S ? S.w / 2 : 0) + 1), bx0 = Math.max(0, Math.min(o.x0, o.x1) - m), by0 = Math.max(0, Math.min(o.y0, o.y1) - m), bx1 = Math.min(W - 1, Math.max(o.x0, o.x1) + m), by1 = Math.min(W - 1, Math.max(o.y0, o.y1) + m);
+    const fc = fill ? o.c.map(F) : null, fa = fill ? F(o.a) : 0, sc = S ? S.c.map(F) : null, sa = S ? F(S.a) : 0, pix = l.pix;
+    const over = (i, c, a) => { if (a <= 0) return; const ia = F(1 - a), p = i * 4; for (let k = 0; k < 3; k++) pix[p + k] = F(F(c[k] * a) + F(pix[p + k] * ia)); pix[p + 3] = F(a + F(pix[p + 3] * ia)); };
+    const cov = (d) => { const v = F(0.5 - d); return v < 0 ? 0 : v > 1 ? 1 : v; };
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+      const i = y * W + x; if (sel && !sel[i]) continue; const px = F(x + 0.5), py = F(y + 0.5); let d;
+      if (line) { const ax = F(px - o.x0), ay = F(py - o.y0); let h = ll > 0 ? F(F(F(ax * lx) + F(ay * ly)) / ll) : 0; h = h < 0 ? 0 : h > 1 ? 1 : h; const dx = F(ax - F(lx * h)), dy = F(ay - F(ly * h)); d = F(F(Math.sqrt(F(F(dx * dx) + F(dy * dy)))) - w2); over(i, sc, F(cov(d) * sa)); continue; }
+      if (o.kind === 'rect') { const qx = F(F(Math.abs(F(px - cx))) - ex), qy = F(F(Math.abs(F(py - cy))) - ey), mx = qx > 0 ? qx : 0, my = qy > 0 ? qy : 0, inner = Math.min(Math.max(qx, qy), 0); d = F(F(F(Math.sqrt(F(F(mx * mx) + F(my * my)))) + F(inner)) - rr); }
+      else { const u = F(F(px - cx) / hw), v = F(F(py - cy) / hh), f = F(Math.sqrt(F(F(u * u) + F(v * v)))); if (f === 0) d = F(-minh); else { const gu = F(u / hw), gv = F(v / hh), g = F(Math.sqrt(F(F(gu * gu) + F(gv * gv)))); d = F(F(F(f - 1) * f) / g); } }
+      if (fill) over(i, fc, F(cov(d) * fa));
+      if (S) over(i, sc, F(cov(F(F(Math.abs(d)) - w2)) * sa));
+    }
+    return true;
+  }
+  const NAMES = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line' };
+  const label = (o) => (o.kind === 'rect' && o.r ? 'Rounded rectangle' : NAMES[o.kind]) + ' on layer ' + o.layer + ' (' + o.x0 + ',' + o.y0 + ')-(' + o.x1 + ',' + o.y1 + ')';
+  const api = { apply, validateShape, label };
+  if (node) module.exports = api; else root.ShapeOps = api;
+})(this);
+
+;
+/* ===== editor/fx_ops.js ===== */
+// Layer effects for the editor log: {op:'fx', layer, kind:'shadow', dx, dy, blur_x10, c, a} | {op:'fx', layer, kind:'stroke', w, c, a}.
+// Spec: prompts/OPLOGPIC_DESIGN_KIT.md X.1; witness_log/HYPOTHESES.md "Level 2l" (FX1-FX7). Acts on the layer's own premultiplied float32 pixels; only + - * / Math.sqrt, every step through Math.fround.
+// shadow: the layer's alpha shifted by (dx, dy), tinted, blurred (filters/blur.js on a copy padded with R transparent pixels), composited BEHIND the layer. stroke: an outside outline from the exact Euclidean distance to the 50 % alpha edge, behind the layer.
+// Limited to the active selection (st.sel.mask) exactly as the brush ops are.
+(function (root) {
+  const F = Math.fround, node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, Bl = node ? require('../filters/blur.js') : root.Blur;
+  const KEYS = { shadow: ['op', 'layer', 'kind', 'dx', 'dy', 'blur_x10', 'c', 'a'], stroke: ['op', 'layer', 'kind', 'w', 'c', 'a'] };
+  const unit = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1, col = (c) => Array.isArray(c) && c.length === 3 && c.every(unit), int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+  function validateFx(o) {   // pure: no layer lookup (also used by amend)
+    const bad = (m) => { throw new Error('fx: ' + m); }, keys = KEYS[o.kind]; if (!keys) bad('kind must be shadow or stroke');
+    for (const k of Object.keys(o)) if (!keys.includes(k)) bad('unknown field ' + k + ' for ' + o.kind);
+    if (!col(o.c) || !unit(o.a)) bad('c must be [r,g,b] and a a number, both in 0..1');
+    if (o.kind === 'shadow') { if (!int(o.dx, -256, 256) || !int(o.dy, -256, 256)) bad('dx and dy must be integers -256..256'); if (!int(o.blur_x10, 0, 400)) bad('blur_x10 must be an integer 0..400'); }
+    else if (!int(o.w, 1, 32)) bad('w must be an integer 1..32');
+  }
+  // exact squared Euclidean distance transform (Felzenszwalb): f = 0 on the source set, INF elsewhere; integer-valued doubles, so exact
+  const INF = 1e20;
+  function dt1d(f, n, d, v, z) { let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF; for (let q = 1; q < n; q++) { let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); while (s <= z[k]) { k--; s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]); } k++; v[k] = q; z[k] = s; z[k + 1] = INF; }
+    k = 0; for (let q = 0; q < n; q++) { while (z[k + 1] < q) k++; d[q] = (q - v[k]) * (q - v[k]) + f[v[k]]; } }
+  function edt2(inside, W) { const g = new Float64Array(W * W), f = new Float64Array(W), d = new Float64Array(W), v = new Int32Array(W), z = new Float64Array(W + 1);
+    for (let x = 0; x < W; x++) { for (let y = 0; y < W; y++) f[y] = inside[y * W + x] ? 0 : INF; dt1d(f, W, d, v, z); for (let y = 0; y < W; y++) g[y * W + x] = d[y]; }
+    for (let y = 0; y < W; y++) { for (let x = 0; x < W; x++) f[x] = g[y * W + x]; dt1d(f, W, d, v, z); for (let x = 0; x < W; x++) g[y * W + x] = d[x]; } return g; }
+  function ringOf(l, W, o) { const n = W * W, inside = new Uint8Array(n); let any = false; for (let i = 0; i < n; i++) if (l.pix[i * 4 + 3] >= 0.5) { inside[i] = 1; any = true; } if (!any) return null;
+    const d2 = edt2(inside, W), k = new Float32Array(n), a = F(o.a), wp = F(o.w + 0.5); for (let i = 0; i < n; i++) { if (inside[i]) continue; const d = F(Math.sqrt(d2[i])), v = F(wp - d); k[i] = v <= 0 ? 0 : F((v >= 1 ? 1 : v) * a); } return k; }
+  function shadowOf(l, W, o) {   // premultiplied float32 RGBA of the shadow, W x W
+    const sigma = o.blur_x10 / 10, R = o.blur_x10 > 0 ? Math.floor(4 * sigma + 0.5) : 0, P = W + 2 * R, c = o.c.map(F), a = F(o.a), sh = new Float32Array(P * P * 4);
+    for (let y = 0; y < W; y++) { const sy = y - o.dy; if (sy < 0 || sy >= W) continue; for (let x = 0; x < W; x++) { const sx = x - o.dx; if (sx < 0 || sx >= W) continue; const al = l.pix[(sy * W + sx) * 4 + 3]; if (al <= 0) continue; const v = F(a * al), p = ((y + R) * P + x + R) * 4; sh[p] = F(c[0] * v); sh[p + 1] = F(c[1] * v); sh[p + 2] = F(c[2] * v); sh[p + 3] = v; } }
+    const out = R > 0 ? Bl.blurRectTo(sh, P, sigma, [0, 0, P, P]) : sh, res = new Float32Array(W * W * 4);
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const s = ((y + R) * P + x + R) * 4, d = (y * W + x) * 4; res[d] = out[s]; res[d + 1] = out[s + 1]; res[d + 2] = out[s + 2]; res[d + 3] = out[s + 3]; } return res; }
+  function apply(st, o) {
+    if (o.op !== 'fx') return false;
+    validateFx(o); const l = st.L[o.layer]; if (!l) throw new Error('fx: unknown layer ' + o.layer);
+    const W = st.W, n = W * W, sel = st.sel ? st.sel.mask : null, pix = l.pix;
+    if (o.kind === 'shadow') { const sh = shadowOf(l, W, o); for (let i = 0; i < n; i++) { if (sel && !sel[i]) continue; const ia = F(1 - pix[i * 4 + 3]), p = i * 4; for (let k = 0; k < 4; k++) pix[p + k] = F(pix[p + k] + F(sh[p + k] * ia)); } return true; }
+    const ring = ringOf(l, W, o); if (!ring) return true; const c = o.c.map(F);
+    for (let i = 0; i < n; i++) { const k = ring[i]; if (k <= 0 || (sel && !sel[i])) continue; const ia = F(1 - pix[i * 4 + 3]), p = i * 4; for (let q = 0; q < 3; q++) pix[p + q] = F(pix[p + q] + F(F(c[q] * k) * ia)); pix[p + 3] = F(pix[p + 3] + F(k * ia)); }
+    return true;
+  }
+  const label = (o) => (o.kind === 'shadow' ? 'Drop shadow on layer ' + o.layer + ' (' + o.dx + ',' + o.dy + '), blur ' + o.blur_x10 / 10 : 'Outline on layer ' + o.layer + ', ' + o.w + ' px');
+  const api = { apply, validateFx, label, edt2 };
+  if (node) module.exports = api; else root.FxOps = api;
+})(this);
+
+;
 /* ===== editor/img_ops.js ===== */
 // Photo layer op for the editor log: {op:'img', id, sha}. Spec: witness_log/HYPOTHESES.md "Level 1d" (I1-I8). The blob (W*W*4 straight RGBA8, already scaled to the canvas) lives in st.blobs, keyed by its sha256.
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, F = Math.fround;
+  // caption metadata (Level 1k): which words / style a caption layer was drawn from. Metadata only: the fold uses the blob.
+  const AL = ['left', 'center', 'right'], FA = ['sans', 'serif', 'mono'], AN = ['top', 'middle', 'bottom'], rgb255 = (c) => Array.isArray(c) && c.length === 3 && c.every((v) => Number.isInteger(v) && v >= 0 && v <= 255);
+  function validateTxt(t) {
+    const bad = (m) => { throw new Error('txt: ' + m); };
+    if (!t || typeof t !== 'object' || Array.isArray(t) || Object.keys(t).sort().join() !== 'align,anchor,color,family,outline,shadow,size,text') bad('needs exactly text, size, color, anchor, align, family, shadow, outline');
+    if (typeof t.text !== 'string' || !t.text.trim() || t.text.length > 200) bad('text must be 1..200 characters'); if (!Number.isInteger(t.size) || t.size < 24 || t.size > 300) bad('size must be an integer 24..300');
+    if (!rgb255(t.color)) bad('color must be [r,g,b] integers 0..255'); if (!AN.includes(t.anchor)) bad('anchor must be top, middle or bottom'); if (!AL.includes(t.align)) bad('align must be left, center or right'); if (!FA.includes(t.family)) bad('family must be sans, serif or mono'); if (typeof t.shadow !== 'boolean') bad('shadow must be a boolean');
+    if (t.outline !== null && !(t.outline && typeof t.outline === 'object' && Object.keys(t.outline).sort().join() === 'color,w' && Number.isInteger(t.outline.w) && t.outline.w >= 1 && t.outline.w <= 20 && rgb255(t.outline.color))) bad('outline must be null or {w: 1..20, color: [r,g,b]}');
+  }
+  function fromBlob(st, o, tag) {
+    const W = st.W, blob = st.blobs && st.blobs.get(o.sha); if (!blob) throw new Error(tag + ': missing blob ' + String(o.sha).slice(0, 12)); if (blob.length !== W * W * 4) throw new Error(tag + ': blob has ' + blob.length + ' bytes, expected ' + W * W * 4); return blob;
+  }
   function apply(st, o) {
+    if (o.op === 'imgset') {   // replace the pixels of an existing layer (editable text, Level 1k)
+      const l = st.L[o.layer]; if (!l) throw new Error('imgset: unknown layer ' + o.layer); for (const k of Object.keys(o)) if (!['op', 'layer', 'sha', 'txt'].includes(k)) throw new Error('imgset: unknown field ' + k); if ('txt' in o) validateTxt(o.txt);
+      const W = st.W, blob = fromBlob(st, o, 'imgset'), pix = l.pix; for (let i = 0; i < W * W; i++) { const a = F(blob[i * 4 + 3] / 255); pix[i * 4 + 3] = a; for (let k = 0; k < 3; k++) pix[i * 4 + k] = F(F(blob[i * 4 + k] / 255) * a); } return true;
+    }
     if (o.op !== 'img') return false;
+    if ('txt' in o) validateTxt(o.txt);
     const W = st.W, blob = st.blobs && st.blobs.get(o.sha);
     if (!blob) throw new Error('img: missing blob ' + String(o.sha).slice(0, 12)); if (blob.length !== W * W * 4) throw new Error('img: blob has ' + blob.length + ' bytes, expected ' + W * W * 4);
     if (st.L[o.id]) throw new Error('img: layer ' + o.id + ' already exists');
@@ -797,9 +1023,9 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   function cover(iw, ih, W, anchor) { const s = Math.min(iw, ih), off = (long) => (anchor === 'start' ? 0 : anchor === 'end' ? long - s : anchor === 'q1' ? Math.floor((long - s) / 4) : anchor === 'q3' ? Math.floor(3 * (long - s) / 4) : Math.floor((long - s) / 2)); return iw >= ih ? { sx: off(iw), sy: 0, sw: s, sh: s } : { sx: 0, sy: off(ih), sw: s, sh: s }; }
   const b64 = { enc(u8) { if (node) return Buffer.from(u8.buffer, u8.byteOffset, u8.byteLength).toString('base64'); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); },
     dec(str) { if (node) return new Uint8Array(Buffer.from(str, 'base64')); const s = atob(str), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; } };
-  function packBlobs(blobs, ops) { const used = {}; for (const o of ops) if (o.op === 'img') used[o.sha] = b64.enc(blobs.get(o.sha)); return used; }
+  function packBlobs(blobs, ops) { const used = {}; for (const o of ops) if (o.op === 'img' || o.op === 'imgset') used[o.sha] = b64.enc(blobs.get(o.sha)); return used; }
   function unpackBlobs(obj) { const m = new Map(); for (const sha of Object.keys(obj || {})) { const u = b64.dec(obj[sha]); if (S.sha256(u) !== sha) throw new Error('blob sha mismatch for ' + sha.slice(0, 12)); m.set(sha, u); } return m; }
-  const api = { apply, fit, cover, b64, packBlobs, unpackBlobs };
+  const api = { apply, fit, cover, b64, packBlobs, unpackBlobs, validateTxt };
   if (node) module.exports = api; else root.ImgOps = api;
 })(this);
 
@@ -849,7 +1075,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 /* ===== editor/text_raster.js ===== */
 // Caption drawing for the editor (page only: needs a canvas). Spec: witness_log/HYPOTHESES.md "Level 1f" (T1-T9). Returns straight-alpha RGBA8 of a W x W transparent canvas with the caption drawn on it; the log stores these pixels (img op), so replay is exact on every device even though the glyph drawing is not.
 (function (root) {
-  const FONT = 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  const FONT = 'system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif', FAMILY = { sans: FONT, serif: 'ui-serif, Georgia, "Times New Roman", serif', mono: 'ui-monospace, Menlo, Consolas, "Courier New", monospace' };
   function wrap(ctx, text, maxW) {
     const lines = []; for (const para of String(text).split('\n')) { let line = '';
       for (const word of para.split(/\s+/).filter(Boolean)) {
@@ -858,14 +1084,17 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       lines.push(line); }
     return lines.filter((l, i, a) => l || (i > 0 && i < a.length - 1));
   }
-  // opts: { text, size (24..300), color [r,g,b] 0..255, anchor 'top'|'middle'|'bottom', shadow bool }
+  // opts: { text, size (24..300), color [r,g,b] 0..255, anchor 'top'|'middle'|'bottom', shadow bool, align 'left'|'center'|'right' (default center), family 'sans'|'serif'|'mono' (default sans), outline null | { w 1..20, color [r,g,b] } } (Level 1k)
   function render(W, opts) {
     const size = Math.max(24, Math.min(300, Math.round(opts.size))), cv = document.createElement('canvas'); cv.width = cv.height = W; const ctx = cv.getContext('2d', { willReadFrequently: true });
-    ctx.font = 'bold ' + size + 'px ' + FONT; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-    const lines = wrap(ctx, opts.text, W * 0.9), lh = Math.round(size * 1.2), bh = lines.length * lh, m = Math.round(W * 0.06), y0 = opts.anchor === 'top' ? m : opts.anchor === 'bottom' ? W - m - bh : Math.round((W - bh) / 2);
+    const align = opts.align || 'center', outline = opts.outline || null; ctx.font = 'bold ' + size + 'px ' + (FAMILY[opts.family] || FONT); ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    const lines = wrap(ctx, opts.text, align === 'center' ? W * 0.9 : W * 0.88), lh = Math.round(size * 1.2), bh = lines.length * lh, m = Math.round(W * 0.06), y0 = opts.anchor === 'top' ? m : opts.anchor === 'bottom' ? W - m - bh : Math.round((W - bh) / 2);
     ctx.fillStyle = 'rgb(' + opts.color.map((v) => Math.round(v)).join(',') + ')';
     if (opts.shadow) { ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = Math.round(size * 0.08); ctx.shadowOffsetX = ctx.shadowOffsetY = Math.round(size * 0.04); }
-    lines.forEach((l, i) => ctx.fillText(l, W / 2, y0 + i * lh));
+    // x of a line: centre = the canvas centre; left / right put the INK box on the 6 % margin (the measured side bearing of the line is compensated)
+    const xOf = (l) => { if (align === 'center') { ctx.textAlign = 'center'; return W / 2; } ctx.textAlign = align; const mt = ctx.measureText(l); return align === 'left' ? m0 + mt.actualBoundingBoxLeft : W - m0 - mt.actualBoundingBoxRight; }, m0 = m;   // textAlign is set BEFORE measuring: the bounding box is relative to the alignment point
+    if (outline) { ctx.lineJoin = 'round'; ctx.lineWidth = 2 * outline.w; ctx.strokeStyle = 'rgb(' + outline.color.map((v) => Math.round(v)).join(',') + ')'; lines.forEach((l, i) => ctx.strokeText(l, xOf(l), y0 + i * lh)); ctx.shadowColor = 'rgba(0,0,0,0)'; ctx.shadowBlur = 0; ctx.shadowOffsetX = ctx.shadowOffsetY = 0; }   // the shadow belongs to the outline pass (the shape with its outline)
+    lines.forEach((l, i) => ctx.fillText(l, xOf(l), y0 + i * lh));
     return new Uint8Array(ctx.getImageData(0, 0, W, W).data.buffer);
   }
   const api = { render, wrap };
@@ -911,11 +1140,13 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 // History for the editor log: amend (re-edit a past stroke), labels, share-as-link, fingerprint. Spec: witness_log/HYPOTHESES.md "Level 1b" (A1-A3, R1-R2, V1, L1-L2).
 (function (root) {
   const node = typeof require !== 'undefined', S = node ? require('../stack.js') : root.Stack, IO = node ? require('./img_ops.js') : root.ImgOps;
-  const KEYS = { hard: ['c', 'a', 'r'], soft: ['c', 'a', 'r'], erase: ['c', 'a', 'r'], blur: ['s', 'r'], smudge: ['s', 'r'] };
+  const KEYS = { hard: ['c', 'a', 'r'], soft: ['c', 'a', 'r'], erase: ['c', 'a', 'r'], blur: ['s', 'r'], smudge: ['s', 'r'], shape: ['x0', 'y0', 'x1', 'y1', 'r', 'c', 'a', 'stroke'], fx: ['dx', 'dy', 'blur_x10', 'w', 'c', 'a'] };
   const inR = (v, lo, hi, loEx) => typeof v === 'number' && isFinite(v) && (loEx ? v > lo : v >= lo) && v <= hi;
   function checkSet(t, set) {
-    const k = t.op === 'smudge' ? 'smudge' : t.kind; if (!KEYS[k]) throw new Error('amend: target kind ' + k + ' cannot be amended');
+    const k = t.op === 'smudge' ? 'smudge' : t.op === 'shape' ? 'shape' : t.op === 'fx' ? 'fx' : t.kind; if (!KEYS[k]) throw new Error('amend: target kind ' + k + ' cannot be amended');
     if (!set || typeof set !== 'object' || !Object.keys(set).length) throw new Error('amend: empty set');
+    if (k === 'fx') { const FXO = node ? require('./fx_ops.js') : root.FxOps, m = { ...t, ...set }; for (const key of Object.keys(set)) if (!KEYS.fx.includes(key)) throw new Error('amend: key "' + key + '" not allowed for fx'); try { FXO.validateFx(m); } catch (e) { throw new Error('amend: ' + e.message); } return; }
+    if (k === 'shape') { const SPO = node ? require('./shape_ops.js') : root.ShapeOps, m = { ...t, ...set }; for (const key of Object.keys(set)) if (!KEYS.shape.includes(key)) throw new Error('amend: key "' + key + '" not allowed for shape'); try { SPO.validateShape(m, 16384); } catch (e) { throw new Error('amend: ' + e.message); } return; }   // canvas bounds are checked in editor.amend
     for (const key of Object.keys(set)) { if (!KEYS[k].includes(key)) throw new Error('amend: key "' + key + '" not allowed for ' + k); const v = set[key];
       if (key === 'c' && !(Array.isArray(v) && v.length === 3 && v.every((x) => inR(x, 0, 1)))) throw new Error('amend: c must be 3 numbers in [0,1]');
       if (key === 'a' && !inR(v, 0, 1, true)) throw new Error('amend: a must be in (0,1]'); if (key === 's' && !inR(v, 0, 1, true)) throw new Error('amend: s must be in (0,1]'); if (key === 'r' && !inR(v, 1, 200)) throw new Error('amend: r must be in [1,200]'); }
@@ -923,7 +1154,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
   // pure: returns the list with every amended target replaced by {...target, ...merged sets}; amend entries stay (they are no-ops when folded)
   function expand(list) {
     const patch = new Map();
-    list.forEach((o, idx) => { if (o.op !== 'amend') return; if (!Number.isInteger(o.i) || o.i < 0 || o.i >= idx) throw new Error('amend: target index ' + o.i + ' must be an earlier entry'); const t = list[o.i]; if (!t || (t.op !== 'stroke' && t.op !== 'smudge')) throw new Error('amend: entry ' + o.i + ' is not a stroke or smudge'); checkSet(t, o.set); patch.set(o.i, { ...(patch.get(o.i) || {}), ...o.set }); });
+    list.forEach((o, idx) => { if (o.op !== 'amend') return; if (!Number.isInteger(o.i) || o.i < 0 || o.i >= idx) throw new Error('amend: target index ' + o.i + ' must be an earlier entry'); const t = list[o.i]; if (!t || (t.op !== 'stroke' && t.op !== 'smudge' && t.op !== 'shape' && t.op !== 'fx')) throw new Error('amend: entry ' + o.i + ' is not a stroke, smudge, shape or effect'); checkSet(t, o.set); patch.set(o.i, { ...(patch.get(o.i) || {}), ...o.set }); });
     return patch.size ? list.map((o, i) => (patch.has(i) ? { ...o, ...patch.get(i) } : o)) : list;
   }
   const apply = (st, o) => o.op === 'amend';
@@ -939,14 +1170,17 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       case 'smudge': return 'Smudge on ' + (o.t === 'mask' ? 'mask of ' : '') + 'layer ' + o.layer + ', size ' + o.r + ', ' + o.pts.length + ' pts'; case 'blur': return 'Blur layer ' + o.layer;
       case 'del': return 'Delete layer ' + o.layer; case 'mv': return 'Move layer ' + o.layer + ' to ' + o.to; case 'vis': return (o.v ? 'Show' : 'Hide') + ' layer ' + o.layer; case 'name': return 'Rename layer ' + o.layer + ' to ' + o.name;
       case 'sel': if (o.kind === 'wand') return 'Magic wand at (' + Math.floor(o.x) + ', ' + Math.floor(o.y) + '), tolerance ' + o.tol + (o.contiguous ? ', contiguous' : ', all pixels') + (o.mode && o.mode !== 'new' ? ', ' + o.mode : ''); if (o.kind === 'grow') return (o.n > 0 ? 'Grow' : 'Shrink') + ' selection by ' + Math.abs(o.n); return o.kind === 'rect' || o.kind === 'ellipse' ? 'Select ' + o.kind + ' ' + (o.x1 - o.x0) + 'x' + (o.y1 - o.y0) : o.kind === 'invert' ? 'Invert selection' : 'Clear selection';
-      case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return 'Add photo as layer ' + o.id; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
+      case 'grad': return 'Gradient ' + o.kind + (o.target === 'mask' ? ' on mask of layer ' : ' on layer ') + o.layer + ' (' + o.x0 + ',' + o.y0 + ') to (' + o.x1 + ',' + o.y1 + ')';
+      case 'fx': return (root.FxOps || require('./fx_ops.js')).label(o);
+      case 'shape': return (root.ShapeOps || require('./shape_ops.js')).label(o);
+      case 'xform': return 'Move layer ' + o.layer + ' by ' + o.dx + ',' + o.dy + ', scale ' + (o.s / 10) + ' %'; case 'img': return o.txt ? 'Add text as layer ' + o.id : 'Add photo as layer ' + o.id; case 'imgset': return 'Edit text on layer ' + o.layer; case 'amend': return 'Re-edit entry ' + (o.i + 1) + ' (' + Object.keys(o.set).join(', ') + ')'; default: return o.op; }
   }
   const bytesOf = (o) => new TextEncoder().encode(JSON.stringify(o)).length;
   function raw(o) { if (o && Array.isArray(o.pts) && o.pts.length > 4) { const first = o.pts.slice(0, 4).map((p) => JSON.stringify(p)).join(','); return JSON.stringify({ ...o, pts: '@@' }).replace('"@@"', '[' + first + ',"+' + (o.pts.length - 4) + ' more"]'); } return JSON.stringify(o); }
   const head = (ops) => (ops.length ? S.chain(ops)[ops.length - 1].h : '0'.repeat(64));
   const b64u = { enc: (u8) => IO.b64.enc(u8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), dec: (s) => IO.b64.dec(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)) };
   async function pipe(u8, T) { const s = new T('deflate-raw'), w = s.writable.getWriter(); w.write(u8).catch(() => {}); w.close().catch(() => {}); return new Uint8Array(await new Response(s.readable).arrayBuffer()); }
-  async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
+  async function makeLink(W, ops) { if (ops.some((o) => o.op === 'img' || o.op === 'imgset')) throw new Error('photos make the link too large: use Save'); const raw = new TextEncoder().encode(JSON.stringify({ W, ops })); return '#v1=' + b64u.enc(await pipe(raw, CompressionStream)) + '&h=' + head(ops).slice(0, 16); }
   async function parseLink(hash) {
     const m = /^#v1=([A-Za-z0-9_-]+)&h=([0-9a-f]{16})$/.exec(hash || ''); if (!m) throw new Error('not a painting link');
     let j; try { j = JSON.parse(new TextDecoder().decode(await pipe(b64u.dec(m[1]), DecompressionStream))); } catch (e) { throw new Error('the link is damaged'); }
@@ -1025,11 +1259,11 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
 // Minimal playable editor on the op log. Spec: witness_log/HYPOTHESES.md "Minimal playable editor on the op log" (U1-U9). Every action is one log entry; the canvas is the dirty-tile backdrop.
 (function (root) {
   const S = root.Stack, Br = root.Brush, Bl = root.Blur, T = 64, F = Math.fround, r2 = (x) => Math.round(x * 100) / 100, r4 = (x) => Math.round(x * 1e4) / 1e4, q = (v) => Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5)));
-  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, AO = root.AdjustOps, HO = root.HistoryOps, CK = root.Ckpt, MO = root.MaskOps, XO = root.XformOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || XO.apply(st, o) || AO.apply(st, o) || IO.apply(st, o) || HO.apply(st, o) || MO.apply(st, o, base) || SO.apply(st, o, base) ? undefined : base(st, o));
+  const LO = root.LayerOps, SO = root.SelectOps, IO = root.ImgOps, AO = root.AdjustOps, HO = root.HistoryOps, CK = root.Ckpt, MO = root.MaskOps, GO = root.GradOps, SPO = root.ShapeOps, FXO = root.FxOps, XO = root.XformOps, base = (st, o) => (o.op === 'blur' ? Bl.applyOp(st, o) : Br.applyOp(st, o)), applyOp = (st, o) => (LO.apply(st, o) || XO.apply(st, o) || AO.apply(st, o) || IO.apply(st, o) || GO.apply(st, o) || SPO.apply(st, o) || FXO.apply(st, o) || HO.apply(st, o) || MO.apply(st, o, base) || SO.apply(st, o, base) ? undefined : base(st, o));
   function createEditor(canvas, W) {
     W = W || 1024; const ctx = canvas.getContext('2d'), tn = W / T, tileImg = new ImageData(T, T);
     canvas.width = canvas.height = W;
-    const blobs = new Map(), J2 = JSON.stringify; let xf = null, xfRaf = 0, xfPend = null, adjDrag = null, st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { feather: 0, target: 'layer', maskValue: 1, tol: 33, contig: true, wandMode: 'new', tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
+    const blobs = new Map(), J2 = JSON.stringify; let xf = null, xfRaf = 0, xfPend = null, adjDrag = null, st, D, ops, undo, redo, cur = null, prevw = null, replaying = null, readOnly = false, memCk = null; const moveMs = [], flushLog = [], params = { skind: 'rect', sfill: true, sstroke: false, sw: 4, sradius: 0, scol: [0, 0, 0], gkind: 'linear', gclear: false, gcol: [1, 1, 1], feather: 0, target: 'layer', maskValue: 1, tol: 33, contig: true, wandMode: 'new', tool: 'hard', layer: 1, color: [0.1, 0.2, 0.6], size: 14, flow: 1, strength: 0.7, sigma: 4 }, listeners = [];
     const emit = () => listeners.forEach((f) => f());
     function paintTiles(list, DD) { const back = (DD || D).back, d = tileImg.data;
       for (const t of list) { const tx = t % tn, ty = (t / tn) | 0;
@@ -1041,8 +1275,8 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     const initial = () => [{ op: 'layer', id: 0, mode: 'normal', opacity: 1, mask: false }, { op: 'fill', layer: 0, c: [1, 1, 1], a: 1 }, { op: 'layer', id: 1, mode: 'normal', opacity: 1, mask: false }];
     function regionCopy(layer, b, mk) { const ch = mk ? 1 : 4, l = mk ? st.L[layer].mask : st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1, out = new Float32Array(w * (y1 - y0 + 1) * ch); for (let y = y0; y <= y1; y++) out.set(l.subarray((y * W + x0) * ch, (y * W + x1 + 1) * ch), (y - y0) * w * ch); return out; }
     function regionPut(layer, b, data, mk) { const ch = mk ? 1 : 4, l = mk ? st.L[layer].mask : st.L[layer].pix, [x0, y0, x1, y1] = b, w = x1 - x0 + 1; for (let y = y0; y <= y1; y++) l.set(data.subarray((y - y0) * w * ch, (y - y0 + 1) * w * ch), (y * W + x0) * ch); }
-    const tilesOfBox = (b) => { const set = new Set(); for (let ty = Math.floor(b[1] / T); ty <= Math.floor(b[3] / T); ty++) for (let tx = Math.floor(b[0] / T); tx <= Math.floor(b[2] / T); tx++) set.add(ty * tn + tx); return [...set]; };
-    function refresh(list) { for (const t of list) D.renderTile(t); paintTiles(list); }
+    const tilesOfBox = (b, DD) => { const h = (DD || D).halo(), x0 = Math.max(0, b[0] - h), y0 = Math.max(0, b[1] - h), x1 = Math.min(W - 1, b[2] + h), y1 = Math.min(W - 1, b[3] + h), set = new Set(); for (let ty = Math.floor(y0 / T); ty <= Math.floor(y1 / T); ty++) for (let tx = Math.floor(x0 / T); tx <= Math.floor(x1 / T); tx++) set.add(ty * tn + tx); return [...set]; };   /* grown by the halo of the filter layers (Level 2j) */
+    function refresh(list) { D.renderTiles(list); paintTiles(list); }
     // time-sliced drawing for expensive brushes: apply queued dabs within a budget, show them, continue next frame; end() flushes the rest
     function drainSlice(budget) { const done = cur.sb.drain(budget, performance.now.bind(performance)), set = new Set(); for (const pos of done) { const bb = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, bb); if (cur.mk) MO.merge(st.L[cur.o.layer].mask, cur.mk.work, st.sel ? st.sel.mask : null, W, bb); for (const t of tilesOfBox(bb)) set.add(t); } if (set.size) refresh([...set]); }
     function frame() { if (!cur) return; cur.raf = 0; const t0 = performance.now(); drainSlice(8); moveMs.push(performance.now() - t0); if (cur.sb.pending()) cur.raf = requestAnimationFrame(frame); }
@@ -1050,16 +1284,25 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
     function rebuildKeep() { let done = false; if (memCk) { try { CK.usable(memCk, ops, { verify: false }); st = CK.resume(memCk, ops, applyOp, W, blobs); done = true; ed.lastRebuild = { ckpt: memCk.k }; } catch (e) { ed.lastRebuild = { ckpt: null, why: e.message }; } } if (!done) { st = S.newState(W); st.blobs = blobs; const ex = HO.expand(ops); for (const o of ex) applyOp(st, o); } D = root.Dirty.makeDirty(st); D.full(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; paintTiles(allTiles()); }
     const scratch = () => { const s2 = S.newState(W); s2.blobs = blobs; return { st: s2, D: root.Dirty.makeDirty(s2) }; };
     const isPix = (o) => o.op === 'stroke' || o.op === 'smudge', quiet = (o) => o.op === 'sel' || o.op === 'name' || o.op === 'amend';
-    function stepScratch(sc, o, acc) { applyOp(sc.st, o); if (quiet(o)) return; if (isPix(o)) for (const t of tilesOfBox(Br.bbox(o, W))) { sc.D.renderTile(t); acc.add(t); } else { sc.D.full(); for (const t of allTiles()) acc.add(t); } }
+    function stepScratch(sc, o, acc) { applyOp(sc.st, o); if (quiet(o)) return; if (isPix(o)) { const ts = tilesOfBox(Br.bbox(o, W), sc.D); sc.D.renderTiles(ts); for (const t of ts) acc.add(t); } else { sc.D.full(); for (const t of allTiles()) acc.add(t); } }
     const ed = {
       W, params, moveMs, flushLog, get ops() { return ops; }, get st() { return st; }, get D() { return D; }, onChange: (f) => listeners.push(f),
       reset() { blobs.clear(); build(initial()); }, canUndo: () => undo.length > 0 && ops.length > 3, canRedo: () => redo.length > 0,
       layers() { return st.order.map((id) => { const l = st.L[id]; return { id, mode: l.mode, opacity: l.hid ? l.keep : l.opacity, hidden: !!l.hid, name: LO.displayName(id, l), hasMask: !!l.mask, clip: !!l.clip, parent: l.parent }; }); },
       pickColor(x, y) { const c = ed.displayRGBA8(Math.max(0, Math.min(W - 1, Math.floor(x))), Math.max(0, Math.min(W - 1, Math.floor(y)))); return [c[0] / 255, c[1] / 255, c[2] / 255]; },
       exportPSD() { return root.PsdWeb.exportEditorPsd(st, W); },
+      // image export (Level 1l): PNG / JPEG / WebP at a chosen size; logs nothing. PNG at the native size IS the old export.
+      async exportImage(o = {}) { const fmt = o.format || 'png', size = o.size || W, q = Math.max(0.1, Math.min(1, (o.quality || 90) / 100)); if (![256, 512, 1024, 2048, W].includes(size)) throw new Error('size must be 256, 512, 1024 or 2048'); if (!['png', 'jpeg', 'webp'].includes(fmt)) throw new Error('format must be png, jpeg or webp');
+        if (fmt === 'png' && size === W) return { bytes: await ed.exportPNG(), type: 'image/png', ext: 'png' };
+        const mime = 'image/' + fmt, cv = document.createElement('canvas'); cv.width = cv.height = size; const g = cv.getContext('2d');
+        if (fmt === 'jpeg') { const bg = o.bg === 'black' ? [0, 0, 0] : Array.isArray(o.bg) ? o.bg.map((v) => Math.round(v * 255)) : [255, 255, 255]; g.fillStyle = 'rgb(' + bg.join(',') + ')'; g.fillRect(0, 0, size, size); }
+        g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(canvas, 0, 0, size, size);
+        const blob = await new Promise((res) => cv.toBlob(res, mime, q)); if (!blob || blob.type !== mime) throw new Error(fmt.toUpperCase() + ' is not supported by this browser'); return { bytes: new Uint8Array(await blob.arrayBuffer()), type: mime, ext: fmt === 'jpeg' ? 'jpg' : fmt }; },
       exportPNG() { return new Promise((res, rej) => canvas.toBlob((b) => (b ? b.arrayBuffer().then((a) => res(new Uint8Array(a))) : rej(new Error('PNG export failed'))), 'image/png')); },
       begin(x, y) { x = r2(x); y = r2(y); const p = params, l = st.L[p.layer]; if (p.tool === 'pick') { p.color = ed.pickColor(x, y); emit(); return; } if (prevw || replaying || readOnly) return; if (xf && p.tool !== 'move') ed.xfApply();
         if (p.tool === 'move') { if (!cur && l && !l.hid) { if (xf && xf.layer !== p.layer) ed.xfApply(); cur = { mv: { x0: x, y0: y, dx0: xf ? xf.dx : 0, dy0: xf ? xf.dy : 0 } }; } return; }   /* the session starts on the first movement, so a tap (or the first finger of a two-finger tap) opens nothing */
+        if (p.tool === 'shape') { if (!cur && l && !l.hid) cur = { shp: [x, y], pv: null }; return; }   /* acts on release, so a second finger can cancel it */
+        if (p.tool === 'grad') { if (!cur && l && !l.hid && (p.target !== 'mask' || l.mask)) cur = { grad: [x, y], pv: null }; return; }   /* acts on release, so a second finger can cancel it */
         if (p.tool === 'wand') { if (!cur && st.L[p.layer]) cur = { wand: [x, y] }; return; }   /* acts on release, so a second finger can cancel it */
         if (p.tool === 'select') { if (!cur) { cur = { selDrag: [x, y], pv: null }; emit(); } return; }
         if (!l || cur || l.hid) return;
@@ -1068,12 +1311,12 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
         if (mk) o.t = 'mask'; const sel = st.sel && !mk ? SO.shadow(st, p.layer) : null; cur = { o, snap, last: null, tiles: new Set(), box: null, sel, mk };
         if (o.op === 'smudge') { cur.pb = Br.PositionBuilder(o.r, 0.1); cur.sm = Br.SmudgeBuilder(mk ? mk.sh : sel ? sel.sh : l, W, o); } else cur.sb = Br.StrokeBuilder(mk ? mk.shSt : sel ? sel.shSt : st, o);
         ed.move(x, y, true); },
-      move(x, y, first) { if (!cur || cur.wand) return; x = r2(x); y = r2(y); if (cur.mv) { const m = cur.mv; xfPend = [Math.round(m.dx0 + x - m.x0), Math.round(m.dy0 + y - m.y0)]; if (!xfRaf) xfRaf = requestAnimationFrame(() => { xfRaf = 0; if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; }); return; } if (cur.selDrag) { cur.pv = [x, y]; emit(); return; } const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
+      move(x, y, first) { if (!cur || cur.wand) return; x = r2(x); y = r2(y); if (cur.mv) { const m = cur.mv; xfPend = [Math.round(m.dx0 + x - m.x0), Math.round(m.dy0 + y - m.y0)]; if (!xfRaf) xfRaf = requestAnimationFrame(() => { xfRaf = 0; if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; }); return; } if (cur.selDrag || cur.grad || cur.shp) { cur.pv = [x, y]; emit(); return; } const t0 = performance.now(); if (cur.last && cur.last[0] === x && cur.last[1] === y) return; cur.last = [x, y]; cur.o.pts.push([x, y]);
         const sliced = !!cur.sb && !!cur.sb.queue, planned = cur.o.op === 'smudge' ? cur.pb.push(x, y) : sliced ? cur.sb.queue(x, y) : cur.sb.push(x, y);
         for (const pos of planned) { if (cur.o.op === 'smudge') cur.sm.step(pos); const b = Br.bbox({ op: 'hdab', x: pos[0], y: pos[1], r: cur.o.r + 1 }, W); if (cur.sel && !sliced) SO.merge(st.L[cur.o.layer].pix, cur.sel.work, st.sel.mask, W, b); if (cur.mk && !sliced) MO.merge(st.L[cur.o.layer].mask, cur.mk.work, st.sel ? st.sel.mask : null, W, b); cur.box = cur.box ? [Math.min(cur.box[0], b[0]), Math.min(cur.box[1], b[1]), Math.max(cur.box[2], b[2]), Math.max(cur.box[3], b[3])] : b; if (!sliced) for (const t of tilesOfBox(b)) cur.tiles.add(t); }
         if (sliced) { drainSlice(6); cur.maxPending = Math.max(cur.maxPending || 0, cur.sb.pending()); if (cur.sb.pending() && !cur.raf) cur.raf = requestAnimationFrame(frame); } else if (cur.tiles.size) { refresh([...cur.tiles]); cur.tiles.clear(); }
         if (!first) moveMs.push(performance.now() - t0); },
-      end() { if (!cur) return; if (cur.mv) { if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; cur = null; emit(); return; } if (cur.wand) { const d = cur.wand; cur = null; ed.wandAt(d[0], d[1]); return; } if (cur.selDrag) { const d = cur; cur = null; if (d.pv) ed.commitSelDrag(d.selDrag, d.pv); else emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box, mk } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
+      end() { if (!cur) return; if (cur.mv) { if (xfRaf) { cancelAnimationFrame(xfRaf); xfRaf = 0; } if (xfPend) { if (!xf) ed.xfBegin(); if (xf) ed.xfPreview(xfPend[0], xfPend[1], xf.s); } xfPend = null; cur = null; emit(); return; } if (cur.wand) { const d = cur.wand; cur = null; ed.wandAt(d[0], d[1]); return; } if (cur.selDrag) { const d = cur; cur = null; if (d.pv) ed.commitSelDrag(d.selDrag, d.pv); else emit(); return; } if (cur.grad) { const d = cur; cur = null; if (d.pv) ed.commitGrad(d.grad, d.pv); else emit(); return; } if (cur.shp) { const d = cur; cur = null; if (d.pv) ed.commitShape(d.shp, d.pv); else emit(); return; } if (cur.raf) cancelAnimationFrame(cur.raf); if (cur.sb && cur.sb.queue) { const t0 = performance.now(), n = cur.sb.pending(); drainSlice(Infinity); flushLog.push({ pending: n, ms: performance.now() - t0, maxPending: cur.maxPending || 0 }); } const { o, snap, box, mk } = cur; cur = null; if (o.op === 'smudge' && o.pts.length < 2) return;
         const ch = mk ? 1 : 4, b = box || [0, 0, 0, 0], sw = b[2] - b[0] + 1, before = new Float32Array(sw * (b[3] - b[1] + 1) * ch); for (let y = b[1]; y <= b[3]; y++) before.set(snap.subarray((y * W + b[0]) * ch, (y * W + b[2] + 1) * ch), (y - b[1]) * sw * ch);
         ops.push(o); undo.push({ kind: 'px', layer: o.layer, bbox: b, before, op: o, mask: !!mk }); redo = []; emit(); },
       get busy() { return !!cur; },
@@ -1086,6 +1329,21 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       moveLayer(id, to) { const from = LO.listOf(st, id).indexOf(id); ed.structural({ op: 'mv', layer: id, to }, () => applyOp(st, { op: 'mv', layer: id, to: from })); },
       hideLayer(id, hide) { const v = !hide; ed.structural({ op: 'vis', layer: id, v }, () => applyOp(st, { op: 'vis', layer: id, v: !v })); },
       renameLayer(id, name) { const l = st.L[id] || st.G[id] || st.A[id], prev = l.name; ed.structural({ op: 'name', layer: id, name }, () => { if (prev === undefined) delete l.name; else l.name = prev; }); },
+      // Shape tool (Level 2k): the box from the drag, Shift = square / circle / 45 degree line (desktop pointer modifier)
+      shapeBox(a, b) { const p = params, c = (v) => Math.max(0, Math.min(W, Math.round(v))); let x0 = c(a[0]), y0 = c(a[1]), x1 = c(b[0]), y1 = c(b[1]);
+        if (p.shift) { const dx = x1 - x0, dy = y1 - y0; if (p.skind === 'line') { const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), len = Math.hypot(dx, dy); x1 = c(x0 + Math.cos(ang) * len); y1 = c(y0 + Math.sin(ang) * len); } else { const s = Math.max(Math.abs(dx), Math.abs(dy)); x1 = c(x0 + Math.sign(dx || 1) * s); y1 = c(y0 + Math.sign(dy || 1) * s); } }
+        if (p.skind !== 'line') { const t0 = Math.min(x0, x1), t1 = Math.max(x0, x1), u0 = Math.min(y0, y1), u1 = Math.max(y0, y1); x0 = t0; x1 = t1; y0 = u0; y1 = u1; } return { x0, y0, x1, y1 }; },
+      // Effects panel (Level 2l): Apply logs ONE fx entry on the active layer; returns '' or an error message
+      applyFx(o) { if (prevw || replaying || readOnly) return 'Not now.'; const l = st.L[o.layer]; if (!l) return 'Pick a layer first.'; try { FXO.validateFx(o); } catch (err) { return err.message; } const id = o.layer, snap = new Float32Array(l.pix); ed.structural(o, () => { st.L[id].pix.set(snap); }); return ''; },
+      get shapePreview() { return cur && cur.shp && cur.pv ? { kind: params.skind, ...ed.shapeBox(cur.shp, cur.pv), r: params.sradius } : null; },
+      commitShape(a, b) { if (prevw || replaying || readOnly) return; const p = params, l = st.L[p.layer]; if (!l || l.hid) { emit(); return; } const bx = ed.shapeBox(a, b), line = p.skind === 'line'; if (!line && (bx.x0 >= bx.x1 || bx.y0 >= bx.y1)) { emit(); return; } if (line && bx.x0 === bx.x1 && bx.y0 === bx.y1) { emit(); return; }
+        const o = { op: 'shape', layer: p.layer, kind: line ? 'line' : p.skind === 'ellipse' ? 'ellipse' : 'rect', ...bx };
+        if (line) o.stroke = { w: p.sw, c: p.color.map(r4), a: r4(p.flow) }; else { if (p.skind === 'round') o.r = Math.min(p.sradius, Math.floor(Math.min(bx.x1 - bx.x0, bx.y1 - bx.y0) / 2)); if (p.sfill) { o.c = p.color.map(r4); o.a = r4(p.flow); } else o.fill = false; if (p.sstroke) o.stroke = { w: p.sw, c: p.scol.map(r4), a: 1 }; if (!p.sfill && !p.sstroke) { emit(); return; } }
+        try { SPO.validateShape(o, W); } catch (err) { emit(); return; } const id = p.layer, snap = new Float32Array(l.pix); ed.structural(o, () => { st.L[id].pix.set(snap); }); },
+      get gradPreview() { return cur && cur.grad && cur.pv ? [cur.grad, cur.pv] : null; },
+      commitGrad(a, b) { if (prevw || replaying || readOnly) return; const p = params, l = st.L[p.layer], c = (v) => Math.max(0, Math.min(W - 1, Math.round(v))), x0 = c(a[0]), y0 = c(a[1]), x1 = c(b[0]), y1 = c(b[1]); if (!l || l.hid || (x0 === x1 && y0 === y1)) { emit(); return; } const toMask = p.target === 'mask';
+        if (toMask && !l.mask) { emit(); return; } const o = toMask ? { op: 'grad', layer: p.layer, kind: p.gkind, x0, y0, x1, y1, a0: r4(p.maskValue), a1: r4(1 - p.maskValue), target: 'mask' } : { op: 'grad', layer: p.layer, kind: p.gkind, x0, y0, x1, y1, c0: p.color.map(r4), c1: (p.gclear ? p.color : p.gcol).map(r4), a0: r4(p.flow), a1: p.gclear ? 0 : r4(p.flow) };
+        const id = p.layer, snap = new Float32Array(toMask ? l.mask : l.pix); ed.structural(o, () => { const t = st.L[id]; (toMask ? t.mask : t.pix).set(snap); }); },
       get selPreview() { return cur && cur.selDrag && cur.pv ? [cur.selDrag, cur.pv] : null; },
       selOp(o) { if (prevw || replaying || readOnly) return; const prev = st.sel; applyOp(st, o); ops.push(o); undo.push({ kind: 'struct', noPix: true, op: o, inv() { st.sel = prev; } }); redo = []; emit(); },
       wandAt(x, y, mode) { const o = { op: 'sel', kind: 'wand', layer: params.layer, x: Math.floor(x), y: Math.floor(y), tol: params.tol, contiguous: !!params.contig }; const m = mode || params.wandMode; if (m && m !== 'new') o.mode = m; if (m === 'sub' && !st.sel) return false; ed.selOp(o); return true; },
@@ -1107,7 +1365,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       setAdjust(id, params) { const a = st.A[id]; if (!a) return; const prev = AO.clone(a.params); ed.structural({ op: 'adjset', id, params: AO.clone(params) }, () => { a.params = prev; }); },
       // live editing of settings: preview changes the state and the picture WITHOUT logging; commit logs ONE adjset entry (undo restores the settings before the drag)
       adjBegin(id) { const a = st.A[id]; if (a && !adjDrag) adjDrag = { id, prev: AO.clone(a.params) }; },
-      adjPreview(id, params) { const a = st.A[id]; if (!a || prevw || replaying || readOnly) return false; try { AO.validate(a.kind, params); } catch (e) { return false; } if (!adjDrag) adjDrag = { id, prev: AO.clone(a.params) }; a.params = AO.clone(params); D.full(); paintTiles(allTiles()); return true; },
+      adjPreview(id, params) { const a = st.A[id]; if (!a || prevw || replaying || readOnly) return false; try { AO.validate(a.kind, params); } catch (e) { return false; } if (!adjDrag) adjDrag = { id, prev: AO.clone(a.params) }; a.params = AO.clone(params); const FLs = root.FilterLayers; if (FLs && S.spatial[a.kind]) S.preview.scale = FLs.scaleFor(D.halo()); try { D.full(); } finally { S.preview.scale = 1; } paintTiles(allTiles()); return true; },   /* a filter slider drag shows a COARSE preview; the commit below is exact (Level 2j FL9) */
       adjCommit(id) { const d = adjDrag; adjDrag = null; const a = st.A[id]; if (!d || !a || d.id !== id) return; if (J2(d.prev) === J2(a.params)) return; const now = AO.clone(a.params); a.params = AO.clone(d.prev); ed.structural({ op: 'adjset', id, params: now }, () => { a.params = d.prev; }); },
       adjCancel() { if (!adjDrag) return; const a = st.A[adjDrag.id]; if (a) { a.params = adjDrag.prev; D.full(); paintTiles(allTiles()); } adjDrag = null; },
       addGroup() { if (prevw || replaying || readOnly) return; const id = LO.nextId(st); ed.structural({ op: 'group', id, mode: 'pass-through', opacity: 1, mask: false }, () => applyOp(st, { op: 'ungroup', group: id })); return id; },
@@ -1119,7 +1377,7 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
       maskOp(id, kind, feather) { const l = st.L[id] || st.A[id]; if (!l) return; const prevMask = l.mask ? new Float32Array(l.mask) : null, prevPix = kind === 'apply' && l.pix ? new Float32Array(l.pix) : null;
         ed.structural({ op: 'mask', layer: id, kind, ...(kind === 'sel' && feather > 0 ? { feather } : {}) }, () => { l.mask = prevMask; if (prevPix) l.pix.set(prevPix); }); if (!l.mask && params.target === 'mask' && params.layer === id) { params.target = 'layer'; emit(); } },
       get previewing() { return prevw ? prevw.k : null; }, get replaying() { return !!replaying; }, get readOnly() { return readOnly; }, set readOnly(v) { readOnly = !!v; emit(); },
-      amend(i, set) { if (prevw || replaying || readOnly) return; const o = { op: 'amend', i, set }; HO.expand([...ops, o]); undo = undo.map((e) => ({ kind: 'rebuild', op: e.op })); ops.push(o); undo.push({ kind: 'rebuild', op: o }); redo = []; rebuildKeep(); emit(); },
+      amend(i, set) { if (prevw || replaying || readOnly) return; const o = { op: 'amend', i, set }; if (ops[i] && ops[i].op === 'shape') SPO.validateShape({ ...ops[i], ...set }, W);   /* canvas bounds (Level 2k) */ HO.expand([...ops, o]); undo = undo.map((e) => ({ kind: 'rebuild', op: e.op })); ops.push(o); undo.push({ kind: 'rebuild', op: o }); redo = []; rebuildKeep(); emit(); },
       preview(k) { if (replaying) return; k = Math.max(3, Math.min(ops.length, k)); const sc = scratch(), ex = HO.expand(ops.slice(0, k)); for (let i = 0; i < k; i++) applyOp(sc.st, ex[i]); sc.D.full(); paintTiles(allTiles(), sc.D); prevw = { k, sc }; emit(); return { k, comp: S.hashF32(S.composite(sc.st)), layers: Object.keys(sc.st.L).map((id) => S.hashF32(sc.st.L[id].pix)) }; },
       endPreview() { if (!prevw) return; prevw = null; paintTiles(allTiles()); emit(); },
       replay(opt = {}) { if (replaying) return replaying; prevw = null; const total = Math.max(2000, Math.min(8000, opt.totalMs || 6000)), ex = HO.expand(ops), n = ex.length, sc = scratch(), msPer = total / Math.max(1, n - 3), t0 = performance.now(); let i = 0, stopped = false, raf = 0;
@@ -1140,8 +1398,12 @@ var agPsd=(()=>{var ee=(e,n)=>()=>{try{return n||e((n={exports:{}}).exports,n),n
         if (e.kind === 'px') { e.after = regionCopy(e.layer, e.bbox, e.mask); regionPut(e.layer, e.bbox, e.before, e.mask); refresh(tilesOfBox(e.bbox)); } else { e.inv(); if (st.L[params.layer] === undefined) params.layer = st.order[st.order.length - 1]; if (!e.noPix) { D.full(); paintTiles(allTiles()); } } emit(); },
       redo() { if (!ed.canRedo() || prevw || replaying || readOnly) return; const e = redo.pop(); if (e.kind === 'rebuild') { ops.push(e.op); undo.push(e); rebuildKeep(); emit(); return; } if (e.kind === 'px') { regionPut(e.layer, e.bbox, e.after, e.mask); refresh(tilesOfBox(e.bbox)); } else { applyOp(st, e.op); if (!e.noPix) { D.full(); paintTiles(allTiles()); } } ops.push(e.op); undo.push(e); emit(); },
       save() { const j = { format: 'psd-oplog-editor', v: 1, W, ops }; if (ed.hasBlobs()) j.blobs = IO.packBlobs(blobs, ops); return JSON.stringify(j); },
-      hasBlobs: () => ops.some((o) => o.op === 'img'), get blobs() { return blobs; },
-      importPixels(rgba8) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = LO.nextId(st); blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
+      hasBlobs: () => ops.some((o) => o.op === 'img' || o.op === 'imgset'), get blobs() { return blobs; },
+      importPixels(rgba8, txt) { if (prevw || replaying || readOnly) return; const sha = S.sha256(rgba8), id = LO.nextId(st); blobs.set(sha, rgba8); ed.structural({ op: 'img', id, sha, ...(txt ? { txt } : {}) }, () => { delete st.L[id]; st.order.pop(); st.root.pop(); }); params.layer = id; emit(); return id; },
+      // editable text (Level 1k): the words / style a caption layer was last drawn from (null for photos and old captions)
+      textOf(layer) { let t = null; for (const o of ops) { if (o.op === 'img' && o.id === layer) t = o.txt || null; else if (o.op === 'imgset' && o.layer === layer) t = o.txt || t; } return t ? JSON.parse(J2(t)) : null; },
+      editText(layer, txt, rgba8) { if (prevw || replaying || readOnly) return false; const l = st.L[layer], prev = ed.textOf(layer); if (!l || !prev) return false; const sha = S.sha256(rgba8), snap = new Float32Array(l.pix), autoName = (w) => 'Text: ' + (w.length > 28 ? w.slice(0, 28) + '...' : w), keepName = !l.name || l.name === autoName(prev.text); blobs.set(sha, rgba8);
+        ed.structural({ op: 'imgset', layer, sha, txt }, () => { st.L[layer].pix.set(snap); }); if (keepName && autoName(txt.text) !== (l.name || '')) ed.renameLayer(layer, autoName(txt.text)); return true; },
       load(json) { const j = JSON.parse(json); if (j.format !== 'psd-oplog-editor' || j.v !== 1 || j.W !== W) throw new Error('not an editor log for this canvas size'); const nb = IO.unpackBlobs(j.blobs); blobs.clear(); for (const [k, v] of nb) blobs.set(k, v); memCk = null; build(j.ops, true); },
       hashes() { return { comp: S.hashF32(S.composite(st)), layers: Object.keys(st.L).map((k) => S.hashF32(st.L[k].pix)) }; },
       displayRGBA8(x, y) { const p = (y * W + x) * 4, b = D.back, a = b[p + 3]; return a > 0 ? [q(F(b[p] / a)), q(F(b[p + 1] / a)), q(F(b[p + 2] / a)), q(a)] : [0, 0, 0, q(a)]; },

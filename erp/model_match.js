@@ -104,7 +104,7 @@
     var il = trx.get('c_invoiceline', r.c_invoiceline_id), inv = trx.get('c_invoice', il.c_invoice_id), ol = trx.get('c_orderline', r.c_orderline_id), o = trx.get('c_order', ol.c_order_id);
     var pa = D(il.priceactual);
     if (!sameId(inv.c_currency_id, o.c_currency_id)) {
-      var rt = T.rate(trx, inv.c_currency_id, o.c_currency_id, inv.dateinvoiced, inv.c_conversiontype_id);
+      var rt = T.rate(trx, inv.c_currency_id, o.c_currency_id, inv.dateinvoiced, inv.c_conversiontype_id, inv.ad_org_id);
       if (!rt) throw new Error('ErrorConvertingCurrencyToBaseCurrency'); pa = pa.multiply(rt).setScale(T.precisionOf(trx, o.c_currency_id), HU);
     }
     return pa;
