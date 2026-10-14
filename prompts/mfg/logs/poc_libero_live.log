@@ -11,5 +11,7 @@
   §LIBERO-LIVE V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand + 1 routing workflow (+ 1 update setting its start node) + 1 routing node, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree) PASS
 §LIBERO-LIVE-6 refused order: sealed rows named LIVE-NOROUTE=0 | §MODEL-AFTER-SAVE table=pp_order refused: Routing (AD_Workflow undefined) not found || §MODEL-SAVE-ROLLBACK table=pp_order op=CRUD_CREATE nothing sealed: Routing (AD_Workflow undefined) not found
   §LIBERO-LIVE V5 an order refused by the model (no routing) is ROLLED BACK: nothing sealed, §MODEL-SAVE-ROLLBACK logged (legacy PO.save: afterSave false => the trx rolls back) PASS
+§LIBERO-LIVE-7 cost side in the real page: {"cc":true,"ccDoc":true,"orderDoc":true,"trade":true,"cost":true,"master":true}
+  §LIBERO-LIVE V6 the cost side is live in the real page: PP_Cost_Collector model + DocAction, the PP_Order DocAction, and the core ports the chunks reuse (ModelTrade / ModelCost / ModelMaster) are all present PASS
   §LIBERO-LIVE V4 zero page errors PASS
 §LIBERO-LIVE-VERDICT PASS failed=0

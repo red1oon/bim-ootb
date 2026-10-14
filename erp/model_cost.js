@@ -531,5 +531,6 @@
     getMaterialCostElement: getMaterialCostElement, getCost: getCost, getCostInfo: getCostInfo, getSeedCosts: getSeedCosts, getProductCosts: getProductCosts,
     getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment,
     getMatchInvoice: getMatchInvoice, createOrder: createOrder, createInvoice: createInvoice, createShipment: createShipment, createMatchInvoice: createMatchInvoice,
-    processProduct: processProduct, processProductAll: processProductAll, currencyConvert: currencyConvert };
+    processProduct: processProduct, processProductAll: processProductAll, currencyConvert: currencyConvert,
+    cdNew: cdNew, cdSave: cdSave, cdProcess: cdProcess, cdSet: cdSet, cdSetAmtQty: cdSetAmtQty };   // the MCostDetail record primitives, for model classes that create details of their own kind (Libero CostEngine)
 });

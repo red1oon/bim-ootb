@@ -5,7 +5,6 @@
 //   and printed by the witness (§LIBERO-DEFERRED) so no omission is silent. Pure: no clock (env.now), no random.
 const RM_UP = 'UP', RM_HALF_UP = 'HALF_UP';
 export const DEFERRED = [
-  'MPPOrder.orderStock (M_Storage QtyOrdered) - needs StorageEngine, cost side',
   'RoutingService variants other than DefaultRoutingServiceImpl (estimateWorkingTime for cost collectors) - cost side',
   'MPPOrderBOMLine.explodePhantom - fixtures carry no phantom',
   'MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)',
@@ -13,7 +12,7 @@ export const DEFERRED = [
   'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true };
+export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
@@ -88,13 +87,33 @@ export function create(ctx) {
     }
     rec.qtybatchs = size.signum() === 0 ? 1 : num(dec(rec.qtyordered).divide(size, 0, RM_UP));
   }
+  // ── storage / costing helpers (core ports reused: ModelTrade.storageAdd/reservationAdd, ModelCost) ──────────────────────────────────────────────────────
+  const T = () => { if (!globalThis.ModelTrade) throw new Error('Libero: ModelTrade (core model_trade.js) is not loaded'); return globalThis.ModelTrade; };
+  const isStocked = (p) => !!p && p.isstocked === 'Y' && p.producttype === 'I';   // MProduct.isStocked() = IsStocked && isItem()
+  function defaultLocator(trx, whId) {      // MWarehouse.getDefaultLocator: the active default locator, else the first
+    const ls = trx.find('m_locator', { m_warehouse_id: whId }).filter(active).sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.m_locator_id) - Number(b.m_locator_id));
+    return ls[0] || null;
+  }
+  // MPPOrder.orderStock :606-657 (fork divergence: see spec; reservation semantics by default). Mutates `rec.qtyreserved`; returns an error string or null.
+  function orderStock(trx, rec) {
+    const p = trx.get('m_product', rec.m_product_id); if (!isStocked(p) || SOURCE.orderStock === 'none') return null;
+    const diff = dec(rec.qtyordered).subtract(dec(rec.qtyreserved)).subtract(dec(rec.qtydelivered));
+    if (diff.signum() === 0) return null;
+    let e;
+    if (SOURCE.orderStock === 'onhand') { const loc = defaultLocator(trx, rec.m_warehouse_id); e = loc ? T().storageAdd(trx, loc.m_locator_id, rec.m_product_id, rec.m_attributesetinstance_id, diff, null) : 'no locator for warehouse ' + rec.m_warehouse_id; }
+    else e = T().reservationAdd(trx, rec.m_warehouse_id, rec.m_product_id, rec.m_attributesetinstance_id, diff, false, null);
+    if (e) return e;
+    trx.say('§LIBERO-ORDERSTOCK order=' + rec.documentno + ' mode=' + SOURCE.orderStock + ' diff=' + diff.toString());
+    rec.qtyreserved = num(dec(rec.qtyreserved).add(diff));
+    return null;
+  }
   function orderBeforeSave(trx, rec, isNew, old) {
     const env = trx.env || {};
     if (Number(rec.ad_client_id == null ? env.client : rec.ad_client_id) === 0) return 'AD_Client_ID = 0';
     if (!rec.ad_org_id) { const o = Number(env.org || 0); if (!o) return 'AD_Org_ID = 0'; rec.ad_org_id = o; }
     if (!(Number(rec.c_uom_id || 0) > 0) && Number(rec.m_product_id || 0) > 0) { const p = trx.get('m_product', rec.m_product_id); rec.c_uom_id = p ? p.c_uom_id : rec.c_uom_id; }
     if (!rec.datefinishschedule) rec.datefinishschedule = rec.datepromised;
-    // orderStock(): DEFERRED (see DEFERRED)
+    if (isNew ? (rec.qtyordered != null || rec.qtydelivered != null) : (old && (lc(old.qtyordered) !== lc(rec.qtyordered) || lc(old.qtydelivered) !== lc(rec.qtydelivered)))) { const e = orderStock(trx, rec); if (e) return e; }   // :425-430
     updateQtyBatchs(trx, rec, false);
     if (isNew) trx._libSet = { pp_order: { qtyentered: rec.qtyentered != null } };   // PO.is_ValueChanged tracks only what the CALLER set, not DB defaults filled in at insert
     return null;
@@ -113,10 +132,10 @@ export function create(ctx) {
     } catch (e) { return e.message; }
     return null;
   }
-  // MPPOrder.beforeDelete :478-494: a Drafted/In-Progress order removes its cost rows and its snapshot; "Un-Order Stock" (orderStock) is DEFERRED
+  // MPPOrder.beforeDelete :478-494: a Drafted/In-Progress order removes its cost rows and its snapshot, then "Un-Order Stock"
   function orderBeforeDelete(trx, row) {
-    if (row.docstatus === 'DR' || row.docstatus === 'IP') { try { deletePO(trx, 'pp_order_cost', { pp_order_id: row.pp_order_id, ad_client_id: row.ad_client_id }); } catch (e) { return e.message; } return deleteWorkflowAndBOM(trx, row); }
-    return null;
+    if (row.docstatus === 'DR' || row.docstatus === 'IP') { try { deletePO(trx, 'pp_order_cost', { pp_order_id: row.pp_order_id, ad_client_id: row.ad_client_id }); } catch (e) { return e.message; } const e0 = deleteWorkflowAndBOM(trx, row); if (e0) return e0; }
+    return orderStock(trx, Object.assign({}, row, { qtyordered: 0 }));   // "Un-Order Stock" :490-492
   }
   // explosion() :1028-1051 BOM half + expandBOM :1100-1138
   function explosion(trx, rec) {
@@ -286,7 +305,75 @@ export function create(ctx) {
     return fn(trx, info.record);
   };
 
+  // ── MPPOrder DocAction (DocumentEngine contract: fn(trx, doc) -> status; the engine writes DocStatus) ─────────────────────────────────────────────────
+  function reserveLine(trx, row) {          // MPPOrderBOMLine.reserveStock() called directly (prepareIt :640-648): no changed-column gate
+    const rec = Object.assign({}, row), parent = trx.get('pp_order', rec.pp_order_id);
+    const wh = parent ? Number(parent.m_warehouse_id || 0) : 0; if (wh !== 0 && wh !== Number(rec.m_warehouse_id || 0)) rec.m_warehouse_id = wh;
+    const diff = dec(rec.qtyrequiered).subtract(dec(rec.qtyreserved)).subtract(dec(rec.qtydelivered)), p = trx.get('m_product', rec.m_product_id);
+    if (diff.signum() !== 0 && isStocked(p)) rec.qtyreserved = num(dec(rec.qtyreserved).add(diff));
+    const ch = {}; ['m_warehouse_id', 'qtyreserved'].forEach((c) => { if (lc(rec[c]) !== lc(row[c])) ch[c] = rec[c]; });
+    if (Object.keys(ch).length) ML.po(trx, 'pp_order_bomline', row).set('m_warehouse_id', rec.m_warehouse_id).set('qtyreserved', rec.qtyreserved).save();
+  }
+  function orderLines(trx, orderId) { return trx.find('pp_order_bomline', { pp_order_id: orderId }, ['line']); }
+  const orderDoc = {
+    prepareIt(trx, doc) {                                                                   // :547-604
+      const lines = orderLines(trx, doc.pp_order_id);
+      if (!lines.length) { trx._msg = '@NoLines@'; return 'IN'; }
+      if (Number(doc.c_doctype_id || 0) !== 0 && lines.some((l) => Number(l.m_warehouse_id || 0) !== Number(doc.m_warehouse_id || 0))) { trx._msg = '@CannotChangeDocType@'; return 'IN'; }
+      const ch = {};
+      if (['DR', 'IP', 'IN'].indexOf(doc.docstatus) >= 0 || Number(doc.c_doctype_id || 0) === 0) ch.c_doctype_id = doc.c_doctypetarget_id;
+      const dt = trx.get('c_doctype', ch.c_doctype_id || doc.c_doctype_id);
+      if (!dt || dt.docbasetype !== 'MQO') {                                               // ManufacturingOrder, MaintenanceOrder (a Quality Order does nothing)
+        lines.forEach((l) => reserveLine(trx, l));
+        const rec = Object.assign({}, doc, ch), e = orderStock(trx, rec); if (e) { trx._msg = e; return 'IN'; }
+        if (lc(rec.qtyreserved) !== lc(doc.qtyreserved)) ch.qtyreserved = rec.qtyreserved;
+      }
+      if (Object.keys(ch).length) trx.update('pp_order', doc, ch);
+      return 'IP';
+    },
+    approveIt(trx, doc) { trx.update('pp_order', doc, { isapproved: 'Y' }); return true; },   // :659-668 (non-quality)
+    rejectIt(trx, doc) { trx.update('pp_order', doc, { isapproved: 'N' }); return true; },
+    completeIt(trx, doc) {                                                                  // :686-730
+      if (doc.docaction === 'PR') return 'IP';                                             // "Just prepare"
+      const cur = trx.get('pp_order', doc.pp_order_id);
+      if (cur.isapproved !== 'Y') orderDoc.approveIt(trx, cur);
+      const e = createStandardCosts(trx, trx.get('pp_order', doc.pp_order_id)); if (e) { trx._msg = e; return 'IN'; }
+      const ms = trx.find('pp_order_node', { pp_order_id: doc.pp_order_id }).filter((n) => n.ismilestone === 'Y');   // autoReportActivities :1455-1491 - milestone routings NOT ported
+      if (ms.length) { trx._msg = 'DEFERRED: milestone activity auto-reporting (Activity Control collectors) is not ported yet'; return 'IN'; }
+      trx.update('pp_order', trx.get('pp_order', doc.pp_order_id), { docaction: 'CL' });
+      return 'CO';
+    },
+    getSummary(trx, doc) { return 'Manufacturing Order ' + (doc && doc.documentno); }
+  };
+  // MPPOrder.createStandardCosts :1495-1580 - the standard-cost snapshot (PP_Order_Cost) of the finished product, every BOM-line product and every routing resource product
+  function costDim(trx, product, as, org, asi) { const lvl = globalThis.ModelCost.costingLevel(trx, product, as); return { org: lvl === 'C' || lvl === 'B' ? 0 : org, asi: lvl === 'C' || lvl === 'O' ? 0 : asi }; }   // CostDimension.updateForProduct
+  function createStandardCosts(trx, order) {
+    const as = globalThis.ModelMaster.clientAcctSchemas(trx, order.ad_client_id)[0]; if (!as) return 'no accounting schema for client ' + order.ad_client_id;
+    const done = {};
+    const add = (productId, org, asi) => {
+      if (done[productId]) return; done[productId] = 1;
+      const product = trx.get('m_product', productId), d = costDim(trx, product, as, Number(org || 0), Number(asi || 0));
+      trx.find('m_cost', { ad_client_id: order.ad_client_id, ad_org_id: d.org, m_product_id: productId, m_attributesetinstance_id: d.asi, c_acctschema_id: as.c_acctschema_id, m_costtype_id: as.m_costtype_id }, ['m_costelement_id']).forEach((c) => {
+        const oc = ML.newRecord(trx, 'pp_order_cost', { ad_client_id: c.ad_client_id, ad_org_id: c.ad_org_id, pp_order_id: order.pp_order_id, c_acctschema_id: c.c_acctschema_id, m_costtype_id: c.m_costtype_id,
+          cumulatedamt: c.cumulatedamt, cumulatedqty: c.cumulatedqty, currentcostprice: c.currentcostprice, currentcostpricell: c.currentcostpricell, m_product_id: c.m_product_id, m_attributesetinstance_id: c.m_attributesetinstance_id, m_costelement_id: c.m_costelement_id });
+        if (!oc.save()) throw new Error(oc.error);
+      });
+    };
+    try {
+      add(order.m_product_id, order.ad_org_id, order.m_attributesetinstance_id);
+      orderLines(trx, order.pp_order_id).forEach((l) => add(l.m_product_id, l.ad_org_id, l.m_attributesetinstance_id));
+      const wf = trx.find('pp_order_workflow', { pp_order_id: order.pp_order_id })[0];
+      if (wf) trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter(active).sort((a, b) => Number(a.pp_order_node_id) - Number(b.pp_order_node_id)).forEach((n) => {
+        if (!(Number(n.s_resource_id) > 0)) return;
+        const rp = trx.find('m_product', { s_resource_id: n.s_resource_id })[0]; if (!rp) throw new Error('no product for resource ' + n.s_resource_id + ' (MProduct.forS_Resource_ID)');
+        add(rp.m_product_id, n.ad_org_id, 0);
+      });
+    } catch (e) { return e.message; }
+    return null;
+  }
+
   return {
+    docActions: { pp_order: orderDoc }, createStandardCosts,
     models: { pp_order: { beforeSave: orderBeforeSave, afterSave: orderAfterSave, beforeDelete: orderBeforeDelete }, pp_order_bomline: { beforeSave: bomLineBeforeSave } },
     validators: [
       ['pp_order', 'AFTER_NEW', 'Libero.MPPMRP.PP_Order', validator('pp_order', mrpPPOrder)],
@@ -303,6 +390,7 @@ export function create(ctx) {
 export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
+  Object.keys(m.docActions || {}).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
   m.validators.forEach((v) => ctx.modelval.registerValidator(v[0], v[1], v[2], v[3]));
 }
 export async function deactivate() {}

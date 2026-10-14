@@ -22,6 +22,7 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   _log('§LIBERO-LOAD seed + patches statements ok=' + ok + ' failed=' + bad + ' sqljs=' + (REAL ? 'real' : 'bundled') + ' break=' + (BREAK || 'none'));
   var MV = require(path.join(ERP, 'ad_modelval.js')), ML = require(path.join(ERP, 'model_layer.js')), AC = require(path.join(ERP, 'ad_callout.js')), AP = require(path.join(ERP, 'ad_process.js'));
   var DP = require(path.join(ERP, 'doc_poster.js')), PR = require(path.join(ERP, 'plugin_registry.js')), PA = require(path.join(ERP, 'ad_parser.js'));
+  globalThis.ModelLayer = ML; globalThis.ModelTrade = require(path.join(ERP, 'model_trade.js')); globalThis.ModelCost = require(path.join(ERP, 'model_cost.js')); globalThis.ModelMaster = require(path.join(ERP, 'model_master.js'));   // the Libero chunks reuse the core ports
   ['model_trade', 'model_order'].forEach(function (m) { try { require(path.join(ERP, m + '.js')); } catch (e) { /* core classes not needed for pp_* */ } }); MV.installDefaultHooks();
   function q(sql, params) { var st = db.prepare(sql), out = []; try { if (params && params.length) st.bind(params.map(function (v) { return v === undefined ? null : v; })); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }
   var hostDb = { query: q, run: function (sql, p) { db.run(sql, p || []); } };
@@ -36,14 +37,14 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
     ops.forEach(function (o, i) {
       var t = o.table, cs = colsOf(t);
       if (o.op_type === 'CRUD_CREATE') {
-        var f = Object.assign({}, o.fields), pk = t + '_id'; f[pk] = newId(t); ids[i] = f[pk];
+        var f = Object.assign({}, o.fields), pk = t + '_id'; if (cs.indexOf(pk) >= 0) { f[pk] = newId(t); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];
         Object.keys(f).forEach(function (k) { f[k] = fix(f[k]); if (cs.indexOf(k) < 0) { dropped.push(t + '.' + k); delete f[k]; } });
         var ks = Object.keys(f); db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k] === undefined ? null : f[k]; }));
       } else if (o.op_type === 'CRUD_UPDATE') {
         var kk = Object.keys(o.changes).filter(function (k) { return cs.indexOf(k) >= 0; });
-        if (kk.length) db.run('UPDATE ' + t + ' SET ' + kk.map(function (k) { return '"' + k + '"=?'; }).join(',') + ' WHERE ' + t + '_id=?', kk.map(function (k) { return fix(o.changes[k].new); }).concat([fix(o.id)]));
+        if (kk.length) db.run('UPDATE ' + t + ' SET ' + kk.map(function (k) { return '"' + k + '"=?'; }).join(',') + ' WHERE ' + (o.idCol || t + '_id') + '=?', kk.map(function (k) { return fix(o.changes[k].new); }).concat([fix(o.id)]));
         ids[i] = fix(o.id);
-      } else if (o.op_type === 'CRUD_DELETE') db.run('DELETE FROM ' + t + ' WHERE ' + t + '_id=?', [fix(o.id)]);
+      } else if (o.op_type === 'CRUD_DELETE') db.run('DELETE FROM ' + t + ' WHERE ' + (o.idCol || t + '_id') + '=?', [fix(o.id)]);
     });
     return ids;
   }
