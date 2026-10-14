@@ -269,13 +269,21 @@
     });
     return D(inv.grandtotal).multiply(D(m.cm)).subtract(paid).setScale(precisionOf(trx, inv.c_currency_id), HU);
   }
+  // PL/pgSQL paymentAvailable(C_Payment_ID) (ported 1:1 as the sqlfn.js UDF, W-FN-PARITY): 0 for a charge; C_Payment_v.PayAmt less every ACTIVE allocation line converted
+  // into the payment currency (currencyConvert at the allocation's DateTrx/client/org), a remainder under one currency unit of precision is 0, rounded to precision.
+  // Kept as a Trx-aware body (not the UDF) so allocation lines still pending in THIS transaction count - W-FN-PARITY judges it against the pilot too (fn paymentAvailable@model_trade).
   function paymentAvailable(trx, p) {
     if (nz(p.c_charge_id)) return Z;
-    var amt = D(p.payamt).multiply(D(Y(p.isreceipt) ? 1 : -1));                              // C_Payment_v (AP/AR corrected)
+    var prec = precisionOf(trx, p.c_currency_id), avail = D(p.payamt).multiply(D(Y(p.isreceipt) ? 1 : -1));                  // C_Payment_v (AP/AR corrected)
     trx.find('c_allocationline', { c_payment_id: p.c_payment_id }).forEach(function (al) {
-      var h = trx.get('c_allocationhdr', al.c_allocationhdr_id); if (h && h.isactive === 'Y') amt = amt.subtract(D(al.amount));
+      var h = trx.get('c_allocationhdr', al.c_allocationhdr_id); if (!h || h.isactive !== 'Y') return;
+      var v = String(h.c_currency_id) === String(p.c_currency_id) ? D(al.amount)
+        : D(trx.q('SELECT currencyconvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(al.amount), h.c_currency_id, p.c_currency_id, h.datetrx, h.ad_client_id, h.ad_org_id])[0].v);
+      avail = avail.subtract(v);
     });
-    return amt.setScale(precisionOf(trx, p.c_currency_id), HU);
+    var min = new BigDecimal(1n, prec);                                                                                           // 10^-prec
+    if (avail.compareTo(min.negate()) > 0 && avail.compareTo(min) < 0) avail = Z;
+    return avail.setScale(prec, HU);
   }
   // MConversionRate.getRate — client/org specific first, latest ValidFrom (conversion type: the document's, else the default)
   // optional 6th arg = the document/fact line's org (MConversionRate.getRate(…, AD_Client_ID, AD_Org_ID)): rows of org 0 or THAT org, ORDER BY client DESC, org DESC, ValidFrom DESC; default = the session org

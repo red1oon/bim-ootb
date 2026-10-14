@@ -18,6 +18,7 @@ var log = function (s) { console.log(s); };
   var norm = function (v) { return typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(v) ? v.replace('T', ' ').replace(/(\.\d+)?([+-]\d\d(:\d\d)?|Z)?$/, '') : (v && typeof v === 'object' ? JSON.stringify(v) : v); };
   var A = require(path.join(ERP, 'ad_callout.js'));
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require(path.join(ERP, 'callouts', m + '.js')); });
+  var ML = require(path.join(ERP, 'model_layer.js')), MT = require(path.join(ERP, 'model_trade.js'));
   var lit = function (v, t) { return v === null ? 'NULL' : t === 's' ? "'" + String(v).replace(/'/g, "''") + "'" : t === 't' ? "'" + v + "'" : String(v); };
   var num = function (x) { return x != null && x !== '' && !isNaN(Number(x)); };
   var byFn = {}, bad = [], total = 0;
@@ -47,6 +48,13 @@ var log = function (s) { console.log(s); };
       else if (['t', 'f', 'true', 'false'].indexOf(want.v) >= 0) { ok = (want.v === 't' || want.v === 'true') === (Number(twin) === 1 || twin === true); why = ok ? '' : 'legacy=' + want.v + ' twin=' + twin; }
       else if (num(want.v) && num(twin)) { ok = Math.abs(Number(want.v) - Number(twin)) < 1e-9; why = ok ? '' : 'legacy=' + want.v + ' twin=' + twin; }
       else { ok = String(want.v) === String(twin); why = ok ? '' : 'legacy=' + JSON.stringify(want.v) + ' twin=' + JSON.stringify(twin); }
+      if (c.fn === 'paymentavailable' && !terr && !c.err && typeof ML.Trx === 'function') {   // §PAYAVAIL-MT: the model layer's own paymentAvailable (model_trade.js) must equal legacy too (AD-LAYER LAW 5: one implementation)
+        var mt = null, mterr = null; try { var prow = A.RUNTIME && db.exec('SELECT * FROM C_Payment WHERE C_Payment_ID=' + Number(c.args[0])); var cn = prow && prow[0] ? prow[0].columns.map(function (x) { return x.toLowerCase(); }) : null; if (cn) { var po = {}; prow[0].values[0].forEach(function (v, i) { po[cn[i]] = v; }); var qq = function (sql, params) { var st = db.prepare(sql), out = []; try { if (params && params.length) st.bind(params); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }; mt = MT.paymentAvailable(new ML.Trx(qq, { client: 0, org: 0, user: 0, role: 0, date: L.date, now: L.date + ' 00:00:00' }), po); mt = mt == null ? null : String(mt.toString()); } } catch (e) { mterr = String(e.message || e); }
+        var mb = byFn['paymentAvailable@model_trade'] = byFn['paymentAvailable@model_trade'] || { n: 0, fail: 0, informative: 0 }; mb.n++;
+        var okm = c.pilotNull ? mt === null : mt !== null && num(mt) && Math.abs(Number(mt) - Number(c.pilot)) < 1e-9;
+        if (mterr || !okm) { if (!(mt === null && cn === undefined)) { mb.fail++; bad.push('paymentAvailable@model_trade [' + sc.name + '] ' + c.label + ': legacy=' + c.pilot + ' model_trade=' + mt + (mterr ? ' err=' + mterr : '')); } }
+        if (c.pilot != null && !(num(c.pilot) && Number(c.pilot) === 0)) mb.informative++;
+      }
       var b = byFn[c.fn === '@sql' ? 'sql-converter' : c.fn] = byFn[c.fn === '@sql' ? 'sql-converter' : c.fn] || { n: 0, fail: 0, informative: 0 }; b.n++;
       if (!ok) { b.fail++; bad.push(c.fn + ' [' + sc.name + '] ' + c.label + ': ' + why); }
       var informative = want.err ? true : want.v !== null && !(num(want.v) && Number(want.v) === 0) && want.v !== 'f' && want.v !== 'false' && want.v !== ''; if (informative) b.informative++;
