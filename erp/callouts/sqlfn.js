@@ -265,7 +265,8 @@
     }
     return BD.ZERO;
   };
-  F.getdate = function () { return nowTs(); };                                                        // statement_timestamp()
+  F.getdate = function () { return nowTs(); };
+  F.statement_timestamp = F.getdate;                                                                   // what Convert_PostgreSQL turns SYSDATE / getDate() into (ConvertMap :71,:76)                                                        // statement_timestamp()
   // trunc(datetime[, format]) — CAST(... AS DATE) / DATE_Trunc
   F.trunc = function (dt, fmt) {
     if (dt == null) return null;
@@ -393,12 +394,42 @@
     var r; try { r = q('get1099Bucket', "SELECT SUM((COALESCE(il.LineNetAmt, 0) + COALESCE(il.TaxAmt, 0)) * (CASE WHEN dt.DocBaseType='API' THEN 1 WHEN dt.DocBaseType='APC' THEN -1 ELSE 0 END)) AS v FROM C_Invoice i, C_InvoiceLine il, C_1099Box b, C_DocType dt WHERE i.C_Invoice_ID=il.C_Invoice_ID AND i.IsSOTrx='N' AND il.C_1099Box_ID=b.C_1099Box_ID AND i.DateAcct BETWEEN ? AND ? AND i.C_BPartner_ID=? AND b.Bucket=? AND i.C_DocType_ID=dt.C_DocType_ID AND i.DocStatus IN ('CO','CL')", [cut.slice(0, 4) + '-01-01 00:00:00', cut, p_BP, p_Bucket])[0]; } catch (e) { return null; }
     return r && r.v != null ? D(r.v) : null;
   };
+
+  // ── §FN-CENSUS stage 3c: the Oracle-compat date/string shims the DICTIONARY calls (GLJournalGenerate.ProcessingDate = firstof(add_months(SYSDATE,-1),'MM'), ...). Sources: pg_get_functiondef on the pilot. ──
+  function tsv(v) { return v == null ? null : Timestamp.of(v); }
+  F.add_months = function (dt, n) { if (dt == null || n == null) return null; return addMonths(tsv(dt), Math.trunc(Number(n))); };                  // datetime + interval '1' month * TRUNC(months)
+  F.adddays = function (dt, n) { if (dt == null || n == null) return null; return new Timestamp(tsv(dt).getTime() + Math.round(Number(n) * 86400000)); };   // + interval '1' second * (86400*days)
+  F.subtractdays = function (dt, n) { return n == null ? null : F.adddays(dt, -Number(n)); };                                                          // addDays(day, days * -1)
+  F.daysbetween = function (a, b) { if (a == null || b == null) return null; return Math.round((TimeUtil.getDay(tsv(a)).getTime() - TimeUtil.getDay(tsv(b)).getTime()) / 86400000); };   // CAST(d1 AS DATE) - CAST(d2 AS DATE)
+  F.charat = function (str, i) { if (str == null || i == null) return null; var a = Array.from(String(str)), k = Math.trunc(Number(i)); return k >= 1 && k <= a.length ? a[k - 1] : ''; };      // SUBSTR($1, $2, 1)
+  // round(numeric, n) — PG ROUND on NUMERIC: exact decimal, half away from zero, negative n allowed. SQLite's built-in round(x, n) works on the binary double
+  //   (round(2.675,2)=2.67, round(1.005,2)=1, negative n ignored) - the dictionary calls ROUND in 29 AD_Column default rows, so the twin must agree with legacy. Overrides the 2-arg built-in only.
+  //   Returns a NUMBER (not text) so comparisons such as ROUND(x,2)=1.01 keep numeric typing; the decimal text is the shortest round-trip form of the stored REAL.
+  F.round = function (x, n) {
+    if (x == null || n == null) return null;
+    var bd = (typeof x === 'number' && /e/i.test(String(x))) ? D(x.toFixed(20).replace(/\.?0+$/, '') || '0') : D(x), k = Math.trunc(Number(n));   // JS prints 1e-7 in exponent form, which BigDecimal refuses
+    if (k >= 0) return Number(round(bd, k).toString());
+    var unit = BD.of(10).pow ? BD.of(Math.pow(10, -k)) : BD.of(Math.pow(10, -k));
+    return Number(round(pdiv(bd, unit), 0).multiply(unit).toString());
+  };
+  var FIRSTOF = { year: 'IYYY IY I SYYYY YYYY YEAR SYEAR YYY YY Y', quarter: 'Q', month: 'MONTH MON MM RM', week: 'IW W', day: 'DDD DD J', sunweek: 'DAY DY D', hour: 'HH HH12 HH24', minute: 'MI' };
+  // firstOf(datetime, format) — date_trunc(part) cast to date; DAY/DY/D = the week starting SUNDAY (offset -1 on the ISO Monday); the IN lists are case-sensitive (lower case = unit not recognized); NULL format -> NULL
+  F.firstof = function (dt, fmt) {
+    if (dt == null || fmt == null) return null;
+    var part = null; Object.keys(FIRSTOF).forEach(function (k) { if (FIRSTOF[k].split(' ').indexOf(String(fmt)) >= 0) part = k; });
+    if (part == null) throw new Error('timestamp with time zone units "' + fmt + '" not recognized');
+    var d = new Date(tsv(dt).getTime()), y = d.getUTCFullYear(), m = d.getUTCMonth(), dd = d.getUTCDate(), off = 0, out;
+    if (part === 'year') out = Date.UTC(y, 0, 1); else if (part === 'quarter') out = Date.UTC(y, m - m % 3, 1); else if (part === 'month') out = Date.UTC(y, m, 1);
+    else if (part === 'day' || part === 'hour' || part === 'minute') out = Date.UTC(y, m, dd);
+    else { var dow = (new Date(Date.UTC(y, m, dd)).getUTCDay() + 6) % 7; out = Date.UTC(y, m, dd - dow); if (part === 'sunweek') off = -1; }   // ISO week starts Monday
+    return new Timestamp(out + off * 86400000);
+  };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
-    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], trunc: [1, 2],
-    invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
+    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
+    invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
     ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
@@ -414,9 +445,10 @@
     }
     throw new Error('arity ' + n);
   }
+  var prevReg = R.registerSqlFunctions;                                                                  // views.js (currencyconvertinvoice) loads BEFORE this file in idempiere.html; replacing its registrar silently dropped it
   R.registerSqlFunctions = function (reg) {
     var names = Object.keys(ARITY);
     names.forEach(function (n) { ARITY[n].forEach(function (k) { reg(n, arity(F[n], k)); }); });
-    return names;
+    return typeof prevReg === 'function' ? (prevReg(reg) || []).concat(names) : names;
   };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

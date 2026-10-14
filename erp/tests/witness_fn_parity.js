@@ -36,15 +36,18 @@ var log = function (s) { console.log(s); };
     sc.cases.forEach(function (c) {
       total++;
       var twin, terr = null;
-      try { var r = db.exec('SELECT ' + c.fn + '(' + c.args.map(function (a, i) { return lit(a, c.types[i]); }).join(',') + ')'); twin = r[0] ? r[0].values[0][0] : null; } catch (e) { terr = String(e.message || e); }
+      try { var r = db.exec(c.fn === '@sql' ? A.convertSql(c.sql) : 'SELECT ' + c.fn + '(' + c.args.map(function (a, i) { return lit(a, c.types[i]); }).join(',') + ')'); twin = r[0] ? r[0].values[0][0] : null; } catch (e) { terr = String(e.message || e); }
       var want = c.err ? { err: c.err } : { v: c.pilotNull ? null : c.pilot }, ok, why = '';
+      if (c.clock && want.v != null && twin != null) { want.v = String(want.v).slice(0, 10); twin = String(twin).slice(0, 10); }   // both sides read their own clock: compare the DATE
+      if (want.v != null && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d([+-]\d\d(:\d\d)?)?$/.test(want.v)) want.v = want.v.replace(/([+-]\d\d(:\d\d)?)$/, '');   // timestamptz text from psql (session TZ = UTC): compare the wall clock
       if (want.err) { ok = terr != null; why = ok ? '' : 'legacy raised "' + want.err + '" but the twin returned ' + JSON.stringify(twin); }
       else if (terr) { ok = false; why = 'twin raised "' + terr + '" but legacy returned ' + JSON.stringify(want.v); }
+      else if (want.v != null && /^\d{4}-\d\d-\d\d$/.test(want.v) && twin != null && /^\d{4}-\d\d-\d\d 00:00:00$/.test(String(twin))) { ok = String(twin).slice(0, 10) === want.v; why = ok ? '' : 'legacy(date)=' + want.v + ' twin=' + twin; }   // a DATE result: the twin stores dates as "YYYY-MM-DD 00:00:00" (ad_seed convention)
       else if (want.v === null || twin === null) { ok = want.v === null && twin === null; why = ok ? '' : 'legacy=' + JSON.stringify(want.v) + ' twin=' + JSON.stringify(twin); }
       else if (['t', 'f', 'true', 'false'].indexOf(want.v) >= 0) { ok = (want.v === 't' || want.v === 'true') === (Number(twin) === 1 || twin === true); why = ok ? '' : 'legacy=' + want.v + ' twin=' + twin; }
       else if (num(want.v) && num(twin)) { ok = Math.abs(Number(want.v) - Number(twin)) < 1e-9; why = ok ? '' : 'legacy=' + want.v + ' twin=' + twin; }
       else { ok = String(want.v) === String(twin); why = ok ? '' : 'legacy=' + JSON.stringify(want.v) + ' twin=' + JSON.stringify(twin); }
-      var b = byFn[c.fn] = byFn[c.fn] || { n: 0, fail: 0, informative: 0 }; b.n++;
+      var b = byFn[c.fn === '@sql' ? 'sql-converter' : c.fn] = byFn[c.fn === '@sql' ? 'sql-converter' : c.fn] || { n: 0, fail: 0, informative: 0 }; b.n++;
       if (!ok) { b.fail++; bad.push(c.fn + ' [' + sc.name + '] ' + c.label + ': ' + why); }
       var informative = want.err ? true : want.v !== null && !(num(want.v) && Number(want.v) === 0) && want.v !== 'f' && want.v !== 'false' && want.v !== ''; if (informative) b.informative++;
     });
