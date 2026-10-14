@@ -225,6 +225,31 @@
     if (!showDetail) sql += ' GROUP BY productAttribute(s.M_AttributeSetInstance_ID), w.Name, l.Value';
     return { sql: sql + ' ORDER BY l.Value', params: params };
   }
+  // initAtpTab orders part (java:947-): open order lines with a reservation; PO adds to QtyOrdered, others to QtyReserved
+  function atpOrdersSql(M_Warehouse_ID, M_AttributeSetInstance_ID, M_Product_ID) {
+    var sql = 'SELECT COALESCE(ol.DatePromised, o.DatePromised) AS dp, ol.QtyReserved AS q, productAttribute(ol.M_AttributeSetInstance_ID) AS pa, ol.M_AttributeSetInstance_ID AS asi, dt.DocBaseType AS bt, bp.Name AS bp, ' +
+      "dt.PrintName || ' ' || o.DocumentNo AS dn, w.Name AS wn FROM C_Order o INNER JOIN C_OrderLine ol ON (o.C_Order_ID=ol.C_Order_ID) INNER JOIN C_DocType dt ON (o.C_DocType_ID=dt.C_DocType_ID) " +
+      'INNER JOIN M_Warehouse w ON (ol.M_Warehouse_ID=w.M_Warehouse_ID) INNER JOIN C_BPartner bp ON (o.C_BPartner_ID=bp.C_BPartner_ID) WHERE ol.QtyReserved<>0 AND ol.M_Product_ID=?', params = [M_Product_ID];
+    if (M_Warehouse_ID) { sql += ' AND ol.M_Warehouse_ID=?'; params.push(M_Warehouse_ID); }
+    if (M_AttributeSetInstance_ID > 0) { sql += ' AND ol.M_AttributeSetInstance_ID=?'; params.push(M_AttributeSetInstance_ID); }
+    return { sql: sql + ' ORDER BY o.DatePromised', params: params };
+  }
+  // m_sqlProductprice (java:382-399): bomPrice* are the DB functions; Margin = Std - Limit
+  function priceSql() {
+    return 'SELECT plv.Name AS n, plv.ValidFrom AS vf, bomPriceList(pp.M_Product_ID, pp.M_PriceList_Version_ID) AS PriceList, bomPriceStd(pp.M_Product_ID, pp.M_PriceList_Version_ID) AS PriceStd, ' +
+      'bomPriceStd(pp.M_Product_ID, pp.M_PriceList_Version_ID)-bomPriceLimit(pp.M_Product_ID, pp.M_PriceList_Version_ID) AS Margin, bomPriceLimit(pp.M_Product_ID, pp.M_PriceList_Version_ID) AS PriceLimit ' +
+      "FROM M_ProductPrice pp INNER JOIN M_PriceList_Version plv ON (pp.M_PriceList_Version_ID = plv.M_PriceList_Version_ID) WHERE pp.M_Product_ID = ? AND plv.IsActive = 'Y' AND pp.IsActive = 'Y' ORDER BY plv.ValidFrom DESC";
+  }
+  // renderContentPane substitute / related tabs (java:328-362): the same view, RowType 'S' / 'R'; the price list version comes from the window's criteria
+  function substRelSql(rowType, M_Product_ID, M_PriceList_Version_ID) {
+    return { sql: 'SELECT orgname AS orgname, (Select Value from M_Product p where p.M_Product_ID=M_PRODUCT_SUBSTITUTERELATED_V.Substitute_ID) AS value, Name AS name, QtyAvailable AS qtyavailable, QtyOnHand AS qtyonhand, QtyReserved AS qtyreserved, PriceStd AS pricestd ' +
+      "FROM M_PRODUCT_SUBSTITUTERELATED_V WHERE M_Product_ID = ? AND M_PriceList_Version_ID = ? and RowType = '" + rowType + "'", params: [M_Product_ID, M_PriceList_Version_ID] };
+  }
+  function substRelTab(id, label, rowType) {
+    return { id: id, label: label, load: function (c, pid) {
+      var b = substRelSql(rowType, pid, Number(c.M_PriceList_Version_ID) || 0), r = tipQ(b.sql, b.params);
+      return { cols: ['Warehouse', 'Value', 'Name', 'Available Quantity', 'On Hand Quantity', 'Reserved Quantity', 'Standard Price'], rows: r.map(function (x) { return [x.orgname, x.value, x.name, num(x.qtyavailable), num(x.qtyonhand), num(x.qtyreserved), num(x.pricestd)]; }) }; } };
+  }
   function num(x) { return x == null ? 0 : Number(x); }
   HOOKS['M_PRODUCT'] = {
     // InfoProductWindow.initParameters:~470 — M_Warehouse_ID from the context; here the session org's AD_OrgInfo warehouse (no login-warehouse pick in this app)
@@ -251,17 +276,19 @@
           var wh = Number(c.M_Warehouse_ID) || 0, rows = [], qty = 0;
           var q1 = atpSql(!!st.detail, wh, 0, pid);
           tipQ(q1.sql, q1.params).forEach(function (x) { qty += num(x.oh); var asi = x.pa == null ? '' : String(x.pa); if (st.detail && asi === '') asi = '{' + (x.asi || 0) + '}'; rows.push(['', num(x.oh), '', num(x.od), num(x.rs), x.lv, asi, '', x.wn]); });   // java:918-935
-          tipQ("SELECT COALESCE(ol.datepromised, o.datepromised) AS dp, ol.qtyreserved AS q, dt.docbasetype AS bt, bp.name AS bp, COALESCE(dt.printname,'') || ' ' || o.documentno AS dn, w.name AS wn, ol.m_attributesetinstance_id AS asi FROM c_order o JOIN c_orderline ol ON o.c_order_id=ol.c_order_id JOIN c_doctype dt ON o.c_doctype_id=dt.c_doctype_id JOIN m_warehouse w ON ol.m_warehouse_id=w.m_warehouse_id JOIN c_bpartner bp ON o.c_bpartner_id=bp.c_bpartner_id WHERE ol.qtyreserved<>0 AND ol.m_product_id=?" + (wh ? ' AND ol.m_warehouse_id=' + wh : '') + ' ORDER BY o.datepromised', [pid]).forEach(function (x) {
-            var po = x.bt === 'POO'; if (po) qty += num(x.q); else qty -= num(x.q);
-            rows.push([String(x.dp || '').slice(0, 10), qty, x.bp, po ? num(x.q) : '', po ? '' : num(x.q), '', st.detail ? '{' + (x.asi || 0) + '}' : '', x.dn, x.wn]);
+          var q2 = atpOrdersSql(wh, 0, pid);
+          tipQ(q2.sql, q2.params).forEach(function (x) {                                                    // java:975-1000
+            var po = x.bt === 'POO', oq = num(x.q); if (po) qty += oq; else qty -= oq;
+            var asi = x.pa == null ? '' : String(x.pa); if (st.detail && asi === '') asi = '{' + (x.asi || 0) + '}';
+            rows.push([String(x.dp || '').slice(0, 10), qty, x.bp, po ? oq : '', po ? '' : oq, '', asi, x.dn, x.wn]);
           });
           return { cols: ['Date', 'On Hand Quantity', 'Business Partner', 'Ordered Quantity', 'Reserved Quantity', 'Locator', 'Attribute Set Instance', 'Document No', 'Warehouse'], rows: rows }; } },
-      { id: 'price', label: 'Price', load: function (c, pid) {   // m_sqlProductprice:~268-285
-          var r = tipQ("SELECT plv.name AS n, plv.validfrom AS vf, " + ['pricelist', 'pricestd', 'pricelimit'].map(function (k) { return 'COALESCE(pp.' + k + ',0) AS ' + k; }).join(', ') + " FROM m_productprice pp JOIN m_pricelist_version plv ON pp.m_pricelist_version_id=plv.m_pricelist_version_id WHERE pp.m_product_id=? AND plv.isactive='Y' AND pp.isactive='Y' ORDER BY plv.validfrom DESC", [pid]);
-          return { cols: ['Price List Version', 'Valid from', 'List Price', 'Standard Price', 'Margin', 'Limit Price'], rows: r.map(function (x) { return [x.n, String(x.vf || '').slice(0, 10), num(x.pricelist), num(x.pricestd), num(x.pricestd) - num(x.pricelimit), num(x.pricelimit)]; }) }; } }
-      // Substitute / Related: NAMED-DEFERRED (M_PRODUCT_SUBSTITUTERELATED_V absent from the seed) — ERP_DEPTH_FILM.md §7
+      { id: 'price', label: 'Price', load: function (c, pid) {   // m_sqlProductprice (java:382-399), run as written
+          var r = tipQ(priceSql(), [pid]);
+          return { cols: ['Price List Version', 'Valid from', 'List Price', 'Standard Price', 'Margin', 'Limit Price'], rows: r.map(function (x) { return [x.n, String(x.vf || '').slice(0, 10), num(x.pricelist), num(x.pricestd), num(x.margin), num(x.pricelimit)]; }) }; } }
+      ,substRelTab('substitute', 'Substitute Products', 'S'), substRelTab('related', 'Related Products', 'R')
     ]
   };
 
-  g.AdInfoWindow = { open: open, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, parseContextForSql: parseContextForSql, buildInfoSql: buildInfoSql, hook: function (t) { return HOOKS[String(t).toUpperCase()] || {}; }, stockSql: stockSql, atpSql: atpSql, definition: definition };
+  g.AdInfoWindow = { open: open, register: function (table, hook) { HOOKS[String(table).toUpperCase()] = hook; }, parseContextForSql: parseContextForSql, buildInfoSql: buildInfoSql, hook: function (t) { return HOOKS[String(t).toUpperCase()] || {}; }, stockSql: stockSql, atpSql: atpSql, atpOrdersSql: atpOrdersSql, priceSql: priceSql, substRelSql: substRelSql, definition: definition };
 })(typeof window !== 'undefined' ? window : globalThis);
