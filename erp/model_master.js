@@ -356,5 +356,5 @@
   }
   var installed = install(MASTER);
 
-  return { MASTER: MASTER, install: install, installed: installed, insertAccounting: insertAccounting, insertTree: insertTree, mcostCreate: mcostCreate };
+  return { MASTER: MASTER, install: install, installed: installed, insertAccounting: insertAccounting, insertTree: insertTree, mcostCreate: mcostCreate, clientAcctSchemas: clientAcctSchemas };
 });

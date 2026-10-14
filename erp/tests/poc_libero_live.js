@@ -61,6 +61,9 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   const lr = logs.slice(mR);
   console.log('§LIBERO-LIVE-6 refused order: sealed rows named LIVE-NOROUTE=' + nr + ' | ' + lr.filter(l => /MODEL-AFTER-SAVE|MODEL-SAVE-ROLLBACK/.test(l)).join(' || ').slice(0, 300));
   ok('V5 an order refused by the model (no routing) is ROLLED BACK: nothing sealed, §MODEL-SAVE-ROLLBACK logged (legacy PO.save: afterSave false => the trx rolls back)', nr === 0 && lr.some(l => /§MODEL-SAVE-ROLLBACK table=pp_order/.test(l)), { nr, lr: lr.slice(0, 4) });
+  const cls = await pg.evaluate(() => ({ cc: !!window.ModelLayer.MODEL.pp_cost_collector, ccDoc: !!window.ModelLayer.docActionFor('pp_cost_collector'), orderDoc: !!window.ModelLayer.docActionFor('pp_order'), trade: !!window.ModelTrade, cost: !!window.ModelCost, master: !!window.ModelMaster }));
+  console.log('§LIBERO-LIVE-7 cost side in the real page: ' + JSON.stringify(cls));
+  ok('V6 the cost side is live in the real page: PP_Cost_Collector model + DocAction, the PP_Order DocAction, and the core ports the chunks reuse (ModelTrade / ModelCost / ModelMaster) are all present', cls.cc && cls.ccDoc && cls.orderDoc && cls.trade && cls.cost && cls.master, cls);
   ok('V4 zero page errors', errs.length === 0, errs.slice(0, 3));
   console.log('§LIBERO-LIVE-VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' failed=' + fails); await browser.close(); srv.close(); process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('§LIBERO-LIVE-VERDICT FAIL harness: ' + e.stack); process.exit(2); });
