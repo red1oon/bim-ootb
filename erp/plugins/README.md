@@ -59,3 +59,7 @@ is downstream and ignorant of why."*) A hook may return an error string to abort
 (`fireHooks`'s iDempiere-faithful semantics); it may never call into `doc_poster.js`/`erp_postings.js`
 or otherwise decide what gets posted. Nothing in this engine enforces that boundary with a type
 system — it is a documented discipline, and this is the one place a bundle author has to learn it.
+
+## Licence boundary
+
+`libero_*.mjs` (Libero Manufacturing) are ports of GPLv2 code and are `GPL-2.0-only` (text in `COPYING.GPL-2.0`); every other file here is MIT like the rest of the repo. A plugin is installed by the user at their discretion, so GPL terms attach to the plugin, not to the host.

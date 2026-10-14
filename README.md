@@ -216,3 +216,8 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 ## License
 
 MIT. Copyright (c) 2025–2026 Redhuan D. Oon.
+
+**Exception — the Libero Manufacturing plugin is GPL-2.0-only.** It is a port of Libero / `org.idempiere.mfg` (GPLv2, © e-Evolution and contributors), so the files below carry `SPDX-License-Identifier: GPL-2.0-only` and are NOT relicensed MIT. Full text: `erp/plugins/COPYING.GPL-2.0`.
+- `erp/plugins/libero_*.mjs`, `erp/patches/mfg.sql` and its generator `erp/patches/build_mfg_patch.py`, `erp/tests/witness_libero_*.js`, `erp/tests/poc_libero_live.js`, `erp/tests/film_mfg_intro.js`.
+
+The plugin is a separate module that the MIT host loads only when a user installs and starts it from the Plugins & Releases panel. Installing it is the user's choice, and GPLv2 applies to that module and to any copy of it, not to the MIT host. This is the project's reading, not legal advice.
