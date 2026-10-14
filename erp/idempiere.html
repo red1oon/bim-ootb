@@ -1489,7 +1489,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §ZOOM-ACROSS state — set by _zoomAcross() before opening the destination window; consumed by renderActiveTab
   //   to filter the header tab to the records that reference the origin record. Cleared on any non-zoom open.
   var _zoomFilter = null;
+  // §PLUGIN-NEED seams (Host H2 grid triggers) - the OSGi lazy-activation demand point for windows/callouts and processes. `trigs` = [{window|table|process: x}]; any STARTING lazy bundle declaring one is activated
+  //   (sequentially, async) BEFORE `run`. Nothing pending => run() synchronously, exactly as before (same contract as crud_overlay._needThen). An activation failure is logged and `run` proceeds without that bundle.
+  function _needBundles(trigs, run) {
+    var PE = window.PluginEngine;
+    if (!PE || typeof PE.hasPending !== 'function') { run(); return; }
+    var todo = trigs.filter(function (t) { return PE.hasPending(t); });
+    if (!todo.length) { run(); return; }
+    var chain = Promise.resolve();
+    todo.forEach(function (t) { chain = chain.then(function () { return PE.need(t); }).catch(function (e) { console.log('§PLUGIN-NEED-ERR ' + JSON.stringify(t) + ' ' + (e && e.message)); }); });
+    chain.then(run);
+  }
+  function _windowTriggers(windowId) {   // the window itself + every tab table (callouts only fire inside windows, so this covers them)
+    var out = [{ window: windowId }];
+    try { _sqlRows('SELECT DISTINCT t.TableName AS tn FROM AD_Tab b JOIN AD_Table t ON t.AD_Table_ID=b.AD_Table_ID WHERE b.AD_Window_ID=' + Number(windowId)).forEach(function (r) { out.push({ table: String(r.tn || r.tablename || '').toLowerCase() }); }); } catch (e) { /* no AD yet */ }
+    return out;
+  }
+  function _processTriggers(processId) {
+    try { var r = _sqlRows('SELECT classname FROM AD_Process WHERE AD_Process_ID=' + Number(processId))[0]; return r && r.classname ? [{ process: String(r.classname).toLowerCase() }] : []; } catch (e) { return []; }
+  }
   function openWindow(windowId, name, keepZoom) {
+    _needBundles(_windowTriggers(windowId), function () { _openWindowNow(windowId, name, keepZoom); });
+  }
+  function _openWindowNow(windowId, name, keepZoom) {
     if (!keepZoom) _zoomFilter = null;   // a plain menu/tab open is unfiltered; only a zoom-across keeps the filter
     if (!_openWins[windowId]) {
       var win = ADP.getWindow(db, windowId);
@@ -3416,6 +3438,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 
   // openProcess — the entry for menu P/R leaves + the ?process= deep link (procSet-gated in applySession).
   function openProcess(processId, name, rec) {
+    _needBundles(_processTriggers(processId), function () { _openProcessNow(processId, name, rec); });
+  }
+  function _openProcessNow(processId, name, rec) {
     _procRecord = rec || null;   // a button-launched process carries its record (Record_ID); a menu launch carries none
     if (!window.AdProcess) { status('Process engine not loaded'); return; }
     _ensureProcHandlers();
@@ -3908,6 +3933,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
   }
   function runProcess(proc, params, recordId) {
+    _needBundles(_processTriggers(proc.AD_Process_ID), function () { _runProcessGuarded(proc, params, recordId); });
+  }
+  function _runProcessGuarded(proc, params, recordId) {
     // FS-16 (§FS2n): hydrate the signed sidecar FIRST — a handler that reads the tip (ImportBPartner over the rows the File
     //   Loader committed) must not run against a not-yet-hydrated sidecar (kernelDb() is null before hydration → base only).
     var C = window.__crud;
