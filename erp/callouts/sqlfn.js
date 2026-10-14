@@ -288,11 +288,118 @@
       return r ? r.v : dflt;
     } catch (e) { return dflt; }   // AD_SysConfig absent from an unpatched bundle → the function's NO_DATA_FOUND path
   };
+
+  // ── §FN-CENSUS stage 2 (bim-compiler prompts/ERP_DEPTH_FILM.md): the BUSINESS functions that had no JS port. Source of truth = pg_get_functiondef on the pilot. ──
+  function prec(cur) { var r = cur == null ? null : q('prec', 'SELECT StdPrecision AS p FROM C_Currency WHERE C_Currency_ID=?', [cur])[0]; return r && r.p != null ? Number(r.p) : null; }
+  function tsq(v) { var t = Timestamp.of(v); return t == null ? null : t.toString(); }
+  // invoicePaid / invoicePaidToDate share one body; toDate=undefined means no DateAcct filter (invoicePaid)
+  function paid(inv, cur, mult, toDate, filter) {
+    var v_Precision = prec(cur), v_Min = v_Precision == null ? null : new BD(1n, v_Precision), v_MultiplierAP = mult == null ? BD.of(1) : D(mult), v_Pay = BD.ZERO;
+    var lim = filter ? tsq(toDate) : null;
+    var rows = (filter && lim == null) ? [] : q('invoicePaid', "SELECT al.AD_Client_ID AS cl, al.AD_Org_ID AS org, al.Amount AS amt, al.DiscountAmt AS dis, al.WriteOffAmt AS wo, a.C_Currency_ID AS cur, a.DateTrx AS dt FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Invoice_ID=? AND a.IsActive='Y'" + (filter ? ' AND a.DateAcct <= ?' : ''), filter ? [inv, lim] : [inv]);
+    rows.forEach(function (ar) {
+      var conv = F.currencyconvert(D(ar.amt).add(D(ar.dis)).add(D(ar.wo)), ar.cur, cur, ar.dt, null, ar.cl, ar.org);
+      v_Pay = (v_Pay == null || conv == null) ? null : v_Pay.add(D(conv));                           // NUMERIC + NULL = NULL
+    });
+    if (v_Pay != null && v_Min != null && v_Pay.compareTo(v_Min.negate()) > 0 && v_Pay.compareTo(v_Min) < 0) v_Pay = BD.ZERO;   // Ignore Rounding
+    if (v_Precision == null) return null;
+    return round(v_Pay == null ? BD.ZERO : v_Pay, v_Precision).multiply(v_MultiplierAP);
+  }
+  F.invoicepaid = function (p_C_Invoice_ID, p_C_Currency_ID, p_MultiplierAP) { return paid(p_C_Invoice_ID, p_C_Currency_ID, p_MultiplierAP, null, false); };
+  F.invoicepaidtodate = function (p_C_Invoice_ID, p_C_Currency_ID, p_MultiplierAP, p_DateAcct) { return paid(p_C_Invoice_ID, p_C_Currency_ID, p_MultiplierAP, p_DateAcct, true); };
+  // paymentAllocated(C_Payment_ID, C_Currency_ID) — Charge payments return PayAmt (nothing available), else the allocated amount in the payment currency
+  F.paymentallocated = function (p_C_Payment_ID, p_C_Currency_ID) {
+    var v_Precision = prec(p_C_Currency_ID), v_Min = v_Precision == null ? null : new BD(1n, v_Precision), v_Alloc = BD.ZERO;
+    var ch = q('paymentAllocated', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [p_C_Payment_ID])[0];
+    if (ch && ch.v != null) return D(ch.v);
+    q('paymentAllocated', "SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, a.C_Currency_ID AS cur, a.DateTrx AS dt FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Payment_ID=? AND a.IsActive='Y'", [p_C_Payment_ID]).forEach(function (r) {
+      var conv = F.currencyconvert(D(r.amt), r.cur, p_C_Currency_ID, r.dt, null, r.cl, r.org);
+      v_Alloc = (v_Alloc == null || conv == null) ? null : v_Alloc.add(D(conv));
+    });
+    if (v_Alloc != null && v_Min != null && v_Alloc.compareTo(v_Min.negate()) > 0 && v_Alloc.compareTo(v_Min) < 0) v_Alloc = BD.ZERO;
+    if (v_Precision == null) return null;
+    return round(v_Alloc == null ? BD.ZERO : v_Alloc, v_Precision);
+  };
+  // currencyConvertPayment(C_Payment_ID, to, amt, date) — reads the C_Payment_v columns (the view passes them through)
+  F.currencyconvertpayment = function (p_C_Payment_ID, p_Currency_To_ID, p_Amt, p_ConversionDate) {
+    var p = q('currencyConvertPayment', 'SELECT AD_Client_ID AS cl, AD_Org_ID AS org, DateAcct AS da, C_Currency_ID AS cur, C_ConversionType_ID AS ct, CurrencyRate AS rate, ConvertedAmt AS conv, PayAmt AS pay, IsOverrideCurrencyRate AS ov FROM C_Payment WHERE C_Payment_ID=?', [p_C_Payment_ID])[0] || {};
+    var b = p.cl == null ? null : q('currencyConvertPayment', 'SELECT sc.C_Currency_ID AS c FROM AD_ClientInfo ci JOIN C_AcctSchema sc ON ci.C_AcctSchema1_ID=sc.C_AcctSchema_ID WHERE ci.AD_Client_ID=?', [p.cl])[0];
+    var base = b ? b.c : null, rate = p.rate == null ? BD.ZERO : D(p.rate), cv = p.conv == null ? BD.ZERO : D(p.conv);
+    if (base != null && p_Currency_To_ID != null && Number(base) === Number(p_Currency_To_ID) && rate.signum() > 0 && cv.signum() !== 0 && p.cur != null && Number(p.cur) !== Number(p_Currency_To_ID) && p.ov === 'Y') {
+      return p_Amt == null ? D(p.conv) : F.currencyround(D(p_Amt).multiply(D(p.rate)), p_Currency_To_ID, null);
+    }
+    return F.currencyconvert(p_Amt != null ? D(p_Amt) : (p.pay == null ? null : D(p.pay)), p.cur, p_Currency_To_ID, p_ConversionDate != null ? p_ConversionDate : p.da, p.ct, p.cl, p.org);
+  };
+  // prodQtyOrdered / prodQtyReserved(product, warehouse) — unprocessed M_ProductionLine quantities of a stocked product; every other path returns 0
+  function prodQty(sign) {
+    return function (p_Product_ID, p_Warehouse_ID) {
+      if (p_Warehouse_ID == null) return BD.ZERO;
+      var pr = q('prodQty', 'SELECT IsStocked AS s FROM M_Product WHERE M_Product_ID=?', [p_Product_ID])[0];
+      if (!pr || pr.s !== 'Y') return BD.ZERO;
+      var r; try { r = q('prodQty', 'SELECT COALESCE(SUM(MovementQty), 0) AS v FROM M_ProductionLine p WHERE M_Product_ID=? AND MovementQty ' + (sign > 0 ? '> 0' : '< 0') + " AND p.Processed = 'N' AND EXISTS (SELECT * FROM M_Locator l WHERE p.M_Locator_ID=l.M_Locator_ID AND l.M_Warehouse_ID=?)", [p_Product_ID, p_Warehouse_ID])[0]; } catch (e) { r = null; }   // table absent from a bundle = no rows
+      var v = D(r ? r.v : 0); return sign > 0 ? v : v.negate();
+    };
+  }
+  F.prodqtyordered = prodQty(1); F.prodqtyreserved = prodQty(-1);
+  // bPartnerRemitLocation(C_BPartner_ID) — first active location, IsRemitTo='Y' first (no secondary sort in the original: ties follow the heap, here the key)
+  F.bpartnerremitlocation = function (p_C_BPartner_ID) {
+    var r = q('bPartnerRemitLocation', "SELECT C_Location_ID AS l FROM C_BPartner_Location WHERE C_BPartner_ID=? AND IsActive='Y' ORDER BY IsRemitTo DESC, C_BPartner_Location_ID", [p_C_BPartner_ID])[0];
+    return r ? r.l : null;
+  };
+  // isMemberOfAcctSchema(client, org, acctschema) — org tree walk for the schema's AD_OrgOnly_ID (recursive CTE, transcribed)
+  F.ismemberofacctschema = function (p_Client, p_Org, p_Schema) {
+    var v_org = -1, c = q('isMemberOfAcctSchema', 'SELECT COUNT(*) AS n FROM C_AcctSchema WHERE C_AcctSchema_ID <> ? AND AD_OrgOnly_ID=?', [p_Schema, p_Org])[0];
+    if (c && Number(c.n) === 0) {
+      var r = q('isMemberOfAcctSchema', "WITH RECURSIVE tr(ad_org_id) AS (SELECT tn.node_id FROM ad_tree t JOIN ad_treenode tn ON t.ad_tree_id=tn.ad_tree_id JOIN ad_org ON tn.node_id=ad_org.ad_org_id JOIN c_acctschema ca ON ad_org.ad_org_id=ca.AD_OrgOnly_ID AND ca.C_AcctSchema_ID=? " +
+        "WHERE t.treetype='OO' AND t.ad_client_id=? AND ((tn.parent_id = 0 AND ad_org.issummary='Y') OR (ad_org.ad_org_id=?)) UNION SELECT tn.node_id FROM ad_tree t JOIN ad_treenode tn ON t.ad_tree_id=tn.ad_tree_id JOIN ad_org ON tn.node_id=ad_org.ad_org_id JOIN tr ON tr.ad_org_id=tn.parent_id WHERE tn.node_id=?) " +
+        'SELECT ad_org_id AS o FROM tr WHERE ad_org_id=?', [p_Schema, p_Client, p_Org, p_Org, p_Org])[0];
+      v_org = r && r.o != null ? Number(r.o) : null;                                               // SELECT INTO with no row = NULL (not -1) -> the function returns NULL
+    }
+    return (v_org == null || p_Org == null) ? null : (v_org === Number(p_Org) ? 1 : 0);
+  };
+  // isIntersectCSV(csv1, csv2) — string_to_array(.., ',') && string_to_array(.., ','): any shared element (no trimming); NULL input -> 'N'
+  F.isintersectcsv = function (a, b) {
+    if (a == null || b == null) return 'N';
+    var x = String(a) === '' ? [] : String(a).split(','), y = String(b) === '' ? [] : String(b).split(',');
+    return x.some(function (e) { return y.indexOf(e) >= 0; }) ? 'Y' : 'N';
+  };
+  // toRecordID(tablename, uu) — the key of the row whose <Table>_UU equals the uuid; the original RAISEs when the table/columns/row are not found (STRICT = exactly one row)
+  F.torecordid = function (p_Table, p_UU) {
+    var tn = String(p_Table).toLowerCase(), kc = q('toRecordID', "SELECT a.ColumnName AS c FROM AD_Column a JOIN AD_Table b ON (a.AD_Table_ID=b.AD_Table_ID) WHERE a.IsActive='Y' AND a.IsKey='Y' AND lower(b.TableName)=?", [tn])[0];
+    if (!kc) throw new Error('ID column not found for table ' + p_Table);
+    var uu;
+    if (String(p_Table).length <= 27) uu = p_Table + '_UU';
+    else { var u = q('toRecordID', "SELECT a.ColumnName AS c FROM AD_Column a JOIN AD_Table b ON (a.AD_Table_ID=b.AD_Table_ID) WHERE a.IsActive='Y' AND lower(a.ColumnName) LIKE ? AND lower(b.TableName)=?", [String(p_Table).toLowerCase().slice(0, 26) + '%uu', tn])[0]; uu = u ? u.c : null; }
+    if (!uu) throw new Error('UUID column not found for table ' + p_Table);
+    var rows = q('toRecordID', 'SELECT ' + kc.c + ' AS id FROM ' + tn + ' WHERE lower(' + uu + ')=lower(?)', [p_UU]);
+    if (rows.length !== 1) throw new Error(rows.length ? 'query returned more than one row' : 'query returned no rows');
+    return rows[0].id;
+  };
+  // productAttribute(M_AttributeSetInstance_ID) — ' («lot» #serno guarantee Attr:Value ...)'; '' when no instance, NULL when the instance has nothing to say (|| propagates NULL)
+  F.productattribute = function (p_ASI) {
+    if (p_ASI == null || !(Number(p_ASI) > 0)) return '';
+    var a = q('productAttribute', "SELECT asi.Lot AS lot, asi.SerNo AS ser, asi.GuaranteeDate AS gd, COALESCE(a.SerNoCharSOverwrite, '#') AS ss, COALESCE(a.SerNoCharEOverwrite, '') AS se, COALESCE(a.LotCharSOverwrite, char(171)) AS ls, COALESCE(a.LotCharEOverwrite, char(187)) AS le FROM M_AttributeSetInstance asi INNER JOIN M_AttributeSet a ON (asi.M_AttributeSet_ID=a.M_AttributeSet_ID) WHERE asi.M_AttributeSetInstance_ID=?", [p_ASI])[0] || {};
+    var add = '';
+    function cat(x) { add = (add == null || x == null) ? null : add + x; }
+    if (a.ser != null) { cat(a.ss); cat(a.ser); cat(a.se); cat(' '); }
+    if (a.lot != null) { cat(a.ls); cat(a.lot); cat(a.le); cat(' '); }
+    if (a.gd != null) { cat(String(a.gd)); cat(' '); }
+    q('productAttribute', "SELECT ai.Value AS v, a.Name AS n FROM M_AttributeInstance ai INNER JOIN M_Attribute a ON (ai.M_Attribute_ID=a.M_Attribute_ID AND a.IsInstanceAttribute='Y') WHERE ai.M_AttributeSetInstance_ID=? ORDER BY ai.rowid", [p_ASI]).forEach(function (r) { cat(r.n); cat(':'); cat(r.v); cat(' '); });
+    return (add != null && add.length > 0) ? ' (' + add.trim() + ')' : null;
+  };
+  // get1099Bucket(C_BPartner_ID, cutDate, bucket) — SUM over AP invoice lines in the 1099 box bucket, year-to-date; NULL when none (or C_1099Box absent from the bundle)
+  F.get1099bucket = function (p_BP, p_Cut, p_Bucket) {
+    var cut = tsq(p_Cut); if (cut == null) return null;
+    var r; try { r = q('get1099Bucket', "SELECT SUM((COALESCE(il.LineNetAmt, 0) + COALESCE(il.TaxAmt, 0)) * (CASE WHEN dt.DocBaseType='API' THEN 1 WHEN dt.DocBaseType='APC' THEN -1 ELSE 0 END)) AS v FROM C_Invoice i, C_InvoiceLine il, C_1099Box b, C_DocType dt WHERE i.C_Invoice_ID=il.C_Invoice_ID AND i.IsSOTrx='N' AND il.C_1099Box_ID=b.C_1099Box_ID AND i.DateAcct BETWEEN ? AND ? AND i.C_BPartner_ID=? AND b.Bucket=? AND i.C_DocType_ID=dt.C_DocType_ID AND i.DocStatus IN ('CO','CL')", [cut.slice(0, 4) + '-01-01 00:00:00', cut, p_BP, p_Bucket])[0]; } catch (e) { return null; }
+    return r && r.v != null ? D(r.v) : null;
+  };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
-    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], trunc: [1, 2] };
+    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], trunc: [1, 2],
+    invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
+    ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
     switch (n) {
