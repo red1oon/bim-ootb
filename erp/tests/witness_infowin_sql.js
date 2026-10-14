@@ -31,7 +31,7 @@ const log = (s) => console.log(s);
     const cols = Object.keys(rows[0]); scratch.run(`CREATE TABLE "${t}" (${cols.map(c => `"${c}"`).join(',')})`);
     const st = scratch.prepare(`INSERT INTO "${t}" VALUES (${cols.map(() => '?').join(',')})`); rows.forEach(r => st.run(cols.map(c => { const v = norm(r[c]); return v === undefined ? null : v; }))); st.free();
   }
-  const patch = fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8'), vs = patch.slice(patch.indexOf('-- >>> VIEWS'), patch.indexOf('-- <<< VIEWS')).split(/;\s*\n/).map(x => x.replace(/^\s*--[^\n]*\n?/gm, '').trim()).filter(x => /^(DROP VIEW IF EXISTS (m_storage|m_product_stock_v|m_product_substituterelated_v)|CREATE VIEW (m_storage|m_product_stock_v|m_product_substituterelated_v) )/i.test(x));
+  const patch = fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8'), vs = patch.slice(patch.indexOf('-- >>> VIEWS'), patch.indexOf('-- <<< VIEWS')).split(/;\s*\n/).map(x => x.replace(/^\s*--[^\n]*\n?/gm, '').trim()).filter(x => /^(DROP VIEW IF EXISTS (m_storage|m_product_stock_v|m_product_substituterelated_v)|CREATE VIEW (m_storage|m_product_stock_v|m_product_substituterelated_v) )/i.test(x)).map(x => process.env.INFOWIN_NEG === 'substrel' ? x.replace(/sum\(ms\.qtyonhand\) AS qtyonhand/g, 'sum(ms.qtyonhand) + 1 AS qtyonhand') : x);   // negative control: INFOWIN_NEG=substrel must turn the Substitute/Related rows FAIL
   vs.forEach(x => { try { scratch.run(x); } catch (e) {} });                                        // the views exactly as the self-heal loader creates them
   const A = require(path.join(ERP, 'ad_callout.js')); ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => require(path.join(ERP, 'callouts', m + '.js')));
   A.RUNTIME.registerSqlFunctions((n, f) => scratch.create_function(n, f));
@@ -76,7 +76,7 @@ const log = (s) => console.log(s);
     return { L: L.length, T: T.length, miss: miss, left: left, nz: nz, v: (!L.length && !T.length) ? 'EMPTY' : (L.length !== T.length || miss || left) ? 'FAIL' : 'PASS' };
   };
   const plvs = PGROWS('select distinct m_pricelist_version_id as v from m_product_substituterelated_v order by 1').map(r => r.v).concat([0]);
-  const tabStats = { PASS: 0, FAIL: 0, EMPTY: 0, rows: 0, nz: 0 };
+  const tabStats = { PASS: 0, FAIL: 0, EMPTY: 0, rows: 0, nz: 0 }, sr = { PASS: 0, FAIL: 0, EMPTY: 0, rows: 0 };
   for (const p of prods) {
     const cases = [['stock', { sql: IW.stockSql(), params: [p] }]];
     [[true, 0], [false, 0], [true, 103], [false, 103], [false, 104]].forEach(([d, w]) => cases.push(['atp detail=' + d + ' wh=' + w, IW.atpSql(d, w, 0, p)]));
@@ -85,10 +85,12 @@ const log = (s) => console.log(s);
     plvs.forEach(v => ['S', 'R'].forEach(t => cases.push(['subst/related ' + t + ' plv=' + v, IW.substRelSql(t, p, v)])));
     for (const [label, b] of cases) {
       const r = runPair('p' + p + ' ' + label, b); if (r === 'FAIL') { tabStats.FAIL++; failed++; continue; }
+      if (/subst\/related/.test(label)) { sr[r.v]++; sr.rows += r.L; }
       tabStats[r.v]++; tabStats.rows += r.L; tabStats.nz += r.nz; if (r.v === 'FAIL') { failed++; log('§INFOWIN_SQL tab=p' + p + ' ' + label + ' legacyRows=' + r.L + ' twinRows=' + r.T + ' unmatchedTwin=' + r.miss + ' unmatchedLegacy=' + r.left + ' verdict=FAIL'); }
     }
   }
   log('§INFOWIN_SQL tabs products=' + prods.length + ' statements=' + (tabStats.PASS + tabStats.FAIL + tabStats.EMPTY) + ' PASS=' + tabStats.PASS + ' FAIL=' + tabStats.FAIL + ' EMPTY=' + tabStats.EMPTY + ' legacyRows=' + tabStats.rows + ' withNonZero=' + tabStats.nz);
+  log('§INFOWIN_SQL substrel PASS=' + sr.PASS + ' FAIL=' + sr.FAIL + ' EMPTY=' + sr.EMPTY + ' legacyRows=' + sr.rows + (sr.PASS + sr.FAIL ? '' : ' verdict=INCONCLUSIVE (no non-empty Substitute/Related statement judged)'));
   if (tabStats.PASS) judgedAny++;
   const verdict = failed ? 'FAIL' : judgedAny ? 'PASS' : 'INCONCLUSIVE';
   log('§INFOWIN_SQL summary judged=' + judgedAny + ' failed=' + failed + ' verdict=' + verdict); process.exit(verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 3);
