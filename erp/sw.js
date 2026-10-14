@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v844';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v845';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -201,6 +201,7 @@ const PRECACHE_ASSETS = [
   'callouts/CalloutPaymentAllocate.js',
   'callouts/CalloutRequisition.js',
   'processes/PeriodStatus.js',     // PLUGIN_SYSTEM_LANE §Phase D — callout dispatch (window.AdCallout); gives callout bundles a live target
+  'osgi_console.js',   // Host work H2: the Felix-style OSGi stack console for Plugins & Releases
   'plugin_registry.js',// PLUGIN_SYSTEM_LANE §Phase A — Fold-Engine plugin host (window.PluginRegistry), W-PLUGIN
   'plugin_overlay.js', // PLUGIN_SYSTEM_LANE §Phase D — the Plugin Engine pill overlay (window.PluginEngine); v2 = +Create face
   'ad_modelval_bridge.js', // PLUGIN_SYSTEM_LANE §Phase E — bridges ad_modelvalidator AD rows into the plugin host (window.AdModelValBridge)
@@ -220,6 +221,7 @@ const PRECACHE_ASSETS = [
   'erp_seam.js',       // engine seam (window.ERPSeam.makeSeam) — ENGINE_CONTRACT §1 write path
   'kanban_lens.js',    // Kanban board chrome (buildBoard/resolveDrag/mount) — lens + idempiere
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
+  'layered_registry.js', // Host work H1: layered extension registries (plugin stop restores the core)
   'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)

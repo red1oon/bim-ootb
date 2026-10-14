@@ -36,6 +36,12 @@
     (REGISTRY[t] = REGISTRY[t] || {});
     (REGISTRY[t][timing] = REGISTRY[t][timing] || []).push({ name: name, fn: fn });
   }
+  // unregisterValidator(table, timing, name) - remove the LAST validator registered under that name in that slot (a bundle's stop). Returns the number removed (0 or 1).
+  function unregisterValidator(table, timing, name) {
+    var t = table.toLowerCase(), a = REGISTRY[t] && REGISTRY[t][timing]; if (!a) return 0;
+    for (var i = a.length - 1; i >= 0; i--) if (a[i].name === name) { a.splice(i, 1); if (!a.length) { delete REGISTRY[t][timing]; if (!Object.keys(REGISTRY[t]).length) delete REGISTRY[t]; } return 1; }
+    return 0;
+  }
   function registeredCount() {
     var n = 0, t, ti; for (t in REGISTRY) for (ti in REGISTRY[t]) n += REGISTRY[t][ti].length; return n;
   }
@@ -843,7 +849,7 @@
   }
 
   var API = {
-    TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, registeredCount: registeredCount,
+    TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, unregisterValidator: unregisterValidator, registeredCount: registeredCount,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
     installMOrderSaveHooks: installMOrderSaveHooks, fireHooks: fireHooks, hooksFor: hooksFor,
     installMInOutSaveHooks: installMInOutSaveHooks, installMInvoiceSaveHooks: installMInvoiceSaveHooks,

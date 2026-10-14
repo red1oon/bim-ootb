@@ -33,17 +33,17 @@ var server = http.createServer(function (req, res) {
   var hasLink = await page.$eval('#idmp-release-link', function (e) { return e.textContent.trim(); }).catch(function () { return null; });
 
   await page.click('#idmp-release-link');
-  await page.waitForSelector('#pr-root #pr-modules .pr-row', { timeout: 8000 });
+  await page.waitForSelector('#pr-root #pr-osgi table.oc-t tbody tr', { timeout: 8000 });   // the OSGi console (Host work H2) replaced the Plugins + Modules lists
   await page.waitForFunction(function () { var r = document.querySelector('#pr-release'); return r && r.textContent.indexOf('checking') < 0; }, null, { timeout: 8000 }).catch(function () {});
 
   var view = await page.evaluate(function () {
     var root = document.getElementById('pr-root');
     var grps = [].map.call(root.querySelectorAll('.pr-grp'), function (e) { return e.textContent.trim(); });
     var rel = (root.querySelector('#pr-release') || {}).textContent || '';
-    var modRows = root.querySelectorAll('#pr-modules .pr-row').length;
-    var coreBadges = root.querySelectorAll('#pr-modules .pr-badge.core').length;
-    var optBadges = root.querySelectorAll('#pr-modules .pr-badge.opt').length;
-    var plugins = (root.querySelector('#pr-plugins') || {}).textContent || '';
+    var modRows = root.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)').length;
+    var coreBadges = [].filter.call(root.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)'), function (tr) { return /system bundle/.test(tr.cells[1].textContent); }).length;
+    var optBadges = [].filter.call(root.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)'), function (tr) { return /^\d+$/.test(tr.cells[0].textContent.trim()) && tr.cells[3].textContent.trim() === 'Active'; }).length;
+    var plugins = (root.querySelector('#pr-osgi .oc-sum') || {}).textContent || '';
     var checkBtn = !!root.querySelector('[data-pr-check]');
     return { grps: grps, rel: rel.replace(/\s+/g, ' ').trim(), modRows: modRows, coreBadges: coreBadges, optBadges: optBadges, plugins: plugins.replace(/\s+/g, ' ').trim().slice(0, 80), checkBtn: checkBtn };
   });
@@ -62,12 +62,12 @@ var server = http.createServer(function (req, res) {
   function ck(ok, msg) { (ok ? pass++ : fail++); console.log((ok ? '  ✓ ' : '  ✗ FAIL ') + msg); }
   ck(hasLink && /Plugins & Releases/.test(hasLink), 'login info panel carries a "Plugins & Releases" link');
   ck(/§PLUGIN-RELEASE open/.test(L), 'the link opens the Plugins & Releases page');
-  ck(['Release', 'Plugins (foreign code)', 'Modules (our code)'].every(function (g) { return view.grps.indexOf(g) >= 0; }), 'page has the three sections: Release · Plugins · Modules');
-  ck(/Running:/.test(view.rel) && /v7\d\d/.test(view.rel), 'Release section shows the running release (sw CACHE_VERSION) — ' + view.rel.slice(0, 60));
+  ck(['Release', 'Bundles (OSGi console)'].every(function (g) { return view.grps.indexOf(g) >= 0; }), 'page has the two sections: Release · Bundles (OSGi console)');
+  ck(/Running:/.test(view.rel) && /v\d{3,4}/.test(view.rel), 'Release section shows the running release (sw CACHE_VERSION) — ' + view.rel.slice(0, 60));
   ck(view.checkBtn || /Update available/.test(view.rel), 'Release offers Check-for-updates (or shows a held update) — gated, not auto-latest');
-  ck(/§PLUGIN-RELEASE state running=v7\d\d/.test(L), 'release state read from the live SW (running version logged)');
-  ck(view.modRows >= 10 && view.coreBadges >= 5 && view.optBadges >= 3, 'Modules lists our code split core (always-on) vs optional — rows=' + view.modRows + ' core=' + view.coreBadges + ' opt=' + view.optBadges);
-  ck(view.plugins.length > 0, 'Plugins section renders (registry rows or an honest "none loaded" note)');
+  ck(/§PLUGIN-RELEASE state running=v\d{3,4}/.test(L), 'release state read from the live SW (running version logged)');
+  ck(view.modRows >= 10 && view.coreBadges === 1 && view.optBadges >= 5, 'the console lists the system bundle (Id 0) and our built-in modules as Active bundles — rows=' + view.modRows + ' core=' + view.coreBadges + ' opt=' + view.optBadges);
+  ck(/^Bundle information: \d+ bundles in total/.test(view.plugins), 'the console shows the Felix summary sentence — ' + view.plugins.slice(0, 70));
   ck(pageErrors.length === 0, 'zero page errors' + (pageErrors.length ? ' — ' + pageErrors[0] : ''));
 
   console.log('\n═══ W-PLUGIN-RELEASE-LIVE: ' + pass + ' PASS / ' + fail + ' FAIL ═══');

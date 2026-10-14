@@ -112,7 +112,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   // (its source is extracted from the shipped file and run against this db; the form supplies NO ad_client_id / ad_org_id, as a real window does).
   var OV = fs.readFileSync(path.join(ERP, 'crud_overlay.js'), 'utf8'), vm = require('vm');
   function fnSrc(name) { var i = OV.indexOf('  function ' + name + '('); if (i < 0) return null; var d = 0, j = OV.indexOf('{', i); for (var k = j; k < OV.length; k++) { if (OV[k] === '{') d++; else if (OV[k] === '}' && --d === 0) return OV.slice(i, k + 1); } return null; }
-  var ovSrc = ['_modelQuery', '_modelEnv', 'modelRun', '_modelAfterSave'].map(fnSrc);
+  var ovSrc = ['_modelQuery', '_modelEnv', '_needThen', '_noteTouched', '_modelRunNow', 'modelRun', '_modelAfterSave'].map(fnSrc);   // + the lazy-activation seam helpers modelRun now calls (Host work H2)
   var ovOk = ovSrc.every(Boolean), hostLogs = [], HOSTCTX = null;
   if (ovOk) { HOSTCTX = vm.createContext({ console: { log: function (l) { hostLogs.push(String(l)); }, warn: function () {} }, SIDE: null, _tipShadowOn: function () { return []; }, _tipShadowOff: function () {},
     withBundle: function (cb) { cb(db); }, Date: Date, global: { ModelLayer: ML, AdModelVal: MV, APP: { clientId: 11, orgId: 11, actor: 100 }, crypto: require('crypto').webcrypto } });

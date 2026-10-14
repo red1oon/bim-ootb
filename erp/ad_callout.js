@@ -365,11 +365,19 @@
   var COLUMN_CALLOUTS = {};  // 'table|column' (lower) → [ {name, start(ctx, WindowNo, mTab, mField, value, oldValue)} ]  (@Callout / IColumnCallout)
   var LEGACY = {};           // 'a.b.Class.method' → fn(ctx, info) → {derived} — the plugin registerHandler shape, adapted
   var _deferredDefs = [];
-  function defineCallout(fqcn, factory) {           // factory(CalloutEngine, R) → constructor
+  // LAYERED (Host work H1, layered_registry.js): CLASSES / LEGACY stay the materialised effective views; a bundle registers with opts {owner, rank}, stopping it removes its layers and the base entry (if any) is effective again.
+  function _LR() { return (typeof module !== 'undefined' && module.exports) ? require('./layered_registry.js') : global.LayeredRegistry; }
+  var CLASS_L = _LR().create(), CLASS_BASE = {};
+  function _reclass(k) {
+    var t = CLASS_L.top(k);
+    if (t) CLASSES[k] = t.value; else if (CLASS_BASE[k] !== undefined) CLASSES[k] = CLASS_BASE[k]; else delete CLASSES[k];
+  }
+  function _addClass(k, C, opts) { if (!(k in CLASS_BASE)) CLASS_BASE[k] = CLASSES[k]; CLASS_L.add(k, C, opts); _reclass(k); }
+  function defineCallout(fqcn, factory, opts) {     // factory(CalloutEngine, R) → constructor
     var C = factory(CalloutEngine, RUNTIME);
-    CLASSES[fqcn] = C; C.fqcn = fqcn;
+    C.fqcn = fqcn; _addClass(fqcn, C, opts);
     var short = fqcn.split('.').pop();
-    if (!CLASSES[short]) CLASSES[short] = C;         // AD rows carry the bare class name too ("CalloutGLJournal.period")
+    if (!CLASSES[short]) _addClass(short, C, opts);  // AD rows carry the bare class name too ("CalloutGLJournal.period")
     return C;
   }
   function defineColumnCallout(table, columns, name, start) {
@@ -950,7 +958,22 @@
   }
 
   // legacy plugin seam (plugin_registry ctx.callout.registerHandler) — kept, adapted to the GridTab engine
-  function registerHandler(name, fn) { LEGACY[name] = fn; }
+  var LEG_L = _LR().create();
+  function registerHandler(name, fn, opts) { LEG_L.add(name, fn, opts); LEGACY[name] = LEG_L.top(name).value; }
+  function unregisterHandler(name, owner) { var n = LEG_L.remove(name, owner), t = LEG_L.top(name); if (t) LEGACY[name] = t.value; else delete LEGACY[name]; return n; }
+  // removeOwner - everything one bundle contributed here (plugin_registry stop). Returns { handlers, classes }.
+  function removeOwner(owner) {
+    var h = 0, c = 0;
+    LEG_L.keys().forEach(function (k) { h += unregisterHandler(k, owner); });
+    CLASS_L.keys().forEach(function (k) { var n = CLASS_L.remove(k, owner); if (n) { c += n; _reclass(k); } });
+    return { handlers: h, classes: c };
+  }
+  function describe() {
+    var o = { handlers: {}, classes: {} };
+    LEG_L.keys().sort().forEach(function (k) { o.handlers[k] = LEG_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    CLASS_L.keys().sort().forEach(function (k) { o.classes[k] = CLASS_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    return o;
+  }
   function hasHandler(name) { return !!LEGACY[name] || hasCallout(name); }
 
   var API = { BigDecimal: BD, RoundingMode: RM, Timestamp: Timestamp, TimeUtil: TimeUtil, DisplayType: DT, Env: Env, Ctx: Ctx,
@@ -958,7 +981,7 @@
     CalloutEngine: CalloutEngine, GridTab: GridTab, GridField: GridField, RUNTIME: RUNTIME, convertSql: convertSql, bind: bind, openTab: openTab,
     fieldsFor: fieldsFor, loginContext: loginContext, defineCallout: defineCallout, defineColumnCallout: defineColumnCallout,
     findColumnCallouts: findColumnCallouts, COLUMN_CALLOUTS: COLUMN_CALLOUTS, getCallout: getCallout, hasCallout: hasCallout, CLASSES: CLASSES,
-    coverageScan: coverageScan, registerHandler: registerHandler, hasHandler: hasHandler, REGISTRY: LEGACY,
+    coverageScan: coverageScan, registerHandler: registerHandler, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, hasHandler: hasHandler, REGISTRY: LEGACY,
     registeredNames: function () { return Object.keys(CLASSES).filter(function (k) { return k.indexOf('.') > 0; }); } };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.AdCallout = API;
