@@ -109,7 +109,7 @@
       stop: function (id) { console.log('§PLUGIN-RELEASE console stop id=' + id); return Promise.resolve(pr.stopBundle(id)).then(persist); },
       refresh: function (id) { console.log('§PLUGIN-RELEASE console refresh id=' + id); return Promise.resolve(pr.stopBundle(id)).then(function () { return pr.startBundle(id); }).then(persist); },
       uninstall: function (id) { console.log('§PLUGIN-RELEASE console uninstall id=' + id); return Promise.resolve(pr.uninstallBundle(id)).then(persist); },
-      install: function (url) { console.log('§PLUGIN-RELEASE console install url=' + url); return pr.installBundle(url).then(function (ins) { return pr.startBundle(ins.id); }).then(persist); },
+      install: function (url) { var abs = new URL(url, global.location ? global.location.href : url).href; console.log('§PLUGIN-RELEASE console install url=' + url + (abs !== url ? ' -> ' + abs : '')); return pr.installBundle(abs).then(function (ins) { return pr.startBundle(ins.id); }).then(persist); },
       setPolicy: function (id, p) { console.log('§PLUGIN-RELEASE console policy id=' + id + ' -> ' + p); pr.setPolicy(id, p); return persist(); },
       reload: function () { return Promise.resolve(); },
       toast: function (m) { console.log('§PLUGIN-RELEASE console msg=' + m); }

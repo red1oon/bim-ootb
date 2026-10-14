@@ -49,14 +49,14 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
     return ids;
   }
   function saveOrder(fields) { var r = ML.run(q, env(), { table: 'pp_order', timing: 'SAVE', changes: ML.newPO(new ML.Trx(q, env()), 'pp_order', fields) }); if (r.ok) apply(r.ops); return r; }
-  var BUNDLES = {}, tokens = {}, ops = [];
-  var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function (t) { ops.push(t); return ops.length; } }, modelval: MV, callout: AC, process: AP, postTokens: tokens, docAction: ML, docClass: DP,
+  var FSM = require(path.join(ERP, 'ad_docfsm.js')); var BUNDLES = {}, tokens = {}, ops = [];
+  var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function (t) { ops.push(t); return ops.length; } }, modelval: MV, callout: AC, process: AP, postTokens: tokens, docAction: ML, docClass: DP, docFsm: FSM,
     import: function (u) { return import(u); } };
   function dump() {   // everything the bundle can touch
     var mv = {}; Object.keys(MV.REGISTRY).sort().forEach(function (t) { mv[t] = {}; Object.keys(MV.REGISTRY[t]).sort().forEach(function (ti) { mv[t][ti] = MV.REGISTRY[t][ti].map(function (h) { return h.name; }); }); });
     var models = Object.keys(ML.MODEL).sort().map(function (t) { return t + ':' + Object.keys(ML.MODEL[t]).sort().join(','); });
-    var menu = q('SELECT ad_menu_id AS i, isactive AS a, name AS n FROM ad_menu WHERE ad_menu_id IN (53014,53052,53053,53055) ORDER BY 1').map(function (r) { return r.i + r.a + r.n; });
-    var s = JSON.stringify({ models: models, layers: ML.describe(), mv: mv, doc: DP.describeDocClasses(), menu: menu });
+    var menu = q('SELECT ad_menu_id AS i, isactive AS a, name AS n FROM ad_menu WHERE ad_menu_id IN (53014,53052,53053,53055,53074,53082) ORDER BY 1').map(function (r) { return r.i + r.a + r.n; });
+    var fsmKeys = [53027, 53035].map(function (t) { return t + ':' + (FSM.DOC_FAMILY[t] ? FSM.DOC_FAMILY[t].name : '-'); }); var s = JSON.stringify({ fsm: fsmKeys, models: models, layers: ML.describe(), mv: mv, doc: DP.describeDocClasses(), menu: menu });
     return { s: s, h: djb(s), n: s.length, menu: menu.length };
   }
   var counts = function () { return ['pp_order', 'pp_order_bom', 'pp_order_bomline', 'pp_mrp'].map(function (t) { return t + '=' + q('SELECT COUNT(*) n FROM ' + t)[0].n; }).join(' '); };
@@ -72,10 +72,10 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   mute(); await reg.installBundle(URL); var st = await reg.startBundle('org.idempiere.mfg'); if (BREAK === 'eager') await reg.need({ activateId: 'org.idempiere.mfg' }); unmute();
   var d1 = dump(), g1 = reg.get('org.idempiere.mfg');
   _log('§LIBERO-L1 after START: state=' + g1.state + ' policy=' + g1.activation + ' hash=' + d1.h + ' (baseline ' + base.h + ') hasPending(window 53009)=' + reg.hasPending({ window: 53009 }) + ' hasPending(table pp_order)=' + reg.hasPending({ table: 'pp_order' }));
-  var bj = JSON.parse(base.s), dj = JSON.parse(d1.s), codeSame = ['models', 'layers', 'mv', 'doc'].every(function (k) { return JSON.stringify(bj[k]) === JSON.stringify(dj[k]); });
-  var act1 = {}; q("SELECT ad_menu_id AS id FROM ad_menu WHERE isactive='Y' AND ad_menu_id IN (53014,53052,53053,53055)").forEach(function (r) { act1[r.id] = 1; });
+  var bj = JSON.parse(base.s), dj = JSON.parse(d1.s), codeSame = ['fsm', 'models', 'layers', 'mv', 'doc'].every(function (k) { return JSON.stringify(bj[k]) === JSON.stringify(dj[k]); });
+  var act1 = {}; q("SELECT ad_menu_id AS id FROM ad_menu WHERE isactive='Y' AND ad_menu_id IN (53014,53052,53053,53055,53074,53082)").forEach(function (r) { act1[r.id] = 1; });
   _log('§LIBERO-L1b STARTING: code registries identical to baseline=' + codeSame + ' | menu rows staged at START (2Pack part)=' + dj.menu.length + ' so the lazy window trigger is reachable before any code ran');
-  check('L1 started LAZY: STARTING, NO code contributed (models/validators/doc classes == baseline), the 4 menu rows staged (the trigger is reachable), pending on window 53009 and table pp_order', g1.state === 'STARTING' && codeSame && dj.menu.length === 4 && Object.keys(act1).length === 4 && reg.hasPending({ window: 53009 }) && reg.hasPending({ table: 'PP_Order' }) && (BREAK !== 'eager'), { state: g1.state, codeSame: codeSame, menu: dj.menu.length });
+  check('L1 started LAZY: STARTING, NO code contributed (models/validators/doc classes == baseline), the 6 menu rows staged (the trigger is reachable), pending on window 53009 and table pp_order', g1.state === 'STARTING' && codeSame && dj.menu.length === 6 && Object.keys(act1).length === 6 && reg.hasPending({ window: 53009 }) && reg.hasPending({ table: 'PP_Order' }) && (BREAK !== 'eager'), { state: g1.state, codeSame: codeSame, menu: dj.menu.length });
 
   // L2 DEMAND: the window opens
   mute(); var act = await reg.need({ window: 53009 }); unmute();
@@ -231,7 +231,7 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
 
   // L7c a bundle stopped while still STARTING (never demanded) takes its staged menu rows with it
   mute(); await reg.startBundle('org.idempiere.mfg'); var mid7 = dump().menu; await reg.stopBundle('org.idempiere.mfg'); unmute();
-  check('L7c stop while STARTING (no code ever ran): menu rows staged at START are removed (' + mid7 + ' -> ' + dump().menu + ')', mid7 === 4 && dump().h === base.h && reg.get('org.idempiere.mfg').state === 'STOPPED', { mid: mid7 });
+  check('L7c stop while STARTING (no code ever ran): menu rows staged at START are removed (' + mid7 + ' -> ' + dump().menu + ')', mid7 === 6 && dump().h === base.h && reg.get('org.idempiere.mfg').state === 'STOPPED', { mid: mid7 });
 
   // L7d manifest.dictionary on an EAGER bundle: staged with its activation, removed at stop; a failing activate() leaves nothing behind (atomic)
   var row = function (id) { return { AD_Menu_ID: id, Name: 'dict probe', IsActive: 'Y', ad_client_id: 0, ad_org_id: 0 }; };
@@ -245,6 +245,7 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   // L8 nothing silent
   var ch = await import('file://' + path.join(ERP, 'plugins', 'libero_pporder.mjs')); ch.DEFERRED.forEach(function (d) { _log('§LIBERO-DEFERRED ' + d); });
   check('L8 deferrals are listed (never silent)', ch.DEFERRED.length >= 4, ch.DEFERRED);
+  check('L8b the plugin documents have their FSM family while ACTIVE and not otherwise (PP_Order 53027, PP_Cost_Collector 53035): ' + JSON.stringify(JSON.parse(d2.s).fsm) + ' -> baseline ' + JSON.stringify(JSON.parse(base.s).fsm), JSON.parse(d2.s).fsm.join() === '53027:PP_Order,53035:PP_Cost_Collector' && JSON.parse(base.s).fsm.join() === '53027:-,53035:-' && JSON.parse(d7.s).fsm.join() === '53027:-,53035:-', { d2: JSON.parse(d2.s).fsm });
   check('L9 no op carried a column the physical table lacks (dropped=0)', dropped.length === 0, dropped.slice(0, 6));
 
   var verdict = fails ? 'FAIL' : (inconclusive || !judged) ? 'INCONCLUSIVE' : 'PASS';
