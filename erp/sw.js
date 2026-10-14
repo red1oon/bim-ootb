@@ -201,6 +201,7 @@ const PRECACHE_ASSETS = [
   'callouts/CalloutPaymentAllocate.js',
   'callouts/CalloutRequisition.js',
   'processes/PeriodStatus.js',     // PLUGIN_SYSTEM_LANE §Phase D — callout dispatch (window.AdCallout); gives callout bundles a live target
+  'osgi_console.js',   // Host work H2: the Felix-style OSGi stack console for Plugins & Releases
   'plugin_registry.js',// PLUGIN_SYSTEM_LANE §Phase A — Fold-Engine plugin host (window.PluginRegistry), W-PLUGIN
   'plugin_overlay.js', // PLUGIN_SYSTEM_LANE §Phase D — the Plugin Engine pill overlay (window.PluginEngine); v2 = +Create face
   'ad_modelval_bridge.js', // PLUGIN_SYSTEM_LANE §Phase E — bridges ad_modelvalidator AD rows into the plugin host (window.AdModelValBridge)

@@ -129,6 +129,7 @@
       '.pe-row .pe-id small{display:block;color:#8b93a7;font-size:11px}' +
       '.pe-chip{font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:20px}' +
       '.pe-chip.ACTIVE{background:rgba(34,197,94,.16);color:#4ade80}' +
+      '.pe-chip.STARTING{background:rgba(250,204,21,.16);color:#facc15}' +
       '.pe-chip.STOPPED,.pe-chip.INSTALLED,.pe-chip.RESOLVED{background:rgba(148,163,184,.16);color:#94a3b8}' +
       '.pe-empty{color:#8b93a7;font-size:12.5px;padding:14px 0;text-align:center}' +
       '.pe-x{cursor:pointer;color:#8b93a7;font-size:18px;line-height:1;margin-left:auto;background:none;border:none}' +
@@ -173,10 +174,12 @@
     if (!bundles.length) { body.innerHTML = '<div class="pe-empty">No plugins installed. Paste a bundle URL above to install.</div>'; return; }
     bundles.forEach(function (b) {
       var row = doc.createElement('div'); row.className = 'pe-row';
-      var active = b.state === 'ACTIVE';
+      var active = b.state === 'ACTIVE' || b.state === 'STARTING';   // STARTING = started, activates on first demand (lazy)
+      var eff = b.policy || b.activation || 'eager', lazyCapable = b.activation === 'lazy';
       row.innerHTML =
         '<div class="pe-id">' + b.id + ' <small>' + (b.version || '') + (b.url ? ' · ' + b.url.replace(/^https?:\/\//, '') : '') + '</small></div>' +
-        '<span class="pe-chip ' + b.state + '">' + b.state + '</span>' +
+        '<span class="pe-chip ' + b.state + '" title="' + (b.state === 'STARTING' ? 'started; activates on first demand' : '') + '">' + b.state + '</span>' +
+        (lazyCapable ? '<button class="pe-btn pe-policy" title="Activation policy (takes effect on next start): lazy = activate on first demand, eager = at start">' + (eff === 'lazy' ? 'On demand' : 'At start') + '</button>' : '') +
         '<button class="pe-btn pe-toggle">' + (active ? 'Stop' : 'Start') + '</button>' +
         '<button class="pe-btn pe-uninstall" title="Uninstall">' + ICO('xmark') + '</button>';
       row.querySelector('.pe-toggle').onclick = function () {
@@ -185,6 +188,8 @@
           .then(function () { _render(doc); })
           .catch(function (e) { _toast(doc, e.message); });
       };
+      var pb = row.querySelector('.pe-policy');
+      if (pb) pb.onclick = function () { try { _reg.setPolicy(b.id, eff === 'lazy' ? 'eager' : 'lazy'); } catch (e) { _toast(doc, e.message); return; } _persist().then(function () { _render(doc); _toast(doc, b.id + ': ' + (eff === 'lazy' ? 'starts eagerly' : 'activates on demand') + ' from the next start'); }); };
       row.querySelector('.pe-uninstall').onclick = function () {
         Promise.resolve(_reg.uninstallBundle(b.id)).then(function () { return _persist(); })
           .then(function () { _render(doc); _toast(doc, 'Uninstalled ' + b.id); })
@@ -455,5 +460,10 @@
   //   (Libero: C_Order, C_OrderLine, M_Requisition ... , PLUGIN_ARCHITECTURE.md section 3) must be live before the user can save anything. Resolves to the registry (null when the engine is not loaded).
   function boot(glue) { var r = ensure(glue); if (!r) return Promise.resolve(null); return _hydrate().then(function () { return r; }, function () { return r; }); }
 
-  global.PluginEngine = { open: open, ensure: ensure, boot: boot, _reg: function () { return _reg; } };
+  // the demand seam (Host work H2, OSGi lazy activation): crud_overlay asks before running model code for a table; the sync check keeps the common path (nothing pending) synchronous.
+  function need(trig) { return _reg ? _reg.need(trig) : Promise.resolve([]); }
+  function hasPending(trig) { return !!(_reg && _reg.hasPending && _reg.hasPending(trig)); }
+  function noteTouched(tables) { return _reg && _reg.noteTouched ? _reg.noteTouched(tables) : []; }
+
+  global.PluginEngine = { open: open, ensure: ensure, boot: boot, need: need, hasPending: hasPending, noteTouched: noteTouched, persist: function () { return _persist(); }, _reg: function () { return _reg; } };
 })(typeof window !== 'undefined' ? window : this);

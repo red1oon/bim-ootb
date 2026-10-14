@@ -1614,21 +1614,41 @@
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
              uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
   }
+  // _needThen(table, run) - the OSGi lazy-activation seam (Host work H2): if a lazy plugin bundle declares `table` as a trigger and is still STARTING, activate it FIRST (async, before the synchronous model layer runs), then run.
+  //   Nothing pending => run() synchronously, exactly as before. An activation failure is atomic in the registry and is logged here; the run proceeds without that bundle (legacy: a bundle that failed to activate registers no factory).
+  function _needThen(table, run) {
+    var PE = global.PluginEngine, t = table == null ? null : String(table).toLowerCase();
+    if (!PE || typeof PE.hasPending !== 'function' || !t || !PE.hasPending({ table: t })) { run(); return; }
+    var fired = false; function go() { if (!fired) { fired = true; run(); } }
+    Promise.resolve(PE.need({ table: t })).then(go, function (e) { console.log('§PLUGIN-NEED-ERR table=' + t + ' ' + (e && e.message)); go(); });
+  }
+  function _noteTouched(r) {   // a run that wrote a trigger table of a still-STARTING bundle (cascade) is reported by the registry, never silent
+    var PE = global.PluginEngine; if (!PE || typeof PE.noteTouched !== 'function' || !r || !r.ops) return;
+    var seen = {}, tabs = []; r.ops.forEach(function (o) { var t = o && (o.table || (o.params && o.params.table)); if (t && !seen[t]) { seen[t] = 1; tabs.push(t); } });
+    if (tabs.length) PE.noteTouched(tabs);
+  }
   function modelRun(spec, cb) {
     var ML = global.ModelLayer;
     if (!ML || typeof withBundle !== 'function') { cb(null); return; }
+    _needThen(spec && spec.table, function () { _modelRunNow(spec, cb, ML); });
+  }
+  function _modelRunNow(spec, cb, ML) {
     withBundle(function (db) {
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
       try { r = ML.run(_modelQuery(db), _modelEnv(), spec); }
       catch (e) { console.log('§MODEL-ERR ' + (e && e.message)); r = null; }
       finally { _tipShadowOff(db, sh); }
       if (r && r.log) r.log.forEach(function (l) { console.log(l); });
+      _noteTouched(r);
       cb(r);
     });
   }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || typeof withBundle !== 'function') { cb(null); return; }
+    _needThen(e && e.key, function () { _fireBeforeSaveNow(e, vals, orig, cb, MV); });
+  }
+  function _fireBeforeSaveNow(e, vals, orig, cb, MV) {
     withBundle(function (db) {
       var out = null;
       try {
@@ -2527,6 +2547,11 @@
 
   // ── applyOp — the commit funnel. DOC_ACTION + CRUD verbs all take the GP3 signed-write seam (sidecar). ──
   function applyOp(op, e) {
+    // THE demand point of OSGi-style lazy activation (Host work H2): completeFanout / _modelAfterSave / modelRun all read the model + DocAction registries SYNCHRONOUSLY before they run, so a lazy plugin bundle
+    //   whose trigger table is this op's table must be activated FIRST. Nothing pending => synchronous, exactly as before (applyOp returns nothing, so waiting is safe for every caller).
+    _needThen(op && (op.key || op.table), function () { _applyOpNow(op, e); });
+  }
+  function _applyOpNow(op, e) {
     if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }                                    // GP3: signed status write
     if (op.op_type === 'CRUD_CREATE' || op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE') { commitCrud(op); return; }  // GP3: signed field write
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — unknown op');

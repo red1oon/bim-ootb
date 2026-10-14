@@ -40,11 +40,13 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
     var s = JSON.stringify({ core: core, layers: m, mv: mv, proc: p, callout: c, doc: DP.describeDocClasses(), tokens: Object.keys(tokens).sort().map(function (k) { return k + '=' + JSON.stringify(tokens[k]); }), ad: ad, handlers: Object.keys(AP.JAVA).sort().length + '/' + AP.registeredClassnames().length });
     return { s: s, h: djb(s), n: s.length };
   }
+  var calls = {};
   function mkBundle(id, tag, opt) {
     opt = opt || {};
     var chunk = { activate: function (ctx) { ctx.modelval.registerValidator('pp_order', 'AFTER_SAVE', tag + '.chunk', function () { return null; }); if (opt.chunkThrows) throw new Error('hot chunk ' + tag + ' failed'); }, deactivate: function () {} };
-    return { manifest: { id: id, version: '1.0.0', engineVersion: '>=0.9.0', requires: opt.requires || {}, chunks: { hot: [chunk] }, budget: { kb: 12, note: 'synthetic' } },
+    return { manifest: Object.assign({ id: id, version: '1.0.0', engineVersion: '>=0.9.0', requires: opt.requires || {}, chunks: { hot: [chunk] }, budget: { kb: 12, note: 'synthetic' } }, opt.lazy ? { activation: 'lazy', triggers: { tables: ['PP_Order', 'c_order'] } } : {}),
       activate: async function (ctx) {
+        calls[tag] = (calls[tag] || 0) + 1;
         ctx.docAction.registerModel('pp_order', { afterSave: function () { return tag + '-after'; }, beforeSave: function () { return tag + '-before'; } });
         ctx.docAction.registerModel('c_order', { beforeSave: function () { return tag + '-overrides-core-beforeSave'; } });                    // overrides a CORE hook
         ctx.docAction.registerDocAction('pp_order', { completeIt: function () { return tag; } });
@@ -121,6 +123,41 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   console.log('§PLG-P7 saved=' + saved.map(function (x) { return x.id + ':' + x.state; }).join(' ') + ' -> restored states ' + JSON.stringify(st2) + ' started=' + rr.started.join(',') + ' failed=' + rr.failed.length);
   check('P7 restore: ACTIVE bundles are re-activated (A), STOPPED/INSTALLED ones are only installed; live again == first start', st2['com.test.a'] === 'ACTIVE' && st2['com.test.b'] === 'INSTALLED' && rr.started.join() === 'com.test.a' && dump().h === d2.h, { st2: st2, rr: rr });
   mute(); await reg2.stopBundle('com.test.a'); unmute();
+
+  // ── LAZY ACTIVATION (Host work H2): started != activated ──────────────────────────────────────────────────────────────────────────────────────────────────
+  var L = mkBundle('com.test.l', 'L', { lazy: true }), L2 = mkBundle('com.test.l2', 'L2', { lazy: true }), L3 = mkBundle('com.test.l3', 'L3', { lazy: true }), LF = mkBundle('com.test.lf', 'LF', { lazy: true, activateThrows: true }), LP = mkBundle('com.test.lp', 'LP', { lazy: true });
+  BUNDLES['b/l.mjs'] = L; BUNDLES['b/l2.mjs'] = L2; BUNDLES['b/l3.mjs'] = L3; BUNDLES['b/lf.mjs'] = LF; BUNDLES['b/lp.mjs'] = LP;
+  ops.length = 0;
+  mute(); await reg.installBundle('b/l.mjs'); if (BREAK === 'eagerlazy') reg.setPolicy('com.test.l', 'eager'); await reg.startBundle('com.test.l'); unmute();   // BREAK eagerlazy: the lazy bundle is activated at start
+  var p9 = { state: reg.get('com.test.l').state, calls: calls.L || 0, same: dump().h === base.h, op: ops.indexOf('PLUGIN_START') >= 0 };
+  console.log('§PLG-P9 lazy start: ' + JSON.stringify(p9));
+  check('P9 lazy start = STARTING: the bundle code was NOT activated (0 calls), hooks not live, registry dump == baseline, PLUGIN_START logged', p9.state === 'STARTING' && p9.calls === 0 && p9.same && p9.op, p9);
+  mute(); var none = await reg.need({ table: 'm_inout' }), none2 = await reg.need({ process: 'org.nobody' }); unmute();
+  check('P11 demand on a table/process that is not a trigger activates nothing (still STARTING)', none.length === 0 && none2.length === 0 && reg.get('com.test.l').state === 'STARTING' && (calls.L || 0) === 0, { none: none, none2: none2 });
+  mute(); var hit = await reg.need({ table: 'C_Order' }); unmute();
+  var p10 = { hit: hit, state: reg.get('com.test.l').state, calls: calls.L, live: ML.MODEL.pp_order && ML.MODEL.pp_order.afterSave() === 'L-after', op: ops.indexOf('PLUGIN_ACTIVATE') >= 0, changed: dump().h !== base.h };
+  console.log('§PLG-P10 first demand (C_Order, case-insensitive): ' + JSON.stringify(p10));
+  check('P10 first demand on a trigger table activates it: ACTIVE, activated once, contributions live, signed PLUGIN_ACTIVATE logged', hit.join() === 'com.test.l' && p10.state === 'ACTIVE' && p10.calls === 1 && p10.live && p10.op && p10.changed, p10);
+  mute(); await reg.stopBundle('com.test.l'); unmute();
+  check('P13a stop after on-demand activation restores the baseline hash', dump().h === base.h && reg.get('com.test.l').state === 'STOPPED', { now: dump().h, base: base.h });
+  mute(); await reg.installBundle('b/l2.mjs'); await reg.startBundle('com.test.l2'); var both = await Promise.all([reg.need({ table: 'pp_order' }), reg.need({ table: 'pp_order' }), reg.need({ table: 'c_order' })]); unmute();
+  check('P12 concurrent demand (3 callers) activates the bundle exactly once and every caller resolves', calls.L2 === 1 && both.every(function (x) { return x.join() === 'com.test.l2'; }) && reg.get('com.test.l2').state === 'ACTIVE', { calls: calls.L2, both: both });
+  mute(); await reg.stopBundle('com.test.l2'); await reg.installBundle('b/l3.mjs'); await reg.startBundle('com.test.l3'); await reg.stopBundle('com.test.l3'); unmute();
+  check('P13b stop while STARTING cancels it: never activated, state STOPPED, dump == baseline, a later demand does nothing', (calls.L3 || 0) === 0 && reg.get('com.test.l3').state === 'STOPPED' && dump().h === base.h && (await reg.need({ table: 'pp_order' })).length === 0, { calls: calls.L3 });
+  mute(); await reg.installBundle('b/lp.mjs'); reg.setPolicy('com.test.lp', 'eager'); await reg.startBundle('com.test.lp'); var lpState = reg.get('com.test.lp').state; await reg.stopBundle('com.test.lp'); unmute();
+  check('P14 the ADMIN policy override (eager) beats the manifest default (lazy): start activates immediately', lpState === 'ACTIVE' && calls.LP === 1 && dump().h === base.h, { lpState: lpState, calls: calls.LP });
+  mute(); await reg.installBundle('b/lf.mjs'); await reg.startBundle('com.test.lf'); var lfErr = null; try { await reg.need({ table: 'pp_order' }); } catch (e) { lfErr = e.message; } unmute();
+  check('P15 a failing lazy activation is atomic: the demanding caller gets the error, state INSTALLED, dump == baseline', /half-way/.test(lfErr || '') && reg.get('com.test.lf').state === 'INSTALLED' && dump().h === base.h, { lfErr: lfErr, state: reg.get('com.test.lf').state });
+  mute(); await reg.installBundle('b/l3.mjs').catch(function () {}); reg.setPolicy('com.test.l3', null); await reg.startBundle('com.test.l3');
+  var saved2 = reg.list().map(function (x) { return { id: x.id, url: x.url, state: x.state, policy: x.policy }; }); await reg.stopBundle('com.test.l3'); var reg3 = PR.create(host); var rr3 = await reg3.restore(saved2); unmute();
+  var st3 = reg3.get('com.test.l3') && reg3.get('com.test.l3').state, c3 = calls.L3 || 0;
+  mute(); await reg3.need({ table: 'c_order' }); unmute();
+  check('P16 restore() brings a STARTING bundle back STARTING (not activated), and the next demand activates it', st3 === 'STARTING' && c3 === 0 && reg3.get('com.test.l3').state === 'ACTIVE' && calls.L3 === 1, { st3: st3, c3: c3, after: reg3.get('com.test.l3').state });
+  mute(); await reg3.stopBundle('com.test.l3'); unmute();
+  // a cascade that reached a trigger table of a still-STARTING bundle is reported, never silent
+  mute(); await reg.installBundle('b/l2.mjs').catch(function () {}); await reg.startBundle('com.test.l2'); var lines = []; var rl = console.log; console.log = function (x) { lines.push(String(x)); }; var missed = reg.noteTouched(['PP_Order']); await new Promise(function (r) { setTimeout(r, 20); }); console.log = rl; unmute();
+  check('P17 noteTouched: a run that touched a trigger table of a STARTING bundle is logged (§PLUGIN-LAZY-MISSED) and the bundle is activated for the next run', missed.length === 1 && lines.some(function (l) { return /PLUGIN-LAZY-MISSED/.test(l); }) && reg.get('com.test.l2').state === 'ACTIVE', { missed: missed, st: reg.get('com.test.l2').state });
+  mute(); await reg.stopBundle('com.test.l2'); unmute();
   check('P8 after the whole run every registry is at the baseline hash (nothing leaked across 9 start/stop operations)', dump().h === base.h, { now: dump().h, base: base.h });
 
   var verdict = fails ? 'FAIL' : (inconclusive ? 'INCONCLUSIVE' : 'PASS');
