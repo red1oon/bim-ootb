@@ -75,7 +75,7 @@ for ln in ['The document is the log: undo, history, Verify, share link and Save 
     for t in wrap(d, '· ' + ln, font(BF), W - 280): d.text((130, y), t, font=font(BF), fill=(235, 235, 235)); y += BF + 8
     y += 3
 y += 6
-for ln in ['The live site has the tools up to export. Save file, Open file and Show QR are built and tested in the source; the live site does not have them yet.',
+for ln in ['Everything shown is on the live site, including Save file, Open file and Show QR (deployed 15 October 2026).',
            'Photos: Laura Seaman, Joiarib Morales Uc (Unsplash). Recorded on a laptop in Chrome. Not tested on a real phone.'] + (['Mandarin voices: Microsoft Edge TTS (cloud). Mandarin wording not yet reviewed by a native speaker.'] if ZHV else []):
     for t in wrap(d, ln, font(25 if ZHV else 26), W - 240): d.text((120, y), t, font=font(25 if ZHV else 26), fill=(170, 170, 170)); y += 31 if ZHV else 34
     y += 3

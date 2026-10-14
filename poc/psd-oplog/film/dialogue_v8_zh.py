@@ -43,9 +43,9 @@ ZH = {
  'k7': ('M: 小文档能放进二维码。', 'M: 小文档可以放进二维码。三百八十二字节。'),
  'k8': ('M: JPEG或PNG，尺寸自选。', 'M: 可按你选的尺寸导出JPEG或PNG。同一张海报：三十千字节，对比一百一十四。'),
  'c8': ('M: 四十五个套件通过。', 'F: 测试过吗？ | M: 四十五个测试套件全部通过。回放是确定性的，所以测试直接用哈希比对像素。'),
- 'end': ('M: 试试看，读一读，改一改。', 'M: 来试试吧。链接就在屏幕上：无需安装，离线也能用。源码在GitHub上，采用MIT许可。 | F: 为什么能做得这么小？ | M: 因为文档就是日志。撤销、历史、验证、分享和保存，用的都是同一份数据。 | M: 还因为它是本地优先：浏览器自己干活，自己保存日志，没有服务器。 | M: 线上版目前还没有保存文件、打开文件和二维码。'),
+ 'end': ('M: 试试看，读一读，改一改。', 'M: 来试试吧。链接就在屏幕上：无需安装，离线也能用。源码在GitHub上，采用MIT许可。 | F: 为什么能做得这么小？ | M: 因为文档就是日志。撤销、历史、验证、分享和保存，用的都是同一份数据。 | M: 还因为它是本地优先：浏览器自己干活，自己保存日志，没有服务器。 | M: 这些功能，包括二维码，现在都已经在线上版里了。'),
 }
-END_EN = 'M: Try it. The link is on screen: no install, and it works offline. The source is on GitHub, MIT licensed. | F: Why could this be built so small? | M: Because the document is a log. Undo, history, verify, share and save are all the same data. | M: And because it is local first: your browser does the work and keeps the log. No server. | M: The live site does not have Save file, Open file or the QR yet.'
+END_EN = 'M: Try it. The link is on screen: no install, and it works offline. The source is on GitHub, MIT licensed. | F: Why could this be built so small? | M: Because the document is a log. Undo, history, verify, share and save are all the same data. | M: And because it is local first: your browser does the work and keeps the log. No server. | M: It is all on the live site now, QR included.'
 turns = lambda t: [x.strip()[2:].strip() for x in t.split(' | ')]
 cap = {}; out = []
 for i, r in EN.items():
