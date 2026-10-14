@@ -38,14 +38,14 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
       datestartschedule: '2008-08-16 00:00:00', datefinishschedule: '2008-08-17 00:00:00', datepromised: '2008-08-17 00:00:00', docstatus: 'DR', docaction: 'CO', isactive: 'Y' };
     window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'pp_order', table: 'pp_order', verb: 'create', fields: f }); await new Promise(r => setTimeout(r, 4000));
     const k = window.__crud.kernelDb && window.__crud.kernelDb(); if (!k) return { noKernel: true };
-    const rows = (k.exec('SELECT * FROM kernel_ops ORDER BY 1')[0] || { values: [] }).values.map(v => { try { return JSON.parse(v[4]); } catch (e) { return null; } }).filter(o => o && o.table && /^pp_/.test(o.table));
-    const by = {}; rows.forEach(o => { by[o.table] = (by[o.table] || 0) + 1; });
-    return { by, lines: rows.filter(o => o.table === 'pp_order_bomline').map(o => [o.fields.line, o.fields.m_product_id, o.fields.qtyrequiered, o.fields.qtyreserved]), mrp: rows.filter(o => o.table === 'pp_mrp').map(o => [o.fields.typemrp, o.fields.qty]) };
+    const rows = (k.exec('SELECT * FROM kernel_ops ORDER BY 1')[0] || { values: [] }).values.map(v => { try { const o = JSON.parse(v[4]); o.op_type = v[3]; return o; } catch (e) { return null; } }).filter(o => o && o.table && /^pp_/.test(o.table));
+    const by = {}, upd = {}; rows.forEach(o => { const m = o.op_type === 'CRUD_CREATE' ? by : upd; m[o.table] = (m[o.table] || 0) + 1; });
+    return { by, upd, lines: rows.filter(o => o.table === 'pp_order_bomline').map(o => [o.fields.line, o.fields.m_product_id, o.fields.qtyrequiered, o.fields.qtyreserved]), mrp: rows.filter(o => o.table === 'pp_mrp').map(o => [o.fields.typemrp, o.fields.qty]) };
   });
   console.log('§LIBERO-LIVE-4 funnel result: ' + JSON.stringify(out));
   const mas = logs.filter(l => /§MODEL-AFTER-SAVE table=pp_order /.test(l)).pop() || '';
   console.log('§LIBERO-LIVE-5 shipped log line: ' + mas);
-  ok('V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree)', !out.noKernel && out.by.pp_order === 1 && out.by.pp_order_bom === 1 && out.by.pp_order_bomline === 2 && out.by.pp_mrp === 3 && Number(out.lines[0][2]) === 5050.51 && Number(out.lines[1][2]) === 100 && /"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3/.test(mas), out);
+  ok('V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand + 1 routing workflow (+ 1 update setting its start node) + 1 routing node, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree)', !out.noKernel && out.by.pp_order === 1 && out.by.pp_order_bom === 1 && out.by.pp_order_bomline === 2 && out.by.pp_mrp === 3 && out.by.pp_order_workflow === 1 && out.by.pp_order_node === 1 && out.upd.pp_order_workflow === 1 && Number(out.lines[0][2]) === 5050.51 && Number(out.lines[1][2]) === 100 && /"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3/.test(mas), out);
   ok('V4 zero page errors', errs.length === 0, errs.slice(0, 3));
   console.log('§LIBERO-LIVE-VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' failed=' + fails); await browser.close(); srv.close(); process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('§LIBERO-LIVE-VERDICT FAIL harness: ' + e.stack); process.exit(2); });

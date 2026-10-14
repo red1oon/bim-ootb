@@ -4,8 +4,8 @@
   §LIBERO-LIVE V1 after a plain reload the bundle is STARTING (restored at boot), NO pp_order model class yet, and the menu leaf is in the tree (2Pack rows staged at boot) PASS
 §LIBERO-LIVE-3 after clicking the leaf: {"state":"ACTIVE","model":true} activate@3 windowOpen@21
   §LIBERO-LIVE V2 clicking the menu leaf ACTIVATED the bundle before the window rendered (ACTIVE, model class registered) PASS
-§LIBERO-LIVE-4 funnel result: {"by":{"pp_order":1,"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3},"lines":[[10,50008,5050.51,5050.51],[20,50013,100,100]],"mrp":[["D",5050.51],["D",100],["S",100]]}
-§LIBERO-LIVE-5 shipped log line: §MODEL-AFTER-SAVE table=pp_order ops=6 tables={"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3}
-  §LIBERO-LIVE V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree) PASS
+§LIBERO-LIVE-4 funnel result: {"by":{"pp_order":1,"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3,"pp_order_workflow":1,"pp_order_node":1},"upd":{"pp_order_workflow":1},"lines":[[10,50008,5050.51,5050.51],[20,50013,100,100]],"mrp":[["D",5050.51],["D",100],["S",100]]}
+§LIBERO-LIVE-5 shipped log line: §MODEL-AFTER-SAVE table=pp_order ops=10 tables={"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3,"ad_sequence":1,"pp_order_workflow":2,"pp_order_node":1}
+  §LIBERO-LIVE V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand + 1 routing workflow (+ 1 update setting its start node) + 1 routing node, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree) PASS
   §LIBERO-LIVE V4 zero page errors PASS
 §LIBERO-LIVE-VERDICT PASS failed=0

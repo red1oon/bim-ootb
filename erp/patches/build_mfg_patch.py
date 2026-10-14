@@ -26,6 +26,30 @@ for t in SHORT:   # a duplicate-column failure on re-run is tolerated by the loa
     for c, d in cols(t):
         if c not in have: out.append('ALTER TABLE %s ADD COLUMN "%s" %s;' % (t, c, aff(d)))
 # the 4 EE01 ad_menu rows (53014>53052>53053>53055) are NOT in this patch any more: upstream ships them disabled; the Libero bundle (erp/plugins/libero_manufacturing.mjs) stages them on activation (ctx.dict).
+# ── legacy ROUTING data the base lacks (twin rule: legacy has these rows regardless of the Libero bundle) ─────────────────────────────────────────────
+#   the routing the two legacy orders use (AD_Workflow 50017 + its AD_WF_Node), and the order-side snapshot legacy holds for orders 50000/50001 (PP_Order_Workflow, PP_Order_Node).
+#   The slice-2 witness re-creates the snapshot through the bundle and compares to these rows. INSERT guarded by primary key, only columns the SQLite table has.
+import re
+def sqlite_cols(t):
+    have = set(r[1].lower() for r in seed.execute('pragma table_info(%s)' % t))
+    for stmt in out:
+        m = re.match(r'CREATE TABLE IF NOT EXISTS %s \((.*)\);' % t, stmt)
+        if m: have |= set(x.lower() for x in re.findall(r'"([^"]+)"', m.group(1)))
+        m = re.match(r'ALTER TABLE %s ADD COLUMN "([^"]+)"' % t, stmt)
+        if m: have.add(m.group(1).lower())
+    seedsql = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ad_seed.db.sql')).read()
+    m = re.search(r'CREATE TABLE IF NOT EXISTS %s \((.*?)\);' % t, seedsql)
+    if m: have |= set(x.lower() for x in re.findall(r'"([^"]+)"', m.group(1)))
+    return have
+def dump_rows(t, pk, where):
+    have = sqlite_cols(t); allc = [c for c, _ in cols(t)]; mc = [c for c in allc if c in have]
+    cur.execute('select %s from %s where %s order by %s' % (', '.join('"%s"' % c for c in mc), t, where, pk))
+    for r in cur.fetchall():
+        out.append('INSERT INTO %s (%s) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM %s WHERE %s=%s);' % (t, ', '.join('"%s"' % c for c in mc), ', '.join(lit(v) for v in r), t, pk, lit(r[mc.index(pk)])))
+dump_rows('ad_workflow', 'ad_workflow_id', 'ad_workflow_id=50017')
+dump_rows('ad_wf_node', 'ad_wf_node_id', 'ad_workflow_id=50017')
+dump_rows('pp_order_workflow', 'pp_order_workflow_id', 'pp_order_id in (50000,50001)')
+dump_rows('pp_order_node', 'pp_order_node_id', 'pp_order_id in (50000,50001)')
 out.append('CREATE TABLE IF NOT EXISTS ad_ddl_default (tablename TEXT, columnname TEXT, defaultvalue TEXT);')
 cur.execute("select table_name, column_name, column_default from information_schema.columns where table_schema='adempiere' and column_default is not null and table_name = any(%s) order by 1,2", (NEW,))
 import re
