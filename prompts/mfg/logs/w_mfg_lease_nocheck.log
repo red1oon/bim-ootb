@@ -1,0 +1,10 @@
+§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+§OWNER_LOADED erp_replay.js (owner-gate + CAS guarded replay)
+§MFG-LEASE-LOAD break=nocheck orders=PP_Order:8000,PP_Order:8001 resource=50000 window=2008-08-16 00:00:00..2008-08-17 00:00:00 | legacy assignment windows res 100: 2003-02-05 10:00:00..2003-02-05 13:00:00 , 2003-02-05 17:00:00..2003-02-05 18:00:00 | convention=half-open [from,to) (not evidenced by legacy)
+§MFG-LEASE-E1 applied=15 rejected=5 leases=b1:held b2:held b3:held b4:held l1:expired l2:held l3:used l4:held l5:used
+  §MFG-LEASE E1 every lease/use/expire verdict matches the timeline (real double-booking refused, adjacent+other-resource granted, non-owner refused, expiry strictly ordered, used lease immune, handoff moves USE right) FAIL {"wrong":["op4 LEASE wanted rejected(slot held by PP_Order:8000), got ACCEPTED","op8 LEASE wanted rejected(slot held by PP_Order:8000), got ACCEPTED","op12 LEASE wanted rejected(slot held by PP_Order:8000), got ACCEPTED","op20 USE wanted rejected(no such lease), got non-owner (dev:B≠dev:C)"]}
+§MFG-LEASE-E4 merge orders ABC,CBA,BCA,CAB -> aa9bb5ac/a0900f92 aa9bb5ac/a0900f92 aa9bb5ac/a0900f92 aa9bb5ac/a0900f92
+  §MFG-LEASE E4 lease table + rejected set identical for every merge order (== central) PASS
+§MFG-LEASE-E5 live leases=8 overlapping pairs=4 ["b1(PP_Order:8000) x b2(PP_Order:8001) on res 100","l2(PP_Order:8001) x l4(PP_Order:8001) on res 50000","l2(PP_Order:8001) x l5(PP_Order:8001) on res 50000","l4(PP_Order:8001) x l5(PP_Order:8001) on res 50000"]
+  §MFG-LEASE E5 no two live leases overlap on a resource (scanner proven able to fail: control finds 1) FAIL {"bad":["b1(PP_Order:8000) x b2(PP_Order:8001) on res 100","l2(PP_Order:8001) x l4(PP_Order:8001) on res 50000","l2(PP_Order:8001) x l5(PP_Order:8001) on res 50000","l4(PP_Order:8001) x l5(PP_Order:8001) on res 50000"]}
+§MFG-LEASE-VERDICT FAIL break=nocheck judged=3 failed=2 inconclusive=0

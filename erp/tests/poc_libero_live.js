@@ -28,6 +28,10 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   const s2 = await st(), l2 = await leaf();
   console.log('§LIBERO-LIVE-2 after RELOAD: ' + JSON.stringify(s2) + ' leaf53055InTree=' + l2);
   ok('V1 after a plain reload the bundle is STARTING (restored at boot), NO pp_order model class yet, and the menu leaf is in the tree (2Pack rows staged at boot)', s2.state === 'STARTING' && !s2.model && l2, { s2, l2 });
+  // scene 2: the OPENING SCREEN (Home) of the reloaded page, bundle still STARTING (no code run), already carries the Manufacturing indicator + goal from the bundle's dictionary rows
+  const dg = logs.filter(l => /§DASH-GADGET/.test(l)), ds = dg.filter(l => /docstatus indicators/.test(l)).pop() || '', pf = dg.filter(l => /performance goals/.test(l)).pop() || '';   // the LAST ones = the reloaded page
+  console.log('§LIBERO-LIVE-2b opening screen: ' + ds.slice(0, 260) + ' || ' + pf.slice(0, 260));
+  ok('V1b the opening screen shows "Manufacturing Orders to complete=<n>" on the Activities gadget and "Manufacturing Output: <pct>%" on the Performance gadget while the bundle is only STARTING', /Manufacturing Orders to complete=\d+/.test(ds) && /Manufacturing Output: \d+%/.test(pf) && s2.state === 'STARTING', { ds: ds.slice(0, 200), pf: pf.slice(0, 200) });
   const m3 = logs.length; await pg.evaluate(() => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]').click()); await pg.waitForTimeout(3500);
   const l3 = logs.slice(m3), iAct = l3.findIndex(l => /§PLUGIN-ACTIVATE id=org.idempiere.mfg/.test(l)), iWin = l3.findIndex(l => /§IDEMPIERE window=Manufacturing Order\(53009\)/.test(l)), s3 = await st();
   console.log('§LIBERO-LIVE-3 after clicking the leaf: ' + JSON.stringify(s3) + ' activate@' + iAct + ' windowOpen@' + iWin);

@@ -119,6 +119,19 @@ const MENU = [
 ];
 
 
+// Home dashboard content (scene "opening screen"): ordinary dictionary rows, no code - the Activities gadget (PA_DocumentStatus -> MDocumentStatus) and the Performance gadget (PA_Goal -> PA_Measure -> PA_MeasureCalc) are
+// driven entirely by the dictionary, so a module contributes an indicator and a goal the way legacy 2Pack does. Ids 532xx are this bundle's. The goal is demo content for the GardenWorld client (11), owned by its admin role (102).
+const NOW = '2026-10-15 00:00:00';
+const STD = { ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
+const DASH_STATUS = [Object.assign({ pa_documentstatus_id: 53201, ad_client_id: 0, name: 'Manufacturing Orders to complete', description: 'Manufacturing orders in Drafted or In Progress', seqno: 70, ad_table_id: 53027,
+  whereclause: "PP_Order.DocStatus IN ('DR','IP')", ad_window_id: 53009, entitytype: 'EE01' }, STD)];
+const DASH_CALC = [Object.assign({ pa_measurecalc_id: 53201, ad_client_id: 0, name: 'Manufacturing Order Quantity', description: 'Quantity ordered on live manufacturing orders',
+  selectclause: 'SELECT COALESCE(SUM(PP_Order.QtyOrdered),0) FROM PP_Order', whereclause: "WHERE PP_Order.DocStatus IN ('DR','IP','CO')", datecolumn: 'PP_Order.DateStartSchedule', orgcolumn: 'PP_Order.AD_Org_ID',
+  productcolumn: 'PP_Order.M_Product_ID', ad_table_id: 53027, keycolumn: 'PP_Order.PP_Order_ID', entitytype: 'EE01' }, STD)];
+const DASH_MEASURE = [Object.assign({ pa_measure_id: 53201, ad_client_id: 11, name: 'Manufacturing Order Quantity', measuretype: 'C', manualactual: 0, pa_measurecalc_id: 53201, measuredatatype: 'Q' }, STD)];
+const DASH_GOAL = [Object.assign({ pa_goal_id: 53201, ad_client_id: 11, seqno: 5, name: 'Manufacturing Output', description: 'Quantity on live manufacturing orders', ad_role_id: 102, pa_colorschema_id: 100, issummary: 'N',
+  pa_measure_id: 53201, relativeweight: 1, measuretarget: 20000, measurescope: 0, measuredisplay: 5, measureactual: 0, goalperformance: 0, charttype: 'BC' }, STD)];
+
 export const manifest = {
   id: 'org.idempiere.mfg',
   name: 'Libero Manufacturing',
@@ -127,7 +140,9 @@ export const manifest = {
   requires: {},
   activation: 'lazy',
   triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP'] },
-  dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) }],
+  dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },
+    { table: 'pa_documentstatus', idCol: 'pa_documentstatus_id', rows: DASH_STATUS }, { table: 'pa_measurecalc', idCol: 'pa_measurecalc_id', rows: DASH_CALC },
+    { table: 'pa_measure', idCol: 'pa_measure_id', rows: DASH_MEASURE }, { table: 'pa_goal', idCol: 'pa_goal_id', rows: DASH_GOAL }],
   chunks: { hot: ['./libero_pporder.mjs'] },
   budget: { kb: 14, note: 'slice 1: model classes + MRP validators; the cost side adds ~8k Java lines' }
 };
