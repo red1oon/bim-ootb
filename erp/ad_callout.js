@@ -256,9 +256,35 @@
   });
   PStmt.prototype.executeQuery = function () { return new RS(this.db.query(this.sql, this.params)); };
   PStmt.prototype.close = function () {};
+  // ── convertSql: the dictionary's Oracle/PG-isms, rewritten for SQLite. Mechanism = legacy Convert_PostgreSQL.java:100-175 + ConvertMap_PostgreSQL.java:71 (SYSDATE),
+  //    :76 (getDate()), :100 (\sFROM\s+DUAL\b removed); FETCH FIRST / EXTRACT / date +- n are PG-native in legacy, so SQLite needs the rewrite (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS 3c;
+  //    witness W-DICT-SQL-EXEC). Regex level, quoted strings protected; applied in makeDB().query - the one choke point of callouts, val rules, @SQL= defaults, info windows, status lines.
+  var DATE_CALL = /\b(statement_timestamp|getdate|firstof|add_months|adddays|subtractdays|trunc|nextbusinessday)\s*\(/ig;
+  function matchParen(str, open) { var d = 0; for (var i = open; i < str.length; i++) { var c = str.charAt(i); if (c === '(') d++; else if (c === ')') { d--; if (d === 0) return i; } } return -1; }
+  function convertSql(sql) {
+    if (typeof sql !== 'string' || !/\b(SYSDATE|CURRENT_TIMESTAMP|DUAL|FETCH\s+FIRST|EXTRACT)\b/i.test(sql)) return sql;
+    var quoted = []; var s = sql.replace(/'(?:[^']|'')*'/g, function (q) { quoted.push(q); return '\u0001' + (quoted.length - 1) + '\u0001'; });
+    s = s.replace(/\bSYSDATE\b/gi, 'statement_timestamp()').replace(/\bCURRENT_TIMESTAMP\b/gi, 'statement_timestamp()');   // ConvertMap :71 / :72
+    s = s.replace(/\sFROM\s+DUAL\b/gi, '');                                                                                  // ConvertMap :100
+    s = s.replace(/\bFETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY\b/gi, 'LIMIT $1');
+    var FIELD = { YEAR: '%Y', MONTH: '%m', DAY: '%d', HOUR: '%H', MINUTE: '%M', SECOND: '%S', DOW: '%w', DOY: '%j', EPOCH: '%s' }, k;
+    while ((k = /\bEXTRACT\s*\(\s*(YEAR|MONTH|DAY|HOUR|MINUTE|SECOND|DOW|DOY|EPOCH)\s+FROM\s+/i.exec(s))) {
+      var open = s.indexOf('(', k.index), close = matchParen(s, open); if (close < 0) break;
+      s = s.slice(0, k.index) + "CAST(strftime('" + FIELD[k[1].toUpperCase()] + "', " + s.slice(k.index + k[0].length, close) + ') AS INTEGER)' + s.slice(close + 1);
+    }
+    var pos = 0, m;                                                                                                          // <date-valued call> +/- <number|column>  ->  adddays(call, +/-operand)
+    while (pos < s.length) {
+      DATE_CALL.lastIndex = pos; m = DATE_CALL.exec(s); if (!m) break;
+      var op = s.indexOf('(', m.index), cl = matchParen(s, op); if (cl < 0) break;
+      var rest = /^\s*([+-])\s*(\d+(?:\.\d+)?|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)(?!\s*\()/.exec(s.slice(cl + 1));
+      if (rest) { s = s.slice(0, m.index) + 'adddays(' + s.slice(m.index, cl + 1) + ', ' + (rest[1] === '-' ? '-(' + rest[2] + ')' : rest[2]) + ')' + s.slice(cl + 1 + rest[0].length); pos = m.index + 8 + m[0].length; }
+      else pos = m.index + m[0].length;
+    }
+    return s.replace(/\u0001(\d+)\u0001/g, function (_, i) { return quoted[+i]; });
+  }
   function makeDB(query) {
     var db = {
-      query: function (sql, params) { return query(sql, (params || []).map(sqlParam)) || []; },
+      query: function (sql, params) { return query(convertSql(sql), (params || []).map(sqlParam)) || []; },
       prepareStatement: function (sql) { return new PStmt(db, sql); },
       _first: function (sql, args) { var r = db.query(sql, args); if (!r.length) return undefined; var k = Object.keys(r[0]); return r[0][k[0]]; },
       // getSQLValue(Ex): int of col 1, -1 when no row (DB.java getSQLValueEx)
@@ -929,7 +955,7 @@
 
   var API = { BigDecimal: BD, RoundingMode: RM, Timestamp: Timestamp, TimeUtil: TimeUtil, DisplayType: DT, Env: Env, Ctx: Ctx,
     Msg: Msg, typed: typed, stored: stored, toBD: toBD, isEmpty: isEmpty, AdempiereException: AdempiereException,
-    CalloutEngine: CalloutEngine, GridTab: GridTab, GridField: GridField, RUNTIME: RUNTIME, bind: bind, openTab: openTab,
+    CalloutEngine: CalloutEngine, GridTab: GridTab, GridField: GridField, RUNTIME: RUNTIME, convertSql: convertSql, bind: bind, openTab: openTab,
     fieldsFor: fieldsFor, loginContext: loginContext, defineCallout: defineCallout, defineColumnCallout: defineColumnCallout,
     findColumnCallouts: findColumnCallouts, COLUMN_CALLOUTS: COLUMN_CALLOUTS, getCallout: getCallout, hasCallout: hasCallout, CLASSES: CLASSES,
     coverageScan: coverageScan, registerHandler: registerHandler, hasHandler: hasHandler, REGISTRY: LEGACY,
