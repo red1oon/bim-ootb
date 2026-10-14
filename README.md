@@ -220,4 +220,6 @@ The BOM algebra, IFC extraction pipeline, Rosetta Stone verification, and buildi
 - **`erp/` (the Kernel ERP) — GPL-2.0-only.** Much of it is a port of iDempiere and Libero (GPLv2), so it is declared GPLv2 throughout: every source file carries `SPDX-License-Identifier: GPL-2.0-only`; text in `erp/COPYING.GPL-2.0`. Exceptions inside `erp/`, which keep their own licences: `erp/lib/*` and `*.min.js` (third-party), and data files that are extracted from other products (`12-odoo.db`, `14-sap*.db`, `15-oracle.db`, `16-dynamics.db`), whose licences are not settled here.
 - **Everything else — MIT.** The BIM Viewer, Modeller and Toolkit are written from scratch and follow no project line for line. Copyright (c) 2025–2026 Redhuan D. Oon.
 
+Credits and upstream lineage: `erp/NOTICE`. Files that mimic or derive from Odoo are declared and kept apart under LGPL-3.0: `erp/lens/odoo/README.md`.
+
 This is the project's own position, not legal advice.

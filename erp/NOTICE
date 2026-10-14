@@ -1,0 +1,21 @@
+Kernel ERP (erp/) — GPL-2.0-only. See COPYING.GPL-2.0.
+
+This ERP deliberately mirrors the data model, window/process dictionary, behaviour and
+look and feel of iDempiere, so that a user sees no difference. It is not a clean-room design.
+Its lineage and the licences that come with it:
+
+- Compiere (ComPiere, Inc. — Jorg Janke): the origin of the Application Dictionary and the
+  trade/accounting data model.
+- ADempiere and iDempiere communities: the dictionary rows, model classes, document actions
+  and accounting rules this code ports, with file:line citations in the source.
+  iDempiere is GPLv2.
+- Libero / org.idempiere.mfg (e-Evolution, Victor Perez, and the contributors of the
+  pshepetko and logilite forks): the Manufacturing plugin in erp/plugins/libero_*.mjs.
+  GPLv2.
+
+Copyright notices of the upstream authors apply to the parts derived from them.
+The list above is built from the headers and commit authors seen while porting; the owner
+completes and corrects it.
+
+Separately licensed material kept out of the GPL files: erp/lib/* and *.min.js (third-party,
+own licences) and, once moved, erp/lens/odoo/* (LGPL-3.0, see its README).
