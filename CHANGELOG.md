@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.80.0](https://github.com/red1oon/bim-ootb/compare/v1.79.0...v1.80.0) (2026-10-13)
+
+
+### ✨ Features
+
+* **oplogpic:** design kit: gradient tool + gradient map, live blur / sharpen layers, shapes, drop shadow / outline, editable text, image export (JPEG / WebP / sizes) ([#2002](https://github.com/red1oon/bim-ootb/issues/2002)) ([eb0857b](https://github.com/red1oon/bim-ootb/commit/eb0857bbbd9ead6c5bc7a25218be3b67f94da575))
+
 ## [1.79.0](https://github.com/red1oon/bim-ootb/compare/v1.78.0...v1.79.0) (2026-10-13)
 
 
