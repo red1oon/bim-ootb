@@ -18,9 +18,11 @@ function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MF
   var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var db = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   var ok = 0, bad = 0;
-  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) {
-    st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return;
-    try { db.run(st); ok++; } catch (e) { bad++; }
+  ['ad_seed.db.sql', 'mfg.sql'].forEach(function (pf) {   // the loader's order: seed patch, then the Manufacturing patch
+    fs.readFileSync(path.join(ERP, 'patches', pf), 'utf8').split(/;\s*\n/).forEach(function (st) {
+      st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return;
+      try { db.run(st); ok++; } catch (e) { bad++; }
+    });
   });
   console.log('§MFG-LOAD patch statements ok=' + ok + ' failed=' + bad + ' break=' + (BREAK || 'none'));
   // deliberate breaks, applied AFTER the load so they model "the patch lost something"
