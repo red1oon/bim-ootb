@@ -84,11 +84,13 @@
         var pre = P.preflight(m); var okPre = P.report(pre);        // §PREFLIGHT lines: template faults (missing sheet, mistyped Input tag, empty Direction) stop the run with a clear message instead of a silently wrong report
         if (!okPre) throw new Error('TEMPLATE CHECK FAILED: ' + pre.errors.join(' | '));
         var t1 = Date.now();
+        var tex = null;
         var S = withDb(function (raw) {
           var db = shim(raw); T.registerPgBuiltins(function (n, f) { db.function(n, { varargs: true }, f); });
-          return T.runTemplate(m, P.selectOnly(T.sqliteExecutor(db, global.BigDecimal)), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
+          tex = P.timed(T.sqliteExecutor(db, global.BigDecimal), function (l) { console.log(l); });   // §SQL_MS per statement + §SQL_SUMMARY: where the time goes (the legacy plugin ran minutes with no timing at all)
+          return T.runTemplate(m, P.selectOnly(tex), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
         });
-        var runMs = Date.now() - t1;
+        var runMs = Date.now() - t1; if (tex) tex.summary();
         console.log('§NINJA_REPORT_RUN client=' + client + ' from=' + opts.from + ' to=' + opts.to + ' statements=' + S.sqlcount + ' ms=' + runMs);
         var cs = C.evaluateSheet(m, 'Output');
         return H.saveModel(global.ExcelJS, m, tpl, ['Output', 'Process']).then(function (xl) {
