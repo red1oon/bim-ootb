@@ -6,13 +6,14 @@
 const RM_UP = 'UP', RM_HALF_UP = 'HALF_UP';
 export const DEFERRED = [
   'MPPOrder.orderStock (M_Storage QtyOrdered) - needs StorageEngine, cost side',
-  'MPPOrder.explosion routing half (PP_Order_Workflow/Node/NodeNext/NodeProduct/NodeAsset) - RESUME 5 item 3',
+  'RoutingService variants other than DefaultRoutingServiceImpl (estimateWorkingTime for cost collectors) - cost side',
   'MPPOrderBOMLine.explodePhantom - fixtures carry no phantom',
   'MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)',
-  'MPPOrder.beforeSave #M_Warehouse_ID context default'
+  'MPPOrder.beforeSave #M_Warehouse_ID context default',
+  'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true };
+export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
@@ -101,9 +102,21 @@ export function create(ctx) {
   // changed(col): PO.is_ValueChanged inside afterSave. For a NEW record every set (non-null) column is changed (old = null); for an update, against the old row.
   const changed = (rec, old, isNew, c, trx) => { if (isNew) { const u = trx && trx._libSet && trx._libSet.pp_order; return u && c in u ? u[c] : rec[c] != null; } return old != null && lc(rec[c]) !== lc(old[c]); };
   function isDelivered(rec) { return dec(rec.qtydelivered).signum() > 0; }
-  function deleteWorkflowAndBOM(trx, rec) {   // :495-515 (BOM half; the workflow rows are the deferred routing half)
-    trx.find('pp_order_bomline', { pp_order_id: rec.pp_order_id }).forEach((r) => trx.del('pp_order_bomline', r));
-    trx.find('pp_order_bom', { pp_order_id: rec.pp_order_id }).forEach((r) => trx.del('pp_order_bom', r));
+  // deletePO(table, where, params) (MPPOrder :520-540): each row deleted THROUGH the model layer so beforeDelete + BEFORE_DELETE validators (the MRP cleanup below) fire.
+  function deletePO(trx, t, w) { trx.find(t, w).forEach((r) => ML.po(trx, t, r).deleteEx()); }
+  function deleteWorkflowAndBOM(trx, rec) {   // MPPOrder.deleteWorkflowAndBOM :497-519 (order of deletes verbatim; `AD_Client_ID` guard = the order's client)
+    if (ML.isNewId(rec.pp_order_id) && !trx._p('pp_order')[String(rec.pp_order_id)]) return null;   // get_ID() <= 0: a new record, nothing to do
+    const w = { pp_order_id: rec.pp_order_id, ad_client_id: rec.ad_client_id };
+    try {
+      trx.find('pp_order_workflow', w).forEach((r) => { if (r.pp_order_node_id != null) trx.update('pp_order_workflow', r, { pp_order_node_id: null }); });   // "Reset workflow start node"
+      ['pp_order_node_asset', 'pp_order_node_product', 'pp_order_nodenext', 'pp_order_node', 'pp_order_workflow', 'pp_order_bomline', 'pp_order_bom'].forEach((t) => deletePO(trx, t, w));
+    } catch (e) { return e.message; }
+    return null;
+  }
+  // MPPOrder.beforeDelete :478-494: a Drafted/In-Progress order removes its cost rows and its snapshot; "Un-Order Stock" (orderStock) is DEFERRED
+  function orderBeforeDelete(trx, row) {
+    if (row.docstatus === 'DR' || row.docstatus === 'IP') { try { deletePO(trx, 'pp_order_cost', { pp_order_id: row.pp_order_id, ad_client_id: row.ad_client_id }); } catch (e) { return e.message; } return deleteWorkflowAndBOM(trx, row); }
+    return null;
   }
   // explosion() :1028-1051 BOM half + expandBOM :1100-1138
   function explosion(trx, rec) {
@@ -134,12 +147,83 @@ export function create(ctx) {
       const ob = ML.newRecord(trx, 'pp_order_bomline', l);
       if (!ob.save()) return ob.error;
     }
+    return explodeRouting(trx, rec);
+  }
+  // ── routing half of explosion() :1052-1098 ───────────────────────────────────────────────────────────────────
+  // RoutingService (DefaultRoutingServiceImpl :74-80, :106-114): working time = node.Duration x cycles, cycles = ceil(qty / UnitsCycles) when UnitsCycles > 0 else qty
+  function estimateWorkingTime(node, qty) {
+    const units = Number(node.unitscycles || 0);
+    const cycles = units > 0 ? Number(num(dec(qty).divide(D(units), 0, SOURCE.cyclesRounded ? RM_UP : 'DOWN'))) : Math.trunc(Number(num(dec(qty))));
+    return Number(node.duration || 0) * cycles;
+  }
+  function explodeRouting(trx, rec) {
+    const start = rec.datestartschedule, env = trx.env || {};
+    const wf = rec.ad_workflow_id ? trx.get('ad_workflow', rec.ad_workflow_id) : null;
+    if (!wf) return 'Routing (AD_Workflow ' + rec.ad_workflow_id + ') not found';
+    if (wf.isvalid !== 'Y') return 'Routing is not valid. Please validate it first - ' + wf.value;
+    if (!isValidFromTo(wf.validfrom, wf.validto, start)) return 'RoutingExpired: AD_Workflow ' + wf.ad_workflow_id + ' not valid at ' + ts(start);
+    // new MPPOrderWorkflow(AD_Workflow, PP_Order_ID) :104-139 (every field the peer ctor copies)
+    const WF_COPY = ['value', 'workflowtype', 'qtybatchsize', 'name', 'accesslevel', 'author', 'durationunit', 'duration', 'entitytype', 'isdefault', 'publishstatus', 'version', 'cost', 'waitingtime', 'workingtime',
+      'ad_wf_responsible_id', 'ad_workflow_id', 'limit', 'priority', 's_resource_id', 'queuingtime', 'setuptime', 'movingtime', 'processtype', 'ad_table_id', 'ad_wf_node_id', 'ad_workflowprocessor_id', 'description', 'validfrom', 'validto'];
+    const wfFields = { pp_order_id: rec.pp_order_id, ad_org_id: rec.ad_org_id };
+    WF_COPY.forEach((c) => { wfFields[c] = wf[c] === undefined ? null : wf[c]; });
+    const owf = ML.newRecord(trx, 'pp_order_workflow', wfFields);
+    if (!owf.save()) return owf.error;
+    const clientOk = (r) => Number(r.ad_client_id || 0) === 0 || Number(r.ad_client_id) === Number(rec.ad_client_id);
+    const envClient = Number(env.client == null ? rec.ad_client_id : env.client);
+    // MWorkflow.loadNodes :361-366: AD_Client_ID IN (0, env client), active; no ORDER BY in the Query (heap order) -> ordered by key here
+    const wfNodes = trx.find('ad_wf_node', { ad_workflow_id: wf.ad_workflow_id }).filter((n) => active(n) && (Number(n.ad_client_id || 0) === 0 || Number(n.ad_client_id) === envClient))
+      .sort((a, b) => Number(a.ad_wf_node_id) - Number(b.ad_wf_node_id));
+    const NODE_COPY = ['action', 'ad_wf_node_id', 'ad_wf_responsible_id', 'ad_workflow_id', 'issubcontracting', 'ismilestone', 'c_bpartner_id', 'cost', 'duration', 'overlapunits', 'entitytype', 'iscentrallymaintained',
+      'joinelement', 'limit', 'name', 'priority', 'splitelement', 'subflowexecution', 'value', 's_resource_id', 'setuptime', 'movingtime', 'waitingtime', 'workingtime', 'queuingtime', 'xposition', 'yposition',
+      'docaction', 'ad_column_id', 'ad_form_id', 'ad_image_id', 'ad_window_id', 'ad_process_id', 'attributename', 'attributevalue', 'startmode', 'finishmode', 'validfrom', 'validto', 'hr_requirement_id', 'isemployee'];
+    const nodeCols = ML.columnsOf(trx, 'pp_order_node'), qtyOrdered = dec(rec.qtyordered);
+    for (const wn of wfNodes) {
+      if (!isValidFromTo(wn.validfrom, wn.validto, start)) continue;
+      const nf = { pp_order_id: owf.row.pp_order_id, pp_order_workflow_id: owf.row.pp_order_workflow_id, ad_org_id: rec.ad_org_id, docstatus: 'DR' };
+      NODE_COPY.forEach((c) => { if (c in nodeCols && c in wn) nf[c] = wn[c]; });
+      nf.unitscycles = wn.unitscycles == null ? null : Math.trunc(Number(wn.unitscycles));   // getUnitsCycles().intValueExact()
+      nf.setuptimerequiered = wn.setuptime;                                                    // setSetupTimeRequired(wfNode.getSetupTime())
+      nf.qtyrequiered = num(qtyOrdered);                                                       // setQtyOrdered -> setQtyRequired
+      nf.durationrequiered = estimateWorkingTime({ duration: wn.duration, unitscycles: nf.unitscycles }, qtyOrdered);   // setDurationRequired(workingTime.intValueExact())
+      const on = ML.newRecord(trx, 'pp_order_node', nf);
+      if (!on.save()) return on.error;
+      const nodeRow = on.row;
+      // MWFNode.getTransitions(client) (MWFNode :334-347; loadNext orders by SeqNo): copy each active next of the AD node
+      const nexts = trx.find('ad_wf_nodenext', { ad_wf_node_id: wn.ad_wf_node_id }).filter((x) => active(x) && clientOk(x)).sort((a, b) => Number(a.seqno) - Number(b.seqno) || Number(a.ad_wf_nodenext_id) - Number(b.ad_wf_nodenext_id));
+      for (const wnn of nexts) {   // new MPPOrderNodeNext(MWFNodeNext, MPPOrderNode) :84-98 (pp_order_next_id set later by setPP_Order_Next_ID)
+        const nn = ML.newRecord(trx, 'pp_order_nodenext', { ad_org_id: rec.ad_org_id, pp_order_id: nodeRow.pp_order_id, pp_order_node_id: nodeRow.pp_order_node_id, ad_wf_node_id: wnn.ad_wf_node_id, ad_wf_next_id: wnn.ad_wf_next_id,
+          description: wnn.description, entitytype: wnn.entitytype, isstduserworkflow: wnn.isstduserworkflow, seqno: wnn.seqno, transitioncode: wnn.transitioncode });
+        if (!nn.save()) return nn.error;
+      }
+      for (const np of trx.find('pp_wf_node_product', { ad_wf_node_id: wn.ad_wf_node_id }).filter(active).sort((a, b) => Number(a.seqno) - Number(b.seqno))) {   // MPPOrderNodeProduct(np, node) :60-75 + beforeSave
+        let qty = dec(np.qty); if (qty.signum() === 0 && np.issubcontracting === 'Y') qty = ONE;
+        const x = ML.newRecord(trx, 'pp_order_node_product', { ad_org_id: rec.ad_org_id, seqno: np.seqno, isactive: np.isactive, m_product_id: np.m_product_id, qty: num(qty), issubcontracting: np.issubcontracting,
+          pp_order_id: nodeRow.pp_order_id, pp_order_workflow_id: nodeRow.pp_order_workflow_id, pp_order_node_id: nodeRow.pp_order_node_id });
+        if (!x.save()) return x.error;
+      }
+      for (const na of trx.find('pp_wf_node_asset', { ad_wf_node_id: wn.ad_wf_node_id }).filter(active).sort((a, b) => Number(a.seqno) - Number(b.seqno))) {   // MPPOrderNodeAsset(na, node) :55-66
+        const x = ML.newRecord(trx, 'pp_order_node_asset', { ad_org_id: rec.ad_org_id, a_asset_id: na.a_asset_id, pp_order_id: nodeRow.pp_order_id, pp_order_workflow_id: nodeRow.pp_order_workflow_id, pp_order_node_id: nodeRow.pp_order_node_id });
+        if (!x.save()) return x.error;
+      }
+    }
+    // "Update transitions nexts and set first node" :1076-1094 (requery: active nodes of the order workflow, client 0 or the order's)
+    let first = null;
+    for (const on of trx.find('pp_order_node', { pp_order_workflow_id: owf.row.pp_order_workflow_id }).filter((n) => active(n) && clientOk(n))) {
+      if (Number(owf.row.ad_wf_node_id) === Number(on.ad_wf_node_id)) first = on.pp_order_node_id;
+      for (const nx of trx.find('pp_order_nodenext', { pp_order_node_id: on.pp_order_node_id }).filter((x) => active(x) && clientOk(x)).sort((a, b) => Number(a.seqno) - Number(b.seqno))) {
+        // MPPOrderNodeNext.setPP_Order_Next_ID :164-170: the order node with that AD_WF_Node in this order and client, else 0
+        const tgt = trx.find('pp_order_node', { pp_order_id: nx.pp_order_id }).filter((n) => Number(n.ad_wf_node_id) === Number(nx.ad_wf_next_id) && Number(n.ad_client_id) === Number(nx.ad_client_id))[0];
+        const p = ML.po(trx, 'pp_order_nodenext', nx); p.set('pp_order_next_id', tgt ? tgt.pp_order_node_id : 0); if (!p.save()) return p.error;
+      }
+    }
+    if (first != null) { const p = ML.po(trx, 'pp_order_workflow', owf.row); p.set('pp_order_node_id', first); if (!p.save()) return p.error; }
     return null;
   }
   function orderAfterSave(trx, live, isNew, old) {
     if (live.docaction === 'CL' || live.docaction === 'VO') return null;   // :451-455
     let e;
-    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { deleteWorkflowAndBOM(trx, live); if ((e = explosion(trx, live))) return e; }
+    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { if ((e = deleteWorkflowAndBOM(trx, live))) return e; if ((e = explosion(trx, live))) return e; }
     if (changed(live, old, isNew, 'qtyentered', trx) && isDelivered(live)) return 'Cannot Change Quantity, Only for Draft or In-Progess Status';
     if (!isNew) return null;
     return explosion(trx, live);   // :466-475 - second explosion for a new record (faithful, see spec §LIBERO-DOUBLE-EXPLODE)
@@ -181,6 +265,21 @@ export function create(ctx) {
     if (!existing) f.pp_order_bomline_id = obl.pp_order_bomline_id;
     return saveMrp(trx, existing, f);
   }
+  // MFG_Validator PO_BEFORE_DELETE -> MPPMRP.deleteMRP :493-583. BOM line: the final DELETE only (the Ferry blocks are for MPPOrder/MOrder). DEFERRED, named: voiding draft Requisitions and the MResourceAssignment cleanup.
+  function mrpDeleteBomLine(trx, obl) {
+    if (!SOURCE.mrpDelete) return null;
+    trx.find('pp_mrp', { pp_order_bomline_id: obl.pp_order_bomline_id, ad_client_id: obl.ad_client_id }).filter((m) => m.docstatus === 'DR' || m.docstatus === 'VO').forEach((m) => trx.del('pp_mrp', m));
+    return null;
+  }
+  function mrpDeleteOrder(trx, o) {
+    const w = { pp_order_id: o.pp_order_id, ad_client_id: o.ad_client_id };
+    let set = trx.find('pp_mrp', w).filter((m) => m.ordertype === 'SOP');
+    if (!set.length) set = trx.find('pp_mrp', w).filter((m) => m.ordertype === 'MOP' && m.typemrp === 'S');   // "MO created manually"
+    set.forEach((m) => { trx.update('pp_mrp', m, { pp_order_id: null }); });                                       // mrp.setPP_Order_ID(0): the supply row is KEPT, detached
+    trx.find('pp_mrp', w).filter((m) => m.docstatus === 'DR' || m.docstatus === 'VO').forEach((m) => trx.del('pp_mrp', m));
+    trx.find('pp_mrp', w).filter((m) => m.docstatus === 'IP' && String(m.description || '').indexOf('** Voided Ordered Quantity') === 0).forEach((m) => trx.del('pp_mrp', m));
+    return null;
+  }
   const validator = (table, fn) => (c, info) => {
     const trx = c && c.trx; if (!trx || !info || !info.record) return null;
     const isNew = !info.recordOld; if (!isChanged(table, info.record, info.recordOld, isNew)) return null;
@@ -188,12 +287,14 @@ export function create(ctx) {
   };
 
   return {
-    models: { pp_order: { beforeSave: orderBeforeSave, afterSave: orderAfterSave }, pp_order_bomline: { beforeSave: bomLineBeforeSave } },
+    models: { pp_order: { beforeSave: orderBeforeSave, afterSave: orderAfterSave, beforeDelete: orderBeforeDelete }, pp_order_bomline: { beforeSave: bomLineBeforeSave } },
     validators: [
       ['pp_order', 'AFTER_NEW', 'Libero.MPPMRP.PP_Order', validator('pp_order', mrpPPOrder)],
       ['pp_order', 'AFTER_CHANGE', 'Libero.MPPMRP.PP_Order', validator('pp_order', mrpPPOrder)],
       ['pp_order_bomline', 'AFTER_NEW', 'Libero.MPPMRP.PP_Order_BOMLine', validator('pp_order_bomline', mrpBomLine)],
-      ['pp_order_bomline', 'AFTER_CHANGE', 'Libero.MPPMRP.PP_Order_BOMLine', validator('pp_order_bomline', mrpBomLine)]
+      ['pp_order_bomline', 'AFTER_CHANGE', 'Libero.MPPMRP.PP_Order_BOMLine', validator('pp_order_bomline', mrpBomLine)],
+      ['pp_order', 'BEFORE_DELETE', 'Libero.MPPMRP.deleteMRP', (c, info) => (c && c.trx && info && info.record ? mrpDeleteOrder(c.trx, info.record) : null)],
+      ['pp_order_bomline', 'BEFORE_DELETE', 'Libero.MPPMRP.deleteMRP', (c, info) => (c && c.trx && info && info.record ? mrpDeleteBomLine(c.trx, info.record) : null)]
     ]
   };
 }
