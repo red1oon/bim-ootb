@@ -519,16 +519,29 @@
     }
     return bal;
   };
+
+  // documentNo(PP_MRP_ID) - the document number of the order behind an MRP row (pg_get_functiondef): '' for id<=0; NULL when the row is missing or the order type is not one of the six
+  F.documentno = function (p_PP_MRP_ID) {
+    if (p_PP_MRP_ID == null) return null;
+    if (Number(p_PP_MRP_ID) <= 0) return '';
+    var m = q('documentNo', 'SELECT trim(OrderType) AS t, M_Forecast_ID AS f, C_Order_ID AS co, DD_Order_ID AS dd, PP_Order_ID AS po, M_Requisition_ID AS r FROM PP_MRP WHERE PP_MRP_ID=?', [p_PP_MRP_ID])[0];
+    if (!m) return null;
+    var map = { FTC: ['SELECT Name AS v FROM M_Forecast WHERE M_Forecast_ID=?', m.f], POO: ['SELECT DocumentNo AS v FROM C_Order WHERE C_Order_ID=?', m.co], DOO: ['SELECT DocumentNo AS v FROM DD_Order WHERE DD_Order_ID=?', m.dd],
+      SOO: ['SELECT DocumentNo AS v FROM C_Order WHERE C_Order_ID=?', m.co], MOP: ['SELECT DocumentNo AS v FROM PP_Order WHERE PP_Order_ID=?', m.po], POR: ['SELECT DocumentNo AS v FROM M_Requisition WHERE M_Requisition_ID=?', m.r] };
+    var e = map[m.t]; if (!e) return null;
+    var r = q('documentNo', e[0], [e[1]])[0]; return r ? r.v : null;
+  };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
     currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
     bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
-    paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3],
+    paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3], documentno: [1],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
     ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
-  function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
+  // a NUMERIC result reaches SQLite as a NUMBER: as TEXT it compared GREATER than every number (rv_pp_mrp: bomqtyonhand(..) < pp.safetystock was never true), whereas arithmetic coerced it anyway
+  function conv(v) { if (v instanceof BD) return Number(out(v)); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
     switch (n) {
       case 0: return function () { return conv(fn()); };
