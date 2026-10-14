@@ -5,8 +5,8 @@
 # usage: build_views_patch.py <ad_seed.db.sql>   (the previous views section, between the markers, is replaced)
 import re, subprocess, sys
 OUT = sys.argv[1]
-VIEWS = ['rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
-         'rv_requestupdates', 'm_costmovement_v', 'ad_allusers_v', 'ad_allroles_v', 'ad_alluserroles_v', 'ad_allclients_v', 'ad_sessioninfo_v']   # dependency order (rv_c_invoice before its users). NOT m_storage: the twin keeps it as a TABLE its MOVE_STOCK ops write (legacy: a VIEW over M_StorageOnHand/Reservation) - a stock-model item, see the spec
+VIEWS = ['m_storage', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
+         'rv_requestupdates', 'm_costmovement_v', 'ad_allusers_v', 'ad_allroles_v', 'ad_alluserroles_v', 'ad_allclients_v', 'ad_sessioninfo_v']   # dependency order (rv_c_invoice before its users). m_storage: legacy = a VIEW over M_StorageOnHand/M_StorageReservation; the seed carried a stale 20-row TABLE copy of M_StorageOnHand nobody writes (the model layer writes M_StorageOnHand) - replaced
 BEGIN, END = '-- >>> VIEWS (build_views_patch.py)', '-- <<< VIEWS'
 def pg(sql):
     r = subprocess.run(['docker', 'exec', '-i', 'postgres', 'psql', '-U', 'postgres', '-d', 'idempiere_pilot', '-tA', '-c', 'set search_path=adempiere;' + sql], capture_output=True, text=True)
@@ -35,16 +35,22 @@ def _conn():
             except Exception: pass
     return con
 CON = _conn()
+def is_table(name):
+    return CON.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)=lower(?)", (name,)).fetchone() is not None
 def usable(name, create_sql):                                                               # earlier emitted views stay in CON, so a view over another shipped view resolves
-    try: CON.execute(create_sql); CON.execute('SELECT * FROM %s LIMIT 0' % name).fetchall(); return None
+    try:
+        if is_table(name): CON.execute('DROP TABLE %s' % name)
+        CON.execute(create_sql); CON.execute('SELECT * FROM %s LIMIT 0' % name).fetchall(); return None
     except Exception as e: return str(e)[:80]
 skipped = []
 stmts = []
 for v in VIEWS:
     d = pg("select pg_get_viewdef('%s'::regclass)" % v).rstrip().rstrip(';')
     create = 'CREATE VIEW %s AS %s' % (v, re.sub(r'\s+', ' ', translate(d)))
+    was_table = is_table(v)
     why = usable(v, create)
     if why: skipped.append('%s (%s)' % (v, why)); continue
+    if was_table: stmts.append('DROP TABLE IF EXISTS %s;' % v)          # the seed ships a stale TABLE of this name; legacy has a VIEW (the statement is a tolerated no-op once it is a view)
     stmts.append('DROP VIEW IF EXISTS %s;' % v)
     stmts.append(create + ';')
 txt = open(OUT).read()
@@ -52,5 +58,5 @@ if BEGIN in txt:
     txt = txt[:txt.index(BEGIN)].rstrip('\n') + '\n' + (txt[txt.index(END) + len(END):].lstrip('\n') if END in txt else '')
 txt = txt.rstrip('\n') + '\n' + BEGIN + '\n' + '\n'.join(stmts) + '\n' + END + '\n'
 open(OUT, 'w').write(txt)
-print('§VIEWS-PATCH views=%d emitted=%d statements=%d -> %s' % (len(VIEWS), len(stmts) // 2, len(stmts), OUT))
+print('§VIEWS-PATCH views=%d emitted=%d statements=%d -> %s' % (len(VIEWS), len([x for x in stmts if x.startswith('CREATE VIEW')]), len(stmts), OUT))
 print('§VIEWS-PATCH NOT-SHIPPED (twin lacks a table/column): ' + '; '.join(skipped))
