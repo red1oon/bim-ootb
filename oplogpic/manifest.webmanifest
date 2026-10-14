@@ -21,5 +21,15 @@
    "type": "image/png",
    "purpose": "any"
   }
+ ],
+ "file_handlers": [
+  {
+   "action": "./index.html",
+   "accept": {
+    "application/x-oplogpic": [
+     ".oplogpic"
+    ]
+   }
+  }
  ]
 }
