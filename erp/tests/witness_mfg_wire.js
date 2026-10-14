@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — W-MFG-WIRE (Milestone 1; spec ~/Projects/Mfg/MILESTONE_1_SPEC.md). READ THE LOG after every run: verdict = §MFG-VERDICT.
 // THE ISSUE it proves/disproves: the Manufacturing Order window (AD_Window 53009, 13 tabs) cannot be used because (a) 8 PP tables have no
-//   physical table and 2 are column-short, (b) no active AD_Menu path reaches it.  PASS = a user can walk menu -> window -> 13 tabs whose
+//   physical table and 2 are column-short, (b) no active AD_Menu path reaches it (M3 now: the BASE carries none; the Libero bundle stages the path, witness_libero_bundle.js L2).  PASS = the window carries 13 tabs whose
 //   tables hold every dictionary column.  The seed is loaded AS THE LOADER LOADS IT: ad_seed.db + patches/ad_seed.db.sql statement by statement.
 // Deliberate breaks (each MUST turn the verdict red and NAME the culprit):  MFG_BREAK=table|col|menu
 'use strict';
@@ -50,14 +50,13 @@ function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MF
   if (!tnames.length || !judgedCols) { inconclusive++; console.log('§MFG M2 INCONCLUSIVE — empty population (tables=' + tnames.length + ' cols=' + judgedCols + ')'); }
   else check('M2 every tab table has every dictionary column', lacking.length === 0, { lacking: lacking.slice(0, 12), n: lacking.length });
 
-  // M3 — menu walk: leaf up to a root through ACTIVE AD_Menu rows only; leaf opens window 53009
-  var act = {}; q("SELECT ad_menu_id AS id, name, issummary FROM ad_menu WHERE isactive='Y'").forEach(function (r) { act[r.id] = r; });
-  var par = {}; q("SELECT node_id, parent_id FROM ad_treenodemm WHERE ad_tree_id=10 AND isactive='Y'").forEach(function (r) { par[r.node_id] = r.parent_id; });
-  var chain = [], cur = MENU_LEAF, broke = null, guard = 0;
-  while (cur && guard++ < 12) { if (!act[cur]) { broke = cur; break; } chain.push(act[cur].name.trim()); cur = par[cur]; if (cur === undefined) { broke = 'no tree node'; break; } }
-  var menuWin = q("SELECT ad_window_id AS w FROM ad_menu WHERE ad_menu_id=? AND action='W' AND isactive='Y'", [MENU_LEAF]);
-  console.log('§MFG-MENU path(leaf->root)=' + chain.join(' < ') + (broke ? ' BROKEN at ' + broke : ''));
-  check('M3 menu path to Manufacturing Order is fully active and opens window ' + WIN, !broke && chain.length === 4 && menuWin.length === 1 && Number(menuWin[0].w) === WIN, { broke: broke, chain: chain, window: menuWin });
+  // M3 — menu: since the Libero bundle (erp/plugins/libero_manufacturing.mjs) owns the EE01 menu path, the BASE must NOT carry an active path to the window (legacy parity: EE01 ships disabled).
+  //      The positive walk (leaf -> root through active rows, opens window 53009) is witnessed by witness_libero_bundle.js L2 after the bundle activates. MFG_BREAK=menu re-adds one row and must turn this red.
+  if (BREAK === 'menu') db.run("INSERT INTO ad_menu (ad_menu_id, name, isactive, issummary, action, ad_window_id) VALUES (53055, 'Manufacturing Order', 'Y', 'N', 'W', 53009)");
+  var anyMenu = q("SELECT ad_menu_id AS id FROM ad_menu WHERE ad_menu_id IN (53014,53052,53053,53055)");
+  var menuWin = q("SELECT ad_menu_id AS id FROM ad_menu WHERE ad_window_id=? AND action='W' AND isactive='Y'", [WIN]);
+  console.log('§MFG-MENU base rows for the EE01 path=' + anyMenu.length + ' active menu leaves for window ' + WIN + '=' + menuWin.length + ' (expected 0 and 0 until the bundle activates)');
+  check('M3 the base has no EE01 menu rows and no active menu leaf for window ' + WIN + ' (the bundle stages them)', anyMenu.length === 0 && menuWin.length === 0, { rows: anyMenu, leaves: menuWin });
 
   // M4 — the window as the app opens it (ad_parser.getWindow) carries 13 tabs
   var P = require(path.join(ERP, 'ad_parser.js'));
