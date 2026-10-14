@@ -89,6 +89,7 @@
     XL = opts.XLSX || XL || (typeof require !== 'undefined' ? require('xlsx') : global.XLSX);
     var N = { input: 'Input', process: 'Process', output: 'Output', backup: 'BACKUP' }; for (var k in (opts.sheets || {})) N[k] = opts.sheets[k];
     var S = { log: [], sqlcount: 0, lastrowwrite: 1, lastrowread: 0, crosstab: false, crossTabHoldSQL: '', gotSQL: true, stale: 0, nothingReturned: 0, sqls: [] };
+    if (typeof opts.onState === 'function') opts.onState(S, wb);   // OPTIONAL read-only hook (replay witness W40 needs the engine's statement-row cursor); off by default, changes nothing
     function log(s) { S.log.push(s); }
     var from = opts.from || '', to = opts.to || '', orgId = opts.orgId || 0, accountGroup = opts.accountGroup || '';
 

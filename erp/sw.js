@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v845';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v846';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -240,7 +240,7 @@ const PRECACHE_ASSETS = [
   'ninja_excel.js',   // NINJA EXCEL — Excel-as-report-binder engine (read/gate/run/verify; == bim-compiler build/erp)
   'ninja_rule.js',    // NINJA EXCEL — RULE tier: business phrase → SQL candidates from the AD dictionary (§7)
   'ninja_report.js',  // NINJA EXCEL REPORT — template + dates -> .xlsx + PDF in the browser (window.NinjaReport)
-  'ninja_template.js', 'ninja_template_xlsx.js', 'ninja_calc.js', 'ninja_pdf.js', // report engine (== bim-compiler build/erp)
+  'ninja_template.js', 'ninja_template_xlsx.js', 'ninja_calc.js', 'ninja_pdf.js', 'ninja_preflight.js', // report engine (== bim-compiler build/erp)
   'vendor/exceljs.min.js', 'vendor/pdfkit.standalone.js',   // MIT, lazy-loaded on first report run; precached for offline
   'fonts/LiberationSans-Regular.ttf', 'fonts/LiberationSans-Bold.ttf', 'fonts/NotoSansThai-Regular.ttf', 'fonts/NotoSansThai-Bold.ttf', 'fonts/NotoSansLao-Regular.ttf', 'fonts/NotoSansLao-Bold.ttf', // SIL OFL
   'ninja_tb_sample.xlsx', // public Thai trial-balance report template

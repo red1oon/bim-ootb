@@ -25,6 +25,7 @@
     if (!global.NinjaCalc) need.push('ninja_calc.js?v=1');
     if (!global.NinjaTemplate) need.push('ninja_template.js?v=1');
     if (!global.NinjaTemplateXlsx) need.push('ninja_template_xlsx.js?v=1');
+    if (!global.NinjaPreflight) need.push('ninja_preflight.js?v=1');
     if (!global.NinjaPdf) need.push('ninja_pdf.js?v=1');
     _loaded = seq(need.map(function (s) { return function () { return inject(base + s); }; })).then(function () {
       console.log('§NINJA_REPORT_LOAD scripts=' + need.length + ' ms=' + (Date.now() - t0)); return true;
@@ -73,17 +74,19 @@
   function run(opts) {
     var base = opts.base || '', t0 = Date.now();
     return Promise.all([ensureLibs(base), ensureFonts(base)]).then(function (all) {
-      var F = all[1], H = global.NinjaTemplateXlsx, T = global.NinjaTemplate, C = global.NinjaCalc, R = global.NinjaPdf;
+      var F = all[1], H = global.NinjaTemplateXlsx, T = global.NinjaTemplate, C = global.NinjaCalc, R = global.NinjaPdf, P = global.NinjaPreflight;
       var tpl = opts.template instanceof Uint8Array ? opts.template : new Uint8Array(opts.template);
       var withDb = opts.withDb || function (fn) { return fn(opts.db); };       // pill passes __crud.withTipDb so documents entered THIS session (signed op-log tip) are visible to the report's SQL
       var client = opts.clientId != null ? opts.clientId : clientOf(opts.db);   // ad_client rows are not touched by sales: main is enough
       if (client == null) throw new Error('no client in the open database (ad_client has no row > 0)');
       var from = opts.from + ' 00:00:00.0', to = opts.to + ' 00:00:00.0';
       return H.loadModel(global.ExcelJS, tpl).then(function (m) {
+        var pre = P.preflight(m); var okPre = P.report(pre);        // §PREFLIGHT lines: template faults (missing sheet, mistyped Input tag, empty Direction) stop the run with a clear message instead of a silently wrong report
+        if (!okPre) throw new Error('TEMPLATE CHECK FAILED: ' + pre.errors.join(' | '));
         var t1 = Date.now();
         var S = withDb(function (raw) {
           var db = shim(raw); T.registerPgBuiltins(function (n, f) { db.function(n, { varargs: true }, f); });
-          return T.runTemplate(m, T.sqliteExecutor(db, global.BigDecimal), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
+          return T.runTemplate(m, P.selectOnly(T.sqliteExecutor(db, global.BigDecimal)), { XLSX: opts.XLSX || global.XLSX, clientId: client, orgId: 0, from: from, to: to });
         });
         var runMs = Date.now() - t1;
         console.log('§NINJA_REPORT_RUN client=' + client + ' from=' + opts.from + ' to=' + opts.to + ' statements=' + S.sqlcount + ' ms=' + runMs);
