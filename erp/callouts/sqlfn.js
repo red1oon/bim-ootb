@@ -424,11 +424,57 @@
     else { var dow = (new Date(Date.UTC(y, m, dd)).getUTCDay() + 6) % 7; out = Date.UTC(y, m, dd - dow); if (part === 'sunweek') off = -1; }   // ISO week starts Monday
     return new Timestamp(out + off * 86400000);
   };
+
+  // ── bomQtyOnHand / bomQtyOnHandForReservation / bomQtyOrdered / bomQtyReserved / bomQtyAvailable (stage 3d). Source = pg_get_functiondef on the pilot, quirks kept:
+  //    warehouse NULL -> the locator's warehouse (SUM in the on-hand pair, MAX in ordered/reserved); an unknown product is NOT an error (SELECT INTO leaves NULLs -> falls through to 99999);
+  //    bomQtyOrdered's component branch reads the PARENT's reservations (live body); BOM roll-up = MIN over verified components, TRUNC(qty, UOM StdPrecision) rounded DOWN.
+  function hasTable(name) { var r = q('hasTable', "SELECT 1 AS x FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=lower(?)", [name]); return r.length > 0; }
+  function bomQty(kind) {
+    var self = function (P, W, L, depth) {
+      depth = depth || 0; if (depth > 32) return null;
+      var wh = W;
+      if (wh == null) {
+        if (L == null) return BD.ZERO;
+        var lr = q('bomQty', 'SELECT ' + (kind === 'onhand' || kind === 'forres' ? 'SUM' : 'MAX') + '(M_Warehouse_ID) AS w FROM M_Locator WHERE M_Locator_ID=?', [L])[0];
+        wh = lr ? lr.w : null;
+      }
+      if (wh == null) return BD.ZERO;
+      var pr = q('bomQty', 'SELECT IsBOM AS b, ProductType AS t, IsStocked AS s FROM M_Product WHERE M_Product_ID=?', [P])[0] || {};   // not found = NULLs, no exception
+      var onhand = kind === 'onhand' || kind === 'forres', v_Quantity = BD.of(99999);
+      function stock(prod) {
+        if (onhand) {
+          var lt = kind === 'forres' && hasTable('M_LocatorType');
+          var r = q('bomQty', 'SELECT COALESCE(SUM(s.QtyOnHand), 0) AS v FROM M_StorageOnHand s JOIN M_Locator l ON (s.M_Locator_ID=l.M_Locator_ID)' + (lt ? ' LEFT JOIN M_LocatorType lt ON (l.M_LocatorType_ID=lt.M_LocatorType_ID)' : '') +
+            ' WHERE s.M_Product_ID=? AND l.M_Warehouse_ID=?' + (lt ? " AND COALESCE(lt.IsAvailableForReservation,'Y')='Y'" : ''), [prod, wh])[0];
+          return D(r ? r.v : 0);
+        }
+        var r2 = q('bomQty', "SELECT COALESCE(SUM(Qty), 0) AS v FROM M_StorageReservation WHERE M_Product_ID=? AND M_Warehouse_ID=? AND IsSOTrx=? AND IsActive='Y'", [prod, wh, kind === 'ordered' ? 'N' : 'Y'])[0];
+        return D(r2 ? r2.v : 0);
+      }
+      if (pr.b === 'N' && (pr.t !== 'I' || pr.s === 'N')) return onhand ? BD.of(99999) : BD.ZERO;
+      if (pr.s === 'Y') return stock(P);
+      q('bomQty', "SELECT b.M_ProductBOM_ID AS id, b.BOMQty AS qty, p.IsBOM AS isbom, p.IsStocked AS st, p.ProductType AS pt, p.IsVerified AS ver FROM M_Product_BOM b, M_Product p WHERE b.M_ProductBOM_ID=p.M_Product_ID AND b.M_Product_ID=? AND b.M_ProductBOM_ID != ? AND b.IsActive='Y'", [P, P]).forEach(function (bom) {
+        var pq;
+        if (bom.pt === 'I' && bom.st === 'Y') { pq = pdiv(stock(kind === 'ordered' ? P : bom.id), D(bom.qty)); if (pq.compareTo(v_Quantity) < 0) v_Quantity = pq; }   // bomQtyOrdered: parent id (live body)
+        else if (bom.isbom === 'Y' && bom.ver === 'Y') { pq = self(bom.id, wh, L, depth + 1); if (pq != null && pq.compareTo(v_Quantity) < 0) v_Quantity = pq; }
+      });
+      if (!onhand && v_Quantity.compareTo(BD.of(99999)) === 0) return BD.ZERO;
+      if (v_Quantity.signum() > 0) {
+        var u = q('bomQty', 'SELECT COALESCE(MAX(u.StdPrecision), 0) AS p FROM C_UOM u, M_Product p WHERE u.C_UOM_ID=p.C_UOM_ID AND p.M_Product_ID=?', [P])[0];
+        return v_Quantity.setScale(Number(u ? u.p : 0), RM.DOWN);                                       // TRUNC(v_Quantity, v_StdPrecision) - round down
+      }
+      return BD.ZERO;
+    };
+    return function (P, W, L) { return self(P, W, L, 0); };
+  }
+  F.bomqtyonhand = bomQty('onhand'); F.bomqtyonhandforreservation = bomQty('forres'); F.bomqtyordered = bomQty('ordered'); F.bomqtyreserved = bomQty('reserved');
+  F.bomqtyavailable = function (P, W, L) { var a = F.bomqtyonhandforreservation(P, W, L), b = F.bomqtyreserved(P, W, L); return a == null || b == null ? null : a.subtract(b); };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
     currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
+    bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
     ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
