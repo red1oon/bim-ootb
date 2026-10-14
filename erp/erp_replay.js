@@ -33,13 +33,14 @@
   function normalize(row) {
     var p = (typeof row.parameters === 'string') ? JSON.parse(row.parameters) : (row.parameters || {});
     return { op_uuid: row.op_uuid, timestamp: row.timestamp, op_type: row.op_type,
-             actor: p.actor, target: p.target, doc_type: p.doc_type, owner: p.owner, amount: p.amount };
+             actor: p.actor, target: p.target, doc_type: p.doc_type, owner: p.owner, amount: p.amount, to: p.to, status: p.status };
   }
 
   // replayGuarded — fold the ordered ERP ops into `documents` under the guards. Mirrors
   // poc_distributed.replay(). Returns { applied, rejected:[{op,why}] }.
   //   CREATE   — INSERT OR IGNORE (idempotent; first writer of a uuid sets its owner)
   //   ALLOCATE — owner-gate (G-SINGLE-WRITER): only actor === documents.owner may allocate
+  //   SET_STATUS / HANDOFF — the same owner-gate; HANDOFF transfers ownership (G-ORDERED-HANDOFF, W-MFG-OWN)
   //   CLAIM    — CAS set-if-unset: first claim in total order wins; later claims rejected (no value lost)
   //   (any non-ERP op types — BIM/AD ops sharing the log — are simply not projected here)
   function replayGuarded(db, orderedOps) {
@@ -50,12 +51,21 @@
         db.run('INSERT OR IGNORE INTO documents (uuid,doc_type,owner,status,amount) VALUES (?,?,?,?,?)',
                [op.target, op.doc_type, op.owner, 'drafted', op.amount || 0]);
         applied++;
-      } else if (op.op_type === 'ALLOCATE') {
+      } else if (op.op_type === 'ALLOCATE' || op.op_type === 'SET_STATUS' || op.op_type === 'HANDOFF') {
+        // ONE owner-gate for every owner-only mutation (G-SINGLE-WRITER). HANDOFF = G-ORDERED-HANDOFF: ownership moves only by this op,
+        // applied in the merged total order, so there is never a window with two owners.
         var o = db.exec('SELECT owner,status FROM documents WHERE uuid=?', [op.target]);
         var row = o.length && o[0].values.length ? o[0].values[0] : null;
         if (!row) { rejected.push({ op: op, why: 'no such doc' }); return; }
         if (row[0] !== op.actor) { rejected.push({ op: op, why: 'non-owner (' + op.actor + '≠' + row[0] + ')' }); return; }
-        db.run("UPDATE documents SET status='allocated' WHERE uuid=?", [op.target]);
+        if (op.op_type === 'HANDOFF') {
+          if (!op.to) { rejected.push({ op: op, why: 'handoff without target' }); return; }
+          db.run('UPDATE documents SET owner=? WHERE uuid=?', [op.to, op.target]);
+        } else if (op.op_type === 'SET_STATUS') {
+          db.run('UPDATE documents SET status=? WHERE uuid=?', [op.status, op.target]);
+        } else {
+          db.run("UPDATE documents SET status='allocated' WHERE uuid=?", [op.target]);
+        }
         applied++;
       } else if (op.op_type === 'CLAIM') {
         var c = db.exec('SELECT claimed_by FROM documents WHERE uuid=?', [op.target]);
