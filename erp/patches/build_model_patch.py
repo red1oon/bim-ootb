@@ -19,6 +19,16 @@ out = []; n = 0
 for t in ['ad_message', 'm_inoutlinema', 'm_storagereservationlog', 'm_costdetail', 'm_costhistory', 'm_costqueue', 'ad_workflow', 'ad_wf_node', 'c_conversiontype', 'c_paymentallocate', 'c_orderlandedcost', 'c_orderpayschedule',
           'ad_sequence_no', 't_fact_acct_history', 'c_orderlandedcostallocation', 'ad_sysconfig', 'c_projectissue', 'm_production', 'm_productionline']:   # + core P2P/costing (ERP_MODEL_LAYER.md §CORE-P2P)
     out.append('CREATE TABLE IF NOT EXISTS %s (%s);' % (t, ', '.join('"%s" %s' % (c, aff(d)) for c, d in cols(t))))
+# MANUFACTURING ORDER window 53009 (~/Projects/Mfg/MILESTONE_1_SPEC.md, W-MFG-WIRE): the 8 PP tables its tabs / routing need that the bundle never
+#   shipped (same live-schema extraction), + the columns the two column-short tables lack (PP_Order_Node 30/70, PP_Order_Cost 20/24).
+import sqlite3 as _sq0, os as _os0
+_seed0 = _sq0.connect(_os0.path.join(_os0.path.dirname(_os0.path.abspath(__file__)), '..', 'ad_seed.db'))
+for t in ['pp_order_workflow', 'pp_order_node_product', 'pp_order_node_asset', 'pp_order_nodenext', 'pp_cost_collector', 'pp_cost_collectorma', 'pp_wf_node_product', 'pp_wf_node_asset']:
+    out.append('CREATE TABLE IF NOT EXISTS %s (%s);' % (t, ', '.join('"%s" %s' % (c, aff(d)) for c, d in cols(t))))
+for t in ['pp_order_node', 'pp_order_cost']:
+    have = set(r[1].lower() for r in _seed0.execute('pragma table_info(%s)' % t))
+    for c, d in cols(t):
+        if c not in have: out.append('ALTER TABLE %s ADD COLUMN "%s" %s;' % (t, c, aff(d)))
 for c, d in cols('fact_acct'):
     if c in ('c_locfrom_id', 'c_locto_id', 'c_uom_id', 'ad_orgtrx_id', 'c_activity_id', 'c_campaign_id', 'c_project_id', 'c_salesregion_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id', 'm_warehouse_id'):
         out.append('ALTER TABLE fact_acct ADD COLUMN %s %s;' % (c, aff(d)))
@@ -33,6 +43,14 @@ rows('ad_workflow', WF); rows('ad_wf_node', WF)
 rows('ad_wf_nodenext', 'ad_wf_node_id in (select ad_wf_node_id from ad_wf_node where %s)' % WF)
 rows('ad_message', "value in ('Voided')")   # Msg.getMsg texts the model writes into documents (MOrder.voidIt)
 rows('c_conversiontype', 'true'); rows('m_costqueue', 'ad_client_id=11')
+# Manufacturing Order menu path (W-MFG-WIRE): 53014 Manufacturing Management > 53052 Production Management > 53053 Discreet Manufacturing >
+#   53055 Manufacturing Order (window 53009). Upstream ships all four IsActive='N' (EE01, off by default) so the seed kept their AD_TreeNodeMM
+#   nodes but no AD_Menu rows. Rows copied verbatim from the reference, IsActive forced 'Y' = the ordinary admin activation (precedent: scripts/seed_hba_payroll_windows.js).
+_mc = [c for c, _ in cols('ad_menu')]
+cur.execute('select %s from ad_menu where ad_menu_id in (53014,53052,53053,53055) order by ad_menu_id' % ', '.join('"%s"' % c for c in _mc))
+for r in cur.fetchall():
+    vals = ["'Y'" if c == 'isactive' else lit(v) for c, v in zip(_mc, r)]
+    out.append('INSERT INTO ad_menu (%s) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM ad_menu WHERE ad_menu_id=%s);' % (', '.join('"%s"' % c for c in _mc), ', '.join(vals), r[_mc.index('ad_menu_id')])); n += 1   # ad_menu has no unique key: guard by id
 # Info Product window (bim-compiler prompts/ERP_DEPTH_FILM.md §7): the dictionary rows InfoProductWindow is driven by (AD_InfoWindow 200000 + its AD_InfoColumns)
 rows('ad_infowindow', 'ad_infowindow_id=200000'); rows('ad_infocolumn', 'ad_infowindow_id=200000')
 # M_StorageOnHand / M_StorageReservation: the bundle carries a subset (reservation 2 of the reference's rows) captured earlier —
