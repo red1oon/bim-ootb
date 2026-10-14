@@ -1,0 +1,30 @@
+# OplogPic film v8 "developer cut" (2026-10-15): RAW first (silent, cards, no narration)
+
+Owner brief: a slightly compact film, about 4 min, that includes quite all that is built; opening and closing cards; dev friendly; LAST card says where the project is and gives the ready link, and explains how the op log and local-first made this possible. Raw (silent) first; owner gives the go for English narration, then Mandarin.
+
+**Source rule:** nothing new is claimed. Footage = existing takes (v6: tour, history, edits; v7: poster, qr) plus two NEW takes recorded by `film/record_v8.js` on the LOCAL build (`cutout`, `carry`). Every number shown on a card is read from a `*_facts.tsv` or the witness ledger, never typed. Claims about other editors: none (the v7 prior-art card is NOT reused). Photos need the Unsplash credit line (CREDIT.txt) on the end card.
+
+| # | Chapter | Footage | Features covered | Target s |
+|---|---|---|---|---|
+| 0 | Cover card | blurred frame | name + one line | 4 |
+| 1 | Concept card (dev) | card with one REAL log line (from the poster take's facts) | entry = one JSON line; picture = replay; no server | 8 |
+| 2 | Tools and layers | v6 tour (T1-T7 trimmed) | layers, hide/show, reorder, opacity, 10 blend modes, brushes, smudge, erase, blur brush | 22 |
+| 3 | Design kit | v7 poster P1-B4 | gradient (linear/radial/to clear), shapes, text + outline + shadow, Edit text, undo/redo, live blur, drop shadow | 50 |
+| 4 | Cut-out and filters | NEW `cutout` | photo import + Fill, wand (tol, grow), feather, mask from selection, invert, clip, group, Levels, Gradient map, Sharpen | 40 |
+| 5 | Move and recolour | v6 edits E2, E4-E6 | move/scale, masked Hue/Saturation, live re-edit | 20 |
+| 6 | History proves it | v6 history H2-H6 | preview, Go back, undo/redo, raw entries, Verify | 28 |
+| 7 | Take it with you | v7 qr + NEW `carry` | Save file, Open file with verdict, share link, tampered link refused, Show QR, Export JPEG/PNG/PSD | 38 |
+| 8 | Dev card | card | suites/checks from `witness_log/ledger.jsonl`, KNOWN_OPS, layout of the repo | 8 |
+| 9 | End card | card | repo path, live link, how oplog + local-first made it possible, credits, what is not deployed yet | 24 |
+
+Chapter cards 2.5 s each. Total target 230-250 s.
+
+**Honest limits for the end card:** the live site (`red1oon.github.io/bim-ootb/oplogpic/`) has everything up to export; Save file / Open file / Show QR are built and tested in the repo but NOT deployed (owner decision pending) -- the card says so. Real-phone and iOS are untested. Recorded on a laptop.
+
+**Witness for the raw:** ffprobe duration within 230-250 s, frame count = sum of segments, 0 black frames, every chapter present as a marker, contact sheet inspected frame by frame, `*_facts.tsv` page_errors = 0 for both new takes.
+
+## RAW built 2026-10-15 (silent, no narration; awaiting the owner's go for English, then Mandarin)
+- Output `~/Videos/OplogPic_v8_RAW.mp4` (= `~/Videos/oplogpic_v2_work/v8/OplogPic_v8_RAW_chapters.mp4`): 254.04 s (4:14), 1920x1080 25 fps, 6,351 frames, 10 chapter markers, 0 black frames (blackdetect). Chapters (start / length s): cover 0 / 3.5 · The document is a log 3.5 / 8.0 · 1 Layers and tools 11.5 / 22.4 · 2 Design kit 33.9 / 56.4 · 3 Cut-out and filters 90.3 / 41.3 · 4 Move, scale, recolour 131.6 / 18.0 · 5 History proves it 149.5 / 23.0 · 6 Take it with you 172.6 / 48.3 · Under the hood 220.9 / 9.0 · END card 229.9 / 24.0.
+- Footage: v6 tour / edits / history takes (recorded on the 2026-10-12 build: its buttons still say "Load log / Save log"), v7 poster / qr takes, NEW `cutout` (81.6 s, 0 page errors) and `carry` (64.5 s, 0 page errors) takes by `film/record_v8.js` (needs Node 20: the host's /usr/bin/node is 18.19; used `npm i node@20` in the scratchpad). Facts read from the page: `v8/cutout_facts.tsv`, `v8/carry_facts.tsv` (share link 382 characters, tampered link "Link not opened: not a painting link", Save file 2,762,635 bytes, Open file "Verified: this is the identical picture"). Cards: `film/oplogpic_cards_v8.py`; assembly: `film/build_v8.py` (speeds are raw-cut speeds; the narrated cut will retime). Card numbers come from files: 143-byte gradient entry (v7 poster facts), 45 of 45 suites at commit db3cde7f (witness ledger), 28 log-line kinds (`KNOWN_OPS`).
+- Defect found by this QA and fixed: the Gradient map's colour bar (a `<canvas>`) was drawn at the top-left of the page because of the global `canvas { position:absolute }` rule (same class as the QR bug of 2026-10-14); fix = a `canvas.gmap` rule in `editor/index.html`; seen fixed in the cutout take. NOT yet run through the full witness suite (CSS only).
+- Known flaws left in the raw: in the cut-out, wand tolerance 32 still eats a few sky-blue balloon tiles at the right edge (the clip demo shows the ragged edge); the v6 takes show the older button labels; the END card says Save file / Open file / Show QR are not on the live site yet (true on 2026-10-15: `h-qr` absent from the live page); source link is the feature BRANCH because `poc/psd-oplog` is not on `main`.
