@@ -23,18 +23,37 @@
     return BD.of(String(qtyBom)).multiply(BD.of(String(orderQty))).divide(denom, 8, BD.RoundingMode.HALF_UP).toString();
   }
 
-  // order = { docno, product, qty, bomId, warehouseId, datestart }.  q = read-only (sql, params) -> rows[].  Returns ops[].
-  function explodeOps(q, order) {
-    var hid = 'PP_Product_BOM#' + order.bomId;
+  // ── effectivity (Milestone 4, W-MFG-ASOF): a bound is INCLUSIVE ("Valid from/to including this date (first/last day)", AD_Element). Day granularity: the YYYY-MM-DD prefix,
+  //    compared as ISO strings — no Date object, no clock. An empty/null bound is open.
+  function day(v) { return v == null || v === '' ? '' : String(v).slice(0, 10); }
+  function isEffective(validfrom, validto, asOf) {
+    var f = day(validfrom), t = day(validto), d = day(asOf);
+    if (f && d < f) return false;
+    if (t && d > t) return false;
+    return true;
+  }
+  // the BOM as of a date: header + the lines effective then (+ what was left out and why). Pure; q = read-only (sql, params) -> rows[].
+  function explodeAsOf(q, bomId, asOf) {
+    if (!day(asOf)) throw new Error('asof-required');
+    var hid = 'PP_Product_BOM#' + bomId;
     var hrows = q('SELECT id, metadata FROM items WHERE id=? AND type=?', [hid, 'PP_Product_BOM']);
     if (!hrows.length) throw new Error('template-missing:' + hid);
     var h = meta(hrows[0]);
+    if (!API.isEffective(h.validfrom, h.validto, asOf)) throw new Error('not-effective:' + hid + ' asOf=' + day(asOf) + ' from=' + day(h.validfrom) + ' to=' + day(h.validto));
     var lrows = q('SELECT id, metadata FROM items WHERE parent_id=? AND type=? ORDER BY id', [hid, 'PP_Product_BOMLine']);
-    var lines = lrows.map(function (r) { var m = meta(r); m._tid = r.id; return m; }).sort(function (a, b) { return Number(a.line) - Number(b.line); });
+    var all = lrows.map(function (r) { var m = meta(r); m._tid = r.id; return m; }).sort(function (a, b) { return Number(a.line) - Number(b.line); });
+    var lines = [], excluded = [];
+    all.forEach(function (l) { if (API.isEffective(l.validfrom, l.validto, asOf)) lines.push(l); else excluded.push({ line: Number(l.line), why: 'from=' + day(l.validfrom) + ' to=' + day(l.validto) }); });
+    return { hid: hid, header: h, lines: lines, excluded: excluded, total: all.length };
+  }
+
+  // order = { docno, product, qty, bomId, warehouseId, asOf }.  q = read-only (sql, params) -> rows[].  Returns ops[].
+  function explodeOps(q, order) {
+    var ex = explodeAsOf(q, order.bomId, order.asOf), hid = ex.hid, h = ex.header, lines = ex.lines;
     lines.forEach(function (l) { if (l.isqtypercentage === 'Y') throw new Error('unsupported:isqtypercentage line=' + l.line); });   // not evidenced in legacy: refuse, never guess
     var odoc = 'PP_Order:' + order.docno, ohdr = 'PP_Order_BOM:' + order.docno, ops = [];
     ops.push({ op_type: 'CREATE_DOCUMENT', table: 'PP_Order', uuid: odoc, doc_status: 'DR', documentno: order.docno, m_product_id: order.product, qtyordered: String(order.qty),
-      pp_product_bom_id: order.bomId, m_warehouse_id: order.warehouseId, c_uom_id: h.c_uom_id });
+      pp_product_bom_id: order.bomId, m_warehouse_id: order.warehouseId, c_uom_id: h.c_uom_id, asof: day(order.asOf) });
     ops.push({ op_type: 'CREATE_LINE', table: 'PP_Order_BOM', uuid: ohdr, line_no: 0, template_id: hid,
       fields: Object.assign(pick(h, HDR_COPY), { bomuse: 'M' }) });   // template 'A' -> order 'M' (2 of 2 legacy orders)
     lines.forEach(function (l) {
@@ -56,7 +75,7 @@
     return K;
   }
 
-  var API = { explodeOps: explodeOps, readOrderLines: readOrderLines, register: register, qtyRequired: qtyRequired, WFMC: WFMC, HDR_COPY: HDR_COPY, LINE_COPY: LINE_COPY };
+  var API = { explodeOps: explodeOps, explodeAsOf: explodeAsOf, isEffective: isEffective, readOrderLines: readOrderLines, register: register, qtyRequired: qtyRequired, WFMC: WFMC, HDR_COPY: HDR_COPY, LINE_COPY: LINE_COPY };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.MfgSnapshot = API;
 })(typeof window !== 'undefined' ? window : this);

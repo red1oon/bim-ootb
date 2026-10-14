@@ -20,7 +20,7 @@ M.register(K);
   var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var seed = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   function rows(db, sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; }
-  var ORDERS = rows(seed, 'SELECT pp_order_id, documentno, m_product_id, qtyordered, pp_product_bom_id, m_warehouse_id FROM pp_order WHERE pp_order_id IN (50000,50001) ORDER BY 1');
+  var ORDERS = rows(seed, 'SELECT pp_order_id, documentno, m_product_id, qtyordered, pp_product_bom_id, m_warehouse_id, datestartschedule FROM pp_order WHERE pp_order_id IN (50000,50001) ORDER BY 1');
   var tmplIds = ORDERS.map(function (o) { return o.pp_product_bom_id; });
   function loadTemplate(db, ids) {   // seed rows -> kernel `items` (type + parent_id + metadata = the row's own columns)
     ids.forEach(function (id) {
@@ -31,14 +31,14 @@ M.register(K);
     });
   }
   var q = function (db) { return function (sql, p) { return K.query(db, sql, p); }; };
-  function orderIn(o) { return { docno: o.documentno, product: o.m_product_id, qty: o.qtyordered, bomId: o.pp_product_bom_id, warehouseId: o.m_warehouse_id }; }
+  function orderIn(o) { return { docno: o.documentno, product: o.m_product_id, qty: o.qtyordered, bomId: o.pp_product_bom_id, warehouseId: o.m_warehouse_id, asOf: o.datestartschedule }; }
   function create(db, o, actor) { return K.dispatch(db, { wfmc: M.WFMC, guards: [], query: q(db), actor: actor || 'user:planner', baseTs: 1000 }, { docType: 'PP_Order', action: 'CR', status: 'NEW', order: orderIn(o) }); }
   function scopeHash(db) { return djb(JSON.stringify(K.query(db, 'SELECT * FROM documents ORDER BY id')) + JSON.stringify(K.query(db, 'SELECT * FROM document_lines ORDER BY id'))); }
   function linesOf(db, o) { return M.readOrderLines(q(db), 'PP_Order:' + o.documentno); }
   if (BREAK === 'live') {   // BREAK: the order's lines are explosions of the LIVE template at read time instead of the stored snapshot
     M.readOrderLines = function (qq, uuid) {
       var d = qq('SELECT metadata FROM documents WHERE id=?', [uuid])[0], m = JSON.parse(d.metadata);
-      return M.explodeOps(qq, { docno: m.documentno, product: m.m_product_id, qty: m.qtyordered, bomId: m.pp_product_bom_id, warehouseId: m.m_warehouse_id })
+      return M.explodeOps(qq, { docno: m.documentno, product: m.m_product_id, qty: m.qtyordered, bomId: m.pp_product_bom_id, warehouseId: m.m_warehouse_id, asOf: m.asof })
         .filter(function (op) { return op.op_type === 'CREATE_LINE'; }).map(function (op) { return { id: op.uuid, line_no: op.line_no, table: op.table, fields: op.fields }; });
     };
   }
