@@ -5,7 +5,8 @@
 # usage: build_views_patch.py <ad_seed.db.sql>   (the previous views section, between the markers, is replaced)
 import re, subprocess, sys
 OUT = sys.argv[1]
-VIEWS = ['m_storage', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
+EXTRA_TABLES = ['m_locatortype']      # tables a shipped view/UDF reads that the seed lacks: DDL extracted from the pilot (information_schema); legacy has no rows either
+VIEWS = ['m_storage', 'm_product_stock_v', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
          'rv_requestupdates', 'm_costmovement_v', 'ad_allusers_v', 'ad_allroles_v', 'ad_alluserroles_v', 'ad_allclients_v', 'ad_sessioninfo_v']   # dependency order (rv_c_invoice before its users). m_storage: legacy = a VIEW over M_StorageOnHand/M_StorageReservation; the seed carried a stale 20-row TABLE copy of M_StorageOnHand nobody writes (the model layer writes M_StorageOnHand) - replaced
 BEGIN, END = '-- >>> VIEWS (build_views_patch.py)', '-- <<< VIEWS'
 def pg(sql):
@@ -34,6 +35,15 @@ def _conn():
             try: con.execute(line)
             except Exception: pass
     return con
+def table_ddl(t):
+    cols = pg("select column_name || '|' || data_type from information_schema.columns where table_schema='adempiere' and table_name='%s' order by ordinal_position" % t).splitlines()
+    m = {'numeric': 'NUMERIC', 'integer': 'INTEGER', 'character varying': 'VARCHAR', 'character': 'CHAR', 'text': 'TEXT', 'uuid': 'VARCHAR', 'timestamp without time zone': 'TIMESTAMP', 'timestamp with time zone': 'TIMESTAMP', 'date': 'DATE'}
+    return 'CREATE TABLE IF NOT EXISTS %s (%s);' % (t, ', '.join('"%s" %s' % (c.split('|')[0], m.get(c.split('|')[1], 'VARCHAR')) for c in cols))
+extra = [table_ddl(t) for t in EXTRA_TABLES]
+if extra:                                                                                       # written first so the validation connection (and the loader) see the tables before any view
+    txt0 = open(OUT).read()
+    if BEGIN in txt0: txt0 = txt0[:txt0.index(BEGIN)].rstrip('\n') + '\n' + (txt0[txt0.index(END) + len(END):].lstrip('\n') if END in txt0 else '')
+    open(OUT, 'w').write(txt0.rstrip('\n') + '\n' + BEGIN + '\n' + '\n'.join(extra) + '\n' + END + '\n')
 CON = _conn()
 def is_table(name):
     return CON.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND lower(name)=lower(?)", (name,)).fetchone() is not None
@@ -56,7 +66,7 @@ for v in VIEWS:
 txt = open(OUT).read()
 if BEGIN in txt:
     txt = txt[:txt.index(BEGIN)].rstrip('\n') + '\n' + (txt[txt.index(END) + len(END):].lstrip('\n') if END in txt else '')
-txt = txt.rstrip('\n') + '\n' + BEGIN + '\n' + '\n'.join(stmts) + '\n' + END + '\n'
+txt = txt.rstrip('\n') + '\n' + BEGIN + '\n' + '\n'.join(extra + stmts) + '\n' + END + '\n'
 open(OUT, 'w').write(txt)
 print('§VIEWS-PATCH views=%d emitted=%d statements=%d -> %s' % (len(VIEWS), len([x for x in stmts if x.startswith('CREATE VIEW')]), len(stmts), OUT))
 print('§VIEWS-PATCH NOT-SHIPPED (twin lacks a table/column): ' + '; '.join(skipped))
