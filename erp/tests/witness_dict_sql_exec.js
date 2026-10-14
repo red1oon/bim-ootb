@@ -14,7 +14,8 @@ var log = function (s) { console.log(s); };
 // [table, column, mode]: 'sql' = whole value is SQL; 'atsql' = only values starting @SQL=; 'where' = a WHERE fragment (wrapped)
 var SRC = [['ad_column', 'defaultvalue', 'atsql'], ['ad_process_para', 'defaultvalue', 'atsql'], ['ad_process_para', 'defaultvalue2', 'atsql'], ['ad_val_rule', 'code', 'where'], ['ad_infocolumn', 'selectclause', 'sql'],
   ['ad_infowindow', 'fromclause', 'from'], ['ad_infowindow', 'whereclause', 'where'], ['ad_statusline', 'sqlstatement', 'sql'], ['pa_measurecalc', 'selectclause', 'sql'], ['pa_measurecalc', 'whereclause', 'where', '(SELECT tablename FROM ad_table WHERE ad_table_id=pa_measurecalc.ad_table_id)'],
-  ['ad_tab', 'whereclause', 'where', '(SELECT tablename FROM ad_table WHERE ad_table_id=ad_tab.ad_table_id)'], ['ad_ref_table', 'whereclause', 'where', '(SELECT tablename FROM ad_table WHERE ad_table_id=ad_ref_table.ad_table_id)'], ['ad_field', 'defaultvalue', 'atsql']];
+  ['ad_tab', 'whereclause', 'where', '(SELECT tablename FROM ad_table WHERE ad_table_id=ad_tab.ad_table_id)'], ['ad_ref_table', 'whereclause', 'where', '(SELECT tablename FROM ad_table WHERE ad_table_id=ad_ref_table.ad_table_id)'], ['ad_field', 'defaultvalue', 'atsql'],
+  ['ad_column', 'columnsql', 'expr', '(SELECT tablename FROM ad_table WHERE ad_table_id=ad_column.ad_table_id)'], ['ad_field', 'columnsql', 'expr', "''"]];   // 'expr' = a virtual-column SELECT expression evaluated per row of its table (AD_Column.ColumnSQL)
 (async function main() {
   var SQL = await initSqlJs(), db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
   fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { try { db.run(st); } catch (e) {} } });
@@ -32,7 +33,7 @@ var SRC = [['ad_column', 'defaultvalue', 'atsql'], ['ad_process_para', 'defaultv
     vals.forEach(function (row) {
       var v = String(row[0]), tbl = row[1]; if (m === 'atsql') { if (!/^@SQL=/i.test(v.trim())) return; v = v.trim().replace(/^@SQL=/i, ''); }
       var body = v.replace(/@[^@\s][^@]*@/g, 'NULL'); if (m === 'where') body = body.replace(/^\s*WHERE\s+/i, ''); var quals = {}; (body.match(/\b([A-Za-z_]\w*)\.[A-Za-z_]\w*/g) || []).forEach(function (x) { quals[x.split('.')[0].toLowerCase()] = 1; }); var qt = Object.keys(quals).filter(function (q) { try { return db.exec("SELECT 1 FROM sqlite_master WHERE lower(name)='" + q + "'").length > 0; } catch (e) { return false; } });
-      var from = tbl ? '"' + tbl + '"' : (qt.length ? qt.map(function (q) { return '"' + q + '"'; }).join(',') : null), sql = m === 'where' ? (from ? 'SELECT 1 FROM ' + from + ' WHERE (' + body + ')' : 'SELECT 1 WHERE (' + body + ')') : m === 'from' ? 'SELECT 1 FROM ' + body : body;
+      var from = tbl ? '"' + tbl + '"' : (qt.length ? qt.map(function (q) { return '"' + q + '"'; }).join(',') : null), sql = m === 'expr' ? (tbl ? 'SELECT (' + body + ') FROM "' + tbl + '"' : 'SELECT (' + body + ')') : m === 'where' ? (from ? 'SELECT 1 FROM ' + from + ' WHERE (' + body + ')' : 'SELECT 1 WHERE (' + body + ')') : m === 'from' ? 'SELECT 1 FROM ' + body : body;
       if (!/^\s*(SELECT|WITH)\b/i.test(sql)) return;
       var key = t + '.' + c; perSrc[key] = perSrc[key] || { n: 0, ok: 0 }; perSrc[key].n++; total++;
       try { var st = db.prepare(A.convertSql(sql)); st.free(); ok++; perSrc[key].ok++; }

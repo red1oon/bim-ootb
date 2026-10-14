@@ -98,13 +98,13 @@
   };
   // C_Invoice_v rows of one invoice (the view is absent from the bundle; its definition, transcribed): grandtotal/multipliers by DocBaseType
   function invoiceV(id) {
-    var h = q('invoiceOpen', 'SELECT i.C_Currency_ID AS cur, i.GrandTotal AS gt, i.IsPayScheduleValid AS v, d.DocBaseType AS dbt FROM C_Invoice i JOIN C_DocType d ON i.C_DocType_ID=d.C_DocType_ID WHERE i.C_Invoice_ID=?', [id])[0];
+    var h = q('invoiceOpen', 'SELECT i.C_Currency_ID AS cur, i.GrandTotal AS gt, i.IsPayScheduleValid AS v, d.DocBaseType AS dbt, i.DateAcct AS da FROM C_Invoice i JOIN C_DocType d ON i.C_DocType_ID=d.C_DocType_ID WHERE i.C_Invoice_ID=?', [id])[0];
     if (!h) return [];
     var cm = String(h.dbt || '').charAt(2) === 'C', ap = String(h.dbt || '').charAt(1) === 'P';
     var mult = cm ? BD.fromString('-1.0') : BD.fromString('1.0'), multAP = ap ? BD.fromString('-1.0') : BD.fromString('1.0');
-    if (h.v !== 'Y') { var g = D(h.gt); return [{ cur: h.cur, gt: g == null ? null : (cm ? g.negate() : g), mult: mult, multAP: multAP }]; }
+    if (h.v !== 'Y') { var g = D(h.gt); return [{ cur: h.cur, gt: g == null ? null : (cm ? g.negate() : g), mult: mult, multAP: multAP, da: h.da }]; }
     return q('invoiceOpen', "SELECT DueAmt AS a FROM C_InvoicePaySchedule WHERE C_Invoice_ID=? AND IsValid='Y'", [id]).map(function (s) {
-      var g = D(s.a); return { cur: h.cur, gt: cm ? g.negate() : g, mult: cm ? BD.of(-1) : BD.of(1), multAP: ap ? BD.of(-1) : BD.of(1) };
+      var g = D(s.a); return { cur: h.cur, gt: cm ? g.negate() : g, mult: cm ? BD.of(-1) : BD.of(1), multAP: ap ? BD.of(-1) : BD.of(1), da: h.da };
     });
   }
   function maxBD(list) { var m = null; list.forEach(function (x) { if (x != null && (m == null || x.compareTo(m) > 0)) m = x; }); return m; }
@@ -323,13 +323,14 @@
   };
   // currencyConvertPayment(C_Payment_ID, to, amt, date) — reads the C_Payment_v columns (the view passes them through)
   F.currencyconvertpayment = function (p_C_Payment_ID, p_Currency_To_ID, p_Amt, p_ConversionDate) {
-    var p = q('currencyConvertPayment', 'SELECT AD_Client_ID AS cl, AD_Org_ID AS org, DateAcct AS da, C_Currency_ID AS cur, C_ConversionType_ID AS ct, CurrencyRate AS rate, ConvertedAmt AS conv, PayAmt AS pay, IsOverrideCurrencyRate AS ov FROM C_Payment WHERE C_Payment_ID=?', [p_C_Payment_ID])[0] || {};
+    var p = q('currencyConvertPayment', 'SELECT AD_Client_ID AS cl, AD_Org_ID AS org, DateAcct AS da, C_Currency_ID AS cur, C_ConversionType_ID AS ct, CurrencyRate AS rate, ConvertedAmt AS conv, PayAmt AS pay, IsOverrideCurrencyRate AS ov, IsReceipt AS rc FROM C_Payment WHERE C_Payment_ID=?', [p_C_Payment_ID])[0] || {};
+    var payV = p.pay == null ? null : (p.rc === 'Y' ? D(p.pay) : D(p.pay).negate());                    // C_Payment_v: PayAmt * -1 unless IsReceipt='Y'
     var b = p.cl == null ? null : q('currencyConvertPayment', 'SELECT sc.C_Currency_ID AS c FROM AD_ClientInfo ci JOIN C_AcctSchema sc ON ci.C_AcctSchema1_ID=sc.C_AcctSchema_ID WHERE ci.AD_Client_ID=?', [p.cl])[0];
     var base = b ? b.c : null, rate = p.rate == null ? BD.ZERO : D(p.rate), cv = p.conv == null ? BD.ZERO : D(p.conv);
     if (base != null && p_Currency_To_ID != null && Number(base) === Number(p_Currency_To_ID) && rate.signum() > 0 && cv.signum() !== 0 && p.cur != null && Number(p.cur) !== Number(p_Currency_To_ID) && p.ov === 'Y') {
       return p_Amt == null ? D(p.conv) : F.currencyround(D(p_Amt).multiply(D(p.rate)), p_Currency_To_ID, null);
     }
-    return F.currencyconvert(p_Amt != null ? D(p_Amt) : (p.pay == null ? null : D(p.pay)), p.cur, p_Currency_To_ID, p_ConversionDate != null ? p_ConversionDate : p.da, p.ct, p.cl, p.org);
+    return F.currencyconvert(p_Amt != null ? D(p_Amt) : payV, p.cur, p_Currency_To_ID, p_ConversionDate != null ? p_ConversionDate : p.da, p.ct, p.cl, p.org);
   };
   // prodQtyOrdered / prodQtyReserved(product, warehouse) — unprocessed M_ProductionLine quantities of a stocked product; every other path returns 0
   function prodQty(sign) {
@@ -469,12 +470,62 @@
   }
   F.bomqtyonhand = bomQty('onhand'); F.bomqtyonhandforreservation = bomQty('forres'); F.bomqtyordered = bomQty('ordered'); F.bomqtyreserved = bomQty('reserved');
   F.bomqtyavailable = function (P, W, L) { var a = F.bomqtyonhandforreservation(P, W, L), b = F.bomqtyreserved(P, W, L); return a == null || b == null ? null : a.subtract(b); };
+
+  // ── stage 3e: paymentAvailable / invoiceOpenToDate / acctBalance (pg_get_functiondef on the pilot) ──
+  F.paymentavailable = function (p_C_Payment_ID) {
+    var ch = q('paymentAvailable', 'SELECT MAX(PayAmt) AS v FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [p_C_Payment_ID])[0];
+    if (ch && ch.v != null) return BD.ZERO;                                                           // a Charge payment has nothing available
+    var pv = q('paymentAvailable', 'SELECT C_Currency_ID AS cur, PayAmt AS pay, IsReceipt AS rc FROM C_Payment WHERE C_Payment_ID=?', [p_C_Payment_ID])[0] || {};
+    var cur = pv.cur == null ? null : pv.cur, v_Precision = prec(cur), v_Min = v_Precision == null ? null : new BD(1n, v_Precision);
+    var avail = pv.pay == null ? null : (pv.rc === 'Y' ? D(pv.pay) : D(pv.pay).negate());              // C_Payment_v
+    q('paymentAvailable', "SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, a.C_Currency_ID AS cur, a.DateTrx AS dt FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Payment_ID=? AND a.IsActive='Y'", [p_C_Payment_ID]).forEach(function (r) {
+      var conv = F.currencyconvert(D(r.amt), r.cur, cur, r.dt, null, r.cl, r.org);
+      avail = (avail == null || conv == null) ? null : avail.subtract(D(conv));
+    });
+    if (avail != null && v_Min != null && avail.compareTo(v_Min.negate()) > 0 && avail.compareTo(v_Min) < 0) avail = BD.ZERO;
+    if (v_Precision == null) return null;
+    return round(avail == null ? BD.ZERO : avail, v_Precision);
+  };
+  F.invoiceopentodate = function (p_C_Invoice_ID, p_C_InvoicePaySchedule_ID, p_DateAcct) {
+    var lim = tsq(p_DateAcct);
+    var rows = lim == null ? [] : invoiceV(p_C_Invoice_ID).filter(function (r) { var d = tsq(r.da); return d != null && d <= lim; });
+    var v_Currency_ID = rows.length ? rows.map(function (r) { return Number(r.cur); }).reduce(function (a, b) { return Math.max(a, b); }) : null;
+    var v_Total = null; rows.forEach(function (r) { if (r.gt != null) v_Total = v_Total == null ? r.gt : v_Total.add(r.gt); });
+    var v_MultAP = maxBD(rows.map(function (r) { return r.multAP; })), v_MultCM = maxBD(rows.map(function (r) { return r.mult; }));
+    var v_Precision = prec(v_Currency_ID), v_Min = v_Precision == null ? null : new BD(1n, v_Precision), v_Paid = BD.ZERO;
+    if (lim != null) q('invoiceOpenToDate', "SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, al.DiscountAmt AS dis, al.WriteOffAmt AS wo, a.C_Currency_ID AS cur, a.DateTrx AS dt FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Invoice_ID=? AND a.DateAcct <= ? AND a.IsActive='Y'", [p_C_Invoice_ID, lim]).forEach(function (ar) {
+      var t = D(ar.amt).add(D(ar.dis)).add(D(ar.wo)), conv = F.currencyconvert(v_MultAP == null ? null : t.multiply(v_MultAP), ar.cur, v_Currency_ID, ar.dt, null, ar.cl, ar.org);
+      v_Paid = (v_Paid == null || conv == null) ? null : v_Paid.add(D(conv));
+    });
+    if (p_C_InvoicePaySchedule_ID != null && Number(p_C_InvoicePaySchedule_ID) > 0) {
+      var rem = v_Paid;
+      q('invoiceOpenToDate', "SELECT C_InvoicePaySchedule_ID AS id, DueAmt AS a FROM C_InvoicePaySchedule WHERE C_Invoice_ID=? AND IsValid='Y' ORDER BY DueDate", [p_C_Invoice_ID]).forEach(function (sc) {
+        var due = D(sc.a);
+        if (Number(sc.id) === Number(p_C_InvoicePaySchedule_ID)) { v_Total = (v_MultCM == null || rem == null) ? null : due.multiply(v_MultCM).subtract(rem); if (rem != null && due.subtract(rem).signum() < 0) v_Total = BD.ZERO; }
+        else { rem = rem == null ? null : rem.subtract(due); if (rem != null && rem.signum() < 0) rem = BD.ZERO; }
+      });
+    } else v_Total = (v_Total == null || v_Paid == null) ? null : v_Total.subtract(v_Paid);
+    if (v_Total != null && v_Min != null && v_Total.compareTo(v_Min.negate()) > 0 && v_Total.compareTo(v_Min) < 0) v_Total = BD.ZERO;
+    if (v_Precision == null) return null;
+    return round(v_Total == null ? BD.ZERO : v_Total, v_Precision);
+  };
+  F.acctbalance = function (p_Account_ID, p_AmtDr, p_AmtCr) {
+    if (p_AmtDr == null || p_AmtCr == null) return null;
+    var bal = D(p_AmtDr).subtract(D(p_AmtCr));
+    if (p_Account_ID != null && Number(p_Account_ID) > 0) {
+      var ev = q('acctBalance', 'SELECT AccountType AS t, AccountSign AS s FROM C_ElementValue WHERE C_ElementValue_ID=?', [p_Account_ID])[0] || {}, sign = ev.s;
+      if (sign === 'N') sign = (ev.t === 'A' || ev.t === 'E') ? 'D' : 'C';
+      if (sign === 'C') bal = D(p_AmtCr).subtract(D(p_AmtDr));
+    }
+    return bal;
+  };
   M.SqlFn = F;
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
     currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
     bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
+    paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
     ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
   function conv(v) { if (v instanceof BD) return out(v); if (v instanceof Timestamp) return v.toString(); return v; }
