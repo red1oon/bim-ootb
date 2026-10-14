@@ -212,23 +212,11 @@
       this.saveLine(er.c_dunningrunentry_id, f, C_Currency_ID, Number(er.c_currency_id));
       return true;
     };
-    // paymentAvailable(C_Payment_ID) — PL/pgSQL port: PayAmt (C_Payment_v) less allocations converted, ignore-rounding, ROUND to precision
-    DunningRunCreate.prototype.paymentAvailable = function (payId) {
-      var A = X.A, trx = this.get_TrxName(), S = P.PSTK;
-      var ch = trx.q('SELECT MAX(PayAmt) AS m FROM C_Payment WHERE C_Payment_ID=? AND C_Charge_ID > 0', [payId])[0];
-      if (ch && ch.m != null) return A.Env.ZERO;
-      var p = trx.q('SELECT C_Currency_ID AS c, PayAmt AS a FROM C_Payment_v WHERE C_Payment_ID=?', [payId])[0];
-      var avail = MT.bd(p.a), prec = MT.currencyStdPrecision(trx, p.c), min = A.BigDecimal.fromString(prec > 0 ? '0.' + new Array(prec).join('0') + '1' : '1');   // 1/10^prec
-      trx.q('SELECT a.AD_Client_ID AS cl, a.AD_Org_ID AS org, al.Amount AS amt, a.C_Currency_ID AS cur, a.DateTrx AS d FROM C_AllocationLine al INNER JOIN C_AllocationHdr a ON (al.C_AllocationHdr_ID=a.C_AllocationHdr_ID) WHERE al.C_Payment_ID=? AND a.IsActive=?', [payId, 'Y'])
-        .forEach(function (r) { var v = r.cur === p.c ? MT.bd(r.amt) : MT.bd(trx.q('SELECT currencyConvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(r.amt), r.cur, p.c, r.d, r.cl, r.org])[0].v); avail = avail.subtract(v); });
-      if (avail.compareTo(min.negate()) > 0 && avail.compareTo(min) < 0) avail = A.Env.ZERO;
-      return avail.setScale(prec, A.RoundingMode.HALF_UP);
-    };
     // addPayments :369-431
     DunningRunCreate.prototype.addPayments = function (level) {
       var A = X.A, R = A.RUNTIME, trx = this.get_TrxName(), self = this, S = P.PSTK, count = 0;
       R.M.ensureView('c_payment_v');
-      var sql = 'SELECT C_Payment_ID, C_Currency_ID, PayAmt, C_Payment_ID, C_BPartner_ID FROM C_Payment_v p WHERE AD_Client_ID=? ' +
+      var sql = 'SELECT C_Payment_ID, C_Currency_ID, PayAmt, paymentAvailable(C_Payment_ID) AS OpenAmt, C_BPartner_ID FROM C_Payment_v p WHERE AD_Client_ID=? ' +   // java column 4 = the stored function (one implementation)
         "AND IsAllocated='N' AND C_BPartner_ID IS NOT NULL AND C_Charge_ID IS NULL AND DocStatus IN ('CO','CL') " +
         'AND EXISTS (SELECT * FROM C_DunningLevel dl WHERE dl.C_DunningLevel_ID=? AND dl.C_Dunning_ID IN (SELECT COALESCE(bp.C_Dunning_ID, bpg.C_Dunning_ID) FROM C_BPartner bp INNER JOIN C_BP_Group bpg ON (bp.C_BP_Group_ID=bpg.C_BP_Group_ID) WHERE p.C_BPartner_ID=bp.C_BPartner_ID))';
       var args = [this.getAD_Client_ID(), level.c_dunninglevel_id];
@@ -240,8 +228,7 @@
       if (this.p_AD_Org_ID !== 0) sql += ' AND p.AD_Org_ID=' + this.p_AD_Org_ID;
       try {
         trx.q(sql, args).forEach(function (r) {
-          var keys = Object.keys(r), v = keys.map(function (k) { return r[k]; });
-          var C_Payment_ID = Number(v[0]), C_Currency_ID = Number(v[1]), PayAmt = MT.bd(v[2]).negate(), OpenAmt = self.paymentAvailable(C_Payment_ID).negate(), C_BPartner_ID = Number(v[4]);
+          var C_Payment_ID = Number(r.c_payment_id), C_Currency_ID = Number(r.c_currency_id), PayAmt = MT.bd(r.payamt).negate(), OpenAmt = (r.openamt == null ? A.Env.ZERO : MT.bd(r.openamt)).negate(), C_BPartner_ID = Number(r.c_bpartner_id);
           if (A.Env.ZERO.compareTo(OpenAmt) === 0) return;
           if (self.createPaymentLine(C_Payment_ID, C_Currency_ID, PayAmt, OpenAmt, C_BPartner_ID, Number(level.c_dunninglevel_id))) count++;
         });
