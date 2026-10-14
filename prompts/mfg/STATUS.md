@@ -15,6 +15,7 @@ Each milestone has its own spec + result section (`MILESTONE_n_SPEC.md`); eviden
 | 8 | W-MFG-LEASE | DONE | real double-booking of resource 50000 by orders 8000/8001 refused; ordered expiry; legacy allows overlap so leases are additive |
 | 9 | W-MFG-TRACE | NOT STARTED | needs the cost collector (PP_Cost_CollectorMA) |
 | 10 | W-MFG-WHATIF | DONE | what-if = discarded BLUE FUTURE branch; found + fixed `ERPKernel.replay` leaking branch ops and `apply` ignoring a branch |
+| L1 | W-LIBERO-BUNDLE (slices 1+2) | DONE | `erp/plugins/libero_manufacturing.mjs` + `libero_pporder.mjs`: lazy bundle, PP_Order + BOM explosion + ROUTING snapshot + MRP + delete semantics through Trx; 31 witness checks + 7 breaks red + real-browser lifecycle. Source-vs-seed deltas declared (spec top). Open: `§LIBERO-DOUBLE-EXPLODE`, host refusal-on-AFTER_SAVE does not roll back |
 | H1 | W-PLUGIN-LIFECYCLE | DONE | plugin STOP restores the registries exactly (hash), stacking in any order, atomic start, hot chunks, restore, boot hydration (was only on pill open) |
 | H2 | lazy activation + OSGi console | DONE | STARTING state, `need()` at `applyOp`, signed PLUGIN_ACTIVATE (18 lifecycle checks, real-browser lazy test incl. a "too-late seam" proof); Felix-style Bundles console in Plugins & Releases (8 node + 9 browser checks) |
 

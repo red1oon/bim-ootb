@@ -1,0 +1,12 @@
+═══ W-PLUGIN-RELEASE-LIVE — Plugin Management + the gated Release/Update surface iDempiere lacks ═══
+  release="Running: v844✓ up to dateCheck for updatesThis app is pinned to its release until you update it — a release/update surface iDempiere has no in-app equivalent of."
+  ✓ login info panel carries a "Plugins & Releases" link
+  ✓ the link opens the Plugins & Releases page
+  ✓ page has the two sections: Release · Bundles (OSGi console)
+  ✓ Release section shows the running release (sw CACHE_VERSION) — Running: v844✓ up to dateCheck for updatesThis app is pinned
+  ✓ Release offers Check-for-updates (or shows a held update) — gated, not auto-latest
+  ✓ release state read from the live SW (running version logged)
+  ✓ the console lists the system bundle (Id 0) and our built-in modules as Active bundles — rows=14 core=1 opt=14
+  ✓ the console shows the Felix summary sentence — Bundle information: 14 bundles in total - all 14 bundles active.
+  ✓ zero page errors
+═══ W-PLUGIN-RELEASE-LIVE: 9 PASS / 0 FAIL ═══
