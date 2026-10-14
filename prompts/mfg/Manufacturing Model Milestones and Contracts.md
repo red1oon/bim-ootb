@@ -2,6 +2,18 @@
 
 Oct 14, 2026 · @Redhuan Oon
 
+## Status update 2026-10-15 (corrections from the build; the original text below is kept, these notes override it)
+
+This document was a draft. Building and witnessing it found the following, each with its evidence in `MILESTONE_n_SPEC.md`, `CONVENTIONS_STUDY.md` and `PLUGIN_ARCHITECTURE.md`:
+
+- **Snapshot is at order CREATION, not release (rule 3, W-MFG-SNAP).** The reference iDempiere database has two manufacturing orders, both still `DR`, and both already carry their BOM, workflow and node snapshot rows. The twin rule makes legacy the oracle. Editing a template after the order exists never changes the order's lines (witnessed).
+- **Manufacturing is a plugin, not core, and writes real tables.** The shipped product writes real tables through the model layer (`registerModel` / `registerDocAction` writing through a `Trx`), not through the 5-table kernel verbs of rule 1; the kernel-verb versions of M3, M5 and M10 prove the logic against legacy rows and are to be re-homed into the Libero bundle. Libero is an OSGi-style bundle (installed, started, lazily activated, stopped) on our plugin registry; see `PLUGIN_ARCHITECTURE.md` and `HOST_PLUGIN_LIFECYCLE_SPEC.md`.
+- **BOM effectivity (rule 4, W-MFG-ASOF)** follows `MPPProductBOM.isValidFromTo` exactly: an exact timestamp comparison (`date.before(validFrom)`, `date.after(validTo)`), active lines only ordered by `Line`, and a header that is not valid on the date is the null BOM. "Day granularity, inclusive last day" in the draft was wrong.
+- **The Maintenance row of the layers table is loose.** Measured: `MP_Maintain`, `MP_OT` and `MP_OT_Request` are `documents`; the task and resource children are `document_lines`; setup, meter and prognosis tables are `items`.
+- **Cost Collector (W-MFG-POST).** Legacy iDempiere (CLIENT_ACCOUNTING = I) refuses to complete a `PP_Cost_Collector` or `PP_Order` ("Doc Class invalid"), so a stopped bundle must refuse the same way. With the bundle active, the posting is `Doc_PPCostCollector` (debit and credit pairs per cost element, driven by the `M_CostDetail` rows the cost engine creates on completion): recorded from source in `CONVENTIONS_STUDY.md` §10-11.
+- **Routing.** The Libero model copies the `AD_Workflow` nodes into `PP_Order_Workflow` / `PP_Order_Node`: keep `AD_Workflow` for parity (open question 2 answered by the source).
+- **Vendor comparison.** The Odoo, ERPNext and SAP statements remain indicative, not measured.
+
 ## Status
 
 The layer design is a sound draft, but only the repo facts below are verified; the rest is proposal until each milestone passes.
