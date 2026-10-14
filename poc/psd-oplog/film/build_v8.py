@@ -1,7 +1,7 @@
-# ⚠ DO NOT REMOVE — Scope: build the OplogPic v8 developer-cut RAW (silent) film from existing takes (v6 tour/history/edits, v7 poster/qr) and the two new takes (v8 cutout/carry), the cards, chapter markers and timeline.json.
+# ⚠ DO NOT REMOVE — Scope: build the OplogPic v8 developer-cut RAW (silent) film from existing takes (v6 tour/history/edits, v7 poster/qr) and the two new takes (v8 cutout/carry), the cards, chapter markers and timeline{SFX}.json.
 # Read the log after every run: §V8 lines (durations per chapter, total, windows). usage: python3 build_v8.py   (needs ~/Videos/oplogpic_v2_work/{v6,v7,v8}, cards in v8/cards; ffmpeg)
 import os, subprocess, json, csv
-R = os.path.expanduser('~/Videos/oplogpic_v2_work'); V = R + '/v8'; S = V + '/seg'; os.makedirs(S, exist_ok=True)
+R = os.path.expanduser('~/Videos/oplogpic_v2_work'); V = R + '/v8'; SFX = os.environ.get('V8_SUFFIX', ''); CARDS = os.environ.get('V8_CARDS', 'cards'); S = V + '/seg' + SFX; os.makedirs(S, exist_ok=True)
 for f in os.listdir(S): os.remove(os.path.join(S, f))
 ENC = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '25', '-an']
 def run(a): subprocess.run(['ffmpeg', '-v', 'error', '-y'] + a, check=True)
@@ -21,19 +21,19 @@ t = 0.0; TL = {}
 for p in plan:
     if p[0] == 'card':
         name = p[1]; sec = CD[name]
-        run(['-loop', '1', '-t', str(sec), '-i', f'{V}/cards/{name}.png', '-vf', f'scale=1920:1080,fade=t=in:st=0:d=0.35,fade=t=out:st={sec-0.35}:d=0.35,format=yuv420p'] + ENC + [f'{S}/{name}.mp4']); TL[name] = dict(start=t, len=sec); L = sec
+        run(['-loop', '1', '-t', str(sec), '-i', f'{V}/{CARDS}/{name}.png', '-vf', f'scale=1920:1080,fade=t=in:st=0:d=0.35,fade=t=out:st={sec-0.35}:d=0.35,format=yuv420p'] + ENC + [f'{S}/{name}.mp4']); TL[name] = dict(start=t, len=sec); L = sec
     else:
         _, name, src, a, b, sp = p
         run(['-ss', str(a), '-to', str(b), '-i', SRC[src], '-vf', f'scale=1920:1080,setpts=PTS/{sp},fade=t=in:st=0:d=0.25,format=yuv420p'] + ENC + [f'{S}/{name}.mp4']); L = dur(f'{S}/{name}.mp4'); TL[name] = dict(start=t, len=L, src=src, a=a, b=b, sp=sp)
     t += L
 order = [p[1] for p in plan]; open(f'{S}/list.txt', 'w').write(''.join(f"file '{S}/{n}.mp4'\n" for n in order))
-run(['-f', 'concat', '-safe', '0', '-i', f'{S}/list.txt', '-c', 'copy', f'{V}/OplogPic_v8_RAW.mp4']); total = dur(f'{V}/OplogPic_v8_RAW.mp4')
+run(['-f', 'concat', '-safe', '0', '-i', f'{S}/list.txt', '-c', 'copy', f'{V}/OplogPic_v8_RAW{SFX}.mp4']); total = dur(f'{V}/OplogPic_v8_RAW{SFX}.mp4')
 chap = [('Cover', ['cover']), ('The document is a log', ['c1']), ('1 Layers and tools', ['c2', 't1']), ('2 Design kit', ['c3', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7']), ('3 Cut-out and filters', ['c4', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7']), ('4 Move, scale, recolour', ['c5', 'e1', 'e2']), ('5 History proves it', ['c6', 'h1', 'h2', 'h3', 'h4']), ('6 Take it with you', ['c7', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7', 'k8']), ('Under the hood', ['c8']), ('Try it. Read it. Fork it.', ['end'])]
 meta = [';FFMETADATA1']; tt = 0.0; summ = []
 for title, segs in chap:
     ln = sum(TL[s]['len'] for s in segs); meta.append('[CHAPTER]\nTIMEBASE=1/1000\nSTART=%d\nEND=%d\ntitle=%s' % (round(tt * 1000), round((tt + ln) * 1000), title)); summ.append((title, round(tt, 1), round(ln, 1))); tt += ln
 open(f'{S}/chapters.txt', 'w').write('\n'.join(meta) + '\n')
-run(['-i', f'{V}/OplogPic_v8_RAW.mp4', '-i', f'{S}/chapters.txt', '-map', '0', '-map_metadata', '1', '-map_chapters', '1', '-c', 'copy', f'{V}/OplogPic_v8_RAW_chapters.mp4'])
-json.dump({'total': total, 'segments': TL, 'chapters': summ}, open(f'{V}/timeline.json', 'w'), indent=1)
+run(['-i', f'{V}/OplogPic_v8_RAW{SFX}.mp4', '-i', f'{S}/chapters.txt', '-map', '0', '-map_metadata', '1', '-map_chapters', '1', '-c', 'copy', f'{V}/OplogPic_v8_RAW{SFX}_chapters.mp4'])
+json.dump({'total': total, 'segments': TL, 'chapters': summ}, open(f'{V}/timeline{SFX}.json', 'w'), indent=1)
 print('§V8 raw cut %.2f s' % total)
 for c in summ: print('§V8 chapter %-28s start %6.1f  len %5.1f' % c)
