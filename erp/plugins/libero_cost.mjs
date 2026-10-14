@@ -101,6 +101,7 @@ export function create(ctx) {
   // StorageEngine.createTransaction :49-140. Throws on a storage failure (Java: AdempiereException).
   function createTransaction(trx, cc, mt, date, qty, whId) {
     const product = trx.get('m_product', cc.m_product_id), incoming = mt.charAt(1) === '+'; if (!stocked(product)) return;
+    if (!(Number(cc.m_locator_id || 0) > 0)) throw new Error('M_Locator_ID is mandatory for a stock transaction (MTransaction)');   // beforeSave defaults it from the warehouse; a record that skipped beforeSave has none
     checkMaterialPolicy(trx, cc, mt, date, whId, product);
     const cur = trx.get('pp_cost_collector', cc.pp_cost_collector_id), tr = ML.D;
     const move = (asi, q, dmp) => {
@@ -133,7 +134,9 @@ export function create(ctx) {
     const oc = trx.find('pp_order_cost', { pp_order_id: cc.pp_order_id, ad_client_id: trx.env.client, ad_org_id: d.org, m_product_id: product.m_product_id, m_attributesetinstance_id: d.asi, c_acctschema_id: as.c_acctschema_id, m_costtype_id: as.m_costtype_id, m_costelement_id: element.m_costelement_id })[0];
     return oc ? roundCost(trx, dec(oc.currentcostprice).add(dec(oc.currentcostpricell)), as) : ZERO;
   }
-  const firstDetail = (trx, ccId) => trx.find('m_costdetail', { pp_cost_collector_id: ccId }, ['m_costdetail_id'])[0] || null;
+  // CostEngine.getCostDetail(cc) is `.first()` with no ORDER BY = the first row INSERTED = the first acct schema x the first Standard element (the creation loops' order). Key order is NOT used: a sidecar-projected row carries a negative synthetic key, so ascending key order would be reverse creation order.
+  const firstDetail = (trx, ccId) => { const ds = trx.find('m_costdetail', { pp_cost_collector_id: ccId }); if (!ds.length) return null; const sch = acctSchemas(trx, ds[0].ad_org_id).map((a) => String(a.c_acctschema_id)), els = elements(trx).map((e) => String(e.m_costelement_id));
+    const rank = (d) => (sch.indexOf(String(d.c_acctschema_id)) + 1 || 99) * 1000 + (els.indexOf(String(d.m_costelement_id)) + 1 || 999); return ds.slice().sort((a, b) => rank(a) - rank(b))[0]; };
   function calculateFG(trx, current, isVar) {                // :220-272
     const mo = trx.get('pp_order', current.pp_order_id); let amtIssue = ZERO, delivered = ZERO, foh = ZERO;
     for (const cc of trx.find('pp_cost_collector', { pp_order_id: current.pp_order_id, docstatus: 'CO' })) {
@@ -259,5 +262,7 @@ export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
+  // FSM entry of AD_Table PP_Cost_Collector 53035 (MPPCostCollector: voidIt returns false :506, reActivateIt false :628, reverseAccrualIt false :622; reverseCorrectIt is DEFERRED)
+  if (ctx.docFsm) ctx.docFsm.register(53035, { name: 'PP_Cost_Collector', reActivate: false, rc: false, ra: false, vo: {} });
 }
 export async function deactivate() {}

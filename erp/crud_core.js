@@ -860,6 +860,9 @@
           else if (ds.indexOf('@') >= 0) unresolvedLog.push(spec.col + '="' + ds + '"');
         }
       }
+      // GridField.getDefault stage 1, defaultForSpecialCase -> defaultForActiveField (GridField.java:777-785): a column named IsActive ALWAYS defaults to 'Y', whatever the dictionary says (Libero's EE01 columns carry no DefaultValue;
+      //   without this the New form shows IsActive unchecked and §GT.7 then makes the whole new record read-only). The callout-layer GridField (ad_callout.js:637) already had it; this is the form-spec peer.
+      if (spec.col === 'isactive') spec.default = 'Y';
       // §P7 P7.2 — the DATA-TYPE stage of GridField.getDefault(), reached ONLY when no earlier stage
       // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
       // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
