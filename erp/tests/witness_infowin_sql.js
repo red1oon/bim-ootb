@@ -23,14 +23,15 @@ const log = (s) => console.log(s);
   require(path.join(ERP, 'ad_infowin.js')); const IW = window.AdInfoWindow;
   try { PGROWS('select 1 as x'); } catch (e) { log('§INFOWIN_SQL verdict=INCONCLUSIVE reason="legacy oracle unreachable: docker start postgres"'); process.exit(3); }
   // scratch twin = the pilot's rows for every table the Product Info statement and its functions read
-  const scratch = new SQL.Database(), TABLES = ['m_product', 'm_productprice', 'm_attributeset', 'm_product_po', 'c_bpartner', 'm_storageonhand', 'm_storagereservation', 'm_locator', 'm_warehouse', 'c_uom', 'm_product_bom', 'm_locatortype', 'm_attributesetinstance', 'm_attributeinstance', 'm_attribute'];
+  const scratch = new SQL.Database(), TABLES0 = ['m_product', 'm_productprice', 'm_attributeset', 'm_product_po', 'c_bpartner', 'm_storageonhand', 'm_storagereservation', 'm_locator', 'm_warehouse', 'c_uom', 'm_product_bom', 'm_locatortype', 'c_order', 'c_orderline', 'm_relatedproduct', 'm_substitute', 'ad_org', 'm_pricelist', 'm_productprice', 'c_doctype', 'c_bpartner', 'm_pricelist_version', 'm_attributesetinstance', 'm_attributeinstance', 'm_attribute'];
+  const TABLES = [...new Set(TABLES0)];
   const norm = (v) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/.test(v) ? v.replace('T', ' ').replace(/\.\d+$/, '') : (v && typeof v === 'object' ? JSON.stringify(v) : v);
   for (const t of TABLES) {
     const rows = PGROWS(`select * from ${t}`); if (!rows.length) { const cs = PGROWS(`select column_name as c from information_schema.columns where table_schema='adempiere' and table_name='${t}' order by ordinal_position`).map(x => x.c); scratch.run(`CREATE TABLE "${t}" (${cs.map(c => `"${c}"`).join(',')})`); continue; }   // an empty table keeps its columns
     const cols = Object.keys(rows[0]); scratch.run(`CREATE TABLE "${t}" (${cols.map(c => `"${c}"`).join(',')})`);
     const st = scratch.prepare(`INSERT INTO "${t}" VALUES (${cols.map(() => '?').join(',')})`); rows.forEach(r => st.run(cols.map(c => { const v = norm(r[c]); return v === undefined ? null : v; }))); st.free();
   }
-  const patch = fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8'), vs = patch.slice(patch.indexOf('-- >>> VIEWS'), patch.indexOf('-- <<< VIEWS')).split(/;\s*\n/).map(x => x.replace(/^\s*--[^\n]*\n?/gm, '').trim()).filter(x => /^(DROP VIEW IF EXISTS (m_storage|m_product_stock_v)|CREATE VIEW (m_storage|m_product_stock_v) )/i.test(x));
+  const patch = fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8'), vs = patch.slice(patch.indexOf('-- >>> VIEWS'), patch.indexOf('-- <<< VIEWS')).split(/;\s*\n/).map(x => x.replace(/^\s*--[^\n]*\n?/gm, '').trim()).filter(x => /^(DROP VIEW IF EXISTS (m_storage|m_product_stock_v|m_product_substituterelated_v)|CREATE VIEW (m_storage|m_product_stock_v|m_product_substituterelated_v) )/i.test(x));
   vs.forEach(x => { try { scratch.run(x); } catch (e) {} });                                        // the views exactly as the self-heal loader creates them
   const A = require(path.join(ERP, 'ad_callout.js')); ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(m => require(path.join(ERP, 'callouts', m + '.js')));
   A.RUNTIME.registerSqlFunctions((n, f) => scratch.create_function(n, f));
@@ -45,7 +46,8 @@ const log = (s) => console.log(s);
   log('§INFOWIN_SQL case=unresolved-context built=' + (noCtx ? 'YES' : 'NO') + ' want=NO verdict=' + (noCtx ? 'FAIL' : 'PASS'));
   let failed = noCtx ? 1 : 0, judgedAny = 0;
   const num = (x) => x != null && x !== '' && typeof x !== 'boolean' && !isNaN(Number(x));
-  const key = (r) => JSON.stringify(Object.keys(r).sort().map(k => { const v = r[k]; return [k, v == null ? null : (num(v) ? Math.round(Number(v) * 1e6) / 1e6 : String(v))]; }));
+  const nd = (v) => String(v).replace(/^(\d{4}-\d\d-\d\d)T/, '$1 ').replace(/\.\d+/, '').replace(/[+-]00(:00)?$/, '').replace(/\s+$/, '');   // psql timestamps vs the twin's stored text
+  const key = (r) => JSON.stringify(Object.keys(r).map(k => k.toLowerCase()).sort().map(k => { const v = r[Object.keys(r).find(x => x.toLowerCase() === k)]; return [k, v == null ? null : (num(v) ? Math.round(Number(v) * 1e6) / 1e6 : nd(v))]; }));
   const cases = [['wh103', { M_Warehouse_ID: 103 }, []], ['wh104', { M_Warehouse_ID: 104 }, []], ['wh103 Name like', { M_Warehouse_ID: 103 }, [{ def: byName('Name'), value: 'a' }]], ['wh103 Value like', { M_Warehouse_ID: 103 }, [{ def: byName('Value'), value: 'S' }]]];
   for (const [label, ctx, cv] of cases) {
     const b = IW.buildInfoSql(def, ctx, cv, hook, 11, disp); if (!b) { log('§INFOWIN_SQL case=' + label + ' verdict=FAIL reason="builder returned null"'); failed++; continue; }
@@ -63,19 +65,24 @@ const log = (s) => console.log(s);
     if (v === 'PASS') judgedAny++;
   }
   // 2. the detail tabs (InfoProductWindow.renderContentPane / initAtpTab): the SAME statement text on legacy and twin
-  const prods = PGROWS("select distinct m_product_id as p from (select m_product_id from m_storageonhand union select m_product_id from m_storagereservation) x order by 1 limit 24").map(r => r.p);
+  const prods = PGROWS("select distinct m_product_id as p from (select m_product_id from m_storageonhand union select m_product_id from m_storagereservation) x order by 1 limit 24").map(r => r.p).concat(PGROWS('select distinct m_product_id as p from m_product_substituterelated_v').map(r => r.p)).filter((v, i, a) => a.indexOf(v) === i);   // + every product that HAS substitutes/related rows
   const sub = (b) => { let i = 0; return b.sql.replace(/\?/g, () => { const v = b.params[i++]; return typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'"; }); };
   const runPair = (label, b) => {
     let L, T; try { L = PGROWS(sub(b)); } catch (e) { log('§INFOWIN_SQL tab=' + label + ' verdict=FAIL reason="legacy rejected: ' + String(e.message).slice(0, 160) + '"'); return 'FAIL'; }
     try { const st = scratch.prepare(A.convertSql(b.sql)); st.bind(b.params); T = []; while (st.step()) T.push(st.getAsObject()); st.free(); } catch (e) { log('§INFOWIN_SQL tab=' + label + ' verdict=FAIL reason="twin rejected: ' + String(e.message).slice(0, 160) + '"'); return 'FAIL'; }
     const lm = new Map(); L.forEach(r => { const k = key(r); lm.set(k, (lm.get(k) || 0) + 1); }); let miss = 0; T.forEach(r => { const k = key(r); if (lm.get(k)) lm.set(k, lm.get(k) - 1); else miss++; });
     const left = [...lm.values()].reduce((a, b2) => a + b2, 0), nz = L.filter(r => Object.values(r).some(v => num(v) && Number(v) !== 0 && typeof v !== 'string')).length;
+    if ((L.length !== T.length || miss || left) && process.env.INFOWIN_DEBUG) log('  §INFOWIN_SQL-DIFF ' + label + ' legacy0=' + JSON.stringify(L[0]) + ' twin0=' + JSON.stringify(T[0]));
     return { L: L.length, T: T.length, miss: miss, left: left, nz: nz, v: (!L.length && !T.length) ? 'EMPTY' : (L.length !== T.length || miss || left) ? 'FAIL' : 'PASS' };
   };
+  const plvs = PGROWS('select distinct m_pricelist_version_id as v from m_product_substituterelated_v order by 1').map(r => r.v).concat([0]);
   const tabStats = { PASS: 0, FAIL: 0, EMPTY: 0, rows: 0, nz: 0 };
   for (const p of prods) {
     const cases = [['stock', { sql: IW.stockSql(), params: [p] }]];
     [[true, 0], [false, 0], [true, 103], [false, 103], [false, 104]].forEach(([d, w]) => cases.push(['atp detail=' + d + ' wh=' + w, IW.atpSql(d, w, 0, p)]));
+    [0, 103, 104].forEach(w => cases.push(['atp orders wh=' + w, IW.atpOrdersSql(w, 0, p)]));
+    cases.push(['price', { sql: IW.priceSql(), params: [p] }]);
+    plvs.forEach(v => ['S', 'R'].forEach(t => cases.push(['subst/related ' + t + ' plv=' + v, IW.substRelSql(t, p, v)])));
     for (const [label, b] of cases) {
       const r = runPair('p' + p + ' ' + label, b); if (r === 'FAIL') { tabStats.FAIL++; failed++; continue; }
       tabStats[r.v]++; tabStats.rows += r.L; tabStats.nz += r.nz; if (r.v === 'FAIL') { failed++; log('§INFOWIN_SQL tab=p' + p + ' ' + label + ' legacyRows=' + r.L + ' twinRows=' + r.T + ' unmatchedTwin=' + r.miss + ' unmatchedLegacy=' + r.left + ' verdict=FAIL'); }
