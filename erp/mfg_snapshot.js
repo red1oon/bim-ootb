@@ -53,7 +53,7 @@
     lines.forEach(function (l) { if (l.isqtypercentage === 'Y') throw new Error('unsupported:isqtypercentage line=' + l.line); });   // not evidenced in legacy: refuse, never guess
     var odoc = 'PP_Order:' + order.docno, ohdr = 'PP_Order_BOM:' + order.docno, ops = [];
     ops.push({ op_type: 'CREATE_DOCUMENT', table: 'PP_Order', uuid: odoc, doc_status: 'DR', documentno: order.docno, m_product_id: order.product, qtyordered: String(order.qty),
-      pp_product_bom_id: order.bomId, m_warehouse_id: order.warehouseId, c_uom_id: h.c_uom_id, asof: day(order.asOf) });
+      pp_product_bom_id: order.bomId, m_warehouse_id: order.warehouseId, c_uom_id: h.c_uom_id, asof: day(order.asOf), attrs: order.attrs || {} });   // attrs: the order's own date/org/resource inputs, kept so derived views (MRP) use only what the log holds
     ops.push({ op_type: 'CREATE_LINE', table: 'PP_Order_BOM', uuid: ohdr, line_no: 0, template_id: hid,
       fields: Object.assign(pick(h, HDR_COPY), { bomuse: 'M' }) });   // template 'A' -> order 'M' (2 of 2 legacy orders)
     lines.forEach(function (l) {
