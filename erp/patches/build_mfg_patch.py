@@ -25,11 +25,7 @@ for t in SHORT:   # a duplicate-column failure on re-run is tolerated by the loa
     have = set(r[1].lower() for r in seed.execute('pragma table_info(%s)' % t))
     for c, d in cols(t):
         if c not in have: out.append('ALTER TABLE %s ADD COLUMN "%s" %s;' % (t, c, aff(d)))
-mc = [c for c, _ in cols('ad_menu')]
-cur.execute('select %s from ad_menu where ad_menu_id in (53014,53052,53053,53055) order by ad_menu_id' % ', '.join('"%s"' % c for c in mc))
-for r in cur.fetchall():   # ad_menu has no unique key: guard by id
-    vals = ["'Y'" if c == 'isactive' else lit(v) for c, v in zip(mc, r)]
-    out.append('INSERT INTO ad_menu (%s) SELECT %s WHERE NOT EXISTS (SELECT 1 FROM ad_menu WHERE ad_menu_id=%s);' % (', '.join('"%s"' % c for c in mc), ', '.join(vals), r[mc.index('ad_menu_id')]))
+# the 4 EE01 ad_menu rows (53014>53052>53053>53055) are NOT in this patch any more: upstream ships them disabled; the Libero bundle (erp/plugins/libero_manufacturing.mjs) stages them on activation (ctx.dict).
 out.append('CREATE TABLE IF NOT EXISTS ad_ddl_default (tablename TEXT, columnname TEXT, defaultvalue TEXT);')
 cur.execute("select table_name, column_name, column_default from information_schema.columns where table_schema='adempiere' and column_default is not null and table_name = any(%s) order by 1,2", (NEW,))
 import re

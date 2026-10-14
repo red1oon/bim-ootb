@@ -282,12 +282,23 @@
     function policyOf(rec) { var p = rec.policy || (rec.manifest && rec.manifest.activation) || 'eager'; var t = rec.manifest && rec.manifest.triggers;
       return (p === 'lazy' && t && ((t.tables || []).length || (t.processes || []).length || (t.windows || []).length)) ? 'lazy' : 'eager'; }
 
+    // manifest.dictionary = [{ table, idCol, rows }] - the 2Pack part of a bundle (menu/window rows): staged at START, even for a LAZY bundle, because the user must be able to REACH the lazy trigger (the menu leaf of the window) before any code has run.
+    //   Undone (refcounted, previous state restored) at STOP or a failed activation. Code-time staging stays available through ctx.dict inside activate().
+    function stageDictionary(rec, scope) {
+      var dict = (rec.manifest && rec.manifest.dictionary) || []; if (!dict.length) return 0;
+      var c = buildCtx(rec.manifest, scope), n = 0;
+      dict.forEach(function (d) { n += c.dict.insert(d.table, d.idCol, d.rows) || 0; });
+      return n;
+    }
+    function undoStartScope(id) { var lh = loaded[id]; if (lh && lh.startScope) { var errs = lh.startScope.undoAll(); lh.startScope = null; return errs; } return []; }
+
     async function startBundle(id) {
       var rec = store.get(id);
       if (!rec) throw new Error('plugin not installed: ' + id);
       if (rec.state === STATES.ACTIVE || rec.state === STATES.STARTING) return { id: id, state: rec.state, opId: null };
       checkRequires(rec, false);
       if (policyOf(rec) === 'lazy') {
+        var sc0 = makeScope(id); try { stageDictionary(rec, sc0); } catch (e0) { sc0.undoAll(); throw e0; } (loaded[id] || (loaded[id] = {})).startScope = sc0;
         var t = rec.manifest.triggers; pending[id] = { tables: norm(t.tables), processes: norm(t.processes), windows: norm(t.windows) };
         rec.state = STATES.STARTING; store.put(rec);
         var lop = appendOp('PLUGIN_START', { id: id, version: rec.version, lazy: true });
@@ -317,9 +328,10 @@
       for (var d = 0; d < Object.keys(req).length; d++) { var dep = Object.keys(req)[d]; if (store.get(dep).state === STATES.STARTING) await need({ activateId: dep }); }
       rec.state = STATES.RESOLVED; store.put(rec);   // pending[id] stays until the activation COMPLETES, so a concurrent need() finds it and awaits the same in-flight activation
 
-      var lh = loaded[id] || (loaded[id] = { module: normalizeModule(await importer(rec.url)) });
+      var lh = loaded[id] || (loaded[id] = {}); if (!lh.module) lh.module = normalizeModule(await importer(rec.url));
       var scope = makeScope(id), ctx = buildCtx(rec.manifest, scope), activated = [];
       try {
+        if (!lh.startScope) stageDictionary(rec, scope);   // an EAGER bundle stages its dictionary with its activation; a LAZY one already did at START
         // HOT chunks (manifest.chunks.hot): modules that register synchronous hooks. Loaded and activated BEFORE the bundle is ACTIVE, so no covered save can run without them.
         var hot = (rec.manifest.chunks && rec.manifest.chunks.hot) || [];
         for (var i = 0; i < hot.length; i++) {
@@ -331,7 +343,7 @@
       } catch (e) {
         // ATOMIC activation: undo everything contributed so far and go back to INSTALLED; the error propagates (to start / to the seam that demanded it).
         for (var j = activated.length - 1; j >= 0; j--) { try { if (typeof activated[j].deactivate === 'function') await activated[j].deactivate(ctx); } catch (e2) { /* best effort */ } }
-        var errs = scope.undoAll();
+        var errs = scope.undoAll().concat(undoStartScope(id));
         rec.state = STATES.INSTALLED; store.put(rec); delete pending[id];
         console.log('§PLUGIN-START-FAILED id=' + id + ' undone=' + (errs.length ? 'with ' + errs.length + ' undo error(s)' : 'clean') + ' error=' + e.message);
         throw e;
@@ -382,7 +394,7 @@
     async function stopBundle(id) {
       var rec = store.get(id);
       if (!rec) throw new Error('plugin not installed: ' + id);
-      if (rec.state === STATES.STARTING) { delete pending[id]; rec.state = STATES.STOPPED; store.put(rec); var sop = appendOp('PLUGIN_STOP', { id: id, lazy: true }); console.log('§PLUGIN-STOP    id=' + id + ' state=' + rec.state + ' (cancelled before activation)'); return { id: id, state: rec.state, opId: sop }; }
+      if (rec.state === STATES.STARTING) { undoStartScope(id); delete pending[id]; rec.state = STATES.STOPPED; store.put(rec); var sop = appendOp('PLUGIN_STOP', { id: id, lazy: true }); console.log('§PLUGIN-STOP    id=' + id + ' state=' + rec.state + ' (cancelled before activation)'); return { id: id, state: rec.state, opId: sop }; }
       if (rec.state !== STATES.ACTIVE) return { id: id, state: rec.state, opId: null };
       var lh = loaded[id], dctx = (lh && lh.ctx) || buildCtx(rec.manifest, makeScope(id));
       // the bundle's own deactivate first (anything custom), then its hot chunks in reverse, then the AUTOMATIC undo of every recorded contribution.
@@ -390,6 +402,7 @@
       var ch = (lh && lh.chunks) || [];
       for (var i = ch.length - 1; i >= 0; i--) { if (typeof ch[i].deactivate === 'function') await ch[i].deactivate(dctx); }
       var undone = lh && lh.scope ? lh.scope.size() : 0, errs = lh && lh.scope ? lh.scope.undoAll() : [];
+      errs = errs.concat(undoStartScope(id));
       if (lh) { lh.ctx = null; lh.scope = null; lh.chunks = []; }
       rec.state = STATES.STOPPED; store.put(rec);
       var opId = appendOp('PLUGIN_STOP', { id: id });
