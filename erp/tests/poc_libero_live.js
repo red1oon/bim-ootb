@@ -46,6 +46,17 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   const mas = logs.filter(l => /§MODEL-AFTER-SAVE table=pp_order /.test(l)).pop() || '';
   console.log('§LIBERO-LIVE-5 shipped log line: ' + mas);
   ok('V3 a PP_Order committed through the funnel is sealed with 1 BOM header + 2 lines (5050.51 / 100, reserved = required) + MRP 1 supply + 2 demand + 1 routing workflow (+ 1 update setting its start node) + 1 routing node, all written by the bundle (op log + the shipped §MODEL-AFTER-SAVE line agree)', !out.noKernel && out.by.pp_order === 1 && out.by.pp_order_bom === 1 && out.by.pp_order_bomline === 2 && out.by.pp_mrp === 3 && out.by.pp_order_workflow === 1 && out.by.pp_order_node === 1 && out.upd.pp_order_workflow === 1 && Number(out.lines[0][2]) === 5050.51 && Number(out.lines[1][2]) === 100 && /"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3/.test(mas), out);
+  // V5 PO.save semantics: an order whose afterSave REFUSES (no routing) must not be sealed at all (rollback), not sealed-with-a-log-line
+  const mR = logs.length;
+  const nr = await pg.evaluate(async () => {
+    const f = { ad_client_id: 11, ad_org_id: 50006, documentno: 'LIVE-NOROUTE', m_product_id: 136, pp_product_bom_id: 50004, qtyordered: 10, m_warehouse_id: 50002, c_uom_id: 100, datestartschedule: '2008-08-16 00:00:00', datepromised: '2008-08-17 00:00:00', docstatus: 'DR', docaction: 'CO', isactive: 'Y' };
+    window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'pp_order', table: 'pp_order', verb: 'create', fields: f }); await new Promise(r => setTimeout(r, 3000));
+    const k = window.__crud.kernelDb(); const rows = (k.exec('SELECT * FROM kernel_ops ORDER BY 1')[0] || { values: [] }).values.map(v => { try { return JSON.parse(v[4]); } catch (e) { return null; } }).filter(Boolean);
+    return rows.filter(o => o.fields && o.fields.documentno === 'LIVE-NOROUTE').length;
+  });
+  const lr = logs.slice(mR);
+  console.log('§LIBERO-LIVE-6 refused order: sealed rows named LIVE-NOROUTE=' + nr + ' | ' + lr.filter(l => /MODEL-AFTER-SAVE|MODEL-SAVE-ROLLBACK/.test(l)).join(' || ').slice(0, 300));
+  ok('V5 an order refused by the model (no routing) is ROLLED BACK: nothing sealed, §MODEL-SAVE-ROLLBACK logged (legacy PO.save: afterSave false => the trx rolls back)', nr === 0 && lr.some(l => /§MODEL-SAVE-ROLLBACK table=pp_order/.test(l)), { nr, lr: lr.slice(0, 4) });
   ok('V4 zero page errors', errs.length === 0, errs.slice(0, 3));
   console.log('§LIBERO-LIVE-VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' failed=' + fails); await browser.close(); srv.close(); process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('§LIBERO-LIVE-VERDICT FAIL harness: ' + e.stack); process.exit(2); });

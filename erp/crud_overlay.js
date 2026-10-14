@@ -2506,7 +2506,9 @@
           Object.keys(op.changes || {}).forEach(function (c) { var ch = op.changes[c]; rec[c.toLowerCase()] = (ch && Object.prototype.hasOwnProperty.call(ch, 'new')) ? ch.new : ch; }); rec[pk] = op.id; }
       } finally { _tipShadowOff(bdb, sh); }
       modelRun({ table: op.table, timing: 'AFTER_SAVE', record: rec, old: old, isNew: op.op_type === 'CRUD_CREATE' }, function (mr) {
-        if (!mr || !mr.ok || !mr.ops.length) { if (mr && !mr.ok) console.log('§MODEL-AFTER-SAVE table=' + op.table + ' refused: ' + (mr.error || mr.msg)); cb([]); return; }
+        // PO.save semantics (PO.java saveNew/saveFinish): an afterSave/AFTER_NEW refusal fails the WHOLE save and the trx rolls back - the host row must not be sealed either (twin rule). cb(ops, refusal).
+        if (mr && !mr.ok) { var why = mr.error || mr.msg || 'refused'; console.log('§MODEL-AFTER-SAVE table=' + op.table + ' refused: ' + why); cb([], why); return; }
+        if (!mr || !mr.ops.length) { cb([]); return; }
         // the host op sits at index 0 → every model {__opRef:i} shifts by one
         var shift = function (v) { return (v && typeof v === 'object' && v.__opRef != null) ? { __opRef: v.__opRef + 1 } : v; };
         var ops = mr.ops.map(function (o) { var c = JSON.parse(JSON.stringify(o)); if (c.fields) Object.keys(c.fields).forEach(function (k) { c.fields[k] = shift(c.fields[k]); });
@@ -2517,7 +2519,8 @@
     });
   }
   function _commitCrudSealed(op, K, db, done) {
-    _modelAfterSave(op, db, function (modelOps) {
+    _modelAfterSave(op, db, function (modelOps, refusal) {
+      if (refusal) { console.log('§MODEL-SAVE-ROLLBACK table=' + op.table + ' op=' + op.op_type + ' nothing sealed: ' + refusal); toast('Save refused: ' + String(refusal).slice(0, 140)); done(); return; }
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
         if (op.op_type === 'CRUD_UPDATE')      { params.changes = op.changes; if (op.actor != null) params.actor = op.actor; }
