@@ -75,6 +75,7 @@
       process:    glue.engines && glue.engines.process,
       postTokens: glue.engines && glue.engines.postTokens,
       docAction:  global.ModelLayer || null,   // the DocAction extension point (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 2)
+      docFsm:     global.AdDocFsm || null,     // the document-action FSM family table (plugin documents get the DocAction bar): registerFamily / removeFamilyOwner
       docClass:   global.DocPoster || null,    // the posting-class extension point (legacy IDocFactory): registerDocClass / removeDocClassOwner (Host work H1)
       import: function (url) { return import(/* @vite-ignore */ url); }
       // store: default in-memory; IDB persistence is a side-channel (_persist below) so the registry stays sync.

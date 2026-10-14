@@ -391,6 +391,8 @@ export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions || {}).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
+  // the document-action FSM entry (ad_docfsm DOC_FAMILY) of AD_Table PP_Order 53027: prepare/complete are ported; void/close/reverse/re-activate are DEFERRED (MPPOrder.voidIt/closeIt/reActivateIt), so no Void arm is offered (vo: {}).
+  if (ctx.docFsm) ctx.docFsm.register(53027, { name: 'PP_Order', reActivate: false, rc: false, ra: false, vo: {} });
   m.validators.forEach((v) => ctx.modelval.registerValidator(v[0], v[1], v[2], v[3]));
 }
 export async function deactivate() {}
