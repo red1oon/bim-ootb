@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-LEASE (Milestone 8; spec ~/Projects/Mfg/MILESTONE_8_SPEC.md). READ THE LOG after every run: verdict = §MFG-LEASE-VERDICT.
 // THE ISSUE it proves/disproves: through lease ops an order's claim on a resource window is exclusive (two orders cannot hold the same slot); an unused lease is released ONLY by an EXPIRE op that is itself ordered in
 //   the log (no clock on replay); no two live leases ever overlap on a resource.  REAL data: legacy orders 8000/8001 both schedule S_Resource 50000 for the same window (a genuine double-booking in the seed); legacy

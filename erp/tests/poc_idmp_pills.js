@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_BOTTOM_BAR_AND_LIFECYCLE.md §A — the iDempiere renderer's bottom/side
 //   bar is now rendered by the SHARED registry (idmp_pills.js + pills_idmp.json + PillBuilder), retiring the

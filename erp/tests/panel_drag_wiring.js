@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // panel_drag_wiring.js — W-PANEL-DRAG (FUSED_4D5D_WEDGE_LANE — user ask 2026-06-23)
 // Both TM-owned panels (Author 4D, What-if) are repositionable by dragging their header. Live
 // drag proven by Playwright (exact-px move, screenshots); this guards the wiring stays in place.

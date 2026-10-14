@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * erp_engine.js — the §0.10 abstract engine, EXTRACTED into one module.
  *   Spec: docs/ERP.md §0.9-0.10 (dispatch-by-form), §0.5 (decision tables),

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_post.js — DocumentEngine.postImmediate for the documents the model completes: Doc.post per ACCOUNTING SCHEMA
 // (acct/Doc.java:246 — every schema of the client, GardenWorld = 101 USD + 200000 EUR) + the costing it triggers
 // (Doc_InOut → MCostDetail.createShipment → process per costing element → M_Cost / M_CostHistory / M_CostQueue).

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-DASH-DOCSTATUS (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D3, the "Activities" gadget = docstatus.zul -> DPDocumentStatus). READ THE LOG: §DDS lines.
 // THE ISSUE it proves/disproves: the legacy Home's document-status indicators (PA_DocumentStatus: Notice, Request, Workflow Activities, Unprocessed Documents, Sales Orders received today, Pending Customer
 //   Shipments) show the SAME COUNTS and the SAME visible set for a user/role: MDocumentStatus.getDocumentStatusIndicators (active, client 0/own, ORDER BY SeqNo, canAccess via PA_DocumentStatusAccess,

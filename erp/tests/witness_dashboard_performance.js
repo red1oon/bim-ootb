@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-DASH-PERF (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2b). READ THE LOG: §DP lines; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the legacy Performance gadget (DPPerformance -> WPAPanel.loadGoal -> MGoal.getUserGoals; WPerformanceIndicator.init title/tooltip; MGoal.getPercent/getColor ->
 //   MColorSchema.getColor -> MPrintColor.getColor) shows, for GardenWorld Admin, FOUR indicators with a title "<Name>: <percent>%" (or "<Name>: <actual>" when the goal has no target), a tooltip

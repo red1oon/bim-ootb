@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-DICT-SQL-EXEC (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS stage 3c; AD-LAYER LAW 2: the claim is "X of N dictionary SQL strings resolve on the twin", N from the dictionary).
 //   READ THE LOG after every run: every verdict is a §DICT_SQL line; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: every executable SQL string the AD dictionary carries (@SQL= defaults, process-parameter defaults, validation rules, info columns/windows, status lines,

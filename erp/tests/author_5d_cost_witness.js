@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // author_5d_cost_witness.js — W-AUTHOR-5D-COST (FUSED_4D5D_WEDGE_LANE §AUTHOR-1 step ④)
 //
 // ISSUE PROVED: the wizard's 5D cost step is a FOLD, not hand-entry — phase cost = Σ of its

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING items 0 (BLUE FUTURE) + 3b
 //   (PER-FIELD LINEAGE). VALUE correctness is headless (scripts/poc_blue_future.js 9/9 + poc_field_lineage.js

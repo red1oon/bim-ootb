@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-EMBED-ICON (RESUME_OVERLAY_PILL_ICONS.md). Proves the Teams pill reuses the REAL
 //   icon registry (window.ICONS, erp/icons.js — verbatim-copied from panels.js ICONS, the source of truth)
 //   when the host page carries one, instead of always drawing its own hardcoded inline SVG. Two fixtures:

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/PaySelectionCreateFrom.js — org.compiere.process.PaySelectionCreateFrom, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/PaySelectionCreateFrom.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // SQL functions currencyConvertInvoice/invoiceOpen/invoiceDiscount/currencyConvert are the sqlfn.js/views.js UDFs; the view C_Invoice_v

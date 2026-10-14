@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for RULE_EDIT_SPEC §11 (client-scoping bug fix, 2026-06-06).
 //   ISSUE IT PROVES: "the ⚖ Rule pill was hard-bound to Odoo (AD_Client_ID=12)" — on any non-Odoo

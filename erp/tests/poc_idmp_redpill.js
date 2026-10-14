@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_BOTTOM_BAR_AND_LIFECYCLE.md §D — the RED PILL master toggle.
 //   OUR design (default) = "just the pill": classic iDempiere chrome (toolbar) hidden, the pill is the UI.

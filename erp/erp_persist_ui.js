@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* erp_persist_ui.js — §INTEG-WIRE-B (prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2, slice B)
  *
  * Disposable-host persistence as a GESTURE on the live ERP surface. Backs the books up to a SIGNED

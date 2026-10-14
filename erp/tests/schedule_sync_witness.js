@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // schedule_sync_witness.js — W-SCHED-SYNC (FUSED_4D5D_WEDGE_LANE §SE-4 / §SE-D)
 //
 // ISSUE PROVED: replaying a schedule op on a SECOND surface's db via ScheduleSync.applyOp (the exact

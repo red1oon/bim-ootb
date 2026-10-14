@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for USER_JOURNEY_LANE punch-list #2 (DocStatus status-at-a-glance chip).
 //   Proves the LIVE idempiere.html Sales Order GRID and mobile CARDS render a coloured DocStatus chip

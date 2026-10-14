@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Witness: W-DOC-DOTS (HISTORY_SESSION_EVENTS.md §A1-DOC)
 // Issue PROVED/DISPROVED: committed doc changes (Save/New/Delete/DocAction) were INVISIBLE in the
 //   glassbowl Z (#scrub) — only VIEW moments recorded; AND the fix must record at the COMMIT boundary

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 /**
  * sysmon_release_witness.js — W-SYSMON-RELEASE.
  *   Spec: prompts/RESUME_SYSMON_RELEASE_LINK.md §FIX A + §FIX B (revised 2026-06-25: semver + build)

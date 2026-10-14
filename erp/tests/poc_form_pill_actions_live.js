@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING item 5 (PROCESS +New/Save/Print
 //   IN PILL FOR FORM VIEW). Spec: prompts/GRID_BATCH_FORM_PILL_SPEC.md item 5. Proves the LIVE idempiere.html

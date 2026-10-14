@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §SEAM-FROZEN witness for idempiere.html host-conformance (IDEMPIERE_RECORD_PANEL.md +
 //   docs/TourGuideHostContract.md §2). PROVES the STEP-0 freeze (SEAM #2, the host contract):

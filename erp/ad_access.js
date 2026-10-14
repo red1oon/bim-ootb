@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_access.js — AD role/access gate (W-ACCESS). The security-layer twin of the op-level
 // owner-gate (scripts/poc_distributed.js G-SINGLE-WRITER). Self-contained, no kernel dep.
 // Implementing ERP_COVERAGE_MATRIX.md §AD_Role/§AD_Window_Access/§AD_Process_Access/

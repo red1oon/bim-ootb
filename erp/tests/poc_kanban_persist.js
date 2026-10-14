@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that a kanban drag SURVIVES RELOAD (gap #2 — durability).
 //   THE CLAIM (write-path spine: persist the op-LOG, replay on boot, read-the-tip): a drag commits a signed

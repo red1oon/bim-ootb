@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* period_close_ui.js — §INTEG-WIRE (prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2, slice A)
  *
  * Wires the FROZEN period-close substrate (erp_period_close.js → window.ErpPeriodClose) into the live

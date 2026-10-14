@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that kanban DRAG → a REAL signed SET_STATUS via window.ERP (gap #1 closed).
 //   THE CLAIM (LENS_FAMILY §F2 / GAP-LEDGER #1): the board chrome + drag-resolution were done, but dispatch/ctx

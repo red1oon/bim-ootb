@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // schedule_move_witness.js — W-SCHED-MOVE (FUSED_4D5D_WEDGE_LANE §SE-3)
 //
 // ISSUE PROVED: moveTask (the drag-to-reschedule verb) shifts a LEAF task to a new start, PRESERVING

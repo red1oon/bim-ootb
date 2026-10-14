@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MASTER-SAVE-RULES (bim-compiler prompts/SQLiteIDEMPIERE.md §G-SD2-PORT; CARDINAL RULE: a master saved through the shipped model layer
 //   yields the same defaults / child rows / sequence values as legacy iDempiere). READ THE LOG after every run: every verdict is a §-line, the exit code is not evidence.
 // THE ISSUE it proves/disproves: before erp/model_master.js the shipped ModelLayer.save of a BP / Product / Bank account / Tax / Location / Cost element wrote ONLY the

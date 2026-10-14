@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/M_PriceList_Create.js — org.compiere.process.M_PriceList_Create, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/M_PriceList_Create.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // Named equivalences (not behaviour changes):

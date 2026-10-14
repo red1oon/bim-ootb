@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for GRAND_LANE S6 / ERP_CRITIC_UX_LANE.md J7-S6 LENS-SWAP — "Kanban drag ==
 //   a signed verb; the SAME owned model under a different skin". W-CRITIC-LENS-SWAP.

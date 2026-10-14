@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/CostCreate.js — org.compiere.process.CostCreate, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/CostCreate.java). §CP — Witness: W-CP-PROC-ORACLE.
 // Its body is MCostDetail.processProduct (costing engine — model layer, not this lane): called when the model layer

@@ -1,7 +1,7 @@
 /**
  * ERP OOTB — AD-driven ERP from SQLite WASM. No server. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // erp/sw.js — Service Worker for the ERP app's own folder home (docs/ERP_FOLDER_HOME.md).
 // Scope = /erp/ (registered by erp.html / idempiere.html). Distinct cache PREFIX from the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — DOM smoke (Playwright, WIRING check) for W-DOC-DOTS (HISTORY_SESSION_EVENTS.md §A1-DOC).
 // Logic is proven in poc_doc_dots.js; THIS proves the live wiring on the real glassbowl.html: driving the
 // __crud.applyOp commit funnel emits §DOC-DOT and the #scrub Z gains a labelled dot (page-local).

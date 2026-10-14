@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-GOAL-ENGINE (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D1). READ THE LOG: §GE lines; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the four PA_Goal actuals the legacy Performance gadget shows (MGoal.updateGoal -> MMeasure.updateCalculatedGoals / updateRequests -> MMeasureCalc.getSqlPI / MRequestType.getSqlPI + role
 //   client/org access SQL) are reproduced by the twin's goal engine, which BUILDS THE SQL FROM THE DICTIONARY ROWS (PA_Goal, PA_Measure, PA_MeasureCalc, R_RequestType) - no per-goal code. Oracle = scripts/bridge/goal_oracle_legacy.js

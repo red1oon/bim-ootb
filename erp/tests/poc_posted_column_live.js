@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for Leg 3 of the iDempiere L&F FIDELITY lane (RESUME_IDMP_FIDELITY.md §SPEC Leg 3):
 //   the per-record accounting (Accts-Posted / Posting-Preview) surfaced as iDempiere's NATIVE `Posted`

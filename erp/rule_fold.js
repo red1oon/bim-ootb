@@ -1,4 +1,4 @@
-// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 //
 // rule_fold.js — THE ONE GESTURE (window.RuleFold): edit ONE rule → K records re-fold live, signed +
 //   reversible, on the LOGGED-IN client (the honest tenant — read from window.__idmpClient, never

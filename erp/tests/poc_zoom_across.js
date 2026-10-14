@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_zoom_across.js — W-ZOOM-ACROSS: the RED "Zoom Across" pill (abstract cross-surface registry,
 // zoom_across.js). Deep-links to the Hospital Project Order (GardenAdmin, win 130, record 990000) and proves:
 //   §gate   — IdmpPillZoomGate() true (ZoomAcross has an available target); the red pill #pill-zoomacross

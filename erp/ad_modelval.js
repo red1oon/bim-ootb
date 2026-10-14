@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_modelval.js — Model-validator timing-hook engine (W-MODELVAL). The "Model Validators" leg of the
 // coverage matrix: dispatch registered validators around a record/document action at named TIMINGS
 // (BEFORE/AFTER × NEW/SAVE/DELETE + the doc-timings PREPARE/COMPLETE/VOID). Faithful port of iDempiere's

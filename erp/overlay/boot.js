@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/boot.js — the ONE seam between the iDempiere-twin core (erp/idempiere.html) and the EXTENSION OVERLAY (prompts/ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW, user 2026-10-14: the lens/pill/Home
 // features are "an overlay over the immutable core"). The core carries exactly one `<script src="overlay/boot.js">` and nothing else about the overlay: no hooks, no styles, no tables, no manifest entries.

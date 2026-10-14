@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-OSGI-CONSOLE-LIVE (Host work H2; erp/osgi_console.js). READ THE LOG: §OC-LIVE lines carry the evidence.
 // THE ISSUE it proves/disproves, in a real browser: Plugins & Releases shows the Felix-style OSGi console (Id 0 system bundle, built-ins, Felix summary sentence); the Install/Update box installs + starts the LAZY fixture which appears as STARTING;
 //   the name expands a detail pane; Stop -> Resolved, Start -> Starting; a DocAction on a pp_order row activates it (Reload shows Active and the detail pane lists what it registered); a page reload restores the stack from persistence;

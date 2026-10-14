@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * idmp_pills.js — mounts the iDempiere renderer's bottom/side bar from pills_idmp.json.
  *   The SIBLING of erp_pills.js: SAME PillBuilder renderer (pill_builder.js, used as-is),

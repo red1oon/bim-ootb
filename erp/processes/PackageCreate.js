@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/PackageCreate.js — org.compiere.process.PackageCreate, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/PackageCreate.java) with MPackage.create/createPackage/ctor/beforeSave/afterSave
 // (org.adempiere.base/src/org/compiere/model/MPackage.java), MPackageLine, MPackageMPS ported inline (no other lane owns them).

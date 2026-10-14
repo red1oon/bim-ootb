@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC5-RATES (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-5a; CARDINAL RULE: a document in a foreign currency converts at exactly the rate legacy picks).
 //   READ THE LOG after every run: every verdict is a §NC5 line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: MConversionRate.getRate / the PG function currencyRate() picks, among client-0/client/org rows, types, validity windows and inactive rows,

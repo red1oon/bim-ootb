@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // xer_pmxml_writer_witness.js — W-XER-ROUNDTRIP / W-PMXML-ROUNDTRIP (prompts/XER_PMXML_WRITER_LANE.md §4).
 //
 // toPMXML/toXER (foreign_schedule.js) are the write-side counterpart to parsePMXML/parseXER. The bar is

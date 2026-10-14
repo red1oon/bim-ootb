@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/CommissionAPInvoice.js — org.compiere.process.CommissionAPInvoice, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/CommissionAPInvoice.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // Model code it calls, ported where the shared ctor layer lacks it (ModelCtor does not export MInvoiceNew): new MInvoice(ctx,0,trx)

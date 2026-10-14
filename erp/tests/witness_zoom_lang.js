@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // witness_zoom_lang.js — W-ZOOM-LANG (bim-compiler prompts/S226_localisation.md §R1).
 // ISSUE IT PROVES OR DISPROVES: "the Viewer opens in a different language from the ERP that launched it."
 //   (a)  each CHOSEN ERP UI code (erp/i18n/index.json, not the base en_US) rides in the Zoom Across Viewer URL (both launches)

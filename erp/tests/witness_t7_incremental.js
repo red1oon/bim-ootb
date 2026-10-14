@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-T7-INC (FABLE5_WRAPUP_2026-07-03 §Item 4 + 4b; spec prompts/T7_INCREMENTAL_SHARD_SPEC.md;
 //   diagnosis KERNEL_TIMEBOMB_AUDIT §T7). A ~5k-op synthetic POS-scale log with a REAL ECDSA P-256 signer,
 //   measuring each fix — "a real, measured drop, not just 'should be faster'":

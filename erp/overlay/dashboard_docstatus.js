@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // dashboard_docstatus.js — HOME "ACTIVITIES" GADGET: DOCUMENT STATUS INDICATORS (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D3; Witness: W-DASH-DOCSTATUS).
 // docstatus.zul -> DPDocumentStatus -> MDocumentStatus. getDocumentStatusIndicators (MDocumentStatus.java:141-186): active PA_DocumentStatus rows of client 0 / the session client ORDER BY SeqNo, kept when

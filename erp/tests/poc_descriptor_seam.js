@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2 increment 1).
 //   PROVES the behavior-preserving refactor: idempiere.html's chrome now reads its dictionary/data/session

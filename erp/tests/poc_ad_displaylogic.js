@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_ad_displaylogic.js — W-AD-DISPLAYLOGIC-LIVE (UI-unpark §1 on the real AD-UI).
 // Proves ad_ui.js applies AD DisplayLogic to the live form: opening AD_Menu record 101 (Action='W')
 // HIDES the action-gated FK fields whose @Action@ != W (Workflow/Task/Process/Form/InfoWindow) and SHOWS

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-SEED-RESET-BIM-STORE — issue (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §BIM-CRUD, user 2026-10-07):
 //   "Reset demo / seed ERPs" left the viewer's push store (OPFS bim_analysis/bim_project_orders.db), so the next boot's
 //   §BIM_OVERLAY re-inserted the pushed Project Orders — the reset was not a reset. This witness drives the REAL button:

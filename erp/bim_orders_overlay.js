@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // bim_orders_overlay.js — BIM → Project round-trip §B (docs/BIMtoERP.md §B write-path).
 //

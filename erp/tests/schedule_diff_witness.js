@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // schedule_diff_witness.js — proves §4D_SCHEDULE_DIFF (viewer/schedule_diff.js) on the REAL Hospital
 // model: matches the synthetic-but-grounded GW-Hospital P6 programme (tests/gen_foreign_schedule.js —
 // real WBS/IFC-class vocabulary, real Hospital element counts drive the binding sidecar) against OUR

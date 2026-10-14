@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // setup_lens.js — SETUP COMPLETENESS LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §SETUP-LENS; Witness: W-SETUP-LENS).
 // A READ-ONLY overlay for the pill panel: "what is this client still missing before it can post a first invoice?" Every line is ONE SQL over the client's own rows plus the legacy

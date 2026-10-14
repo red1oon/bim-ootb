@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 'use strict';
 /**
  * erp_kernel.js — the OP-LOG KERNEL (prompts/ERP_RUNTIME_ENGINE.md T2, ERP_KERNEL_BUILD §P3/P3b).

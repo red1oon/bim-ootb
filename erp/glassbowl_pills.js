@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * glassbowl_pills.js — mounts the Glassbowl + Gravity ⋯ dock from a sibling manifest.
  *   The SIBLING of idmp_pills.js / erp_pills.js: SAME PillBuilder renderer (pill_builder.js,

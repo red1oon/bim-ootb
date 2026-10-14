@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — Scope: fetch the published iDempiere / ADempiere language packs that tools/build_i18n.py extracts
 #   erp/i18n/<lang>.json from (bim-compiler prompts/ERP_UI_LOCALES.md §L2). Every source is pinned (commit or dated
 #   release file). Output goes to $ERP_TRL_CACHE (default ~/.cache/erp_trl) — never into the repo. Read the

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — layered_registry.js: the ONE layering/undo primitive for every extension registry (Host work H1, ~/Projects/Mfg/HOST_PLUGIN_LIFECYCLE_SPEC.md; Witness W-PLUGIN-LIFECYCLE).
 //   OSGi parity: a service registered by a bundle has an owner and a ranking (Libero's DS components declare service.ranking=1); the highest rank wins, then the latest registration; stopping the bundle removes ITS layers and the
 //   next layer (ultimately the core one) is the effective entry again. Used by model_layer (MODEL, DOCS), ad_process, ad_callout and doc_poster so stop restores the system instead of leaving overrides behind (AD-LAYER LAW rule 5).

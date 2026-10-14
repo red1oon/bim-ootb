@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // probe_a_grail_dom.js — W-FOLD-BACK-DOM: live glassbowl.html §A-GRAIL fold-back wiring check.
 // Verifies: (1) window.crudFoldBack is defined, (2) recordDocMoment stores docOp on the viewHist
 // entry, (3) scrubTo calls foldDocOps which fires crudFoldBack for DOC_ACTION dots, and

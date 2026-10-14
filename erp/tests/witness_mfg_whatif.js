@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-WHATIF (Milestone 10; spec ~/Projects/Mfg/MILESTONE_10_SPEC.md). READ THE LOG after every run: verdict = §MFG-WHATIF-VERDICT.
 // THE ISSUE it proves/disproves: a what-if order run through MRP in a speculative (BLUE FUTURE) branch and then discarded leaves the OFFICIAL state exactly as it was: projection hash, official op-set hash, official replay and the
 //   MRP rows.  It also pins the defect found on the way: ERPKernel.replay used to rebuild branch-tagged speculative ops into the official projection.  Breaks (MUST be red): MFG_BREAK=untagged | leak.

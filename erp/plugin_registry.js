@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // plugin_registry.js — the Fold Engine OSGi-like plugin host (W-PLUGIN). Implements
 //   prompts/PLUGIN_SYSTEM_LANE.md §Phase A. A `.foldbundle` is a single ES module that exports
 //   `{ manifest, activate, deactivate }`; this host loads it, runs its lifecycle, and lets it CONTRIBUTE

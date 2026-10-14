@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — zoom_across.js — the abstract "Zoom Across" registry.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * A "Zoom Across" is a record's set of CROSS-SURFACE destinations — the other surfaces that render the SAME
  * real-world thing this record points at. It GENERALISES iDempiere's native Zoom-Across (record → related

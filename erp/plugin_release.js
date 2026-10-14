@@ -1,4 +1,4 @@
-// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 // plugin_release.js — SYSTEM_ADMIN_LANE §6. iDempiere's Plugin Management (OSGi bundles), reframed for a
 //   serverless fold-engine — PLUS a Release/Update surface iDempiere has NO in-app equivalent of:
 //     · RELEASE — the running release (sw CACHE_VERSION). Check for updates; a new deploy WAITS (gated, not

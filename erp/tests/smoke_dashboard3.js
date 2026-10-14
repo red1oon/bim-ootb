@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');
 function pw(){for(const c of [path.join(__dirname,'../../tests/node_modules/playwright'),'/home/red1/bim-ootb/tests/node_modules/playwright']){try{return require(c)}catch(e){}}throw new Error('no pw')}

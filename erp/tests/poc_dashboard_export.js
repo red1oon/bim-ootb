@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — DASHBOARD_EXPORT + name/date fixes (this lane):
 //  W-DASH-EXPORT  : per-card CSV download parses back to the same fold rows; window Export = all records;
 //                   pivot cross-tab CSV grand-total > 0; PNG/SVG affordance present.

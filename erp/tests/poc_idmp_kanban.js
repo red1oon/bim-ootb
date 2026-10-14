@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that idempiere.html's Kanban pill mounts the REAL draggable board and a
 //   drag commits a signed SET_STATUS (gap c — the main renderer, not the standalone lens).

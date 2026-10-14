@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutBankStatement.js — VERBATIM port of org.adempiere.base.callout/src/org/compiere/model/CalloutBankStatement.java
 // (prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE scenarios/cp/CalloutBankStatement.json).
 // Methods 4/4: bankAccount :48, amount :70, payment :116, paymentIntoBatch :167.

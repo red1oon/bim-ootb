@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the CONCEPT-UI follow-up —
 //   W-SUFFIX  — the Glassbowl + Gravity LAUNCHER pills on erp.html carry a "<Name> — CONCEPT" hover title

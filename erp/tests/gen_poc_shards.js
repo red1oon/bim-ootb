@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 //
 // gen_poc_shards.js — PoC tenant SHARD generator for SAP / Oracle / MS Dynamics (IMPORT_EXPAND_POC.md §P-1).
 //   Emits THREE master-only overlay shards proving "master tables can be matched" for sources that have no

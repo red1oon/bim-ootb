@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for ERP_AUDIT_CHANGELOG.md (Tasks 0/2 + iDempiere-convention polish).
 //   VALUE verification is headless (scripts/poc_audit_changelog.js 25/25) — this proves only that the LIVE

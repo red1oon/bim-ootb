@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_layer.js — the iDempiere PO + DocAction + DocumentEngine + workflow CONTRACT, ported as ONE generic
 // layer (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN — Witness: W-MODEL-ORACLE / W-MODEL-OPGROUP / W-MODEL-PLUGIN).
 //

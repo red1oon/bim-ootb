@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/SalesOrderRateInquiryProcess.js — org.adempiere.process.SalesOrderRateInquiryProcess
 // (org.adempiere.base/src/org/adempiere/process/SalesOrderRateInquiryProcess.java). The pre-checks (:70-112) are verbatim; the rate inquiry itself
 // (createShippingTransaction :200-, MShippingTransaction.processOnline = a call to the shipper's carrier web service) is a NAMED DEP

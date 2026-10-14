@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-OWN (Milestone 7; spec ~/Projects/Mfg/MILESTONE_7_SPEC.md). READ THE LOG after every run: verdict = §MFG-OWN-VERDICT.
 // THE ISSUE it proves/disproves: only the recorded owner of a PP_Order may mutate it on replay; ownership moves only by an ordered HANDOFF (no two-owner window, either side of it); the verdicts do not
 //   depend on which device log is merged first; a tampered op — even with the hash chain re-sealed — is caught by verifyChain (content signature).  Break (MUST be red, named): MFG_BREAK=tamper.

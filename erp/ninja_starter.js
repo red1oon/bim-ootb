@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_starter.js — Phase D helper: the "shell Excel" a first-time user downloads to self-learn Ninja mode.
 //
 // Implementing NINJA_MODE_LANE.md §Phase D (the Create/author flow's onboarding artifact).

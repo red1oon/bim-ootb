@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-PLUGIN-RELEASE-LIVE — iDempiere Plugin Management + the gated Release/Update surface it lacks, in a real
 //   browser. SYSTEM_ADMIN_LANE §6. Proves: (1) the login info panel carries a "Plugins & Releases" link; (2) it
 //   opens a panel with three sections — RELEASE (running sw CACHE_VERSION + Check-for-updates; gated, not auto-

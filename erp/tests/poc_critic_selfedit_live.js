@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P3 / S4 — LIVE MODEL SELF-EDIT, fanned across all 5
 //   migrated tenants. W-CRITIC-SELFEDIT. The thesis: editing the DICTIONARY (a signed CRUD_UPDATE on

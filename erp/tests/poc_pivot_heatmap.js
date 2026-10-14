@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — PIVOT HEATMAP (W-PIVOT-HEATMAP, this lane). §SPEC: pivot_lens.html.
 //   Each data cell is tinted blue by its share of the biggest cell (darker = higher) — the SAME count/sum the
 //   cell already shows (NON-INVENT). Totals + row labels stay plain so they never dominate the heat.

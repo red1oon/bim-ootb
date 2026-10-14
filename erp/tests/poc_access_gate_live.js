@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: W-ACCESS-GATE-LIVE witness (ERP_PROJECT_REVIEW.md §2.1). PROVES the fix: the browser's
 //   idmp_session.js now delegates window/process/form access decisions to ad_access.js (the

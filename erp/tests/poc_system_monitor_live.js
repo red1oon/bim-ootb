@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-SYSTEM-MONITOR-LIVE — the iDempiere System Monitor, reframed for a serverless kernel, in a real browser.
 //   SYSTEM_ADMIN_LANE §6. Proves: (1) the login info panel shows the release/dictionary version + the default
 //   credential hints (SuperUser/System · GardenAdmin/GardenAdmin) + a System Monitor link; (2) the link opens a

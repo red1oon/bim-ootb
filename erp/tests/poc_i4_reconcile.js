@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for I-4 (prompts/I4_OPLOG_RECONCILE.md) — reconcile the TWO op-logs to ONE
 //   genuinely-signed chain, so the LIVE write path (a doc Complete) is a SIGNED op on the SAME chain as the

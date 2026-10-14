@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-ASOF (Milestone 4; spec ~/Projects/Mfg/MILESTONE_4_SPEC.md). READ THE LOG after every run: verdict = §MFG-ASOF-VERDICT.
 // THE ISSUE it proves/disproves: exploding a BOM as of a date returns exactly the lines MPPProductBOM.getLines(valid) returns: active lines with ValidFrom <= date <= ValidTo compared as EXACT timestamps (java Timestamp.before/after, no day rounding), from an INPUT date
 //   (no clock), and an order created on that date snapshots only those lines.  REAL data covers ValidFrom (2 lines dated 2008-09-22); NO real ValidTo exists in the seed or the

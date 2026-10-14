@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // schedule_cpm_witness.js — W-SCHED-CPM (FUSED_4D5D_WEDGE_LANE §SE-2)
 //
 // ISSUE PROVED: computeCpm runs an EXACT critical-path forward/backward pass over the authored

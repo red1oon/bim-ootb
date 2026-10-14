@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_order.js — MOrder + MOrderLine + MInOut + MInOutLine model/DocAction classes, ported and REGISTERED into
 // model_layer.js (bim-compiler prompts/ERP_MODEL_LAYER.md §CHANGE-LIST A + B — Witness: W-MODEL-ORACLE).
 // Java root: org.adempiere.base/src/org/compiere/model/. One-line cite per rule. Writes only through trx.

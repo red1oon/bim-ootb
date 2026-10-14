@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: deploy-boundary FRESHNESS witness for the init-bubble stale-while-revalidate change (PR #188,
 //   ERP_INIT_BUBBLE_INSTANT.md). SWR buys an instant warm first paint — but the question the closing session

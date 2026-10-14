@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-EMBED-WIRE (teams/ROADMAP.md §S9 follow-up, the GATED embed into production chrome).
 //   A Playwright WIRING check (doctrine: Playwright = wiring/deploy checks, not value verification) over a
 //   MINIMAL iDempiere host fixture + the production /erp/teams_embed.js. NOT the full app (that harness is

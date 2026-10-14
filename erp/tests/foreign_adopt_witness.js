@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // foreign_adopt_witness.js — proves the FOREIGN-PROGRAMME ADOPT seam on the REAL Hospital model.
 // prompts/XER_IMPORT_P6_ADOPT_LANE.md — Witnesses: W-FOREIGN-EQ / W-FOREIGN-ADOPT / W-FOREIGN-CPM /
 // W-FOREIGN-BIND.

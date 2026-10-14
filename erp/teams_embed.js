@@ -1,5 +1,5 @@
 /**
- * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+ * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
  *
  * teams_embed.js — the GATED embed of the distinct Teams pill into the live iDempiere chrome
  * (teams/ROADMAP.md §S9 follow-up, Phase E). The launcher (teams/overlay/teams_pill.js) is proven

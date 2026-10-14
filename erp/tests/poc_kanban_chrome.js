@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for kanban_lens.js (LENS-FAMILY lane-3 F2 — the KANBAN CHROME).
 //   THE CLAIM (engine PROVEN in build/erp/poc_kanban.log; this proves the CHROME folds/resolves it):

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // widget_callout.mjs — C-1 witness bundle (prompts/PLUGIN_SYSTEM_LANE.md §Phase C).
 // Single-file .foldbundle: one ES module = manifest + activate + deactivate. Contributes ONE callout into
 // the live ad_callout REGISTRY (no new abstraction) — fires on M_Product.Name and uppercases it.

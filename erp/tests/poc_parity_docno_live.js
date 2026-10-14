@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §P10 of bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md — W-DOCNO-BRANCH.
 //   THE ISSUE this test proves/disproves: §P4-CANDIDATES scored the IsDocNoControlled IMPLEMENTATION faithful

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-WINDOW-LENS-LIVE — the Window anatomy pill in the REAL idempiere.html (headless CPU). ⚠ DO NOT REMOVE — spec bim-compiler prompts/ERP_DEPTH_FILM.md §WINDOW-LENS. READ THE LOG: §WLL-CHECK lines.
 // ISSUE it proves/disproves: what the USER SEES (the rendered tab strip of an opened window) == what the lens says the window is made of (tab count + names). A window where they differ is a dictionary-vs-UI
 //   gap (AD-LAYER LAW item 3: witness the rendered result, sweep the dictionary). Sample = every Nth active window that the menu lets GardenAdmin open, capped; INCONCLUSIVE if < 10 judged.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-MRP (Milestone 5; spec ~/Projects/Mfg/MILESTONE_5_SPEC.md). READ THE LOG after every run: verdict = §MFG-MRP-VERDICT.
 // THE ISSUE it proves/disproves: PP_MRP rows are a pure fold — two runs and a run over a projection rebuilt from the op log alone are byte-identical, no row field is a clock/counter, the fold is read-only,
 //   and for the legacy orders the derived rows equal legacy iDempiere's PP_MRP rows on the derivable fields.  Breaks (MUST be red): MFG_BREAK=clock | counter.

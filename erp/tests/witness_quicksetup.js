@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-QUICKSETUP-EQUALS-WIZARD (bim-compiler prompts/ERP_DEPTH_FILM.md §QUICKSETUP; TWIN rule: the legacy-identical Initial Client Setup stays default, Quick setup is OPTIONAL).
 //   READ THE LOG after every run: every verdict is a §QS line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: an optional "Quick setup" (name + country only) must (1) DERIVE every other answer from the dictionary — currency = C_Country.C_Currency_ID, admin user =

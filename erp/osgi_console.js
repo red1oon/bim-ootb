@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — osgi_console.js: the legacy-looking OSGi stack control panel for the "Plugins & Releases" page (Host work H2; user, 2026-10-15: "we should have the same legacy looking OSGi stack control panel, which legacy users are familiar with").
 //   Modelled on the Apache Felix Web Console "Bundles" page that iDempiere administrators use (/osgi/system/console/bundles): a summary line, a filter box, a table  Id | Name | Version | Status | Actions , an expandable
 //   detail pane per bundle (Symbolic Name, Version, Location, Activation Policy, Services registered ...), and Install/Update + Reload.  Statuses use OSGi's vocabulary: Active, Starting (a LAZY bundle that is started but not yet

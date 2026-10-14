@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for idempiere.html LOGIN / Role·Client·Org session (renderer #1).
 //   THE CLAIM (docs/IDEMPIERE_RENDERER_SPEC.md §3b/§3b.1): the recognizable iDempiere on-ramp —

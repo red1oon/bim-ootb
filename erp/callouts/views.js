@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/views.js — the two iDempiere DB VIEWS the payment-family callouts SELECT from, which the bundle (ad_seed.db)
 // does not carry: C_Payment_v (CalloutBankStatement.payment :126) and C_Invoice_v (CalloutPaySelection.invoice :114).
 // Extracted from the live definitions (pg_get_viewdef on idempiere_pilot, 2026-10-04), translated to SQLite and created as

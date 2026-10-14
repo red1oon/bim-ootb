@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 //
 // agent.js — the SELF-CONTAINED, INSTALL-SIDE Odoo migration extractor (delegate-to-install). This is the
 //   `odoo_agent.zip` bundle entry-point: it carries its own `erp_kernel.js` + `odoo_adapter.js` siblings and a

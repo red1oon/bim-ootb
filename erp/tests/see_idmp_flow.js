@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Visual investigation (not a pass/fail witness): SEE the post-login launch flow in idempiere.html —
 // the pill rail (Graph/Kanban icons), the Graph view, and the Kanban board — as a real user would.
 'use strict';

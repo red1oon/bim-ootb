@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness W-NC2B-UI (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-2 row NC2.6 / open item O1). READ tests/poc_nc2b_finreport_ui_live.log
 //   before any conclusion — exit code is not evidence.

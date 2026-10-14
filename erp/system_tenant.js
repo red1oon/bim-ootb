@@ -1,4 +1,4 @@
-// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 // system_tenant.js — SYSTEM_ADMIN_LANE.md §SA1 (System-only genesis entry). Boot overlay that makes the
 //   iDempiere **System** tenant (client 0, role 0 "System Administrator", userlevel 'S') a log-in-able tenant
 //   on our surface, so Initial Tenant Setup is reachable the canonical way (System login → menu → wizard) and

@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // bake_drop_bim_tab.js — remove the orphan 'BIM' AD_Tab left in the seed by the (now-stripped) BIM-in-window
 // embed lane. The ADWindow renderer honours AD metadata, so an empty AD_Tab still shows as a folder tab on the

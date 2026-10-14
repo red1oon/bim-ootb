@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — §PCLOSE-RACE: constructed witness for the TOCTOU shape flagged in
 //   feedback_toctou_race_scrutiny_pattern.md against erp_period_close.js closePeriod():
 //     1. snapshot = _snapshotLog(db, null)   -- captured BEFORE the archiveSink await

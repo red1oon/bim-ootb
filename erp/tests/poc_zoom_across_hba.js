@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_zoom_across_hba.js — W-ZOOM-ACROSS-HBA: §2026-07-04c reverse Zoom Across (ERP→BIM) for the 5 HBA tables
 // _zoomScope() gained (erp/idempiere.html) — m_warehouse, c_subscription, s_resource (room+person disambiguation),
 // s_resourceunavailable, ad_user. Real user path: navigate to each real window/record (clicking through to a

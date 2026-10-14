@@ -2,7 +2,7 @@
 // FTS5 full-text search across all AD data tables.
 // Pattern detection, BM25 ranking, debounced typeahead.
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 (function () {
   'use strict';
 

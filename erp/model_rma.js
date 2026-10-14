@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_rma.js -- MRMA + MRMALine model/DocAction classes REGISTERED into model_layer.js (bim-compiler prompts/SQLiteIDEMPIERE.md §RMA-WINDOW-PORT;
 // CARDINAL RULE: a Customer RMA / Vendor RMA saved and completed through the shipped generic window path behaves like legacy iDempiere).
 // This file READS the database through the Trx and DECIDES nothing: every rule is the engine verb (erp_engine.js rmaLineSave / completeRMA) -- ONE implementation, the same

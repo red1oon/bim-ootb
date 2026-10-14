@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // author_captured_witness.js — W-AUTHOR-CAPTURED (FUSED_4D5D_WEDGE_LANE — user 2026-06-23)
 //
 // ISSUE PROVED: a model dropped from Bonsai/Revit can arrive WITH a native IFC schedule

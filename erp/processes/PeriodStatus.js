@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/PeriodStatus.js — org.compiere.process.PeriodStatus, verbatim (org.adempiere.base.process/src/org/compiere/process/
 // PeriodStatus.java). bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-PROC-ORACLE.
 (function (global) {

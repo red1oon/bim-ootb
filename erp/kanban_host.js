@@ -1,5 +1,5 @@
 /**
- * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+ * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
  *
  * kanban_host.js — the reusable HOST boot for the Kanban lens: publishes window.ERP (the ENGINE_CONTRACT §1
  * seam) so a drag commits a REAL signed SET_STATUS, and gives durability (persist the op-LOG to IDB, restore

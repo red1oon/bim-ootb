@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the demo auto-login (?login=<id|name>) on top of Renderer #2.
 //   PROVES (issue: "land straight on the tenant — zero clicks — for the movie; SystemAdmin is the proper

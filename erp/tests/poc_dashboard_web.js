@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — DASHBOARD SPIDER WEB (W-DASH-WEB, this lane). §SPEC: idempiere.html.
 //   The Graph tab's "Web" toggle collapses the pies the user has on the board into ONE radar: each pie = a spoke,
 //   the spoke's reach = that pie's CONCENTRATION (biggest slice's % — read off the live card's data-conc). The

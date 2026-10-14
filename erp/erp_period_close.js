@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_period_close.js — ERP.md §0.20 contract-freeze / HolyGrail §"hard parts" (compaction = period-close).
 // Witness: W-PCLOSE (scripts/test_kernel_period_close.js). Spec: prompts/PERIOD_CLOSE_FOLD_POC.md §Spec.
 //

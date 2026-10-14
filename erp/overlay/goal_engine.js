@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // goal_engine.js — PERFORMANCE GOAL ENGINE (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D1; Witness: W-GOAL-ENGINE).
 // Ports MGoal.updateGoal -> MMeasure.updateCalculatedGoals (MMeasure.java:500-541) / updateRequests (:558-595): the SQL is BUILT FROM THE DICTIONARY ROWS (PA_Goal, PA_Measure, PA_MeasureCalc, R_RequestType)

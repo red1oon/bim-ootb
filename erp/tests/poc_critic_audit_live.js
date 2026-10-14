@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P3 / S2 — AUDIT-BY-CONSTRUCTION, fanned across all 5
 //   migrated tenants. W-CRITIC-AUDIT. The thesis: record-level audit (the iDempiere "ⓘ" / AD_ChangeLog parity)

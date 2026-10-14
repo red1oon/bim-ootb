@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutFillLocator.js — org.idempiere.model.CalloutFillLocator.fillLocator, ported verbatim
 // (org.adempiere.base/src/org/idempiere/model/CalloutFillLocator.java:37-52). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

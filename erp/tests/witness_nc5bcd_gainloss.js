@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC5BCD-GAINLOSS (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-5bcd; CARDINAL RULE: a foreign-currency receipt books exactly what legacy books).
 //   READ THE LOG after every run: every verdict is a §NC5BCD line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: Doc_AllocationHdr.createInvoiceGainLoss (:893-1030) and createPaymentGainLoss (:1044-1135) — when a EUR invoice (rate R1 on its date) is settled by a

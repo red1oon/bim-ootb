@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-RMA-WINDOW-PATH (bim-compiler prompts/SQLiteIDEMPIERE.md §RMA-WINDOW-PORT; CARDINAL RULE: a customer return done in the shipped UI behaves like legacy iDempiere).
 //   READ THE LOG after every run: every verdict is a §RW line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the RMA verbs (rmaCheckQty/rmaLineSave/completeRMA/rmaReceiptEffects) were engine-only; the shipped generic save/doc-action path (ModelLayer, the same path the

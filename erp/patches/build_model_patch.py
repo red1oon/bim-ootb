@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — scope: the MODEL LAYER part of erp/patches/ad_seed.db.sql (bim-compiler prompts/ERP_MODEL_LAYER.md
 # §DESIGN 5). EXTRACT ONLY from the reference Postgres `idempiere` (read-only): DDL for the tables the model writes that the
 # bundle never shipped, fact_acct's FactLine dimension columns, the Process_* workflows the DocAction column runs, the

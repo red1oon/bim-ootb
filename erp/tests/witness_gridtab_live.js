@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // W-GRIDTAB-LIVE — bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §GT.3. Real headless browser (--disable-gpu) over the served
 //   bundle. READ erp/tests/witness_gridtab_live.log (verdicts) + witness_gridtab_live.page.log after every run.

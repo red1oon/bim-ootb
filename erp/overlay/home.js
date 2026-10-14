@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/home.js — the legacy HOME dashboard as an OVERLAY (prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2c, §EXTENSION-LAYER LAW). When the core shows its empty-content placeholder for a logged-in
 // session, the Home is drawn next to it (the placeholder is hidden, not removed; the core replaces #idmp-content whenever a window opens, which removes the Home). Reads: window.APP (actor/client/role/org),

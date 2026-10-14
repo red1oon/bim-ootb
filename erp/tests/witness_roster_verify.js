@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-ROSTER-VERIFY (bim-compiler prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION, T1).
 //   THE ISSUE PROVED/DISPROVED: the merge/import path (teams/erp/erp_sync.js importBranch) checked the
 //   KEYLESS chain only — a forged op signed by ANY key (or none of ours) with a self-consistently re-sealed

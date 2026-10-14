@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the SAP/Oracle/Dynamics PoC TENANTS + the tenant-switcher truth
 // (IMPORT_EXPAND_POC.md §P-1/§P-2/§L-1, W-POC-SHARDS).

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/support.js — the model statics the core callouts call, ported verbatim (bim-compiler
 // prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE). Fills AdCallout.RUNTIME.M.
 // M = org.adempiere.base/src/org/compiere/model. Read-only: no callout support method writes a row.

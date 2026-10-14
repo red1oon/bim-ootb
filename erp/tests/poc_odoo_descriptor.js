@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for RENDERER #2 — the ODOO DESCRIPTOR (RENDERER2_ODOO.md increment 2,
 //   IDEMPIERE_2.md §pivot "one renderer, N dictionaries"). PROVES ?erp=odoo drives the UNCHANGED iDempiere

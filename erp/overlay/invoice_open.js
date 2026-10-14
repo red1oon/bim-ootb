@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/invoice_open.js — the pg functions invoiceopen() / currency rate pick, as the goal engine needs them.
 // VERBATIM copy of erp/ad_process.js `_agRate` / `_agInvoiceOpen` / `_agRound` (read from the core file at commit b2fa278b, NOT modified there). It is copied, not imported, because the

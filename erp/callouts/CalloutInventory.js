@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutInventory.js — org.compiere.model.CalloutInventory.product, ported verbatim
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutInventory.java:44-128). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

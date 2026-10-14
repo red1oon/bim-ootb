@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_sync_fsm.js — Implementing ERP.md §0.20 (secured/durable axis) — Witness: W-SYNC-FSM
 // The client↔server-domain synchronisation lifecycle as an explicit finite state machine.
 // Borrowed shape: docs/LocalFirstPriorArt.md §6 (SQLSync rebase loop / SyncStateMachine), but

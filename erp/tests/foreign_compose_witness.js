@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // foreign_compose_witness.js — proves an ADOPTED P6 plan composes with the verbs that landed AFTER the
 // §SE arc, on the REAL Hospital model. prompts/FOREIGN_IMPORT_COMPOSE_CHECKS.md.
 //

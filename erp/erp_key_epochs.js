@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_key_epochs.js — T1 trust root (bim-compiler prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION)
 // — Witness: W-ROSTER-VERIFY. PORTED from bim-compiler build/erp/erp_key_epochs.js (W-ROTATE, witnessed
 // §ROTATE-OP/§HISTORY-VALID/§FUTURE-GATED/§REVOKE in scripts/poc_rotate.js) — excavated doctrine

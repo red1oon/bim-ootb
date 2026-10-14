@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /* crud_core.js — crud_overlay.js's PURE CORE, physically split out VERBATIM
  * (bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S60 item 1; extraction precedent:
  * viewer/gantt_model.js, PR #1446).

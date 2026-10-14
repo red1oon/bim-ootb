@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §P7 of bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md —
 //   W-PARITY-MANDATORY-CREATE.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the MOBILE pill re-open regression (PILL_REOPEN_FIX).
 //   BUG (user, verbatim): "the mobile version ... that pill when folded after clicking the three dots,

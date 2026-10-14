@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness proving the ERP init-bubble globe BURSTS ONCE on first erp.html load.
 //   ISSUE: on first load the constellation appeared, then ~100ms later the auto-maximize

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — DASHBOARD "future tense" (W-DASH-FORECAST, this lane). §SPEC: idempiere.html.
 //   The future is a run-rate PROJECTION on the TIME-axis lenses only (Graph S-curve + Timeline), driven by one
 //   Forecast toggle. NON-INVENT: every dashed point is a labelled extrapolation of the SAME real folds the donuts

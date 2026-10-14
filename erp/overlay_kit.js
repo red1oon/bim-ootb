@@ -1,5 +1,5 @@
 /**
- * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+ * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
  *
  * overlay_kit.js — the ONE shared toolbox for the import overlays (prompts/CONSISTENCY_FINISH.md §K-1).
  *   Extracts what erp_picker.js + migrate_showme.js carried byte-for-byte each (el, ensureSql) and adds

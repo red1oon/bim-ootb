@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC4-ACCTSCHEMA (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-4; CARDINAL RULE: saving an Accounting Schema does exactly what legacy does).
 //   READ THE LOG after every run: every verdict is a §NC4 line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: MAcctSchema.beforeSave (MAcctSchema.java:711-742) + checkCosting (:577-600) on the twin == what the LEGACY pilot did for the same saves

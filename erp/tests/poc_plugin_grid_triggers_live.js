@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-PLUGIN-GRID-TRIGGERS-LIVE (Host H2 grid seams; RESUME.md §8). READ THE LOG: §PLG-GRID lines carry the evidence.
 // THE ISSUE it proves/disproves, in a REAL browser through the menu leaf click: a LAZY bundle with a WINDOW trigger (Sales Order 143) stays STARTING until the window is opened from the menu, activates then (callout handler registered BEFORE the window renders);
 //   a LAZY bundle with a PROCESS trigger (OrderOpen) stays STARTING until its process is opened from the menu; neither re-activates; a window/process with no pending bundle opens synchronously as before; 0 page errors.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: W-WINDOW-SWEEP (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-4+; CLAUDE.md AD-LAYER LAW 2: "X of N AD windows pass", N from the dictionary). READ tests/poc_window_sweep_live.log.
 // THE ISSUE it proves/disproves, PER WINDOW: opening the window from its menu leaf shows EVERY dictionary tab (names, order) and, per tab, the form carries EVERY displayed dictionary field

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // author_blank_start_witness.js — W-AUTHOR-BLANK-START (FUSED_4D5D_WEDGE_LANE §MI-FLOW)
 //
 // ISSUE PROVED: a "true blank start" organizes the phases (WBS) + assignments but leaves them

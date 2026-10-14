@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-GENESIS-SYSADMIN-LIVE — Initial Tenant Setup reached the CANONICAL way in a real browser (SYSTEM_ADMIN_LANE
 //   §SA1). Drives the whole System-Admin entry: front door lists the System(0) tenant → log in as System
 //   Administrator → the menu carries "Initial Tenant Setup" (and ONLY that, for this leg) → click it → the genesis

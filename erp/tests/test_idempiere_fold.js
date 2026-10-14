@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for idempiere.html (renderer #1, iDempiere-classic chrome).
 //   THE POC CLAIM: a browser page with NO server folds the real Application Dictionary out of

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_export.js — the workbook-serialize leg of PackOut: model → Excel sheet (download).
 //
 // Implementing NINJA_MODE_LANE.md §1 (two-way / "Export an existing window"). The clean INVERSE of

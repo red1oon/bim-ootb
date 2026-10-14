@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING item 3a (RECORD-INFO POPUP).
 //   VALUE correctness is headless (bim-compiler scripts/poc_recinfo.js W-RECINFO 9/9). This proves only that the

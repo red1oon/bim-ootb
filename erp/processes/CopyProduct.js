@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/CopyProduct.js — org.compiere.process.CopyProduct, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/CopyProduct.java). §CP — Witness: W-CP-PROC-ORACLE.
 // A source table absent from the bundle (M_Substitute, M_ProductDownload — no DDL in ad_seed.db) is a named §PROC-UNPORTED-DEP: no rows can exist there, count 0.

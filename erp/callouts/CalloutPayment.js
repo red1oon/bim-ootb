@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutPayment.js — VERBATIM port of org.adempiere.base.callout/src/org/compiere/model/CalloutPayment.java
 // (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE scenarios/cp/CalloutPayment.json).
 // Methods 5/5: invoice :57, order :142, charge :211, docType :239, amounts :292.

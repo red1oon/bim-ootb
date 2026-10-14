@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-PLUGIN-LIFECYCLE (Host work H1; spec ~/Projects/Mfg/HOST_PLUGIN_LIFECYCLE_SPEC.md). READ THE LOG after every run: verdict = §PLG-VERDICT.
 // THE ISSUE it proves/disproves: a plugin bundle (OSGi-style) can be installed, started and STOPPED, and STOP restores the system EXACTLY: install changes nothing; start contributes to every extension point (model hooks, doc action,
 //   validator, process, callout, posting class, GL token, dictionary rows); stop returns a canonical dump of every registry to the baseline hash; overrides STACK by rank/owner and unwind in any stop order; a failing start is atomic;

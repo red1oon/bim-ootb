@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/currency.js — MConversionRate + MConversionType.getDefault + MCurrency precision statics, ported verbatim
 // (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-SUPPORT-ORACLE). Fills AdCallout.RUNTIME.M.
 // M = org.adempiere.base/src/org/compiere/model. Read-only (MConversionRate.setRate :163-227 is a write → not ported).

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * system_monitor.js — the New-Paradigm System Monitor (4 field-health widgets).
  *   Spec: prompts/SYSTEM_MONITOR_WIDGETS.md §SPEC  ·  Risk register: docs/ProductionRisks.md §H

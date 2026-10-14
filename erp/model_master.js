@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_master.js -- the MASTER-RECORD save rules of the iDempiere model classes (bim-compiler prompts/SQLiteIDEMPIERE.md §G-SD2-PORT;
 // CARDINAL RULE: a master created through the shipped window/ModelLayer.save path yields the same child records, defaults and
 // sequence values as legacy). ONE table-driven registry (MASTER) feeding ModelLayer.registerModel -- the generic mechanism

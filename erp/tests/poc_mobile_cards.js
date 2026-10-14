@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §MOBILE-VIEW (prompts/MOBILE_CARDS.md) — the AD record LIST renders as
 //   stacked .acc CARDS at ≤760px INSTEAD of the desktop multi-column <table class="idmp-grid">, and the desktop

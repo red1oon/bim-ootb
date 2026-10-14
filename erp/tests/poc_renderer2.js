@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for RENDERER #2 — a 3rd tenant (Client 12 "Odoo"), rendered by the SAME
 //   AD dictionary framework, from ad_odoo.db (tests/gen_ad_odoo.js: GardenWorld frame cloned → Client 12 +

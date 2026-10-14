@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-CROSS-TAB-PERSIST (prompts/KERNEL_HARDENING_BATCH1_SPEC.md §T6, in bim-compiler).
 //   THE ISSUE PROVED/DISPROVED: kernel_ops _persistToIdb blindly overwrote the stored IDB blob with the
 //   current tab's whole-DB export (kernel_ops.js) — the audit's T6 timebomb: a stale second tab

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // real_xer_witness.js — W-REAL-PARSE / W-REAL-CPM (prompts/XER_REAL_FIXTURE_PROOF.md).
 //
 // The synthetic Hospital demo (gen_foreign_schedule.js) can't prove real-P6 fidelity — WE generate its

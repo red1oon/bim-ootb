@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: HEADLESS engine witness for S2B AD-FOLDED CRUD GENERALITY (W-AD-FOLDED-CRUD) + §P2/§P1 parity engine arms
 //   (W-PARITY-REFLIST / W-PARITY-FIELDSET engine halves, bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL). Proves CORE.foldCrudSpec

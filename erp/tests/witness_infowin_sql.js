@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-INFOWIN-SQL (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS stage 3f; supersedes W-INFOPROD-PARITY, whose subject - the bom* SQL template registry - is deleted).
 //   READ THE LOG after every run: every verdict is a §INFOWIN_SQL line; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the twin builds the Info Window SQL the LEGACY way (InfoWindow.java:1757-1773 + Env.parseContextForSql: the dictionary SelectClause/FromClause text as written,

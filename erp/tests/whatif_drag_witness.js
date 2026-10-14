@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // whatif_drag_witness.js — W-WHATIF-DRAG (FUSED 4D/5D WEDGE P1.b). Whitebox §-log proof that the
 // front-visual DRAG gesture (whatif_panel.js track drag → WhatIf.pxToDays) is a real, deterministic

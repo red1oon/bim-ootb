@@ -2,7 +2,7 @@
 // Implementing prompts/MOBILE_CHAT_LENS.md §"Thread list / inbox = work queue (push, not pull)"
 //   — Witness: §FEED / §FEED-RANK / §FEED-SCOPE (build: tests/poc_feed.js → tests/poc_feed.log)
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // WHAT THIS IS (a PURE fold, node-requireable, exposed on window.FeedFold):
 //   The chat thread-list (F1) is a PUSH inbox, not a pull list: it shows ONLY the docs that need the

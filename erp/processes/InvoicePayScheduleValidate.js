@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/InvoicePayScheduleValidate.js — org.compiere.process.InvoicePayScheduleValidate, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/InvoicePayScheduleValidate.java). §CP — Witness: W-CP-PROC-ORACLE.
 (function (global) {

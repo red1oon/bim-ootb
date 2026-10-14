@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-VIEWS-PARITY (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS stage 4; CARDINAL RULE: a view the legacy windows sit on returns the same rows on the twin).
 //   READ THE LOG after every run: every verdict is a §VIEWS line; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the views in erp/patches/ad_seed.db.sql (translated mechanically from pg_get_viewdef by build_views_patch.py) return, on the pilot's own base rows, the same

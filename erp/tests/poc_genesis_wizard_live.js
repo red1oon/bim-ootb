@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-GENESIS-WIZARD-LIVE — drive genesis.html headless, capture the §-log, assert the born tenant posts to the cent.
 // Run: node tests/poc_genesis_wizard_live.js   (serves erp/ on a local port, loads genesis.html, clicks Birth)
 'use strict';

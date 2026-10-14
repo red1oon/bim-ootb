@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-SD16-ALLOCATION-MODEL-PATH (bim-compiler prompts/SQLiteIDEMPIERE.md §SD16; CARDINAL RULE: the shipped ERP must book exactly like legacy iDempiere).
 //   READ THE LOG after every run: every verdict is a §-line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: SD-16d (a customer return's AR credit memo allocated against the original invoice) is owned by the SHIPPED model layer (erp/model_invoice.js MAllocationHdr.prepareIt/completeIt

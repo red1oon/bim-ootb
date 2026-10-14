@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for feed_fold.js (LENS family, lane-3 worker feed-fold).
 //   THE CLAIM (prompts/MOBILE_CHAT_LENS.md §"Thread list / inbox = work queue, push not pull"):

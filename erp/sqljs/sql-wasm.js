@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 
 // We are modularizing this manually because the current modularize setting in Emscripten has some issues:
 // https://github.com/kripken/emscripten/issues/5820

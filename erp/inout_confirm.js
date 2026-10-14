@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * inout_confirm.js — the CONFIRMATION-LAYER fold (POS_ADDON_SPEC.md §P-12 pick gate,
  * POS_ENGINE_LANE.md §E-5): m_inoutconfirm / m_inoutlineconfirm as pure derivations.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-SLOT (Milestone 2; spec ~/Projects/Mfg/MILESTONE_2_SPEC.md). READ THE LOG after every run: verdict = §MFG-SLOT-VERDICT.
 // THE ISSUE it proves/disproves: every manufacturing table lands in the 5-table slot the layers table says, by the rule that really decides it
 //   (ad_table_map.js OVERRIDES else the PV heuristic fed with DICTIONARY facts — built exactly as scripts/test_bridge.js builds them), and that result

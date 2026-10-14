@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutMovement.js — org.compiere.model.CalloutMovement, ported verbatim, 3 methods + checkQtyAvailable
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutMovement.java). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: FS-19 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2q) — THE ISSUE: opening an existing record with the toolbar
 //   Grid/Form toggle left Save disabled, so the record could not be saved by that (the visible) path. Proves/disproves, BY

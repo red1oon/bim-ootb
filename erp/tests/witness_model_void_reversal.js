@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-VOID-REVERSAL (bim-compiler prompts/SQLiteIDEMPIERE_PORT_BRIEF.md §VOID-1; CARDINAL RULE: the shipped ERP must void
 //   exactly like legacy iDempiere). READ THE LOG after every run: every verdict is a §-line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: before this lane `erp/model_order.js` MOrder.voidIt REFUSED to void a completed Sales Order that had

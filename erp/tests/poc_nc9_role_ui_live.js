@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC9-ROLE-UI (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-9): a Role typed in window 111 and Saved in the browser receives its access rows (MRole.afterSave) in ONE signed group.
 //   THE ISSUE: does the model hook run through the UI save path (not only the headless model witness) and how long does the ~1,700-op group take? READ the §NC9-UI lines.
 'use strict';

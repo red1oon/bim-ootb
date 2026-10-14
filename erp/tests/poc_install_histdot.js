@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for INSTALL → WORLD-HISTORY DOT (CONSISTENCY_FINISH.md §K-3, W-INSTALL-DOT).
 //   PROVES the issue: "the W timeline records BUILDING_OPEN and every committed doc moment, but the

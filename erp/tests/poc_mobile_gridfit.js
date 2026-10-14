@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that idempiere.html FITS a 390px phone — the gap the narrow §MOB-TOPBAR
 //   witness missed. PROVES (issue: "mobile not done — #idmp-main 2145px, header buttons off-screen right"):

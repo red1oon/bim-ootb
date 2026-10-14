@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-SHOPDAY-MODEL-PATH (bim-compiler prompts/SQLiteIDEMPIERE.md §SHOPDAY-RUN-2; CARDINAL RULE: the shipped ERP must refuse/default exactly like legacy iDempiere).
 //   READ THE LOG after every run: every verdict is a §-line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: through the SHIPPED model layer (ModelLayer.run SAVE / DOCACTION on the shipped erp/ad_seed.db + patches, sql.js, recorded clock) --

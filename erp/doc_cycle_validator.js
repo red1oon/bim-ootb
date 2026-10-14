@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // doc_cycle_validator.js — Production-grade iDempiere Document Processing Cycle validator.
 // Implements: (1) strict DocStatus FSM for M_InOut (Purchase Receipt), (2) atomic dual-schema
 // SQLite sync (ERP fact_acct + BIM spatial tracking) under a single SAVEPOINT, (3) rollback

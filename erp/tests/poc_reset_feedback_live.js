@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Witness: both resets now show an OK feedback dialog summarizing what happened (before reload). Sandboxed.
 'use strict';
 var http=require('http'),fs=require('fs'),path=require('path');

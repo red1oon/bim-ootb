@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for MIGRATE_ERP_PICKER.md §SPEC — the pick-your-ERP Install/Migrate dialog.
 //   PROVES:

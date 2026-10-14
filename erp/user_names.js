@@ -1,6 +1,6 @@
 // user_names.js — LENS lane-3 worker `user:0-names`.
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // DO NOT REMOVE — Scope guard
 // SPEC (spec-first): fold AD_User display names into the chat sender — kill the `user:0`

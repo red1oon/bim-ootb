@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_replica_client.js — ERP.md §0.20 / W-PERSIST — Witness: W-REPLICA
 // Reads a canonical op-log snapshot from ANY of N interchangeable hosts (GH raw / OCI / here),
 // replays it through the REAL kernel, and verifies the replayed chain tip == the host's advertised

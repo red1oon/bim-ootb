@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — Scope: build erp/i18n/<lang>.json, the per-locale UI translation files idempiere.html fetches
 #   lazily on a language switch (bim-compiler prompts/ERP_UI_LOCALES.md §L2). EXTRACT ONLY: every translated string
 #   is read from a published iDempiere / ADempiere language pack (XML, the format org.compiere.install.Translation

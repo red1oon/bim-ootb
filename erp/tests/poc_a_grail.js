@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_a_grail.js — W-FOLD-BACK (HISTORY_SESSION_EVENTS.md §A-GRAIL).
 //
 // SPEC: a Z dot = a committed save. Scrubbing BACKWARD past a DOC_ACTION dot calls the fold engine

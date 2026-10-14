@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // foreign_import_smoke.js — §TM-IMPORT-SMOKE (wiring check, secondary to W-FGN node proof).
 // §TM_P6_FOLD (2026-08-24): retargeted from the deleted schedule_editor.html tab to the Time
 // Machine panel's in-panel ⇄ P6/MSP section — the same seam, on its new surface. Serves the real

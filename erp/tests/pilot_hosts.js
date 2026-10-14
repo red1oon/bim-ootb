@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // pilot_hosts.js — host write/fetch for W-PILOT-GROUP-RELAY. ONLY the existing documented static-host paths
 // (prompts/BACKEND_SUBSTRATE_LANE.md §MULTIHOST_WITNESS; scripts/witness_multihost_sync.js:192-214):
 //   OCI dev bucket bim-ootb-dev, prefix sandbox/erp/  (NEVER bim-ootb-live)   — NEW object names only, no --force

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-SETUP-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §SETUP-LENS). READ THE LOG: every verdict is a §SL line.
 // THE ISSUE it proves/disproves: the read-only setup-completeness lens must (1) report a freshly BORN tenant (genesis) honestly line by line, (2) flip EXACTLY the one line whose rows are removed
 //   (neg-control: delete the warehouse -> only 'warehouse' goes MISSING), (3) say INCONCLUSIVE, not OK, when the bundle lacks the table (vacuous population), (4) WRITE NOTHING (db byte-identical

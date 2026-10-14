@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for P4 of the iDempiere-FAITHFUL IN-PLACE CRUD lane
 //   (prompts/CRUD_INPLACE_EDIT_SESSION.md §P4 / T5; RESUME_INPLACE_P4.md). W-INPLACE-GRID-LIVE.

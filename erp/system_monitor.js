@@ -1,4 +1,4 @@
-// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 // system_monitor.js — SYSTEM_ADMIN_LANE §6 (serverless reframe). iDempiere's System Monitor (the
 //   /idempiere-monitor servlet, AdempiereMonitor.java) — same sections (Memory · Cache · Logs/Trace · Servers ·
 //   Cluster/Threads · Database) — but on a serverless browser kernel: every section shows OUR REAL LOCAL value

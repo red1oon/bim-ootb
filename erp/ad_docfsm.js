@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_docfsm.js — C_DocType document FSM (W-DOCFSM). The "C_DocType FSM" leg of the coverage matrix: the
 // legal-action set per DocStatus + the action→resulting-status transition table, a faithful port of
 // iDempiere's DocumentEngine.getValidActions / processIt. Extends Lane-3's DocAction spine (which folded

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC3-NUMBERING (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-3; CARDINAL RULE: document numbers across calendar years/months are exactly legacy's).
 //   READ THE LOG after every run: every verdict is a §NC3 line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: MSequence.getDocumentNoFromSeq (MSequence.java:330-581) on the twin == the numbers the LEGACY pilot issued

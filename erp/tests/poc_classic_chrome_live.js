@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the CLASSIC-CHROME L&F flip (user steer 2026-06-18 "truly maintain
 //   iDempiere L&F"). W-CLASSIC-CHROME (Leg 1). PROVES:

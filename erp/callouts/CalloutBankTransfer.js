@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutBankTransfer.js — VERBATIM port of org.adempiere.base.callout/src/org/adempiere/base/callout/CalloutBankTransfer.java
 // (@Callout IColumnCallout on C_BankTransfer — prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE
 // scenarios/cp/CalloutBankTransfer.json). Methods 11/11 (calloutMap :59-82): toAmt, conversionType, fromCurrency, toCurrency,

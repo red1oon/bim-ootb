@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/CopyFromBankStmt.js — org.compiere.process.CopyFromBankStmt, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/CopyFromBankStmt.java). §CP — Witness: W-CP-PROC-ORACLE.
 // MBankStatementLine(statement) / setPayment / beforeSave / updateHeader live in model_trade.js (ModelTrade, moved §CP-OPEN 4b) (MBankStatementLine.java:100-287).

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — prompts/AGENT_QUEUE.md §AGENT-ZIPS-BUILT (owns §ERP-SESSION-CLOSE-2 §C2.3 item 5).
 // THE CLAIM UNDER TEST (W-AGENT-ZIP-SYNC):
 //   A. Both shipped agent downloads BUILD from their source directories, and what a user extracts is

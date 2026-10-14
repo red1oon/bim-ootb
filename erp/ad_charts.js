@@ -1,7 +1,7 @@
 // ad_charts.js — Implementing ERP_AD_UI.md §7 — Witness: W-ERP-ADUI
 // Cross-table SQL → Canvas chart (bar, pie). Overlay panel.
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 (function () {
   'use strict';
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the W (world-history) long-press drawer PERPENDICULAR auto-layout.
 //   The drawer must draw ACROSS the pill strip, never ALONG it — a parallel drawer COVERS the neighbour

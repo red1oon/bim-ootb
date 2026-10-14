@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the §OUTSTANDING "no buttons outside the pill" item.
 //   PROVES (registry concept from BIM OOTB applied to erp.html):

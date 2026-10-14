@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for GRAND_LANE S2 / ERP_CRITIC_UX_LANE.md J4 CREATE — "make New REAL".
 //   W-CRITIC-CREATE-LIVE. The critic drives the SERVED bundle and proves iDempiere's OWN New (the CRUD seam,

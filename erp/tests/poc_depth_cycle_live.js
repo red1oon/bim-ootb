@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness W-DEPTH-CYCLE (bim-compiler prompts/ERP_DEPTH_FILM.md §5). READ tests/poc_depth_cycle_live.log
 //   before any conclusion — exit code is not evidence.

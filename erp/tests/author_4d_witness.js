@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // author_4d_witness.js — W-AUTHOR-4D-BLANK (FUSED_4D5D_WEDGE_LANE §AUTHOR-1)
 //
 // ISSUE PROVED: a user can start from a real model with ZERO 4D metadata, materialize an

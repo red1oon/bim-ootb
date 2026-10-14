@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_process.js — AD_Process dispatch spine (W-PROC). The "SvrProcess runner" leg of the
 // coverage matrix: read AD_Process + AD_Process_Para, resolve classname against a small JS
 // HANDLER REGISTRY, validate the supplied params against the para rows, run the handler, log.

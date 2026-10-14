@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for INSTALL PERSISTENCE + SUCCESS-PATH (NEW_CLIENT_MGMT.md #4, W-INSTALL-PERSIST).
 //   PROVES the issue: "going through the Install DIALOG (ErpPicker, mode=install) for Odoo ends at a verified

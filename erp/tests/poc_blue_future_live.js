@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING item 0 (BLUE FUTURE) browser
 //   legs. VALUE correctness of the ENGINE is headless (scripts/poc_blue_future.js 9/9). This proves the LIVE

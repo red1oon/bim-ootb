@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // bake_gw_hospital_variance.js — write the budget-vs-actual VARIANCE into the iDempiere records (system of
 // record) for the GW Hospital Project Order. iDempiere natively holds cost variance: PlannedAmt (budget) vs

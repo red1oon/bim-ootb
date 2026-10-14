@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-SNAP (Milestone 3; spec ~/Projects/Mfg/MILESTONE_3_SPEC.md). READ THE LOG after every run: verdict = §MFG-SNAP-VERDICT.
 // THE ISSUE it proves/disproves: (N1) our BOM explosion equals legacy iDempiere's stored PP_Order_BOM/BOMLine rows; (N2) editing the BOM template afterwards never changes
 //   the order's lines; (N3) the order's lines replay from the op log alone (template absent or edited) with an identical hash; (N4) deterministic; (N5) unsupported input

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for FOLD RETURN VALUE (CONSISTENCY_FINISH.md §K-4b, W-FOLD-RET).
 //   PROVES the issue: "crudFoldBack/crudFoldForward logged success but returned undefined — a caller

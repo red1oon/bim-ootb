@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // dashboard_home.js — HOME DASHBOARD GADGET SELECTION (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2a; Witness: W-DASH-SELECT).
 // Ports which PA_DashboardContent gadgets the legacy Home shows a user/role and where: MDashboardContentAccess.get (dashboards not granted through PA_DashboardContent_Access that are IsShowInLogin, UNION the

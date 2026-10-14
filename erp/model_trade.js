@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_trade.js — the trade-cycle model classes, PORTED from iDempiere and REGISTERED into model_layer.js
 // (bim-compiler prompts/ERP_MODEL_LAYER.md §CHANGE-LIST A-E, W1 — Witness: W-MODEL-ORACLE).
 // MOrder · MOrderLine · MInOut · MInvoice · MInvoiceLine · MPayment · MAllocationHdr/Line · MBPartner balances ·

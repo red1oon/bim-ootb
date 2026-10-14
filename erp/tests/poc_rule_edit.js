@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for THE ONE GESTURE (docs/RULE_EDIT_SPEC.md / bim-compiler
 //   prompts/RULE_EDIT_ONE_GESTURE.md) — edit ONE rule on the migrated Odoo Client-12 tenant →

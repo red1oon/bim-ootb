@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the FULL CRUD on iDempiere's OWN surface (GRAND_LANE S2 / J4, the change side).
 //   W-CRITIC-CRUD-FULL-LIVE. J4 proved CREATE; this proves READ · UPDATE · DELETE too — "if you can't CHANGE a

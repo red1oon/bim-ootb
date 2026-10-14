@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — Scope: regenerate erp/patches/ad_seed.db.sql, the self-heal SQL patch idempiere.html applies to
 #   ad_seed.db on every load (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2m, FS-15). EXTRACT ONLY: every row is
 #   read from the live iDempiere Postgres `idempiere` DB (docker container `postgres`, user adempiere). Idempotent

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-POS-PILLBAR (FABLE5_FOLLOWUP_2026-07-04 §Item 3). The POS pill-button bar was an
 //   UNTESTED surface (flagged in the pills survey, never picked up). ISSUES THIS PROVES / DISPROVES:
 //     1. The bar RENDERS: `.pos-pill-btn` is a CSS-only legacy of §P-7 — the LIVE bar is the §R2

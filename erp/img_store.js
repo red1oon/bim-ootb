@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * img_store.js — the POS images FOLDER + the out-of-band copy job (POS_ADDON_SPEC.md §P-9.1,
  * POS_ENGINE_LANE.md §E-3 / POS_KILLER_DEMO §LAYOUT.3).

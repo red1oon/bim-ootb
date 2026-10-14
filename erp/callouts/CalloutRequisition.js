@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutRequisition.js — org.compiere.model.CalloutRequisition (product, amt, setPrice), ported verbatim
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutRequisition.java). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

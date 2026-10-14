@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // zoom_tm_route_witness.js — W-ZOOM-TM-ROUTE (FUSED_4D5D_WEDGE_LANE §ARCH-OWNERSHIP)
 //
 // ISSUE PROVED: ZoomAcross/Connect scope routing is "TM-if-open, else Find" — when the Time Machine

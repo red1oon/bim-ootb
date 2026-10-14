@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Offline smoke for the ERP Gravity/Glassbowl LOCAL rewire (sw v578).
 // PROVES (issue: "clicking Gravity went to remote BIMCompiler GH Pages → dead offline"):
 //   §SMOKE-NAV-LOCAL  — gravity pill nav is LOCAL (location.href, same tab), not a new-tab remote open.

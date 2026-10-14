@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_invoice.js — MInvoice + MInvoiceLine + MPayment + MAllocationHdr/Line model/DocAction classes + MOrder.createInvoice,
 // ported and REGISTERED into model_layer.js (bim-compiler prompts/ERP_MODEL_LAYER.md §CHANGE-LIST A12-A13, C, D — W-MODEL-ORACLE).
 // Java root: org.adempiere.base/src/org/compiere/model/ (credit managers: model/credit/). One-line cite per rule.

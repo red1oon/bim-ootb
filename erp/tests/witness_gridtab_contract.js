@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // W-GRIDTAB-CONTRACT — bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §GT.3. Node, no browser. READ the log after every run.
 // THE ISSUES this proves or disproves, over EVERY active window that has an active TabLevel>=1 tab whose table and parent

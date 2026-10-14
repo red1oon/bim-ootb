@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_shard.js — T7 fix 4 + 4b (W-T7-INC): the signed SHARD_SNAPSHOT op as the shard boundary.
 // Spec: prompts/T7_INCREMENTAL_SHARD_SPEC.md (strategy call deferred to Claude by the user,
 // FABLE5_WRAPUP_2026-07-03 §4b). Period-close pattern (erp_period_close.js §SHOW-CKPT lineage) with

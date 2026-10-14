@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Bake the 5 ERP demo shards (Odoo 12 · iDempiere 13 · SAP 14 · Oracle 15 · Dynamics 16) INTO ad_seed.db,
 // the SAME way the app's installShard merges them: for every table present in BOTH, INSERT OR IGNORE the shard
 // rows column-INTERSECT (drop unknown cols, idempotent). Result = seed that already contains all ERPs, so a

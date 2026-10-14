@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the SHARED OVERLAY KIT + LUCIDE SWEEP (CONSISTENCY_FINISH.md §K-1/§K-2, W-OVERLAY-KIT).
 //   PROVES the issue: "the import overlays (erp_picker + migrate_showme) read like a different author —

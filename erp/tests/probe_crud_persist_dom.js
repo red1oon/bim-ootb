@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — DOM smoke (Playwright, BROWSER proof) for CRUD_EDIT_PERSIST.md Items 1+2.
 // Logic is proven headless in scripts/poc_crud_persist.js (16/16); THIS closes the two gaps a node
 // harness CANNOT reach, on the real glassbowl.html:

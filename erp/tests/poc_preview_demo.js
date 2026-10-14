@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for erp_preview.js (POSTING_PREVIEW_PANEL.md §6 — the Posting-Preview DRAWER).
 //   THE CLAIM (engine PROVEN in bim-compiler build/erp/poc_doc_poster.log; this proves the DRAWER renders it

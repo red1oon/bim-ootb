@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // dashboard_gadgets.js — HOME DASHBOARD GADGET MODELS (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2b; Witness: W-DASH-PERF).
 // One pure model per gadget kind (view-models only, no DOM). performance(): DPPerformance -> WPAPanel.loadGoal -> MGoal.getUserGoals (active goals of the client whose user AND role are empty, or whose

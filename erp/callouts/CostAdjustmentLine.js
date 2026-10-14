@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CostAdjustmentLine.js — @Callout(M_InventoryLine) org.adempiere.base.callout.CostAdjustmentLineASI (.M_AttributeSetInstance_ID)
 // and CostAdjustmentLineProduct (.M_Product_ID), verbatim (org.adempiere.base.callout/src/org/adempiere/base/callout/
 // CostAdjustmentLineASI.java:51-110, CostAdjustmentLineProduct.java:51-122). §CP — Witness: W-CP-CALLOUT-ORACLE.

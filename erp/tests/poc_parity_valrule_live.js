@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §P3 of bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md — W-PARITY-VALRULE.
 //   THE ISSUE this test proves/disproves: "AD_Val_Rule is not wired into the live app at all" (§MEASURED) —

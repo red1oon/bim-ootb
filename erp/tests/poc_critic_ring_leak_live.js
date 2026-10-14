@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the RING-LEAK fix on the iDempiere surface (FRONTEND_LANE_MASTER.md
 //   §OUTSTANDING "RING LEAK ON iDempiere"; doctrine GRAND_LANE_STRATEGY §0). W-RING-LEAK.

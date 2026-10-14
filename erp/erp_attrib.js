@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_attrib.js — T1 (employee attribution): PIN/login as AUDIT METADATA on the op, NOT a signing key.
 // Spec: bim-compiler prompts/FABLE5_WRAPUP_2026-07-03.md §Item 3 (user-locked 2026-07-03) +
 //       prompts/KERNEL_TIMEBOMB_AUDIT_2026-07-03.md §T1 (the employee-attribution sub-gap).

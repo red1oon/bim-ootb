@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // accts_posted.js — the READ-ONLY "Accts Posted" panel (FRONTEND_LANE_MASTER §2 Item C).
 //   Implementing prompts/ACCTS_POSTED_PANEL.md §3/§4 — Witness: §POSTED-READ / §POSTED-GATE / §POSTED-CTX.
 //   A pure RENDERER of window.ERPPostings.readPostings(...). It does NOT gate, balance, or fold — every

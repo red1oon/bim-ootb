@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/DunningRunCreate.js — org.compiere.process.DunningRunCreate, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/DunningRunCreate.java) + the model code it drives: MDunningRun.getLevels/getEntries/
 // deleteEntries/getEntry (M/MDunningRun.java), MDunningRunEntry.setBPartner (:~120-200), MDunningRunLine setInvoice/setPayment/setFee/

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — mfg_mrp.js: PP_MRP as a DERIVED, DETERMINISTIC FOLD (Milestone 5, ~/Projects/Mfg/MILESTONE_5_SPEC.md; Witness W-MFG-MRP). Design rule 6: MRP output is never hand-written.
 //   fold(q) reads the kernel projection (documents PP_Order + their document_lines BOM snapshot) through a READ-ONLY query and RETURNS PP_MRP rows. It writes nothing, emits no ops, reads no clock,
 //   mints no counter: identity of a row is a key built from DocumentNo + type + line. Field mapping EXTRACTED from legacy orders 50000/50001 (reference DB / seed pp_mrp), see spec.

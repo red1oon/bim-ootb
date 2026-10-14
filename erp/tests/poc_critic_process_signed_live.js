@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for GRAND_LANE S1 / ERP_CRITIC_UX_LANE.md J5 PROCESS — "make Complete REAL".
 //   W-CRITIC-PROCESS-LIVE. The critic drives the SERVED bundle and proves the re-pointed DocAction surfaces

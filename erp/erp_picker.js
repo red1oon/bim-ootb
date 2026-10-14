@@ -1,5 +1,5 @@
 /**
- * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+ * BIM OOTB — ERP. Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
  *
  * erp_picker.js — the "pick-your-ERP" Install/Migrate dialog (prompts/MIGRATE_ERP_PICKER.md §SPEC).
  *   ONE dialog family: Install + Migrate both call open({mode}). It (S1) lists ALL five ERPs always,

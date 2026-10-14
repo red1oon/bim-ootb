@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutCashJournal.js — VERBATIM port of org.adempiere.base.callout/src/org/compiere/model/CalloutCashJournal.java
 // (prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE scenarios/cp/CalloutCashJournal.json). Methods 2/2: invoice :49, amounts :128.
 (function (global) {

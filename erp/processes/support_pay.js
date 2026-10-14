@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/support_pay.js — module ACCESSORS for the family-C (pay / bank / match) processes. §CP-OPEN 4b: MAllocationHdr.beforeDelete/afterDelete,
 // MAllocationLine.beforeDelete + processIt(reverse) moved to model_invoice.js (registered into ModelLayer there); PO.saveEx (saveRow) is ModelLayer.saveEx;
 // MFactAcct.deleteEx is model_match.js; the Processed/Processing/Posted phantom-column strip is gone (ModelLayer.newPO follows PO.setStandardDefaults).

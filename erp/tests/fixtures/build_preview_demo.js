@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — prompts/AGENT_QUEUE.md §PREVIEW-DEMO-FROM-SQL (owns §ERP-SESSION-CLOSE-2 §C2.3 item 4).
 //
 // WHY THIS EXISTS. `erp/preview_demo.db` was a 397 KB BINARY tracked in git — the one thing CLAUDE.md's

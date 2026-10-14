@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that the Share pill CAPTURES and RESTORES full ERP context (erp.html).
 //   THE CLAIM (docs/ERP_SHARE_SPEC.md): the pill emits a URL with the SAME params erp.html restores on

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // pilot_report.js — §PILOT-GROUP-REPORT-RAW: group stock + P&L folded from the admin's folded op log.
 // UNVERIFIED: not compared with real iDempiere (Phase B, after the model layer lands). Raw numbers only.
 // Run: node erp/tests/pilot_report.js [run-dir]  — joins header+line by gid (local ids collide across stations).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope: W-PILOT-GROUP-RELAY, ERP_PARALLEL_RUN_PILOT.md §9 Phase A (relay + fold integrity).
 // THE ISSUE: do three stations (own context/IDB/signer, own org+warehouse) each ringing POS sales, persisted on three
 // different hosts (here / OCI dev / GH), fold at an admin with every op present, signed by its station, gid intact,

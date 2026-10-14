@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // bake_forms_valrules_seed.js — additively CREATE + fill AD_Form and ad_val_rule in ad_seed.db.
 //
 // WHY a narrow additive bake, not scripts/export_ad_seed.js: a full re-export against the live

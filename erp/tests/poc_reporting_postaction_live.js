@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness W-REPORT-POSTACTION — "Post Action: Reporting" (red1 2026-10-13: any reporting part is a separate post-action so the films are not redone). The POS cycle is SETUP only (its own witness: poc_depth_cycle_live.js). THE ISSUE: standard iDempiere reports/windows must show the documents a session has just completed. Derived from W-DEPTH-CYCLE (bim-compiler prompts/ERP_DEPTH_FILM.md §5). READ tests/poc_depth_cycle_live.log
 //   before any conclusion — exit code is not evidence.

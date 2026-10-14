@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC6-SETUPRULES (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-6/7/8; CARDINAL RULE: a setup master saved in a window does exactly what legacy does).
 //   READ THE LOG after every run: every verdict is a §NC6 line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the save rules of MConversionRate (currency/rate/date/overlap refusals + the auto-created REVERSE rate), MWarehouse (org 0 -> context org, Warehouse_Acct per

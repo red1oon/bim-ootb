@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness W-INFOPROD-ONHAND (bim-compiler prompts/ERP_DEPTH_FILM.md §7). READ tests/poc_infoprod_onhand_live.log before any
 //   conclusion — exit code is not evidence.

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // production_validator.mjs — C-2 witness bundle (prompts/PLUGIN_SYSTEM_LANE.md §Phase C).
 // Contributes ONE BEFORE_SAVE model validator into the live ad_modelval REGISTRY (registerValidator pattern):
 // reject an M_Production whose production qty is negative. Returns an error STRING (fireHooks aborts on the

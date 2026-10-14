@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // W-ERP-I18N — the in-browser Kernel-ERP's UI language switch, EXECUTED in a real headless browser (software
 //   rendering, --disable-gpu) over the served bundle. Spec: bim-compiler prompts/ERP_UI_LOCALES.md (§L1–§L5).

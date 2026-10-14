@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — DASHBOARD EVM variance S-curve (W-DASH-VARIANCE, this lane). §SPEC: idempiere.html.
 //   On a PROJECT window a phased project's baked PlannedAmt (contract) vs CommittedAmt (outturn) folds into the
 //   variance S-curve: planned baseline always, committed/forecast outturn + Δ when the Forecast toggle is on.

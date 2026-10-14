@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §P2 of bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md — W-PARITY-REFLIST.
 //   THE ISSUE this test proves/disproves: LEG-1 ("list/yesno render as an editable text of the raw value",

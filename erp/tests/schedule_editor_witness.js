@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // schedule_editor_witness.js — W-SCHED-EDIT (FUSED_4D5D_WEDGE_LANE §SE-1)
 //
 // ISSUE PROVED: step 1+2 of the MSP-grade Gantt arc works on the engine — a user can SEE the schedule

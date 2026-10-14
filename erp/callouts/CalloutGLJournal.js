@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutGLJournal.js — org.compiere.model.CalloutGLJournal, ported verbatim, all 7 methods
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutGLJournal.java). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the STANDALONE Kanban Lens page (erp/kanban_lens.html) rich cards.
 //   THE CLAIM: the standalone lens no longer renders bare "Table #id" cards — it folds per-record meta

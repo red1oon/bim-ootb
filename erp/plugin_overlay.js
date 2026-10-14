@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // plugin_overlay.js — the Plugin Engine pill overlay (prompts/PLUGIN_SYSTEM_LANE.md §Phase D).
 //   The browser face of the Fold-Engine plugin host (plugin_registry.js, W-PLUGIN). One pill → one click:
 //   paste a raw ES-module URL, Install, and the bundle is ACTIVE — collapsing iDempiere's two-step

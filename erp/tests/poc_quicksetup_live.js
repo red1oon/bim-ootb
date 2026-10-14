@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-QUICKSETUP-LIVE — Quick setup + Setup check pill in the REAL idempiere.html (headless CPU, Playwright from ~/bim-ootb/tests/node_modules).
 // ⚠ DO NOT REMOVE — spec bim-compiler prompts/ERP_DEPTH_FILM.md §QUICKSETUP + §SETUP-LENS. READ THE LOG: every verdict is a §QSL line.
 // ISSUES it proves/disproves: (1) the legacy-identical wizard is UNCHANGED by default (quick box present, OFF, currency/admin/chart fields visible); (2) ticking Quick hides them and the tenant it

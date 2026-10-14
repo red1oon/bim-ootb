@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for GRAND_LANE S3 / ERP_CRITIC_UX_LANE.md J6 POST + REPORT —
 //   "the completed doc's GL is SHOWN to the cent, and a statement/receipt folds." W-CRITIC-POST-LIVE.

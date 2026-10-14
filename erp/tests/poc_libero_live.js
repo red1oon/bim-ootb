@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-LIBERO-LIVE (Libero bundle slice 1; spec prompts/mfg/LIBERO_BUNDLE_SLICE1_SPEC.md). READ THE LOG: §LIBERO-LIVE lines carry the evidence.
 // THE ISSUE it proves/disproves, in a REAL browser through the page's own paths: the Libero bundle (plugins/libero_manufacturing.mjs) installed + STARTED lazily survives a reload as STARTING with its menu rows staged at boot, so the
 //   "Manufacturing Order" leaf is in the tree although NO code has run; clicking the leaf ACTIVATES the bundle (before the window renders); a PP_Order committed through the commit funnel (__crud.applyOp) then gets its BOM

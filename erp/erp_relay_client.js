@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_relay_client.js — Implementing ERP.md §0.20 — Witness: W-RELAY
 // Browser/node client for erp_relay_server.js. Exposes the SAME shape as erp_sequencer.js
 // (push / snapshot / head), but ASYNC over fetch — so FSM.rebase() (which now awaits the sequencer)

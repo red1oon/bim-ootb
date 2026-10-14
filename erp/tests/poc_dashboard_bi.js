@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — DASHBOARD BI low-hanging fruit (W-DASH-BI, this lane). §SPEC: prompts/RESUME_DASHBOARD_BI.md.
 //   Three Graph-tab enrichments, every number a REAL fold of the open window's records (NON-INVENT, no LLM):
 //     KPI strip   — count·total·average·biggest·smallest + ▲/▼ vs last month.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for REFRESOLVE_SPEC.md W-REFRESOLVE (USER_JOURNEY_LANE punch-list #1).
 //   Proves the LIVE idempiere.html (ad_ref_table now sliced into the seed + fmt() widened + resolveFK rewritten

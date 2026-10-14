@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: LENS lane-3 F1 — the §-WITNESS for the CHAT CHROME (chat_lens.js PURE view-model builder).
 //   THE CLAIM: the chat chrome is a FAITHFUL FOLD over the REAL op-log — every bubble traces to a

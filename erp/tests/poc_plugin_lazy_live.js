@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-PLUGIN-LAZY-LIVE (Host work H2; spec ~/Projects/Mfg/HOST_PLUGIN_LIFECYCLE_SPEC.md §H2). READ THE LOG: §PLG-LAZY lines carry the evidence.
 // THE ISSUE it proves/disproves, in a REAL browser through the page's own commit funnel: a LAZY plugin bundle (fixture, trigger table PP_Order) is STARTED but not activated; the base product has no DocAction class for pp_order
 //   (control: a DocAction on a pp_order row takes the status-only path, no §MODEL-DOCACTION); the FIRST DocAction on a pp_order row activates the bundle at the funnel (applyOp -> demand), BEFORE the registries are read, and the model layer then runs

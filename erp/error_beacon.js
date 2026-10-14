@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * error_beacon.js — S1 SPIKE: the MINIMAL field-error beacon (NOT the G2 telemetry pipeline).
  *   Card: prompts/RESUME_S1_DISCOVERY_SPIKES.md §Beacon  ·  Risk: ProductionRisks.md G2 (observability)

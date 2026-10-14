@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-CONTENT-SIGN (bim-compiler prompts/KERNEL_HARDENING_BATCH1_SPEC.md §NEXT SESSION, T2).
 //   THE ISSUE PROVED/DISPROVED: signatures bind to the LOCAL rowid — _canonical hashes `op.id` and the sig
 //   attests over op_hash — so any id shift (a merge renumbering, the audit's §T2 permanence trap) breaks

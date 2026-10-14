@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_pos_close_leak.js — W-POS-CLOSE-LEAK. §BUGFIX 2026-07-13 (user report: "shop cart pill does not
 //   close when we exited"). ISSUE THIS PROVES / DISPROVES: does closing the POS lens via the overlay's
 //   OWN native ✕ (the obvious top-right close, distinct from the buried ⋯→Home dock button) actually

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // help_overlay.js — ReadMe/ShowMe HELP overlay (READSHOWME_DYNAMIC_SPEC.md — D3).
 // A separated behavior layer (unobtrusive JS / Stimulus-style data-hooks / AOP cross-cutting concern):
 // it attaches to glassbowl's bubbles BY KEY, reads the keyed _TRL-style store help_ops.json, and never

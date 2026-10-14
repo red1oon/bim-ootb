@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_snapshot_sign.js — ERP.md §0.20 W-SIGN / HolyGrail "signed checkpoint" — Witness: W-REPLICA-SIGN
 // Signs/verifies a snapshot's chain-head tip with the controller's ECDSA P-256 key (same scheme as
 // scripts/poc_sign.js + the kernel's W-SIGN). This is the HolyGrail §"hard parts" primitive: a signed

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/quicksetup_ui.js — OPTIONAL "Quick setup" for Initial Client Setup, as an OVERLAY (prompts/ERP_DEPTH_FILM.md §QUICKSETUP, §EXTENSION-LAYER LAW). The core wizard form is NOT edited: when the
 // form appears this file adds a tick-box (OFF by default). Ticked = hide the currency / administrator / chart fields and FILL them with the values derived from the dictionary (OverlayQuickInput); the

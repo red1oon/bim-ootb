@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/AcctSchemaCopyAcct.js — org.compiere.process.AcctSchemaCopyAcct, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/AcctSchemaCopyAcct.java) + the model code it calls:
 // MAccount.get(…) :72-235, MAccount.setValueDescription :623-835 / validate :841-857 (M/MAccount.java),

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutInOut.js — org.compiere.model.CalloutInOut, ported verbatim, all 11 methods
 // (org.adempiere.base.callout/src/org/compiere/model/CalloutInOut.java). bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP
 // — Witness: W-CP-CALLOUT-ORACLE (scripts/pilot/scenarios/cp/CalloutInOut.json).

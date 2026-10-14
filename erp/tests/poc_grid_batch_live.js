@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING item 4 (GRID MULTI-SELECT +
 //   GEAR BATCH PROCESS). Spec: prompts/GRID_BATCH_FORM_PILL_SPEC.md item 4. The DocAction FSM correctness is

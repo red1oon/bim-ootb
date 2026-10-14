@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for HISTORY_TAP_TO_IDEMPIERE.md §SESSION + the AD_DATA-echo FIX.
 //   ISSUE (observed live): the ERP §-tap drain turned §AD_DATA (navigation's data-read echo) into a crumb dot.

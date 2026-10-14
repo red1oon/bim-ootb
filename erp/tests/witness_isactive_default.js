@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-ISACTIVE-DEFAULT (found by the Libero intro film). READ THE LOG: §ISACT lines.
 // THE ISSUE it proves/disproves: GridField.getDefault stage 1 (defaultForSpecialCase -> defaultForActiveField, GridField.java:777-785): a column named IsActive ALWAYS defaults to 'Y'. Libero's EE01 columns carry NO DefaultValue, so the twin's
 //   form-spec fold left IsActive unchecked on New and §GT.7 then made every other field of the new record read-only (a New Manufacturing Order could not be typed). Neg-controls: a column that is not IsActive keeps its (absent) default;

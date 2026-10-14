@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: whitebox §-witness PROVING whether Odoo "Client 12" is an ACTUAL migrated/resident tenant or a
 //   TRANSIENT demo prop. Proves/disproves the report: "12-odoo.db loads via ?shard= but is NOT persisted —

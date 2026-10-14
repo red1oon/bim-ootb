@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for PILLS_TO_GLASSBOWL_CONSOLIDATE.md — every loose Glassbowl + Gravity
 //   control folds into the SHARED ⋯ pill registry (pill_builder.js used as-is) via glassbowl_pills.js +

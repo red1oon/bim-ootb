@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-HOME-DASHBOARD-LIVE — the Home dashboard in the REAL idempiere.html after login (headless CPU). ⚠ DO NOT REMOVE — spec bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2c.
 // READ THE LOG: §HDL-CHECK lines. ISSUE it proves/disproves: after login the user lands on the legacy Home - the gadget set and order equal what MDashboardContentAccess.get + DashboardController select for
 //   that user/role (oracle scripts/bridge/dashboard_select_legacy.js: GardenAdmin 8 main + 2 side, System 5 main + 2 side); the Performance gadget shows the 4 goals with a title, a tooltip and a colour; EVERY

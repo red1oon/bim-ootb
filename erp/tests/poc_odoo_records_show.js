@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: whitebox §-witness PROVING the migrated Odoo tenant's REAL records are resident AND showable in our
 //   SQLite/AD UI — "sample data can go in, and we show their records." Loads the demo URL (seed + 12-odoo.db

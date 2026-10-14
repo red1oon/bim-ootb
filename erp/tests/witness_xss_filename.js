@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // witness_xss_filename.js — W-XSS-FILENAME (bim-compiler prompts/CODEBASE_QUALITY_AUDIT_2026-07-02.md §5)
 //
 // ISSUE PROVED: a maliciously-named local file (e.g. `<img src=x onerror=alert(1)>.xlsx`)

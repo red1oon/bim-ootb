@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the GATED SIGNED COMPLETE (prompts/I4_OPLOG_RECONCILE.md §payoff) —
 //   the editable, signed L1 rule "an order may Complete iff GrandTotal ≤ T" GATES the real wfmc CO

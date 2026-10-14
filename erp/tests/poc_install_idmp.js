@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for iDempiere DIALOG-INSTALL (NEW_CLIENT_MGMT.md #5-install / IDMP_FULLWIDTH_SEED §4,
 // W-INSTALL-IDMP — mirrors PR #260's poc_install_persist pattern for the Odoo tenant).

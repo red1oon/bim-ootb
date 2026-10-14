@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P0 / J1 (THE FRONT DOOR) — W-CRITIC-FRONTDOOR.
 //   PROVES (issue: "all 5 demo tenants must be PRESENT + enterable at login with NO install step; today a bare

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/AllocationReset.js — org.compiere.process.AllocationReset, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/AllocationReset.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 (function (global) {

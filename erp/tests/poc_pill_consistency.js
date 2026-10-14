@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the CROSS-SURFACE pill behavior the user dictated (wrap 2026-06-09):
 //   "the pill ⋯ should rest BOTTOM-RIGHT and stay there (not drift to mid on collapse); start COLLAPSED;

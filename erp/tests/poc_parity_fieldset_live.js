@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for §P1 of bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md — W-PARITY-FIELDSET.
 //   THE ISSUE this test proves/disproves: the five documents an iDempiere user lives in (C_Order, M_InOut, C_Invoice,

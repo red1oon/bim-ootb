@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_excel.js — NinjaExcel RUN engine: read a three-sheet workbook (BACKUP/Input/Process), gate it,
 // execute the Process rows over an injected query executor, write values back to addressed cells, and
 // verify-by-example against the filled BACKUP sample. The binder between Excel (layout/format/graphs,

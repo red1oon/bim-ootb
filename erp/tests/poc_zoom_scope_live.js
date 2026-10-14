@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ZOOM ACROSS v2 CARRY side (ZOOM_ACROSS_SCOPE_SESSION §SPEC, witness legs 1-3).
 //   Drives the REAL registered 'viewer' destination (window.ZoomAcross.destinations()) with REAL seed rows from

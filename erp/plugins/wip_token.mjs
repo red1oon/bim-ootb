@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // wip_token.mjs — C-3 witness bundle (prompts/PLUGIN_SYSTEM_LANE.md §Phase C).
 // Contributes ONE GL token into the post_resolver token map (a plain object): {Production.WIP} → the REAL
 // Work-In-Process account, EXTRACTED from the seed (c_elementvalue), never invented. The bundle reads the

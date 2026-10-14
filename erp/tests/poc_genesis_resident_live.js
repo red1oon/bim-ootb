@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-GENESIS-RESIDENT-LIVE — drive the FULL genesis→resident flow in a real browser (sql.js + IndexedDB):
 //   genesis.html births a tenant + posts to the cent → "Install as resident tenant" → idb handoff → redirect to
 //   idempiere.html?installGenesis=1 → boot allocates a free band, re-bands + merges + grants + persists → the login

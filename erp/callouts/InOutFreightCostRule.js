@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/InOutFreightCostRule.js — @Callout(M_InOut.FreightCostRule) org.adempiere.base.callout.InOutFreightCostRule, verbatim
 // (org.adempiere.base.callout/src/org/adempiere/base/callout/InOutFreightCostRule.java:42-73). §CP — Witness: W-CP-CALLOUT-ORACLE.
 (function (global) {

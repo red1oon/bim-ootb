@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for MIGRATE_ERP_PICKER.md §ALSO-REQUESTED — the no-pivot heat-map fallback.
 //   PROVES:

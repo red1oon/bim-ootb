@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * blue_future.js — the VISUAL/BROWSER legs of FRONTEND_LANE_MASTER.md §OUTSTANDING item 0 (BLUE FUTURE).
  *   The ENGINE is shipped (kernel_ops.js v9: branch_id ∉ _canonical · replayOps official-default ·

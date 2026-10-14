@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: LENS lane-3 worker F1 — the CHAT CHROME (mobile-first). A NEW LENS over the SAME op-log
 //   engine: the ERP rendered as a WhatsApp/Telegram thread. THIS FILE IS A RENDERER ONLY. It folds

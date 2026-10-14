@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P2 — FAN TO ALL 5 TENANTS (J2 ORIENT + J3 READ + J8
 //   SWITCH). W-CRITIC-SWITCH. The CRITIC drives the SERVED bundle, once per tenant, with ONE lens code path —

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutInvoice.js — org.compiere.model.CalloutInvoice, ported verbatim (every method).
 // Source: org.adempiere.base.callout/src/org/compiere/model/CalloutInvoice.java (iDempiere @87968daa73).
 // bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE (scenarios/cp/CalloutInvoice.json).

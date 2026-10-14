@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-PCLOSE-ARCHIVE (prompts/KERNEL_HARDENING_BATCH1_SPEC.md §T3, in bim-compiler).
 //   THE ISSUE PROVED/DISPROVED: erp_period_close.closePeriod DELETEs every pre-checkpoint op from the
 //   only live copy (erp_period_close.js:92) — the audit's T3 timebomb: first real period close silently

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 'use strict';
 /**
  * odoo_adapter.js — the Odoo↔iDempiere migration adapter (prompts/ODOO_FOLD_POC.md Step 1).

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // erp_descriptor.js — THE DESCRIPTOR SEAM ("one renderer, N dictionaries"; docs/IDEMPIERE_2.md §pivot,
 // docs/IDEMPIERE_RENDERER_SPEC.md §descriptor-seam). The recorded decision: "I1 calls ADParser directly;

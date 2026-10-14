@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/PaySelectionCreateCheck.js — org.compiere.process.PaySelectionCreateCheck, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/PaySelectionCreateCheck.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // MPaySelectionCheck ctors / addLine / isValid come from model_ctor.js (ModelCtor, ONE implementation).

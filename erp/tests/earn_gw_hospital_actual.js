@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // ⚠ DO NOT REMOVE — SCOPE: W0 / S5 "EARN THE ACTUAL" (lane prompts/TM_4D5D_VARIANCE_LANE.md §W0-SOURCE-DECISION).
 // Read the LOG after every run (tests/earn_gw_hospital_actual.log) — exit code is not evidence. DONE when W-PC-EARN green.

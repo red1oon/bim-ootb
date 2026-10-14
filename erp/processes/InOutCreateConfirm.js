@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/InOutCreateConfirm.js — org.compiere.process.InOutCreateConfirm, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/InOutCreateConfirm.java), with MInOutConfirm.create
 // (org.adempiere.base/src/org/compiere/model/MInOutConfirm.java:64-93) + MInOutLineConfirm ctor/setInOutLine/beforeSave

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * vfs_detect.js — CONSTRAINT_MITIGATION_LANE item 3: VFS detection + IndexedDB fallback.
  *   Spec: docs/FoldEngineConstraints.md §4 P0 (OPFS 2.5× vs IDB) + §5/§6 (vfs_backend monitor).

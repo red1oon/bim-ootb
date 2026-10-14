@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // kitchen_lens.js — the Kitchen Display lens (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS.md §T2-SPEC).
 //
 // DUMB TERMINAL by construction (the pos_lens.js discipline): this file renders tickets and SENDS —

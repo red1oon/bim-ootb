@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // model_cost.js — the iDempiere costing engine, ported VERBATIM and written through the model Trx (bim-compiler
 // prompts/ERP_MODEL_LAYER.md §CORE-P2P — Witness: W-MODEL-ORACLE m_costdetail / m_cost / m_costhistory / m_costqueue).
 // MCostElement.getCostingMethods · MCost (get, getCostInfo, add, setWeightedAverage(+Initial), getSeedCosts, getCost) ·

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Probe: Project (deeplink 990001) → Task Line DIRECTLY (skip Phase/Task) — does the detail filter by parent? Log only.
 const { chromium } = require(require('os').homedir() + '/bim-ootb/tests/node_modules/playwright');
 const http = require('http'), fs = require('fs'), path = require('path');

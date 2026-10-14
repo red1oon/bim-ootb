@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for KANBAN_MARVEL_SPEC — the "Odoo-marvel" Kanban cards + the shared
 //   semantic status colour palette across Kanban AND Graph (consistent L&F, status-at-a-glance).

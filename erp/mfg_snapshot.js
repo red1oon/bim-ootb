@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — mfg_snapshot.js: the Manufacturing Order BOM SNAPSHOT as a PURE kernel handler (Milestone 3, ~/Projects/Mfg/MILESTONE_3_SPEC.md; Witness W-MFG-SNAP).
 //   Implementing the parent doc's design rules 1+3: no manufacturing verb (CREATE_DOCUMENT + CREATE_LINE only), the order carries its OWN copy of the BOM so a later
 //   template edit can never reach it. Field mapping + the QtyRequired formula are EXTRACTED from legacy rows (reference DB, orders 50000/50001), not invented — see spec.

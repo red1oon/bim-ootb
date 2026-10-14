@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_callout.js — the iDempiere CALLOUT RUNTIME, ported as ONE generic layer (AD-LAYER LAW: no per-window code).
 //   Implementing bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP (core callouts) — Witness: W-CP-CALLOUT-ORACLE.
 // What it ports (M = org.adempiere.base/src/org/compiere/model, U = .../compiere/util):

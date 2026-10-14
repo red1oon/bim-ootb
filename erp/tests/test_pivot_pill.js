@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: whitebox §-witness for RESUME_360_KANBAN_PIVOT item 3 — "surface pivot_lens on the ⋯ pill rail"
 //   (W-PIVOT-PILL). The Pivot LENS becomes reachable from the ⋯ rail, sibling to kanban/graph, never on the

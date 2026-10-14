@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — FAST node WHITEBOX §-witness for the BLUE DOT state machine (blue_future.js skin legs).
 // Spec: FRONTEND_LANE_MASTER §OUTSTANDING item 0 + HISTORY_KNOB_SIGNAL_TAP. Issue it proves/disproves:
 //   "the Blue Dot gestures (long-press → enter / accept-up-to / discard-all) drive the shipped branch ENGINE

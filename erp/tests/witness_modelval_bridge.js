@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-2.0-only
 // witness_modelval_bridge.js — WITNESS for ad_modelval_bridge.js (PLUGIN_SYSTEM_LANE.md §Phase E).
 // Spec: bim-compiler prompts/WITNESS_INTERFACE_FRAMEWORK.md §2.3 (witness_kit/contract.js pattern).
 //

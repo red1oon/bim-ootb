@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // genesis_seed.js — NON-INVENT default-genesis data (extracted from idempiere_test), as a browser-loadable UMD
 // module (no fs). coa = 311 real iDempiere default accounts; acctMap = 73 real default-account col→value maps.
 'use strict';

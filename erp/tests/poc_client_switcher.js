@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: §-witness for the LOGIN CLIENT SWITCHER (NEW_CLIENT_MGMT.md P3, W-CLIENT-SWITCHER).
 //   PROVES (issue: "list installed tenants → pick → role-scoped login; today only ?shard=&login= selects"):

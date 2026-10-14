@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard. ad_infowin.js — the generic Info Window (iDempiere org.adempiere.webui.info.InfoWindow) driven by the
 //   DICTIONARY (AD_InfoWindow + AD_InfoColumn), plus the per-table "subclass" hooks (InfoProductWindow) as registered plug-ins.
 //   Spec: bim-compiler prompts/ERP_DEPTH_FILM.md §7 (every behaviour carries its Java file:line). Witnesses: W-INFOPROD-ONHAND, W-INFOPROD-PARITY.

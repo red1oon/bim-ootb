@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_BOTTOM_BAR_AND_LIFECYCLE.md §C — Install/Migrate context-aware lifecycle.
 //   GATE-2 (decided): Install + Migrate appear ONLY pre-client (login / tenant picker); HIDDEN once a client

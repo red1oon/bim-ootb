@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_BOTTOM_BAR_AND_LIFECYCLE.md §B — the cross-tab history scrubber.
 //   PROVES (issue: "no timeline of what you navigated across the iDempiere window tabs; no read-only restore"):

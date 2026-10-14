@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 //
 // extract_model.js — the Odoo DICTIONARY extractor (renderer #2 increment 2, prompts/RENDERER2_ODOO.md §1).
 //   Sibling of agent.js (which folds the O2C *data* chain → odoo_chain.json). This pulls the *structure*:

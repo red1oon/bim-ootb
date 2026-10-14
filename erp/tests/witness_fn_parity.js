@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-FN-PARITY (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS stage 2/3; CARDINAL RULE: the twin's stored-function ports return what legacy returns).
 //   READ THE LOG after every run: every verdict is a §FN_PARITY line; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: erp/callouts/sqlfn.js's UDFs == the pilot's PL/pgSQL functions, for the SAME input rows. Input: scripts/bridge/fn_parity_legacy.js -> out/fn_parity_legacy.json

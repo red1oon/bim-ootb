@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser WIRING §-witness for FRONTEND_LANE_MASTER.md §OUTSTANDING item 1 (PRIVATE DRAFT RESTORE)
 //   browser leg. VALUE correctness is headless (scripts/poc_draft_restore.js W-DRAFT-RESTORE 14/14). This proves

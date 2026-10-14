@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the agreed front-door onboarding UX (idempiere.html). THE CLAIM
 //   (UPDATED §P4-4, user wrap 2026-06-09 — "stick to the pill"):

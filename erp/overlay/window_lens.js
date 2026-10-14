@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // window_lens.js — WINDOW ANATOMY LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §WINDOW-LENS; Witness: W-WINDOW-LENS + poc_window_lens_live).
 // READ-ONLY "what is this window made of": tabs, fields, buttons, access, numbering — straight from the Application Dictionary, one SQL per line, legacy mechanism cited, INCONCLUSIVE (never OK)

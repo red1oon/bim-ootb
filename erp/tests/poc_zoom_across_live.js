@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for Leg 1 of the iDempiere L&F FIDELITY lane (RESUME_IDMP_FIDELITY.md §SPEC Leg 1):
 //   the toolbar ZOOM ACROSS button (iDempiere btnZoomAcross / WZoomAcross — WHERE-USED drill). W-ZOOM-ACROSS PROVES:

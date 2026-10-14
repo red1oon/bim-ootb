@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // pos_lens.js — the POS LENS (docs/POS_ADDON_SPEC.md §P-1..§P-11, prompts/POS_LENS_SESSION.md).
 //
 // DUMB TERMINAL by construction (the anti-fat-client rule): this file renders tiles, holds a cart,

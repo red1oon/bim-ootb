@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for Leg 4 of the iDempiere L&F FIDELITY lane (RESUME_IDMP_FIDELITY.md §SPEC Leg 4):
 //   the DIRTY-EXIT GATE (iDempiere AbstractADWindowContent.onExit → Dialog.ask "CloseUnSave?"). The form view is

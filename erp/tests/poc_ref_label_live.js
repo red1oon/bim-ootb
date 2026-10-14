@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-REF-LABEL (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-6): a Table-reference picker (Currency Rate window 116, C_Currency_ID, AD_Ref_Table 112) labels a table WITHOUT a Name column by its first IsIdentifier column (MLookupFactory.getLookup_TableDir: ISO_Code) - was the bare id "100 (100)".
 //   THE ISSUE: option labels of C_Currency pickers are ISO codes. READ the §REFLABEL lines.
 'use strict';

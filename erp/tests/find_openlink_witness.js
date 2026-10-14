@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // find_openlink_witness.js — W-FIND-OPENLINK (prompts/FIND_OPENLINK_EXISTING_ORDERLINE.md)
 //
 // ISSUE PROVED: the Find panel's existing-order detection (_surfaceExistingOrder) finds a folded

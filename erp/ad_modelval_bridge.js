@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — SPEC (ad_modelval_bridge.js)
 // SCOPE: bridges the real ad_modelvalidator AD table (ad_modelval.js:39 readValidators) to the
 //   already-shipped Fold-Engine plugin system (plugin_registry.js Phase A, plugin_overlay.js Phase D,

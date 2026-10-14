@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/support_docgen.js — module ACCESSORS for the family-B (doc-from-doc) processes. §CP-OPEN 4b: every M-class body that lived here
 // (getLines, PO.saveEx, MDocType.docBaseType, MInvoice.isCreditMemo) moved to model_order.js / model_invoice.js — this file only wires names.
 // Registered on AdProcess.PSUP.docgen; resolved at call time (processes/ load alphabetically, this file last).

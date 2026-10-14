@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — mfg_whatif.js: a WHAT-IF scenario as a discarded BLUE FUTURE branch (Milestone 10, ~/Projects/Mfg/MILESTONE_10_SPEC.md; Witness W-MFG-WHATIF).
 //   No second branch mechanism: speculative ops are committed to the SAME kernel_ops log TAGGED with branch_id (kernel_ops.js BLUE FUTURE) and applied to a SCRATCH clone of the live projection, never to the live one;
 //   MRP (mfg_mrp.fold) is run over the scratch; discard = KernelOps.discardBranch (the whole branch undone). Nothing manufacturing-specific lives in the kernel.

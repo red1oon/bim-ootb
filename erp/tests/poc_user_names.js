@@ -1,6 +1,6 @@
 // tests/poc_user_names.js — §-witness for user_names.js (LENS lane-3 `user:0-names`).
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // DO NOT REMOVE — Scope guard
 // CLAIM under test: the chat sender `user:0` (build/erp/poc_chat.log §CHAT-THREAD) is folded to a

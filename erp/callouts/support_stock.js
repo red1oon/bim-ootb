@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/support_stock.js — model statics used by the inout/stock/GL callouts, ported verbatim (bim-compiler
 // prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE). Each is guarded so a sibling file that
 // ports the same static (callouts/uom.js etc.) keeps ONE implementation: whichever defines it first owns it.

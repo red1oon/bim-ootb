@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/RMACreateOrder.js — org.adempiere.process.RMACreateOrder, verbatim
 // (org.adempiere.base.process/src/org/adempiere/process/RMACreateOrder.java). §CP-PROC-CORE family B — Witness: W-CP-PROC-ORACLE.
 // The M-class code (MOrder ctor/beforeSave, MOrderLine ctor/setOrder/setHeaderInfo/setPrice) moved to model_order.js (§CP-OPEN 4b).

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_bundle.js — Phase C: wrap a staged Ninja model as a `.foldbundle` (emit + install)
 //
 // Implementing NINJA_MODE_LANE.md §Phase C — Witness: W-NINJA-BUNDLE

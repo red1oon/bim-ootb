@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-SEED-RESET — the surgical "Reset demo / seed ERPs" transform (SYSTEM_ADMIN_LANE §6, user 2026-06-19).
 //   Proves SystemMonitor._rebuildSeed restores the SHIPPED seed/demo clients to pristine WITHOUT touching the
 //   tenants the user created. Issue under test: a blunt full-wipe also nukes born tenants; the surgical reset must

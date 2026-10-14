@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-DASH-SELECT (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2a). READ THE LOG: §DS lines; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: which gadgets the legacy Home shows a user/role, and where (MDashboardContentAccess.get: dashboards not configured in PA_DashboardContent_Access that are IsShowInLogin,
 //   plus those granted by an active access row for this role/user, minus those an INACTIVE access row removes; then DashboardController: main vs side panel by IsShowInDashboard, active only, ORDER BY

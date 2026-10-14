@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // Whitebox §-witness — unified Dashboard: donut grid, chip-fills-left, long-press textmode, collapse, timeline scrub.
 'use strict';
 const path=require('path'),http=require('http'),fs=require('fs');

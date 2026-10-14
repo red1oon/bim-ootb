@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/InventoryCountUpdate.java port — org.compiere.process.InventoryCountUpdate, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/InventoryCountUpdate.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.
 // The Java's three raw UPDATEs use a row-value IN, an aliased UPDATE and a (a,b)=(subselect) SET — shapes the runtime's

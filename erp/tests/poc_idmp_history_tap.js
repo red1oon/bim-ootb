@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for HISTORY_TAP_TO_IDEMPIERE.md — the §-tap VIEW-DEPTH ported onto the ERP bar.
 //   PROVES (issue: "the idmp_history scrubber restores window/tab/record but NOT the LOOK; the §-stream is not

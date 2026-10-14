@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // SPIKE driver — serve-and-drive the live write-path page headless, capture the in-browser §-logs
 // (real crypto.subtle seal + real IndexedDB persist). Run from bim-compiler (has puppeteer):
 //   node ~/bim-ootb/erp/tests/drive_spike.js [n]

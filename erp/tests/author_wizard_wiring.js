@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // author_wizard_wiring.js — W-AUTHOR-WIZARD-WIRE (FUSED_4D5D_WEDGE_LANE §AUTHOR-1 slice-2)
 //
 // ISSUE PROVED: the authoring wizard is correctly MOUNTED on the Time-Machine surface and its

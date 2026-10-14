@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/support_stock_proc.js — generic PO helpers (create / cols / saveEx) for the family-D processes. §CP-OPEN 4b: the M-class statics that lived here
 // (MInventoryLine, BigDecimal(double), MCurrency precision, SimpleDateFormat) moved to model_trade.js.
 // bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE. Registered on AdProcess.PSTK; resolved at call time

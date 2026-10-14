@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-DASH-DICT (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY step D0). READ THE LOG: §DD lines; the exit code is not the evidence.
 // THE ISSUE it proves/disproves: the legacy Home dashboard + Performance Measurement dictionary (PA_DashboardContent/_Access/Preference, PA_Goal/GoalRestriction, PA_Measure/MeasureCalc, PA_ColorSchema,
 //   PA_Ratio, AD_Note, AD_RecentItem) is in the SEED AS LOADED (ad_seed.db + patches/ad_seed.db.sql applied statement by statement, as idempiere.html does) cell for cell equal to the legacy pilot.

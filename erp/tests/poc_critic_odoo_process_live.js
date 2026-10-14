@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P1 — J5 PROCESS on the Odoo tenant (client 12).
 //   W-CRITIC-PROCESS. The critic Completes a real Odoo sales order THROUGH THE UI (the form Process ▶ pill AND

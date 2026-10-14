@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for S2B AD-FOLDED CRUD GENERALITY (W-AD-FOLDED-CRUD-LIVE). The ISSUE: today only
 //   the curated 5 document tables (crud_ops.json) are editable; the user's principle is "rules general not custom"

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-WINDOW-LENS (bim-compiler prompts/ERP_DEPTH_FILM.md §WINDOW-LENS). READ THE LOG: HARNESS verdict = §WL-VERDICT; FINDINGS = §WL-GAP lines (reported, not asserted away).
 // THE ISSUE it proves/disproves: the read-only "what is this window made of" lens reports tabs / fields / displayed fields / buttons / access / numbering of ANY AD window straight from the dictionary.
 //   HARNESS (asserted): over EVERY active AD window of ad_seed.db the lens equals an independent recount (different join path); per-tab sums == window totals; a window with no tabs is INCONCLUSIVE, never OK;

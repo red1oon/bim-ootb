@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
 # build_odoo_agent_zip.sh — (re)build the self-sufficient odoo_agent.zip download bundle.
 # Vendored deps (erp_kernel.js, odoo_adapter.js) come from the engine-lane source:
 #   ../../../bim-compiler/scripts/{erp_kernel,odoo_adapter}.js  (source of truth)

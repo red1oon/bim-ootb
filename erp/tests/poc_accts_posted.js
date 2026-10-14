@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: headless §-witness for accts_posted.js (FRONTEND_LANE_MASTER §2 Item C — the Accts-Posted PANEL).
 //   THE CLAIM (engine PROVEN in bim-compiler build/erp/poc_postings.log; this proves the PANEL renders it):

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/CalloutPaymentAllocate.js — VERBATIM port of org.adempiere.base.callout/src/org/compiere/model/CalloutPaymentAllocate.java
 // (prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-CALLOUT-ORACLE scenarios/cp/CalloutPaymentAllocate.json). Methods 2/2: invoice :53, amounts :141.
 (function (global) {

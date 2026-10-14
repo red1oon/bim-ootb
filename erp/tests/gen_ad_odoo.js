@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: MIT
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>. SPDX-License-Identifier: GPL-2.0-only
 //
 // gen_ad_odoo.js — RENDERER #2 tenant SHARD generator (delegate-to-install, NON-INVENT, SHARD-IN doctrine).
 //   AD data is never a baked monolith — it is SHARDED IN. The base ad_seed.db is the installed framework (the

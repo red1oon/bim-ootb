@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope: harness lib for W-PILOT-GROUP-RELAY (bim-compiler prompts/ERP_PARALLEL_RUN_PILOT.md §9 Phase A).
 // Read the run log after every run; exit code is not evidence. Harness only — no erp/ product file is edited.
 'use strict';

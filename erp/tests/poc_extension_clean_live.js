@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-EXTENSION-CLEAN-LIVE — the pill / lens / Home / Quick-setup extension layer must leave the CORE model and standard processes untouched and must never break them.
 // ⚠ DO NOT REMOVE — rule: bim-compiler prompts/ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW (user, 2026-10-14: "pill features are out of legacy scope ... they may shortcut but still commit along the iDempiere
 // convention, ensure it does not impact core model and std process so that the core still clean"). READ THE LOG: §XCL-CHECK lines.

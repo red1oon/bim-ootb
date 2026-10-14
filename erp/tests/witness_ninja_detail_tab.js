@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // W-NINJA-DETAIL-TAB — bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §GT-NINJA. Node, no browser. READ the log after every run.
 // THE ISSUES this proves or disproves (Ninja generator ↔ iDempiere AD shape, GridWindow.initTab:193-242):

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_workflow.js — Workflow node-walk + activity + routing engine (W-WF). The "AD_Workflow" leg of the
 // coverage matrix: read AD_Workflow / AD_WF_Node / AD_WF_NodeNext, walk the node graph from the start node,
 // create a WF_Activity per visited node, and route to the next node (std-user-next by seqno, or an explicit

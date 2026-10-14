@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that vfs_detect.js is WIRED into the boot of erp.html + idempiere.html
 //   (CONSTRAINT_MITIGATION_LANE item 3, browser-wiring step 1/5). Proves the §VFS line fires once at boot,

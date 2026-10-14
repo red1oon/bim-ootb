@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — Scope: append the legacy DB VIEWS the twin's windows sit on to erp/patches/ad_seed.db.sql (bim-compiler prompts/ERP_DEPTH_FILM.md §FN-CENSUS stage 4).
 #   EXTRACT ONLY: each definition is `pg_get_viewdef` read from the pilot (docker container `postgres`, db idempiere_pilot), translated mechanically (casts stripped, = ANY(ARRAY[..]) -> IN (..));
 #   nothing is hand-written. Idempotent (DROP VIEW IF EXISTS + CREATE VIEW). READ the "§VIEWS-PATCH" line after a run; the judge is erp/tests/witness_views_parity.js (rows vs the pilot's view).

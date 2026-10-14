@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the ERP init-bubble FIRST PAINT (prompts/ERP_INIT_BUBBLE_INSTANT.md).
 //   The "init bubble" = the initbubble.json constellation/globe. It must paint INSTANTLY (≤300ms from

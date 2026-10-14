@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: W-ERP-FIRST-SETUP — the "set up a brand-new ERP from scratch" journey a first-time Odoo / iDempiere user
 //   expects, EXECUTED step by step in a real headless browser (software rendering, --disable-gpu) over the served

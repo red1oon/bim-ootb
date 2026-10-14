@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the pill ⋯ trigger UX (v597), two user-requested changes:
 //   (a) FLAT (horizontal) kebab on ALL pill surfaces (erp.html + idempiere.html) so OUR ⋯ differs from

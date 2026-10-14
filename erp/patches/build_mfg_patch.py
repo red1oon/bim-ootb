@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 # ⚠ DO NOT REMOVE — scope: erp/patches/mfg.sql, the MANUFACTURING self-heal patch (~/Projects/Mfg/MILESTONE_1_SPEC.md, W-MFG-WIRE). Kept apart from
 #   ad_seed.db.sql so the manufacturing layer can grow/ship/roll back on its own; idempiere.html applies it after ad_seed.db.sql on every load.
 # EXTRACT ONLY from the reference Postgres `idempiere` (read-only): DDL for the 8 PP tables the bundle never shipped, the columns the two column-short

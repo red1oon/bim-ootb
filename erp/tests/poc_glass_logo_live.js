@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the glass-bubble client logo (Leg 2 of the iDempiere L&F FIDELITY lane —
 //   user-supplied doublebubble mark, "kernel within a kernel"). W-GLASS-LOGO PROVES:

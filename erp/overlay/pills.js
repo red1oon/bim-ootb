@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/pills.js — the READ-ONLY lens pill ACTIONS ("Setup check", "Window anatomy"). Registration is done by the shim in boot.js (core pill manifest and actions are NOT edited). Every action is
 // wrapped: a fault shows a message, never throws into the host (prompts/ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW).

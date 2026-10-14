@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-SD16-ENGINE-PORT (bim-compiler prompts/SQLiteIDEMPIERE.md §SD16; CARDINAL RULE: the shipped ERP must book and refuse exactly like legacy iDempiere).
 //   READ THE LOG after every run: every verdict is a §-line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: erp/doc_poster.js + erp/erp_engine.js lacked the customer-return (M_RMA) rules: RMA qty refusal (MRMALine.checkQty, cumulative), return receipt booked at CURRENT cost

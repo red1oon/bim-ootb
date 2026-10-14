@@ -4,7 +4,7 @@
 // AD_Org, AD_Window_Access). No DOM, no writes — the SAME calls the headless witness makes.
 // HONEST: no server → identity/context SELECTION, not password auth (docs §3b honest framing).
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 (function () {
   'use strict';
 

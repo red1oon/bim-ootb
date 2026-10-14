@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // tools/unrar.mjs — unpack a .rar with node-unrar-js (pure JS). Used by fetch_i18n_packs.sh for the 2008 Arabic pack.
 // Needs: npm i node-unrar-js@2 (resolved from NODE_PATH or a node_modules beside it). Usage: node unrar.mjs <file.rar> <outdir>
 import { createExtractorFromData } from 'node-unrar-js';

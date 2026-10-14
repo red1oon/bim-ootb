@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 'use strict';
 /**
  * erp_preview.js — the Posting-Preview seam (POSTING_PREVIEW_PANEL.md §3).

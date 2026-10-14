@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // W-SEED-RESET-LIVE — wiring + asset smoke (secondary to the whitebox W-SEED-RESET) in a real browser.
 //   Proves, over the REAL ad_seed.db: (1) the doublebubble.jpg brand mark renders at the three BIG spots (login
 //   card · header · System Monitor head); (2) the System Monitor Cache section now offers BOTH a surgical "Reset

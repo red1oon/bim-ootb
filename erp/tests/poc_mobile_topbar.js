@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that the mobile top bar of erp.html survives the pill-registry change.
 //   PROVES (issue: "did removing gbHud/switcher + adding pills break the mobile top layout?"):

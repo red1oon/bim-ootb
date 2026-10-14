@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_sync_relay.js — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring — Witness: W-N-CONVERGE.
 // Wires the ENGINE-PROVEN relay (erp_relay_server.js / erp_relay_client.js) + the ENGINE-PROVEN rebase
 // loop (erp_sync_fsm.js rebase() — rewind → apply-canonical → replay-pending → re-seal, proven by

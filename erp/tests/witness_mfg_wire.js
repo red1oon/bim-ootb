@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-MFG-WIRE (Milestone 1; spec ~/Projects/Mfg/MILESTONE_1_SPEC.md). READ THE LOG after every run: verdict = §MFG-VERDICT.
 // THE ISSUE it proves/disproves: the Manufacturing Order window (AD_Window 53009, 13 tabs) cannot be used because (a) 8 PP tables have no
 //   physical table and 2 are column-short, (b) no active AD_Menu path reaches it (M3 now: the BASE carries none; the Libero bundle stages the path, witness_libero_bundle.js L2).  PASS = the window carries 13 tabs whose

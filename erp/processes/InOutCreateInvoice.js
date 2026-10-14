@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/InOutCreateInvoice.js — org.compiere.process.InOutCreateInvoice, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/InOutCreateInvoice.java). §CP-PROC-CORE family B — Witness: W-CP-PROC-ORACLE.
 (function (global) {

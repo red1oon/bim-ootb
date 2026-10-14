@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_gridtab.js — the GridTab layer: ONE tab model per AD_Tab, built only from AD metadata, owning the tab's
 //   query contract (link column, link value, WhereClause, access, OrderBy) and the insert gate. Every window is
 //   handled by the same object — no per-window / per-table code. Browser (window.AdGridTab) + node (module.exports).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-MOBILE-viewport §-witness that the iDempiere pill bar (idmp_pills.js, mounted from
 //   pills_idmp.json) RENDERS VISIBLE pills on a phone — the proof poc_onboard_front_door.js never had

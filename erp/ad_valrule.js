@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ad_valrule.js — AD_Val_Rule SQL-where interpreter (W-VALRULE). The "AD_Val_Rule" leg of the coverage
 // matrix: read AD_Val_Rule.Code (Type S = a SQL where-clause fragment), substitute @Context@/@Field@
 // tokens, and APPLY the clause as a real WHERE against the bound table for list/FK filtering — exactly

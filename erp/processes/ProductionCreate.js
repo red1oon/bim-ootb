@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/ProductionCreate.js — org.compiere.process.ProductionCreate (org.adempiere.base.process/src/org/compiere/process/ProductionCreate.java).
 // Manufacturing is NOT core (CLAUDE.md §AD-LAYER LAW rule 6): the process shell is verbatim; MProduction.validateEndProduct / createLines / deleteLines and
 // MProductionPlan.* (the M_Production line generator) are a NAMED DEP (§PROC-UNPORTED-DEP) — those branches follow the Java's own "created == 0" return.

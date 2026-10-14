@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-OSGI-CONSOLE (Host work H2; erp/osgi_console.js). READ THE LOG: verdict = §OC-VERDICT.
 // THE ISSUE it proves/disproves: the Plugins & Releases console speaks the OSGi/Felix vocabulary a legacy administrator knows - system bundle Id 0, built-ins as always-active bundles, plugin statuses Active / Starting (lazy, started but not
 //   activated) / Resolved (a stopped bundle returns to Resolved) / Installed, the Felix summary sentence, a working filter, correct per-state actions, and a detail pane whose "Services registered" is what the REAL PluginRegistry recorded.

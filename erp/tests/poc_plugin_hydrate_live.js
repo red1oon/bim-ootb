@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-PLUGIN-HYDRATE-LIVE (Host work H1; spec ~/Projects/Mfg/HOST_PLUGIN_LIFECYCLE_SPEC.md). READ THE LOG: §PLG-LIVE lines carry the numbers.
 // THE ISSUE it proves/disproves, in a REAL browser: (1) a bundle (plugins/wip_token.mjs, a real shipped bundle) installs + starts through the page's PluginRegistry, its GL token {Production.WIP} resolves from the seed; (2) after a page RELOAD the registry
 //   restores it ACTIVE from IndexedDB through registry.restore() (the path this lane changed) and the token is live again; (3) STOP removes the token (automatic undo) and a second reload does NOT bring it back (STOPPED is persisted).

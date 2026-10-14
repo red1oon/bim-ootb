@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-NC1-CALENDAR (bim-compiler prompts/ERP_DEPTH_FILM.md §NC-1; CARDINAL RULE: the twin creates periods exactly like legacy iDempiere).
 //   READ THE LOG after every run: every verdict is a §NC1 line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: AD_Process 100 YearCreatePeriods -> MYear.createStdPeriods (MYear.java:209-285) + MPeriod.beforeSave/afterSave (MPeriod.java:799-873) on the twin.

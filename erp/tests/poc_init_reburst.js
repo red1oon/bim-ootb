@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for the init-bubble "jumping / reburst on refresh" report.
 //   The "init bubble" = the initbubble.json constellation/globe (erp.html Phase-1, ad_ui._renderHomeGraph

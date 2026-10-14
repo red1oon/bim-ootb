@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // poc_idmp_history_restore.js — W-IDMP-HIST-RESTORE: per-page bar seeds from persisted WholeHistory
 // Issue proved: idmp_history started _hist=[] each session — prior session dots were lost on reload.
 'use strict';

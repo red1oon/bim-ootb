@@ -3,7 +3,7 @@
 // MIRROR of bim-compiler/scripts/migrate_pg_to_sqlite.js — keep in sync (canonical there).
 // Run locally:  npm install better-sqlite3  &&  node migrate_agent.js --masters
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * migrate_pg_to_sqlite.js — ERP Step 0: raw PG→SQLite migration.
  *   Spec: docs/ERP.md §0.10 + prompts/ERP_RAW_MIGRATION.md (TASK Step 0).

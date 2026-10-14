@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — BigDecimal: exact decimal arithmetic for ALL money/quantity math (mirrors java.math.BigDecimal)
 // SCOPE / CONTRACT:
 //   JavaScript Number is IEEE-754 binary double — WRONG for money (0.1+0.2 != 0.3). SQLite has no DECIMAL type.

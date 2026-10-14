@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for Leg 5 of the iDempiere L&F FIDELITY lane (RESUME_IDMP_FIDELITY.md §Leg 5):
 //   the toolbar **Print** button (iDempiere btnPrint / Print24.png, Alt+P) — print THIS document = fold its

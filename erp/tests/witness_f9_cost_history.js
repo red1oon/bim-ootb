@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-F9-COSTHISTORY (bim-compiler prompts/SQLiteIDEMPIERE.md §78 / §F9.4; CARDINAL RULE: the shipped ERP must cost a back-dated
 //   shipment exactly like legacy iDempiere). READ THE LOG after every run: every verdict is a §-line, the exit code is not the evidence.
 // THE ISSUE it proves/disproves: before this port erp/doc_poster.js costed a shipment from the CURRENT m_cost row; legacy (MCost.getCost :290-300

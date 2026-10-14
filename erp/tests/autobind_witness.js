@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // autobind_witness.js — proves §B1/§B2 of prompts/AUTOBIND_BY_CONVENTION.md on the REAL Hospital model.
 //
 // Issue each block proves:

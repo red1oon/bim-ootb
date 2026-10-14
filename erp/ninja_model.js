@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_model.js — Phase A: pure Ninja sheet parser (UMD, no DB, no iDempiere)
 //
 // Implementing NINJA_MODE_LANE.md §Phase A — Witness: W-NINJA-MODEL

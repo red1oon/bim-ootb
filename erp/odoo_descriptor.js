@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // odoo_descriptor.js — RENDERER #2: the Odoo descriptor (prompts/RENDERER2_ODOO.md, docs/IDEMPIERE_2.md
 // §pivot "one renderer, N dictionaries"). Registers a SECOND ErpDescriptor whose three facets

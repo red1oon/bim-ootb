@@ -3,7 +3,7 @@
 // Reads AD_Menu, AD_Window, AD_Tab, AD_Field, AD_Column from SQLite.
 // Returns structured objects. No rendering. No side effects except §-log.
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 (function () {
   'use strict';
 

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ninja_rule.js — NinjaExcel RULE tier: compile a closed business phrase into Process-row SQL candidates,
 // deterministically, from the AD dictionary already in the client db. Reduces SQL crafting to a business
 // vocabulary the substrate itself declares — entity=ad_table, measure/filter=ad_column, status=ad_ref_list.

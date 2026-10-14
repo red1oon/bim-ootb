@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness for ERP_CRITIC_UX_LANE.md P1 — J2 ORIENT + J3 READ on the Odoo tenant
 //   (client 12, the doc-complete tenant). W-CRITIC-ORIENT + W-CRITIC-READ. The CRITIC drives the SERVED bundle.

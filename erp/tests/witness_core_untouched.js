@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-CORE-UNTOUCHED (bim-compiler prompts/ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW). READ THE LOG: §CU lines.
 // THE ISSUE it proves/disproves: the overlay (lens / pill / Home / Quick-setup) is an overlay OVER an immutable core. Against the BASE commit (default: the last core commit before any overlay work, b2fa278b;
 //   override with CU_BASE=<rev> to guard a later branch point) the diff of every file under erp/ OUTSIDE erp/overlay, erp/tests and erp/patches may contain ONLY (a) the single seam line

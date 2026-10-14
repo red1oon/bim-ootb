@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // processes/BOMVerify.js — org.compiere.process.BOMVerify, verbatim
 // (org.adempiere.base.process/src/org/compiere/process/BOMVerify.java) + MPPProductBOM.getProductBOMs :78-87, getDefault :155-185,
 // getLines(false) :340-352 (org.adempiere.base/src/org/eevolution/model/MPPProductBOM.java). §CP-PROC-CORE — Witness: W-CP-PROC-ORACLE.

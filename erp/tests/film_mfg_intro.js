@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Libero Manufacturing intro film: RAW take (no narration, no cards; cards/voice are added in POST per the film standing rules, prompts/mfg/INTRO_FILM_SCRIPT.md).
 // ONE take, CPU only, English UI, real mouse/keyboard on the real page. Every fact is a §ERP_FILM_FACT read from the live in-browser DB/DOM. READ <out>/erp_film.log and <out>/erp_film.page.log before any conclusion; exit code is not evidence.
 // Run: [DRY=1] [REPO=<worktree root>] node erp/tests/film_mfg_intro.js <outDir>      (DRY=1: no screencast / no ffmpeg, same steps, for proving the beats with §-logs first - PRIMAL LAW)

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 //
 // overlay/quick_input.js — QUICK SETUP derivation (pure). Moved OUT of core genesis.js (prompts/ERP_DEPTH_FILM.md §EXTENSION-LAYER LAW): the overlay never edits core; it FILLS the legacy-identical
 // Initial Client Setup form (see quicksetup_ui.js) and the core wizard's own handler runs unchanged.

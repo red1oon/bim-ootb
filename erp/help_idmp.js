@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // help_idmp.js — idempiere HOST ADAPTER for the SHARED help_overlay.js (prompts/IDEMPIERE_TOUR_GUIDE.md).
 // It REUSES help_overlay.js unchanged — NO FORK: this file contains ZERO coach logic (no coachPlan, no
 // buildBadges, no step machine). It only calls window.__help.init({host, nav}) with idempiere's exposed

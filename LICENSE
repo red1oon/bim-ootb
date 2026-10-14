@@ -1,3 +1,5 @@
+NOTE: this MIT licence covers everything in this repository EXCEPT the erp/ directory (Kernel ERP), which is GPL-2.0-only; see erp/COPYING.GPL-2.0 and the README's License section.
+
 MIT License
 
 Copyright (c) 2026 Redhuan D. Oon

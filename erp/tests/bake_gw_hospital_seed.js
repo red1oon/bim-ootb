@@ -1,7 +1,7 @@
 /**
  * BIM OOTB — Frictionless BIM. Two DBs. One browser. Zero install.
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
- * SPDX-License-Identifier: MIT
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 // bake_gw_hospital_seed.js — PREPARE the GardenWorld sample: bake the Hospital BIM Project Order into the
 //   ERP seed (erp/ad_seed.db) so a clean reload already contains it (NO OPFS push, NO boot overlay — the

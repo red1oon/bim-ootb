@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // autobind_smoke.js — §TM-AUTOBIND-SMOKE (wiring check, secondary to W-AUTOBIND node proof 16/16).
 // §TM_P6_FOLD (2026-08-24): retargeted from the deleted schedule_editor.html tab to the Time
 // Machine panel's in-panel ⇄ P6/MSP section — same §B3 seam, new surface. Serves the real viewer +

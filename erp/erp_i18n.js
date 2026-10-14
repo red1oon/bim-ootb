@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // erp_i18n.js — UI language (locale) for the in-browser Kernel-ERP (idempiere.html).
 // Spec: bim-compiler prompts/ERP_UI_LOCALES.md (§L1 model, §L2 packs, §L3 chrome catalogue, §L4 switch, §L5 RTL).
 // Witness: W-ERP-I18N (erp/tests/witness_erp_i18n.js).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — Scope guard
 // Scope: real-browser §-witness that PERIOD-CLOSE is wired into the live app on the REAL signed op-log
 //   (prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice A — §INTEG-WIRE). THE CLAIM:

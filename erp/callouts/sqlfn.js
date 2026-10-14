@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-only
 // callouts/sqlfn.js — the iDempiere PL/pgSQL functions the callout/pricing SQL calls, ported as SQLite UDFs
 // (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — Witness: W-CP-SUPPORT-ORACLE). Source of truth = the LIVE
 // definitions on the pilot DB (pg_get_functiondef, adempiere schema): bompricestd/list/limit, currencyrate,
