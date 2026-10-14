@@ -63,11 +63,18 @@
   // handler needs (e.g. ctx.report = report_overlay CORE, ctx.fetch = a row-fetcher) so the spine stays
   // data-source-agnostic (node witness injects sqlite fetchers; browser injects the bundle).
   // REPORT handlers resolve to report_overlay.js folds — NOT reinvented here.
-  var REGISTRY = {};
+  // LAYERED (Host work H1, layered_registry.js): REGISTRY / JAVA are the MATERIALISED effective views; a bundle registers with opts {owner, rank} and stopping it removes its layers (core entry effective again).
+  function _LR() { return (typeof module !== 'undefined' && module.exports) ? require('./layered_registry.js') : global.LayeredRegistry; }
+  var REGISTRY = {}, REG_L = _LR().create();
 
-  // registerHandler(classname, fn[, meta]) — meta.kind ∈ {report, docaction}; meta.reportKey wires to REPORT_MAP.
-  function registerHandler(classname, fn, meta) {
-    REGISTRY[classname] = { fn: fn, meta: meta || {} };
+  // registerHandler(classname, fn[, meta[, opts]]) — meta.kind ∈ {report, docaction}; meta.reportKey wires to REPORT_MAP.
+  function registerHandler(classname, fn, meta, opts) {
+    REG_L.add(classname, { fn: fn, meta: meta || {} }, opts); REGISTRY[classname] = REG_L.top(classname).value;
+  }
+  function unregisterHandler(classname, owner) {
+    var n = REG_L.remove(classname, owner), t = REG_L.top(classname);
+    if (t) REGISTRY[classname] = t.value; else delete REGISTRY[classname];
+    return n;
   }
   function hasHandler(classname) { return !!REGISTRY[classname]; }
   function registeredClassnames() { return Object.keys(REGISTRY); }
@@ -1217,10 +1224,29 @@
     remove: function (trx, table, po) { return _ML().remove(trx, String(table).toLowerCase(), po.row || po); },
     newPO: function (trx, table, fields) { return _ML().newPO(trx, String(table).toLowerCase(), PO_HELPERS.plainMap(fields || {})); }
   };
-  function defineProcess(classname, factory) {
+  var JAVA_L = _LR().create();
+  function defineProcess(classname, factory, opts) {
     var C = factory(SvrProcess, PO_HELPERS);
-    JAVA[classname] = C;
+    JAVA_L.add(classname, C, opts); JAVA[classname] = JAVA_L.top(classname).value;
     return C;
+  }
+  function undefineProcess(classname, owner) {
+    var n = JAVA_L.remove(classname, owner), t = JAVA_L.top(classname);
+    if (t) JAVA[classname] = t.value; else delete JAVA[classname];
+    return n;
+  }
+  // removeOwner - everything one bundle contributed here (plugin_registry stop). Returns { handlers, processes }.
+  function removeOwner(owner) {
+    var h = 0, j = 0;
+    REG_L.keys().forEach(function (k) { h += unregisterHandler(k, owner); });
+    JAVA_L.keys().forEach(function (k) { j += undefineProcess(k, owner); });
+    return { handlers: h, processes: j };
+  }
+  function describe() {
+    var o = { handlers: {}, processes: {} };
+    REG_L.keys().sort().forEach(function (k) { o.handlers[k] = REG_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    JAVA_L.keys().sort().forEach(function (k) { o.processes[k] = JAVA_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    return o;
   }
   // runJava(query, env, pi) — ProcessUtil.startJavaProcess (ProcessUtil.java:145-205) inside one ModelLayer.Trx.
   //   pi = { AD_Process_ID, className, title, Record_ID, Table_ID, AD_PInstance_ID, params:{name:{v,vTo}|v}, ctx(Ctx) }
@@ -1278,7 +1304,7 @@
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
     openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
-    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

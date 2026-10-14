@@ -8,7 +8,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, REAL_SQLJS = false; try { initSqlJs = require('sql.js'); REAL_SQLJS = true; } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }   // the bundled wasm only goes with the bundled loader
 var BREAK = process.env.MFG_BREAK || '', fails = 0, judged = 0, inconclusive = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MFG-SLOT ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 // layers table of Manufacturing Model Milestones and Contracts.md (slots as the doc states them); MP rows = the measured correction (see spec)
@@ -23,7 +23,7 @@ var WANT = {
 var WANT_MP = { MP_Maintain: 'documents', MP_OT: 'documents', MP_OT_Request: 'documents', MP_Maintain_Task: 'document_lines', MP_Maintain_Resource: 'document_lines',
   MP_OT_Task: 'document_lines', MP_OT_Resource: 'document_lines' };
 (async function () {
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var SQL = await initSqlJs(REAL_SQLJS ? {} : { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var db = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));   // dictionary only: no patch needed, no physical table needed
   function q(sql) { var r = db.exec(sql); return r.length ? r[0].values : []; }
   var isDoc = {}; q("SELECT DISTINCT t.TableName FROM AD_Column c JOIN AD_Table t ON c.AD_Table_ID=t.AD_Table_ID WHERE c.ColumnName='DocStatus'").forEach(function (r) { isDoc[r[0]] = 1; });

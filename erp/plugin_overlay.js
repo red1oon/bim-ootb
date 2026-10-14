@@ -75,6 +75,7 @@
       process:    glue.engines && glue.engines.process,
       postTokens: glue.engines && glue.engines.postTokens,
       docAction:  global.ModelLayer || null,   // the DocAction extension point (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 2)
+      docClass:   global.DocPoster || null,    // the posting-class extension point (legacy IDocFactory): registerDocClass / removeDocClassOwner (Host work H1)
       import: function (url) { return import(/* @vite-ignore */ url); }
       // store: default in-memory; IDB persistence is a side-channel (_persist below) so the registry stays sync.
     };
@@ -91,13 +92,9 @@
   function _hydrate() {
     if (_hydrated) return Promise.resolve();
     return _idbGet().then(function (saved) {
-      var chain = Promise.resolve();
-      (saved || []).forEach(function (b) {
-        if (!b || !b.url) return;
-        chain = chain.then(function () { return _reg.installBundle(b.url); })
-          .then(function () { if (b.state === 'ACTIVE') return _reg.startBundle(b.id); })
-          .catch(function (e) { console.warn('§PLUGIN-PILL rehydrate failed id=' + (b.id || '?') + ': ' + e.message); });
-      });
+      // one implementation: the registry's restore() installs every saved bundle then restarts the ACTIVE ones in dependency order (Host work H1); failures are collected, never thrown.
+      var chain = _reg.restore((saved || []).filter(function (b) { return b && b.url; }))
+        .then(function (r) { (r.failed || []).forEach(function (f) { console.warn('§PLUGIN-PILL rehydrate failed id=' + f.id + ': ' + f.error); }); });
       return chain.then(function () { _hydrated = true; });
     });
   }
@@ -454,5 +451,9 @@
     console.log('§PLUGIN-PILL open bundles=' + (_reg ? _reg.list().length : 0));
   }
 
-  global.PluginEngine = { open: open, ensure: ensure, _reg: function () { return _reg; } };
+  // boot(glue) - Host work H1: build the registry AND restore the persisted ACTIVE bundles NOW (idempiere.html awaits it right after the seed patches), not when the pill is first opened. A bundle whose hot hooks gate core saves
+  //   (Libero: C_Order, C_OrderLine, M_Requisition ... , PLUGIN_ARCHITECTURE.md section 3) must be live before the user can save anything. Resolves to the registry (null when the engine is not loaded).
+  function boot(glue) { var r = ensure(glue); if (!r) return Promise.resolve(null); return _hydrate().then(function () { return r; }, function () { return r; }); }
+
+  global.PluginEngine = { open: open, ensure: ensure, boot: boot, _reg: function () { return _reg; } };
 })(typeof window !== 'undefined' ? window : this);

@@ -220,6 +220,7 @@ const PRECACHE_ASSETS = [
   'erp_seam.js',       // engine seam (window.ERPSeam.makeSeam) — ENGINE_CONTRACT §1 write path
   'kanban_lens.js',    // Kanban board chrome (buildBoard/resolveDrag/mount) — lens + idempiere
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
+  'layered_registry.js', // Host work H1: layered extension registries (plugin stop restores the core)
   'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)

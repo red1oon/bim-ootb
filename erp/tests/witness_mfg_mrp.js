@@ -7,7 +7,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, REAL_SQLJS = false; try { initSqlJs = require('sql.js'); REAL_SQLJS = true; } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }   // the bundled wasm only goes with the bundled loader
 var K = require(path.join(ERP, 'erp_kernel.js')), S = require(path.join(ERP, 'mfg_snapshot.js')), R = require(path.join(ERP, 'mfg_mrp.js'));
 var BREAK = process.env.MFG_BREAK || '', fails = 0, judged = 0, inconclusive = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MFG-MRP ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
@@ -16,7 +16,7 @@ var realFold = R.fold, counter = 0;
 if (BREAK === 'clock') R.fold = function (q) { return realFold(q).map(function (r) { return Object.assign({}, r, { datesimulation: process.hrtime.bigint().toString() }); }); };   // BREAK: a wall-clock stamp inside the fold
 if (BREAK === 'counter') R.fold = function (q) { return realFold(q).map(function (r) { return Object.assign({}, r, { pp_mrp_id: ++counter }); }); };                                // BREAK: a running id counter
 (async function () {
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var SQL = await initSqlJs(REAL_SQLJS ? {} : { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var seed = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   function rows(db, sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; }
   var ORDERS = rows(seed, 'SELECT * FROM pp_order WHERE pp_order_id IN (50000,50001) ORDER BY 1');

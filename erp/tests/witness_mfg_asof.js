@@ -8,7 +8,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, REAL_SQLJS = false; try { initSqlJs = require('sql.js'); REAL_SQLJS = true; } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }   // the bundled wasm only goes with the bundled loader
 var K = require(path.join(ERP, 'erp_kernel.js')), M = require(path.join(ERP, 'mfg_snapshot.js'));
 var BREAK = process.env.MFG_BREAK || '', fails = 0, judged = 0, inconclusive = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MFG-ASOF ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
@@ -19,7 +19,7 @@ if (BREAK === 'ignoreto') M.isValidFromTo = function (f, t, d) { return real(f, 
 if (BREAK === 'exclusive') M.isValidFromTo = function (f, t, d) { var ff = M.ts(f), dd = M.ts(d); return (!ff || dd > ff) && real('', t, d); };   // BREAK: ValidFrom exclusive
 if (BREAK === 'daygran') M.isValidFromTo = function (f, t, d) { return real(f ? String(f).slice(0, 10) : '', t ? String(t).slice(0, 10) + ' 23:59:59' : '', String(d).slice(0, 10)); };   // BREAK: the OLD day-granularity bug (not java Timestamp.before/after)
 (async function () {
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var SQL = await initSqlJs(REAL_SQLJS ? {} : { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var seed = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   function rows(db, sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; }
   var db = new SQL.Database(); K.initProjection(db);

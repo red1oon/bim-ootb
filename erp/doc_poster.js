@@ -194,12 +194,21 @@ function sysConfigBool(db, name, dflt, client, org) {
 // does not exist (:97-107) ⇒ the completion itself fails. The core accounting classes (org.idempiere.acct.doc, @{u}) are exactly these:
 var LEGACY_DOC_CLASSES = ['AllocationHdr', 'AssetAddition', 'AssetDisposed', 'AssetReval', 'AssetTransfer', 'BankStatement', 'Cash', 'DepreciationEntry', 'GLJournal', 'InOut', 'Inventory', 'Invoice',
   'MatchInv', 'MatchPO', 'Movement', 'Order', 'Payment', 'Production', 'ProjectIssue', 'Requisition'];
+// DOC CLASS REGISTRY (Host work H1; legacy IDocFactory): a plugin bundle (Libero: PP_Order / PP_Cost_Collector / DD_Order) registers the posting class for its table; layered + removable like every registry (layered_registry.js).
+//   impl = { derive(db, id, schema, R, recordRef) -> { by:{key:{account_id,value,name,dr,cr}}, absent:[] } (the same internal shape the built-in derive* return, amounts in cents), basis? }.
+//   derivePostings consults it before the 'basis none' fallback; immediatePostingRefusal treats a registered table as having a Doc class (legacy: the factory finds the class).
+var _DOCC = (typeof require !== 'undefined' ? require('./layered_registry') : (typeof window !== 'undefined' ? window.LayeredRegistry : null)).create();
+function registerDocClass(table, impl, opts) { _DOCC.add(String(table).toLowerCase(), impl, opts); }
+function unregisterDocClass(table, owner) { return _DOCC.remove(String(table).toLowerCase(), owner); }
+function removeDocClassOwner(owner) { return _DOCC.removeOwner(owner); }
+function docClassFor(table) { var t = _DOCC.top(String(table || '').toLowerCase()); return t ? t.value : null; }
+function describeDocClasses() { var o = {}; _DOCC.keys().sort().forEach(function (k) { o[k] = _DOCC.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); }); return o; }
 function legacyDocClassOf(tableName) { var t = String(tableName); return 'Doc_' + (t.indexOf('_') === 1 ? t.substring(2) : t).replace(/_/g, ''); }
 // → the refusal text legacy gives, or null. hasPostedColumn = the table's AD_Column 'Posted' exists (SQLite dictionary).
 function immediatePostingRefusal(db, tableName, hasPostedColumn, client) {
   if (!hasPostedColumn || !isClientAccountingImmediate(db, client)) return null;
   var cls = legacyDocClassOf(tableName);
-  return LEGACY_DOC_CLASSES.indexOf(cls.substring(4)) >= 0 ? null : 'Doc Class invalid: ' + cls;
+  return (LEGACY_DOC_CLASSES.indexOf(cls.substring(4)) >= 0 || docClassFor(tableName)) ? null : 'Doc Class invalid: ' + cls;
 }
 // MClient.isClientAccountingImmediate (MClient.java:1094-1100 @{u}): CLIENT_ACCOUNTING equalsIgnoreCase 'I', default 'Q'
 function isClientAccountingImmediate(db, client) { return /^i$/i.test(sysConfig(db, 'CLIENT_ACCOUNTING', 'Q', client, 0)); }
@@ -1582,12 +1591,14 @@ function derivePostings(db, recordRef, schema, R) {
   if (table === 'C_Cash') return finish(deriveCash(db, R, id, schema), 'cash', glOf('c_cash', id));
   if (table === 'GL_Journal') return finish(deriveGLJournal(db, id, schema), 'gl-journal', glOf('gl_journal', id));   // §69 (F33)
   if (table === 'M_Inventory') return finish(deriveInventory(db, id, schema), 'inventory', glOf('m_inventory', id));
+  var dc = docClassFor(table);   // a bundle's posting class (IDocFactory) - after every built-in class, before the empty fallback
+  if (dc && typeof dc.derive === 'function') return finish(dc.derive(db, id, schema, R, recordRef), dc.basis || String(table).toLowerCase(), glOf(String(table).toLowerCase(), id));
   return { lines: [], balanced: false, sumDr: 0, sumCr: 0, absent: [], basis: 'none' };
 }
 
 function _R() { try { return (typeof require !== 'undefined') ? require('./post_resolver') : null; } catch (e) { return null; } }
 
-var _api = { derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
+var _api = { registerDocClass: registerDocClass, unregisterDocClass: unregisterDocClass, removeDocClassOwner: removeDocClassOwner, docClassFor: docClassFor, describeDocClasses: describeDocClasses, derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, deriveMovement: deriveMovement, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 // Internal helpers for witnesses, exposed on the Node module ONLY (never on window.DocPoster): the public _api is not widened.

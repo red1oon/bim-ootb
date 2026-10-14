@@ -9,13 +9,13 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, REAL_SQLJS = false; try { initSqlJs = require('sql.js'); REAL_SQLJS = true; } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }   // the bundled wasm only goes with the bundled loader
 var BREAK = process.env.MFG_BREAK || '', WIN = 53009, MENU_LEAF = 53055, EXPECT_TABS = 13;
 var EIGHT = ['pp_order_workflow', 'pp_order_node_product', 'pp_order_node_asset', 'pp_order_nodenext', 'pp_cost_collector', 'pp_cost_collectorma', 'pp_wf_node_product', 'pp_wf_node_asset'];
 var fails = 0, judged = 0, inconclusive = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MFG ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var SQL = await initSqlJs(REAL_SQLJS ? {} : { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var db = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   var ok = 0, bad = 0;
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (pf) {   // the loader's order: seed patch, then the Manufacturing patch

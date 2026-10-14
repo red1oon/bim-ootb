@@ -491,6 +491,7 @@
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
+<script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
@@ -1068,6 +1069,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // log-in-able tenant so Initial Tenant Setup is reached the canonical way (System login → menu → wizard) and
     // stays System-only. Idempotent boot overlay (oracle-sourced rows), never touches ad_seed.db. W-GENESIS-SYSADMIN.
     if (window.SystemTenant) { try { SystemTenant.ensure(db); } catch (e) { console.log('§SYSTEM-TENANT-ERR ' + e.message); } }
+    // Host work H1 (plugin lifecycle): restore the persisted ACTIVE plugin bundles at BOOT, after the seed + patches are in, so a bundle's hot hooks (model/doc/validator/process/callout/posting class) are live before the first save.
+    if (window.PluginEngine && window.PluginEngine.boot) { try { await window.PluginEngine.boot({ db: db }); console.log('§PLUGIN-BOOT restored=' + (window.PluginEngine._reg() ? window.PluginEngine._reg().list().filter(function (b) { return b.state === 'ACTIVE'; }).length : 0)); } catch (e) { console.log('§PLUGIN-BOOT-ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
     var shardParam = new URLSearchParams(location.search).get('shard');
     if (shardParam) await installShard(shardParam);

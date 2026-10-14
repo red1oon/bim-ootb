@@ -8,7 +8,7 @@
 'use strict';
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, REAL_SQLJS = false; try { initSqlJs = require('sql.js'); REAL_SQLJS = true; } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }   // the bundled wasm only goes with the bundled loader
 var K = require(path.join(ERP, 'erp_kernel.js')), M = require(path.join(ERP, 'mfg_snapshot.js'));
 var BREAK = process.env.MFG_BREAK || '', fails = 0, judged = 0, inconclusive = 0;
 function check(name, ok, info) { judged++; if (!ok) fails++; console.log('  §MFG-SNAP ' + name + ' ' + (ok ? 'PASS' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
@@ -17,7 +17,7 @@ function norm(v) { if (v === null || v === undefined || v === '') return ''; if 
 M.register(K);
 // legacy orders in the seed -> the order inputs (DocumentNo, product, qty, template, warehouse); oracle = the legacy snapshot rows stored beside them
 (async function () {
-  var SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var SQL = await initSqlJs(REAL_SQLJS ? {} : { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var seed = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
   function rows(db, sql, p) { var s = db.prepare(sql), r = []; try { if (p) s.bind(p); while (s.step()) { var o = s.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); r.push(k); } } finally { s.free(); } return r; }
   var ORDERS = rows(seed, 'SELECT pp_order_id, documentno, m_product_id, qtyordered, pp_product_bom_id, m_warehouse_id, datestartschedule FROM pp_order WHERE pp_order_id IN (50000,50001) ORDER BY 1');
