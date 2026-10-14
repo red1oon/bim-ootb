@@ -58,23 +58,23 @@ def dev(d, y):
         y += 14
 card('c8', 'bg_dev.png', 'Under the hood', [], y0=250, extra=dev)
 # END: black card. Where it is, the ready link, and why the op log and local-first made it possible.
-im = Image.new('RGB', (W, H), (0, 0, 0)); d = ImageDraw.Draw(im); y = 54
-d.text((120, y), 'Try it. Read it. Fork it.', font=font(80, True), fill=(255, 255, 255)); y += 110
+im = Image.new('RGB', (W, H), (0, 0, 0)); d = ImageDraw.Draw(im); y = 36
+d.text((120, y), 'Try it. Read it. Fork it.', font=font(76, True), fill=(255, 255, 255)); y += 100
 d.text((120, y), 'TRY IT NOW (no install, works offline)', font=font(32, True), fill=(79, 195, 247)); y += 46
-d.text((120, y), 'https://red1oon.github.io/bim-ootb/oplogpic/', font=font(46, True, mono=True), fill=(190, 235, 190)); y += 80
+d.text((120, y), 'https://red1oon.github.io/bim-ootb/oplogpic/', font=font(44, True, mono=True), fill=(190, 235, 190)); y += 64
 d.text((120, y), 'SOURCE (MIT licence)', font=font(32, True), fill=(79, 195, 247)); y += 46
 d.text((120, y), 'github.com/red1oon/bim-ootb', font=font(40, True, mono=True), fill=(190, 235, 190)); y += 52
-d.text((120, y), 'branch claude/photoshop-clone-gaps-m5p5mz  ·  folder poc/psd-oplog', font=font(34, mono=True), fill=(190, 235, 190)); y += 74
+d.text((120, y), 'branch claude/photoshop-clone-gaps-m5p5mz  ·  folder poc/psd-oplog', font=font(32, mono=True), fill=(190, 235, 190)); y += 58
 d.text((120, y), 'WHY THE OP LOG AND LOCAL-FIRST MADE THIS POSSIBLE', font=font(32, True), fill=(79, 195, 247)); y += 50
 for ln in ['The document is the log: undo, history, Verify, share link and Save file are the same data, not separate features.',
            'The picture is a deterministic replay of the log: same log, same pixels, checked by hash. That is how the tests work too.',
            'Local-first: your browser does the work and keeps the log. No server, no account, no upload. A link or a file carries it to another device.',
            'It stays small: a gradient is about %s bytes, so a small document fits in a QR code.' % nbytes]:
-    for t in wrap(d, '· ' + ln, font(34), W - 280): d.text((130, y), t, font=font(34), fill=(235, 235, 235)); y += 46
-    y += 8
-y += 14
+    for t in wrap(d, '· ' + ln, font(31), W - 280): d.text((130, y), t, font=font(31), fill=(235, 235, 235)); y += 42
+    y += 4
+y += 8
 for ln in ['The live site has the tools up to export. Save file, Open file and Show QR are built and tested in the source; the live site does not have them yet.',
            'Photos: Laura Seaman, Joiarib Morales Uc (Unsplash). Recorded on a laptop in Chrome. Not tested on a real phone.']:
-    for t in wrap(d, ln, font(28), W - 240): d.text((120, y), t, font=font(28), fill=(170, 170, 170)); y += 38
+    for t in wrap(d, ln, font(26), W - 240): d.text((120, y), t, font=font(26), fill=(170, 170, 170)); y += 34
     y += 4
 im.save(os.path.join(outdir, 'end.png')); print('§OPLOGPIC_CARDS_V8 wrote end (black), text bottom y=%d of %d' % (y, H))

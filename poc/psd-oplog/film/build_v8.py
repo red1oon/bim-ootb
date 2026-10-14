@@ -7,15 +7,15 @@ ENC = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420
 def run(a): subprocess.run(['ffmpeg', '-v', 'error', '-y'] + a, check=True)
 def dur(p): return float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p]).decode())
 SRC = dict(tour=R + '/v6/tour.webm', history=R + '/v6/history.webm', edits=R + '/v6/edits.webm', poster=R + '/v7/poster.webm', qr=R + '/v7/qr.webm', cutout=V + '/cutout.webm', carry=V + '/carry.webm')
-CD = dict(cover=3.5, c1=8.0, c2=2.5, c3=2.5, c4=2.5, c5=2.5, c6=2.5, c7=2.5, c8=9.0, end=24.0)
+CD = dict(cover=3.5, c1=9.5, c2=2.5, c3=2.5, c4=2.5, c5=2.5, c6=2.5, c7=2.5, c8=11.0, end=31.0)
 # (kind, name, src, a, b, speed); a / b are seconds in the source take (shot boundaries from each take's *_shots.tsv); speeds make a raw cut, the narrated cut will retime
 plan = [('card', 'cover'), ('card', 'c1'),
- ('card', 'c2'), ('take', 't1', 'tour', 4.3, 51.8, 2.4),
+ ('card', 'c2'), ('take', 't1', 'tour', 4.3, 51.8, 2.7),
  ('card', 'c3'), ('take', 'd1', 'poster', 1.9, 11.31, 1.8), ('take', 'd2', 'poster', 11.31, 17.72, 1.3), ('take', 'd3', 'poster', 17.72, 44.69, 2.6), ('take', 'd4', 'poster', 44.69, 66.58, 2.4), ('take', 'd5', 'poster', 78.35, 100.79, 2.6), ('take', 'd6', 'poster', 100.79, 110.54, 1.2), ('take', 'd7', 'poster', 110.54, 126.94, 2.4),
- ('card', 'c4'), ('take', 'x1', 'cutout', 2.2, 11.41, 1.8), ('take', 'x2', 'cutout', 11.41, 22.61, 1.8), ('take', 'x3', 'cutout', 22.61, 33.18, 1.8), ('take', 'x4', 'cutout', 33.19, 42.67, 2.4), ('take', 'x5', 'cutout', 42.67, 58.76, 2.4), ('take', 'x6', 'cutout', 58.76, 71.91, 2.4), ('take', 'x7', 'cutout', 71.91, 80.43, 1.8),
+ ('card', 'c4'), ('take', 'x1', 'cutout', 2.2, 11.41, 1.3), ('take', 'x2', 'cutout', 11.41, 22.61, 1.25), ('take', 'x3', 'cutout', 22.61, 33.18, 1.8), ('take', 'x4', 'cutout', 33.19, 42.67, 2.4), ('take', 'x5', 'cutout', 42.67, 58.76, 1.5), ('take', 'x6', 'cutout', 58.76, 71.91, 2.4), ('take', 'x7', 'cutout', 71.91, 80.43, 1.8),
  ('card', 'c5'), ('take', 'e1', 'edits', 9.63, 21.03, 2.2), ('take', 'e2', 'edits', 26.37, 50.62, 2.4),
- ('card', 'c6'), ('take', 'h1', 'history', 9.61, 22.56, 2.2), ('take', 'h2', 'history', 22.56, 37.03, 3.0), ('take', 'h3', 'history', 37.03, 44.57, 1.5), ('take', 'h4', 'history', 44.57, 53.36, 2.0),
- ('card', 'c7'), ('take', 'k1', 'carry', 2.2, 23.2, 3.5), ('take', 'k2', 'carry', 23.2, 28.0, 1.0), ('take', 'k3', 'carry', 28.0, 32.9, 1.0), ('take', 'k4', 'carry', 32.9, 48.8, 2.4), ('take', 'k5', 'carry', 48.8, 56.7, 1.4), ('take', 'k6', 'carry', 56.7, 63.3, 2.0), ('take', 'k7', 'qr', 18.73, 25.18, 1.0), ('take', 'k8', 'poster', 174.46, 189.68, 2.0),
+ ('card', 'c6'), ('take', 'h1', 'history', 9.61, 22.56, 2.2), ('take', 'h2', 'history', 22.56, 37.03, 3.0), ('take', 'h3', 'history', 37.03, 44.57, 1.5), ('take', 'h4', 'history', 44.57, 53.36, 1.3),
+ ('card', 'c7'), ('take', 'k1', 'carry', 2.2, 23.2, 3.5), ('take', 'k2', 'carry', 23.2, 28.0, 1.0), ('take', 'k3', 'carry', 28.0, 32.9, 1.0), ('take', 'k4', 'carry', 32.9, 48.8, 2.4), ('take', 'k5', 'carry', 48.8, 56.7, 1.0), ('take', 'k6', 'carry', 56.7, 63.3, 2.0), ('take', 'k7', 'qr', 18.73, 25.18, 1.0), ('take', 'k8', 'poster', 174.46, 189.68, 1.4),
  ('card', 'c8'), ('card', 'end')]
 t = 0.0; TL = {}
 for p in plan:
