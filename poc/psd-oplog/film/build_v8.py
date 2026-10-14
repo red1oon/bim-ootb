@@ -7,7 +7,8 @@ ENC = ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420
 def run(a): subprocess.run(['ffmpeg', '-v', 'error', '-y'] + a, check=True)
 def dur(p): return float(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p]).decode())
 SRC = dict(tour=R + '/v6/tour.webm', history=R + '/v6/history.webm', edits=R + '/v6/edits.webm', poster=R + '/v7/poster.webm', qr=R + '/v7/qr.webm', cutout=V + '/cutout.webm', carry=V + '/carry.webm')
-CD = dict(cover=3.5, c1=9.5, c2=2.5, c3=2.5, c4=2.5, c5=2.5, c6=2.5, c7=2.5, c8=11.0, end=31.0)
+CD = dict(cover=3.5, c1=9.5, c2=2.5, c3=2.5, c4=2.5, c5=2.5, c6=2.5, c7=2.5, c8=11.0, end=31.0); SPK = 1.0
+if SFX == '_ms': CD = dict(cover=4.5, c1=12.0, c2=3.5, c3=3.5, c4=3.5, c5=3.5, c6=3.5, c7=3.5, c8=13.0, end=36.0); SPK = 0.85   # Malay runs longer: lengthen the cards and slow the takes, not the speech speed
 # (kind, name, src, a, b, speed); a / b are seconds in the source take (shot boundaries from each take's *_shots.tsv); speeds make a raw cut, the narrated cut will retime
 plan = [('card', 'cover'), ('card', 'c1'),
  ('card', 'c2'), ('take', 't1', 'tour', 4.3, 51.8, 2.7),
@@ -23,12 +24,14 @@ for p in plan:
         name = p[1]; sec = CD[name]
         run(['-loop', '1', '-t', str(sec), '-i', f'{V}/{CARDS}/{name}.png', '-vf', f'scale=1920:1080,fade=t=in:st=0:d=0.35,fade=t=out:st={sec-0.35}:d=0.35,format=yuv420p'] + ENC + [f'{S}/{name}.mp4']); TL[name] = dict(start=t, len=sec); L = sec
     else:
-        _, name, src, a, b, sp = p
+        _, name, src, a, b, sp = p; sp = sp * SPK
         run(['-ss', str(a), '-to', str(b), '-i', SRC[src], '-vf', f'scale=1920:1080,setpts=PTS/{sp},fade=t=in:st=0:d=0.25,format=yuv420p'] + ENC + [f'{S}/{name}.mp4']); L = dur(f'{S}/{name}.mp4'); TL[name] = dict(start=t, len=L, src=src, a=a, b=b, sp=sp)
     t += L
 order = [p[1] for p in plan]; open(f'{S}/list.txt', 'w').write(''.join(f"file '{S}/{n}.mp4'\n" for n in order))
 run(['-f', 'concat', '-safe', '0', '-i', f'{S}/list.txt', '-c', 'copy', f'{V}/OplogPic_v8_RAW{SFX}.mp4']); total = dur(f'{V}/OplogPic_v8_RAW{SFX}.mp4')
+TITLES_MS = ['Muka depan', 'Dokumen ialah log', '1 Lapisan dan alat', '2 Kit reka bentuk', '3 Potong imej dan penapis', '4 Alih, skala, warnakan semula', '5 Sejarah membuktikannya', '6 Bawa bersama anda', 'Di bawah tudung', 'Cuba. Baca. Garpu.']
 chap = [('Cover', ['cover']), ('The document is a log', ['c1']), ('1 Layers and tools', ['c2', 't1']), ('2 Design kit', ['c3', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7']), ('3 Cut-out and filters', ['c4', 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x7']), ('4 Move, scale, recolour', ['c5', 'e1', 'e2']), ('5 History proves it', ['c6', 'h1', 'h2', 'h3', 'h4']), ('6 Take it with you', ['c7', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7', 'k8']), ('Under the hood', ['c8']), ('Try it. Read it. Fork it.', ['end'])]
+if SFX == '_ms': chap = [(t, c[1]) for t, c in zip(TITLES_MS, chap)]
 meta = [';FFMETADATA1']; tt = 0.0; summ = []
 for title, segs in chap:
     ln = sum(TL[s]['len'] for s in segs); meta.append('[CHAPTER]\nTIMEBASE=1/1000\nSTART=%d\nEND=%d\ntitle=%s' % (round(tt * 1000), round((tt + ln) * 1000), title)); summ.append((title, round(tt, 1), round(ln, 1))); tt += ln

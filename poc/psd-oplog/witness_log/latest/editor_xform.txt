@@ -27,7 +27,7 @@ PASS X3 undo all (6) / redo all through xform entries: live == refold at every s
 PASS X6 page PSD bytes (248257) == Node exporter bytes with xform entries = true (== true)
 PASS X3 one xform: undo restores the layer bitwise, redo equals the first result = true (== true)
 PASS X7 a mouse drag of (120, -80) screen px (canvas scale 0.746) moves by (161, -107) document px, expected (161, -107) within 1 = true (== true)
-X8 (reported) live preview refresh (resample + full composite + paint) at 1024^2 in the page: median 138 ms (target <= 400)
+X8 (reported) live preview refresh (resample + full composite + paint) at 1024^2 in the page: median 141 ms (target <= 400)
 PASS X6 no page errors (desktop) = 0 (== 0)
 PASS X7 phone: Move button, Scale slider, Apply, Cancel >= 44 px high (44/44/44/44), no horizontal overflow = true (== true)
 PASS X7 a touch drag of (60, 30) screen px moves by (164, 82) document px, expected (164, 82) within 1 = true (== true)
