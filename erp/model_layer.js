@@ -493,6 +493,7 @@
         if (!e) e = fire(trx, spec.isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, rec, { recordOld: spec.old || null }) || fire(trx, 'AFTER_SAVE', table, rec, { recordOld: spec.old || null });
         r = { ok: !e, error: e };
       }
+      else if (spec.timing === 'PROCESS') { r = spec.fn(trx, spec); }   // a plugin process run in ONE Trx: its op group is all-or-none and traced by §EVENT_SEQ
       else if (spec.timing === 'BEFORE_SAVE') {   // PO.beforeSave derivations for a record the HOST will write: returns the derived columns, no ops
         var rec2 = {}; for (var k2 in spec.record) rec2[k2.toLowerCase()] = spec.record[k2];
         var M2 = MODEL[table] || {}, before = Object.assign({}, rec2);

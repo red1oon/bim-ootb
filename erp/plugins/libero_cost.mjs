@@ -6,15 +6,16 @@
 export const DEFERRED = [
   'MPPCostCollector Activity Control (160) completeIt + CostEngine.createActivityControl + RoutingService.getResourceBaseValue',
   'Usage / Method Change / Mix variance collectors (120/130/150) and CostEngine.createUsageVariances / createMethodVariances bodies',
+  'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
   'Doc_PPCostCollector posting (M6) and MPPOrder.voidIt / closeIt / createVariances'
 ];
-export const SOURCE = { calculateFG: true };   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
-  const ML = ctx.docAction, D = ML.D, ZERO = D(0), BDc = D(0).constructor, RM_HALF_UP = 'HALF_UP', RM_HALF_EVEN = 'HALF_EVEN';
+  const ML = ctx.docAction, D = ML.D, ZERO = D(0), D100 = D(100), BDc = D(0).constructor, RM_HALF_UP = 'HALF_UP', RM_HALF_EVEN = 'HALF_EVEN';
   const MC = () => globalThis.ModelCost, T = () => globalThis.ModelTrade, MM = () => globalThis.ModelMaster;
   const asiOf = (v) => (v == null || v === '' ? 0 : v);   // an ASI created in this Trx is a '#new:i' placeholder: NEVER Number() it
   const dec = (v) => D(v == null ? 0 : v), num = (v) => ML.N(v), lc = (v) => (v == null ? v : String(v)), active = (r) => r.isactive == null || r.isactive === '' || r.isactive === 'Y';
@@ -256,7 +257,119 @@ export function create(ctx) {
   };
   function dateStart(cc) { return cc.movementdate; }   // getDateStart(): DurationReal x the routing duration base; DurationReal is 0 for Issue/Receipt -> MovementDate
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG };
+  // ══ SLICE 4 - the legacy ONE-STEP entry points (prompts/mfg/LIBERO_BACKFLUSH_SLICE4_SPEC.md) ═══════════════════════
+  const mccDocType = (trx) => { const d = trx.find('c_doctype', { docbasetype: 'MCC' }).filter((r) => active(r) && (r.ad_client_id == null || Number(r.ad_client_id) === Number(trx.env.client)))
+    .sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.c_doctype_id) - Number(b.c_doctype_id))[0]; if (!d) throw new Error('No Manufacturing Cost Collector document type (MDocType.getDocType MCC)'); return d.c_doctype_id; };
+  // MPPCostCollector.createCollector :73-156 - build, save, then processIt(CO) in the SAME transaction; a refused DocAction throws its message (:151-153)
+  function createCollector(trx, order, p) {
+    const f = collectorFields(trx, order, p); f.ad_client_id = order.ad_client_id;
+    const r = ML.newRecord(trx, 'pp_cost_collector', f); if (!r.save()) throw new Error(r.error);
+    const id = r.row.pp_cost_collector_id, res = ML.processIt(trx, 'pp_cost_collector', id, 'CO');
+    if (!res.ok) throw new Error(res.msg || ('DocAction CO refused, status ' + res.status));
+    return trx.get('pp_cost_collector', id);
+  }
+  // MPPOrder.getStorages :206-251 (guarantee-date filter DEFERRED)
+  function getStorages(trx, productId, whId, asiId) {
+    const pr = trx.get('m_product', productId); if (!stocked(pr)) return [];
+    return getWarehouse(trx, whId, productId, Number(pr.m_attributesetinstance_id || 0) === 0 ? (asiId || 0) : 0, mmPolicyFifo(trx, pr), true, 0);
+  }
+  const onHandOf = (storages) => storages.reduce((a, s) => a.add(dec(s.qtyonhand)), ZERO);
+  // MPPOrder.createIssue :1256-1330
+  function createIssue(trx, order, bomLineId, movementDate, qty, qtyScrap, qtyReject, storages, forceIssue) {
+    if (dec(qty).signum() === 0) return;
+    const bl = trx.get('pp_order_bomline', bomLineId), dt = mccDocType(trx);
+    let toIssue = dec(qty).add(dec(qtyScrap));
+    const mk = (type, loc, asi, q, sc, rj) => createCollector(trx, order, { type, docTypeId: dt, locatorId: loc, asiId: asi, movementDate, qty: q, scrap: sc, reject: rj, bomLineId, productId: bl.m_product_id, nodeId: 0, durationSetup: 0, duration: 0 });
+    if (!SOURCE.perRow && storages.length) { const st0 = storages[0]; mk(T_ISSUE, st0.m_locator_id, st0.m_attributesetinstance_id, toIssue, qtyScrap, qtyReject); return; }   // BREAK only
+    for (const st of storages) {
+      const oh = dec(st.qtyonhand); if (oh.signum() === 0) continue;
+      const qtyIssue = toIssue.compareTo(oh) <= 0 ? toIssue : oh;                                       // toIssue.min(onHand) :1273
+      if (qtyIssue.signum() !== 0 || dec(qtyScrap).signum() !== 0 || dec(qtyReject).signum() !== 0) {
+        let type = T_ISSUE;
+        if (dec(bl.qtybatch).signum() === 0 && dec(bl.qtybom).signum() === 0) type = T_METHOD;           // :1280-1283
+        else if (bl.componenttype === 'CP') type = T_MIX;                                               // :1284-1287
+        mk(type, st.m_locator_id, st.m_attributesetinstance_id, qtyIssue, qtyScrap, qtyReject);        // scrap/reject repeat on EVERY row (legacy quirk, kept)
+      }
+      toIssue = toIssue.subtract(qtyIssue);
+      if (toIssue.signum() === 0) break;
+    }
+    if (forceIssue && toIssue.signum() !== 0) { mk(T_ISSUE, bl.m_locator_id, bl.m_attributesetinstance_id, toIssue, ZERO, ZERO); return; }
+    if (toIssue.signum() !== 0) throw new Error('Should not happen toIssue=' + toIssue.toString());   // :1327
+  }
+  // MPPOrder.createReceipt :1190-1245
+  function createReceipt(trx, order, movementDate, qtyDelivered, qtyToDeliver, qtyScrap, qtyReject, locatorId, asiId) {
+    if (dec(qtyToDeliver).signum() !== 0 || dec(qtyScrap).signum() !== 0 || dec(qtyReject).signum() !== 0)
+      createCollector(trx, order, { type: T_RECEIPT, docTypeId: mccDocType(trx), locatorId, asiId: asiId || 0, movementDate, qty: qtyToDeliver, scrap: qtyScrap, reject: qtyReject, bomLineId: 0, nodeId: 0, productId: order.m_product_id, durationSetup: 0, duration: 0 });
+    const o = ML.po(trx, 'pp_order', trx.get('pp_order', order.pp_order_id));          // re-read: the completed receipt already moved QtyDelivered; PO saves only the columns set here
+    o.set('datedelivered', movementDate);
+    if (!o.row.datestart) o.set('datestart', movementDate);
+    if (dec(qtyDelivered).add(dec(qtyScrap)).compareTo(dec(qtyToDeliver)) >= 0) o.set('datefinish', movementDate);   // :1235-1240 - qtyDelivered is the quantity BEFORE this receipt
+    if (!o.save()) throw new Error(o.error);
+  }
+  // MPPOrder.isQtyAvailable :126-190 on the selected rows
+  function isQtyAvailable(trx, order, rows, movementDate) {
+    for (const r of rows) {
+      if (!r.selected) continue;
+      const pr = trx.get('m_product', r.productId); if (!stocked(pr)) continue;
+      const bl = trx.get('pp_order_bomline', r.bomLineId), asi = bl ? bl.m_attributesetinstance_id : 0;
+      const oh = onHandOf(getStorages(trx, r.productId, order.m_warehouse_id, asi || 0, movementDate));
+      if (oh.compareTo(dec(r.toDeliver).add(dec(r.scrap))) < 0) return false;
+    }
+    return true;
+  }
+  // OrderReceiptIssue.executeQuery :309-540 - the form's default rows. p: { rule, toDeliver, scrap }
+  function backflushRows(trx, order, p) {
+    const isBack = p.rule === 'BackFlush', rows = [], openQtyOrder = dec(order.qtyordered).subtract(dec(order.qtydelivered));
+    const toDeliver = dec(p.toDeliver == null ? openQtyOrder : p.toDeliver), scrapQty = dec(p.scrap || 0);
+    for (const bl of trx.find('pp_order_bomline', { pp_order_id: order.pp_order_id }).sort((a, b) => Number(a.line) - Number(b.line))) {
+      const req = dec(bl.qtyrequiered), delv = dec(bl.qtydelivered), open = req.subtract(delv), bom = dec(bl.qtybom), batch = dec(bl.qtybatch), pct = bl.isqtypercentage === 'Y';
+      const oh = onHandOf(trx.find('m_storageonhand', { m_product_id: bl.m_product_id }).filter((s) => { const l = trx.get('m_locator', s.m_locator_id); return l && Number(l.m_warehouse_id) === Number(bl.m_warehouse_id); }));
+      const row = { bomLineId: bl.pp_order_bomline_id, productId: bl.m_product_id, selected: false, toDeliver: ZERO, scrap: ZERO, required: req };
+      if (bl.componenttype === 'CO' || bl.componenttype === 'PK') {
+        row.selected = oh.signum() > 0 && req.signum() > 0;                                             // :401-402
+        if (pct) {
+          const perc = batch.divide(D100, 8, RM_HALF_UP);
+          if (isBack) {
+            let c = (req.signum() === 0 || open.signum() === 0) ? ZERO : toDeliver.multiply(perc);
+            if (!(req.signum() === 0 || open.signum() === 0) && (req.subtract(delv).signum() < 0 || c.signum() === 0)) c = req.subtract(delv);
+            row.toDeliver = c;
+          } else row.toDeliver = open;
+          row.scrap = scrapQty.signum() !== 0 ? scrapQty.multiply(perc) : ZERO;
+        } else {
+          row.toDeliver = isBack ? (SOURCE.scrapDivide ? toDeliver.multiply(bom).divide(D(1).subtract(dec(bl.scrap).divide(D100, 8, RM_HALF_UP)), 8, RM_HALF_UP) : toDeliver.multiply(bom)) : open;
+          row.scrap = scrapQty.signum() !== 0 ? scrapQty.multiply(bom) : ZERO;
+        }
+      } else if (bl.componenttype === 'TL') row.toDeliver = bom;                                          // :482-489 (Tools: not selected)
+      rows.push(row);
+    }
+    return rows;
+  }
+  // WOrderReceiptIssue.cmd_process :895-950, ONE transaction. p: { rule, movementDate, toDeliver, scrap, reject, locatorId, asiId, rows, closeDocument }
+  function backflush(trx, orderId, p) {
+    const order = trx.get('pp_order', orderId); if (!order) throw new Error('PP_Order ' + orderId + ' not found');
+    const rule = p.rule || 'BackFlush', mdate = p.movementDate;
+    if (!mdate) throw new Error('@FillMandatory@ MovementDate');
+    const wh = trx.get('m_warehouse', order.m_warehouse_id) || {};
+    const locator = p.locatorId || (trx.find('m_locator', { m_warehouse_id: order.m_warehouse_id }).filter(active).sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.m_locator_id) - Number(b.m_locator_id))[0] || {}).m_locator_id || 0;
+    if ((rule === 'OnlyReceipt' || rule === 'BackFlush') && !(Number(locator) > 0)) throw new Error('NoLocator');
+    if (p.closeDocument) throw new Error('DEFERRED: MPPOrder.closeIt is not ported (order Close); nothing was written');
+    const open = dec(order.qtyordered).subtract(dec(order.qtydelivered)), toDeliver = dec(p.toDeliver == null ? open : p.toDeliver), scrap = dec(p.scrap || 0), reject = dec(p.reject || 0);
+    const rows = p.rows || backflushRows(trx, order, { rule, toDeliver, scrap });
+    if (rule === 'BackFlush' || rule === 'OnlyIssue') {
+      if (!isQtyAvailable(trx, order, rows, mdate)) throw new Error('Not enough on hand to issue the selected components (MPPOrder.isQtyAvailable); nothing was written');
+      for (const r of rows) {
+        if (!r.selected) continue;
+        const pr = trx.get('m_product', r.productId); if (!stocked(pr)) continue;
+        const bl = trx.get('pp_order_bomline', r.bomLineId);
+        createIssue(trx, order, r.bomLineId, mdate, dec(r.toDeliver), dec(r.scrap), ZERO, getStorages(trx, r.productId, order.m_warehouse_id, bl.m_attributesetinstance_id || 0, mdate), false);
+      }
+    }
+    if (rule === 'OnlyReceipt' || rule === 'BackFlush') createReceipt(trx, order, mdate, dec(order.qtydelivered), toDeliver, scrap, reject, locator, p.asiId || 0);
+    void wh;
+    return { ok: true, rows };
+  }
+
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush };
 }
 export async function activate(ctx) {
   const m = create(ctx);
