@@ -36,7 +36,7 @@ var FIELD_SQL = function (tabId) {
     "CASE WHEN COALESCE(f.isselectioncolumn, c.isselectioncolumn)='Y' THEN 1 ELSE 0 END AS \"isSelectionColumn\", c.seqnoselection AS \"seqNoSelection\", " +
     "CASE WHEN f.isdisplayed='Y' THEN 1 ELSE 0 END AS \"isDisplayed\", COALESCE(f.columnsql, c.columnsql) AS \"columnSQL\", " +
     "CASE WHEN c.isencrypted='Y' OR f.isencrypted='Y' THEN 1 ELSE 0 END AS \"isEncrypted\" " +
-    "FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=" + tabId + " AND f.isactive='Y' AND c.isactive='Y' ORDER BY f.isdisplayed DESC, f.seqno";
+    "FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id WHERE f.ad_tab_id=" + tabId + " AND f.isactive='Y' AND c.isactive='Y' ORDER BY f.seqno, f.isdisplayed DESC";
 };
 var norm = function (fs2) { return fs2.map(function (f) { f.isSelectionColumn = !!+f.isSelectionColumn; f.isDisplayed = !!+f.isDisplayed; f.isEncrypted = !!+f.isEncrypted; if (f.columnSQL === '') f.columnSQL = null; return f; }); };
 function oracleRows(restrictions, fieldsByCol) {   // twin restrictions -> the rows FindWindow would hand MQuery (simple mode)
