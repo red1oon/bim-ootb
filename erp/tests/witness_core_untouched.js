@@ -8,7 +8,7 @@
 //   erp/patches/ad_seed.db.sql is the sanctioned data self-heal (legacy dictionary rows), listed separately, never code.
 'use strict';
 var cp = require('child_process'), path = require('path'), log = console.log, fails = 0, judged = 0;
-var BASE = process.env.CU_BASE || 'b2fa278bdd9dc1361cfd07edab8d6372a44db366', REPO = path.join(__dirname, '..', '..');
+var BASE = process.env.CU_BASE || 'cea7bbfa8fdfe3516553992e530d5db001b4368f'   /* BUMPED 2026-10-15 to main at that date: sanctioned core PRs (twin-fidelity fixes, host work H1/H2, mfg) landed after b2fa278b; bump again after each sanctioned core PR - an overlay PR must leave core untouched relative to THIS base */, REPO = path.join(__dirname, '..', '..');
 function sh(c) { return cp.execSync(c, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 26 }); }
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §CU-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 try { sh('git cat-file -e ' + BASE + '^{commit}'); } catch (e) { log('§CU-VERDICT INCONCLUSIVE base commit ' + BASE + ' not in this clone'); process.exit(3); }
@@ -18,9 +18,10 @@ var allowed = ['erp/idempiere.html', 'erp/sw.js'], extra = files.filter(function
 check('CU1 no core file other than idempiere.html / sw.js differs from the base', extra.length === 0, extra);
 var hunks = function (f) { return sh('git diff -U0 ' + BASE + ' -- ' + f).split('\n').filter(function (l) { return /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l); }); };
 var h = hunks('erp/idempiere.html'), seam = h.filter(function (l) { return /^\+<script src="overlay\/boot\.js"><\/script>/.test(l); });
-check('CU2 idempiere.html differs ONLY by the one overlay seam line (' + h.length + ' changed line(s))', h.length === 1 && seam.length === 1, h.slice(0, 4));
+var baseHasSeam = /overlay\/boot\.js/.test(sh('git show ' + BASE + ':erp/idempiere.html'));   // a bumped base already contains the seam: then NO line may differ
+check('CU2 idempiere.html differs ONLY by the one overlay seam line (' + h.length + ' changed line(s); base has seam=' + baseHasSeam + ')', baseHasSeam ? h.length === 0 : (h.length === 1 && seam.length === 1), h.slice(0, 4));
 var s = hunks('erp/sw.js');
-check('CU3 sw.js differs ONLY by CACHE_VERSION (the existing per-deploy bump)', s.length === 2 && s.every(function (l) { return /CACHE_VERSION/.test(l); }), s.slice(0, 4));
+check('CU3 sw.js differs ONLY by CACHE_VERSION (the existing per-deploy bump)', (s.length === 0 || s.length === 2) && s.every(function (l) { return /CACHE_VERSION/.test(l); }), s.slice(0, 4));
 var refs = sh('git grep -l -E "overlay/(boot|home|pills|quicksetup_ui|goal_engine|dashboard_|setup_lens|window_lens|quick_input|invoice_open)" -- erp ":!erp/overlay" ":!erp/tests" ":!erp/patches" ":!erp/sqljs" || true').split('\n').filter(Boolean);
 log('§CU core files referencing an overlay module: ' + (refs.join(', ') || 'none'));
 check('CU4 only idempiere.html (the seam) references an overlay module', refs.every(function (f) { return f === 'erp/idempiere.html'; }) && refs.length <= 1, refs);
