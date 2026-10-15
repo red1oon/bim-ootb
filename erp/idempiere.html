@@ -498,6 +498,7 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=15"></script>
 <script src="ad_find.js?v=2"></script>
+<script src="ad_recent.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -5063,6 +5064,47 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (wid != null && _openWins[wid]) { delete _openWins[wid]; openWindow(Number(wid)); }
     if (/^AD_(Window|Menu)$/i.test(t)) { try { buildMenu(); } catch (er) {} }   // name/menu edits relabel the tree
   });
+
+  // §UDP-6 — AD_RecentItem (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-6; Witnesses: W-UDP6-ENGINE, W-UDP6-LIVE). After a save,
+  //   AbstractADWindowContent records the window's header record (a detail-tab save records the MAIN tab's record): addModifiedField
+  //   (:2155-2170 / :2985-3000) and, for a save of an existing record, touchUpdatedRecord (:3005-3010, which trims to RecentItems_MaxSaved).
+  //   The maths is window.AdRecent (ad_recent.js, judged against the real MRecentItem); the writes are ONE signed CRUD group.
+  window.addEventListener('overlay:committed', function (e) {
+    var d = e.detail || {}; if (d.op_type !== 'CRUD_CREATE' && d.op_type !== 'CRUD_UPDATE') return;
+    var t = String(d.table || ''); if (!t || /^ad_recentitem$/i.test(t) || !window.AdRecent) return;
+    var ct = _curTab(); if (!ct || !ct.tableName || !_adMatch(ct.tableName, t)) return;
+    setTimeout(function () { try { _recentRecord(d.op_type === 'CRUD_UPDATE'); } catch (er) { console.log('§UDP6-RECENT error ' + er); } }, 0);   // after the refold set the current record
+  });
+  function _recentRecord(existing) {
+    var w = _curWin(), t0 = w && w.tabs && w.tabs[0], ct = _curTab(); if (!t0 || !ct) return;
+    var rec = (ct.tabLevel || 0) === 0 ? _records[_recIdx] : _recByLevel[0]; if (!rec) return;
+    var id = recVal(rec, _keyCol(t0)), uu = recVal(rec, t0.tableName + '_UU'), App = window.APP || {};
+    if ((uu == null || uu === '') && !(id != null && Number(id) !== 0)) return;   // legacy: !isEmpty(Record_UU) || Record_ID > 0 (a twin-created row's pk is negative)
+    var mx = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='RecentItems_MaxSaved' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var max = mx && mx.v != null && String(mx.v).trim() !== '' ? Number(mx.v) : 50;
+    var a = { table: t0.tableId, record: id, uu: uu || null, user: App.actor, role: App.roleId, window: _activeWin, tab: t0.id, client: App.clientId };
+    var base = _sqlRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), c = window.__crud;
+    var go = function (rows) {
+      var now = _procNowTs(), intents = AdRecent.addModified(rows, a, max), work = rows.map(function (r) { var o = {}; for (var k in r) o[k] = r[k]; return o; }), seq = -1;
+      intents.forEach(function (it) { if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.ad_recentitem_id = seq--; f.ad_client_id = App.clientId; f.isactive = 'Y'; f.updated = now; f.__new = it; work.push(f); }
+        else work.forEach(function (r) { if (String(r.ad_recentitem_id) === String(it.id)) { if (it.changes) for (var k in it.changes) r[k] = it.changes[k]; r.updated = now; } }); });
+      if (existing && max > 0) AdRecent.touchUpdated(work, a, max, now).forEach(function (it) { if (it.op === 'delete') intents.push(it); else if (!intents.length) intents.push(it); });
+      var ops = [];
+      intents.forEach(function (it) {
+        var nw = it.op === 'delete' ? work.filter(function (r) { return String(r.ad_recentitem_id) === String(it.id); })[0] : null;
+        if (nw && nw.__new) { ops = ops.filter(function (o) { return o.__it !== nw.__new; }); return; }   // created and trimmed in the same save: nothing to write
+        if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.updated = now; f.created = now; var op = _procCrud('create', 'ad_recentitem', { fields: f }); op.__it = it; ops.push(op); }
+        else if (it.op === 'update') { var ch = {}; for (var k2 in it.changes) ch[k2] = { old: null, new: it.changes[k2] }; ch.updated = { old: null, new: now }; ops.push(_procCrud('update', 'ad_recentitem', { id: it.id, changes: ch })); }
+        else if (it.op === 'touch') ops.push(_procCrud('update', 'ad_recentitem', { id: it.id, changes: { updated: { old: null, new: now } } }));
+        else if (it.op === 'delete') ops.push(_procCrud('delete', 'ad_recentitem', { id: it.id }));
+      });
+      ops.forEach(function (o) { delete o.__it; });
+      if (!ops.length || !c || typeof c.applyOpGroup !== 'function') { console.log('§UDP6-RECENT table=' + t0.tableName + ' record=' + id + ' ops=' + ops.length + (ops.length ? ' NOT persisted (no signed op-log)' : '')); return; }
+      c.applyOpGroup(ops, function (cr) { console.log('§UDP6-RECENT table=' + t0.tableName + ' record=' + id + ' window=' + _activeWin + ' ' + intents.map(function (i) { return i.op; }).join(',') + ' max=' + max + ' committed=' + !!(cr && cr.committed)); });
+    };
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { go(base); return; }
+    c.withSidecar(function (sdb) { go(sdb ? c.core.listTip(sdb, 'ad_recentitem', 'ad_recentitem_id', base, null).rows.filter(function (r) { return String(r.ad_user_id) === String(App.actor); }) : base); });
+  }
 
   // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
   // grid/form re-read through the now-branch-aware read-sites (blue rows appear in blue, vanish on discard).
