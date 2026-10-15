@@ -10,6 +10,8 @@ import json, os, re, sqlite3, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__)); ERP = os.path.dirname(HERE)
 TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn').split()
 
+DDL_ONLY = os.environ.get('G_DICT_DDL', 'c_cash c_cashline m_movementlinema r_requestupdates ad_session').split()   # tables the legacy views read that the seed lacks: structure only (the twin gains rows when its own flows write them)
+
 
 def pg(sql):
     r = subprocess.run(['docker', 'exec', '-i', 'postgres', 'psql', '-U', 'postgres', '-d', os.environ.get('PG_DB', 'idempiere_pilot'), '-tA', '-c', 'set search_path=adempiere;' + sql],
@@ -53,6 +55,12 @@ for t in TABLES:
         out.append('INSERT OR IGNORE INTO %s (%s) VALUES %s;' % (t, ','.join(cols), ',\n'.join('(' + ','.join(lit(r[c]) for c in cols) + ')' for r in miss[i:i + 100])))
     total += n
     print('§G-DICT %s legacy=%d seed-has=%d emitted=%d dropped-cols=%s' % (t, len(legacy), len(legacy) - n, n, sorted(pcols - set(cols))))
+for t in DDL_ONLY:
+    if list(db.execute('pragma table_info(%s)' % t)): continue
+    cs = pg("select column_name || ' ' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end from information_schema.columns where table_schema='adempiere' and table_name='%s' order by ordinal_position" % t)
+    pkc = pg("select kcu.column_name from information_schema.table_constraints tc join information_schema.key_column_usage kcu using (constraint_name, table_schema) where tc.table_schema='adempiere' and tc.table_name='%s' and tc.constraint_type='PRIMARY KEY' order by kcu.ordinal_position" % t)
+    if not cs: print('§G-DICT %s DDL-SKIP (absent on the pilot)' % t); continue
+    out.append('CREATE TABLE IF NOT EXISTS %s (%s%s);' % (t, ', '.join(cs), (', PRIMARY KEY (%s)' % ', '.join(pkc)) if pkc else '')); print('§G-DICT %s DDL (%d columns, pk=%s)' % (t, len(cs), pkc))
 out.append('-- <<< G-DICT')
 blk = '\n'.join(out) + '\n'
 new = re.sub(r'-- >>> G-DICT.*?-- <<< G-DICT\n?', lambda m: blk, patch, flags=re.S) if '-- >>> G-DICT' in patch else patch.rstrip('\n') + '\n' + blk
