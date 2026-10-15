@@ -281,7 +281,16 @@
   }
   function registerModel(table, impl, opts) { var t = table.toLowerCase(); MODEL_L.add(t, impl, opts); _remodel(t); }
   function unregisterModel(table, owner) { var t = table.toLowerCase(), n = MODEL_L.remove(t, owner); _remodel(t); return n; }
+  // §EVENT_SEQ - the ordered trace of model events (prompts/ERP_FRIENDLY_OPS_LENS.md §8). Off unless env.eventSeq is set; then every
+  // model/validator/write/doc-action step of save(), remove() and processIt() appends { n, event, table } to trx._events and says one line.
+  // ids are left out on purpose (temporary ids differ between runs); the sequence compares by (event, table).
+  function ev(trx, event, table) {
+    if (!trx || !trx.env || !trx.env.eventSeq) return;
+    var n = (trx._evSeq = (trx._evSeq || 0) + 1); (trx._events = trx._events || []).push({ n: n, event: event, table: table });
+    trx.say('§EVENT_SEQ n=' + n + ' table=' + table + ' event=' + event);
+  }
   function fire(trx, timing, table, row, extra) {
+    ev(trx, 'V.' + timing, table);
     if (!MV || typeof MV.fireHooks !== 'function') return null;
     var r = MV.fireHooks(timing, Object.assign({ table: table, record: row }, extra || {}), Object.assign({ trx: trx }, trx.env.ctx || {}));
     return r && !r.ok ? (r.error || ('blocked by ' + r.blocked)) : null;
@@ -292,13 +301,13 @@
     var isNew = row == null, M = MODEL[table] || {}, old = isNew ? null : Object.assign({}, row);
     var rec = isNew ? Object.assign({}, changes) : Object.assign({}, row, changes);
     if (!isNew && !Object.keys(changes || {}).some(function (k) { var a = row[k], b = changes[k]; return !same(a, b) || (a == null) !== (b == null); })) return { ok: true, row: row };   // PO.save :2425 — !newRecord && !is_Changed() → true, no hooks
-    if (M.beforeSave) { var e0 = M.beforeSave(trx, rec, isNew, old); if (e0) return { ok: false, error: e0 }; }
+    if (M.beforeSave) { ev(trx, 'M.beforeSave', table); var e0 = M.beforeSave(trx, rec, isNew, old); if (e0) return { ok: false, error: e0 }; }
     var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, { recordOld: old }) || fire(trx, 'BEFORE_SAVE', table, rec, { recordOld: old });
     if (e1) return { ok: false, error: e1 };
     var live;
-    if (isNew) { saveNewNumbers(trx, table, rec); live = trx.insert(table, rec); }
-    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; live = trx.update(table, row, ch); }
-    if (M.afterSave) { var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
+    if (isNew) { saveNewNumbers(trx, table, rec); ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec); }
+    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }
+    if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, live, { recordOld: old }) || fire(trx, 'AFTER_SAVE', table, live, { recordOld: old });
     if (e3) return { ok: false, error: e3 };
     return { ok: true, row: live };
@@ -336,10 +345,10 @@
   function remove(trx, table, row) {
     table = table.toLowerCase();
     var M = MODEL[table] || {};
-    if (M.beforeDelete) { var e0 = M.beforeDelete(trx, row); if (e0) return { ok: false, error: e0 }; }   // PO.delete → beforeDelete (model) before the validators
+    if (M.beforeDelete) { ev(trx, 'M.beforeDelete', table); var e0 = M.beforeDelete(trx, row); if (e0) return { ok: false, error: e0 }; }   // PO.delete → beforeDelete (model) before the validators
     var e1 = fire(trx, 'BEFORE_DELETE', table, row); if (e1) return { ok: false, error: e1 };
-    trx.del(table, row);
-    if (M.afterDelete) { var e2 = M.afterDelete(trx, row); if (e2) return { ok: false, error: e2 }; }
+    ev(trx, 'WRITE_DELETE', table); trx.del(table, row);
+    if (M.afterDelete) { ev(trx, 'M.afterDelete', table); var e2 = M.afterDelete(trx, row); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, 'AFTER_DELETE', table, row); if (e3) return { ok: false, error: e3 };
     return { ok: true };
   }
@@ -376,17 +385,17 @@
     var impl = DOCS[table], doc = trx.get(table, id);
     if (!impl) return { ok: false, status: doc && doc.docstatus, msg: 'no DocAction class registered for ' + table };
     if (!doc) return { ok: false, status: null, msg: table + ' ' + id + ' not found' };
-    trx._msg = null;
+    trx._msg = null; ev(trx, 'DOC:' + action, table);
     function setStatus(s) { trx.update(table, doc, { docstatus: s }); }
     var st = doc.docstatus;
-    if (action === 'PR') { var p = impl.prepareIt(trx, doc); setStatus(p); return { ok: p === 'IP', status: p, msg: trx._msg }; }
+    if (action === 'PR') { ev(trx, 'DOC:prepareIt', table); var p = impl.prepareIt(trx, doc); setStatus(p); return { ok: p === 'IP', status: p, msg: trx._msg }; }
     if (action === 'CO' || action === 'WC') {
       if (st === 'DR' || st === 'IN' || st == null) {                     // :325-330 prepare if not prepared yet
-        var ps = impl.prepareIt(trx, doc); setStatus(ps);
+        ev(trx, 'DOC:prepareIt', table); var ps = impl.prepareIt(trx, doc); setStatus(ps);
         if (ps !== 'IP') return { ok: false, status: ps, msg: trx._msg };
       }
       var outer = trx._docsPost; trx._docsPost = [];                       // this document's IDocsPostProcess list
-      var cs = impl.completeIt(trx, doc); setStatus(cs);
+      ev(trx, 'DOC:completeIt', table); var cs = impl.completeIt(trx, doc); setStatus(cs);
       var docsPost = trx._docsPost; trx._docsPost = outer;
       var ok = cs === 'CO' || cs === 'IP' || cs === 'WP' || cs === 'WC';  // :330-333
       if (ok && docsPost.length) docsPost.forEach(function (d) {          // :335-346 docafter.setProcessedOn("Processed") + saveEx
@@ -394,13 +403,13 @@
       // :349-372 MClient.isClientAccountingImmediate → postIt (env.postImmediate overrides; env.noPost = accounting queued), then each
       // queued docafter whose OWN instance says Posted<>'Y' → DocumentEngine.postImmediate(…, force=true) = a repost
       if (ok && cs === 'CO' && !trx.env.noPost) { var P = typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : _poster;
-        if (P) { P(trx, table, trx.get(table, id));
+        if (P) { ev(trx, 'DOC:post', table); P(trx, table, trx.get(table, id));
           docsPost.forEach(function (d) { if (d.posted === 'Y') return; var r = trx.get(d.table, d.id); if (r) P(trx, d.table, r, { repost: true }); }); } }
       return { ok: ok, status: cs, msg: trx._msg };
     }
     var m = { AP: 'approveIt', RJ: 'rejectIt', VO: 'voidIt', CL: 'closeIt', RC: 'reverseCorrectIt', RA: 'reverseAccrualIt', RE: 'reActivateIt' }[action];
     if (!m || typeof impl[m] !== 'function') return { ok: false, status: st, msg: 'DocAction ' + action + ' not implemented by the ' + table + ' class (named, not faked)' };
-    var res = impl[m](trx, doc);
+    ev(trx, 'DOC:' + m, table); var res = impl[m](trx, doc);
     return { ok: !!res, status: trx.get(table, id).docstatus, msg: trx._msg };
   }
 
@@ -502,5 +511,5 @@
 
   return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
-           processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
+           eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });
