@@ -41,7 +41,8 @@
   function isSearchLike(f) { return isText(f.displayType) && !f.columnSQL && (!!f.isSelectionColumn || isSuggestSelectionColumn(f.columnName)); }
 
   // ── initFind :983-1170 — which fields the Simple tab shows. fields = the tab's active fields (AD_Field_v shape):
-  //    { columnName, name, displayType, isSelectionColumn, seqNoSelection, isDisplayed, columnSQL, isEncrypted, isVirtualUI }
+  //    { columnName, name, displayType, isSelectionColumn, seqNoSelection, isDisplayed, columnSQL, isEncrypted, isVirtualUI } in GridTab order
+  //    (SeqNo, then IsDisplayed DESC: GridTabVO.createFields :463 re-sorts AD_Field_v's IsDisplayed DESC, SeqNo by SeqNo, stable)
   //    opts.isLookupOnlySelection (AD_Tab.IsLookupOnlySelection). Returns { selection: [...], more: [...] } in display order.
   function findFields(fields, opts) {
     opts = opts || {};

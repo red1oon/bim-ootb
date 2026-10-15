@@ -497,7 +497,7 @@
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=15"></script>
-<script src="ad_find.js?v=1"></script>
+<script src="ad_find.js?v=2"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -543,7 +543,7 @@
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
-<script src="ad_gridtab.js?v=2"></script>
+<script src="ad_gridtab.js?v=3"></script>
 <script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -729,7 +729,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=6"></script>
-<script src="crud_overlay.js?v=32"></script>
+<script src="crud_overlay.js?v=33"></script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -1350,6 +1350,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.clientId = _session.client.id;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
     window.APP.roleId  = _session.role.id;
+    try { var _adv = db.exec('SELECT IsAccessAdvanced FROM AD_Role WHERE AD_Role_ID=?', [_session.role.id]); window.APP.showAdvanced = _adv.length && _adv[0].values.length && _adv[0].values[0][0] === 'Y' ? 'Y' : 'N'; } catch (eA) { window.APP.showAdvanced = 'N'; }   // #ShowAdvanced (Login.java:531)
     // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
     // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
     // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
@@ -2116,6 +2117,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ln === 'ad_role_id') return _session && _session.role ? _session.role.id : null;
       if (ln === 'date') return (new Date()).toISOString().slice(0, 10);
       if (ln === 'issotrx') return _winIsSOTrx();
+      if (ln === 'showadvanced') return window.APP && window.APP.showAdvanced ? window.APP.showAdvanced : null;   // Login.java:531 (AD_UserQuery tab WhereClause uses it)
       return null;
     };
   }
@@ -2261,9 +2263,21 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var _fq = _findByTab[_findKey()];
     if (_fq && _fq.where) { _findUdf(); clauses.push(_fq.where); mdNote = (mdNote ? mdNote + ' ' : '') + 'find=' + _fq.where; console.log('§UDP3-FIND-APPLY table=' + tab.tableName + ' where=' + _fq.where + (_fq.name ? ' query="' + _fq.name + '"' : '')); }
     var where = clauses.length ? clauses.join(' AND ') : null;
+    // §UDP-ORDER — GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo, else Created (DESC on a header tab)
     var orderBy = gq.orderBy || null;
+    if (window.AdGridTab && AdGridTab.orderByOf && tab.id != null) {
+      var _sf = _sqlRows('SELECT c.ColumnName AS cn, f.SortNo AS sn FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=' + Number(tab.id) + " AND f.IsActive='Y' AND c.IsActive='Y' ORDER BY f.SeqNo, f.IsDisplayed DESC")
+        .map(function (r) { return { columnName: r.cn, sortNo: r.sn }; }).filter(function (f) { return _colExists(tab.tableName, f.columnName); });
+      var _ob = AdGridTab.orderByOf(orderBy || '', _sf, false, (tab.tabLevel || 0) > 0);
+      orderBy = (/^Created( DESC)?$/.test(_ob) && !_colExists(tab.tableName, 'Created')) ? orderBy : _ob;
+    }
     _curQ = { tm: tm, q: gq, where: where, tabIdx: _activeTabIdx, win: _activeWin };
     _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
+    // §UDP-ORDER — PostgreSQL's ORDER BY over the rows SQLite read: text under the legacy DB collation (AdFind.collate), NULLs last on ASC
+    if (orderBy && window.AdGridTab && AdGridTab.sortRows) {
+      var _so = AdGridTab.sortRows(_records, orderBy, window.AdFind ? AdFind.collate : null);
+      _records = _so.rows; console.log('§UDP-ORDER table=' + tab.tableName + ' orderBy=' + orderBy + ' applied=' + _so.applied + (_so.reason ? ' (' + _so.reason + ': SQLite order kept)' : ''));
+    }
     if (_records.length > 200) _records = _records.slice(0, 200); // cap display in I1
     _overlayListTip(tab, _records);  // S2/J4 — fold the op-log over the bundle: signed CRUD_CREATE rows APPEAR, edits overlay, deletes hide, then DocStatus reads-the-tip (S1/J5). Bundle immutable; op-log is truth.
     _recIdx = _keepIdx(tab); _gridSel = Object.create(null); _setSel(tab);   // §GT keep the current record by key (else row 0); fresh set → clear multi-select
@@ -2290,11 +2304,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _findKey() { return _activeWin + ':' + _activeTabIdx; }
   function _findMsg(v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + String(v).replace(/'/g, "''") + "'")[0]; return r && r.msgtext ? String(r.msgtext).trim() : en; }
   function _findUdf() { try { if (window.__idmpDb && window.AdFind && !window.__idmpDb.__pgcollate) { window.__idmpDb.create_function('pgcollate', AdFind.collate); window.__idmpDb.__pgcollate = true; } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
-  function _findFieldMeta(tab) {   // AD_Field_v for the tab, ordered IsDisplayed DESC, SeqNo (GridFieldVO.getSQL :68-75)
+  function _findFieldMeta(tab) {   // the tab's fields in GridTab order: AD_Field_v ORDER BY IsDisplayed DESC, SeqNo (GridFieldVO.getSQL :68-75) then a stable sort by SeqNo (GridTabVO.createFields :463)
     return _sqlRows("SELECT c.ColumnName AS cn, f.Name AS nm, COALESCE(f.AD_Reference_ID, c.AD_Reference_ID) AS dt, COALESCE(f.AD_Reference_Value_ID, c.AD_Reference_Value_ID) AS rv, " +
       "COALESCE(f.IsSelectionColumn, c.IsSelectionColumn) AS sc, c.SeqNoSelection AS ss, f.IsDisplayed AS d, COALESCE(f.ColumnSQL, c.ColumnSQL) AS csql, " +
       "CASE WHEN c.IsEncrypted='Y' OR f.IsEncrypted='Y' THEN 'Y' ELSE 'N' END AS enc FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID " +
-      "WHERE f.AD_Tab_ID=" + Number(tab.id) + " AND f.IsActive='Y' AND c.IsActive='Y' ORDER BY f.IsDisplayed DESC, f.SeqNo")
+      "WHERE f.AD_Tab_ID=" + Number(tab.id) + " AND f.IsActive='Y' AND c.IsActive='Y' ORDER BY f.SeqNo, f.IsDisplayed DESC")
       .map(function (r) { return { columnName: r.cn, name: r.nm, displayType: Number(r.dt), refValueId: r.rv, isSelectionColumn: r.sc === 'Y', seqNoSelection: Number(r.ss) || 0,
         isDisplayed: r.d === 'Y', columnSQL: r.csql || null, isEncrypted: r.enc === 'Y' }; })
       .filter(function (f) { return f.columnSQL || _colExists(tab.tableName, f.columnName); });
