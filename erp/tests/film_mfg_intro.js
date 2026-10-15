@@ -40,12 +40,15 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await me.send('Page.startScreencast', { format: 'jpeg', quality: 90, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
   }
   const nowT = () => (T0 === null ? 0 : Date.now() / 1000 - T0);
-  const beat = (id, note) => say('§ERP_FILM_BEAT id=' + id + ' t=' + nowT().toFixed(2) + ' ' + (note || ''));
+  // per-beat gesture tally (ERP_FRIENDLY_OPS_LENS.md §14): G = clicks + selects + typed fields, the same unit the Odoo recorder counts
+  const GT = { click: 0, select: 0, type: 0 }; let GPrev = null, GPrevId = null;
+  const gestFlush = () => { if (GPrevId) { const d = Object.fromEntries(Object.keys(GT).map(k => [k, GT[k] - GPrev[k]])); say('§ERP_FILM_GESTURES beat=' + GPrevId + ' G=' + (d.click + d.select + d.type) + ' clicks=' + d.click + ' selects=' + d.select + ' typed=' + d.type); } };
+  const beat = (id, note) => { gestFlush(); GPrev = { ...GT }; GPrevId = id; say('§ERP_FILM_BEAT id=' + id + ' t=' + nowT().toFixed(2) + ' ' + (note || '')); };
   async function glide(sel) { const loc = page.locator(sel).first(); await loc.scrollIntoViewIfNeeded().catch(() => {}); const b = await loc.boundingBox(); if (!b) throw new Error('no box for ' + sel); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: DRY ? 3 : 22 }); await hold(DRY ? 40 : 160); }
   let clicks = 0, cursorOk = 0;
   async function hclick(sel) { await glide(sel); const c = await page.evaluate(() => { const e = document.getElementById('__fc'); return e ? [parseFloat(e.style.left), parseFloat(e.style.top)] : null; }); const b = await page.locator(sel).first().boundingBox();
-    clicks++; if (c && b && Math.abs(c[0] - (b.x + b.width / 2)) < 2 && Math.abs(c[1] - (b.y + b.height / 2)) < 2) cursorOk++; await page.mouse.down(); await hold(60); await page.mouse.up(); await hold(DRY ? 150 : 280); }
-  const htype = async (sel, text) => { await glide(sel); await page.click(sel); await page.fill(sel, ''); await page.type(sel, text, { delay: DRY ? 5 : 80 }); await hold(DRY ? 60 : 350); };
+    clicks++; GT.click++; if (c && b && Math.abs(c[0] - (b.x + b.width / 2)) < 2 && Math.abs(c[1] - (b.y + b.height / 2)) < 2) cursorOk++; await page.mouse.down(); await hold(60); await page.mouse.up(); await hold(DRY ? 150 : 280); }
+  const htype = async (sel, text) => { GT.type++; await glide(sel); await page.click(sel); await page.fill(sel, ''); await page.type(sel, text, { delay: DRY ? 5 : 80 }); await hold(DRY ? 60 : 350); };
   const pace = (ms) => hold(DRY ? Math.min(ms, 120) : ms);
 
   await page.goto(base + '/idempiere.html?lang=en_US', { waitUntil: 'networkidle' });
@@ -98,7 +101,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ helpers for the order / collector beats ═══
     const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [title^="Save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
     const optBy = async (col, re) => { const o = (await page.$$eval('#idmp-inline-mount select[data-col="' + col + '"] option', os => os.map(x => ({ v: x.value, t: x.text })))).find(x => x.v && re.test(x.t)); if (!o) throw new Error('no option ' + col + ' ' + re); return o; };
-    const hselect = async (sel, val) => { await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
+    const hselect = async (sel, val) => { GT.select++; await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
     const tip = (q) => page.evaluate(x => window.__crud.withModelTrx(f => f(x)), q);
     const TAB = (table) => '#idmp-tabstrip .idmp-adtab[title$="· ' + table + '"]';
     const GRIDROWS = () => page.$$eval('.idmp-grid tbody tr', e => e.length);
@@ -125,7 +128,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('order.productCallout', JSON.stringify(await page.evaluate(() => ['ad_workflow_id', 'pp_product_bom_id', 'c_uom_id', 'qtybatchsize'].map(c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return c + '=' + (e ? (e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value) : 'absent'); }))));
     await page.waitForTimeout(DRY ? 100 : 1200);
     await hselect(F('priorityrule', 'select'), (await optBy('priorityrule', /Medium/)).v); await htype(F('qtyentered'), '100'); await hold(DRY ? 200 : 800); fact('order.formQty', JSON.stringify(await page.evaluate(() => ['qtyentered', 'qtyordered', 'c_uom_id'].map(c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return c + '=' + (e ? e.value + (e.offsetParent ? '' : '(hidden)') : 'absent'); }))));
-    await page.fill(F('datestartschedule'), '2008-08-16'); await page.fill(F('datepromised'), '2008-08-17'); await page.fill(F('datefinishschedule'), '2008-08-17'); await pace(700);
+    await page.fill(F('datestartschedule'), '2008-08-16'); await page.fill(F('datepromised'), '2008-08-17'); await page.fill(F('datefinishschedule'), '2008-08-17'); GT.type += 3; await pace(700);
     const nS = PAGELOG.length, cnt0 = (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n; await hclick(SAVEB);
     for (let i = 0; i < 60 && (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n === cnt0; i++) await page.waitForTimeout(200);
     await hold(DRY ? 600 : 2500);
@@ -240,6 +243,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('home.afterStop.docstatus', lastLog(nB, /§DASH-GADGET docstatus/)); fact('home.afterStop.performance', lastLog(nB, /§DASH-GADGET performance/));
     fact('home.afterStop.plugin', await page.evaluate(() => { const r = window.PluginEngine._reg().get('org.idempiere.mfg'); return r ? r.state : 'absent'; }) + ' menuLeaf53055=' + await page.locator('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]').count());
     await hold(DRY ? 200 : 3500);
+    gestFlush(); GPrevId = null;
     say('§ERP_FILM_CURSOR clicks=' + clicks + ' cursorOnTarget=' + cursorOk + (clicks === cursorOk ? ' OK' : ' WRONG'));
   } catch (e) { say('§ERP_FILM_ERROR ' + String(e.stack || e.message).split('\n').slice(0, 3).join(' | ')); }
   if (cdp) await cdp.send('Page.stopScreencast').catch(() => {}); await page.waitForTimeout(300).catch(() => {});
