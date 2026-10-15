@@ -51,20 +51,9 @@
     return db.prepare('SELECT ad_modelvalidator_id,name,modelvalidationclass,entitytype FROM ad_modelvalidator ORDER BY ad_modelvalidator_id').all();
   }
 
-  // installDefaultHooks — faithful ports of real M*.beforeSave / completeIt invariants.
-  function installDefaultHooks() {
-    // MOrder.completeIt precondition: the document must have at least one line (docValidate BEFORE_COMPLETE).
-    registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.hasLines', function (ctx, info) {
-      // The model layer (model_layer.fire) hands the hook ctx.trx — the transaction the order is being completed in — and no lineCount
-      // accessor; counting through it sees the lines the user typed THIS session (tip-shadowed) as well as the bundle's. Without this the
-      // hook read 0 and refused EVERY UI Complete with "no lines" (§ERP-DEPTH-FILM P1, measured 2026-10-13: order typed in the window + line).
-      var rec = info && info.record || {};
-      var n = ctx.lineCount ? ctx.lineCount(info)
-            : (ctx.trx && typeof ctx.trx.find === 'function' ? ctx.trx.find('c_orderline', { c_order_id: rec.c_order_id }).filter(function (l) { return l.isactive !== 'N'; }).length
-            : (info.lineCount || 0));
-      return n > 0 ? null : 'Cannot complete an order with no lines';
-    });
-  }
+  // installDefaultHooks - NONE. The twin-only 'MOrder.hasLines' BEFORE_COMPLETE hook (refusal 'Cannot complete an order with no lines') is DELETED: legacy has no such validator, the
+  //   no-line refusal is MOrder.prepareIt's @NoLines@ (model_order.js:141 -> AD_Message "No Document Lines found"). W-VOID case NOLINES. Kept as an empty function so callers (crud_overlay.js:1493) are unchanged.
+  function installDefaultHooks() { }
 
   // installMOrderSaveHooks(db) — faithful port of MOrder.beforeSave (MOrder.java:1183-1396), the H-1.3
   // archetype delta. Each hook cites its Java lines. iDempiere's beforeSave BOTH derives defaults (setters)
