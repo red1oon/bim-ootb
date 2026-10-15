@@ -256,6 +256,26 @@ function r2(v) { return Math.round(Number(v || 0) * 100) / 100; }
       eq('reversal_not_posted', 'Doc_InOut :298 "Original Shipment/Receipt not posted yet" → the reversal stays Posted=N', rv && rv.posted, 'N')]);
   })();
 
+  // NOLINES (§ERP-DEPTH-FILM O2): completing an order with no lines is refused by MOrder.prepareIt with @NoLines@ = "No Document Lines found" (legacy AD_Message NoLines). The app installs MV.installDefaultHooks()
+  //   (crud_overlay.js:1493); a hook of the twin's own ('Cannot complete an order with no lines', no legacy counterpart) used to refuse FIRST with different text. Judged with the app's hook set installed.
+  (function () {
+    var hooked = MV.installDefaultHooks ? (MV.installDefaultHooks(), true) : false, r = sale({ dt: 132, lines: [] });
+    verdict('NOLINES', [eq('hooks_installed_like_the_app', 'the app\'s default validator set is installed for this case', hooked, true),
+      eq('refused', 'a no-line order is refused at Complete', !!r.err, true),
+      eq('legacy_token', 'the refusal is prepareIt\'s m_processMsg "@NoLines@" (not the twin-only hook text)', /@NoLines@/.test(String(r.err || '')) && !/Cannot complete/.test(String(r.err || '')), true),
+      eq('legacy_text', 'the AD_Message NoLines the token resolves to == the pilot\'s "No Document Lines found"', require(path.join(ERP, 'model_trade.js')).msgText(new ML.Trx(q, env()), 'NoLines'), 'No Document Lines found')]);
+  })();
+
+  // FACT-DATES (§DICT-CENSUS column parity): the books this run wrote carry DateAcct/DateTrx like legacy Fact_Acct (Doc.getDateAcct()/getDateDoc()); the seed's fact_acct used to have no such columns, so the poster's values were silently dropped
+  (function () {
+    var out = [];
+    [['invoice', 318, 'c_invoice', 'c_invoice_id', 'dateinvoiced'], ['inout', 319, 'm_inout', 'm_inout_id', 'movementdate']].forEach(function (d) {
+      var r; try { r = one('SELECT count(*) AS n, COALESCE(SUM(f.dateacct IS NULL OR f.datetrx IS NULL),0) AS nulls, COALESCE(SUM(substr(f.dateacct,1,10)<>substr(i.dateacct,1,10)),0) AS badacct, COALESCE(SUM(substr(f.datetrx,1,10)<>substr(i.' + d[4] + ',1,10)),0) AS badtrx FROM fact_acct f JOIN ' + d[2] + ' i ON i.' + d[3] + '=f.record_id WHERE f.ad_table_id=' + d[1] + ' AND f.fact_acct_id>=9000000', []); } catch (e) { r = { n: -1, nulls: String(e.message).slice(0, 60), badacct: -1, badtrx: -1 }; }
+      out.push(eq(d[0] + '_judged', d[0] + ' books written this run (non-vacuous)', Number(r.n) > 0, true), eq(d[0] + '_dates', d[0] + ' fact rows: no NULL dates, DateAcct == document, DateTrx == ' + d[4], [Number(r.nulls), Number(r.badacct), Number(r.badtrx)], [0, 0, 0]));
+    });
+    verdict('FACT-DATES', out);
+  })();
+
   var pass = results.filter(function (r) { return r.v === 'PASS'; }).length, fail = results.filter(function (r) { return r.v === 'FAIL'; }).length, inc = results.filter(function (r) { return r.v === 'INCONCLUSIVE'; }).length;
   log('§W-VOID-SUMMARY cases=' + results.length + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc + ' verdict=' + (fail ? 'FAIL' : inc || !results.length ? 'INCONCLUSIVE' : 'PASS'));
   process.exit(fail || inc ? 1 : 0);

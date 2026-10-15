@@ -235,7 +235,12 @@ var VIEW = [['gl_journal', 'dateacct', null, true], ['c_projectissue', 'movement
   partial('PS-PARTIAL-NO-YEAR-CAL', 'ALTER TABLE c_year RENAME COLUMN c_calendar_id TO c_calendar_id_x', 'ALTER TABLE c_year RENAME COLUMN c_calendar_id_x TO c_calendar_id', 'c_year.c_calendar_id missing: refused by name, no raw SQL error', 'c_year');
   partial('PS-PARTIAL-NO-ORGINFO-CAL', 'ALTER TABLE ad_orginfo RENAME COLUMN c_calendar_id TO c_calendar_id_x', 'ALTER TABLE ad_orginfo RENAME COLUMN c_calendar_id_x TO c_calendar_id', 'ad_orginfo.c_calendar_id missing: refused by name', 'ad_orginfo');
   // NEG-CONTROL for the partial cases: a genuinely ABSENT table (c_cash is not in the bundle) is not a refusal
-  verdict('PS-ABSENT-TABLE-NOT-A-REFUSAL', [eq('c_cash_absent', 'c_cash is not in the shipped bundle', colsOf('c_cash').length, 0), eq('closes', 'NEG-CONTROL the clean period still closes with c_cash absent', (function () { setAll(PC, 'O', 'N'); var r = proc(167, { PeriodAction: 'C' }, PC, 142); setAll(PC, 'O', 'N'); return r.ok; })(), true)]);
+  // the seed now ships c_cash (G-DICT DDL, legacy views read it): this case builds its OWN absence - the dependent view is dropped first (SQLite refuses to drop a table a view reads), c_cash dropped for the case, both restored after
+  var _cashDdl = (q("SELECT sql FROM sqlite_master WHERE type='table' AND name='c_cash'")[0] || {}).sql, _vwDdl = q("SELECT name, sql FROM sqlite_master WHERE type='view' AND sql LIKE '%c_cash%'");
+  _vwDdl.forEach(function (v) { db.run('DROP VIEW IF EXISTS ' + v.name); }); if (_cashDdl) { try { db.run('DROP TABLE IF EXISTS c_cash'); } catch (e) { console.log('§PS-NOTE drop c_cash: ' + e.message); } }
+  delete cols.c_cash;   // colsOf() caches table_info
+  verdict('PS-ABSENT-TABLE-NOT-A-REFUSAL', [eq('c_cash_absent', 'c_cash is absent in this case', colsOf('c_cash').length, 0), eq('closes', 'NEG-CONTROL the clean period still closes with c_cash absent', (function () { setAll(PC, 'O', 'N'); var r = proc(167, { PeriodAction: 'C' }, PC, 142); setAll(PC, 'O', 'N'); return r.ok; })(), true)]);
+  delete cols.c_cash; if (_cashDdl) db.run(_cashDdl); _vwDdl.forEach(function (v) { try { db.run(v.sql); } catch (e) {} });   // restore the seed's c_cash + its views
   // ── PS-MEMO: the view prefix is built once per process run (one DB handle), not per call ──
   (function () { setAll(PC, 'O', 'N'); var r = proc(167, { PeriodAction: 'C' }, PC, 142); var n = r.lines.filter(function (l) { return /§PERIOD-UNPOSTED/.test(l); }).length; setAll(PC, 'O', 'N');
     verdict('PS-MEMO-ONCE-PER-RUN', [eq('one_line', '§PERIOD-UNPOSTED is logged once for the run (view built once per DB handle)', n, 1)]); })();

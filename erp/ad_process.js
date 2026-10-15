@@ -39,6 +39,9 @@
   var REF_TYPE = {
     10: 'string', 14: 'string',                                  // String / Text
     11: 'integer', 13: 'integer', 18: 'integer', 19: 'integer',  // Integer / ID / Table / TableDirect (all *_ID)
+    // the rest of DisplayType.isID (DisplayType.java:249-255): Location, Account, Search, Locator, Image, Assignment, PAttribute,
+    // Chart, RecordID - their editors hold an Integer, so a saved parameter is P_Number (W-UDP2-ENGINE B: Search params were 'string')
+    21: 'integer', 25: 'integer', 30: 'integer', 31: 'integer', 32: 'integer', 33: 'integer', 35: 'integer', 53370: 'integer', 200202: 'integer',
     12: 'number', 22: 'number', 29: 'number',                    // Amount / Number / Quantity
     15: 'date', 16: 'date',                                      // Date / Date+Time
     17: 'list', 20: 'yesno', 28: 'button'
@@ -1288,6 +1291,107 @@
     return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, log: trx.log, trx: trx };
   }
 
+  // ── §UDP-2 SAVED PARAMETERS / LAST RUN — AD_PInstance + AD_PInstance_Para (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2) ──
+  // Pure ports, rows in / rows out; the host reads/writes the rows (seed + signed op-log). Witness: W-UDP2-ENGINE.
+  // lastRunLabel — Msg LastRun + " " + java.sql.Timestamp.toString() of Created (MPInstance.java:566): the fraction
+  //   is printed without trailing zeros and never empty (".0").
+  function lastRunLabel(created, msg) {
+    var m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?/.exec(String(created || ''));
+    var ts = m ? m[1] + ' ' + m[2] + '.' + ((m[3] || '0').replace(/0+$/, '') || '0') : String(created || '');
+    return (msg || 'Last Run') + ' ' + ts;
+  }
+  // paramsStr — MPInstance.getParamsStr (MPInstance.java:590-613): paras by SeqNo, ParameterName; report fields appended.
+  //   Values are compared only with each other (dedup), so each side's own text form is used as-is.
+  function _s(v) { return v == null ? 'null' : String(v); }
+  function paramsStr(inst, paras, isReport) {
+    var ps = paras.slice().sort(function (a, b) { return (Number(a.seqno) - Number(b.seqno)) || String(a.parametername).localeCompare(String(b.parametername)); });
+    var s = ps.map(function (p) {
+      var z = function (x) { return x == null ? '0' : x; };   // getP_Number()/getP_Number_To() return ZERO for null (X_AD_PInstance_Para.java:260-265)
+      return '(' + [p.parametername, p.p_string, p.p_string_to, z(p.p_number), z(p.p_number_to), p.p_date, p.p_date_to, p.info, p.info_to].map(_s).join('|') + '|)';
+    }).join('');
+    if (isReport) s += _s(inst.ad_language_id) + '|' + _s(inst.ad_printformat_id) + _s(inst.ad_language_id) + _s(inst.reporttype) + _s(inst.issummary);
+    return s;
+  }
+  // pinstanceList — MPInstance.get(ctx, AD_Process_ID, AD_User_ID) (MPInstance.java:527-585).
+  //   opts = { processId, userId, clientId, isReport, lastRunCount (MSysConfig LASTRUN_RECORD_COUNT, default 5), lastRunMsg }
+  //   insts/paras = AD_PInstance / AD_PInstance_Para rows (lower-case keys). Returns [{ id, name, named, row }].
+  // _ins — insertion order: seed/migrated rows (pk >= 0) first by pk, then op-log rows (synthetic pk = -opId) by opId.
+  function _ins(i) { var k = Number(i.ad_pinstance_id); return k >= 0 ? k : 1e15 - k; }
+  function pinstanceList(insts, paras, opts) {
+    opts = opts || {};
+    var n = opts.lastRunCount == null ? 5 : Number(opts.lastRunCount);
+    var byInst = {}; (paras || []).forEach(function (p) { (byInst[String(p.ad_pinstance_id)] = byInst[String(p.ad_pinstance_id)] || []).push(p); });
+    var mine = (insts || []).filter(function (i) {
+      return String(i.ad_process_id) === String(opts.processId) && String(i.ad_user_id) === String(opts.userId) &&
+        (opts.clientId == null || String(i.ad_client_id) === String(opts.clientId)) && String(i.isactive || 'Y').toUpperCase() === 'Y';
+    });
+    var pstr = function (i) { return paramsStr(i, byInst[String(i.ad_pinstance_id)] || [], !!opts.isReport); };
+    var tie = opts.tieKey || _ins;   // legacy's ORDER BY Created DESC leaves equal-Created rows in heap order (undefined); witness seam
+    var out = [], seen = [];
+    mine.filter(function (i) { return i.name != null; })                                                    // :531-541
+      .sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; })
+      .forEach(function (i) { out.push({ id: i.ad_pinstance_id, name: i.name, named: true, row: i }); seen.push(pstr(i)); });
+    if (n > 0) {                                                                                            // :543-576
+      var un = mine.filter(function (i) { return i.name == null; }).sort(function (a, b) {
+        var ca = String(a.created), cb = String(b.created);
+        return ca < cb ? 1 : ca > cb ? -1 : (tie(a) - tie(b));   // ties: the DB's insertion (heap) order, as PG returns them (W-UDP2-ENGINE 53154/10/0)
+      });
+      var run = 0;
+      for (var k = 0; k < un.length; k++) {
+        var s = pstr(un[k]);
+        if (seen.indexOf(s) < 0) {
+          out.push({ id: un[k].ad_pinstance_id, name: lastRunLabel(un[k].created, opts.lastRunMsg), named: false, row: un[k] });
+          seen.push(s); if (++run === n) break;
+        }
+        if (k + 1 === 10 * n) break;
+      }
+    }
+    return out;
+  }
+  // paramsToParas — ProcessParameterPanel.saveParameters (:893-983): SeqNo = the field's index, only set values;
+  //   date -> P_Date ('yyyy-MM-dd HH:mm:ss'), integer/number (IDs too) -> P_Number, yes-no -> P_String Y/N, else P_String.
+  //   params = { ColumnName: v | {v, vTo} }; info = { ColumnName: displayText | {v, vTo} } (the editor's getDisplay()).
+  function paramsToParas(proc, params, info) {
+    var rows = [];
+    (proc.paras || []).forEach(function (pp, i) {
+      var raw = params ? params[pp.columnName] : undefined;
+      var v = raw && typeof raw === 'object' ? raw.v : raw, vTo = raw && typeof raw === 'object' ? raw.vTo : undefined;
+      var empty = function (x) { return x == null || x === ''; };
+      if (empty(v) && empty(vTo)) return;
+      var r = { seqno: i, parametername: pp.columnName, p_string: null, p_string_to: null, p_number: null, p_number_to: null, p_date: null, p_date_to: null, info: null, info_to: null };
+      var ts = function (x) { return empty(x) ? null : (/^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? x + ' 00:00:00' : String(x).replace('T', ' ')); };
+      if (pp.type === 'date') { r.p_date = ts(v); r.p_date_to = ts(vTo); }
+      else if (pp.type === 'integer' || pp.type === 'number') { r.p_number = empty(v) ? null : Number(v); r.p_number_to = empty(vTo) ? null : Number(vTo); }
+      else if (pp.type === 'yesno') { r.p_string = (v === true || v === 'Y') ? 'Y' : 'N'; }
+      else { r.p_string = empty(v) ? null : String(v); r.p_string_to = empty(vTo) ? null : String(vTo); }
+      var inf = info ? info[pp.columnName] : undefined;
+      r.info = inf && typeof inf === 'object' ? (inf.v == null ? null : String(inf.v)) : (inf == null ? (v == null ? null : String(v)) : String(inf));
+      if (pp.isRange) r.info_to = inf && typeof inf === 'object' ? (inf.vTo == null ? null : String(inf.vTo)) : (vTo == null ? null : String(vTo));
+      rows.push(r);
+    });
+    return rows;
+  }
+  // parasToParams — ProcessParameterPanel.loadParameters (:741-832): per field the FIRST matching para; P_Date(_To) wins,
+  //   then P_String(_To), then a non-zero P_Number(_To) (ID types as integers). Returns { ColumnName: v | {v, vTo} }
+  //   holding EVERY field (null = cleared, as the editor is setValue(null) first).
+  function parasToParams(proc, paras) {
+    var out = {}, nz = function (x) { return x != null && x !== '' && Number(x) !== 0; };
+    (proc.paras || []).forEach(function (pp) {
+      var p = (paras || []).filter(function (x) { return String(x.parametername) === String(pp.columnName); })[0], v = null, vTo = null;
+      if (p) {
+        if (p.p_date != null || p.p_date_to != null) { v = p.p_date == null ? null : String(p.p_date).slice(0, 10); vTo = p.p_date_to == null ? null : String(p.p_date_to).slice(0, 10); }
+        else if (p.p_string != null || p.p_string_to != null) { v = p.p_string; vTo = p.p_string_to; }
+        else if (nz(p.p_number) || nz(p.p_number_to)) {
+          var asInt = pp.type === 'integer';
+          v = p.p_number == null ? null : (asInt ? Math.trunc(Number(p.p_number)) : Number(p.p_number));
+          vTo = p.p_number_to == null ? null : (asInt ? Math.trunc(Number(p.p_number_to)) : Number(p.p_number_to));
+        }
+      }
+      out[pp.columnName] = pp.isRange ? { v: v, vTo: vTo } : v;
+    });
+    return out;
+  }
+
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
@@ -1300,6 +1404,7 @@
     registerCreateFromInvoice: registerCreateFromInvoice, createFromInvoiceGate: createFromInvoiceGate,
     shipLineFields: shipLineFields, sameOrderLineUOM: sameOrderLineUOM,
     readProcess: readProcess, resolveClassname: resolveClassname,
+    pinstanceList: pinstanceList, paramsToParas: paramsToParas, parasToParams: parasToParams, lastRunLabel: lastRunLabel,   // §UDP-2
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,

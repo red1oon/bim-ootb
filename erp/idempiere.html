@@ -498,7 +498,8 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=14"></script>
+<script src="ad_process.js?v=15"></script>
+<script src="ad_find.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -1063,6 +1064,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         } else console.log('§AD-SEED-PATCH none for ' + pf + ' (HTTP ' + pr.status + ')');
       } catch (ePatch) { console.log('§AD-SEED-PATCH skipped ' + pf + ' (' + ePatch.message + ')'); }
     }
+    // The stored-function UDFs (sqlfn.js: trunc, round, currencyRate, ...) belong to the DATABASE, like PL/pgSQL functions in legacy: bind them once the handle is ready, not lazily on the first model transaction.
+    //   A window on a legacy VIEW (Accounting Fact Balances, trunc(date,'DD')) opened FIRST hit SQLite's 1-argument built-in trunc() and showed 0 records (W-VIEW-WINDOW-FIRST).
+    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && !db.__udfBound) { window.AdCallout.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; console.log('§UDF-BOUND at load'); } } catch (eUdf) { console.log('§UDF-BOUND failed ' + eUdf.message); }
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
     // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
     // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
@@ -1520,6 +1524,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (!win) { status('Window ' + windowId + ' not found'); return; }
       if (window.ErpI18n) ErpI18n.applyWindow(win);   // AD_Window/AD_Tab/AD_Field _Trl (§L1); English kept on ._en
       _openWins[windowId] = { win: win, name: name || win.name };
+      Object.keys(_findByTab).forEach(function (k) { if (k.indexOf(windowId + ':') === 0) delete _findByTab[k]; });   // §UDP-3 a Find query lives on its tab while the window stays open (GridTab.setQuery)
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
     _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {}; _curKeyByTab = {}; _curQ = null;
@@ -1619,6 +1624,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     function sep() { tb.appendChild(el('span', 'sep')); }
     btn('⟲', _Ttl('tb.refresh', 'Refresh'), true, function () { renderActiveTab(); });
+    // §UDP-3 Find (ADWindowToolbar btnFind :255-256, Alt+F :519) -> FindWindow over the selected tab
+    var _fb = btn((window.OverlayKit && OverlayKit.ico ? OverlayKit.ico('search', 15) + ' ' : '🔎 ') + _T('tb.find', _findMsg('Find', 'Lookup Record')), _Ttl('tb.find', 'Lookup Record (Alt+F)', ' (Alt+F)'),
+      !!(window.AdFind && _curTab() && _curTab().tableName && _tableExists(_curTab().tableName)), function () { _openFind(); });
+    _fb.setAttribute('data-tb', 'find'); if (_findByTab[_findKey()]) _fb.classList.add('active');
     sep();
     // ── iDempiere ADWindowToolbar verbs (New/Copy/Save/Save&New/Delete/Ignore) + Process ▶ — the classic
     //    chrome IS the CRUD surface (red-pill "just the pill" retired; these no longer live in the pill rail).
@@ -2325,6 +2334,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zoomFilter.col + '=' + _zoomFilter.val;
       console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
     }
+    // §UDP-3 — the Find query on this tab (AbstractADWindowContent.doOnFind: GridTab.setQuery + query), ANDed with the tab's own contract
+    var _fq = _findByTab[_findKey()];
+    if (_fq && _fq.where) { _findUdf(); clauses.push(_fq.where); mdNote = (mdNote ? mdNote + ' ' : '') + 'find=' + _fq.where; console.log('§UDP3-FIND-APPLY table=' + tab.tableName + ' where=' + _fq.where + (_fq.name ? ' query="' + _fq.name + '"' : '')); }
     var where = clauses.length ? clauses.join(' AND ') : null;
     var orderBy = gq.orderBy || null;
     _curQ = { tm: tm, q: gq, where: where, tabIdx: _activeTabIdx, win: _activeWin };
@@ -2341,6 +2353,203 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   (Copy / Delete / Process / Zoom) were stale (computed against 0 rows). Re-render now that _records is live.
     renderToolbar();
   }
+  // ── §UDP-3 — the Find window (ZK FindWindow.java; bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-3; Witnesses: W-UDP3-ENGINE, W-UDP3-LIVE).
+  //   Simple tab (initFind :983-1170 / cmd_saveSimple :2951-3080), Advanced tab (cmd_saveAdvanced :2507-2840, this tab's columns),
+  //   Saved Query (MUserQuery.get, saveQuery :2884-2945, delete), History (addHistoryRestriction :3394-3408). The query maths is
+  //   window.AdFind (ad_find.js), judged against the real MQuery in the pilot JVM. Named gaps: child-tab/attribute rows, default + share.
+  var _findByTab = {};
+  function _findKey() { return _activeWin + ':' + _activeTabIdx; }
+  function _findMsg(v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + String(v).replace(/'/g, "''") + "'")[0]; return r && r.msgtext ? String(r.msgtext).trim() : en; }
+  function _findUdf() { try { if (window.__idmpDb && window.AdFind && !window.__idmpDb.__pgcollate) { window.__idmpDb.create_function('pgcollate', AdFind.collate); window.__idmpDb.__pgcollate = true; } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
+  function _findFieldMeta(tab) {   // AD_Field_v for the tab, ordered IsDisplayed DESC, SeqNo (GridFieldVO.getSQL :68-75)
+    return _sqlRows("SELECT c.ColumnName AS cn, f.Name AS nm, COALESCE(f.AD_Reference_ID, c.AD_Reference_ID) AS dt, COALESCE(f.AD_Reference_Value_ID, c.AD_Reference_Value_ID) AS rv, " +
+      "COALESCE(f.IsSelectionColumn, c.IsSelectionColumn) AS sc, c.SeqNoSelection AS ss, f.IsDisplayed AS d, COALESCE(f.ColumnSQL, c.ColumnSQL) AS csql, " +
+      "CASE WHEN c.IsEncrypted='Y' OR f.IsEncrypted='Y' THEN 'Y' ELSE 'N' END AS enc FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID " +
+      "WHERE f.AD_Tab_ID=" + Number(tab.id) + " AND f.IsActive='Y' AND c.IsActive='Y' ORDER BY f.IsDisplayed DESC, f.SeqNo")
+      .map(function (r) { return { columnName: r.cn, name: r.nm, displayType: Number(r.dt), refValueId: r.rv, isSelectionColumn: r.sc === 'Y', seqNoSelection: Number(r.ss) || 0,
+        isDisplayed: r.d === 'Y', columnSQL: r.csql || null, isEncrypted: r.enc === 'Y' }; })
+      .filter(function (f) { return f.columnSQL || _colExists(tab.tableName, f.columnName); });
+  }
+  function _findEditor(f, attr) {   // a Find editor for the field: list / table-dir select, number, date or text
+    var dt = Number(f.displayType), inp = null;
+    if (dt === 17 || dt === 20 || (dt === 28 && f.refValueId)) {
+      inp = document.createElement('select'); var o0 = el('option', null, ''); o0.value = ''; inp.appendChild(o0);
+      var refId = dt === 20 ? 319 : Number(f.refValueId);   // YesNo as a Y/N list (initFind :995-1010, REFERENCE_YESNO)
+      _sqlRows("SELECT value, name FROM ad_ref_list WHERE ad_reference_id=" + refId + " AND upper(isactive)='Y' ORDER BY name").forEach(function (r) { var o = el('option', null, r.name); o.value = r.value; inp.appendChild(o); });
+      if (inp.options.length === 1 && dt === 20) ['Y', 'N'].forEach(function (v) { var o = el('option', null, v); o.value = v; inp.appendChild(o); });
+    } else if (dt === 19 || dt === 18) inp = _procTableDirSelect({ columnName: f.columnName });
+    if (!inp) { inp = document.createElement('input'); var vt = AdFind.valueType(f); inp.type = vt === 'date' ? 'date' : (vt === 'int' || vt === 'num') ? 'number' : 'text'; }
+    inp.setAttribute(attr, f.columnName); return inp;
+  }
+  function _userQueries(tab, cb) {   // seed ad_userquery + the signed op-log, then MUserQuery.get
+    var base = _sqlRows('SELECT * FROM ad_userquery WHERE ad_tab_id=' + Number(tab.id)), c = window.__crud;
+    var ctx = { clientId: _session && _session.client ? _session.client.id : (window.APP || {}).clientId, userId: (window.APP || {}).actor, roleId: _session && _session.role ? _session.role.id : null,
+      includedRoles: _session && _session.role ? _sqlRows("SELECT included_role_id AS r FROM ad_role_included WHERE ad_role_id=" + Number(_session.role.id) + " AND isactive='Y'").map(function (x) { return x.r; }) : [] };
+    var done = function (rows) { cb(AdFind.userQueryList(rows, tab.id, ctx), ctx); };
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { done(base); return; }
+    c.withSidecar(function (sdb) { done(sdb ? c.core.listTip(sdb, 'ad_userquery', 'ad_userquery_id', base, null).rows : base); });
+  }
+  function _openFind() {
+    var tab = _curTab(); if (!tab || !window.AdFind) return;
+    _findUdf();
+    var old = document.getElementById('idmp-find-ov'); if (old) old.remove();
+    var fields = _findFieldMeta(tab), ff = AdFind.findFields(fields, { isLookupOnlySelection: false }), all = ff.selection.concat(ff.more);
+    var byCol = {}; fields.forEach(function (f) { byCol[f.columnName] = f; });
+    var tabUU = (_sqlRows('SELECT AD_Tab_UU AS u FROM AD_Tab WHERE AD_Tab_ID=' + Number(tab.id))[0] || {}).u || '';
+    var ov = el('div', null); ov.id = 'idmp-find-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+    var box = el('div', 'idmp-procpane'); box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:14px 16px;width:min(760px,96vw);max-height:90vh;overflow:auto;font:13px system-ui';
+    box.appendChild(el('h3', null, _findMsg('Find', 'Lookup Record') + ': ' + tab.name));
+    var tabsRow = el('div', null); tabsRow.style.cssText = 'display:flex;gap:6px;margin:6px 0 10px';
+    var tSimple = el('button', null, _findMsg('Find', 'Lookup Record')), tAdv = el('button', null, _findMsg('Advanced', 'Advanced'));
+    tSimple.type = tAdv.type = 'button'; tSimple.setAttribute('data-find-tab', 'simple'); tAdv.setAttribute('data-find-tab', 'advanced');
+    tabsRow.appendChild(tSimple); tabsRow.appendChild(tAdv); box.appendChild(tabsRow);
+    var pSimple = el('div', null), pAdv = el('div', null); pSimple.setAttribute('data-find-panel', 'simple'); pAdv.setAttribute('data-find-panel', 'advanced');
+    box.appendChild(pSimple); box.appendChild(pAdv);
+    var mode = 'simple';
+    function show(m) { mode = m; pSimple.style.display = m === 'simple' ? '' : 'none'; pAdv.style.display = m === 'advanced' ? '' : 'none'; tSimple.style.fontWeight = m === 'simple' ? '700' : ''; tAdv.style.fontWeight = m === 'advanced' ? '700' : ''; }
+    tSimple.addEventListener('click', function () { show('simple'); }); tAdv.addEventListener('click', function () { show('advanced'); });
+    // Simple: the selection fields (+ the rest under "...", collapsed — :1152-1170); date / number get a To editor (addSelectionColumn :1800-1830)
+    function simpleRow(f, parent) {
+      var row = el('div', 'fld'); row.appendChild(el('label', null, f.name));
+      row.appendChild(_findEditor(f, 'data-find-s'));
+      var vt = AdFind.valueType(f);
+      if ((vt === 'date' || vt === 'num' || (vt === 'int' && Number(f.displayType) === 11))) { var to = _findEditor(f, 'data-find-s-to'); to.title = 'to'; row.appendChild(to); }
+      parent.appendChild(row);
+    }
+    ff.selection.forEach(function (f) { simpleRow(f, pSimple); });
+    if (ff.more.length && ff.selection.length) {
+      var det = document.createElement('details'); det.appendChild(el('summary', null, '...')); ff.more.forEach(function (f) { simpleRow(f, det); }); pSimple.appendChild(det);
+    }
+    // Advanced rows
+    var advRows = el('div', null); pAdv.appendChild(advRows);
+    var addRow = el('button', null, '+'); addRow.type = 'button'; addRow.setAttribute('data-find-addrow', '1'); pAdv.appendChild(addRow);
+    function opName(op) { return _findMsg(AdFind.OP_MSG[op], op).trim(); }
+    function newAdvRow(r) {
+      r = r || {}; var row = el('div', 'fld'); row.setAttribute('data-find-row', '1'); row.style.cssText = 'display:flex;gap:4px;align-items:center;flex-wrap:wrap';
+      var andOr = document.createElement('select'); ['', 'AND', 'OR', 'AND NOT', 'OR NOT'].forEach(function (v) { var o = el('option', null, v); o.value = v; andOr.appendChild(o); }); andOr.setAttribute('data-find-andor', '1');
+      var lB = document.createElement('select'), rB = document.createElement('select');
+      ['', '(', '((', '((('].forEach(function (v) { var o = el('option', null, v); o.value = v; lB.appendChild(o); }); [')', '))', ')))'].reduce(function (a, v) { var o = el('option', null, v); o.value = v; rB.appendChild(o); return a; }, rB.appendChild((function () { var o = el('option', null, ''); o.value = ''; return o; })()));
+      lB.setAttribute('data-find-lb', '1'); rB.setAttribute('data-find-rb', '1');
+      var col = document.createElement('select'); col.setAttribute('data-find-col', '1');
+      all.forEach(function (f) { var o = el('option', null, f.name); o.value = f.columnName; col.appendChild(o); });
+      var op = document.createElement('select'); op.setAttribute('data-find-op', '1');
+      var vWrap = el('span', null), v2Wrap = el('span', null);
+      function refresh(keep) {
+        var f = byCol[col.value]; op.innerHTML = '';
+        AdFind.operatorsFor(f).forEach(function (x) { var o = el('option', null, opName(x)); o.value = x; op.appendChild(o); });
+        if (keep && keep.op != null) op.value = keep.op;
+        vWrap.innerHTML = ''; v2Wrap.innerHTML = '';
+        var v = _findEditor(f, 'data-find-v'), v2 = _findEditor(f, 'data-find-v2'); vWrap.appendChild(v); v2Wrap.appendChild(v2);
+        if (keep) { v.value = _findShow(f, keep.v); v2.value = _findShow(f, keep.v2); }
+        v2Wrap.style.display = op.value === AdFind.OP.BETWEEN ? '' : 'none';
+      }
+      col.addEventListener('change', function () { refresh(); }); op.addEventListener('change', function () { v2Wrap.style.display = op.value === AdFind.OP.BETWEEN ? '' : 'none'; });
+      var del = el('button', null, '−'); del.type = 'button'; del.addEventListener('click', function () { row.remove(); });
+      [andOr, lB, col, op, vWrap, v2Wrap, rB, del].forEach(function (x) { row.appendChild(x); });
+      if (r.column && byCol[r.column]) col.value = r.column;
+      andOr.value = r.andOr || ''; lB.value = r.lB || ''; rB.value = r.rB || '';
+      refresh(r.column ? r : null);
+      advRows.appendChild(row);
+    }
+    addRow.addEventListener('click', function () { newAdvRow(); });
+    newAdvRow();
+    // bottom: saved query + history + buttons
+    var bottom = el('div', 'fld'); bottom.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px';
+    var dl = document.createElement('datalist'); dl.id = 'idmp-find-queries';
+    var qn = document.createElement('input'); qn.type = 'text'; qn.setAttribute('list', dl.id); qn.setAttribute('data-find-query', '1'); qn.placeholder = _findMsg('SavedQuery', 'Saved Query');
+    var bSave = el('button', null, _T('find.save', 'Save')), bDel = el('button', null, _T('find.delete', 'Delete'));
+    bSave.type = bDel.type = 'button'; bSave.setAttribute('data-find-save', '1'); bDel.setAttribute('data-find-delete', '1');
+    var hist = document.createElement('select'); hist.setAttribute('data-find-history', '1'); hist.title = _findMsg('History', 'History records');
+    [['', ''], ['All', 'All'], ['Year', 'Year'], ['Month', 'Month'], ['Week', 'Week'], ['Day', 'Day']].forEach(function (p) { var o = el('option', null, p[0] ? _findMsg(p[0], p[1]) : ''); o.value = p[0]; hist.appendChild(o); });
+    [qn, dl, bSave, bDel, hist].forEach(function (x) { bottom.appendChild(x); });
+    box.appendChild(bottom);
+    var acts = el('div', 'actions'), bOk = el('button', 'run', 'OK'), bReset = el('button', null, _T('find.reset', 'Reset')), bCancel = el('button', null, _T('find.cancel', 'Cancel'));
+    bOk.type = bReset.type = bCancel.type = 'button'; bOk.setAttribute('data-find-ok', '1'); bReset.setAttribute('data-find-reset', '1'); bCancel.setAttribute('data-find-cancel', '1');
+    [bOk, bReset, bCancel].forEach(function (x) { acts.appendChild(x); }); box.appendChild(acts);
+    var msg = el('div', 'err'); box.appendChild(msg);
+    ov.appendChild(box); document.body.appendChild(ov);
+    show('simple');
+    // queries
+    var queries = [], qctx = null;
+    function entry() { return queries.filter(function (q) { return q.name === qn.value; })[0] || null; }
+    function enable() { var e = entry(); bDel.disabled = !(e && AdFind.userCanSave(e, qctx)); bSave.disabled = !qn.value || !!(e && !AdFind.userCanSave(e, qctx)); }
+    function loadQueries(cb) {
+      _userQueries(tab, function (list, ctx) {
+        queries = list; qctx = ctx; dl.innerHTML = '';
+        list.forEach(function (q) { var o = document.createElement('option'); o.value = q.name; dl.appendChild(o); });
+        console.log('§UDP3-FIND queries tab=' + tab.id + ' [' + list.map(function (q) { return q.name; }).join(' | ') + ']');
+        enable(); if (cb) cb();
+      });
+    }
+    loadQueries();
+    qn.addEventListener('input', function () {   // onSelectedQueryChanged :2293-2322 — a saved query loads into the Advanced tab
+      enable(); var e = entry(); if (!e) return;
+      var p = AdFind.parseCode(e.code);
+      advRows.innerHTML = ''; (p.rows.length ? p.rows : [{}]).forEach(function (r) { newAdvRow(r); });
+      hist.value = p.history || ''; show('advanced');
+      console.log('§UDP3-FIND load query="' + e.name + '" rows=' + p.rows.length + (p.sql != null ? ' sql' : '') + ' history=' + (p.history || '-'));
+    });
+    function readSimple() {
+      var vals = {};
+      pSimple.querySelectorAll('[data-find-s]').forEach(function (inp) {
+        var c = inp.getAttribute('data-find-s'), to = inp.parentNode.querySelector('[data-find-s-to="' + c + '"]');
+        if (inp.value !== '' || (to && to.value !== '')) vals[c] = { v: inp.value === '' ? null : inp.value, vTo: to && to.value !== '' ? to.value : null };
+      });
+      return AdFind.simpleQuery(ff.selection.concat(ff.more), vals, { table: tab.tableName, dialect: 'sqlite', tabUU: tabUU, history: hist.value });
+    }
+    function readAdvanced() {
+      var rows = [];
+      advRows.querySelectorAll('[data-find-row]').forEach(function (row) {
+        var c = row.querySelector('[data-find-col]').value, f = byCol[c]; if (!f) return;
+        var v = row.querySelector('[data-find-v]'), v2 = row.querySelector('[data-find-v2]'), op = row.querySelector('[data-find-op]').value;
+        var cv = function (x) { return x && x.value !== '' ? _findCode(f, x.value) : ''; };
+        rows.push({ column: c, op: op, v: cv(v), v2: op === AdFind.OP.BETWEEN ? cv(v2) : '', andOr: row.querySelector('[data-find-andor]').value, lB: row.querySelector('[data-find-lb]').value, rB: row.querySelector('[data-find-rb]').value, tabUU: tabUU });
+      });
+      var q = AdFind.advancedQuery(tab.tableName, rows, function (cn) { return byCol[cn] || null; }, { dialect: 'sqlite', tabUU: tabUU, history: hist.value });
+      q.code = AdFind.codeOf(rows.filter(function (r) { return r.v !== '' || r.op === AdFind.OP.NULL || r.op === AdFind.OP.NOT_NULL; }));
+      return q;
+    }
+    function current() { var q = mode === 'simple' ? readSimple() : readAdvanced(); if (hist.value && q.code !== undefined) q.code = q.code + (q.code ? '<~>' : '') + (hist.value ? '<#>' + hist.value : ''); return q; }
+    bOk.addEventListener('click', function () {
+      var q = current(), empty = !q.restrictions.length && !(AdFind.HISTORY_DAYS[hist.value] > 0);
+      _findByTab[_findKey()] = empty ? null : { where: q.where, code: q.code, name: entry() ? entry().name : null };
+      console.log('§UDP3-FIND ok mode=' + mode + ' restrictions=' + q.restrictions.length + ' where=' + (empty ? '(none)' : q.where) + ' code=' + q.code + (q.skipped && q.skipped.length ? ' skipped=' + q.skipped.join(',') : ''));
+      ov.remove(); renderActiveTab();
+    });
+    bReset.addEventListener('click', function () {
+      pSimple.querySelectorAll('input,select').forEach(function (x) { x.value = ''; }); advRows.innerHTML = ''; newAdvRow(); hist.value = ''; qn.value = ''; enable();
+      if (_findByTab[_findKey()]) { _findByTab[_findKey()] = null; console.log('§UDP3-FIND reset (query removed)'); }
+    });
+    bCancel.addEventListener('click', function () { ov.remove(); });
+    bSave.addEventListener('click', function () {   // saveQuery :2884-2945 (a name is required; an empty code on a listed name = delete)
+      var nm = qn.value; if (!nm) { msg.textContent = _findMsg('NeedsName', 'Needs a name'); return; }
+      var q = current(), e = entry(), App = window.APP || {}, ops;
+      var std = (App.actor != null || App.clientId != null) ? { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 } : null;
+      if (!q.code) {
+        if (!e) { msg.textContent = _findMsg('NeedsQuery', 'Needs a query'); return; }
+        ops = [{ key: 'ad_userquery', table: 'ad_userquery', verb: 'delete', op_type: 'CRUD_DELETE', id: e.ad_userquery_id, tombstone: true, reversible: true, op_uuid: null }];
+      } else if (e) ops = [{ key: 'ad_userquery', table: 'ad_userquery', verb: 'update', op_type: 'CRUD_UPDATE', id: e.ad_userquery_id, actor: App.actor, op_uuid: null,
+        changes: { code: { old: e.code, new: q.code }, ad_table_id: { old: e.ad_table_id, new: Number(tab.tableId) } } }];
+      else { var op = { key: 'ad_userquery', table: 'ad_userquery', verb: 'create', op_type: 'CRUD_CREATE', cas: null, op_uuid: null,
+        fields: { name: nm, ad_tab_id: Number(tab.id), ad_user_id: App.actor, code: q.code, ad_table_id: Number(tab.tableId), isdefault: 'N' } }; if (std) op.stdDefaults = std; ops = [op]; }
+      if (!window.__crud || typeof window.__crud.applyOpGroup !== 'function') { msg.textContent = 'not persisted (no signed op-log)'; return; }
+      window.__crud.applyOpGroup(ops, function (cr) {
+        console.log('§UDP3-FIND save query="' + nm + '" ' + ops[0].op_type + ' code=' + q.code + ' committed=' + !!(cr && cr.committed));
+        loadQueries(function () { qn.value = nm; enable(); });
+      });
+    });
+    bDel.addEventListener('click', function () {   // deleteSavedQuery :2254-2280
+      var e = entry(); if (!e || !window.__crud) return;
+      window.__crud.applyOpGroup([{ key: 'ad_userquery', table: 'ad_userquery', verb: 'delete', op_type: 'CRUD_DELETE', id: e.ad_userquery_id, tombstone: true, reversible: true, op_uuid: null }], function (cr) {
+        console.log('§UDP3-FIND delete query="' + e.name + '" committed=' + !!(cr && cr.committed));
+        loadQueries(function () { qn.value = ''; enable(); });
+      });
+    });
+    console.log('§UDP3-FIND open tab=' + tab.name + '(' + tab.id + ') table=' + tab.tableName + ' simple=[' + ff.selection.map(function (f) { return f.columnName; }).join(',') + '] more=' + ff.more.length);
+  }
+  function _findCode(f, v) { return AdFind.valueType(f) === 'date' ? (String(v).length === 10 ? v + ' 00:00:00.0' : v) : String(v); }   // the Code holds java toString values
+  function _findShow(f, v) { if (v == null || v === '') return ''; return AdFind.valueType(f) === 'date' ? String(v).slice(0, 10) : String(v); }
   function _displayFields(tab) {
     return (tab.fields || []).filter(function (f) { return f.isDisplayed && !f.isKey; });
   }
@@ -4058,6 +4267,116 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
     return sel;
   }
+  // §UDP-2 — Saved Parameters / Last Run in the generic process dialog (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2; Witness: W-UDP2-LIVE).
+  //   ZK AbstractProcessDialog: savePrameterLayout :581-608 (editable combobox + Save + Delete), querySaved :613-625 (MPInstance.get),
+  //   onEvent :827-840, updateSaveParameter :853-898, deleteSaveParameter :954-966, chooseSaveParameter :972-985 (Save/Delete are blocked
+  //   only for the literal "** Last Run **", which the list never holds - so a "Last Run ..." entry can be saved under its name or deleted).
+  //   Rows = seed ad_pinstance(_para) + the signed op-log (CORE.listTip); every write is ONE signed CRUD group. The list/load/save maths are
+  //   the AdProcess ports (pinstanceList / parasToParams / paramsToParas), judged against the real MPInstance.get by W-UDP2-ENGINE.
+  function _procInstances(procId, cb) {
+    var bi = _sqlRows('SELECT * FROM ad_pinstance WHERE ad_process_id=' + Number(procId)), ids = bi.map(function (r) { return Number(r.ad_pinstance_id); });
+    var bp = ids.length ? _sqlRows('SELECT * FROM ad_pinstance_para WHERE ad_pinstance_id IN (' + ids.join(',') + ')') : [];
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(bi, bp); return; }
+    c.withSidecar(function (sdb) {
+      if (!sdb) { cb(bi, bp); return; }
+      var I = c.core.listTip(sdb, 'ad_pinstance', 'ad_pinstance_id', bi, null).rows.filter(function (r) { return String(r.ad_process_id) === String(procId); });
+      var keep = {}; I.forEach(function (r) { keep[String(r.ad_pinstance_id)] = 1; });
+      var P = c.core.listTip(sdb, 'ad_pinstance_para', 'ad_pinstance_para_uu', bp, null).rows.filter(function (p) { return keep[String(p.ad_pinstance_id)]; });
+      cb(I, P);
+    });
+  }
+  function _procNowTs() {   // Created with milliseconds, as PO stamps it (java.sql.Timestamp of System.currentTimeMillis)
+    var d = new Date(), p = function (n, w) { return String(n).padStart(w || 2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3);
+  }
+  function _procSavedRow(proc, pane) {
+    var A = window.AdProcess, App = window.APP || {}, user = App.actor, client = App.clientId;
+    var msgOf = function (v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + v + "'")[0]; return (r && r.msgtext) || en; };
+    var lrRow = _sqlRows("SELECT value FROM ad_sysconfig WHERE name='LASTRUN_RECORD_COUNT' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(client || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var lastRunCount = lrRow && lrRow.value != null && String(lrRow.value).trim() !== '' ? Number(lrRow.value) : 5, lastRunMsg = msgOf('LastRun', 'Last Run');
+    var row = el('div', 'fld idmp-savedparam'), dl = document.createElement('datalist'), dlId = 'idmp-savedparam-' + proc.AD_Process_ID;
+    dl.id = dlId;
+    var name = document.createElement('input'); name.type = 'text'; name.setAttribute('list', dlId); name.setAttribute('data-proc-saved', '1');
+    name.placeholder = msgOf('SavedParameter', 'Saved Parameters');
+    var bSave = el('button', null, _T('proc.save', 'Save')), bDel = el('button', null, _T('proc.delete', 'Delete'));
+    bSave.setAttribute('data-proc-saved-save', '1'); bDel.setAttribute('data-proc-saved-delete', '1'); bSave.type = bDel.type = 'button';
+    row.appendChild(el('label', null, name.placeholder)); row.appendChild(name); row.appendChild(dl); row.appendChild(bSave); row.appendChild(bDel);
+    pane.appendChild(row);
+    var list = [], paras = [];
+    function entry() { var t = name.value; return list.filter(function (x) { return x.name === t; })[0] || null; }
+    function enable() { var t = name.value, e = entry(); bSave.disabled = !t; bDel.disabled = !(t && e); }   // chooseSaveParameter :980-984
+    function querySaved(cb) {                                                                              // :613-625
+      _procInstances(proc.AD_Process_ID, function (I, P) {
+        paras = P;
+        list = A.pinstanceList(I, P, { processId: proc.AD_Process_ID, userId: user, clientId: client, isReport: proc.isReport, lastRunCount: lastRunCount, lastRunMsg: lastRunMsg });
+        dl.innerHTML = ''; list.forEach(function (x) { var o = document.createElement('option'); o.value = x.name; dl.appendChild(o); });
+        console.log('§UDP2-SAVED proc=' + proc.AD_Process_ID + ' user=' + user + ' list=' + list.length + ' [' + list.map(function (x) { return (x.named ? 'N:' : 'L:') + x.name; }).join(' | ') + ']');
+        enable(); if (cb) cb();
+      });
+    }
+    function readForm() {   // the editors' values + display text (ProcessParameterPanel.saveParameters: Info = editor.getDisplay())
+      var params = {}, info = {};
+      proc.paras.forEach(function (pp) {
+        var inp = pane.querySelector('[data-proc-param="' + pp.columnName + '"]'); if (!inp || inp.value === '') return;
+        params[pp.columnName] = inp.value;
+        info[pp.columnName] = inp.tagName === 'SELECT' && inp.selectedIndex >= 0 ? inp.options[inp.selectedIndex].text : inp.value;
+      });
+      return { params: params, info: info };
+    }
+    function paraOps(instRef, f) {
+      return A.paramsToParas(proc, f.params, f.info).map(function (r) {
+        var fields = {}; for (var k in r) fields[k] = r[k]; fields.ad_pinstance_id = instRef;
+        return _procCrud('create', 'ad_pinstance_para', { fields: fields });
+      });
+    }
+    function newInstanceOps(nm) {   // new MPInstance(ctx, AD_Process_ID, Table_ID, Record_ID) + setName + saveParameters (:872-893)
+      var ts = _procNowTs(), rec = _procRecord && _procRecord.recordId != null ? Number(_procRecord.recordId) : 0;
+      var head = _procCrud('create', 'ad_pinstance', { fields: { ad_process_id: Number(proc.AD_Process_ID), ad_user_id: user, record_id: rec, name: nm, isprocessing: 'N', result: 0, created: ts, updated: ts } });
+      return [head].concat(paraOps({ __opRef: 0 }, readForm()));
+    }
+    function commit(ops, what, cb) {
+      if (!window.__crud || typeof window.__crud.applyOpGroup !== 'function') { console.log('§UDP2-SAVED ' + what + ' NOT persisted (no signed op-log)'); if (cb) cb(); return; }
+      window.__crud.applyOpGroup(ops, function (cr) {
+        console.log('§UDP2-SAVED ' + what + ' proc=' + proc.AD_Process_ID + ' ops=' + ops.length + ' committed=' + !!(cr && cr.committed) + (cr && cr.committed ? '' : ' reason=' + (cr && cr.reason)));
+        if (cb) cb();
+      });
+    }
+    name.addEventListener('input', function () {
+      var e = entry(); enable(); if (!e) return;
+      var v = A.parasToParams(proc, paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }));   // loadParameters :741-832
+      proc.paras.forEach(function (pp) {
+        var inp = pane.querySelector('[data-proc-param="' + pp.columnName + '"]'); if (!inp) return;
+        var x = v[pp.columnName]; x = x && typeof x === 'object' ? x.v : x;
+        inp.value = x == null ? '' : String(x);
+      });
+      console.log('§UDP2-SAVED load proc=' + proc.AD_Process_ID + ' entry="' + e.name + '" id=' + e.id + ' values=' + JSON.stringify(v));
+    });
+    bSave.addEventListener('click', function () {
+      var nm = name.value, e = entry(); if (!nm) return;
+      if (e) {   // update existing: delete its paras, save the form's, keep the instance (now carrying the name) :855-870
+        var ops = paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }).map(function (p) { return _procCrud('delete', 'ad_pinstance_para', { id: p.ad_pinstance_para_uu }); });
+        ops = ops.concat(paraOps(Number(e.id), readForm()));
+        ops.push(_procCrud('update', 'ad_pinstance', { id: Number(e.id), changes: { name: { old: e.row.name == null ? null : e.row.name, new: nm }, updated: { old: e.row.updated, new: _procNowTs() } } }));
+        commit(ops, 'save-existing name="' + nm + '"', function () { querySaved(function () { name.value = nm; enable(); }); });
+      } else commit(newInstanceOps(nm), 'save-new name="' + nm + '"', function () { querySaved(function () { name.value = nm; enable(); }); });
+    });
+    bDel.addEventListener('click', function () {   // deleteEx(true) :954-966 - the instance and its parameters
+      var e = entry(); if (!e) return;
+      var ops = paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }).map(function (p) { return _procCrud('delete', 'ad_pinstance_para', { id: p.ad_pinstance_para_uu }); });
+      ops.push(_procCrud('delete', 'ad_pinstance', { id: Number(e.id) }));
+      commit(ops, 'delete name="' + e.name + '"', function () { querySaved(function () { name.value = ''; enable(); }); });
+    });
+    querySaved();
+    return { recordRun: function (cb) { commit(newInstanceOps(null), 'run (Last Run entry)', cb); } };
+  }
+  function _procCrud(verb, table, o) {   // the crud_core.buildOp shapes (create / update / delete), actor + tenant as sessionActor() reads them
+    var App = window.APP || {}, op = { key: table, table: table, verb: verb, op_uuid: null };
+    if (verb === 'create') { op.op_type = 'CRUD_CREATE'; op.fields = o.fields; op.cas = null; if (App.actor != null || App.clientId != null) op.stdDefaults = { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 }; }
+    else if (verb === 'update') { op.op_type = 'CRUD_UPDATE'; op.id = o.id; op.changes = o.changes; if (App.actor != null) op.actor = App.actor; }
+    else { op.op_type = 'CRUD_DELETE'; op.id = o.id; op.tombstone = true; op.reversible = true; }
+    return op;
+  }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
@@ -4114,6 +4433,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       pane.appendChild(fld);
     });
     if (hidden.length) console.log('§AD-PROC-LIVE proc=' + proc.AD_Process_ID + ' paras hidden by DisplayLogic: [' + hidden.join(',') + ']');
+    var saved = _procSavedRow(proc, pane);
     var err = el('div', 'err');
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Run'); run.setAttribute('data-proc-run', '1');
@@ -4134,7 +4454,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return;
       }
       console.log('§PROC_PARAM_VALIDATE proc=' + proc.AD_Process_ID + ' ok required=[' + v.required.join(',') + '] supplied=[' + v.supplied.join(',') + ']');
-      runProcess(proc, params, _procRecord ? _procRecord.recordId : undefined);
+      var recId = _procRecord ? _procRecord.recordId : undefined;
+      saved.recordRun(function () { runProcess(proc, params, recId); });   // the run's AD_PInstance (unnamed) is written first, as legacy does
     });
     cancel.addEventListener('click', function () {
       if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
@@ -4548,7 +4869,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         //   value the tab query used. Supersedes §ORDERLINE-PARENT-FK's parent-key-name search.
         var seedVals = null;
         if (_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && _curQ.tm.tabLevel > 0 && _curQ.tm.linkColumn && _curQ.q.linkValue != null) {
-          seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue;
+          // GridField.isParentValue (GridField.java:1938-1961): only an ID/UUID-typed link column takes the parent's value (DisplayType.isID:249-255 + isUUID); a String link
+          //   (A_Depreciation_Table_Code, Reference 10) stays EMPTY on a new row - measured on the legacy pilot (oracle dataNew: A_Depreciation_Table_Code=null). The tab QUERY still filters by it.
+          var _lcRef = (_adQ("SELECT c.ad_reference_id AS r FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [tab.tableName, _curQ.tm.linkColumn])[0] || {}).r;
+          if ([13, 18, 19, 30, 21, 31, 25, 33, 35, 32, 53370, 200202, 200231].indexOf(Number(_lcRef)) >= 0) { seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue; }
         }
         if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
