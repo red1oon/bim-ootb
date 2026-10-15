@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-LIBERO-ORDEREND (spec prompts/mfg/LIBERO_ORDER_END_SLICE7_SPEC.md). READ THE LOG after every run: verdict = §LEND-VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: a manufacturing order can be VOIDED, RE-ACTIVATED and CLOSED the way MPPOrder does it: quantities, reservations, activities and descriptions follow the Java; a delivered order refuses void and re-activate by name; nothing half-written.
-//   Every number is hand-computed from the Java (comments show the arithmetic). Breaks (MUST exit 1): LEND_BREAK=novoidnode|noguard
+//   Every number is hand-computed from the Java (comments show the arithmetic). Breaks (MUST exit 1): LEND_BREAK=novoidnode|noguard|novariance|noactivities
 'use strict';
 var fs = require('fs'), path = require('path');
 if (!global.window) global.window = {};
@@ -120,9 +120,9 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LEND ' + n + 
 
 
   var FSM = require(path.join(ERP, 'ad_docfsm.js')), PPMOD = await import('file://' + path.join(ERP, 'plugins', 'libero_pporder.mjs'));
-  if (BREAK === 'novoidnode') PPMOD.SOURCE.voidNodes = false; if (BREAK === 'noguard') PPMOD.SOURCE.voidGuard = false;
+  if (BREAK === 'novoidnode') PPMOD.SOURCE.voidNodes = false; if (BREAK === 'noguard') PPMOD.SOURCE.voidGuard = false; if (BREAK === 'novariance') PPMOD.SOURCE.closeVariances = false; if (BREAK === 'noactivities') PPMOD.SOURCE.closeActivities = false;
   stdOn(true);
-  function act(orderId, action, noWf) { mute(); var e = Object.assign(env(), T, { noWorkflow: !!noWf }), r = ML.run(q, e, { table: 'pp_order', timing: 'DOCACTION', id: orderId, action: action }); unmute(); if (r.ok) apply(r.ops); return r; }
+  function act(orderId, action, noWf) { mute(); var e = Object.assign(env(), T, { noWorkflow: !!noWf }), r = ML.run(q, e, { table: 'pp_order', timing: 'DOCACTION', id: orderId, action: action }); unmute(); if (r.ok) apply(r.ops); else if (process.env.LEND_DEBUG) log((r.log || []).filter(function (l) { return /MODEL-ERR|PROC-EXC|LIBERO-COMPLETE-REFUSED/.test(l); }).join('\n').slice(0, 1500)); return r; }
   var resv = function (p) { return S(one("SELECT COALESCE(SUM(qty),0) AS s FROM m_storagereservation WHERE m_product_id=? AND m_warehouse_id=? AND issotrx='N'", [p, WH]).s); };
   var oneO = function (id) { return one('SELECT * FROM pp_order WHERE pp_order_id=?', [id]); };
 
@@ -159,6 +159,43 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LEND ' + n + 
   // E4 events: the void fires BEFORE_VOID, then the line/node/order saves, then AFTER_VOID
   var ev4 = ML.eventSeq(rV.trx);
   check('E4 §EVENT_SEQ of the void: V.BEFORE_VOID first, the order-line saves before the order save, V.AFTER_VOID after the stock steps', ev4.indexOf('V.BEFORE_VOID@pp_order') >= 0 && ev4.indexOf('V.AFTER_VOID@pp_order') > ev4.indexOf('V.BEFORE_VOID@pp_order') && ev4.indexOf('WRITE_UPDATE@pp_order_bomline') > ev4.indexOf('V.BEFORE_VOID@pp_order') && ev4.indexOf('WRITE_UPDATE@pp_order_node') > ev4.indexOf('WRITE_UPDATE@pp_order_bomline'), ev4.slice(0, 40));
+
+  // ── C: CLOSE (MPPOrder.closeIt :792-850) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  // FIXTURE (as W-LIBERO-ACTIVITY): resource product 50024 on Standard, Labor 12 / Burden 3 per hour, QtyBatchs 2
+  db.run("UPDATE m_product_category_acct SET costingmethod='S' WHERE m_product_category_id=50003");
+  [[105, 12], [50000, 3]].forEach(function (x) { db.run('UPDATE m_cost SET currentcostprice=? WHERE m_product_id=50024 AND m_costelement_id=? AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0', [x[1], x[0]]); });
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OD = newCompletedOrder('LE-D'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OD.pp_order_id]);
+  var rbD = runProcess(OD.pp_order_id, { rule: 'BackFlush', movementDate: DATE }), lD0 = bomLines(OD.pp_order_id);
+  log('§LEND-C0 backflush ok=' + rbD.ok + ' KG delivered=' + lD0[0].qtydelivered + ' required=' + lD0[0].qtyrequiered + ' node=' + one('SELECT docstatus FROM pp_order_node WHERE pp_order_id=?', [OD.pp_order_id]).docstatus);
+  var rCl = act(OD.pp_order_id, 'CL', true), oCl = oneO(OD.pp_order_id), lCl = bomLines(OD.pp_order_id), nCl = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OD.pp_order_id]);
+  var ccs2 = q('SELECT pp_cost_collector_id AS id, costcollectortype AS t, movementqty AS qty, durationreal AS dur, docstatus AS st FROM pp_cost_collector WHERE pp_order_id=? ORDER BY pp_cost_collector_id', [OD.pp_order_id]);
+  log('§LEND-C1 close ok=' + rCl.ok + ' msg=' + (rCl.msg || '') + ' order=' + JSON.stringify({ st: oCl.docstatus, da: oCl.docaction, qo: oCl.qtyordered, qd: oCl.qtydelivered, qr: oCl.qtyreserved, desc: oCl.description }) + ' collectors=' + JSON.stringify(ccs2.map(function (c) { return c.t + ':' + c.qty + ':' + c.dur + ':' + c.st; })));
+  check('C1 Close: DocStatus CL, DocAction --, QtyOrdered = QtyDelivered = 100, nothing reserved, description "closed Ordered Quantity : (100)"', rCl.ok && oCl.docstatus === 'CL' && oCl.docaction === '--' && close(S(oCl.qtyordered), 100) && close(S(oCl.qtydelivered), 100) && close(S(oCl.qtyreserved), 0, 0.0005) && /closed Ordered Quantity : \(100\)/.test(String(oCl.description)), { ok: rCl.ok, msg: rCl.msg, o: oCl });
+  // hand: KG required 7070.71, delivered 7000 -> QtyOpen 70.71, previous variance 0 -> ONE Usage Variance collector qty 70.71 ; BAG open 0 -> none ; the node has nothing reported -> no usage variance for it
+  var uv = ccs2.filter(function (c) { return c.t === '120'; });
+  check('C2 createVariances: exactly ONE Usage Variance collector (type 120), qty 70.71 (= 7070.71 required - 7000 delivered), completed; the KG line now shows delivered 7070.71', uv.length === 1 && close(uv[0].qty, 70.71) && uv[0].st === 'CO' && close(S(lCl[0].qtydelivered), 7070.71, 0.0005), { uv: uv, kg: lCl[0].qtydelivered });
+  var cdv = q("SELECT amt, qty FROM m_costdetail WHERE pp_cost_collector_id=? AND c_acctschema_id=101 AND m_costelement_id=100", [(uv[0] || {}).id])[0];
+  // hand: Material price 2.5 x 70.71 = 176.775 (positive: the variance detail is not negated)
+  check('C2b the variance cost detail: Material amt +176.775, qty +70.71', cdv && close(cdv.amt, 176.775, 0.0005) && close(cdv.qty, 70.71, 0.0005), cdv);
+  // hand: unreported node: setup 0, duration = estimateWorkingTime(3 x ceil(100/200)=1) = 3 s -> auto-reported Activity Control 100 units, then closed
+  var ac = ccs2.filter(function (c) { return c.t === '160'; });
+  var ad = q("SELECT m_costelement_id AS e, amt FROM m_costdetail WHERE pp_cost_collector_id=? AND c_acctschema_id=101 AND m_costelement_id IN (105,50000) ORDER BY m_costelement_id", [ac[0] && ac[0].id]);
+  // hand: the order saves in the backflush recomputed QtyBatchs = ceil(100/200) = 1 (my fixture value 2 is overwritten by updateQtyBatchs) : total = (0+1+2) x 1 + 0 + 3 = 6 s = 0.0016666666666666668 h ; Labor 12 x = 0.02 ; Burden 3 x = 0.005
+  check('C3 closeActivities: the unreported activity is auto-reported (Activity Control 100 units, 3 s) and the node is CLOSED; Labor -0.02, Burden -0.005', ac.length === 1 && close(ac[0].qty, 100) && close(ac[0].dur, 3) && nCl.docstatus === 'CL' && ad.length === 2 && close(ad[0].amt, -0.02, 0.00005) && close(ad[1].amt, -0.005, 0.00005), { ac: ac, node: nCl.docstatus, ad: ad });
+  var usvEl = one('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=50004').e, wipEl3 = one('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=50001').e;
+  var fuv = q('SELECT account_id AS a, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=53035 AND record_id=? ORDER BY fact_acct_id', [(uv[0] || {}).id]);
+  log('§LEND-C4 usage variance posting ' + JSON.stringify(fuv.map(function (f) { return [f.a === usvEl ? 'USAGEVAR' : f.a === wipEl3 ? 'WIP' : f.a, f.dr, f.cr]; })));
+  // hand: cost = -amt = -176.775 -> HALF_UP currency precision 2 = -176.78 : DR Usage Variance -176.78 / CR WIP -176.78 (negative as the Java computes; GardenWorld allows negative posting)
+  check('C4 the Usage Variance posts: DR Usage Variance acct -176.78 / CR Work in Process -176.78', fuv.length === 2 && fuv[0].a === usvEl && close(fuv[0].dr, -176.78) && fuv[1].a === wipEl3 && close(fuv[1].cr, -176.78), fuv);
+  var nColl = nCC(OD.pp_order_id), rCl2 = act(OD.pp_order_id, 'CL', true);
+  check('C5 closing a Closed order is a no-op returning true (closeIt :796-797): nothing new is written', rCl2.ok && nCC(OD.pp_order_id) === nColl && oneO(OD.pp_order_id).docstatus === 'CL', { ok: rCl2.ok, msg: rCl2.msg });
+  // refusal: an order with no delivery cannot be closed
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OE2 = newCompletedOrder('LE-E'), nE = nCC(OE2.pp_order_id), rClE = act(OE2.pp_order_id, 'CL', true);
+  check('C6 an order with no delivery cannot be closed: "Cannot close this document because do not exist transactions", nothing written', !rClE.ok && /Cannot close this document because do not exist transactions/.test(String(rClE.msg)) && nCC(OE2.pp_order_id) === nE && oneO(OE2.pp_order_id).docstatus === 'CO', { ok: rClE.ok, msg: rClE.msg });
+  var ev6 = ML.eventSeq(rCl.trx);
+  check('C7 §EVENT_SEQ of the close: V.BEFORE_CLOSE first; the usage-variance collector completes before the activity collector; V.AFTER_CLOSE last', ev6.indexOf('V.BEFORE_CLOSE@pp_order') >= 0 && ev6.lastIndexOf('V.AFTER_CLOSE@pp_order') > ev6.lastIndexOf('DOC:completeIt@pp_cost_collector') && ev6.indexOf('DOC:completeIt@pp_cost_collector') < ev6.lastIndexOf('DOC:completeIt@pp_cost_collector'), ev6.length);
 
   COSTMOD.DEFERRED.forEach(function (d) { log('§LIBERO-DEFERRED ' + d); });
   var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§LEND-VERDICT ' + v + ' break=' + (BREAK || 'none') + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);

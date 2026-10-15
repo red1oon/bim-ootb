@@ -4,11 +4,11 @@
 //   Receipt (100), StorageEngine.createTransaction, CostEngine.createCostDetail / createRateVariances. Core ports are REUSED (ModelTrade storage, ModelCost MCostDetail, ModelMaster acct schemas). Pure: no clock, no random.
 //   Every type it does not port is REFUSED by name (never a silent no-op).
 export const DEFERRED = [
-  'Usage / Method Change / Mix variance collectors (120/130/150) and CostEngine.createUsageVariances / createMethodVariances bodies',
+  'Method Change variance collectors (130) and CostEngine.createMethodVariances (resource differs from routing); Mix variance (150) completion beyond the bomline update; rate variances for Activity Control collectors',
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
-  'MPPOrder.voidIt / closeIt / createVariances; milestone and subcontracting activities (closeActivities, createPO); Doc_PPCostCollector Receipt scrap branch (named refusals)'
+  'milestone and subcontracting activities (closeActivities, createPO); Doc_PPCostCollector Receipt scrap branch (named refusals)'
 ];
 export const SOURCE = { routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
@@ -207,7 +207,7 @@ export function create(ctx) {
   }
 
   // ── DocAction (MPPCostCollector.prepareIt :300-387 / completeIt :404-570), Issue + Receipt only ─────────────────────────
-  const NOT_PORTED = (cc) => (isType(cc, T_USAGE, T_METHOD) ? 'DEFERRED: ' + cc.costcollectortype + ' variance collectors are not ported yet (Usage / Method Change)' : null);   // Rate (140) and Mix (150) completions are a bomline/order update only
+  const NOT_PORTED = (cc) => (isType(cc, T_METHOD) ? 'DEFERRED: Method Change variance collectors (130) are not ported yet' : null);   // Rate (140) and Mix (150) completions are a bomline/order update only
   function asiMandatory(trx, product, isSO) {   // MProduct.isASIMandatory
     for (const as of MM().clientAcctSchemas(trx, product.ad_client_id)) if (MC().costingLevel(trx, product, as) === 'B') return true;
     if (!Number(product.m_attributeset_id || 0)) return false;
@@ -247,9 +247,10 @@ export function create(ctx) {
           }
         }
         if (isActivity(cc)) activityComplete(trx, cc);
+        else if (isType(cc, T_USAGE)) usageComplete(trx, cc);
         let e = createRateVariances(trx, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); if (e) throw new Error(e);
         trx.update('pp_cost_collector', trx.get('pp_cost_collector', cc.pp_cost_collector_id), { processed: 'Y', docaction: 'CL' });
-      } catch (e) { trx._msg = e.message; return 'IN'; }
+      } catch (e) { trx._msg = e.message; trx.say('§LIBERO-COMPLETE-REFUSED collector=' + d0.documentno + ' type=' + d0.costcollectortype + ' ' + e.message + (e.stack ? ' @' + String(e.stack).split('\n').slice(1, 4).join(' <- ') : '')); return 'IN'; }
       return 'CO';
     },
     approveIt() { return true; }, rejectIt() { return true; },
@@ -337,6 +338,40 @@ export function create(ctx) {
   function activityGuards(trx, node) {
     if (node.issubcontracting === 'Y') throw new Error('DEFERRED: subcontracting activities (MPPCostCollector.createPO) are not ported - nothing was written');
     if (node.ismilestone === 'Y') throw new Error('DEFERRED: milestone activities (MPPOrderWorkflow.closeActivities auto-reports earlier activities) are not ported - nothing was written');
+  }
+  // ── Usage Variance collectors (120) - MPPCostCollector.completeIt :528-554 + CostEngine.createUsageVariances :485-519 ───────────────────────────────────
+  function usageComplete(trx, cc) {
+    if (idSet(cc.pp_order_bomline_id)) {                                  // material
+      const bl = ML.po(trx, 'pp_order_bomline', trx.get('pp_order_bomline', cc.pp_order_bomline_id));
+      bl.set('qtydelivered', num(dec(bl.get('qtydelivered')).add(dec(cc.movementqty)))).set('qtyscrap', num(dec(bl.get('qtyscrap')).add(dec(cc.scrappedqty)))).set('qtyreject', num(dec(bl.get('qtyreject')).add(dec(cc.qtyreject))));
+      if (!bl.save()) throw new Error(bl.error);
+      createUsageVariances(trx, cc);
+    } else if (idSet(cc.pp_order_node_id)) {                              // resource
+      const node = ML.po(trx, 'pp_order_node', trx.get('pp_order_node', cc.pp_order_node_id));
+      node.set('durationreal', Number(node.get('durationreal') || 0) + Math.trunc(Number(cc.durationreal || 0))).set('setuptimereal', Number(node.get('setuptimereal') || 0) + Math.trunc(Number(cc.setuptimereal || 0)));
+      if (!node.save()) throw new Error(node.error);
+      createUsageVariances(trx, cc);
+    }
+  }
+  function createUsageVariances(trx, cc) {
+    if (!isType(cc, T_USAGE)) throw new Error('Cost Collector is not Material Usage Variance');
+    const M = MC(); let product, qty;
+    if (idSet(cc.pp_order_bomline_id)) { product = trx.get('m_product', cc.m_product_id); qty = dec(cc.movementqty); }
+    else { product = resourceProduct(trx, cc.s_resource_id); if (!product) throw new Error('No product for S_Resource_ID=' + cc.s_resource_id); qty = getResourceBaseValue(trx, cc.s_resource_id, cc); }
+    for (const as of acctSchemas(trx, cc.ad_org_id)) {
+      const method = M.costingMethod(trx, product, as); if (libMethod(trx, product, as) !== method) throw new Error('Costing method not supported - ' + method);
+      for (const el of elements(trx)) {
+        const amt = roundCost(trx, actualPrice(trx, cc, product, as, el).multiply(qty), as);   // price x qty (createVarianceCostDetail :405-439: amt and qty as computed, NOT negated)
+        const h = M.cdNew(trx, as, cc.ad_org_id, product.m_product_id, 0, el.m_costelement_id, amt, qty, '', null, 0);
+        h.row.pp_cost_collector_id = cc.pp_cost_collector_id; M.cdSave(trx, h); if (h.row.processed !== 'Y') M.cdProcess(trx, h);
+      }
+    }
+  }
+  // DefaultRoutingServiceImpl.estimateWorkingTime(PP_Order_Node, qty) :74-80 + calculateCycles :101-110 (cycles = qty / UnitsCycles rounded UP when UnitsCycles > 0, else qty; intValue)
+  function estimateWorkingTime(node, qty) {
+    const uc = Number(node.unitscycles || 0); let cycles = dec(qty);
+    if (uc > 0) cycles = cycles.divide(D(uc), 0, 'UP');
+    return bdValueOf(Number(node.duration || 0) * Math.trunc(Number(cycles.toString())));
   }
   // MPPCostCollector.prepareIt activity branch :327-366
   function activityPrepare(trx, cc) {
@@ -568,15 +603,16 @@ export function create(ctx) {
     }
   };
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration };
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration, createUsageVariances, estimateWorkingTime, nodeCloseIt, mccDocType };
 }
 export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
   // FSM entry of AD_Table PP_Cost_Collector 53035 (MPPCostCollector: voidIt returns false :506, reActivateIt false :628, reverseAccrualIt false :622; reverseCorrectIt is DEFERRED)
+  ctx.libero = Object.assign(ctx.libero || {}, { cost: m });   // the order chunk (close) reaches the collector entry points through the shared bundle ctx
   if (ctx.docClass) ctx.docClass.register('pp_cost_collector', m.docClass);   // M6: Doc_PPCostCollector, found by model_post Doc.post through DocPoster.docClassFor
   if (ctx.form) ctx.form.register('org.eevolution.form.VOrderReceiptIssue', m.formDescriptor);   // AD_Form 53007: drawn by the generic form renderer, zero host code
   if (ctx.docFsm) ctx.docFsm.register(53035, { name: 'PP_Cost_Collector', reActivate: false, rc: false, ra: false, vo: {} });
 }
-export async function deactivate() {}
+export async function deactivate(ctx) { if (ctx && ctx.libero) delete ctx.libero.cost; }
