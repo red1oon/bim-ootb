@@ -184,7 +184,31 @@
     return -1;
   }
 
-  var API = { open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
+  // ── §UDP-4 the initial query of a window (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-4; Witness: W-UDP4-ENGINE / W-UDP4-LIVE).
+  //   AbstractADWindowContent :416-422 (a transaction window - AD_Window.WindowType 'T' - queries only current rows), initialQuery
+  //   :899-991 (Find first when the tab is high volume, or - not a transaction window - when isQueryRequire(row count)),
+  //   GridTable :437-446 (the only-current clause, header tab only), GridTab.getMaxQueryRecords :3677-3687, isQueryRequire :3694-3703,
+  //   MRole.getConfirmQueryRecords :414-420 (0 -> 500), GridTab.DEFAULT_GLOBAL_MAX_QUERY_RECORDS = 100000 (:245).
+  function onlyCurrentClause(dialect) { return "(Processed='N' OR Updated>" + (dialect === 'pg' ? 'getDate()-1' : "datetime('now','localtime','-1 day')") + ')'; }
+  function maxQueryRecords(tabMax, roleMax, globalMax) {
+    var t = Number(tabMax) || 0, r = Number(roleMax) || 0;
+    if (r > 0 && (r < t || t === 0)) t = r;
+    if (t === 0) t = globalMax != null && String(globalMax) !== '' ? Number(globalMax) : 100000;
+    return t;
+  }
+  function isQueryRequire(n, maxQ, confirm) {
+    if (n < 2) return false;
+    if (maxQ > 0 && n > maxQ) return true;
+    return n > ((Number(confirm) || 0) === 0 ? 500 : Number(confirm));
+  }
+  // o = { isTransaction, isHighVolume, tabMax, roleMax, globalMax, roleConfirm, countAll: fn -> n (or -1 on failure) }
+  function initialDecision(o) {
+    var require = !!o.isHighVolume, n = null;
+    if (!require && !o.isTransaction) { n = o.countAll ? o.countAll() : -1; require = n === -1 ? true : isQueryRequire(n, maxQueryRecords(o.tabMax, o.roleMax, o.globalMax), o.roleConfirm); }
+    return { onlyCurrentRows: !!o.isTransaction, findFirst: require, countAll: n };
+  }
+
+  var API = { onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
               query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.AdGridTab = API;

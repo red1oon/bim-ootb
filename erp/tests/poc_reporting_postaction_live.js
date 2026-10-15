@@ -53,6 +53,7 @@ const chk = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ 
   for (const id of chain) { const open = await pg.evaluate(i => { const r = document.querySelector('#idmp-tree .idmp-row[data-menu-id="' + i + '"]'); return r && r.parentElement.classList.contains('open'); }, id);
     if (!open) await hc('#idmp-tree .idmp-row[data-menu-id="' + id + '"]'); }
   await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + mid + '"]');
+  await require('./legacy_open.js').showAllRows(pg).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
   const NEWB = '#idmp-toolbar [data-tb="new"]'; await pg.waitForSelector(NEWB); await pg.waitForTimeout(800);
 
   const oh0 = await onhand(), tx0 = (await tip('SELECT COUNT(*) AS n FROM m_transaction'))[0].n;
@@ -150,7 +151,9 @@ const chk = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ 
   const openMenu = async (id) => { const chain = await pg.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); if (!leaf) return null; const out = []; let n = leaf.parentElement.parentElement;
       while (n && n.id !== 'idmp-tree') { if (n.classList.contains('idmp-node')) out.unshift(n.querySelector(':scope > .idmp-row').getAttribute('data-menu-id')); n = n.parentElement; } return out; }, id);
     if (!chain) return false; for (const c of chain) { const open = await pg.evaluate(i => { const r = document.querySelector('#idmp-tree .idmp-row[data-menu-id="' + i + '"]'); return r && r.parentElement.classList.contains('open'); }, c); if (!open) await hc('#idmp-tree .idmp-row[data-menu-id="' + c + '"]'); }
-    await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); await pg.waitForTimeout(1500); return true; };
+    await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); await pg.waitForTimeout(1500);
+    if (await pg.locator('#idmp-toolbar [data-tb="find"]').isVisible().catch(() => false)) await require('./legacy_open.js').showAllRows(pg).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4 (a window, not a process)
+    return true; };
   const runAging = async () => { const [[id]] = await mi('Aging'); await openMenu(id); const k = logs.length; await pg.locator('button:text-is("Run")').first().click(); await pg.waitForTimeout(3500);
     const l = logs.slice(k).filter(x => /§AGING stmt/.test(x)).pop() || ''; return { line: l, open: Number((/ open=([\d.-]+)/.exec(l) || [])[1]) }; };
   // R1 Aging now vs the same report with the credit invoice excluded is not possible in one session → compare against the bundle-only baseline the shipped DB gives (389.97 = items of the seed)
