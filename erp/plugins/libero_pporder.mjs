@@ -12,7 +12,7 @@ export const DEFERRED = [
   'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
+export const SOURCE = { explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
@@ -241,11 +241,14 @@ export function create(ctx) {
   }
   function orderAfterSave(trx, live, isNew, old) {
     if (live.docaction === 'CL' || live.docaction === 'VO') return null;   // :451-455
-    let e;
-    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { if ((e = deleteWorkflowAndBOM(trx, live))) return e; if ((e = explosion(trx, live))) return e; }
+    let e, exploded = false;
+    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { if ((e = deleteWorkflowAndBOM(trx, live))) return e; if ((e = explosion(trx, live))) return e; exploded = true; }
     if (changed(live, old, isNew, 'qtyentered', trx) && isDelivered(live)) return 'Cannot Change Quantity, Only for Draft or In-Progess Status';
     if (!isNew) return null;
-    return explosion(trx, live);   // :466-475 - second explosion for a new record (faithful, see spec §LIBERO-DOUBLE-EXPLODE)
+    // :466-475 explodes AGAIN for a new record. DECISION (owner, 2026-10-15, "explode once"): a new order whose QtyEntered branch already exploded is NOT exploded a second time. This is a DECLARED deviation from the
+    // verbatim port (it produced two Parent Product rows and doubled every backflush issue and cost); SOURCE.explodeOnce=false restores the verbatim behaviour (LIBERO_BREAK=explodetwice). Spec: LIBERO_BUNDLE_SLICE1_SPEC.md §LIBERO-DOUBLE-EXPLODE.
+    if (SOURCE.explodeOnce && exploded) { trx.say('§LIBERO-DEVIATION explodeOnce: new-record second explosion skipped (MPPOrder.afterSave :473-474)'); return null; }
+    return explosion(trx, live);
   }
 
   // ── MPPMRP (MFG_Validator AFTER_NEW/AFTER_CHANGE -> MPPMRP.PP_Order / PP_Order_BOMLine) ──────────────

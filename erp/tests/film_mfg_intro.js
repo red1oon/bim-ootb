@@ -199,7 +199,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     beat('b8', 'Cost Collector window');
     await page.waitForTimeout(300); await hclick('#infowin-close, #idmp-infowin button[title="Close"]').catch(() => {}); await pace(500);
     await openMenuById(53082); await page.waitForSelector(NEWB, { timeout: 20000 }); await pace(1800);
-    fact('cc.grid', (await page.$$eval('.idmp-grid tbody tr', e => e.length)) + ' collectors listed (4 created above + any seeded)'); await pace(2500);
+    fact('cc.grid', (await page.$$eval('.idmp-grid tbody tr', e => e.length)) + ' collectors listed (the 3 the Backflush created + any seeded)'); await pace(2500);
     await hclick('#idmp-tabstrip .idmp-adtab[title$="· PP_Cost_Collector"]').catch(() => {}); await pace(800);
 
     // ═══ B9 a refusal: an order with no routing is refused and rolled back (nothing saved) ═══
