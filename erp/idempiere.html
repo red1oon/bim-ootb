@@ -4335,7 +4335,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         //   value the tab query used. Supersedes §ORDERLINE-PARENT-FK's parent-key-name search.
         var seedVals = null;
         if (_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && _curQ.tm.tabLevel > 0 && _curQ.tm.linkColumn && _curQ.q.linkValue != null) {
-          seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue;
+          // GridField.isParentValue (GridField.java:1938-1961): only an ID/UUID-typed link column takes the parent's value (DisplayType.isID:249-255 + isUUID); a String link
+          //   (A_Depreciation_Table_Code, Reference 10) stays EMPTY on a new row - measured on the legacy pilot (oracle dataNew: A_Depreciation_Table_Code=null). The tab QUERY still filters by it.
+          var _lcRef = (_adQ("SELECT c.ad_reference_id AS r FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [tab.tableName, _curQ.tm.linkColumn])[0] || {}).r;
+          if ([13, 18, 19, 30, 21, 31, 25, 33, 35, 32, 53370, 200202, 200231].indexOf(Number(_lcRef)) >= 0) { seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue; }
         }
         if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);

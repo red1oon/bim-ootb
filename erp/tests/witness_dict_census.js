@@ -16,13 +16,18 @@ var LEG = process.env.DC_LEGACY || '/home/red1/bim-compiler/scripts/bridge/out/d
   fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); ok++; } catch (e) { bad++; } });
   log('§DC seed-as-loaded: patch statements ok=' + ok + ' failed=' + bad);
   var RUNTIME = /^(ad_changelog|ad_session|ad_pinstance|ad_pinstance_para|ad_pinstance_log|ad_issue|ad_attachment|ad_migrationscript|ad_package_imp.*|ad_alertprocessorlog|ad_schedulerlog|ad_workflowprocessorlog|ad_sequence_no|ad_note|ad_recentitem)$/, cls = function (t) { return RUNTIME.test(t) ? 'RUNTIME' : /_trl$/.test(t) ? 'TRANSLATION' : 'DICTIONARY'; };
+  // tenant/harness-created roles exist on ONE side only (the twin's System-overlay role 1000000, the pilot's 'Bridge System WS' 1200001): their access rows are not shipped dictionary -> judge per-role tables over the roles BOTH sides have
+  var seedRoles = db.exec("SELECT ad_role_id FROM ad_role WHERE ad_client_id IN (0,11)")[0].values.map(function (r) { return String(r[0]); }), common = (L.__roles || []).map(String).filter(function (r) { return seedRoles.indexOf(r) >= 0; });
+  log('§DC roles: legacy=' + (L.__roles || []).length + ' seed=' + seedRoles.length + ' common=' + common.length + ' exempt(one-side-only)=' + ((L.__roles || []).length + seedRoles.length - 2 * common.length));
   var judged = 0, match = 0, diff = [], absent = [], tally = {};
   Object.keys(L).sort().forEach(function (t) {
-    var by = L[t].byClient, leg = (by['0'] || 0) + (by['11'] || 0) + (by['none'] || 0);
+    if (t.indexOf('__') === 0) return;
+    var by = L[t].byClient, leg = (by['0'] || 0) + (by['11'] || 0) + (by['none'] || 0), perRole = L[t].byRole && Object.keys(L[t].byRole).length;
+    if (perRole) leg = common.reduce(function (a, r) { return a + (L[t].byRole[r] || 0); }, 0);   // only roles both sides have
     if (!leg) return; judged++;
     var ti = db.exec("SELECT lower(name) FROM pragma_table_info('" + t + "')"), cols = ti.length ? ti[0].values.map(function (r) { return r[0]; }) : null;
     if (!cols) { var c2 = cls(t); tally[c2] = tally[c2] || { ok: 0, bad: 0 }; tally[c2].bad++; absent.push(c2 + ' ' + t + ' legacy=' + leg); return; }
-    var q = cols.indexOf('ad_client_id') >= 0 ? 'SELECT count(*) FROM ' + t + ' WHERE ad_client_id IN (0,11)' : 'SELECT count(*) FROM ' + t, n = db.exec(q)[0].values[0][0];
+    var q = perRole && cols.indexOf('ad_role_id') >= 0 ? 'SELECT count(*) FROM ' + t + ' WHERE ad_client_id IN (0,11) AND ad_role_id IN (' + common.join(',') + ')' : cols.indexOf('ad_client_id') >= 0 ? 'SELECT count(*) FROM ' + t + ' WHERE ad_client_id IN (0,11)' : 'SELECT count(*) FROM ' + t, n = db.exec(q)[0].values[0][0];
     var c = cls(t); tally[c] = tally[c] || { ok: 0, bad: 0 }; if (n === leg) { match++; tally[c].ok++; } else { diff.push(c + ' ' + t + ' legacy=' + leg + ' seed=' + n); tally[c].bad++; }
   });
   diff.forEach(function (d) { log('  §DC-TABLE COUNT-DIFF ' + d); }); absent.forEach(function (a) { log('  §DC-TABLE ABSENT-IN-SEED ' + a); });

@@ -42,6 +42,9 @@ const PAGELOG = [];
   const Q = (s, p) => { const r = p ? db.exec(s, p) : db.exec(s); return r.length ? r[0].values : []; };
   const has = t => Q("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND lower(name)=lower(?)", [t]).length > 0;
   const access = (role, w) => Q("SELECT 1 FROM AD_Window_Access WHERE AD_Role_ID=? AND AD_Window_ID=? AND IsActive='Y'", [role, w]).length > 0;
+  const ACCT_N = Q("SELECT count(*) FROM C_AcctSchema WHERE AD_Client_ID=11 AND IsActive='Y'")[0][0];   // PO.insert_Accounting (model_master.js): saving a header auto-creates ONE <X>_Acct child row per accounting schema of the client (iDempiere AFTER-SAVE, not a leak)
+  const isIdLink = (W, col) => { const x = Q("SELECT c.ad_reference_id FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower(?) AND lower(c.ColumnName)=lower(?)", [W.childTable, col || '']); return x.length ? [13, 18, 19, 30, 21, 31, 25, 33, 35, 32, 53370, 200202, 200231].indexOf(Number(x[0][0])) >= 0 : true; };
+  const autoRows = W => /_acct$/i.test(W.childTable) ? ACCT_N : 0;
   const POPW = [];
   for (const [wid, wname] of Q("SELECT AD_Window_ID, Name FROM AD_Window WHERE IsActive='Y' ORDER BY AD_Window_ID")) {
     const tabs = Q("SELECT t.AD_Tab_ID, t.Name, t.TabLevel, tb.TableName FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Window_ID=? AND t.IsActive='Y' ORDER BY t.SeqNo", [wid]);
@@ -180,7 +183,7 @@ const PAGELOG = [];
     if (s1.tabIdx !== W.childIdx) fails.push('not on child tab after autosave');
     if (String(s1.parentKey) !== String(h1.id)) fails.push('MD-4 child bound to parent=' + s1.parentKey + ' != header ' + h1.id);
     if (s1.linkValue == null) r.arms.child1.note = 'parent has no link value → 2=3 (iDempiere parentNeedSave)';
-    if (s1.rows.length !== 0) fails.push('MD-2 new header shows ' + s1.rows.length + ' child rows');
+    if (s1.rows.length !== autoRows(W)) fails.push('MD-2 new header shows ' + s1.rows.length + ' child rows (expected ' + autoRows(W) + (autoRows(W) ? ': one ' + W.childTable + ' per accounting schema, insert_Accounting' : '') + ')');
     // ── arm 2: a child row on header 1 ──
     let childSaved = false;
     if (!s1.canInsert) r.arms.childNew = 'INCONCLUSIVE canInsert=false (IsInsertRecord/ReadOnly)';
@@ -196,7 +199,11 @@ const PAGELOG = [];
           childSaved = true; await page.waitForTimeout(400);
           const s2 = await snap(); const mine = s2.rows.filter(x => String(x.link) === String(s1.linkValue)).length;
           r.arms.childNew = 'saved rows=' + s2.rows.length + ' linkedToHeader1=' + mine;
-          if (s2.rows.length !== 1 || mine !== 1) fails.push('MD-4/MD-2 after child save rows=' + s2.rows.length + ' linkedToHeader1=' + mine);
+          // a NON-ID link column (String key, e.g. A_Depreciation_Table_Code) is NOT defaulted from the parent by iDempiere (GridField.isParentValue:1938-1961; legacy oracle dataNew -> null):
+          //   the user types the parent's key, the generic filler types its own - so the saved row legitimately does not belong to header 1. MD-4 is judged only where legacy defaults the link.
+          const strLink = !isIdLink(W, s1.linkColumn);
+          if (strLink) r.arms.childNew += ' (string link ' + s1.linkColumn + ': not parent-defaulted in legacy - MD-4 not judged)';
+          else if (s2.rows.length !== 1 || mine !== 1) fails.push('MD-4/MD-2 after child save rows=' + s2.rows.length + ' linkedToHeader1=' + mine);
         } else {
           r.arms.childNew = 'INCONCLUSIVE child not saveable: ' + sv.slice(0, 120);
           await page.click('#idmp-toolbar button[title^="Ignore"]').catch(() => {}); await page.waitForTimeout(700);   // the user abandons the line (dataIgnore)
@@ -213,7 +220,7 @@ const PAGELOG = [];
       const s3 = await snap(); const foreign = s3.rows.filter(x => String(x.link) !== String(s3.linkValue)).length;
       r.arms.child2 = 'parent=' + s3.parentKey + ' linkValue=' + s3.linkValue + ' rows=' + s3.rows.length + ' foreign=' + foreign + (childSaved ? ' (header1 has a session child row)' : ' (no session child to leak)');
       if (String(s3.parentKey) !== String(h2.id)) fails.push('MD-4 child2 bound to parent=' + s3.parentKey + ' != ' + h2.id);
-      if (s3.rows.length !== 0) fails.push('MD-2 header2 child rows=' + s3.rows.length + ' foreign=' + foreign);
+      if (s3.rows.length !== autoRows(W) || foreign) fails.push('MD-2 header2 child rows=' + s3.rows.length + ' (expected ' + autoRows(W) + ') foreign=' + foreign);
       await clickTab(0); sh = await snap();
       r.arms.back2 = 'current=' + sh.currentKey;
       if (String(sh.currentKey) !== String(h2.id)) fails.push('MD-3 back2 current=' + sh.currentKey + ' != ' + h2.id);
