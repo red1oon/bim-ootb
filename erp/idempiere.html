@@ -543,7 +543,7 @@
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
-<script src="ad_gridtab.js?v=1"></script>
+<script src="ad_gridtab.js?v=2"></script>
 <script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -1373,7 +1373,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       ' source=ad_user/ad_role/ad_window_access handAuthored=0');
     _syncPillStage();   // §C — a client context is now committed → hide Install/Migrate from the primary rail
     var _wOpened = false;
-    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) { openWindow(w); _wOpened = true; if (_pendingRid) { _landOnRecord(_pendingRid); _pendingRid = null; } } }
+    if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) {
+      // §UDP-4 a record link is a ZOOM (AEnv.zoom -> MQuery on the key): the window opens on that record only - no Find-first, no
+      //   only-current-rows (initialQuery :901-905 returns the zoom query; initTab :777-779 turns onlyCurrentRows off)
+      var _zw = _pendingRid ? (function () { try { return ADP.getWindow(db, w); } catch (e) { return null; } })() : null, _zt = _zw && _zw.tabs && _zw.tabs[0];
+      if (_zt && _zt.tableName) { _zoomFilter = { windowId: w, table: _zt.tableName, col: _keyCol(_zt), val: _pendingRid }; openWindow(w, null, true); }
+      else openWindow(w);
+      _wOpened = true; if (_pendingRid) { _landOnRecord(_pendingRid); _pendingRid = null; } } }
     // §AD-PROC-LIVE deep link — same role gate as windows: the role's REAL ad_process_access set decides.
     if (_pendingPid) { var pp = Number(_pendingPid); _pendingPid = null;
       if (_session.procSet && _session.procSet[pp]) { openProcess(pp); _wOpened = true; }
@@ -1523,6 +1529,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (window.ErpI18n) ErpI18n.applyWindow(win);   // AD_Window/AD_Tab/AD_Field _Trl (§L1); English kept on ._en
       _openWins[windowId] = { win: win, name: name || win.name };
       Object.keys(_findByTab).forEach(function (k) { if (k.indexOf(windowId + ':') === 0) delete _findByTab[k]; });   // §UDP-3 a Find query lives on its tab while the window stays open (GridTab.setQuery)
+      _openWins[windowId].initialQuery = true;   // §UDP-4 first open: AbstractADWindowContent.initTab(0) -> initialQuery
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
     _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {}; _curKeyByTab = {}; _curQ = null;
@@ -2227,6 +2234,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zoomFilter.col + '=' + _zoomFilter.val;
       console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
     }
+    // §UDP-4 — the initial query of a window (AbstractADWindowContent :416-422 + initialQuery :899-991; GridTable :437-446). Only on the
+    //   first open of the window, header tab: Find FIRST when the tab is high volume or (not a transaction window) isQueryRequire(rows);
+    //   a transaction window (WindowType T) shows only current rows until a Find result (or a zoom query) turns that off for the window.
+    var _ow = _openWins[_activeWin], _w0 = _curWin();
+    if (level === 0 && _ow && _ow.initialQuery && !(_zoomFilter && _zoomFilter.windowId === _activeWin) && window.AdGridTab && AdGridTab.initialDecision) {
+      _ow.initialQuery = false;
+      var _hv = (_sqlRows("SELECT COALESCE(t.IsHighVolume, tb.IsHighVolume) AS h, t.MaxQueryRecords AS m FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Tab_ID=" + Number(tab.id))[0]) || {};
+      var _rl = _session && _session.role ? (_sqlRows('SELECT MaxQueryRecords AS m, ConfirmQueryRecords AS c FROM AD_Role WHERE AD_Role_ID=' + Number(_session.role.id))[0] || {}) : {};
+      var _gm = (_sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='GLOBAL_MAX_QUERY_RECORDS' AND ad_client_id IN (0," + Number(_session && _session.client ? _session.client.id : 0) + ") ORDER BY ad_client_id DESC")[0] || {}).v;
+      var _dec = AdGridTab.initialDecision({ isTransaction: _w0 && _w0.windowType === 'T', isHighVolume: _hv.h === 'Y', tabMax: _hv.m, roleMax: _rl.m, globalMax: _gm, roleConfirm: _rl.c,
+        countAll: function () { try { var r = db.exec('SELECT count(*) FROM ' + tab.tableName + (clauses.length ? ' WHERE ' + clauses.join(' AND ') : '')); return r.length ? Number(r[0].values[0][0]) : 0; } catch (e) { return -1; } } });
+      _ow.onlyCurrentRows = _dec.onlyCurrentRows; _ow.autoNewCheck = _dec.onlyCurrentRows;   // AutoNew is set for a transaction window (:416-419)
+      console.log('§UDP4-INITIAL window=' + _activeWin + ' type=' + (_w0 && _w0.windowType) + ' highVolume=' + (_hv.h === 'Y') + ' onlyCurrentRows=' + _dec.onlyCurrentRows + ' findFirst=' + _dec.findFirst + (_dec.countAll != null ? ' rows=' + _dec.countAll : ''));
+      if (_dec.findFirst) {   // the window shows nothing until the Find answers; Cancel closes it (initTab callback :765-768)
+        _records = []; _recIdx = 0; $('idmp-content').innerHTML = ''; var _wid = _activeWin;
+        _openFind({ initial: true, onCancel: function () { console.log('§UDP4-INITIAL find cancelled -> window ' + _wid + ' closed'); closeWindow(_wid); } });
+        return;
+      }
+    }
+    if (level === 0 && _ow && _ow.onlyCurrentRows && !(_zoomFilter && _zoomFilter.windowId === _activeWin) && !_findByTab[_findKey()]) {
+      if (_colExists(tab.tableName, 'Processed') && _colExists(tab.tableName, 'Updated')) { clauses.push(AdGridTab.onlyCurrentClause('sqlite')); mdNote = (mdNote ? mdNote + ' ' : '') + 'onlyCurrentRows'; console.log('§UDP4-ONLY-CURRENT table=' + tab.tableName + ' clause=' + AdGridTab.onlyCurrentClause('sqlite')); }
+      else console.log('§UDP4-ONLY-CURRENT table=' + tab.tableName + ' skipped (no Processed/Updated column - legacy appends it and its SQL fails)');
+    }
     // §UDP-3 — the Find query on this tab (AbstractADWindowContent.doOnFind: GridTab.setQuery + query), ANDed with the tab's own contract
     var _fq = _findByTab[_findKey()];
     if (_fq && _fq.where) { _findUdf(); clauses.push(_fq.where); mdNote = (mdNote ? mdNote + ' ' : '') + 'find=' + _fq.where; console.log('§UDP3-FIND-APPLY table=' + tab.tableName + ' where=' + _fq.where + (_fq.name ? ' query="' + _fq.name + '"' : '')); }
@@ -2245,6 +2275,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // The toolbar was rendered (by openWindow) BEFORE these records loaded, so its record-dependent enable states
     //   (Copy / Delete / Process / Zoom) were stale (computed against 0 rows). Re-render now that _records is live.
     renderToolbar();
+    // §UDP-4 initQueryOnNew (:719-737): no query result + 0 rows + AutoNew (a transaction window) -> a New record is opened
+    if (level === 0 && _ow && _ow.autoNewCheck) {
+      _ow.autoNewCheck = false;
+      var _canNew = !(_curQ && _curQ.tm && window.AdGridTab) || AdGridTab.canInsert(_curQ.tm, _curQ.q);
+      if (!_records.length && _canNew && !_findByTab[_findKey()]) { console.log('§UDP4-AUTONEW window=' + _activeWin + ' table=' + tab.tableName + ' rows=0 -> New'); setTimeout(function () { _openCreate(); }, 0); }
+    }
   }
   // ── §UDP-3 — the Find window (ZK FindWindow.java; bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-3; Witnesses: W-UDP3-ENGINE, W-UDP3-LIVE).
   //   Simple tab (initFind :983-1170 / cmd_saveSimple :2951-3080), Advanced tab (cmd_saveAdvanced :2507-2840, this tab's columns),
@@ -2282,7 +2318,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { done(base); return; }
     c.withSidecar(function (sdb) { done(sdb ? c.core.listTip(sdb, 'ad_userquery', 'ad_userquery_id', base, null).rows : base); });
   }
-  function _openFind() {
+  function _openFind(opts) {
+    opts = opts || {};
     var tab = _curTab(); if (!tab || !window.AdFind) return;
     _findUdf();
     var old = document.getElementById('idmp-find-ov'); if (old) old.remove();
@@ -2407,6 +2444,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     bOk.addEventListener('click', function () {
       var q = current(), empty = !q.restrictions.length && !(AdFind.HISTORY_DAYS[hist.value] > 0);
       _findByTab[_findKey()] = empty ? null : { where: q.where, code: q.code, name: entry() ? entry().name : null };
+      if (_openWins[_activeWin]) _openWins[_activeWin].onlyCurrentRows = false;   // §UDP-4 "search history too" (doOnFind :2662, initTab :777-779)
       console.log('§UDP3-FIND ok mode=' + mode + ' restrictions=' + q.restrictions.length + ' where=' + (empty ? '(none)' : q.where) + ' code=' + q.code + (q.skipped && q.skipped.length ? ' skipped=' + q.skipped.join(',') : ''));
       ov.remove(); renderActiveTab();
     });
@@ -2414,7 +2452,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       pSimple.querySelectorAll('input,select').forEach(function (x) { x.value = ''; }); advRows.innerHTML = ''; newAdvRow(); hist.value = ''; qn.value = ''; enable();
       if (_findByTab[_findKey()]) { _findByTab[_findKey()] = null; console.log('§UDP3-FIND reset (query removed)'); }
     });
-    bCancel.addEventListener('click', function () { ov.remove(); });
+    bCancel.addEventListener('click', function () { ov.remove(); if (opts.onCancel) opts.onCancel(); });
     bSave.addEventListener('click', function () {   // saveQuery :2884-2945 (a name is required; an empty code on a listed name = delete)
       var nm = qn.value; if (!nm) { msg.textContent = _findMsg('NeedsName', 'Needs a name'); return; }
       var q = current(), e = entry(), App = window.APP || {}, ops;

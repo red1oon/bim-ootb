@@ -41,6 +41,7 @@ const server = http.createServer((req, res) => {
 
   async function login(loginName, windowId) {
     await page.goto(`http://localhost:${port}/idempiere.html?login=${loginName}&window=${windowId}`, { waitUntil: 'networkidle' });
+    await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
     await page.waitForSelector('#idmp-content table.idmp-grid, #idmp-placeholder', { timeout: 20000 });
     await page.waitForTimeout(800);
   }

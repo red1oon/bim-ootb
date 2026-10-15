@@ -66,11 +66,12 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   from = logs.length; await hc('[data-find-ok]'); await pg.waitForTimeout(1200);
   const j1 = await judge(from, "UPPER(C_Order.DocumentNo) LIKE '" + pre.toUpperCase() + "%'", 'simple');
   ok('F2', 'Simple DocumentNo "' + pre.toLowerCase() + '" -> UPPER(DocumentNo) LIKE \'' + pre.toUpperCase() + '%\' (isSearchLike), grid = its WHERE\'s rows, all matching',
-    j1.where && /UPPER\(C_Order\.DocumentNo\) LIKE UPPER\('/.test(j1.where) && j1.shown === Math.min(j1.n, 200) && j1.bad === 0 && j1.shown > 0 && j1.shown <= before, JSON.stringify(j1) + ' before=' + before);
+    j1.where && /UPPER\(C_Order\.DocumentNo\) LIKE UPPER\('/.test(j1.where) && j1.shown === Math.min(j1.n, 200) && j1.bad === 0 && j1.shown > 0, JSON.stringify(j1) + ' before=' + before + ' (a Find searches history too: doOnFind :2662)');
   ok('F3', 'the Find button shows the tab is filtered', await pg.$eval('#idmp-toolbar [data-tb="find"]', b => b.classList.contains('active')));
   // the query lives on its tab while the window stays open: open another window, switch back
   const bpMenu = (await seed("SELECT AD_Menu_ID FROM AD_Menu WHERE Action='W' AND AD_Window_ID=123 AND IsActive='Y'"))[0][0];
   await pg.evaluate(id => { const r = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); r && r.click(); }, bpMenu); await pg.waitForTimeout(1500);
+  await require('./legacy_open.js').showAllRows(pg, { history: false });   // Business Partner is high volume: it opens on Find first (§UDP-4)
   from = logs.length; await pg.evaluate(() => { const t = Array.from(document.querySelectorAll('#idmp-wintabs .idmp-wintab')).find(x => /Sales Order/.test(x.textContent)); t && t.click(); }); await pg.waitForTimeout(1500);
   const jsw = lastRead(from);
   ok('F3b', 'switching to another window and back keeps the Find query (GridTab.setQuery lives with the open window)', !!jsw && /UPPER\(C_Order\.DocumentNo\) LIKE UPPER\('/.test(jsw), 'where=' + jsw);
@@ -115,7 +116,8 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('F9', 'Delete removes the saved query', !!dl && /committed=true/.test(dl) && !listed2.includes(QNAME), dl + ' list=' + JSON.stringify(listed2));
   // reset -> unfiltered again
   await hc('[data-find-reset]'); await hc('[data-find-cancel]'); from = logs.length; await hc('#idmp-toolbar [data-tb="refresh"], #idmp-toolbar button[title^="Refresh"]'); await pg.waitForTimeout(1000);
-  ok('F10', 'Reset removes the query: the grid is back to the unfiltered rows', rowsLine(from) === before && !/UPPER|DocStatus='CO'/.test(lastRead(from) || ''), 'rows=' + rowsLine(from) + ' before=' + before + ' where=' + lastRead(from));
+  const w10 = lastRead(from), n10 = w10 ? (await seed('SELECT count(*) FROM C_Order WHERE ' + w10))[0][0] : null;
+  ok('F10', 'Reset removes the query: the grid is back to the tab\'s own rows (history included after a Find, doOnFind :2662)', rowsLine(from) === Math.min(n10, 200) && !/UPPER|DocStatus='CO'|Processed='N'/.test(w10 || ''), 'rows=' + rowsLine(from) + ' whereCount=' + n10 + ' initial=' + before + ' where=' + w10);
   const real = errs.filter(e => !/ResizeObserver/.test(e));
   ok('F11', 'no page errors', real.length === 0, real.slice(0, 3).join(' | '));
   logs.filter(l => /§UDP3-FIND/.test(l)).forEach(l => console.log('  log| ' + l.slice(0, 300)));

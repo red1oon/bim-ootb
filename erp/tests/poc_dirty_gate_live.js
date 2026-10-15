@@ -48,6 +48,7 @@ const clickToolbar = (page, re) => page.evaluate((rs) => {
   await page.click('#idmp-login-users .idmp-login-user:not(.disabled)');
   await page.waitForSelector('#idmp-login-ok', { timeout: 5000 });
   await page.click('#idmp-login-ok');
+  await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
   await page.waitForSelector('[data-ad-table]', { timeout: 20000 });
   await page.waitForTimeout(800);
 
