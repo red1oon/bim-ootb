@@ -8,7 +8,7 @@
 import json, os, re, sqlite3, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ERP = os.path.dirname(HERE)
-TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn').split()
+TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn ad_toolbarbutton ad_toolbarbuttonrestrict').split()   # + §18 (bim-compiler ERP_FRIENDLY_OPS_LENS.md): window/tab toolbar buttons (MToolBarButton), absent from the seed
 
 DDL_ONLY = os.environ.get('G_DICT_DDL', 'c_cash c_cashline m_movementlinema r_requestupdates ad_session ad_pinstance ad_pinstance_para').split()   # §UDP-2: ad_pinstance(_para) hold the process dialog's Saved Parameters + Last Run (written through the signed op-log). tables the legacy views read that the seed lacks: structure only (the twin gains rows when its own flows write them)
 

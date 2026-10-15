@@ -1717,6 +1717,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       sep();
       btn('🕒 Log', 'Change log for this record (AD-filtered)', true, function () { _showChangelog(tn); });
     })();
+    _renderTabProcessButtons(tb);
     _renderLensBar(tb);
   }
 
@@ -3310,10 +3311,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 
   // §AD-FORM-GENERIC (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §12) - ONE renderer for every form a bundle describes (ad_form_generic.js): parameters, an editable grid, one
   // transaction. No per-form code here: a plugin registers { params, columns, rows, run } for an AD_Form classname and gets this screen. Replaces the "row level data input" embargo.
-  function renderGenericForm(row, desc, preset) {
+  function renderGenericForm(row, desc, preset, pinfo) {
     var AF = window.AdFormGeneric, cls = String(row.classname), crud = window.__crud;
     var withT = function (fn) { return crud && typeof crud.withModelTrx === 'function' ? crud.withModelTrx(fn) : null; };
     var pane = el('div', 'idmp-procpane idmp-procform'); pane.setAttribute('data-gform', cls);
+    if (pinfo) { pane.setAttribute('data-gform-from', (pinfo.tableName || '') + ':' + pinfo.recordId); console.log('§AD-FORM-GENERIC open class=' + cls + ' from window table=' + pinfo.tableName + ' record=' + pinfo.recordId + ' process=' + pinfo.processId + ' (ProcessInfo handed to the form, as ADForm.openForm)'); }
     pane.appendChild(el('h3', null, desc.title || row.name));
     pane.appendChild(el('div', 'sub', 'AD_Form ' + row.ad_form_id + ' · ' + cls + ' · generic form (described by its module, no host code)'));
     var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {};
@@ -3411,7 +3413,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (preset) desc.params.forEach(function (p, i) { if (Object.prototype.hasOwnProperty.call(preset, p.name)) { paint(p, preset[p.name]); loadParams(i + 1); console.log('§AD-FORM-GENERIC preset class=' + cls + ' ' + p.name + '=' + preset[p.name] + ' painted=' + readParam(p)); } });
     loadRows(); _showProcPane(pane);
   }
-  function openAdForm(formId, name, preset) {
+  function openAdForm(formId, name, preset, pinfo) {   // pinfo = the ProcessInfo of a window launch (ADForm.openForm(formId, gridTab, pi)); null from the menu
     var row = _sqlRows('SELECT ad_form_id, name, classname FROM ad_form WHERE ad_form_id=' + Number(formId))[0] || null;
     var cls = row ? String(row.classname || '') : '';
     var gdesc = (!_FORM_HANDLERS[cls] && window.AdFormGeneric) ? window.AdFormGeneric.get(cls) : null;
@@ -3419,7 +3421,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-FORM-LIVE open form=' + formId + ' name="' + ((row && row.name) || name || '') + '" classname=' + (cls || '(blank)') +
                 ' handled=' + (handled ? 'Y' : 'N') + ' registered=[' + Object.keys(_FORM_HANDLERS).map(function (c) { return c.split('.').pop(); }).join(',') + ']');
     if (!row) { status('AD_Form ' + formId + ' not found'); return; }
-    if (gdesc) { renderGenericForm(row, gdesc, preset); return; }
+    if (gdesc) { renderGenericForm(row, gdesc, preset, pinfo); return; }
     if (handled) { _FORM_HANDLERS[cls](row); return; }
     // the honest absent card — identical in kind to an unregistered process classname
     var pane = el('div', 'idmp-procpane idmp-procresult absent');
@@ -3858,6 +3860,49 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     run();
   });
 
+  // §AD-TBB (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §18): a process launched from a window (a Button field or an AD_ToolBarButton) =
+  //   AbstractADWindowContent.executeButtonProcess0 (:4138-4175): AD_Process.AD_Form_ID != 0 -> ADForm.openForm(formId, gridTab, ProcessInfo(Table_ID, Record_ID)),
+  //   else the process dialog with the record. ONE helper for both entry points (the form branch was missing for Button fields too).
+  function _runButtonProcess(processId, name, rec) {
+    var pr = _sqlRows('SELECT ad_form_id, name FROM ad_process WHERE ad_process_id=' + Number(processId))[0] || {};
+    var formId = Number(pr.ad_form_id) || 0;
+    console.log('§AD-TBB run process=' + processId + ' form=' + formId + ' table=' + (rec && rec.table) + ' record=' + (rec && rec.recordId));
+    if (formId && window.__tbbBreak !== 'noform') { openAdForm(formId, name || pr.name, null, { processId: Number(processId), tableName: rec && rec.table, tableId: rec && rec.tableId, recordId: rec && rec.recordId }); return; }
+    openProcess(Number(processId), name, rec);
+  }
+  // the tab's toolbar process buttons = ADTabpanel.loadToolbarButtons (:1038-1050) over MToolBarButton.getProcessButtonOfTab (:66-79): Action 'W', a process set and
+  //   active, ordered by SeqNo (0 -> the button id); shown only when the role holds the process (MRole.getProcessAccess) and no AD_ToolBarButtonRestrict row hides it.
+  function _tabProcessButtons(tab) {
+    if (!tab || !tab.id || !_tableExists('AD_ToolBarButton')) return [];
+    var rows = _sqlRows("SELECT b.ad_toolbarbutton_id AS id, b.componentname AS comp, b.ad_process_id AS pid, b.displaylogic AS dl, p.name AS pname, p.description AS pdesc " +
+      "FROM ad_toolbarbutton b JOIN ad_process p ON p.ad_process_id=b.ad_process_id AND p.isactive='Y' " +
+      "WHERE b.ad_tab_id=" + Number(tab.id) + " AND b.action='W' AND b.ad_process_id IS NOT NULL AND b.isactive='Y' " +
+      "ORDER BY CASE WHEN COALESCE(b.seqno,0)=0 THEN b.ad_toolbarbutton_id ELSE b.seqno END");
+    var role = (window.APP && window.APP.roleId) != null ? Number(window.APP.roleId) : null;
+    var hidden = (role != null && _tableExists('AD_ToolBarButtonRestrict')) ? _sqlRows("SELECT ad_toolbarbutton_id AS id FROM ad_toolbarbuttonrestrict WHERE isactive='Y' AND action='W' AND ad_role_id=" + role +
+      " AND (ad_tab_id IS NULL OR ad_tab_id=" + Number(tab.id) + ")").map(function (r) { return Number(r.id); }) : [];
+    var procSet = window.__tbbBreak === 'noaccess' ? null : ((_session && _session.procSet) || null);   // __tbbBreak: W-AD-TBB negative controls only
+    var out = rows.filter(function (r) { return (!procSet || procSet[r.pid]) && hidden.indexOf(Number(r.id)) < 0; });
+    console.log('§AD-TBB tab=' + tab.id + '(' + tab.tableName + ') rows=' + rows.length + ' shown=' + out.length + ' [' + out.map(function (r) { return r.comp + '->' + r.pid; }).join(',') + ']' +
+      (rows.length !== out.length ? ' hidden=' + rows.filter(function (r) { return out.indexOf(r) < 0; }).map(function (r) { return r.comp + (procSet && !procSet[r.pid] ? '(no process access)' : '(restricted)'); }).join(',') : ''));
+    return out;
+  }
+  function _renderTabProcessButtons(tb) {
+    var tab = _curTab(); var bs = _tabProcessButtons(tab); if (!bs.length) return;
+    var rec = _records[_recIdx] || null, kc = _keyCol(tab), pk = (rec && kc && !_newMode) ? recVal(rec, kc) : null;
+    tb.appendChild(el('span', 'sep'));
+    bs.forEach(function (r) {
+      var b = el('button', null, String(r.pname)); b.title = r.pdesc || r.pname; b.setAttribute('data-tbb', r.comp); b.setAttribute('data-tbb-process', r.pid);
+      if (r.dl && String(r.dl).trim() && window.AdEvaluator && rec) {   // ToolbarProcessButton.dynamicDisplay: DisplayLogic over the current row (same evaluator as field DisplayLogic)
+        var show; try { show = window.AdEvaluator.evaluate(String(r.dl), rec, rec) !== false; } catch (e) { show = true; } if (!show) return;
+      }
+      b.addEventListener('click', function () {
+        console.log('§AD-TBB click comp=' + r.comp + ' process=' + r.pid + ' table=' + tab.tableName + ' record=' + pk);
+        _saveAndNavigate(function () { var rr = _records[_recIdx] || null; _runButtonProcess(Number(r.pid), String(r.pname), { recordId: rr && kc ? recVal(rr, kc) : pk, table: tab.tableName, tableId: tab.tableId || null }); }, 'process');
+      });
+      tb.appendChild(b);
+    });
+  }
   // openProcess — the entry for menu P/R leaves + the ?process= deep link (procSet-gated in applySession).
   function openProcess(processId, name, rec) {
     _needBundles(_processTriggers(processId), function () { _openProcessNow(processId, name, rec); });
@@ -4835,7 +4880,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       b.setAttribute('data-proc-btn', bt.col); b.title = 'AD_Process ' + bt.pid;
       b.addEventListener('click', function () {
         console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' table=' + tab.tableName + ' record=' + pk);
-        _saveAndNavigate(function () { openProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName }); }, 'process');
+        _saveAndNavigate(function () { _runButtonProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName, tableId: tab.tableId || null }); }, 'process');
       });
       wrap.appendChild(b); fld.appendChild(wrap); formEl.appendChild(fld);
     });
