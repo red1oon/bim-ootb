@@ -8,7 +8,7 @@
 //   erp/patches/ad_seed.db.sql is the sanctioned data self-heal (legacy dictionary rows), listed separately, never code.
 'use strict';
 var cp = require('child_process'), path = require('path'), log = console.log, fails = 0, judged = 0;
-var BASE = process.env.CU_BASE || 'cea7bbfa8fdfe3516553992e530d5db001b4368f'   /* BUMPED 2026-10-15 to main at that date: sanctioned core PRs (twin-fidelity fixes, host work H1/H2, mfg) landed after b2fa278b; bump again after each sanctioned core PR - an overlay PR must leave core untouched relative to THIS base */, REPO = path.join(__dirname, '..', '..');
+var BASE = process.env.CU_BASE || 'bc4f1df53db0b7098e77ddb198b3f4eb3f6db4b3'   /* BUMPED 2026-10-15 to main at that date: sanctioned core PRs (twin-fidelity fixes, host work H1/H2, mfg) landed after b2fa278b; bump again after each sanctioned core PR - an overlay PR must leave core untouched relative to THIS base */, REPO = path.join(__dirname, '..', '..');
 function sh(c) { return cp.execSync(c, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 26 }); }
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §CU-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
 try { sh('git cat-file -e ' + BASE + '^{commit}'); } catch (e) { log('§CU-VERDICT INCONCLUSIVE base commit ' + BASE + ' not in this clone'); process.exit(3); }
