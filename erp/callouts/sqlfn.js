@@ -402,6 +402,37 @@
   F.adddays = function (dt, n) { if (dt == null || n == null) return null; return new Timestamp(tsv(dt).getTime() + Math.round(Number(n) * 86400000)); };   // + interval '1' second * (86400*days)
   F.subtractdays = function (dt, n) { return n == null ? null : F.adddays(dt, -Number(n)); };                                                          // addDays(day, days * -1)
   F.daysbetween = function (a, b) { if (a == null || b == null) return null; return Math.round((TimeUtil.getDay(tsv(a)).getTime() - TimeUtil.getDay(tsv(b)).getTime()) / 86400000); };   // CAST(d1 AS DATE) - CAST(d2 AS DATE)
+  // instr(string, string_to_search [, beg_index [, occur_index]]) - Oracle compat, the PL/pgSQL bodies line for line (STRICT: any NULL argument -> NULL). position(a IN b) = b.indexOf(a)+1; substring FROM n is 1-based.
+  F.instr = function (str, sub, beg, occ) {
+    // sql.js keeps ONE callback per name, so a 2-argument call arrives through the widest wrapper with trailing args undefined: the arity is the count of non-undefined args (SQL NULL arrives as null)
+    var n = occ !== undefined ? 4 : beg !== undefined ? 3 : 2; for (var i = 0; i < n; i++) if (arguments[i] == null) return null;
+    var S = Array.from(String(str)), T = Array.from(String(sub)), pos = function (needle, hay) { return hay.join('').indexOf(needle.join('')) < 0 ? 0 : Array.from(hay.join('').slice(0, hay.join('').indexOf(needle.join('')))).length + 1; };
+    var sub1 = function (from, len) { var a = S.slice(Math.max(from - 1, 0), len == null ? undefined : Math.max(from - 1, 0) + len); return a; };
+    beg = n < 3 ? 1 : Math.trunc(Number(beg));
+    if (n === 4) {
+      occ = Math.trunc(Number(occ));
+      if (beg > 0) {
+        var b = beg, tmp = sub1(beg), p = 0;
+        for (var k = 1; k <= occ; k++) { p = pos(T, tmp); b = k === 1 ? b + p - 1 : b + p; tmp = sub1(b + 1); }
+        return p === 0 ? 0 : b;
+      }
+      var sl = T.length, len = S.length, bb = len + beg - sl + 2, seen = 0;
+      while (bb > 0) { if (pos(T, sub1(bb, sl)) > 0) { seen++; if (seen === occ) return bb; } bb--; }
+      return 0;
+    }
+    if (beg > 0) { var p2 = pos(T, sub1(beg)); return p2 === 0 ? 0 : p2 + beg - 1; }
+    var sl2 = T.length, len2 = S.length, b2 = len2 + beg - sl2 + 2;
+    while (b2 > 0) { if (pos(T, sub1(b2, sl2)) > 0) return b2; b2--; }
+    return 0;
+  };
+  // generate_uuid(ts) - UUIDv7: 48-bit unix ms + version 7 + variant 10 + random (the random part cannot equal the pilot's; W-FN-PARITY judges timestamp prefix, version and variant)
+  F.generate_uuid = function (ts) {
+    var ms = ts == null ? Date.now() : (typeof ts === 'number' ? ts : Date.parse(String(ts).replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00').replace(/^(\d{4}-\d\d-\d\dT[\d:.]+)$/, '$1Z')));
+    var b = new Uint8Array(16), hex = Math.floor(ms).toString(16).padStart(12, '0').slice(-12); for (var i = 0; i < 6; i++) b[i] = parseInt(hex.substr(i * 2, 2), 16);
+    var R = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto.getRandomValues(new Uint8Array(10)) : Array.from({ length: 10 }, function () { return Math.floor(Math.random() * 256); });
+    for (var j = 0; j < 10; j++) b[6 + j] = R[j]; b[6] = (b[6] & 15) | 112; b[8] = (b[8] & 63) | 128;
+    var h = Array.from(b).map(function (x) { return x.toString(16).padStart(2, '0'); }).join(''); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+  };
   F.charat = function (str, i) { if (str == null || i == null) return null; var a = Array.from(String(str)), k = Math.trunc(Number(i)); return k >= 1 && k <= a.length ? a[k - 1] : ''; };      // SUBSTR($1, $2, 1)
   // round(numeric, n) — PG ROUND on NUMERIC: exact decimal, half away from zero, negative n allowed. SQLite's built-in round(x, n) works on the binary double
   //   (round(2.675,2)=2.67, round(1.005,2)=1, negative n ignored) - the dictionary calls ROUND in 29 AD_Column default rows, so the twin must agree with legacy. Overrides the 2-arg built-in only.
@@ -537,7 +568,7 @@
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
     currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
     bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
-    paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3], documentno: [1],
+    paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3], documentno: [1], instr: [2, 3, 4], generate_uuid: [0, 1],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
     ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
   // a NUMERIC result reaches SQLite as a NUMBER: as TEXT it compared GREATER than every number (rv_pp_mrp: bomqtyonhand(..) < pp.safetystock was never true), whereas arithmetic coerced it anyway
