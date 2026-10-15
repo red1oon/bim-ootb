@@ -61,6 +61,21 @@ for t in DDL_ONLY:
     pkc = pg("select kcu.column_name from information_schema.table_constraints tc join information_schema.key_column_usage kcu using (constraint_name, table_schema) where tc.table_schema='adempiere' and tc.table_name='%s' and tc.constraint_type='PRIMARY KEY' order by kcu.ordinal_position" % t)
     if not cs: print('§G-DICT %s DDL-SKIP (absent on the pilot)' % t); continue
     out.append('CREATE TABLE IF NOT EXISTS %s (%s%s);' % (t, ', '.join(cs), (', PRIMARY KEY (%s)' % ', '.join(pkc)) if pkc else '')); print('§G-DICT %s DDL (%d columns, pk=%s)' % (t, len(cs), pkc))
+# fact_acct column parity (§DICT-CENSUS column census 2026-10-15: the twin kept 34 of the legacy 57 columns, every other core transaction table is 100%). model_post.js already hands dateacct/datetrx/dimensions
+#   to ML.newPO, which DROPS keys the table lacks - adding the columns lets the existing poster fill them. ADD COLUMN has no IF NOT EXISTS: a re-apply fails per column and the loader counts it (tolerated, idempotent in effect).
+for t in os.environ.get('G_DICT_ALTER', 'fact_acct').split():
+    have_cols = set(r[1].lower() for r in db.execute('pragma table_info(%s)' % t))
+    for r in pg("select column_name || '|' || case when data_type in ('numeric','integer','bigint') then 'NUMERIC' else 'TEXT' end from information_schema.columns where table_schema='adempiere' and table_name='%s' order by ordinal_position" % t):
+        c, ty = r.split('|')
+        if c not in have_cols: out.append('ALTER TABLE %s ADD COLUMN %s %s;' % (t, c, ty))
+BACKFILL = [  # (AD_Table_ID, document table, key, dateacct expr, datetrx expr) - the Doc.getDateAcct()/getDateDoc() the poster uses; checked against the pilot (0 mismatches except re-dated docs)
+    (318, 'c_invoice', 'c_invoice_id', 'dateacct', 'dateinvoiced'), (319, 'm_inout', 'm_inout_id', 'dateacct', 'movementdate'), (335, 'c_payment', 'c_payment_id', 'dateacct', 'datetrx'),
+    (735, 'c_allocationhdr', 'c_allocationhdr_id', 'dateacct', 'datetrx'), (323, 'm_movement', 'm_movement_id', 'movementdate', 'movementdate'), (224, 'gl_journal', 'gl_journal_id', 'dateacct', 'datedoc'),
+    (472, 'm_matchinv', 'm_matchinv_id', 'dateacct', 'datetrx'), (392, 'c_bankstatement', 'c_bankstatement_id', 'statementdate', 'statementdate')]
+if any(r[1].lower() == 'dateacct' for r in db.execute('pragma table_info(fact_acct)')) or True:
+    for tid, dt, k, da, dx in BACKFILL:
+        if list(db.execute('pragma table_info(%s)' % dt)):
+            out.append("UPDATE fact_acct SET dateacct=(SELECT d.%s FROM %s d WHERE d.%s=fact_acct.record_id), datetrx=(SELECT d.%s FROM %s d WHERE d.%s=fact_acct.record_id) WHERE ad_table_id=%d AND dateacct IS NULL;" % (da, dt, k, dx, dt, k, tid))
 out.append('-- <<< G-DICT')
 blk = '\n'.join(out) + '\n'
 new = re.sub(r'-- >>> G-DICT.*?-- <<< G-DICT\n?', lambda m: blk, patch, flags=re.S) if '-- >>> G-DICT' in patch else patch.rstrip('\n') + '\n' + blk
