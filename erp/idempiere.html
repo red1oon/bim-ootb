@@ -3848,6 +3848,116 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
     return sel;
   }
+  // §UDP-2 — Saved Parameters / Last Run in the generic process dialog (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2; Witness: W-UDP2-LIVE).
+  //   ZK AbstractProcessDialog: savePrameterLayout :581-608 (editable combobox + Save + Delete), querySaved :613-625 (MPInstance.get),
+  //   onEvent :827-840, updateSaveParameter :853-898, deleteSaveParameter :954-966, chooseSaveParameter :972-985 (Save/Delete are blocked
+  //   only for the literal "** Last Run **", which the list never holds - so a "Last Run ..." entry can be saved under its name or deleted).
+  //   Rows = seed ad_pinstance(_para) + the signed op-log (CORE.listTip); every write is ONE signed CRUD group. The list/load/save maths are
+  //   the AdProcess ports (pinstanceList / parasToParams / paramsToParas), judged against the real MPInstance.get by W-UDP2-ENGINE.
+  function _procInstances(procId, cb) {
+    var bi = _sqlRows('SELECT * FROM ad_pinstance WHERE ad_process_id=' + Number(procId)), ids = bi.map(function (r) { return Number(r.ad_pinstance_id); });
+    var bp = ids.length ? _sqlRows('SELECT * FROM ad_pinstance_para WHERE ad_pinstance_id IN (' + ids.join(',') + ')') : [];
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(bi, bp); return; }
+    c.withSidecar(function (sdb) {
+      if (!sdb) { cb(bi, bp); return; }
+      var I = c.core.listTip(sdb, 'ad_pinstance', 'ad_pinstance_id', bi, null).rows.filter(function (r) { return String(r.ad_process_id) === String(procId); });
+      var keep = {}; I.forEach(function (r) { keep[String(r.ad_pinstance_id)] = 1; });
+      var P = c.core.listTip(sdb, 'ad_pinstance_para', 'ad_pinstance_para_uu', bp, null).rows.filter(function (p) { return keep[String(p.ad_pinstance_id)]; });
+      cb(I, P);
+    });
+  }
+  function _procNowTs() {   // Created with milliseconds, as PO stamps it (java.sql.Timestamp of System.currentTimeMillis)
+    var d = new Date(), p = function (n, w) { return String(n).padStart(w || 2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3);
+  }
+  function _procSavedRow(proc, pane) {
+    var A = window.AdProcess, App = window.APP || {}, user = App.actor, client = App.clientId;
+    var msgOf = function (v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + v + "'")[0]; return (r && r.msgtext) || en; };
+    var lrRow = _sqlRows("SELECT value FROM ad_sysconfig WHERE name='LASTRUN_RECORD_COUNT' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(client || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var lastRunCount = lrRow && lrRow.value != null && String(lrRow.value).trim() !== '' ? Number(lrRow.value) : 5, lastRunMsg = msgOf('LastRun', 'Last Run');
+    var row = el('div', 'fld idmp-savedparam'), dl = document.createElement('datalist'), dlId = 'idmp-savedparam-' + proc.AD_Process_ID;
+    dl.id = dlId;
+    var name = document.createElement('input'); name.type = 'text'; name.setAttribute('list', dlId); name.setAttribute('data-proc-saved', '1');
+    name.placeholder = msgOf('SavedParameter', 'Saved Parameters');
+    var bSave = el('button', null, _T('proc.save', 'Save')), bDel = el('button', null, _T('proc.delete', 'Delete'));
+    bSave.setAttribute('data-proc-saved-save', '1'); bDel.setAttribute('data-proc-saved-delete', '1'); bSave.type = bDel.type = 'button';
+    row.appendChild(el('label', null, name.placeholder)); row.appendChild(name); row.appendChild(dl); row.appendChild(bSave); row.appendChild(bDel);
+    pane.appendChild(row);
+    var list = [], paras = [];
+    function entry() { var t = name.value; return list.filter(function (x) { return x.name === t; })[0] || null; }
+    function enable() { var t = name.value, e = entry(); bSave.disabled = !t; bDel.disabled = !(t && e); }   // chooseSaveParameter :980-984
+    function querySaved(cb) {                                                                              // :613-625
+      _procInstances(proc.AD_Process_ID, function (I, P) {
+        paras = P;
+        list = A.pinstanceList(I, P, { processId: proc.AD_Process_ID, userId: user, clientId: client, isReport: proc.isReport, lastRunCount: lastRunCount, lastRunMsg: lastRunMsg });
+        dl.innerHTML = ''; list.forEach(function (x) { var o = document.createElement('option'); o.value = x.name; dl.appendChild(o); });
+        console.log('§UDP2-SAVED proc=' + proc.AD_Process_ID + ' user=' + user + ' list=' + list.length + ' [' + list.map(function (x) { return (x.named ? 'N:' : 'L:') + x.name; }).join(' | ') + ']');
+        enable(); if (cb) cb();
+      });
+    }
+    function readForm() {   // the editors' values + display text (ProcessParameterPanel.saveParameters: Info = editor.getDisplay())
+      var params = {}, info = {};
+      proc.paras.forEach(function (pp) {
+        var inp = pane.querySelector('[data-proc-param="' + pp.columnName + '"]'); if (!inp || inp.value === '') return;
+        params[pp.columnName] = inp.value;
+        info[pp.columnName] = inp.tagName === 'SELECT' && inp.selectedIndex >= 0 ? inp.options[inp.selectedIndex].text : inp.value;
+      });
+      return { params: params, info: info };
+    }
+    function paraOps(instRef, f) {
+      return A.paramsToParas(proc, f.params, f.info).map(function (r) {
+        var fields = {}; for (var k in r) fields[k] = r[k]; fields.ad_pinstance_id = instRef;
+        return _procCrud('create', 'ad_pinstance_para', { fields: fields });
+      });
+    }
+    function newInstanceOps(nm) {   // new MPInstance(ctx, AD_Process_ID, Table_ID, Record_ID) + setName + saveParameters (:872-893)
+      var ts = _procNowTs(), rec = _procRecord && _procRecord.recordId != null ? Number(_procRecord.recordId) : 0;
+      var head = _procCrud('create', 'ad_pinstance', { fields: { ad_process_id: Number(proc.AD_Process_ID), ad_user_id: user, record_id: rec, name: nm, isprocessing: 'N', result: 0, created: ts, updated: ts } });
+      return [head].concat(paraOps({ __opRef: 0 }, readForm()));
+    }
+    function commit(ops, what, cb) {
+      if (!window.__crud || typeof window.__crud.applyOpGroup !== 'function') { console.log('§UDP2-SAVED ' + what + ' NOT persisted (no signed op-log)'); if (cb) cb(); return; }
+      window.__crud.applyOpGroup(ops, function (cr) {
+        console.log('§UDP2-SAVED ' + what + ' proc=' + proc.AD_Process_ID + ' ops=' + ops.length + ' committed=' + !!(cr && cr.committed) + (cr && cr.committed ? '' : ' reason=' + (cr && cr.reason)));
+        if (cb) cb();
+      });
+    }
+    name.addEventListener('input', function () {
+      var e = entry(); enable(); if (!e) return;
+      var v = A.parasToParams(proc, paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }));   // loadParameters :741-832
+      proc.paras.forEach(function (pp) {
+        var inp = pane.querySelector('[data-proc-param="' + pp.columnName + '"]'); if (!inp) return;
+        var x = v[pp.columnName]; x = x && typeof x === 'object' ? x.v : x;
+        inp.value = x == null ? '' : String(x);
+      });
+      console.log('§UDP2-SAVED load proc=' + proc.AD_Process_ID + ' entry="' + e.name + '" id=' + e.id + ' values=' + JSON.stringify(v));
+    });
+    bSave.addEventListener('click', function () {
+      var nm = name.value, e = entry(); if (!nm) return;
+      if (e) {   // update existing: delete its paras, save the form's, keep the instance (now carrying the name) :855-870
+        var ops = paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }).map(function (p) { return _procCrud('delete', 'ad_pinstance_para', { id: p.ad_pinstance_para_uu }); });
+        ops = ops.concat(paraOps(Number(e.id), readForm()));
+        ops.push(_procCrud('update', 'ad_pinstance', { id: Number(e.id), changes: { name: { old: e.row.name == null ? null : e.row.name, new: nm }, updated: { old: e.row.updated, new: _procNowTs() } } }));
+        commit(ops, 'save-existing name="' + nm + '"', function () { querySaved(function () { name.value = nm; enable(); }); });
+      } else commit(newInstanceOps(nm), 'save-new name="' + nm + '"', function () { querySaved(function () { name.value = nm; enable(); }); });
+    });
+    bDel.addEventListener('click', function () {   // deleteEx(true) :954-966 - the instance and its parameters
+      var e = entry(); if (!e) return;
+      var ops = paras.filter(function (p) { return String(p.ad_pinstance_id) === String(e.id); }).map(function (p) { return _procCrud('delete', 'ad_pinstance_para', { id: p.ad_pinstance_para_uu }); });
+      ops.push(_procCrud('delete', 'ad_pinstance', { id: Number(e.id) }));
+      commit(ops, 'delete name="' + e.name + '"', function () { querySaved(function () { name.value = ''; enable(); }); });
+    });
+    querySaved();
+    return { recordRun: function (cb) { commit(newInstanceOps(null), 'run (Last Run entry)', cb); } };
+  }
+  function _procCrud(verb, table, o) {   // the crud_core.buildOp shapes (create / update / delete), actor + tenant as sessionActor() reads them
+    var App = window.APP || {}, op = { key: table, table: table, verb: verb, op_uuid: null };
+    if (verb === 'create') { op.op_type = 'CRUD_CREATE'; op.fields = o.fields; op.cas = null; if (App.actor != null || App.clientId != null) op.stdDefaults = { actor: App.actor, clientId: App.clientId, orgId: App.orgId != null ? App.orgId : 0 }; }
+    else if (verb === 'update') { op.op_type = 'CRUD_UPDATE'; op.id = o.id; op.changes = o.changes; if (App.actor != null) op.actor = App.actor; }
+    else { op.op_type = 'CRUD_DELETE'; op.id = o.id; op.tombstone = true; op.reversible = true; }
+    return op;
+  }
   function renderProcParamForm(proc) {
     var pane = el('div', 'idmp-procpane idmp-procform');
     pane.appendChild(el('h3', null, proc.name));
@@ -3904,6 +4014,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       pane.appendChild(fld);
     });
     if (hidden.length) console.log('§AD-PROC-LIVE proc=' + proc.AD_Process_ID + ' paras hidden by DisplayLogic: [' + hidden.join(',') + ']');
+    var saved = _procSavedRow(proc, pane);
     var err = el('div', 'err');
     var actions = el('div', 'actions');
     var run = el('button', 'run', 'Run'); run.setAttribute('data-proc-run', '1');
@@ -3924,7 +4035,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return;
       }
       console.log('§PROC_PARAM_VALIDATE proc=' + proc.AD_Process_ID + ' ok required=[' + v.required.join(',') + '] supplied=[' + v.supplied.join(',') + ']');
-      runProcess(proc, params, _procRecord ? _procRecord.recordId : undefined);
+      var recId = _procRecord ? _procRecord.recordId : undefined;
+      saved.recordRun(function () { runProcess(proc, params, recId); });   // the run's AD_PInstance (unnamed) is written first, as legacy does
     });
     cancel.addEventListener('click', function () {
       if (_procRecord) { _closeProcDialog(false); return; }   // dialog Cancel: back to the window, nothing else touched
