@@ -57,6 +57,10 @@
   Fact.prototype.line = function (acct, cur, dr, cr, extra) {
     if (acct == null) { this.err = this.err || 'account not resolvable'; return; }
     dr = dr == null ? null : D(dr); cr = cr == null ? null : D(cr);
+    if (!(this.as.isallownegativeposting && Y(this.as.isallownegativeposting))) {            // FactLine.setAmtSource :237-257 - without AllowNegativePosting a negative DR becomes a CR (and vice versa)
+      if (dr != null && dr.signum() < 0) { cr = dr.abs ? dr.abs() : dr.negate(); dr = Z; }
+      if (cr != null && cr.signum() < 0) { dr = cr.abs ? cr.abs() : cr.negate(); cr = Z; }
+    }
     if ((dr == null || dr.signum() === 0) && (cr == null || cr.signum() === 0)) return;     // Fact.createLine: zero → no line
     var prec = T.precisionOf(this.trx, this.as.c_currency_id), r = rate(this.trx, cur, this.as.c_currency_id, this.doc.dateacct, this.doc.c_conversiontype_id);
     if (!r) { this.err = 'No conversion rate ' + cur + '→' + this.as.c_currency_id; return; }

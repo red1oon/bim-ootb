@@ -4,14 +4,13 @@
 //   Receipt (100), StorageEngine.createTransaction, CostEngine.createCostDetail / createRateVariances. Core ports are REUSED (ModelTrade storage, ModelCost MCostDetail, ModelMaster acct schemas). Pure: no clock, no random.
 //   Every type it does not port is REFUSED by name (never a silent no-op).
 export const DEFERRED = [
-  'MPPCostCollector Activity Control (160) completeIt + CostEngine.createActivityControl + RoutingService.getResourceBaseValue',
   'Usage / Method Change / Mix variance collectors (120/130/150) and CostEngine.createUsageVariances / createMethodVariances bodies',
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
-  'MPPOrder.voidIt / closeIt / createVariances; Doc_PPCostCollector: Activity Control posting and the Receipt scrap branch (named refusals)'
+  'MPPOrder.voidIt / closeIt / createVariances; milestone and subcontracting activities (closeActivities, createPO); Doc_PPCostCollector Receipt scrap branch (named refusals)'
 ];
-export const SOURCE = { detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
@@ -208,7 +207,7 @@ export function create(ctx) {
   }
 
   // ── DocAction (MPPCostCollector.prepareIt :300-387 / completeIt :404-570), Issue + Receipt only ─────────────────────────
-  const NOT_PORTED = (cc) => (isActivity(cc) ? 'DEFERRED: Activity Control collectors are not ported yet' : isType(cc, T_USAGE, T_METHOD) ? 'DEFERRED: ' + cc.costcollectortype + ' variance collectors are not ported yet (Usage / Method Change)' : null);   // Rate (140) and Mix (150) completions are a bomline/order update only
+  const NOT_PORTED = (cc) => (isType(cc, T_USAGE, T_METHOD) ? 'DEFERRED: ' + cc.costcollectortype + ' variance collectors are not ported yet (Usage / Method Change)' : null);   // Rate (140) and Mix (150) completions are a bomline/order update only
   function asiMandatory(trx, product, isSO) {   // MProduct.isASIMandatory
     for (const as of MM().clientAcctSchemas(trx, product.ad_client_id)) if (MC().costingLevel(trx, product, as) === 'B') return true;
     if (!Number(product.m_attributeset_id || 0)) return false;
@@ -220,6 +219,7 @@ export function create(ctx) {
       const nm = NOT_PORTED(d); if (nm) { trx._msg = nm; return 'IN'; }
       if (!T().periodOpen(trx, d.dateacct, 'MCC', d.ad_org_id)) { trx._msg = '@PeriodClosed@'; return 'IN'; }
       const ch = { c_doctype_id: d.c_doctypetarget_id };
+      if (isActivity(d)) { try { activityPrepare(trx, d); } catch (e) { trx._msg = e.message; return 'IN'; } }
       const product = trx.get('m_product', d.m_product_id);
       if (isIssue(d) && Number(d.m_attributesetinstance_id || 0) === 0 && asiMandatory(trx, product, false)) { trx._msg = '@M_AttributeSet_ID@ @IsMandatory@ @M_Product_ID@=' + product.value; return 'IN'; }
       if (isReceipt(d) && Number(d.m_attributesetinstance_id || 0) === 0 && asiMandatory(trx, product, true)) { trx._msg = '@M_AttributeSet_ID@ @IsMandatory@ @M_Product_ID@=' + product.value; return 'IN'; }
@@ -241,11 +241,12 @@ export function create(ctx) {
           if (isReceipt(cc)) {        // update the PP Order :442-460
             const o = ML.po(trx, 'pp_order', trx.get('pp_order', cc.pp_order_id));
             o.set('qtydelivered', num(dec(o.get('qtydelivered')).add(qty))).set('qtyscrap', num(dec(o.get('qtyscrap')).add(scrap))).set('qtyreject', num(dec(o.get('qtyreject')).add(rej))).set('datedelivered', cc.movementdate);
-            if (!o.get('datestart')) o.set('datestart', dateStart(cc));
+            if (!o.get('datestart')) o.set('datestart', dateStart(trx, cc));
             if (dec(o.get('qtyordered')).subtract(dec(o.get('qtydelivered'))).signum() <= 0) o.set('datefinish', cc.movementdate);
             if (!o.save()) throw new Error(o.error);
           }
         }
+        if (isActivity(cc)) activityComplete(trx, cc);
         let e = createRateVariances(trx, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); if (e) throw new Error(e);
         trx.update('pp_cost_collector', trx.get('pp_cost_collector', cc.pp_cost_collector_id), { processed: 'Y', docaction: 'CL' });
       } catch (e) { trx._msg = e.message; return 'IN'; }
@@ -256,7 +257,108 @@ export function create(ctx) {
     voidIt() { return false; },                                                              // :506-511
     getSummary(trx, d) { return 'Cost Collector ' + (d && d.documentno); }
   };
-  function dateStart(cc) { return cc.movementdate; }   // getDateStart(): DurationReal x the routing duration base; DurationReal is 0 for Issue/Receipt -> MovementDate
+  // ══ SLICE 6 - Activity Control (prompts/mfg/LIBERO_ACTIVITY_SLICE6_SPEC.md) ═══════════════════════════════════════════════════════════
+  // RoutingService = DefaultRoutingServiceImpl. Durations are doubles in Java (BigDecimal.valueOf(double)); String(n) of a JS number is Double.toString, bar the trailing ".0".
+  const DUR_SEC = { s: 1, m: 60, h: 3600, D: 86400, M: 2592000, Y: 31536000 };   // :707-722 (AD_Workflow.DurationUnit)
+  const durationBaseSec = (unit) => (unit == null ? 0 : (DUR_SEC[unit] || 0));
+  const TIME_X12 = ['03', 'MJ', 'HR', 'DA', 'WD', 'WK', 'MO', 'WM', 'YR'];                 // :767-780 isTime
+  function uomBaseSec(uom) {                                                              // :730-760 - only week, day, hour, minute, second
+    const x = String(uom.x12de355);
+    if (x === 'WK') return 604800; if (x === 'DA') return 86400; if (x === 'HR') return 3600; if (x === 'MJ') return 60; if (x === '03') return 1;
+    throw new Error('@NotSupported@ @C_UOM_ID@=' + uom.name);
+  }
+  const bdValueOf = (n) => { let t = String(n); if (/e/i.test(t)) t = Number(n).toFixed(20).replace(/0+$/, ''); if (t.indexOf('.') < 0) t += '.0'; return D(t); };   // BigDecimal.valueOf(double)
+  const parseTs = (t) => Date.parse(String(t).replace(' ', 'T').replace(/Z?$/, 'Z')), fmtTs = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+  function orderWorkflowOf(trx, orderId) { return trx.find('pp_order_workflow', { pp_order_id: orderId })[0] || {}; }
+  // MPPCostCollector.getDateStart/getDateFinish :808-836
+  function dateStart(trx, cc) {
+    const dur = Number(cc.durationreal || 0);
+    if (dur === 0) return cc.movementdate;
+    return fmtTs(parseTs(cc.movementdate) - Math.trunc(dur * durationBaseSec(orderWorkflowOf(trx, cc.pp_order_id).durationunit) * 1000.0));
+  }
+  const dateFinishCC = (cc) => cc.movementdate;
+  // DefaultRoutingServiceImpl.calculateDuration(node, cc) :124-180 with a collector
+  function calculateDuration(trx, wfNode, cc) {
+    if (!wfNode) throw new Error('calculateDuration not supported using Node null!!!');
+    const wf = trx.get('ad_workflow', wfNode.ad_workflow_id) || {}, batchSize = Number(wf.qtybatchsize || 0), qwm = Number(wfNode.queuingtime || 0) + Number(wfNode.waitingtime || 0) + Number(wfNode.movingtime || 0);
+    const setup = Number(cc.setuptimereal || 0), duration = Number(cc.durationreal || 0), batchS = Number(trx.get('pp_order', cc.pp_order_id).qtybatchs);
+    if (Number.isNaN(batchS)) throw new Error('PP_Order.QtyBatchs is null (NullPointerException in calculateDuration :158)');
+    const total = batchSize > 1 ? (qwm * (SOURCE.batchMult ? batchS : 1)) + setup + duration : qwm + setup + duration;
+    return bdValueOf(total);
+  }
+  function convertDuration(duration, fromUnit, uom) { const fromMult = durationBaseSec(fromUnit), toDiv = uomBaseSec(uom); return bdValueOf(Number(duration.toString()) * fromMult / toDiv); }   // :789-801
+  function resourceProduct(trx, resourceId) { return trx.find('m_product', { s_resource_id: resourceId }).filter(active)[0] || null; }   // MProduct.forS_Resource_ID
+  function getResourceBaseValue(trx, resourceId, cc) {                                    // :666-694
+    const on = trx.get('pp_order_node', cc.pp_order_node_id), wfNode = on ? trx.get('ad_wf_node', on.ad_wf_node_id) : null;
+    const rp = resourceProduct(trx, resourceId), uom = rp ? trx.get('c_uom', rp.c_uom_id) : null;
+    if (!uom) throw new Error('S_Resource ' + resourceId + ' has no product / UOM');
+    if (TIME_X12.indexOf(String(uom.x12de355)) < 0) throw new Error('@NotSupported@ @C_UOM_ID@ - ' + uom.name);
+    const duration = calculateDuration(trx, wfNode, cc), wf = trx.get('ad_workflow', wfNode.ad_workflow_id);
+    return SOURCE.routeBase ? convertDuration(duration, wf.durationunit, uom) : duration;
+  }
+  // CostEngine.createActivityControl :442-483
+  function createActivityControl(trx, cc) {
+    if (!isType(cc, T_ACTIVITY)) return;
+    const M = MC(), product = resourceProduct(trx, cc.s_resource_id); if (!product) throw new Error('No product for S_Resource_ID=' + cc.s_resource_id);
+    const qty = getResourceBaseValue(trx, cc.s_resource_id, cc);
+    for (const as of acctSchemas(trx, cc.ad_org_id)) {
+      const method = M.costingMethod(trx, product, as);
+      if (libMethod(trx, product, as) !== method) throw new Error('Costing method not supported - ' + method);
+      for (const el of elements(trx)) {
+        if (['R', 'O', 'B'].indexOf(el.costelementtype) < 0) continue;      // isActivityControlElement :350-356
+        const price = Number(cc.s_resource_id) > 0 ? actualPrice(trx, cc, product, as, el) : ZERO, costs = roundCost(trx, price.multiply(qty), as);
+        const h = M.cdNew(trx, as, cc.ad_org_id, product.m_product_id, product.m_attributesetinstance_id || 0, el.m_costelement_id, costs.negate(), qty.negate(), '', null, 0);
+        h.row.pp_cost_collector_id = cc.pp_cost_collector_id; M.cdSave(trx, h); if (h.row.processed !== 'Y') M.cdProcess(trx, h);
+      }
+    }
+  }
+  // MPPOrderNode (:377-451, :486-515)
+  const nodeProcessed = (n) => n.docstatus === 'CO' || n.docstatus === 'CL';
+  const nodeStr = (n) => 'MPPOrderNode[' + n.pp_order_node_id + '-' + n.name + ']';
+  function nodeSetDateFinish(trx, node, override) {
+    if (!nodeProcessed(node)) throw new Error('Calling setDateFinish when the activity is not completed/closed is not allowed');
+    if (!override && node.datefinish) return;
+    const rows = trx.find('pp_cost_collector', { pp_order_node_id: node.pp_order_node_id, costcollectortype: T_ACTIVITY }).filter((c) => ['IP', 'CO', 'CL'].indexOf(c.docstatus) >= 0);
+    if (!rows.length) { trx.say('§LIBERO-WARN Activity Completed/Closed but no cost collectors found!'); return; }
+    const max = rows.map((c) => c.movementdate).sort().pop(); ML.po(trx, 'pp_order_node', trx.get('pp_order_node', node.pp_order_node_id)).set('datefinish', max).save();
+  }
+  function nodeCloseIt(trx, nodeId) {
+    const po = ML.po(trx, 'pp_order_node', trx.get('pp_order_node', nodeId)), n = po.row;
+    po.set('docstatus', 'CL').set('docaction', '--'); if (!po.save()) throw new Error(po.error);
+    nodeSetDateFinish(trx, trx.get('pp_order_node', nodeId), false);
+    const fresh = ML.po(trx, 'pp_order_node', trx.get('pp_order_node', nodeId)), old = Number(fresh.row.durationrequiered || 0);
+    if (old !== Number(fresh.row.durationreal || 0)) {
+      fresh.set('description', (fresh.row.description ? fresh.row.description + ' | ' : '') + 'closed ( Duration :' + old + ') ( QtyRequired :' + fresh.row.qtyrequiered + ')');
+      fresh.set('durationrequiered', Number(fresh.row.durationreal || 0)).set('qtyrequiered', fresh.row.qtydelivered);
+    }
+    if (!fresh.save()) throw new Error(fresh.error); void n;
+  }
+  function activityNode(trx, cc) { const n = Number(cc.pp_order_node_id) !== 0 && cc.pp_order_node_id != null ? trx.get('pp_order_node', cc.pp_order_node_id) : null; if (!n) throw new Error('FillMandatory: PP_Order_Node_ID'); return n; }
+  function activityGuards(trx, node) {
+    if (node.issubcontracting === 'Y') throw new Error('DEFERRED: subcontracting activities (MPPCostCollector.createPO) are not ported - nothing was written');
+    if (node.ismilestone === 'Y') throw new Error('DEFERRED: milestone activities (MPPOrderWorkflow.closeActivities auto-reports earlier activities) are not ported - nothing was written');
+  }
+  // MPPCostCollector.prepareIt activity branch :327-366
+  function activityPrepare(trx, cc) {
+    const node = activityNode(trx, cc);
+    if (node.docstatus === 'CO') throw new Error('Order Activity Already Processed - ' + nodeStr(node));
+    activityGuards(trx, node);
+    if (nodeProcessed(node)) throw new Error('Cannot change status from ' + node.docstatus + ' to IP');
+    const po = ML.po(trx, 'pp_order_node', node);
+    po.set('docstatus', 'IP').set('docaction', 'CO'); if (!node.datestart) po.set('datestart', dateStart(trx, cc));
+    po.set('qtydelivered', num(dec(node.qtydelivered).add(dec(cc.movementqty)))).set('qtyscrap', num(dec(node.qtyscrap).add(dec(cc.scrappedqty)))).set('qtyreject', num(dec(node.qtyreject).add(dec(cc.qtyreject))));
+    po.set('durationreal', Number(node.durationreal || 0) + Math.trunc(Number(cc.durationreal || 0))).set('setuptimereal', Number(node.setuptimereal || 0) + Math.trunc(Number(cc.setuptimereal || 0)));
+    if (!po.save()) throw new Error(po.error);
+  }
+  // MPPCostCollector.completeIt activity branch :474-526
+  function activityComplete(trx, cc) {
+    const node = activityNode(trx, cc);
+    if (nodeProcessed(node)) throw new Error('Order Activity Already Processed - ' + nodeStr(node));
+    activityGuards(trx, node);
+    createActivityControl(trx, cc);
+    const n2 = trx.get('pp_order_node', node.pp_order_node_id);
+    if (SOURCE.closeNode && dec(n2.qtydelivered).compareTo(dec(n2.qtyrequiered)) >= 0) nodeCloseIt(trx, node.pp_order_node_id);
+  }
 
   // ══ SLICE 4 - the legacy ONE-STEP entry points (prompts/mfg/LIBERO_BACKFLUSH_SLICE4_SPEC.md) ═══════════════════════
   const mccDocType = (trx) => { const d = trx.find('c_doctype', { docbasetype: 'MCC' }).filter((r) => active(r) && (r.ad_client_id == null || Number(r.ad_client_id) === Number(trx.env.client)))
@@ -419,7 +521,15 @@ export function create(ctx) {
     } else if (type === T_METHOD || type === T_USAGE || type === T_RATE || type === T_MIX) {   // createVariance :299-316 - DR variance account / CR WIP, cost = -amount, qty = -detail qty
       const col = ACCT_COL[{ [T_METHOD]: 'MethodChangeVariance', [T_USAGE]: 'UsageVariance', [T_RATE]: 'RateVariance', [T_MIX]: 'MixVariance' }[type]], debit = lineAccount(trx, cc.m_product_id, as.c_acctschema_id, col);
       for (const cd of details) createLines(el(cd.m_costelement_id), debit, wip, rnd(dec(cd.amt).negate()), dec(cd.qty).negate());
-    } else if (isActivity(cc)) throw new Error('DEFERRED: Activity Control posting (Doc_PPCostCollector.createActivityControl) is not ported');
+    } else if (isActivity(cc)) {                                      // createActivityControl :221-241 - DR WIP / CR the element's account; cost = the detail amount as stored (negative), NOT negated
+      const ELACC = { R: 'p_labor_acct', B: 'p_burden_acct', O: 'p_overhead_acct', X: 'p_outsideprocessing_acct' };
+      for (const cd of details) {
+        const costs = dec(cd.amt); if (costs.signum() === 0) continue;
+        const element = el(cd.m_costelement_id), t = String(element.costelementtype);
+        const credit = t === 'M' ? asset : (ELACC[t] ? lineAccount(trx, cc.m_product_id, as.c_acctschema_id, ELACC[t]) : (() => { throw new Error('@NotSupported@ ' + element.name); })());
+        createLines(element, wip, credit, costs, cc.movementqty);
+      }
+    }
     return true;
   }
   const docClass = { createFacts, basis: 'pp_cost_collector' };
@@ -458,7 +568,7 @@ export function create(ctx) {
     }
   };
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass };
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration };
 }
 export async function activate(ctx) {
   const m = create(ctx);
