@@ -1728,7 +1728,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var fsm = (tab && rec && !_newMode) ? _fsmCtx(tab, rec) : null;
     var keyVal = (rec && kc && !_newMode) ? recVal(rec, kc) : null;
     return {
-      tab: tab, rec: rec, keyCol: kc, keyVal: keyVal, editing: editing, isNew: !!_newMode,
+      tab: tab, rec: rec, keyCol: kc, keyVal: keyVal, editing: editing, isNew: !!_newMode, dirty: editing && (!!_newMode || _formNeedsSave()),
       hasDocFsm: !!(tab && (fsm || (tab.fields || []).some(function (f) { return /^DocStatus$/i.test(String(f.columnName)); }))),
       legal: fsm ? fsm.legal.slice() : [],
       saveThen: function (fn) { _saveAndNavigate(fn, 'lens'); },
@@ -1741,8 +1741,63 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return res;
       },
       forms: _lensForms,
+      hasAfterSave: !!(tab && tab.tableName && window.ModelLayer && window.ModelLayer.MODEL[String(tab.tableName).toLowerCase()] && window.ModelLayer.MODEL[String(tab.tableName).toLowerCase()].afterSave),
+      previewSave: function (cb) {
+        if (!window.__crud || typeof window.__crud.previewInline !== 'function') { console.log('§OPS-LENS preview REFUSED no preview seam'); return; }
+        window.__crud.previewInline(function (res) { _showSavePreview(_curTab(), res); if (cb) cb(res); });
+      },
+      related: function () { return (tab && rec && !_newMode) ? _zoomDestinations(tab, rec) : []; },
+      openRelated: function (d) {   // the exact Zoom Across click (_zoomAcross item handler)
+        _zoomFilter = { windowId: d.windowId, table: d.table, col: d.col, val: d.val };
+        console.log('§ZOOM-ACROSS-OPEN window=' + d.name + '(' + d.windowId + ') filter=' + d.col + '=' + d.val + ' via=lens');
+        openWindow(d.windowId, d.name, true);
+      },
       openForm: function (formId, preset) { openAdForm(Number(formId), null, preset || null); }
     };
+  }
+  // §SAVE-PREVIEW panel (ERP_FRIENDLY_OPS_LENS.md §16 FO-M1): what Save would write, read from the uncommitted model run. Generic: per child table its dictionary name and
+  //   row count; per row the identifier columns (AD_Column.IsIdentifier) and the Qty* numbers, foreign keys shown by the referenced table's own identifier.
+  function _identCols(table) {
+    return _sqlRows("SELECT c.columnname AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE UPPER(t.tablename)=UPPER('" + String(table).replace(/'/g, "''") + "') AND c.isidentifier='Y' AND c.isactive='Y' ORDER BY c.seqno").map(function (r) { return String(r.c); });
+  }
+  function _fkLabel(col, val) {
+    if (val == null || !/_ID$/i.test(col)) return val;
+    var rt = String(col).replace(/_ID$/i, ''); if (!_tableExists(rt)) return val;
+    var ic = _identCols(rt).filter(function (c) { return !/_ID$/i.test(c); }); if (!ic.length) return val;
+    var r = _tipSql('SELECT ' + ic.join(', ') + ' FROM ' + rt + ' WHERE ' + rt + '_ID=' + _lit(val))[0];
+    return r ? ic.map(function (c) { return r[c.toLowerCase()]; }).filter(function (x) { return x != null && x !== ''; }).join(' ') : val;
+  }
+  function _showSavePreview(tab, res) {
+    var old = document.getElementById('idmp-preview-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-preview-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center';
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    var box = el('div', null); box.setAttribute('data-save-preview', res && res.ok ? 'ok' : 'refused');
+    box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:12px 16px;min-width:340px;max-width:92vw;max-height:76vh;overflow:auto;box-shadow:0 8px 28px rgba(0,0,0,.35);font:13px system-ui';
+    box.appendChild(el('div', null, res && res.ok ? 'Save will write' : 'Preview of Save')).style.cssText = 'font-weight:700;font-size:14px;margin-bottom:8px';
+    var groups = [];
+    if (!res || !res.ok) {
+      var m = el('div', null, 'Save would be refused: ' + ((res && (res.error || res.refusal || res.reason)) || 'unknown')); m.style.color = '#b00020'; m.setAttribute('data-preview-refusal', '1'); box.appendChild(m);
+    } else {
+      var byT = {}; (res.ops || []).forEach(function (o) { (byT[o.table] = byT[o.table] || []).push(o); });
+      Object.keys(byT).forEach(function (t) {
+        var nm = (_sqlRows("SELECT name FROM ad_table WHERE UPPER(tablename)=UPPER('" + t.replace(/'/g, "''") + "')")[0] || {}).name || t;
+        var creates = byT[t].filter(function (o) { return o.fields; }), updates = byT[t].length - creates.length;
+        var h = el('div', null, nm + ' · ' + creates.length + ' new' + (updates ? ', ' + updates + ' updated' : '')); h.style.cssText = 'font-weight:600;margin:8px 0 3px'; h.setAttribute('data-preview-table', t); box.appendChild(h);
+        var ic = _identCols(t);
+        creates.slice(0, 6).forEach(function (o) {
+          var keys = Object.keys(o.fields), parts = [];
+          ic.forEach(function (c) { var k = keys.find(function (x) { return x.toLowerCase() === c.toLowerCase(); }); if (k && o.fields[k] != null && typeof o.fields[k] !== 'object') parts.push(String(_fkLabel(c, o.fields[k]))); });
+          keys.filter(function (k) { return /^qty/i.test(k) && Number(o.fields[k]); }).forEach(function (k) { parts.push(k.toLowerCase() + ' ' + Number(o.fields[k])); });
+          var row = el('div', null, '• ' + (parts.join(' · ') || '(row)')); row.style.cssText = 'padding-left:10px;color:var(--idmp-muted,#555)'; box.appendChild(row);
+        });
+        groups.push(t + '=' + creates.length + (updates ? '+' + updates + 'u' : ''));
+      });
+      if (!groups.length) box.appendChild(el('div', null, 'Only this record (no other rows).'));
+    }
+    var close = el('button', null, 'Close'); close.setAttribute('data-preview-close', '1'); close.style.cssText = 'margin-top:12px'; close.onclick = function () { ov.remove(); }; box.appendChild(close);
+    ov.appendChild(box); document.body.appendChild(ov);
+    console.log('§OPS-LENS preview table=' + ((tab && tab.tableName) || '?') + ' ok=' + !!(res && res.ok) + ' groups=[' + groups.join(',') + ']');
   }
   function _renderLensBar(tb) {
     var L = window.AdLens; if (!L || !L.count()) return;
