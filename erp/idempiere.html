@@ -1061,6 +1061,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         } else console.log('§AD-SEED-PATCH none for ' + pf + ' (HTTP ' + pr.status + ')');
       } catch (ePatch) { console.log('§AD-SEED-PATCH skipped ' + pf + ' (' + ePatch.message + ')'); }
     }
+    // The stored-function UDFs (sqlfn.js: trunc, round, currencyRate, ...) belong to the DATABASE, like PL/pgSQL functions in legacy: bind them once the handle is ready, not lazily on the first model transaction.
+    //   A window on a legacy VIEW (Accounting Fact Balances, trunc(date,'DD')) opened FIRST hit SQLite's 1-argument built-in trunc() and showed 0 records (W-VIEW-WINDOW-FIRST).
+    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && !db.__udfBound) { window.AdCallout.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; console.log('§UDF-BOUND at load'); } } catch (eUdf) { console.log('§UDF-BOUND failed ' + eUdf.message); }
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
     // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
     // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
