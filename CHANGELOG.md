@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.81.0](https://github.com/red1oon/bim-ootb/compare/v1.80.0...v1.81.0) (2026-10-15)
+
+
+### ✨ Features
+
+* **oplogpic:** carry file (.oplogpic Save file / Open file with verified open) + Show QR for small links + gradient-map bar layout fix ([#2025](https://github.com/red1oon/bim-ootb/issues/2025)) ([4f19cb5](https://github.com/red1oon/bim-ootb/commit/4f19cb52dc6e115519409dc2c99bc098adbbd773))
+
 ## [1.80.0](https://github.com/red1oon/bim-ootb/compare/v1.79.0...v1.80.0) (2026-10-13)
 
 
