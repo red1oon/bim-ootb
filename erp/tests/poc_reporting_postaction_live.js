@@ -154,7 +154,8 @@ const chk = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ 
     await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); await pg.waitForTimeout(1500);
     if (await pg.locator('#idmp-toolbar [data-tb="find"]').isVisible().catch(() => false)) await require('./legacy_open.js').showAllRows(pg).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4 (a window, not a process)
     return true; };
-  const runAging = async () => { const [[id]] = await mi('Aging'); await openMenu(id); const k = logs.length; await pg.locator('button:text-is("Run")').first().click(); await pg.waitForTimeout(3500);
+  const runAging = async () => { const [[id]] = await mi('Aging'); await openMenu(id); const k = logs.length; await pg.locator('button:text-is("Run")').first().click();
+    for (let w = 0; w < 80 && !logs.slice(k).some(x => /§AGING stmt/.test(x)); w++) await pg.waitForTimeout(250);   // the report's own line, not a fixed sleep (the run first commits its Last Run instance, §UDP-2)
     const l = logs.slice(k).filter(x => /§AGING stmt/.test(x)).pop() || ''; return { line: l, open: Number((/ open=([\d.-]+)/.exec(l) || [])[1]) }; };
   // R1 Aging now vs the same report with the credit invoice excluded is not possible in one session → compare against the bundle-only baseline the shipped DB gives (389.97 = items of the seed)
   const ag = await runAging();

@@ -498,6 +498,7 @@
      and BD must exist at parse time — glassbowl.html load-order parity). -->
 <script src="ad_process.js?v=15"></script>
 <script src="ad_find.js?v=2"></script>
+<script src="ad_recent.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -1341,6 +1342,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-login').style.display = 'none';
     applySession();
   }
+  // §UDP-8 — AD_Session (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-8; Witness: W-UDP8-LIVE). Legacy writes one row per login
+  //   (AdempiereWebUI.java:317 -> MSession(ctx, Remote_Addr, Remote_Host, WebSession) :194-210: ServerName, Remote_Addr/Host, WebSession,
+  //   Description = version, AD_Role_ID, LoginDate = #Date) and logout() sets Processed='Y' (:314-320); the Session Audit window and
+  //   AD_SessionInfo_V read it. In a browser twin there is no server-side client address: Remote_Addr/Remote_Host stay NULL (named),
+  //   WebSession is this tab's own random session id, ServerName the host that served the page. ONE signed CRUD op each.
+  var _sessionRow = null;
+  function _sessionOpen() {
+    var c = window.__crud, App = window.APP || {}; if (!c || typeof c.applyOpGroup !== 'function') return;
+    var ws = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()), ts = _procNowTs();
+    var op = _procCrud('create', 'ad_session', { fields: { websession: ws, remote_addr: null, remote_host: null, servername: location.hostname || 'localhost',
+      description: 'SQLite twin ' + (document.documentElement.getAttribute('data-version') || ''), ad_role_id: App.roleId, logindate: ts.slice(0, 10) + ' 00:00:00', processed: 'N', created: ts, updated: ts } });
+    c.applyOpGroup([op], function (cr) {
+      _sessionRow = cr && cr.committed && cr.ids && cr.ids.length ? -Number(cr.ids[0]) : null;
+      console.log('§UDP8-SESSION open user=' + App.actor + ' role=' + App.roleId + ' client=' + App.clientId + ' websession=' + ws + ' committed=' + !!(cr && cr.committed) + ' row=' + _sessionRow);
+    });
+  }
+  function _sessionClose() {
+    var c = window.__crud, id = _sessionRow; if (!c || id == null || typeof c.applyOpGroup !== 'function') return;
+    _sessionRow = null;
+    c.applyOpGroup([_procCrud('update', 'ad_session', { id: id, changes: { processed: { old: 'N', new: 'Y' }, updated: { old: null, new: _procNowTs() } } })], function (cr) {
+      console.log('§UDP8-SESSION close row=' + id + ' processed=Y committed=' + !!(cr && cr.committed));
+    });
+  }
   function applySession() {
     // expose the live login client (the honest tenant) for client-scoped lenses (RuleFold §11) — NON-INVENT
     window.__idmpClient = _session.client;   // { id, name }
@@ -1351,6 +1375,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
     window.APP.roleId  = _session.role.id;
     try { var _adv = db.exec('SELECT IsAccessAdvanced FROM AD_Role WHERE AD_Role_ID=?', [_session.role.id]); window.APP.showAdvanced = _adv.length && _adv[0].values.length && _adv[0].values[0][0] === 'Y' ? 'Y' : 'N'; } catch (eA) { window.APP.showAdvanced = 'N'; }   // #ShowAdvanced (Login.java:531)
+    _sessionOpen();   // §UDP-8 AD_Session: the login is recorded (AdempiereWebUI :317 -> MSession :194-210)
     // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
     // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
     // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
@@ -5064,6 +5089,47 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (/^AD_(Window|Menu)$/i.test(t)) { try { buildMenu(); } catch (er) {} }   // name/menu edits relabel the tree
   });
 
+  // §UDP-6 — AD_RecentItem (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-6; Witnesses: W-UDP6-ENGINE, W-UDP6-LIVE). After a save,
+  //   AbstractADWindowContent records the window's header record (a detail-tab save records the MAIN tab's record): addModifiedField
+  //   (:2155-2170 / :2985-3000) and, for a save of an existing record, touchUpdatedRecord (:3005-3010, which trims to RecentItems_MaxSaved).
+  //   The maths is window.AdRecent (ad_recent.js, judged against the real MRecentItem); the writes are ONE signed CRUD group.
+  window.addEventListener('overlay:committed', function (e) {
+    var d = e.detail || {}; if (d.op_type !== 'CRUD_CREATE' && d.op_type !== 'CRUD_UPDATE') return;
+    var t = String(d.table || ''); if (!t || /^ad_recentitem$/i.test(t) || !window.AdRecent) return;
+    var ct = _curTab(); if (!ct || !ct.tableName || !_adMatch(ct.tableName, t)) return;
+    setTimeout(function () { try { _recentRecord(d.op_type === 'CRUD_UPDATE'); } catch (er) { console.log('§UDP6-RECENT error ' + er); } }, 0);   // after the refold set the current record
+  });
+  function _recentRecord(existing) {
+    var w = _curWin(), t0 = w && w.tabs && w.tabs[0], ct = _curTab(); if (!t0 || !ct) return;
+    var rec = (ct.tabLevel || 0) === 0 ? _records[_recIdx] : _recByLevel[0]; if (!rec) return;
+    var id = recVal(rec, _keyCol(t0)), uu = recVal(rec, t0.tableName + '_UU'), App = window.APP || {};
+    if ((uu == null || uu === '') && !(id != null && Number(id) !== 0)) return;   // legacy: !isEmpty(Record_UU) || Record_ID > 0 (a twin-created row's pk is negative)
+    var mx = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='RecentItems_MaxSaved' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var max = mx && mx.v != null && String(mx.v).trim() !== '' ? Number(mx.v) : 50;
+    var a = { table: t0.tableId, record: id, uu: uu || null, user: App.actor, role: App.roleId, window: _activeWin, tab: t0.id, client: App.clientId };
+    var base = _sqlRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), c = window.__crud;
+    var go = function (rows) {
+      var now = _procNowTs(), intents = AdRecent.addModified(rows, a, max), work = rows.map(function (r) { var o = {}; for (var k in r) o[k] = r[k]; return o; }), seq = -1;
+      intents.forEach(function (it) { if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.ad_recentitem_id = seq--; f.ad_client_id = App.clientId; f.isactive = 'Y'; f.updated = now; f.__new = it; work.push(f); }
+        else work.forEach(function (r) { if (String(r.ad_recentitem_id) === String(it.id)) { if (it.changes) for (var k in it.changes) r[k] = it.changes[k]; r.updated = now; } }); });
+      if (existing && max > 0) AdRecent.touchUpdated(work, a, max, now).forEach(function (it) { if (it.op === 'delete') intents.push(it); else if (!intents.length) intents.push(it); });
+      var ops = [];
+      intents.forEach(function (it) {
+        var nw = it.op === 'delete' ? work.filter(function (r) { return String(r.ad_recentitem_id) === String(it.id); })[0] : null;
+        if (nw && nw.__new) { ops = ops.filter(function (o) { return o.__it !== nw.__new; }); return; }   // created and trimmed in the same save: nothing to write
+        if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.updated = now; f.created = now; var op = _procCrud('create', 'ad_recentitem', { fields: f }); op.__it = it; ops.push(op); }
+        else if (it.op === 'update') { var ch = {}; for (var k2 in it.changes) ch[k2] = { old: null, new: it.changes[k2] }; ch.updated = { old: null, new: now }; ops.push(_procCrud('update', 'ad_recentitem', { id: it.id, changes: ch })); }
+        else if (it.op === 'touch') ops.push(_procCrud('update', 'ad_recentitem', { id: it.id, changes: { updated: { old: null, new: now } } }));
+        else if (it.op === 'delete') ops.push(_procCrud('delete', 'ad_recentitem', { id: it.id }));
+      });
+      ops.forEach(function (o) { delete o.__it; });
+      if (!ops.length || !c || typeof c.applyOpGroup !== 'function') { console.log('§UDP6-RECENT table=' + t0.tableName + ' record=' + id + ' ops=' + ops.length + (ops.length ? ' NOT persisted (no signed op-log)' : '')); return; }
+      c.applyOpGroup(ops, function (cr) { console.log('§UDP6-RECENT table=' + t0.tableName + ' record=' + id + ' window=' + _activeWin + ' ' + intents.map(function (i) { return i.op; }).join(',') + ' max=' + max + ' committed=' + !!(cr && cr.committed)); });
+    };
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { go(base); return; }
+    c.withSidecar(function (sdb) { go(sdb ? c.core.listTip(sdb, 'ad_recentitem', 'ad_recentitem_id', base, null).rows.filter(function (r) { return String(r.ad_user_id) === String(App.actor); }) : base); });
+  }
+
   // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
   // grid/form re-read through the now-branch-aware read-sites (blue rows appear in blue, vanish on discard).
   window.addEventListener('bluefuture:changed', function () {
@@ -7047,7 +7113,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     (function () { var lsb = $('idmp-switch-btn'); if (!lsb) return;
       if (window.ICONS && window.ICONS.logOut) lsb.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.logOut.svg + '</svg>';
       lsb.title = 'Log out';
-      lsb.addEventListener('click', function () { showLogin('user'); });
+      lsb.addEventListener('click', function () { _sessionClose(); showLogin('user'); });   // §UDP-8 MSession.logout (:314-320)
     })();
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });

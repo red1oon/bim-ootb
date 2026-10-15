@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v857';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v858';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -85,6 +85,7 @@ const PRECACHE_ASSETS = [
   'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
   'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage
   'ad_parser.js',
+  'ad_recent.js',     // §UDP-6 AD_RecentItem engine (window.AdRecent), W-UDP6-ENGINE / W-UDP6-LIVE
   'ad_find.js',       // §UDP-3 Find window engine (window.AdFind), W-UDP3-ENGINE / W-UDP3-LIVE
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   // 'ad_table_map.js' — REMOVED from the precache 2026-09-04 (E-14, prompts/AGENT_QUEUE.md §HYGIENE-E14).
