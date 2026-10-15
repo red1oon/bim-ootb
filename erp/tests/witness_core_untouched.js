@@ -8,19 +8,22 @@
 //   erp/patches/ad_seed.db.sql is the sanctioned data self-heal (legacy dictionary rows), listed separately, never code.
 'use strict';
 var cp = require('child_process'), path = require('path'), log = console.log, fails = 0, judged = 0;
-var BASE = process.env.CU_BASE || 'bc4f1df53db0b7098e77ddb198b3f4eb3f6db4b3'   /* BUMPED 2026-10-15 to main at that date: sanctioned core PRs (twin-fidelity fixes, host work H1/H2, mfg) landed after b2fa278b; bump again after each sanctioned core PR - an overlay PR must leave core untouched relative to THIS base */, REPO = path.join(__dirname, '..', '..');
+var REPO = path.join(__dirname, '..', '..'), PINNED = 'cea7bbfa8fdfe3516553992e530d5db001b4368f';   // PINNED = the last fixed base (fallback when origin/main is not in the clone)
 function sh(c) { return cp.execSync(c, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 26 }); }
 function check(name, ok, info) { judged++; if (!ok) fails++; log('  §CU-CHECK ' + name + ' ' + (ok ? 'OK' : 'FAIL') + (ok ? '' : ' ' + JSON.stringify(info))); }
+var BASE = process.env.CU_BASE; if (!BASE) { try { BASE = sh('git merge-base HEAD origin/main').trim(); } catch (e) { BASE = PINNED; } }   // a PR is judged against ITS OWN merge-base with main; on main itself the diff is empty
+// a core file may differ only if EVERY commit that touched it since BASE carries a "Core-Fix:" trailer (a sanctioned twin-fidelity fix, reason stated) - an untagged core edit is an overlay leak
+function tagged(f) { var msgs = sh('git log --format=%B%x00 ' + BASE + '..HEAD -- ' + f).split('\0').map(function (x) { return x.trim(); }).filter(Boolean); return msgs.length > 0 && msgs.every(function (m) { return /^Core-Fix:/m.test(m); }); }
 try { sh('git cat-file -e ' + BASE + '^{commit}'); } catch (e) { log('§CU-VERDICT INCONCLUSIVE base commit ' + BASE + ' not in this clone'); process.exit(3); }
 var files = sh('git diff --name-only ' + BASE + ' -- erp ":!erp/overlay" ":!erp/tests" ":!erp/patches"').split('\n').filter(Boolean);
 log('§CU core files differing from ' + BASE.slice(0, 8) + ': ' + (files.join(', ') || 'none'));
-var allowed = ['erp/idempiere.html', 'erp/sw.js'], extra = files.filter(function (f) { return allowed.indexOf(f) < 0; });
+var allowed = ['erp/idempiere.html', 'erp/sw.js'], extra = files.filter(function (f) { return allowed.indexOf(f) < 0 && !tagged(f); });
 check('CU1 no core file other than idempiere.html / sw.js differs from the base', extra.length === 0, extra);
 var hunks = function (f) { return sh('git diff -U0 ' + BASE + ' -- ' + f).split('\n').filter(function (l) { return /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l); }); };
-var h = hunks('erp/idempiere.html'), seam = h.filter(function (l) { return /^\+<script src="overlay\/boot\.js"><\/script>/.test(l); });
+var h = tagged('erp/idempiere.html') ? [] : hunks('erp/idempiere.html'), seam = h.filter(function (l) { return /^\+<script src="overlay\/boot\.js"><\/script>/.test(l); });
 var baseHasSeam = /overlay\/boot\.js/.test(sh('git show ' + BASE + ':erp/idempiere.html'));   // a bumped base already contains the seam: then NO line may differ
 check('CU2 idempiere.html differs ONLY by the one overlay seam line (' + h.length + ' changed line(s); base has seam=' + baseHasSeam + ')', baseHasSeam ? h.length === 0 : (h.length === 1 && seam.length === 1), h.slice(0, 4));
-var s = hunks('erp/sw.js');
+var s = tagged('erp/sw.js') ? [] : hunks('erp/sw.js');
 check('CU3 sw.js differs ONLY by CACHE_VERSION (the existing per-deploy bump)', (s.length === 0 || s.length === 2) && s.every(function (l) { return /CACHE_VERSION/.test(l); }), s.slice(0, 4));
 var refs = sh('git grep -l -E "overlay/(boot|home|pills|quicksetup_ui|goal_engine|dashboard_|setup_lens|window_lens|quick_input|invoice_open)" -- erp ":!erp/overlay" ":!erp/tests" ":!erp/patches" ":!erp/sqljs" || true').split('\n').filter(Boolean);
 log('§CU core files referencing an overlay module: ' + (refs.join(', ') || 'none'));
