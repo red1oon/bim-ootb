@@ -336,7 +336,7 @@
   // DocManager.postDocument (acct/DocManager.java:390-470: every schema, all-or-none under one savepoint) ∘ Doc.post :560-700
   // (repost → deleteAcct :768-802 backs the schema's facts up into T_Fact_Acct_History first; deferred → Posted='d').
   function post(trx, table, doc, opts) {
-    var fn = DOC[table], key = table + '_id';
+    var plug = _DP() && _DP().docClassFor(table), fn = DOC[table] || (plug && typeof plug.createFacts === 'function' ? plug.createFacts : null), key = table + '_id';   // a bundle's posting class (legacy IDocFactory): DocPoster registry, ONE registry for preview and Trx posting
     if (!fn) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="no Doc class ported"'); return false; }
     doc = trx.get(table, doc[key]);
     var repost = !opts || opts.repost !== false;                                              // DocumentEngine.postImmediate → repost=true (:249)
@@ -376,6 +376,7 @@
     trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=Y facts=' + out.length);
     return true;
   }
+  function _DP() { try { return (typeof module !== 'undefined' && module.exports) ? require('./doc_poster') : (typeof window !== 'undefined' ? window : globalThis).DocPoster; } catch (e) { return null; } }
   ML.setPoster(post);
   return { post: post, DOC: DOC, rate: rate, schemas: schemas, Doc: Doc, DocLine: DocLine, createLine: createLine, updateReverseLine: updateReverseLine };
 });

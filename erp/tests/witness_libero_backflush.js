@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — W-LIBERO-BACKFLUSH (spec prompts/mfg/LIBERO_BACKFLUSH_SLICE4_SPEC.md). READ THE LOG after every run: verdict = §LBACK-VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: legacy completes cost collectors in ONE call (MPPCostCollector.createCollector :150-155) and drives them from the Order Receipt & Issue form (WOrderReceiptIssue.cmd_process :895-950). Does the twin do the same:
 //   the form's default quantities, one collector per storage row, all-or-none in one transaction, and the same model-event order as the plain window path? Every expected number is hand-computed from the Java (comments show the arithmetic).
-//   Fixture = W-LIBERO-COST's (GardenWorld order 100 x Fertilizer; KG on hand 10000, BAG 500; standard prices KG 2.5 BAG 0.4; BOM lines are ABSOLUTE: KG QtyBom 70 scrap 1, BAG QtyBom 1).  Breaks (MUST exit 1): LBACK_BREAK=perrow|noatomic|scrapdiv
+//   Fixture = W-LIBERO-COST's (GardenWorld order 100 x Fertilizer; KG on hand 10000, BAG 500; standard prices KG 2.5 BAG 0.4; BOM lines are ABSOLUTE: KG QtyBom 70 scrap 1, BAG QtyBom 1).  Breaks (MUST exit 1): LBACK_BREAK=perrow|noatomic|scrapdiv|perschema
 'use strict';
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -17,7 +17,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   var SQL = await initSqlJs(), db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (pf) { fs.readFileSync(path.join(ERP, 'patches', pf), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { db.run(st); } catch (e) {} }); });
   var MV = require(path.join(ERP, 'ad_modelval.js')), ML = require(path.join(ERP, 'model_layer.js')), AC = require(path.join(ERP, 'ad_callout.js')), AP = require(path.join(ERP, 'ad_process.js')), DP = require(path.join(ERP, 'doc_poster.js')), PR = require(path.join(ERP, 'plugin_registry.js'));
-  globalThis.ModelLayer = ML; globalThis.ModelTrade = require(path.join(ERP, 'model_trade.js')); ['model_ctor', 'model_order', 'model_invoice'].forEach(function (m) { try { require(path.join(ERP, m + '.js')); } catch (e) {} });
+  globalThis.ModelLayer = ML; globalThis.ModelTrade = require(path.join(ERP, 'model_trade.js')); ['model_ctor', 'model_order', 'model_invoice', 'model_post'].forEach(function (m) { try { require(path.join(ERP, m + '.js')); } catch (e) {} });
   globalThis.ModelCost = require(path.join(ERP, 'model_cost.js')); globalThis.ModelMaster = require(path.join(ERP, 'model_master.js'));
   function q(sql, params) { var st = db.prepare(sql), out = []; try { if (params && params.length) st.bind(params.map(function (v) { return v === undefined ? null : v; })); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }
   var uu = 0, clock = Date.parse('2026-10-15T09:00:00Z'); var TODAY = '2026-10-15';
@@ -78,7 +78,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
 
   // break flips (the module instance is shared with the running bundle)
   var COSTMOD = await import(LCpath);
-  if (BREAK === 'perrow') COSTMOD.SOURCE.perRow = false; if (BREAK === 'scrapdiv') COSTMOD.SOURCE.scrapDivide = true;
+  if (BREAK === 'perschema') COSTMOD.SOURCE.detailsPerSchema = true; if (BREAK === 'perrow') COSTMOD.SOURCE.perRow = false; if (BREAK === 'scrapdiv') COSTMOD.SOURCE.scrapDivide = true;
   var DATE = TODAY + ' 00:00:00';
   function fixtureStock(kgRows, bag) {
     db.run("DELETE FROM m_storageonhand WHERE m_product_id IN (" + [FG, KG, BAG].join(',') + ")");
@@ -115,6 +115,29 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   check('B2c cost details: KG -17500, BAG -40, receipt +17540 (the issues\' cost carried to the finished goods)', md.length === 3 && close(md[0].amt, -17500, 0.001) && close(md[1].amt, -40, 0.001) && close(md[2].amt, 17540, 0.001), md);
   var oAfter = one('SELECT qtydelivered, qtyreserved, datestart, datefinish, datedelivered FROM pp_order WHERE pp_order_id=?', [OA.pp_order_id]);
   check('B2d order books the delivery: QtyDelivered 100, nothing reserved, DateStart and DateDelivered set', close(S(oAfter.qtydelivered), 100) && close(S(oAfter.qtyreserved), 0, 0.0005) && oAfter.datestart && oAfter.datedelivered, oAfter);
+
+
+  // ── B10 M6: Doc_PPCostCollector posting of the Backflush order OA (B2): per collector DR/CR, WIP nets to zero ───────────────────────────────────
+  var wipEl = one('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=50001').e, astEl = one('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=231').e;
+  var ids10 = c2.map(function (c) { return c.id; }), fa = q('SELECT record_id AS r, c_acctschema_id AS s, account_id AS a, amtacctdr AS dr, amtacctcr AS cr, qty, m_product_id AS p FROM fact_acct WHERE ad_table_id=53035 AND record_id IN (' + ids10.join(',') + ') ORDER BY fact_acct_id');
+  var posted10 = q('SELECT posted FROM pp_cost_collector WHERE pp_cost_collector_id IN (' + ids10.join(',') + ')').map(function (r) { return r.posted; });
+  log('§LBACK-B10 posted=' + JSON.stringify(posted10) + ' facts=' + JSON.stringify(fa.map(function (f) { return [f.r, f.s, f.a === wipEl ? 'WIP' : f.a === astEl ? 'ASSET' : f.a, f.dr, f.cr]; })));
+  var sumBy = function (acct, col) { return fa.filter(function (f) { return f.a === acct; }).reduce(function (a, f) { return a + Number(f[col]); }, 0); };
+  // hand: Issue KG: DR WIP 17500 / CR Asset 17500 ; Issue BAG: DR WIP 40 / CR Asset 40 ; Receipt: DR Asset 17540 / CR WIP 17540 ; schema 200000 has no WIP account -> no lines there ; 6 lines, DR = CR = 35080
+  // hand (faithful to the upstream class, 2 schemas): Issue KG DR WIP 17500 / CR Asset 17500 ; Issue BAG DR WIP 40 / CR Asset 40 ; the Receipt's cost details exist for BOTH schemas (17540 each) and getCostDetails is not
+  // filtered by schema, so its fact repeats: 2 x (DR Asset 17540 / CR WIP 17540) -> 8 lines, WIP DR 17540 vs CR 35080 (Q-M6-1). Schema 200000 itself has no WIP account -> no lines.
+  var lines = function (rid) { return fa.filter(function (f) { return f.r === rid; }).map(function (f) { return (f.a === wipEl ? 'WIP:' : 'AST:') + f.dr + '/' + f.cr; }).join(); };
+  check('B10a all three collectors are Posted=Y; every line is in schema 101 (schema 200000 has no WIP account, createLines writes nothing)', posted10.length === 3 && posted10.every(function (v) { return v === 'Y'; }) && fa.length === 8 && fa.every(function (f) { return Number(f.s) === 101; }), { posted: posted10, n: fa.length });
+  check('B10b Issue KG = DR WIP 17500 / CR Asset 17500 and Issue BAG = DR WIP 40 / CR Asset 40', lines(ids10[0]) === 'WIP:17500/0,AST:0/17500' && lines(ids10[1]) === 'WIP:40/0,AST:0/40', fa);
+  check('B10c Receipt (upstream behaviour, no schema filter) = TWO pairs DR Asset 17540 / CR WIP 17540, qty 100 on the lines', lines(ids10[2]) === 'AST:17540/0,WIP:0/17540,AST:17540/0,WIP:0/17540' && close(fa.filter(function (f) { return f.r === ids10[2]; })[0].qty, 100), fa);
+  check('B10d Q-M6-1 measured, not hidden: Work in Process is debited 17540 but credited 35080 (the receipt posted both schemas\' details)', close(sumBy(wipEl, 'dr'), 17540) && close(sumBy(wipEl, 'cr'), 35080), { wipDr: sumBy(wipEl, 'dr'), wipCr: sumBy(wipEl, 'cr') });
+  // the switch: filter by the schema being posted -> the books close
+  COSTMOD.SOURCE.detailsPerSchema = true;
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OJ = newCompletedOrder('LB-J'), rJ = runProcess(OJ.pp_order_id, { rule: 'BackFlush', movementDate: DATE }), idsJ = ccs(OJ.pp_order_id).map(function (c) { return c.id; });
+  var faJ = q('SELECT record_id AS r, account_id AS a, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=53035 AND record_id IN (' + idsJ.join(',') + ') ORDER BY fact_acct_id'), sumJ = function (acct, col) { return faJ.filter(function (f) { return f.a === acct; }).reduce(function (a, f) { return a + Number(f[col]); }, 0); };
+  COSTMOD.SOURCE.detailsPerSchema = BREAK === 'perschema';
+  check('B10e with SOURCE.detailsPerSchema the books close: 6 lines, WIP DR 17540 = CR 17540, Asset DR 17540 = CR 17540', rJ.ok && faJ.length === 6 && close(sumJ(wipEl, 'dr'), 17540) && close(sumJ(wipEl, 'cr'), 17540) && close(sumJ(astEl, 'dr'), 17540) && close(sumJ(astEl, 'cr'), 17540), { n: faJ.length });
 
   // ── B3 integrity: the same model events, in the same order, as the plain collector path ──────────────────────────
   function plainCollector(order, type, extra) {   // what a user (or createCollector) does: SAVE the collector, then processIt(CO) directly (no AD workflow: Java cc.processIt)

@@ -9,9 +9,9 @@ export const DEFERRED = [
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
-  'Doc_PPCostCollector posting (M6) and MPPOrder.voidIt / closeIt / createVariances'
+  'MPPOrder.voidIt / closeIt / createVariances; Doc_PPCostCollector: Activity Control posting and the Receipt scrap branch (named refusals)'
 ];
-export const SOURCE = { calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
@@ -373,6 +373,57 @@ export function create(ctx) {
 
 
   // ── the Order Receipt & Issue FORM as a generic descriptor (ad_form_generic.js; AD_Form 53007 org.eevolution.form.VOrderReceiptIssue; WOrderReceiptIssue :598-604 defaults) ──
+
+  // ══ SLICE 5 - M6: Doc_PPCostCollector posting (acct/Doc_PPCostCollector.java @ b2adfea0; DocLine_CostCollector.java account lookup) ═══════════════════════
+  // Registered as the posting class of PP_Cost_Collector (ctx.docClass.register); model_post.js Doc.post calls createFacts once per accounting schema.
+  const ACCT_COL = { WIP: 'p_wip_acct', MethodChangeVariance: 'p_methodchangevariance_acct', UsageVariance: 'p_usagevariance_acct', RateVariance: 'p_ratevariance_acct', MixVariance: 'p_mixvariance_acct',
+    FloorStock: 'p_floorstock_acct', Scrap: 'p_scrap_acct' };   // DocLine_CostCollector.s_acctName :39-53 (the types it maps)
+  const SOURCE_ACCT = (trx, col, productId, schemaId) => {   // C_ValidCombination -> account element, the way every Doc class resolves a MAccount
+    const vcId = col; if (vcId == null) return null; const v = trx.q('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=?', [vcId])[0]; return v ? v.e : null; };
+  // DocLine_CostCollector.getAccount(acctName, as) :107-125 - COALESCE(product, product category, schema default); INNER JOINs: a product without an M_Product_Acct row for the schema has NO account
+  function lineAccount(trx, productId, schemaId, col) {
+    const r = trx.q('SELECT COALESCE(pa.' + col + ', pca.' + col + ', asd.' + col + ') AS v FROM m_product p JOIN m_product_acct pa ON pa.m_product_id=p.m_product_id JOIN m_product_category_acct pca ON pca.m_product_category_id=p.m_product_category_id AND pca.c_acctschema_id=pa.c_acctschema_id JOIN c_acctschema_default asd ON asd.c_acctschema_id=pa.c_acctschema_id WHERE pa.m_product_id=? AND pa.c_acctschema_id=?', [productId, schemaId])[0];
+    return r ? SOURCE_ACCT(trx, r.v) : null;
+  }
+  // DocLine.getAccount(ProductCost.ACCTTYPE_P_Asset, as): the product's own P_Asset_Acct, else the schema default (ProductCost.getAccount)
+  function assetAccount(trx, productId, schemaId) {
+    const pa = trx.q('SELECT p_asset_acct AS v FROM m_product_acct WHERE m_product_id=? AND c_acctschema_id=?', [productId, schemaId])[0];
+    let v = pa ? pa.v : null; if (v == null) { const d = trx.q('SELECT p_asset_acct AS v FROM c_acctschema_default WHERE c_acctschema_id=?', [schemaId])[0]; v = d ? d.v : null; }
+    return SOURCE_ACCT(trx, v);
+  }
+  function createFacts(trx, cc, as, F) {
+    const cur = as.c_currency_id, prec = Number((trx.get('c_currency', cur) || {}).stdprecision == null ? 2 : trx.get('c_currency', cur).stdprecision);
+    const rnd = (v) => (v.scale() > prec ? v.setScale(prec, RM_HALF_UP) : v);
+    // getCostDetails() :384-392 is NOT filtered by accounting schema (Libero/ADempiere/logilite forks all read): with two schemas every cost detail of BOTH feeds each schema's fact. Kept (twin rule);
+    // SOURCE.detailsPerSchema=true filters by the schema being posted (the correct books). Measured on GardenWorld (2 schemas): the Receipt posts twice -> Work in Process credited 35080 vs debited 17540 (witness B10, named Q-M6-1).
+    const details = trx.find('m_costdetail', { pp_cost_collector_id: cc.pp_cost_collector_id }).filter((cd) => !SOURCE.detailsPerSchema || Number(cd.c_acctschema_id) === Number(as.c_acctschema_id)).sort((a, b) => Number(a.m_costdetail_id) - Number(b.m_costdetail_id));
+    const el = (id) => trx.get('m_costelement', id) || {};
+    const type = String(cc.costcollectortype);
+    // createLines :139-166 - nothing when cost/accounts are missing; a zero cost writes no line
+    function createLines(element, debit, credit, cost, qty) {
+      if (cost == null || debit == null || credit == null) return;
+      if (cost.signum() === 0) return;
+      const extra = { qty: num(dec(qty)), m_product_id: cc.m_product_id, line_id: cc.pp_cost_collector_id, ad_org_id: cc.ad_org_id, description: (cc.description ? cc.description + ' | ' : '') + (element.name || ''),
+        c_project_id: cc.c_project_id, c_activity_id: cc.c_activity_id, c_campaign_id: cc.c_campaign_id, m_locator_id: cc.m_locator_id };
+      F.line(debit, cur, cost, null, extra); F.line(credit, cur, null, cost, extra);
+    }
+    const wip = lineAccount(trx, cc.m_product_id, as.c_acctschema_id, ACCT_COL.WIP), asset = assetAccount(trx, cc.m_product_id, as.c_acctschema_id);
+    if (type === T_RECEIPT) {                                        // createMaterialReceipt :192-222 - DR product asset / CR WIP per cost element
+      if (dec(cc.scrappedqty).signum() !== 0) throw new Error('DEFERRED: Receipt scrap posting (Doc_PPCostCollector.createMaterialReceipt scrap branch needs MCostDetail.getPrice) - nothing was posted');
+      for (const cd of details) {
+        if (dec(cc.movementqty).signum() !== 0) createLines(el(cd.m_costelement_id), asset, wip, rnd(dec(cd.amt)), cc.movementqty);
+      }
+    } else if (type === T_ISSUE) {                                   // createComponentIssue :243-265 - DR WIP / CR product asset (or floor stock) per cost element, cost = -detail amount
+      const credit = cc.isfloorstock === 'Y' ? lineAccount(trx, cc.m_product_id, as.c_acctschema_id, ACCT_COL.FloorStock) : asset;
+      for (const cd of details) createLines(el(cd.m_costelement_id), wip, credit, rnd(dec(cd.amt).negate()), cc.movementqty);
+    } else if (type === T_METHOD || type === T_USAGE || type === T_RATE || type === T_MIX) {   // createVariance :299-316 - DR variance account / CR WIP, cost = -amount, qty = -detail qty
+      const col = ACCT_COL[{ [T_METHOD]: 'MethodChangeVariance', [T_USAGE]: 'UsageVariance', [T_RATE]: 'RateVariance', [T_MIX]: 'MixVariance' }[type]], debit = lineAccount(trx, cc.m_product_id, as.c_acctschema_id, col);
+      for (const cd of details) createLines(el(cd.m_costelement_id), debit, wip, rnd(dec(cd.amt).negate()), dec(cd.qty).negate());
+    } else if (isActivity(cc)) throw new Error('DEFERRED: Activity Control posting (Doc_PPCostCollector.createActivityControl) is not ported');
+    return true;
+  }
+  const docClass = { createFacts, basis: 'pp_cost_collector' };
+
   const nv = (v) => (v === '' || v == null ? null : v), numOf = (v) => num(dec(v == null || v === '' ? 0 : v));
   const openOrders = (trx) => trx.find('pp_order', { ad_client_id: trx.env.client }).filter((o) => (o.docstatus === 'CO' || o.docstatus === 'IP') && dec(o.qtyordered).compareTo(dec(o.qtydelivered)) > 0).sort((a, b) => String(a.documentno).localeCompare(String(b.documentno)));
   const ordOf = (trx, p) => (p && p.PP_Order_ID != null && p.PP_Order_ID !== '' && Number(p.PP_Order_ID) !== 0 ? trx.get('pp_order', Number(p.PP_Order_ID)) : null);   // a new order carries a NEGATIVE key until its op group is folded
@@ -407,13 +458,14 @@ export function create(ctx) {
     }
   };
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor };
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass };
 }
 export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
   // FSM entry of AD_Table PP_Cost_Collector 53035 (MPPCostCollector: voidIt returns false :506, reActivateIt false :628, reverseAccrualIt false :622; reverseCorrectIt is DEFERRED)
+  if (ctx.docClass) ctx.docClass.register('pp_cost_collector', m.docClass);   // M6: Doc_PPCostCollector, found by model_post Doc.post through DocPoster.docClassFor
   if (ctx.form) ctx.form.register('org.eevolution.form.VOrderReceiptIssue', m.formDescriptor);   // AD_Form 53007: drawn by the generic form renderer, zero host code
   if (ctx.docFsm) ctx.docFsm.register(53035, { name: 'PP_Cost_Collector', reActivate: false, rc: false, ra: false, vo: {} });
 }
