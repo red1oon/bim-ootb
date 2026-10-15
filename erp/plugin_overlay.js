@@ -77,6 +77,7 @@
       docAction:  global.ModelLayer || null,   // the DocAction extension point (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 2)
       docFsm:     global.AdDocFsm || null,     // the document-action FSM family table (plugin documents get the DocAction bar): registerFamily / removeFamilyOwner
       form:       global.AdFormGeneric || null, // the generic AD_Form engine (ad_form_generic.js): a bundle registers a form descriptor, the host draws it
+      lens:       global.AdLens || null,       // the opt-in operations lens (ad_lens.js, bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15): a bundle registers record actions, the host draws ONE lens bar
       docClass:   global.DocPoster || null,    // the posting-class extension point (legacy IDocFactory): registerDocClass / removeDocClassOwner (Host work H1)
       import: function (url) { return import(/* @vite-ignore */ url); }
       // store: default in-memory; IDB persistence is a side-channel (_persist below) so the registry stays sync.

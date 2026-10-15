@@ -493,6 +493,7 @@
 <script src="ad_docfsm.js?v=1"></script>
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=1"></script>
+<script src="ad_lens.js?v=1"></script>
 <script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
@@ -1707,6 +1708,56 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       sep();
       btn('🕒 Log', 'Change log for this record (AD-filtered)', true, function () { _showChangelog(tn); });
     })();
+    _renderLensBar(tb);
+  }
+
+  // §OPS-LENS (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15) - the opt-in operations lens. Drawn ONLY while a lens bundle is registered
+  //   (ad_lens.js), so with none the toolbar is the legacy twin's. The api hands a lens the host's OWN seams, never a write path of its own:
+  //   saveThen = _saveAndNavigate (Save, then the saved record current), docAction = the DocAction bar's dispatch, openForm = openAdForm.
+  function _lensForms() {
+    var AF = window.AdFormGeneric; if (!AF) return [];
+    return Object.keys(AF.describe()).map(function (cls) {
+      var d = AF.get(cls), f = _sqlRows("SELECT ad_form_id, name FROM ad_form WHERE classname='" + String(cls).replace(/'/g, "''") + "' AND isactive='Y'")[0];
+      var m = f ? _sqlRows("SELECT ad_menu_id FROM ad_menu WHERE action='X' AND ad_form_id=" + Number(f.ad_form_id) + " AND isactive='Y'")[0] : null;
+      return (d && f && m) ? { formId: Number(f.ad_form_id), menuId: Number(m.ad_menu_id), name: (d.title || f.name), classname: cls, params: (d.params || []).map(function (p) { return p.name; }) } : null;
+    }).filter(Boolean);
+  }
+  function _lensApi() {
+    var tab = _curTab(), rec = _records[_recIdx] || null, kc = tab ? _keyCol(tab) : null;
+    var editing = !!document.getElementById('idmp-inline-mount');
+    var fsm = (tab && rec && !_newMode) ? _fsmCtx(tab, rec) : null;
+    var keyVal = (rec && kc && !_newMode) ? recVal(rec, kc) : null;
+    return {
+      tab: tab, rec: rec, keyCol: kc, keyVal: keyVal, editing: editing, isNew: !!_newMode,
+      hasDocFsm: !!(tab && (fsm || (tab.fields || []).some(function (f) { return /^DocStatus$/i.test(String(f.columnName)); }))),
+      legal: fsm ? fsm.legal.slice() : [],
+      saveThen: function (fn) { _saveAndNavigate(fn, 'lens'); },
+      docAction: function (act) {
+        var t = _curTab(), r = _records[_recIdx], c = (t && r) ? _fsmCtx(t, r) : null;
+        if (!c) { console.log('§OPS-LENS docAction=' + act + ' REFUSED no document on screen'); return { ok: false, reason: 'no document' }; }
+        var res = c.dispatch(act);
+        console.log('§OPS-LENS docAction=' + act + ' record=' + c.recId + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
+        if (res.ok) { refreshForm(); renderToolbar(); } else status('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
+        return res;
+      },
+      forms: _lensForms,
+      openForm: function (formId, preset) { openAdForm(Number(formId), null, preset || null); }
+    };
+  }
+  function _renderLensBar(tb) {
+    var L = window.AdLens; if (!L || !L.count()) return;
+    var api = _lensApi();
+    var acts = L.actions(api, function (lens, e) { console.log('§OPS-LENS actions lens=' + lens + ' ERROR ' + (e && e.message)); });
+    console.log('§OPS-LENS bar table=' + ((api.tab && api.tab.tableName) || '?') + ' record=' + api.keyVal + ' editing=' + api.editing + ' actions=[' + acts.map(function (a) { return a.lens + ':' + a.id; }).join(',') + ']');
+    if (!acts.length) return;
+    var bar = el('span', 'idmp-lensbar'); bar.id = 'idmp-lensbar';
+    bar.style.cssText = 'display:inline-flex;gap:4px;margin-left:8px;padding-left:8px;border-left:2px solid #2c6';
+    acts.forEach(function (a) {
+      var b = el('button', null, a.label); b.title = a.title; b.setAttribute('data-lens-action', a.lens + ':' + a.id);
+      b.addEventListener('click', function () { console.log('§OPS-LENS run lens=' + a.lens + ' action=' + a.id); L.run(a.lens, a.id, _lensApi()); });
+      bar.appendChild(b);
+    });
+    tb.appendChild(bar);
   }
 
   // ── Zoom Across (iDempiere btnZoomAcross / WZoomAcross / ZoomInfoFactory) — WHERE-USED drill ──────────────
@@ -2995,7 +3046,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 
   // §AD-FORM-GENERIC (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §12) - ONE renderer for every form a bundle describes (ad_form_generic.js): parameters, an editable grid, one
   // transaction. No per-form code here: a plugin registers { params, columns, rows, run } for an AD_Form classname and gets this screen. Replaces the "row level data input" embargo.
-  function renderGenericForm(row, desc) {
+  function renderGenericForm(row, desc, preset) {
     var AF = window.AdFormGeneric, cls = String(row.classname), crud = window.__crud;
     var withT = function (fn) { return crud && typeof crud.withModelTrx === 'function' ? crud.withModelTrx(fn) : null; };
     var pane = el('div', 'idmp-procpane idmp-procform'); pane.setAttribute('data-gform', cls);
@@ -3081,6 +3132,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     refBtn.addEventListener('click', function () { loadParams(0); loadRows(); });
     runBtn.addEventListener('click', function () {
       var params = collect(), rows = collectRows(), res = AF.execute(withT, cls, params, rows);
+      if (res && res.log) res.log.forEach(function (l) { console.log(l); });   // the model transaction's own lines (§EVENT_SEQ, §MODEL-*), as crud_overlay modelRun prints them
       console.log('§AD-FORM-GENERIC run class=' + cls + ' ok=' + !!(res && res.ok) + ' ops=' + ((res && res.ops) || []).length + ' msg=' + JSON.stringify(res && res.msg));
       if (!res || !res.ok) { msg.className = 'msg err'; msg.textContent = (res && res.msg) || 'Failed'; return; }
       if (res.ops && res.ops.length && crud && typeof crud.applyOpGroup === 'function') {
@@ -3090,9 +3142,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
       } else { msg.className = 'msg ok'; msg.textContent = res.msg; }
     });
-    loadParams(0); loadRows(); _showProcPane(pane);
+    loadParams(0);
+    // §OPS-LENS preset (ERP_FRIENDLY_OPS_LENS.md §15.4): a parameter handed in by the caller is applied as if the user picked it - paint, then the same reload a change does
+    if (preset) desc.params.forEach(function (p, i) { if (Object.prototype.hasOwnProperty.call(preset, p.name)) { paint(p, preset[p.name]); loadParams(i + 1); console.log('§AD-FORM-GENERIC preset class=' + cls + ' ' + p.name + '=' + preset[p.name] + ' painted=' + readParam(p)); } });
+    loadRows(); _showProcPane(pane);
   }
-  function openAdForm(formId, name) {
+  function openAdForm(formId, name, preset) {
     var row = _sqlRows('SELECT ad_form_id, name, classname FROM ad_form WHERE ad_form_id=' + Number(formId))[0] || null;
     var cls = row ? String(row.classname || '') : '';
     var gdesc = (!_FORM_HANDLERS[cls] && window.AdFormGeneric) ? window.AdFormGeneric.get(cls) : null;
@@ -3100,7 +3155,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§AD-FORM-LIVE open form=' + formId + ' name="' + ((row && row.name) || name || '') + '" classname=' + (cls || '(blank)') +
                 ' handled=' + (handled ? 'Y' : 'N') + ' registered=[' + Object.keys(_FORM_HANDLERS).map(function (c) { return c.split('.').pop(); }).join(',') + ']');
     if (!row) { status('AD_Form ' + formId + ' not found'); return; }
-    if (gdesc) { renderGenericForm(row, gdesc); return; }
+    if (gdesc) { renderGenericForm(row, gdesc, preset); return; }
     if (handled) { _FORM_HANDLERS[cls](row); return; }
     // the honest absent card — identical in kind to an unregistered process classname
     var pane = el('div', 'idmp-procpane idmp-procresult absent');

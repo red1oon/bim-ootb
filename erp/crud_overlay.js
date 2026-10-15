@@ -1618,6 +1618,7 @@
     return { client: A.clientId != null ? Number(A.clientId) : null, org: A.orgId != null ? Number(A.orgId) : 0, user: A.actor != null ? A.actor : null,
              date: day + ' 00:00:00', now: day + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), nowMillis: d.getTime(),
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
+             eventSeq: !!global.__eventSeq,   // §EVENT_SEQ trace (ERP_FRIENDLY_OPS_LENS.md §15.6): off unless a witness sets window.__eventSeq
              uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
   }
   // _needThen(table, run) - the OSGi lazy-activation seam (Host work H2): if a lazy plugin bundle declares `table` as a trigger and is still STARTING, activate it FIRST (async, before the synchronous model layer runs), then run.

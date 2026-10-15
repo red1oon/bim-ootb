@@ -224,11 +224,47 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('refusal.rows', 'pp_order count ' + cntB + ' -> ' + (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n); await hold(DRY ? 200 : 2500);
     await hclick('#idmp-toolbar [title^="Ignore"]').catch(() => {}); await pace(600);
 
+    // ═══ B9b-B9d the friendly-ops lens (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15): installed like any bundle; Save & Complete in one click; the order opens its own Receipt & Issue ═══
+    beat('b9b', 'Friendly ops lens: install');
+    await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pace(1200);
+    if (!(await page.locator('#pr-osgi [data-oc-url]:visible').count())) await hclick('#pr-osgi [data-oc-installtoggle]');
+    await page.waitForSelector('#pr-osgi [data-oc-url]'); await pace(500);
+    const nL = PAGELOG.length; await htype('#pr-osgi [data-oc-url]', 'plugins/friendly_ops.mjs'); await hclick('#pr-osgi [data-oc-doinstall]'); await hold(DRY ? 1500 : 2200);
+    fact('lens.installed', JSON.stringify((await rowsOf()).find(r => /Friendly/i.test(r.name))) + ' | ' + lastLog(nL, /§PLUGIN-START|§PLUGIN-ACTIVATE/));
+    await hclick('#pr-root [data-pr-close]'); await pace(600);
+    beat('b9c', 'Save & Complete in one click');
+    await hclick('.idmp-wintab:has(.lbl:text-is("Manufacturing Order"))'); await pace(900);
+    await hclick('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · PP_Order"]'); await pace(800);
+    await hclick(NEWB); await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 }); await pace(900);
+    await hselect(F('c_doctypetarget_id', 'select'), (await optBy('c_doctypetarget_id', /^Manufacturing Order/)).v);
+    await hselect(F('ad_org_id', 'select'), (await optBy('ad_org_id', /^Fertilizer \(/)).v);
+    await hselect(F('m_warehouse_id', 'select'), (await optBy('m_warehouse_id', /^Fertilizer \(/)).v);
+    await hselect(F('s_resource_id', 'select'), (await optBy('s_resource_id', /Fertilizer Plant/)).v);
+    await hselect(F('m_product_id', 'select'), (await optBy('m_product_id', /Fertilizer #70/)).v); await pace(900);
+    await hselect(F('priorityrule', 'select'), (await optBy('priorityrule', /Medium/)).v); await htype(F('qtyentered'), '40');
+    await page.fill(F('datestartschedule'), '2008-08-16'); await page.fill(F('datepromised'), '2008-08-17'); await page.fill(F('datefinishschedule'), '2008-08-17'); GT.type += 3; await pace(700);
+    fact('lens.barWhileEditing', JSON.stringify(await page.$$eval('[data-lens-action]', e => e.map(x => x.getAttribute('data-lens-action') + '=' + x.textContent))));
+    const nSC = PAGELOG.length; await hclick('[data-lens-action="friendly-ops:save-complete"]');
+    let oSC = null; for (let i = 0; i < 60; i++) { oSC = (await tip("SELECT pp_order_id AS id, documentno, qtyordered, docstatus FROM pp_order WHERE pp_order_id<0 ORDER BY pp_order_id ASC LIMIT 1"))[0]; if (oSC && oSC.docstatus === 'CO' && Number(oSC.qtyordered) === 40) break; await page.waitForTimeout(200); }
+    await hold(DRY ? 600 : 2500);
+    fact('lens.saveComplete', JSON.stringify(oSC) + ' | ' + lastLog(nSC, /§OPS-LENS docAction/));   // event equality is W-FRIENDLY-OPS's job (erp/tests/witness_friendly_ops.js), not the film's
+    beat('b9d', 'Receipt & Issue from the order');
+    fact('lens.barOnOrder', JSON.stringify(await page.$$eval('[data-lens-action]', e => e.map(x => x.getAttribute('data-lens-action') + '=' + x.textContent))));
+    await hclick('[data-lens-action^="friendly-ops:form:"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(1500);
+    fact('lens.formPreset', await page.$eval('[data-gform-param=PP_Order_ID]', e => (e.options[e.selectedIndex] || {}).textContent));
+    const nLP = PAGELOG.length; await hclick('[data-gform-run]');
+    for (let i = 0; i < 80 && !(await page.$eval('[data-gform-msg]', e => e.textContent).catch(() => '')); i++) await page.waitForTimeout(250);
+    await hold(DRY ? 1500 : 3500);
+    fact('lens.formCommit', lastLog(nLP, /§AD-FORM-GENERIC commit/)); fact('lens.formMessage', await page.$eval('[data-gform-msg]', e => e.textContent).catch(() => ''));
+    await openMenuById(53055); await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 }); await pace(1000);
+
     // ═══ B10 stop the plugin from the panel: the opening screen returns to the baseline, the data stays ═══
     beat('b10', 'Stop the plugin');
     await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pace(1200);
     const mfgRow = (await rowsOf()).find(r => /Libero|mfg/i.test(r.name)); fact('panel.beforeStop', JSON.stringify(mfgRow));
     await hclick('#pr-osgi [data-oc-stop="org.idempiere.mfg"]'); await pace(1500);
+    await hclick('#pr-osgi [data-oc-stop="org.kernel.friendly-ops"]').catch(() => {}); await pace(1200);
+    fact('lens.afterStop', JSON.stringify({ lenses: await page.evaluate(() => window.AdLens.count()), row: (await rowsOf()).find(r => /Friendly/i.test(r.name)) }));
     fact('panel.afterStop', JSON.stringify((await rowsOf()).find(r => /Libero|mfg/i.test(r.name))));
     fact('afterStop', JSON.stringify({ menuLeaf53055: await page.locator('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]').count(), indicatorRow: await sql("SELECT COUNT(*) FROM pa_documentstatus WHERE pa_documentstatus_id=53201"), orderRows: (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n, modelClass: await page.evaluate(() => !!window.ModelLayer.MODEL.pp_order) }));
     await hold(DRY ? 200 : 2500);
