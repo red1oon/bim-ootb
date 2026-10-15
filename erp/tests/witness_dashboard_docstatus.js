@@ -19,7 +19,7 @@ function check(name, ok, info) { judged++; if (!ok) fails++; log('  §DDS-CHECK 
   if (!DS) { check('DDS0 dashboard_docstatus.js exists', false, 'missing'); log('§DDS-VERDICT FAIL judged=' + judged + ' failed=' + fails); process.exit(1); }
   var O = JSON.parse(fs.readFileSync(ORA, 'utf8')), SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
   var seed = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
-  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { seed.run(st); } catch (e) {} });
+  fs.readFileSync(path.join(ERP, 'patches', 'ad_seed.db.sql'), 'utf8').replace(process.env.DDS_NOGDICT ? /-- >>> G-DICT[\s\S]*?-- <<< G-DICT/ : /$^/, '').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { seed.run(st); } catch (e) {} });
   var db = new SQL.Database();
   ['pa_documentstatus', 'pa_documentstatusaccess', 'ad_table'].forEach(function (t) {
     var r = seed.exec('SELECT * FROM ' + t)[0]; if (!r) return; db.run('CREATE TABLE ' + t + ' (' + r.columns.join(',') + ')');
@@ -48,5 +48,13 @@ function check(name, ok, info) { judged++; if (!ok) fails++; log('  §DDS-CHECK 
   check('DDS4 NEG: restricting the role to org 0 only changes at least one count (org filter applied)', JSON.stringify(wide.map(function (i) { return i.count; })) !== JSON.stringify(base.map(function (i) { return i.count; })), wide.map(function (i) { return i.count; }));
   db.run("UPDATE pa_documentstatus SET isactive='N' WHERE pa_documentstatus_id=200005"); var off = DS.indicators(q, ctx0);
   check('DDS5 NEG: an inactive indicator disappears (Unprocessed Documents)', off.length === base.length - 1 && off.every(function (i) { return !/Unprocessed/.test(i.name); }), off.map(function (i) { return i.name; }));
+  // DDS6 (§G-SYS1): the visible set must come out right from the SEED's OWN access rows, not only from the pilot's dump (the seed lacked all role-0 form/process/workflow rows: System saw 2 indicators, the pilot 3)
+  db.run("UPDATE pa_documentstatus SET isactive='Y' WHERE pa_documentstatus_id=200005");
+  ['ad_window_access', 'ad_form_access'].forEach(function (t) {
+    db.run('DELETE FROM ' + t); var r = seed.exec('SELECT ad_role_id, ' + (t === 'ad_window_access' ? 'ad_window_id' : 'ad_form_id') + ', isactive FROM ' + t)[0]; if (!r) return;
+    var ins = db.prepare('INSERT INTO ' + t + ' (ad_role_id, ' + r.columns[1] + ', isactive) VALUES (?,?,?)'); r.values.forEach(function (v) { ins.run(v); }); ins.free(); });
+  var sysCase = O.cases.filter(function (c) { return c.role === 0; })[0];
+  var gotSys = DS.indicators(q, { client: 0, user: sysCase.user, role: 0, now: O.now, access: { clientIds: [0], orgIds: sysCase.orgs } }).map(function (i) { return i.name; }), wantSys = sysCase.indicators.filter(function (i) { return i.shown; }).map(function (i) { return i.name; });
+  check('DDS6 System (role 0) indicator set from the SEED access rows == the legacy pilot (' + wantSys.length + ' shown)' + (process.env.DDS_NOGDICT ? ' [G-DICT block removed: expected FAIL]' : ''), JSON.stringify(gotSys) === JSON.stringify(wantSys) && wantSys.length >= 3, { got: gotSys, want: wantSys });
   var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§DDS-VERDICT ' + v + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
 })().catch(function (e) { log('§DDS-VERDICT CRASH ' + (e.stack || e)); process.exit(2); });
