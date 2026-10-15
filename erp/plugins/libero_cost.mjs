@@ -22,7 +22,8 @@ export function create(ctx) {
 
   // ── type predicates (MPPCostCollector :894-960) ─────────────────────────────────────────────────────────────────
   const isType = (cc, ...ts) => ts.indexOf(String(cc.costcollectortype)) >= 0;
-  const isIssue = (cc) => isType(cc, T_ISSUE) || (isType(cc, T_METHOD) && Number(cc.pp_order_bomline_id) > 0) || (isType(cc, T_MIX) && Number(cc.pp_order_bomline_id) > 0);
+  const idSet = (v) => v != null && v !== '' && Number(v) !== 0;   // a record created in this session carries a NEGATIVE key until its op group is folded: 'set' means non-zero, not > 0
+  const isIssue = (cc) => isType(cc, T_ISSUE) || (isType(cc, T_METHOD) && idSet(cc.pp_order_bomline_id)) || (isType(cc, T_MIX) && idSet(cc.pp_order_bomline_id));
   const isReceipt = (cc) => isType(cc, T_RECEIPT), isActivity = (cc) => isType(cc, T_ACTIVITY), isVariance = (cc) => isType(cc, T_METHOD, T_USAGE, T_RATE, T_MIX);
   const movementType = (cc) => (isReceipt(cc) ? 'W+' : isIssue(cc) ? 'W-' : null);
 
@@ -47,12 +48,12 @@ export function create(ctx) {
       if (l) rec.m_locator_id = l.m_locator_id;
     }
     if (isIssue(rec)) {
-      if (!(Number(rec.pp_order_bomline_id || 0) > 0)) return 'FillMandatory: PP_Order_BOMLine_ID';
+      if (!idSet(rec.pp_order_bomline_id)) return 'FillMandatory: PP_Order_BOMLine_ID';
       const bl = trx.get('pp_order_bomline', rec.pp_order_bomline_id);
       if (!(Number(rec.c_uom_id || 0) > 0)) rec.c_uom_id = bl.c_uom_id;
       if (Number(rec.c_uom_id) !== Number(bl.c_uom_id)) return '@PP_Cost_Collector_ID@ @C_UOM_ID@ <> @PP_Order_BOMLine_ID@ @C_UOM_ID@';
     }
-    if (isActivity(rec) && !(Number(rec.pp_order_node_id || 0) > 0)) return 'FillMandatory: PP_Order_Node_ID';
+    if (isActivity(rec) && !idSet(rec.pp_order_node_id)) return 'FillMandatory: PP_Order_Node_ID';
     return null;
   }
 
@@ -264,7 +265,7 @@ export function create(ctx) {
   function createCollector(trx, order, p) {
     const f = collectorFields(trx, order, p); f.ad_client_id = order.ad_client_id;
     const r = ML.newRecord(trx, 'pp_cost_collector', f); if (!r.save()) throw new Error(r.error);
-    const id = r.row.pp_cost_collector_id, res = ML.processIt(trx, 'pp_cost_collector', id, 'CO');
+    const id = r.row.pp_cost_collector_id, res = ML.processIt(trx, 'pp_cost_collector', id, 'CO'); (trx._lcc = trx._lcc || []).push(id);
     if (!res.ok) throw new Error(res.msg || ('DocAction CO refused, status ' + res.status));
     return trx.get('pp_cost_collector', id);
   }
@@ -348,7 +349,7 @@ export function create(ctx) {
   function backflush(trx, orderId, p) {
     const order = trx.get('pp_order', orderId); if (!order) throw new Error('PP_Order ' + orderId + ' not found');
     const rule = p.rule || 'BackFlush', mdate = p.movementDate;
-    if (!mdate) throw new Error('@FillMandatory@ MovementDate');
+    if (!mdate) throw new Error('NoDate');   // WOrderReceiptIssue.onEvent :452-456
     const wh = trx.get('m_warehouse', order.m_warehouse_id) || {};
     const locator = p.locatorId || (trx.find('m_locator', { m_warehouse_id: order.m_warehouse_id }).filter(active).sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.m_locator_id) - Number(b.m_locator_id))[0] || {}).m_locator_id || 0;
     if ((rule === 'OnlyReceipt' || rule === 'BackFlush') && !(Number(locator) > 0)) throw new Error('NoLocator');
@@ -356,7 +357,8 @@ export function create(ctx) {
     const open = dec(order.qtyordered).subtract(dec(order.qtydelivered)), toDeliver = dec(p.toDeliver == null ? open : p.toDeliver), scrap = dec(p.scrap || 0), reject = dec(p.reject || 0);
     const rows = p.rows || backflushRows(trx, order, { rule, toDeliver, scrap });
     if (rule === 'BackFlush' || rule === 'OnlyIssue') {
-      if (!isQtyAvailable(trx, order, rows, mdate)) throw new Error('Not enough on hand to issue the selected components (MPPOrder.isQtyAvailable); nothing was written');
+      const avail = isQtyAvailable(trx, order, rows, mdate);   // OrderReceiptIssue.createIssue :237-238 computes this flag and then IGNORES it (kept): the real stop is createIssue's "Should not happen" below, which rolls the transaction back
+      trx.say('§LBACK-AVAIL isQtyAvailable=' + avail + ' (legacy ignores the flag)');
       for (const r of rows) {
         if (!r.selected) continue;
         const pr = trx.get('m_product', r.productId); if (!stocked(pr)) continue;
@@ -369,13 +371,50 @@ export function create(ctx) {
     return { ok: true, rows };
   }
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush };
+
+  // ── the Order Receipt & Issue FORM as a generic descriptor (ad_form_generic.js; AD_Form 53007 org.eevolution.form.VOrderReceiptIssue; WOrderReceiptIssue :598-604 defaults) ──
+  const nv = (v) => (v === '' || v == null ? null : v), numOf = (v) => num(dec(v == null || v === '' ? 0 : v));
+  const openOrders = (trx) => trx.find('pp_order', { ad_client_id: trx.env.client }).filter((o) => (o.docstatus === 'CO' || o.docstatus === 'IP') && dec(o.qtyordered).compareTo(dec(o.qtydelivered)) > 0).sort((a, b) => String(a.documentno).localeCompare(String(b.documentno)));
+  const ordOf = (trx, p) => (p && p.PP_Order_ID != null && p.PP_Order_ID !== '' && Number(p.PP_Order_ID) !== 0 ? trx.get('pp_order', Number(p.PP_Order_ID)) : null);   // a new order carries a NEGATIVE key until its op group is folded
+  const openQtyOf = (o) => num(dec(o.qtyordered).subtract(dec(o.qtydelivered)));
+  const defLocator = (trx, o) => { const l = trx.find('m_locator', { m_warehouse_id: o.m_warehouse_id }).filter(active).sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.m_locator_id) - Number(b.m_locator_id))[0]; return l ? l.m_locator_id : null; };
+  const formDescriptor = {
+    title: 'Order Receipt & Issue',
+    params: [
+      { name: 'PP_Order_ID', label: 'Manufacturing Order', type: 'list', mandatory: true, options: (trx) => openOrders(trx).map((o) => ({ value: o.pp_order_id, label: o.documentno + ' - ' + ((trx.get('m_product', o.m_product_id) || {}).name || o.m_product_id) + ' (open ' + openQtyOf(o) + ')' })), default: (trx) => { const o = openOrders(trx)[0]; return o ? o.pp_order_id : null; } },
+      { name: 'DeliveryRule', label: 'Delivery Rule', type: 'list', mandatory: true, options: [{ value: 'BackFlush', label: 'Backflush' }, { value: 'OnlyIssue', label: 'Only Issue' }, { value: 'OnlyReceipt', label: 'Only Receipt' }], default: () => 'BackFlush' },
+      { name: 'MovementDate', label: 'Movement Date', type: 'date', mandatory: true, default: (trx) => String(trx.env.date || '').slice(0, 10) },
+      { name: 'QtyToDeliver', label: 'Quantity To Deliver', type: 'number', default: (trx, p) => { const o = ordOf(trx, p); return o ? openQtyOf(o) : 0; } },
+      { name: 'QtyScrap', label: 'Scrap', type: 'number', default: () => 0 }, { name: 'QtyReject', label: 'Reject', type: 'number', default: () => 0 },
+      { name: 'M_Locator_ID', label: 'Locator', type: 'list', options: (trx, p) => { const o = ordOf(trx, p); return o ? trx.find('m_locator', { m_warehouse_id: o.m_warehouse_id }).filter(active).map((l) => ({ value: l.m_locator_id, label: l.value })) : []; }, default: (trx, p) => { const o = ordOf(trx, p); return o ? defLocator(trx, o) : null; } },
+      { name: 'IsCloseDocument', label: 'Close Document', type: 'yesno', default: () => 'N' }
+    ],
+    columns: [{ key: 'product', label: 'Component', type: 'string' }, { key: 'required', label: 'Required', type: 'number' }, { key: 'delivered', label: 'Delivered', type: 'number' }, { key: 'onhand', label: 'On Hand', type: 'number' },
+      { key: 'toDeliver', label: 'To Deliver', type: 'number', editable: true }, { key: 'scrap', label: 'Scrap', type: 'number', editable: true }],
+    rows(trx, p) {
+      const o = ordOf(trx, p); if (!o || p.DeliveryRule === 'OnlyReceipt') return [];
+      return backflushRows(trx, o, { rule: p.DeliveryRule || 'BackFlush', toDeliver: nv(p.QtyToDeliver), scrap: nv(p.QtyScrap) || 0 }).map((r) => {
+        const bl = trx.get('pp_order_bomline', r.bomLineId), pr = trx.get('m_product', r.productId) || {};
+        return { key: r.bomLineId, selected: r.selected, product: pr.name || r.productId, required: num(dec(bl.qtyrequiered)), delivered: num(dec(bl.qtydelivered)), onhand: num(onHandOf(trx.find('m_storageonhand', { m_product_id: r.productId }).filter((s) => { const l = trx.get('m_locator', s.m_locator_id); return l && Number(l.m_warehouse_id) === Number(bl.m_warehouse_id); }))), toDeliver: num(r.toDeliver), scrap: num(r.scrap) };
+      });
+    },
+    run(trx, p, rows) {
+      const o = ordOf(trx, p); if (!o) throw new Error('@FillMandatory@ PP_Order_ID');
+      const rr = (rows || []).map((r) => ({ bomLineId: r.key, productId: (trx.get('pp_order_bomline', r.key) || {}).m_product_id, selected: !!r.selected, toDeliver: numOf(r.toDeliver), scrap: numOf(r.scrap) }));
+      backflush(trx, o.pp_order_id, { rule: p.DeliveryRule || 'BackFlush', movementDate: String(p.MovementDate || '').slice(0, 10) + ' 00:00:00', toDeliver: nv(p.QtyToDeliver), scrap: nv(p.QtyScrap), reject: nv(p.QtyReject), locatorId: nv(p.M_Locator_ID) ? Number(p.M_Locator_ID) : 0, closeDocument: p.IsCloseDocument === 'Y', rows: rr.length ? rr : undefined });
+      const made = (trx._lcc || []).map((id) => trx.get('pp_cost_collector', id)).filter(Boolean);
+      return made.length + ' cost collector(s) completed: ' + made.map((c) => '#' + c.documentno + ' ' + ({ '110': 'Issue', '100': 'Receipt', '130': 'Method variance', '150': 'Mix variance' }[String(c.costcollectortype)] || c.costcollectortype) + ' ' + c.movementqty).join(', ');
+    }
+  };
+
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor };
 }
 export async function activate(ctx) {
   const m = create(ctx);
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
   // FSM entry of AD_Table PP_Cost_Collector 53035 (MPPCostCollector: voidIt returns false :506, reActivateIt false :628, reverseAccrualIt false :622; reverseCorrectIt is DEFERRED)
+  if (ctx.form) ctx.form.register('org.eevolution.form.VOrderReceiptIssue', m.formDescriptor);   // AD_Form 53007: drawn by the generic form renderer, zero host code
   if (ctx.docFsm) ctx.docFsm.register(53035, { name: 'PP_Cost_Collector', reActivate: false, rc: false, ra: false, vo: {} });
 }
 export async function deactivate() {}

@@ -44,7 +44,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   }
   var mute = function () { console.log = function () {}; }, unmute = function () { console.log = log; };
   var hostDb = { query: q, run: function (sql, p) { db.run(sql, p || []); } };
-  var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function () { return 1; } }, modelval: MV, callout: AC, process: AP, postTokens: {}, docAction: ML, docClass: DP, import: function (u) { return import(u); } };
+  var host = { engineVersion: '1.0.0', db: hostDb, ops: { append: function () { return 1; } }, modelval: MV, callout: AC, process: AP, postTokens: {}, docAction: ML, form: require(path.join(ERP, 'ad_form_generic.js')), docClass: DP, import: function (u) { return import(u); } };
   var CH = BREAK ? null : null, LCpath = 'file://' + path.join(ERP, 'plugins', 'libero_cost.mjs'), PPpath = 'file://' + path.join(ERP, 'plugins', 'libero_pporder.mjs');
   var reg = PR.create(host); mute(); await reg.installBundle('file://' + path.join(ERP, 'plugins', 'libero_manufacturing.mjs')); await reg.startBundle('org.idempiere.mfg'); await reg.need({ table: 'pp_cost_collector' }); unmute();
   if (BREAK === 'calcfg') (await import(LCpath)).SOURCE.calculateFG = false; if (BREAK === 'noreserve') (await import(PPpath)).SOURCE.orderStock = 'none'; if (BREAK === 'onhand') (await import(PPpath)).SOURCE.orderStock = 'onhand';
@@ -141,8 +141,8 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   // ── B4 insufficient stock: nothing is written ───────────────────────────────────────────────────────────────────
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 50);
   var OD = newCompletedOrder('LB-D'), n4 = nCC(OD.pp_order_id), kg4 = onhand(KG), tx4 = S(one('SELECT COUNT(*) AS n FROM m_transaction').n), r4 = runProcess(OD.pp_order_id, { rule: 'BackFlush', movementDate: DATE }, BREAK === 'noatomic');
-  log('§LBACK-B4 BAG on hand 50 < 100: ok=' + r4.ok + ' msg="' + r4.msg + '"');
-  check('B4 not enough BAG on hand -> refused before anything is written (no collector, no stock move, no transaction)', !r4.ok && /Not enough on hand/.test(String(r4.msg)) && nCC(OD.pp_order_id) === n4 && close(onhand(KG), kg4) && S(one('SELECT COUNT(*) AS n FROM m_transaction').n) === tx4, { ok: r4.ok, msg: r4.msg });
+  log('§LBACK-B4 BAG on hand 50 < 100 (KG already issued in the same transaction when BAG fails): ok=' + r4.ok + ' msg="' + r4.msg + '"');
+  check('B4 not enough BAG on hand -> refused with the legacy text "Should not happen toIssue=50" (the form ignores isQtyAvailable) and the WHOLE transaction rolls back (no collector, no stock move, no transaction)', !r4.ok && /Should not happen toIssue=50/.test(String(r4.msg)) && nCC(OD.pp_order_id) === n4 && close(onhand(KG), kg4) && S(one('SELECT COUNT(*) AS n FROM m_transaction').n) === tx4, { ok: r4.ok, msg: r4.msg });
 
   // ── B5 all-or-none: the receipt step fails after the issues were done ──────────────────────────────────────────────
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
@@ -171,6 +171,32 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   // hand: toIssue = 7000+2 = 7002; row1 min(7002,4000)=4000, row2 min(3002,6000)=3002; scrap 2 passed to BOTH
   check('B8 scrap 2 is repeated on every storage row\'s collector (4000/scrap 2 and 3002/scrap 2), as the Java does', r8.ok && c8.length === 2 && close(c8[0].qty, 4000) && close(c8[1].qty, 3002) && close(c8[0].sc, 2) && close(c8[1].sc, 2), c8);
 
+
+  // ── B9 the FORM as a generic descriptor: registered by the bundle, drawn by data, row quantities editable, one transaction ───────────────────
+  var AF = require(path.join(ERP, 'ad_form_generic.js')), FC = 'org.eevolution.form.VOrderReceiptIssue', withT = function (fn) { return fn(q, env()); };
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OI = newCompletedOrder('LB-I'), fg9 = onhand(FG);
+  check('B9a the bundle registered the form descriptor for AD_Form 53007 through ctx.form (and nothing is registered before it started)', !!AF.get(FC) && AF.get(FC).params.length === 8 && AF.describe()[FC].length === 1, AF.describe());
+  var dflt = {};
+  AF.get(FC).params.forEach(function (pp) { var v = typeof pp.default === 'function' ? AF.read(withT, function (trx) { return pp.default(trx, dflt); }) : pp.default; dflt[pp.name] = v; });
+  log('§LBACK-B9 form defaults ' + JSON.stringify(dflt));
+  // hand: the first open completed order is LB-I's predecessor set; the form defaults follow WOrderReceiptIssue :598-604 -> toDeliver = open = 100 for LB-I once it is selected
+  dflt.PP_Order_ID = OI.pp_order_id; dflt.QtyToDeliver = AF.read(withT, function (trx) { return AF.get(FC).params[3].default(trx, dflt); }); dflt.M_Locator_ID = AF.read(withT, function (trx) { return AF.get(FC).params[6].default(trx, dflt); });
+  check('B9b form defaults for the selected order: Backflush, QtyToDeliver = open = 100, locator = the warehouse default (' + LOC + ')', dflt.DeliveryRule === 'BackFlush' && close(S(dflt.QtyToDeliver), 100) && S(dflt.M_Locator_ID) === LOC && dflt.IsCloseDocument === 'N', dflt);
+  var grid = AF.read(withT, function (trx) { return AF.get(FC).rows(trx, dflt); });
+  log('§LBACK-B9 grid rows ' + JSON.stringify(grid.map(function (r) { return [r.product, r.selected, r.required, r.delivered, r.onhand, r.toDeliver, r.scrap]; })));
+  check('B9c the grid shows both components with required 7070.71/100, on hand 10000/500, defaults 7000/100, both selected', grid.length === 2 && close(grid[0].required, 7070.71, 0.001) && close(grid[0].onhand, 10000) && close(grid[0].toDeliver, 7000) && close(grid[1].toDeliver, 100) && grid[0].selected && grid[1].selected, grid);
+  // the user edits ROW quantities (the embargo of the InfoWindow port): KG 3500, BAG deselected
+  grid[0].toDeliver = 3500; grid[1].selected = false;
+  mute(); var rf = AF.execute(withT, FC, dflt, grid); unmute(); if (rf.ok) apply(rf.ops);
+  var c9 = ccs(OI.pp_order_id), rcpt = q("SELECT d.amt AS amt FROM m_costdetail d JOIN pp_cost_collector c ON c.pp_cost_collector_id=d.pp_cost_collector_id WHERE c.pp_order_id=? AND c.costcollectortype='100' AND d.c_acctschema_id=101 AND d.m_costelement_id=100", [OI.pp_order_id]);
+  log('§LBACK-B9 form run ok=' + rf.ok + ' msg="' + rf.msg + '"');
+  // hand: KG 3500 x 2.5 = 8750 out; BAG not issued; receipt 100 carries the issued cost 8750 (open 100 / 100)
+  check('B9d the edited rows are honoured in one transaction: KG 10000 -> 6500, BAG stays 500, finished goods +100, collectors 110 (3500) + 100 (100), receipt cost 8750', rf.ok && close(onhand(KG), 6500, 0.001) && close(onhand(BAG), 500) && close(onhand(FG) - fg9, 100) && c9.length === 2 && close(c9[0].qty, 3500) && c9[1].t === '100' && rcpt.length === 1 && close(rcpt[0].amt, 8750, 0.001), { ok: rf.ok, msg: rf.msg, c9: c9 });
+  var rfBad = AF.execute(withT, FC, Object.assign({}, dflt, { PP_Order_ID: 0 }), []);
+  check('B9e a form run without an order is refused by name and writes nothing', !rfBad.ok && /FillMandatory/.test(String(rfBad.msg)) && !(rfBad.ops || []).length, { ok: rfBad.ok, msg: rfBad.msg });
+  mute(); await reg.stopBundle('org.idempiere.mfg'); unmute();
+  check('B9f stopping the bundle removes the form descriptor (owner-removed, like model and process registrations)', AF.get(FC) === null, AF.describe());
   COSTMOD.DEFERRED.forEach(function (d) { log('§LIBERO-DEFERRED ' + d); });
   var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§LBACK-VERDICT ' + v + ' break=' + (BREAK || 'none') + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);
 })().catch(function (e) { console.log('§LBACK-VERDICT CRASH ' + (e.stack || e)); process.exit(2); });

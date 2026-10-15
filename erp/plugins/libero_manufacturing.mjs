@@ -169,6 +169,33 @@ const MENU = [
   "ad_menu_uu": "29928756-34e2-4f43-9a53-398187f99151",
   "ad_infowindow_id": null,
   "predefinedcontextvariables": null
+ },
+ {
+  "ad_menu_id": 53059,
+  "ad_client_id": 0,
+  "ad_org_id": 0,
+  "isactive": "N",
+  "created": "2007-12-17T08:52:13",
+  "createdby": 0,
+  "updated": "2012-08-15T10:12:52",
+  "name": "Order Receipt & Issue",
+  "updatedby": 100,
+  "description": "Order Receipt & Issue",
+  "issummary": "N",
+  "issotrx": "N",
+  "isreadonly": "N",
+  "action": "X",
+  "ad_window_id": null,
+  "ad_workflow_id": null,
+  "ad_task_id": null,
+  "ad_process_id": null,
+  "ad_form_id": 53007,
+  "ad_workbench_id": null,
+  "entitytype": "EE01",
+  "iscentrallymaintained": "Y",
+  "ad_menu_uu": "b53fee94-05d4-4f50-a47c-c7515666e096",
+  "ad_infowindow_id": null,
+  "predefinedcontextvariables": null
  }
 ];
 

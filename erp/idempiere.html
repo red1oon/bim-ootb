@@ -492,6 +492,7 @@
 <script src="ad_evaluator.js?v=24"></script>
 <script src="ad_docfsm.js?v=1"></script>
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
+<script src="ad_form_generic.js?v=1"></script>
 <script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
@@ -2991,13 +2992,115 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // three-way match this lane closed at #1654/#1661 — the junctions already exist, so nothing is invented.
   var _FORM_HANDLERS = {};
   function _registerForm(classname, fn) { _FORM_HANDLERS[classname] = fn; }
+
+  // §AD-FORM-GENERIC (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §12) - ONE renderer for every form a bundle describes (ad_form_generic.js): parameters, an editable grid, one
+  // transaction. No per-form code here: a plugin registers { params, columns, rows, run } for an AD_Form classname and gets this screen. Replaces the "row level data input" embargo.
+  function renderGenericForm(row, desc) {
+    var AF = window.AdFormGeneric, cls = String(row.classname), crud = window.__crud;
+    var withT = function (fn) { return crud && typeof crud.withModelTrx === 'function' ? crud.withModelTrx(fn) : null; };
+    var pane = el('div', 'idmp-procpane idmp-procform'); pane.setAttribute('data-gform', cls);
+    pane.appendChild(el('h3', null, desc.title || row.name));
+    pane.appendChild(el('div', 'sub', 'AD_Form ' + row.ad_form_id + ' · ' + cls + ' · generic form (described by its module, no host code)'));
+    var fields = el('div', 'fld'), ctl = {}, opts = {}, vals = {};
+    desc.params.forEach(function (p) {
+      fields.appendChild(el('label', null, p.label + (p.mandatory ? ' *' : '')));
+      var c;
+      if (p.type === 'list') c = document.createElement('select');
+      else { c = document.createElement('input'); c.type = p.type === 'date' ? 'date' : p.type === 'number' ? 'number' : p.type === 'yesno' ? 'checkbox' : 'text'; if (p.type === 'number') c.step = 'any'; }
+      c.setAttribute('data-gform-param', p.name); ctl[p.name] = c; fields.appendChild(c);
+    });
+    pane.appendChild(fields);
+    var actions = el('div', 'actions'), runBtn = el('button', 'run', 'Process'), refBtn = el('button', null, 'Refresh'), closeBtn = el('button', null, 'Close');
+    runBtn.setAttribute('data-gform-run', '1'); refBtn.setAttribute('data-gform-refresh', '1');
+    actions.appendChild(runBtn); actions.appendChild(refBtn); actions.appendChild(closeBtn); pane.appendChild(actions);
+    var grid = el('div', null); grid.setAttribute('data-gform-grid', '1'); pane.appendChild(grid);
+    var msg = el('div', 'msg'); msg.setAttribute('data-gform-msg', '1'); pane.appendChild(msg);
+    closeBtn.addEventListener('click', function () {
+      $('idmp-content').innerHTML = '<div id="idmp-placeholder"><div class="big">&#128193;</div>' + _T('main.placeholder', 'Select a menu item to open a window.') + '</div>'; status('Ready');
+    });
+    function readParam(p) {
+      var c = ctl[p.name];
+      if (p.type === 'list') { var o = (opts[p.name] || [])[c.selectedIndex]; return o ? o.value : null; }
+      if (p.type === 'yesno') return c.checked ? 'Y' : 'N';
+      if (p.type === 'number') return c.value === '' ? null : Number(c.value);
+      return c.value === '' ? null : c.value;
+    }
+    function collect() { var o = {}; desc.params.forEach(function (p) { o[p.name] = readParam(p); }); return o; }
+    function paint(p, v) {
+      var c = ctl[p.name];
+      if (p.type === 'list') { var os = opts[p.name] || [], i = 0; os.forEach(function (o, k) { if (String(o.value) === String(v)) i = k; }); c.selectedIndex = os.length ? i : -1; }
+      else if (p.type === 'yesno') c.checked = v === 'Y' || v === true;
+      else c.value = v == null ? '' : v;
+    }
+    // recompute options + defaults of every parameter FROM index `from` on, using the values of the ones before it
+    function loadParams(from) {
+      var cur = {}; desc.params.forEach(function (p, i) { if (i < from) cur[p.name] = readParam(p); });
+      desc.params.forEach(function (p, i) {
+        if (i < from) return;
+        if (p.type === 'list') {
+          var os = typeof p.options === 'function' ? (AF.read(withT, function (trx) { return p.options(trx, cur); }) || []) : (p.options || []);
+          opts[p.name] = os; var c = ctl[p.name]; c.innerHTML = '';
+          os.forEach(function (o) { var op = el('option', null, o.label); c.appendChild(op); });
+        }
+        var d = typeof p.default === 'function' ? AF.read(withT, function (trx) { return p.default(trx, cur); }) : p.default;
+        paint(p, d); cur[p.name] = readParam(p);
+      });
+    }
+    function loadRows() {
+      var params = collect(), rows = AF.read(withT, function (trx) { return desc.rows(trx, params); }) || [];
+      grid.innerHTML = '';
+      console.log('§AD-FORM-GENERIC rows class=' + cls + ' n=' + rows.length + ' params=' + JSON.stringify(params));
+      if (!rows.length) { grid.appendChild(el('div', 'sub', 'No component rows for this delivery rule.')); return; }
+      var t = document.createElement('table'); t.className = 'idmp-grid'; var hr = document.createElement('tr');
+      hr.appendChild(el('th', null, '')); desc.columns.forEach(function (c) { hr.appendChild(el('th', null, c.label)); }); t.appendChild(hr);
+      rows.forEach(function (r) {
+        var tr = document.createElement('tr'); tr.setAttribute('data-gform-row', String(r.key));
+        var td0 = document.createElement('td'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!r.selected; cb.setAttribute('data-gform-sel', '1'); td0.appendChild(cb); tr.appendChild(td0);
+        desc.columns.forEach(function (c) {
+          var td = document.createElement('td');
+          if (c.editable) { var inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.value = r[c.key] == null ? '' : r[c.key]; inp.setAttribute('data-gform-cell', c.key); td.appendChild(inp); }
+          else td.textContent = r[c.key] == null ? '' : r[c.key];
+          tr.appendChild(td);
+        });
+        t.appendChild(tr);
+      });
+      grid.appendChild(t);
+    }
+    function collectRows() {
+      var out = [];
+      grid.querySelectorAll('tr[data-gform-row]').forEach(function (tr) {
+        var r = { key: Number(tr.getAttribute('data-gform-row')), selected: tr.querySelector('[data-gform-sel]').checked };
+        tr.querySelectorAll('[data-gform-cell]').forEach(function (i) { r[i.getAttribute('data-gform-cell')] = i.value === '' ? null : Number(i.value); });
+        out.push(r);
+      });
+      return out;
+    }
+    desc.params.forEach(function (p, i) {
+      ctl[p.name].addEventListener('change', function () { loadParams(i + 1); loadRows(); });
+    });
+    refBtn.addEventListener('click', function () { loadParams(0); loadRows(); });
+    runBtn.addEventListener('click', function () {
+      var params = collect(), rows = collectRows(), res = AF.execute(withT, cls, params, rows);
+      console.log('§AD-FORM-GENERIC run class=' + cls + ' ok=' + !!(res && res.ok) + ' ops=' + ((res && res.ops) || []).length + ' msg=' + JSON.stringify(res && res.msg));
+      if (!res || !res.ok) { msg.className = 'msg err'; msg.textContent = (res && res.msg) || 'Failed'; return; }
+      if (res.ops && res.ops.length && crud && typeof crud.applyOpGroup === 'function') {
+        crud.applyOpGroup(res.ops, function (cr) {
+          console.log('§AD-FORM-GENERIC commit class=' + cls + ' ops=' + res.ops.length + ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) + ' verifyChain=' + (cr && cr.verifyOk ? 'ok' : 'FAIL'));
+          msg.className = 'msg ok'; msg.textContent = res.msg; loadParams(0); loadRows();
+        });
+      } else { msg.className = 'msg ok'; msg.textContent = res.msg; }
+    });
+    loadParams(0); loadRows(); _showProcPane(pane);
+  }
   function openAdForm(formId, name) {
     var row = _sqlRows('SELECT ad_form_id, name, classname FROM ad_form WHERE ad_form_id=' + Number(formId))[0] || null;
     var cls = row ? String(row.classname || '') : '';
-    var handled = !!_FORM_HANDLERS[cls];
+    var gdesc = (!_FORM_HANDLERS[cls] && window.AdFormGeneric) ? window.AdFormGeneric.get(cls) : null;
+    var handled = !!_FORM_HANDLERS[cls] || !!gdesc;
     console.log('§AD-FORM-LIVE open form=' + formId + ' name="' + ((row && row.name) || name || '') + '" classname=' + (cls || '(blank)') +
                 ' handled=' + (handled ? 'Y' : 'N') + ' registered=[' + Object.keys(_FORM_HANDLERS).map(function (c) { return c.split('.').pop(); }).join(',') + ']');
     if (!row) { status('AD_Form ' + formId + ' not found'); return; }
+    if (gdesc) { renderGenericForm(row, gdesc); return; }
     if (handled) { _FORM_HANDLERS[cls](row); return; }
     // the honest absent card — identical in kind to an unregistered process classname
     var pane = el('div', 'idmp-procpane idmp-procresult absent');

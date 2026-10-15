@@ -169,6 +169,7 @@
         docAction.registerDocAction = function (table, impl) { var r = host.docAction.registerDocAction(table, impl, own); scope.label('DocAction class  ' + table); scope.once('model', function () { if (host.docAction.removeOwner) host.docAction.removeOwner(id); }); return r; };
       }
       var docFsm = host.docFsm ? { register: function (tableId, fam) { host.docFsm.registerFamily(tableId, fam, id); scope.label('DocAction FSM  AD_Table ' + tableId + '  (' + (fam && fam.name) + ')'); scope.once('docfsm', function () { host.docFsm.removeFamilyOwner(id); }); } } : null;
+      var form = host.form ? { register: function (classname, desc) { host.form.register(classname, desc, own); scope.label('IFormFactory  ' + classname); scope.once('form', function () { host.form.removeOwner(id); }); } } : null;   // the generic AD_Form engine (ad_form_generic.js): a form is a descriptor, never host code
       var docClass = host.docClass ? { register: function (table, impl) { host.docClass.registerDocClass(table, impl, own); scope.label('IDocFactory  ' + table); scope.once('docclass', function () { host.docClass.removeDocClassOwner(id); }); } } : null;
       // postTokens: a plain object the bundle assigns into; a Proxy turns every assignment into a LAYER owned by this bundle (rank 1), so stopping in ANY order restores the right value.
       var postTokens = null;
@@ -234,6 +235,7 @@
         // DocAction class (registerDocAction) and model hooks (registerModel) for its tables; zero host code per table.
         docAction:  docAction,
         docFsm:     docFsm,                    // the document-action state machine entry of a plugin's own document table (ad_docfsm.js DOC_FAMILY, layered, owner-removed)
+        form:       form,                      // generic AD_Form descriptor: register(classname, { params, columns, rows, run })
         docClass:   docClass,                  // doc_poster posting class (legacy IDocFactory): register(table, { derive })
         dict:       dict,                      // dictionary staging with rollback (IsActive flips, row inserts)
         db:         host.db         || { query: function () { throw new Error('plugin ctx: no db host injected'); } },
