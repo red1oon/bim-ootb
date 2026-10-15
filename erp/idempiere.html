@@ -1342,6 +1342,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-login').style.display = 'none';
     applySession();
   }
+  // §UDP-8 — AD_Session (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-8; Witness: W-UDP8-LIVE). Legacy writes one row per login
+  //   (AdempiereWebUI.java:317 -> MSession(ctx, Remote_Addr, Remote_Host, WebSession) :194-210: ServerName, Remote_Addr/Host, WebSession,
+  //   Description = version, AD_Role_ID, LoginDate = #Date) and logout() sets Processed='Y' (:314-320); the Session Audit window and
+  //   AD_SessionInfo_V read it. In a browser twin there is no server-side client address: Remote_Addr/Remote_Host stay NULL (named),
+  //   WebSession is this tab's own random session id, ServerName the host that served the page. ONE signed CRUD op each.
+  var _sessionRow = null;
+  function _sessionOpen() {
+    var c = window.__crud, App = window.APP || {}; if (!c || typeof c.applyOpGroup !== 'function') return;
+    var ws = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()), ts = _procNowTs();
+    var op = _procCrud('create', 'ad_session', { fields: { websession: ws, remote_addr: null, remote_host: null, servername: location.hostname || 'localhost',
+      description: 'SQLite twin ' + (document.documentElement.getAttribute('data-version') || ''), ad_role_id: App.roleId, logindate: ts.slice(0, 10) + ' 00:00:00', processed: 'N', created: ts, updated: ts } });
+    c.applyOpGroup([op], function (cr) {
+      _sessionRow = cr && cr.committed && cr.ids && cr.ids.length ? -Number(cr.ids[0]) : null;
+      console.log('§UDP8-SESSION open user=' + App.actor + ' role=' + App.roleId + ' client=' + App.clientId + ' websession=' + ws + ' committed=' + !!(cr && cr.committed) + ' row=' + _sessionRow);
+    });
+  }
+  function _sessionClose() {
+    var c = window.__crud, id = _sessionRow; if (!c || id == null || typeof c.applyOpGroup !== 'function') return;
+    _sessionRow = null;
+    c.applyOpGroup([_procCrud('update', 'ad_session', { id: id, changes: { processed: { old: 'N', new: 'Y' }, updated: { old: null, new: _procNowTs() } } })], function (cr) {
+      console.log('§UDP8-SESSION close row=' + id + ' processed=Y committed=' + !!(cr && cr.committed));
+    });
+  }
   function applySession() {
     // expose the live login client (the honest tenant) for client-scoped lenses (RuleFold §11) — NON-INVENT
     window.__idmpClient = _session.client;   // { id, name }
@@ -1352,6 +1375,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.APP.orgId   = _session.org ? _session.org.id : 0;
     window.APP.roleId  = _session.role.id;
     try { var _adv = db.exec('SELECT IsAccessAdvanced FROM AD_Role WHERE AD_Role_ID=?', [_session.role.id]); window.APP.showAdvanced = _adv.length && _adv[0].values.length && _adv[0].values[0][0] === 'Y' ? 'Y' : 'N'; } catch (eA) { window.APP.showAdvanced = 'N'; }   // #ShowAdvanced (Login.java:531)
+    _sessionOpen();   // §UDP-8 AD_Session: the login is recorded (AdempiereWebUI :317 -> MSession :194-210)
     // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
     // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
     // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
@@ -7089,7 +7113,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     (function () { var lsb = $('idmp-switch-btn'); if (!lsb) return;
       if (window.ICONS && window.ICONS.logOut) lsb.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + window.ICONS.logOut.svg + '</svg>';
       lsb.title = 'Log out';
-      lsb.addEventListener('click', function () { showLogin('user'); });
+      lsb.addEventListener('click', function () { _sessionClose(); showLogin('user'); });   // §UDP-8 MSession.logout (:314-320)
     })();
     $('idmp-login').addEventListener('click', function (e) { if (e.target === $('idmp-login') && _session) $('idmp-login').style.display = 'none'; });
     boot().catch(function (e) { console.error('§IDEMPIERE boot error: ' + e.message); $('idmp-load-msg').textContent = 'Boot error: ' + e.message; });
