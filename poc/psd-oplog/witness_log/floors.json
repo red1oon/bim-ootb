@@ -1,0 +1,137 @@
+{
+ "adjust": {
+  "n": 77
+ },
+ "blurbrush": {
+  "n": 18
+ },
+ "cmfold": {
+  "n": 8
+ },
+ "curves": {
+  "n": 33
+ },
+ "depth16": {
+  "n": null
+ },
+ "dirty": {
+  "n": 10
+ },
+ "doc": {
+  "n": null
+ },
+ "editor": {
+  "n": 14
+ },
+ "editor_adjust": {
+  "n": 39
+ },
+ "editor_admask": {
+  "n": 33
+ },
+ "editor_carry": {
+  "n": 54
+ },
+ "editor_ckpt": {
+  "n": 19
+ },
+ "editor_clip": {
+  "n": 25
+ },
+ "editor_export": {
+  "n": 5
+ },
+ "editor_feather": {
+  "n": 24
+ },
+ "editor_fill": {
+  "n": 19
+ },
+ "editor_filters": {
+  "n": 48
+ },
+ "editor_fx": {
+  "n": 34
+ },
+ "editor_gradient": {
+  "n": 49
+ },
+ "editor_groups": {
+  "n": 28
+ },
+ "editor_history": {
+  "n": 44
+ },
+ "editor_hsl": {
+  "n": 33
+ },
+ "editor_imgexport": {
+  "n": 18
+ },
+ "editor_layers": {
+  "n": 43
+ },
+ "editor_masks": {
+  "n": 40
+ },
+ "editor_mobile": {
+  "n": 29
+ },
+ "editor_photo": {
+  "n": 24
+ },
+ "editor_redpill": {
+  "n": 11
+ },
+ "editor_select": {
+  "n": 30
+ },
+ "editor_shapes": {
+  "n": 34
+ },
+ "editor_text": {
+  "n": 19
+ },
+ "editor_textedit": {
+  "n": 30
+ },
+ "editor_v01": {
+  "n": 15
+ },
+ "editor_wand": {
+  "n": 28
+ },
+ "editor_xform": {
+  "n": 32
+ },
+ "erase": {
+  "n": 11
+ },
+ "export": {
+  "n": null
+ },
+ "groups": {
+  "n": 153
+ },
+ "icc": {
+  "n": null
+ },
+ "nonsep": {
+  "n": 113
+ },
+ "oplog_witness": {
+  "n": null
+ },
+ "psd_roundtrip": {
+  "n": null
+ },
+ "sha": {
+  "n": 12
+ },
+ "stack": {
+  "n": null
+ },
+ "tiles": {
+  "n": 17
+ }
+}

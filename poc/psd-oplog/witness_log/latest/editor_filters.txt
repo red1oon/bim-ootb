@@ -29,4 +29,28 @@ PASS FL5 the transparent hole stays exactly transparent (all four channels 0), i
 PASS FL5 the flat area is bitwise unchanged when threshold > 0 (cases with threshold 8 / 64) = true (== true)
 PASS FL5 sharpening changes the picture at the edge (negative control: not a no-op) = true (== true)
 PASS FL8 a checkpoint holding a blur and a hidden sharpen is accepted by the rule = true (== true)
-PASS FL8 resume from that checkpoin
+PASS FL8 resume from that checkpoint then replaying the later ops gives an equal composite and equal filter parameters = true (== true)
+PASS FL8 three replays of the same log give identical hashes = 1 (== 1)
+PASS FL8 every filter entry is at most 256 bytes (max 120) = true (== true)
+PASS FL8 live editor: blur, masked + faded sharpen, hidden blur: live hashes == refold = true (== true)
+PASS FL7 page PSD bytes (1119572) == Node exporter bytes with a blur, a masked faded sharpen and a hidden blur = true (== true)
+FL7 psd-tools: {"nodes":[{"kind":"pixel","name":"Background","visible":true,"opacity":255},{"kind":"pixel","name":"Layer 1","visible":true,"opacity":255},{"kind":"pixel","name":"Gaussian blur 2 (baked)","visible":true,"opacity":255},{"kind":"pixel","name":"Sharpen 3 (baked)","visible":true,"opacity":179},{"kind":"pixel","name":"Gaussian blur 4 (baked)","visible":false,"opacity":255}],"merged_max_diff":1,"merged_over1":0}
+PASS FL7 psd-tools sees 3 pixel layers with the baked names (Gaussian blur 2 (baked) op255, Sharpen 3 (baked) op179, Gaussian blur 4 (baked) [hidden] op255), opacities 255 / 179 / 255 (+-1), the hidden one hidden = true (== true)
+PASS FL7 stored merged image within 1 level of the editor composite on an opaque backdrop (max diff 1, pixels over 1: 0) = 0 (== 0)
+PASS FL7 import of that PSD yields pixel layers only (the filters are NOT live there): no gblur / sharpen adjust ops, 5 layer ops = true (== true)
+PASS FL8 hide / show, move, rename and an amend of a stroke BELOW the filters: live == refold = true (== true)
+PASS FL8 delete a filter layer: live == refold = true (== true)
+PASS FL8 undo all (18 steps) / redo all: hashes == refold at every step, log length restored = true (== true)
+PASS FL8 save -> load gives the same hashes = true (== true)
+PASS FL8 the page's filter entries are <= 256 bytes (max 118) = true (== true)
+FL9 REPORTED, 1024^2 (ms): coarse preview refresh (median of 5) and exact commit: {"blur2":370.59999999403954,"blur2c":376,"blur10":182.09999999403954,"blur10c":1616,"sharp5":246.59999999403954,"sharp5c":2236}
+PASS FL9 1024^2 COARSE preview refresh in the page: blur sigma 2 371 ms, + sigma 10 182 ms, + sharpen radius 5 247 ms (limit 400 ms each; exact commit REPORTED: 376 / 1616 / 2236 ms) = true (== true)
+PASS FL9 after drag (coarse preview) + release the picture is EXACT: live hashes == refold = true (== true)
+PASS FL8 no page errors (desktop) = 0 (== 0)
+PASS FL9 phone 390x844: Add adjustment menu 159x44 (>= 44); choosing Gaussian blur adds a row with 1 slider 44 px high (+1 entry) = true (== true)
+PASS FL9 a drag of the blur Radius slider logs exactly 1 `adjset` with sigma_x10 80 = true (== true)
+PASS FL9 choosing Sharpen adds a row with 3 sliders (44,44,44 px high, all >= 44) (+1 entry) = true (== true)
+PASS FL9 a drag of the Amount slider logs exactly 1 `adjset` with amount 220 = true (== true)
+PASS FL9 no horizontal overflow, the page does not scroll, no page errors = true (== true)
+
+all 48 checks pass

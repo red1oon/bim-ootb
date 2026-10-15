@@ -20,8 +20,8 @@ PASS FX4 bad amends are refused (a key of the other kind, blur 401, w 0, a non-f
 PASS FX4 14 invalid fx ops (unknown kind, dx / dy / blur / w out of range or float, bad alpha / colour, a key of the other kind, unknown field / layer) throw = 14 (== 14)
 PASS FX4 and leave the state unchanged = 14 (== 14)
 PASS FX4 checkpoint then replay of later fx ops gives an equal composite = true (== true)
-FX7 REPORTED at 1024^2: shadow blur 10 2061 ms, outline w 8 41 ms
-PASS FX7 cost at 1024^2 REPORTED: shadow blur 10 2061 ms, outline w 8 41 ms (no limit pre-registered) = true (== true)
+FX7 REPORTED at 1024^2: shadow blur 10 3567 ms, outline w 8 83 ms
+PASS FX7 cost at 1024^2 REPORTED: shadow blur 10 3567 ms, outline w 8 83 ms (no limit pre-registered) = true (== true)
 PASS FX4 the Effects panel: Drop shadow Apply (real clicks) logs ONE `fx` entry with the chosen offset, blur, opacity and the active layer = true (== true)
 PASS FX4 Outline Apply logs ONE `fx` entry with width 9, white, opacity 1 = true (== true)
 PASS FX4 both entries <= 256 bytes and live hashes == refold = true (== true)
@@ -33,4 +33,8 @@ PASS FX5 page PSD bytes (353250) == Node exporter bytes with a shadow and an out
 FX5 psd-tools: {"nodes":[{"kind":"pixel","name":"Background","visible":true,"opacity":255},{"kind":"pixel","name":"Layer 1","visible":true,"opacity":255}],"merged_max_diff":1,"merged_over1":0}
 PASS FX5 psd-tools sees ordinary pixel layers only (pixel,pixel) and the stored merged image is within 1 level of the editor composite (max diff 1, pixels over 1: 0) = true (== true)
 PASS FX4 no page errors (desktop) = 0 (== 0)
-PASS FX6 phone 390x844: Effects controls >= 44 px high and inside the viewport (addfx:44 fx-k-shadow:44 fx-k-stroke:44 fx-dx:44 fx
+PASS FX6 phone 390x844: Effects controls >= 44 px high and inside the viewport (addfx:44 fx-k-shadow:44 fx-k-stroke:44 fx-dx:44 fx-dy:44 fx-bl:44 fx-sa:44 fx-sc:44 fx-apply:44 fx-cancel:44), no horizontal overflow, page does not scroll = true (== true)
+PASS FX6 tapping Apply logs exactly 1 `fx` entry (default shadow) = true (== true)
+PASS FX6 no page errors (phone) = 0 (== 0)
+
+all 34 checks pass

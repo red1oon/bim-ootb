@@ -31,10 +31,27 @@ PASS GD6 (a) 8-bit-exact content: stored merged image within 1 level of the edit
 PASS GD6 (b) float content: merged max diff 8 (pixels over 1 level: 2972, REPORTED) <= steepest segment + 1 = 9 = true (== true)
 PASS GD6 ag-psd read-back: the stops of both layers equal the log (positions, rgb) = true (== true)
 PASS GD6 import: the PSD yields two `adjust` gradmap ops with the same stops, opacities 1 and 0.4 = true (== true)
-GD8 REPORTED at 1024^2: gradient-map composite (best of 5) 44 ms; one grad op 43 ms
-PASS GD8 1024^2 one grad op (43 ms) = true (== true)
-PASS GD8 1024^2 gradient-map full composite (best of 5, 44 ms, includes the flatten of one layer) = true (== true)
+GD8 REPORTED at 1024^2: gradient-map composite (best of 5) 43 ms; one grad op 47 ms
+PASS GD8 1024^2 one grad op (47 ms) = true (== true)
+PASS GD8 1024^2 gradient-map full composite (best of 5, 43 ms, includes the flatten of one layer) = true (== true)
 PASS GD4 a Gradient-tool drag (real mouse events) logs ONE `grad` entry with integer points, colours and alphas = true (== true)
 PASS GD4 4 drags (linear, radial to clear, mask, linear) logged 4 grad entries, each <= 256 bytes (max 115) = true (== true)
 PASS GD4 live hashes == refold of the log = true (== true)
-PASS GD4 undo all (6 steps) / redo all: hashes == refold at every step, log length restored = true (== tr
+PASS GD4 undo all (6 steps) / redo all: hashes == refold at every step, log length restored = true (== true)
+PASS GD4 the page layer pixels == the Node engine replay of the saved log (sha256) = true (== true)
+PASS GD4 save -> load gives the same hashes = true (== true)
+PASS GD6 page PSD bytes (2241769) == Node exporter bytes with two gradient maps (one edited, one hidden at opacity 0.4) = true (== true)
+PASS GD4 no page errors = 0 (== 0)
+PASS GD7 phone 390x844: Gradient tool button 56x44 (>= 44), gradient bar shown with Linear / Radial / To clear / End colour all inside the viewport and >= 44 px high (44,44,44,44), no horizontal overflow, page does not scroll = true (== true)
+PASS GD7 a drag on the phone canvas logs exactly 1 grad entry = true (== true)
+PASS GD7 undo removes it = true (== true)
+PASS GD7 no page errors = 0 (== 0)
+PASS GD7 choosing Gradient map adds an adjustment row with the stop bar (+1 entry, one canvas.gmap) = true (== true)
+PASS GD7 stop bar 256x44 px, colour input 44 px and Remove button 44 px high (all >= 44), inside the viewport = true (== true)
+PASS GD7 a tap on the bar adds a stop: exactly 1 `adjset` with 3 stops, the new stop at about the middle = true (== true)
+PASS GD7 dragging the middle stop logs exactly 1 `adjset` and moves it right of 150 = true (== true)
+PASS GD7 changing the stop colour logs exactly 1 `adjset` with the new colour = true (== true)
+PASS GD7 Remove stop logs exactly 1 `adjset` with 2 stops = true (== true)
+PASS GD7 no page errors (gradient map editor) = 0 (== 0)
+
+all 49 checks pass

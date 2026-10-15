@@ -18,8 +18,8 @@ PASS SP4 save -> load (JSON round trip) gives the same hash = 46ad33ae00f69ebf63
 PASS SP4 checkpoint then replay of later shape ops gives an equal composite = true (== true)
 PASS SP5 amend of a rect (box, colour) and an ellipse (stroke, alpha): the amended log folds to the document authored with the new params from the start = true (== true)
 PASS SP5 bad amends are refused (changing the kind, a float coordinate, a target that is not a stroke / smudge / shape) = true (== true)
-SP7 REPORTED at 1024^2: rounded rect + outline 50 ms, full-canvas ellipse 40 ms
-PASS SP7 1024^2 rounded rect + outline (50 ms) and full-canvas ellipse (40 ms) = true (== true)
+SP7 REPORTED at 1024^2: rounded rect + outline 81 ms, full-canvas ellipse 64 ms
+PASS SP7 1024^2 rounded rect + outline (81 ms) and full-canvas ellipse (64 ms) = true (== true)
 PASS SP4 a Shape-tool drag (real mouse events) logs ONE `shape` entry with integer corners, fill colour and alpha = true (== true)
 PASS SP4 5 drags (rect, rounded + outline, Shift-circle outline only, line, rect + outline) logged 5 shape entries, each <= 256 bytes (max 142); the rounded one has r 40, the Shift ellipse is square-boxed, the line has a stroke = true (== true)
 PASS SP4 live hashes == refold of the log = true (== true)
@@ -32,4 +32,9 @@ PASS SP5 the amended picture == the log expanded (authored with the new params):
 PASS SP5 an amend that leaves the canvas (x1 2000) is refused (the amend throws) and logs nothing (no UI re-edits shapes yet) = true (== true)
 PASS SP5 undo-all / redo-all after the amend: hashes == refold at every step (6 steps) = true (== true)
 PASS SP4 no page errors (desktop) = 0 (== 0)
-PASS SP6 phone 390x844: Shape tool button 56x44, bar shown, controls inside the viewport and >= 44 px high (sh-rect:44 sh-round:44 sh-ell:44 sh-line:44 sh-fill:44 sh-stroke:44 sh-w:44 sh-col:44), no horizontal ove
+PASS SP6 phone 390x844: Shape tool button 56x44, bar shown, controls inside the viewport and >= 44 px high (sh-rect:44 sh-round:44 sh-ell:44 sh-line:44 sh-fill:44 sh-stroke:44 sh-w:44 sh-col:44), no horizontal overflow, page does not scroll = true (== true)
+PASS SP6 one touch drag logs exactly 1 `shape` = true (== true)
+PASS SP6 a two-finger tap undoes it = true (== true)
+PASS SP6 no page errors (phone) = 0 (== 0)
+
+all 34 checks pass

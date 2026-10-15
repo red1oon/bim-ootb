@@ -57,6 +57,8 @@
     "editor_textedit": "node editor/run_textedit.js",
     "editor_imgexport": "node editor/run_imgexport.js",
     "editor_carry": "node editor/run_carry.js",
+    "floors": "node witness_floors.js",
+    "floors_test": "node run_floors_test.js",
     "editor_text": "node editor/run_text.js",
     "editor_xform": "node editor/run_xform.js",
     "editor_redpill": "node editor/run_redpill.js",
