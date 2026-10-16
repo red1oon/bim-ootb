@@ -731,6 +731,7 @@
       "id": "PACKAGE 1",
       "name": "INFRASTRUCTURE",
       "color": "8E44AD",
+      "phase": "Substructure",
       "classes": [
         "IfcFooting",
         "IfcPile",
@@ -741,6 +742,7 @@
       "id": "PACKAGE 2",
       "name": "GROS OEUVRE",
       "color": "2980B9",
+      "phase": "Superstructure",
       "classes": [
         "IfcColumn",
         "IfcBeam",
@@ -753,6 +755,7 @@
       "id": "PACKAGE 3",
       "name": "CVC GROS OEUVRE",
       "color": "D35400",
+      "phase": "MEP Rough-in",
       "classes": [
         "IfcDuct",
         "IfcDuctSegment",
@@ -777,6 +780,7 @@
       "id": "PACKAGE 4",
       "name": "SECOND OEUVRE",
       "color": "ED7D31",
+      "phase": "Architecture",
       "classes": [
         "IfcWall",
         "IfcWallStandardCase",
@@ -795,6 +799,7 @@
       "id": "PACKAGE 5",
       "name": "FINITIONS",
       "color": "27AE60",
+      "phase": "Finishes",
       "classes": [
         "IfcCovering",
         "IfcFurniture",
@@ -805,6 +810,7 @@
       "id": "PACKAGE 6",
       "name": "CVC FINITION",
       "color": "C0392B",
+      "phase": "MEP Final",
       "classes": [
         "IfcFlowTerminal",
         "IfcLightFixture",

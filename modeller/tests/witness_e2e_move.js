@@ -1,174 +1,94 @@
 #!/usr/bin/env node
 /**
- * # ⚠ DO NOT REMOVE — W-E2E-MOVE scope (read this block first)
- * SCOPE: a USER-EMULATING, MATHS-ASSERTED, ATOMIC end-to-end test of the MOVE authoring tool — the standard the
- *   user set: "a test suite must emulate a user series of actions that confirms each function works completely,
- *   perfectly and atomically." This drives the REAL production path with REAL mouse input (puppeteer pg.mouse →
- *   Chrome pointer events), NOT an engine seam: open a building from the chooser, PICK an element by clicking it,
- *   enter Move, DRAG the X gizmo handle, RELEASE to commit, then UNDO via the real history slider. Every claim is a
- *   number read back from the live op-log + scene graph + framebuffer — no eyeballing, no magic constants.
+ * # ⚠ DO NOT REMOVE — W-E2E-MOVE: real-user, maths-asserted E2E of the MOVE tool (gizmo X-axis arrow).
+ * Real path: open → click an element (select) → Move pill (transform gizmo) → drag the X-axis ARROW handle →
+ * one signed GEOM_MOVE (X-only). Asserted by op-log + the measured bbox-centre displacement (rendered ==
+ * committed) + framebuffer change + the real history-slider undo. Real pg.mouse on the real gizmo.
+ *   A1 SELECT      — a real click selects an element.
+ *   A2 GIZMO       — Move mode builds the gizmo with an X-axis arrow handle on the selection.
+ *   A3 MOVE-COMMIT — dragging the X handle commits a GEOM_MOVE for the selection (dy==0, dz==0, |dx|>0.01);
+ *                    if the selection HOSTS fillings (a door/window on this wall) their own GEOM_MOVE rides
+ *                    along with the identical delta (§STRETCH-RIDE-style cascade, not a separate free op).
+ *   A4 ATOMIC      — the moved mesh's bbox-centre displacement == the committed op delta within 1e-3m.
+ *   A5 VISIBLE     — the framebuffer changed after the move (readPixels checksum differs).
+ *   A6 REVERSIBLE  — undo via the real history slider restores the bbox-centre within 1e-3m, cursor −1.
  *
- * THE WORKING SWIFTSHADER FLAGS: --use-gl=angle --use-angle=swiftshader (precedent witness_dw_pixelprobe.js).
- *
- * CLAIMS (Duplex, a real picked element):
- *   A1 OPEN-REAL      — clicking Open → Duplex loads the building as editable meshes (group has ≥1 featureId mesh).
- *   A2 PICK-REAL      — a real mouse click on an element SELECTS it (window.Bonsai._selSet gains exactly that fid).
- *   A3 MOVE-ENTER     — clicking the Move pill enters move mode (b-move 'on') and builds the XYZ gizmo in the scene.
- *   A4 DRAG-COMMITS   — a real X-handle drag+release commits EXACTLY ONE GEOM_MOVE op for the selected fid (op-log +1).
- *   A5 ATOMIC         — the moved mesh's bbox-centre displacement == the committed op delta within 1e-3m
- *                       (what is committed IS what is rendered — one coherent result, no drift).
- *   A6 AXIS-PERFECT   — an X drag moves ONLY X: op dy==0 and dz==0, |dx|>0.01 (the axis constraint held).
- *   A7 VISIBLE        — the framebuffer changed after the move (readPixels checksum differs → the user SEES it move).
- *   A8 REVERSIBLE     — UNDO via the real history slider restores the bbox-centre to the original within 1e-3m and
- *                       drops the op cursor by 1 (the action is atomic + perfectly reversible).
- *   A9 NO-ERROR       — no pageerror across the whole sequence.
+ * §F2-FRAMING (2026-08-07, guide-recapture card RESUME_MODELLER_GUIDE_SCREENSHOT_FIX.md): ported from a
+ * standalone raw-puppeteer script to the shared e2e_harness (same rig as witness_e2e_rotate.js /
+ * witness_e2e_scale.js) so `move-gizmo.png` gets the SAME t.frameElement+t.shotClip close-up treatment as
+ * its Transform-section neighbors (gizmo.png / rotate-yaw.png / scale-stretched.png) instead of the old wide
+ * whole-building shot (watchdog-flagged 2026-07-02 NIGHT as a composition regression, never fixed — the PR
+ * #608 recapture batch that fixed the other Transform frames didn't include this one). All A1-A6 maths are
+ * the same claims as the pre-port A1-A9 (old A1 OPEN-REAL / A9 NO-ERROR are now the harness's own built-in
+ * checks, not separate assertions here).
  */
 'use strict';
-const http = require('http'), fs = require('fs'), path = require('path');
-const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const ROOT = path.join(__dirname, '..', '..');
-const SHOTS = path.join(__dirname, 'e2e_shots'); try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) {}
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
-const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
-  fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404 ' + p); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
+const { runE2E } = require('./e2e_harness');
+runE2E('W-E2E-MOVE', async (t) => {
+  await t.open('Duplex'); await t.shot('01-open');
+  const sel = await t.pick({ prefer: 'wall', axisSafe: true, maxVol: 6 });   // §F2-FRAMING: element-scale subject; axisSafe rules out tilted inserts where local-X≠world-X; maxVol avoids the pathological-largest-mesh crash (see e2e_harness.js §F2-FRAMING notes, W-E2E-MOVE finding)
+  t.assert('A1 SELECT (real click selects element)', !!sel, 'fid=' + (sel && sel.fid));
+  if (!sel) return;
+  const c0 = sel.centre;
 
-(async () => {
-  await new Promise(r => server.listen(0, r)); const port = server.address().port;
-  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
-  const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
-  const slog = []; pg.on('console', m => { const t = m.text(); if (/^§(MOVE|SDG|GATE)/.test(t)) slog.push(t); });
-  // F4: capture real guide frames at the asserted moments (2× DPR; non-invent — these ARE the app frames)
-  const shot = (label) => pg.screenshot({ path: path.join(SHOTS, 'W-E2E-MOVE-' + label + '.png') }).catch(() => {});
-
-  console.log('═══ W-E2E-MOVE — real user: open → pick → move gizmo drag → commit → undo (maths-asserted, atomic) ═══');
-  await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
-  await pg.waitForFunction('window.__sceneReady === true && !!window.THREE && !!window.A && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
-
-  // A1 — real Open → Duplex
-  await pg.click('#b-open'); await sleep(200);
-  await pg.click('#m-open-panel .mo-row[data-key="Duplex"]');
-  await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
-  await sleep(2500);
-  const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(600); }
-
-  const editable = await pg.evaluate(() => {
-    const g = window.Bonsai.group(); return g.children.filter(o => o.isMesh && o.userData && o.userData.featureId != null).length;
+  await t.clickSel('#b-move'); await t.sleep(500);
+  const giz = await t.pg.evaluate(() => {
+    const gz = window.A.scene.getObjectByName('MoveGizmo'); if (!gz) return null;
+    let handle = null; gz.traverse(o => { if (o.userData && o.userData.moveAxis === 'x' && !handle) handle = o; });
+    if (!handle) return null;
+    const w = new window.THREE.Vector3(); handle.getWorldPosition(w);
+    return { handle: [w.x, w.y, w.z], on: document.getElementById('b-move').classList.contains('on') };
   });
+  t.assert('A2 GIZMO (X-axis handle present)', !!giz && giz.on === true, giz ? 'handle@' + giz.handle.map(n => n.toFixed(2)) : 'no gizmo/handle');
+  if (!giz) return;
 
-  // in-page helper: project a world point → client px (THREE is global, camera = window.A.camera)
-  await pg.evaluate(() => {
-    window.__e2e = {
-      proj(x, y, z) { const v = new window.THREE.Vector3(x, y, z).project(window.A.camera);
-        const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect();
-        return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top, v.z]; },
-      centre(fid) { const g = window.Bonsai.group(); const m = g.children.find(o => o.isMesh && o.userData.featureId === fid);
-        if (!m) return null; m.geometry.computeBoundingBox(); const b = new window.THREE.Box3().setFromObject(m);
-        const c = new window.THREE.Vector3(); b.getCenter(c); return [c.x, c.y, c.z]; },
-      pixsum() { const r = window.A.renderer; r.render(window.A.scene, window.A.camera); const gl = r.getContext();
-        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(w * h * 4);
-        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0; return s; },
-      // candidate elements with the largest projected screen footprint → most reliable to click
-      candidates() { const g = window.Bonsai.group(); const out = [];
-        for (const m of g.children) { if (!m.isMesh || m.userData.featureId == null) continue;
-          const b = new window.THREE.Box3().setFromObject(m); if (!isFinite(b.min.x)) continue;
-          const c = new window.THREE.Vector3(); b.getCenter(c); const p = this.proj(c.x, c.y, c.z);
-          const cv = window.A.renderer.domElement, r = cv.getBoundingClientRect();
-          if (p[0] < r.left + 20 || p[0] > r.right - 20 || p[1] < r.top + 20 || p[1] > r.bottom - 20 || p[2] > 1) continue;
-          const sz = new window.THREE.Vector3(); b.getSize(sz);
-          out.push({ fid: m.userData.featureId, sx: p[0], sy: p[1], vol: sz.x * sz.y * sz.z }); }
-        out.sort((a, b) => b.vol - a.vol); return out.slice(0, 12); }
-    };
-    return true;
-  });
+  const before = await t.oplog(); const pix0 = await t.pixsum();
+  const DELTA = 1.0;
+  // §AXIS-PATH (2026-08-07 finding): t.drag() interpolates LINEARLY IN SCREEN SPACE between down/up — under
+  // perspective, the screen-space image of a straight WORLD-axis line is itself slightly curved, so that
+  // shortcut walks the intermediate mouse positions a little off the true axis (measured: a run landed
+  // dy=-0.095m, comfortably outside noise). Project each intermediate WORLD point on the axis individually
+  // (same fix rotate.js/scale.js already apply to their ring/cube drags) so every frame of the gesture is a
+  // real on-axis point, not a screen-space shortcut between two on-axis endpoints.
+  const STEPS = 8, pts = [];
+  for (let i = 0; i <= STEPS; i++) { const f = i / STEPS; pts.push(await t.proj(giz.handle[0] + DELTA * f, giz.handle[1], giz.handle[2])); }
+  await t.pg.mouse.move(pts[0][0], pts[0][1]); await t.sleep(60);
+  await t.pg.mouse.down(); await t.sleep(60);
+  for (let i = 1; i < pts.length; i++) { await t.pg.mouse.move(pts[i][0], pts[i][1], { steps: 3 }); await t.sleep(30); }
+  await t.sleep(60); await t.pg.mouse.up();
+  await t.sleep(1500);   // full re-fold settle, same budget as witness_e2e_rotate.js/witness_e2e_scale.js
 
-  // A2 — real pick: click candidates until one selects
-  const cands = await pg.evaluate(() => window.__e2e.candidates());
-  let fid = null;
-  for (const c of cands) {
-    await pg.mouse.move(c.sx, c.sy); await sleep(40); await pg.mouse.click(c.sx, c.sy); await sleep(120);
-    const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
-    if (sel.length === 1) { fid = sel[0]; break; }
-  }
-  // §ZOOM-SEL: the pick auto-flew the camera (zoomToSelection) — wait it out before computing any drag
-  // coordinates, or they are stale mid-fly (a real user drags on the settled frame)
-  { const t0 = Date.now(); while (Date.now() - t0 < 15000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120); }
-  await sleep(300);
-  const c0 = fid != null ? await pg.evaluate(f => window.__e2e.centre(f), fid) : null;
-  const oplog0 = await pg.evaluate(() => ({ len: window.Bonsai.oplog.length, cur: window.Bonsai.oplog.cursor }));
-  const pix0 = await pg.evaluate(() => window.__e2e.pixsum());
+  const after = await t.oplog(); const last = await t.lastOp(); const pix1 = await t.pixsum();
+  // §RIDE (2026-08-07 finding): moving a HOST wall cascades a GEOM_MOVE onto each hosted filling with the
+  // identical delta (the guide's own caption: "a moved host drags its hosted fillings") — op-log +1 is only
+  // true for a childless subject. Fetch every new op (not just the newest) so a hosted-fillings subject is
+  // asserted correctly instead of failing on op-count.
+  const newOps = await t.pg.evaluate(n => window.Bonsai.oplog._geomOps().slice(n), before.len);
+  let c1 = await t.centre(sel.fid);
+  for (let i = 0; i < 10 && !c1; i++) { await t.sleep(300); c1 = await t.centre(sel.fid); }   // re-fold may still be replacing meshes
+  await t.frameElement(sel.fid, 0.35);   // §F2-FRAMING (spec G4): element close-up — was a wide whole-building shot
+  await t.shot('02-moved');
+  await t.shotClip('move-gizmo', sel.fid, 150);
 
-  // A3 — enter Move
-  await pg.click('#b-move'); await sleep(300);
-  const moveState = await pg.evaluate(() => {
-    const giz = window.A.scene.children.find(o => o.name === 'MoveGizmo');
-    let handle = null;
-    if (giz) { giz.updateMatrixWorld(true); giz.traverse(o => { if (o.isMesh && o.userData.moveAxis === 'x' && !handle) handle = o; }); }
-    const wp = handle ? handle.getWorldPosition(new window.THREE.Vector3()) : null;
-    return { on: document.getElementById('b-move').classList.contains('on'), hasGizmo: !!giz,
-      handleWorld: wp ? [wp.x, wp.y, wp.z] : null };
-  });
-  await shot('gizmo');   // guide frame: the XYZ transform gizmo raised on the selected element (A3 asserted)
+  const selOp = newOps.find(o => o.parameters && o.parameters.parent === sel.fid);
+  const selD = selOp && selOp.parameters ? [selOp.parameters.dx, selOp.parameters.dy, selOp.parameters.dz] : [0, 0, 0];
+  const allMoveSameDelta = newOps.length > 0 && newOps.every(o => o.op_type === 'GEOM_MOVE' &&
+    Math.abs(o.parameters.dx - selD[0]) < 1e-6 && Math.abs(o.parameters.dy - selD[1]) < 1e-6 && Math.abs(o.parameters.dz - selD[2]) < 1e-6);
 
-  // A4/A5/A6 — real drag of the X handle: down on the shaft, move +1.0m along world-X, release
-  let dragErr = '';
-  if (moveState.handleWorld) {
-    const Wh = moveState.handleWorld, DELTA = 1.0;
-    const down = await pg.evaluate(w => window.__e2e.proj(w[0], w[1], w[2]), Wh);
-    const up = await pg.evaluate((w, d) => window.__e2e.proj(w[0] + d, w[1], w[2]), Wh, DELTA);
-    await pg.mouse.move(down[0], down[1]); await sleep(40);
-    await pg.mouse.down(); await sleep(40);
-    await pg.mouse.move((down[0] + up[0]) / 2, (down[1] + up[1]) / 2, { steps: 4 }); await sleep(40);
-    await pg.mouse.move(up[0], up[1], { steps: 6 }); await sleep(60);
-    await pg.mouse.up(); await sleep(500);
-  } else { dragErr = 'no X handle found on gizmo'; }
+  const dMove = c0 && c1 ? [c1[0] - c0[0], c1[1] - c0[1], c1[2] - c0[2]] : null;
+  const atomicErr = dMove ? Math.hypot(dMove[0] - selD[0], dMove[1] - selD[1], dMove[2] - selD[2]) : Infinity;
 
-  const after = await pg.evaluate(f => {
-    const ops = window.Bonsai.oplog._geomOps();
-    const last = ops[ops.length - 1] || null;
-    return { len: window.Bonsai.oplog.length, cur: window.Bonsai.oplog.cursor,
-      lastType: last && last.op_type, lastParent: last && last.parameters && last.parameters.parent,
-      d: last && last.parameters ? [last.parameters.dx, last.parameters.dy, last.parameters.dz] : null,
-      centre: window.__e2e.centre(f) };
-  }, fid);
-  const pix1 = await pg.evaluate(() => window.__e2e.pixsum());
-  await shot('moved');   // guide frame: the element after the committed X-axis GEOM_MOVE (A5/A7 asserted)
+  t.assert('A3 MOVE-COMMIT (GEOM_MOVE for selection [+ any hosted fillings riding the same delta], X-only)',
+    after.len === before.len + newOps.length && !!selOp && allMoveSameDelta &&
+    Math.abs(selD[0]) > 0.01 && Math.abs(selD[1]) < 1e-6 && Math.abs(selD[2]) < 1e-6,
+    'len ' + before.len + '→' + after.len + ' newOps=' + newOps.length + ' selDelta=' + JSON.stringify(selD));
+  t.assert('A4 ATOMIC (rendered centre delta == committed delta)', atomicErr < 1e-3, 'atomicErr=' + atomicErr.toExponential(2) + 'm');
+  t.assert('A5 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
 
-  // A8 — UNDO via the real history slider (range input → scrubToShared → oplog.scrubTo)
-  await pg.evaluate(() => { const s = document.getElementById('hist-slider'); s.value = Math.max(0, (window.Bonsai.oplog.cursor - 1)); s.dispatchEvent(new Event('input', { bubbles: true })); });
-  await sleep(600);
-  const undo = await pg.evaluate(f => ({ cur: window.Bonsai.oplog.cursor, centre: window.__e2e.centre(f) }), fid);
-
-  await br.close(); server.close();
-
-  const disp = (a, b) => a && b ? [b[0] - a[0], b[1] - a[1], b[2] - a[2]] : null;
-  const d_move = disp(c0, after.centre);            // bbox-centre displacement vs committed op delta
-  const d_undo = disp(c0, undo.centre);             // residual after undo
-  const norm = v => v ? Math.hypot(v[0], v[1], v[2]) : Infinity;
-  const opd = after.d || [0, 0, 0];
-  const atomicErr = (d_move && after.d) ? Math.hypot(d_move[0] - opd[0], d_move[1] - opd[1], d_move[2] - opd[2]) : Infinity;
-
-  console.log('  §OPEN editableMeshes=' + editable + ' picked fid=' + fid + ' c0=' + JSON.stringify(c0));
-  console.log('  §MOVE-STATE ' + JSON.stringify(moveState) + (dragErr ? ' ERR=' + dragErr : ''));
-  console.log('  §AFTER op=' + after.lastType + ' parent=' + after.lastParent + ' delta=' + JSON.stringify(after.d) +
-    ' centreDisp=' + JSON.stringify(d_move ? d_move.map(x => +x.toFixed(4)) : null) + ' atomicErr=' + atomicErr.toExponential(2) + 'm');
-  console.log('  §PIX before=' + pix0 + ' afterMove=' + pix1 + ' (changed=' + (pix0 !== pix1) + ')');
-  console.log('  §UNDO cursor ' + after.cur + '→' + undo.cur + ' residual=' + norm(d_undo).toExponential(2) + 'm');
-  slog.forEach(l => console.log('  ' + l));
-
-  let pass = 0, fail = 0;
-  const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
-  chk('A1 OPEN-REAL (editable meshes)', editable > 0, 'meshes=' + editable);
-  chk('A2 PICK-REAL (one element selected)', fid != null, 'fid=' + fid);
-  chk('A3 MOVE-ENTER (mode on + gizmo)', moveState.on === true && moveState.hasGizmo === true, JSON.stringify({ on: moveState.on, gizmo: moveState.hasGizmo }));
-  chk('A4 DRAG-COMMITS exactly one GEOM_MOVE', after.lastType === 'GEOM_MOVE' && after.lastParent === fid && after.len === oplog0.len + 1, 'type=' + after.lastType + ' parent=' + after.lastParent + ' len ' + oplog0.len + '→' + after.len);
-  chk('A5 ATOMIC (render delta == committed delta)', atomicErr < 1e-3, 'atomicErr=' + atomicErr.toExponential(2) + 'm');
-  chk('A6 AXIS-PERFECT (X-only)', after.d != null && Math.abs(opd[0]) > 0.01 && Math.abs(opd[1]) < 1e-6 && Math.abs(opd[2]) < 1e-6, 'delta=' + JSON.stringify(after.d));
-  chk('A7 VISIBLE (framebuffer changed)', pix0 !== pix1, 'pixsum ' + pix0 + '→' + pix1);
-  chk('A8 REVERSIBLE (undo restores ≤1e-3m, cursor−1)', norm(d_undo) < 1e-3 && undo.cur === after.cur - 1, 'residual=' + norm(d_undo).toExponential(2) + 'm cursor ' + after.cur + '→' + undo.cur);
-  chk('A9 NO-ERROR', errs.length === 0 && !dragErr, (dragErr || '') + ' ' + errs.slice(0, 2).join(' | '));
-
-  console.log('W-E2E-MOVE: ' + pass + ' PASS / ' + fail + ' FAIL');
-  process.exit(fail ? 1 : 0);
-})();
+  await t.undoToCursor(before.cur);
+  const undo = await t.oplog(); const c2 = await t.centre(sel.fid);
+  await t.shot('03-undone');
+  const residual = c0 && c2 ? Math.hypot(c2[0] - c0[0], c2[1] - c0[1], c2[2] - c0[2]) : Infinity;
+  t.assert('A6 REVERSIBLE (undo restores centre + cursor)', undo.cur === before.cur && residual < 1e-3,
+    'cursor ' + after.cur + '→' + undo.cur + ' (want ' + before.cur + ') residual=' + residual.toExponential(2) + 'm');
+}, { width: 1200, height: 850, dpr: 2 });

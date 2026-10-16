@@ -34,6 +34,38 @@
     return pt[0] >= box[0] - tol && pt[0] <= box[1] + tol && pt[1] >= box[2] - tol && pt[1] <= box[3] + tol;
   }
 
+  // §GATE-SCALE: uniform XY grid over the AFTER boxes. near(box) → indices (into keys) of every box whose AABB intersects
+  // `box` grown by `pad` on all three axes, ascending. Boxes spanning > BIG_CELLS cells (slabs, roofs) go to a list that
+  // every query scans, so no cell holds thousands of copies. Exact: a superset filter followed by the true AABB test.
+  var GRID_CELL = 4, BIG_CELLS = 256;
+  function spatialIndex(boxes, keys, pad) {
+    var cells = new Map(), big = [], stamp = new Int32Array(keys.length), q = 0;
+    for (var j = 0; j < keys.length; j++) {
+      var b = boxes[keys[j]];
+      var i0 = Math.floor(b[0] / GRID_CELL), i1 = Math.floor(b[1] / GRID_CELL), j0 = Math.floor(b[2] / GRID_CELL), j1 = Math.floor(b[3] / GRID_CELL);
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) > BIG_CELLS) { big.push(j); continue; }
+      for (var a = i0; a <= i1; a++) for (var c = j0; c <= j1; c++) {
+        var ck = a + ',' + c, arr = cells.get(ck); if (!arr) cells.set(ck, arr = []); arr.push(j);
+      }
+    }
+    function hit(b, g) {
+      return b[0] <= g[1] && b[1] >= g[0] && b[2] <= g[3] && b[3] >= g[2] && b[4] <= g[5] && b[5] >= g[4];
+    }
+    return {
+      near: function (box) {
+        var g = [box[0] - pad, box[1] + pad, box[2] - pad, box[3] + pad, box[4] - pad, box[5] + pad], out = [];
+        q++;
+        var i0 = Math.floor(g[0] / GRID_CELL), i1 = Math.floor(g[1] / GRID_CELL), j0 = Math.floor(g[2] / GRID_CELL), j1 = Math.floor(g[3] / GRID_CELL);
+        for (var a = i0; a <= i1; a++) for (var c = j0; c <= j1; c++) {
+          var arr = cells.get(a + ',' + c); if (!arr) continue;
+          for (var t = 0; t < arr.length; t++) { var j = arr[t]; if (stamp[j] !== q) { stamp[j] = q; if (hit(boxes[keys[j]], g)) out.push(j); } }
+        }
+        for (var u = 0; u < big.length; u++) { var jb = big[u]; if (stamp[jb] !== q) { stamp[jb] = q; if (hit(boxes[keys[jb]], g)) out.push(jb); } }
+        return out.sort(function (x, y) { return x - y; });
+      }
+    };
+  }
+
   // evaluate(before, after, moved, rel, opts) → {red:[{kind,a,b,depth?}], orange:[{kind,a,b,gap}]}. PURE.
   //   before/after = {fid: aabb}      moved = [fid,…] (host + cascade riders)
   //   rel = { related(a,b)->bool  (hosted-by/abuts/anchored = EXPECTED contact, never a clash),
@@ -50,25 +82,47 @@
     var red = [], orange = [], seen = {};
 
     // (1) CLASH + (3) CLEARANCE — each moved element vs every other (deduped by unordered pair)
-    moved.forEach(function (m) {
-      if (!after[m]) return;
-      allFids.forEach(function (o) {
-        if (+o === +m) return;
-        var key = Math.min(+m, +o) + '|' + Math.max(+m, +o);
-        if (seen[key]) return; seen[key] = 1;
-        if (related(+m, +o)) return;                          // expected contact (door-in-wall, abuts) → never a clash
-        var penA = penetration(after[m], after[o]);
-        var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
-        if (penA > clashTol && penA > penB + clashTol) {       // NEW or WORSENED interpenetration
-          red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
-        }
-        var gapA = faceGap(after[m], after[o]);
-        var gapB = (before[m] && before[o]) ? faceGap(before[m], before[o]) : null;
-        if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - 1e-9)) {
-          orange.push({ kind: 'clearance', a: +m, b: +o, gap: +gapA.toFixed(4) });
-        }
+    function pairCheck(m, o) {
+      if (related(+m, +o)) return;                            // expected contact (door-in-wall, abuts) → never a clash
+      var penA = penetration(after[m], after[o]);
+      var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
+      if (penA > clashTol && penA > penB + clashTol) {         // NEW or WORSENED interpenetration
+        red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
+      }
+      var gapA = faceGap(after[m], after[o]);
+      var gapB = (before[m] && before[o]) ? faceGap(before[m], before[o]) : null;
+      if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - 1e-9)) {
+        orange.push({ kind: 'clearance', a: +m, b: +o, gap: +gapA.toFixed(4) });
+      }
+    }
+    if (opts.bruteForce) {                                    // the pre-§GATE-SCALE loop — kept for the parity witness only
+      moved.forEach(function (m) {
+        if (!after[m]) return;
+        allFids.forEach(function (o) {
+          if (+o === +m) return;
+          var key = Math.min(+m, +o) + '|' + Math.max(+m, +o);
+          if (seen[key]) return; seen[key] = 1;
+          pairCheck(m, o);
+        });
       });
-    });
+    } else {
+      // §GATE-SCALE (SPEC_GATE_SCALE.md): a RED needs the AFTER boxes to interpenetrate and an ORANGE clearance needs them
+      // within `clearance` on the one separated axis — so only boxes intersecting after[m] grown by `pad` can report.
+      // A uniform XY grid over `after` finds them; candidates run in allFids order, so red[]/orange[] keep the old order.
+      // Pair dedup replaces the old `seen` map (moved × all string keys: RangeError past ~300 moved on Terminal):
+      // a moved–moved pair is checked only from the one that comes first in `moved`.
+      var pad = Math.max(clearance, clashTol), idx = spatialIndex(after, allFids, pad);
+      var firstPos = {}; moved.forEach(function (m, i) { if (firstPos[m] == null) firstPos[m] = i; });
+      moved.forEach(function (m, i) {
+        if (!after[m] || firstPos[m] !== i) return;
+        idx.near(after[m]).forEach(function (j) {
+          var o = allFids[j];
+          if (+o === +m) return;
+          if (movedSet[o] && after[o] && firstPos[o] < i) return;   // already checked from o's side
+          pairCheck(m, o);
+        });
+      });
+    }
 
     // (2) DOOR OUT OF HOST — a moved filling whose centre left its host footprint (catches sliding a door off its wall)
     Object.keys(hostOf).forEach(function (fStr) {
@@ -149,39 +203,51 @@
   // inventing a type mapping to unlock them would violate PRIME RULE. Demo/mockup scope only
   // (user decision 2026-07-05): every output carries UBBL_DEMO_LABEL verbatim — it is an indicator,
   // NOT a compliance verdict, and the label is the guardrail against it silently becoming one.
-  var UBBL_MIN_AREA = 6.5;      // m² — By-Law 42 "all other rooms" minimum (verified, spec §1b)
-  var UBBL_MIN_HEADROOM = 2.5;  // m  — By-Law 42 minimum headroom height (verified, spec §1b)
-  var UBBL_DEMO_LABEL = "UBBL-style demo indicator (By-Law 42, 'all other rooms' minimum only) — not a compliance verdict";
+  // §UBBL-TIERS (UBBL_RULES_GATE.md §SOURCED + §MISCITE, 2026-09-26): the gazetted text splits room minimums by room TYPE, and
+  // the extracted IfcSpace rows carry no type (§1c). So two tiers, each citing its clause:
+  //   ANY-ROOM floor — true whatever the room is (smallest minimum of any type): a breach is a real violation (`flagged`).
+  //     area ≥ 0.9375 m² (By-law 43(b): WC 1.25 × 0.75 m) · width ≥ 0.75 m (43) · height ≥ 2.0 m (44 proviso: "not part of any
+  //     room shall be less than 2 metres").
+  //   HABITABLE tier — living rooms/bedrooms only: area ≥ 6.5 m² (42(1), the smallest habitable figure) · width ≥ 2 m (42(2)) ·
+  //     height ≥ 2.5 m (44(1)(a)). Without a type label this is reported as `check` ("would fail if habitable"), never a verdict.
+  // (Before: 6.5 m² and 2.5 m were applied to EVERY room and 2.5 m was cited as By-law 42 — it is 44(1)(a).)
+  var UBBL_ANY = { area: 0.9375, width: 0.75, height: 2.0, cite: { area: '43(b)', width: '43', height: '44 proviso' } };
+  var UBBL_HAB = { area: 6.5, width: 2.0, height: 2.5, cite: { area: '42(1)', width: '42(2)', height: '44(1)(a)' } };
+  var UBBL_MIN_AREA = UBBL_HAB.area, UBBL_MIN_HEADROOM = UBBL_HAB.height;   // kept exports (habitable tier values)
+  var UBBL_DEMO_LABEL = "UBBL-style demo indicator — not a compliance verdict";
+  var UBBL_CHECK_LABEL = "would fail IF this is a living room/bedroom — room type not in the model";
 
-  // ubblRoomSizeDemo(spaces, opts) → {kind:'ubbl-room-size', checked, flagged:[…], label}. PURE.
-  //   spaces = [{guid, name, size_x, size_y, size_z}, …]  (spatial_structure rows, type='IfcSpace' —
-  //            Duplex-extractor schema; SampleHouse predates it and has no such table: caller's concern)
-  //   opts   = {minArea, minHeadroom} — explicit params like CLEARANCE, defaults are the §1b numbers
-  // Rooms with NULL/missing dims are reported under `unmeasured`, never guessed at (non-invent).
+  // ubblRoomSizeDemo(spaces, opts) → {kind:'ubbl-room-size', checked, flagged:[…], check:[…], unmeasured:[…], label}. PURE.
+  //   spaces = [{guid, name, size_x, size_y, size_z}, …]  (spatial_structure IfcSpace rows)
+  //   opts   = {any:{area,width,height}, habitable:{…}} — explicit params; defaults are the gazetted numbers above.
+  // `flagged` = breaches of the any-room floor (real). `check` = habitable-tier misses that pass the floor. NULL dims →
+  // `unmeasured`, never guessed.
   function ubblRoomSizeDemo(spaces, opts) {
     opts = opts || {};
-    var minArea = opts.minArea != null ? opts.minArea : UBBL_MIN_AREA;
-    var minHeadroom = opts.minHeadroom != null ? opts.minHeadroom : UBBL_MIN_HEADROOM;
-    var flagged = [], unmeasured = [], checked = 0;
+    var A = Object.assign({}, UBBL_ANY, opts.any || {}), H = Object.assign({}, UBBL_HAB, opts.habitable || {});
+    var flagged = [], check = [], unmeasured = [], checked = 0;
+    function misses(s, T) {
+      var area = s.size_x * s.size_y, width = Math.min(s.size_x, s.size_y), out = [];
+      if (area < T.area) out.push('area ' + area.toFixed(3) + ' m² < ' + T.area + ' (By-law ' + T.cite.area + ')');
+      if (width < T.width) out.push('width ' + width.toFixed(3) + ' m < ' + T.width + ' (By-law ' + T.cite.width + ')');
+      if (s.size_z < T.height) out.push('height ' + (+s.size_z).toFixed(3) + ' m < ' + T.height + ' (By-law ' + T.cite.height + ')');
+      return out;
+    }
     (spaces || []).forEach(function (s) {
       if (s == null || s.size_x == null || s.size_y == null || s.size_z == null) {
         unmeasured.push({ kind: 'ubbl-room-size', guid: s && s.guid, name: s && s.name, label: UBBL_DEMO_LABEL });
         return;
       }
       checked++;
-      var area = s.size_x * s.size_y;
-      var belowArea = area < minArea, belowHeadroom = s.size_z < minHeadroom;
-      if (belowArea || belowHeadroom) {
-        flagged.push({
-          kind: 'ubbl-room-size', guid: s.guid, name: s.name,
-          size_x: +s.size_x.toFixed(3), size_y: +s.size_y.toFixed(3), size_z: +s.size_z.toFixed(3),
-          area: +area.toFixed(3), belowArea: belowArea, belowHeadroom: belowHeadroom,
-          minArea: minArea, minHeadroom: minHeadroom, label: UBBL_DEMO_LABEL
-        });
-      }
+      var row = { kind: 'ubbl-room-size', guid: s.guid, name: s.name, size_x: +s.size_x.toFixed(3), size_y: +s.size_y.toFixed(3),
+        size_z: +s.size_z.toFixed(3), area: +(s.size_x * s.size_y).toFixed(3) };
+      var hard = misses(s, A);
+      if (hard.length) { flagged.push(Object.assign(row, { tier: 'any-room', why: hard, label: UBBL_DEMO_LABEL })); return; }
+      var soft = misses(s, H);
+      if (soft.length) check.push(Object.assign(row, { tier: 'habitable', why: soft, label: UBBL_CHECK_LABEL }));
     });
-    return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
+    return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, check: check, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
   }
 
-  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL };
+  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL, UBBL_CHECK_LABEL: UBBL_CHECK_LABEL, UBBL_ANY: UBBL_ANY, UBBL_HAB: UBBL_HAB };
 });

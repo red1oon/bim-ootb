@@ -472,9 +472,17 @@
     // selector survives a model re-export (re-resolvable; a guid list could not). Reviewable, opt-in.
     db.run('CREATE TABLE IF NOT EXISTS task_bind_selectors (task_id TEXT PRIMARY KEY, selector_json TEXT)');
     db.run('BEGIN');
-    var sc = db.prepare('INSERT OR IGNORE INTO schedules VALUES (?,?,?,?)');
+    // NAMED columns, never positional (§TM_P6_FOLD smoke finding, 2026-08-24): in the live viewer
+    // ScheduleAuthor's ensure path has usually ALREADY widened `schedules` (+gen_version,
+    // +display_authored — guarded ALTERs at schedule_author.js:228/238) by the time an import runs,
+    // so a positional 4-value insert throws "table schedules has 6 columns but 4 values were
+    // supplied". `tasks` is the same class of risk — runtime-widened by TWO engines' ensure paths
+    // (identical 18-col DDL today, one ALTER away from the same crash) — so it is named too.
+    var sc = db.prepare('INSERT OR IGNORE INTO schedules (schedule_id,name,status,created_date) VALUES (?,?,?,?)');
     data.schedules.forEach(function (s) { sc.run([s.id, s.name, s.status, s.created]); }); sc.free();
-    var tk = db.prepare('INSERT OR IGNORE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    var tk = db.prepare('INSERT OR IGNORE INTO tasks (task_id,schedule_id,wbs_parent,name,predefined_type,' +
+      'is_summary,schedule_start,schedule_finish,schedule_duration,early_start,early_finish,late_start,' +
+      'late_finish,free_float,total_float,is_critical,resource,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     data.tasks.forEach(function (t) {
       tk.run([t.id, t.scheduleId, t.wbsParent, t.name, t.predefinedType, t.isSummary,
         t.scheduleStart, t.scheduleFinish, t.scheduleDuration, t.earlyStart, t.earlyFinish,

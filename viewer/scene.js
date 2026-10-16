@@ -38,10 +38,25 @@ async function setupScene(A) {
   // Load standard WebGL build — WebGPU build's PMREMGenerator/Scene expect WebGPURenderer internals
   var _std = await import('./lib/three.module.min.js');
   for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
+  // §SKY_OCCLUSION — patch the WebGL lighting chunks ONCE, here (ShaderChunk arrives with this build), before any
+  // material compiles. Inert until an Alt+S sets uSkyOcc.
+  if (window.SkyOcc) { try { window.SkyOcc.install(THREE); } catch (eSO) { console.warn('§SKY_OCCLUSION install failed: ' + eSO.message); } }
+  else console.warn('§SKY_OCCLUSION not loaded — Alt+S sky occlusion disabled');
+  // §SOURCED_LIGHT — zone-bound lamps/portals + no sourceless sky indoors; same once-only chunk patch, inert until an Alt+S.
+  if (window.SourcedLight) { try { window.SourcedLight.install(THREE); } catch (eSL) { console.warn('§SOURCED_LIGHT install failed: ' + eSL.message); } }
+  else console.warn('§SOURCED_LIGHT not loaded — Alt+S sourced light disabled');
+  // §STILL_SHADOW_CASCADE — the sun's shadow line + the once-per-fragment cascade pick; inert until an Alt+S sets uCsm.
+  if (window.ShadowCascade) { try { window.ShadowCascade.install(THREE); } catch (eSC) { console.warn('§STILL_SHADOW_CASCADE install failed: ' + eSC.message); } }
+  else console.warn('§STILL_SHADOW_CASCADE not loaded — Alt+S keeps one sun shadow map');
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: !_isMobileRenderer,
-    preserveDrawingBuffer: true
+    preserveDrawingBuffer: true,
+    // §129 OPEN ITEM (2026-09-17) — the load-path section-cut's solid cap face needs a real stencil
+    // buffer for the standard clip-plane-cap technique (mark stencil on the clipped solid's back/
+    // front faces, draw the cap only where it's non-zero). A real bake (`§LOADPATH_CUT_CAP
+    // stencilBuffer=false`) proved the context did not have one without this flag — never assumed.
+    stencil: true
   });
   console.log('§S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)');
   // §S281b: report multi_draw fast-path + GPU at startup. BatchedMesh collapses a bucket to ONE draw
@@ -107,15 +122,16 @@ async function setupScene(A) {
   // §S260: shadow setup deferred entirely to toggleShadow() in tools.js
   // §S260c: ACESFilmic tone mapping — preserves color saturation, adds cinematic contrast.
   // NoToneMapping was flat/grey. ACES gives "crisp vibrant" look like Bonsai/Autodesk.
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const LLS = window.LightLaw.SCENE;   // §LIGHT_LAW_MODULE: scene source values + tone curve from light_law.js
+  renderer.toneMapping = window.LightLaw.toneConst(THREE);
   // §PHOTO_EXPOSURE — 0.45 is DELIBERATE and stays. It has been the daytime value since the initial
   // migration, and the user recalls overexposure problems from raising it ("AFAIR before we may have
   // issue of overexposure"). Briefly set to 1.0 this session to fix "too dark drab" and reverted:
   // doubling the base brightens DAY NAVIGATION too, which is not what was being complained about.
   // The lift is applied to the frozen still ONLY — see PHOTO_EXPOSURE_LIFT in effects.js — matching
   // how bloom, ember and the 48-light budget are all still-only.
-  renderer.toneMappingExposure = 0.45;
-  console.log('§TONEMAPPING type=ACESFilmic exposure=0.45');
+  renderer.toneMappingExposure = LLS.exposure;
+  console.log('§TONEMAPPING type=' + LLS.toneMapping + ' exposure=' + LLS.exposure);
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;  // §S259: proper gamma curve for web display
   // §S276: r184 uses physically-correct lights by default (useLegacyLights removed in r165).
@@ -132,6 +148,12 @@ async function setupScene(A) {
     if (bc && bc.envelope) env = bc.envelope;
     // Larger envelope = lighter fog (LTU 426m→0.0004, Castle 23m→0.003)
     scene.fog.density = Math.max(0.00015, Math.min(0.004, 1.5 / env));
+    // §FOG_LARGE_SITE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): past ~375 m the 1.5/env branch leaves the
+    // 0.004 cap and hides the model from its OWN framing distance (camera = 1.5 x env, streaming.js §CAMERA): at env
+    // 2114 m transmittance there is exp(-(1.5/env * 1.5 env)^2) = exp(-5.06) = 0.6%. For those sites only, size the fog
+    // so the model stays >= 50% visible from the framing distance: density = sqrt(ln 2) / (1.5 env). Every building
+    // that stays on the 0.004 cap (env < 375 m: Hospital, LTU, Terminal, Duplex) is unchanged.
+    if (1.5 / env < 0.004) scene.fog.density = Math.max(0.00015, Math.min(scene.fog.density, Math.sqrt(Math.LN2) / (1.5 * env)));
     console.log('§FOG_DENSITY env=' + env.toFixed(0) + 'm density=' + scene.fog.density.toFixed(5));
   };
   A.scene = scene;
@@ -175,17 +197,27 @@ async function setupScene(A) {
 
   // Lighting
   // §S276: Physically-correct intensities (legacy × π). Tuned with ACESFilmic @ exposure 0.45.
-  const ambient = new THREE.AmbientLight(0xffffff, 0.785);
+  // §WALL_SIDE_AND_LIGHT_FLOOR (2026-09-01, PHOTOREAL_STILL_RENDER.md): ambient 0.785->0.386 and
+  // hemi 1.257->0.617 — NOT hand-tuned. Derived: the old non-directional fill measured 1.756
+  // ambient-equivalent units on a vertical wall (in-page single-light probe renders, linear:
+  // hemi contributes 0.611/unit at horizontal N, envMap 0.203 at intensity 0.6) against a sun
+  // term of 2.820 (4.4 x 0.958 x the 0.669 max horizontal N·L of this sun vector), so an
+  // away-facing wall held 38% of a sun-facing one's light and could never read dark. Target
+  // contrast 0.25 wants k=0.475 on (ambient, hemi); the interior floor (p25 fill retention
+  // >= 0.55) binds first at k=0.491 — declared conflict, clamped at the floor: achieved
+  // contrast 0.255. One k scales both lights jointly to preserve the colour balance; sun and
+  // envMapIntensity untouched. Witness: witness_wall_side_light_floor.js (§WWSLF_DERIVE line).
+  const ambient = new THREE.AmbientLight(LLS.ambient.color, LLS.ambient.intensity);
   scene.add(ambient);
   A.ambient = ambient;
 
-  const sun = new THREE.DirectionalLight(0xfff0dd, 4.4);
+  const sun = new THREE.DirectionalLight(LLS.sun.color, LLS.sun.intensity);
   sun.position.set(200, 400, 300);
   sun.castShadow = false;
   scene.add(sun);
   A.sun = sun;
 
-  const hemi = new THREE.HemisphereLight(0xb0c4de, 0x8b7355, 1.257);
+  const hemi = new THREE.HemisphereLight(LLS.hemi.sky, LLS.hemi.ground, LLS.hemi.intensity);
   scene.add(hemi);
   A.hemi = hemi;
 
@@ -196,6 +228,28 @@ async function setupScene(A) {
   _pmrem.compileCubemapShader();
   var _sky = null;
   var _sunVec = new THREE.Vector3();
+  // §VAC V3 — both arms of §ENVMAP_STOMP_GUARD are counted, so "100% skips" has a denominator.
+  // The sampled line prints every 100th call; the EXACT totals are always readable here, so the
+  // in-flight tail (< 100 calls since the last line) is compressed, never dropped. Same pattern as
+  // time_machine.js's window.__tmTrav — a diagnostic hook a probe or witness can read directly.
+  var _envSkips = 0, _envRegens = 0;
+  A._envmapStompStats = function() { return { skips: _envSkips, regens: _envRegens }; };
+  // §MEMLEAK_PMREM_DISPOSE (2026-08-14): _pmrem.fromScene() allocates a brand-new
+  // WebGLRenderTarget (backing texture + framebuffer) on every call — it is NOT reused/pooled
+  // internally by THREE.PMREMGenerator, and three.js never garbage-collects WebGL resources on
+  // its own. Every prior caller here did `A._envMap = envRT.texture` with no reference kept to
+  // `envRT` itself, so the old render target was silently orphaned on the GPU every time. Measured
+  // via renderer.info.memory.textures in a live headless run (8 calls to A.updateSky(), 2s throttle
+  // apart): texture count climbed 2->10, i.e. +1 leaked GPU texture per call, unbounded — see
+  // prompts/VIEWER_MEMORY_LEAK.md in bim-compiler for the full before/after numbers. Track the
+  // current render target here (not just its .texture) so every future regen can dispose the
+  // previous one first.
+  var _envRT = null;
+  function _setEnvMap(newRT) {
+    if (_envRT && _envRT !== newRT) _envRT.dispose();
+    _envRT = newRT;
+    A._envMap = newRT ? newRT.texture : null;
+  }
   try {
     var _skyMod = await import('./lib/Sky.js');
     if (!_skyMod.Sky) throw new Error('Sky class not exported');
@@ -223,7 +277,15 @@ async function setupScene(A) {
     var theta = THREE.MathUtils.degToRad(azimuth);
     _sunVec.setFromSphericalCoords(1, phi, theta);
     // §S276b: Update sky shader — never hide, Preetham darkens naturally below horizon.
-    if (_sky && _sky.visible) {
+    // §SKY_SUNPOS_INIT (2026-08-16): the uniform copy must NOT be gated on _sky.visible. The
+    // Sky shader ships with a default sunPosition of (0,0,0), and the init-time
+    // A.updateSky(45,180) call runs while the sky is still hidden — with the old
+    // `if (_sky && _sky.visible)` guard that skipped the copy, so any path that later flips
+    // _sky.visible=true WITHOUT calling updateSky (Alt+S non-dusk staging since #1379) rendered
+    // the Preetham shader with a zero sun vector: fully black sky, live-reproduced (sky band
+    // 192/192 black px, uniform read back [0,0,0]). Copying a uniform on a hidden object is
+    // free — keep it unconditionally in sync so "make visible" is always safe.
+    if (_sky) {
       _sky.material.uniforms['sunPosition'].value.copy(_sunVec);
     }
     // Update directional light to match sky sun
@@ -265,11 +327,25 @@ async function setupScene(A) {
           // silently swapping every material's reflection source frame-to-frame and reading as an
           // alternating bright/dark movie. Every OTHER updateSky() caller (plain nav, Time Machine)
           // is unaffected — this flag is only ever true during a staged photoshoot.
+          // §VAC V2+V3 / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): MEASURED on
+          // s5_hospital.log — 906 firings, 100% of them the identical `skipped procedural regen`,
+          // and the regen arm two lines up logged NOTHING. "100% skips" with no denominator cannot
+          // distinguish "the guard saved us 906 times" from "the regen arm was never reachable."
+          // Both arms are counted now, and the skip line is run-length reported: printed on the
+          // first skip of a run and then every 100th, always carrying the running skip/regen split
+          // so the ratio is readable without grepping the whole log. Nothing is dropped — the
+          // counters ARE the signal. (906 over a 2,680 s bake is the 2,000 ms A._envMapThrottle
+          // firing roughly every 3 s, not per frame; the volume was honest, the denominator was not.)
           if (!A._envMapHdriActive) {
-            var envRT = _pmrem.fromScene(_sky);
-            A._envMap = envRT.texture;
+            _envRegens++;
+            _setEnvMap(_pmrem.fromScene(_sky));
+            if (_envRegens === 1 || _envRegens % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD regen ran (HDRI inactive) — regens=' + _envRegens + ' skips=' + _envSkips);
           } else {
-            console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active');
+            _envSkips++;
+            if (_envSkips === 1 || _envSkips % 100 === 0)
+              console.log('§ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active; skips=' + _envSkips +
+                ' regens=' + _envRegens + ' (1-in-100 sample; every call is counted, only the line is sampled)');
           }
         } catch(e) {}
         A._envMapThrottle = false;
@@ -290,8 +366,7 @@ async function setupScene(A) {
   // Also generate initial env map synchronously
   try {
     if (_sky) {
-      var _initRT = _pmrem.fromScene(_sky);
-      A._envMap = _initRT.texture;
+      _setEnvMap(_pmrem.fromScene(_sky));
       // §S276b: Don't set scene.environment — it overrides ground material.
       // Building materials get envMap via streaming.js _getMaterial().
       console.log('§ENV_MAP Sky-based atmospheric env map ready (per-material, not scene.environment)');
@@ -311,8 +386,7 @@ async function setupScene(A) {
       envGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       envScene2.add(new THREE.Mesh(envGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
       envScene2.add(new THREE.AmbientLight(0xffffff, 1));
-      var envRT2 = _pmrem.fromScene(envScene2, 0.04);
-      A._envMap = envRT2.texture;
+      _setEnvMap(_pmrem.fromScene(envScene2, 0.04));
       envGeo.dispose();
       console.log('§ENV_MAP vertex-color gradient fallback applied');
     }
@@ -463,6 +537,15 @@ async function setupScene(A) {
   A.CACHE_DB_NAME = 'bim_ootb_cache';
   A.CACHE_STORE = 'dbs';
 
+  // LARGE_DB_BAKE.md §2 L2 — a CLI bake profile is disposable: nothing it renders is ever reopened
+  // from cache, so writing a 400-900MB blob into IndexedDB during a bake buys nothing and cost a
+  // real hang (§CACHE_WRITE_HANG) and a write-loop race (§8.6/§KRN_PERSIST) on LTU/Hospital.
+  // window.__MAXQ_SILENT is set by cli_silent_bake.js via evaluateOnNewDocument BEFORE this page's
+  // own scripts run (cli_silent_bake.js §CLI_BAKE_FLAG_OVERRIDE block), so it is already true here,
+  // long before Time Machine ever activates — the one signal early enough to gate the DB fetch's
+  // own cache write, not just later kernel_ops/gantt persistence.
+  A._bakeOwned = !!window.__MAXQ_SILENT;
+
   // §S260b: Log storage quota at init — diagnoses private browsing / low-quota environments
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(function(e) {
@@ -514,6 +597,7 @@ async function setupScene(A) {
         var db = req2.result;
         if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
         if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+        if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
       };
       req2.onsuccess = function() {
         console.log('[S203] §IDB_VERSION_FALLBACK_OK opened at stored version (unversioned)');
@@ -529,17 +613,20 @@ async function setupScene(A) {
   A.openCacheDB = function() {
     return new Promise((resolve, reject) => {
       try {
-        const req = indexedDB.open(A.CACHE_DB_NAME, 2);
+        const req = indexedDB.open(A.CACHE_DB_NAME, 3);
         req.onupgradeneeded = function(e) {
           var db = req.result;
           if (!db.objectStoreNames.contains(A.CACHE_STORE)) db.createObjectStore(A.CACHE_STORE);
           // v2: timestamps store for LRU eviction
           if (!db.objectStoreNames.contains('timestamps')) db.createObjectStore('timestamps');
+          // v3 (CPE_4D_PERF_MEM_STUDY.md §R6a): etag/content-length per cached key, so cachedFetch
+          // can tell a stale cache entry from a fresh one instead of trusting it forever.
+          if (!db.objectStoreNames.contains('revalidation')) db.createObjectStore('revalidation');
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = function() {
           if (req.error && req.error.name === 'VersionError') {
-            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 2 — falling back to unversioned open');
+            console.warn('[S203] §IDB_VERSION_MISMATCH stored version > 3 — falling back to unversioned open');
             _openCacheDbUnversioned(resolve);
             return;
           }
@@ -586,11 +673,17 @@ async function setupScene(A) {
       var toRemove = forceN ? entries.slice(0, Math.min(forceN, entries.length))
                             : entries.slice(0, entries.length - A._MAX_CACHE_ENTRIES + 1);
       if (toRemove.length > 0) {
+        // §R6a: drop the revalidation comparator alongside the evicted blob, or it's an orphaned
+        // record forever (harmless to correctness — a stale-keyed comparator is just never read
+        // again — but still cleanup debt). Same store-existence guard as the write path.
+        var _hasRevalStore2 = cacheDb.objectStoreNames.contains('revalidation');
         await new Promise(function(done) {
-          var tx3 = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+          var stores2 = _hasRevalStore2 ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+          var tx3 = cacheDb.transaction(stores2, 'readwrite');
           for (var j = 0; j < toRemove.length; j++) {
             tx3.objectStore(A.CACHE_STORE).delete(toRemove[j].key);
             tx3.objectStore('timestamps').delete(toRemove[j].key);
+            if (_hasRevalStore2) tx3.objectStore('revalidation').delete(toRemove[j].key);
           }
           tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
         });
@@ -676,20 +769,70 @@ async function setupScene(A) {
       // ones — a table written by an older build has 13 columns and the reader selects by NAME with
       // a fallback, so both directions of the version skew stay readable (§CPE_PATH_NOT_PORTABLE
       // only just made these files portable at all; do not break that in the next release).
+      // ══ §CPE_FLAGS_PORTABLE (2026-09-04, user: "the HHS silent i have set a stored path which are
+      // all those [buildup/label/reveal ON]" — but the CLI bake of that very .db resolved
+      // `§CLI_BAKE_RESOLVED source=db:cinema_path bands=4 total=61.0s buildup=0 roomTitle=0 reveal=0`).
+      // MEASURED CAUSE, not guessed: the table above stored the path's GEOMETRY and its BEAT SECONDS
+      // and nothing else. The four film flags live on the same `_buildOverride()` object the bands
+      // come from, and the IndexedDB working store keeps them — but the PORTABLE table dropped them,
+      // so a path that travels with the .db arrived with every feature off. The file was not wrong
+      // about the path; it never carried the answer at all.
+      // Appended as columns, never inserted among the existing ones — the same version-skew rule
+      // §CPE_STICK_HOLD's hold_sec already follows, and the reader (effects.js _cpeLoadFromDb)
+      // probes PRAGMA table_info and falls back, so an older .db still opens and a .db written here
+      // still opens in an older build.
+      // ══ §CPE_FLAGS_PORTABLE_2 (2026-09-14, user: "it seems that the latest features are not
+      // included in the path saving") — §CPE_FLAGS_PORTABLE persisted FOUR of the override's film
+      // flags. `_buildOverride()` carries SIX: clash (§CLASH_FILM_P1), measure (§FLYTHRU_DATUM) and
+      // storeyReveal (§STOREY_HIGHLIGHT_REVEAL) were added to the panel afterwards and were left out
+      // of the portable table, so a saved path travelled with those three silently off and a CLI bake
+      // of that .db had to be told each one on the command line. Same failure §CPE_FLAGS_PORTABLE
+      // already fixed once, one panel revision later.
+      // Appended after day_counter, never inserted among the existing columns — the version-skew rule
+      // §CPE_STICK_HOLD and §CPE_FLAGS_PORTABLE both follow, and the reader probes PRAGMA table_info
+      // per optional column, so an older .db still opens here and a .db written here still opens in
+      // an older build.
       db.run("CREATE TABLE cinema_path (seq INTEGER, ifc_x REAL, ifc_y REAL, ifc_z REAL, " +
              "dir_x REAL, dir_y REAL, dir_z REAL, len REAL, " +
              "total_sec REAL, dive_sec REAL, spin_sec REAL, out_sec REAL, rise_sec REAL, " +
-             "hold_sec REAL)");
-      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+             "hold_sec REAL, buildup INTEGER, room_title INTEGER, reveal INTEGER, day_counter TEXT, " +
+             "clash INTEGER, measure INTEGER, storey_reveal INTEGER, " +
+             // §CPE_CHECKBOX_SAVE (2026-10-06, user: "it does not save new boxes") — the rest of the panel,
+             // appended after storey_reveal under the same version-skew rule. The table is rebuilt on every
+             // save, so an older .db upgrades to this shape the first time it is saved from this build.
+             "load_path INTEGER, visual_panel INTEGER, audio_panel INTEGER, escape_route INTEGER, " +
+             "sun_compass INTEGER, sun_date TEXT, bake_res TEXT, film_bounce INTEGER)");
+      var stmt = db.prepare("INSERT INTO cinema_path VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       ov.bands.forEach(function(b, i) {
         var p = A.three2ifc(b.c.x, b.c.y, b.c.z);
         var d = A.three2ifcDir(b.d.x, b.d.y, b.d.z);
         stmt.run([i, p.ix, p.iy, p.iz, d.ix, d.iy, d.iz, b.len,
                   ov._total, ov.diveSec, ov.spinSec, ov.outSec, ov.riseSec,
-                  +(b.hold || 0)]);
+                  +(b.hold || 0),
+                  // §CPE_FLAGS_PORTABLE — the film flags, per row (constant across rows, exactly
+                  // like total_sec/dive_sec above; the reader takes them from row 0).
+                  ov.buildup ? 1 : 0, ov.roomTitle ? 1 : 0, ov.reveal ? 1 : 0,
+                  ov.dayCounter == null ? null : String(ov.dayCounter),
+                  // §CPE_FLAGS_PORTABLE_2 — the other three the panel tracks.
+                  ov.clash ? 1 : 0, ov.measure ? 1 : 0, ov.storeyReveal ? 1 : 0,
+                  // §CPE_CHECKBOX_SAVE — the remaining boxes + sun date + bake size + bounce (default ON).
+                  ov.loadPath ? 1 : 0, ov.visualPanel ? 1 : 0, ov.audioPanel ? 1 : 0, ov.escapeRoute ? 1 : 0,
+                  ov.sunCompass ? 1 : 0, ov.sunDate ? String(ov.sunDate) : '', ov.bakeRes ? String(ov.bakeRes) : '',
+                  ov.filmBounce === false ? 0 : 1]);
       });
       stmt.free();
-      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's');
+      // §CPE_FLAGS_PORTABLE — the flags are now part of what a save CLAIMS to have written, so a
+      // path that goes out with every feature off says so here rather than being discovered a bake
+      // later. `dayCounter` absent means the reader's own default, not "off".
+      console.log('§CINEMA_PATH_SAVE bands=' + ov.bands.length + ' total=' + ov._total.toFixed(1) + 's' +
+        ' buildup=' + (ov.buildup ? 1 : 0) + ' roomTitle=' + (ov.roomTitle ? 1 : 0) +
+        ' reveal=' + (ov.reveal ? 1 : 0) + ' dayCounter=' + (ov.dayCounter || 'default') +
+        ' clash=' + (ov.clash ? 1 : 0) + ' measure=' + (ov.measure ? 1 : 0) +
+        ' storeyReveal=' + (ov.storeyReveal ? 1 : 0) +
+        ' loadPath=' + (ov.loadPath ? 1 : 0) + ' visualPanel=' + (ov.visualPanel ? 1 : 0) + ' audioPanel=' + (ov.audioPanel ? 1 : 0) +
+        ' escapeRoute=' + (ov.escapeRoute ? 1 : 0) + ' sunCompass=' + (ov.sunCompass ? 1 : 0) +
+        ' sunDate=' + (ov.sunDate || '-') + ' bakeRes=' + (ov.bakeRes || '-') + ' filmBounce=' + (ov.filmBounce === false ? 0 : 1) +
+        ' (§CPE_CHECKBOX_SAVE cols=28; §CPE_FLAGS_PORTABLE — these travel with the .db now)');
     } catch (e) { console.warn('§CINEMA_PATH_SAVE_FAIL ' + e.message); }
   }
   // prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4 — camera/display/nav/panel/Find-selection/Time-Machine
@@ -718,13 +861,78 @@ async function setupScene(A) {
         ' tm=' + (A._tmOn ? 1 : 0));
     } catch (e) { console.warn('§SCENE_STATE_SAVE_FAIL ' + e.message); }
   }
+  // ⚠ §SAVE_CARRIES_BUT_NEVER_BUILDS_THE_RASTER (noted 2026-09-20 at red1's instruction, while
+  // speccing bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md §12) — READ THIS BEFORE ASSUMING A SAVED
+  // DB CAN PATHFIND.
+  // This function writes three tables of its own (staffage, cinema_path, scene_state) and exports
+  // everything else VERBATIM out of A.db. `storey_walkable_raster` is therefore CARRIED when the
+  // source already had it — which is exactly why the _silent DBs have one (Hospital_silent 7 rows,
+  // HHS_Office_Federated_silent 4): their source did, via the buildings/patches/<db>.sql self-heal
+  // that A._applyPendingPatch runs at load. It is NEVER BUILT here. Save a building whose source
+  // has no raster and the saved copy has none either, permanently.
+  // WHAT BREAKS WITHOUT IT: room_graph.js's §G3-REVISED chord-legality degrades to room rects, and
+  // EXIT DETECTION needs the raster outright — so escapeRoute() returns null for every room, and
+  // with it the whole escape-route beat plus §12's common_path_of_egress_travel and exit_remoteness
+  // rules go inert. Silently: they report zero findings, which reads like a clean building.
+  // COVERAGE, MEASURED 2026-09-20 (in-db OR via its patch): Hospital_meta/_extracted, Terminal_meta,
+  // HHS_Office_Federated_extracted and JKR_extracted are covered. NOT covered, and they have real
+  // rooms: Clinic (118 spaces), LTU_AHouse_extracted (369), Terminal_extracted (53), Duplex.
+  // THE FIX IS A PATCH, NOT CODE HERE. scripts/build_storey_walkable_raster.js already emits exactly
+  // the CREATE TABLE IF NOT EXISTS + INSERT OR REPLACE fragment those patch files carry, and
+  // Hospital_extracted.db.sql is 1.4 MB of precisely that. Generating it at SAVE time was considered
+  // and rejected: it needs component_geometries (the mesh), and it was MEASURED at 1.0-1.4 s for
+  // Terminal/JKR/Clinic but 166.8 s for LTU_AHouse_extracted — a three-minute stall inside Ctrl+S.
+  // Offline patch generation costs the user nothing and makes the raster a property of the building
+  // rather than of whoever last saved it.
+  // §LIGHT_FIELD_DB (light_zones.js SPEC S1/S5, red1 2026-09-29 "put it as part of the one time DB save"): the Alt+S light-zone
+  // field (zone grid + sky field + ground field + the Z26 glass table), gzip-packed by LightZones.dbPack (awaited in saveModelDb,
+  // the export here is synchronous) — the same choke point and the same viewer-authored-derived-data pattern as the three tables
+  // above. No field in memory => skipped and logged, never built here (Hospital: 16 s shell + 67 s glass). A row carried in from
+  // the source file is kept only while its key (light_zones.js code hash) is current, else dropped: a stale row is never re-shipped.
+  function _writeLightFieldTable(db) {
+    var LZ = window.LightZones, rec = (LZ && LZ.dbRecord) ? LZ.dbRecord(true) : null, cur = (LZ && LZ.cacheKey) ? LZ.cacheKey() : null;
+    try {
+      if (!rec) {
+        var row = null; try { var r0 = db.exec("SELECT key, bytes FROM light_field_cache LIMIT 1"); row = r0 && r0[0] && r0[0].values[0]; } catch (eR) {}
+        if (row && row[0] === cur) { console.log('§LIGHT_FIELD_DB save kept existing row key=' + row[0] + ' bytes=' + row[1] + ' (nothing newer in memory)'); return; }
+        if (row) { db.run("DROP TABLE IF EXISTS light_field_cache"); console.log('§LIGHT_FIELD_DB save dropped stale row key=' + row[0] + ' now=' + cur); return; }
+        console.log('§LIGHT_FIELD_DB save skipped reason=no-field-in-memory (press Alt+S once before saving; the save never builds it)'); return;
+      }
+      db.run("DROP TABLE IF EXISTS light_field_cache");
+      db.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+      var stmt = db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)");
+      stmt.run([rec.key, rec.bld, rec.fp, rec.bytes, rec.rawBytes, rec.blob, rec.created]); stmt.free();
+      console.log('§LIGHT_FIELD_DB save key=' + rec.key + ' bld=' + rec.bld + ' bytes=' + rec.bytes + ' raw=' + rec.rawBytes + ' src=' + rec.src + ' packMs=' + rec.packMs + ' gzipMs=' + rec.gzipMs + ' created=' + rec.created);
+    } catch (e) { console.warn('§LIGHT_FIELD_DB_SAVE_FAIL ' + e.message); }
+  }
+  // §MESH_SLIM save: a civil model drops its stored normals (derived on load, fleet format) and compacts, so the
+  // saved file — and every reload/IDB copy of it — is light. Fleet / building DBs: isCivilModel() false → untouched.
+  function _meshSlim(db) {
+    if (!(A.isCivilModel && A.isCivilModel())) return;
+    try {
+      var r = db.exec("SELECT COUNT(*), COALESCE(SUM(LENGTH(normals)),0) FROM component_geometries WHERE normals IS NOT NULL");
+      var n = r.length ? r[0].values[0][0] : 0, b = r.length ? r[0].values[0][1] : 0;
+      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); }
+      var t0 = performance.now();
+      if (n) db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      // §VERT_WELD (M4-A, CIVIL_HIGHWAY_JELAPANG.md §MEM_GROWTH): merge duplicate corners at data level, look-neutral. Needs normals gone
+      // (stored normals would no longer match the welded vertex list), so it runs only after the drop above.
+      if (window.VertexWeld) { var W = window.VertexWeld.weldDb(db);
+        console.log('§VERT_WELD_SAVE rows=' + W.rows + ' changed=' + W.changed + ' vertsBefore=' + W.vertsBefore + ' vertsAfter=' + W.vertsAfter + ' ms=' + W.ms + (W.changed ? '' : ' INCONCLUSIVE(nothing welded)')); }
+      else console.warn('§VERT_WELD_SAVE skipped: vertex_weld.js not loaded');
+      db.run('VACUUM');
+      console.log('§MESH_SLIM_SAVE normalsDropped=' + n + ' bytes=' + b + ' ms=' + (performance.now() - t0).toFixed(0));
+    } catch (e) { console.warn('§MESH_SLIM_SAVE_ERR ' + e.message); }
+  }
   A._exportBuildingDb = function() {
     if (!A.db) return null;
     if (!A.libDb || A.libDb === A.db) {
       console.log('§SAVE_EXPORT monolith (A.db holds geometry)');
+      _meshSlim(A.db);
       _writeStaffageTable(A.db);
       _writeCinemaPathTable(A.db);
       _writeSceneStateTable(A.db);
+      _writeLightFieldTable(A.db);
       return A.db.export();
     }
     // Split → build a monolith: clone meta, copy every geometry table not already present.
@@ -749,9 +957,11 @@ async function setupScene(A) {
       copied++;
     });
     console.log('§SAVE_FOLD split→monolith geoTablesCopied=' + copied + ' rows=' + rows);
+    _meshSlim(mono);
     _writeStaffageTable(mono);
     _writeCinemaPathTable(mono);
     _writeSceneStateTable(mono);
+    _writeLightFieldTable(mono);
     var bytes = mono.export();
     mono.close();
     return bytes;
@@ -761,20 +971,33 @@ async function setupScene(A) {
     if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
     var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
     var bytes;
+    // §SAVE_PICKER_FIRST (user 2026-10-09: "it should let me choose where to save to. It seems to auto save now"): showSaveFilePicker needs a LIVE user gesture
+    //   (~5 s of transient activation after the click). The export below takes seconds (light-field pack, civil weld + VACUUM ~13 s on Civil Works), so a picker
+    //   opened AFTER it threw SecurityError and the catch fell through to the silent <a download> = straight into Downloads. Open the picker FIRST, export after.
+    var handle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
+        console.log('§SAVE_PICKER first name=' + handle.name + ' userActive=' + (navigator.userActivation ? navigator.userActivation.isActive : 'n/a'));
+      } catch (e) {
+        if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; }
+        console.warn('§SAVE_PICKER_FAIL ' + e.name + ': ' + e.message + ' -> download fallback');
+      }
+    }
+    // §LIGHT_FIELD_DB S5: pack + gzip the light field first (async, ~1-2 s on Hospital); _exportBuildingDb writes it synchronously
+    if (window.LightZones && window.LightZones.dbPack) { try { await window.LightZones.dbPack(A); } catch (eLF) { console.warn('§LIGHT_FIELD_DB pack failed: ' + eLF.message); } }
     try { bytes = A._exportBuildingDb(); }
     catch (e) { if (A.status) A.status.textContent = 'Save failed: ' + e.message; console.log('§SAVE_ERR ' + e.message); return; }
     if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
     var blob = new Blob([bytes], { type: 'application/x-sqlite3' });
     // Native Save As… (Chromium FSA) — the traditional desktop dialog. Fallback = download.
-    if (window.showSaveFilePicker) {
+    if (handle) {
       try {
-        var handle = await window.showSaveFilePicker({ suggestedName: name,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
         var w = await handle.createWritable(); await w.write(blob); await w.close();
         if (A.status) A.status.textContent = 'Saved ' + handle.name;
         console.log('§SAVE_DONE mode=fsa name=' + handle.name + ' bytes=' + bytes.byteLength);
         return;
-      } catch (e) { if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; } /* else fall through to download */ }
+      } catch (e) { console.warn('§SAVE_WRITE_FAIL ' + e.name + ': ' + e.message + ' -> download fallback'); }
     }
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
@@ -838,6 +1061,9 @@ async function setupScene(A) {
     'rel_contained_in_space', 'spatial_structure', 'tasks', 'task_elements', 'task_sequences',
     'schedules', 'bom_tree'];
   A._MERGE_GEO_TABLES = ['component_geometries', 'base_geometries'];
+  // §MERGE_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): guid-keyed tables with NO unique key — folded only for the guids
+  // NEW to the live DB (A._mergeNewGuids, taken before the fold). Was absent: every merge dropped element properties.
+  A._MERGE_GUID_ROW_TABLES = ['element_psets'];
 
   // ⚠ sql.js `exec` returns ONLY statements that produced rows, so `SELECT * … LIMIT 0` yields `[]`
   // and NOT a columns list — the first cut of this used that and silently merged nothing
@@ -854,9 +1080,35 @@ async function setupScene(A) {
   // Clinic's does not). Insert on the INTERSECTION, driven by the DESTINATION's schema so the
   // destination schema never changes — which is also what keeps the once-probed, cached
   // A._libHasNormals (streaming.js:868) honest after a merge.
-  function _mergeTable(src, dst, table) {
+  // onlyGuids (optional Set): fold only rows whose `guid` is in it — for a table with NO unique key (element_psets), where
+  // INSERT OR IGNORE cannot dedupe and a re-merge would duplicate every row (§MERGE_PSETS).
+  function _mergeTable(src, dst, table, onlyGuids) {
     var sCols = _mergeCols(src, table), dCols = _mergeCols(dst, table);
-    if (!sCols || !dCols) return null;
+    if (!sCols) return null;
+    // §MERGE_CREATE 2026-08-30 — "fold only when the table exists on BOTH sides" silently threw away
+    // every incoming geometry BLOB whenever the two sides name that table differently: a server
+    // split geo.db carries `base_geometries`, a client-side IFC import carries
+    // `component_geometries` (import_db_builder.js:66). Neither name was ever on both sides, so
+    // _MERGE_GEO_TABLES folded NOTHING and the merged building saved with no geometry at all
+    // (W-MERGE-SAVE-ROUNDTRIP). The readers already accept either name (streaming.js:1162,1212), so
+    // materialising the source's own table in the destination is what makes the fold lossless.
+    // Only ever reached for the fixed _MERGE_META_TABLES/_MERGE_GEO_TABLES whitelist.
+    if (!dCols) {
+      var ddl = null;
+      try {
+        var dr = src.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='" +
+          table.replace(/'/g, "''") + "'");
+        if (dr && dr.length && dr[0].values.length) ddl = dr[0].values[0][0];
+      } catch (e) {}
+      if (!ddl) return null;
+      try { dst.run(ddl); } catch (e) {
+        console.warn('§MERGE_CREATE_FAIL table=' + table + ' ' + e.message); return null;
+      }
+      dCols = _mergeCols(dst, table);
+      if (!dCols) return null;
+      console.log('§MERGE_CREATE table=' + table + ' cols=' + dCols.length +
+        ' — destination had no such table, created from source schema');
+    }
     var cols = dCols.filter(function(c) { return sCols.indexOf(c) >= 0; });
     if (!cols.length) return null;
     var q = cols.map(function(c) { return '"' + c + '"'; }).join(',');
@@ -864,20 +1116,66 @@ async function setupScene(A) {
     try { before = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
     // Stream row-by-row rather than materialising the whole table first — component_geometries is
     // ~100MB of BLOBs on Clinic and 311MB-class on KUL070 (§SM-5 memory is the real ceiling).
-    var srcRows = 0, errs = 0;
+    var srcRows = 0, errs = 0, skipped = 0;
     try {
       var st = src.prepare('SELECT ' + q + ' FROM "' + table + '"');
       var ins = dst.prepare('INSERT OR IGNORE INTO "' + table + '" (' + q + ') VALUES (' +
         cols.map(function() { return '?'; }).join(',') + ')');
-      while (st.step()) { srcRows++; try { ins.run(st.get()); } catch (e2) { errs++; } }
+      var gi = onlyGuids ? cols.indexOf('guid') : -1;
+      while (st.step()) { srcRows++; var row = st.get(); if (gi >= 0 && !onlyGuids.has(row[gi])) { skipped++; continue; } try { ins.run(row); } catch (e2) { errs++; } }
       st.free(); ins.free();
     } catch (e) { console.warn('§MERGE_READ_FAIL table=' + table + ' ' + e.message); return null; }
     try { after = dst.exec('SELECT COUNT(*) FROM "' + table + '"')[0].values[0][0]; } catch (e) {}
-    var added = after - before, dup = srcRows - added;
+    var added = after - before, dup = srcRows - added - (skipped || 0);
     console.log('§MERGE_ROWS table=' + table + ' src=' + srcRows + ' before=' + before +
-      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs +
+      ' after=' + after + ' added=' + added + ' dup=' + dup + ' errs=' + errs + (onlyGuids ? ' skippedHeld=' + skipped : '') +
       ' cols=' + cols.length + '/src' + sCols.length + '/dst' + dCols.length);
     return { src: srcRows, before: before, after: after, added: added, dup: dup, errs: errs };
+  }
+
+  // §MERGE_BLDCOL 2026-08-30 — LTU_AHouse_meta.db's elements_meta has NO `building` column
+  // (streaming.js:26-31, CPE_4D_PERF_MEM_FINDINGS §R6). Two consequences, both live bugs:
+  //   1. _mergeTable's destination-driven column intersection DROPS the incoming building name, so
+  //      a merged DB cannot say which rows are the new building.
+  //   2. the `GROUP BY m.building` centres query below throws (§HELPERS_QUERY_ERR), gets swallowed
+  //      by dbQuery, and leaves added=[] — the merged building is never registered, never streams.
+  // Add the column once, backfilling existing rows with the label the scene is ALREADY using for
+  // them (read off buildingCentres — extracted from live state, never invented), so both the live
+  // scene and every DB saved from it can name both buildings.
+  function _ensureBuildingCol(dst, src) {
+    var sCols = _mergeCols(src, 'elements_meta'), dCols = _mergeCols(dst, 'elements_meta');
+    if (!sCols || !dCols) return false;
+    if (dCols.indexOf('building') >= 0) return true;
+    if (sCols.indexOf('building') < 0) return false;   // neither side has it — nothing to preserve
+    var keys = Object.keys(A.buildingCentres || {});
+    var label = (keys.length === 1) ? keys[0]
+      : (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    try {
+      dst.run('ALTER TABLE elements_meta ADD COLUMN building TEXT');
+      dst.run('UPDATE elements_meta SET building = ? WHERE building IS NULL', [label]);
+      var n = 0;
+      try { n = dst.exec("SELECT COUNT(*) FROM elements_meta WHERE building = ?", [label])[0].values[0][0]; } catch (e) {}
+      // streaming.js probes this ONCE and caches — a stale `false` would keep every m.building
+      // query on the single-building fallback for the rest of the session.
+      A._buildingCol = true;
+      console.log('§MERGE_BLDCOL added=building backfill="' + label + '" rows=' + n);
+      return true;
+    } catch (e) { console.warn('§MERGE_BLDCOL_FAIL ' + e.message); return false; }
+  }
+
+  // The centres re-query both merge paths run in their step 6. Mirrors streaming.js:2501's
+  // _hasBuildingCol guard, which the merge copies were written without.
+  function _mergeCentresRows() {
+    var ok = A._hasBuildingCol ? A._hasBuildingCol(A.db) : true;
+    if (ok) {
+      return A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+    }
+    var label = (A._singleBuildingName ? A._singleBuildingName() : 'building');
+    console.log('§MERGE_CENTRES_FALLBACK no building column — one building, one centre name="' + label + '"');
+    return A.dbQuery("SELECT '" + label.replace(/'/g, "''") + "', COUNT(*), " +
+      'AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
+      'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid');
   }
 
   function _georefPin(db) {
@@ -894,6 +1192,36 @@ async function setupScene(A) {
   }
 
   // Merge an opened .db into the LIVE scene instead of navigating. §SM-7.1.
+  // §MERGE_FOLD_TOPUP (CIVIL_HIGHWAY_JELAPANG.md §MERGED_DB): rows folded into a building name that is ALREADY drawn
+  // (the BIM partner's GEOTECH/CHAINAGE/... files carry the road's name "JELAPANG") left `added` empty → nothing streamed
+  // and the open Find tree kept its pre-merge counts. Queue those buildings for a guid-filtered top-up stream.
+  A._mergeNewGuids = function(guids) {
+    var out = [];
+    try {
+      var st = A.db.prepare('SELECT 1 FROM elements_meta WHERE guid = ?');
+      for (var i = 0; i < guids.length; i++) { st.bind([guids[i]]); if (!st.step()) out.push(guids[i]); st.reset(); }
+      st.free();
+    } catch (e) { return []; }
+    return out;
+  };
+  A._mergeQueueTopUp = function(srcGuids, before) {
+    var byBld = {};
+    try {
+      var st = A.db.prepare('SELECT building FROM elements_meta WHERE guid = ?');
+      for (var i = 0; i < srcGuids.length; i++) {
+        st.bind([srcGuids[i]]);
+        if (st.step()) { var b = st.get()[0]; if (before.indexOf(b) >= 0 && A.buildingsRendered && A.buildingsRendered.has(b)) (byBld[b] = byBld[b] || new Set()).add(srcGuids[i]); }
+        st.reset();
+      }
+      st.free();
+    } catch (e) { console.log('§MERGE_FOLD_TOPUP_FAIL ' + e.message); return []; }
+    var names = Object.keys(byBld);
+    A._mergeTopUp = A._mergeTopUp || {};
+    names.forEach(function(n) { A._mergeTopUp[n] = byBld[n]; A.buildingsRendered.delete(n); });
+    console.log('§MERGE_FOLD_TOPUP_QUEUE ' + JSON.stringify(names.map(function(n) { return n + ':' + byBld[n].size; })));
+    return names;
+  };
+
   A._mergeDbIntoScene = async function(fileName, bytes) {
     var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
     var SQL = A._SQL || A.citySQL || A._citySQL;
@@ -909,6 +1237,9 @@ async function setupScene(A) {
       var br = src.exec('SELECT DISTINCT building FROM elements_meta');
       if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
     } catch (e) {}
+    var srcGuids = [];   // §MERGE_FOLD_TOPUP: which rows this merge brings (they may join an already-drawn building)
+    try { var gr = src.exec('SELECT guid FROM elements_meta'); if (gr && gr.length) srcGuids = gr[0].values.map(function(v) { return v[0]; }); } catch (e) {}
+    srcGuids = A._mergeNewGuids(srcGuids);   // only rows the live DB does not hold yet — a re-merge must never redraw
     console.log('§MERGE_START file=' + fileName + ' bytes=' + bytes.byteLength +
       ' srcBuildings=' + JSON.stringify(srcBlds) + ' sceneBuildings=' + JSON.stringify(before));
 
@@ -934,13 +1265,20 @@ async function setupScene(A) {
 
     // ── §SM-7.1 step 3: fold the tables
     var stats = {};
+    _ensureBuildingCol(A.db, src);
     A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
+    var _newSet = new Set(srcGuids);
+    A._MERGE_GUID_ROW_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t, _newSet); if (s) stats[t] = s; });
     if (A.libDb) {
       A._MERGE_GEO_TABLES.forEach(function(t) {
         var s = _mergeTable(src, A.libDb, t);
         if (s) stats[t] = s;
         else if (A.libDb !== A.db) { var s2 = _mergeTable(src, A.db, t); if (s2) stats[t] = s2; }
       });
+    } else {
+      // A.libDb is null in several streaming modes (streaming.js:2302,2479). Without this branch the
+      // geometry fold was skipped outright — the split sibling below always had it, this one didn't.
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(src, A.db, t); if (s) stats[t] = s; });
     }
     console.log('§MERGE_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
       ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t){ return !stats[t]; })));
@@ -965,8 +1303,7 @@ async function setupScene(A) {
     for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
     var added = [];
     try {
-      var centres = A.dbQuery('SELECT m.building, COUNT(*), AVG(t.center_x), AVG(t.center_y), AVG(t.center_z) ' +
-        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid GROUP BY m.building');
+      var centres = _mergeCentresRows();
       for (var ci = 0; ci < centres.length; ci++) {
         var row = centres[ci];
         if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
@@ -995,7 +1332,128 @@ async function setupScene(A) {
     if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
 
     // ── §SM-7.1 step 7: stream the new names sequentially (drained at stream-complete)
-    A._mergePending = (A._mergePending || []).concat(added);
+    A._mergePending = (A._mergePending || []).concat(added).concat(A._mergeQueueTopUp(srcGuids, before));
+    if (A._findRefreshTree) A._findRefreshTree('merge-fold');   // tree reads A.db, which already holds the folded rows
+    A._mergeStreamNext();
+    return true;
+  };
+
+  // Split-DB sibling of _mergeDbIntoScene — for a meta.db + geo.db pair opened as TWO separate
+  // blobs (a large/split-mode building has no single monolithic byte buffer to hand _mergeDbIntoScene).
+  // §BUG 2026-08-29: nothing called this before — split results were funnelled through the monolithic
+  // _openDbBytes/_mergeDbIntoScene path, which opens ONE SQL.Database and therefore only ever saw
+  // whichever single blob got passed in (see _openIfcFiles' old metaDb-only fallback). Same merge
+  // logic as _mergeDbIntoScene line-for-line, just META_TABLES read from srcMeta and GEO_TABLES from
+  // srcGeo instead of one shared src — _mergeTable/_georefPin are already source-agnostic, reused as-is.
+  A._mergeSplitDbIntoScene = async function(fileName, metaBytes, geoBytes) {
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    var SQL = A._SQL || A.citySQL || A._citySQL;
+    if (!SQL) { console.log('§MERGE_SPLIT_FAIL reason=no_sql_factory'); if (A.status) A.status.textContent = 'Merge failed — sql.js not ready'; return false; }
+    if (!A.db) { console.log('§MERGE_SPLIT_FAIL reason=no_live_db'); return false; }
+    var srcMeta, srcGeo;
+    try { srcMeta = new SQL.Database(new Uint8Array(metaBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_meta ' + e.message); return false; }
+    try { srcGeo = new SQL.Database(new Uint8Array(geoBytes)); }
+    catch (e) { console.log('§MERGE_SPLIT_FAIL reason=open_geo ' + e.message); try { srcMeta.close(); } catch (e2) {} return false; }
+
+    var before = Object.keys(A.buildingCentres || {});
+    var srcBlds = [];
+    try {
+      var br = srcMeta.exec('SELECT DISTINCT building FROM elements_meta');
+      if (br && br.length) srcBlds = br[0].values.map(function(v) { return v[0]; });
+    } catch (e) {}
+    var srcGuids = [];   // §MERGE_FOLD_TOPUP: which rows this merge brings (they may join an already-drawn building)
+    try { var gr = srcMeta.exec('SELECT guid FROM elements_meta'); if (gr && gr.length) srcGuids = gr[0].values.map(function(v) { return v[0]; }); } catch (e) {}
+    srcGuids = A._mergeNewGuids(srcGuids);   // only rows the live DB does not hold yet — a re-merge must never redraw
+    console.log('§MERGE_SPLIT_START file=' + fileName + ' metaBytes=' + metaBytes.byteLength +
+      ' geoBytes=' + geoBytes.byteLength + ' srcBuildings=' + JSON.stringify(srcBlds) +
+      ' sceneBuildings=' + JSON.stringify(before));
+
+    // Frame rebase — same rule as _mergeDbIntoScene step 2, pinned off the META source
+    // (project_metadata/georef_offset_* lives with the metadata, not the geometry).
+    var pin = _georefPin(A.db), inc = _georefPin(srcMeta);
+    if (pin && inc) {
+      var dx = inc[0] - pin[0], dy = inc[1] - pin[1], dz = inc[2] - pin[2];
+      if (dx || dy || dz) {
+        try {
+          srcMeta.run('UPDATE element_transforms SET center_x = center_x + ?, center_y = center_y + ?, center_z = center_z + ?', [dx, dy, dz]);
+          console.log('§MERGE_SPLIT_GEOREF mode=rebase pin=(' + pin.join(',') + ') inc=(' + inc.join(',') + ') delta=(' + dx + ',' + dy + ',' + dz + ')');
+        } catch (e) { console.log('§MERGE_SPLIT_GEOREF mode=rebase_fail ' + e.message); }
+      } else {
+        console.log('§MERGE_SPLIT_GEOREF mode=same pin=(' + pin.join(',') + ')');
+      }
+    } else {
+      console.log('§MERGE_SPLIT_GEOREF mode=none pin=' + (pin ? '(' + pin.join(',') + ')' : 'absent') +
+        ' inc=' + (inc ? '(' + inc.join(',') + ')' : 'absent') + ' — each DB keeps its own coordinates');
+    }
+
+    // Fold tables: META_TABLES from srcMeta, GEO_TABLES from srcGeo — same _mergeTable helper, two sources.
+    var stats = {};
+    _ensureBuildingCol(A.db, srcMeta);
+    A._MERGE_META_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t); if (s) stats[t] = s; });
+    var _newSet = new Set(srcGuids);
+    A._MERGE_GUID_ROW_TABLES.forEach(function(t) { var s = _mergeTable(srcMeta, A.db, t, _newSet); if (s) stats[t] = s; });
+    if (A.libDb) {
+      A._MERGE_GEO_TABLES.forEach(function(t) {
+        var s = _mergeTable(srcGeo, A.libDb, t);
+        if (s) stats[t] = s;
+        else if (A.libDb !== A.db) { var s2 = _mergeTable(srcGeo, A.db, t); if (s2) stats[t] = s2; }
+      });
+    } else {
+      A._MERGE_GEO_TABLES.forEach(function(t) { var s = _mergeTable(srcGeo, A.db, t); if (s) stats[t] = s; });
+    }
+    console.log('§MERGE_SPLIT_TABLES folded=' + JSON.stringify(Object.keys(stats)) +
+      ' skipped=' + JSON.stringify(A._MERGE_META_TABLES.concat(A._MERGE_GEO_TABLES).filter(function(t) { return !stats[t]; })));
+    if (!stats.elements_meta) {
+      console.error('§MERGE_SPLIT_FAIL reason=elements_meta_not_folded — schema read failed, nothing merged');
+      try { srcMeta.close(); } catch (e) {}
+      try { srcGeo.close(); } catch (e) {}
+      if (A.status) A.status.textContent = 'Merge failed — could not read ' + fileName;
+      return false;
+    }
+    if (!stats.elements_meta.added) {
+      console.log('§MERGE_SPLIT_WARN elements_meta added=0 — nothing new (all GUIDs already present)');
+    }
+    try { srcMeta.close(); } catch (e) {}
+    try { srcGeo.close(); } catch (e) {}
+
+    A.cityBuildingDbs = A.cityBuildingDbs || {};
+    srcBlds.forEach(function(n) { A.cityBuildingDbs[n] = { db: A.db, libDb: A.libDb }; });
+
+    var env = null;
+    for (var k0 in A.buildingCentres) { if (A.buildingCentres[k0].envelope) { env = A.buildingCentres[k0].envelope; break; } }
+    var added = [];
+    try {
+      var centres = _mergeCentresRows();
+      for (var ci = 0; ci < centres.length; ci++) {
+        var row = centres[ci];
+        if (A.buildingCentres[row[0]]) { A.buildingCentres[row[0]].count = row[1]; continue; }
+        A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
+        if (env) A.buildingCentres[row[0]].envelope = env;
+        added.push(row[0]);
+      }
+    } catch (e) { console.log('§MERGE_SPLIT_CENTRES_FAIL ' + e.message); }
+    console.log('§MERGE_SPLIT_CENTRES before=' + before.length + ' after=' + Object.keys(A.buildingCentres).length +
+      ' added=' + JSON.stringify(added));
+
+    try {
+      var er = A.dbQuery('SELECT COUNT(*) FROM elements_meta');
+      A.totalElements = er.length ? er[0][0] : A.totalElements;
+      var dr = A.dbQuery('SELECT discipline, COUNT(*) FROM elements_meta GROUP BY discipline');
+      A.discCounts = {};
+      for (var di = 0; di < dr.length; di++) A.discCounts[dr[di][0]] = dr[di][1];
+    } catch (e) {}
+    if (A.updateHUD) A.updateHUD();
+    if (A.populateBuildingList) A.populateBuildingList();
+    if (A._updateFogDensity) A._updateFogDensity();
+
+    var ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
+    console.log('§MERGE_SPLIT_DONE file=' + fileName + ' newBuildings=' + added.length +
+      ' totalElements=' + A.totalElements + ' ms=' + ms.toFixed(0));
+    if (A.status) A.status.textContent = 'Merged ' + fileName + ' — ' + added.length + ' building(s) added';
+
+    A._mergePending = (A._mergePending || []).concat(added).concat(A._mergeQueueTopUp(srcGuids, before));
+    if (A._findRefreshTree) A._findRefreshTree('merge-fold');   // tree reads A.db, which already holds the folded rows
     A._mergeStreamNext();
     return true;
   };
@@ -1042,6 +1500,40 @@ async function setupScene(A) {
     location.assign('viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(dbUrl) + '&ghost=1');
   };
 
+  // Split-DB sibling of _openDbBytes — for a meta.db + geo.db pair (from a local file-pair open, or
+  // a split-mode importMultiIFC result). Mirrors _openDbBytes' merge/replace branching exactly; the
+  // only difference is TWO source blobs, cached under the _meta.db/_geo.db naming convention
+  // streaming.js's §DB_SPLIT_DETECT already expects (same convention import.js's openImported already
+  // uses successfully for split records — this extends it to the file-picker/Open door and to
+  // _openIfcFiles' split branch below, neither of which had any split-aware path before).
+  A._openSplitDbBytes = async function(fileName, metaBytes, geoBytes) {
+    var open = Object.keys(A.buildingCentres || {});
+    if (A.db && open.length) {
+      var target = (A.activeBuilding && A.buildingCentres[A.activeBuilding]) ? A.activeBuilding : open[0];
+      var choice = await A._showMergeModal(fileName, target);
+      console.log('§MERGE_CHOICE file=' + fileName + ' target=' + target + ' action=' + choice.action);
+      if (choice.action === 'merge') { await A._mergeSplitDbIntoScene(fileName, metaBytes, geoBytes); return; }
+    } else {
+      console.log('§MERGE_SKIP reason=no_building_open — replace path');
+    }
+    var key = fileName.replace(/_meta\.db$/i, '').replace(/\.(db|sqlite)$/i, '');
+    var extractedUrl = 'import://' + key + '_extracted.db/v0';
+    var metaUrl = 'import://' + key + '_meta.db/v0';
+    var geoUrl = 'import://' + key + '_geo.db/v0';
+    var cacheDb = await A.openCacheDB();
+    if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
+    await new Promise(function(resolve) {
+      var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
+      var store = tx.objectStore(A.CACHE_STORE);
+      store.put(metaBytes, metaUrl);
+      store.put(geoBytes, geoUrl);
+      store.put(metaBytes, extractedUrl);   // meta as primary — fast load, same as import.js's openImported
+      tx.oncomplete = resolve; tx.onerror = resolve;
+    });
+    console.log('§OPEN_DB_SPLIT cached key=' + key + ' meta=' + metaBytes.byteLength + ' geo=' + geoBytes.byteLength + ' → navigate');
+    location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1');
+  };
+
   // §SM-7.1 step 5 — source IFC in the SAME door. No new import path: route to the existing
   // A.importMultiIFC (import.js:267), take the DB it produced, feed it into the same merge/replace
   // flow. §SM-5 named the ceiling and it is measured, not theoretical: a single ~1GB+ source file
@@ -1058,6 +1550,16 @@ async function setupScene(A) {
     console.log('§OPEN_IFC files=' + files.length + ' names=' + Array.prototype.map.call(files, function(f){ return f.name; }).join(','));
     var out = await A.importMultiIFC(files);
     if (!out || !out.record) { console.log('§OPEN_IFC_FAIL reason=no_record_returned'); return; }
+    // §BUG 2026-08-29: a split-mode result (large building, e.g. LTU_AHouse 8-file merge) carries
+    // metaDb+geoDb as SEPARATE blobs — this used to take metaDb alone (`extractedDb || metaDb`) and
+    // silently drop geoDb, opening a metadata-only DB with zero mesh geometry. Route split results
+    // through _openSplitDbBytes instead, which keeps both halves.
+    if (out.split && out.record.metaDb && out.record.geoDb) {
+      console.log('§OPEN_IFC_DB building=' + out.buildingName + ' meta=' + out.record.metaDb.byteLength +
+        ' geo=' + out.record.geoDb.byteLength + ' split=true');
+      await A._openSplitDbBytes(out.buildingName + '_meta.db', new Uint8Array(out.record.metaDb), new Uint8Array(out.record.geoDb));
+      return;
+    }
     var bytes = out.record.extractedDb || out.record.metaDb;
     if (!bytes) { console.log('§OPEN_IFC_FAIL reason=no_db_bytes split=' + !!out.record.metaDb); return; }
     console.log('§OPEN_IFC_DB building=' + out.buildingName + ' bytes=' + bytes.byteLength + ' split=' + !!out.split);
@@ -1074,6 +1576,19 @@ async function setupScene(A) {
         for (var pi = 0; pi < picks.length; pi++) fsaFiles.push(await picks[pi].getFile());
         console.log('§OPEN_PICK mode=fsa n=' + fsaFiles.length + ' name=' + fsaFiles[0].name + ' bytes=' + fsaFiles[0].size);
         if (/\.ifc$/i.test(fsaFiles[0].name)) { await A._openIfcFiles(fsaFiles); return; }
+        // §BUG 2026-08-29: selecting a meta.db + geo.db pair together used to silently drop everything
+        // past fsaFiles[0] — picker return order isn't guaranteed alphabetical-by-role, so "geo.db"
+        // (no elements_meta at all) could load ALONE while meta.db (the actual data) was discarded.
+        // Detect the pair by name first, before falling into the single-file path.
+        var metaFile = fsaFiles.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile = fsaFiles.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (fsaFiles.length >= 2 && metaFile && geoFile) {
+          console.log('§OPEN_PICK_SPLIT meta=' + metaFile.name + ' geo=' + geoFile.name);
+          var metaBuf = new Uint8Array(await metaFile.arrayBuffer());
+          var geoBuf = new Uint8Array(await geoFile.arrayBuffer());
+          await A._openSplitDbBytes(metaFile.name, metaBuf, geoBuf);
+          return;
+        }
         var buf = await fsaFiles[0].arrayBuffer();
         await A._openDbBytes(fsaFiles[0].name, new Uint8Array(buf));
         return;
@@ -1086,10 +1601,74 @@ async function setupScene(A) {
       var file = input.files[0];
       console.log('§OPEN_PICK mode=input n=' + input.files.length + ' name=' + file.name + ' bytes=' + file.size);
       if (/\.ifc$/i.test(file.name)) { await A._openIfcFiles(input.files); }
-      else { var buf = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf)); }
+      else {
+        var files2 = Array.prototype.slice.call(input.files);
+        var metaFile2 = files2.filter(function(f) { return /_meta\.db$/i.test(f.name); })[0];
+        var geoFile2 = files2.filter(function(f) { return /_geo\.db$/i.test(f.name); })[0];
+        if (files2.length >= 2 && metaFile2 && geoFile2) {
+          console.log('§OPEN_PICK_SPLIT mode=input meta=' + metaFile2.name + ' geo=' + geoFile2.name);
+          var metaBuf2 = new Uint8Array(await metaFile2.arrayBuffer());
+          var geoBuf2 = new Uint8Array(await geoFile2.arrayBuffer());
+          await A._openSplitDbBytes(metaFile2.name, metaBuf2, geoBuf2);
+        } else {
+          var buf2 = await file.arrayBuffer(); await A._openDbBytes(file.name, new Uint8Array(buf2));
+        }
+      }
       if (input.parentNode) document.body.removeChild(input);
     });
     document.body.appendChild(input); input.click();
+  };
+
+  // §R6a (CPE_4D_PERF_MEM_STUDY.md): a cache HIT alone is not proof the cached blob is still
+  // current — cachedFetch used to trust it forever, so a re-uploaded building DB never reached a
+  // returning user. Compares a cheap HEAD's ETag/Content-Length against what was stored at cache
+  // write time. Fails OPEN on every uncertain path (no stored comparator, network error, timeout,
+  // missing headers) — "skip revalidation, trust the cache" is the same behaviour this file had
+  // before this function existed, never a regression, only ever a stale-cache correction.
+  A._revalidateCache = async function(url, key, cacheDb) {
+    var fname = url.split('/').pop();
+    var stored;
+    try {
+      stored = await new Promise(function(resolve) {
+        var tx = cacheDb.transaction('revalidation', 'readonly');
+        var req = tx.objectStore('revalidation').get(key);
+        req.onsuccess = function() { resolve(req.result); };
+        req.onerror = function() { resolve(null); };
+      });
+    } catch (e) { stored = null; }
+    if (!stored || (!stored.etag && !stored.contentLength)) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-stored-comparator`);
+      return true;
+    }
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, 4000);
+    var resp;
+    try {
+      resp = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=${e.name === 'AbortError' ? 'timeout' : 'network-fail'}`);
+      return true;
+    }
+    clearTimeout(timer);
+    if (!resp.ok) {
+      console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=head-status-${resp.status}`);
+      return true;
+    }
+    var liveEtag = resp.headers.get('ETag');
+    var liveLen = resp.headers.get('Content-Length');
+    if (stored.etag && liveEtag) {
+      if (stored.etag === liveEtag) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} etag=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.etag} new=${liveEtag}`);
+      return false;
+    }
+    if (stored.contentLength && liveLen) {
+      if (String(stored.contentLength) === String(liveLen)) { console.log(`[S203] §CACHE_REVALIDATE_OK url=${fname} contentLength=match`); return true; }
+      console.log(`[S203] §CACHE_REVALIDATE_STALE url=${fname} old=${stored.contentLength} new=${liveLen}`);
+      return false;
+    }
+    console.log(`[S203] §CACHE_REVALIDATE_SKIP url=${fname} reason=no-comparable-header`);
+    return true;
   };
 
   A.cachedFetch = async function(url) {
@@ -1110,16 +1689,21 @@ async function setupScene(A) {
           req.onerror = () => resolve(null);
         });
         if (cached) {
-          // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
-          // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
-          A._cacheHitLogged = A._cacheHitLogged || {};
-          if (!A._cacheHitLogged[key]) {
-            A._cacheHitLogged[key] = 1;
-            console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+          // §R6a: a cache hit is provisional until revalidated — a STALE verdict falls through to
+          // the normal fetch+write path below exactly as a cache miss would.
+          var _fresh = await A._revalidateCache(url, key, cacheDb);
+          if (_fresh) {
+            // §PERF: log a cache hit ONCE per url, not on every call. A per-tick caller (e.g. the
+            // dashboard's ad_seed.db read) turned this into 25.8MB-labelled console spam every tick.
+            A._cacheHitLogged = A._cacheHitLogged || {};
+            if (!A._cacheHitLogged[key]) {
+              A._cacheHitLogged[key] = 1;
+              console.log(`[S203] §CACHE_HIT ${url.split('/').pop()} size=${(cached.byteLength/1024/1024).toFixed(1)}MB`);
+            }
+            // Update LRU timestamp on hit
+            try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
+            return cached;
           }
-          // Update LRU timestamp on hit
-          try { var tx2 = cacheDb.transaction('timestamps', 'readwrite'); tx2.objectStore('timestamps').put(Date.now(), key); } catch(e2) {}
-          return cached;
         }
         // §CACHE_KEY_LEGACY (W-DB-CACHE-KEY): profiles that cached BEFORE this fix hold the blob under
         // the raw url. Adopt it in place rather than making every existing user pay one more 251MB
@@ -1192,7 +1776,8 @@ async function setupScene(A) {
         // §S-PROGRESS-META — clamp ≤100%: gzip/transfer-encoding makes Content-Length (compressed)
         // smaller than received (decompressed) bytes, so the raw ratio can exceed 1.0.
         const pct = Math.min(100, Math.round((received / contentLength) * 100));
-        if (A.status) A.status.textContent = `Downloading ${fileName}... ${pct}% (${(received/1024/1024).toFixed(0)}/${(contentLength/1024/1024).toFixed(0)}MB)`;
+        if (A.status) A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_downloading_pct||'Downloading {name}... {pct}% ({a}/{b}MB)')   // S226 §R2b
+          .replace('{name}',fileName).replace('{pct}',pct).replace('{a}',(received/1024/1024).toFixed(0)).replace('{b}',(contentLength/1024/1024).toFixed(0));
         // drive the visible bar during cachedFetch (meta.db phase), not just the status text
         var _sp = document.getElementById('s-progress');
         if (_sp) _sp.style.width = pct + '%';
@@ -1205,45 +1790,114 @@ async function setupScene(A) {
       buf = await resp.arrayBuffer();
     }
 
-    if (cacheDb && !A._cacheDisabled) {
+    if (A._CACHE_WRITE_TIMEOUT_MS == null) A._CACHE_WRITE_TIMEOUT_MS = 60000;   // §CACHE_WRITE_HANG
+    // §CACHE_WRITE_HANG_GATE (2026-09-14, found on LTU_AHouse's 761MB DB): the timeout above only
+    // helps a write that is genuinely pending on a free event loop. Measured live: on this size, the
+    // page's own event loop never ran again either — no setTimeout fired even 8 minutes later — so
+    // whatever IndexedDB is doing with a buffer this large (most likely structured-clone
+    // serialization of the ArrayBuffer for storage) is blocking the renderer itself, past the point
+    // any JS-level recovery can reach. Every building tried today up to 315MB (Hospital) completed
+    // its write normally; only LTU's 725.7MB one wedged. Never attempt the put() at all above this
+    // size — return the already-downloaded buffer uncached instead of risking the whole load.
+    if (A._CACHE_MAX_BLOB_BYTES == null) A._CACHE_MAX_BLOB_BYTES = 400 * 1024 * 1024;
+    if (cacheDb && !A._cacheDisabled && !A._bakeOwned && buf.byteLength > A._CACHE_MAX_BLOB_BYTES) {
+      console.warn(`[S203] §CACHE_WRITE_SKIP_TOO_LARGE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+        ` max=${(A._CACHE_MAX_BLOB_BYTES/1024/1024).toFixed(0)}MB — put() itself risks wedging the renderer past any JS-level recovery (§CACHE_WRITE_HANG); proceeding uncached`);
+    } else if (cacheDb && !A._cacheDisabled && !A._bakeOwned) {
       try {
         // §S260b: LRU evict before write to keep under max entries
         await A._evictOldest(cacheDb);
-        // One write attempt under `key`; resolves true on success, false if the tx aborted (quota).
+        // §R6a: store the comparator ALONGSIDE the blob, same transaction — a write and its own
+        // freshness marker must never disagree. Profiles stuck on the unversioned-fallback open
+        // (VersionError path, §IDB_VERSION_MISMATCH) never got the 'revalidation' store created —
+        // guard with objectStoreNames.contains, since listing a non-existent store in
+        // db.transaction([...]) throws synchronously and would break the whole write.
+        var _hasRevalStore = cacheDb.objectStoreNames.contains('revalidation');
+        // One write attempt under `key`. Resolves { ok, name, err } — the abort REASON, not just a
+        // boolean, because only ONE class of failure (a genuine quota shortfall) can be helped by
+        // throwing other entries away. See §CACHE_EVICT_ONLY_ON_QUOTA below.
         var _attemptWrite = function() {
           return new Promise(function(resolve) {
-            var _writeOk = false;
-            const tx = cacheDb.transaction([A.CACHE_STORE, 'timestamps'], 'readwrite');
+            var _writeOk = false, _settled = false;
+            const stores = _hasRevalStore ? [A.CACHE_STORE, 'timestamps', 'revalidation'] : [A.CACHE_STORE, 'timestamps'];
+            const tx = cacheDb.transaction(stores, 'readwrite');
             tx.objectStore('timestamps').put(Date.now(), key);
+            if (_hasRevalStore) {
+              tx.objectStore('revalidation').put({ etag: resp.headers.get('ETag') || null, contentLength: resp.headers.get('Content-Length') || null }, key);
+            }
             const req = tx.objectStore(A.CACHE_STORE).put(buf, key);
             req.onsuccess = function() { _writeOk = true; console.log(`[S203] §CACHE_WRITE_OK url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB`); };
             req.onerror = function() {
-              // §S260b: Quota exceeded — let the tx abort so the caller evicts LRU and retries.
               console.warn(`[S203] §CACHE_WRITE_ERR url=${url.split('/').pop()} err=${req.error}`);
             };
+            function _settle(result) { if (_settled) return; _settled = true; clearTimeout(_hangGuard); resolve(result); }
             tx.oncomplete = function() {
               if (!_writeOk) console.warn('[S203] §CACHE_TX_COMPLETE_BUT_NO_WRITE — data NOT persisted');
-              resolve(_writeOk);
+              _settle({ ok: _writeOk });
             };
-            tx.onabort = function() { resolve(false); };
+            // Read tx.error. The old handler discarded it and every caller then ASSUMED "quota" —
+            // which is how a non-quota abort came to be reported as `quota too small` for months.
+            tx.onabort = function() {
+              var e = tx.error;
+              _settle({ ok: false, name: e ? e.name : '', err: e ? (e.name + ': ' + e.message) : '(tx.error was null)' });
+            };
+            // §CACHE_WRITE_HANG (2026-09-14, found on LTU_AHouse's 761MB single-file DB,
+            // MEP_CLASH_REVEAL_MOVIE.md §128 lane): req.onsuccess firing ("§CACHE_WRITE_OK") only
+            // means the individual put() succeeded — it is NOT the same as the transaction
+            // committing. Observed live: onsuccess fires, then neither oncomplete nor onabort ever
+            // fires again — 15+ minutes, near-zero CPU, no error surfaced. Every caller of
+            // cachedFetch awaits it before opening the DB, so a stuck transaction here used to hang
+            // the entire load pipeline forever with nothing to blame in the log. Bound the wait: on
+            // timeout, best-effort abort the stuck transaction and resolve not-ok so the existing
+            // §CACHE_WRITE_UNFIXABLE path below reports it and returns the already-downloaded buffer
+            // uncached — the load proceeds; only "instant reload from cache" is lost for this write.
+            var _hangGuard = setTimeout(function() {
+              console.warn(`[S203] §CACHE_WRITE_TIMEOUT url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+                ` after=${A._CACHE_WRITE_TIMEOUT_MS}ms — tx.oncomplete/onabort never fired; proceeding without caching this write`);
+              try { tx.abort(); } catch (eAb) {}   // best-effort release; onabort may still fire and no-ops via _settled
+              _settle({ ok: false, name: 'timeout', err: 'tx.oncomplete/onabort never fired within ' + A._CACHE_WRITE_TIMEOUT_MS + 'ms' });
+            }, A._CACHE_WRITE_TIMEOUT_MS);
           });
         };
-        // §CACHE_EVICT_LRU_RETRY (F3): on a quota abort, drop the OLDEST entries and try again —
-        // bounded. The old code .clear()'d the entire store, so one oversized write wiped every
-        // other cached building and turned the next open of ANY of them into a fresh download.
-        var _ok = await _attemptWrite();
-        for (var _try = 0; !_ok && _try < 4; _try++) {
-          var _dropped = await A._evictOldest(cacheDb, 4);
-          if (!_dropped) break;                       // nothing left to give up — stop, don't spin
-          console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
-          _ok = await _attemptWrite();
+        // §CACHE_EVICT_ONLY_ON_QUOTA (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — THE DATA-LOSS FIX.
+        // This ladder used to force-evict the 4 oldest entries after ANY abort and retry, up to 4
+        // times. MEASURED on Hospital: Hospital_geo.db is 239,702,016 bytes and Chrome caps a SINGLE
+        // IndexedDB value at 133,169,152 bytes (~127MiB), so its write aborts with
+        //   UnknownError: The serialized keys and/or value are too large (size=239702104, max=133169152)
+        // — a failure NO amount of eviction can fix. The ladder ran anyway and, with only 2 entries in
+        // the store, "drop the 4 oldest" dropped EVERYTHING — including buildings/Hospital_meta.db,
+        // the slot the Time Machine had just persisted a user's Gantt edit into. persistDb had
+        // correctly reported ok=true and logged §SCHED_PERSIST; the bytes were then deleted out from
+        // under it by this loop, and the next reload silently refetched the pristine network copy.
+        // So: evict ONLY for QuotaExceededError, the one failure eviction can actually relieve.
+        var _res = await _attemptWrite();
+        var _ok = _res.ok;
+        // §CACHE_EVICT_ONLY_ON_QUOTA_STRICT: require the POSITIVE match before evicting. A blank/
+        // missing name — tx.onabort firing with tx.error null, or tx.oncomplete firing with
+        // _writeOk still false (neither is provably a quota shortfall) — must default to "leave the
+        // cache intact", not fall through to eviction. The previous form
+        // (`_res.name && _res.name !== 'QuotaExceededError'`) only excluded ONE named non-quota case
+        // and let every UNNAMED failure reach the evict branch below — the same blind-evict-on-any-
+        // abort defect §CACHE_EVICT_ONLY_ON_QUOTA was written to retire, just narrowed to a smaller
+        // trigger set instead of closed.
+        if (!_ok && _res.name === 'QuotaExceededError') {
+          for (var _try = 0; !_ok && _try < 4; _try++) {
+            var _dropped = await A._evictOldest(cacheDb, 4);
+            if (!_dropped) break;                     // nothing left to give up — stop, don't spin
+            console.log(`[S203] §CACHE_EVICT_LRU_RETRY attempt=${_try + 1} dropped=${_dropped}`);
+            _res = await _attemptWrite();
+            _ok = _res.ok;
+          }
+          if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} err=${_res.err || 'unknown'} — still failing after LRU eviction`);
+        } else if (!_ok) {
+          console.warn(`[S203] §CACHE_WRITE_UNFIXABLE url=${url.split('/').pop()} size=${(buf.byteLength/1024/1024).toFixed(1)}MB` +
+            ` err=${_res.err || '(no error name — treated as unfixable, not evicted)'} — eviction cannot help this; cache left INTACT`);
         }
-        if (!_ok) console.warn(`[S203] §CACHE_EVICT_WRITE_FAIL url=${url.split('/').pop()} — quota too small even after LRU eviction`);
       } catch(e) { console.log(`[S203] §CACHE_WRITE_ERR ${e.message}`); }
     }
 
-    if (!cacheDb || A._cacheDisabled) {
-      console.log(`[S203] §CACHE_SKIP url=${url.split('/').pop()} reason=${!cacheDb ? 'IDB_unavailable' : 'quota_low'}`);
+    if (!cacheDb || A._cacheDisabled || A._bakeOwned) {
+      console.log(`[S203] §CACHE_SKIP url=${url.split('/').pop()} reason=${A._bakeOwned ? 'bake' : (!cacheDb ? 'IDB_unavailable' : 'quota_low')}`);
     }
     return buf;
   };
@@ -1261,30 +1915,306 @@ async function setupScene(A) {
   // patch script MUST be idempotent (DELETE-then-INSERT or INSERT OR IGNORE) so a repeat apply on
   // an already-current db is a safe no-op. Best-effort: a missing patch (404, the common case) or
   // any exec failure is swallowed and the ORIGINAL buffer returned untouched — never blocks an open.
+  // §PATCH_CHUNK (2026-08-10): a single db.run() over one giant multi-thousand-statement
+  // string crashes THIS project's bundled sql-wasm.wasm ("memory access out of bounds") —
+  // confirmed live, reproduced in a real headless browser AND in isolation against the exact
+  // shipped .wasm binary with a 9,465-statement patch. This is a DIFFERENT WASM build from the
+  // npm sql.js package (different byte size, different md5) — a Node-only sql.js verification
+  // does not catch this class of bug; only testing against the real bundled binary does. Run
+  // in bounded batches instead — statement-aware, not raw-line-count: most lines in every
+  // patch file are one complete statement, but at least two existing patches
+  // (Terminal_extracted.db.sql, Terminal_meta.db.sql) have a multi-line `CREATE TABLE
+  // spatial_structure (...)` — a naive "500 raw lines per batch" split could cut that
+  // statement in half if it ever landed on a chunk boundary (it doesn't today, but that's
+  // luck, not correctness). Accumulate lines into a statement until one ends in `;`, THEN
+  // batch ~500 statements per db.run() — multi-line statements always stay whole.
+  // Shared by _applyPendingPatch (pre-load buffer patch) AND navigate_find.js's needle path
+  // (same patch applied to the LIVE A.db) — the needle path shipped un-chunked and bricked the
+  // whole sql.js heap on Hospital's 9,466-statement patch (every later query, the geo.db load
+  // and streaming init all died "memory access out of bounds"). One chunker, both callers.
+  A._runSqlChunked = function(db, sql) {
+    var rawLines = sql.split('\n');
+    var statements = [];
+    var stBuf = [];
+    for (var li = 0; li < rawLines.length; li++) {
+      var ln = rawLines[li];
+      if (!ln.trim().length) continue;
+      stBuf.push(ln);
+      if (/;\s*$/.test(ln)) { statements.push(stBuf.join('\n')); stBuf = []; }
+    }
+    if (stBuf.length) statements.push(stBuf.join('\n'));  // trailing content with no `;` (comment-only tail, etc.)
+    var CHUNK = 500;
+    for (var i = 0; i < statements.length; i += CHUNK) {
+      db.run(statements.slice(i, i + CHUNK).join('\n'));
+    }
+    return { statements: statements.length, chunks: Math.ceil(statements.length / CHUNK) };
+  };
+
+  // §LIGHT_FIELD_PATCH (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-09-29 "can the initial glass data be injected into the DB
+  // ... so my own testing will be faster"): the §LIGHT_FIELD_DB row (light_field_cache: zone grid + sky / ground field + Z26 glass
+  // table, gzip) ships as an optional BINARY sidecar patches/<db>.lightfield.bin, baked headless per light-code version (its key is
+  // the light_zones.js hash; primeDb ignores a stale row). Format 'LFP1' + u32 header length + JSON header {key,bld,fp,bytes,
+  // raw_bytes,created} + the gzip blob, inserted with a prepared statement: derived data, not a hand-written SQL patch (a multi-MB
+  // hex literal is what the bundled sql-wasm cannot take, and SQLite || turns blobs into text). 404 = nothing to add (logged).
+  A._applyLightFieldPatch = async function(buf, dir, dbFile) {
+    var u = dir + 'patches/' + dbFile + '.lightfield.bin';
+    try { var r = await fetch(u); if (!r.ok) { console.log('§LIGHT_FIELD_PATCH none ' + dbFile + ' (' + r.status + ')'); return buf; }
+      var ab = await r.arrayBuffer(), dv = new DataView(ab), SQLF = A._SQL || window.SQL || window._SQL_CACHED;
+      if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' bad magic'); return buf; }
+      if (!SQLF) { console.warn('§LIGHT_FIELD_PATCH_FAIL sql.js factory not loaded'); return buf; }
+      var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
+      if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' blob ' + blob.byteLength + ' != header ' + H.bytes); return buf; }
+      var t0 = performance.now(), pdb = new SQLF.Database(new Uint8Array(buf));
+      pdb.run("DROP TABLE IF EXISTS light_field_cache"); pdb.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+      var st = pdb.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
+      var out = pdb.export().buffer; pdb.close();
+      console.log('§LIGHT_FIELD_PATCH applied ' + dbFile + ' key=' + H.key + ' bytes=' + H.bytes + ' raw=' + H.raw_bytes + ' created=' + H.created + ' ms=' + Math.round(performance.now() - t0) + ' from ' + u); return out;
+    } catch (e) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' — ' + (e && e.message)); return buf; }
+  };
+  // §FILM_FIELD_BY_BUILDING (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT"): a film opens its PATH db (HospitalAjaibPath.db,
+  // Hospital_silent.db) — that file name has no sidecar, the baked field is keyed on the building's own db (patches/Hospital_meta.db
+  // .lightfield.bin). §POC_BAKE measured §LIGHT_FIELD_PATCH none (404) + §LIGHT_FIELD_DB skip reason=no-table on the film. So, when the
+  // opened db has no light_field_cache row, look the sidecar up by BUILDING (A.activeBuilding) and put the row into the live A.db
+  // before LightZones.primeDb reads it. Same LFP1 container as _applyLightFieldPatch; light_zones.js still checks key (its code hash)
+  // and fp (geometry) — a sidecar for other geometry is rejected there and the build runs as before. light_zones.js is NOT edited
+  // (an edit re-keys every baked sidecar).
+  // §PREBAKE (bim-compiler prompts/ALTC_FOUNDATION.md "§PREBAKE spec"): pure-data setup results cached per db in
+  // patches/<db>.prebake.json (load-path shot PB1, window sides PB2). Loaded once, never blocks; each consumer checks its own key
+  // and falls back to computing. A._prebakeOut collects what this session COMPUTED (cli_silent_bake.js --write-prebake saves it).
+  A._prebakeFnv = function (str) { var h = 0x811c9dc5; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16) + ':' + str.length; };
+  A._prebake = null; A._prebakeOut = {};
+  A._loadPrebake = async function() {
+    var t0 = performance.now();
+    try {
+      if (/[?&]prebake=0/.test(location.search)) { console.log('§PREBAKE sidecar ignored (&prebake=0)'); return; }
+      var url = A.DB_URL || ''; if (!url) { console.log('§PREBAKE sidecar skip (no DB_URL)'); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0], u = dir + 'patches/' + own + '.prebake.json';
+      var r = await fetch(u); if (!r.ok) { console.log('§PREBAKE sidecar none ' + own + ' (' + r.status + ')'); return; }
+      var j = await r.json();
+      if (!j || j.v !== 1 || typeof j !== 'object') { console.warn('§PREBAKE sidecar bad format ' + u); return; }
+      A._prebake = j;
+      console.log('§PREBAKE sidecar loaded ' + own + ' parts=[' + Object.keys(j).filter(function (k) { return k !== 'v' && k !== 'created'; }).join(',') + '] created=' + j.created + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { A._prebake = null; console.warn('§PREBAKE sidecar failed ' + (e && e.message) + ' — computing as usual'); }
+  };
+  // merged with the loaded sidecar: parts served from it are kept, parts computed this session replace theirs (never drop a part)
+  A._prebakeRecord = function () { var o = { v: 1, created: new Date().toISOString() }, n = 0;
+    if (A._prebake) Object.keys(A._prebake).forEach(function (k) { if (k !== 'v' && k !== 'created') o[k] = A._prebake[k]; });
+    Object.keys(A._prebakeOut || {}).forEach(function (k) { o[k] = A._prebakeOut[k]; n++; }); return n ? JSON.stringify(o) : null; };
+  A._lightFieldByBuilding = async function() {
+    var t0 = performance.now();
+    try {
+      if (!A.db) return;
+      var has = A.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'");
+      if (has && has[0] && has[0].values.length) return;
+      for (var w = 0; !A.activeBuilding && w < 40; w++) await new Promise(function (r) { setTimeout(r, 250); });
+      var bld = A.activeBuilding, url = A.DB_URL || '';
+      if (!bld || !url) { console.log('§LIGHT_FIELD_BY_BUILDING skip bld=' + bld + ' url=' + (url ? 'yes' : 'none')); return; }
+      var dir = url.slice(0, url.lastIndexOf('/') + 1), own = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var names = [bld + '_meta.db', bld + '_extracted.db'].filter(function (n) { return n !== own; });
+      for (var i = 0; i < names.length; i++) {
+        var u = dir + 'patches/' + names[i] + '.lightfield.bin', r = await fetch(u); if (!r.ok) continue;
+        var ab = await r.arrayBuffer(), dv = new DataView(ab);
+        if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_BY_BUILDING bad magic ' + u); continue; }
+        var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
+        if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_BY_BUILDING blob ' + blob.byteLength + ' != header ' + H.bytes); continue; }
+        A.db.run("CREATE TABLE IF NOT EXISTS light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+        var st = A.db.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
+        console.log('§LIGHT_FIELD_BY_BUILDING found bld=' + bld + ' opened=' + own + ' sidecar=' + names[i] + ' key=' + H.key + ' bytes=' + H.bytes + ' ms=' + Math.round(performance.now() - t0) + ' (row put into the live db; LightZones.primeDb checks key + fp)');
+        return;
+      }
+      console.log('§LIGHT_FIELD_BY_BUILDING none bld=' + bld + ' opened=' + own + ' tried=' + names.join(',') + ' ms=' + Math.round(performance.now() - t0));
+    } catch (e) { console.warn('§LIGHT_FIELD_BY_BUILDING failed ' + (e && e.message)); }
+  };
+  // §PATCH_QTO (prompts/FIND_ASK_ANSWERS.md §K.1) — the main <db>.sql patch is applied exactly as
+  // before; THEN an optional, separately-owned <db>.qto.sql (the building's own cost rows, copied from
+  // its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent: a missing main
+  // patch does not skip the cost patch, a missing cost patch changes nothing.
   A._applyPendingPatch = async function(buf, url) {
+    var out = await A._applyMainPatch(buf, url);
+    return A._applyQtoPatch(out, url);
+  };
+  A._applyQtoPatch = async function(buf, url) {
+    try {
+      var dir = url.slice(0, url.lastIndexOf('/') + 1);
+      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+      var qUrl = dir + 'patches/' + dbFile + '.qto.sql';
+      var r = await fetch(qUrl);
+      if (!r.ok) { console.log('§PATCH_QTO_NONE ' + dbFile + ' (' + r.status + ')'); return buf; }
+      var sql = await r.text();
+      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;
+      if (!SQLFactory) { console.warn('§PATCH_QTO_FAIL ' + url + ' — sql.js factory not loaded yet'); return buf; }
+      var pdb = new SQLFactory.Database(new Uint8Array(buf));
+      var _ch = A._runSqlChunked(pdb, sql);
+      var n = 0; try { n = pdb.exec('SELECT count(*) FROM qto_cache')[0].values[0][0]; } catch (e) { n = -1; }
+      var out = pdb.export().buffer;
+      pdb.close();
+      console.log('§PATCH_QTO ' + dbFile + ' applied (' + _ch.statements + ' statements) qto_cache rows=' + n + ' from ' + qUrl);
+      return out;
+    } catch (e) {
+      console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', e && e.message);
+      return buf;
+    }
+  };
+  A._applyMainPatch = async function(buf, url) {
     try {
       var dir = url.slice(0, url.lastIndexOf('/') + 1);
       var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
       var patchUrl = dir + 'patches/' + dbFile + '.sql';
+      console.log('§DB_LOAD_STEP patch-fetch ' + patchUrl);
       var r = await fetch(patchUrl);
-      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return buf; }
+      console.log('§DB_LOAD_STEP patch-response status=' + r.status);
+      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return A._applyLightFieldPatch(buf, dir, dbFile); }
       var sql = await r.text();
       var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
       if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
       var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      pdb.run(sql);
+      var _ch = A._runSqlChunked(pdb, sql);   // §PATCH_CHUNK — see comment above _runSqlChunked
       var out = pdb.export().buffer;
       pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes) from ${patchUrl}`);
-      return out;
+      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${_ch.statements} statements, ${_ch.chunks} chunk(s)) from ${patchUrl}`);
+      return A._applyLightFieldPatch(out, dir, dbFile);
     } catch (e) {
       console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
       return buf;
     }
   };
 
+  // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ONE shared function, ONE
+  // trigger (called from streaming.js right after `A.db = new SQL.Database(...)`, both load
+  // paths — this covers an OCI sample load, a fresh drop-your-own-IFC import, and reopening a
+  // previously-imported building from bim_ootb_imports IndexedDB alike, since all three build
+  // `A.db` through this exact same streaming.js code, confirmed by reading it (import:// URLs
+  // route through A.cachedFetch → the same `new SQL.Database()` lines as any OCI URL). There used
+  // to be a SECOND copy of this logic in import_worker.js, running at import time instead of load
+  // time — dropped; redundant once every load (including the first one right after an import)
+  // goes through this one function anyway.
+  //
+  // A geometry-less element is often an IFC aggregate-parent container (IfcCurtainWall/IfcStair/
+  // IfcRoof — no own Representation; real geometry lives on its IfcRelAggregates children). The
+  // real parent→child GUID pairs (IfcRelAggregates, nothing computed) live in one of two tables
+  // depending on where this DB came from: `rel_aggregates` (server-side
+  // DAGCompiler/python/extractIFCtoDB.py, AGGREGATES-only — already written for any current
+  // extraction, missing only from older-vintage shipped DBs, backfilled per-building via a tiny
+  // relationship-only patch, buildings/patches/*.sql, no computed values) or `bom_tree`
+  // (client-side import_worker.js, §S267 — mixed VOIDS/FILLS/AGGREGATES via `rel_type`, filtered
+  // to AGGREGATES here). Same real relationship fact either way; the compose algorithm itself is
+  // one copy, not two.
+  //
+  // Runs on the in-memory sql.js db ONLY — never writes back to the fetched buffer or the served
+  // file/OCI. Guards: never touches a guid that already has a real transform (the ghost set is
+  // built from a LEFT JOIN ... WHERE t.guid IS NULL, and the INSERT is OR IGNORE besides); a ghost
+  // with no geometric children found stays a ghost, named in the §NOGEO_COMPOSE_UNRESOLVED log
+  // rather than silently falling through to time_machine.js's §4D_NOGEO project-end park
+  // unlabeled. Fixpoint over passes for multi-level aggregates (a composed parent can itself feed
+  // a higher-level parent on a later pass).
+  //
+  // Every row this writes is marked `transform_source='composed_aggregate'` — the project's
+  // existing provenance convention (see extractIFCtoDB.py's 'void_anchor' rows) — so it stays
+  // distinguishable from real extracted geometry later, not just a console log line. Currently
+  // shipped DBs (and the fresh-import schema in import_db_builder.js) predate that column, so the
+  // ALTER runs here, in-memory, guarded for a DB that already has it.
+  A.composeGhostsFromAggregates = function(db) {
+    var _t0 = Date.now();
+    try {
+      try { db.run("ALTER TABLE element_transforms ADD COLUMN transform_source TEXT"); }
+      catch (eAlter) { /* column already exists on this db — fine, nothing to do */ }
+
+      var ghostRows = db.exec(
+        "SELECT m.guid, m.ifc_class FROM elements_meta m " +
+        "LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL");
+      if (!ghostRows.length) {
+        // Paid this LEFT JOIN scan on every load, even for a building with zero ghosts (measured
+        // ~30-60ms on Hospital/Terminal's 48k-63k row elements_meta — negligible against the
+        // multi-second DB fetch/parse it runs alongside, but logged so that claim is a number,
+        // not an assumption, and stays checkable if this table ever grows an order of magnitude).
+        console.log(`[S203] §NOGEO_COMPOSE_SKIP no ghosts, ms=${Date.now() - _t0}`);
+        return { composed: 0, unresolved: 0 };
+      }
+      var ghostClass = {};   // guid -> ifc_class; shrinks to the truly-unresolved set below
+      ghostRows[0].values.forEach(function(r) { ghostClass[r[0]] = r[1]; });
+
+      var xformByGuid = {};  // guid -> [guid,cx,cy,cz,bx,by,bz]
+      var xr = db.exec("SELECT guid,center_x,center_y,center_z,bbox_x,bbox_y,bbox_z FROM element_transforms");
+      if (xr.length) xr[0].values.forEach(function(v) { if (v[4] != null) xformByGuid[v[0]] = v; });
+
+      var childrenOf = {};
+      var haveTables = db.exec(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('rel_aggregates','bom_tree')");
+      var tableNames = haveTables.length ? haveTables[0].values.map(function(r) { return r[0]; }) : [];
+      if (tableNames.indexOf('rel_aggregates') >= 0) {
+        var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates");
+        if (ar.length) ar[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+      if (tableNames.indexOf('bom_tree') >= 0) {
+        var bt = db.exec("SELECT parent_guid, child_guid FROM bom_tree WHERE rel_type='AGGREGATES'");
+        if (bt.length) bt[0].values.forEach(function(r) {
+          (childrenOf[r[0]] = childrenOf[r[0]] || []).push(r[1]);
+        });
+      }
+
+      var stmt = db.prepare(
+        "INSERT OR IGNORE INTO element_transforms " +
+        "(guid,center_x,center_y,center_z,rotation_x,rotation_y,rotation_z,bbox_x,bbox_y,bbox_z,transform_source) " +
+        "VALUES (?,?,?,?,0,0,0,?,?,?,'composed_aggregate')");
+      var composed = 0;
+      for (var pass = 0; pass < 10; pass++) {
+        var progressed = false;
+        for (var guid in ghostClass) {
+          var kids = childrenOf[guid] || [];
+          var minX = Infinity, minY = Infinity, minZ = Infinity;
+          var maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+          var found = 0;
+          for (var ki = 0; ki < kids.length; ki++) {
+            var v = xformByGuid[kids[ki]];
+            if (!v) continue;
+            found++;
+            if (v[1] - v[4] / 2 < minX) minX = v[1] - v[4] / 2;
+            if (v[2] - v[5] / 2 < minY) minY = v[2] - v[5] / 2;
+            if (v[3] - v[6] / 2 < minZ) minZ = v[3] - v[6] / 2;
+            if (v[1] + v[4] / 2 > maxX) maxX = v[1] + v[4] / 2;
+            if (v[2] + v[5] / 2 > maxY) maxY = v[2] + v[5] / 2;
+            if (v[3] + v[6] / 2 > maxZ) maxZ = v[3] + v[6] / 2;
+          }
+          if (!found) continue;
+          var cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2;
+          var bx = maxX - minX, by = maxY - minY, bz = maxZ - minZ;
+          stmt.run([guid, cx, cy, cz, bx, by, bz]);
+          xformByGuid[guid] = [guid, cx, cy, cz, bx, by, bz];  // feeds a later pass (multi-level)
+          delete ghostClass[guid];
+          composed++;
+          progressed = true;
+        }
+        if (!progressed) break;
+      }
+      stmt.free();
+
+      var unresolvedGuids = Object.keys(ghostClass);
+      if (composed) console.log(`[S203] §NOGEO_COMPOSE composed=${composed} ms=${Date.now() - _t0} (aggregate-parent elements, transform_source=composed_aggregate, union bbox of real AGGREGATES children)`);
+      if (unresolvedGuids.length) {
+        var byClass = {};
+        unresolvedGuids.forEach(function(g) { byClass[ghostClass[g]] = (byClass[ghostClass[g]] || 0) + 1; });
+        console.log(`[S203] §NOGEO_COMPOSE_UNRESOLVED count=${unresolvedGuids.length} classes=${JSON.stringify(byClass)} (no geometric AGGREGATES children found in rel_aggregates/bom_tree — stays a ghost, falls to time_machine.js's §4D_NOGEO project-end park)`);
+      }
+      return { composed: composed, unresolved: unresolvedGuids.length };
+    } catch (e) {
+      console.warn('[S203] §NOGEO_COMPOSE_FAIL', e && e.message);
+      return { composed: 0, unresolved: 0 };
+    }
+  };
+
   // BLOB → Three.js BufferGeometry (optional precomputed normals BLOB)
-  A.blobToGeometry = function(vBlob, fBlob, nBlob) {
+  // §WIND_FLIP baked table (patch SQL geometry_wind_flip, rule-checked): hash -> flipped-edge count; null = absent / other rule
+  A._windTableGet = function() {
+    if (A._windTable !== undefined) return A._windTable; A._windTable = null;
+    try { var R = window.WindFlip && A.db && A.db.exec("SELECT geometry_hash, conflict_edges, rule FROM geometry_wind_flip");
+      if (R && R[0]) { var m = new Map(), ok = false; R[0].values.forEach(function (r) { if (r[0] === '__census__') ok = (r[2] === window.WindFlip.RULE); else m.set(r[0], r[1]); });
+        if (ok) A._windTable = m; console.log('§WIND_FLIP table ' + (ok ? 'used rows=' + m.size : 'IGNORED (rule mismatch or no census row)')); }
+    } catch (e) { /* no table: live count */ }
+    return A._windTable;
+  };
+  A.blobToGeometry = function(vBlob, fBlob, nBlob, knownFlip) {
     try {
       const vArr = new Float32Array(vBlob.buffer, vBlob.byteOffset, vBlob.byteLength / 4);
       const fArr = new Uint32Array(fBlob.buffer, fBlob.byteOffset, fBlob.byteLength / 4);
@@ -1300,7 +2230,29 @@ async function setupScene(A) {
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setIndex(new THREE.BufferAttribute(fArr, 1));
+      // §IDX16 (2026-08-30) — the per-element build site. The merged path got this first, and the
+      // witness caught that it was the WRONG one to fix alone: 300 of 448 Clinic geometries were
+      // still Uint32 while addressing fewer than 65,536 vertices, so the saving measured 0.0 MB.
+      // MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB geometry footprint against a
+      // 1,226 MB heap. Guard is exact — vertex count, from the buffer just built — so a geometry
+      // that genuinely needs 32-bit keeps it and an index can never be truncated.
+      var _vCount = positions.length / 3, _fIdx = fArr;
+      if (_vCount < 65536 && !(fArr instanceof Uint16Array)) {
+        _fIdx = new Uint16Array(fArr.length);
+        for (var _fi = 0; _fi < fArr.length; _fi++) _fIdx[_fi] = fArr[_fi];
+      }
+      geo.setIndex(new THREE.BufferAttribute(_fIdx, 1));
+      // §WIND_FLIP (bim-compiler PHOTOREAL_STILL_RENDER.md "§WIND_FLIP — SPEC", 2026-10-02): flipped-winding edges per geometry
+      // (rule in wind_flip.js). MEASURED: Clinic 748 / 3,126 FRONT_SIDE-class elements carry them (the 92 mm partitions: one face
+      // wound like the other -> culled from one side, the wall invisible; red1 …881490077), Hospital 3 / 37,249. streaming.js gives a
+      // bucket holding one DoubleSide. knownFlip = the baked geometry_wind_flip value (patch SQL) -> no live count.
+      if (A && A._windFlip !== false && !/[?&]windflip=0/.test(location.search)) {
+        A._windStat = A._windStat || { geos: 0, flagged: 0, edges: 0, ms: 0, baked: 0 };
+        var _wf;
+        if (knownFlip != null) { _wf = knownFlip; A._windStat.baked++; }
+        else if (window.WindFlip) { var _wt0 = performance.now(); _wf = window.WindFlip.count(positions, fArr); A._windStat.ms += performance.now() - _wt0; }
+        if (_wf != null) { geo.userData.windFlip = _wf; A._windStat.geos++; if (_wf) { A._windStat.flagged++; A._windStat.edges += _wf; } }
+      }
       if (nBlob && nBlob.byteLength >= 12) {
         // Precomputed normals — apply same Y↔Z swap as positions
         const nArr = new Float32Array(nBlob.buffer, nBlob.byteOffset, nBlob.byteLength / 4);
@@ -1315,6 +2267,17 @@ async function setupScene(A) {
       } else {
         geo.computeVertexNormals();
         if (A) { A._normalsComputed = (A._normalsComputed || 0) + 1; }
+      }
+      // §DUCT_SILHOUETTE — the ONE choke point every streamed element passes through, and the only
+      // place refinement can happen: both batch paths in streaming.js size their BatchedMesh from
+      // `item.geo` at flush time (:2055 totalVerts, :2412 rv/ri reservation), so a geometry that is
+      // already refined HERE is reserved for correctly with no batch change at all. Refining after
+      // the batch is built is impossible — the slot's vertex range is fixed.
+      // Declines silently and leaves `geo` untouched for everything that does not qualify, which is
+      // the overwhelming majority; see viewer/silhouette_refine.js for the gate and W-DUCT-SIL for
+      // the proof that a non-curve surface is not moved.
+      if (window.SilhouetteRefine) {
+        try { window.SilhouetteRefine.refineGeometry(geo, THREE); } catch (e) { /* never block a load */ }
       }
       geo.computeBoundingSphere();
       // §S258: BVH deferred — don't build during streaming (86K builds = ~9s lag).
@@ -1558,6 +2521,7 @@ async function setupScene(A) {
     },
     '4':  function() { if (typeof A.export4D5D === 'function') A.export4D5D(); },
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
+    'j':  function() { if (typeof A.toggleRoadStandards === 'function') A.toggleRoadStandards(); },   // §SIGN_CHECK: Road standards (civil-only; the opener gates itself)
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
@@ -1746,7 +2710,8 @@ async function setupScene(A) {
     // left anywhere in the codebase — matches the reorg's own "no longer in use, delete" verdict.
     // ROOM_CYCLE_HOME_SHORTCUTS.md (2026-07-22): 'r' reused for Room Cycle — plain R is confirmed
     // free (grepped), unrelated to the retired Record binding above.
-    'r':  function() { _cycleRoom(); },
+    // §ROAD_REPORT (user 2026-10-08 "for CW 'R' be for Road"): on a civil model R opens The Road Report; a building keeps Room Cycle
+    'r':  function() { if (A.isCivilModel && A.isCivilModel() && typeof A.toggleRoadReport === 'function') { A.toggleRoadReport(); return; } _cycleRoom(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…
@@ -1823,6 +2788,9 @@ async function setupScene(A) {
     var existing = document.getElementById('cmd-palette');
     if (existing) { existing.remove(); console.log('§KBD_HELP close'); return; }
     console.log('§KBD_HELP open');
+    // S226 §R2d: the palette's own strings through the dictionary — rebuilt on every open, so always in the current language
+    var _hT = function (k, en) { return (typeof _trl === 'function') ? _trl(k, null, en) : en; };
+    var _hA = function (k, en) { return String(_hT(k, en)).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); };   // into an attribute
 
     var pal = document.createElement('div');
     pal.id = 'cmd-palette';
@@ -1835,7 +2803,7 @@ async function setupScene(A) {
     // Blue (#4fc3f7) = not installed, Green (#4caf50) = installed/standalone
     var _pwaInstalled = _isStandalone || window._pwaAccepted;
     var _badgeColor = _pwaInstalled ? '#4caf50' : '#4fc3f7';
-    var _badgeTitle = _pwaInstalled ? 'Installed \u2714' : 'Download \xB7 Run Offline';
+    var _badgeTitle = _pwaInstalled ? _hA('ui_cmd_installed', 'Installed \u2714') : _hA('ui_cmd_download_offline', 'Download · Run Offline');
     var _badgeIcon = _pwaInstalled
       ? '<polyline points="20 6 9 17 4 12"/>'  // checkmark
       : '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>';  // download arrow
@@ -1854,14 +2822,14 @@ async function setupScene(A) {
     var html = '<div style="padding:6px 14px;color:#888;font-size:10px;border-bottom:1px solid #222;text-align:center">' +
       badgeHtml +
       '<div style="padding:10px 14px;border-bottom:1px solid #333">' +
-      '<input id="cmd-search" type="text" placeholder="Type a command..." ' +
+      '<input id="cmd-search" type="text" placeholder="' + _hA('ui_cmd_placeholder', 'Type a command...') + '" ' +
       'style="width:100%;background:#222;color:#eee;border:1px solid #555;border-radius:6px;' +
       'padding:8px 10px;font-size:13px;outline:none;box-sizing:border-box">' +
       '</div>' +
       '<div id="cmd-list" style="max-height:260px;overflow-y:auto;padding:4px 0"></div>' +
       '<div style="padding:8px 14px;border-top:1px solid #333;text-align:center;display:flex;align-items:center;justify-content:center;gap:14px">' +
-      '<span id="cmd-report" title="Report Bug" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
-      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="Viewer User Guide" ' +
+      '<span id="cmd-report" title="' + _hA('ui_report_bug', 'Report Bug') + '" style="color:#ff8a65;cursor:pointer;line-height:0">' + _ic(ICONS.circleHelp.svg) + '</span>' +
+      '<a id="cmd-docs" href="https://red1oon.github.io/BIMCompiler/BIMUserGuide/" target="_blank" title="' + _hA('ui_cmd_user_guide', 'Viewer User Guide') + '" ' +
       'style="color:#4fc3f7;line-height:0">' + _ic(ICONS.lightbulb.svg) + '</a></div>';
     pal.innerHTML = html;
     document.body.appendChild(pal);
@@ -1906,18 +2874,18 @@ async function setupScene(A) {
         });
       }
       // §ZOOM: keyboard-only shortcuts (NOT pills) — surfaced in the Help listing for discoverability
-      all.push({ seq: '+', name: 'Zoom In',  icon: '', action: function() { _shortcuts['+'](); }, children: null });
-      all.push({ seq: '-', name: 'Zoom Out', icon: '', action: function() { _shortcuts['-'](); }, children: null });
+      all.push({ seq: '+', name: _hT('ui_cmd_zoom_in', 'Zoom In'),  icon: '', action: function() { _shortcuts['+'](); }, children: null });
+      all.push({ seq: '-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function() { _shortcuts['-'](); }, children: null });
       // §CINEMA_SHORTCUT (2026-07-17, user: "Cinema has no shortcut and not in Help box among the
       // others"): same keyboard-only pattern as Zoom above — Cinema Orbit lives as a row inside the
       // Sunglass panel, not its own pill, so it was never in _mainPillActions and never surfaced here.
-      all.push({ seq: 'ALT+C', name: 'MaxQ Movie', icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+      all.push({ seq: 'ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function() { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
       // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the
       // presentation shot — its own toggle, separate from Alt+S's clean extract-only still.
-      all.push({ seq: 'ALT+P', name: 'Populate (people + trees)', icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+      all.push({ seq: 'ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function() { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
       // §HOVER_NAME: same keyboard-only pattern — lives as a Find-panel checkbox, not a pill.
       // Dead key on some international layouts (US-Intl, ES, PT, FR-CA) — fails harmlessly there.
-      if (!window._isMobile) all.push({ seq: "'", name: 'Hover Name', icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
+      if (!window._isMobile) all.push({ seq: "'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function() { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
       var matches = all.filter(function(e) {
         return e.name.toLowerCase().indexOf(f) >= 0 || e.seq.toLowerCase().indexOf(f) >= 0;
       });
@@ -2071,20 +3039,30 @@ async function setupScene(A) {
     }
     var ov = _createProgressOverlay();
     ov.setText('Fetching asset list from service worker...');
-
-    // Ask sw.js for the full precache list via MessageChannel
-    if (!navigator.serviceWorker || !navigator.serviceWorker.controller) {
-      ov.setText('Service worker not ready. Reload and try again.');
+    if (!navigator.serviceWorker) {
+      ov.setText('Service worker not supported in this browser.');
+      console.log('§OFFLINE_DL no_sw_api');
       return;
     }
-    var ch = new MessageChannel();
-    ch.port1.onmessage = function(ev) {
-      var assets = (ev.data.assets || []).concat(ev.data.libs || []);
-      var version = ev.data.version || 'v515';
-      window._pwaVersion = version; // stash for cache name
-      _cacheAllAssets(assets, ov);
-    };
-    navigator.serviceWorker.controller.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+    // Use serviceWorker.ready to get the active worker even when controller is null
+    // (controller=null on first visit before clients.claim fires, but reg.active is the running SW)
+    navigator.serviceWorker.ready.then(function(reg) {
+      var ctrl = navigator.serviceWorker.controller || reg.active;
+      if (!ctrl) {
+        ov.setText('Service worker not ready. Reload and try again.');
+        console.log('§OFFLINE_DL no_controller');
+        return;
+      }
+      console.log('§OFFLINE_DL ctrl_via=' + (navigator.serviceWorker.controller ? 'controller' : 'active'));
+      var ch = new MessageChannel();
+      ch.port1.onmessage = function(ev) {
+        var assets = (ev.data.assets || []).concat(ev.data.libs || []);
+        var version = ev.data.version || 'v515';
+        window._pwaVersion = version; // stash for cache name
+        _cacheAllAssets(assets, ov);
+      };
+      ctrl.postMessage({ type: 'GET_PRECACHE' }, [ch.port2]);
+    });
   }
 
   // §S283 1.4: Force-cache every asset with progress
@@ -2499,6 +3477,8 @@ async function setupScene(A) {
   window._focusPanel = _focusPanel;
   window._blurPanel = _blurPanel;
   window._cyclePanel = _cyclePanel;
+  window._zoomStep = _zoomStep;   // §S281: audit-visible (was a +/- false "dead" — fn is closure-local)
+  window._cycleRoom = _cycleRoom; // §S281: audit-visible (was an r false "dead" — fn is closure-local)
   window._shortcuts = _shortcuts; // §S281: exposed so InputReg.checkShortcuts() can self-audit
   window._panels = _panels;
   window._focusStack = _focusStack; // §S280: exposed for [] double-tap
@@ -2520,7 +3500,7 @@ async function setupScene(A) {
     if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (typeof A.cycleXrayBboxMode === 'function') A.cycleXrayBboxMode(); console.log('§KBD_ROUTE Alt+Z → xray-cycle'); if (window.S) window.S('KBD_ROUTE', 'Alt+Z → xray-cycle', { xray: true }); return; }
     // Alt+S = still-refine — progressive TAA supersample of the current camera view (2026-07-15,
     // user ask). Cancels itself on any interaction via the A.markDirty() wrap in effects.js.
-    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
+    if (e.altKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); if (typeof A.toggleStillRefineUI === 'function') A.toggleStillRefineUI(); else if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine(); console.log('§KBD_ROUTE Alt+S → still-refine'); return; }
     // §GI_POC (sandbox spike, feat/ssgi-composer-poc, isolated branch — not a shipped feature)
     if (e.altKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); console.log('§KBD_ROUTE Alt+G → GI preview (N8AO POC)'); return; }
     if (e.altKey && (e.key === 'j' || e.key === 'J')) { e.preventDefault(); if (typeof A.toggleSSGIPreview === 'function') A.toggleSSGIPreview(); console.log('§KBD_ROUTE Alt+J → SSGI preview (realism-effects spike)'); return; }

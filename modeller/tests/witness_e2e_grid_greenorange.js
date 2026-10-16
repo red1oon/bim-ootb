@@ -190,9 +190,11 @@ runE2E('W-E2E-GRID-GREENORANGE', async (t) => {
   await t.pg.mouse.down(); await t.sleep(40);
   await t.pg.mouse.move(midB[0], midB[1], { steps: 6 }); await t.sleep(150);
   const midHost = await emisOf(t, idsB.host), midDoor = await emisOf(t, idsB.door);
-  console.log('  §GREENORANGE H1 mid-drag host=0x' + (midHost || 0).toString(16) + ' door=0x' + (midDoor || 0).toString(16) + ' (door must be BLUE=rides, NOT orange=its own raw SCALE)');
-  t.assert('H1 mid-drag (before release): hosted door tints BLUE (rides host via §STRETCH-RIDE), NOT orange (its own raw SCALE — the item-1 bug)',
-    midHost === ORANGE && midDoor === BLUE, 'host=0x' + (midHost || 0).toString(16) + ' door=0x' + (midDoor || 0).toString(16));
+  console.log('  §GREENORANGE H1 mid-drag host=0x' + (midHost || 0).toString(16) + ' door=0x' + (midDoor || 0).toString(16) + ' (§DAGEVU: door must be GREEN=held/anchor, NOT orange=its own raw SCALE, NOT blue=ride)');
+  // §DAGEVU (SPEC_DAGEVU_ENGINE.md §5): the old H1 expected BLUE (always-ride) — STALE. The anchor default holds
+  // the opening in place while the host stretches: it tints GREEN (non-mover), never its own raw orange SCALE.
+  t.assert('H1 mid-drag (before release): hosted door tints GREEN (held — §DAGEVU anchor default), NOT orange (its own raw SCALE — the item-1 bug), NOT blue (ride is opt-in now)',
+    midHost === ORANGE && midDoor === GREEN, 'host=0x' + (midHost || 0).toString(16) + ' door=0x' + (midDoor || 0).toString(16));
   await t.shot('06-scenarioB-middrag');
 
   await t.pg.mouse.move(finalB[0], finalB[1], { steps: 6 }); await t.sleep(60);
@@ -210,9 +212,40 @@ runE2E('W-E2E-GRID-GREENORANGE', async (t) => {
       doorInCommands: gridMove ? gridMove.parameters.commands.some(c => c.featureId === doorFid) : null, inducedCount: induced.length };
   }, beforeB.len, idsB.door);
   console.log('  §GREENORANGE H2 ' + JSON.stringify(opCheckB));
-  t.assert('H2 commit: door\'s own command is STRIPPED from the committed GEOM_GRID_MOVE + exactly ONE induced hosted-by GEOM_MOVE for it (preview and commit AGREE)',
-    afterB.len === beforeB.len + 2 && opCheckB.doorInCommands === false && opCheckB.inducedCount === 1, JSON.stringify(opCheckB));
+  t.assert('H2 commit: door\'s own command is STRIPPED from the committed GEOM_GRID_MOVE + ZERO induced GEOM_MOVE for it (held — preview and commit AGREE)',
+    afterB.len === beforeB.len + 1 && opCheckB.doorInCommands === false && opCheckB.inducedCount === 0, JSON.stringify(opCheckB));
   await t.shot('07-scenarioB-committed');
+
+  // ── H3 (§DAGEVU): RIDE OPT-IN through the SAME real ctrl+click — on an OPENING the toggle means anchor↔ride,
+  // not exclude. Undo, ctrl+click the door, re-drag the same gridline → door tints BLUE mid-drag and the commit
+  // carries exactly ONE induced hosted-by GEOM_MOVE (the pre-§DAGEVU behaviour, now explicit).
+  await t.undoToCursor(beforeB.cur);
+  await t.clickSel('#b-gridmove'); await t.sleep(300);                            // re-arm (H2's commit already exited grid-move)
+  // The fixture door (x 3.7..4.0, y 0.05..0.15, z 0..1) is FULLY ENCLOSED by the host box (0..4, 0..0.2, 0..3), so a
+  // raycast pick from any camera hits the wall first — a real ctrl+click cannot reach it in this fixture (real
+  // SampleHouse doors sit in cut voids / protrude and are pickable; the pick itself is already proven by G1-G3).
+  // So call the SAME production function the ctrl+click handler calls one level below the pick.
+  const tog = await t.pg.evaluate((fid) => ({ isFilling: window.Bonsai.gridmove.isFilling(fid), held: window.Bonsai.gridmove.toggleOverride(fid) }), idsB.door);
+  const rideSet = await t.pg.evaluate(() => window.Bonsai.gridmove.rideList());
+  const doorEmisPre = await emisOf(t, idsB.door);
+  await t.pg.mouse.move(downB[0], downB[1]); await t.sleep(40);
+  await t.pg.mouse.down(); await t.sleep(40);
+  await t.pg.mouse.move(midB[0], midB[1], { steps: 6 }); await t.sleep(150);
+  const midDoor3 = await emisOf(t, idsB.door);
+  await t.pg.mouse.move(finalB[0], finalB[1], { steps: 6 }); await t.sleep(60);
+  await t.pg.mouse.up(); await t.sleep(900);
+  const after3 = await t.oplog();
+  // undone rows stay in _geomOps (undone=1 flag) — count only ops appended AFTER H2's commit (afterB.len).
+  const op3 = await t.pg.evaluate((fromLen, doorFid) => {
+    const added = window.Bonsai.oplog._geomOps().slice(fromLen);
+    return { addedTypes: added.map(o => o.op_type), inducedCount: added.filter(o => o.op_type === 'GEOM_MOVE' && o.parameters && o.parameters.induced === 'hosted-by' && o.parameters.parent === doorFid).length };
+  }, afterB.len, idsB.door);
+  console.log('  §DAGEVU H3 toggle=' + JSON.stringify(tog) + ' rideSet=' + JSON.stringify(rideSet) + ' doorEmisPreDrag=0x' + (doorEmisPre || 0).toString(16) + ' midDoor=0x' + (midDoor3 || 0).toString(16) + ' ops=' + JSON.stringify(op3) + ' len ' + afterB.len + '→' + after3.len);
+  t.slog.filter(l => /§DAGEVU/.test(l)).forEach(l => console.log('    ' + l.slice(0, 300)));
+  await t.shot('08-scenarioB-ride-optin');
+  t.assert('H3 ride opt-in: toggleOverride(OPENING) means anchor→ride (isFilling true, rideList has it), door tints BLUE mid-drag, commit = GEOM_GRID_MOVE + exactly ONE induced hosted-by GEOM_MOVE',
+    tog.isFilling === true && tog.held === false && rideSet.includes(idsB.door) && midDoor3 === BLUE && after3.len === afterB.len + 2 && op3.inducedCount === 1,
+    'toggle=' + JSON.stringify(tog) + ' mid=0x' + (midDoor3 || 0).toString(16) + ' ' + JSON.stringify(op3));
 
   // Surface the REAL production §GRIDMOVE log lines captured off the app's own console (t.slog) — the app code
   // itself (bonsai_gridmove.js) is what logs §GREEN-EXCLUDE toggle/reset/commit-skip, not just this witness's

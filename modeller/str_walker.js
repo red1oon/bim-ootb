@@ -28,11 +28,37 @@ var SW_GRID_GAP_TOL = 0.5;
 // A cluster whose total span exceeds this is rejected as NOT a single gridline (anti-drift guard
 // against greedy chaining across a whole wing). Span is reported; never silently merged.
 var SW_GRID_SPAN_MAX = 2.0;
+// §ROW7-ROT (SPEC_ROW7_HGARAGE.md §C) — a lattice ROTATED against the world axes cannot be described by per-axis 1D
+// clustering: HospitalGarage (IfcSite RefDirection #196106 = 88.000° ≡ −2° mod 90, applied by the extractor into the
+// db's world frame) walked to 15×103 with 102 one-column lines and colRMS 1.19 m. The runtime db carries no site
+// placement, so the rotation is MEASURED from the real columns: every column pair's direction mod 90° → 0.01° histogram
+// → mode → mean of the ±2-bin inliers. Measured: HospitalGarage mode −2.00° (1,529 of 9,730 pairs in ONE bin) →
+// −2.0000° = the IFC's angle; Terminal −0.0002°; Hospital −4.9993° = ITS IfcSite −5.000°. Two gates, both logged by the
+// bridge (§STRWALK-ROT): the dead-band below, and the SUPPORT gate in swDetectRotation — the rotated frame must put MORE
+// real columns exactly on gridlines than the axis-aligned one (HospitalGarage 6 → 132 applied; Hospital 43 → 26 REFUSED:
+// its per-storey column stacks span ≥ 2 wing directions and no single lattice describes them). Nothing is invented: the
+// frame is a rigid rotation of the real coordinates and every line value is still a real column coordinate (median).
+var SW_GRID_ROT_BIN_DEG = 0.01;
+var SW_GRID_ROT_MIN_DEG = 0.05;   // dead-band: below this a measured angle is within-line jitter (0.05° over 150 m = 131 mm), not a rotation
+var SW_GRID_EXACT_TOL = 0.005;    // "exactly on a gridline" (5 mm): the support-gate census and the witnesses' exact(<5 mm) count
+
+// ─── Frame rotation (world = R(θ)·frame; CCW about +Z, the same convention as bonsai_library.place()'s yaw) ──
+function swToFrame(x, y, theta) { var c = Math.cos(theta), s = Math.sin(theta); return [x * c + y * s, -x * s + y * c]; }
+function swToWorld(u, v, theta) { var c = Math.cos(theta), s = Math.sin(theta); return [u * c - v * s, u * s + v * c]; }
 
 // ─── 1D clustering → gridlines (the emergent datum) ──────────
 // Greedy by consecutive gap; gridline value = MEAN of the cluster it owns (non-invent).
 // Returns [{ value, members:[v...], span }]. Members trace each line to real coordinates.
-function swClusterAxis(values, gapTol, spanMax) {
+//   lineFit (§ROW7-LINE-FIT; DEFAULT 'median' since red1's 2026-09-26 call "on the beams"; 'mean' = the pre-09-26 behaviour):
+//     'mean'   — least-squares value; MINIMISES the residual RMS for a fixed membership, but on a facade line
+//                whose members mix on-line columns with face-flush eccentric ones it lands where NOTHING is
+//                (Terminal south facade: mean −40.050 vs the 34 facade beams and 12 columns at −40.157).
+//     'median' — a REAL member coordinate (zero new constants, traceable to a column); lands the line on the
+//                structural line the beams prove, so the residual then measures ONLY design eccentricity.
+//                Measured Terminal (true centres): RMS 0.1039 → 0.1323 (UP — the mean was optimal by construction),
+//                exact(<5 mm) 92 → 131 of 158, Y0/Y9 → −40.157/−0.157 (0 mm from the beam line). A handle
+//                decision red1 made 2026-09-26 (median), pinned both ways by W-ROW7-TRUE-CENTRE T5.
+function swClusterAxis(values, gapTol, spanMax, lineFit) {
   if (!values.length) return [];
   var sorted = values.slice().sort(function (a, b) { return a - b; });
   var lines = [];
@@ -48,22 +74,24 @@ function swClusterAxis(values, gapTol, spanMax) {
   return lines.map(function (members) {
     var sum = members.reduce(function (s, v) { return s + v; }, 0);
     var span = members[members.length - 1] - members[0];
-    return { value: sum / members.length, members: members, span: span, spanOk: span <= spanMax };
+    var value = lineFit === 'median' ? members[(members.length - 1) >> 1] : sum / members.length;   // members are sorted
+    return { value: value, members: members, span: span, spanOk: span <= spanMax };
   });
 }
 
 // ─── Derive the emergent structural grid from columns ────────
-// columns: [{ guid, x, y, z }]. Returns { xLines:[..], yLines:[..], xMeta, yMeta, gapTol }.
+// columns: [{ guid, x, y, z }]. Returns { xLines:[..], yLines:[..], xMeta, yMeta, gapTol, lineFit }.
 function swDeriveGrid(columns, opts) {
   opts = opts || {};
   var gapTol = opts.gapTol != null ? opts.gapTol : SW_GRID_GAP_TOL;
   var spanMax = opts.spanMax != null ? opts.spanMax : SW_GRID_SPAN_MAX;
-  var xMeta = swClusterAxis(columns.map(function (c) { return c.x; }), gapTol, spanMax);
-  var yMeta = swClusterAxis(columns.map(function (c) { return c.y; }), gapTol, spanMax);
+  var lineFit = opts.lineFit === 'mean' ? 'mean' : 'median';   // red1 2026-09-26: gridlines sit ON the structure (median); 'mean' = pre-09-26
+  var xMeta = swClusterAxis(columns.map(function (c) { return c.x; }), gapTol, spanMax, lineFit);
+  var yMeta = swClusterAxis(columns.map(function (c) { return c.y; }), gapTol, spanMax, lineFit);
   return {
     xLines: xMeta.map(function (m) { return m.value; }),
     yLines: yMeta.map(function (m) { return m.value; }),
-    xMeta: xMeta, yMeta: yMeta, gapTol: gapTol, spanMax: spanMax
+    xMeta: xMeta, yMeta: yMeta, gapTol: gapTol, spanMax: spanMax, lineFit: lineFit
   };
 }
 
@@ -357,17 +385,73 @@ function swReWalk(base, edit, opts) {
            exceptions: exceptions, after: { grid: base.grid, walked: newWalked, girders: newGirders } };
 }
 
+// ─── §ROW7-ROT: measure the lattice rotation from the real columns (see the constants block) ──
+// Returns the census + the gate verdict so the caller can LOG it; `applied` is the only field the walk acts on.
+//   opts.theta (radians) — explicit override (witness use); opts.rotate === false — the caller disables detection.
+function _swExactCensus(columns, opts) {
+  var grid = swDeriveGrid(columns, opts), n = 0;
+  for (var i = 0; i < columns.length; i++) {
+    var d = Math.hypot(swNearest(columns[i].x, grid.xLines).dist, swNearest(columns[i].y, grid.yLines).dist);
+    if (d < SW_GRID_EXACT_TOL) n++;
+  }
+  return { exact: n, lines: grid.xLines.length + grid.yLines.length, grid: grid.xLines.length + '×' + grid.yLines.length };
+}
+function swDetectRotation(columns, opts) {
+  opts = opts || {};
+  var out = { thetaDeg: 0, theta: 0, modeDeg: 0, modeN: 0, modeShare: 0, pairs: 0, inliers: 0, applied: false, reason: 'no-pairs',
+              exact0: null, exactRot: null, lines0: null, linesRot: null, grid0: null, gridRot: null };
+  if (opts.theta != null) { out.theta = opts.theta; out.thetaDeg = opts.theta * 180 / Math.PI; out.applied = out.theta !== 0; out.reason = 'opts.theta'; return out; }
+  var bin = SW_GRID_ROT_BIN_DEG, hist = {}, angs = [], pairs = 0;
+  for (var i = 0; i < columns.length; i++) {
+    for (var j = i + 1; j < columns.length; j++) {
+      var dx = columns[j].x - columns[i].x, dy = columns[j].y - columns[i].y;
+      if (dx * dx + dy * dy < 1e-12) continue;                 // stacked columns (same plan position) carry no direction
+      var a = Math.atan2(dy, dx) * 180 / Math.PI;
+      a = ((a + 45) % 90 + 90) % 90 - 45;                      // mod 90 → [−45, 45)
+      angs.push(a); pairs++;
+      var k = Math.round(a / bin); hist[k] = (hist[k] || 0) + 1;
+    }
+  }
+  out.pairs = pairs;
+  if (!pairs) return out;
+  // mode bin — ties broken deterministically (smaller |angle|, then smaller angle), never by insertion order
+  var keys = Object.keys(hist).map(Number).sort(function (p, q) { return hist[q] - hist[p] || Math.abs(p) - Math.abs(q) || p - q; });
+  var mk = keys[0], modeDeg = mk * bin;
+  var inl = angs.filter(function (v) { return Math.abs(v - modeDeg) <= 2 * bin; });
+  var refined = inl.reduce(function (s, v) { return s + v; }, 0) / inl.length;
+  out.modeDeg = modeDeg; out.modeN = hist[mk]; out.modeShare = hist[mk] / pairs; out.inliers = inl.length;
+  out.thetaDeg = refined; out.theta = refined * Math.PI / 180;
+  if (Math.abs(refined) < SW_GRID_ROT_MIN_DEG) { out.reason = 'below-deadband'; return out; }
+  // SUPPORT gate: the rotated frame must land MORE real columns exactly on gridlines than the axis-aligned walk.
+  var e0 = _swExactCensus(columns, opts);
+  var frame = columns.map(function (c) { var p = swToFrame(c.x, c.y, out.theta); return { x: p[0], y: p[1] }; });
+  var eR = _swExactCensus(frame, opts);
+  out.exact0 = e0.exact; out.exactRot = eR.exact; out.lines0 = e0.lines; out.linesRot = eR.lines; out.grid0 = e0.grid; out.gridRot = eR.grid;
+  if (eR.exact > e0.exact) { out.applied = true; out.reason = 'more-exact'; } else { out.reason = 'fewer-exact'; }
+  return out;
+}
+
 // ─── Convenience: derive + walk in one call ──────────────────
+// §ROW7-ROT: when a rotation is measured AND supported, the column list is rotated into the lattice frame and the
+// EXISTING derive/walk/girder steps run unchanged there — walked x/y and every girder datum are then FRAME coordinates
+// (grid.theta; world = swToWorld). θ = 0 (Terminal, every axis-aligned fixture) ⇒ the same objects and values as before.
 function swWalkSkeleton(columns, opts) {
-  var grid = swDeriveGrid(columns, opts);
-  var walked = swWalkColumns(columns, grid, opts);
-  var girders = swWalkGirders(columns, grid, opts);
+  opts = opts || {};
+  var rot = opts.rotate === false ? null : swDetectRotation(columns, opts);
+  var theta = rot && rot.applied ? rot.theta : 0;
+  var frame = theta ? columns.map(function (c) { var p = swToFrame(c.x, c.y, theta); var f = Object.assign({}, c); f.x = p[0]; f.y = p[1]; return f; }) : columns;
+  var grid = swDeriveGrid(frame, opts);
+  grid.theta = theta; grid.thetaDeg = theta * 180 / Math.PI; grid.rotation = rot;
+  var walked = swWalkColumns(frame, grid, opts);
+  var girders = swWalkGirders(frame, grid, opts);
   return { grid: grid, walked: walked, girders: girders };
 }
 
 // ─── Exports (node) + globals (browser eval) ─────────────────
 var _swApi = {
   SW_PREFIX: SW_PREFIX, SW_GRID_GAP_TOL: SW_GRID_GAP_TOL, SW_GRID_SPAN_MAX: SW_GRID_SPAN_MAX,
+  SW_GRID_ROT_BIN_DEG: SW_GRID_ROT_BIN_DEG, SW_GRID_ROT_MIN_DEG: SW_GRID_ROT_MIN_DEG, SW_GRID_EXACT_TOL: SW_GRID_EXACT_TOL,
+  swToFrame: swToFrame, swToWorld: swToWorld, swDetectRotation: swDetectRotation,
   swClusterAxis: swClusterAxis, swDeriveGrid: swDeriveGrid, swDeriveSemiGrid: swDeriveSemiGrid, swNearest: swNearest,
   swWalkColumns: swWalkColumns, swWalkGirders: swWalkGirders, swWalkSkeleton: swWalkSkeleton,
   SW_SPAN_RULES: SW_SPAN_RULES, swCheckGirder: swCheckGirder, swConforms: swConforms,

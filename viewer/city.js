@@ -315,6 +315,11 @@ function setupCity(A) {
     A.citySQL = SQL;
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_fetching_city||'Fetching city index ({url})...').replace('{url}', A.CITY_URL);
     const buf = await A.cachedFetch(A.CITY_URL);
+    // §SQLJS_CLOSE (housekeeping/sqljs-close-leaks): free a prior instance before reassigning —
+    // defensive-only today: initCity is reached once per page life (streaming.js A.init, called once
+    // from main.js:942, or A.loadCityManual which early-returns `if (A.cityDb)`). Nothing else
+    // aliases A.cityDb (A.cityBuildingDbs holds per-archetype building DBs, not the index).
+    if (A.cityDb && typeof A.cityDb.close === 'function') { try { A.cityDb.close(); } catch (e) {} }
     A.cityDb = new SQL.Database(new Uint8Array(buf));
     console.log(`[S203] §CITY_INDEX size=${(buf.byteLength/1024).toFixed(0)}KB`);
 

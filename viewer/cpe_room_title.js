@@ -386,6 +386,7 @@ function setupCpeRoomTitle(A) {
   // five named and the rest counted, the building alone as the last resort.
   function _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldName) {
     var parts = [], keyParts = [], srcCat = null;
+    var _storeyHeads = [], _roomBares = [];   // §80 — the two halves, gathered as the line is built
     var dedupe = function(nm, stName) {
       return stName && nm.indexOf(stName + ' ') >= 0 ? nm.replace(stName + ' ', '') : nm;
     };
@@ -425,6 +426,15 @@ function setupCpeRoomTitle(A) {
         if (!groups[key]) { groups[key] = { header: header, names: [] }; groupOrder.push(key); }
         groups[key].names.push(bare);
       });
+      // §80 — collect each group's storey HEADER separately from its room names. The composed line
+      // (`parts`) is unchanged, so every existing caller and witness sees exactly what it did; the
+      // headers are handed back alongside so the status box can put them in its own Storey row
+      // instead of leaving that row blank while the Room row truncates under both halves.
+      groupOrder.forEach(function(key) {
+        var g2 = groups[key];
+        if (g2.header && _storeyHeads.indexOf(g2.header) < 0) _storeyHeads.push(g2.header);
+        g2.names.forEach(function(n2) { if (n2) _roomBares.push(n2); });
+      });
       var sightNames = groupOrder.map(function(key) {
         var grp = groups[key];
         return grp.header ? grp.header + ' ' + grp.names.join(', ') : grp.names.join(', ');
@@ -434,7 +444,23 @@ function setupCpeRoomTitle(A) {
       if (srcCat !== 'containment') srcCat = 'sight';
     }
     if (!parts.length && bldName) { parts.push(bldName); keyParts.push('b'); srcCat = 'building'; }
-    return { parts: parts, keyParts: keyParts, srcCat: srcCat };
+    // §75 — hand back the storey half separately from the room half. The composed single line stays
+    // EXACTLY as it was (every existing caller and witness sees the same `parts`); this is additive.
+    // parts[0] is the storey iff the stSame/stU branch above pushed it — checked by that flag, not by
+    // re-parsing the joined string, so the split can never disagree with the grammar that built it.
+    // §75/§80 — hand back the storey half separately from the room half. §75 only filled the Storey
+    // row when ONE storey was announced (stSame); measured on a real clip that was filled=0 blank=112,
+    // because the camera usually sees several. §80 also takes each GROUP's storey header, so multiple
+    // storeys give "Level 1, Level 4" in the Storey row and the Room row keeps only the bare room
+    // names — which is what stops it truncating. Split where the line is COMPOSED, never re-parsed.
+    var _hasStorey = !!(stSame && stU);
+    var heads = _storeyHeads.slice();
+    if (_hasStorey && heads.indexOf(stU) < 0) heads.unshift(stU);
+    var roomOnly = _roomBares.length ? [_roomBares.join(', ')]
+                 : (_hasStorey ? parts.slice(1) : parts.slice());
+    return { parts: parts, keyParts: keyParts, srcCat: srcCat,
+             storeyPart: heads.length ? heads.join(', ') : null,
+             roomParts: roomOnly };
   }
 
   // Coarse-samples the whole (or clipped) film ONCE, collapses into room-dwell segments, and drops
@@ -617,6 +643,7 @@ function setupCpeRoomTitle(A) {
               // key separator is TAB — room-graph guids legitimately contain '|'
               // (CORRIDOR_ROOM::Level 4|y|12.84), which a '|' join would corrupt.
               prevSeg = { guid: 'group:' + keyParts.join('\t'), name: name,
+                          storeyName: C.storeyPart, roomName: C.roomParts.join(' · '),   // §75
                           tStart: t0w, tEnd: t1w, group: 1, groupSrc: srcCat };
               held.push(prevSeg);
               gAdded++; gSec += t1w - t0w; byCat[srcCat] += t1w - t0w;
@@ -677,7 +704,16 @@ function setupCpeRoomTitle(A) {
           (s.sight || []).forEach(function(n) { if (!sightMap[n.guid]) sightMap[n.guid] = n; });
         }
         var C = _lineFrom(stSame, stU, ctSame, ctNode, ctU, sightMap, bldNm);
-        if (C.parts.length) { seg.label = C.parts.join(' · '); labelled++; }
+        // §80.3 — the DWELL-caption pass is the one the film actually reads (roomTitleOpacityAt takes
+      // `s.label || s.name`). §80 attached storeyName/roomName only to the gap-fill segments, so the
+      // real clip still logged Storey="" on every frame — filled=0 blank=112, unchanged. Both
+      // producers must carry the split, which is exactly what this file's own §CPE_ROOM_TITLE_
+      // COLLECTIVE comment warns about: ONE composer, TWO callers.
+      if (C.parts.length) {
+        seg.label = C.parts.join(' · ');
+        seg.storeyName = C.storeyPart; seg.roomName = C.roomParts.join(' · ');
+        labelled++;
+      }
       });
       console.log('§CPE_ROOM_TITLE_COLLECTIVE labelled=' + labelled + '/' + dwellN +
         ' dwell captions composed via the group grammar (label only — name/guid/times untouched)' +
@@ -786,7 +822,8 @@ function setupCpeRoomTitle(A) {
                (t > s.tEnd) ? 1 - (t - s.tEnd) / FADE : 1;
       // §CPE_ROOM_TITLE_COLLECTIVE: the composed label is what the film shows; the bare room
       // name survives on the segment for the timing/identity witnesses and as the degrade path.
-      if (!best || op > best.opacity) best = { name: s.label || s.name, guid: s.guid, opacity: op };
+      if (!best || op > best.opacity) best = { name: s.label || s.name, guid: s.guid, opacity: op,
+        storeyName: s.storeyName || null, roomName: s.roomName || null };   // §75
     });
     return best;
   };
@@ -813,6 +850,21 @@ function setupCpeRoomTitle(A) {
     }
     return text;
   };
+  // §CPE_CAPTION_BAND — how much of the bottom of the frame this caption occupies, so another
+  // overlay can keep out of it. Same shape as cpe_day_counter.js's A.dayCounterBoxSize: ONE owner
+  // of the arithmetic, callers ask rather than re-derive.
+  // Added 2026-09-19 because §SUN_COMPASS's bottom-left readout was measured landing INSIDE this
+  // band on an 854x480 bake with everything on — caption plate 405.6..443.6, the readout's sun
+  // line 418..443. Two overlays, one strip of pixels, and neither knew about the other.
+  A.roomTitleBandSize = function(h) {
+    var fontPx = Math.max(18, Math.round(h * 0.032));
+    var bandH = fontPx * 2.2;
+    var padY = Math.round(fontPx * 0.55);
+    var plateH = padY * 2 + fontPx;
+    var centreY = h - bandH * 1.4;
+    return { fontPx: fontPx, plateH: plateH, centreY: centreY, top: centreY - plateH / 2,
+             fromBottom: h - (centreY - plateH / 2) };
+  };
   A.roomTitleCompositeOntoCanvas = function(ctx, w, h, text, opacity) {
     if (!ctx || !text || !(opacity > 0)) return;
     text = A.roomTitleFinalText(text);
@@ -821,10 +873,35 @@ function setupCpeRoomTitle(A) {
     var bandH = fontPx * 2.2;
     var y = h - bandH * 1.4;
     ctx.globalAlpha = opacity;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, y, w, bandH);
+    var font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+
+    // §CPE_LABEL_PANEL_SYNC (2026-08-30, user: "The bottom label should also be synch style, same
+    // font and panelling"). Was a full-bleed black band across the frame while the day counter and
+    // §CPE_PATH_OVERVIEW both sit on rounded, text-hugging plates — three overlays, two visual
+    // languages. Now the same plate: same 0.45 black, same 0.22-of-height corner radius, same
+    // padX/padY rhythm cpe_day_counter.js already established. The FONT was already identical;
+    // only the panelling diverged.
+    //
+    // Falls back to the original band when the context cannot measure text — the collective-caption
+    // witness drives this function through a minimal capturing stub, and a layout change must never
+    // be able to break a test that is asserting the CAPTION, not the plate.
+    var plate = (typeof ctx.measureText === 'function');
+    if (plate) {
+      ctx.font = font;
+      var tw = ctx.measureText(text).width;
+      var padX = Math.round(fontPx * 0.85), padY = Math.round(fontPx * 0.55);
+      var boxW = Math.min(w - Math.round(h * 0.056), tw + padX * 2);
+      var boxH = padY * 2 + fontPx;
+      var bx = Math.round((w - boxW) / 2), by = Math.round(y + (bandH - boxH) / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, boxW, boxH, Math.round(boxH * 0.22)); ctx.fill(); }
+      else ctx.fillRect(bx, by, boxW, boxH);
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, y, w, bandH);
+    }
     ctx.fillStyle = '#fff';
-    ctx.font = '600 ' + fontPx + 'px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    ctx.font = font;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, w / 2, y + bandH / 2);
@@ -854,7 +931,12 @@ function setupCpeRoomTitle(A) {
   };
 
   // Called every preview frame with the ABSOLUTE seconds along the (unclipped) film timeline.
-  A.roomTitleLiveTick = function(tSec) {
+  // §CPE_DISCIPLINE_REVEAL_PULLOUT (2026-08-14, pull-out restructure) — `plan`/`tNorm` are optional,
+  // backward-compatible extra args: when supplied, A.cpeRevealCaptionAt(plan, tNorm) is checked FIRST
+  // so the tail's disc-parade caption can override the normal room title, exactly the same override
+  // cinema_maxq.js's bake loop applies before ITS own A.roomTitleOpacityAt call — one pure function,
+  // two callers, so preview and bake can never disagree about when the caption swaps.
+  A.roomTitleLiveTick = function(tSec, plan, tNorm) {
     var c = _ensureLiveCanvas();
     if (!c) return;
     var src = A.renderer.domElement, r = src.getBoundingClientRect();
@@ -864,7 +946,11 @@ function setupCpeRoomTitle(A) {
     c.style.width = r.width + 'px'; c.style.height = r.height + 'px';
     var ctx = c.getContext('2d');
     ctx.clearRect(0, 0, c.width, c.height);
-    var info = A.roomTitleOpacityAt(_liveSegs, tSec);
+    var info = (plan != null && tNorm != null && A.cpeRevealCaptionAt) ? A.cpeRevealCaptionAt(plan, tNorm) : null;
+    // §STOREY_HIGHLIGHT_REVEAL — same override chain the bake loop uses (cinema_maxq.js), so the
+    // editor's rehearsal never disagrees with what a real bake would show.
+    if (!info && plan != null && tNorm != null && A.storeyRevealCaptionAt) info = A.storeyRevealCaptionAt(plan, tNorm);
+    if (!info) info = A.roomTitleOpacityAt(_liveSegs, tSec);
     if (info) A.roomTitleCompositeOntoCanvas(ctx, c.width, c.height, info.name, info.opacity);
   };
 

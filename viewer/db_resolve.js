@@ -35,9 +35,15 @@
 //   K1 import:// url                  → verbatim   (IDB-only identity; never rewritten)
 //   K2 production buildings/<file>    → 'buildings/<file>'  (folds ../buildings, buildings, /buildings,
 //                                                            and <prodBase>buildings onto ONE key)
-//   K3 /deploy/ or /modeller/ path    → verbatim   (dev bench serves deploy/dev/buildings/Terminal…
+//   K3 deploy/ or modeller/ path seg  → verbatim   (dev bench serves deploy/dev/buildings/Terminal…
 //                                                   AND deploy/buildings/Hospital… — same filenames,
-//                                                   DIFFERENT bytes. Folding those = wrong geometry.)
+//                                                   DIFFERENT bytes. Folding those = wrong geometry.
+//                                                   Matches the segment with OR without a leading '/' —
+//                                                   ?db=deploy/dev/buildings/X.db (no leading slash,
+//                                                   e.g. hand-typed against a repo-root-relative local
+//                                                   server) folded onto the shipped K2 key until this
+//                                                   fix; every KNOWN tool (dlod_bench.html) already used
+//                                                   a leading slash and was never affected. §S76.)
 //   K4 anything else                  → verbatim   (../erp/ad_seed.db, non-buildings/ assets)
 // NON-INVENT: the key is built from the url's own filename; no path is fabricated, nothing is guessed.
 (function () {
@@ -63,8 +69,10 @@
     if (!url || typeof url !== 'string') return url;
     if (url.indexOf('import://') === 0) return url;                  // K1
     // K3 — dev/authoring trees keep their full path: deploy/dev/buildings/Terminal_extracted.db and
-    // deploy/buildings/Terminal_extracted.db are different bytes behind the same filename.
-    if (/\/deploy\/|\/modeller\//.test(url)) return url;             // K3
+    // deploy/buildings/Terminal_extracted.db are different bytes behind the same filename. Matches
+    // 'deploy/'/'modeller/' as a path segment whether or not the url has a leading slash — a bare
+    // '?db=deploy/...' (no leading '/') must be caught the same as '/deploy/...' (§S76).
+    if (/(^|\/)(deploy|modeller)\//.test(url)) return url;           // K3
     // K2 — the shipped production set, however it was addressed. Strip the query/hash first so a
     // cache-busted '?v=' link folds onto the same key as the plain one.
     var bare = url.split('#')[0].split('?')[0];

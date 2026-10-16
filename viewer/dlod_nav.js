@@ -157,6 +157,24 @@
   var OCCL_STRUCT_HOLD = OCCL_HOLD;                 // reuse the same tuned hold window, not a new number
   var OCCL_STRUCT_V = 'v1';        // §17.16.6 cache version stamp (ROOM_WALKER_V convention) — bump
                                     // to invalidate every cached IndexedDB entry fleet-wide.
+  // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.3 — Witness: W-OCC3-BIAS. Depth bias for the query
+  // SUBJECT's AABB proxy, expressed in METRES (not polygonOffset units) so the number is
+  // interpretable and independent of depth-buffer precision. Defaults are the swept/measured values
+  // recorded in §17.17's RESULT table — live-tunable from the console (window.__dlodNav.
+  // occlStructBiasM / occlStructThinBiasM / occlStructThinM) precisely so they COULD be swept.
+  // Inflating the proxy is strictly the conservative direction: a bigger box can only turn a
+  // 'hidden' verdict into 'visible', never the reverse, so an over-large bias costs missed
+  // true-occlusion (perf), never a wrongly-vanished element (correctness).
+  // ⚠ INVARIANT: every bias below MUST stay < OCCL_CAM_MARGIN (1.0m). The proxy box is drawn with
+  // CULL_FACE off and depthFunc LEQUAL, so a box that SWALLOWS the camera would have its front faces
+  // clipped by the near plane and be depth-tested on its back faces alone — a spurious 'hidden'. The
+  // §17.5-pitfall-2 cam-inside guard prevents that, but it tests the UNINFLATED AABB + OCCL_CAM_MARGIN;
+  // it only stays a valid guard for the inflated box while bias < that margin. Raising a bias to
+  // ≥1.0m without raising OCCL_CAM_MARGIN in step reintroduces exactly the false-hide class this
+  // bias exists to remove.
+  var OCCL_STRUCT_BIAS_M = 0.05;      // all subjects — clears plain depth coincidence with a host face
+  var OCCL_STRUCT_THIN_M = 0.12;      // "thin" = smallest AABB extent under this (m)
+  var OCCL_STRUCT_THIN_BIAS_M = 0.25; // thin subjects — must clear a whole host wall/slab thickness
 
   var _pillOn = false;             // user toggle — OFF = this module does exactly nothing
   var _engaged = false;            // gate currently satisfied and proxy state applied
@@ -183,6 +201,20 @@
   var _lastBudgetT = 0;            // periodic-tick throttle clock (150ms — see _tick)
   var _passPromoteSq = 0, _passDemoteSq = 0; // effective thresholds, frozen per-pass (see _evalChunk)
   var _passBoostVal = 0;           // the boost value the CURRENTLY-COMPLETING pass was frozen at
+  // §R15 (2026-09-03, CPE_4D_PERF_MEM_STUDY.md §R15) — closed-loop freshness bookkeeping. The
+  // budget controller's INPUT (_stats.activeElig) is published once per completed scan pass; its
+  // CLOCK is a fixed 150ms tick. A pass is ceil(n/EVAL_CHUNK) chunk-ticks = one rAF frame each,
+  // so on a 122k building the feedback period is 8 frames — 24ms at 330fps (loop closed) but
+  // 154ms at 52fps (LONGER than the control period, loop effectively open). _passSeq counts
+  // completed passes so the controller can tell "I have a new measurement" from "I am about to
+  // integrate the same number twice".
+  var _passSeq = 0;                // monotonic completed-pass counter (published to _stats.passSeq)
+  var _ctlSeq = -1;                // _passSeq value the controller last acted on
+  var _eligBoost = 0;              // the boost the CURRENTLY-PUBLISHED activeElig was measured under
+  // §R15 rule 2 (conditional integration / anti-windup) — the previous (boost, activeElig) PAIR the
+  // controller acted on, so the loop can measure its own plant gain instead of assuming one.
+  var _ctlPrevBoost = null, _ctlPrevElig = 0;
+  var _ctlUpBlocked = false;       // last UP step demonstrably bought nothing ⇒ stop charging
   // §ROOM_OCCL state (§13) — live by default since §19; inert only if roomOcclEnabled is set false
   var _roomIdx = null, _roomIdxBld = null, _roomIdxTriedT = 0, _roomStampRef = null;
   var _roomCur = null, _roomPend, _roomPendN = 0, _roomActive = false, _roomEvals = 0;
@@ -259,10 +291,48 @@
     // doesn't re-walk this exact fix shape without knowing it was already tried and falsified.
     occlDepthDecoupleEnabled: false,
     // §17.16 step: same console-only convention (window.__dlodNav.occlStructEnabled = true),
-    // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior. Once witnessed
-    // (W-OCC2-*), this flips to default true and occlBvhEnabled's whole §17.2-17.4 machinery retires.
-    occlStructEnabled: false, occlStructReady: false, occlStructCount: 0, occlStructRootDiag: 0,
-    occlStructCandidates: 0, occlStructHidden: 0, occlStructQueriesIssued: 0, occlStructResultsRead: 0 };
+    // independent of occlBvhEnabled — false ⇒ identical to shipped §13+§16 behavior.
+    // §17.17.4 (W-OCC3-ARM): the squash-merge that landed §17.17.1-3 (PR #1328) dropped this
+    // declaration entirely (_stats.occlStructEnabled read as undefined, not false — harmless since
+    // undefined===true is still false, but not the intended explicit default). Restored here,
+    // armed true: false-hide dropped 26.9%→2.3-4.1% (real RTX 4060, LTU_AHouse), W-OCC3-EQUIV
+    // passed lever-off first. See prompts/OCCL_STRUCT_SESSION_HANDOFF.md.
+    occlStructEnabled: true, occlStructReady: false, occlStructCount: 0, occlStructRootDiag: 0,
+    occlStructCandidates: 0, occlStructHidden: 0, occlStructQueriesIssued: 0, occlStructResultsRead: 0,
+    // §17.17.2/§17.17.3 sub-levers — all three only ever read while occlStructEnabled is true, so
+    // the off-path stays byte-identical regardless of their values (W-OCC3-EQUIV).
+    // occlStructSelfExclude: a guid in the occluder set is never its own query subject. Default TRUE
+    // because the opposite (a wall depth-tested against a buffer containing that same wall) is not a
+    // behaviour worth keeping a lever for — the flag exists so the A/B can measure its contribution.
+    occlStructSelfExclude: true, occlStructSelfExcluded: 0,
+    occlStructBiasM: OCCL_STRUCT_BIAS_M, occlStructThinM: OCCL_STRUCT_THIN_M,
+    occlStructThinBiasM: OCCL_STRUCT_THIN_BIAS_M, occlStructThinSubjects: 0,
+    // §R15 controller-health counters — see _passSeq above. budgetTicks = control periods that
+    // reached _budgetControl(); budgetStaleTicks = those where NO scan pass had completed since
+    // the previous control action (an open-loop step); budgetWindupTicks = those where the boost
+    // was already saturated at MAX_BOOST and the measurement still said "below LOW", i.e. steps
+    // that bought nothing and only had to be unwound later. All three are pure bookkeeping.
+    passSeq: 0, budgetTicks: 0, budgetStaleTicks: 0, budgetWindupTicks: 0, budgetUpBlocked: false,
+    // §R15 rules 1 and 2, each independently live-flippable. Setting BOTH false is the pre-§R15
+    // integrator byte-for-byte, which is how witness/w_budget_converge.js gets its before/after
+    // and its red control out of a SINGLE page load.
+    // ⚠ DEFAULT FALSE (2026-09-03) — DELIBERATELY, and this is the honest reading of the evidence,
+    // not caution for its own sake. The two rules were landed default-TRUE in #1635 and #1635
+    // auto-merged before the second witness run came back. W-BUDGET-CONVERGE reports verdict=FAIL
+    // on BOTH runs and the gate was never relaxed (CPE_4D_PERF_MEM_STUDY.md §R15.5):
+    //   - the MECHANISM result reproduces exactly — boostSpan 60->4, boost changes 174->12,
+    //     windupTicks ->0, dive-back-in phase 56.9->24.4 ms (-57.1%) / -59.3% on the second run.
+    //   - the FRAME-TIME result does NOT — whole-cycle dt_mean was -0.5% on run 2 and +1.1% on
+    //     run 3. The sign flips, so run-to-run variance is the same size as the effect and there
+    //     is no measured mean win to claim in either direction. Run 3 regressed THREE phases by
+    //     15-45%, one of them 52.4->60.6 ms. Every regressed phase draws FEWER calls under the
+    //     fix, so the added ms is demote-side _startFade work, not rendering (queue item A-27).
+    // A behaviour change whose own witness says FAIL must not be the shipped default. Everything
+    // else from #1635 stays live and is pure gain: the §R15 counters (passSeq/budgetTicks/
+    // budgetStaleTicks/budgetWindupTicks), the richer §DLOD_NAV_BUDGET line, and the
+    // §ROOM_OCCL_INDEX_ERR noise fix. Flip these to true to re-arm the fix; land it as the default
+    // when A-27 removes the transition cost and the witness turns green on its OWN gate.
+    budgetFreshGate: false, budgetAntiWindup: false };
   window.__dlodNav = _stats;
 
   // §20 — effective boost this pass: forceBoost (witness pin) wins outright; otherwise the
@@ -289,10 +359,33 @@
   function _budgetControl() {
     if (_stats.forceBoost !== null && _stats.forceBoost !== undefined) { _stats.budgetBoost = _stats.forceBoost; return _stats.forceBoost; }
     if (_stats.budgetBoostEnabled !== true) { _budgetBoost = 0; _stats.budgetBoost = 0; return 0; }
-    if (_stats.activeElig < BUDGET_LOW) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
-    else if (_stats.activeElig > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
+    var elig = _stats.activeElig;
+    // §R15 rule 2 — CONDITIONAL INTEGRATION (anti-windup). Measured defect (CPE_4D_PERF_MEM_STUDY.md
+    // §R15.2): a fly tour begins and ends OUTSIDE the building, where activeElig is legitimately 0
+    // no matter how wide the distance threshold is opened. The unguarded integrator charged all the
+    // way to MAX_BOOST against that dead input, and the instant the tour dived back inside, promote
+    // was 38+60=98m and a huge slice of the model became eligible at once (the user's own
+    // §DLOD_NAV started=21638 — read precisely: _logAccStarted ACCUMULATES fade-starts between the
+    // 2s-throttled log lines, so that is 21,638 transitions over >=2s, not one tick) — a burst of
+    // fades and full instanceMatrix re-uploads that the integrator then had to spend 30 further
+    // steps unwinding at BUDGET_STEP=2m each. Classic actuator windup.
+    // The guard is a MEASUREMENT, not a constant: pair the published activeElig with the boost it
+    // was actually measured under (_eligBoost), and if the last UP step raised the boost without
+    // raising eligibility, the actuator is not authoritative in this regime — stop charging.
+    // Released the moment the measurement re-enters (or exceeds) the working band, so a legitimately
+    // useful ramp is only ever delayed by one pass, never prevented.
+    // The lever exists so the witness can run BOTH controllers in one page load, at one pose
+    // sequence, on one GPU — the before/after is a same-session A/B, not a cross-run comparison.
+    if (_stats.budgetAntiWindup === false) _ctlUpBlocked = false;
+    else if (_ctlPrevBoost !== null && _eligBoost > _ctlPrevBoost && elig <= _ctlPrevElig) _ctlUpBlocked = true;
+    if (elig >= BUDGET_LOW) _ctlUpBlocked = false;
+    _ctlPrevBoost = _eligBoost; _ctlPrevElig = elig;
+    if (elig < BUDGET_LOW) {
+      if (!_ctlUpBlocked) _budgetBoost = Math.min(MAX_BOOST, _budgetBoost + BUDGET_STEP);
+    } else if (elig > BUDGET_HIGH) _budgetBoost = Math.max(0, _budgetBoost - BUDGET_STEP);
     // between watermarks: hold steady, no assignment — this dead band IS the hysteresis
     _stats.budgetBoost = _budgetBoost;
+    _stats.budgetUpBlocked = _ctlUpBlocked;
     return _budgetBoost;
   }
 
@@ -559,7 +652,20 @@
     if (!window.RoomWalker || !window.RoomWalker.buildCameraRoomIndex || !app.db || !app.dbQuery || !_boxIndex) return false;
     var t0 = performance.now(), idx;
     try { idx = window.RoomWalker.buildCameraRoomIndex(app.db); }
-    catch (e) { console.log('§ROOM_OCCL_INDEX_ERR ' + e.message); return false; }
+    // §R15 (2026-09-03): "rooms not compiled yet" reaches here in TWO shapes, not one — an empty
+    // index (below) OR a SQLite schema error, because writeRooms() ALTERs center_x/size_x in when
+    // it first stamps rooms, so a query issued before that stamp raises `no such column: r.center_x`
+    // rather than returning zero rows. Both are the same benign pre-stamp state on the same retry
+    // path; only the second was printing an exception (~5 lines per load, self-healing once
+    // §ROOM_OCCL_INDEX succeeds). Route it to the existing retry message. Any OTHER exception is
+    // still surfaced as an ERR — this narrows the noise, it does not swallow real failures.
+    catch (e) {
+      if (/no such (column|table)/i.test(e.message || '')) {
+        console.log('§ROOM_OCCL_INDEX rects=0 (rooms not compiled yet — will retry) schema=' + e.message);
+        return false;
+      }
+      console.log('§ROOM_OCCL_INDEX_ERR ' + e.message); return false;
+    }
     if (!idx || !idx.rects) { console.log('§ROOM_OCCL_INDEX rects=0 (rooms not compiled yet — will retry)'); return false; }
     // Stamp each element's LOGICAL contained room from rel_contained_in_space (compiled RM_ rows
     // only — the same domain roomAt() resolves into). Elements with no row keep room=undefined and
@@ -1294,8 +1400,10 @@
     _occStruct = null; _occStructBld = null; _occStructLoading = false;
     _occ2Hidden = null; _occStructCandGuids = null; _occStructCandBuf = null;
     _occStructPendingList.length = 0; _occStructCursor = 0; _occStructFrame = 0;
+    _occStructResetElemState();   // §17.17 — same strand-prevention as _occStructDisableLever
     _stats.occlStructReady = false; _stats.occlStructCount = 0; _stats.occlStructRootDiag = 0;
     _stats.occlStructHidden = 0; _stats.occlStructCandidates = 0;
+    _stats.occlStructSelfExcluded = 0; _stats.occlStructThinSubjects = 0; // §17.17.2/.3
   }
 
   // §17.16.6 — lazy, building-keyed, async (IDB read is async even though app.dbQuery is sync).
@@ -1332,6 +1440,14 @@
         _occStructLoading = false; return;
       }
       _occStruct = _occStructBuildScene(app, items);
+      // §17.17.2 (W-OCC3-SELF): the occluder scene can finish building AFTER queries have already
+      // been running (async IDB read), so purge any occluder guid the pre-build cycles managed to
+      // hide — a live flip must never strand hidden state the new rule would forbid.
+      if (_occ2Hidden && _stats.occlStructSelfExclude !== false) {
+        var purged = 0;
+        for (var pg in _occ2Hidden) { if (_occStruct.byGuid[pg] !== undefined) { delete _occ2Hidden[pg]; purged++; } }
+        if (purged) { _scanPending = true; console.log('§OCCL_STRUCT_SELF_PURGE n=' + purged); }
+      }
       _occStructBld = bld;
       _occStructLoading = false;
       _stats.occlStructReady = true; _stats.occlStructCount = _occStruct.count;
@@ -1351,8 +1467,16 @@
     app.renderer.setRenderTarget(_occStruct.rt);
     app.renderer.clear(true, true, false);
     app.renderer.render(_occStruct.scene, app.camera);
-    app.renderer.setRenderTarget(prevTarget);
-    return prevTarget;
+    // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.1 — Witness: W-OCC3-BIND.
+    // The early `setRenderTarget(prevTarget)` that used to sit HERE handed the display framebuffer
+    // back BEFORE _occStructIssueQueries issued its raw-GL queries, so every query depth-tested the
+    // canvas (contaminated by DLOD's own box-proxy depth writes) instead of this occluder-only
+    // target — measured on real hardware as beginQueries=256 / boundToDefaultFramebuffer=256 /
+    // matchedOccluderPrepassFbo=0, i.e. this target was written every cycle and read never. §17.13's
+    // _occlDepthPrepass deliberately leaves ITS depth RT bound for exactly this reason and documents
+    // the caller-restores contract; _occStructIssueQueries already honours it (setRenderTarget(
+    // prevTarget) at the end of the batch), so the early restore was pure bug, not a paired teardown.
+    return prevTarget; // render target is CURRENTLY the occluder RT — caller restores when done
   }
 
   // §17.16.4 — query subjects = the UNCHANGED §9/§19/§13/§16 active population, no new gating of its
@@ -1360,6 +1484,18 @@
   // in _wantedReal, keyed by guid exactly like _occlBvhMismatch.
   function _occStructMismatch(guid) {
     return _stats.occlStructEnabled === true && _occ2Hidden !== null && _occ2Hidden[guid] === true;
+  }
+
+  // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.2 — Witness: W-OCC3-SELF.
+  // A guid that IS the occluder set (wall/slab/roof) must never be a query SUBJECT: it renders into
+  // the occluder depth target, then its own world AABB gets drawn as a proxy under LEQUAL against
+  // that same depth — a self-test that precision alone can flip to 'hidden'. Measured directly:
+  // post-§17.17.1 the Hospital hide-set contained its own occluders, IfcWall among the false-hidden
+  // classes. One map lookup; _occStruct.byGuid is the authoritative membership set (it is exactly
+  // what _occStructBuildScene put in the depth scene, not a re-derived class list).
+  function _occStructIsOccluder(guid) {
+    return _stats.occlStructSelfExclude !== false && _occStruct !== null &&
+      _occStruct.byGuid[guid] !== undefined;
   }
 
   function _occStructPollResults() {
@@ -1392,6 +1528,12 @@
     var len = cands ? cands.length : 0;
     if (!len) return 0;
     var gl = _occlGl.gl, changed = 0, issued = 0, camPos = app.camera.position;
+    var selfSkipped = 0, thinSubjects = 0;
+    // §17.17.3 (W-OCC3-BIAS) — read the levers ONCE per batch, not per subject; console-tunable so
+    // the values below could be swept and measured rather than asserted.
+    var biasM = typeof _stats.occlStructBiasM === 'number' ? _stats.occlStructBiasM : OCCL_STRUCT_BIAS_M;
+    var thinM = typeof _stats.occlStructThinM === 'number' ? _stats.occlStructThinM : OCCL_STRUCT_THIN_M;
+    var thinBiasM = typeof _stats.occlStructThinBiasM === 'number' ? _stats.occlStructThinBiasM : OCCL_STRUCT_THIN_BIAS_M;
     if (!_occlM4) _occlM4 = new THREE.Matrix4();
     _occlM4.multiplyMatrices(app.camera.projectionMatrix, app.camera.matrixWorldInverse);
     var glReady = false, prevTarget = null;
@@ -1400,6 +1542,15 @@
       var e = _boxIndex[guid];
       if (!e) continue;
       if (e.o2Pending || _occStructFrame < (e.o2HoldUntil || 0)) continue;
+      // §17.17.2 hard guard (W-OCC3-SELF). _evalChunk already filters these out of the candidate
+      // list, but correctness must not depend on the candidate list being FRESH — the list is
+      // published once per completed scan pass, and _occStruct can finish building mid-pass.
+      if (_occStructIsOccluder(guid)) {
+        selfSkipped++;
+        if (e.o2Res !== 'vis') { e.o2Res = 'vis'; if (_occ2Hidden[guid] === true) { delete _occ2Hidden[guid]; changed++; } }
+        e.o2HoldUntil = _occStructFrame + OCCL_STRUCT_HOLD;
+        continue;
+      }
       // §17.5 pitfall-2 guard (same as §17.3's _occlCamInside), applied to the CANDIDATE's own AABB
       // this time (there is no tree node here) — camera inside its box ⇒ unconditionally visible.
       if (camPos.x > e.minX - OCCL_CAM_MARGIN && camPos.x < e.maxX + OCCL_CAM_MARGIN &&
@@ -1423,8 +1574,18 @@
       }
       if (!e.o2Q) e.o2Q = gl.createQuery();
       e.o2Guid = guid;
-      gl.uniform3f(_occlGl.uMin, e.minX, e.minY, e.minZ);
-      gl.uniform3f(_occlGl.uMax, e.maxX, e.maxY, e.maxZ);
+      // §17.17.3 (W-OCC3-BIAS) — inflate the subject's AABB proxy by a world-space bias so a
+      // surface COINCIDENT with its host wall/slab (already in the occluder depth) is not rejected
+      // by LEQUAL. Thin subjects (IfcCovering/IfcPlate/IfcMember/MEP terminals — the measured
+      // false-hide classes) get the larger bias: a finish or plate flush with, or recessed into, a
+      // ~200mm wall must clear the whole host thickness, not just depth coincidence.
+      var bias = biasM;
+      if (thinBiasM > biasM &&
+          Math.min(e.maxX - e.minX, Math.min(e.maxY - e.minY, e.maxZ - e.minZ)) < thinM) {
+        bias = thinBiasM; thinSubjects++;
+      }
+      gl.uniform3f(_occlGl.uMin, e.minX - bias, e.minY - bias, e.minZ - bias);
+      gl.uniform3f(_occlGl.uMax, e.maxX + bias, e.maxY + bias, e.maxZ + bias);
       gl.beginQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE, e.o2Q);
       gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_BYTE, 0);
       gl.endQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE);
@@ -1434,6 +1595,8 @@
     }
     _occStructCursor = len ? (_occStructCursor + Math.max(1, issued)) % len : 0;
     _stats.occlStructQueriesIssued += issued;
+    _stats.occlStructSelfExcluded += selfSkipped;   // §17.17.2 counter (W-OCC3-SELF)
+    _stats.occlStructThinSubjects += thinSubjects;  // §17.17.3 counter (W-OCC3-BIAS)
     if (glReady) {
       gl.bindVertexArray(null);
       app.renderer.setRenderTarget(prevTarget);
@@ -1466,16 +1629,34 @@
   // Live-flip back to false: clear the hide-set + candidate/pending state (query resources on
   // individual _boxIndex entries are simply abandoned — GC'd whenever _boxIndex itself rebuilds;
   // no live queries survive a candidate-list swap anyway). Same one-shot reset shape as _occlDisable.
+  // §17.17 — per-ELEMENT query state lives on _boxIndex entries (o2Pending/o2Res/o2HoldUntil), NOT
+  // in _occStructPendingList, so clearing the pending LIST alone stranded every in-flight subject
+  // with o2Pending=true forever: _occStructIssueQueries skips those unconditionally, so after one
+  // off→on cycle a growing slice of the population could never be re-queried again. Harmless while
+  // the lever was a one-shot console flip, fatal to any A/B that toggles it between variants inside
+  // one session — which is exactly how §17.17's own witness measures. Mirrors what _occlDisable
+  // already does for §17.3's node state via _occlTouched.
+  function _occStructResetElemState() {
+    if (!_boxIndex) return 0;
+    var n = 0;
+    for (var g in _boxIndex) {
+      var e = _boxIndex[g];
+      if (e.o2Pending || e.o2Res || e.o2HoldUntil) { e.o2Pending = false; e.o2Res = null; e.o2HoldUntil = 0; n++; }
+    }
+    return n;
+  }
+
   function _occStructDisableLever() {
     var had = false;
     if (_occ2Hidden) { for (var k in _occ2Hidden) { had = true; break; } }
     _occ2Hidden = Object.create(null);
     _occStructCandGuids = null; _occStructCandBuf = null;
     _occStructPendingList.length = 0; _occStructCursor = 0;
+    var _resetN = _occStructResetElemState();   // §17.17 — see _occStructResetElemState's header
     if (had) _scanPending = true;
     _stats.occlStructHidden = 0; _stats.occlStructCandidates = 0;
     _lastOcclStructEnabled = false;
-    console.log('§OCCL_STRUCT_OFF hiddenCleared=' + had);
+    console.log('§OCCL_STRUCT_OFF hiddenCleared=' + had + ' elemStateReset=' + _resetN);
   }
 
   // Per-frame current-room eval (same rAF loop as everything else — no second timer, §13). The
@@ -1601,7 +1782,13 @@
       }
       if (elig) {
         _passEligible++;
-        if (_occStructCandBuf) _occStructCandBuf.push(guid);
+        // §17.17.2 (W-OCC3-SELF): the occluder set is never its own query subject. Filtered HERE as
+        // well as in _occStructIssueQueries so occlStructCandidates and query volume both reflect it
+        // (~4103 of ~19-27k candidates on LTU_AHouse — real work, not just bookkeeping). Only the
+        // occl-struct candidate list is filtered — general eligibility (_passEligible, the §20
+        // budget controller's own input) is unaffected: an occluder wall is still "active" in the
+        // ordinary DLOD sense, it's just never a query SUBJECT.
+        if (_occStructCandBuf && !_occStructIsOccluder(guid)) _occStructCandBuf.push(guid);
       } else if (_occ2Hidden && _occ2Hidden[guid] === true) delete _occ2Hidden[guid]; // stale — out of eligible zone
       if (want === (e.state === 'real')) { if (e.state === 'box') _passBoxed++; else _passReal++; continue; }
       var r = _realIndex[guid];
@@ -1615,6 +1802,11 @@
     _logAccStarted += started;
     if (_evalCursor >= _guidArr.length) { // pass complete — publish partition, rearm on next pose change
       _stats.active = _passReal; _stats.boxed = _passBoxed; _stats.activeElig = _passEligible;
+      // §R15: a NEW measurement is now available, and it is honestly PAIRED with the boost the
+      // completing pass was frozen at (_passBoostVal) — not with whatever the boost happens to be
+      // by the time the controller reads it. The pairing is what makes the gain test below a
+      // measurement rather than a guess.
+      _passSeq++; _stats.passSeq = _passSeq; _eligBoost = _passBoostVal;
       _passReal = 0; _passBoxed = 0; _passEligible = 0;
       _evalCursor = 0;
       // §20: if the boost moved on (periodic tick fired) WHILE this pass was still mid-flight —
@@ -1659,6 +1851,20 @@
     var idx = _boxIndex, ridx = _realIndex;
     var guids = idx ? Object.keys(idx) : [];
     var i = 0;
+    // §26 fix (2026-08-08): finish() must run AT MOST ONCE per _restoreAllNow() invocation. Before
+    // this flag, step()'s own already-scheduled requestAnimationFrame(step) continuation (queued
+    // during THIS call's first synchronous step() below, before any external caller forces an
+    // early finish via the module-level _restoreFlush) was never cancelled — a rapid OFF→ON toggle
+    // makes _tick() call _restoreFlush() (=finish, closure-local, still the CURRENT invocation's)
+    // to force-complete the drain early so the fresh re-engage can rebuild _boxIndex. That leftover
+    // rAF-scheduled step() then fires on a LATER frame regardless, sees i already at guids.length,
+    // and calls finish() A SECOND TIME — re-disposing (via onDone=_disposeBoxes) whatever _boxIndex
+    // is CURRENTLY live (the fresh one from the re-engage), which the main tick's _evalChunk then
+    // reads as null on its very next call. Reproduced live: `witness_boxindex_race.js` — unfixed,
+    // rapid o/o on LTU_AHouse throws `Cannot read properties of null (reading '<guid>')` from
+    // _evalChunk, exactly matching the field stack trace; fixed, zero crash across repeated runs,
+    // __dlodNavAudit() mismatch=0 afterward (structurally correct, not just crash-silenced).
+    var _done = false;
     function runTo(end) {
       for (; i < end; i++) {
         var guid = guids[i], e = idx[guid];
@@ -1671,6 +1877,8 @@
       }
     }
     function finish() {
+      if (_done) return; // stale leftover step() firing after an external flush already finished this
+      _done = true;
       runTo(guids.length); // no-op if step() already finished the loop
       _restoreFlush = null;
       // Belt-and-braces: if a filter turned on while we were engaged, reassert it after restore
@@ -1681,6 +1889,7 @@
       if (onDone) onDone();
     }
     function step() {
+      if (_done) return; // this invocation was already force-finished elsewhere — stop rescheduling
       runTo(Math.min(i + EVAL_CHUNK, guids.length));
       if (i < guids.length) requestAnimationFrame(step);
       else finish();
@@ -1707,6 +1916,9 @@
       // §20: fresh engage starts the boost ramp at 0 (never carries a stale value across a
       // disengage/re-engage cycle — same discipline as _lastCamSig reset above).
       _budgetBoost = 0; _stats.budgetBoost = 0; _appliedBoost = 0; _lastBudgetT = 0;
+      // §R15: the controller's own loop state resets with it — a stale (boost, elig) pair or a
+      // latched up-block from a previous engagement must never survive into a new one.
+      _ctlPrevBoost = null; _ctlPrevElig = 0; _ctlUpBlocked = false; _ctlSeq = -1; _eligBoost = 0;
       console.log('§DLOD_NAV_ENGAGE bld=' + app.activeBuilding + ' elements=' + app.activeBuildingTotal);
     }
     // §ROOM_OCCL (§13): evaluated only when the console lever is on; the else-branch is a pure
@@ -1739,11 +1951,33 @@
       if (nowB - _lastBudgetT >= 150) {
         _lastBudgetT = nowB;
         if ((_stats.active + _stats.boxed) > 0) {
+          // §R15 PROBE (no behaviour change in this commit): classify this control period before
+          // acting on it. stale = no scan pass has completed since the last control action, so
+          // _stats.activeElig is the SAME number the previous step already integrated. windup =
+          // the actuator is already saturated and the measurement still asks for more.
+          _stats.budgetTicks++;
+          if (_budgetBoost >= MAX_BOOST && _stats.activeElig < BUDGET_LOW) _stats.budgetWindupTicks++;
+          // §R15 rule 1 — FRESHNESS. The controller's INPUT is published once per completed scan
+          // pass; its CLOCK is this fixed 150ms tick. A pass is ceil(n/EVAL_CHUNK) chunk-ticks, one
+          // per rAF frame — 8 frames on a 122k building, which is 24ms at 330fps (loop closed) but
+          // 154ms at 52fps (LONGER than the control period, loop effectively OPEN). Integrating the
+          // same unrefreshed activeElig twice is an open-loop step, and it is self-reinforcing: more
+          // flips ⇒ slower frames ⇒ staler feedback ⇒ larger excursion. Act once per MEASUREMENT
+          // instead of once per millisecond budget. This is a condition, not a tuned constant, and
+          // it scales with the building for free (the pass length is a function of element count).
+          // No deadlock: a boost change re-arms a scan (below), whose completion supplies the next
+          // measurement; a CONVERGED boost stops producing passes and the loop correctly idles.
+          if (_passSeq === _ctlSeq && _stats.budgetFreshGate !== false) { _stats.budgetStaleTicks++; }
+          else {
+          if (_passSeq === _ctlSeq) _stats.budgetStaleTicks++;
+          _ctlSeq = _passSeq;
           var newBoost = _budgetControl();
           if (newBoost !== _appliedBoost) {
             _appliedBoost = newBoost;
             _scanPending = true; // partition must be recomputed under the new effective distance
-            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed);
+            console.log('§DLOD_NAV_BUDGET boost=' + newBoost + ' active=' + _stats.active + ' boxed=' + _stats.boxed +
+              ' elig=' + _stats.activeElig + ' upBlocked=' + (_ctlUpBlocked ? 1 : 0) + ' pass=' + _passSeq);
+          }
           }
         }
       }
@@ -1864,7 +2098,11 @@
       occlStruct: { enabled: _stats.occlStructEnabled === true, ready: _stats.occlStructReady,
         count: _stats.occlStructCount, rootDiag: _stats.occlStructRootDiag,
         candidates: _stats.occlStructCandidates, hidden: _stats.occlStructHidden,
-        queriesIssued: _stats.occlStructQueriesIssued, resultsRead: _stats.occlStructResultsRead } };
+        queriesIssued: _stats.occlStructQueriesIssued, resultsRead: _stats.occlStructResultsRead,
+        // §17.17.2/§17.17.3 (W-OCC3-SELF / W-OCC3-BIAS) — 0/default while the lever is off
+        selfExclude: _stats.occlStructSelfExclude !== false, selfExcluded: _stats.occlStructSelfExcluded,
+        biasM: _stats.occlStructBiasM, thinM: _stats.occlStructThinM,
+        thinBiasM: _stats.occlStructThinBiasM, thinSubjects: _stats.occlStructThinSubjects } };
     console.log('§DLOD_NAV_AUDIT mismatch=' + mismatch + ' real=' + real + ' boxed=' + boxed + ' fades=' + _fades.length +
       ' activeElig=' + _stats.activeElig +
       (_stats.roomOcclEnabled === true ? ' §ROOM_OCCL_AUDIT active=' + _roomActive + ' room=' + (_roomCur || 'none') + ' roomOnlyBoxed=' + roomOnly : '') +
@@ -1883,6 +2121,15 @@
   window.__dlodOcclHiddenGuids = function () { return _occlHidden ? Object.keys(_occlHidden) : []; };
   // §17.16 (W-OCC2-CORRECT support) — same convention, structural-occluder hide-set.
   window.__dlodOcclStructHiddenGuids = function () { return _occ2Hidden ? Object.keys(_occ2Hidden) : []; };
+  // §17.17 diagnostic accessor, same console-only convention. The false-hide METRIC compares the GPU
+  // verdict against a ground truth whose occluder list is "everything currently VISIBLE in the
+  // display scene" — but this mechanism's whole premise is a STATIC occluder set that is deliberately
+  // NOT subject to DLOD state, so it contains walls/slabs the display scene has demoted to boxes.
+  // Any element the GPU correctly hides behind such a wall scores as a false hide purely because the
+  // two occluder populations differ. Exposing the static set lets a witness re-classify the residual
+  // against the depth the GPU actually sampled and tell a mechanism bug apart from a metric artifact.
+  window.__dlodOcclStructScene = function () { return _occStruct ? _occStruct.scene : null; };
+  window.__dlodOcclStructGuids = function () { return _occStruct ? Object.keys(_occStruct.byGuid) : []; };
 
   console.log('§DLOD_NAV_READY pill=off engaged=false');
 })();

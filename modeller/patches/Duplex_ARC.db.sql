@@ -278,3 +278,25 @@ INSERT OR IGNORE INTO surface_styles (style_name,surface_r,surface_g,surface_b,t
 INSERT OR IGNORE INTO surface_styles (style_name,surface_r,surface_g,surface_b,transparency,specular_r,specular_g,specular_b,specular_ratio,specular_exponent,reflectance_method,side,source) VALUES ('Wood - Flooring',0.8313725490196079,0.7019607843137254,0.4431372549019608,0.0,NULL,NULL,NULL,0.00390625,128.0,'NOTDEFINED','BOTH','EXTRACTED:Duplex_ARC.ifc');
 INSERT OR IGNORE INTO surface_styles (style_name,surface_r,surface_g,surface_b,transparency,specular_r,specular_g,specular_b,specular_ratio,specular_exponent,reflectance_method,side,source) VALUES ('Wood - Sheathing - plywood',0.7215686274509804,0.7333333333333333,0.2666666666666667,0.0,NULL,NULL,NULL,0.00390625,64.0,'NOTDEFINED','BOTH','EXTRACTED:Duplex_ARC.ifc');
 INSERT OR IGNORE INTO surface_styles (style_name,surface_r,surface_g,surface_b,transparency,specular_r,specular_g,specular_b,specular_ratio,specular_exponent,reflectance_method,side,source) VALUES ('Wood - Teak',0.5686274509803921,0.4392156862745098,0.3529411764705883,0.0,NULL,NULL,NULL,0.00390625,128.0,'NOTDEFINED','BOTH','EXTRACTED:Duplex_ARC.ifc');
+
+-- Duplex_ARC.db rel_aggregates — real IfcRelAggregates parent->child GUID pairs (§NOGEO_COMPOSE,
+-- prompts/4D_SCHEDULE_PERFECTION.md Part B — Modeller port). Relationship-only, NO computed values:
+-- composeGhostsFromAggregates() does the union-bbox math live from element_transforms at open.
+-- Recovered VERBATIM from the source IFC's own IfcRelAggregates (same read as
+-- extractIFCtoDB.py extract, the ONE implementation), filtered to this DB's 3 ghost
+-- aggregate-parents (elements_meta rows with no element_transforms row).
+-- Source: Ifc2x3_Duplex_Architecture.ifc (11)   Generated: 2026-08-10 (ifcopenshell 0.8.4.post1)
+-- Idempotent: CREATE IF NOT EXISTS + INSERT OR IGNORE on the (parent_guid,child_guid) PRIMARY KEY.
+
+CREATE TABLE IF NOT EXISTS rel_aggregates (parent_guid TEXT NOT NULL, child_guid TEXT NOT NULL, PRIMARY KEY (parent_guid, child_guid));
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0jf0rYHfX3RAB3bSIRjmxl','3ThA22djr8AQQ9eQMA5s7I');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0wkEuT1wr1kOyafLY4v_O1','1oKjKg9PD3fP1iIwXLh3lK');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0wkEuT1wr1kOyafLY4v_O1','1gtrSK5QnDuxDwygd0EDGO');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0wkEuT1wr1kOyafLY4v_O1','34qUFGjJzFKwVWpXe2dTPt');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0wkEuT1wr1kOyafLY4v_O1','0wkEuT1wr1kOyafLY4v_PL');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('0wkEuT1wr1kOyafLY4v_O1','0wkEuT1wr1kOyafLY4v_PH');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('21ldoMpbP4VfsJ0XGY_34d','3KMJUyUe9DfQ2FOCd5ZoiN');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('21ldoMpbP4VfsJ0XGY_34d','01KzA4SPn5IOODwLEb5RNY');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('21ldoMpbP4VfsJ0XGY_34d','37Fy90kSD2PvviizyM7EKl');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('21ldoMpbP4VfsJ0XGY_34d','21ldoMpbP4VfsJ0XGY_34P');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('21ldoMpbP4VfsJ0XGY_34d','21ldoMpbP4VfsJ0XGY_335');

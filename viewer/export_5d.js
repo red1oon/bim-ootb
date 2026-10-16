@@ -229,15 +229,32 @@ async function save5D() {
   const wpHeaders = [_TRL.h_item, _TRL.h_description, _TRL.h_quantity, _TRL.h_uom, _TRL.h_mat_rate+' ('+CUR+')', _TRL.h_material+' ('+CUR+')', _TRL.h_labour+' ('+CUR+')', _TRL.h_equipment+' ('+CUR+')', _TRL.h_total+' ('+CUR+')', _TRL.h_total+' ('+CUR2+')'];
   const wpColWidths = [{ width: 8 },{ width: 35 },{ width: 10 },{ width: 6 },{ width: 18 },{ width: 16 },{ width: 14 },{ width: 14 },{ width: 16 },{ width: 14 }];
 
-  // Build set of all matched classes to find "OTHER"
-  const matchedClasses = new Set();
-  for (const wp of WORK_PACKAGES) wp.classes.forEach(c => matchedClasses.add(c));
+  // §EXACT_LOOKUP_BLINDSPOT P3 — was a hand-maintained classes:[...] membership array per package (a
+  // 4th classification system, not keyed off SEQUENCE_RULES at all). Groups by the real classify()
+  // tier 1->2->3 result instead: WORK_PACKAGES now carries `phase` (SEQUENCE_RULES' own field, added
+  // to every rate template's work_packages JSON, positionally verified identical to the classes-based
+  // grouping it replaces). Genuinely unclassified (tier 3) rows still go to their own OTHER package —
+  // NOT classify()'s 'Architecture' default — same distinction proj_fold.js's P2 fix preserves.
+  const _p3Hier = (typeof window !== 'undefined' && window.IFC_SCHEMA_HIERARCHY) || {};
+  const _wpByPhase = {};
+  for (const wp of WORK_PACKAGES) _wpByPhase[wp.phase] = wp;
+  const rowsByWpId = {};
+  const otherRows = [];
+  for (const r of qtoData) {
+    let warned = null;
+    const origWarn = console.warn;
+    console.warn = function (m) { warned = m; origWarn(m); };
+    const rule = window.ScheduleAuthor.classify(r.cls, _p3Hier);
+    console.warn = origWarn;
+    const isTier3 = warned && warned.indexOf('§CLASS_UNMATCHED_INHERITED') !== 0 && warned.indexOf('§CLASS_UNMATCHED') === 0;
+    const wp = !isTier3 && _wpByPhase[rule.phase];
+    if (wp) { (rowsByWpId[wp.id] || (rowsByWpId[wp.id] = [])).push(r); }
+    else { otherRows.push(r); }
+  }
 
-  // Check if we need a PACKAGE 6: OTHER
-  const otherRows = qtoData.filter(r => !matchedClasses.has(r.cls));
   const allWPs = [...WORK_PACKAGES];
   if (otherRows.length > 0) {
-    allWPs.push({ id: 'PACKAGE 6', name: 'OTHER', color: '7F8C8D', classes: null });
+    allWPs.push({ id: 'PACKAGE 7', name: 'OTHER', color: '7F8C8D' });
   }
 
   const wsWP = wb.addWorksheet('Work Packages');
@@ -247,9 +264,7 @@ async function save5D() {
   let wpGrandMat = 0, wpGrandLab = 0, wpGrandEq = 0;
 
   for (const wp of allWPs) {
-    const wpData = wp.classes
-      ? qtoData.filter(r => wp.classes.includes(r.cls))
-      : otherRows;
+    const wpData = wp.phase ? (rowsByWpId[wp.id] || []) : otherRows;
     if (wpData.length === 0) continue;
 
     wsWP.addRow([]);

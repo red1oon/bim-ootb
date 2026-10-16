@@ -83,17 +83,18 @@ async function login(page) {
     });
   });
   await page.waitForTimeout(500);
-  const opened = await page.evaluate(async () => {
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-    var leaves = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf'))
-      .filter(function (r) { var ic = r.querySelector('.ic'); return ic && ic.textContent === '▤'; });   // ▤ = window
-    for (var i = 0; i < leaves.length && i < 15; i++) {
-      leaves[i].click(); await sleep(550);
-      var nav = document.getElementById('idmp-recnav');
-      if (nav && /of [1-9]/.test(nav.textContent)) return { name: leaves[i].dataset.name, nav: nav.textContent };
-    }
-    return null;
-  });
+  // §UDP-4: a window opens like legacy (Find first / auto-New / only-current rows) - reach rows the way a legacy user does (legacy_open.js)
+  const nLeaves = await page.evaluate(() => Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var ic = r.querySelector('.ic'); return ic && ic.textContent === '▤'; }).length);
+  let opened = null;
+  for (let i = 0; i < nLeaves && i < 15 && !opened; i++) {
+    await page.evaluate(i => Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var ic = r.querySelector('.ic'); return ic && ic.textContent === '▤'; })[i].click(), i);
+    await page.waitForTimeout(550);
+    const steps = await require('./legacy_open.js').showAllRows(page);
+    opened = await page.evaluate(i => { var n = 0; try { n = window.IdmpGridTab.snapshot().rows.length; } catch (e) {} var nav = { textContent: n ? 'of ' + n : '' }; var leaf = Array.prototype.slice.call(document.querySelectorAll('#idmp-tree .idmp-row.leaf')).filter(function (r) { var ic = r.querySelector('.ic'); return ic && ic.textContent === '▤'; })[i];
+      return /of [1-9]/.test(nav.textContent) ? { name: leaf.dataset.name, nav: nav.textContent } : { miss: leaf.dataset.name, nav: nav.textContent }; }, i);
+    console.log('  leaf ' + i + ' ' + JSON.stringify(opened) + ' steps=' + steps.join(','));
+    if (opened && opened.miss) opened = null;
+  }
   console.log('§RECINFO-LIVE opened window=' + (opened ? opened.name + ' (' + opened.nav + ')' : 'NONE'));
   ok('opened a real window with records via the menu', !!opened, opened ? JSON.stringify(opened) : 'none loaded');
 

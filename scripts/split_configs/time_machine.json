@@ -1,0 +1,18 @@
+{
+  "family": "time_machine",
+  "file": "viewer/time_machine.js",
+  "container": { "kind": "iife" },
+  "shared": "TMS",
+  "registry": "__timeMachineParts",
+  "prefix": "tm_",
+  "parts": [
+    { "name": "core" },
+    { "name": "render", "startsAt": "renderAtTime" },
+    { "name": "panel", "startsAt": "updateStatus" },
+    { "name": "sched_xray", "startsAt": "_promoteRoofLoadPath" },
+    { "name": "gantt_build", "startsAt": "injectGantt" },
+    { "name": "gantt_edit", "startsAt": "buildGanttTasks" },
+    { "name": "dash", "startsAt": "drawGanttMini" },
+    { "name": "lifecycle_api", "startsAt": "_cacheKey" }
+  ]
+}
