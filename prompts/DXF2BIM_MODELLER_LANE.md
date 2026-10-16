@@ -495,7 +495,7 @@ Input: the std set regenerated from master `std2d.py` with `--door-ops` (a `door
 
 **Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-green`).**
 - **W1:** the model confirms `@WALLTOP` on neither storey, so nothing is written and the 40 wall-height gaps stay blocking. Interior walls that do not reach the slab underside:
-  - Level 1 (underside 2.795; 13 of 18 confirm): walls 1014 and 1019 (base 2.612, top 6.0), and 1029, 1037, 1038 (top 3.1)
+  - Level 1 (underside 2.795; 12 of 17 confirm): walls 1014 and 1019 (base 2.612, top 6.0), and 1029, 1037, 1038 (top 3.1)
   - Level 2 (underside 6.0; 19 of 21 confirm): walls 1033 and 1034 (top 5.695)
 - **W2:**
   - Before the fix, all 9 unmatched source windows were explained by the gap on their plan opening (A3, C2, C0, CE ×3, F1 ×3). None was silent.
