@@ -5,6 +5,8 @@ Spec before code, for every lane below. Read the log after every run (exit code 
 ## ▶ RESUME (next session, written 2026-10-17)
 Read this block first, then the sections it names. Work to zero; spec first, then code; read every log; use worktrees only (editing ~/bim-ootb directly is hook-blocked); neutral naming (no client name in any repo, film or doc).
 
+**Update 2026-10-17 (later session).** Lane 2 closed as far as the model allows: §L1.7 (BIMCompiler #200, spec in this PR) accounts the 51 fully-voided SampleCastle frame walls (`host_voided`, E5 51/51 vs IfcOpenShell); the remaining 366 unhosted openings are unstated in the IFC (V4) and stay `GAP:opening_no_host` (closing them needs a user `@TAG` host marking). Duplex regression `test_std2d` fail=0. Known: `witness_extract_2d_tables.py` E1 compares against `origin/master`, which now contains the new tables, so it fails with "new tables []"; repoint its base at the pre-#196 commit. NEXT: lane 3 (L5 spec above). Do not patch `tests/dxf2bim/mark_dx_set.js` for N storeys: it is Duplex-specific throughout (window families `M_Fixed`/`M_Casement`, `elements_rtree` SQL, WALLTOP, HAXIS fitted to FLOOR_GF, 1-char grid labels); derive markings in the JS port (L5.1 c) generalised from the start, using `mark_dx_set.js std` only as the Duplex oracle.
+
 **Where things stand (all merged unless marked).**
 - **Round trip, witnessed on the Duplex:**
   - L1 standard 2D writer (BIMCompiler `2D_Layout/python/std2d.py`): grid on load-bearing axes, 3-tier DIMENSION entities, door hinge/swing from IFC `door_operation`, plan = everything the cut plane passes through, roof plan, section.
