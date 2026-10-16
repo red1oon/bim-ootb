@@ -1,18 +1,19 @@
 # dxf2bim/ — verbatim copies of the BIMCompiler DXF2BIM reader modules
 
-Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3). Do not edit here: change BIMCompiler, then re-copy and update this file.
+Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-| file | BIMCompiler source | commit | sha256 |
-|---|---|---|---|
-| dxf2bim/dxf2bim.js | deploy/dev/dxf2bim.js | 4bb4bf3c0 (master, PR #182) | 6ae03baa48bba6170a3a4e8fbd928a694afaf19e645a747f3ccbc55d034c5b4b |
-| dxf2bim/dxf2elev.js | deploy/dev/dxf2elev.js | 4bb4bf3c0 (master, PR #182) | 7fa2292393dea3e1b00441008d9b732a8387a3acfe6180b90a1aa23ec28ce5d2 |
-| dxf2bim/dxf2marks.js | deploy/dev/dxf2marks.js | 4bb4bf3c0 (master, PR #182) | 09894806489e3afce7e1e9a24331c4ef449b4eadcb9ccac3501911f171e3f878 |
-| dxf2bim/dxf2mesh.js | deploy/dev/dxf2mesh.js | 4bb4bf3c0 (master, PR #182) | 67157a627b4408230948e62b93810f0be91e362d9f8458deedc98813d3a17fc2 |
-| dxf2bim/dxf2types.js | deploy/dev/dxf2types.js | 4bb4bf3c0 (master, PR #182) | 0df204a2f63819e036765977af2d93bbdd0d601e3cfc1b8982955349b6332944 |
-| dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 4bb4bf3c0 (master, PR #182) | 274088a8a38796e98368206cde2cf0e4fb3a4332130e12f2f6be99911895575a |
-| dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | 4bb4bf3c0 (master, PR #182) | 377dc2acea6483b1c4a2558007761fc540cb57ccece681e919484c8521a19459 |
-| lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 4bb4bf3c0 | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
+Commit: `be1dcda91` — DXF2BIM §13: std set config in the shared module (STD maps, QUALIFY, CASING moved verbati
 
-All rows re-verified against master 4bb4bf3c0 (2026-10-16): only dxf2marks.js changed (#182: `@VIEW=ROOF`, `@WALLTOP`). `dxf2qualify.js` (L2) is not used by the import and is not copied.
+| file | BIMCompiler source | sha256 |
+|---|---|---|
+| dxf2bim/dxf2bim.js | deploy/dev/dxf2bim.js | 815fb190044ba1ba949a2fbf21d6b546db1e3130d1512109085e83d7ea96dfa5 |
+| dxf2bim/dxf2elev.js | deploy/dev/dxf2elev.js | 93b7d5080af88d93c9698d02356a06cf5a61cb4e94dcce2a784587f6ccdeaf9d |
+| dxf2bim/dxf2marks.js | deploy/dev/dxf2marks.js | d6a2c72c26b8f08d7f13b739ce6e2177afd065b5f06ed139b118661f9ed51aff |
+| dxf2bim/dxf2mesh.js | deploy/dev/dxf2mesh.js | 67157a627b4408230948e62b93810f0be91e362d9f8458deedc98813d3a17fc2 |
+| dxf2bim/dxf2types.js | deploy/dev/dxf2types.js | aa0364a564356a9d6ddcebd71b237b5cb36b5368e00cf9ebbea181b0d1df0b1c |
+| dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
+| dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | 8b7f75eef018994cad43ca8bfc9a5cd816ba6f01cfbb95efb6cc0c6ef8ea5d40 |
+| dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | b42fe8c051b5e399ab0bff198a97fe60500f7a5da08d580502a887444b856737 |
+| lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show <commit>:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show be1dcda91:deploy/dev/<file> | sha256sum` equals the column above.

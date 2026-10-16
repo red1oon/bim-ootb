@@ -10,14 +10,14 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory({ DxfParser: require('./lib/dxf-parser.js'), B: require('./dxf2bim/dxf2bim.js'), MK: require('./dxf2bim/dxf2marks.js'),
       E: require('./dxf2bim/dxf2elev.js'), M: require('./dxf2bim/dxf2mesh.js'), T: require('./dxf2bim/dxf2types.js'), S: require('./dxf2bim/dxf2shell.js'),
-      C: require('./dxf2bim/dxf2shell_config.js') });
+      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js') });
   } else {
-    root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig });
+    root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig, Q: root.Dxf2Qualify });
   }
 })(typeof self !== 'undefined' ? self : this, function (L) {
   'use strict';
   var TAG = '§DXF-IMPORT';
-  var DxfParser = L.DxfParser, B = L.B, MK = L.MK, E = L.E, M = L.M, T = L.T, S = L.S, C = L.C;
+  var DxfParser = L.DxfParser, B = L.B, MK = L.MK, E = L.E, M = L.M, T = L.T, S = L.S, C = L.C, Q = L.Q;
 
   // ---- SHA-256 (FIPS 180-4), synchronous, over the UTF-8 bytes of a string: the modules need a sync hashHex (crypto.subtle is async).
   // Equality with Node crypto is witnessed by C1 (run_id hashes every sheet text and every storey run id).
@@ -72,6 +72,7 @@
     else if (d.view === 'PLAN' && typeof d.level === 'number' && !missing.length) { sh.role = 'plan'; sh.level = d.level; }
     else if (d.view === 'ELEV' && d.face && !missing.length) { sh.role = 'elev'; sh.face = d.face; }
     else if (d.view === 'ROOF' && typeof d.roof === 'number' && !missing.length) { sh.role = 'roof'; sh.roofZ = d.roof; }   // BIMCompiler #182 (lane L2.3 D1): @VIEW=ROOF + @LEVEL + @ROOF
+    else if (d.view === 'SECTION' && d.cut && !missing.length) { sh.role = 'section'; sh.cut = d.cut; }   // §L3.3 R5: @VIEW=SECTION (NEED SET,VIEW,UNITS,HAXIS,CUT + GRIDH, Z)
     else sh.why = 'markings name no role (view=' + d.view + (missing.length ? ', missing ' + missing.join(',') : '') + ')';
     if (sh.role && !(d.units in MK.UNITS)) { sh.role = null; sh.why = 'no @UNITS'; }
     if (sh.role) sh.factor = MK.UNITS[d.units];
@@ -81,6 +82,18 @@
     var hashHex = (opts && opts.hashHex) || sha256Hex;
     return files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
   }
+  // §L3.3 layer-map set (DX or STD): the set whose elevation-wall layer (its MAP_ELEV 'elevwall' rule, read from the copied config) has
+  // entities on EVERY elevation sheet; both or neither -> null (the gate refuses, no guess).
+  var SETS = { DX: { MAP_PLAN: C.MAP_PLAN, MAP_ELEV: C.MAP_ELEV, MAP_LEVL: C.MAP_LEVL, MAP_ROOF: C.MAP_ROOF, MAP_SECT: C.STD.MAP_SECT, EXCL_ELEV: null, QUALIFY: C.QUALIFY, maps: undefined },
+    STD: { MAP_PLAN: C.STD.MAP_PLAN, MAP_ELEV: C.STD.MAP_ELEV, MAP_LEVL: C.STD.MAP_LEVL, MAP_ROOF: C.STD.MAP_ROOF, MAP_SECT: C.STD.MAP_SECT, EXCL_ELEV: C.STD.EXCL_ELEV, QUALIFY: C.STD.QUALIFY,
+      maps: { plan: C.STD.MAP_PLAN, elev: C.STD.MAP_ELEV, levl: C.STD.MAP_LEVL, roof: C.STD.MAP_ROOF, sect: C.STD.MAP_SECT } } };
+  function elevWallLayers(map) { return map.rules.filter(function (r) { return r.type === 'elevwall' && r.match === 'exact'; }).map(function (r) { return r.pattern; }); }
+  function setOf(sheets) {
+    var el = sheets.filter(function (s) { return s.role === 'elev'; });
+    var fit = Object.keys(SETS).filter(function (k) { var ly = elevWallLayers(SETS[k].MAP_ELEV);
+      return el.length && el.every(function (s) { return s.dxf.entities.some(function (e) { return ly.indexOf(e.layer) >= 0; }); }); });
+    return { name: fit.length === 1 ? fit[0] : null, fits: fit, layers: Object.keys(SETS).map(function (k) { return k + ':' + elevWallLayers(SETS[k].MAP_ELEV).join('|'); }) };
+  }
   function gate(sheets) {
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
@@ -89,7 +102,10 @@
     if (n('roof') !== 1) refused.push({ sheet: '(set)', reason: 'roof plans=' + n('roof') + ' (need exactly 1: @VIEW=ROOF + @LEVEL + @ROOF)' });
     var lv = {}; sheets.filter(function (s) { return s.role === 'plan'; }).forEach(function (s) { if (lv[s.level]) refused.push({ sheet: s.name, reason: 'two plans at @LEVEL=' + s.level }); lv[s.level] = 1; });
     var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
-    return { ok: refused.length === 0, refused: refused };
+    if (n('section') > 1) refused.push({ sheet: '(set)', reason: 'sections=' + n('section') + ' (at most 1: @VIEW=SECTION)' });
+    var so = n('elev') ? setOf(sheets) : null;
+    if (so && !so.name) refused.push({ sheet: '(set)', reason: 'layer set ambiguous: elevation-wall layers ' + so.layers.join(', ') + ' fit ' + (so.fits.join('+') || 'none') + ' on every elevation' });
+    return { ok: refused.length === 0, refused: refused, set: so ? so.name : null };
   }
 
   // ---- the pipeline: rosetta_dx_shell.js pipeline({convention:false}), same calls, same order ----
@@ -98,20 +114,20 @@
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, library = opts.library || null;
     var g = gate(sheets); if (!g.ok) return { refused: g.refused };
-    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] };
+    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] }, SET = SETS[g.set];
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
-    var roofSh = sheets.filter(function (s) { return s.role === 'roof'; })[0];
+    var roofSh = sheets.filter(function (s) { return s.role === 'roof'; })[0], sectSh = sheets.filter(function (s) { return s.role === 'section'; })[0] || null;
     var elevSh = sheets.filter(function (s) { return s.role === 'elev'; }).sort(function (a, b) { return FACE_ORDER.indexOf(a.face) - FACE_ORDER.indexOf(b.face); });
-    var R = { gaps: [], refused: null };
+    var R = { gaps: [], refused: null, set: g.set };
     var refuse = function (sheet, reason) { R.refused = (R.refused || []).concat([{ sheet: sheet, reason: reason }]); return R; };
     var base = plans[0].desc;
     var elevs = [];
     for (var ei = 0; ei < elevSh.length; ei++) {
       var es = elevSh[ei], al = MK.align(base, es.desc, C.MARK_ALIGN_TOL);
       if (!al.map || !al.map.zOf) return refuse(es.name, 'elevation does not align with plan ' + plans[0].name + ' (' + J(al.errors || al.error || null) + ')');
-      elevs.push({ name: es.name, face: es.face, roof: es.desc.roof, map: al.map, lines: S.levelLinesZ(es.dxf.entities, C.MAP_LEVL, al.map),
-        clusters: E.elevClusters(es.dxf.entities, C.MAP_ELEV, al.map, CFG.snap_tol, 'glazing'), walls: E.elevWallRects(es.dxf.entities, C.MAP_ELEV, al.map),
-        doors: E.elevClusters(es.dxf.entities, C.MAP_ELEV, al.map, CFG.snap_tol, 'elevdoor') });
+      elevs.push({ name: es.name, face: es.face, roof: es.desc.roof, map: al.map, lines: S.levelLinesZ(es.dxf.entities, SET.MAP_LEVL, al.map),
+        clusters: E.elevClusters(es.dxf.entities, SET.MAP_ELEV, al.map, CFG.snap_tol, 'glazing'), walls: E.elevWallRects(es.dxf.entities, SET.MAP_ELEV, al.map),
+        doors: E.elevClusters(es.dxf.entities, SET.MAP_ELEV, al.map, CFG.snap_tol, 'elevdoor') });
     }
     R.elevs = elevs;
     var allRects = [].concat.apply([], elevs.map(function (e) { return e.walls; }));
@@ -122,21 +138,47 @@
       if (!st.levelDrawn.length) return refuse(st.sheet, '@LEVEL=' + st.level + ' is not a drawn elevation boundary (BASIC_SHAPES_SPEC §2.3 LV)');
       var nxt = ST[si + 1] ? ST[si + 1].level : Math.max.apply(null, allRects.filter(function (r) { return Math.abs(r.z0 - st.level) <= CFG.elev_tol; }).map(function (r) { return r.z1; }));
       st.top = nxt;
-      var run = B.run(st.sh.text, C.MAP_PLAN, CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
+      var run = B.run(st.sh.text, SET.MAP_PLAN, CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
       var ops = E.applyElevations(run.ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex }).ops;
       ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
-      ops = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level }).ops;
+      // L2.6 C: the plan's door tags label the doors before their heights; a door no elevation shows takes the scheduled height
+      var pd = st.sh.desc, sch = T.scheduleFromDesc(pd, MK.UNITS);
+      if ((pd.tags || []).length) { var tg = T.applyTags(ops, [{ desc: pd }], MK.UNITS, { snap_tol: CFG.snap_tol, level: st.level }); ops = tg.ops; st.tagged = tg.labelled; }
+      var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: C.CASING });
+      ops = dh.ops; st.doorRep = dh.report;
       st.after = ops;
     }
     R.ST = ST;
+    // L2.6 E: a marked SECTION sheet states slab top / underside (Dxf2Shell.sectionSlabs)
+    var sopt = null;
+    if (sectSh) {
+      var sal = MK.align(base, sectSh.desc, C.MARK_ALIGN_TOL);
+      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, SET.MAP_SECT, sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof)
+        : { slabs: {}, roof: null, gaps: [{ code: 'GAP:section_align_fail', errors: sal.errors.map(function (e) { return e.code; }) }] };
+      R.sectionSheet = sectSh.name; sopt = { section: R.section };
+      if (sectSh.desc.cut && sal.map) { var cp = sectSh.desc.cut.split(','); R.sectionCut = { axis: cp[0], at: Number(cp[1]) * MK.UNITS[sectSh.desc.units] }; }
+    }
     R.slabZ = {};
-    ST.forEach(function (st, i) { R.slabZ[st.name] = S.slabZ({ level: st.level, ops: st.after }, i ? { level: ST[i - 1].level, ops: ST[i - 1].after } : null, CFG); });
+    ST.forEach(function (st, i) { R.slabZ[st.name] = S.slabZ({ level: st.level, ops: st.after }, i ? { level: ST[i - 1].level, ops: ST[i - 1].after } : null, CFG, sopt); });
     var TOP = ST[ST.length - 1];
     R.roofZ = S.roofZ({ level: TOP.level, ops: TOP.after }, elevs, CFG);
+    // L2.6 A: wall tops the plan's @WALLTOP markings state; U = underside of the slab above (the top storey: the roof bottom)
+    ST.forEach(function (st, i) {
+      var d = st.sh.desc; if (!(d.walltop || []).length && !(d.walltop_walls || []).length) return;
+      var U = ST[i + 1] ? R.slabZ[ST[i + 1].name].bottom : R.roofZ.bottom;
+      var a = E.applyWallTops(st.after, st.before, d, st.level, U); st.after = a.ops; st.wallTopRep = a.report;
+    });
+    // lane spec L2.8 (1): wall base from the lowest stated source (section > elevation > plan level + advisory)
+    ST.forEach(function (st, i) {
+      var lower = ST[i - 1], sec = R.section && R.sectionCut ? { walls: R.section.walls || [], axis: R.sectionCut.axis, at: R.sectionCut.at } : null;
+      var wb = S.applyWallBases(st.after, { level: st.level, lowerLevel: lower ? lower.level : undefined,
+        lowerPieces: lower ? lower.before.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; }).map(function (o) { return o.params.rect; }) : [], section: sec, tol: CFG.snap_tol });
+      st.after = wb.ops; st.baseAdv = wb.advisories; st.baseRep = wb.report;
+    });
     ST.forEach(function (st) { st.ring = S.innerRing(st.after, CFG); });
-    R.roofPlan = S.roofPlan(roofSh.dxf.entities, C.MAP_ROOF, roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
+    R.roofPlan = S.roofPlan(roofSh.dxf.entities, SET.MAP_ROOF, roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
     R.roofSheet = roofSh.name;
-    R.run_id = C.runId(B.canon, hashHex, ST.map(function (st) { return st.run_id; }), sheets.map(function (s) { return s.sha; }));
+    R.run_id = C.runId(B.canon, hashHex, ST.map(function (st) { return st.run_id; }), sheets.map(function (s) { return s.sha; }), SET.maps);
     // type binding + labels: only with library rows (the rosetta_dx_types chain)
     if (library) {
       var LIB = { wall: library.wallTypes.filter(function (w) { return w.id !== 'NONE'; }).map(function (w) { return { id: w.id, thickness: w.t / 1000 }; }),
@@ -186,9 +228,12 @@
       });
     }
     // mesh (as the witness): pieces + infill, slabs with a thickness, fills, roof
+    // L2.8 (2): one wall per footprint across consecutive plans, on the final element set
+    var msk = S.mergeStacked(ST.map(function (st) { return { name: st.name, level: st.level, ops: st.after.filter(function (o) { return o.op_type === 'DXF_WALL'; }) }; }), CFG.snap_tol, CFG.elev_tol);
+    msk.storeys.forEach(function (x, i) { ST[i].meshWalls = x.ops; }); R.merged = msk.merged;
     var els = [];
     ST.forEach(function (st) {
-      var wallOps = st.after.filter(function (o) { return o.op_type === 'DXF_WALL'; }).concat(st.infill);
+      var wallOps = st.meshWalls.concat(st.infill);
       var m = M.meshFromOps(wallOps, { level: st.level, hashHex: hashHex, snapTol: CFG.snap_tol });
       st.meshGaps = m.gaps;
       m.elements.forEach(function (e) { els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });
@@ -211,6 +256,27 @@
     ST.forEach(function (st) {
       st.infill.forEach(function (o) { var me = M.meshFromOps([o], { level: st.level, hashHex: hashHex, snapTol: CFG.snap_tol }).elements; if (me.length === 1) R.infillGuid[me[0].guid] = { storey: st.name, op: o }; });
     });
+    // §L3.3 qualify input, exactly as rosetta_dx_shell.js writes dx_shell_gaps.json (variant A) + rosetta_qualify.js builds the files / plan_ops
+    var qg = [], resolved = {}, pick = function (x) { var o = Object.assign({}, x); delete o.run_id; return o; };
+    ST.forEach(function (st) {
+      var sheet = st.sheet, sz = R.slabZ[st.name];
+      st.after.filter(function (o) { return o.op_type === 'DXF_GAP'; }).forEach(function (o) { qg.push(Object.assign({ sheet: sheet }, pick(o.params))); });
+      (st.ring.gaps || []).concat(sz.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'slabs' }, pick(x))); });
+      st.bridge.gaps.concat(st.fills.gaps).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'openings' }, pick(x))); });
+      st.meshGaps.forEach(function (x) { qg.push(Object.assign({ sheet: sheet }, pick(x))); });
+      (st.baseAdv || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'walls' }, pick(x))); });
+      var opH = {}; st.after.filter(function (o) { return o.op_type === 'DXF_OPENING'; }).forEach(function (o) { opH[o.params.handle] = (o.params.parts || []).map(function (q) { return q.handle; }); });
+      var rs = {}; st.bridge.voids.forEach(function (v) { v.openings.forEach(function (h) { rs[h] = 1; (opH[h] || []).forEach(function (x) { rs[x] = 1; }); }); });
+      st.fills.elements.forEach(function (e) { if (typeof e.handle === 'string') rs[e.handle] = 1; });
+      resolved[sheet] = Object.keys(rs).sort(function (a, b) { return parseInt(a, 16) - parseInt(b, 16); });
+    });
+    ((R.section && R.section.gaps) || []).forEach(function (x) { qg.push(Object.assign({ sheet: R.sectionSheet, shape: 'slabs' }, pick(x))); });
+    R.roofPlan.gaps.concat(R.roofZ.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); });
+    var mapsOf = function (sh) { return sh.role === 'plan' ? [SET.MAP_PLAN] : sh.role === 'roof' ? [SET.MAP_ROOF] : sh.role === 'section' ? [SET.MAP_SECT] : [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []); };
+    var planOps = {}; ST.forEach(function (st) { planOps[st.sheet] = st.before; });
+    R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),
+      plan_ops: planOps, gaps: qg, resolved: resolved };
+    R.verdict = Q.qualify(R.qualifyInput, SET.QUALIFY);
     return R;
   }
 
@@ -323,5 +389,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, SETS: SETS, setOf: setOf, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

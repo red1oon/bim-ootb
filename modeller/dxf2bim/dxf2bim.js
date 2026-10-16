@@ -422,13 +422,55 @@
     } else if (oSegs.length) {
       var tolS = config.snap_tol;
       var near = function (p, q) { return Math.hypot(p[0] - q[0], p[1] - q[1]) <= tolS; };
-      // D1 door parts
-      oSegs.forEach(function (sg) {
-        for (var i = 0; i < doorPts.length; i++) {
-          if (near(sg.a, doorPts[i].p) || near(sg.b, doorPts[i].p)) {
-            doorPts[i].door.params.parts.push({ handle: sg.e.handle, part: sg.part }); sg.used = true; return;
-          }
-        }
+      // D1 door parts (lane spec L2.6 B): an entity whose outline (any vertex or segment) passes within snap_tol of a door's hinge or arc end
+      // is that door's part, WHOLE (all its segments). Touching two doors -> GAP:door_part_ambiguous (not absorbed).
+      var segD = function (p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy, t = L ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+      var byEnt = {}, entOrder = [];
+      oSegs.forEach(function (sg) { if (!byEnt[sg.e.handle]) { byEnt[sg.e.handle] = []; entOrder.push(sg.e.handle); } byEnt[sg.e.handle].push(sg); });
+      // L2.7 (1): door symbol = arc + leaf + frame/casing. Pass 1: the L2.6 touch rule (hinge / arc ends). Pass 2: the door's opening box from the drawn walls
+      // (closed leaf, jamb pieces, band) widened along by the parts pass 1 attached (the drawn casing extent); an entity in exactly one box joins that door.
+      var wallEls = elems.filter(function (x) { return x.op === 'DXF_WALL' && x.params.rect; }).concat((typeof thinCands !== 'undefined' ? thinCands : []).map(function (c) { return c.el; }));   // drawn thin stubs (F5b candidates) are jambs too
+      var touch = {};
+      entOrder.sort(function (p, q) { return hnum(p) - hnum(q); }).forEach(function (h) {
+        var segs = byEnt[h], hit = [];
+        doorPts.forEach(function (dp) { if (hit.indexOf(dp.door) < 0 && segs.some(function (sg) { return segD(dp.p, sg.a, sg.b) <= tolS; })) hit.push(dp.door); });
+        touch[h] = hit;
+      });
+      var ext = function (segs, ai) { var v = []; segs.forEach(function (sg) { v.push(sg.a[ai], sg.b[ai]); }); return [Math.min.apply(null, v), Math.max.apply(null, v)]; };
+      elems.forEach(function (door) {
+        if (door.op !== 'DXF_OPENING' || door.params.kind !== 'door') return;
+        var q = door.params, H = q.hinge, found = [];
+        [q.swing_start_deg, q.swing_end_deg].forEach(function (a) {
+          var E = [H[0] + q.width * Math.cos(a * Math.PI / 180), H[1] + q.width * Math.sin(a * Math.PI / 180)];
+          var ai = Math.abs(E[1] - H[1]) <= tolS ? 0 : Math.abs(E[0] - H[0]) <= tolS ? 1 : -1; if (ai < 0) return;
+          var ci = 1 - ai, lo = Math.min(H[ai], E[ai]), hi = Math.max(H[ai], E[ai]);
+          // wall lines through the hinge: the bands of LONG pieces parallel to the leaf; a line's pieces = every piece with that same band (short or square stubs included)
+          var bands = [];
+          wallEls.forEach(function (w) { var r = w.params.rect; if (r[ai + 2] - r[ai] > r[ci + 2] - r[ci] + tolS && H[ci] >= r[ci] - tolS && H[ci] <= r[ci + 2] + tolS && !bands.some(function (bd) { return Math.abs(bd[0] - r[ci]) <= tolS && Math.abs(bd[1] - r[ci + 2]) <= tolS; })) bands.push([r[ci], r[ci + 2]]); });
+          bands.forEach(function (bd) {
+            var strip = wallEls.filter(function (w) { var r = w.params.rect; return Math.abs(r[ci] - bd[0]) <= tolS && Math.abs(r[ci + 2] - bd[1]) <= tolS; });
+            if (strip.some(function (w) { var r = w.params.rect; return r[ai] < hi - tolS && r[ai + 2] > lo + tolS; })) return;
+            var before = strip.filter(function (w) { return w.params.rect[ai + 2] <= lo + tolS; }).sort(function (p, r) { return r.params.rect[ai + 2] - p.params.rect[ai + 2]; });
+            var after = strip.filter(function (w) { return w.params.rect[ai] >= hi - tolS; }).sort(function (p, r) { return p.params.rect[ai] - r.params.rect[ai]; });
+            if (!before.length || !after.length) return;
+            var s0 = before[0].params.rect[ai + 2], s1 = after[0].params.rect[ai], along = [s0, s1];
+            entOrder.forEach(function (h) { if (touch[h].length === 1 && touch[h][0] === door) { var e2 = ext(byEnt[h], ai); along = [Math.min(along[0], e2[0]), Math.max(along[1], e2[1])]; } });
+            found.push({ axis: ai === 0 ? 'x' : 'y', s: [r6(s0), r6(s1)], along: [r6(along[0]), r6(along[1])], band: [r6(bd[0]), r6(bd[1])] });
+          });
+        });
+        if (found.length === 1) q.opening_box = found[0];
+      });
+      var inBox = function (segs, b) {
+        var ai = b.axis === 'x' ? 0 : 1, ci = 1 - ai, e1 = ext(segs, ai), e2 = ext(segs, ci);
+        return e1[0] >= b.along[0] - tolS && e1[1] <= b.along[1] + tolS && e2[1] >= b.band[0] - tolS && e2[0] <= b.band[1] + tolS;
+      };
+      entOrder.forEach(function (h) {
+        var segs = byEnt[h], hit = touch[h].slice();
+        if (!hit.length) elems.forEach(function (door) { if (door.op === 'DXF_OPENING' && door.params.kind === 'door' && door.params.opening_box && inBox(segs, door.params.opening_box)) hit.push(door); });
+        if (!hit.length) return;
+        segs.forEach(function (sg) { sg.used = true; });
+        if (hit.length > 1) { gap('GAP:door_part_ambiguous', segs[0].e, { doors: hit.map(function (d) { return d.e.handle; }).sort(function (p, q) { return hnum(p) - hnum(q); }) }); return; }
+        segs.forEach(function (sg) { hit[0].params.parts.push({ handle: sg.e.handle, part: sg.part }); });
       });
       elems.forEach(function (x) { if (x.params.parts) x.params.parts.sort(function (p, q) { return hnum(p.handle) - hnum(q.handle) || p.part - q.part; }); });
       // W1 rectangle clusters among unconsumed segments

@@ -89,9 +89,14 @@
     return ws.filter(function (o) { var r = o.params.rect; return o.params.height_source === 'elevation' && (Math.abs(r[0] - E[0]) <= tol || Math.abs(r[1] - E[1]) <= tol || Math.abs(r[2] - E[2]) <= tol || Math.abs(r[3] - E[3]) <= tol); });
   }
   function agree(list, tol) { var d = uniq(list.map(function (x) { return r6(x.z); })); return { ok: d.length && d[d.length - 1] - d[0] <= tol, values: d, z: d[0] }; }
-  function slabZ(upper, lower, cfg) {
+  function slabZ(upper, lower, cfg, opts) {
     var tol = typeof cfg.elev_tol === 'number' ? cfg.elev_tol : cfg.snap_tol, gaps = [];
     var tops = exteriorElev(upper.ops, cfg).map(function (o) { return { z: upper.level + o.params.base, h: o.params.handle }; });
+    var sx = opts && opts.section && opts.section.slabs && opts.section.slabs[String(upper.level)];
+    if (sx) {                                                                                  // L1.4 F5: the section states top and underside
+      if (tops.length) { var T0 = agree(tops, tol); if (!T0.ok || Math.abs(T0.z - sx.top) > tol) gaps.push({ code: 'GAP:slab_top_conflict', values: T0.values, section: sx.top }); }
+      return { top: sx.top, bottom: sx.bottom, thickness: sx.thickness, gaps: gaps, source: 'section', section_from: sx.from };
+    }
     if (!tops.length) return { top: null, bottom: null, thickness: null, gaps: [{ code: 'GAP:slab_no_top' }] };
     var T = agree(tops, tol);
     if (!T.ok) return { top: null, bottom: null, thickness: null, gaps: [{ code: 'GAP:slab_top_conflict', values: T.values }] };
@@ -107,6 +112,44 @@
     if (!(top - bottom > tol)) { gaps.push({ code: 'GAP:slab_bad_thickness', top: top, bottom: bottom }); return res; }
     res.bottom = bottom; res.thickness = r6(top - bottom); res.underside_from = unders.map(function (x) { return x.h; });
     return res;
+  }
+
+  // ---- lane spec L1.4 F5: slab top / underside from a marked SECTION sheet ----
+  // entities: the section sheet; layerMap types 'sectslab' (S-SLAB) and 'roof' (A-ROOF); map: MK.align(plan, sectionDesc).map;
+  // levels: stated plan levels (m); roofMark: the section's @ROOF (optional). Every closed polyline is read as a rectangle in (plan h, z).
+  function sectionSlabs(entities, layerMap, map, levels, cfg, roofMark) {
+    var tol = typeof cfg.elev_tol === 'number' ? cfg.elev_tol : cfg.snap_tol, gaps = [], slabs = [], roofs = [], swalls = [];
+    (entities || []).forEach(function (e) {
+      var rule = Dxf2Bim.matchRule(e.layer, layerMap.rules); if (!rule || (rule.type !== 'sectslab' && rule.type !== 'roof' && rule.type !== 'sectwall')) return;   // sectwall: lane spec L2.8
+      if (!((e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.shape)) return;
+      var p = e.vertices.map(function (q) { return [r6(map.toPlan(q.x)), r6(map.zOf(q.y))]; });
+      var hs = p.map(function (q) { return q[0]; }), zs = p.map(function (q) { return q[1]; });
+      var r = [Math.min.apply(null, hs), Math.min.apply(null, zs), Math.max.apply(null, hs), Math.max.apply(null, zs)];
+      var onEdge = p.every(function (q, i) { var n = p[(i + 1) % p.length];                 // rectilinear edges, every vertex on the bbox boundary
+        return (Math.abs(q[0] - n[0]) <= tol || Math.abs(q[1] - n[1]) <= tol) && (Math.abs(q[0] - r[0]) <= tol || Math.abs(q[0] - r[2]) <= tol || Math.abs(q[1] - r[1]) <= tol || Math.abs(q[1] - r[3]) <= tol); });
+      if (!onEdge) { gaps.push({ code: 'GAP:section_not_rect', handle: e.handle, layer: e.layer }); return; }
+      (rule.type === 'roof' ? roofs : rule.type === 'sectwall' ? swalls : slabs).push({ handle: e.handle, h: [r[0], r[2]], bottom: r[1], top: r[3] });
+    });
+    slabs.sort(function (a, b) { return hnum(a.handle) - hnum(b.handle); }); roofs.sort(function (a, b) { return hnum(a.handle) - hnum(b.handle); });
+    var out = {};
+    (levels || []).slice().sort(function (a, b) { return a - b; }).forEach(function (L) {
+      var at = slabs.filter(function (s) { return Math.abs(s.top - L) <= tol; });
+      if (!at.length) { gaps.push({ code: 'GAP:section_no_slab', level: L }); return; }
+      var B = agree(at.map(function (s) { return { z: s.bottom }; }), tol);
+      if (!B.ok) { gaps.push({ code: 'GAP:section_slab_conflict', level: L, values: B.values }); return; }
+      var bottom = r6(B.z), top = r6(L);
+      if (!(top - bottom > tol)) { gaps.push({ code: 'GAP:section_bad_thickness', level: L, top: top, bottom: bottom }); return; }
+      out[String(L)] = { level: L, top: top, bottom: bottom, thickness: r6(top - bottom), source: 'section', from: at.map(function (s) { return s.handle; }) };
+    });
+    var roof = null;
+    if (roofs.length) {
+      var RB = agree(roofs.map(function (s) { return { z: s.bottom }; }), tol), RT = agree(roofs.map(function (s) { return { z: s.top }; }), tol);
+      if (!RB.ok || !RT.ok) gaps.push({ code: 'GAP:section_roof_conflict', bottoms: RB.values, tops: RT.values });
+      else if (typeof roofMark === 'number' && Math.abs(RT.z - roofMark) > tol) gaps.push({ code: 'GAP:section_roof_top_conflict', drawn: r6(RT.z), marked: roofMark });
+      else roof = { bottom: r6(RB.z), top: r6(RT.z), thickness: r6(RT.z - RB.z), source: 'section', from: roofs.map(function (s) { return s.handle; }) };
+    }
+    swalls.sort(function (a, b) { return hnum(a.handle) - hnum(b.handle); });
+    return { slabs: out, roof: roof, walls: swalls, gaps: gaps };
   }
 
   // ---- §5.2 roof bottom / top ----
@@ -187,14 +230,38 @@
 
   // ---- §6 OP-1b door strip: the swing end point that lies on a wall strip's axis line through the hinge (closed leaf along the wall) ----
   function doorStrip(door, ws, tol) {
-    var q = door.params, Hh = q.hinge, hits = [];
-    [q.swing_start_deg, q.swing_end_deg].forEach(function (a) {
-      var E = [Hh[0] + q.width * Math.cos(a * Math.PI / 180), Hh[1] + q.width * Math.sin(a * Math.PI / 180)];
-      var ai = Math.abs(E[1] - Hh[1]) <= tol ? 0 : Math.abs(E[0] - Hh[0]) <= tol ? 1 : -1; if (ai < 0) return;
-      var ci = 1 - ai, strip = ws.filter(function (w) { var r = w.params.rect, hz = (r[2] - r[0]) > (r[3] - r[1]) + tol; return (ai === 0 ? hz : !hz && (r[3] - r[1]) > (r[2] - r[0]) + tol) && Math.abs((r[ci] + r[ci + 2]) / 2 - Hh[ci]) <= tol; });
-      if (strip.length) hits.push({ ai: ai, ci: ci, J: [r6(E[0]), r6(E[1])], cr: [strip[0].params.rect[ci], strip[0].params.rect[ci + 2]], strip: strip });
+    // lane spec L2.6 G: the hinge on the strip's centre line (old set); only when no direction finds one, the hinge on a face line of the strip (std set, L1.2 R9)
+    var q = door.params, Hh = q.hinge;
+    function centre(r, ci) { return Math.abs((r[ci] + r[ci + 2]) / 2 - Hh[ci]) <= tol; }
+    function face(r, ci) { return Math.abs(r[ci] - Hh[ci]) <= tol || Math.abs(r[ci + 2] - Hh[ci]) <= tol; }
+    function pass(onLine) {
+      var hits = [];
+      [q.swing_start_deg, q.swing_end_deg].forEach(function (a) {
+        var E = [Hh[0] + q.width * Math.cos(a * Math.PI / 180), Hh[1] + q.width * Math.sin(a * Math.PI / 180)];
+        var ai = Math.abs(E[1] - Hh[1]) <= tol ? 0 : Math.abs(E[0] - Hh[0]) <= tol ? 1 : -1; if (ai < 0) return;
+        var ci = 1 - ai, strip = ws.filter(function (w) { var r = w.params.rect, hz = (r[2] - r[0]) > (r[3] - r[1]) + tol; return (ai === 0 ? hz : !hz && (r[3] - r[1]) > (r[2] - r[0]) + tol) && onLine(r, ci); });
+        if (strip.length) hits.push({ ai: ai, ci: ci, J: [r6(E[0]), r6(E[1])], cr: [strip[0].params.rect[ci], strip[0].params.rect[ci + 2]], strip: strip });
+      });
+      return hits;
+    }
+    if (q.opening_box) {                                                // L2.7 (4): the reader's opening box fixes the host: the wall line the hinge lies on, parallel to the closed leaf, jamb to jamb
+      var bx = q.opening_box, bai = bx.axis === 'x' ? 0 : 1, bci = 1 - bai, Jb = null;
+      [q.swing_start_deg, q.swing_end_deg].forEach(function (a) { var E = [Hh[0] + q.width * Math.cos(a * Math.PI / 180), Hh[1] + q.width * Math.sin(a * Math.PI / 180)]; if (Math.abs(E[bci] - Hh[bci]) <= tol) Jb = [r6(E[0]), r6(E[1])]; });
+      var bs = ws.filter(function (w) { var r = w.params.rect; return Math.abs(r[bci] - bx.band[0]) <= tol && Math.abs(r[bci + 2] - bx.band[1]) <= tol && (r[bai + 2] <= bx.s[0] + tol || r[bai] >= bx.s[1] - tol); })
+        .sort(function (p, r) { return p.params.rect[bai] - r.params.rect[bai]; });
+      var jb = bs.filter(function (w) { return w.params.rect[bai + 2] <= bx.s[0] + tol; }).slice(-1).concat(bs.filter(function (w) { return w.params.rect[bai] >= bx.s[1] - tol; }).slice(0, 1));   // the two jamb pieces
+      bs = jb;
+      if (!Jb || !bs.length) return { gap: 'GAP:door_no_strip' };
+      return { ai: bai, ci: bci, J: Jb, cr: [bx.band[0], bx.band[1]], strip: bs };
+    }
+    var hits = pass(centre); if (!hits.length) hits = pass(face);
+    var nCand = hits.length;
+    if (hits.length > 1) hits = hits.filter(function (h) {           // L2.7 (4): only when several: the closed leaf's span is a wall-free gap bounded by strip pieces at both ends
+      var ai = h.ai, lo = Math.min(Hh[ai], h.J[ai]), hi = Math.max(Hh[ai], h.J[ai]);
+      return h.strip.some(function (w) { return w.params.rect[ai + 2] <= lo + tol; }) && h.strip.some(function (w) { return w.params.rect[ai] >= hi - tol; }) &&
+        !h.strip.some(function (w) { var r = w.params.rect; return r[ai] < hi - tol && r[ai + 2] > lo + tol; });
     });
-    if (hits.length !== 1) return { gap: hits.length ? 'GAP:door_host_ambiguous' : 'GAP:door_no_strip' };
+    if (hits.length !== 1) return { gap: hits.length || nCand > 1 ? 'GAP:door_host_ambiguous' : 'GAP:door_no_strip' };
     return hits[0];
   }
 
@@ -315,7 +382,7 @@
       var cz = level + sill + q.height / 2, lc = [(G.bbox.min[0] + G.bbox.max[0]) / 2, (G.bbox.min[1] + G.bbox.max[1]) / 2, (G.bbox.min[2] + G.bbox.max[2]) / 2];
       var V = G.vertices.map(function (v) { return [r6(v[0] - lc[0] + cx), r6(v[1] - lc[1] + cy), r6(v[2] - lc[2] + cz)]; });
       var gw = alongX ? G.bbox.max[0] - G.bbox.min[0] : G.bbox.max[1] - G.bbox.min[1], gh = G.bbox.max[2] - G.bbox.min[2];
-      var mw = q.kind === 'window' ? Math.max(q.bbox[2] - q.bbox[0], q.bbox[3] - q.bbox[1]) : q.width;
+      var mw = q.kind === 'window' ? Math.max(q.bbox[2] - q.bbox[0], q.bbox[3] - q.bbox[1]) : (q.opening_box && q.opening_box.along ? r6(q.opening_box.along[1] - q.opening_box.along[0]) : r6(voidOf[o.output_guid].s[1] - voidOf[o.output_guid].s[0]));   // L2.7 (2): door = drawn frame extent (else the wall gap), not the leaf
       var dw = r6(gw - mw), dh = r6(gh - q.height);
       if (typeof opts.size_tol === 'number' && (Math.abs(dw) > opts.size_tol || Math.abs(dh) > opts.size_tol)) g('GAP:fill_size_mismatch', { delta_w: dw, delta_h: dh, element_ref: m.ref });
       els.push({ guid: hashHex(o.output_guid + '|fill|' + G.geometry_hash).slice(0, 32), class: q.kind === 'door' ? 'IfcDoor' : 'IfcWindow', handle: q.handle, layer: q.layer, piece: 0,
@@ -328,6 +395,69 @@
     return { elements: els, gaps: gaps };
   }
 
-  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
-    applySlabAbove: applySlabAbove, bridgeOpenings: bridgeOpenings, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
+
+  // ---- lane spec L2.8 (1): wall BASE from the lowest stated source: section (if it cuts the piece) > elevation > plan level (+ advisory) ----
+  // opts: { level, lowerLevel (next lower plan level, or undefined), lowerPieces: [rect m] of the lower plan, section: { walls:[{h:[a,b], bottom, top, handle}], axis:'X'|'Y', at:m } | null, tol }
+  function applyWallBases(ops, opts) {
+    var tol = opts.tol, level = opts.level, sec = opts.section, floor = typeof opts.lowerLevel === 'number' ? opts.lowerLevel : level, out = [], adv = [], rep = { section: 0, elevation: 0, plan_level: 0 };
+    // a cut inside a drawn opening (door opening_box s0..s1 / window bbox, same band) states the base of that opening's two jamb pieces
+    var jambCut = {};
+    if (sec) {
+      var sai = sec.axis === 'X' ? 0 : 1, sci = 1 - sai;
+      ops.forEach(function (o) {
+        if (o.op_type !== 'DXF_OPENING') return; var q = o.params, span = null, band = null;
+        if (q.opening_box && (q.opening_box.axis === 'x' ? 0 : 1) === sai) { span = q.opening_box.s; band = q.opening_box.band; }
+        else if (q.kind === 'window' && q.bbox) { span = [q.bbox[sai], q.bbox[sai + 2]]; band = [q.bbox[sci], q.bbox[sci + 2]]; }
+        if (!span || !(span[0] < sec.at - tol && span[1] > sec.at + tol)) return;
+        ops.forEach(function (w) { if (w.op_type !== 'DXF_WALL' || !w.params.rect) return; var r = w.params.rect;
+          if (Math.abs(r[sci] - band[0]) <= tol && Math.abs(r[sci + 2] - band[1]) <= tol && (Math.abs(r[sai + 2] - span[0]) <= tol || Math.abs(r[sai] - span[1]) <= tol)) jambCut[w.output_guid] = true; });
+      });
+    }
+    ops.forEach(function (o) {
+      if (o.op_type !== 'DXF_WALL' || typeof o.params.height !== 'number' || typeof o.params.base !== 'number') { out.push(o); return; }
+      var p = o.params, r = p.rect, z1 = level + p.base + p.height, found = null;
+      if (sec && r) {
+        var ai = sec.axis === 'X' ? 0 : 1, ci = 1 - ai;
+        if ((r[ai] < sec.at - tol && r[ai + 2] > sec.at + tol) || jambCut[o.output_guid]) {
+          var mine = sec.walls.filter(function (w) {
+            if (Math.abs(w.h[0] - r[ci]) > tol || Math.abs(w.h[1] - r[ci + 2]) > tol) return false;
+            if (w.bottom < floor - tol || w.bottom >= z1 - tol) return false;
+            if (w.bottom < level - tol && (opts.lowerPieces || []).some(function (q) { return Math.abs(q[ci] - w.h[0]) <= tol && Math.abs(q[ci + 2] - w.h[1]) <= tol; })) return false;   // the lower plan draws this wall line: its rect
+            return true;
+          });
+          if (mine.length) found = { z0: Math.min.apply(null, mine.map(function (w) { return w.bottom; })), from: mine.map(function (w) { return w.handle; }) };
+        }
+      }
+      if (found) { rep.section++; out.push(Object.assign({}, o, { params: Object.assign({}, p, { base: r6(found.z0 - level), height: r6(z1 - found.z0), base_source: 'section', base_from: found.from }) })); return; }
+      if (p.height_source === 'elevation') { rep.elevation++; out.push(Object.assign({}, o, { params: Object.assign({}, p, { base_source: 'elevation' }) })); return; }
+      rep.plan_level++; out.push(Object.assign({}, o, { params: Object.assign({}, p, { base_source: 'plan_level' }) }));
+      if (!p.infill) adv.push({ code: 'GAP:wall_base_from_plan_level', handle: p.handle, part: p.part, layer: p.layer, height_source: p.height_source || null });
+    });
+    return { ops: out, advisories: adv, report: rep };
+  }
+
+  // ---- lane spec L2.8 (2): one wall per footprint across consecutive plans (no GUIDs in drawings: footprint only) ----
+  // storeys: [{ name, level, ops }] in level order; a piece on storey i+1 with the same rect (tol) whose z-range overlaps or touches (ztol) a piece on storey i -> one wall on storey i
+  function mergeStacked(storeys, tol, ztol) {
+    var merged = [];
+    for (var i = 0; i + 1 < storeys.length; i++) {
+      var lo = storeys[i], up = storeys[i + 1], drop = {};
+      var zr = function (st, o) { var z0 = st.level + o.params.base; return [z0, z0 + o.params.height]; };
+      var walls = function (st) { return st.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect && typeof o.params.height === 'number' && !o.params.infill; }); };
+      var upW = walls(up);
+      lo.ops = lo.ops.map(function (o) {
+        if (o.op_type !== 'DXF_WALL' || !o.params.rect || typeof o.params.height !== 'number' || o.params.infill) return o;
+        var a = zr(lo, o), m = upW.find(function (u) { return !drop[u.output_guid] && u.params.rect.every(function (v, k) { return Math.abs(v - o.params.rect[k]) <= tol; }) && (function (b) { return b[0] <= a[1] + ztol && a[0] <= b[1] + ztol; })(zr(up, u)); });
+        if (!m) return o;
+        var b = zr(up, m), z0 = Math.min(a[0], b[0]), z1 = Math.max(a[1], b[1]); drop[m.output_guid] = 1;
+        merged.push({ lower: o.params.handle, upper: m.params.handle, storeys: [lo.name, up.name], z: [r6(z0), r6(z1)] });
+        return Object.assign({}, o, { params: Object.assign({}, o.params, { base: r6(z0 - lo.level), height: r6(z1 - z0), height_source: 'stacked:' + (o.params.height_source || '?') + '+' + (m.params.height_source || '?'), merged_with: { handle: m.params.handle, storey: up.name } }) });
+      });
+      up.ops = up.ops.filter(function (o) { return !drop[o.output_guid]; });
+    }
+    return { storeys: storeys, merged: merged };
+  }
+
+  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
+    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });
