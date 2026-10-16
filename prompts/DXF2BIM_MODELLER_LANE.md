@@ -853,6 +853,69 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
   - rosetta_qualify: fail=0
   - old marked copies: byte-identical (no `@BY`)
 
+### L2.8 Wall base from stated sources, one wall per footprint across storeys, R1b over cut walls (2026-10-16, before code)
+Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63c8a (std set qualifies: 0 blocking / 36 advisory):
+- rosetta_dx_shell std 34/1. OV L2: doors 66/67 (150/152), "below=false".
+- Their host walls 1014/1019 (model z 2.612..6.0) are built from the FF level 3.1, so 2.612..3.1 is missing.
+- The section (cut X = 2.30425) draws 1014 as A-SECT B5 (2.612..3.1) + B7 (5.132..6.0). 1019 is not cut by the section and is interior, so no elevation shows it.
+- The same A-SECT layer holds foundation walls (−1.25..0) and the GF exterior wall (BD, 0..3.1) at the same `h` as FF pieces.
+- Same plan footprint on GF and FF: 2 pieces in each set, the 0.417 × 0.417 corner posts (std 107 / 10D; old 6E / E3). The model holds separate stacked walls there (0..3.1 and 3.1..6.0).
+
+**1. Wall base from the lowest stated source** (`Dxf2Shell.applyWallBases`, after the wall heights).
+- (a) Section, when the section cuts the piece: its along-range on the cut axis contains the `@CUT` coordinate.
+  - The section's wall rects are closed polylines on a layer typed `sectwall` (std map: A-SECT; until now `ignore`). They are mapped with the section's `@HAXIS` / `@Z` calibration. Their h-range equals the piece's cross range (±snap_tol).
+  - A rect counts for this plan's wall when:
+    - its z0 ≥ the next lower plan level (or ≥ this plan's level for the lowest plan; walls below the lowest storey are foundations, outside the set's storeys);
+    - its z0 < the piece's top; and
+    - the lower plan draws no wall on the same line (no lower-plan piece with the same cross band ±snap_tol), because such a rect is that plan's wall. Measured: GF lintel/sill rects BB (2.52..3.1) and B9 (0..0.1) sit at a GF window where no GF piece passes the cut, but the GF plan draws that wall line, so they are GF material.
+  - base = the lowest z0 of those rects; `base_source: 'section'`.
+  - When the cut falls inside a drawn opening (a door's `opening_box` s0..s1, or a window's bbox, on the same band), the section rects at that h state the base of that wall. The base therefore applies to the opening's two jamb pieces (the pieces ending at s0 and starting at s1). Measured: the cut passes through door 152's opening (1.483..2.347), so B5/B7 state wall 1014's base at the opening, not at a piece.
+  - S-SLAB rects are never wall material.
+- (b) Else the elevation's base (`applyWallHeights`): `base_source: 'elevation'`.
+- (c) Else the plan level: `base_source: 'plan_level'`. When the piece's model storey can't be stated, nothing in the drawings states a base below the plan level, so the pipeline logs advisory `GAP:wall_base_from_plan_level` (qualify: advisory) on interior pieces whose height came from a marking or slab_above.
+- The top is unchanged. Base and top never extend through a slab: the base is a section wall rect, never an S-SLAB.
+- rosetta_dx_shell OV: "wall below missing" is explained when the host carries `wall_base_from_plan_level` (the drawings state no base below). The host is the piece holding the opening centre, or the jamb pieces of the infill box there. Target: std fail = 0.
+- Tests:
+  - WB1: a section-cut piece takes the section base
+  - WB2: a lower-plan rect (stacked wall) is not taken
+  - WB3: a foundation rect below the lowest plan is not taken
+  - WB4: an uncut interior piece → plan level + advisory
+  - WB5 (mutation): the section rect moved 50 mm → the base follows; the S-SLAB is never used
+
+**2. One wall per footprint across consecutive plans** (`Dxf2Shell.mergeStacked`, applied to the final element set just before meshing; the per-storey reasoning before it (openings bridged, slabs, witnesses) keeps the plan pieces, since FF bridging needs its own jamb pieces).
+- Two pieces, on consecutive plans (by `@LEVEL`), with the same rect (±snap_tol), whose stated z-ranges OVERLAP or TOUCH (±elev_tol), are ONE wall.
+  - It is kept on the lower plan, with z = the union of the stated ranges and `height_source: 'stacked:<lower source>+<upper source>'`.
+  - The upper piece is removed and recorded as `merged_into`.
+  - Plans carry no GUIDs, so matching is by footprint only.
+  - Different footprints, or ranges separated by a gap, stay separate.
+- Duplex: the 2 corner posts per set (stacked 0..3.1 + 3.1..6.0) become one post 0..6.0. The volume is identical.
+  - rosetta_dx_shell R6 compares a merged piece with the union of the source walls that hold it (stacked).
+  - The OBJ hash changes; the element count drops by 2 per set.
+- Tests:
+  - MS1: a two-storey wall drawn on both plans with overlapping heights (0..6 each) → one wall 0..6
+  - MS2 (mutation): the upper footprint shifted 10 mm → two walls
+  - MS3: a gap between the ranges (0..2.8 / 3.1..6) → two walls
+
+**3. R1b over every cut wall** (rosetta_dx.js R1b and rosetta_dx_shell R1b-u). Recall is scored over every source wall the plan's cut plane cuts (any model storey), symmetric with R1a. The expected uncovered length uses the source openings the plane cuts (any storey) whose plan centre lies in that wall.
+
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-wall-base`; baseline = master d06a63c8a).**
+- **rosetta_dx_shell std: 36 PASS / 0 FAIL** (was 34/1).
+  - Wall bases: L1 section 5 / elevation 9 / plan level 15; L2 section 6 / elevation 11 / plan level 24.
+  - Door 152 (wall 1014): the section cut lies inside its opening, so jambs 13B/13D take base 2.612 (B5) and the infill under the door is solid.
+  - Door 150 (wall 1019, not cut, interior): explained by `wall_base_from_plan_level` on jamb 103.
+  - Merged across plans: the 2 corner posts (107+12B, 10D+139 → 0..6.0). R6-stacked PASS. R1b-u over every cut wall: 17/17, 19/19.
+- **Std qualify: qualifies, 0 blocking, 75 advisory** (`type_unbound` 36 + `wall_base_from_plan_level` 39).
+- **Old set:**
+  - rosetta_dx_shell 33/4 (was 33/3): + R6-stacked PASS, + R1b-u L2 FAIL 17/19.
+  - rosetta_dx 12/3 (was 13/2): R1b-stated L2 FAIL 17/19.
+  - Both new FAILs are KNOWN FINDINGS: the old writer drew walls by storey, so its FF plan omits 1014 and 1019, which the 4.3 m plane cuts. Recall over every cut wall exposes it.
+  - Its mesh holds 104 elements (106 − 2 merged corner posts); the volume is unchanged.
+  - Old qualify: unchanged (347).
+- Tests:
+  - `test_std_rules` 47: WB1-6 (WB6 = cut inside a door opening → its jambs), MS1-3
+  - All 18 unit suites fail=0.
+- Unchanged: rosetta_dx std 15/0, rosetta_dx_section, farm_heights; t8 identical except timing; old marked copies byte-identical.
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
@@ -967,6 +1030,26 @@ Closes the L3 GAP C1 FILLS (`GAP:lod400_library_unreachable` x26). User rule: no
 - Page: C0, C1 RUN-ID/PARITY/COUNTS/PROVENANCE/CUTS PASS; **C1 FILLS PASS** 26/26 (IfcDoor 4, IfcWindow 22; rendered centre + bbox 1 mm); C1 FILLS-FALSIFY PASS (mesh 00b72db6 dropped → exactly fills 10F, 111 `GAP:lod400_mesh_missing`, 24 placed, 82 inserts, no box); **C2 PASS** reimport IfcWall 56 / IfcSlab 1 / IfcRoof 1 / IfcDoor 4 / IfcWindow 22, storeys 2, contained 84 = products; C3, C4 PASS.
 - Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS. Screenshot `l3b_fills.png` read: doors and glazing sit in the cut openings.
 
+### L3.3 L3 on the std set (2026-10-16, written before the code)
+The film uses the std Duplex set (BIMCompiler master `d06a63c8a`: 8 sheets GF/FF plans, 4 elevations, ROOF, SECTION; markings from the model, `@BY=model`; dxf2qualify verdict **qualifies**, 0 blocking). The old marked set is verdict **blocked** (347). L3 must convert the std set like the Node run (`DXSET=std rosetta_dx_shell.js`) and refuse what qualify blocks.
+- **Same source, no fork (BIMCompiler §13, PR on master).** The std layer maps, the qualify settings and the door casing lived in test scripts (`set_configs.js`, `rosetta_dx_shell.js`): moved verbatim into `deploy/dev/dxf2shell_config.js` (`STD`, `QUALIFY`, `CASING`), logs unchanged. The std run_id now covers the SECTION sheet and the std maps (`runId(..., maps)`; DX run_id unchanged); the std run writes `out/duplex_basic_shapes_elements_std.json` + `_labels_std.json`.
+- **Copies.** `modeller/dxf2bim/sync.sh <BIMCompiler dir> <commit>` copies `dxf2{bim,elev,marks,mesh,types,shell,shell_config,qualify}.js` + `dxf-parser.js` VERBATIM with `git show <commit>:deploy/dev/<f>` and rewrites SOURCE.md (commit + sha256 per file). Re-synced from the §13 commit (BIMCompiler branch `feat/dxf2bim-std-modeller` = master `e3e9c70cd` + §13; re-sync from master once it merges).
+- **Layer-map set (DX or STD), from evidence, refusing when ambiguous.** Each set's elevation map names its elevation-wall layer (`MAP_ELEV` rule type `elevwall`: DX `A-ELEV-WALL`, STD `A-WALL`). The set is the one whose elevwall layer has entities on EVERY elevation sheet; both or neither → gate refuses `layer set ambiguous` naming the sheets. No new constant: the layers are read from the copied config.
+- **R5 SECTION role.** `@VIEW=SECTION` with no `MARK:missing` (NEED: SET, VIEW, UNITS, HAXIS, CUT + `GRIDH(>=2)`, `Z(>=2)`) → role `section`. Gate: at most 1 section. Canvas: a section sheet aligns to the lowest plan by `Dxf2Marks.align` (as the Node run); a point (h, v) → plan axis `map.axis` = `toPlan(h)`, the `@CUT` axis = the cut coordinate × the sheet's unit factor, z = `zOf(v)`. Not aligned → not drawn, logged.
+- **Pipeline port = master `pipeline()` (variant A), same calls, same order:** `applyElevations` → `applyWallHeights` → plan `@TAG`s (`T.applyTags`) → `applyDoorHeights` with the plan schedule (`T.scheduleFromDesc`) and `schedule_head_frame: CASING`; the SECTION sheet (if any) → `S.sectionSlabs(…, STD.MAP_SECT, align map, storey levels, CFG, @ROOF)` passed to `slabZ`; `@WALLTOP` → `E.applyWallTops(after, before, desc, level, U)` with U = the next storey's slab underside, the top storey's = roof bottom; maps of the chosen set; run_id with the set's maps (STD: + sect) over all sheet texts; after the wall tops, L2.8 (BIMCompiler `e3e9c70cd`) `S.applyWallBases` per storey (section cut walls > elevation > plan level + `GAP:wall_base_from_plan_level` advisory, in the qualify gaps as shape walls) and, before meshing, `S.mergeStacked` (one wall per footprint across consecutive plans). Rest unchanged (labels, binding, bridge, fills, mesh).
+- **Qualify gate (ONE function, `DxfImportUI.convertGate()`, shared with the L4 editor).** Runs at import: roles gate (R1-R5) → the pipeline (with the local library subset) → the qualify input exactly as the Node run builds it (`files` {name, dxf, layer_maps per role: plan [PLAN], roof [ROOF], section [STD.SECT], elev DX [ELEV, LEVL] / STD [ELEV, LEVL, EXCL_ELEV]}, `plan_ops` = each plan's `Dxf2Bim.run` ops, `gaps` + `resolved` per sheet as `rosetta_dx_shell.js` writes `dx_shell_gaps.json`) → `Dxf2Qualify.qualify(input, set QUALIFY)`. Convert is enabled only when roles pass AND verdict = qualifies; otherwise the panel lists the blocking count by code and the first items (sheet, handle, message). Stated consequence: with no library subset the fills' `GAP:lod400_library_unreachable` are blocking (openings) → the set is refused, never converted without its fills.
+- **Witnesses (std set; inputs regenerated first by the master chain, read every log):**
+  - Node `witness_dxf_import_node.js` with `DXSET=std`: P1-P7 against `duplex_basic_shapes_elements_std.json`; P8 VERDICT: the module's qualify verdict equals rosetta_qualify's std verdict (qualifies, blocking 0, advisory count). Issue: the port's gaps or qualify input drift from the Node run.
+  - Page `witness_dxf_convert.js` with `DXSET=std`: C0 (plans, roof, elevations, SECTION on its cut plane: every read layer at the cut coordinate (1 mm), its cut walls A-SECT spanning the plan envelope along the section axis (1 mm); amended 2026-10-16 after the first run: the S-SLAB lines extend beyond the envelope (drawn content, -22.18..-0.42 m), so 'S-SLAB within the envelope' was not a rule of the drawing), C1 (run_id, every element incl. the fills within 1 mm), C1-FILLS, C2 (IFC classes = committed, storeys 2, contained = products), C3 (the OLD marked set: verdict blocked → Convert disabled, forced convert refused, op-log unchanged; and a std plan without markings → roles refuse), C4 one undo.
+  - C1-FILLS-FALSIFY (std): one mesh removed from the served subset → exactly that product's Node fills get `GAP:lod400_mesh_missing`, these are the only blocking items, so the gate refuses (Convert disabled, forced convert refused, op-log unchanged).
+  - Regression: the old set C0 (canvas only, it no longer converts), W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC. Screenshot `~/Videos/dxf2bim_work/l3/l3_std_converted.png`, read by eye.
+
+**L3.3 results (2026-10-16).** BIMCompiler `feat/dxf2bim-std-modeller` (master `e3e9c70cd` #189 + §13): chain std2d → mark std → `DXSET=std rosetta_dx_shell` 36/0 (std run_id `0c538552…`, 158 elements, 51 infill) → rosetta_qualify std **qualifies**, 0 blocking, 75 advisory; old set blocked 347. §13 left every Node log unchanged except the two new std checks. Copies re-synced by `sync.sh` from `8cba44890`.
+- Node (`witness_dxf_import_node.js`, read): std P1-P8 PASS (P2 158/158, P6 36 fills from the subset, P8 module verdict == Node verdict: qualifies, 75 advisory); old set P1-P8 PASS (P8 both blocked, 347). Subset (std) 136,432 bytes.
+- Page (`witness_dxf_convert.js`, read): C0 std 8 sheets PASS (SECTION: all read layers at x = 2.30425, A-SECT spanning the envelope -17.8..0); C0 GATE: one gate → STD set, qualifies; C1 run_id `0c538552…` equal, PARITY 71 solids + 28 cut bodies (51 infill) within 1 mm, COUNTS, PROVENANCE (171 ops), CUTS 36; **C1 FILLS 36/36** (IfcDoor 14, IfcWindow 22) within 1 mm; C1 FALSIFY; **C2** reimport IfcWall 96 / IfcSlab 2 / IfcRoof 1 / IfcDoor 14 / IfcWindow 22, storeys 2, contained 135 = products; C4 one undo; C1-FILLS-FALSIFY (mesh 00b72db6 dropped → fills 110, 112 `GAP:lod400_mesh_missing`, the only 2 blocking, refused, op-log 0→0); C3 raw GF refused by roles naming it; C3 old set: C0 PASS, refused by the verdict (blocked 347). All PASS.
+- Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS. Screenshot `l3_std_converted.png` read: two storeys, doors and glazing in the cut openings, roof with two skylight holes; `l3_std_imported_sheets.png`: 8 sheets incl. the section on its plane.
+- Stated: the gate runs the whole pipeline at import (the convert commits that judged run). The page reads ONE local subset file; the witness writes the std one (the old set then reports `GAP:lod400_not_in_subset` for its other products, and is blocked anyway). Old marked set: no longer converts (qualify blocks it).
+
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**
   - Sheets (role, level / face)
@@ -982,6 +1065,55 @@ Closes the L3 GAP C1 FILLS (`GAP:lod400_library_unreachable` x26). User rule: no
   - E2 stripped → blanks shown red; filling them via UI actions (E2E harness) reproduces the original markings byte-equal and the verdict turns green
   - E3 an unconfirmed proposal never reaches the saved file
   - E4 mutation: the editor writes one wrong level → Q-verdict blocked
+
+
+### L4.1 Build spec (2026-10-16, written before the code; revised the same day on the §L3.3 base)
+Scope: the "Drawing metadata" panel, the live verdict, propose → confirm, save. Module `modeller/dxf_meta_editor.js` (lazy, loaded with the import scripts); hooks only in `dxf_import_ui.js` (button, canvas index, `applySheets`, `holdGate`) and `dxf2bim_import.js` (`setWith`, `qualifyNotRun`, a user-stated set). Inputs: the old Duplex marked set (7 sheets, `rosetta_qualify.js` Q1) and the std set (8 sheets), regenerated with BIMCompiler master `be1dcda91` (std2d `--door-ops` → `mark_dx_set.js std` → `DXSET=std rosetta_dx_shell.js`; `mark_dx_set.js` → `rosetta_dx_shell.js`).
+
+**Sources.** The copies (incl. `dxf2qualify.js`) are synced by the §L3.3 script `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`; one command, no second script. The witness checks every copy equals `git show HEAD:deploy/dev/<f>` of the BIMCompiler that made its inputs (E0).
+
+**ONE gate.** The verdict the editor shows is `DxfImportUI.convertGate()` (§L3.3), never a second computation: the editor hands in the EFFECTIVE sheets (below), its layer rules and the set it states (`applySheets`), the gate runs roles → pipeline (local library subset) → qualify, and Convert follows `gate.ok`. While a change is pending the gate is held (`holdGate`: Convert off). When the pipeline cannot run (roles incomplete, or the pipeline refuses), the gaps are UNKNOWN: `Dxf2BimImport.qualifyNotRun` qualifies the same files with one blocking `GAP:pipeline_not_run {reason}` (shape set) in place of the gaps, so marking / layer / unit / dimension / grid items still show and nothing passes silently.
+
+**Marking model.** Per sheet (one view per file; `@REGION` files: open question) a list `{key, value, x, y, source}`:
+- `file`: read by `Dxf2Marks.readMarks`. Shown by its `@BY` suffix: none → "from file", `model` → "from model", `user` → "you".
+- `user`: typed / chosen, or a proposal the user ticked. Shown "you".
+- Proposals are a separate list: never a marking, never in the verdict input, never saved until ticked.
+- Canonical form (E2): the sorted `@KEY=VALUE` strings (the `@BY` suffix stripped) plus the position that carries meaning: x for `@GRIDX`/`@GRIDH`, y for `@GRIDY`/`@Z`, x,y for `@TAG`; other positions ignored.
+- Effective sheet text: the original text when the markings equal the file's; else `Dxf2Marks.writeMarks(strip(original), markings)`; `strip` drops every TEXT/MTEXT on `DXF2BIM-MARK` in ENTITIES (group-code walk, nothing else touched). Position-free markings are written at (0,0).
+- **Source `@BY` (lead decision; BIMCompiler #187 grammar):** a per-marking suffix in the SAME TEXT, e.g. `@LEVEL=3.1 @BY=user`; it qualifies the other `@KEY` of that TEXT only (no scope by position or handle order). The editor writes ` @BY=user` on every marking the user enters or ticks, when the synced grammar accepts it (runtime check: `describe('@LEVEL=1 @BY=user')` gives level 1, no error); otherwise without it, said in the panel. No sidecar.
+
+**Sections.**
+- Sheets: role select (PLAN / ELEV / ROOF / SECTION = `@VIEW`) and the keys its role needs (`Dxf2Marks` NEED): `@SET @NAME`; PLAN `@LEVEL` + grids (`@GRIDX/@GRIDY` label + position); ELEV `@FACE @HAXIS @ROOF` + `@GRIDH` + `@Z` (z + drawing y); ROOF `@LEVEL @ROOF`; SECTION `@HAXIS @CUT` + `@GRIDH @Z`. Needed and empty → red.
+- Units: per sheet a select, empty until picked; beside it "file says X" ($INSUNITS in the tooltip). The header is never applied by itself (it is a proposal with a tick).
+- Layers: the layer-map set in use (DX / STD of `dxf2shell_config.js`, chosen by the gate from the elevation-wall layer evidence, or stated by the user in a select) and every layer per role with the set's type ("template", read-only). A layer the set does not match is red; the user picks wall / door / glazing / dims / grid / level / ignore (+ roof on ROOF sheets). The rule is appended as an exact rule to that role's map for the pipeline AND qualify (`Dxf2BimImport.setWith`); dims / grid also join `QUALIFY.layers`. With rules the run_id hashes the effective maps (stated). Type → rule: wall = wall (plan) / elevwall (elev); door = opening / elevdoor; glazing; level = levelline (levl map); roof; dims, grid, ignore = ignore.
+- Tags: a Tag tool; click an entity on a plan or roof sheet on the canvas (raycast on the sheet's lines, per-segment handle index) → class (door / window / wall) + a value from the canned vocabulary: the local library subset's family ids and the set's `@SCHEDULE` texts. Writes `@TAG=<class>,<value>` at the entity's raw bbox centre. No free text.
+- Excludes: an Exclude tool; drag a box on a chosen plan or roof sheet (on its z plane) → `@EXCLUDE=x0,y0,x1,y1` raw. Elevations: open.
+- Wall tops: per PLAN the convention `@WALLTOP=<level>,slab_above` (tick + level field, default the plan's `@LEVEL`) and the wall-layer `GAP:no_elevation_height` list of the verdict, each clickable, with a top-z field writing the per-wall grammar `@WALLTOP=handle:<h>,<z_top_m>` (BIMCompiler #186).
+- Verdict: chip "Qualifies" (green, 0 blocking) / "Blocked · N"; blocking (red) / advisory (amber) per shape (walls / slabs / roof / openings); the items (code, message); a click frames the canvas on the item (its handles' drawn segments, else its `pos`, raw → world by the sheet's role mapping), panned clear of the panel, and highlights the segments.
+
+**Proposals (evidence only; ambiguous → none, with the reason).** PR-UNITS (`$INSUNITS`), PR-VIEW / PR-NAME (one title TEXT ending PLAN / ELEVATION / SECTION; ROOF PLAN → ROOF), PR-SET (the other sheets agree), PR-GRID (grid-layer LINE axis-parallel within 1 mm + exactly one 1-char label within 0.06 m across and 0.7 m beyond an end: `mark_dx_set.js gridLines`), PR-Z (`LEVEL ±z` / level-layer `±z` text paired with its own y or a level line: `levelPairs`), PR-HAXIS (unique fit against the lowest plan's grids, 1 mm), PR-FACE (sheet name FRONT/REAR/LEFT/RIGHT, repo convention R11, labelled as such). None for `@LEVEL`, `@ROOF`, `@WALLTOP`, tags, excludes.
+
+**Save.** One button: per sheet a download `<base>_marked.dxf` (base = file name without `.dxf` and a trailing `_marked`) with the effective text. The opened files are never written. Re-import gives the same markings.
+
+**Witnesses** (`modeller/tests/witness_dxf_meta_editor.js`, real UI through `tests/e2e_harness.js`; log `tests/logs/witness_dxf_meta_editor.log`):
+- E0 COPIES: copies == BIMCompiler HEAD modules. E1 FROM-FILE: marked set → every marking "from file", no red field; editor verdict counts by code == Node `Dxf2Qualify` over the same files + maps + plan ops + `dx_shell_gaps.json`. E1 ZOOM: a verdict click frames + highlights the item's segments.
+- E2 FILL: the set stripped by the witness's own stripper → role / units red; every value entered through selects, typing and Add clicks; the in-page verdict, the saved copies' canonical markings and the re-imported copies' verdict equal the marked set's; E2 BY: every saved marking carries `@BY=user` (grammar accepts it).
+- E3 UNCONFIRMED: suggestions listed; one ticked (GF PR-UNITS); Save → only that marking in any file.
+- E4 MUTATION: `@WALLTOP=3.2,slab_above` on FF (no plan at 3.2) → exactly one new blocking `QF:walltop_unknown_storey` on the new marking's handle; control 3.1 → no new blocking, the 17 FF wall height gaps leave the blocking list (the pipeline applies stated tops, `Dxf2Elev.applyWallTops`); untick → the file verdict again.
+- E5: old set blocked → Convert disabled, `convert()` refused, op-log unchanged; std set → layer set STD from the drawings, editor verdict == gate, qualifies → Convert enabled, a real click converts (one gesture).
+- T1 / X1 UI sanity: Tag tool click writes `@TAG` at the picked entity centre; Exclude drag writes `@EXCLUDE`.
+- Screenshots `~/Videos/dxf2bim_work/l4/` (filled, verdict zoom, raw, mid-fill, std); regression `witness_dxf_import_node.js` (old + std), `witness_dxf_convert.js`, W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC.
+
+**Not claimed (L4.1).** Changing a template-mapped layer's type; excludes on elevations; `@REGION` (multi-view) files; layer rules surviving re-import (the DXF grammar has no layer key; session only).
+
+**L4.1 results (2026-10-16).** BIMCompiler master `be1dcda91` (copies equal, E0). Log `modeller/tests/logs/witness_dxf_meta_editor.log`: SUMMARY fail=0 gap=0.
+- E1: 76 file markings shown, all "from file", 0 red; verdict blocked 347 + 28 advisory, counts by code == Node. Zoom: 16 segments highlighted.
+- E2: stripped → 7/7 role + 7/7 units red (verdict 72 incl. `GAP:pipeline_not_run`); 76 UI actions; in-page verdict, 7 saved copies (markings equal, every one `@BY=user`) and their re-import all == E1.
+- E3: 21 suggestions, GF PR-UNITS ticked → saved files hold exactly `@UNITS=mm @BY=user` on GF, nothing else.
+- E4: one `QF:walltop_unknown_storey` (handle 2AC = `@WALLTOP=3.2,slab_above @BY=user`); control 3.1: 347 → 330, 17 FF wall gaps gone, nothing new; untick restores.
+- E5: old set Convert disabled, refused, op-log 0→0; std: set STD (evidence), qualifies 0 / 75 advisory, run_id `0c538552…` (= Node), Convert enabled, click → 171 ops (135 inserts, 36 cuts).
+- T1 `@TAG=door,BATHROOM_DOOR` at the picked door centre; X1 `@EXCLUDE` from a drag.
+- Regression: Node old + std SUMMARY fail=0; `witness_dxf_convert.js` 15/15; W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
 
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → film (FILM_PLAN §10), English first.
