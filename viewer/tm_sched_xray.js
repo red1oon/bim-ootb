@@ -180,7 +180,8 @@
     var ov = _classifyNameOverride(cls, name, nameOverrides);
     if (ov) return ov;
     if (window.ScheduleAuthor && window.ScheduleAuthor.matchRule) {
-      return window.ScheduleAuthor.matchRule(cls, rules, dflt);
+      // tier-2 schema-ancestor map (schedule_author.js); ScheduleAuthor.matchRule is the one owner of the 3 tiers.
+      return window.ScheduleAuthor.matchRule(cls, rules, dflt, window.IFC_SCHEMA_HIERARCHY || {});
     }
     var bestKey = null, bestLen = 0;
     for (var key in rules) {
