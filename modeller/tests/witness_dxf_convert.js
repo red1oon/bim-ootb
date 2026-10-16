@@ -66,6 +66,7 @@ const server = http.createServer((q, r) => {
 });
 
 const LIBMODE = process.env.DXF_LIB === 'oci' ? 'oci' : 'local';
+const CRASH_DIR = process.env.DXF_CRASH_DIR || path.join(require('os').tmpdir(), 'w-dxf-convert-crash');   // Chrome minidumps of a renderer crash (§L3.4 L2 'Waiting failed' under load)
 const LOCAL_RE = /dxf2bim\/local\/library_subset_duplex\.json/, LATEST_RE = /\/dxf2bim\/library\/latest\.json$/;
 // routes: [[RegExp, {status, contentType, body}]] answered by interception (the SW is bypassed so it cannot answer first)
 async function openPage(br, port, tag, routes) {
@@ -78,6 +79,7 @@ async function openPage(br, port, tag, routes) {
   }
   pg.on('console', m => { const t = m.text(); pg._logs.push(t); if (/§DXF|§IFC-SPATIAL|§IFC reimport|§IFC build|§IFC §IFC-SEED|commitGesture|GESTURE-UNDO|LOD400-REFUSE|insert fold fail|ERR/.test(t)) say('  [' + tag + '] ' + t.slice(0, 400)); });
   pg.on('pageerror', e => say('  [' + tag + '] PAGEERR ' + String(e).slice(0, 300)));
+  pg.on('error', e => say('  [' + tag + '] PAGECRASH ' + String(e).slice(0, 300) + ' (crash dumps: ' + CRASH_DIR + ')'));   // renderer crash (diagnostic only; the waits are unchanged)
   await pg.goto(`http://localhost:${port}/modeller.html`, { waitUntil: 'load', timeout: 90000 });
   await pg.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.Bonsai.library && window.DxfImportUI && window.A && window.A.scene', { timeout: 90000 });
   return pg;
@@ -102,7 +104,10 @@ async function openViaChooser(pg, files) {
   const DROP = ref.elements.filter(e => e.class === 'IfcDoor' && e.geometry_hash).map(e => e.geometry_hash).sort()[0];   // a door product's mesh (deterministic)
   fs.mkdirSync(SHOTS, { recursive: true });
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
-  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  fs.mkdirSync(CRASH_DIR, { recursive: true }); const crash0 = new Set(fs.readdirSync(CRASH_DIR, { recursive: true }).map(String));
+  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-crash-reporter', '--crash-dumps-dir=' + CRASH_DIR] });
+  let closing = false; br.on('disconnected', () => { if (!closing) say('  BROWSER DISCONNECTED (not by the witness)'); });
+  process.on('exit', () => { try { const nw = fs.readdirSync(CRASH_DIR, { recursive: true }).map(String).filter(f => !crash0.has(f) && /\.dmp$/.test(f)); if (nw.length) { lines.push('CRASH DUMPS ' + nw.map(f => path.join(CRASH_DIR, f)).join(' ')); console.log(lines[lines.length - 1]); fs.writeFileSync(LOG, lines.join('\n') + '\n'); } } catch (e) {} });
   say('BC=' + BC);
 
   // ---------------- C1 / C2 / C4 on the marked set ----------------
@@ -329,9 +334,9 @@ async function openViaChooser(pg, files) {
     await pg5.close();
   }
 
-  await br.close(); server.close();
+  closing = true; await br.close(); server.close();
   say('screenshots: ' + ['l3_std_imported_sheets.png', 'l3_std_converted_panel.png', 'l3_std_converted.png', 'l3_std_fills.png'].map(f => path.join(SHOTS, f)).join(' , '));
   say('SUMMARY fail=' + fail + ' gap=' + gaps);
   fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');
   process.exit(fail ? 1 : 0);
-})().catch(e => { say('ERR ' + e.stack); try { fs.writeFileSync(LOG, lines.join('\n') + '\n'); } catch (x) {} process.exit(1); });
+})().catch(e => { say('ERR ' + e.stack + (e.cause ? '\nCAUSE ' + (e.cause.stack || e.cause) : '')); try { fs.writeFileSync(LOG, lines.join('\n') + '\n'); } catch (x) {} process.exit(1); });

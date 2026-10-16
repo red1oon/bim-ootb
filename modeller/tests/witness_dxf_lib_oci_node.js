@@ -3,16 +3,17 @@
  * # ⚠ DO NOT REMOVE — W-DXF-LIB-OCI (L1): prompts/DXF2BIM_MODELLER_LANE.md §L3.4. Read the log after every run (exit code is not evidence).
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the public Modeller has no local library; it reads the LOD400 library from OCI as an index +
- * shards (BIMCompiler scripts/export_library_subset.js --full). A shard can lose a candidate row or a mesh, the loader can fetch the
- * wrong shards, or the labels of the run can be missing, and then a fill binds to another product or sits elsewhere.
+ * shards (BIMCompiler scripts/export_library_subset.js --full). A shard can lose a candidate row or a mesh, or the loader can fetch the
+ * wrong shards, and then a fill binds to another product or sits elsewhere. The marked std set states its window products as @TAG
+ * markings (BIMCompiler §14 LF-4), so the library alone (no labels sidecar) must give the 36 fills.
  *   O1 FILLS     — the module fed ONLY from objects DOWNLOADED from OCI (Dxf2BimImport.loadOci, the page's own loader, Node fetch)
  *                  places the same fills as the Node run on the local DB (out/duplex_basic_shapes_elements_std.json): same guid,
  *                  element_ref, geometry_hash, class, storey, bbox within 1 mm; 36 = IfcDoor 14 + IfcWindow 22; verdict qualifies.
- *   O2 BYTES     — every object fetched from OCI (latest, index, shards, labels) is byte-identical to a fresh local export, and each
+ *   O2 BYTES     — every object fetched from OCI (latest, index, shards) is byte-identical to a fresh local export, and each
  *                  shard's sha256 equals the one the index lists. Issue: OCI serves another (stale / partial) library than the export.
  *   O3 DETERMINISM — two fresh exports are byte-identical (diff -r). Issue: the export is not a function of the DB.
  *   O4 FALSIFY   — the O1 comparator with one Node fill moved 2 mm reports exactly that one. Issue: a comparator that cannot fail.
- * DXSET=std inputs (not in git): $DXF2BIM_BC tests/dxf2bim/out/{marked_std,marked_std_shell}, the _std summary + labels, deploy/component_library.db.
+ * DXSET=std inputs (not in git): $DXF2BIM_BC tests/dxf2bim/out/{marked_std,marked_std_shell}, the _std summary, deploy/component_library.db.
  */
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process'), crypto = require('crypto'), os = require('os');
@@ -31,7 +32,7 @@ const hashHex = s => sha(s);
   say('BC=' + BC + ' base=' + BASE);
   // O3: two fresh exports
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dxflib-')), E1 = path.join(tmp, 'e1'), E2 = path.join(tmp, 'e2');
-  const exp = d => cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--full', '--out-dir', d, '--labels', path.join(OUT, 'duplex_basic_shapes_labels_std.json'),
+  const exp = d => cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--full', '--out-dir', d,
     '--lib', path.join(BC, 'deploy/component_library.db')], { encoding: 'utf8' }).trim();
   say(exp(E1)); exp(E2);
   let same = true; try { cp.execFileSync('diff', ['-r', '-q', E1, E2]); } catch (e) { same = false; say(String(e.stdout)); }
@@ -47,8 +48,7 @@ const hashHex = s => sha(s);
   const sheets = I.readSheets(files, { hashHex });
   const t0 = Date.now();
   const o = await I.loadOci(sheets, { base: BASE, fetchJson });
-  say('§DXF-LIB source=oci sha=' + o.sha.slice(0, 12) + ' shards=' + o.shards.length + ' families=' + o.families.length + ' (' + o.families.join(',') + ') labels=' + (o.labels ? o.labels.slice(0, 12) : 'none') +
-    ' passes=' + o.passes + ' fetched=' + Object.keys(got).length + ' bytes=' + Object.values(got).reduce((n, x) => n + (x ? Buffer.byteLength(x.text) : 0), 0) + ' ms=' + (Date.now() - t0));
+  say('§DXF-LIB source=oci sha=' + o.sha.slice(0, 12) + ' shards=' + o.shards.length + ' families=' + o.families.length + ' (' + o.families.join(',') + ') passes=' + o.passes + ' fetched=' + Object.keys(got).length + ' bytes=' + Object.values(got).reduce((n, x) => n + (x ? Buffer.byteLength(x.text) : 0), 0) + ' ms=' + (Date.now() - t0));
 
   // O2: fetched == fresh export, byte for byte; shard sha == index; content type
   const bad2 = [], idx = JSON.parse(fs.readFileSync(path.join(E1, o.sha.slice(0, 12), 'index.json'), 'utf8')), shaOf = {};
@@ -78,7 +78,7 @@ const hashHex = s => sha(s);
   const bad1 = cmp(fills, refF), byCls = fills.reduce((m, f) => (m[f.class] = (m[f.class] || 0) + 1, m), {});
   check('O1 FILLS', 'a fill from the OCI library binds to another product, mesh, class or storey, or sits elsewhere (1 mm), than the Node run on the local DB',
     !R.refused && bad1.length === 0 && fills.length === 36 && refF.length === 36 && byCls.IfcDoor === 14 && byCls.IfcWindow === 22 && R.run_id === ref.run_id && R.verdict.verdict === 'qualifies' && R.fillGaps.length === 0,
-    'node=' + refF.length + ' oci=' + fills.length + ' ' + JSON.stringify(byCls) + ' run_id ' + (R.run_id || '').slice(0, 12) + '/' + ref.run_id.slice(0, 12) + ' labels=' + R.labelsFrom + ' verdict=' + (R.verdict && R.verdict.verdict) +
+    'node=' + refF.length + ' oci=' + fills.length + ' ' + JSON.stringify(byCls) + ' run_id ' + (R.run_id || '').slice(0, 12) + '/' + ref.run_id.slice(0, 12) + ' verdict=' + (R.verdict && R.verdict.verdict) +
     ' blocking=' + (R.verdict && R.verdict.blocking.length) + ' fillGaps=' + (R.fillGaps || []).length + ' hashes=' + new Set(fills.map(f => f.geometry_hash)).size + (bad1.length ? ' differ: ' + bad1.slice(0, 6).join('; ') : ''));
 
   const moved = JSON.parse(JSON.stringify(refF)); moved[0].bbox[0] += 0.002; moved[0].bbox[3] += 0.002;
