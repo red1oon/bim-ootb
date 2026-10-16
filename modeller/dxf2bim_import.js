@@ -94,7 +94,23 @@
       return el.length && el.every(function (s) { return s.dxf.entities.some(function (e) { return ly.indexOf(e.layer) >= 0; }); }); });
     return { name: fit.length === 1 ? fit[0] : null, fits: fit, layers: Object.keys(SETS).map(function (k) { return k + ':' + elevWallLayers(SETS[k].MAP_ELEV).join('|'); }) };
   }
-  function gate(sheets) {
+  // §L4.1: the editor's layer rules [{role:'plan'|'elev'|'levl'|'roof'|'sect', layer, type, ui}] appended as exact rules to that role's map of the set
+  // (pipeline AND qualify); 'dims'/'grid' also join QUALIFY.layers. With rules, the run_id hashes the effective maps (stated). No rules = the set itself.
+  function setWith(name, rules) {
+    var S0 = SETS[name]; if (!S0) return null;
+    rules = (rules || []).slice().sort(function (a, b) { return a.role < b.role ? -1 : a.role > b.role ? 1 : a.layer < b.layer ? -1 : a.layer > b.layer ? 1 : 0; });
+    if (!rules.length) return S0;
+    var add = function (role, M) { var ex = rules.filter(function (r) { return r.role === role; }).map(function (r) { return { match: 'exact', pattern: r.layer, type: r.type }; });
+      return ex.length ? { version: M.version, rules: M.rules.concat(ex) } : M; };
+    var Qs = JSON.parse(JSON.stringify(S0.QUALIFY));
+    rules.forEach(function (r) { ['dims', 'grid'].forEach(function (k) { if (r.ui === k && Qs.layers[k].indexOf(r.layer) < 0) Qs.layers[k].push(r.layer); }); });
+    var o = { MAP_PLAN: add('plan', S0.MAP_PLAN), MAP_ELEV: add('elev', S0.MAP_ELEV), MAP_LEVL: add('levl', S0.MAP_LEVL), MAP_ROOF: add('roof', S0.MAP_ROOF), MAP_SECT: add('sect', S0.MAP_SECT),
+      EXCL_ELEV: S0.EXCL_ELEV, QUALIFY: Qs, rules: rules };
+    o.maps = { plan: o.MAP_PLAN, elev: o.MAP_ELEV, levl: o.MAP_LEVL, roof: o.MAP_ROOF, sect: o.MAP_SECT, layer_rules: rules.map(function (r) { return [r.role, r.layer, r.type]; }) };
+    return o;
+  }
+  function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
+    var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
@@ -104,8 +120,21 @@
     var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
     if (n('section') > 1) refused.push({ sheet: '(set)', reason: 'sections=' + n('section') + ' (at most 1: @VIEW=SECTION)' });
     var so = n('elev') ? setOf(sheets) : null;
+    if (userSet) return { ok: refused.length === 0, refused: refused, set: userSet, setFrom: 'user', evidence: so ? so.name : null };
     if (so && !so.name) refused.push({ sheet: '(set)', reason: 'layer set ambiguous: elevation-wall layers ' + so.layers.join(', ') + ' fit ' + (so.fits.join('+') || 'none') + ' on every elevation' });
-    return { ok: refused.length === 0, refused: refused, set: so ? so.name : null };
+    return { ok: refused.length === 0, refused: refused, set: so ? so.name : null, setFrom: 'evidence' };
+  }
+  // §L4.1: the verdict when the pipeline does NOT run (roles incomplete, or the pipeline refused): the gaps are UNKNOWN, so one blocking
+  // GAP:pipeline_not_run {reason} stands for them (never a silent pass); markings, layers, units, dimension and grid checks still run.
+  function qualifyNotRun(sheets, opts) {
+    opts = opts || {};
+    var SET = setWith(opts.set, opts.layerRules), CFG = C.CFG, files = [], planOps = {};
+    var mapsOf = function (v) { return !SET ? null : v === 'PLAN' ? [SET.MAP_PLAN] : v === 'ROOF' ? [SET.MAP_ROOF] : v === 'SECTION' ? [SET.MAP_SECT] : v === 'ELEV' ? [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []) : null; };
+    sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).forEach(function (sh) {
+      var f = { name: sh.name, dxf: sh.dxf }, lm = mapsOf(sh.desc.view); if (lm) f.layer_maps = lm; files.push(f);
+      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, SET.MAP_PLAN, CFG, { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
+    });
+    return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
 
   // ---- the pipeline: rosetta_dx_shell.js pipeline({convention:false}), same calls, same order ----
@@ -113,12 +142,12 @@
   function convert(sheets, opts) {
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, library = opts.library || null;
-    var g = gate(sheets); if (!g.ok) return { refused: g.refused };
-    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] }, SET = SETS[g.set];
+    var g = gate(sheets, { set: opts.set }); if (!g.ok) return { refused: g.refused };
+    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] }, SET = setWith(g.set, opts.layerRules);   // §L4.1 + the editor's layer rules
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var roofSh = sheets.filter(function (s) { return s.role === 'roof'; })[0], sectSh = sheets.filter(function (s) { return s.role === 'section'; })[0] || null;
     var elevSh = sheets.filter(function (s) { return s.role === 'elev'; }).sort(function (a, b) { return FACE_ORDER.indexOf(a.face) - FACE_ORDER.indexOf(b.face); });
-    var R = { gaps: [], refused: null, set: g.set };
+    var R = { gaps: [], refused: null, set: g.set, setFrom: g.setFrom };
     var refuse = function (sheet, reason) { R.refused = (R.refused || []).concat([{ sheet: sheet, reason: reason }]); return R; };
     var base = plans[0].desc;
     var elevs = [];
@@ -389,5 +418,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, SETS: SETS, setOf: setOf, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

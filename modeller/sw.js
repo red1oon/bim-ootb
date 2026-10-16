@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v83';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v84';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -83,6 +83,7 @@ const PRECACHE_ASSETS = [
   'dxf2bim/dxf2shell.js',
   'dxf2bim/dxf2shell_config.js',
   'dxf2bim/dxf2qualify.js',
+  'dxf_meta_editor.js',   // §DXF-META (lane L4): the Drawing metadata editor
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
   '../viewer/locale_loader.js',  // S226 §R3 — the Modeller's UI language (shared loader; i18n/<code>.json cache on first use)
