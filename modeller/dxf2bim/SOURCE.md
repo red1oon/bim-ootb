@@ -10,7 +10,7 @@ Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3). Do not edit here: 
 | dxf2bim/dxf2mesh.js | deploy/dev/dxf2mesh.js | b4739b50a (master, PR #177) | 67157a627b4408230948e62b93810f0be91e362d9f8458deedc98813d3a17fc2 |
 | dxf2bim/dxf2types.js | deploy/dev/dxf2types.js | b4739b50a (master, PR #177) | 0df204a2f63819e036765977af2d93bbdd0d601e3cfc1b8982955349b6332944 |
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | b4739b50a (master, PR #177) | 274088a8a38796e98368206cde2cf0e4fb3a4332130e12f2f6be99911895575a |
-| dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | a13b61707 (branch feat/dxf2bim-shell-config, PR #180; BASIC_SHAPES_SPEC §11) | 377dc2acea6483b1c4a2558007761fc540cb57ccece681e919484c8521a19459 |
+| dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | be415bfab (master, PR #180; BASIC_SHAPES_SPEC §11) | 377dc2acea6483b1c4a2558007761fc540cb57ccece681e919484c8521a19459 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | b4739b50a | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
 Check: `git -C <BIMCompiler> show <commit>:deploy/dev/<file> | sha256sum` equals the column above.
