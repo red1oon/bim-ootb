@@ -315,6 +315,7 @@ Written before the code. BIMCompiler branch `fix/std2d-plan-cut` (off master 73a
 ### L1.6 Multi-storey acid test: openings from the host relation, columns, model storeys, one building grid (2026-10-17, before code)
 Inputs: two real multi-storey models, re-extracted with the Node extractor only (`scripts/extractIFC2DB.js`), DBs outside git.
 - **SampleCastle** `Ifc2x3_SampleCastle.ifc` (IFC2X3, 6 storeys -1000/0/3000/6000/9000/12000 mm; 205 IfcDoor, 259 IfcWindow, 23 IfcColumn, 9 IfcStair, 0 IfcFooting). Only 74 IfcRelFillsElement / 79 IfcRelVoidsElement for 464 doors+windows (counted in the IFC text).
+- **HHS Office structure** `opensourceBIM_HHS_Office_construction.ifc` (the federated set's structural model: 257 IfcColumn, round; 36 walls; the architect model has no column). Run separately for COL1 (`construction2.ifc` is again a one-GlobalId-edit copy).
 - **HHS Office** `opensourceBIM_HHS_Office_architect.ifc` (IFC2X3, 4 storeys; 133 IfcDoor, 0 IfcWindow: the facade is IfcCurtainWall + IfcPlate/IfcMember; 0 IfcFooting). `architect2.ifc` is the same file with one wall's GlobalId and Name edited (1-line diff, `3XrBtx9eX7mQE6EqWHPk0L` → `…k0a`, "New Wall"): a change-detection copy, not a federated source. `architect.ifc` is used.
 
 Problem (user, 2026-10-17): "we could not even place the knife cut right … sometimes we cut too low or too high and not catch the openings on the floor plan". Measured on the Duplex already: Level 2 has 18 IfcWindow, 8 of them do not cross the 4.300 m knife (4 at z 3.200–3.959, 4 at 4.851–5.610), so today's FF plan shows them on a solid wall.
@@ -344,7 +345,7 @@ Problem (user, 2026-10-17): "we could not even place the knife cut right … som
 
 **C Columns as columns.**
 - C1 IfcColumn cut contours go on `S-COLS` (IfcColumn is a structural member by its IFC definition), or `A-COLS` when the model states `Pset_ColumnCommon.LoadBearing = FALSE`; closed polyline + SOLID hatch on the same layer (filled section symbol). No longer on A-WALL-*.
-- C2 Columns are grid evidence: each orthogonal plan-storey column's bbox centre contributes one X and one Y grid entry (common practice: grid lines run through column centres). Merged as R5.
+- C2 Columns are grid evidence: each plan-storey column whose plan section is point-symmetric about its bbox centre (every mesh vertex has a mirror partner through it within 1 mm: round, square, rotated rectangle; then the bbox centre is the column axis) contributes one X and one Y grid entry through that centre (common practice: grid lines run through column centres); otherwise `GAP:column_not_symmetric`. Merged as R5. (Amended after the first HHS structural run: its 257 columns are round, d = 300, so the R3 orthogonal test rejected all of them.)
 
 **N Storeys from the model.** Plan view key = `FLOOR_<storey name>` (upper case, every run of non-alphanumerics → `_`), title `<STOREY NAME> PLAN (FFL ±z.zzz)`. The GF/FF list is retired. The Duplex reader harness maps its sheets by storey (see Regression).
 
