@@ -455,6 +455,36 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
   - rosetta_qualify: fail=0
 - Finding for L1 (W1): two `std2d.py` runs into different directories give DXFs that differ in the OBJECTS section (LAYOUT / ACDBPLACEHOLDER order).
 
+### L2.5 Std set to green: @WALLTOP from the model, and window accounting (2026-10-16, before code)
+Input: the std set regenerated from master `std2d.py` with `--door-ops` (a `door_operation` DB extracted from `Ifc2x3_Duplex_Architecture.ifc` by `scripts/extractIFC2DB.js`, 14 rows, 14 arcs, 0 `§GAP`). Markings come from `mark_dx_set.js std`; pipeline gaps come from `DXSET=std rosetta_dx_shell.js`.
+
+**W1 `@WALLTOP` derived from the model** (`mark_dx_set.js std`, PLAN sheets only; never written for a raw user drawing, where it stays the editor's question).
+- **Interior wall** of storey S: an IfcWall in S whose plan bbox has no outer face on S's wall envelope bbox within 10 mm. This is the same rule as L1.1 R4(b), `EXT_FACE_TOL`.
+- **Slab above** a wall: every IfcSlab whose minZ > level(S) + tol and whose plan bbox overlaps the wall's bbox with positive area. Its underside is the minimum minZ of those slabs.
+- **Confirmed** when every interior wall of S has a slab above and |wall maxZ − underside| ≤ tol. The tol is 0.003 m (`CFG.elev_tol`, the pipeline's own height tolerance).
+- If confirmed, `@WALLTOP=<level>,slab_above` is written on that plan. Otherwise nothing is written, and the wall-height gaps stay blocking.
+- The log lists every interior wall with its top, its underside and confirmed / not confirmed.
+- Measured on the DB before coding:
+  - Level 1: interior walls top at 2.795, but also at 3.1 (4.03..4.182) and at 3.1 / 6.0 (the four walls based at 2.612).
+  - Level 2: two walls top at 5.695, under the 6.0 roof slab.
+  - Expectation: the rule probably confirms neither storey. The result is reported as measured.
+
+**W2 Windows accounted.** Measured, std set: rosetta_dx_shell's DW-windows lists 9 source windows with "no window" (GF 76, 79; FF 80-83, 89-91).
+- **None is silent.** Each lies under ONE plan A-GLAZ entity that carries `GAP:no_elevation_match`: GF A3, C2; FF C0, CE, F1. 81-83 and 89-91 are three stacked windows on one plan spot each, so one entity explains three. DW-windows did not look for an explaining gap; DW-doors does.
+- **Cause of the mismatch: the marking tool, not the writer.**
+  - `mark_dx_set.js` writes grid positions with `Math.round` to whole mm. The std grid axes sit on half millimetres (208.5, 17591.5).
+  - JS rounds +208.5 → 209 but −208.5 → −208. On mirrored elevations (REAR −X, LEFT −Y) the `@GRIDH` calibration is then 1 mm off the plan's `@GRIDX/@GRIDY`.
+  - Elevation openings land 1 mm off their plan glazing. Example: REAR cluster 9E at 3.549..8.384 vs plan 3.548..8.383. That exceeds `snap_tol` 0.001, so `no_elevation_match` follows.
+  - The L1 writer's glazing is right: 9E's raw coordinates equal the model ±0.
+- **Fix:**
+  - (a) `mark_dx_set.js std` writes grid positions and `@Z` y at 0.001 mm (`toFixed(3)`), no whole-mm rounding. The old-set profile keeps whole mm, so its copies stay byte-identical; its positions are integers.
+  - (b) DW-windows counts a source window "explained" when no window matches it but a `DXF_GAP` with an A-GLAZ handle has its plan box (the entity's bbox) within 10 mm of the source box. A window with neither a match nor such a gap is a FAIL ("vanished without a trace").
+- **Tests:**
+  - W2-acc: the std run has 0 unexplained windows; each explained window names its gap handle.
+  - W2-mut: the window gaps are filtered out of the ops before the check, and the check must FAIL.
+
+**Report:** the std-set verdict by cause after W1 and W2, and rosetta_dx_shell std PASS/FAIL.
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
