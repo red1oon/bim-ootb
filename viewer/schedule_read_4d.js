@@ -50,6 +50,13 @@
   // buildScheduleFromOps() applies to kernel_ops, kept identical so a task's discipline does not
   // change meaning depending on which source the page happened to read.
   function discOfResource(res) {
+    // §CIVIL_TRADES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): a civil crew maps back to its civil
+    // discipline via SEQUENCE_CIVIL (one table). Building resources never start with CIVIL_ → unchanged.
+    if (res && res.indexOf('CIVIL_') === 0) {
+      var SC = (typeof window !== 'undefined' && window.SEQUENCE_CIVIL) || global.SEQUENCE_CIVIL || {};
+      for (var d in SC) if (SC[d] && SC[d].resource === res) return d;
+      return 'CIV';
+    }
     if (res === 'HVAC_TECH' || res === 'PLUMBER' || res === 'ELECTRICIAN') return 'MEP';
     if (res === 'STEEL_ERECTOR' || res === 'CONCRETE_GANG') return 'STR';
     return 'ARC';
@@ -147,7 +154,7 @@
       'SELECT te.task_id, te.guid, em.ifc_class, em.storey FROM task_elements te ' +
       'JOIN tasks t ON t.task_id = te.task_id LEFT JOIN elements_meta em ON em.guid = te.guid ' +
       'WHERE t.schedule_id=?', [sched.id]) || [];
-    var noMeta = 0;
+    var noMeta = 0, _civilSeen = false;
     erows.forEach(function (r) {
       var t = byId[r[0]]; if (!t) return;              // belongs to a summary/undated task
       t.guids.push(r[1]);
@@ -155,7 +162,12 @@
       if (!cls) { noMeta++; }
       else {
         t.classes[cls] = (t.classes[cls] || 0) + 1;
-        var rule = classifyCls(cls);
+        // §CIVIL_PHASE: the civil discipline rule wins for civil elements (one owner, ScheduleAuthor.civilRuleFor);
+        // null for every building element → the class lookup below, unchanged.
+        var SAx = opts.scheduleAuthor || global.ScheduleAuthor;
+        var _cv = (SAx && SAx.civilRuleFor) ? SAx.civilRuleFor(db, r[1], opts.civilRules) : null;
+        if (_cv) _civilSeen = true;
+        var rule = _cv || classifyCls(cls);
         if (rule) {
           if (rule.resource) t.resources[rule.resource] = 1;
           t.disciplines[discOfResource(rule.resource)] = 1;
@@ -193,6 +205,12 @@
     // the reader fall back to the majority phase of the task's own elements. Both are real; the
     // counts of each are logged so the split is visible rather than assumed.
     var fromName = 0, fromElements = 0, unphased = 0;
+    // §CIVIL_PHASE: civil phase names (SEQUENCE_CIVIL) are known phases ONLY when this schedule's elements carry a
+    // civil discipline — a building (even one with an imported task literally named "Drainage — X") is unchanged.
+    if (_civilSeen) {
+      var _SC = opts.civilRules || global.SEQUENCE_CIVIL || {};
+      for (var _cd in _SC) if (_SC[_cd] && _SC[_cd].phase) knownPhase[_SC[_cd].phase] = true;
+    }
     function identify(t) {
       var i = t.name.indexOf(' — ');
       if (i > 0) {
@@ -278,7 +296,79 @@
     return out;
   }
 
-  var API = { phaseOrder: phaseOrder, readTasks: readTasks, discOfResource: discOfResource, dayNum: dayNum };
+  // ── windowForGuid(db, guid, opts) ───────────────────────────────────────────────────────────
+  // S7 §S7-DO item 1 — the ONLY new engine surface the "when does this get built, on the thing
+  // itself" stage needs. One element's persisted construction window, off the SAME `tasks` ⋈
+  // `task_elements` this file already reads for readTasks — never a second reader, never a
+  // recompute. opts: { scheduleAuthor } — the same override hook readTasks exposes, so a witness
+  // can inject a stub without touching global state.
+  //
+  // Returns { taskId, name, startDate, finishDate, resource, totalFloat, isCritical } or null.
+  // Every field is copied straight off the ONE `tasks` row `task_elements` points the guid at —
+  // nothing here is a join RESULT that got computed, only a row that got LOOKED UP. That is the
+  // §3 "read the twin, don't recompute" doctrine this whole file exists to keep, and the reason
+  // this is not a second copy of `time_machine.js:9106 window.tmJumpToElement(guid)` — that scans
+  // `_ops` and needs Time Machine active + `_ops` loaded; this needs neither, it is a plain SQL read.
+  //
+  // MULTI-TASK GUID: `task_elements`' primary key is (task_id, guid), not guid alone — the schema
+  // permits one guid under more than one task. Checked 2026-09-13 against both real schedules that
+  // exist (Hospital_silent.db, 63,415 task_elements rows; HHS_Office_Federated_silent.db, 6,880
+  // rows): `SELECT guid, COUNT(DISTINCT task_id) ... GROUP BY guid` tops out at 1 in both — it does
+  // not happen today. Because the hover line / #info-4d block this feeds can only render ONE
+  // window, a tie-break is still picked so the function has a defined answer if that ever changes:
+  // earliest `schedule_start`, then `task_id` ascending — "the first real work this element is part
+  // of" — never an arbitrary SQLite row-order pick. Logged via §4D_ON_ELEMENT_MULTI (not silent) so
+  // a future occurrence is visible instead of quietly always resolving the same way for the wrong
+  // reason.
+  function windowForGuid(db, guid, opts) {
+    opts = opts || {};
+    if (!db || !guid) return null;
+    var SA = opts.scheduleAuthor || global.ScheduleAuthor;
+    if (!SA || !SA.activeSchedule) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=no_active_schedule');
+      return null;
+    }
+    var sched = null;
+    try { sched = SA.activeSchedule(db); } catch (e) { sched = null; }
+    if (!sched || !sched.id) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=no_active_schedule');
+      return null;
+    }
+
+    // Scoped to the ACTIVE schedule's own tasks only (t.schedule_id=?), same as readTasks — a
+    // task_elements row left over from a stale/non-active schedule_id must not leak through and
+    // must read as "not in a task" from the active schedule's point of view.
+    var rows = execRows(db,
+      'SELECT t.task_id, t.name, t.schedule_start, t.schedule_finish, t.resource, t.total_float, t.is_critical ' +
+      'FROM task_elements te JOIN tasks t ON t.task_id = te.task_id ' +
+      'WHERE te.guid=? AND t.schedule_id=? ' +
+      'ORDER BY t.schedule_start ASC, t.task_id ASC', [guid, sched.id]);
+    if (!rows || !rows.length) {
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=guid_not_in_task');
+      return null;
+    }
+    if (rows.length > 1) {
+      console.log('§4D_ON_ELEMENT_MULTI guid=' + guid + ' count=' + rows.length + ' picked=' + rows[0][0]);
+    }
+    var r = rows[0];
+    if (!r[2] || !r[3]) {            // §MI-FLOW blank-start: a real row, just not dated yet
+      console.log('§4D_ON_ELEMENT_GATE guid=' + guid + ' reason=undated task=' + r[0]);
+      return null;
+    }
+    var win = {
+      taskId: r[0], name: r[1] || r[0],
+      startDate: String(r[2]).slice(0, 10), finishDate: String(r[3]).slice(0, 10),
+      resource: r[4], totalFloat: r[5], isCritical: r[6]
+    };
+    console.log('§4D_ON_ELEMENT guid=' + guid + ' task=' + win.taskId + ' start=' + win.startDate +
+      ' finish=' + win.finishDate + ' resource=' + win.resource + ' critical=' + win.isCritical);
+    return win;
+  }
+
+  var API = {
+    phaseOrder: phaseOrder, readTasks: readTasks, discOfResource: discOfResource, dayNum: dayNum,
+    windowForGuid: windowForGuid
+  };
   if (typeof window !== 'undefined') window.ScheduleRead4D = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleRead4D = API;

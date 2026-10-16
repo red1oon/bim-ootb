@@ -30,6 +30,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 const RULES_PATH = path.join(__dirname, '..', 'rates', 'sequence_rules.json');
 const rulesJson = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8'));
 const SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
+const DOOR_PHASE = SEQUENCE_RULES.IfcDoor.phase;   // derived from the shipped rules (was a literal 'Architecture' before the phase split)
 
 const HIERARCHY_PATH = path.join(__dirname, '..', 'rates', 'ifc_schema_hierarchy.json');
 const hierarchyJson = JSON.parse(fs.readFileSync(HIERARCHY_PATH, 'utf8'));
@@ -73,7 +74,7 @@ const PRICED = [
 
   assert(r1.names.indexOf('MEP Rough-in') >= 0, 'G-K IfcTank (tier 2, via IfcFlowStorageDevice) resolves to phase "MEP Rough-in", not Unsequenced');
   assert(r1.tasks.indexOf('PLUMBER') >= 0, 'G-K IfcTank resolves resource PLUMBER (inherited), not GENERAL');
-  assert(r1.names.indexOf('Architecture') >= 0, 'G-L IfcDoorType (tier 1 substring, no own key) resolves to phase "Architecture" via IfcDoor');
+  assert(r1.names.indexOf(DOOR_PHASE) >= 0, 'G-L IfcDoorType (tier 1 substring, no own key) resolves to phase "' + DOOR_PHASE + '" via IfcDoor');
   assert(r1.tasks.indexOf('CARPENTER') >= 0, 'G-L IfcDoorType resolves resource CARPENTER (via IfcDoor), not GENERAL');
   assert(r1.names.indexOf('Unsequenced') >= 0, 'G-M IfcActor (genuine tier 3 — no own match, no classified ancestor) still lands in Unsequenced');
 
@@ -81,7 +82,7 @@ const PRICED = [
   // both filter `WHERE Name<>'Unsequenced'` — confirm that query still excludes exactly the right row
   // and nothing else, on the SAME data this witness just folded.
   const filtered = edb1.exec("SELECT Name FROM C_ProjectPhase WHERE C_Project_ID=" + r1.pid + " AND Name<>'Unsequenced'")[0].values.map(r => r[0]);
-  assert(filtered.indexOf('Unsequenced') === -1 && filtered.indexOf('MEP Rough-in') >= 0 && filtered.indexOf('Architecture') >= 0,
+  assert(filtered.indexOf('Unsequenced') === -1 && filtered.indexOf('MEP Rough-in') >= 0 && filtered.indexOf(DOOR_PHASE) >= 0,
     'G-N dashboard filter (Name<>\'Unsequenced\') still excludes the true-unclassified bucket, keeps the real phases');
 
   // ── WITHOUT hierarchy — existing callers (e.g. bake_gw_hospital_seed.js) that haven't been updated
@@ -94,7 +95,7 @@ const PRICED = [
   const r2 = phasesOf(edb2, 'ExactLookupP2NoHier');
   console.log('§P2_NO_HIERARCHY phases=' + r2.names.join(','));
   assert(r2.names.indexOf('Unsequenced') >= 0, 'G-O without hierarchy, IfcTank still falls to Unsequenced (tier 2 simply never fires — degrade-safe)');
-  assert(r2.names.indexOf('Architecture') >= 0, 'G-O without hierarchy, IfcDoorType STILL resolves via tier 1 substring (unaffected by hierarchy presence)');
+  assert(r2.names.indexOf(DOOR_PHASE) >= 0, 'G-O without hierarchy, IfcDoorType STILL resolves via tier 1 substring (unaffected by hierarchy presence)');
 
   console.log('\n§EXACT_LOOKUP_P2_SUMMARY pass=' + pass + ' fail=' + fail);
   process.exit(fail ? 1 : 0);

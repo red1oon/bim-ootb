@@ -21,6 +21,314 @@ function setupStreaming(A) {
 
   // drawBuildingBoxes() retired — replaced by per-element _drawBboxPlaceholders()
   A.drawBuildingBoxes = function() {};
+  var _idx16Saved = 0, _idx16Geoms = 0;
+
+  // ══ §MEP_SMOOTH_NORMALS (2026-08-30, user: "we know that may ducts, dome, are not fully rounded"
+  // … "it must not impact non curve intending surfaces") ═══════════════════════════════════════
+  // MEASURED FIRST (§SHADE_PROBE, Clinic, 448 real streamed geometries): every class ships hard
+  // per-face normals — weldRatio 0.107-0.29 and splitNormal 96-100% — so `flatShading: false` is
+  // silently overridden by the data, because with no shared vertices there is nothing to average.
+  // The decisive number is distinctNormals: IfcFlowFitting 114.3, IfcFlowTerminal 128.6,
+  // IfcFlowController 189.0 — richly tessellated shapes whose roundness is being thrown away by
+  // flat shading, recoverable with ZERO new triangles. IfcFlowSegment is 10.3 over 26 triangles: a
+  // genuine 10-sided prism, so its SHADING improves here but its silhouette cannot, and straight
+  // ducts will gain less than fittings do. Every box class reports distinctNormals = 7, which is
+  // what makes the gate below safe by construction rather than by tuning.
+  //
+  // TWO GATES, because a crease angle alone is not enough: an 8-sided duct's facets are 45 deg
+  // apart, so any threshold able to smooth it would also round a 45 deg roof ridge or chamfer.
+  //   1. CLASS — only curve-intending IFC classes are eligible, ever. A wall is never a candidate
+  //      regardless of its geometry, which is the user's constraint met by construction.
+  //   2. CREASE — inside those classes, a vertex keeps its own face normal when the smoothed result
+  //      would swing more than CREASE_DEG away, so duct flanges and end caps stay crisp.
+  //
+  // IN PLACE, BY DESIGN — NO WELD, NO RE-INDEX. Merged meshes carry many elements and `ranges`
+  // addresses them by idxStart/idxCount; picking, per-element hide, the BVH and §TRIPLANAR's own
+  // vTriWorldNormal all read that layout. Rewriting normal VALUES touches none of it. Welding would
+  // renumber vertices and break all four, which is the "no side effects" line the user drew.
+  var MEP_CURVE_CLASSES = {
+    IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1, IfcFlowController: 1,
+    IfcFlowMovingDevice: 1, IfcFlowStorageDevice: 1, IfcValve: 1,
+    IfcPipeSegment: 1, IfcPipeFitting: 1, IfcDuctSegment: 1, IfcDuctFitting: 1
+  };
+  var CREASE_DEG = 55;   // above an 8-sided prism's 45 deg facet step, below a 90 deg box corner
+  // §MEP_SMOOTH_MEASURED_GATE (2026-08-30, user: "The rounding shading is still not fully working.
+  // Many cylindrical type candidates can be smoothly curved."). A class list can only ever name the
+  // shapes someone thought of — MEASURED on the user's Hospital bake it reached just 96 geometries,
+  // and round columns, domes, tanks and curtain-wall mullions are all cylindrical yet none are
+  // IfcFlow*. The gate is now THE SHAPE ITSELF, using the separation §SHADE_PROBE already measured:
+  // curve-intending geometry carries 36-189 distinct facet directions (IfcFlowController 189.0,
+  // IfcFlowTerminal 128.6, IfcFlowFitting 114.3, IfcColumn 36.3) while EVERY box-like class measured
+  // exactly 7 (IfcWallStandardCase, IfcPlate, IfcMember, IfcDoor). 16 sits in the empty middle of
+  // that gap, so "must not impact non curve intending surfaces" holds by measurement, not by a name
+  // I had to guess. The class list stays as an OR: a 10-sided duct (IfcFlowSegment, 10.3) is
+  // genuinely curve-intending and would fail a pure-shape test.
+  var CURVE_MIN_DISTINCT = 16;
+  // §MEP_SMOOTH_PERF (2026-08-30) — MEASURED 18,718 ms on Hospital (14,075 spans, 25.2M vertices),
+  // which is 18.7 s added to every Alt+S and every bake stage. Unacceptable next to a bake the user
+  // already called slow. Two costs, both cut here rather than accepted:
+  //   1. gate sampling — 1500 samples per span existed to count distinct facet directions, but the
+  //      decision is only "is this nearer 7 or nearer 16+". 192 samples settle that; the early-out
+  //      at >64 distinct usually stops far sooner.
+  //   2. the position map — see _smoothKey below.
+  var DISTINCT_SAMPLE_CAP = 192;
+  function _distinctNormals(nor, idx, start, count) {
+    var seen = {}, n = 0, step = Math.max(1, Math.floor(count / DISTINCT_SAMPLE_CAP)), i, vi, k;
+    for (i = start; i < start + count; i += step) {
+      vi = idx ? idx.getX(i) : i;
+      k = Math.round(nor.getX(vi) * 8) + ',' + Math.round(nor.getY(vi) * 8) + ',' + Math.round(nor.getZ(vi) * 8);
+      if (!seen[k]) { seen[k] = 1; if (++n > 64) return n; }   // early out: well past the threshold
+    }
+    return n;
+  }
+  A.mepSmoothNormals = function() {
+    if (!A.scene) return null;
+    var t0 = performance.now(), cosCrease = Math.cos(CREASE_DEG * Math.PI / 180);
+    var geomsTouched = 0, rangesTouched = 0, vertsSmoothed = 0, vertsKeptHard = 0, skippedNoNormal = 0;
+    var seen = new Set();
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh) || !o.geometry) return;
+      var g = o.geometry;
+      if (seen.has(g.uuid)) return;
+      seen.add(g.uuid);
+      var pos = g.attributes && g.attributes.position, nor = g.attributes && g.attributes.normal;
+      if (!pos || !nor) { skippedNoNormal++; return; }
+      var idx = g.index; if (!idx) return;
+      // Which index spans are eligible? A merged mesh mixes elements, so the gate is applied per
+      // RANGE (which records its own ifcClass), never per mesh — a duct sharing a merged bucket
+      // with a wall must not drag the wall in with it.
+      var spans = [];
+      // Ranges live in A._mergedMeta keyed by mesh.id (:1924), NOT on userData — checked, because
+      // reading the wrong place would leave every merged mesh with no eligible span and the gate
+      // would silently do nothing on exactly the buildings that need it.
+      var rngs = A._mergedMeta && A._mergedMeta[o.id];
+      if (rngs && rngs.length) {
+        // Judged per RANGE, never per mesh: a merged bucket mixes elements, and a mesh full of boxes
+        // would score a high distinct-normal count in aggregate while every individual box is 7.
+        for (var ri = 0; ri < rngs.length; ri++) {
+          var rg = rngs[ri];
+          if (MEP_CURVE_CLASSES[rg.ifcClass] ||
+              _distinctNormals(nor, idx, rg.idxStart, rg.idxCount) >= CURVE_MIN_DISTINCT) {
+            spans.push([rg.idxStart, rg.idxCount]);
+          }
+        }
+      } else if (o.isBatchedMesh) {
+        // §MEP_SMOOTH_BATCHED (2026-08-30 — the gap the user's Hospital bake exposed). Hospital
+        // reports §CONTRACT_CHECK batch=38169 instanced=25013 merged=0: NO merged meshes at all, so
+        // the ranges branch above never fires and §MEP_SMOOTH_NORMALS did not even log there. The
+        // fix is not to relax the single-element rule but to satisfy it: a BatchedMesh holds each
+        // element's geometry as its OWN entry, so `_geometryInfo[gid]` (vertexStart/vertexCount +
+        // index start/count) IS a single element's span inside the shared buffer. Judging one entry
+        // is judging one element, exactly the safety condition G-MEP-2 enforces.
+        // Private three.js field, so it is feature-detected: if the shape is not what r184/185
+        // provides, the mesh is skipped rather than guessed at.
+        var gi = o._geometryInfo;
+        if (gi && gi.length) {
+          for (var bi = 0; bi < gi.length; bi++) {
+            var e = gi[bi];
+            var iStart = (e.start != null) ? e.start : e.indexStart;
+            var iCount = (e.count != null) ? e.count : e.indexCount;
+            if (iStart == null || !(iCount > 0)) continue;
+            if (_distinctNormals(nor, idx, iStart, iCount) >= CURVE_MIN_DISTINCT) spans.push([iStart, iCount]);
+          }
+        } else if (!A._bmShapeWarned) {
+          A._bmShapeWarned = true;
+          console.warn('§MEP_SMOOTH_BATCHED INCONCLUSIVE — BatchedMesh exposes no _geometryInfo; ' +
+            'batched elements skipped rather than judged as one mesh');
+        }
+      } else if (o.isInstancedMesh) {
+        // An InstancedMesh's geometry IS one element's shape — that is what instancing means, one
+        // geometry repeated N times. So judging it whole IS judging a single element, and smoothing
+        // it correctly affects every instance of that same shape. A wall instanced 500 times still
+        // measures 7 distinct facet directions and fails the threshold, so the box case is safe.
+        var icls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        if (MEP_CURVE_CLASSES[icls] || _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT) {
+          spans.push([0, idx.count]);
+        }
+      } else {
+        // §MEP_SMOOTH_GATE_SCOPE (2026-08-30 — caught by G-MEP-2, which failed with 5,233,835
+        // non-curve vertices changed; the previous revision of this branch judged ANY rangeless mesh
+        // whole). A BATCHED mesh holds hundreds of elements in one geometry: hundreds of boxes score
+        // a high distinct-normal count IN AGGREGATE while every individual box is 7, so the shape
+        // test caught the lot and smoothed real walls. That is exactly the regression the user's
+        // "must not impact non curve intending surfaces" forbids.
+        //
+        // The shape test is therefore only allowed where a single ELEMENT is being judged: a mesh
+        // carrying its own ifc_class is one element. A multi-element mesh with no ranges cannot be
+        // resolved into elements here, so it falls back to the CLASS gate alone — narrower, but
+        // never wrong. Coverage lost this way is a reason to expose ranges for batched meshes, not
+        // a reason to smooth a wall.
+        var cls = (o.userData && (o.userData.ifc_class || o.userData.ifcClass)) || '';
+        var singleElement = !!cls;
+        if (MEP_CURVE_CLASSES[cls] ||
+            (singleElement && _distinctNormals(nor, idx, 0, idx.count) >= CURVE_MIN_DISTINCT)) {
+          spans.push([0, idx.count]);
+        }
+      }
+      if (!spans.length) return;
+      var acc = new Map(), k, i, a, b, c;
+      // §MEP_SMOOTH_PERF — was a 3-part STRING key built per vertex: on Hospital that is ~75M string
+      // concatenations and the bulk of the 18.7 s. Now a single number. Positions are quantised to
+      // 0.1 mm exactly as before (1e4), then folded into one integer; the multipliers are the
+      // standard large primes used for spatial hashing, and the value is kept inside the safe
+      // integer range so it can key a Map without allocating.
+      // A hash CAN collide, unlike the string it replaces. The consequence is bounded and local:
+      // two genuinely separate vertices would average their normals, shading one vertex slightly
+      // wrong on one element — it cannot move geometry, cross the class gate, or affect a
+      // non-curve surface. G-MEP-2 still measures the real output either way.
+      function key(i2) {
+        var qx = Math.round(pos.getX(i2) * 1e4);
+        var qy = Math.round(pos.getY(i2) * 1e4);
+        var qz = Math.round(pos.getZ(i2) * 1e4);
+        return ((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) >>> 0;
+      }
+      // pass 1 — accumulate area-weighted face normals per shared POSITION
+      for (var s2 = 0; s2 < spans.length; s2++) {
+        for (i = spans[s2][0]; i + 2 < spans[s2][0] + spans[s2][1]; i += 3) {
+          a = idx.getX(i); b = idx.getX(i + 1); c = idx.getX(i + 2);
+          var ax = pos.getX(a), ay = pos.getY(a), az = pos.getZ(a);
+          var e1x = pos.getX(b) - ax, e1y = pos.getY(b) - ay, e1z = pos.getZ(b) - az;
+          var e2x = pos.getX(c) - ax, e2y = pos.getY(c) - ay, e2z = pos.getZ(c) - az;
+          var nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+          var tri = [a, b, c];
+          for (var t2 = 0; t2 < 3; t2++) {
+            k = key(tri[t2]);
+            var e = acc.get(k);
+            if (!e) { e = [0, 0, 0]; acc.set(k, e); }
+            e[0] += nx; e[1] += ny; e[2] += nz;   // unnormalised = area weighted, the standard rule
+          }
+        }
+      }
+      // pass 2 — write back, crease-limited
+      var wrote = 0;
+      for (var s3 = 0; s3 < spans.length; s3++) {
+        for (i = spans[s3][0]; i < spans[s3][0] + spans[s3][1]; i++) {
+          var vi = idx.getX(i);
+          var e2 = acc.get(key(vi)); if (!e2) continue;
+          var L = Math.sqrt(e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]);
+          if (!(L > 1e-12)) continue;
+          var sx = e2[0] / L, sy = e2[1] / L, sz = e2[2] / L;
+          var ox = nor.getX(vi), oy = nor.getY(vi), oz = nor.getZ(vi);
+          if (sx * ox + sy * oy + sz * oz < cosCrease) { vertsKeptHard++; continue; }  // hard edge
+          nor.setXYZ(vi, sx, sy, sz); wrote++;
+        }
+      }
+      if (wrote) {
+        vertsSmoothed += wrote; rangesTouched += spans.length; geomsTouched++;
+        nor.needsUpdate = true;
+        // §NORMAL_REPAIR_GPU_UPLOAD (same file, ~:1004) already learned that needsUpdate alone does
+        // not always reach the GPU for a cached geometry — drop the renderer's cached properties so
+        // buffers rebind, exactly as that fix does.
+        if (A.renderer && A.renderer.properties) A.renderer.properties.remove(g);
+      }
+    });
+    var out = { geomsTouched: geomsTouched, rangesTouched: rangesTouched, vertsSmoothed: vertsSmoothed,
+                vertsKeptHard: vertsKeptHard, ms: +(performance.now() - t0).toFixed(1) };
+    console.log('§MEP_SMOOTH_NORMALS geoms=' + geomsTouched + ' ranges=' + rangesTouched +
+      ' vertsSmoothed=' + vertsSmoothed + ' vertsKeptHard=' + vertsKeptHard +
+      ' creaseDeg=' + CREASE_DEG + ' minDistinctN=' + CURVE_MIN_DISTINCT + ' ms=' + out.ms +
+      (geomsTouched === 0 ? '  INCONCLUSIVE — no curve-class range was found; nothing was judged' : '') +
+      '');
+    // §DUCT_SILHOUETTE reports alongside, because the two passes are the two halves of one answer
+    // and reading them apart is what made "roundness works on lamps but not on ducts" hard to
+    // diagnose: this line says how many vertices got a smoother NORMAL, the next says how many
+    // elements got a rounder OUTLINE. A pass that changed nothing prints NO-OP, not silence.
+    if (window.SilhouetteRefine) { try { window.SilhouetteRefine.report(); } catch (e) {} }
+    // §IDX16 reports SEPARATELY (2026-08-30): it used to ride the line above, so on Hospital —
+    // where this pass did not fire at all — its saving was invisible rather than absent.
+    console.log('§IDX16 geoms=' + _idx16Geoms + ' saved=' + (_idx16Saved / 1048576).toFixed(1) + 'MB' +
+      (_idx16Geoms === 0 ? ' (merged path unused on this building — the per-element site in scene.js carries it)' : ''));
+    return out;
+  };   // §IDX16 tally, reported by A.mepSmoothNormals' log line
+
+  // Implementing FLY_TOUR_DLOD_SCALE.md §17.17.4 — Witness: W-OCC3-LTU.
+  // CPE_4D_PERF_MEM_FINDINGS.md §R6 measured the blocker: the 2026-08-10 re-extracted
+  // LTU_AHouse_meta.db's elements_meta has NO `building` column (PRAGMA-verified: id, guid,
+  // discipline, ifc_class, element_name, element_type, storey, material_name, material_rgba), so
+  // every `WHERE m.building = ?` filter throws → §HELPERS_QUERY_ERR no such column: m.building →
+  // §CENTRES_RESULT rows=0 → startStreaming() finds no building and returns silently. Geo downloads,
+  // ZERO meshes ever stream. R6 named two fixes; this is the code-side one (a re-extract is bigger,
+  // riskier, and out of scope — and this repo bans committing DB binaries outright regardless).
+  //
+  // Scope is deliberately narrow: probe the column ONCE per loaded DB; when it is ABSENT treat the
+  // DB as containing exactly ONE building and drop the predicate. A DB that HAS the column takes the
+  // identical path it takes today — the probe is the only added work, and that equivalence is the
+  // witness. The label is EXTRACTED from the DB URL basename (a real source), never invented.
+  A._buildingCol = undefined;   // true = column present (normal), false = single-building fallback
+  A._hasBuildingCol = function(db) {
+    if (A._buildingCol !== undefined) return A._buildingCol;
+    if (!db) return true;       // unknown yet — assume normal, re-probed once the DB is real
+    try {
+      var res = db.exec("PRAGMA table_info(elements_meta)");
+      var cols = (res && res.length) ? res[0].values.map(function(r) { return r[1]; }) : [];
+      A._buildingCol = cols.indexOf('building') !== -1;
+      if (!A._buildingCol) {
+        console.log('§SINGLE_BLD_FALLBACK reason=no-building-column cols=' + JSON.stringify(cols) +
+          ' name=' + A._singleBuildingName());
+      }
+    } catch (e) {
+      console.log('§SINGLE_BLD_PROBE_ERR ' + (e && e.message));
+      A._buildingCol = true;    // probe failed ⇒ do not change behaviour
+    }
+    return A._buildingCol;
+  };
+  // Derive the one building's label from the DB URL basename — LTU_AHouse_meta.db → LTU_AHouse.
+  A._singleBuildingName = function() {
+    var u = A.DB_URL || 'building.db';
+    var base = u.split('?')[0].split('/').pop() || 'building.db';
+    return base.replace(/\.db$/i, '').replace(/_(meta|geo|extracted)$/i, '') || 'building';
+  };
+
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // `elements_meta.material_name` is the element's own authored IFC material. It is NOT universal:
+  // some older/partial DBs have no such column at all (measured: every `*_library.db` and
+  // `*_geo.db`, plus deploy/buildings/LTUAHouse_extracted.db, which has no elements_meta table).
+  // Selecting a missing column throws and would kill streaming outright, so probe ONCE per DB and
+  // substitute a literal NULL when absent — identical shape to A._hasBuildingCol (§17.17.4).
+  A._matNameCol = undefined;
+  A._hasMatNameCol = function(db) {
+    if (A._matNameCol !== undefined) return A._matNameCol;
+    if (!db) return false;              // unknown yet — assume absent, i.e. today's behaviour
+    try {
+      var res = db.exec("PRAGMA table_info(elements_meta)");
+      var cols = (res && res.length) ? res[0].values.map(function(r) { return r[1]; }) : [];
+      A._matNameCol = cols.indexOf('material_name') !== -1;
+      console.log('§MATNAME_COL present=' + A._matNameCol);
+    } catch (e) {
+      console.log('§MATNAME_COL_PROBE_ERR ' + (e && e.message));
+      A._matNameCol = false;            // probe failed ⇒ do not change behaviour
+    }
+    return A._matNameCol;
+  };
+
+  // §FB (prompts/CIVIL_HIGHWAY_JELAPANG.md §FB SPEC): ONE owner for "which building does a whole-scene
+  // reader (Find tree/search/isolate) scope to". A MERGED scene (>1 building, not City) is one model →
+  // '' = all buildings. Every other scene (all hub DBs are 1 building; City keeps per-building) → the
+  // active building, exactly as before.
+  var _sceneScopeLast = null;
+  A.sceneScopeBuilding = function() {
+    var n = Object.keys(A.buildingCentres || {}).length;
+    var merged = !A.CITY_URL && n > 1;
+    var out = merged ? '' : (A.activeBuilding || '');
+    var key = merged ? 'all:' + n : 'one:' + out;
+    if (key !== _sceneScopeLast) {
+      _sceneScopeLast = key;
+      console.log(merged ? '§SCENE_SCOPE all buildings=' + n : '§SCENE_SCOPE one bld=' + out);
+    }
+    return out;
+  };
+
+  // §MESH_SLIM: ONE owner for "is this a civil model" on the viewer side — any element discipline in rates.js
+  // SEQUENCE_CIVIL. Cached per A.db object. Fleet DBs: 0 civil rows → false.
+  A.isCivilModel = function() {
+    if (!A.db || !window.SEQUENCE_CIVIL) return false;
+    if (A._civilModelDb === A.db) return A._civilModel;
+    var n = 0;
+    try { var r = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline IN ('" + Object.keys(window.SEQUENCE_CIVIL).join("','") + "')"); n = (r.length && r[0].values[0][0]) || 0; } catch (e) {}
+    A._civilModelDb = A.db; A._civilModel = n > 0;
+    console.log('§CIVIL_MODEL civilRows=' + n + ' → ' + A._civilModel);
+    return A._civilModel;
+  };
 
   A.startStreaming = function() {
     let nearest = null, nearestDist = Infinity;
@@ -38,6 +346,16 @@ function setupStreaming(A) {
 
   A.streamBuilding = function(nearest) {
     if (A.buildingsRendered.has(nearest)) { console.log('§DS_SKIP_RENDERED bld=' + nearest); return; }
+    // §MERGE_FOLD_TOPUP (CIVIL_HIGHWAY_JELAPANG.md §MERGED_DB): a merge folded new elements into a building that
+    // is ALREADY drawn (scene.js _mergeQueueTopUp). Stream only those guids — never redraw what is on screen.
+    var _topUp = A._mergeTopUp && A._mergeTopUp[nearest];
+    if (_topUp) delete A._mergeTopUp[nearest];
+    var _topUpRows = function(rows) {
+      if (!_topUp) return rows;
+      var kept = rows.filter(function(r) { return _topUp.has(r[0]); });
+      console.log('§MERGE_FOLD_TOPUP bld=' + nearest + ' rows=' + rows.length + ' kept=' + kept.length + ' folded=' + _topUp.size);
+      return kept;
+    };
     if (A.activeBuilding && A.streaming && A.streamIdx < A.streamQueue.length) {
       A.savedStreams[A.activeBuilding] = { queue: A.streamQueue, idx: A.streamIdx };
     }
@@ -66,12 +384,21 @@ function setupStreaming(A) {
             try { await A._rangeDb.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
             catch(e) { A._hasBbox = false; }
           }
-          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
+          // §CPE_MATERIAL_KEY: bbox slots are now ALWAYS emitted (NULL when the columns are absent)
+          // so material_name can live at a FIXED slot 16 — slots 0-15 keep the §BBOX_ROW_SHIFT
+          // 16-slot layout byte-for-byte, and `A._hasBbox ? r[13] : null` below still reads null.
+          var bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
+          if (A._matNameCol === undefined) {
+            try { await A._rangeDb.exec("SELECT material_name FROM elements_meta LIMIT 1"); A._matNameCol = true; }
+            catch(e) { A._matNameCol = false; }
+            console.log('§MATNAME_COL present=' + A._matNameCol + ' path=range');
+          }
+          var matNameCol = A._matNameCol ? ', m.material_name' : ', NULL';
           var result = await A._rangeDb.exec(`
             SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                    t.center_x, t.center_y, t.center_z,
                    t.rotation_x, t.rotation_y, t.rotation_z,
-                   m.storey, m.ifc_class, m.element_name${bboxCols}
+                   m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
             FROM elements_meta m
             JOIN element_instances i ON m.guid = i.guid
             JOIN element_transforms t ON t.guid = m.guid
@@ -79,7 +406,7 @@ function setupStreaming(A) {
               AND i.geometry_hash IS NOT NULL
               AND m.ifc_class != 'IfcOpeningElement'
           `);
-          var rows = (result && result.length > 0) ? result[0].values : [];
+          var rows = _topUpRows((result && result.length > 0) ? result[0].values : []);
           console.log(`§RANGE_STREAM_QUEUE bld=${nearest} elements=${rows.length} ms=${(performance.now() - _sqT0).toFixed(0)}`);
           if (!rows.length) {
             console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
@@ -124,19 +451,25 @@ function setupStreaming(A) {
         try { A.db.exec("SELECT bbox_x FROM element_transforms LIMIT 1"); A._hasBbox = true; }
         catch(e) { A._hasBbox = false; }
       }
-      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : '';
-      const rows = A.dbQuery(`
+      // §CPE_MATERIAL_KEY: always 3 bbox slots (NULL when absent) so material_name is at a FIXED
+      // slot 16 — see the range-path comment above.
+      const bboxCols = A._hasBbox ? ', t.bbox_x, t.bbox_y, t.bbox_z' : ', NULL, NULL, NULL';
+      // §17.17.4 (W-OCC3-LTU): on a DB with no `building` column the predicate becomes 1=1 and the
+      // bind list drops with it — every row IS this building by definition of the fallback.
+      const _bldOk = A._hasBuildingCol(A.db);
+      const matNameCol = A._hasMatNameCol(A.db) ? ', m.material_name' : ', NULL';
+      const rows = _topUpRows(A.dbQuery(`
         SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
                t.center_x, t.center_y, t.center_z,
                t.rotation_x, t.rotation_y, t.rotation_z,
-               m.storey, m.ifc_class, m.element_name${bboxCols}
+               m.storey, m.ifc_class, m.element_name${bboxCols}${matNameCol}
         FROM elements_meta m
         JOIN element_instances i ON m.guid = i.guid
         JOIN element_transforms t ON t.guid = m.guid
-        WHERE m.building = ?
+        WHERE ${_bldOk ? 'm.building = ?' : '1=1'}
           AND i.geometry_hash IS NOT NULL
           AND m.ifc_class != 'IfcOpeningElement'
-      `, [nearest]);
+      `, _bldOk ? [nearest] : []));
       if (!rows.length) {
         console.log(`[S192] §DS_EMPTY bld=${nearest} — no streamable elements`);
         return;
@@ -294,7 +627,872 @@ function setupStreaming(A) {
     return '';
   };
 
-  A._getMaterial = function(rgbaStr, ifcClass, matVariant) {
+  // §MEP_DISC_TINT (2026-08-14): family-name classifier for the 3 IFC2x3 generic-MEP classes
+  // (see DISC_TINT_CLASSES below). Needed because `elements_meta.discipline` is flat "MEP" for
+  // ALL of HHS_Office_Federated's 3390 unassigned elements (confirmed by direct DB query) — no
+  // FP/ACMV/PLB/ELEC breakdown at the discipline-column level, so a discipline-only tint would
+  // just swap flat blue for flat green. The real trade IS recoverable from the authored Revit
+  // family name (e.g. "M_Sprinkler...", "M_Supply Diffuser...", "Rectangular Duct"), which is
+  // real BIM-authored data, not invented. Returns { code, r, g, b } sourced from EITHER an
+  // existing A.DISC_COLORS hex or an existing STD_MAT preset already defined in this file/config
+  // — no new colour values — or null if the name doesn't match a known family pattern (falls
+  // back to the flat discipline tint below). `code` doubles as a bucket-key discriminator
+  // (§S260's batch/merge buckets group by storey|disc|rgba|matVariant, none of which vary
+  // between e.g. a duct and a pipe sharing the same NULL rgba + "MEP" discipline — without
+  // `code` in the key, one shared BatchedMesh material would wrongly paint both the same colour).
+  A._mepNameHint = function(name) {
+    if (!name) return null;
+    if (/duct/i.test(name)) return { code: 'DUCT', r: 0.55, g: 0.58, b: 0.55 };  // STD_MAT.IfcDuct — galvanized sheet-metal grey
+    if (/sprinkler|groove|coupling|victaulic/i.test(name)) { var _fp = _hexToRgb('FP', 0xcc8844); if (/sprinkler/i.test(name)) _fp.sprinkler = true; return _fp; } // DISC_COLORS.FP — brick/orange. Grooved/Victaulic couplings are the standard FP sprinkler-pipe joint (same trade as sprinkler heads) — were falling through to the flat blue-grey IfcFlowFitting default (user report 2026-08-15: "the nice red groove tooling joints are replaced as blue")
+    if (/diffuser|grille|grill|exhaust/i.test(name)) return _hexToRgb('ACMV', 0xcc4444); // DISC_COLORS.ACMV — red, air terminals
+    if (/dwv|sanitary/i.test(name)) return _hexToRgb('SAN', 0xaa44aa);           // DISC_COLORS.SAN — magenta
+    if (/pipe/i.test(name)) return _hexToRgb('PLB', 0x8844cc);                  // DISC_COLORS.PLB — purple
+    if (/light|sconce|pendant|lamp/i.test(name)) return _hexToRgb('ELEC', 0xcccc44); // DISC_COLORS.ELEC — yellow
+    return null;
+  };
+  function _hexToRgb(code, hex) {
+    return { code: code, r: ((hex >> 16) & 255) / 255, g: ((hex >> 8) & 255) / 255, b: (hex & 255) / 255 };
+  }
+
+  // ── §MEP_COLOR_SURVIVES_PHOTOREAL (PHOTOREAL_STILL_RENDER.md, 2026-09-02) ────────────────────
+  // Implementing PHOTOREAL_STILL_RENDER.md §MEP_COLOR_SURVIVES_PHOTOREAL — Witness: W-MEP-COLOR-PHOTOREAL.
+  //
+  // ⚠ THE PALETTE IS AN AUTHORED CHOICE, NOT A PUBLISHED STANDARD. There is no MEP colour convention
+  // anywhere in the model data — no IfcSystem/`system` column exists on any shipped building DB, and
+  // the colour columns that do exist are either one undifferentiated default or the extractor's own
+  // `≈`-prefixed approximations. EXTRACTED here: `elements_meta.discipline`, `material_rgba`,
+  // `material_name`, `element_name`. AUTHORED here: the discipline→hue assignment, which reuses
+  // A.DISC_COLORS (config.js:43-49) VERBATIM — the same table the HUD bars, bbox placeholders,
+  // city.js, measure.js and the §SUNGLASS band already paint with. NO NEW COLOUR VALUE IS INTRODUCED.
+  //
+  // THE MEASURED DEFECT (spec §MEP_COLOR_SURVIVES_PHOTOREAL, sat_census.log): §MEP_DISC_TINT's gate
+  // `!rgbaStr` asks "does the element have a colour", but on 4 of the 5 shipped buildings 100% of MEP
+  // elements DO carry one — an ACHROMATIC off-white default: Hospital `0.920,0.900,0.850` x 40,563
+  // (material_name NULL), Clinic the same value x 11,712 (`≈ Off-White`), Terminal white/`Silver`.
+  // The tint therefore fired only on HHS. _TRI_METAL then multiplies over that off-white
+  // (`diffuseColor.rgb *= triContrasted` — the shader already tints, it does not replace) and the
+  // frame reads exactly as the user described it: greyish metallic. Its second gate,
+  // DISC_TINT_CLASSES, is the 3 IFC2x3 generic classes, and 0 of Hospital's 41,987 MEP elements are
+  // in it (Hospital exports IFC4-style IfcPipeSegment/IfcDuctFitting/...).
+  //
+  // THE RULE — hue comes from the first source that HAS one; the element always keeps its own value:
+  //   1a. a real authored IFC material name (not `≈`-prefixed)  -> UNTOUCHED, byte-identical
+  //   1b. the element's own rgba already carries a hue (sat>=T) -> UNTOUCHED, byte-identical
+  //       (this is what preserves the user's fire-red lever: Hospital IfcPipeFitting|FP|
+  //        0.843,0.137,0.102 x 1,298, saturation 0.879)
+  //   2.  MEP class, no authored name, colour absent or achromatic -> trade hue+saturation, the
+  //       element's OWN V. Trade colour = _mepNameHint (authored Revit family name, more specific)
+  //       if IT carries a hue, else A.DISC_COLORS[discipline].
+  //   3.  anything else -> unchanged.
+  var MEP_HUE_CLASSES = {
+    // Exactly the two MEP blocks STD_MAT already delimits with its own comments ("MEP: pipes +
+    // ducts", "MEP: terminals + devices") plus the IFC2x3 generic trio DISC_TINT_CLASSES named.
+    // Not a new grouping — the same classes _TRI_METAL/STD_MAT already treat as MEP.
+    IfcFlowSegment: 1, IfcFlowFitting: 1, IfcFlowTerminal: 1, IfcFlowController: 1,
+    IfcFlowMovingDevice: 1, IfcFlowTreatmentDevice: 1, IfcFlowStorageDevice: 1, IfcFlowInstrument: 1,
+    IfcEnergyConversionDevice: 1,
+    IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1,
+    IfcDuct: 1, IfcDuctSegment: 1, IfcDuctFitting: 1,
+    IfcCableCarrier: 1, IfcCableCarrierSegment: 1, IfcCableCarrierFitting: 1,
+    IfcValve: 1, IfcAirTerminal: 1, IfcLightFixture: 1, IfcSanitaryTerminal: 1,
+    IfcFireSuppressionTerminal: 1, IfcElectricAppliance: 1, IfcAlarm: 1, IfcSwitchingDevice: 1,
+    IfcDistributionControlElement: 1, IfcElectricDistributionPoint: 1
+  };
+  A._mepHueClasses = MEP_HUE_CLASSES;   // exposed for witness assertions, read-only
+
+  // T — the achromatic threshold. NOT picked: over the tier-2-eligible population fleet-wide (MEP
+  // classes, no authored material name) the distinct HSV saturations present are
+  // {0.000, 0.033, 0.076, 0.100, 0.588, 0.713, 0.879, 1.000}. The widest EMPTY band is
+  // 0.100 -> 0.588 (width 0.4884); T is its midpoint. Split 53,204 achromatic / 85,934 chromatic,
+  // with ZERO elements within +/-0.1 of T — no element's tier depends on the third decimal.
+  // Re-measured by the witness on every run (gap2.log).
+  A.MEP_HUE_ACHROMATIC_MAX = 0.344;
+
+  // ONE owner for "does this colour carry a hue". HSV saturation, the same (max-min)/max the census
+  // used. Returns null when there is no colour at all — a caller must never read that as 0.
+  A._chromaOf = function(rgbaStr) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1) return null;
+    var p = rgbaStr.split(',').map(Number);
+    if (!(p.length >= 3) || isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) return null;
+    var mx = Math.max(p[0], p[1], p[2]), mn = Math.min(p[0], p[1], p[2]);
+    return mx <= 0 ? 0 : (mx - mn) / mx;
+  };
+  // ONE owner for "is this a real authored IFC material name". The `≈ ` prefix is the EXTRACTOR's own
+  // marker for a synthetic colour approximation — §CPE_MATERIAL_KEY established this test and it is
+  // reused verbatim rather than re-derived (Hospital 6,664/6,664 approx, Terminal 48,428/48,428 real).
+  // §EXPORTER_PLACEHOLDER_NAMES (Z20/Z21, coordinator decision for red1 2026-09-27): names an exporter writes where NO material was
+  // assigned — ONE named list, owned here. 'tomt mönster' = Swedish Revit "empty pattern" (a fill-pattern placeholder, not a material):
+  // MEASURED LTU_AHouse elements_meta — 2,858 rows over 14 classes (IfcWindow, IfcDoor, IfcMember, IfcSlab, IfcPlate, IfcFurnishingElement,
+  // IfcFlowTerminal, ...) with dozens of different rgba values, i.e. the name carries no material identity. Lower-case, trimmed match.
+  A.EXPORTER_PLACEHOLDER_MAT_NAMES = { 'tomt mönster': 'Revit (sv) empty pattern — LTU_AHouse 2,858 rows / 14 classes' };
+  A._isAuthoredMatName = function(matName) {
+    return !!matName && matName.charAt(0) !== '≈' && !A.EXPORTER_PLACEHOLDER_MAT_NAMES[String(matName).trim().toLowerCase()];
+  };
+  // §PLACEHOLDER_COLOUR (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z21 SPEC") — ONE owner for "is this rgba the
+  // exporter's default, i.e. NO colour". Exactly (0.920, 0.900, 0.850) at 3 decimals, alpha absent or 1, and no authored
+  // material name (empty or the extractor's `≈` approximation). Measured: every such row fleet-wide has an empty name.
+  A._isExporterPlaceholder = function(rgbaStr, matName) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1 || A._isAuthoredMatName(matName)) return false;
+    var p = rgbaStr.split(',').map(Number);
+    if (p.length < 3 || Math.round(p[0] * 1000) !== 920 || Math.round(p[1] * 1000) !== 900 || Math.round(p[2] * 1000) !== 850) return false;
+    return p.length < 4 || Math.round(p[3] * 1000) === 1000;
+  };
+  // §PORCELAIN ("### Z20 SPEC") — ONE owner for "is this a glazed sanitary fixture". Fixture classes only; an authored material
+  // name decides alone; else IfcSanitaryTerminal, else the element name's whole-word fixture term (import_worker.js:97's list,
+  // minus the metal/accessory words) with none of the accessory words each measured as a false positive in the census.
+  // Finish from physicallybased.info "Porcelain" (https://api.physicallybased.info/materials): roughness 0, metalness 0, ior 1.5.
+  A.PORCELAIN_PBR = { roughness: 0, metalness: 0, ior: 1.5, src: 'https://api.physicallybased.info/materials#Porcelain' };
+  var PORC_CLASSES = { IfcSanitaryTerminal: 1, IfcFlowTerminal: 1, IfcBuildingElementProxy: 1, IfcFurnishingElement: 1 };
+  var PORC_NAME = /(^|[^a-z0-9])(lavatory|water closet|urinal|sink|basin|toilet|wc|bidet)([^a-z0-9]|$)/i;
+  var PORC_NOT = /faucet|(^|[^a-z])tap([^a-z]|$)|hose|partition|screen|counter|cabinet|vanity|hole|dispenser/i;
+  var PORC_MAT = /porcelain|vitreous china|ceramic/i;
+  A._porcelainKey = function(ifcClass, name, matName) {
+    if (!ifcClass || !PORC_CLASSES[ifcClass]) return '';
+    if (A._isAuthoredMatName(matName)) return PORC_MAT.test(matName) ? 'authored' : '';
+    if (ifcClass === 'IfcSanitaryTerminal') return 'class';
+    return (name && PORC_NAME.test(name) && !PORC_NOT.test(name)) ? 'name' : '';
+  };
+  A._porcelainVariant = function(ifcClass, name, matName) { return A._porcelainKey(ifcClass, name, matName) ? 'porcelain' : ''; };
+  // ### ALTS-ALL FIX 11 (b) (D2): PBR metallic workflow — metalness is near-binary (Filament "Standard parameters": Metallic "Often used
+  // as a binary value (0 or 1)"). Pipes / ducts / structural steel default to metal 0 (painted/coated: the data states no bare metal);
+  // BARE METAL only when the authored material name or the element name says so. Base colours: physicallybased.info v2 materials
+  // (schema 2.2, updated 202609010742), srgb-linear, metalness 1 — used only when the element has no colour of its own.
+  A.METAL_PBR_CLASSES = { IfcPipe: 1, IfcPipeFitting: 1, IfcPipeSegment: 1, IfcFlowSegment: 1, IfcFlowFitting: 1,
+    IfcDuct: 1, IfcDuctFitting: 1, IfcDuctSegment: 1, IfcBeam: 1, IfcMember: 1, IfcPlate: 1 };
+  A.BARE_METAL_PBR = {
+    zinc: { lin: [0.808, 0.844, 0.865], src: 'physicallybased.info Zinc' }, stainless: { lin: [0.669, 0.639, 0.598], src: 'physicallybased.info Stainless Steel' },
+    copper: { lin: [0.932, 0.623, 0.522], src: 'physicallybased.info Copper' }, aluminum: { lin: [0.916, 0.923, 0.924], src: 'physicallybased.info Aluminum' } };
+  A._bareMetalKey = function(ifcClass, name, matName) {
+    if (A._metalPbrOff || !ifcClass || !A.METAL_PBR_CLASSES[ifcClass]) return '';
+    var t = ((A._isAuthoredMatName && A._isAuthoredMatName(matName) ? matName : '') + ' ' + (name || '')).toLowerCase();
+    if (/galvani[sz]|zinc/.test(t)) return 'zinc';
+    if (/stainless/.test(t)) return 'stainless';
+    if (/copper/.test(t)) return 'copper';
+    if (/alumin(i)?um/.test(t)) return 'aluminum';
+    return '';
+  };
+  // the element's presentation variant: §ENTOURAGE first (Alt+S shader), else §PORCELAIN (finish, both views)
+  // §PROXY_NAME_MAT (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md P1, red1 2026-10-01): a colourless proxy takes its material from its
+  // authored Revit family name instead of the STD_MAT teal flag. RAL 7035 = the RAL list's "electrical and instrumentation panels" grey.
+  var PROXY_EQUIP = /wshp|heat pump|panelboard|switchboard|transformer|sensor|switch|receptacle|cctv|camera|ahu|cooling tower|(^|[^a-z])fan([^a-z]|$)|water heater|boiler|chiller/i;
+  var PROXY_STEEL = /stahl|steel|balkon|balcony/i;
+  A.PROXY_NAME_MAT = { equip: { r: 0xCB / 255, g: 0xD0 / 255, b: 0xCC / 255, src: 'RAL 7035 light grey (equipment housings)' },
+    steel: { r: 0.50, g: 0.52, b: 0.55, src: 'STD_MAT.IfcMember steel' } };
+  A._proxyVariant = function(ifcClass, name, matName) {
+    if (ifcClass !== 'IfcBuildingElementProxy' || !name || A._isAuthoredMatName(matName)) return '';
+    return PROXY_EQUIP.test(name) ? 'proxy:equip' : (PROXY_STEEL.test(name) ? 'proxy:steel' : '');
+  };
+  A._elementVariant = function(ifcClass, name, matName) {
+    var bm = A._bareMetalKey(ifcClass, name, matName);
+    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '') || A._proxyVariant(ifcClass, name, matName);
+  };
+  // ONE owner for "which trade colour does this MEP element belong to" — the first source that
+  // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
+  // 0x666666, sat 0) supplies no trade hue and is passed over. Returns null when none does.
+  // ### ALTS-ALL FIX 11 (a) (D2, bim-compiler PHOTOREAL_STILL_RENDER.md): a SPECIFIC-trade discipline (FP/PLB/ELEC/ACMV/HVAC/SAN/
+  // VENT/HEAT) with a chromatic DISC_COLORS entry decides first; the Revit element-name hint decides only when the discipline is the
+  // generic 'MEP' or absent (HHS, the case the hint was built for). Measured (MEP GREY): Hospital's 6,228 FP pipes carried the 'pipe'
+  // hint (PLB purple). &metalpbr=0 / A._metalPbrOff = the old order (hint first) — part of the material cache key.
+  var MEP_SPECIFIC_TRADE = { FP: 1, PLB: 1, ELEC: 1, ACMV: 1, HVAC: 1, SAN: 1, VENT: 1, HEAT: 1 };
+  A._mepSpecificTrade = MEP_SPECIFIC_TRADE;
+  A._metalPbrOff = /[?&]metalpbr=0/.test(typeof location !== 'undefined' ? location.search : '');
+  A._mepTradeHue = function(discipline, mepHint) {
+    var T = A.MEP_HUE_ACHROMATIC_MAX;
+    if (!A._metalPbrOff && discipline && MEP_SPECIFIC_TRADE[discipline] && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
+      var d0 = _hexToRgb(discipline, A.DISC_COLORS[discipline]), ds0 = A._chromaOf(d0.r + ',' + d0.g + ',' + d0.b);
+      if (ds0 !== null && ds0 >= T) return { code: discipline, r: d0.r, g: d0.g, b: d0.b, src: 'discipline' };
+    }
+    if (mepHint) {
+      var hs = A._chromaOf(mepHint.r + ',' + mepHint.g + ',' + mepHint.b);
+      if (hs !== null && hs >= T) return { code: mepHint.code, r: mepHint.r, g: mepHint.g, b: mepHint.b, src: 'name-hint' };
+    }
+    if (discipline && A.DISC_COLORS && A.DISC_COLORS[discipline] != null) {
+      var d = _hexToRgb(discipline, A.DISC_COLORS[discipline]);
+      var ds = A._chromaOf(d.r + ',' + d.g + ',' + d.b);
+      if (ds !== null && ds >= T) return { code: discipline, r: d.r, g: d.g, b: d.b, src: 'discipline' };
+    }
+    return null;
+  };
+  // §MEP_SERVICE_COLOUR (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §MEP_SERVICE_COLOUR, red1 2026-10-01 "follow how industry does
+  // it"): BS 1710 pipeline identification, RAL references (promain.co.uk pipeline identification chart), RAL -> sRGB hex from the
+  // Wikipedia List of RAL colours. Ducts are bare galvanised sheet (STD_MAT.IfcDuctSegment, the _mepNameHint 'DUCT' value). Anything
+  // with no known service returns null = its own class STD_MAT (no HUD hue). Stored sRGB-encoded like STD_MAT.
+  A._mepHueDisc = /[?&]mephue=disc/.test(typeof location !== 'undefined' ? location.search : '');
+  var SERVICE_PAINT = {
+    FIRE:  { code: 'FP',    hex: 0xAB2524, src: 'RAL 3000 flame red (BS 1710 fire)' },
+    WATER: { code: 'WATER', hex: 0x3E753B, src: 'RAL 6010 grass green (BS 1710 water)' },
+    DRAIN: { code: 'DRAIN', hex: 0x131516, src: 'RAL 9005 jet black (BS 1710 other/drainage)' },
+    // v2 parts by function: grooved fittings/couplings ship in orange enamel (Victaulic 51.01 standard coating); RAL 2004 is the nearest
+    // RAL orange (Victaulic publishes no RAL) — stated approximation
+    FIRE_FIT: { code: 'FP_FIT', hex: 0xE75B12, src: 'orange enamel (Victaulic 51.01) as RAL 2004 pure orange' }
+  };
+  var FIT_CLASSES = { IfcPipeFitting: 1, IfcFlowFitting: 1 };
+  var SPRINKLER_CLASSES = { IfcFireSuppressionTerminal: 1 };
+  var _oeS = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+  // §LUMINAIRE_WHITE (P2): pendant luminaire datasheets give "housing colour traffic white RAL 9016" (Regiolux panella / alevo)
+  var LUMINAIRE = { code: 'LUMINAIRE', r: 0xF7 / 255, g: 0xFB / 255, b: 0xF5 / 255, src: 'RAL 9016 traffic white (luminaire housing)' };
+  var BRASS = { code: 'SPRINKLER', r: _oeS(0.91), g: _oeS(0.778), b: _oeS(0.423), src: 'physicallybased.info Brass (sprinkler natural brass finish)' };
+  var WATER_TRADES = { PLB: 1, HEAT: 1, ACMV: 1, HVAC: 1 };
+  var PIPE_CLASSES = { IfcPipe: 1, IfcPipeSegment: 1, IfcPipeFitting: 1 };
+  var DUCT_CLASSES = { IfcDuct: 1, IfcDuctSegment: 1, IfcDuctFitting: 1 };
+  A._mepServiceColour = function(ifcClass, discipline, mepHint) {
+    var hc = mepHint && mepHint.code, paint = null;
+    if (SPRINKLER_CLASSES[ifcClass] || (hc === 'FP' && mepHint.sprinkler)) return BRASS;
+    if (ifcClass === 'IfcLightFixture' || hc === 'ELEC') return LUMINAIRE;   // §LUMINAIRE_WHITE (P2)
+    if (discipline === 'FP' || hc === 'FP') paint = FIT_CLASSES[ifcClass] ? SERVICE_PAINT.FIRE_FIT : SERVICE_PAINT.FIRE;
+    else if (hc === 'DUCT' || DUCT_CLASSES[ifcClass]) return { code: 'DUCT', r: 0.53, g: 0.56, b: 0.53, src: 'STD_MAT.IfcDuctSegment galvanised' };
+    else if (hc === 'SAN' || (discipline === 'SAN' && (PIPE_CLASSES[ifcClass] || hc === 'PLB'))) paint = SERVICE_PAINT.DRAIN;
+    else if (WATER_TRADES[discipline] && (PIPE_CLASSES[ifcClass] || hc === 'PLB')) {
+      if (FIT_CLASSES[ifcClass]) return { code: 'WATER_FIT', r: 0.58, g: 0.60, b: 0.63, src: 'STD_MAT.IfcPipeFitting galvanised' };
+      paint = SERVICE_PAINT.WATER; }
+    if (!paint) return null;
+    return { code: paint.code, r: ((paint.hex >> 16) & 255) / 255, g: ((paint.hex >> 8) & 255) / 255, b: (paint.hex & 255) / 255, src: paint.src };
+  };
+  // HSV hue transfer: H and S from the trade colour, V from the element's own albedo. HSV and not
+  // HSL because HSL desaturates hard as L->1 — at the off-white default's L=0.885 an HSL
+  // recombination returns near-white, which is the very look being fixed. HSV keeps the chroma:
+  // 0.920,0.900,0.850 under FP (0xcc8844) -> 0.920,0.613,0.306.
+  function _hsvHueTransfer(trade, v) {
+    var mx = Math.max(trade.r, trade.g, trade.b);
+    if (mx <= 0) return { r: 0, g: 0, b: 0 };
+    // Scale the trade colour so its own max channel becomes the element's V. This preserves the
+    // trade colour's H and S exactly (both are ratios between channels, invariant under scaling)
+    // while handing the element's own brightness to the result.
+    var k = v / mx;
+    return { r: trade.r * k, g: trade.g * k, b: trade.b * k };
+  }
+
+  // THE OWNER. Returns the new albedo, or null when the element must be left exactly as it is.
+  // (r,g,b) is the albedo decided so far (the element's own IFC colour, or its STD_MAT class
+  // default when it has none). `A._mepHueOff` is the witness RED CONTROL — it is deliberately NOT
+  // part of _getMaterial's cacheKey, so a caller flipping it MUST clear A._matCache.
+  // §MEP_PROXY_HUE (Z21, coordinator decision for red1 2026-09-27): an IfcBuildingElementProxy whose EXTRACTED discipline is an MEP
+  // trade and which carries the exporter placeholder is MEP-hue eligible like the MEP classes (Hospital boilers, VAV valves, ...).
+  // ARC/STR proxies are not (their STD_MAT teal is a flag). ONE owner for eligibility — the bucket 'M' bit and the instanced
+  // mixed-set guard read it, so a set mixing eligible and ineligible members is still built with noMepHue.
+  var MEP_PROXY_DISC = { MEP: 1, FP: 1, PLB: 1, ELEC: 1, ACMV: 1, HVAC: 1, SAN: 1, VENT: 1, HEAT: 1 };
+  A._mepProxyDisc = MEP_PROXY_DISC;
+  A._mepHueEligible = function(ifcClass, discipline, rgbaStr, matName) {
+    if (!ifcClass) return false;
+    if (MEP_HUE_CLASSES[ifcClass]) return true;
+    return ifcClass === 'IfcBuildingElementProxy' && !A._mepProxyOff && !!MEP_PROXY_DISC[discipline] && A._isExporterPlaceholder(rgbaStr, matName);
+  };
+  A._mepDiscAlbedo = function(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName) {
+    if (A._mepHueOff) return null;                                   // RED CONTROL
+    if (!A._mepHueEligible(ifcClass, discipline, rgbaStr, matName)) return null;   // tier 3 — not MEP, never touched
+    if (A._isAuthoredMatName(matName)) return null;                  // tier 1a — real authored material
+    var chroma = A._chromaOf(rgbaStr);
+    if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) return null;  // tier 1b — already has a hue
+    if (!A._mepHueDisc) {   // §MEP_SERVICE_COLOUR (default): the service's real paint colour, verbatim; &mephue=disc = the 09-02 HUD palette below
+      var sc = A._mepServiceColour(ifcClass, discipline, mepHint);
+      return sc ? { r: sc.r, g: sc.g, b: sc.b, tier: 2, code: sc.code, src: sc.src, v: null } : null;
+    }
+    var trade = A._mepTradeHue(discipline, mepHint);
+    if (!trade) return null;                                         // tier 3 — no trade hue available
+    if (chroma === null) {
+      // The element has no colour at all. Shipped §MEP_DISC_TINT behaviour, byte-identical: the
+      // trade colour is used verbatim (HHS's 3,390 NULL rows are the whole of this population).
+      return { r: trade.r, g: trade.g, b: trade.b, tier: 2, code: trade.code, src: trade.src, v: null };
+    }
+    var out = _hsvHueTransfer(trade, Math.max(r, g, b));
+    out.tier = 2; out.code = trade.code; out.src = trade.src; out.v = Math.max(r, g, b);
+    return out;
+  };
+
+  // ── §CPE_MATERIAL_KEY helpers (CINEMA_PATH_EDITOR.md, 2026-09-01) ────────────────────────────
+  // Implementing CINEMA_PATH_EDITOR.md §CPE_MATERIAL_KEY — Witness: W-CPE-MATERIAL-KEY.
+  // ONE owner for "is this surface transparent". §GLASS_NOT_METAL's rule (alpha<1 ⇒ never an opaque
+  // wear texture) is evaluated from this and nothing else.
+  A._alphaOf = function(rgbaStr) {
+    if (!rgbaStr || rgbaStr.indexOf(',') === -1) return 1.0;
+    var parts = rgbaStr.split(',').map(Number);
+    return (parts.length >= 4 && parts[3] < 1.0) ? parts[3] : 1.0;
+  };
+  // ONE owner for "which triplanar texture does this element get, and WHICH KEY decided".
+  // name FIRST, ifc_class as fallback, alpha guard ahead of both. Returns src ∈
+  // {name, class, alpha-none, none}. `INCONCLUSIVE` when the maps have not been published yet
+  // (no material has ever been built) — so a caller can never read a 0 as a real answer.
+  // §TRI_BIG_ONLY (2026-09-24, PHOTOREAL_STILL_RENDER.md; red1: rugged surfacing "overdone" on doors
+  // and beams) — a SWITCH, not a change of the maps below. With it on, only these classes keep the
+  // rough triplanar maps during the still; every other class renders its flat colour. Per class, not
+  // per size: one material is shared per batch and built from the batch's first element.
+  // `?tri=big` on the URL or `APP._triBigOnly = true`; default OFF = the look is unchanged.
+  A._TRI_BIG_CLASSES = { IfcWall: 1, IfcWallStandardCase: 1, IfcSlab: 1, IfcColumn: 1, IfcFooting: 1,
+    IfcStair: 1, IfcStairFlight: 1, IfcCovering: 1, IfcRoof: 1 };
+  try { if (A._triBigOnly == null) A._triBigOnly = /[?&]tri=big\b/.test(location.search); } catch (e) {}
+  A._triActiveFor = function(mat) {
+    if (!A._stillRefineActive) return 0.0;
+    return (A._triBigOnly && mat && mat.userData && mat.userData._triSmallPart) ? 0.0 : 1.0;
+  };
+  // ══ §SURFACE_RULES (2026-09-24, bim-compiler PHOTOREAL_STILL_RENDER.md §SURFACE_RULES + rev 1) ══
+  // red1: surfaces too rough, materials hard to tell apart; roof metal deck stays rough; floor slabs and
+  // small beams/members/doors/railings smooth ("marble-like OK, just not rough"). A row per element from
+  // role (geometry) + substance (authored material, a small lexicon) + class, first match wins; a batch
+  // takes its members' MAJORITY row (one material per batch). Rows change roughness / texture / envInt
+  // only — never colour. DEFAULT ON since red1's look ruling (2026-09-24: "cleaner, no more drab surfacing");
+  // `?surf=off` at load (or APP._surfRules = false before streaming) gives the previous look.
+  try { if (A._surfRules == null) A._surfRules = !/[?&]surf=off\b/.test(location.search); } catch (e) { if (A._surfRules == null) A._surfRules = true; }
+  console.log('§SURFACE_RULES ' + (A._surfRules ? 'ON (default; ?surf=off for the previous look)' : 'OFF (?surf=off)'));
+  var _SURF_MEP = /^Ifc(Pipe|Duct|Flow|Cable|Valve|AirTerminal|FireSuppression|LightFixture|Sanitary|Alarm|ElectricAppliance|ElectricDistribution|Distribution|EnergyConversion|UnitaryEquipment|Pump|Fan|Tank|Boiler|Chiller|Coil|Damper|Filter|Outlet|SwitchingDevice|ProtectiveDevice|Controller|Sensor|Actuator|JunctionBox|CommunicationsAppliance|AudioVisual|Lamp)/;
+  var _SURF_ENVELOPE = { IfcSlab: 1, IfcPlate: 1, IfcRoof: 1, IfcCovering: 1 };
+  var _SURF_FLOOR = { IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcRamp: 1, IfcRampFlight: 1 };
+  A._surfSubstance = function(n) {
+    n = (n || '').toLowerCase(); if (!n) return '';
+    // §IFC_SURFACE_NAMES: an IfcMaterialLayerSet arrives as 'A | B | … | Z' in layer order — only the two FACE layers (first, last) are
+    // seen; a stud or insulation core is not the surface (Clinic: 'Plasterboard | Metal - Stud Layer | … | Plasterboard' is plaster).
+    // Framing / fill layers (stud, firring, loose insulation, air; an insulated PANEL is cladding, kept) are never the seen face of a one-sided lining ('Metal - Stud Layer |
+    // Plasterboard', 481 Clinic walls): skipped when choosing the faces, kept if they are all there is.
+    if (n.indexOf(' | ') >= 0) { var _ly0 = n.split(' | '), _lyF = _ly0.filter(function (x) { return !/stud|firring|air gap|air space/.test(x) && !(/insulat/.test(x) && !/panel/.test(x)); }), _ly = _lyF.length ? _lyF : _ly0, _f = A._surfSubstance(_ly[0]), _l = A._surfSubstance(_ly[_ly.length - 1]); return _f || _l; }
+    if (/glass|glaz/.test(n)) return 'glass';
+    if (/metal|steel|alumin|copper|silver|brass|bronze|iron|zinc|galvani|chrome/.test(n)) return 'metal';
+    if (/plaster|gypsum|board|papan|skim|lepaan/.test(n)) return 'plaster';   // finished boards/renders before raw cement
+    if (/concrete|beton|cement|simen|mortar|screed/.test(n)) return 'concrete';
+    if (/wood|timber|oak|pine|plywood|veneer|kayu/.test(n)) return 'timber';
+    if (/stone|marble|granite|tile|ceramic|terrazzo|jubin/.test(n)) return 'stone';
+    return '';
+  };
+  // ROOF LAYER: a FLAT element (thinnest bbox axis vertical) with no OTHER surface's flat element above it
+  // over >= half of its 1 m grid cells; the same surface's own pieces (class + material) are not cover (a
+  // sloped deck is many overlapping strips). Measured: Terminal Metal Deck 33,225 / 33,324. Built once per
+  // DB from element_transforms (IFC coords, z up).
+  A._surfRoofGuids = null;
+  A._surfBuildRoof = function() {
+    var t0 = performance.now(), roof = new Set(), flat = [], grid = new Map(), rows = [];
+    try { rows = A.dbQuery('SELECT m.guid, m.ifc_class, m.material_name, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid') || []; }
+    catch (e) { console.warn('§SURFACE_ROOF_LAYER query failed: ' + e.message); }
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], bx = +r[6] || 0, by = +r[7] || 0, bz = +r[8] || 0;
+      if (!(bz < Math.min(bx, by) && Math.max(bx, by) >= 0.1)) continue;
+      flat.push({ g: r[0], c: r[1], id: (r[1] || '') + '|' + (r[2] || ''), x0: Math.floor(r[3] - bx / 2), x1: Math.floor(r[3] + bx / 2),
+        y0: Math.floor(r[4] - by / 2), y1: Math.floor(r[4] + by / 2), zb: r[5] - bz / 2, zt: r[5] + bz / 2 });
+    }
+    // §ROOF_LAYER_BUDGET (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §LOAD): the 1 m grid costs the SUM of every
+    // flat element's plan area. Fleet max 381,732 cells (LTU_AHouse); a 2 km road site 13,416,479 (16.1 s on the main
+    // thread). Over budget → judge ONLY the classes the sole reader uses (_SURF_ENVELOPE, A._surfRowOf) and find cover
+    // through a 16 m bucket index with the SAME per-cell predicate. Measured identical membership for every envelope
+    // element on all 11 fleet DBs + JELAPANG (diff=0); under budget the path below is untouched.
+    var cellSum = 0;
+    for (var ci = 0; ci < flat.length; ci++) cellSum += (flat[ci].x1 - flat[ci].x0 + 1) * (flat[ci].y1 - flat[ci].y0 + 1);
+    if (cellSum > 2000000) {
+      var B = 16, bk = new Map();
+      flat.forEach(function(o, k) {
+        for (var i = Math.floor(o.x0 / B); i <= Math.floor(o.x1 / B); i++) for (var j = Math.floor(o.y0 / B); j <= Math.floor(o.y1 / B); j++) {
+          var c = i * 1048576 + j; var l = bk.get(c); if (!l) bk.set(c, l = []); l.push(k);
+        }
+      });
+      var judged = 0;
+      flat.forEach(function(e, k) {
+        if (!_SURF_ENVELOPE[e.c]) return;
+        judged++;
+        var cells = 0, covered = 0;
+        for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+          cells++; var l = bk.get(Math.floor(x / B) * 1048576 + Math.floor(y / B));
+          for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02 && o.x0 <= x && x <= o.x1 && o.y0 <= y && y <= o.y1) { covered++; break; } }
+        }
+        if (covered < 0.5 * cells) roof.add(e.g);
+      });
+      A._surfRoofGuids = roof;
+      console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size +
+        ' ms=' + (performance.now() - t0).toFixed(0) + ' path=bucket cells=' + cellSum + ' budget=2000000 judged=' + judged + ' (envelope classes only)');
+      return;
+    }
+    flat.forEach(function(e, k) { for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) { var c = x + ',' + y; var l = grid.get(c); if (!l) grid.set(c, l = []); l.push(k); } });
+    flat.forEach(function(e, k) {
+      var cells = 0, covered = 0;
+      for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
+        cells++; var l = grid.get(x + ',' + y);
+        for (var j = 0; j < l.length; j++) { var o = flat[l[j]]; if (l[j] !== k && o.id !== e.id && o.zb >= e.zt - 0.02) { covered++; break; } }
+      }
+      if (covered < 0.5 * cells) roof.add(e.g);
+    });
+    A._surfRoofGuids = roof;
+    console.log('§SURFACE_ROOF_LAYER bld=' + (A.activeBuilding || '?') + ' flat=' + flat.length + ' roofLayer=' + roof.size + ' ms=' + (performance.now() - t0).toFixed(0) + ' path=grid cells=' + cellSum);
+  };
+  A._surfRowOf = function(el) {
+    if (A._alphaOf(el.rgba) < 1.0) return 'R9';
+    var c = el.ifcClass || '';
+    if (_SURF_MEP.test(c)) return 'R8';
+    var sub = A._surfSubstance(el.matName);
+    if (_SURF_ENVELOPE[c] && A._surfRoofGuids && A._surfRoofGuids.has(el.guid)) return sub === 'metal' ? 'R1' : (sub === 'plaster' ? 'R2p' : 'R2c');
+    if (_SURF_FLOOR[c]) return 'R4';            // a floor is a finished surface whatever it is cast from
+    if (sub === 'concrete') return 'R3';
+    if (sub === 'plaster') return 'R5';
+    if (sub === 'metal') return 'R6';
+    if (sub === 'timber' || sub === 'stone' || sub === 'glass') return 'R7';
+    if (c === 'IfcWall' || c === 'IfcColumn' || c === 'IfcFooting' || c === 'IfcPile') return 'R3';
+    if (c === 'IfcWallStandardCase' || c === 'IfcCovering') return 'R5';
+    if (c === 'IfcBeam' || c === 'IfcMember' || c === 'IfcPlate') return 'R6';
+    return 'R7';
+  };
+  A._surfTallyData = null;
+  A._surfRowFor = function(list, pick) {
+    if (!A._surfRules || !list || !list.length) return '';
+    if (!A._surfRoofGuids) A._surfBuildRoof();
+    var T = A._surfTallyData || (A._surfTallyData = { rows: {}, against: {}, cls: {}, authored: 0, classDefault: 0 });
+    var cnt = {}, own = [];
+    for (var i = 0; i < list.length; i++) {
+      var el = pick ? pick(list[i]) : list[i]; if (!el) continue;
+      var rw = A._surfRowOf(el); own.push(rw); cnt[rw] = (cnt[rw] || 0) + 1;
+      var ck = (el.ifcClass || '?'); var ce = T.cls[ck] || (T.cls[ck] = {}); ce[rw] = (ce[rw] || 0) + 1;
+      if (el.rgba) T.authored++; else T.classDefault++;
+    }
+    var best = '', bn = -1; for (var k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = k; }
+    T.rows[best] = (T.rows[best] || 0) + own.length;
+    T.against[best] = (T.against[best] || 0) + (own.length - bn);
+    return best;
+  };
+  A._surfTally = function() {
+    if (!A._surfRules) return;
+    var T = A._surfTallyData;
+    if (!T) { console.log('§SURFACE_RULES_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' — no batch was judged'); return; }
+    var rk = Object.keys(T.rows).sort();
+    console.log('§SURFACE_RULES_TALLY bld=' + (A.activeBuilding || '?') + ' ' + rk.map(function(r) { return r + '=' + T.rows[r] + '(againstOwnRow=' + (T.against[r] || 0) + ')'; }).join(' ') +
+      ' textured=R1+R2+R3=' + ((T.rows.R1 || 0) + (T.rows.R2c || 0) + (T.rows.R2p || 0) + (T.rows.R3 || 0)));
+    console.log('§SURFACE_RULES_COLOUR bld=' + (A.activeBuilding || '?') + ' authored=' + T.authored + ' classDefault=' + T.classDefault + ' (colours unchanged by the rules)');
+    var ck = Object.keys(T.cls).sort(function(a, b) { var sa = 0, sb = 0, k; for (k in T.cls[a]) sa += T.cls[a][k]; for (k in T.cls[b]) sb += T.cls[b][k]; return sb - sa; });
+    console.log('§SURFACE_RULES_CLASS bld=' + (A.activeBuilding || '?') + ' ' + ck.slice(0, 30).map(function(c) { return c + ':' + Object.keys(T.cls[c]).map(function(r) { return r + '=' + T.cls[c][r]; }).join(','); }).join(' '));
+  };
+  // ══ §SURFACE_R10 (bim-compiler PHOTOREAL_STILL_RENDER.md "§SURFACE_R10 — SPEC" + "R10 additions") ══
+  // Single-style openings: an IfcWindow / IfcDoor whose whole mesh carries ONE style (alpha >= 1) — a data
+  // gap, logged, never silent. Rides the surface rules: ON with them, `?surf=off` disables all of it.
+  // WINDOW: panes split from the frame per TRIANGLE by geometry (viewer/surface_r10.js, a port of the
+  //   measurement r10/split_lib.py; decided once per mesh hash). Pane -> class-default glazing (IfcWindow
+  //   STD_MAT colour, transparent); frame keeps today's material. Not clean -> left as authored (a louvre
+  //   or a muntin grid is not a pane).
+  // DOOR: separable hardware keeps today's (authored handle) material; the rest gets the class-default door
+  //   finish, smooth (R7). No hardware found -> left as today.
+  // SHAPE: geometry groups [0 = today's material, 1 = the new one] + a material array per mesh. A split
+  //   element never enters a BatchedMesh (one material) or a merged bucket (one material over per-element
+  //   index ranges): it is drawn as an InstancedMesh (2+ in a flush) or a single Mesh. Glass must not block
+  //   the sun: three.js casts per MESH, so split windows carry a customDepthMaterial that discards `aPane`
+  //   triangles; frames still cast.
+  // PANE ALPHA (no invented value): the building's own most common authored IfcWindow glazing alpha
+  //   (Terminal 0.100, Hospital 0.300); else its most common authored glazing alpha of any class (LTU 0.600);
+  //   none at all -> windows are NOT split (logged src=none).
+  A._r10GeoCache = {};      // hash -> { kind, verdict, why, geo|null }
+  A._r10State = null;       // per building: tallies + paths
+  A._r10Guids = new Set();  // every element drawn split (consolidation must never put one back in a batch)
+  A._r10Eligible = function(el) {
+    if (!A._surfRules || !el) return false;
+    var c = el.ifcClass;
+    return (c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(el.rgba) >= 1.0;
+  };
+  A._r10St = function() {
+    var b = A.activeBuilding || '?';
+    if (!A._r10State || A._r10State.bld !== b) {
+      A._r10State = { bld: b, win: { clean: 0, fallback: 0, why: {} }, door: { hardware: 0, leafOnly: 0, other: {} },
+        paths: { instanced: 0, merged: 0, batchedMoved: 0, single: 0, movedToInstanced: 0, movedToSingle: 0 }, paneAlpha: null, paneSrc: '' };
+    }
+    return A._r10State;
+  };
+  A._r10PaneAlpha = function() {
+    var S = A._r10St();
+    if (S.paneAlpha !== null) return S.paneAlpha;
+    var q = A.streamQueue || [], win = {}, any = {};
+    for (var i = 0; i < q.length; i++) {
+      var a = A._alphaOf(q[i][2]); if (!(a < 1.0)) continue;
+      any[a] = (any[a] || 0) + 1;
+      if (q[i][11] === 'IfcWindow') win[a] = (win[a] || 0) + 1;
+    }
+    var top = function(o) { var bk = null, bn = 0; for (var k in o) if (o[k] > bn) { bn = o[k]; bk = +k; } return bk; };
+    var w = top(win), y = top(any);
+    if (w !== null) { S.paneAlpha = w; S.paneSrc = 'authored IfcWindow glazing'; }
+    else if (y !== null) { S.paneAlpha = y; S.paneSrc = 'authored glazing, any class'; }
+    else { S.paneAlpha = 0; S.paneSrc = 'none'; }
+    return S.paneAlpha;
+  };
+  A._r10Split = function(hash, geo, cls) {
+    var ck = hash + '|' + cls;
+    if (A._r10GeoCache[ck]) return A._r10GeoCache[ck];
+    var out = { kind: cls === 'IfcWindow' ? 'window' : 'door', verdict: 'NO_GEOMETRY', why: '', geo: null };
+    try {
+      var pos = geo && geo.attributes.position && geo.attributes.position.array, idx = geo && geo.index && geo.index.array;
+      if (pos && idx && window.SurfaceR10) {
+        var r = out.kind === 'window' ? window.SurfaceR10.classifyWindow(pos, idx) : window.SurfaceR10.classifyDoor(pos, idx);
+        out.verdict = r.verdict; out.why = r.why || '';
+        if (r.flags && (out.kind === 'door' || A._r10PaneAlpha() > 0)) out.geo = A._r10BuildGeo(geo, r.flags, out.kind === 'window');
+        else if (r.flags) { out.verdict = 'NO_PANE_ALPHA'; out.why = 'building has no authored glazing to take an alpha from'; }
+      } else if (!window.SurfaceR10) { out.verdict = 'NO_MODULE'; out.why = 'surface_r10.js not loaded'; }
+    } catch (e) { out.verdict = 'ERROR'; out.why = e.message; console.warn('§SURFACE_R10_ERROR hash=' + hash + ' ' + e.message); }
+    A._r10GeoCache[ck] = out;
+    return out;
+  };
+  // A new geometry: a vertex used by triangles of BOTH groups is duplicated, so `aPane` is exact per triangle
+  // (JKR/LTU weld the glass to the frame). Index order = group 0 (today's material) then group 1 (new).
+  A._r10BuildGeo = function(geo, flags, isWindow) {
+    var idx = geo.index.array, m = Math.floor(idx.length / 3), names = Object.keys(geo.attributes);
+    var remap = new Map(), src = [], n1 = 0;
+    for (var t = 0; t < m; t++) if (flags[t]) n1++;
+    var nIdx = new Array(m * 3), w0 = 0, w1 = (m - n1) * 3;
+    for (var t2 = 0; t2 < m; t2++) {
+      var f = flags[t2] ? 1 : 0, at = f ? w1 : w0;
+      for (var c = 0; c < 3; c++) {
+        var ov = idx[t2 * 3 + c], key = ov * 2 + f, nv = remap.get(key);
+        if (nv === undefined) { nv = src.length; remap.set(key, nv); src.push(ov); }
+        nIdx[at + c] = nv;
+      }
+      if (f) w1 += 3; else w0 += 3;
+    }
+    // src[nv] = the old vertex it copies; its group flag is the low bit of its key
+    var nvCount = src.length, pane = new Float32Array(nvCount);
+    remap.forEach(function(nv, key) { pane[nv] = (isWindow && (key & 1)) ? 1 : 0; });
+    var out = new THREE.BufferGeometry();
+    for (var a = 0; a < names.length; a++) {
+      var at0 = geo.attributes[names[a]], isz = at0.itemSize, arr = new at0.array.constructor(nvCount * isz);
+      for (var v = 0; v < nvCount; v++) for (var k = 0; k < isz; k++) arr[v * isz + k] = at0.array[src[v] * isz + k];
+      out.setAttribute(names[a], new THREE.BufferAttribute(arr, isz, at0.normalized));
+    }
+    out.setAttribute('aPane', new THREE.BufferAttribute(pane, 1));
+    out.setIndex(new THREE.BufferAttribute(nvCount < 65536 ? new Uint16Array(nIdx) : new Uint32Array(nIdx), 1));
+    out.addGroup(0, (m - n1) * 3, 0);
+    out.addGroup((m - n1) * 3, n1 * 3, 1);
+    out.computeBoundingSphere(); out.computeBoundingBox();
+    out.userData.r10 = { kind: isWindow ? 'window' : 'door', tris0: m - n1, tris1: n1 };
+    return out;
+  };
+  // A material ARRAY that still answers the single-material questions the rest of the app asks of a
+  // streamed mesh (m.color, m.transparent, m.userData, m.clone(), m.dispose() ...). Reads and writes go to
+  // element 0 (today's material — what the mesh "is"); switches that must hold for the whole mesh
+  // (visible, wireframe, section clipping, depth test, needsUpdate) go to every element. Array.isArray is
+  // still true, so three.js draws it per group.
+  var _R10_FWD_FIRST = ['color', 'emissive', 'emissiveIntensity', 'opacity', 'transparent', 'side', 'userData', 'name', 'type',
+    'envMap', 'envMapIntensity', 'roughness', 'metalness', 'map', 'uuid', 'flatShading', 'vertexColors', 'alphaTest',
+    'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits', 'blending', 'toneMapped', 'fog'];
+  var _R10_FWD_ALL = ['visible', 'wireframe', 'needsUpdate', 'depthTest', 'depthWrite', 'colorWrite', 'clippingPlanes', 'clipShadows', 'clipIntersection'];
+  A._r10MatArray = function(list) {
+    var arr = list.slice();
+    _R10_FWD_FIRST.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { arr[0][p] = v; } });
+    });
+    _R10_FWD_ALL.forEach(function(p) {
+      Object.defineProperty(arr, p, { configurable: true, enumerable: false,
+        get: function() { return arr[0][p]; }, set: function(v) { for (var i = 0; i < arr.length; i++) arr[i][p] = v; } });
+    });
+    Object.defineProperty(arr, 'isR10MaterialArray', { value: true, enumerable: false });
+    // §R10-MAP-SHADOW (prompts/PHOTOREAL_STILL_RENDER.md, 2026-10-04): 'map' is forwarded above (the texture slot), which
+    // SHADOWS the array's own .map() — so clone/dispose call the Array.prototype methods directly. Witness: W-R10-CLONE.
+    Object.defineProperty(arr, 'clone', { enumerable: false, value: function() { return A._r10MatArray(Array.prototype.map.call(arr, function(x) { return x.clone(); })); } });
+    Object.defineProperty(arr, 'dispose', { enumerable: false, value: function() { Array.prototype.forEach.call(arr, function(x) { if (x.dispose) x.dispose(); }); } });
+    Object.defineProperty(arr, 'setValues', { enumerable: false, value: function(v) { return arr[0].setValues(v); } });
+    return arr;
+  };
+  A._r10MatCache = {};
+  A._r10Materials = function(frameMat, kind, el) {
+    var ck = frameMat.uuid + '|' + kind;
+    if (A._r10MatCache[ck]) return A._r10MatCache[ck];
+    var second;
+    if (kind === 'window') {
+      // class-default glazing: IfcWindow STD_MAT colour (0.70, 0.82, 0.88) with the building's own glazing alpha.
+      var al = A._r10PaneAlpha();
+      second = A._getMaterial('0.700,0.820,0.880,' + al.toFixed(3), 'IfcWindow', '', '', null, '', undefined, 'R9');
+    } else {
+      // class-default door finish (IfcDoor STD_MAT, rgba NULL), smooth: R7 = no texture, no grain.
+      second = A._getMaterial(null, 'IfcDoor', '', '', null, '', undefined, 'R7');
+    }
+    return (A._r10MatCache[ck] = A._r10MatArray([frameMat, second]));
+  };
+  A._r10DepthMaterial = function() {
+    if (A._r10DepthMat) return A._r10DepthMat;
+    var m = new THREE.MeshDepthMaterial();
+    m.onBeforeCompile = function(sh) {
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aPane;\nvarying float vR10Pane;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvR10Pane = aPane;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vR10Pane;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vR10Pane > 0.5) discard;');
+      A._r10DepthCompiled = (A._r10DepthCompiled || 0) + 1;
+    };
+    m.customProgramCacheKey = function() { return 'surface_r10_pane_discard'; };
+    m.userData.r10Depth = true;
+    return (A._r10DepthMat = m);
+  };
+  // Stream-end rollup: the numbers the witness asserts are emitted by the running app.
+  A._r10Report = function() {
+    var bld = A.activeBuilding || '?';
+    if (!A._surfRules) { console.log('§SURFACE_R10 OFF bld=' + bld + ' (?surf=off — no opening is split)'); return; }
+    if (!A.streamedCount) { console.log('§SURFACE_R10 VACUOUS bld=' + bld + ' streamed=0 — nothing judged, no split counts printed'); return; }
+    var q = A.streamQueue || [], ss = { IfcWindow: 0, IfcDoor: 0 };
+    for (var i = 0; i < q.length; i++) { var c = q[i][11]; if ((c === 'IfcWindow' || c === 'IfcDoor') && A._alphaOf(q[i][2]) >= 1.0) ss[c]++; }
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcWindow n=' + ss.IfcWindow);
+    console.log('§SURFACE_OPENING_SINGLE_STYLE bld=' + bld + ' class=IfcDoor n=' + ss.IfcDoor);
+    var S = A._r10St(), W = S.win, D = S.door, P = S.paths;
+    var wr = Object.keys(W.why).map(function(k) { return k + ':' + W.why[k]; }).join(',') || 'none';
+    var dr = Object.keys(D.other).map(function(k) { return k + ':' + D.other[k]; }).join(',') || 'none';
+    console.log('§SURFACE_R10_SPLIT bld=' + bld + ' windows clean=' + W.clean + ' fallback=' + W.fallback + ' (' + wr + ')' +
+      ' doors hardware=' + D.hardware + ' leafOnly=' + D.leafOnly + ' (untouched: ' + dr + ')' +
+      ' paneAlpha=' + (S.paneAlpha === null ? 'unused' : S.paneAlpha.toFixed(3)) + ' paneAlphaSrc=' + (S.paneSrc || 'unused'));
+    console.log('§SURFACE_R10_PATHS bld=' + bld + ' instanced=' + P.instanced + ' merged=' + P.merged + ' batchedMoved=' + P.batchedMoved +
+      ' single=' + P.single + ' (moved out of a batch/merge -> instanced ' + P.movedToInstanced + ', -> single ' + P.movedToSingle + ')');
+    A._r10ShadowReport();
+  };
+  // paneCasters = pane triangles (per drawn element) that WOULD reach the shadow map: on a mesh without the
+  // discard material, or with a vertex whose aPane is not 1. frameCasters = split window elements whose frame
+  // triangles cast (aPane 0 on every vertex, group material visible). Read from the scene, not from a counter.
+  A._r10ShadowReport = function() {
+    var pane = 0, frame = 0, meshes = 0, paneTris = 0;
+    A.scene.traverse(function(o) {
+      if (!o.userData || o.userData.r10 !== 'window' || !o.geometry || !o.geometry.userData.r10) return;
+      meshes++;
+      var g = o.geometry, ap = g.getAttribute('aPane').array, ix = g.index.array, gr = g.groups;
+      var inst = o.isInstancedMesh ? o.count : 1, discard = o.customDepthMaterial === A._r10DepthMat && !!A._r10DepthMat;
+      var badPane = 0, frameOk = 0;
+      for (var j = gr[1].start; j < gr[1].start + gr[1].count; j++) if (!discard || ap[ix[j]] !== 1) badPane++;
+      for (var j2 = gr[0].start; j2 < gr[0].start + gr[0].count; j2++) if (ap[ix[j2]] === 0) frameOk++;
+      paneTris += gr[1].count / 3 * inst;
+      if (badPane) pane += inst;
+      if (frameOk === gr[0].count && gr[0].count > 0) frame += inst;
+    });
+    console.log('§SURFACE_R10_SHADOW bld=' + (A.activeBuilding || '?') + ' paneCasters=' + pane + ' frameCasters=' + frame +
+      ' (split window meshes=' + meshes + ', pane triangles drawn=' + paneTris + ', all discarded in the depth pass by aPane)');
+  };
+  // Draw-call / transparent cost at the current pose (renderer.info of one plain render + the render list).
+  A._r10Cost = function() {
+    var r = A.renderer; if (!r || !A.scene || !A.camera) return null;
+    var auto = r.info.autoReset; r.info.autoReset = false; r.info.reset();
+    r.render(A.scene, A.camera);
+    var calls = r.info.render.calls, tris = r.info.render.triangles;
+    r.info.autoReset = auto;
+    var tr = 0; try { var rl = r.renderLists.get(A.scene, 0); tr = rl.transparent.length + (rl.transmissive ? rl.transmissive.length : 0); } catch (e) { tr = -1; }
+    return { calls: calls, transparent: tr, triangles: tris };
+  };
+  A._triResolve = function(alpha, ifcClass, matName) {
+    var byName = A._TRIPLANAR_BY_NAME, byClass = A._TRIPLANAR_MAT;
+    if (!byName || !byClass) return { mat: null, src: 'INCONCLUSIVE' };
+    if (alpha < 1.0) return { mat: null, src: 'alpha-none' };
+    var n = (matName && byName[matName]) ? byName[matName] : null;
+    if (n) return { mat: n, src: 'name' };
+    var c = (ifcClass && byClass[ifcClass]) ? byClass[ifcClass] : null;
+    if (c) return { mat: c, src: 'class' };
+    return { mat: null, src: 'none' };
+  };
+  // Shipped §-log rollup, fired once at stream-complete. PRIMAL LAW 3: the log is the primary
+  // evidence, so the numbers a witness asserts are emitted by the running app, not re-derived.
+  // Reports NO-OP (no element resolved by name — the change did nothing on this building) and
+  // VACUOUS (nothing was judged) explicitly, per PRIMAL LAW 4.
+  A._triSrcTally = function() {
+    var q = A.streamQueue || [];
+    if (!q.length) { console.log('§TRI_SRC_TALLY VACUOUS bld=' + (A.activeBuilding || '?') + ' rows=0 — nothing judged'); return null; }
+    if (!A._TRIPLANAR_BY_NAME) { console.log('§TRI_SRC_TALLY INCONCLUSIVE bld=' + (A.activeBuilding || '?') + ' — no material was ever built'); return null; }
+    var bySrc = { name: 0, class: 0, 'alpha-none': 0, none: 0 };
+    var namesHit = {}, named = 0, approxNamed = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i];
+      var mn = row[16] || '';
+      if (mn) { named++; if (mn.charAt(0) === '≈') approxNamed++; }
+      var res = A._triResolve(A._alphaOf(row[2]), row[11] || '', mn);
+      bySrc[res.src] = (bySrc[res.src] || 0) + 1;
+      if (res.src === 'name') namesHit[mn] = (namesHit[mn] || 0) + 1;
+    }
+    var distinct = Object.keys(namesHit);
+    var textured = bySrc.name + bySrc['class'];
+    // §SUNGLASS_TRIPLANAR_TINT (measured by the concurrent palette lane, 2026-09-01): _recolorMesh's
+    // material.clone() DROPS the triplanar onBeforeCompile hook on 347/347 sampled originals, so an
+    // ACTIVE palette REPLACES the texture with a flat colour rather than tinting it. This tally is
+    // computed from the resolver, not from what is on screen, so a live palette cannot corrupt the
+    // numbers — but a reader comparing them against the screen must know the palette state, so it is
+    // stated here rather than left to be guessed. tick 0 = Off.
+    var _palTick = A._ambienceTick || 0;
+    var _palMeshes = (A._sunglassBackups && A._sunglassBackups.length) || 0;
+    console.log('§TRI_SRC_TALLY bld=' + (A.activeBuilding || '?') + ' rows=' + q.length +
+      ' palette_tick=' + _palTick + ' palette_recoloured=' + _palMeshes +
+      ' named=' + named + ' approx_named=' + approxNamed +
+      ' by_name=' + bySrc.name + ' by_class=' + bySrc['class'] +
+      ' alpha_none=' + bySrc['alpha-none'] + ' none=' + bySrc.none +
+      ' textured=' + textured + ' distinct_names_resolved=' + distinct.length +
+      (bySrc.name === 0 ? ' NO-OP — no element resolved by material_name on this building' : ''));
+    // §TRI_BIG_ONLY_TALLY — per class: rows textured now vs rows textured with the switch on. Same resolver.
+    var _tb = {};
+    for (var ti = 0; ti < q.length; ti++) {
+      var trow = q[ti], tcls = trow[11] || '?';
+      var tres = A._triResolve(A._alphaOf(trow[2]), trow[11] || '', trow[16] || '');
+      if (!tres.mat) continue;
+      var te = _tb[tcls] || (_tb[tcls] = [0, 0]); te[0]++; if (A._TRI_BIG_CLASSES[tcls]) te[1]++;
+    }
+    var _tbK = Object.keys(_tb).sort(function(x, y) { return _tb[y][0] - _tb[x][0]; }), _tbNow = 0, _tbBig = 0;
+    for (var tk = 0; tk < _tbK.length; tk++) { _tbNow += _tb[_tbK[tk]][0]; _tbBig += _tb[_tbK[tk]][1]; }
+    console.log('§TRI_BIG_ONLY_TALLY bld=' + (A.activeBuilding || '?') + ' switch=' + (A._triBigOnly ? 'on' : 'off') +
+      ' texturedNow=' + _tbNow + ' texturedUnderSwitch=' + _tbBig + ' perClass(now/switch)=' +
+      _tbK.map(function(k) { return k + ':' + _tb[k][0] + '/' + _tb[k][1]; }).join(' '));
+    distinct.sort(function(x, y) { return namesHit[y] - namesHit[x]; });
+    for (var d = 0; d < distinct.length; d++)
+      console.log('§TRI_SRC_NAME name="' + distinct[d] + '" n=' + namesHit[distinct[d]] +
+        ' tex=' + A._TRIPLANAR_BY_NAME[distinct[d]].diffuse);
+    return { bySrc: bySrc, namesHit: namesHit, rows: q.length, named: named, approxNamed: approxNamed };
+  };
+
+  // §MEP_COLOR_SURVIVES_PHOTOREAL — shipped §-log rollup, fired once at stream-complete alongside
+  // §TRI_SRC_TALLY. PRIMAL LAW 3: the numbers a witness asserts are emitted by the running app.
+  // Computed over the REAL stream queue through the REAL owner (A._mepDiscAlbedo), element by
+  // element — not from the material cache, which counts materials, and not re-derived.
+  // PRIMAL LAW 4: reports VACUOUS (nothing judged), NO-OP (the rule moved no element) and
+  // INCONCLUSIVE (the owner is not published) explicitly, and never prints a bare 0 as an answer.
+  A._mepHueRollup = function() {
+    var q = A.streamQueue || [];
+    var bld = A.activeBuilding || '?';
+    if (!q.length) { console.log('§MEP_HUE_TALLY VACUOUS bld=' + bld + ' rows=0 — nothing judged'); return null; }
+    if (!A._mepDiscAlbedo) { console.log('§MEP_HUE_TALLY INCONCLUSIVE bld=' + bld + ' — owner not published'); return null; }
+    var mepPop = 0, tinted = 0, tier1name = 0, tier1chroma = 0, noTrade = 0;
+    var hues = {}, codes = {}, minGapDist = 1, tConsulted = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i], cls = row[11] || '';
+      if (!A._mepHueEligible(cls, row[3] || '', row[2], row[16] || '')) continue;   // §MEP_PROXY_HUE
+      mepPop++;
+      var rgba = row[2], disc = row[3] || '', nm = row[16] || '';
+      var chroma = A._chromaOf(rgba);
+      if (A._isAuthoredMatName(nm)) { tier1name++; continue; }
+      // min_dist_to_T is measured ONLY over the population that actually CONSULTS T. An element
+      // with a real authored material name is settled at tier 1a before T is ever read, so folding
+      // its saturation in here would report a knife-edge that no decision depends on (Terminal's
+      // `Rastelli … Brass - Bronze`, sat 0.314, is 0.030 from T and never once compared against it).
+      if (chroma !== null) { tConsulted++; minGapDist = Math.min(minGapDist, Math.abs(chroma - A.MEP_HUE_ACHROMATIC_MAX)); }
+      if (chroma !== null && chroma >= A.MEP_HUE_ACHROMATIC_MAX) { tier1chroma++; continue; }
+      // Reproduce the element's pre-tint albedo exactly as _getMaterial derives it, so the V handed
+      // to the hue transfer is the real one and not an approximation.
+      var r0 = 0.7, g0 = 0.7, b0 = 0.7;
+      if (rgba && rgba.indexOf(',') !== -1) { var p = rgba.split(',').map(Number); r0 = p[0]; g0 = p[1]; b0 = p[2]; }
+      var alb = A._mepDiscAlbedo(r0, g0, b0, rgba, cls, disc, A._mepNameHint(row[12]), nm);
+      if (!alb) { noTrade++; continue; }
+      tinted++;
+      codes[alb.code] = (codes[alb.code] || 0) + 1;
+      // Hue is what is COUNTED (the ask is "distinct hues", not distinct RGB values — V varies per
+      // element by design). Quantised to 0.1 degree so float noise cannot inflate the count.
+      var mx = Math.max(alb.r, alb.g, alb.b), mn = Math.min(alb.r, alb.g, alb.b), h = 0;
+      if (mx > mn) {
+        if (mx === alb.r) h = 60 * (((alb.g - alb.b) / (mx - mn)) % 6);
+        else if (mx === alb.g) h = 60 * ((alb.b - alb.r) / (mx - mn) + 2);
+        else h = 60 * ((alb.r - alb.g) / (mx - mn) + 4);
+        if (h < 0) h += 360;
+      }
+      hues[h.toFixed(1)] = (hues[h.toFixed(1)] || 0) + 1;
+    }
+    var nHues = Object.keys(hues).length;
+    var legendSize = Object.keys(A.DISC_COLORS || {}).length;
+    if (!mepPop) { console.log('§MEP_HUE_TALLY VACUOUS bld=' + bld + ' rows=' + q.length + ' mep_elements=0 — this building has no MEP class in MEP_HUE_CLASSES, its 0 means nothing'); return null; }
+    console.log('§MEP_HUE_TALLY bld=' + bld + ' rows=' + q.length + ' mep_elements=' + mepPop +
+      ' tinted=' + tinted + ' tier1_authored_name=' + tier1name + ' tier1_own_hue=' + tier1chroma +
+      ' no_trade_hue=' + noTrade + ' distinct_hues=' + nHues + ' trade_codes=' + Object.keys(codes).length +
+      ' legend_ceiling=' + legendSize + ' T=' + A.MEP_HUE_ACHROMATIC_MAX +
+      ' inst_mep_uniform=' + (A._instMepUniform || 0) + ' inst_mep_mixed=' + (A._instMepMixed || 0) +
+      ' consulted_T=' + tConsulted +
+      ' min_dist_to_T=' + (tConsulted ? minGapDist.toFixed(4) : 'VACUOUS') +
+      ' hue_off=' + (A._mepHueOff ? 1 : 0) +
+      (tinted === 0 ? ' NO-OP — the rule moved no element on this building' : ''));
+    Object.keys(codes).sort(function(x, y) { return codes[y] - codes[x]; }).forEach(function(c) {
+      console.log('§MEP_HUE_CODE bld=' + bld + ' code=' + c + ' n=' + codes[c]);
+    });
+    return { mepPop: mepPop, tinted: tinted, tier1name: tier1name, tier1chroma: tier1chroma,
+             noTrade: noTrade, hues: hues, codes: codes, legendSize: legendSize,
+             minGapDist: minGapDist, tConsulted: tConsulted,
+             instMepUniform: A._instMepUniform || 0, instMepMixed: A._instMepMixed || 0 };
+  };
+
+  // §PLACEHOLDER_COLOUR (Z21) + §PORCELAIN (Z20) — shipped §-log rollup at stream-complete, over the REAL stream queue through
+  // the REAL owners (element-level, not material-level). VACUOUS / NO-OP printed, never a bare 0 (PRIMAL LAW 4).
+  A._colourTruthRollup = function() {
+    var q = A.streamQueue || [], bld = A.activeBuilding || '?';
+    if (!q.length) { console.log('§PLACEHOLDER_COLOUR VACUOUS bld=' + bld + ' rows=0 — nothing judged'); console.log('§PORCELAIN VACUOUS bld=' + bld + ' rows=0'); return null; }
+    if (!A._stdMatClasses) { console.log('§PLACEHOLDER_COLOUR INCONCLUSIVE bld=' + bld + ' — STD_MAT not published (no material built yet)'); return null; }
+    var STD = A._stdMatClasses || {}, ph = 0, rep = 0, proxy = 0, mep = 0, noStd = 0, porcPh = 0, byCls = {};
+    var pm = 0, pCls = {}, pKey = {}, pOwn = 0, pDef = 0;
+    for (var i = 0; i < q.length; i++) {
+      var row = q[i], cls = row[11] || '', nm = row[16] || '', rgba = row[2];
+      var pk = A._porcelainKey(cls, row[12], nm);
+      if (pk) { pm++; pCls[cls] = (pCls[cls] || 0) + 1; pKey[pk] = (pKey[pk] || 0) + 1; if (!rgba || A._isExporterPlaceholder(rgba, nm)) pDef++; else pOwn++; }
+      if (!A._isExporterPlaceholder(rgba, nm)) continue;
+      ph++;
+      if (pk) { porcPh++; continue; }
+      if (!A._placeholderOff && A._mepHueEligible(cls, row[3] || '', rgba, nm) && A._mepDiscAlbedo(0.92, 0.90, 0.85, rgba, cls, row[3] || '', A._mepNameHint(row[12]), nm)) { mep++; continue; }
+      if (cls === 'IfcBuildingElementProxy') { proxy++; continue; }
+      if (!STD[cls]) { noStd++; continue; }
+      if (A._placeholderOff) continue;
+      rep++; byCls[cls] = (byCls[cls] || 0) + 1;
+    }
+    console.log('§PLACEHOLDER_COLOUR bld=' + bld + ' rows=' + q.length + ' placeholder=' + ph + ' replaced=' + rep + ' mepTier2=' + mep + ' proxyKept=' + proxy +
+      ' noStdMat=' + noStd + ' porcelain=' + porcPh + ' off=' + (A._placeholderOff ? 1 : 0) +
+      (ph === 0 ? ' VACUOUS — no placeholder row on this building, its 0 means nothing' : rep === 0 ? ' NO-OP — the rule moved no element' : ''));
+    Object.keys(byCls).sort(function(x, y) { return byCls[y] - byCls[x]; }).forEach(function(c) { console.log('§PLACEHOLDER_CLASS bld=' + bld + ' cls=' + c + ' n=' + byCls[c]); });
+    console.log('§PORCELAIN bld=' + bld + ' matched=' + pm + ' byClass=' + JSON.stringify(pCls) + ' byKey=' + JSON.stringify(pKey) + ' ownColour=' + pOwn + ' classDefault=' + pDef +
+      ' roughness=' + Math.max(0.08, A.PORCELAIN_PBR.roughness) + ' (cited ' + A.PORCELAIN_PBR.roughness + ', ' + A.PORCELAIN_PBR.src + ')' + (pm === 0 ? ' NO-OP — no sanitary fixture on this building' : ''));
+    return { placeholder: ph, replaced: rep, mep: mep, proxy: proxy, noStd: noStd, porcelainPh: porcPh, byCls: byCls, porcelain: pm, pCls: pCls, pKey: pKey, pOwn: pOwn, pDef: pDef };
+  };
+
+  // §CPE_MATERIAL_KEY: `matName` = elements_meta.material_name for this bucket. Measured on
+  // Terminal/Hospital/Clinic: material_name is fully determined by (storey, discipline,
+  // material_rgba), so adding it to the batch key would add ZERO buckets (244→244, 160→160, 65→65)
+  // — every bucket therefore carries exactly ONE name and taking items[0]'s is exact, not an
+  // approximation (unlike `batchCls`, which really is items[0]'s of a possibly mixed-class bucket).
+  // §WALL_SIDE (2026-09-01, PHOTOREAL_STILL_RENDER.md §WALL_SIDE_AND_LIGHT_FLOOR): class-keyed
+  // material side, derived from the fleet winding census (§WALL_WINDING_MEASURE + this session's
+  // per-class re-census, census_{Terminal,Hospital}.log): a class is FrontSide iff its pooled
+  // (sheet + mixed-winding + inverted + open-negative) fraction is <= 2.0% of elements-with-
+  // geometry across both measured buildings, population >= 30 (T1). Sheet-heavy classes measured
+  // ABOVE T1 keep DoubleSide because a one-sided sheet is invisible from one side under FrontSide
+  // regardless of winding: IfcPipeFitting 20.4%, IfcDuctFitting 14.9%, IfcBuildingElementProxy
+  // 16.4% (and 18.9% of Hospital's drawn triangles), IfcWindow 32.7%, IfcDoor 2.1%,
+  // IfcFlowTerminal 5.1%, IfcFlowController/IfcController/IfcRampFlight/IfcRoof under population.
+  // Unlisted classes default DoubleSide (conservative). `side` is a pure function of
+  // (ifcClass, a<1.0) and ifcClass is already a cacheKey dimension below -> cannot fragment the
+  // material cache (asserted by witness_wall_side_light_floor.js M1).
+  // §WALL_SIDE_PICK_GATE: IfcLightFixture was in the census-derived list (0% winding defect,
+  // 2,086 elements) but is WITHDRAWN by the S3 pick witness: a ray whose origin sits inside a
+  // recessed fixture shell (M_Plain Recessed Lighting Fixture 600x600, Hospital ray
+  // out|IfcElectricAppliance|1cL9Mv$oTAD8jv7e2bmYul) first-hit the fixture's own interior back
+  // face under DoubleSide; FrontSide culls that self-hit and resolves to the diffuser beyond it.
+  // The gate is mechanical: any first-hit divergence drops the class (§WWSLF_PICK_DIVERGE line,
+  // wwslf_assert.log 2026-09-01). Winding did not fail here — pick behaviour did.
+  var FRONT_SIDE_CLASSES = {
+    IfcAirTerminal: 1, IfcAlarm: 1, IfcBeam: 1, IfcCableCarrierFitting: 1,
+    IfcCableCarrierSegment: 1, IfcColumn: 1, IfcCovering: 1, IfcDistributionControlElement: 1,
+    IfcDuctSegment: 1, IfcElectricAppliance: 1, IfcFireSuppressionTerminal: 1, IfcFooting: 1,
+    IfcFurniture: 1, IfcMember: 1, IfcPipeSegment: 1, IfcPlate: 1,
+    IfcRailing: 1, IfcSlab: 1, IfcStair: 1, IfcStairFlight: 1, IfcSwitchingDevice: 1,
+    IfcValve: 1, IfcWall: 1, IfcWallStandardCase: 1
+  };
+  A._frontSideClasses = FRONT_SIDE_CLASSES; // exposed for witness assertions, read-only
+  // §WIND_FLIP: true when any geometry of a bucket has flipped-winding edges (scene.js blobToGeometry counts them);
+  // counted per bucket for the §WIND_FLIP line. The flag reaches _getMaterial, which keeps DoubleSide for that bucket only.
+  A._windFlipAny = function(geos) { for (var i = 0; i < geos.length; i++) { var g = geos[i]; if (g && g.userData && g.userData.windFlip > 0) { A._windBuckets = (A._windBuckets || 0) + 1; return true; } } return false; };
+
+  // §MEP_COLOR_SURVIVES_PHOTOREAL: `noMepHue` suppresses the trade-hue tier for THIS material.
+  // Its one caller is the InstancedMesh branch, which buckets by GEOMETRY HASH ALONE and can
+  // therefore hand one material to a set that is not uniform on MEP-ness — see the guard there.
+  A.CIVIL_EARTHWORK_OPACITY = 0.28;   // §CIVIL_REF_LOOK L1
+  // §CIVIL_REF_LOOK L2: right-of-way drawn as its outline (crease edges ≥ 30°) in the ROW discipline colour, once per guid.
+  // Same placement convention as measure.js (ifc2three position, rotation.set(rx, rz, −ry)).
+  A._civilRowOutline = function() {
+    if (!A.db || !A.scene || typeof THREE === 'undefined') return;
+    var rows;
+    try {
+      rows = A.dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z, i.geometry_hash" +
+        " FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid JOIN element_instances i ON i.guid = m.guid WHERE m.discipline = 'ROW'");
+    } catch (e) { return; }
+    if (!rows || !rows.length) return;
+    A._rowOutlines = A._rowOutlines || {};
+    var col = (window.DISC_COLORS && window.DISC_COLORS.ROW) || '#d04fd0', made = 0, segs = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]; if (A._rowOutlines[r[0]]) continue;
+      var geo = A.meshCache && A.meshCache[r[7]];
+      if (!geo) {
+        var g = A.dbQuery('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [r[7]]);
+        if (!g.length && A.libDb && A.libDb !== A.db) { try { var lr = A.libDb.exec('SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?', [r[7]]); g = lr.length ? lr[0].values : []; } catch (e) {} }
+        if (g.length && g[0][0] && g[0][1] && A.blobToGeometry) geo = A.blobToGeometry(g[0][0], g[0][1]);
+      }
+      if (!geo) { console.log('§CIVIL_ROW_OUTLINE_SKIP guid=' + r[0] + ' no geometry'); continue; }
+      var eg = new THREE.EdgesGeometry(geo, 30);
+      var line = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: col }));
+      var p = A.ifc2three(r[1], r[2], r[3]);
+      line.position.set(p.x, p.y, p.z);
+      if (r[4] || r[5] || r[6]) line.rotation.set(r[4] || 0, r[6] || 0, -(r[5] || 0));
+      line.userData.civilRowOutline = r[0];
+      A.scene.add(line); A._rowOutlines[r[0]] = line; made++; segs += eg.attributes.position.count / 2;
+    }
+    if (made) { console.log('§CIVIL_ROW_OUTLINE made=' + made + ' segments=' + segs + ' colour=' + col); if (A.markDirty) A.markDirty(); }
+  };
+
+  A._getMaterial = function(rgbaStr, ifcClass, matVariant, discipline, mepHint, matName, noMepHue, surfRow, windFlip) {
+    windFlip = !!(windFlip && ifcClass && FRONT_SIDE_CLASSES[ifcClass]);   // §WIND_FLIP: only a FrontSide class changes; others never fragment the cache
     // §S265: Standard reference materials — real-world color + roughness + metalness per IFC class.
     // Applied when IFC author assigned no material (NULL or monochrome grey).
     // Does NOT modify the DB — runtime only.
@@ -304,9 +1502,19 @@ function setupStreaming(A) {
       IfcWallStandardCase:    { r: 0.92, g: 0.91, b: 0.88, rough: 0.75, metal: 0.00 },  // painted plaster
       IfcSlab:                { r: 0.72, g: 0.70, b: 0.68, rough: 0.90, metal: 0.00 },  // cast concrete
       IfcColumn:              { r: 0.65, g: 0.64, b: 0.62, rough: 0.80, metal: 0.05 },  // reinforced concrete
-      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65 },  // steel I-beam
-      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60 },  // steel section
-      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70 },  // steel plate
+      // §HOSPITAL_BLUE_TINT (2026-08-14 session 2, CINEMA_DISCIPLINE_REVEAL.md): these 3 + IfcRailing
+      // below are the 4 highest `metal` values in this whole table — envInt overrides the global
+      // envMapIntensity=0.6 (streaming.js _getMaterial, below) down to 0.18 for JUST these 4 classes.
+      // Measured+analytically confirmed root cause: the sky's own PMREM-reflected colour is strongly,
+      // legitimately blue (A.updateSky(45,180) + Sky.js's configured rayleigh=2/turbidity=4 — computed
+      // directly from that formula, zenith sat=0.767; live-rendered probe at these classes' own
+      // roughness/reflection angle: sat=0.141), and these classes' unusually high metalness (0.55-0.70,
+      // vs 0.35-0.50 for every other reflective MEP/steel class in this table) lets that real sky
+      // colour dominate the final hue over the REAL, correctly-trusted IFC albedo underneath (never
+      // touched here — only the reflection strength is dialled back for these classes).
+      IfcBeam:                { r: 0.55, g: 0.57, b: 0.60, rough: 0.35, metal: 0.65, envInt: 0 },  // steel I-beam — zero sky reflection, user 2026-08-15: "get rid of those railings and overhead beams from been recolorized"
+      IfcMember:              { r: 0.50, g: 0.52, b: 0.55, rough: 0.40, metal: 0.60, envInt: 0.05 },  // steel section
+      IfcPlate:               { r: 0.48, g: 0.50, b: 0.53, rough: 0.30, metal: 0.70, envInt: 0.05 },  // steel plate
       IfcFooting:             { r: 0.60, g: 0.58, b: 0.56, rough: 0.95, metal: 0.00 },  // foundation
       IfcPile:                { r: 0.58, g: 0.56, b: 0.54, rough: 0.95, metal: 0.00 },  // deep foundation
       // ── Envelope ──
@@ -318,38 +1526,57 @@ function setupStreaming(A) {
       IfcWindow:              { r: 0.70, g: 0.82, b: 0.88, rough: 0.05, metal: 0.00 },  // glass
       // ── Circulation ──
       IfcStair:               { r: 0.68, g: 0.66, b: 0.63, rough: 0.80, metal: 0.00 },  // concrete/stone
-      IfcRailing:             { r: 0.40, g: 0.42, b: 0.45, rough: 0.35, metal: 0.55 },  // metal railing
+      IfcRailing:             { r: 0.50, g: 0.49, b: 0.47, rough: 0.35, metal: 0.55, envInt: 0 },  // brushed-steel warm grey — zero sky reflection, user 2026-08-15: "get rid of those railings and overhead beams from been recolorized"
       IfcRamp:                { r: 0.70, g: 0.68, b: 0.65, rough: 0.85, metal: 0.00 },  // concrete ramp
       // ── Furniture/fittings ──
       IfcFurniture:           { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
       IfcFurnishingElement:   { r: 0.65, g: 0.48, b: 0.32, rough: 0.60, metal: 0.00 },  // wood/fabric
       // ── MEP: pipes + ducts ──
-      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45 },  // galvanized
-      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45 },
-      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45 },
-      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40 },  // sheet metal
-      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40 },
-      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40 },
-      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35 },
+      // §PIPE_DUCT_BLUE_TINT (2026-08-15, same mechanism as §HOSPITAL_BLUE_TINT above, just never
+      // applied to this block): none of these 7 classes had an envInt override, so they all sat on
+      // the GLOBAL default 0.6 — which _reassertPhotoMatBoost then tripled to 1.8 during Alt+S/Alt+G,
+      // 10x higher than the beam/railing classes' already-tuned 0.18. User report 2026-08-15: "the
+      // piping, from nice grey become all bluish." Same fix, same value, extended to this block.
+      IfcPipe:                { r: 0.60, g: 0.62, b: 0.65, rough: 0.40, metal: 0.45, envInt: 0.05 },  // galvanized
+      IfcPipeFitting:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.05 },
+      IfcPipeSegment:         { r: 0.58, g: 0.60, b: 0.63, rough: 0.40, metal: 0.45, envInt: 0.05 },
+      IfcDuct:                { r: 0.55, g: 0.58, b: 0.55, rough: 0.45, metal: 0.40, envInt: 0.05 },  // sheet metal
+      IfcDuctFitting:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.05 },
+      IfcDuctSegment:         { r: 0.53, g: 0.56, b: 0.53, rough: 0.45, metal: 0.40, envInt: 0.05 },
+      IfcCableCarrier:        { r: 0.50, g: 0.52, b: 0.48, rough: 0.50, metal: 0.35, envInt: 0.05 },
       // ── MEP: terminals + devices ──
-      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30 },
-      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30 },
-      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30 },
-      IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20 },  // red valve
-      IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30 },
-      IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20 },
-      IfcEnergyConversionDevice: { r: 0.45, g: 0.55, b: 0.50, rough: 0.50, metal: 0.25 },
-      IfcLightFixture:        { r: 0.80, g: 0.75, b: 0.50, rough: 0.25, metal: 0.30 },  // brass/chrome
-      IfcSanitaryTerminal:    { r: 0.88, g: 0.88, b: 0.85, rough: 0.15, metal: 0.05 },  // ceramic
-      IfcAirTerminal:         { r: 0.55, g: 0.65, b: 0.70, rough: 0.40, metal: 0.30 },
-      IfcFireSuppressionTerminal: { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.30 }, // red
-      IfcValve:               { r: 0.55, g: 0.50, b: 0.45, rough: 0.40, metal: 0.45 },
-      IfcAlarm:               { r: 0.75, g: 0.25, b: 0.25, rough: 0.50, metal: 0.20 },  // red
-      IfcElectricAppliance:   { r: 0.60, g: 0.65, b: 0.55, rough: 0.50, metal: 0.15 },
+      // These 3 are DISC_TINT_CLASSES (below) — when null, they get swapped to a real trade colour
+      // (orange/red/purple/etc, not this flat blue-grey). envInt keeps that trade colour from being
+      // blue-washed by the Alt+S reflection boost same as the pipe/duct block above.
+      IfcFlowTerminal:        { r: 0.45, g: 0.50, b: 0.55, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFlowSegment:         { r: 0.48, g: 0.52, b: 0.58, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFlowFitting:         { r: 0.50, g: 0.53, b: 0.57, rough: 0.40, metal: 0.30, envInt: 0.05 },
+      IfcFlowController:      { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.20 , envInt: 0.05 },  // red valve
+      IfcFlowMovingDevice:    { r: 0.50, g: 0.60, b: 0.55, rough: 0.45, metal: 0.30 , envInt: 0.05 },
+      IfcFlowTreatmentDevice: { r: 0.50, g: 0.58, b: 0.55, rough: 0.50, metal: 0.20 , envInt: 0.05 },
+      IfcEnergyConversionDevice: { r: 0.45, g: 0.55, b: 0.50, rough: 0.50, metal: 0.25 , envInt: 0.05 },
+      IfcLightFixture:        { r: 0.80, g: 0.75, b: 0.50, rough: 0.25, metal: 0.30 , envInt: 0.05 },  // brass/chrome
+      IfcSanitaryTerminal:    { r: 0.88, g: 0.88, b: 0.85, rough: 0.15, metal: 0.05 , envInt: 0.05 },  // ceramic
+      IfcAirTerminal:         { r: 0.55, g: 0.65, b: 0.70, rough: 0.40, metal: 0.30 , envInt: 0.05 },
+      IfcFireSuppressionTerminal: { r: 0.80, g: 0.30, b: 0.25, rough: 0.50, metal: 0.30 , envInt: 0.05 }, // red
+      IfcValve:               { r: 0.55, g: 0.50, b: 0.45, rough: 0.40, metal: 0.45 , envInt: 0.05 },
+      IfcAlarm:               { r: 0.75, g: 0.25, b: 0.25, rough: 0.50, metal: 0.20 , envInt: 0.05 },  // red
+      IfcElectricAppliance:   { r: 0.60, g: 0.65, b: 0.55, rough: 0.50, metal: 0.15 , envInt: 0.05 },
       // ── Proxy/other ──
-      IfcBuildingElementProxy:{ r: 0.00, g: 0.78, b: 0.78, rough: 0.50, metal: 0.10 },  // teal
-      IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 },  // elevator
+      IfcBuildingElementProxy:{ r: 0.00, g: 0.78, b: 0.78, rough: 0.50, metal: 0.10 , envInt: 0.05 },  // teal
+      IfcTransportElement:    { r: 0.50, g: 0.50, b: 0.55, rough: 0.40, metal: 0.50 , envInt: 0.05 },  // elevator
     };
+
+    // §MEP_DISC_TINT's class gate WAS `{IfcFlowSegment, IfcFlowFitting, IfcFlowTerminal}` — the 3
+    // IFC2x3 generic-MEP classes, confirmed by direct DB query (HHS_Office_Federated:
+    // 1381+1284+725=3390, exactly its whole NULL-material MEP count). §MEP_COLOR_SURVIVES_PHOTOREAL
+    // (2026-09-02) RETIRED that variable: it excluded the IFC4-style classes Hospital/Terminal/LTU
+    // actually export, so 0 of Hospital's 41,987 MEP elements were ever eligible. The class set now
+    // lives in MEP_HUE_CLASSES (top of this file, next to _mepNameHint) and the ownership question
+    // "does this element get a trade hue" has ONE answer there. The old rule's caution — do not
+    // overwrite a class that already carries a distinct, correct colour (red valve, greenish
+    // device) — is PRESERVED and generalised: that caution is now tier 1b (an albedo that already
+    // carries a hue is never touched), applied per ELEMENT instead of per class.
 
     // §TRIPLANAR: real PBR texture, still-render-only (PHOTOREAL_STILL_RENDER.md §LAYER 3).
     // World-space triplanar sampling — needs no UV data (IFC extraction has none). Gated at
@@ -370,36 +1597,75 @@ function setupStreaming(A) {
     // `(triDiffuse - 1.0) * uTriContrast + 1.0` shader line below) — same average brightness,
     // more visible grain/streak. Metal gets the strongest boost (brushed-streak highlights are
     // the most visually distinctive of the three); concrete/plaster more modest.
+    // §TRIPLANAR_CAST_FIX (2026-08-15, real bug found+fixed — PHOTOREAL_STILL_RENDER.md
+    // §HOSPITAL_META_DB_STALE resume block): normFactor above was always a single scalar
+    // (1/overall-luminance), which only re-centers BRIGHTNESS — it silently preserves any
+    // per-channel colour cast the source texture already has, and contrastBoost then AMPLIFIES
+    // that cast along with the intended grain (same formula, `(value-1.0)*boost+1.0` doesn't
+    // distinguish "real grain" from "systematic tint"). Measured directly
+    // (`textures/materials/*_color_1k.jpg`, mean RGB, 1024x1024): concrete is exactly
+    // grayscale (R=G=B=0.7228, no cast, scalar factor is exact and correct, untouched here).
+    // plaster is 2% off (0.7448/0.7477/0.7324, essentially neutral). metal is NOT: mean RGB
+    // (0.4901, 0.5353, 0.5784) — B is 18% above R — a real, systematic blue-grey cast, not
+    // grain, and metal's contrastBoost (1.9, the strongest of the 3 groups) was amplifying it
+    // on every metal-class element (IfcBeam/Railing/Pipe*/Duct*/CableCarrier*/Flow*) during
+    // Alt+S/Alt+G, independent of and in addition to that element's own real IFC colour —
+    // this is why a correctly red-albedo pipe fitting or cream-albedo beam read cooler/greyer
+    // specifically when staged, never in plain nav (uTriActive gates it to staging only).
+    // Fix: normFactorRGB is the PER-CHANNEL inverse mean (removes the cast entirely, each
+    // channel now genuinely centres at 1.0) instead of a single scalar broadcast to all three.
+    // §TRINORM_LINEAR (2026-08-16 — PHOTOREAL_STILL_RENDER.md §ONGOING_TINT root cause): every
+    // normFactor above (scalar AND per-channel) was derived from the JPG's raw sRGB byte means,
+    // but the shader multiply happens in LINEAR light — these textures are flagged
+    // SRGBColorSpace, so the GPU decodes them BEFORE texture2D() returns. In linear space the
+    // real means are far lower (metal 0.205/0.248/0.294, not 0.490/0.535/0.578), so the sRGB-
+    // derived factors under-normalize ~2.0-2.4x: the "centred at 1.0" product actually centred
+    // at ~0.42-0.53, and the contrast line `(x-1.0)*boost+1.0` then clamps every texel below
+    // 1-1/boost to LITERAL ZERO (metal boost 1.9 → 41% of texels → multiply-by-0 → pure-black
+    // pixels on every metal-class element under Alt+S, with a blue-dominant residue on the rest
+    // because the R factor over-crushes red hardest — the reported "bluish, darker" piping and
+    // the black valve pixels are both exactly this). normFactorRGB below is now the inverse of
+    // the LINEAR mean (sRGB-decoded before averaging); measured multiply now centres at 1.000
+    // per channel with 0.00% of texels clamping to zero, at unchanged contrastBoost.
     var _TRI_CONCRETE = {
       diffuse: 'textures/materials/concrete_color_1k.jpg',
       roughness: 'textures/materials/concrete_rough_1k.jpg',
+      normal: 'textures/materials/concrete_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.5,     // world units per texture repeat
-      normFactor: 1.384,   // 1 / measured avg luminance (0.723) — see textures/materials/NOTICE.txt
+      normFactorRGB: [2.0755, 2.0755, 2.0755],  // §TRINORM_LINEAR — inverse LINEAR mean (grayscale tex)
       contrastBoost: 1.6
     };
     var _TRI_PLASTER = {
       diffuse: 'textures/materials/plaster_color_1k.jpg',
       roughness: 'textures/materials/plaster_rough_1k.jpg',
+      normal: 'textures/materials/plaster_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 2.0,
-      normFactor: 1.348,   // 1 / 0.742
+      normFactorRGB: [1.9428, 1.9262, 2.0172],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.5
     };
     var _TRI_METAL = {
       diffuse: 'textures/materials/metal_color_1k.jpg',
       roughness: 'textures/materials/metal_rough_1k.jpg',
+      normal: 'textures/materials/metal_normal_1k.jpg',   // §TRIPLANAR_NORMAL
       tileMeters: 0.6,     // finer tile — railings/pipes/ducts are thin members
-      normFactor: 1.870,   // 1 / 0.535
+      normFactorRGB: [4.8763, 4.0250, 3.3988],  // §TRINORM_LINEAR — inverse LINEAR mean per channel
       contrastBoost: 1.9
     };
+    // §CONCRETE_TONE dials: APP._concrete (0..1) > &concrete= > 0.55 (strength; contrast 1.1 x 0.55 = 0.6, red1's
+    // start); APP._concreteTile (m) > &concretetile= > 4.0 (was _TRI_CONCRETE's 2.5 m — a larger tile, red1 "consider").
+    var R3_CONTRAST = 1.1;
+    var _concreteUrl = (function() { var m = /[?&]concrete=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    var _concreteTileUrl = (function() { var m = /[?&]concretetile=([0-9.]+)/.exec(location.search); return m ? parseFloat(m[1]) : null; })();
+    A._concreteStrength = function() { var v = (typeof A._concrete === 'number') ? A._concrete : (_concreteUrl != null ? _concreteUrl : 0.55); return Math.max(0, Math.min(1, isFinite(v) ? v : 0.55)); };
+    A._concreteTile = function() { var v = (typeof A._concreteTileM === 'number') ? A._concreteTileM : (_concreteTileUrl != null ? _concreteTileUrl : 4.0); return Math.max(0.5, Math.min(20, isFinite(v) ? v : 4.0)); };
     var TRIPLANAR_MAT = {
       // ── Concrete (STD_MAT: "concrete/plaster", "cast concrete", "reinforced concrete", ...) ──
       IfcWall: _TRI_CONCRETE,
       IfcSlab: _TRI_CONCRETE,
       IfcColumn: _TRI_CONCRETE,
       IfcFooting: _TRI_CONCRETE,
-      IfcPile: _TRI_CONCRETE,
       IfcStair: _TRI_CONCRETE,
-      IfcRamp: _TRI_CONCRETE,
+      IfcStairFlight: _TRI_CONCRETE,
       // ── Plaster (STD_MAT: "painted plaster", "plasterboard") ──
       IfcWallStandardCase: _TRI_PLASTER,
       IfcCovering: _TRI_PLASTER,
@@ -408,30 +1674,164 @@ function setupStreaming(A) {
       IfcMember: _TRI_METAL,
       IfcPlate: _TRI_METAL,
       IfcRailing: _TRI_METAL,
-      IfcPipe: _TRI_METAL,
       IfcPipeFitting: _TRI_METAL,
       IfcPipeSegment: _TRI_METAL,
-      IfcDuct: _TRI_METAL,
       IfcDuctFitting: _TRI_METAL,
       IfcDuctSegment: _TRI_METAL,
-      IfcCableCarrier: _TRI_METAL
+      IfcCableCarrierSegment: _TRI_METAL,
+      IfcCableCarrierFitting: _TRI_METAL,
+      // ── IFC2x3 generic-MEP convention (Clinic/LTU/HHS export these instead of the above) ──
+      IfcFlowSegment: _TRI_METAL,
+      IfcFlowTerminal: _TRI_METAL,
+      IfcFlowFitting: _TRI_METAL,
+      // §TRIPLANAR_MEP_GAPS (PHOTOREAL_STILL_RENDER.md ▶RESUME item 2, user: "it replaces
+      // selectively in some piping but not exactly similar next to it"). Real MEP runs mix inline
+      // devices (valves/dampers/pumps/gauges) between segments/fittings — those classes carried no
+      // triplanar entry, so an untextured device sitting between two grain-streaked pipe/duct
+      // segments on the SAME run read flat/plain right next to its textured neighbours, exactly the
+      // "selective" symptom. IfcValve found the same way as the other 4 (STD_MAT metal>0.3, same as
+      // the group comment above) but had no triplanar entry either — Terminal alone carries 111 of
+      // them, a real gap, not a hypothetical one; confirmed via elements_meta counts before adding
+      // (Clinic: IfcFlowController 369, IfcFlowMovingDevice 13, IfcFlowStorageDevice 1; Terminal:
+      // IfcFlowController 21, IfcValve 111). IfcFlowInstrument has zero real occurrences in any
+      // building checked but is added anyway for schema completeness, same as its siblings.
+      IfcFlowController: _TRI_METAL,
+      IfcFlowMovingDevice: _TRI_METAL,
+      IfcFlowInstrument: _TRI_METAL,
+      IfcFlowStorageDevice: _TRI_METAL,
+      IfcValve: _TRI_METAL
     };
 
+    // §CPE_MATERIAL_KEY (CINEMA_PATH_EDITOR.md, 2026-09-01) — the element's OWN authored IFC
+    // material name, consulted BEFORE its ifc_class. Same defect family as §GLASS_NOT_METAL: the
+    // class alone was deciding a question the element itself already answers. Terminal carries
+    // material_name on 48,428/48,428 elements (41 distinct, 0 of them the synthetic `≈ ` colour
+    // labels Hospital/Clinic/HHS carry) — none of it was reaching this function.
+    //
+    // GROUNDING RULES, so this stays presentation-authoring and not invention:
+    //  1. Only the THREE texture sets that already exist in viewer/textures/materials/ are used.
+    //     No new asset is introduced; a name whose substance has no texture stays unmapped.
+    //  2. A key is a name that DENOTES A MATERIAL SUBSTANCE. Component names ("Seat Base", "Fin"),
+    //     colour words ("Red", "Grigio"), placeholders ("Default", "<Unnamed>") and Revit TYPE
+    //     names are not materials and are deliberately absent.
+    //  3. Absent ⇒ fall through to TRIPLANAR_MAT[ifcClass] ⇒ byte-identical to today.
+    //
+    // The trap this map is shaped around, measured on Terminal_meta.db:
+    // `Basic Wall:A_Wall_Ext_150mm_BrickPlaster_V1` covers 7,714 elements but only 327 (4.2%) are
+    // IfcWall — it is a wall-TYPE name leaked onto elements hosted in that wall (IfcPipeFitting
+    // 4,243, IfcDuctFitting 713, IfcDuctSegment 568, IfcLightFixture 486, IfcAirTerminal 286…).
+    // Keying it to plaster would strip metal off 5,892 MEP elements that §TRIPLANAR_MEP_GAPS
+    // deliberately textured. It is NOT a material name, so it is NOT here.
+    var TRIPLANAR_BY_NAME = {
+      // ── Metal ── (Terminal counts in comments; substance is in the name itself)
+      'Metal Deck': _TRI_METAL,                                   // 33,756
+      'Silver': _TRI_METAL,                                       //  4,263
+      'Copper': _TRI_METAL,                                       //  1,169
+      'Aluminum': _TRI_METAL,                                     //    256
+      'Steel, Paint Finish, Ivory, Glossy': _TRI_METAL,           //    157
+      'Rastelli Rubinetterie - Metal - Brass - Bronze': _TRI_METAL, //   41
+      'Metal - Steel, Polished': _TRI_METAL,                      //     24
+      'Door Handle - Aluminium': _TRI_METAL,                      //      9
+      'Metal - Generic - Black Finish': _TRI_METAL,               //      4
+      'Metal Panel': _TRI_METAL,                                  //      2
+      'Steel - Zurn Industries - Stainless - Type 304': _TRI_METAL, //     1
+      'Metal-WATTS-ASTM A-536 Ductile Iron-Blue': _TRI_METAL,     //      1
+      'Metal - IEC - Steel': _TRI_METAL,                          //      1
+      // ── Concrete ──
+      'Concrete - Cast-in-Place Concrete - 45 MPa': _TRI_CONCRETE, //   448
+      'Concrete, C12/15': _TRI_CONCRETE,                          //      1
+      // ── Plaster / board finishes (the JKR ceiling family) ──
+      'jkrAR_clg-f_(pv60)-3 600mm x 600mm PVC Laminated Gypsum Board': _TRI_PLASTER,      // 34
+      'jkrAR_clg-f_(cf60)-3 1220 x 1220 x 4.5mm Papan simen gentian': _TRI_PLASTER,       // 22
+      'jkrAR_clg-f_(pv60)-3 600mm x 1200mm PVC Laminated Gypsum Board(1)': _TRI_PLASTER,  // 15
+      'jkrAR_clg-f_(sk)-2 Skim Coat Plastering': _TRI_PLASTER                             // 11
+    };
+    // §CPE_MATERIAL_KEY: publish the SAME two objects (not copies) so the rollup below and any
+    // witness resolve through one implementation instead of re-deriving the rule. Ownership rule,
+    // CLAUDE.md §PRIMAL LAW 0: one owner per question.
+    A._TRIPLANAR_MAT = TRIPLANAR_MAT;
+    A._TRIPLANAR_BY_NAME = TRIPLANAR_BY_NAME;
+
     const key = rgbaStr || '_default';
-    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '');
+    // §CPE_MATERIAL_KEY: matName joins the cache key (two elements with the same rgba+class but
+    // different authored materials must not share one material object). It is appended LAST so the
+    // `rgba|class` prefix every existing reader uses (witness_glass_not_metal, effects.js) is
+    // untouched, and its `Ifc` is de-capitalised because time_machine.js:2485 decides night-glow by
+    // `_mk.indexOf('IfcWindow') >= 0` — a SUBSTRING scan of the whole composite key. An authored
+    // material literally containing an Ifc class name would otherwise silently join the bloom set.
+    // Case-only change: the key stays readable, and the real name lives in mat.userData._matName.
+    if (!A._stdMatClasses) A._stdMatClasses = Object.freeze(Object.assign({}, STD_MAT));   // read-only, for the §PLACEHOLDER_COLOUR rollup + witness
+    var cacheKey = key + '|' + (ifcClass || '') + '|' + (matVariant || '') + '|' + (discipline || '') + '|' + (mepHint ? mepHint.code : '') + '|' + (matName || '').replace(/Ifc/g, 'ifc')
+      + (noMepHue ? '|noMepHue' : '')
+      + (surfRow ? '|surf=' + surfRow : '')
+      + (A._metalPbrOff ? '|metalOld' : '')   // ### ALTS-ALL FIX 11 A/B switch (&metalpbr=0) — never served across arms
+      + (A._placeholderOff ? '|phOff' : '')
+      + (windFlip ? '|wf' : '');   // §WIND_FLIP: a bucket holding a flipped-winding geometry gets its own DoubleSide material   // §PLACEHOLDER_COLOUR red control (witness only) — never served a stale material   // §SURFACE_RULES — one material per row   // §MEP_COLOR_SURVIVES_PHOTOREAL — a suppressed material must never be served from the un-suppressed entry
     if (A._matCache[cacheKey]) return A._matCache[cacheKey];
     let r = 0.7, g = 0.7, b = 0.7, a = 1.0;
     if (rgbaStr && rgbaStr.includes(',')) {
       const parts = rgbaStr.split(',').map(Number);
       r = parts[0]; g = parts[1]; b = parts[2];
-      if (parts.length >= 4 && parts[3] < 1.0) a = parts[3];
     }
+    a = A._alphaOf(rgbaStr);   // §CPE_MATERIAL_KEY: one owner for "is this surface transparent"
     // §S265c: Trust IFC data. Only NULL (no color assigned) gets class fallback.
     // For grey buildings (Terminal/LTU), user applies Sunglasses slider on demand.
     var stdMat = (ifcClass && STD_MAT[ifcClass]) ? STD_MAT[ifcClass] : null;
+    // ### ALTS-ALL FIX 11 (b)/(c) (D2): pipes / ducts / structural steel = dielectric (painted/coated) metal 0, or bare metal 1 when the
+    // name says so ('metal:<key>' variant); the pipe/duct envInt 0.05 (§PIPE_DUCT_BLUE_TINT — a metalness artefact) is dropped -> the
+    // global 0.6; IfcBeam envInt 0 (red1 2026-08-15) and IfcMember/IfcPlate 0.05 are kept. &metalpbr=0 = the old table.
+    var _bareKey = (typeof matVariant === 'string' && matVariant.indexOf('metal:') === 0) ? matVariant.slice(6) : '';
+    var _bare = _bareKey ? A.BARE_METAL_PBR[_bareKey] : null;
+    if (stdMat && A.METAL_PBR_CLASSES[ifcClass] && A._metalPbrLogged !== !!A._metalPbrOff) { A._metalPbrLogged = !!A._metalPbrOff;
+      console.log('§METAL_PBR ' + (A._metalPbrOff ? 'off (&metalpbr=0: old STD_MAT metal/envInt, name hint first)' : 'on (pipes/ducts/steel metal 0 unless bare-metal named -> 1; pipe/duct envInt 0.05 dropped; specific-trade discipline before the name hint)')); }
+    if (stdMat && !A._metalPbrOff && A.METAL_PBR_CLASSES[ifcClass]) {
+      var _pd = /^Ifc(Pipe|Duct|FlowSegment|FlowFitting)/.test(ifcClass);
+      stdMat = Object.assign({}, stdMat, { metal: _bare ? 1 : 0 });
+      if (_pd && stdMat.envInt === 0.05) delete stdMat.envInt;
+    }
     if (!rgbaStr && stdMat) {
       r = stdMat.r; g = stdMat.g; b = stdMat.b;
+      // §MEP_DISC_TINT (2026-08-14, CINEMA_DISCIPLINE_REVEAL.md §Findings): IFC2x3's 3 generic
+      // flow classes carry no trade info in the class name, so fire/plumbing/HVAC/etc all fell
+      // into one identical flat blue-grey metal look when unassigned (confirmed: HHS's whole MEP
+      // discipline, 3390/3399 elements, NULL material_rgba, all landing here). Swap the flat
+      // fallback hue for the real trade colour outright (full replace, not a wash — user's
+      // explicit call: "replace color for color", not a blend). Roughness/metalness stay from
+      // STD_MAT, so the metallic PBR read is unchanged, only the hue moves.
+      // §MEP_COLOR_SURVIVES_PHOTOREAL: DISC_TINT_CLASSES' narrow 3-class gate is subsumed by
+      // A._mepDiscAlbedo below — which is reached from BOTH the has-rgba and the no-rgba path, and
+      // covers every MEP class STD_MAT already lists, not just the IFC2x3 generic trio. The
+      // no-rgba branch of that owner returns the trade colour VERBATIM, so this path is preserved
+      // byte-identically for the one building it ever fired on (HHS, 3,390 NULL rows).
     }
+    // §MEP_COLOR_SURVIVES_PHOTOREAL (2026-09-02, PHOTOREAL_STILL_RENDER.md): ONE owner decides
+    // whether an MEP element's albedo gains a trade hue, and which. It is called on EVERY element
+    // (not only the !rgbaStr ones) because the measured defect is that 100% of MEP on Hospital /
+    // Clinic / Terminal / LTU DOES carry a colour — an achromatic off-white default the metal
+    // triplanar texture then multiplies into "greyish metallic". Tier 1 (a real authored material
+    // name, or an rgba that already carries a hue — the user's fire-red lever) returns null here
+    // and is byte-identical. Only HUE moves: the element keeps its own V, and roughness/metalness/
+    // envMapIntensity/the triplanar multiply below are all untouched, so the metallic PBR read the
+    // user complimented survives.
+    // §PORCELAIN (Z20): a glazed fixture keeps its own colour; with none of its own (NULL or the exporter placeholder) it takes
+    // STD_MAT.IfcSanitaryTerminal's "ceramic", and it is never given an MEP trade hue (a toilet is not plumbing purple).
+    var _isPorc = (matVariant === 'porcelain');
+    var _isPh = !A._placeholderOff && A._isExporterPlaceholder(rgbaStr, matName);   // §PLACEHOLDER_COLOUR (Z21)
+    if (_isPorc && (!rgbaStr || _isPh)) { r = STD_MAT.IfcSanitaryTerminal.r; g = STD_MAT.IfcSanitaryTerminal.g; b = STD_MAT.IfcSanitaryTerminal.b; }
+    if (_bare && (!rgbaStr || _isPh)) { var _oe = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+      r = _oe(_bare.lin[0]); g = _oe(_bare.lin[1]); b = _oe(_bare.lin[2]); }   // cited srgb-linear, stored sRGB-encoded (Z9 decodes at stage)
+    var _pvm = (typeof matVariant === 'string' && matVariant.indexOf('proxy:') === 0) ? A.PROXY_NAME_MAT[matVariant.slice(6)] : null;   // §PROXY_NAME_MAT
+    if (_pvm && (!rgbaStr || _isPh)) { r = _pvm.r; g = _pvm.g; b = _pvm.b; }
+    var _mepAlb = (noMepHue || _isPorc || _bare || _pvm) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
+    if (_mepAlb) {
+      r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
+      A._mepHueCounts = A._mepHueCounts || {};
+      var _mhk = _mepAlb.code + '|' + _mepAlb.src;
+      A._mepHueCounts[_mhk] = (A._mepHueCounts[_mhk] || 0) + 1;
+    }
+    // §PLACEHOLDER_COLOUR (Z21): the exporter's cream is NO colour — MEP tier 2 (above, unchanged) had first call; otherwise the
+    // class's STD_MAT default. IfcBuildingElementProxy excluded: its STD_MAT teal is a flag colour, not a material.
+    if (_isPh && !_mepAlb && !_isPorc && !_bare && stdMat && ifcClass !== 'IfcBuildingElementProxy') { r = stdMat.r; g = stdMat.g; b = stdMat.b; }
     // §S260d: Gentler near-white taming — let ACES tone mapping handle the rest
     if (r > 0.85 && g > 0.85 && b > 0.85) { r *= 0.92; g *= 0.92; b *= 0.92; }
     const opts = { color: new THREE.Color(r, g, b), flatShading: false };
@@ -442,21 +1842,111 @@ function setupStreaming(A) {
     // metals/glass stay glossy by ratio. Floor at 0.08 so nothing becomes a mirror artefact.
     var _rough = stdMat ? stdMat.rough : 0.55;
     opts.roughness = Math.max(0.08, _rough * 0.75);
-    opts.metalness = stdMat ? stdMat.metal : 0.08; // §refl: slight metal lift gives surfaces real specular response
-    opts.side = THREE.DoubleSide; // §S260d: IFC geometry has inconsistent normals — DoubleSide ensures pick works
-    if (A._envMap) { opts.envMap = A._envMap; opts.envMapIntensity = 0.6; } // §refl: 0.3->0.6 — more realistic reflection emphasis
+    // §GLASS_NOT_METAL (2026-08-30): STD_MAT is chosen by ifc_class ALONE, so an element carrying a
+    // real, transparent IFC material still got its class's OPAQUE PBR. Measured on live Clinic: the
+    // IDENTICAL IFC material `0.000,0.502,0.753,0.100` renders two different ways purely by class —
+    //   IfcWindow → metalness 0.00, envMapIntensity 0.6   (correct clear glass, 58 elements)
+    //   IfcPlate  → metalness 0.70, envMapIntensity 0.05  (STD_MAT "steel plate", 167 elements)
+    // — so 167 of Clinic's 225 glass panels rendered as metal: at metalness 0.7 the diffuse albedo is
+    // suppressed and envInt 0.05 leaves almost nothing to reflect, i.e. "loss of glass / no longer
+    // see thru" (§A), with no X-ray involved. §S265c's "trust IFC data" was only ever applied to
+    // COLOUR; alpha<1 is the IFC itself declaring the surface transparent, and in a metal/rough
+    // workflow a transparent surface is BY DEFINITION not a metal (metals are opaque). So when the
+    // element's own material says a<1, the opaque class default does not describe it — drop the
+    // metalness rather than let a steel-plate preset override real glazing.
+    opts.metalness = (a < 1.0) ? 0.0 : (stdMat ? stdMat.metal : 0.08); // §refl: slight metal lift gives surfaces real specular response
+    // §WALL_SIDE (2026-09-01): class-keyed side — see FRONT_SIDE_CLASSES above. This corrects
+    // §S260d's premise "IFC geometry has inconsistent normals — DoubleSide ensures pick works":
+    // MEASURED FALSE in §WALL_WINDING_MEASURE (PHOTOREAL_STILL_RENDER.md) — no geo DB ships a
+    // normals column, computeVertexNormals() derives the shading normal FROM the winding, and the
+    // winding is consistent (uniformly-inverted meshes fleet-wide: 2 of 111,610 = 0.003%).
+    // FrontSide on the measured-closed classes gives back-face-correct shading + backface-culling;
+    // DoubleSide stays for the sheet-heavy classes where a one-sided face must render both ways.
+    // Pick integrity across the flip is witness-gated (witness_wall_side_light_floor.js S3).
+    // Transparent path (a<1.0, above) already forced DoubleSide and is untouched.
+    if (a >= 1.0) {
+      opts.side = (ifcClass && FRONT_SIDE_CLASSES[ifcClass] && !windFlip) ? THREE.FrontSide : THREE.DoubleSide;   // §WIND_FLIP: a culled flipped face would make the element invisible from one side
+    }
+    // §refl: 0.3->0.6 — more realistic reflection emphasis (global default).
+    // §HOSPITAL_BLUE_TINT: per-class override (STD_MAT[...].envInt) for the small set of classes
+    // whose unusually high metalness otherwise lets the sky's real, strongly-blue PMREM reflection
+    // dominate the hue over their own correctly-trusted real IFC albedo — see STD_MAT comments above.
+    // §GLASS_NOT_METAL: the envInt overrides exist ONLY to stop a high-metalness class letting the
+    // sky's real blue PMREM reflection dominate its albedo (§HOSPITAL_BLUE_TINT / §PIPE_DUCT_BLUE_TINT
+    // above). A transparent surface has metalness 0 here, so that reason does not apply to it — and
+    // 0.05 on glass kills the reflection that makes glazing read as glass at all. Use the global 0.6.
+    if (A._envMap) {
+      opts.envMap = A._envMap;
+      opts.envMapIntensity = (a < 1.0) ? 0.6
+        : ((stdMat && stdMat.envInt != null) ? stdMat.envInt : 0.6);
+    }
+    // §SURFACE_RULES — roughness / reflection per row (null = keep today's value). Colour is never touched.
+    if (surfRow && surfRow !== 'R9') {
+      var _SRP = { R1: [0.55, null], R2c: [0.8, null], R2p: [0.8, null], R3: [0.85, null], R4: [0.35, 0.3], R5: [0.75, null], R6: [0.45, null] }[surfRow];
+      if (_SRP) { opts.roughness = _SRP[0]; if (_SRP[1] != null) opts.envMapIntensity = _SRP[1]; }
+      // §FURNITURE_POLISH (red1 2026-10-01 "Furniture should have some polish"): furniture / furnishing elements whose material names no
+      // fabric read as a finished (lacquered / laminated) surface: roughness 0.35 instead of the class default 0.60. AUTHORED value (no
+      // source); &furnpolish=0 = off, &furnpolish=r overrides. Clinic's own names: 'Counter Top', 'Laminate - Ivory, Matte' (matte kept 0.6).
+      var _furnPolished = false;
+      if ((ifcClass === 'IfcFurniture' || ifcClass === 'IfcFurnishingElement') && !/fabric|textile|uphol|cloth|matte|carpet/i.test(matName || '')) {
+        var _fp = /[?&]furnpolish=([0-9.]+)/.exec(location.search), _fpv = _fp ? parseFloat(_fp[1]) : 0.35;
+        if (_fpv > 0) { opts.roughness = Math.max(0.05, Math.min(1, _fpv)); _furnPolished = true; }
+      }
+      // §FLOOR_WASH dials (red1: "a bit of bright wash, particularly the floor"; look arms, read at load, defaults
+      // unchanged): &r4rough= overrides R4's 0.35.
+      if (surfRow === 'R4') { var _r4m = /[?&]r4rough=([0-9.]+)/.exec(location.search); if (_r4m) opts.roughness = Math.max(0.02, Math.min(1, parseFloat(_r4m[1]))); }
+    }
+    // §PORCELAIN (Z20): physicallybased.info Porcelain roughness 0 / metalness 0, floored at the §refl 0.08 (no mirror artefact);
+    // a dielectric takes the global envMapIntensity 0.6 (the 0.05 overrides exist only for high-metalness classes)
+    if (_isPorc) { opts.roughness = Math.max(0.08, A.PORCELAIN_PBR.roughness); opts.metalness = A.PORCELAIN_PBR.metalness; if (opts.envMap) opts.envMapIntensity = 0.6; }
     const mat = new THREE.MeshStandardMaterial(opts);
+    if (typeof _furnPolished !== 'undefined' && _furnPolished) mat.userData.furnPolish = opts.roughness;   // §FURNITURE_POLISH
+    if (_isPorc) { mat.userData._photoEnvExempt = true; mat.userData._porcelain = true; }   // Alt+S boost must not move the cited finish
+    // §FLOOR_WASH: &r4envboost=0 exempts R4 floors from Alt+S's x2 env boost (roughness 0.35 <= PHOTO_GLOSSY_ROUGHNESS_MAX
+    // 0.5 makes them "glossy", so their sky reflection doubles 0.3 -> 0.6 in the still), via the existing exemption flag.
+    if (surfRow === 'R4' && /[?&]r4envboost=0/.test(location.search)) mat.userData._photoEnvExempt = true;
+    if (surfRow) mat.userData.surfRow = surfRow;
+    // §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (2026-08-15): effects.js's _reassertPhotoMatBoost() blindly
+    // multiplies envMapIntensity x3 and tightens roughness x0.4 on every metal/glossy material
+    // during Alt+S/Alt+G, with no awareness of this per-class envInt tuning above — so the SAME
+    // blue-sky-reflection this envInt was set to fight comes back 3x stronger specifically during a
+    // photoreal capture (user report 2026-08-15: beams/railings/plates/members "already nice" in
+    // plain nav, "too much bluish" in the baked MP4 — exactly the Alt+S-only symptom this explains).
+    // Flag so the boost pass can exempt materials that were already hand-tuned for this exact issue.
+    if (stdMat && stdMat.envInt != null) mat.userData._photoEnvExempt = true;
     // §TRIPLANAR: classes with a real texture set skip the fake-grain perturbation below —
     // the real photo texture takes over that job, stacking both would double-bump the normal
     // with two uncorrelated patterns.
-    var triMat = (ifcClass && TRIPLANAR_MAT[ifcClass]) ? TRIPLANAR_MAT[ifcClass] : null;
+    // §GLASS_NOT_METAL: TRIPLANAR_MAT is also class-keyed, so IfcPlate glazing was being given
+    // _TRI_METAL (`metal_color_1k.jpg`) — a brushed-metal weathering texture painted onto glass
+    // (visible in the user's own log as `§TRIPLANAR_INIT class=IfcPlate tex=…/metal_color_1k.jpg`).
+    // A transparent surface never wants an opaque material's surface-wear texture.
+    // §CPE_MATERIAL_KEY: name FIRST, class as fallback. The alpha guard above is evaluated before
+    // both and is unchanged — a transparent surface never gets an opaque wear texture, whatever it
+    // is called. `_triSrc` is recorded so the witness can assert WHICH key decided, not just that
+    // some texture appeared.
+    var _triR = A._triResolve(a, ifcClass, matName);
+    var triMat = _triR.mat;
+    var _triSrc = _triR.src;
+    // §SURFACE_RULES: texture only where the real surface is coarse at building scale (R1-R3), and softer
+    // than the shipped contrast (1.9 / 1.6 -> 1.2 / 1.1); every other row renders its own colour smooth.
+    if (surfRow === 'R9') { triMat = null; _triSrc = 'surf:R9'; }   // majority-glass batch: never a wear texture, whatever items[0] is
+    else if (surfRow) {
+      // §WALL_TEXTURE (red1 2026-10-01 "surfacing is bland when all greyish. Walls … should have some diff texture"): R5 (painted plaster /
+      // plasterboard walls + coverings) now carries the plaster set at the soft R2p contrast (1.05); was smooth (R1-R3 only). &r5tex=0 = smooth.
+      var _r5 = /[?&]r5tex=0/.test(location.search) ? null : [_TRI_PLASTER, 1.5 * 0.7];
+      var _SR = { R1: [_TRI_METAL, 1.2], R2c: [_TRI_CONCRETE, 1.6 * 0.7], R2p: [_TRI_PLASTER, 1.5 * 0.7], R3: [_TRI_CONCRETE, 1.1], R5: _r5 }[surfRow];
+      triMat = _SR ? Object.assign({}, _SR[0], { contrastBoost: _SR[1] }) : null;
+      _triSrc = 'surf:' + surfRow;
+    }
+    if (_isPorc) { triMat = null; _triSrc = 'porcelain'; }   // §PORCELAIN: glaze is smooth — no wear texture
 
     // §S277: Procedural normal perturbation — gives surface texture to flat IFC geometry.
     // Metallic surfaces (pipes, ducts, beams): fine brushed-metal grain.
     // Rough surfaces (concrete, slabs, walls): coarse pebble texture.
     // Zero geometry cost. Reduces temporal aliasing shimmer on flat-color surfaces.
     var _perturbScale = 0;
-    if (!triMat) {
+    if (!triMat && !_isPorc && !(surfRow && surfRow !== 'R9')) {   // §SURFACE_RULES: smooth rows get no fake grain either; §PORCELAIN neither
       if (stdMat && stdMat.metal > 0.3) _perturbScale = 0.15;  // metal: subtle brushed grain
       else if (stdMat && stdMat.rough > 0.7) _perturbScale = 0.25;  // concrete: visible grain
     }
@@ -501,13 +1991,18 @@ function setupStreaming(A) {
       }
       var _diffuseTex = _triTex(triMat.diffuse, true);
       var _roughTex = _triTex(triMat.roughness, false);
+      var _normalTex = triMat.normal ? _triTex(triMat.normal, false) : null;
       var _triUvScale = 1.0 / triMat.tileMeters;
-      var _triNorm = triMat.normFactor;
+      var _triNorm = new THREE.Vector3(triMat.normFactorRGB[0], triMat.normFactorRGB[1], triMat.normFactorRGB[2]);
       var _triContrast = triMat.contrastBoost || 1.0;
+      var _triIsR3 = (surfRow === 'R3');   // §CONCRETE_TONE — live strength/tile on the R3 concrete rows only
+      mat.userData.triRow = surfRow || null;
       mat.onBeforeCompile = function(shader) {
         shader.uniforms.uTriActive = { value: 0.0 };  // flipped by A.startStillRefine()/_teardownStillRefine()
         shader.uniforms.uTriDiffuse = { value: _diffuseTex };
         shader.uniforms.uTriRoughness = { value: _roughTex };
+        shader.uniforms.uTriNormalMap = { value: _normalTex };
+        shader.uniforms.uTriNormalScale = { value: _normalTex ? 1.0 : 0.0 };
         shader.uniforms.uTriScale = { value: _triUvScale };
         shader.uniforms.uTriNorm = { value: _triNorm };
         shader.uniforms.uTriContrast = { value: _triContrast };
@@ -554,11 +2049,44 @@ function setupStreaming(A) {
             'varying vec3 vTriWorldNormal;',
             'uniform sampler2D uTriDiffuse;',
             'uniform sampler2D uTriRoughness;',
+            'uniform sampler2D uTriNormalMap;',
+            'uniform float uTriNormalScale;',
             'uniform float uTriActive;',
             'uniform float uTriScale;',
-            'uniform float uTriNorm;',
+            'uniform vec3 uTriNorm;',   // §TRIPLANAR_CAST_FIX — per-channel, was a scalar
             'uniform float uTriContrast;',
             'uniform float uPaintSeed;'
+          ].join('\n'))
+          .replace('#include <normal_fragment_maps>', [
+            '#include <normal_fragment_maps>',
+            // §TRIPLANAR_NORMAL (2026-08-30) — the missing third map. NOTICE.txt recorded the gap
+            // from day one: "Diffuse+roughness only (no normal/AO ... two-maps-only first pass)".
+            // Without it every fragment of a flat wall/floor/slab shares ONE surface normal, so the
+            // lighting term is CONSTANT across the whole surface: the texture tints the albedo and
+            // the light never varies. Measured on a real Alt+S Terminal frame: ceiling patch luma
+            // std 5.67, floor patch std 16.92 — flat, and no tuning can fix it because there is no
+            // relief for the light to catch. Same still-only uTriActive gate as the other two maps,
+            // so navigation still pays nothing.
+            // Whiteout/UDN blend: each axis sample is swizzled into world space and blended by the
+            // same triW weights the diffuse uses, then taken to VIEW space (three.js `normal` is
+            // view-space at this point).
+            'if (uTriActive > 0.5 && uTriNormalScale > 0.0) {',
+            '  vec3 nW = normalize(vTriWorldNormal);',
+            '  vec3 nTriW = pow(abs(nW), vec3(4.0));',
+            '  nTriW /= (nTriW.x + nTriW.y + nTriW.z + 1e-5);',
+            '  vec2 nUvX = vTriWorldPos.zy * uTriScale;',
+            '  vec2 nUvY = vTriWorldPos.xz * uTriScale;',
+            '  vec2 nUvZ = vTriWorldPos.xy * uTriScale;',
+            '  vec3 tX = texture2D(uTriNormalMap, nUvX).xyz * 2.0 - 1.0;',
+            '  vec3 tY = texture2D(uTriNormalMap, nUvY).xyz * 2.0 - 1.0;',
+            '  vec3 tZ = texture2D(uTriNormalMap, nUvZ).xyz * 2.0 - 1.0;',
+            '  tX = vec3(tX.xy + nW.zy, abs(tX.z) * nW.x);',
+            '  tY = vec3(tY.xy + nW.xz, abs(tY.z) * nW.y);',
+            '  tZ = vec3(tZ.xy + nW.xy, abs(tZ.z) * nW.z);',
+            '  vec3 triWorldN = normalize(tX.zyx * nTriW.x + tY.xzy * nTriW.y + tZ.xyz * nTriW.z);',
+            '  vec3 triViewN = normalize((viewMatrix * vec4(triWorldN, 0.0)).xyz);',
+            '  normal = normalize(mix(normal, triViewN, uTriNormalScale));',
+            '}'
           ].join('\n'))
           .replace('#include <roughnessmap_fragment>', [
             '#include <roughnessmap_fragment>',
@@ -608,20 +2136,38 @@ function setupStreaming(A) {
         // the texture dark for the whole accumulation. onBeforeRender runs every frame per
         // object and re-asserts the CURRENT value from live state, so it self-heals across
         // any recompile instead of relying on a single push at start time.
-        shader.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+        shader.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
         shader.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
       };
       mat.onBeforeRender = function() {
         var sh = mat._triplanarShader;
         if (sh) {
-          sh.uniforms.uTriActive.value = A._stillRefineActive ? 1.0 : 0.0;
+          sh.uniforms.uTriActive.value = A._triActiveFor(mat);   // §TRI_BIG_ONLY
           sh.uniforms.uPaintSeed.value = A._photoPaintSeed || 0;
+          // §TRIPLANAR_NORMAL A/B switch, re-asserted here for the same reason uTriActive is
+          // (§TRIPLANAR_RECOMPILE_FIX): a silent program recompile resets uniforms to defaults.
+          // APP._triNormalOff = true reverts to the shipped two-map look with no reload.
+          if (sh.uniforms.uTriNormalMap && sh.uniforms.uTriNormalMap.value)
+            sh.uniforms.uTriNormalScale.value = A._triNormalOff ? 0.0 : (_triIsR3 ? A._concreteStrength() : 1.0);
+          // §CONCRETE_TONE (red1 2026-09-24: "tone down the crinkled concrete on the upper walls") — R3 contrast =
+          // R3's 1.1 x strength (default 0.55 -> 0.6, red1's start value), normal map x strength, tile CONCRETE_TILE_M.
+          if (_triIsR3) { var _cs = A._concreteStrength(); sh.uniforms.uTriContrast.value = R3_CONTRAST * _cs;
+            sh.uniforms.uTriScale.value = 1.0 / A._concreteTile(); }
         }
       };
       A._triplanarMaterials = A._triplanarMaterials || [];
       A._triplanarMaterials.push(mat);
-      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse);
+      console.log('§TRIPLANAR_INIT class=' + ifcClass + ' tex=' + triMat.diffuse +
+        ' src=' + _triSrc + ' name=' + (matName || ''));   // §CPE_MATERIAL_KEY
     }
+    // §CPE_MATERIAL_KEY: which key decided, recorded on the material itself so a witness can assert
+    // it without re-deriving. Plain strings only — see the §TRIPLANAR_CLONE_STALL note above about
+    // never putting the shader object in userData.
+    mat.userData._triSrc = _triSrc;
+    if (surfRow) mat.userData._surfRow = surfRow;   // §SURFACE_RULES
+    mat.userData._triSmallPart = !!triMat && !A._TRI_BIG_CLASSES[ifcClass];   // §TRI_BIG_ONLY
+    mat.userData._triTex = triMat ? triMat.diffuse : '';
+    mat.userData._matName = matName || '';
     // §ENTOURAGE: real RPC people/tree/logo get a presentation material, but ONLY during the Alt+S
     // still-refine pass — gated at RUNTIME by uEntActive (re-asserted every frame from
     // A._stillRefineActive via onBeforeRender, exactly like §TRIPLANAR_RECOMPILE_FIX self-heals),
@@ -669,13 +2215,111 @@ function setupStreaming(A) {
       };
       console.log('§ENTOURAGE_INIT variant=' + matVariant + ' class=' + ifcClass);
     }
+    // §CIVIL_REF_LOOK (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §CIVIL_REF_LOOK, user 2026-10-06 "not to obscure the
+    // main hiway"): the earthworks body is one 2.5 km × 2 km × 60 m solid that hides the road and the piles inside it →
+    // see-through earth colour; the right-of-way solid is a boundary, not built work → hidden here, drawn as an outline
+    // (A._civilRowOutline). Gate: discipline EARTHWORK / ROW only — no building carries either code.
+    if (discipline === 'EARTHWORK') {
+      var _ewc = window.DISC_COLORS && window.DISC_COLORS.EARTHWORK;
+      if (_ewc && mat.color) mat.color.set(_ewc);
+      a = A.CIVIL_EARTHWORK_OPACITY; mat.transparent = true; mat.opacity = a; mat.depthWrite = false; mat.side = THREE.DoubleSide;
+      if (!A._civilRefLookLogged) { A._civilRefLookLogged = 1; console.log('§CIVIL_REF_LOOK earthwork opacity=' + a + ' colour=' + _ewc + ' depthWrite=false'); }
+    } else if (discipline === 'ROW') {
+      mat.visible = false;
+      console.log('§CIVIL_REF_LOOK row solid hidden (outline drawn instead)');
+    }
     mat.userData.origOpacity = a;
-    mat.userData.origSide = a < 1.0 ? THREE.DoubleSide : THREE.FrontSide;
+    // §WALL_SIDE: record the RESOLVED side (before any x-ray override below). The old line
+    // (`a < 1.0 ? DoubleSide : FrontSide`) claimed FrontSide for every opaque material while the
+    // material was actually created DoubleSide — a latent mismatch against the x-ray restore
+    // fallback chain (tools.js:337/359). mat.side here IS the class-keyed resolved value.
+    mat.userData.origSide = mat.side;
     if (A.xrayOn) { mat.transparent = true; mat.opacity = 0.3; mat.side = THREE.DoubleSide; }
     if (A.wireOn) { mat.wireframe = true; }
     if (A.sectionOn) { mat.clippingPlanes = [A.sectionPlane]; mat.clipShadows = true; }
+    // §BEAM_UNDER_SLAB (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-09-30 "floor line slight black strip", Terminal …734512094):
+    // a concrete beam's TOP face lies in the floor slab's top plane (ray hit distance 0 on both: IfcSlab CementRender 868686 + IfcBeam
+    // 303030) -> depth fight, the dark beam wins a band (Lu 88 -> 39 whatever the light). The finished floor covers the beam: beam faces
+    // are pushed back a hair in depth so any coplanar slab face draws on top; a beam seen on its own is unchanged.
+    if (ifcClass === 'IfcBeam' || ifcClass === 'IfcBeamStandardCase') { mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 4; A._beamOffsetMats = (A._beamOffsetMats || 0) + 1; if (A._beamOffsetMats === 1) console.log('§BEAM_UNDER_SLAB polygonOffset(1,4) on IfcBeam materials (coplanar slab tops win the depth test)'); }
     A._matCache[cacheKey] = mat;
     return mat;
+  };
+
+  // §RED_GREY_MYSTERY (2026-08-15, prompts/PHOTOREAL_STILL_RENDER.md §RED_GREY_MYSTERY — ROOT
+  // CAUSE FOUND): a real, non-null-coloured element (Hospital IfcValve guid
+  // 0HuLVU0hf5gxwY8y9yDvc0, and likely others — unmeasured how widespread) still renders literal
+  // [0,0,0] under Alt+S on ~43% of its own screen area, traced all the way down to the shader's
+  // `normal` variable itself: some source vertices in the `normal` BufferAttribute have magnitude
+  // ~0 (confirmed directly, CPU-side, on this element: 24 of 129,162 vertices in its shared
+  // BatchedMesh buffer). `normalize(vec3(0))` in GLSL is 0/0 = NaN, and NaN poisons every
+  // subsequent lighting term it touches (ambient/hemi/direct all multiply through it), which is
+  // why the affected fragments are LITERAL [0,0,0] regardless of how bright the scene is — proven
+  // by directly disabling AO, shadow-restore, the sun shadow map, triplanar, and env reflection
+  // one at a time (raw single-frame renders, not the TAA-accumulated composite) with zero change
+  // to the black-pixel count each time, then confirming the base albedo (diffuseColor, pre-
+  // lighting) is 0% black and an unlit MeshBasicMaterial swap is 0% black too — so it is neither a
+  // colour-data bug nor a geometry-coverage bug, only the normal-dependent lighting stage.
+  // Attempted fix #1 (recompute a face normal per degenerate vertex from its own triangle's
+  // positions) does NOT work here: checked directly, every one of this element's 24 degenerate
+  // vertices belongs ONLY to triangles that are THEMSELVES zero-area (duplicate/collinear
+  // positions — a genuine tessellation defect, not just a missing-normal bug), so recomputing from
+  // the same triangle gives zero again. Fix actually used: nearest-VALID-vertex fallback — when no
+  // triangle referencing a degenerate vertex has real area, copy the normal from whichever OTHER
+  // vertex in the SAME geometry buffer sits closest to it by position (these are near-duplicate
+  // points from the same collapsed tessellation, so a spatially-adjacent valid vertex is almost
+  // always right there). Runs ONCE, after streaming finishes (see the `A.streaming = false`
+  // branch in streamTick below) — cheap (a few dozen degenerate vertices expected per building,
+  // most meshes have zero and short-circuit immediately) and self-contained: no extraction
+  // re-run, no DB change, matches this project's existing "self-heal at the point of consumption"
+  // pattern rather than a migration script (this is mesh geometry, not DB rows).
+  // ### ALTS-ALL FIX 14 (F11, first-press black glass) — the same repair, O(triangles) per mesh (was O(degen x triangles) + an O(n)
+  // nearest search per vertex: ~12 s a building, hence disabled). MEASURED Terminal: batched mesh id 924 (guid 3Q026pUy1CnxmrPEZ8YaXF)
+  // carries 145 zero-length vertex normals of 16,547; normalize(0) = NaN at 2 texels of the §GLASS_ENV +X face on EVERY capture (plain
+  // MeshStandardMaterial swap, sourced light off and every light off all still NaN). The prefiltered env spreads a NaN over the glass
+  // (every glass fragment NaN -> black). Rule: a zero normal is not a direction — take its first non-degenerate adjacent face normal;
+  // a vertex whose triangles are all zero-area rasterises no fragment of its own -> copied from a valid vertex at the same position
+  // (0.1 mm hash) if any, else left (counted). Called once per page by Alt+S staging (effects.js), &normrepair=0 = off.
+  A._repairDegenerateNormals = function() {
+    var t0 = performance.now(), meshesScanned = 0, meshesAffected = 0, degenTotal = 0, fixedFromFace = 0, fixedFromNeighbor = 0, unfixed = 0, skippedBig = 0;
+    var seen = new Set();
+    A.scene.traverse(function(o) {
+      if (!(o.isMesh || o.isBatchedMesh || o.isInstancedMesh)) return;
+      var geom = o.geometry; if (!geom || seen.has(geom)) return; seen.add(geom);
+      var nAttr = geom.getAttribute('normal'), pAttr = geom.getAttribute('position'), idx = geom.index;
+      if (nAttr && geom.userData && geom.userData._normRepairedV === nAttr.version + ':' + nAttr.count) return;   // already repaired, unchanged since
+      if (!nAttr || !pAttr || !idx || nAttr.itemSize !== 3 || pAttr.itemSize !== 3 || nAttr.isInterleavedBufferAttribute || pAttr.isInterleavedBufferAttribute) return;
+      meshesScanned++;
+      var narr = nAttr.array, parr = pAttr.array, iarr = idx.array, n = nAttr.count, bad = new Uint8Array(n), nb = 0;
+      for (var vi = 0; vi < n; vi++) { var x = narr[vi*3], y = narr[vi*3+1], z = narr[vi*3+2], l2 = x*x + y*y + z*z; if (!(l2 >= 0.01)) { bad[vi] = 1; nb++; } }
+      if (!nb) { geom.userData._normRepairedV = nAttr.version + ':' + nAttr.count; return; }
+      // (the old 5 % safety valve is gone: a face-derived normal is correct at any fraction; Terminal had 161 small meshes at 2/34 etc.)
+      meshesAffected++; degenTotal += nb;
+      var left = nb;
+      for (var ii = 0; ii + 2 < iarr.length && left > 0; ii += 3) {
+        var a = iarr[ii], b = iarr[ii+1], c = iarr[ii+2]; if (!(bad[a] === 1 || bad[b] === 1 || bad[c] === 1)) continue;
+        var ax = parr[a*3], ay = parr[a*3+1], az = parr[a*3+2], e1x = parr[b*3] - ax, e1y = parr[b*3+1] - ay, e1z = parr[b*3+2] - az, e2x = parr[c*3] - ax, e2y = parr[c*3+1] - ay, e2z = parr[c*3+2] - az;
+        var cx = e1y * e2z - e1z * e2y, cy = e1z * e2x - e1x * e2z, cz = e1x * e2y - e1y * e2x, len = Math.sqrt(cx*cx + cy*cy + cz*cz);
+        if (!(len > 1e-8)) continue;
+        cx /= len; cy /= len; cz /= len;
+        [a, b, c].forEach(function (v) { if (bad[v] === 1) { narr[v*3] = cx; narr[v*3+1] = cy; narr[v*3+2] = cz; bad[v] = 2; fixedFromFace++; left--; } });
+      }
+      if (left > 0) {
+        var key = function (v) { return ((Math.round(parr[v*3] * 1e4) * 73856093) ^ (Math.round(parr[v*3+1] * 1e4) * 19349663) ^ (Math.round(parr[v*3+2] * 1e4) * 83492791)) >>> 0; }, want = new Map();   // §MEP_SMOOTH_PERF hash (a collision only feeds a no-fragment vertex)
+        for (var v1 = 0; v1 < n; v1++) if (bad[v1] === 1) want.set(key(v1), -1);
+        for (var v2 = 0; v2 < n && want.size; v2++) { if (bad[v2] === 1) continue; var k2 = key(v2); if (want.get(k2) === -1) want.set(k2, v2); }
+        for (var v3 = 0; v3 < n; v3++) if (bad[v3] === 1) { var src = want.get(key(v3)); if (src >= 0) { narr[v3*3] = narr[src*3]; narr[v3*3+1] = narr[src*3+1]; narr[v3*3+2] = narr[src*3+2]; fixedFromNeighbor++; } else unfixed++; }
+      }
+      nAttr.needsUpdate = true;
+      // §NORMAL_REPAIR_GPU_UPLOAD: drop the renderer's cached state for this geometry so the buffers rebind (needsUpdate alone was not enough)
+      var nn = new THREE.BufferAttribute(narr, 3); if (nAttr.usage != null && nn.setUsage) nn.setUsage(nAttr.usage); geom.setAttribute('normal', nn);
+      if (A.renderer && A.renderer.properties) { A.renderer.properties.remove(geom); }
+      geom.userData._normRepairedV = nn.version + ':' + nn.count;
+    });
+    var out = { meshesScanned: meshesScanned, meshesAffected: meshesAffected, degenTotal: degenTotal, fixedFromFace: fixedFromFace, fixedFromNeighbor: fixedFromNeighbor, unfixed: unfixed, ms: Math.round(performance.now() - t0) };
+    console.log('§NORMAL_REPAIR meshesScanned=' + meshesScanned + ' meshesAffected=' + meshesAffected + ' degenTotal=' + degenTotal + ' fixedFromFace=' + fixedFromFace +
+      ' fixedFromNeighbor=' + fixedFromNeighbor + ' unfixed(only zero-area triangles, no fragment)=' + unfixed + ' skippedOver5pct=' + skippedBig + ' ms=' + out.ms);
+    return out;
   };
 
   A.streamTick = function() {
@@ -707,6 +2351,16 @@ function setupStreaming(A) {
           A._bboxCleared = false;
         }
         A.streaming = false;
+        if (A._triSrcTally) A._triSrcTally();   // §CPE_MATERIAL_KEY rollup — shipped §-log evidence
+        if (A._surfTally) A._surfTally();       // §SURFACE_RULES rollup (only when ?surf=rules)
+        if (A._r10Report) A._r10Report();       // §SURFACE_R10 rollup (§SURFACE_OPENING_SINGLE_STYLE / _SPLIT / _PATHS / _SHADOW)
+        if (A._mepHueRollup) A._mepHueRollup();  // §MEP_COLOR_SURVIVES_PHOTOREAL rollup — same reason
+        if (A._colourTruthRollup) A._colourTruthRollup();  // §PLACEHOLDER_COLOUR (Z21) + §PORCELAIN (Z20) rollup
+        // §RED_GREY_MYSTERY: DISABLED for now — the repair itself is verified correct (patches the
+        // broken normal data, confirmed by direct readback) but does NOT change the rendered
+        // black-pixel output at all, and costs ~12s per building load for zero visible benefit.
+        // The real cause is still open — see prompts/PHOTOREAL_STILL_RENDER.md §RED_GREY_MYSTERY.
+        // A._repairDegenerateNormals();
         if (A.activeBuilding) {
           A.buildingsRendered.add(A.activeBuilding);
           A.populateStoreys(A.activeBuilding);
@@ -722,6 +2376,7 @@ function setupStreaming(A) {
           // §SCENE_MERGE (§SM-7.1 step 7): same sequential drain for buildings folded in by
           // Open→Merge. A real merged package (Clinic = 5 discipline buildings) has N names and
           // streamBuilding() handles ONE, so it chains here exactly like City's queue above.
+          if (A._civilRowOutline) A._civilRowOutline();   // §CIVIL_REF_LOOK L2 — outline for any ROW element now streamed
           if (A._mergePending && A._mergePending.length && A._mergeStreamNext) A._mergeStreamNext();
           // §MERGE_CONTRACT (W-SCENE-MERGE): §CONTRACT_CHECK is scene-wide and building-blind, so
           // the merge needs its own per-building split of what is ACTUALLY registered for picking.
@@ -737,9 +2392,14 @@ function setupStreaming(A) {
                 _mcSt.reset();
               }
               _mcSt.free();
-              console.log('§MERGE_CONTRACT buildings=' + Object.keys(_mcOwn).length +
+              var _mcN = Object.keys(_mcOwn).length, _mcC = Object.keys(A.buildingCentres).length;
+              var _mcPend = (A._mergePending || []).filter(function(n) { return !A.buildingsRendered.has(n); }).length;
+              // §FB.4: a witness that can say WRONG — fewer buildings drawn than the DB holds, nothing queued.
+              var _mcVerdict = _mcN >= _mcC ? 'COMPLETE' : ((_mcPend > 0 || A.streaming) ? 'DRAINING' : 'INCOMPLETE');  // drain shifts the queue BEFORE the next building streams
+              console.log('§MERGE_CONTRACT buildings=' + _mcN +
                 ' rendered=' + JSON.stringify(_mcOwn) +
-                ' centres=' + Object.keys(A.buildingCentres).length);
+                ' centres=' + _mcC + ' pending=' + _mcPend + ' verdict=' + _mcVerdict);
+              if (_mcVerdict === 'COMPLETE' && !A.CITY_URL && A._findRefreshTree) A._findRefreshTree('merge-complete');
             } catch (e) { console.warn('§MERGE_CONTRACT_FAIL ' + e.message); }
           }
         }
@@ -868,7 +2528,7 @@ function setupStreaming(A) {
                     var ghash = row[0], vBlob = row[1], fBlob = row[2];
                     var nBlob = A._libHasNormals ? (row[3] || null) : null;
                     if (vBlob && fBlob) {
-                      var geo = A.blobToGeometry(vBlob, fBlob, nBlob);
+                      var _wt = A._windTableGet && A._windTableGet(), geo = A.blobToGeometry(vBlob, fBlob, nBlob, _wt ? (_wt.get(ghash) || 0) : null);   // §WIND_FLIP baked
                       if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
                     }
                   }
@@ -900,7 +2560,11 @@ function setupStreaming(A) {
         }
         console.log(`[S231] §NORMALS_PROBE libHasNormals=${A._libHasNormals}`);
       }
-      const cols = A._libHasNormals
+      // §MESH_SLIM: a civil model's stored normals are redundant (99.95 % = own face normal) — don't pull them out of
+      // the sql.js heap; blobToGeometry derives them exactly as for every fleet DB (which ships none).
+      const _useN = A._libHasNormals && !A.isCivilModel();
+      if (A._libHasNormals && !_useN && !A._meshSlimLoadLogged) { A._meshSlimLoadLogged = true; console.log('§MESH_SLIM_LOAD civil=1 storedNormals=ignored (derived)'); }
+      const cols = _useN
         ? 'geometry_hash, vertices, faces, normals'
         : 'geometry_hash, vertices, faces';
       // Fetch in chunks of 200 to avoid sql.js bind limit
@@ -916,9 +2580,9 @@ function setupStreaming(A) {
             while (stmt.step()) {
               const row = stmt.get();
               const ghash = row[0], vBlob = row[1], fBlob = row[2];
-              const nBlob = A._libHasNormals ? (row[3] || null) : null;
+              const nBlob = _useN ? (row[3] || null) : null;
               if (vBlob && fBlob) {
-                const geo = A.blobToGeometry(vBlob, fBlob, nBlob);
+                const _wt = A._windTableGet && A._windTableGet(), geo = A.blobToGeometry(vBlob, fBlob, nBlob, _wt ? (_wt.get(ghash) || 0) : null);   // §WIND_FLIP baked
                 if (geo) { A.meshCache[ghash] = geo; (A._bvhPending || (A._bvhPending = [])).push(ghash); fetched++; }
               }
             }
@@ -954,7 +2618,9 @@ function setupStreaming(A) {
       A._pendingInstances[hash].push({ guid, hash, rgba, disc, cx, cy, cz,
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
-        matVariant: A._entourageVariant(ifcClass, elementName),
+        matVariant: A._elementVariant(ifcClass, elementName, row[16] || ''),   // §ENTOURAGE / §PORCELAIN (Z20)
+        mepHint: A._mepNameHint(elementName),
+        matName: row[16] || '',   // §CPE_MATERIAL_KEY — fixed slot 16, after the 16-slot bbox layout
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
       A.streamedCount++;
     }
@@ -1144,7 +2810,68 @@ function setupStreaming(A) {
         ' override=' + (_mergeOverride === null ? 'none' : _mergeOverride));
     }
 
-    for (const [hash, elements] of Object.entries(A._pendingInstances)) {
+    // §SURFACE_R10 — draw split openings: split geometry + [today's material, new material]. 2+ in this flush
+    // -> one InstancedMesh (same registration as the instanced branch below); 1 -> one Mesh (same registration
+    // as the §BATCHED_FAIL / §S261 fallback meshes: guidMap[mesh.id] + userData.guid).
+    var _r10Place = function(sp, els, origin) {
+      var S = A._r10St(), P = S.paths, e0 = els[0], n = els.length;
+      var frameMat = A._getMaterial(e0.rgba, e0.ifcClass, e0.matVariant, e0.disc, e0.mepHint, e0.matName, undefined, A._surfRowFor(els));
+      var mats = A._r10Materials(frameMat, sp.kind, e0), mesh;
+      if (origin === 'merged') P.merged += n; else if (origin === 'batched') P.batchedMoved += n;
+      for (var i = 0; i < n; i++) A._r10Guids.add(els[i].guid);
+      if (n >= 2) {
+        mesh = new THREE.InstancedMesh(sp.geo, mats, n);
+        mesh.frustumCulled = false;  // §S271b, as the instanced branch
+        var meta = [], dU = e0.disc || '';
+        for (var k = 0; k < n; k++) {
+          var el = els[k], p = A.ifc2three(el.cx, el.cy, el.cz);
+          _pos.set(p.x, p.y, p.z); _euler.set(el.rotX, el.rotZ, -el.rotY); _quat.setFromEuler(_euler);
+          _m4.compose(_pos, _quat, _scale); mesh.setMatrixAt(k, _m4);
+          meta.push(A._registerInstanceSlot(mesh, el, k));
+          if ((el.disc || '') !== dU) dU = null;
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.userData.isInstanced = true; mesh.userData.hash = e0.hash; mesh.userData.ifcClass = e0.ifcClass || '';
+        if (dU) mesh.userData.disc = dU;
+        A._instanceMeta[mesh.id] = meta;
+        P.instanced += n; if (origin !== 'instanced') P.movedToInstanced += n;
+      } else {
+        mesh = new THREE.Mesh(sp.geo, mats);
+        var q = A.ifc2three(e0.cx, e0.cy, e0.cz);
+        mesh.position.set(q.x, q.y, q.z);
+        if (e0.rotX || e0.rotY || e0.rotZ) mesh.rotation.set(e0.rotX, e0.rotZ, -e0.rotY);
+        mesh.updateMatrix();
+        mesh.userData.storey = e0.storey; mesh.userData.disc = e0.disc;
+        mesh.userData.guid = e0.guid; mesh.userData.ifcClass = e0.ifcClass || '';
+        A.guidMap[mesh.id] = e0.guid;
+        if (!A._storeyVisible(e0.storey)) mesh.visible = false;
+        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(e0.disc)) mesh.visible = false;
+        P.single += 1; if (origin !== 'instanced') P.movedToSingle += 1;
+      }
+      mesh.userData.r10 = sp.kind;
+      if (sp.kind === 'window') mesh.customDepthMaterial = A._r10DepthMaterial();
+      A.scene.add(mesh);
+      return { instanced: n >= 2 ? n : 0, single: n >= 2 ? 0 : 1, draws: 1 };
+    };
+
+    // §INST_RGBA_SPLIT (2026-09-26, found by §FAULT glassPlateLost — Hospital: 57 IfcPlate the IFC gives Glass Transparency 0.7
+    // (DB alpha 0.3) drawn by an OPAQUE InstancedMesh). The instanced branch below keys on the GEOMETRY HASH ALONE and builds the
+    // one material from elements[0] — Hospital's glazed and spandrel curtain panels share shapes AND rgb (0.451,0.447,0.471),
+    // only alpha differs (Hospital_IFC4_ARC.ifc: "Glass" T 0.7 vs "Spandrel Glass" T 0.0), so a mixed hash painted every
+    // member with whichever came first (160 glass plates share a hash with opaque ones). Same hazard §BATCH_BUCKET_CLASS_PAINT
+    // fixed for the batch buckets. A hash whose members differ in rgba / ifc_class / matVariant is split into one group per
+    // combination (same geometry); a uniform hash is untouched (same draw calls). Each group then takes the usual path.
+    var _instEntries = [], _instSplitH = 0, _instSplitExtra = 0, _instSplitEls = 0;
+    Object.entries(A._pendingInstances).forEach(function (e) {
+      var els = e[1], k0 = els.length ? (els[0].rgba || '') + '|' + (els[0].ifcClass || '') + '|' + (els[0].matVariant || '') : '', mixed = false;
+      for (var q = 1; q < els.length; q++) if ((els[q].rgba || '') + '|' + (els[q].ifcClass || '') + '|' + (els[q].matVariant || '') !== k0) { mixed = true; break; }
+      if (!mixed) { _instEntries.push(e); return; }
+      var by = new Map(); els.forEach(function (el) { var k = (el.rgba || '') + '|' + (el.ifcClass || '') + '|' + (el.matVariant || ''); if (!by.has(k)) by.set(k, []); by.get(k).push(el); });
+      _instSplitH++; _instSplitExtra += by.size - 1; _instSplitEls += els.length; by.forEach(function (arr) { _instEntries.push([e[0], arr]); });
+    });
+    A._instRgbaSplit = { hashes: (A._instRgbaSplit ? A._instRgbaSplit.hashes : 0) + _instSplitH, extraGroups: (A._instRgbaSplit ? A._instRgbaSplit.extraGroups : 0) + _instSplitExtra, elements: (A._instRgbaSplit ? A._instRgbaSplit.elements : 0) + _instSplitEls };
+    if (_instSplitH) console.log('§INST_RGBA_SPLIT this flush hashes=' + _instSplitH + ' extraGroups=' + _instSplitExtra + ' elements=' + _instSplitEls + ' (building total ' + JSON.stringify(A._instRgbaSplit) + ')');
+    for (let [hash, elements] of _instEntries) {   // `let`: §SURFACE_R10 may take split openings out of `elements`
       const geo = A.meshCache[hash];
       if (!geo) continue;
 
@@ -1165,14 +2892,62 @@ function setupStreaming(A) {
       // (every element still lands in exactly one, via the same _registerBatchSlot call), which
       // is why this is expected to be safe, but expectation is not the same as verification.
       var LOW_INSTANCE_BATCH_MAX = 3;
+      // §SURFACE_R10 — split single-style openings leave the normal routing HERE, before any batch / merge
+      // bucket or InstancedMesh is built, so no path ever sees them with one material. `origin` is the path
+      // they would have taken (the same rule as below), for §SURFACE_R10_PATHS.
+      if (A._surfRules) {
+        var _r10In = [], _r10Rest = [];
+        for (var _ri = 0; _ri < elements.length; _ri++) (A._r10Eligible(elements[_ri]) ? _r10In : _r10Rest).push(elements[_ri]);
+        if (_r10In.length) {
+          var _r10Sp = A._r10Split(hash, geo, _r10In[0].ifcClass), _r10S = A._r10St();
+          for (var _rj = 0; _rj < _r10In.length; _rj++) {
+            var _rk = _r10Sp.verdict;
+            if (_r10Sp.kind === 'window') { if (_r10Sp.geo) _r10S.win.clean++; else { _r10S.win.fallback++; _r10S.win.why[_rk] = (_r10S.win.why[_rk] || 0) + 1; } }
+            else if (_r10Sp.geo) _r10S.door.hardware++;
+            else if (_rk === 'LEAF_NO_HW') _r10S.door.leafOnly++;
+            else _r10S.door.other[_rk] = (_r10S.door.other[_rk] || 0) + 1;
+          }
+          if (_r10Sp.geo) {
+            var _r10Origin = elements.length > LOW_INSTANCE_BATCH_MAX ? 'instanced' : (_useMerge ? 'merged' : 'batched');
+            var _r10Drawn = _r10Place(_r10Sp, _r10In, _r10Origin);
+            instancedCount += _r10Drawn.instanced; batchedCount += _r10Drawn.single; drawCalls += _r10Drawn.draws;
+            elements = _r10Rest;
+            if (!elements.length) continue;
+          }
+        }
+      }
       if (elements.length <= LOW_INSTANCE_BATCH_MAX) {
         // §S260/§S280e: Desktop — bucket for BatchedMesh (low-instance-count hashes)
         for (let li = 0; li < elements.length; li++) {
           const el = elements[li];
           // §ENTOURAGE: matVariant appended so real RPC people/tree/logo split into their own
           // bucket + own (Alt+S-gated) material instead of merging into a shared cream BatchedMesh.
-          // Positional key.split('|') consumers read parts[0..2] only — 4th field is inert for them.
-          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '');
+          // §MEP_DISC_TINT: mepHint's `code` appended too, so e.g. duct vs pipe (same NULL rgba,
+          // same "MEP" disc, same '' matVariant) don't merge into one shared-colour BatchedMesh.
+          // Positional key.split('|') consumers read parts[0..2] only — trailing fields are inert.
+          // §MEP_COLOR_SURVIVES_PHOTOREAL: whether the element is an MEP-hue class joins the key.
+          // MEASURED: on Hospital 21 of 160 (storey|disc|rgba) buckets mix an MEP class with a
+          // non-MEP one, up to 3,714 non-MEP elements (Clinic 2/65, LTU 21/231, Terminal 0/244).
+          // This branch gives the whole bucket ONE material built from items[0]'s class, so
+          // without this bit a mixed bucket would paint its non-MEP members an MEP trade hue.
+          // Splitting the bucket keeps BOTH halves correct; it cannot fragment by more than the
+          // 21 mixed buckets (160 -> at most 181 on the worst building).
+          // §BATCH_BUCKET_CLASS_PAINT (2026-09-11, bim-compiler prompts/4D_MODEL_INTEGRITY.md §O) —
+          // the `M`/`-` bit above fixed ONE case of the general hazard the comment right above it
+          // names. The bucket's single material is built from `items[0].el.ifcClass` (~:2300 below),
+          // so ANY bucket holding two ifc_classes paints one of them with the other's material —
+          // and two NON-MEP classes still collided. MEASURED on the shipped set: 36,434 elements
+          // fleet-wide painted with a foreign class's material (LTU_AHouse 25,913, Hospital 5,998,
+          // JKR 1,493, Clinic 1,077, HHS 911, Duplex 250, Terminal/TermRooms 396 each).
+          // The user-visible instance that found it: HHS bucket "Level 3|ARC|_default|||-" leads with
+          // an IfcBuildingElementProxy, so its 18 IfcCovering + 16 IfcDoor + 3 IfcRailing members were
+          // painted PROXY TEAL — one of them (3XrBtx9eX7mQE6EqWHPeEe, a 5.89x7.33m suspended ceiling
+          // at z=9.78m) is the "floating blue piece" in the HHS_lingerfit2 bake, frames 3-36.
+          // With the class in the key, `items[0].el.ifcClass` IS every member's class by construction.
+          // Splits ONLY buckets that were already mixed: a class-pure bucket keys identically before
+          // and after, so its draw-call count is unchanged.
+          // Positional `key.split('|')` consumers read parts[0..2] — this stays a TRAILING field.
+          const key = (el.storey || '_') + '|' + (el.disc || '_') + '|' + (el.rgba || '_default') + '|' + (el.matVariant || '') + '|' + (el.mepHint ? el.mepHint.code : '') + '|' + (A._mepHueEligible(el.ifcClass, el.disc, el.rgba, el.matName) ? 'M' : '-') + '|' + (el.ifcClass || '');   // §BATCH_BUCKET_CLASS_PAINT restored — §KERNEL_OPS_SCHED_AGREE (#1727) removed the staging hold that made the 1-slot batch fatal (staged 544->501, the slab is no longer in the map), so the class term is safe again and the foreign-class paint is fixed.
           // §MERGED_GUID: single target selection — merge bucket or batch bucket, never both.
           // Applies to §S280e's low-instance elements too: each is baked individually into the
           // merged buffer with its own index range, so identity survives exactly as for singles.
@@ -1182,7 +2957,19 @@ function setupStreaming(A) {
         }
       } else {
         // LOW_INSTANCE_BATCH_MAX+1 or more instances — InstancedMesh (both desktop and mobile)
-        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant);
+        // §MEP_COLOR_SURVIVES_PHOTOREAL: this branch buckets by GEOMETRY HASH ALONE, so its members
+        // are not guaranteed to share an ifc_class — the same caveat §MEP_DISC_PALETTE recorded for
+        // discipline below. MEASURED: Hospital 0 of 20,609 hashes and Clinic 0 of 8,459 span an MEP
+        // and a non-MEP class, but LTU_AHouse has 108 of 51,393 (1,386 elements). The bucket cannot
+        // be split here without adding a draw call per mixed hash, so on a mixed set the trade hue
+        // is SUPPRESSED (prior behaviour) and COUNTED — never applied to a set that is not all MEP.
+        var _mepU = A._mepHueEligible(elements[0].ifcClass, elements[0].disc, elements[0].rgba, elements[0].matName);   // §MEP_PROXY_HUE: one eligibility owner
+        for (var _mqi = 1; _mqi < elements.length; _mqi++) {
+          if (A._mepHueEligible(elements[_mqi].ifcClass, elements[_mqi].disc, elements[_mqi].rgba, elements[_mqi].matName) !== _mepU) { _mepU = null; break; }
+        }
+        if (_mepU === null) A._instMepMixed = (A._instMepMixed || 0) + 1;
+        else A._instMepUniform = (A._instMepUniform || 0) + 1;
+        const mat = A._getMaterial(elements[0].rgba, elements[0].ifcClass, elements[0].matVariant, elements[0].disc, elements[0].mepHint, elements[0].matName, _mepU === null, A._surfRowFor(elements), A._windFlipAny([geo]));
         const iMesh = new THREE.InstancedMesh(geo, mat, elements.length);
         iMesh.frustumCulled = false;  // §S271b: must stay false — InstancedMesh boundingSphere is base geometry only, not instance spread
         const meta = [];
@@ -1202,6 +2989,22 @@ function setupStreaming(A) {
         iMesh.userData.isInstanced = true;
         iMesh.userData.hash = hash;
         iMesh.userData.ifcClass = elements[0].ifcClass || '';
+        // §MEP_DISC_PALETTE coverage fix (2026-09-02) — MEASURED DEFECT: the §SUNGLASS discipline
+        // band (tools.js ticks 56-65) groups on `mesh.userData.disc`, but this path never set it,
+        // so EVERY InstancedMesh fell into A._groupBy's 'Unknown' bucket and took one flat colour.
+        // (Corroborated independently by PR #1594's own note: Clinic reported "7 discs" while its
+        // DB holds only 6 — the 7th was 'Unknown'.)
+        // ⚠ EXTRACTED, NOT ASSUMED: this branch buckets by GEOMETRY HASH ALONE (the storey|disc|rgba
+        // key above governs only the merge/batch branch), so instances here are NOT guaranteed to
+        // share a discipline. Set the key only when the set is genuinely uniform; otherwise leave it
+        // unset (prior behaviour, 'Unknown') and COUNT it, so a mixed-discipline instance set can
+        // never be silently painted as one discipline it does not all belong to.
+        var _dU = elements[0].disc || '';
+        for (var _dqi = 1; _dqi < elements.length; _dqi++) {
+          if ((elements[_dqi].disc || '') !== _dU) { _dU = null; break; }
+        }
+        if (_dU) { iMesh.userData.disc = _dU; A._instDiscUniform = (A._instDiscUniform || 0) + 1; }
+        else { A._instDiscMixed = (A._instDiscMixed || 0) + 1; }
         A._instanceMeta[iMesh.id] = meta;
         A.scene.add(iMesh);
         instancedCount += elements.length;
@@ -1235,7 +3038,7 @@ function setupStreaming(A) {
         }
 
         var batchCls = items.length ? (items[0].el.ifcClass || '') : '';
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '');
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }), A._windFlipAny(items.map(function(it) { return it.geo; })));
         var bm;
         try {
           bm = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
@@ -1314,7 +3117,7 @@ function setupStreaming(A) {
       for (const [key, items] of Object.entries(batchBuckets)) {
         for (const item of items) {
           const el = item.el;
-          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant);
+          const mat = A._getMaterial(el.rgba, el.ifcClass, el.matVariant, el.disc, el.mepHint, el.matName, undefined, A._surfRowFor([el]));
           const mesh = new THREE.Mesh(item.geo, mat);
           const pos = A.ifc2three(el.cx, el.cy, el.cz);
           mesh.position.set(pos.x, pos.y, pos.z);
@@ -1434,9 +3237,22 @@ function setupStreaming(A) {
         const mergedGeo = new THREE.BufferGeometry();
         mergedGeo.setAttribute('position', new THREE.BufferAttribute(mergedPos, 3));
         if (mergedNorm) mergedGeo.setAttribute('normal', new THREE.BufferAttribute(mergedNorm, 3));
-        mergedGeo.setIndex(new THREE.BufferAttribute(mergedIdx, 1));
+        // §IDX16 (2026-08-30) — a Uint32 index addressing fewer than 65,536 vertices spends twice
+        // the bytes it needs. MEASURED on Terminal (§MEM_PROBE): index = 71.8 MB of a 469 MB
+        // geometry footprint, against a 1,226 MB heap. The guard is exact (totalVerts, the count
+        // this very buffer was sized from), so a geometry that genuinely needs 32-bit keeps it —
+        // this can never truncate an index. Nothing downstream reads the index's TYPE: `ranges`
+        // stores idxStart/idxCount as plain numbers and three.js re-reads .count/.array either way.
+        var _mIdx = mergedIdx;
+        if (totalVerts < 65536) {
+          _mIdx = new Uint16Array(totalIdx);
+          for (var _q = 0; _q < totalIdx; _q++) _mIdx[_q] = mergedIdx[_q];
+          _idx16Saved += totalIdx * 2; _idx16Geoms++;
+        }
+        mergedGeo.setIndex(new THREE.BufferAttribute(_mIdx, 1));
 
-        const mat = A._getMaterial(rgba === '_default' ? null : rgba, null);
+        var mergedCls = items.length ? (items[0].el.ifcClass || '') : '';
+        const mat = A._getMaterial(rgba === '_default' ? null : rgba, mergedCls, items.length ? items[0].el.matVariant : '', disc, items.length ? items[0].el.mepHint : null, items.length ? items[0].el.matName : '', undefined, A._surfRowFor(items, function(it) { return it.el; }), A._windFlipAny(items.map(function(it) { return it.geo; })));
         const mesh = new THREE.Mesh(mergedGeo, mat);
         mesh.userData.storey = storey === '_' ? '' : storey;
         mesh.userData.disc = disc === '_' ? '' : disc;
@@ -1472,6 +3288,12 @@ function setupStreaming(A) {
     A._batchFlushCount++;
     if (A._batchFlushCount <= 1 || A.streamIdx >= A.streamQueue.length - 1) {
       console.log(`[S260] §BATCHED_FLUSH instanced=${instancedCount} batched=${batchedCount} drawCalls=${drawCalls} (was ${instancedCount + batchedCount}) mobile=${A._isMobile}`);
+      // §MEP_DISC_PALETTE coverage — how many InstancedMeshes now carry a real discipline key, and
+      // how many genuinely could not (mixed-discipline geometry set). `mixed` is not a failure; it
+      // is the honest count of sets this fix must NOT paint. Both zero = VACUOUS (no instancing).
+      console.log(`§MEP_DISC_COVERAGE instancedMeshes uniformDisc=${A._instDiscUniform || 0} mixedDisc=${A._instDiscMixed || 0}` +
+        (!(A._instDiscUniform || A._instDiscMixed) ? ' — VACUOUS, no InstancedMesh built on this building'
+          : ` (${Math.round((A._instDiscUniform || 0) / ((A._instDiscUniform || 0) + (A._instDiscMixed || 0)) * 100)}% now keyed; these were ALL 'Unknown' before §MEP_DISC_PALETTE)`));
       if (batchedCount > 0) {
         console.log(`§BATCHED_DETAIL buckets=${Object.keys(batchBuckets).length} elements=${batchedCount} saved=${_prevDrawCalls - Object.keys(batchBuckets).length} drawCalls`);
       }
@@ -1521,6 +3343,12 @@ function setupStreaming(A) {
     // §BILLBOARD_ALWAYS: the model is fully streamed here, so any billboard element in the DB can
     // now be read and given its face. Idempotent and a no-op for buildings that have no billboard.
     if (A._billboardAutoBuild) A._billboardAutoBuild();
+    // §PHOTO_PREWARM (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md §R11): the model is fully
+    // streamed here, which is the EARLIEST point the curve-smoothing pass can legally run — it
+    // walks streamed geometry. MEASURED on the user's own Hospital session: that pass costs
+    // 8,923.6 ms and it was being paid on the first Alt+S press, not here. Same idempotent,
+    // no-op-if-absent contract as the billboard build above.
+    if (A._photoPrewarm) A._photoPrewarm();
   };
 
   // §S261: Bbox-only BatchedMesh flush — ONE flush, all elements start as bbox cubes.
@@ -1584,7 +3412,7 @@ function setupStreaming(A) {
       // Fallback: individual meshes for oversized/over-budget elements
       if (fallbackItems.length > 0) {
         var batchCls = fallbackItems[0].el.ifcClass || '';
-        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant);
+        var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, fallbackItems[0].el.matVariant, disc, fallbackItems[0].el.mepHint, fallbackItems[0].el.matName, undefined, A._surfRowFor(fallbackItems, function(it) { return it.el; }));
         for (var fi = 0; fi < fallbackItems.length; fi++) {
           var el = fallbackItems[fi].el;
           var m = new THREE.Mesh(fallbackItems[fi].geo, mat);
@@ -1606,7 +3434,7 @@ function setupStreaming(A) {
 
       // Create BatchedMesh with reserved capacity
       var batchCls = slotReservations[0].item.el.ifcClass || '';
-      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant);
+      var mat = A._getMaterial(rgba === '_default' ? null : rgba, batchCls, slotReservations[0].item.el.matVariant, disc, slotReservations[0].item.el.mepHint, slotReservations[0].item.el.matName, undefined, A._surfRowFor(slotReservations, function(it) { return it.item.el; }));
       var bm;
       try {
         bm = new THREE.BatchedMesh(slotReservations.length, bucketVerts, bucketIdx, mat);
@@ -1693,156 +3521,87 @@ function setupStreaming(A) {
     if (window.tmResweep) window.tmResweep();
   };
 
-  // §S260c: Consolidate fragmented BatchedMesh from progressive flushes into one set.
-  // Progressive flush creates N sets of BatchedMesh (one per 5000-element chunk).
-  // After streaming ends, this removes them and rebuilds ONE BatchedMesh per bucket
-  // from streamQueue + meshCache. r160 has no getGeometryIdAt, so we rebuild from source.
-  // LTU 122K: 26 flushes × 40 buckets = 1040 draw calls → consolidated to ~40.
+  // §S260c / W4 (ALTC_FOUNDATION §1, rewritten 2026-10-03): merge the progressive-flush BatchedMeshes into one per
+  // (material, storey, discipline). COPIES what is on screen — each slot's own source geometry (userData.slotGeo), its live matrix
+  // (getMatrixAt) and visibility (getVisibleAt), and the batch's own material object — instead of re-deriving from streamQueue.
+  // The re-derive version moved elements that had been placed after streaming (LTU clip: the boundary box grew from
+  // -119.6..125.9 to -137.4..174.0 in x, the §ZONE_IDB_CACHE fingerprint missed, zones were rebuilt and interiors came out up to 26
+  // luma brighter). A batch missing slotGeo for any slot, carrying DLOD slots, or without _batchMeta is left untouched.
+  // Caller removed from interactive streaming 2026-05-27 (b9b1a816: 9.9 s main-thread block on LTU); films call it once (cinema_maxq).
   A._consolidateBatched = function() {
-    if (!THREE.BatchedMesh) return;  // §S265: consolidation on all devices
-    var t0 = performance.now();
-
-    // Count existing BatchedMesh — if already compact, skip
+    if (!THREE.BatchedMesh) return;
+    var t0 = performance.now(), dlodKept = 0, noGeoKept = 0, transpKept = 0;
     var oldBMs = [];
-    A.scene.traverse(function(obj) { if (obj.isBatchedMesh) oldBMs.push(obj); });
+    A.scene.traverse(function(obj) {
+      if (!obj.isBatchedMesh || !A._batchMeta[obj.id]) return;
+      if (A._dlodSlots && A._dlodSlots[obj.id]) { dlodKept++; return; }
+      // &consolidate=opaque (ALTC_FOUNDATION §1 round 3 W4 probe): leave transparent batches unmerged — splits a transparent draw-order
+      // cause of the merged-vs-unmerged luma residual from an opaque one (coplanar depth ties)
+      if (A._consolidateOpaqueOnly && obj.material && obj.material.transparent) { transpKept++; return; }
+      var meta = A._batchMeta[obj.id], sg = obj.userData.slotGeo;
+      for (var k = 0; k < meta.length; k++) if (!sg || !sg[meta[k].slotId]) { noGeoKept++; return; }
+      oldBMs.push(obj);
+    });
     if (oldBMs.length <= 40) {
-      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' — already compact');
+      console.log('§CONSOLIDATE_SKIP batched=' + oldBMs.length + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' — already compact');
       return;
     }
-
-    // Remove all old BatchedMesh + their metadata
-    var oldBMIds = new Set();
+    // 1. gather every slot from the batches that will be merged, keyed by the batch's material + storey + disc
+    var groups = {}, order = [], _m4 = new THREE.Matrix4();
     for (var bi = 0; bi < oldBMs.length; bi++) {
-      oldBMIds.add(oldBMs[bi].id);
-      delete A._batchMeta[oldBMs[bi].id];
-      A.scene.remove(oldBMs[bi]);
-      if (oldBMs[bi].dispose) oldBMs[bi].dispose();
-    }
-    A._batchStoreyMap = {};
-    A._batchDiscMap = {};
-    // Clean guidMap entries from old BMs
-    for (var gk in A.guidMap) {
-      if (gk.indexOf('_') > 0) {
-        var prefix = parseInt(gk.split('_')[0], 10);
-        if (oldBMIds.has(prefix)) delete A.guidMap[gk];
+      var bm = oldBMs[bi], meta = A._batchMeta[bm.id], mat = bm.material;
+      var key = (mat && mat.uuid) + '|' + (bm.userData.storey || '') + '|' + (bm.userData.disc || '');
+      if (!groups[key]) { groups[key] = { mat: mat, storey: bm.userData.storey || '', disc: bm.userData.disc || '', items: [], from: [] }; order.push(key); }
+      var g = groups[key]; g.from.push(bm);
+      for (var mi = 0; mi < meta.length; mi++) {
+        var m = meta[mi], m4 = new THREE.Matrix4(); bm.getMatrixAt(m.slotId, m4);
+        var col = null; if (bm._colorsTexture && bm.getColorAt) { col = new THREE.Color(); try { bm.getColorAt(m.slotId, col); } catch (eC) { col = null; } }
+        g.items.push({ meta: m, geo: bm.userData.slotGeo[m.slotId], matrix: m4, visible: bm.getVisibleAt(m.slotId), color: col,
+          shadow: [bm.castShadow, bm.receiveShadow], order: bm.renderOrder, layers: bm.layers.mask });
       }
     }
-
-    // Build set of guids in InstancedMesh (6+ instances, stay untouched)
-    var instancedGuids = new Set();
-    for (var imId in A._instanceMeta) {
-      var imMeta = A._instanceMeta[imId];
-      for (var imi = 0; imi < imMeta.length; imi++) {
-        instancedGuids.add(imMeta[imi].guid);
-      }
-    }
-
-    // Rebuild buckets from streamQueue (the original source of truth)
-    var buckets = {};  // "storey|disc|rgba" → [{el, geo}, ...]
-    var _m4 = new THREE.Matrix4();
-    var _euler = new THREE.Euler();
-    var _quat = new THREE.Quaternion();
-    var _pos = new THREE.Vector3();
-    var _scale = new THREE.Vector3(1, 1, 1);
-
-    for (var qi = 0; qi < A.streamQueue.length; qi++) {
-      var row = A.streamQueue[qi];
-      var guid = row[0], hash = row[1], rgba = row[2], disc = row[3];
-      var cx = row[4], cy = row[5], cz = row[6];
-      var rotX = row[7] || 0, rotY = row[8] || 0, rotZ = row[9] || 0;
-      var storey = row[10] || '', ifcClass = row[11] || '';
-      var matVariant = A._entourageVariant(ifcClass, row[12]);
-      if (!hash || !A.meshCache[hash]) continue;
-      // Skip elements already in InstancedMesh
-      if (instancedGuids.has(guid)) continue;
-
-      var key = (storey || '_') + '|' + (disc || '_') + '|' + (rgba || '_default') + '|' + (matVariant || '');
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push({ guid: guid, hash: hash, rgba: rgba, disc: disc,
-        cx: cx, cy: cy, cz: cz, rotX: rotX, rotY: rotY, rotZ: rotZ,
-        storey: storey, ifcClass: ifcClass, matVariant: matVariant });
-    }
-
-    // Build consolidated BatchedMesh per bucket
-    var newDrawCalls = 0, totalElements = 0;
-    for (var key in buckets) {
-      var items = buckets[key];
-      if (items.length === 0) continue;
-
-      if (items.length === 0) continue;
-
-      var totalVerts = 0, totalIdx = 0;
-      for (var vi = 0; vi < items.length; vi++) {
-        var geo = A.meshCache[items[vi].hash];
-        var p = geo.attributes.position;
-        totalVerts += p ? p.count : 0;
-        totalIdx += geo.index ? geo.index.count : (p ? p.count : 0);
-      }
-
-      var parts = key.split('|');
-      var rgbaKey = parts[2];
-      var batchCls = items[0].ifcClass;
-      var mat = A._getMaterial(rgbaKey === '_default' ? null : rgbaKey, batchCls, items[0].matVariant);
-      var newBM;
-      try {
-        newBM = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, mat);
-      } catch(e) {
-        console.warn('§CONSOLIDATE_FAIL bucket=' + key + ' count=' + items.length + ' err=' + e.message);
-        continue;
-      }
-
-      newBM.frustumCulled = true;
-      newBM.userData.isBatched = true;
-      newBM.userData.storey = parts[0] === '_' ? '' : parts[0];
-      newBM.userData.disc = parts[1] === '_' ? '' : parts[1];
-      newBM.matrixAutoUpdate = false;
+    // 2. drop the old batches and only THEIR registry rows
+    var oldBMIds = new Set(oldBMs.map(function (b) { return b.id; }));
+    [A._batchStoreyMap, A._batchDiscMap].forEach(function (mp) {
+      for (var mk in mp) { mp[mk] = mp[mk].filter(function (e) { return !oldBMIds.has(e.mesh.id); }); if (!mp[mk].length) delete mp[mk]; }
+    });
+    for (var gk in A.guidMap) { var us = gk.indexOf('_'); if (us > 0 && oldBMIds.has(parseInt(gk.slice(0, us), 10))) delete A.guidMap[gk]; }
+    oldBMs.forEach(function (b) { delete A._batchMeta[b.id]; A.scene.remove(b); if (b.dispose) b.dispose(); });
+    // 3. one BatchedMesh per group, same material object, same per-slot matrix / visibility, shared slot contract
+    var newDrawCalls = 0, totalElements = 0, failed = 0, mixedFlags = 0;
+    order.forEach(function (key) {
+      var g = groups[key], items = g.items, totalVerts = 0, totalIdx = 0;
+      items.forEach(function (it) { var p = it.geo.attributes.position; totalVerts += p ? p.count : 0; totalIdx += it.geo.index ? it.geo.index.count : (p ? p.count : 0); });
+      var nb;
+      try { nb = new THREE.BatchedMesh(items.length, totalVerts, totalIdx, g.mat); }
+      catch (e) { failed++; console.warn('§CONSOLIDATE_FAIL bucket=' + key + ' count=' + items.length + ' err=' + e.message); return; }
+      var f0 = g.from[0];
+      nb.frustumCulled = true; nb.castShadow = f0.castShadow; nb.receiveShadow = f0.receiveShadow; nb.renderOrder = f0.renderOrder; nb.layers.mask = f0.layers.mask;
+      if (g.from.some(function (b) { return b.castShadow !== f0.castShadow || b.receiveShadow !== f0.receiveShadow || b.renderOrder !== f0.renderOrder || b.layers.mask !== f0.layers.mask; })) mixedFlags++;
+      nb.userData.isBatched = true; nb.userData.storey = g.storey; nb.userData.disc = g.disc; nb.matrixAutoUpdate = false;
       var newMeta = [];
-
-      for (var ji = 0; ji < items.length; ji++) {
-        var el = items[ji];
-        var geo = A.meshCache[el.hash];
+      items.forEach(function (it) {
         var slotId;
-        // §S276: r166+ requires addInstance() after addGeometry()
-        try { var geoId = newBM.addGeometry(geo); slotId = newBM.addInstance(geoId); } catch(e) { continue; }
-
-        var pos = A.ifc2three(el.cx, el.cy, el.cz);
-        _pos.set(pos.x, pos.y, pos.z);
-        _euler.set(el.rotX, el.rotZ, -el.rotY);
-        _quat.setFromEuler(_euler);
-        _m4.compose(_pos, _quat, _scale);
-        newBM.setMatrixAt(slotId, _m4);
-
-        var vis = true;
-        if (!A._storeyVisible(el.storey)) vis = false;
-        if (A.hiddenDiscs.size > 0 && A.hiddenDiscs.has(el.disc)) vis = false;
-        if (!vis) newBM.setVisibleAt(slotId, false);
-
-        newMeta.push({ guid: el.guid, storey: el.storey, disc: el.disc, ifcClass: el.ifcClass, slotId: slotId });
-        A.guidMap[newBM.id + '_' + slotId] = el.guid;
-
-        var sk = el.storey || '';
-        if (!A._batchStoreyMap[sk]) A._batchStoreyMap[sk] = [];
-        A._batchStoreyMap[sk].push({ mesh: newBM, slotId: slotId });
-        var dk = el.disc || '';
-        if (!A._batchDiscMap[dk]) A._batchDiscMap[dk] = [];
-        A._batchDiscMap[dk].push({ mesh: newBM, slotId: slotId });
-      }
-
-      A._batchMeta[newBM.id] = newMeta;
-      A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: §CONSOLIDATE rebuilds meshes -> new slotIds
-      newBM.updateMatrix();
-      A.scene.add(newBM);
-      newDrawCalls++;
-      totalElements += items.length;
-    }
-
+        try { slotId = nb.addInstance(nb.addGeometry(it.geo)); } catch (e) { return; }
+        nb.setMatrixAt(slotId, it.matrix);
+        if (!it.visible) nb.setVisibleAt(slotId, false);
+        if (it.color) nb.setColorAt(slotId, it.color);   // a per-slot colour, if the batch carried any, is copied too
+        (nb.userData.slotGeo = nb.userData.slotGeo || {})[slotId] = it.geo;
+        var m = it.meta;
+        newMeta.push(A._registerBatchSlot(nb, { guid: m.guid, storey: m.storey, disc: m.disc, ifcClass: m.ifcClass, bx: m.bx, by: m.by, bz: m.bz }, slotId));
+      });
+      A._batchMeta[nb.id] = newMeta;
+      nb.updateMatrix();
+      A.scene.add(nb);
+      newDrawCalls++; totalElements += newMeta.length;
+    });
+    A._metaGen = (A._metaGen | 0) + 1;   // §PERF_INCR: new slot ids
     var ms = (performance.now() - t0).toFixed(0);
-    console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls +
-      ' elements=' + totalElements + ' ms=' + ms);
-    document.getElementById('s-meshes').textContent = newDrawCalls.toLocaleString() + ' draw calls';
+    console.log('§CONSOLIDATE old_bm=' + oldBMs.length + ' new_bm=' + newDrawCalls + ' elements=' + totalElements + ' failed=' + failed +
+      ' mixedFlagGroups=' + mixedFlags + ' dlodKept=' + dlodKept + ' noSlotGeoKept=' + noGeoKept + ' transparentKept=' + transpKept + ' ms=' + ms + ' (copied: slot geometry + live matrix + batch material)');
+    var sm = document.getElementById('s-meshes'); if (sm) sm.textContent = newDrawCalls.toLocaleString() + ' draw calls';
     if (A.markDirty) A.markDirty();
-    // §TM_STREAM_RESWEEP: see _flushInstanced — consolidation rebuilds BatchedMesh objects
-    // (new object identities), so this needs its own sweep even though nothing NEW streamed in.
+    // §TM_STREAM_RESWEEP: new object identities, so the Time Machine sweeps again even though nothing new streamed in.
     if (window.tmResweep) window.tmResweep();
   };
 
@@ -1863,7 +3622,7 @@ function setupStreaming(A) {
     // fail confusingly. A.openModelDb() (Ctrl+O / Open Building pill) navigates to viewer.html?db=import://…
     // once a file is picked — a fresh page load, so no re-entry guard is needed here.
     if (A.BLANK_MODE && !A.DB_URL) {
-      A.status.textContent = 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
+      A.status.textContent = (typeof _trl === 'function') ? _trl('ui_blank_scene_hint', null, 'Blank scene — press Ctrl+O (Open Building) to load a .db file') : 'Blank scene — press Ctrl+O (Open Building) to load a .db file';
       console.log('§BLANK_MODE active=1 waiting_for_open=1');
       return;
     }
@@ -1916,15 +3675,35 @@ function setupStreaming(A) {
       // Bypass new URL() for import:// URLs (would throw)
       var _geoAbsUrl = geoUrl.startsWith('import://') ? geoUrl : new URL(geoUrl, location.href).href;
       var posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
+      // §S260b pattern above (metaUrl/geoUrl): "hospital.db" → "hospital_positions.bin" when there
+      // is no `_extracted.db` suffix to strip. Missing here is what §8.7 found: for any `_silent.db`
+      // this replace was a no-op, so posUrl === A.DB_URL and the "sidecar" fetch below re-downloaded
+      // the WHOLE database and parsed its SQLite header bytes as a position count.
+      if (posUrl === A.DB_URL) posUrl = A.DB_URL.replace(/\.db$/, '_positions.bin');
 
       // Phase 0: Try positions.bin for instant bboxes (< 3MB, loads in <1s)
       // §S261: Skip if early bbox already drawn above
       var _posLoaded = false;
-      if (!_posLoaded) try {
+      // §POSITIONS_SIDECAR_LOOP_BOUND (2026-09-14, CPE_4D_PERF_MEM_FINDINGS.md §8.7): the sidecar
+      // must never equal A.DB_URL (a no-op derive means "no real sidecar can exist for this name"),
+      // and the header's row count must never be trusted past what the buffer can actually hold —
+      // on LTU_AHouse the misread count (31.7M) needed more heap than V8 had before a bounds check
+      // could ever fire, crashing the whole page (smaller buildings just threw and recovered
+      // 0.8-3.9s later, silently paying the cost every load). Both guards below are independent of
+      // each other on purpose: the first stops the wrong file from ever being fetched; the second
+      // is the backstop if a real sidecar is ever truncated or the header is wrong for any reason.
+      if (!_posLoaded && posUrl !== A.DB_URL) try {
         A.status.textContent = 'Loading positions...';
-        var posBuf = await A.cachedFetch(posUrl);
+        // §8.7b — plain quiet fetch, not A.cachedFetch; see the single-DB §S281 copy of this
+        // comment below for why (OCI-retry-on-404 logs trip cli_silent_bake.js's fatal-abort
+        // regex for what is meant to be a silently-optional sidecar).
+        var posResp = await fetch(posUrl);
+        if (!posResp.ok) throw new Error('sidecar not found: ' + posResp.status);
+        var posBuf = await posResp.arrayBuffer();
         var posView = new DataView(posBuf);
         var posCount = posView.getUint32(0, true);
+        var _posMaxRows = Math.floor((posBuf.byteLength - 4) / 24);
+        if (posCount > _posMaxRows) posCount = _posMaxRows;
         var posRows = [];
         for (var pi = 0; pi < posCount; pi++) {
           var off = 4 + pi * 24;
@@ -1982,14 +3761,39 @@ function setupStreaming(A) {
       // lens/graph actually read in split mode, so a shipped-stale room set (e.g. Terminal's
       // pre-STAIRWELL-STACK 43 rooms) is patched here or nowhere. Raw bytes stay in IDB.
       if (A._applyPendingPatch) metaBuf = await A._applyPendingPatch(metaBuf, metaUrl);
+      // §SQLJS_CLOSE (housekeeping/sqljs-close-leaks): free the prior sql.js WASM instance before
+      // reassigning — an orphaned Database keeps its whole DB copy alive on the WASM heap forever
+      // (no GC reaches it). Defensive-only today: A.init() runs exactly once per page life
+      // (main.js:942; Ctrl+O "replace" navigates to a fresh page, scene.js:1073, and the merge path
+      // folds into the LIVE A.db without reassigning), so no current user path re-enters here.
+      // A.libDb may alias A.db (set just below, and at §SPLIT_GEO_FALLBACK_META / §BBOX_PAINT_YIELD)
+      // — clear the alias so no closed handle survives. City-mode swaps (city.js:707/744/796/950)
+      // never run this code (A.init returns before the split/single load in city mode).
+      if (A.db && typeof A.db.close === 'function') {
+        try { A.db.close(); } catch (e) {}
+        if (A.libDb === A.db) A.libDb = null;
+      }
       A.db = new SQL.Database(new Uint8Array(metaBuf));
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
+      // §SQLJS_CLOSE: on a (hypothetical) re-entry a previous split-load's separate geo instance
+      // would be orphaned by this alias — close it first. Never closes the live meta (!== A.db).
+      if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
       A.libDb = A.db;
       A._splitHasMeta = true;
+      // §TM_SPLITMODE_PERSIST_KEY (4D_GANTT_TM_REFACTOR.md §S78): A.db's content just came from
+      // metaUrl, not A.DB_URL — a persist keyed on A.DB_URL writes a slot this same loader never
+      // reads back (cachedFetch(metaUrl) above resolves its OWN key from metaUrl, never A.DB_URL,
+      // in split mode). One source of truth: whoever persists app.db reads THIS field instead of
+      // re-deriving split state, so read-key and write-key can never drift apart.
+      A._dbPersistUrl = metaUrl;
       console.log(`[S192] §DB_META_LOADED size=${(metaBuf.byteLength/1024/1024).toFixed(1)}MB`);
 
       // §S260b: Set activeBuilding + _hasBbox early so 4D5D relay + clash work during geo download
       try {
-        var _bldRows = A.db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1");
+        // §17.17.4 (W-OCC3-LTU): no `building` column ⇒ one building, label extracted from the URL.
+        var _bldRows = A._hasBuildingCol(A.db)
+          ? A.db.exec("SELECT building, COUNT(*) c FROM elements_meta GROUP BY building ORDER BY c DESC LIMIT 1")
+          : A.db.exec("SELECT '" + A._singleBuildingName().replace(/'/g, "''") + "' b, COUNT(*) c FROM elements_meta");
         if (_bldRows.length && _bldRows[0].values[0][0]) {
           A.activeBuilding = _bldRows[0].values[0][0];
           console.log(`[S260b] §ACTIVE_BUILDING_EARLY name=${A.activeBuilding}`);
@@ -2003,7 +3807,10 @@ function setupStreaming(A) {
           if (_sBldLabel && _sBldLabel.getAttribute('data-trl') === 'ui_buildings') _sBldLabel.textContent = 'Building';
           // §S260e: Element count from meta.db
           try {
-            var _elCnt = A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE building=?", [A.activeBuilding]);
+            var _bldOk2 = A._hasBuildingCol(A.db);   // §17.17.4 (W-OCC3-LTU)
+            var _elCnt = _bldOk2
+              ? A.db.exec("SELECT COUNT(*) FROM elements_meta WHERE building=?", [A.activeBuilding])
+              : A.db.exec("SELECT COUNT(*) FROM elements_meta");
             if (_elCnt.length) {
               var _n = _elCnt[0].values[0][0];
               var _sEl = document.getElementById('s-elements');
@@ -2013,12 +3820,14 @@ function setupStreaming(A) {
           } catch(e) {}
           // §S260b: Redraw bboxes with discipline colors now that meta.db is loaded
           if (_posLoaded && A._drawBboxPlaceholders) {
+            var _bldOk3 = A._hasBuildingCol(A.db);   // §17.17.4 (W-OCC3-LTU)
             var _colorRows = A.dbQuery(`SELECT m.guid, i.geometry_hash, m.material_rgba, m.discipline,
               t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z,
               m.storey, m.ifc_class, m.element_name, t.bbox_x, t.bbox_y, t.bbox_z
               FROM elements_meta m JOIN element_instances i ON m.guid=i.guid
               JOIN element_transforms t ON t.guid=m.guid
-              WHERE m.building=? AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`, [A.activeBuilding]);
+              WHERE ${_bldOk3 ? 'm.building=?' : '1=1'} AND i.geometry_hash IS NOT NULL AND m.ifc_class!='IfcOpeningElement'`,
+              _bldOk3 ? [A.activeBuilding] : []);
             if (_colorRows.length) {
               A._drawBboxPlaceholders(_colorRows);
               console.log('[S260b] §BBOX_RECOLOR discs=' + new Set(_colorRows.map(function(r){return r[3]})).size);
@@ -2042,6 +3851,10 @@ function setupStreaming(A) {
           ? `Loading geometry from cache...`
           : `First visit — downloading geometry (${_posLoaded ? 'bboxes visible' : 'please wait'})...`;
         var geoBuf = _geoCached || await A.cachedFetch(geoUrl);
+        // §SQLJS_CLOSE: A.libDb aliases the live meta A.db here (set above) — the guard's !== A.db
+        // check makes it a no-op in the normal flow; it only fires if a future reorder leaves a
+        // separate prior geo instance in A.libDb. Never closes the meta DB through its alias.
+        if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
         A.libDb = new SQL.Database(new Uint8Array(geoBuf));
         A._splitHasMeta = false;  // use sync streaming path (libDb has geometry)
         var _geoMs = (performance.now() - _geoT0).toFixed(0);
@@ -2056,6 +3869,8 @@ function setupStreaming(A) {
         try {
           A.status.textContent = 'geo.db not found — loading extracted DB as geometry source...';
           var _extBuf = await A.cachedFetch(A.DB_URL);
+          // §SQLJS_CLOSE: same alias-aware guard as the geo.db site above.
+          if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
           A.libDb = new SQL.Database(new Uint8Array(_extBuf));
           A._splitHasMeta = false;
           console.log(`§SPLIT_GEO_FALLBACK_EXTRACTED url=${A.DB_URL} size=${(_extBuf.byteLength/1024/1024).toFixed(1)}MB`);
@@ -2063,6 +3878,8 @@ function setupStreaming(A) {
           _geoOk = true;
         } catch(_extErr) {
           console.log(`§SPLIT_GEO_FALLBACK_META err=${_extErr.message} — using meta.db (bboxes only)`);
+          // §SQLJS_CLOSE: same alias-aware guard (a prior separate geo instance would be orphaned here).
+          if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
           A.libDb = A.db;
           A._splitHasMeta = true;
           A.status.textContent = 'Geometry unavailable — showing bounding boxes only.';
@@ -2088,12 +3905,35 @@ function setupStreaming(A) {
       // ── §S281: Single-DB instant bboxes — try the tiny positions.bin sidecar first (the same one
       // split builds use), so the wireframe preview paints before the full _extracted.db downloads.
       // Additive: a missing sidecar 404s → cachedFetch throws → caught → normal full download (unchanged).
+      // §8.7 (2026-09-14, CPE_4D_PERF_MEM_FINDINGS.md §8.7) — this whole try block used to have two
+      // gaps: '_extracted.db' → '_positions.bin' is a no-op for any `_silent.db`, so the "sidecar"
+      // fetch re-downloaded the WHOLE database, and the header's row count was never checked against
+      // the buffer it actually came from. On HHS/Terminal/Hospital the bogus count ran off the
+      // buffer and threw fast (0.8-3.9s, silently paying the cost every load) — on LTU_AHouse the
+      // misread count needed more heap than V8 had before that bounds check could ever fire, and the
+      // whole page crashed before reaching this catch (the CLI then waited its full 15-minute
+      // timeout on a page that no longer existed). Both fixed below: derive the sidecar the same
+      // way metaUrl/geoUrl already do a few lines up, refuse to fetch when it can't be distinguished
+      // from the real DB, and never trust the header count past what the buffer can hold.
       try {
         var _posUrl = A.DB_URL.replace('_extracted.db', '_positions.bin');
+        if (_posUrl === A.DB_URL) _posUrl = A.DB_URL.replace(/\.db$/, '_positions.bin');
+        if (_posUrl === A.DB_URL) throw new Error('no .db suffix to derive a sidecar name from');
         A.status.textContent = 'Loading positions...';
-        var _posBuf = await A.cachedFetch(_posUrl);
+        // §8.7b — a plain, quiet fetch, never A.cachedFetch: the sidecar is optional and tiny
+        // (<3MB), so caching it buys nothing, and cachedFetch's OCI-retry-on-404 logs
+        // §DB_404_OCI_FAIL / "Failed to fetch ... 404" — lines cli_silent_bake.js's FATAL_RX
+        // treats as "the building never loaded" (§CLI_BAKE_LOAD_FATAL), with no way to tell an
+        // optional sidecar's expected miss from the real DB failing. A missing sidecar must never
+        // abort the bake; it did, the moment this fetch stopped being a permanent no-op on
+        // _silent.db names (§8.7's own fix). Same-origin relative URL — no CORS concern.
+        var _posResp = await fetch(_posUrl);
+        if (!_posResp.ok) throw new Error('sidecar not found: ' + _posResp.status);
+        var _posBuf = await _posResp.arrayBuffer();
         var _posView = new DataView(_posBuf);
         var _posCount = _posView.getUint32(0, true);
+        var _posMaxRows = Math.floor((_posBuf.byteLength - 4) / 24);
+        if (_posCount > _posMaxRows) _posCount = _posMaxRows;
         var _posRows = [];
         for (var _spi = 0; _spi < _posCount; _spi++) {
           var _soff = 4 + _spi * 24;
@@ -2127,8 +3967,22 @@ function setupStreaming(A) {
       // ── Full download (single-DB path — use split_db.sh for large buildings) ──
       A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_fetching||'Fetching {url}...').replace('{url}',A.DB_URL);
       var dbBuf = await A.cachedFetch(A.DB_URL);
+      console.log('§DB_LOAD_STEP fetched bytes=' + (dbBuf && dbBuf.byteLength));   // §128.10 load-path step line
       if (A._applyPendingPatch) dbBuf = await A._applyPendingPatch(dbBuf, A.DB_URL);
+      console.log('§DB_LOAD_STEP patched bytes=' + (dbBuf && dbBuf.byteLength));
+      // §SQLJS_CLOSE: same defensive close-before-reassign as the split path (see comment there).
+      if (A.db && typeof A.db.close === 'function') {
+        try { A.db.close(); } catch (e) {}
+        if (A.libDb === A.db) A.libDb = null;
+      }
+      console.log('§DB_LOAD_STEP opening');
       A.db = new SQL.Database(new Uint8Array(dbBuf));
+      console.log('§DB_LOAD_STEP opened');
+      if (A.composeGhostsFromAggregates) A.composeGhostsFromAggregates(A.db);
+      console.log('§DB_LOAD_STEP ghosts composed');
+      // §TM_SPLITMODE_PERSIST_KEY — whole-db path: A.db's content IS A.DB_URL's bytes, set
+      // explicitly (not left unset) so this field is never stale from a prior split-mode load.
+      A._dbPersistUrl = A.DB_URL;
       console.log(`[S192] §DB_LOADED size=${(dbBuf.byteLength/1024/1024).toFixed(0)}MB`);
       // §S283: Remember last building URL for PWA resume
       try { localStorage.setItem('pwa_last_db', A.DB_URL); } catch(e) {}
@@ -2139,14 +3993,24 @@ function setupStreaming(A) {
     if (Object.keys(A.buildingCentres).length === 0) {
       console.log('§CENTRES_QUERY A.db=' + (!!A.db) + ' tables=' + (A.db ? JSON.stringify(A.db.exec("SELECT name FROM sqlite_master WHERE type='table'")) : 'none'));
       try {
-        const rows = A.dbQuery(`
+        // §17.17.4 (W-OCC3-LTU): with no `building` column this query used to throw inside dbQuery
+        // (§HELPERS_QUERY_ERR), return [], and leave buildingCentres empty — startStreaming() then
+        // silently found no building and nothing ever streamed. One building, one centre instead.
+        const _bldOk = A._hasBuildingCol(A.db);
+        const rows = _bldOk ? A.dbQuery(`
           SELECT m.building, COUNT(*),
             AVG(t.center_x), AVG(t.center_y), AVG(t.center_z)
           FROM elements_meta m
           JOIN element_transforms t ON t.guid = m.guid
           GROUP BY m.building
+        `) : A.dbQuery(`
+          SELECT '${A._singleBuildingName().replace(/'/g, "''")}', COUNT(*),
+            AVG(t.center_x), AVG(t.center_y), AVG(t.center_z)
+          FROM elements_meta m
+          JOIN element_transforms t ON t.guid = m.guid
         `);
-        console.log('§CENTRES_RESULT rows=' + rows.length + (rows.length > 0 ? ' first=' + JSON.stringify(rows[0]) : ''));
+        console.log('§CENTRES_RESULT rows=' + rows.length + ' bldCol=' + _bldOk +
+          (rows.length > 0 ? ' first=' + JSON.stringify(rows[0]) : ''));
         for (const row of rows) {
           A.buildingCentres[row[0]] = { ix: row[2], iy: row[3], iz: row[4], count: row[1] };
         }
@@ -2236,6 +4100,26 @@ function setupStreaming(A) {
       envW = xMax - xMin;
       envD = yMax - yMin;
       envH = zMax - zMin;
+      // §FRAME_ROBUST (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §I.3): a few stray elements
+      // (LTU PLB: 426 m vs a ~126 m core) push the camera ~3x too far. When strays are detached, frame
+      // on the 2nd–98th percentile of element centres. Strays stay loaded and visible.
+      const _cq = A.dbQuery(`SELECT center_x, center_y, center_z FROM element_transforms WHERE center_x IS NOT NULL`);
+      if (_cq.length >= 50) {
+        const _pct = (ax) => {
+          const v = _cq.map(r => r[ax]).sort((a, b) => a - b);
+          return v[Math.floor(v.length * 0.98)] - v[Math.floor(v.length * 0.02)];
+        };
+        const rW = _pct(0), rD = _pct(1), rH = _pct(2);
+        // Trim ONLY when the outer 2% are detached strays: full envelope > 2x the p2–98 envelope.
+        // Measured 2026-10-04 (ratio full/p2-98): LTU 426/126=3.4 (PLB strays) → trim; Hospital
+        // 151/85=1.8, Duplex 22/17=1.3, Terminal 69/60=1.15 → keep (real wings, not strays).
+        const _full = Math.max(envW, envD, envH), _core = Math.max(rW, rD, rH);
+        const _trim = _core > 0 && _full > 2 * _core;
+        console.log(`§FRAME_ROBUST n=${_cq.length} minmax=${envW.toFixed(0)}x${envD.toFixed(0)}x${envH.toFixed(0)}m p2-98=${rW.toFixed(0)}x${rD.toFixed(0)}x${rH.toFixed(0)}m ratio=${_core > 0 ? (_full / _core).toFixed(2) : 'n/a'} ${_trim ? 'TRIM (strays detached)' : 'KEEP min/max'}`);
+        if (_trim) { envW = rW; envD = rD; envH = Math.max(rH, 1); }
+      } else {
+        console.log(`§FRAME_ROBUST n=${_cq.length} <50 — min/max kept (too few elements for percentiles)`);
+      }
     }
     // If envelope is too small (re-centred DB), use sum of bbox spreads from buildingCentres
     if (envW < 1 && Object.keys(A.buildingCentres).length > 0) {
@@ -2248,6 +4132,11 @@ function setupStreaming(A) {
     for (const bc of Object.values(A.buildingCentres)) {
       bc.envelope = envelope;
     }
+    // §FOG_AFTER_ENVELOPE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §U): the fog was sized at :3801, BEFORE
+    // the envelope existed, so it always read the 100 m default → density clamped at 0.004 (≈ nothing visible past
+    // ~500 m). JELAPANG (2114 m) flew at ~3 km inside a wall of fog. Re-size now the envelope is known. Any model
+    // under ~375 m still clamps to 0.004 — Hospital 151 / LTU 126 / Terminal 69 / Duplex 22 unchanged.
+    if (A._updateFogDensity) A._updateFogDensity();
     const dist = Math.max(80, envelope * 1.5);
     // Use buildingCentres for camera target (has IFC world coords via modelOffset)
     const firstBc = Object.values(A.buildingCentres)[0];
@@ -2261,13 +4150,50 @@ function setupStreaming(A) {
     A.controls.update();
     console.log(`[S203] §CAMERA envelope=${envW.toFixed(0)}x${envD.toFixed(0)}x${envH.toFixed(0)}m dist=${dist.toFixed(0)}m`);
 
+    // §GEOREF (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §1/§3) — the georef every consumer
+    // reads: sitecam.js:81 and walk.js:275 for true north, cpe_sun_compass.js for the sun path.
+    // ⚠ THE LOG LINE USED TO SAY "from grid Y" ON EVERY BUILDING, AND IT WAS NEVER TRUE. The
+    // extractor wrote the literal string "0" for true_north_angle from the day the key was added
+    // (§KUL001), and the browser import path wrote no such row at all — so this read has returned
+    // a stub or a default for every building in the fleet since it shipped, while two consumers
+    // applied a real rotation formula to it. It is a real value now, and the log says WHICH:
+    // `ifc_truenorth` is authored, `default_zero` is the honest default, `absent` means this DB
+    // predates the fix and needs a re-extract or a buildings/patches/*.sql row.
     window._trueNorthAngle = 0;
+    window._siteLatitude = null;
+    window._siteLongitude = null;
+    window._siteElevationM = null;
+    window._siteLatLongSource = 'absent';
+    window._trueNorthSource = 'absent';
     try {
-      const tnRows = A.dbQuery("SELECT value FROM project_metadata WHERE key = 'true_north_angle'");
-      if (tnRows.length > 0) {
-        window._trueNorthAngle = parseFloat(tnRows[0][0]) || 0;
-        console.log(`[S204] §TRUE_NORTH ${window._trueNorthAngle}° from grid Y`);
+      const geoRows = A.dbQuery("SELECT key,value FROM project_metadata WHERE key IN " +
+        "('true_north_angle','true_north_source','site_latitude','site_longitude'," +
+        "'site_elevation_m','site_latlong_source')");
+      const g = {};
+      (geoRows || []).forEach(r => { g[r[0]] = r[1]; });
+      if (g.true_north_angle != null && g.true_north_angle !== '') {
+        const tn = parseFloat(g.true_north_angle);
+        if (isFinite(tn)) window._trueNorthAngle = tn;
+        window._trueNorthSource = g.true_north_source || 'legacy_no_source_key';
       }
+      // A non-finite or out-of-range coordinate stays NULL — never a fallback 0, because 0/0 is a
+      // real place and a sun path drawn from it would be confidently wrong (spec §4).
+      const la = parseFloat(g.site_latitude), lo = parseFloat(g.site_longitude);
+      if (isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
+        window._siteLatitude = la;
+        window._siteLongitude = lo;
+        window._siteLatLongSource = g.site_latlong_source || 'legacy_no_source_key';
+      } else if (g.site_latlong_source) {
+        window._siteLatLongSource = g.site_latlong_source;
+      }
+      const el = parseFloat(g.site_elevation_m);
+      if (isFinite(el)) window._siteElevationM = el;
+      console.log(`[S204] §TRUE_NORTH ${window._trueNorthAngle}° (source=${window._trueNorthSource})` +
+        ` — the bearing of MODEL north measured from TRUE north; sitecam/walk rotate by this`);
+      console.log(`[S204] §GEOREF_SITE lat=${window._siteLatitude == null ? 'unknown' : window._siteLatitude}` +
+        ` lon=${window._siteLongitude == null ? 'unknown' : window._siteLongitude}` +
+        ` elev=${window._siteElevationM == null ? 'unknown' : window._siteElevationM + 'm'}` +
+        ` (source=${window._siteLatLongSource})`);
     } catch(e) { /* no project_metadata table */ }
 
     // Deep-link camera restore
@@ -2285,6 +4211,17 @@ function setupStreaming(A) {
     } else {
       A.startStreaming();
     }
+    // §FB.3: a saved MERGED DB holds >1 building but the line above streams ONE (camera-nearest). Queue
+    // the rest into the same drain a live merge uses (scene.js _mergeStreamNext, chained from the
+    // stream-complete hook) so reopening shows the whole merged scene. Gate: >1 building, not City.
+    if (!A.CITY_URL && Object.keys(A.buildingCentres).length > 1) {
+      var _openRest = Object.keys(A.buildingCentres).filter(function(n) {
+        return n !== A.activeBuilding && !(A.buildingsRendered && A.buildingsRendered.has(n));
+      });
+      A._mergePending = (A._mergePending || []).concat(_openRest);
+      console.log('§OPEN_ALL_BUILDINGS queued=' + _openRest.length + ' first=' + A.activeBuilding +
+        ' rest=' + JSON.stringify(_openRest));
+    }
     console.log(`[S241] §BBOX_EARLY placeholders drawn before library fetch`);
 
     // Single DB — geometry is in the same DB (split mode sets libDb asynchronously)
@@ -2294,6 +4231,9 @@ function setupStreaming(A) {
     // libDb is enabled (streamTick gates on libDb), i.e. before mesh streaming grabs the thread.
     if (!_splitMode && !A._useRangeStream) {
       await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+      // §SQLJS_CLOSE: same alias-aware guard — a re-entry after a previous SPLIT load would
+      // otherwise orphan that load's separate geo instance here.
+      if (A.libDb && A.libDb !== A.db && typeof A.libDb.close === 'function') { try { A.libDb.close(); } catch (e) {} }
       A.libDb = A.db;
       console.log('[S241] §BBOX_PAINT_YIELD bboxes painted; enabling mesh stream');
     }
@@ -2321,6 +4261,8 @@ function setupStreaming(A) {
   A.clearStreamed = function() {
     // §6.8 DLOD — disable before clearing scene
     if (A.dlodDisable) A.dlodDisable('clear');
+    // §CIVIL_REF_LOOK L2 — ROW outlines are scene children outside the streamed meshes; drop them with the scene
+    if (A._rowOutlines) { for (var _rg in A._rowOutlines) { var _rl = A._rowOutlines[_rg]; if (_rl.parent) _rl.parent.remove(_rl); _rl.geometry.dispose(); _rl.material.dispose(); } A._rowOutlines = {}; }
     // Dispose active pick highlight
     if (window._pickHighlight) {
       const prev = window._pickHighlight;
@@ -2332,15 +4274,21 @@ function setupStreaming(A) {
     const toRemove = A.collectMeshes(o => o.isMesh || o.isInstancedMesh || o.isBatchedMesh);
     toRemove.forEach(obj => {
       A.scene.remove(obj);
+      // §MEMLEAK_BVH_DISPOSE: three-mesh-bvh's `geometry.boundsTree` is a monkey-patched
+      // property (loader.js) sitting outside BufferGeometry's own 'dispose' event chain —
+      // plain geometry.dispose() does NOT free it. Must call disposeBoundsTree() first.
+      if (obj.geometry && obj.geometry.boundsTree && obj.geometry.disposeBoundsTree) obj.geometry.disposeBoundsTree();
       if (obj.geometry) obj.geometry.dispose();
       if (obj.material) obj.material.dispose();
     });
     // Dispose cached geometry BLOBs — these are the raw BufferGeometry objects
     // that back all scene meshes. Safe to dispose now that meshes are removed.
     for (const geo of Object.values(A.meshCache)) {
+      if (geo && geo.boundsTree && geo.disposeBoundsTree) geo.disposeBoundsTree();
       if (geo && geo.dispose) geo.dispose();
     }
     A.meshCache = {};
+    A._r10GeoCache = {}; A._r10State = null; A._r10Guids = new Set(); A._r10MatCache = {};   // §SURFACE_R10 per-load state
     A.streamedCount = 0;
     A.streaming = false;
     A.streamQueue = [];
@@ -2348,10 +4296,15 @@ function setupStreaming(A) {
     A.activeBuilding = null;
     A.activeBuildingTotal = 0;
     A.buildingsRendered.clear();
-    A._pendingInstances = {};
+    A._pendingInstances = {};  A._instRgbaSplit = null;   // §INST_RGBA_SPLIT per-building total
     A._instanceMeta = {};
     A._instanceGuids = {};
     A._matCache = {};
+    A._mepHueCounts = {}; A._instMepUniform = 0; A._instMepMixed = 0;   // §MEP_COLOR_SURVIVES_PHOTOREAL — per-building, die with the material cache
+    // §CPE_MATERIAL_KEY: the material_name column probe is per-DB, so a scene reset (which is where
+    // a DIFFERENT db gets opened) must re-probe rather than carry a stale answer — the exact
+    // stale-cache hazard §MERGE_BLDCOL calls out for A._buildingCol.
+    A._matNameCol = undefined;
     // §MERGED_GUID: merged identity dies with the meshes it addressed (index ranges are per-mesh).
     A._mergedMeta = {};
     A._mergedIndex = {};

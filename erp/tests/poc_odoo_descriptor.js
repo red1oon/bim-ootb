@@ -62,12 +62,41 @@ const server = http.createServer((req, res) => {
   ok('odoo facets expose the contract methods (getMenuTree/readRecords/buildContext)', ident.hasStruct && ident.hasData && ident.hasSess);
 
   // (2) login through the Odoo session facet → menu renders through getMenuTree
-  await page.evaluate(() => {
-    var rows = Array.prototype.slice.call(document.querySelectorAll('#idmp-login-users .idmp-login-user'));
-    var r = rows.find(x => !x.classList.contains('disabled')); if (r) r.click();
-  });
-  await page.waitForTimeout(400);
-  await page.click('#idmp-login-ok');
+  // STALE-INSTRUMENT FIX 2026-09-04 (prompts/AGENT_QUEUE.md §STALE-WITNESSES): this clicked a row in
+  // #idmp-login-users and then #idmp-login-ok. The login card now OPENS AT STEP 0, the tenant switcher
+  // (NEW_CLIENT_MGMT.md P3) — the page logs `§IDEMPIERE login-step0 tenants=1 demos=5` — so step 1 was
+  // still display:none, its user list was EMPTY, and the click hit nothing. #idmp-login-ok then sat
+  // inside a hidden step 2 and the run died on a click timeout that named the button, not the cause.
+  // Walk whatever step is actually visible, in order. Step 0's rows share the .idmp-login-user class
+  // with step 1's, so the RESIDENT tenant is the one WITHOUT .idmp-login-demo (a demo row would switch
+  // the whole dictionary and is not what ?erp=odoo already selected).
+  async function loginWalk() {
+    const vis = id => page.evaluate(i => { const e = document.getElementById(i); return !!e && e.style.display !== 'none'; }, id);
+    if (await vis('idmp-login-step0')) {
+      const picked = await page.evaluate(() => {
+        const rows = Array.prototype.slice.call(document.querySelectorAll('#idmp-login-clients .idmp-login-user'));
+        const r = rows.find(x => !x.classList.contains('idmp-login-demo') && !x.classList.contains('disabled'));
+        if (!r) return null; r.click(); return (r.textContent || '').trim().slice(0, 40);
+      });
+      console.log('§ODOO-LOGINWALK step0 tenant=' + JSON.stringify(picked));
+      if (picked == null) throw new Error('login step 0 is visible but offers no resident tenant row');
+      await page.waitForTimeout(500);
+    }
+    if (await vis('idmp-login-step1')) {
+      const picked = await page.evaluate(() => {
+        const rows = Array.prototype.slice.call(document.querySelectorAll('#idmp-login-users .idmp-login-user'));
+        const r = rows.find(x => !x.classList.contains('disabled'));
+        if (!r) return null; r.click(); return (r.textContent || '').trim().slice(0, 40);
+      });
+      console.log('§ODOO-LOGINWALK step1 user=' + JSON.stringify(picked));
+      if (picked == null) throw new Error('login step 1 is visible but offers no enabled user row');
+      await page.waitForTimeout(500);
+    }
+    await page.waitForSelector('#idmp-login-ok', { state: 'visible', timeout: 10000 });
+    await page.click('#idmp-login-ok');
+    console.log('§ODOO-LOGINWALK step2 ok-clicked');
+  }
+  await loginWalk();
   await page.waitForTimeout(1200);
 
   const menuLeaves = await page.$$eval('#idmp-menu .idmp-row.leaf', els => els.length).catch(() => 0);

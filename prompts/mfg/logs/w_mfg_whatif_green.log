@@ -1,0 +1,12 @@
+§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+§MFG-WHATIF-LOAD break=none official orders=2 dispatch=true,true pre: projection=5faa5b4c opset=194e5873 mrp=dabc9e5d (6 rows) logRows=8
+§MFG-WHATIF-X1 branch MRP rows=9 hash=98603f4e vs live 6 rows hash=dabc9e5d
+  §MFG-WHATIF X1 non-vacuous: the what-if changes the MRP answer (rows 6 -> 9, hash differs) PASS
+§MFG-WHATIF-X2 while the branch exists: projection=5faa5b4c opset=194e5873 taggedOps=4 logRows=12
+  §MFG-WHATIF X2 live projection hash + official op-set hash unchanged while the branch exists; its ops are in the log, TAGGED PASS
+§MFG-WHATIF-X4 official replay docs=2 blue-view docs=3 (branch order WI-1 in official replay: false, in blue view: true)
+  §MFG-WHATIF X4 default replay excludes the branch-tagged op; replay with {branch} includes it PASS
+§MFG-WHATIF-X3 after discard: projection=5faa5b4c opset=194e5873 mrp=dabc9e5d branchOpsAlive=0 undone=4 logRows=12 | official replay: scope=40991901 mrp=dabc9e5d
+  §MFG-WHATIF X3 after discard: projection hash, official op-set hash and MRP hash equal their pre-branch values PASS
+  §MFG-WHATIF X3b the branch is fully folded away (0 alive, 4 undone) and an official rebuild reproduces the live scope + MRP PASS
+§MFG-WHATIF-VERDICT PASS break=none judged=5 failed=0 inconclusive=0

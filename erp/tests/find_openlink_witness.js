@@ -23,7 +23,7 @@ function check(name, cond, detail) {
 }
 
 // Extract the EXACT detection SQL + URL template the shipped _surfaceExistingOrder uses (non-invent).
-var src = fs.readFileSync(NF, 'utf8');
+var src = require('../../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
 var sqlM = src.match(/db\.exec\("(SELECT C_Project_ID FROM C_Project WHERE Value=\?)"/);
 var urlM = src.match(/'(\.\.\/erp\/idempiere\.html\?client=garden&window=130&record=)'/);
 check('extract-detection-sql', !!sqlM, sqlM ? sqlM[1] : 'NOT FOUND in navigate_find.js');

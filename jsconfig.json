@@ -1,0 +1,16 @@
+{
+  // VS Code code assist for the plain-JS sources: go-to-definition, find references, rename, hover, autocomplete
+  // across files. No build, no emit; never loaded by a page.
+  // Type CHECKING is opt-in per file: put `// @ts-check` on line 1 of a file to get red squiggles there.
+  // (Turning checkJs on repo-wide gave 1,059 diagnostics on erp/ alone, nearly all loose-JS inference noise.)
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable", "WebWorker.ImportScripts"],
+    "skipLibCheck": true
+  },
+  "include": ["erp/**/*.js", "viewer/**/*.js", "types/*.d.ts"],
+  "exclude": ["**/node_modules/**", "erp/lib/**", "erp/sqljs/**", "viewer/lib/**"]
+}

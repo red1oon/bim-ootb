@@ -152,11 +152,27 @@
   }
 
   // -- Evaluation (mirrors EvaluationVisitor) ------------------------------------------------------------
+  // §P8 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P8-RESULT-DEFECT — Witness: W-PARITY-REFTABLE):
+  //   the lookup is CASE-INSENSITIVE on the second pass. AD logic tokens are CamelCase (`@TenderType@`,
+  //   `@IsSOTrx@`) but EVERY record this stack builds is lower-cased — crud_overlay's gatherVals() keys are
+  //   `f.col`, which foldCrudSpec lower-cases — so an exact-case lookup NEVER resolved a CamelCase token and
+  //   every such expression silently evaluated against "". Measured: C_Payment.TrxType's DisplayLogic
+  //   `@TenderType@=C` stayed false however the user set TenderType, so the field could never appear.
+  //   This is the same storage-detail mapping §P3-SPEC P3.5 already established for the val-rule @token@ feed
+  //   ("AD tokens are CamelCase and our records are lowercase, so that case mapping lives in the wiring") —
+  //   applied here too rather than left as a second, contradictory convention. Exact match still wins first,
+  //   so a record that DOES carry the AD casing is unaffected.
+  function _ciGet(bag, name) {
+    if (!bag) return undefined;
+    if (Object.prototype.hasOwnProperty.call(bag, name)) return bag[name];
+    var lower = String(name).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(bag, lower)) return bag[lower];
+    for (var k in bag) if (Object.prototype.hasOwnProperty.call(bag, k) && String(k).toLowerCase() === lower) return bag[k];
+    return undefined;
+  }
   function resolveVar(name, record, context) {
-    var raw;
-    if (record && Object.prototype.hasOwnProperty.call(record, name)) raw = record[name];
-    else if (context && Object.prototype.hasOwnProperty.call(context, name)) raw = context[name];
-    else raw = undefined;
+    var raw = _ciGet(record, name);
+    if (raw === undefined) raw = _ciGet(context, name);
     var val = (raw == null) ? '' : String(raw);
     if (val.trim() === '' && /_ID$/.test(name)) return '0';                // empty _ID -> "0" (267-268)
     return val;

@@ -79,7 +79,8 @@ sandbox.maxResCrew = sandbox.__captured.maxResCrew;
 console.log('§P2_BOQCHART_RESCOUNTS ' + JSON.stringify(sandbox.resCounts));
 assert(sandbox.resCounts.PLUMBER === 1, 'G-P IfcTank (tier 2) contributes to PLUMBER crew count in the real sliced block, not LABORER');
 assert(sandbox.resCounts.CARPENTER === 1, 'G-Q IfcDoorType (tier 1 substring) contributes to CARPENTER crew count, not LABORER');
-assert(sandbox.resCounts.LABORER === 1, 'G-R IfcActor (genuine tier 3) still defaults to LABORER — this bucket is unaffected, by design');
+const DEFAULT_RES = SEQUENCE_DEFAULT.resource || 'LABORER';   // the shipped default's own crew (rates data moved LABORER -> MASON)
+assert(sandbox.resCounts[DEFAULT_RES] === 1, 'G-R IfcActor (genuine tier 3) still defaults to ' + DEFAULT_RES + ' (SEQUENCE_DEFAULT.resource) — this bucket is unaffected, by design');
 
 console.log('\n§EXACT_LOOKUP_P2_BOQCHART_SUMMARY pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

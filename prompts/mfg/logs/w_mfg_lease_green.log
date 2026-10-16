@@ -1,0 +1,10 @@
+§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+§OWNER_LOADED erp_replay.js (owner-gate + CAS guarded replay)
+§MFG-LEASE-LOAD break=none orders=PP_Order:8000,PP_Order:8001 resource=50000 window=2008-08-16 00:00:00..2008-08-17 00:00:00 | legacy assignment windows res 100: 2003-02-05 10:00:00..2003-02-05 13:00:00 , 2003-02-05 17:00:00..2003-02-05 18:00:00 | convention=half-open [from,to) (not evidenced by legacy)
+§MFG-LEASE-E1 applied=12 rejected=8 leases=b1:held b3:held b4:held l1:expired l3:used l5:used
+  §MFG-LEASE E1 every lease/use/expire verdict matches the timeline (real double-booking refused, adjacent+other-resource granted, non-owner refused, expiry strictly ordered, used lease immune, handoff moves USE right) PASS
+§MFG-LEASE-E4 merge orders ABC,CBA,BCA,CAB -> 10711965/7f19d63d 10711965/7f19d63d 10711965/7f19d63d 10711965/7f19d63d
+  §MFG-LEASE E4 lease table + rejected set identical for every merge order (== central) PASS
+§MFG-LEASE-E5 live leases=5 overlapping pairs=0
+  §MFG-LEASE E5 no two live leases overlap on a resource (scanner proven able to fail: control finds 1) PASS
+§MFG-LEASE-VERDICT PASS break=none judged=3 failed=0 inconclusive=0

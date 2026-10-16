@@ -1,0 +1,13 @@
+§WL seed-as-loaded: patch statements ok=3131 failed=0
+§WL population windows=373 equal=372 inconclusive(no tabs)=1 differ=0
+  §WL-CHECK WL1 lens == independent recount for every active window (tabs, fields, displayed) OK
+  §WL-CHECK WL2 per-tab field sums == window totals for every window OK
+  §WL-CHECK WL3 Project(130): 7+ tabs, fields > 100, 7 lines OK
+§WL sample Sales Order(143): window=OK[Sales Order (type T, id 143)] | tabs=OK[5: Order(L0) › Order Line(L1) › Order Tax(L1) › Payment Sche] | fields=OK[191 active, 141 displayed — Order 60/88; Order Line 40/54; O] | buttons=OK[7: ShippingRateInquiry→Online Shipping Sales Order Rate Inqu] | access=OK[11 role(s) hold it] | numbering=OK[C_Order: 1 table sequence; doc types with their own sequence] | integrity=OK[5 of 5 tabs resolve their table]
+  §WL-CHECK WL3b Sales Order: tabs + buttons + numbering lines judged OK
+  §WL-CHECK WL4 read-only: the db bytes are identical after lens runs OK
+  §WL-CHECK WL5 NEG: deleting one tab drops exactly that window by 1 tab and leaves another window unchanged OK
+  §WL-CHECK WL6 a window with no tabs is INCONCLUSIVE, never OK OK
+§WL-FINDINGS legacy windows=370 equal=370 differ=0 onlyInSeed=3
+  §WL-CHECK WL7 FINDINGS closed: seed-as-loaded equals the legacy pilot on tabs/fields/displayed for every legacy window OK
+§WL-VERDICT PASS judged=8 failed=0

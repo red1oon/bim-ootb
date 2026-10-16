@@ -31,3 +31,54 @@ INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_c
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWdx','3cUkl32yn9qRSPvBJVyWw5','3cUkl32yn9qRSPvBJVyWdx','IfcWall','IfcWindow','ifc:recovered');
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWe9','3cUkl32yn9qRSPvBJVyWw5','3cUkl32yn9qRSPvBJVyWe9','IfcWall','IfcWindow','ifc:recovered');
 INSERT OR IGNORE INTO rel_fills_host (opening_guid,host_guid,filling_guid,host_class,filling_class,provenance) VALUES ('3cUkl32yn9qRSPvAVVyZTO','3cUkl32yn9qRSPvBJVyWy4','3cUkl32yn9qRSPvBJVyZTO','IfcWall','IfcWindow','ifc:recovered');
+
+-- SampleHouse_ARC.db rel_aggregates — real IfcRelAggregates parent->child GUID pairs (§NOGEO_COMPOSE,
+-- prompts/4D_SCHEDULE_PERFECTION.md Part B — Modeller port). Relationship-only, NO computed values:
+-- composeGhostsFromAggregates() does the union-bbox math live from element_transforms at open.
+-- Recovered VERBATIM from the source IFC's own IfcRelAggregates (same read as
+-- extractIFCtoDB.py extract, the ONE implementation), filtered to this DB's 2 ghost
+-- aggregate-parents (elements_meta rows with no element_transforms row).
+-- Source: Ifc4_SampleHouse.ifc (26)   Generated: 2026-08-10 (ifcopenshell 0.8.4.post1)
+-- Idempotent: CREATE IF NOT EXISTS + INSERT OR IGNORE on the (parent_guid,child_guid) PRIMARY KEY.
+
+CREATE TABLE IF NOT EXISTS rel_aggregates (parent_guid TEXT NOT NULL, child_guid TEXT NOT NULL, PRIMARY KEY (parent_guid, child_guid));
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_O');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_5');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','3cUkl32yn9qRSPvBJVyW_3');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMomB');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom8');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom9');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom7');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom4');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom5');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom3');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom0');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMom1');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW_P','09J5N7xMHBfQZeQGAEMomU');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$Y');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$l');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','3cUkl32yn9qRSPvBJVyW$j');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomS');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomT');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomQ');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomR');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomO');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomP');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomM');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomN');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomK');
+INSERT OR IGNORE INTO rel_aggregates (parent_guid,child_guid) VALUES ('3cUkl32yn9qRSPvBJVyW$Z','09J5N7xMHBfQZeQGAEMomL');
+
+-- SampleHouse_ARC.db §SLIDE-REAL-WALLS Phase B — uncut host bodies + opening boxes for the SLIDEABLE authored openings.
+-- Self-heal patch section. Generated by scripts/gen_slide_host_patch.py (bim-compiler) — regenerate, do not hand-edit.
+-- Source: Ifc4_SampleHouse.ifc   Generated: 2026-09-30   Rules: Phase M (M1 box opening, M2/M3 bake == opening subtraction, M4 through-wall, M5 uncut body solid at every opening).
+-- 2 of 7 fills slideable; refused (named, not emitted): {'uncut-body-carries-opening': 5}
+-- slide_hosts.vertices/faces: the host body with IfcRelVoidsElement subtraction DISABLED, in the shipped mesh's
+-- own local frame (float32 xyz / int32 tri indices, world = center + R·local); geometry_hash = sha256[:16] of the
+-- blobs (extractIFCtoDB.py geometry_hash()). baked_hash = the shipped element_instances hash it replaces at seed time.
+-- slide_openings: the opening's own solid as a WORLD axis-aligned box = the GEOM_CUT `void` (c1=x0,y0,z0 c2=x1,y1,z1).
+CREATE TABLE IF NOT EXISTS slide_hosts (host_guid TEXT PRIMARY KEY, geometry_hash TEXT, vertices BLOB, faces BLOB, vertex_count INTEGER, face_count INTEGER, baked_hash TEXT, provenance TEXT);
+CREATE TABLE IF NOT EXISTS slide_openings (opening_guid TEXT PRIMARY KEY, host_guid TEXT, filling_guid TEXT, x0 REAL, y0 REAL, z0 REAL, x1 REAL, y1 REAL, z1 REAL, provenance TEXT);
+INSERT OR IGNORE INTO slide_hosts (host_guid,geometry_hash,vertices,faces,vertex_count,face_count,baked_hash,provenance) VALUES ('3cUkl32yn9qRSPvBJVyWXt','5cf7d46dd9a513e7',X'd3193a3dfb5e1cc0201ea9bfd3193a3dfb5e1cc027c3813fd3193a3ddc44444027c3813fd3193a3ddc444440201ea9bfe6044bbddc44444027c3813fe6044bbddc444440201ea9bfe6044bbdfb5e1cc027c3813fe6044bbdfb5e1cc0201ea9bf',X'010000000000000003000000020000000100000003000000020000000300000005000000040000000200000005000000040000000500000007000000060000000400000007000000060000000700000000000000010000000600000000000000050000000300000000000000070000000500000000000000010000000200000004000000010000000400000006000000',8,12,'66da2451cf6f82b6','ifc:uncut-body');
+INSERT OR IGNORE INTO slide_openings (opening_guid,host_guid,filling_guid,x0,y0,z0,x1,y1,z1,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWaG','3cUkl32yn9qRSPvBJVyWXt','3cUkl32yn9qRSPvBJVyWaG',1.572652,-0.530168,0.000000,1.667652,0.279832,2.110000,'ifc:opening-box');
+INSERT OR IGNORE INTO slide_openings (opening_guid,host_guid,filling_guid,x0,y0,z0,x1,y1,z1,provenance) VALUES ('3cUkl32yn9qRSPvAVVyWax','3cUkl32yn9qRSPvBJVyWXt','3cUkl32yn9qRSPvBJVyWax',1.572652,2.272332,0.000000,1.667652,3.082332,2.110000,'ifc:opening-box');

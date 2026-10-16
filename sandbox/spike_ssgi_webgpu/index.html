@@ -1,0 +1,41 @@
+<!doctype html>
+<!--
+  SPIKE — three.js first-party SSGINode/GTAONode (TSL, WebGPURenderer) on real bim-ootb BatchedMesh/InstancedMesh
+  geometry. Standalone sandbox: NOT wired into the viewer. Nothing here is imported by viewer/*.
+  three.js core: vendor/r186 (official unminified builds from the r186 git tag — the addon files are r186 and
+  GTAONode@r186 needs `getScreenPositionFromClip`, which the already-vendored r185 core lacks).
+  Query params: ?db=Clinic|Duplex  ?view=interior|exterior  ?traa=1  ?velocity=0  ?core=185 (SSGI-only on the
+  already-vendored r185 core; GTAO skipped)  ?w=1280&h=720  ?frames=30
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>SSGI WebGPU spike</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}#log{position:fixed;left:0;top:0;color:#0f0;font:12px monospace;white-space:pre;pointer-events:none;background:rgba(0,0,0,.5)}</style>
+<script>
+  // import map is chosen BEFORE the module graph loads: ?core=185 maps three to the app's vendored r185 build
+  (function () {
+    var core185 = new URLSearchParams(location.search).get('core') === '185';
+    var map = core185 ? {
+      'three': '/viewer/lib/three.webgpu.min.js',
+      'three/webgpu': '/viewer/lib/three.webgpu.min.js',
+      'three/tsl': '/sandbox/spike_ssgi_webgpu/vendor/three.tsl.min.js'
+    } : {
+      'three': '/sandbox/spike_ssgi_webgpu/vendor/r186/three.webgpu.js',
+      'three/webgpu': '/sandbox/spike_ssgi_webgpu/vendor/r186/three.webgpu.js',
+      'three/tsl': '/sandbox/spike_ssgi_webgpu/vendor/r186/three.tsl.js'
+    };
+    map['three/addons/tsl/display/SSGINode.js'] = '/sandbox/spike_ssgi_webgpu/vendor/SSGINode.js';
+    map['three/addons/tsl/display/GTAONode.js'] = '/sandbox/spike_ssgi_webgpu/vendor/GTAONode.js';
+    map['three/addons/tsl/display/TRAANode.js'] = '/sandbox/spike_ssgi_webgpu/vendor/TRAANode.js';
+    var s = document.createElement('script'); s.type = 'importmap'; s.textContent = JSON.stringify({ imports: map });
+    document.head.appendChild(s);
+  })();
+</script>
+<script src="/viewer/lib/sql-wasm.js"></script>
+</head>
+<body>
+<div id="log">spike loading…</div>
+<script type="module" src="/sandbox/spike_ssgi_webgpu/spike.js"></script>
+</body>
+</html>

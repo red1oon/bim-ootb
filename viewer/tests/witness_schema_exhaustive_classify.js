@@ -70,9 +70,20 @@ console.log('  tier 2 (inherited) : ' + tier2);
 console.log('  tier 3 (generic)   : ' + tier3);
 
 assert(mismatches === 0, 'G-H classify() returns the identical rule+warn as matchRule() for every class — mismatches=' + mismatches);
-assert(tier1 === 132, 'G-I tier 1 count pinned to witness_schema_exhaustive_fallback.js baseline (132), got ' + tier1);
-assert(tier2 === 53, 'G-I tier 2 count pinned to witness_schema_exhaustive_fallback.js baseline (53), got ' + tier2);
-assert(tier3 === 821, 'G-I tier 3 count pinned to witness_schema_exhaustive_fallback.js baseline (821), got ' + tier3);
+// G-I: tier counts are computed INDEPENDENTLY of matchRule/classify (substring over the shipped rule keys,
+// then ancestor-key membership) instead of pinned literals — the pins (132/53/821) went stale the moment
+// sequence_rules.json gained a rule (main: 134/53/819) and said nothing about correctness.
+const ruleKeys = Object.keys(SEQUENCE_RULES);
+let ix1 = 0, ix2 = 0, ix3 = 0;
+classNames.forEach(function (cls) {
+  if (ruleKeys.some(function (k) { return cls.indexOf(k) >= 0; })) { ix1++; return; }
+  const chain = HIERARCHY[cls] || [];
+  if (chain.some(function (a) { return Object.prototype.hasOwnProperty.call(SEQUENCE_RULES, a); })) ix2++; else ix3++;
+});
+assert(tier1 + tier2 + tier3 === classNames.length && classNames.length > 0, 'G-I tiers partition all ' + classNames.length + ' schema classes (non-vacuous)');
+assert(tier1 === ix1, 'G-I tier 1 count matches the independent substring count (' + ix1 + '), got ' + tier1);
+assert(tier2 === ix2, 'G-I tier 2 count matches the independent ancestor count (' + ix2 + '), got ' + tier2);
+assert(tier3 === ix3, 'G-I tier 3 count matches the independent remainder (' + ix3 + '), got ' + tier3);
 
 // classify(cls) with no hierarchy arg at all — real call sites that only pass `cls` (P2's
 // boq_charts.html chart, proj_fold.js) must still resolve tier 1 correctly; tier 2 simply never

@@ -109,7 +109,7 @@ function tot(c) { return c.projects + c.phases + c.tasks + c.lines + c.products 
   // ── CONTRACT: the > to ERP button call-path must actually be wired in the deployed viewer source ──
   function srcHas(file, tokens) {
     var p = path.join(__dirname, '..', file);
-    var s = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+    var s = file === 'viewer/navigate_find.js' ? require('../viewer/tests/_split_families.js').readFamily('navigate_find') : fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
     return tokens.every(function (t) { var ok = s.indexOf(t) >= 0; if (!ok) console.log('  §PROJ_PUSH_CONTRACT MISSING ' + file + ' :: ' + t); return ok; });
   }
   const cNav = srcHas('viewer/navigate_find.js', ['function _pushToErp', 'function _selectionPriced', 'id="find-erp-btn"', 'window.ProjFold.foldProjectOrder', 'elErpBtn.onclick', '§PROJ_PUSH project=']);

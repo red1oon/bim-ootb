@@ -14,6 +14,18 @@
 var RATE_TEMPLATE_META = null;
 var RATE_TEMPLATE_NAME = null;  // e.g. 'cidb2024_my'
 
+// §SHIFT_HOURS (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — user ruling: "24hr is
+// our default, import and JSON setting can import as we align to standard model"). Productive hours
+// one crew spends per calendar day in the generated 4D. #1323 §ARCH_START_TEMPO/M1 shipped 8 (the
+// rate table's own crew-day length) as the ONLY value, which tripled every building's display span
+// (Hospital ~2020d) — the user judged that too slow and wants the FAST 24h/day clock as the default,
+// with 8h available as an explicit opt-in for a "standard model" rate-pack import. schedule_gate.js
+// still defaults to 8 internally (so every witness/probe that doesn't pass shiftHours is unaffected —
+// they test ORDER/floating, which is invariant to a uniform time rescale, not absolute day counts);
+// this is the ONE value the real viewer generation path (time_machine.js injectGantt) reads and
+// threads through as computeSchedule's 5th arg. A future rate-pack JSON can override this per import.
+var SHIFT_HOURS = 24;
+
 // ============================================================================
 // CIDB 2024 MATERIAL RATES — hardcoded fallback (from boq_export.py)
 // ============================================================================
@@ -92,6 +104,19 @@ function getSMMSection(ifcClass) {
 // crew_size already here (CIDB 2024-derived, not extracted from IFC) — editable via the Settings
 // JSON editor / rates/sequence_rules.json the same way. Modest defaults for a large commercial
 // project; bump for a genuinely huge/fast-tracked site, lower for a small one.
+// ⚠ §RULES_TABLE_SOURCE (2026-08-13, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md) — THIS TABLE,
+// NOT THE JSON, IS WHAT THE VIEWER RUNS. Same fact as the note at SEQUENCE_NAME_OVERRIDES below:
+// viewer.html never calls loadSequenceRules(), so rates/sequence_rules.json is a MIRROR (plus the
+// Settings-editor override surface) and this literal is the executed table. That is easy to forget
+// and it drifted: ELECTRICIAN.productivity here carried 15 class keys while the JSON carried 8
+// (IfcSwitchingDevice, IfcSensor, IfcActuator, IfcFlowInstrument, IfcDistributionControlElement,
+// IfcProtectiveDeviceTrippingUnit, IfcUnitaryControlElement were absent there). Because every Node
+// probe and every viewer/tests/witness_*.js reads the JSON, they were all measuring a labour table
+// the browser never used — Hospital programme 1889.4d measured vs 1926.4d shipped, and MEP Final
+// occupancy 14.1% vs 21.0%. Re-synced 2026-08-13. EDIT BOTH FILES IN THE SAME COMMIT.
+// (Separate, still true: panels.js's 5D rate-pack picker calls loadRateTemplate(), whose shallow
+// LABOR_RATES[k] = tpl.labor[k] REPLACES a whole trade — and no pack file carries max_crews, so
+// selecting one silently drops every crew cap to schedule_gate.js's MAX_CREWS_DEFAULT.)
 var LABOR_RATES = {
   HVAC_TECH: {
     rate_per_day: 185, crew_size: 2, max_crews: 2, trade: 'HVAC Technician (Skilled)',
@@ -111,15 +136,39 @@ var LABOR_RATES = {
   },
   CONCRETE_GANG: {
     rate_per_day: 145, crew_size: 6, max_crews: 3, trade: 'Concrete Gang (Mixed)',
-    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3}
+    // §TPL_ZERO_MINUTE guard (2026-08-27): foundation_wall_substructure below reassigns
+    // IfcWall/IfcWallStandardCase to CONCRETE_GANG, which carried neither — same silent 120s-floor
+    // loss §S65 defect 5 hit. Values COPIED VERBATIM from MASON, those classes' own canonical
+    // trade (IfcWall:12, IfcWallStandardCase:12) — extracted, not invented.
+    productivity: {IfcSlab:35,IfcFooting:6,IfcPile:4,IfcReinforcingBar:50,IfcRamp:3,IfcRampFlight:3,IfcWall:12,IfcWallStandardCase:12}
   },
   MASON: {
     rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Mason (Skilled) + Laborers',
-    productivity: {IfcWall:12,IfcWallStandardCase:12,IfcOpeningElement:20,IfcBuildingElementPart:15}
+    // §TPL_ZERO_MINUTE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65, user ruling):
+    // IfcBuildingElementProxy carried resource:null and therefore _installSecs' silent 120s floor —
+    // a zero-width Gantt bar, stacked with every other floored element. Value COPIED from its own
+    // sibling IfcBuildingElementPart (15), same generic-Architecture/seq-5 rule, already shipped and
+    // measured here — not a new invented figure. default_productivity serves SEQUENCE_DEFAULT: the
+    // class-key lookup below is a SUBSTRING match, so an unmatched class can never resolve any key
+    // and would floor no matter which resource it named.
+    default_productivity: 15,
+    productivity: {IfcWall:12,IfcWallStandardCase:12,IfcOpeningElement:20,IfcBuildingElementPart:15,IfcBuildingElementProxy:15}
   },
   CARPENTER: {
     rate_per_day: 165, crew_size: 2, max_crews: 2, trade: 'Carpenter (Skilled)',
-    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8}
+    // §TPL_ZERO_MINUTE (§S65 defect 4): the glazed_curtainwall_facade NAME_OVERRIDE reassigns
+    // IfcPlate/IfcMember to CARPENTER, which carried no productivity for either — so the override
+    // fixed those elements' PHASE and silently destroyed their DURATION (Hospital 2211 IfcPlate +
+    // 7122 IfcMember, HHS 438 IfcPlate, all 120s). Values COPIED verbatim from STEEL_ERECTOR, the
+    // class's own canonical trade above (IfcPlate:12, IfcMember:10) — extracted, not invented.
+    // §TPL_ZERO_MINUTE guard (2026-09-02, AGENT_QUEUE.md A-15): stair_member_architecture below was
+    // widened to IfcSlab, and CARPENTER carried no IfcSlab — MEASURED on HHS, the four stair treads
+    // immediately started reporting `§TPL_ZERO_MINUTE cls=IfcSlab resource=CARPENTER
+    // reason=no-productivity-key — 120s floor, this class draws a zero-width bar`. Value COPIED
+    // VERBATIM from CONCRETE_GANG, IfcSlab's own canonical trade (35) — exactly what FINISHER below
+    // did for the same reason when finish_floor_finishes reassigned a named IfcSlab subset. This is
+    // the table's own documented rule ("copy the class's canonical trade"), not a number typed in.
+    productivity: {IfcDoor:6,IfcWindow:6,IfcStair:2,IfcStairFlight:3,IfcRailing:15,IfcCurtainWall:8,IfcPlate:12,IfcMember:10,IfcSlab:35}
   },
   ROOFER: {
     rate_per_day: 175, crew_size: 3, max_crews: 1, trade: 'Roofer (Skilled)',
@@ -127,12 +176,46 @@ var LABOR_RATES = {
   },
   FINISHER: {
     rate_per_day: 135, crew_size: 2, max_crews: 2, trade: 'Finisher (Skilled)',
-    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8}
+    // §TPL_ZERO_MINUTE (§S65 defect 5): furniture_generic_bucket reassigns IfcBuildingElementProxy/
+    // IfcBuildingElementPart to FINISHER, which carried neither — same silent duration loss as the
+    // curtain-wall override above. Values COPIED from MASON, those classes' own canonical trade (15).
+    // §TPL_ZERO_MINUTE guard (2026-08-27): finish_floor_finishes below reassigns a NAMED subset of
+    // IfcSlab to FINISHER, which carried no IfcSlab. Value COPIED VERBATIM from CONCRETE_GANG,
+    // IfcSlab's own canonical trade (35) — the same "copy the class's canonical trade" rule this
+    // table's existing entries were built by, not a new number typed in for a finish.
+    productivity: {IfcCovering:20,IfcFurniture:8,IfcFurnishingElement:8,IfcBuildingElementPart:15,IfcBuildingElementProxy:15,IfcSlab:35}
   },
   LABORER: {
     rate_per_day: 95, crew_size: 1, max_crews: 1, trade: 'General Laborer',
     productivity: {}
   },
+  // §FUTURE-5A (bim-compiler prompts/4D_GANTT_TM_REFACTOR.md, applied 2026-09-02, queue item B-3).
+  // THIS is the object window.LABOR_RATES actually resolves to on every real viewer.html load
+  // (rates/sequence_rules.json's own header: "viewer.html never calls loadSequenceRules()... this
+  // file is their MIRROR plus the Settings-JSON-editor override surface") — so these three keys
+  // MUST be kept here, byte-identical to their sequence_rules.json mirror, or the JSON edit a
+  // Settings-JSON-editor user makes is invisible on the default (non-overridden) path. See
+  // sequence_rules.json LABOR_RATES for the full provenance comment on each.
+  // §CIVIL_TRADES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): one trade per civil discipline so civil
+  // phases stop sharing ONE crew (MASON) — finishing trades were serialized by capacity levelling. Params COPIED
+  // from MASON (rate_per_day 155, crew 3, max_crews 2, IfcBuildingElementProxy 15 — the values the proxy class
+  // gets today), so per-element durations are unchanged. NOT civil-calibrated: replace with JKR SoR 2023 /
+  // CIDB labour output when obtained. Listed AFTER every building trade and carrying only the proxy key, so
+  // getProductivity/calcLabor first-match for building classes is unchanged (NON-IMPACT rule).
+  CIVIL_EARTHWORKS: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Earthworks Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_DRAINAGE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Drainage Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_PAVING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Paving Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_FURNITURE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Furniture Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_SIGNAGE: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Signage Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_LIGHTING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Lighting Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_MARKING: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Road Marking Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  // §PARTNER_DISCS (CIVIL_HIGHWAY_JELAPANG.md): the partner's added disciplines — same uncalibrated MASON copy as above
+  CIVIL_SURVEY: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Setting-out / Survey Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_GEOTECH: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Ground Treatment Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  CIVIL_GABION: { rate_per_day: 155, crew_size: 3, max_crews: 2, trade: 'Gabion / Slope Protection Crew (civil — copied from MASON, uncalibrated)', productivity: {IfcBuildingElementProxy:15} },
+  _productivity_basis_secs: 28800,     // A1 — the 8h crew-day the productivity figures are quoted against
+  _zero_minute_floor_secs: 120,        // B3 — the §TPL_ZERO_MINUTE no-data floor
+  _default_max_crews_author: 1,        // B4 — pricing-side crew-cap fallback (schedule_gate.js keeps its own, different, 3)
 };
 
 // ============================================================================
@@ -160,6 +243,15 @@ var EQUIPMENT_ALLOCATION = {
 var SEQUENCE_RULES = {
   // Substructure
   IfcFooting:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
+  // §GAP_A_CLOSE (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md — Witness:
+  // witness_big_element_support_coverage.js): IfcPile had a COST entry (RATES above) but no
+  // sequence rule, so a correctly-classed pile would fall to the DEFAULT (Architecture/seq 6) —
+  // structurally wrong for a foundation element. Latent today (no shipped building models IfcPile
+  // as its own class — Terminal's real piles are authored as IfcSlab and reclassed by the
+  // name-override below; verified again 2026-08-11, zero count change on all 5 buildings), but a
+  // future building that labels its piles correctly would have hit this silently. Mirrors
+  // IfcFooting exactly — a pile is Substructure, seq-1 (1c ground-bearing exempt).
+  IfcPile:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   IfcReinforcingBar:{phase:'Substructure',sequence:1,resource:'CONCRETE_GANG'},
   // Superstructure
   IfcColumn:{phase:'Superstructure',sequence:2,resource:'STEEL_ERECTOR'},
@@ -198,21 +290,21 @@ var SEQUENCE_RULES = {
   IfcProtectiveDeviceTrippingUnit:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   IfcUnitaryControlElement:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   // Architecture
-  IfcWall:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcWallStandardCase:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcOpeningElement:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcSpace:{phase:'Architecture',sequence:5,resource:null},
-  IfcBuildingElementPart:{phase:'Architecture',sequence:5,resource:'MASON'},
-  IfcDoor:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcWindow:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcStair:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcStairFlight:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcRailing:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
-  IfcRamp:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
-  IfcRampFlight:{phase:'Architecture',sequence:6,resource:'CONCRETE_GANG'},
-  IfcRoof:{phase:'Architecture',sequence:8,resource:'ROOFER'},
-  IfcBuildingElementProxy:{phase:'Architecture',sequence:5,resource:null},
-  IfcCurtainWall:{phase:'Architecture',sequence:6,resource:'CARPENTER'},
+  IfcWall:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcWallStandardCase:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcOpeningElement:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcSpace:{phase:'Architecture Envelope',sequence:5,resource:null},
+  IfcBuildingElementPart:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},
+  IfcDoor:{phase:'Architecture Closeup',sequence:8,resource:'CARPENTER'},
+  IfcWindow:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcStair:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcStairFlight:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcRailing:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
+  IfcRamp:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
+  IfcRampFlight:{phase:'Architecture Envelope',sequence:6,resource:'CONCRETE_GANG'},
+  IfcRoof:{phase:'Architecture Envelope',sequence:6,resource:'ROOFER'},   // §S65 defect 7 (user ruling): was 8, which sequenced the roof AFTER all MEP Rough-in (seq 7) — MEP installed before the roof existed, and it made the Architecture band [5-8] overlap MEP Rough-in [7]. Weather-tight first.
+  IfcBuildingElementProxy:{phase:'Architecture Envelope',sequence:5,resource:'MASON'},   // §S65: was resource:null -> 120s floor
+  IfcCurtainWall:{phase:'Architecture Envelope',sequence:6,resource:'CARPENTER'},
   // MEP Final
   IfcLightFixture:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
   IfcOutlet:{phase:'MEP Final',sequence:9,resource:'ELECTRICIAN'},
@@ -223,7 +315,7 @@ var SEQUENCE_RULES = {
   IfcFurniture:{phase:'Finishes',sequence:11,resource:'FINISHER'},
   IfcFurnishingElement:{phase:'Finishes',sequence:11,resource:'FINISHER'},
 };
-var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:null};
+var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON'};   // §S65: was resource:null -> every unmatched class floored at 120s
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
 // tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members
 // (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR/LTU_AHouse structural steel/timber, which must
@@ -231,15 +323,244 @@ var SEQUENCE_DEFAULT = {phase:'Architecture',sequence:6,resource:null};
 // initRateTemplate()/loadSequenceRules() (only mep_report.html/boq_charts.html do), so this hardcoded
 // copy, not the JSON, is what actually runs in the main viewer/Time Machine/Author wizard. Keep it in
 // sync with rates/sequence_rules.json's NAME_OVERRIDES (same convention as SEQUENCE_RULES above).
+// §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
+// consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
+// CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).
+// Phase names = rates/4D_template_civil.json phases. Order: secondary source (JKR road-works method statements).
+// resource = one §CIVIL_TRADES crew per discipline (params copied from MASON) → durations per element unchanged, NOT civil-calibrated.
+var SEQUENCE_CIVIL = {
+  // §MIXED_PROGRAMME (CIVIL_HIGHWAY_JELAPANG.md): the partner's ground treatment + gabions. Phase ORDER is declared in
+  // rates/4D_template_civil.json (ground_treatment → earthworks; slope_protection with drainage), not by these numbers;
+  // sequence 1 = rests on soil (schedule_gate ground exemption, seq === 1) like earthworks; existing ranks unchanged.
+  GEOTECH:{phase:'Ground Treatment',sequence:1,resource:'CIVIL_GEOTECH'},
+  EARTHWORK:{phase:'Earthworks',sequence:1,resource:'CIVIL_EARTHWORKS'},
+  DRAINAGE:{phase:'Drainage',sequence:2,resource:'CIVIL_DRAINAGE'},
+  GABION:{phase:'Slope Protection',sequence:2,resource:'CIVIL_GABION'},
+  ROAD:{phase:'Pavement',sequence:3,resource:'CIVIL_PAVING'},
+  FURNITURE:{phase:'Road Furniture',sequence:4,resource:'CIVIL_FURNITURE'},
+  SIGNAGE:{phase:'Signage',sequence:5,resource:'CIVIL_SIGNAGE'},
+  LIGHTING:{phase:'Road Lighting',sequence:6,resource:'CIVIL_LIGHTING'},
+  MARKING:{phase:'Road Marking',sequence:7,resource:'CIVIL_MARKING'},
+};
+// §CIVIL_RATES (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §R.2) — 5D line items for civil disciplines.
+// Rate source DECIDED: JKR "Jadual Kadar Kerja Kejuruteraan Awam dan Bangunan" 2023 (the schedule JKR projects
+// are estimated from; JELAPANG's own psets are JKR DAK templates). It is a purchased document (RM 20, Ministry of
+// Works procurement unit) — until a copy is in hand every `rate` is null and the line shows UNPRICED. Never type a
+// number in here without its SoR item no. `measure` = the unit the SoR prices in; quantities that need a true
+// mesh measure (curved road area, marking/drain length) are counted (EA) until that measure exists — a bbox
+// area of a curved 1.9 km slab is mostly empty space and is NOT used.
+// Consulted only for civil disciplines (boq_charts.html) → building 5D unchanged (NON-IMPACT rule).
+var CIVIL_RATES = {
+  _source: { doc: 'JKR Jadual Kadar Kerja Kejuruteraan Awam dan Bangunan 2023', status: 'pending', note: 'rates null until a copy of the SoR is obtained' },
+  EARTHWORK: { measure: 'M3', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Earthworks (cut / fill)', trade: 'CIVIL_EARTHWORKS' },
+  DRAINAGE:  { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Drains, culverts & structures', trade: 'CIVIL_DRAINAGE' },
+  ROAD:      { measure: 'M2', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road pavement', trade: 'CIVIL_PAVING' },
+  FURNITURE: { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road furniture', trade: 'CIVIL_FURNITURE' },
+  // §CW_SIGNAGE_RATE (2026-10-07, user: "use the std in the market"; source bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §R.3) —
+  //   label regional-official (Selangor, NOT JKR national; JELAPANG is Perak). RM 800.00/Nos = the LOWEST sign line (items C–L,
+  //   prohibitory signs) of 800–870; includes face, post, concrete base and labour ("papanmuka, tiang, tapak konkrit … dan upah").
+  //   Model pieces carry no sign type and one piece may not be one whole sign — the line says so.
+  SIGNAGE:   { measure: 'EA', qtyBasis: 'EA', rate: 800, currency: 'RM', label: 'regional-official',
+               sor_item: 'Selangor tender "JKH Perabot Jalan" 2023-09, Papantanda item C (RM 800–870/Nos range)',
+               desc: 'Road signs', trade: 'CIVIL_SIGNAGE' },
+  // §CW_LIGHTING_RATE (2026-10-07, user: "use all the standard prices … editable") — RM 485/EA = the market pack already shipped,
+  //   rates/cidb2024_my.json materials.IfcLightFixture "LED Light Fixture" (CIDB N3C 2024). A BUILDING fixture standing in for a road
+  //   lantern (no free road-lighting source, §R) — label says so; edit in the 4D/5D rates panel.
+  LIGHTING:  { measure: 'EA', qtyBasis: 'EA', rate: 485, currency: 'RM', label: 'market-pack-proxy',
+               sor_item: 'rates/cidb2024_my.json IfcLightFixture (CIDB 2024, LED light fixture — building item used as proxy)',
+               desc: 'Road lighting & signals', trade: 'CIVIL_LIGHTING' },
+  MARKING:   { measure: 'M',  qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Road marking', trade: 'CIVIL_MARKING' },
+  // §PARTNER_DISCS: GEOTECH = piles / soil nails / horizontal drains / RC walls (EA until a true measure exists); GABION = mattress (M2)
+  GEOTECH:   { measure: 'EA', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Ground treatment (piles, soil nails, horizontal drains, RC walls)', trade: 'CIVIL_GEOTECH' },
+  GABION:    { measure: 'M2', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Gabion mattress (slope / scour protection)', trade: 'CIVIL_GABION' },
+  // setting-out references are never priced — listed so they cannot fall back to a building class rate ('Misc Element')
+  CHAINAGE:  { measure: 'NONE', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Chainage labels (setting-out reference, not priced)', trade: 'CIVIL_SURVEY' },
+  ROW:       { measure: 'NONE', qtyBasis: 'EA', rate: null, sor_item: null, desc: 'Right-of-way boundary (reference, not priced)', trade: 'CIVIL_SURVEY' },
+};
+// civilLabor(disc, count) — labour for a civil line from its §CIVIL_TRADES crew, COUNT-based (same basis the 4D
+// civil phases use), so 5D labour and the 4D bars agree. null for non-civil disciplines.
+function civilLabor(disc, count) {
+  var cr = CIVIL_RATES[disc]; if (!cr || disc.charAt(0) === '_') return null;
+  var lr = LABOR_RATES[cr.trade]; if (!lr) return null;
+  var prod = (lr.productivity && lr.productivity.IfcBuildingElementProxy) || 0; if (!prod) return null;
+  var days = count / prod;
+  return { cost: Math.round(days * lr.crew_size * lr.rate_per_day), days: days, crew: lr.crew_size, trade: lr.trade, tradeKey: cr.trade, prod: prod };
+}
+
 var SEQUENCE_NAME_OVERRIDES = [
   {
     id: 'glazed_curtainwall_facade',
     classes: ['IfcPlate', 'IfcMember'],
     pattern: 'glaz|glass|verglas|vitrage|vidrio|curtain|mullion',
     flags: 'i',
-    phase: 'Architecture',
-    sequence: 7,
+    phase: 'Architecture Envelope',
+    // §S65 defect 7 (2026-08-25): was 7, which tied this override with MEP Rough-in (seq 7) and kept
+    // the Architecture band [5-7] overlapping it. 6 is IfcCurtainWall's OWN class rule (line ~265) —
+    // these are the glazing panels and mullions OF that same curtain-wall system, so 7 was also
+    // internally inconsistent with the class it belongs to. Aligned, not invented; and it applies the
+    // user's own IfcRoof ruling (weather-tight envelope before MEP rough-in) to the other envelope.
+    sequence: 6,
     resource: 'CARPENTER'
+  },
+  // §PILE_SLAB_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md big-element
+  // follow-up — Witness: witness_big_element_support_coverage.js): Terminal's 236 §SUPPORT_UNCHECKED
+  // IfcSlab are 'jkrST_str-fo_pc_rcp:300 x 300mm' — 300×300mm × 30.15m precast RC foundation PILES
+  // ('str-fo' = JKR structural-foundation code) misclassified as IfcSlab by the authoring tool.
+  // They sit at the building's absolute lowest z (base −16.04..−15.94 vs model min −16.04) with
+  // NOTHING modeled beneath them — genuinely ground-bearing Substructure, the exact population the
+  // seq===1 exemption (schedule_gate.js 1c) exists for, unreachable by class lookup alone (this is
+  // the archived 'Gap A: IfcPile has no SEQUENCE_RULES entry' arriving disguised as IfcSlab).
+  // Pattern MEASURED against every shipped buildings/*.db (2026-08-11): with the IfcSlab class gate
+  // it matches exactly those 236 (Terminal family, incl. Terminal_meta/rooms/TermRooms copies) and
+  // nothing else; \bpile\b (not bare 'pile') keeps 'stockpile'-style names out, and Hospital's
+  // 'M_Pile Cap-6 Pile' footings are already IfcFooting (out of class scope, same target phase).
+  {
+    id: 'foundation_pile_misclassified_slab',
+    classes: ['IfcSlab'],
+    pattern: 'str-fo|\\bpile\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §SLAB_ON_GRADE_RECLASS (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md 250-followup
+  // — Witness: witness_big_element_support_coverage.js): slab-on-grade was NAMED in the original 1c
+  // spec ("IfcFooting/IfcPile/slab-on-grade rests on unmodeled soil") but only the class-level
+  // seq-1 rules ever implemented it — a slab-on-grade authored as plain IfcSlab lands at seq 4 and,
+  // being genuinely ground-bearing (fill between it and the footing tops), shows up as a
+  // §SUPPORT_UNCHECKED finding forever. Pattern MEASURED against every shipped buildings/*.db
+  // (2026-08-11, _logs discipline as the pile override above): under the IfcSlab class gate it
+  // matches exactly Duplex 4 ('127mm Slab on Grade' ×2 base −0.13, '150mm Exterior Slab on Grade'
+  // ×2 base −0.14) + Clinic 4 ('150mm Slab on Grade' ×3, '150mm Exterior…' ×1, bases −1.37..−0.15)
+  // and NOTHING else — every hit at true grade level over its building's footings, zero hits in
+  // Terminal/Hospital/HHS/JKR/LTU. (A 'Floor:150mm Slab on Grade' IfcOpeningElement exists in
+  // Clinic — excluded by the class gate.) Closes 4 of Duplex's 6 findings as correctly-exempt
+  // Substructure work, not by suppressing them but by naming what they are.
+  {
+    id: 'slab_on_grade_substructure',
+    classes: ['IfcSlab'],
+    pattern: 'slab[ _-]?on[ _-]?grade',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §FURNITURE_TIER1_SAFEGUARD (2026-08-11, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §SPEC
+  // 2026-08-11 evening — Witness: witness_tier_serial_display.js W-TS-4): §TIER_SERIAL makes
+  // Substructure→Superstructure→Architecture a STRICT serial backbone (time_machine.js
+  // _twoTierRemap), so furniture-like content exported under a generic catch-all class
+  // (IfcBuildingElementProxy/IfcBuildingElementPart resolve to Architecture/seq 5 — Tier 1) would
+  // gate real structural phase completion on a chair or desk. Genuinely-tagged furniture
+  // (IfcFurniture/IfcFurnishingElement) already resolves to Finishes/seq 11 — safe, untouched.
+  // MEASURED before writing (repo rule: extract, never guess a regex — furniture_measure.log,
+  // 2026-08-11): a naive unscoped substring pattern gave 327 false positives ('table' ⊂
+  // 'adjus-TABLE' shower head; 'cabinet' = a fire-extinguisher cabinet already correctly in
+  // MEP Final/Tier 2) — hence word boundaries + the class gate. Scoped run (word-boundary,
+  // generic buckets only): ZERO live hits across all 5 shipped buildings — this safeguard is
+  // PROACTIVE (the pile-misclassification precedent above proves the generic-catch-all bug class
+  // is real on real-world IFCs), not a fix for a live defect. Known, deliberate NON-target:
+  // Terminal's 'Floor:Table Top:904745' (IfcSlab, 3.96×22.43m ×150mm built-in counter, Aras
+  // Tanah) stays Superstructure — IfcSlab is an unambiguous class ("don't touch classes that are
+  // already unambiguous", spec), and as a seq≤4 support-pool member reclassifying it would
+  // perturb the locked floating/§SUPPORT_UNCHECKED baselines; the witness NAMES it as a
+  // reported (not gated) case instead of silently absorbing it.
+  {
+    id: 'furniture_generic_bucket',
+    classes: ['IfcBuildingElementProxy', 'IfcBuildingElementPart'],
+    pattern: '\\b(chair|desk|table|sofa|couch|settee|cabinet|wardrobe|shelf|shelving|bookcase|credenza|armchair|furniture|dresser|nightstand|stool|bench)\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
+  },
+  // §FOUNDATION_WALL_SUBSTRUCTURE (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §W_D0 C2
+  // — Witness: viewer/tests/witness_day0_integrity.js). A wall NAMED "Foundation" is substructure,
+  // but ifc_class alone cannot say so: IfcWall/IfcWallStandardCase resolve to Architecture Envelope
+  // seq 5, so Duplex's 2 'Basic Wall:Foundation - Concrete (417mm)' at base -1.25 were scheduled
+  // into DAY 0 as ENVELOPE work, five phases ahead of themselves, and showed up as C2 intruders.
+  // MEASURED across every shipped building before writing this pattern (the same discipline
+  // furniture_generic_bucket's header records): under the IfcWall class gate it matches exactly
+  // Duplex 7 ('Foundation - Concrete (417mm)' x4, '(435mm)' x3) and Hospital 28 ('Foundation -
+  // 300mm Concrete - Retaining' x18, '375mm w_step' x8, '200mm Retaining' x2), and NOTHING in
+  // HHS/Terminal. The class gate is load-bearing, not decoration: Terminal has 20 IfcBeam matching
+  // /foundation/ (foundation beams, already structural at seq 3) and Duplex/Hospital 25 IfcFooting
+  // already at seq 1 — all correctly untouched, per the standing rule "don't touch classes that are
+  // already unambiguous". Target COPIED from slab_on_grade_substructure / the pile override above,
+  // the two existing seq-1 name rules.
+  {
+    id: 'foundation_wall_substructure',
+    classes: ['IfcWall', 'IfcWallStandardCase'],
+    pattern: '\\bfoundation\\b',
+    flags: 'i',
+    phase: 'Substructure',
+    sequence: 1,
+    resource: 'CONCRETE_GANG'
+  },
+  // §FINISH_FLOOR_FINISHES (2026-08-27, same witness/claim). A slab NAMED "Finish Floor" is a floor
+  // FINISH, not structure — IfcSlab resolves to Superstructure seq 4, so Duplex's 6 'Floor:Finish
+  // Floor - Wood' / '- Ceramic Tile' were scheduled on DAY 0 alongside the foundations, and each
+  // sits at base z~0.00 on a slab that is itself still being poured. MEASURED fleet-wide: under the
+  // IfcSlab class gate this matches exactly Duplex 14 (Wood x8, Ceramic Tile x6) and NOTHING in
+  // HHS/Hospital/Terminal. Target COPIED from furniture_generic_bucket above (Finishes / 11 /
+  // FINISHER), the existing rule for content that is finish rather than fabric.
+  // NOTE the interaction, deliberate: 1 of the 14 is currently reclassified by §GROUNDWORK_SLAB to
+  // phase Substructure at seq 4. Name overrides run AHEAD of the class lookup and groundworkSlabs
+  // only mutates phase in place, so this rule wins for a slab that is a named finish — which is
+  // correct: a wood finish floor is not slab-on-grade groundworks.
+  // §STAIR_MEMBER_ARCHITECTURE (2026-08-27, same witness/claim as the two rules above). A stair
+  // component authored as IfcMember: the class rule sends IfcMember to Superstructure seq 3
+  // (STEEL_ERECTOR, structural framing), so Duplex's stair stringer — spanning base -0.095 to top
+  // 3.005, a full storey — was scheduled on DAY 0 as frame steel, three phases ahead of the
+  // IfcStairFlight it is part of, and hung there with nothing under it. Its own siblings in the
+  // SAME building already resolve correctly: IfcStairFlight x2 and IfcRailing x4 at Architecture
+  // Envelope seq 6. Target COPIED VERBATIM from IfcStairFlight's own class rule (line ~267),
+  // the family this element belongs to — extracted, not chosen.
+  // MEASURED fleet-wide before writing, under the IfcMember class gate: Duplex 4 (all 4 of its
+  // IfcMember are named 'Stair:...'), HHS 0 of 1450, Hospital 0 of 7127, Terminal 0 of 442 —
+  // 9,019 IfcMember across the rest of the fleet, zero false positives. Anchored ^stair\b so a
+  // 'Handrail for Stair' or a stair-adjacent brace is not swept in by a bare substring.
+  // NOTE the deliberate consequence: schedule_gate supportPool is seq<=4 u IfcSlab u
+  // IfcStairFlight u IfcWall*, so moving these from seq 3 to seq 6 REMOVES them from the support
+  // pool. That is correct — a stair stringer carries the stair, not the building.
+  //
+  // ── WIDENED TO IfcSlab, 2026-09-02 (bim-compiler prompts/AGENT_QUEUE.md A-15, spec
+  //    4D_MODEL_INTEGRITY.md §J.6.4 item 2) ─────────────────────────────────────────────────────
+  // The SAME defect, a different export class: a stair TREAD authored as IfcSlab resolves through
+  // the IfcSlab class rule to Superstructure seq 4 and is scheduled on day 0, ahead of the
+  // IfcStairFlight it is part of — and hangs on it. §W_D0 C3 HHS_Office_Federated, on the played
+  // layer: `hanging{IfcSlab:3} waitingOn{IfcSlab<-IfcStairFlight|seq6|Architecture Envelope:3}`.
+  // MEASURED under this rule's own `^\s*stair\b` pattern, over the persisted cache of all four
+  // buildings (119,568 elements, origin/main @ 85fd0732): IfcSlab whose name starts "Stair" =
+  //   HHS 4 of 83  (all four "Stair:Massiv - Stufen Naturstein:*", all at seq 4)
+  //   Duplex 0/21 · Hospital 0/35 · Terminal 0/705.
+  // Four elements fleet-wide, zero false positives — the same anchored pattern that already keeps
+  // a "Handrail for Stair" out. Target unchanged: it is IfcStairFlight's own class rule, which is
+  // exactly the family a tread belongs to.
+  //
+  // ⚠ CORRECTION TO THE NOTE ABOVE, and to §J.6.4's own wording, MEASURED not assumed. Widening
+  // this rule to IfcSlab does NOT take those elements out of the support pool: supportPool
+  // (schedule_gate.js:1348) is `e.seq <= 4 || (e.cls === 'IfcSlab' && e.seq > 4) ||
+  // e.cls === 'IfcStairFlight'` — the SECOND clause catches an IfcSlab at any sequence, so all four
+  // stay in the pool across the move (verified before/after on the cache: 4 in, 4 in). The
+  // "moves IfcSlab out of supportPool" premise that held this change back was wrong; the removal
+  // consequence is real for IfcMember (seq 3 -> 6 crosses the `<= 4` clause) and only for IfcMember.
+  {
+    id: 'stair_member_architecture',
+    classes: ['IfcMember', 'IfcSlab'],
+    pattern: '^\\s*stair\\b',
+    flags: 'i',
+    phase: 'Architecture Envelope',
+    sequence: 6,
+    resource: 'CARPENTER'
+  },
+  {
+    id: 'finish_floor_finishes',
+    classes: ['IfcSlab'],
+    pattern: '\\bfinish(ed)?[ _-]?floor\\b',
+    flags: 'i',
+    phase: 'Finishes',
+    sequence: 11,
+    resource: 'FINISHER'
   }
 ];
 
@@ -296,10 +617,15 @@ var WORK_PACKAGES = [
 var DISC_COLORS = {
   ARC:'#4488ff',STR:'#44cccc',MEP:'#44cc44',ELEC:'#cccc44',FP:'#cc8844',
   ACMV:'#cc4444',PLB:'#8844cc',HVAC:'#44aacc',SAN:'#aa44aa',VENT:'#88ccaa',
+  // §CIVIL_DISC (#1844) — civil discipline codes from file names; presentation colours only
+  ROAD:'#777777',FURNITURE:'#d9a441',LIGHTING:'#f2e85c',DRAINAGE:'#3d8fd1',SIGNAGE:'#e0503c',MARKING:'#f5f5f5',EARTHWORK:'#8b6b3e',
+  GEOTECH:'#a0522d',GABION:'#8f8f6e',CHAINAGE:'#ffd27a',ROW:'#d04fd0',   // §PARTNER_DISCS
 };
 var PHASE_COLORS = {
   'Substructure':'#A5A5A5','Superstructure':'#4472C4','MEP Rough-in':'#70AD47',
-  'Architecture':'#ED7D31','MEP Final':'#5B9BD5','Finishes':'#FFC000',
+  'Architecture Envelope':'#ED7D31','Architecture Closeup':'#F4B183',
+  'Architecture':'#ED7D31',   // legacy key — ops/DBs written before the 2026-08-26 split still carry it
+  'MEP Final':'#5B9BD5','Finishes':'#FFC000',
   'Commissioning':'#C55A11','Unknown':'#888888',
 };
 

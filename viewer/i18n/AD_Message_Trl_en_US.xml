@@ -1,0 +1,3466 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--BIM OOTB Viewer — AD_Message_Trl en_US — format: org.compiere.install.Translation export (iDempiere). Rows 1000000-1000308 source=viewer/locales/en_US.js @4cd440ae (S225/S226 sessions, machine translation, extracted 2026-10-03, not retranslated); rows 1000309-1000492 and every row listed in viewer/tools/trl_batch_2026-10-03*.js source=machine (Claude, Anthropic, 2026-10-03); rows 1000493-1000655 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_tm.js; rows 1000656-1000671 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_info.js; rows 1000672-1000752 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_help.js; rows 1000753-1000862 source=machine (Claude, Anthropic, 2026-10-04) — viewer/tools/trl_batch_2026-10-04_modeller.js — NOT from a published iDempiere language pack. trl="N" = not translated (English kept, counted apart). Base rows: viewer/i18n/ad_message_base.csv. Edit THIS file, then run: node viewer/tools/build_trl.js-->
+<!--<!DOCTYPE idempiereTrl PUBLIC "-//iDempiere//DTD iDempiere Translation 1.0//EN" "https://raw.githubusercontent.com/idempiere/idempiere/refs/heads/master/utils_dev/trl/idempiereTrl.dtd">-->
+<idempiereTrl language="en_US" table="AD_Message">
+ <row id="1000000" trl="Y">
+  <value column="MsgText" original="BIM OOTB — Frictionless BIM">BIM OOTB — Frictionless BIM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000001" trl="N">
+  <value column="MsgText" original="Discipline">Discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000002" trl="N">
+  <value column="MsgText" original="IFC Class">IFC Class</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000003" trl="N">
+  <value column="MsgText" original="Quantity">Quantity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000004" trl="Y">
+  <value column="MsgText" original="UOM">UOM</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000005" trl="N">
+  <value column="MsgText" original="Description">Description</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000006" trl="N">
+  <value column="MsgText" original="Storey">Storey</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000007" trl="N">
+  <value column="MsgText" original="Phase">Phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000008" trl="N">
+  <value column="MsgText" original="Item">Item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000009" trl="N">
+  <value column="MsgText" original="Material">Material</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000010" trl="N">
+  <value column="MsgText" original="Labour">Labour</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000011" trl="N">
+  <value column="MsgText" original="Equipment">Equipment</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000012" trl="N">
+  <value column="MsgText" original="Total">Total</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000013" trl="N">
+  <value column="MsgText" original="Unit Rate">Unit Rate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000014" trl="N">
+  <value column="MsgText" original="Mat Rate">Mat Rate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000015" trl="N">
+  <value column="MsgText" original="Lab Rate">Lab Rate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000016" trl="N">
+  <value column="MsgText" original="Rate/Day">Rate/Day</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000017" trl="N">
+  <value column="MsgText" original="Trade">Trade</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000018" trl="N">
+  <value column="MsgText" original="Crew Size">Crew Size</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000019" trl="N">
+  <value column="MsgText" original="Man-Days">Man-Days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000020" trl="N">
+  <value column="MsgText" original="Duration (days)">Duration (days)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000021" trl="N">
+  <value column="MsgText" original="GRAND TOTAL">GRAND TOTAL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000022" trl="N">
+  <value column="MsgText" original="SUBTOTAL">SUBTOTAL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000023" trl="Y">
+  <value column="MsgText" original="WBS">WBS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000024" trl="N">
+  <value column="MsgText" original="Task Name">Task Name</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000025" trl="N">
+  <value column="MsgText" original="Productivity">Productivity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000026" trl="N">
+  <value column="MsgText" original="Gangs">Gangs</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000027" trl="N">
+  <value column="MsgText" original="Start Date">Start Date</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000028" trl="N">
+  <value column="MsgText" original="Finish Date">Finish Date</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000029" trl="N">
+  <value column="MsgText" original="Labor Resource">Labor Resource</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000030" trl="N">
+  <value column="MsgText" original="Status">Status</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000031" trl="N">
+  <value column="MsgText" original="% Complete">% Complete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000032" trl="N">
+  <value column="MsgText" original="Day Offset">Day Offset</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000033" trl="N">
+  <value column="MsgText" original="Date">Date</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000034" trl="N">
+  <value column="MsgText" original="Milestone">Milestone</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000035" trl="N">
+  <value column="MsgText" original="Task">Task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000036" trl="N">
+  <value column="MsgText" original="Task Count">Task Count</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000037" trl="N">
+  <value column="MsgText" original="Total Days">Total Days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000038" trl="N">
+  <value column="MsgText" original="Total Man-Days">Total Man-Days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000039" trl="N">
+  <value column="MsgText" original="Week">Week</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000040" trl="N">
+  <value column="MsgText" original="Cumulative %">Cumulative %</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000041" trl="N">
+  <value column="MsgText" original="5D — Cost by Discipline">5D — Cost by Discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000042" trl="N">
+  <value column="MsgText" original="Cost Components by Discipline">Cost Components by Discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000043" trl="N">
+  <value column="MsgText" original="Task Distribution by Phase">Task Distribution by Phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000044" trl="N">
+  <value column="MsgText" original="Task Count by Discipline">Task Count by Discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000045" trl="N">
+  <value column="MsgText" original="4D — Phase Duration (Total Days)">4D — Phase Duration (Total Days)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000046" trl="N">
+  <value column="MsgText" original="4D — Resource Workload (Man-Days by Phase)">4D — Resource Workload (Man-Days by Phase)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000047" trl="N">
+  <value column="MsgText" original="4D — S-Curve Progress">4D — S-Curve Progress</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000048" trl="N">
+  <value column="MsgText" original="4D — Milestone Timeline">4D — Milestone Timeline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000049" trl="N">
+  <value column="MsgText" original="4D — Gantt Timeline (Strategic Tasks by Phase)">4D — Gantt Timeline (Strategic Tasks by Phase)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000050" trl="N">
+  <value column="MsgText" original="5D — Variation Order Impact">5D — Variation Order Impact</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000051" trl="N">
+  <value column="MsgText" original="Cover Sheet">Cover Sheet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000052" trl="N">
+  <value column="MsgText" original="Executive Summary">Executive Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000053" trl="N">
+  <value column="MsgText" original="Material Summary">Material Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000054" trl="N">
+  <value column="MsgText" original="Labour Summary">Labour Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000055" trl="N">
+  <value column="MsgText" original="Equipment Summary">Equipment Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000056" trl="N">
+  <value column="MsgText" original="Detailed BOQ">Detailed BOQ</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000057" trl="N">
+  <value column="MsgText" original="Provisional Sums">Provisional Sums</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000058" trl="N">
+  <value column="MsgText" original="Construction Schedule">Construction Schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000059" trl="N">
+  <value column="MsgText" original="Project Summary">Project Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000060" trl="N">
+  <value column="MsgText" original="BIM 4D Dashboard">BIM 4D Dashboard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000061" trl="N">
+  <value column="MsgText" original="COMPREHENSIVE BILL OF QUANTITIES">COMPREHENSIVE BILL OF QUANTITIES</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000062" trl="N">
+  <value column="MsgText" original="COST BREAKDOWN METHODOLOGY">COST BREAKDOWN METHODOLOGY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000063" trl="N">
+  <value column="MsgText" original="MATERIAL COST SUMMARY">MATERIAL COST SUMMARY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000064" trl="Y">
+  <value column="MsgText" original="LABOUR COST SUMMARY">LABOR COST SUMMARY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000065" trl="N">
+  <value column="MsgText" original="EQUIPMENT COST SUMMARY">EQUIPMENT COST SUMMARY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000066" trl="N">
+  <value column="MsgText" original="PROVISIONAL SUMS">PROVISIONAL SUMS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000067" trl="N">
+  <value column="MsgText" original="Phase Duration Analysis">Phase Duration Analysis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000068" trl="N">
+  <value column="MsgText" original="Resource Workload Analysis">Resource Workload Analysis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000069" trl="N">
+  <value column="MsgText" original="S-Curve Progress">S-Curve Progress</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000070" trl="N">
+  <value column="MsgText" original="Milestone Timeline">Milestone Timeline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000071" trl="N">
+  <value column="MsgText" original="Gantt Timeline (Strategic Tasks)">Gantt Timeline (Strategic Tasks)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000072" trl="N">
+  <value column="MsgText" original="Not Started">Not Started</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000073" trl="N">
+  <value column="MsgText" original="Frictionless BIM. Two DBs. One browser. Zero install.">Frictionless BIM. Two DBs. One browser. Zero install.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000074" trl="N">
+  <value column="MsgText" original="Tools">Tools</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000075" trl="N">
+  <value column="MsgText" original="Storeys">Storeys</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000076" trl="N">
+  <value column="MsgText" original="Disciplines">Disciplines</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000077" trl="N">
+  <value column="MsgText" original="Filter...">Filter...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000078" trl="N">
+  <value column="MsgText" original="All Storeys">All Storeys</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000079" trl="Y">
+  <value column="MsgText" original="X-Ray">X-Ray</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000080" trl="N">
+  <value column="MsgText" original="Screenshot">Screenshot</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000081" trl="N">
+  <value column="MsgText" original="Fullscreen">Fullscreen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000082" trl="N">
+  <value column="MsgText" original="Light/Dark">Light/Dark</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000083" trl="N">
+  <value column="MsgText" original="Fly Around">Fly Around</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000084" trl="N">
+  <value column="MsgText" original="Walk Speed">Walk Speed</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000085" trl="N">
+  <value column="MsgText" original="4D/5D Export">4D/5D Export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000086" trl="N">
+  <value column="MsgText" original="Issues">Issues</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000087" trl="N">
+  <value column="MsgText" original="Measure">Measure</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000088" trl="N">
+  <value column="MsgText" original="Section Cut">Section Cut</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000089" trl="N">
+  <value column="MsgText" original="2D Plans">2D Plans</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000090" trl="N">
+  <value column="MsgText" original="Site Camera">Site Camera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000091" trl="N">
+  <value column="MsgText" original="Walk Mode">Walk Mode</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000092" trl="N">
+  <value column="MsgText" original="Voice Search">Voice Search</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000093" trl="N">
+  <value column="MsgText" original="Cancel">Cancel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000094" trl="N">
+  <value column="MsgText" original="Back">Back</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000095" trl="N">
+  <value column="MsgText" original="Save">Save</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000096" trl="N">
+  <value column="MsgText" original="Undo">Undo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000097" trl="N">
+  <value column="MsgText" original="Retake">Retake</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000098" trl="N">
+  <value column="MsgText" original="Go">Go</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000099" trl="N">
+  <value column="MsgText" original="Clear">Clear</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000100" trl="N">
+  <value column="MsgText" original="Clear All">Clear All</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000101" trl="N">
+  <value column="MsgText" original="Export Excel">Export Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000102" trl="N">
+  <value column="MsgText" original="Share → WhatsApp">Share → WhatsApp</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000103" trl="N">
+  <value column="MsgText" original="Show in 3D">Show in 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000104" trl="N">
+  <value column="MsgText" original="Snag">Snag</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000105" trl="N">
+  <value column="MsgText" original="Class">Class</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000106" trl="N">
+  <value column="MsgText" original="Name">Name</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000107" trl="Y">
+  <value column="MsgText" original="GUID">GUID</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000108" trl="N">
+  <value column="MsgText" original="Building">Building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000109" trl="Y">
+  <value column="MsgText" original="GPS">GPS</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000110" trl="N">
+  <value column="MsgText" original="Compass">Compass</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000111" trl="N">
+  <value column="MsgText" original="Time">Time</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000112" trl="N">
+  <value column="MsgText" original="Notes">Notes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000113" trl="N">
+  <value column="MsgText" original="Open">Open</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000114" trl="N">
+  <value column="MsgText" original="Buildings">Buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000115" trl="N">
+  <value column="MsgText" original="Elements">Elements</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000116" trl="N">
+  <value column="MsgText" original="Meshes">Meshes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000117" trl="N">
+  <value column="MsgText" original="Streaming">Streaming</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000118" trl="N">
+  <value column="MsgText" original="Rendered">Rendered</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000119" trl="N">
+  <value column="MsgText" original="Done">Done</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000120" trl="N">
+  <value column="MsgText" original="Variance">Variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000121" trl="N">
+  <value column="MsgText" original="Initializing...">Initializing...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000122" trl="N">
+  <value column="MsgText" original="Walk Mode">Walk Mode</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000123" trl="N">
+  <value column="MsgText" original="Stand at the building entrance and tap SET to anchor your GPS position to the model.">Stand at the building entrance and tap SET to anchor your GPS position to the model.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000124" trl="N">
+  <value column="MsgText" original="SET">SET</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000125" trl="N">
+  <value column="MsgText" original="Walk Mode: No building data">Walk Mode: No building data</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000126" trl="N">
+  <value column="MsgText" original="Walk Mode: No GPS — orientation only">Walk Mode: No GPS — orientation only</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000127" trl="N">
+  <value column="MsgText" original="Walk Mode stopped.">Walk Mode stopped.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000128" trl="N">
+  <value column="MsgText" original="Drive-Thru: Tap to walk, hold to glide">Drive-Thru: Tap to walk, hold to glide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000129" trl="N">
+  <value column="MsgText" original="Drive-Thru: {n} steps ({d}m)">Drive-Thru: {n} steps ({d}m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000130" trl="N">
+  <value column="MsgText" original="Wall X-Ray: {n} MEP elements behind {name}">Wall X-Ray: {n} MEP elements behind {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000131" trl="N">
+  <value column="MsgText" original="Wall X-Ray: No MEP elements found behind {name}">Wall X-Ray: No MEP elements found behind {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000132" trl="N">
+  <value column="MsgText" original="BIM OOTB — Site Inspection">BIM OOTB — Site Inspection</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000133" trl="N">
+  <value column="MsgText" original="GPS: acquiring...">GPS: acquiring...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000134" trl="N">
+  <value column="MsgText" original="GPS: unavailable">GPS: unavailable</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000135" trl="N">
+  <value column="MsgText" original="GPS: not supported">GPS: not supported</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000136" trl="N">
+  <value column="MsgText" original="BIM Model View">BIM Model View</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000137" trl="N">
+  <value column="MsgText" original="Bearing">Bearing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000138" trl="N">
+  <value column="MsgText" original="Arrow">Arrow</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000139" trl="N">
+  <value column="MsgText" original="Circle">Circle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000140" trl="N">
+  <value column="MsgText" original="Draw">Draw</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000141" trl="N">
+  <value column="MsgText" original="Text">Text</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000142" trl="N">
+  <value column="MsgText" original="Reading file...">Reading file...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000143" trl="N">
+  <value column="MsgText" original="Reading {fmt} file...">Reading {fmt} file...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000144" trl="N">
+  <value column="MsgText" original="Very large file ({n}MB) — may take a few minutes">Very large file ({n}MB) — may take a few minutes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000145" trl="N">
+  <value column="MsgText" original="Large file ({n}MB) — please wait...">Large file ({n}MB) — please wait...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000146" trl="N">
+  <value column="MsgText" original="Building databases...">Building databases...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000147" trl="N">
+  <value column="MsgText" original="Imported {n} elements">Imported {n} elements</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000148" trl="N">
+  <value column="MsgText" original="Imported {n} elements from {fmt}">Imported {n} elements from {fmt}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000149" trl="N">
+  <value column="MsgText" original="CITY MODE — {n} buildings, {m} elements. Click a building to load.">CITY MODE — {n} buildings, {m} elements. Click a building to load.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000150" trl="N">
+  <value column="MsgText" original="Flew to {name} ({n} elements)">Flew to {name} ({n} elements)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000151" trl="N">
+  <value column="MsgText" original="Downloading {name}...">Downloading {name}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000152" trl="N">
+  <value column="MsgText" original="CLEARED — {n} meshes removed.">CLEARED — {n} meshes removed.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000153" trl="N">
+  <value column="MsgText" original="STREAMING {name} — 0/{n} elements">STREAMING {name} — 0/{n} elements</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000154" trl="N">
+  <value column="MsgText" original="Downloaded {name}. Streaming {bld}...">Downloaded {name}. Streaming {bld}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000155" trl="N">
+  <value column="MsgText" original="count doors, floor 1 walls, total cost, Find fire pump...">count doors, floor 1 walls, total cost, Find fire pump...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000156" trl="N">
+  <value column="MsgText" original="No speech detected — tap mic again">No speech detected — tap mic again</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000157" trl="N">
+  <value column="MsgText" original="No match. Try: &quot;count doors&quot; or &quot;floor 1 walls&quot;">No match. Try: "count doors" or "floor 1 walls"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000158" trl="N">
+  <value column="MsgText" original="No results for &quot;{q}&quot;">No results for "{q}"</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000159" trl="N">
+  <value column="MsgText" original="Details ({n})">Details ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000160" trl="N">
+  <value column="MsgText" original="Issues">Issues</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000161" trl="N">
+  <value column="MsgText" original="Swipe to show panels">Swipe to show panels</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000162" trl="N">
+  <value column="MsgText" original="Swipe to hide panels">Swipe to hide panels</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000163" trl="N">
+  <value column="MsgText" original="Section Cut">Section Cut</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000164" trl="N">
+  <value column="MsgText" original="New element">New element</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000165" trl="N">
+  <value column="MsgText" original="Existed">Existed</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000166" trl="N">
+  <value column="MsgText" original="— (demolished)">— (demolished)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000167" trl="N">
+  <value column="MsgText" original="Settings">Settings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000168" trl="N">
+  <value column="MsgText" original="Language">Language</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000169" trl="N">
+  <value column="MsgText" original="Currency">Currency</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000170" trl="N">
+  <value column="MsgText" original="Rate Source">Rate Source</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000171" trl="N">
+  <value column="MsgText" original="Reset to Defaults">Reset to Defaults</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000172" trl="N">
+  <value column="MsgText" original="Apply">Apply</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000173" trl="N">
+  <value column="MsgText" original="Check for Updates">Check for Updates</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000174" trl="N">
+  <value column="MsgText" original="Downloaded {name}.ifc ({size} KB)">Downloaded {name}.ifc ({size} KB)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000175" trl="N">
+  <value column="MsgText" original="Please drop an .ifc file">Please drop an .ifc file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000176" trl="N">
+  <value column="MsgText" original="Exporting IFC ({n} elements)...">Exporting IFC ({n} elements)...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000177" trl="N">
+  <value column="MsgText" original="Generating 4D Excel...">Generating 4D Excel...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000178" trl="N">
+  <value column="MsgText" original="Generating 4D Excel — preparing charts...">Generating 4D Excel — preparing charts...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000179" trl="N">
+  <value column="MsgText" original="Generating 5D Excel...">Generating 5D Excel...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000180" trl="N">
+  <value column="MsgText" original="Generating 5D Excel — preparing charts...">Generating 5D Excel — preparing charts...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000181" trl="N">
+  <value column="MsgText" original="Loading">Loading</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000182" trl="N">
+  <value column="MsgText" original="No data.">No data.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000183" trl="N">
+  <value column="MsgText" original="Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL">Unsupported: .{ext} — Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000184" trl="N">
+  <value column="MsgText" original="Description">Description</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000185" trl="N">
+  <value column="MsgText" original="Parameter">Parameter</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000186" trl="N">
+  <value column="MsgText" original="Value">Value</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000187" trl="N">
+  <value column="MsgText" original="Saved {f} ({n} sheets)">Saved {f} ({n} sheets)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000188" trl="N">
+  <value column="MsgText" original="includes Variance Order">includes Variance Order</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000189" trl="N">
+  <value column="MsgText" original="Search elements...">Search elements...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000190" trl="N">
+  <value column="MsgText" original="All types">All types</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000191" trl="N">
+  <value column="MsgText" original="▶ Navigate">▶ Navigate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000192" trl="N">
+  <value column="MsgText" original="▶ Navigate to selected">▶ Navigate to selected</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000193" trl="N">
+  <value column="MsgText" original="{n} found">{n} found</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000194" trl="N">
+  <value column="MsgText" original="0 matches">0 matches</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000195" trl="N">
+  <value column="MsgText" original="Did you mean:">Did you mean:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000196" trl="N">
+  <value column="MsgText" original="No start position — cannot navigate">No start position — cannot navigate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000197" trl="N">
+  <value column="MsgText" original="No path found">No path found</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000198" trl="N">
+  <value column="MsgText" original="Arrived — walk freely or Find again">Arrived — walk freely or Find again</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000199" trl="N">
+  <value column="MsgText" original="Watch Demo">Watch Demo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000200" trl="N">
+  <value column="MsgText" original="About">About</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000201" trl="N">
+  <value column="MsgText" original="outofthebox">outofthebox</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000202" trl="N">
+  <value column="MsgText" original="In 60 seconds, the way you BIM will never be the same.">In 60 seconds, the way you BIM will never be the same.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000203" trl="N">
+  <value column="MsgText" original="Import">Import</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000204" trl="N">
+  <value column="MsgText" original="View">View</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000205" trl="N">
+  <value column="MsgText" original="Compare">Compare</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000206" trl="N">
+  <value column="MsgText" original="Costed">Costed</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000207" trl="N">
+  <value column="MsgText" original="Done">Done</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000208" trl="N">
+  <value column="MsgText" original="Drop IFC or 3D file here">Drop IFC or 3D file here</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000209" trl="N">
+  <value column="MsgText" original="My Buildings">My Buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000210" trl="N">
+  <value column="MsgText" original="City Buildings">City Buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000211" trl="N">
+  <value column="MsgText" original="Landmark Buildings">Landmark Buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000212" trl="N">
+  <value column="MsgText" original="Loading building manifest...">Loading building manifest...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000213" trl="N">
+  <value column="MsgText" original="Created by">Created by</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000214" trl="N">
+  <value column="MsgText" original="Live Stats">Live Stats</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000215" trl="N">
+  <value column="MsgText" original="COMPLETE THE CITY">COMPLETE THE CITY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000216" trl="N">
+  <value column="MsgText" original="buildings explored">buildings explored</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000217" trl="N">
+  <value column="MsgText" original="CITY UNLOCKED">CITY UNLOCKED</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000218" trl="N">
+  <value column="MsgText" original="LAUNCH CITY 1M">LAUNCH CITY 1M</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000219" trl="N">
+  <value column="MsgText" original="Open 3D Viewer">Open 3D Viewer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000220" trl="N">
+  <value column="MsgText" original="Open Tabs">Open Tabs</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000221" trl="N">
+  <value column="MsgText" original="Theory">Theory</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000222" trl="N">
+  <value column="MsgText" original="Practical">Practical</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000223" trl="N">
+  <value column="MsgText" original="Loading WebAssembly...">Loading WebAssembly...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000224" trl="N">
+  <value column="MsgText" original="Fetching {url}...">Fetching {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000225" trl="N">
+  <value column="MsgText" original="DB loaded ({size}MB). Querying...">DB loaded ({size}MB). Querying...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000226" trl="N">
+  <value column="MsgText" original="Library loaded ({size}MB). Streaming nearest building...">Library loaded ({size}MB). Streaming nearest building...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000227" trl="N">
+  <value column="MsgText" original="Using main DB for geometry. Streaming...">Using main DB for geometry. Streaming...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000228" trl="N">
+  <value column="MsgText" original="STREAMING {name} — {i}/{n} elements">STREAMING {name} — {i}/{n} elements</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000229" trl="N">
+  <value column="MsgText" original="DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.">DONE — {name} {n} elements ({g} instanced groups). {b} building(s) rendered.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000230" trl="N">
+  <value column="MsgText" original="{name} — DONE">{name} — DONE</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000231" trl="N">
+  <value column="MsgText" original="Cleared. Search and click a building to stream.">Cleared. Search and click a building to stream.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000232" trl="N">
+  <value column="MsgText" original="2D Plans">2D Plans</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000233" trl="N">
+  <value column="MsgText" original="Layers">Layers</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000234" trl="N">
+  <value column="MsgText" original="Fit">Fit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000235" trl="N">
+  <value column="MsgText" original="Generate">Generate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000236" trl="N">
+  <value column="MsgText" original="Export DXF">Export DXF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000237" trl="N">
+  <value column="MsgText" original="Drop DXF file here">Drop DXF file here</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000238" trl="N">
+  <value column="MsgText" original="Entities: ">Entities: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000239" trl="N">
+  <value column="MsgText" original="Layers: ">Layers: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000240" trl="N">
+  <value column="MsgText" original="Class: ">Class: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000241" trl="N">
+  <value column="MsgText" original="Name: ">Name: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000242" trl="N">
+  <value column="MsgText" original="Storey: ">Storey: </value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000243" trl="N">
+  <value column="MsgText" original="— select sheet —">— select sheet —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000244" trl="N">
+  <value column="MsgText" original="— storey —">— storey —</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000245" trl="N">
+  <value column="MsgText" original="Floor Plan">Floor Plan</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000246" trl="N">
+  <value column="MsgText" original="Front Elev">Front Elev</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000247" trl="N">
+  <value column="MsgText" original="Rear Elev">Rear Elev</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000248" trl="N">
+  <value column="MsgText" original="Left Elev">Left Elev</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000249" trl="N">
+  <value column="MsgText" original="Right Elev">Right Elev</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000250" trl="N">
+  <value column="MsgText" original="Loading {url}...">Loading {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000251" trl="N">
+  <value column="MsgText" original="Loaded: {n} entities, {l} layers">Loaded: {n} entities, {l} layers</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000252" trl="N">
+  <value column="MsgText" original="Generating {mode}...">Generating {mode}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000253" trl="N">
+  <value column="MsgText" original="Generated: {n} entities, {l} layers ({ms}ms)">Generated: {n} entities, {l} layers ({ms}ms)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000254" trl="N">
+  <value column="MsgText" original="Loading databases...">Loading databases...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000255" trl="N">
+  <value column="MsgText" original="DBs loaded — generating...">DBs loaded — generating...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000256" trl="N">
+  <value column="MsgText" original="No DB loaded — add ?db= to URL">No DB loaded — add ?db= to URL</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000257" trl="N">
+  <value column="MsgText" original="Drop a .dxf file">Drop a .dxf file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000258" trl="N">
+  <value column="MsgText" original="Nothing to export">Nothing to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000259" trl="N">
+  <value column="MsgText" original="2D views are desktop-only">2D views are desktop-only</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000260" trl="N">
+  <value column="MsgText" original="Close Measure first">Close Measure first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000261" trl="N">
+  <value column="MsgText" original="Back online">Back online</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000262" trl="N">
+  <value column="MsgText" original="Offline mode — cached buildings still available">Offline mode — cached buildings still available</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000263" trl="N">
+  <value column="MsgText" original="Select a building first.">Select a building first.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000264" trl="N">
+  <value column="MsgText" original="4D/5D analytics opened for {name}">4D/5D analytics opened for {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000265" trl="N">
+  <value column="MsgText" original="Screenshot saved to Downloads/">Screenshot saved to Downloads/</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000266" trl="N">
+  <value column="MsgText" original="Spatial index ready">Spatial index ready</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000267" trl="N">
+  <value column="MsgText" original="Building spatial index…">Building spatial index…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000268" trl="N">
+  <value column="MsgText" original="Report already generating...">Report already generating...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000269" trl="N">
+  <value column="MsgText" original="Building report…">Building report…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000270" trl="N">
+  <value column="MsgText" original="No clashes — open matrix first">No clashes — open matrix first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000271" trl="N">
+  <value column="MsgText" original="Clash report opened in new tab">Clash report opened in new tab</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000272" trl="N">
+  <value column="MsgText" original="No clash data — open matrix first">No clash data — open matrix first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000273" trl="N">
+  <value column="MsgText" original="CSV export already in progress...">CSV export already in progress...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000274" trl="N">
+  <value column="MsgText" original="CSV exported — {n} clashes">CSV exported — {n} clashes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000275" trl="N">
+  <value column="MsgText" original="Exporting CSV… pair {i}/{n}">Exporting CSV… pair {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000276" trl="N">
+  <value column="MsgText" original="No clash pairs to export">No clash pairs to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000277" trl="N">
+  <value column="MsgText" original="Matrix needs 2+ disciplines (found: {d})">Matrix needs 2+ disciplines (found: {d})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000278" trl="N">
+  <value column="MsgText" original="Close 2D view first">Close 2D view first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000279" trl="N">
+  <value column="MsgText" original="Click for dimensions. Right-click for Info">Click for dimensions. Right-click for Info</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000280" trl="N">
+  <value column="MsgText" original="Tap for dimensions. Long-press for Info. Tap here to exit.">Tap for dimensions. Long-press for Info. Tap here to exit.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000281" trl="N">
+  <value column="MsgText" original="Tap another spot for length, same spot for Area">Tap another spot for length, same spot for Area</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000282" trl="N">
+  <value column="MsgText" original="Clash snag shared">Clash snag shared</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000283" trl="N">
+  <value column="MsgText" original="Check Clash at Desktop..">Check Clash at Desktop..</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000284" trl="N">
+  <value column="MsgText" original="Generating report… {done}/{total} pairs">Generating report… {done}/{total} pairs</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000285" trl="N">
+  <value column="MsgText" original="Counting {a} vs {b}… {i}/{n}">Counting {a} vs {b}… {i}/{n}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000286" trl="N">
+  <value column="MsgText" original="Fetching city index ({url})...">Fetching city index ({url})...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000287" trl="N">
+  <value column="MsgText" original="{name} already loaded ({n} elements)">{name} already loaded ({n} elements)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000288" trl="N">
+  <value column="MsgText" original="Unknown building: {name}">Unknown building: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000289" trl="N">
+  <value column="MsgText" original="No streamable elements for {name}">No streamable elements for {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000290" trl="N">
+  <value column="MsgText" original="MEP BOQ Guide">MEP BOQ Guide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000291" trl="N">
+  <value column="MsgText" original="SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)&lt;br&gt;Pipes/ducts → length (m) · slabs → area (m²) · fittings → count&lt;br&gt;17 country rate templates from national publications&lt;br&gt;Section totals + labour trades + charts + reinstatement value&lt;br&gt;CSV (UTF-8 BOM) or shareable self-contained HTML">SMM2 §R–V · IFC→classify by discipline (PLB·ELEC·ACMV·FP)&lt;br&gt;Pipes/ducts → length (m) · slabs → area (m²) · fittings → count&lt;br&gt;17 country rate templates from national publications&lt;br&gt;Section totals + labour trades + charts + reinstatement value&lt;br&gt;CSV (UTF-8 BOM) or shareable self-contained HTML</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000292" trl="N">
+  <value column="MsgText" original="No DB for archetype: {name}">No DB for archetype: {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000293" trl="N">
+  <value column="MsgText" original="Disposal Systems">Disposal Systems</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000294" trl="N">
+  <value column="MsgText" original="Piped Supply Systems">Piped Supply Systems</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000295" trl="N">
+  <value column="MsgText" original="Mechanical Heating / Cooling">Mechanical Heating / Cooling</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000296" trl="N">
+  <value column="MsgText" original="Ventilation / Air Conditioning">Ventilation / Air Conditioning</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000297" trl="N">
+  <value column="MsgText" original="Electrical Supply / Power / Lighting">Electrical Supply / Power / Lighting</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000298" trl="N">
+  <value column="MsgText" original="Communications / Security / Controls">Communications / Security / Controls</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000299" trl="N">
+  <value column="MsgText" original="Mechanical / Electrical Services (General)">Mechanical / Electrical Services (General)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000300" trl="N">
+  <value column="MsgText" original="REINSTATEMENT VALUE">REINSTATEMENT VALUE</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000301" trl="N">
+  <value column="MsgText" original="Contingency">Contingency</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000302" trl="N">
+  <value column="MsgText" original="INSURED VALUE">INSURED VALUE</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000303" trl="N">
+  <value column="MsgText" original="MEP BOQ complete">MEP BOQ complete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000304" trl="N">
+  <value column="MsgText" original="sections">sections</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000305" trl="N">
+  <value column="MsgText" original="Section">Section</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000306" trl="N">
+  <value column="MsgText" original="Share Report">Share Report</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000307" trl="N">
+  <value column="MsgText" original="No database specified. Open from 4D/5D Analytics page.">No database specified. Open from 4D/5D Analytics page.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000308" trl="N">
+  <value column="MsgText" original="No elements found for building:">No elements found for building:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000309" trl="N">
+  <value column="MsgText" original="Red — you go in (sound on, then we load)">Red — you go in (sound on, then we load)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000310" trl="N">
+  <value column="MsgText" original="Blue — nothing happens, nothing loads">Blue — nothing happens, nothing loads</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000311" trl="N">
+  <value column="MsgText" original="&quot;You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe.&quot;">"You take the blue pill — the story ends, you wake up in your bed and believe whatever you want to believe."</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000312" trl="N">
+  <value column="MsgText" original="← back">← back</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000313" trl="N">
+  <value column="MsgText" original="choose your door">choose your door</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000314" trl="N">
+  <value column="MsgText" original="Site traffic stats (GoatCounter)">Site traffic stats (GoatCounter)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000315" trl="N">
+  <value column="MsgText" original="BUILDINGS &amp; IFC">BUILDINGS &amp; IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000316" trl="N">
+  <value column="MsgText" original="drop your own IFC, or open a ready building — opens in the viewer">drop your own IFC, or open a ready building — opens in the viewer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000317" trl="N">
+  <value column="MsgText" original="Buildings / IFC">Buildings / IFC</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000318" trl="N">
+  <value column="MsgText" original="BIM Modeller">BIM Modeller</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000319" trl="Y">
+  <value column="MsgText" original="ERP">ERP</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000320" trl="N">
+  <value column="MsgText" original="User Guide">User Guide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000321" trl="N">
+  <value column="MsgText" original="Watch demo">Watch demo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000322" trl="N">
+  <value column="MsgText" original="Clear cache">Clear cache</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000323" trl="N">
+  <value column="MsgText" original="More">More</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000324" trl="N">
+  <value column="MsgText" original="BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.">BIM authoring (DAGeVu) is a desktop experience — open it on a larger screen.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000325" trl="N">
+  <value column="MsgText" original="↓ Drop IFC / 3D files here — or tap to browse">↓ Drop IFC / 3D files here — or tap to browse</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000326" trl="N">
+  <value column="MsgText" original="multiple discipline files merge into one building">multiple discipline files merge into one building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000327" trl="N">
+  <value column="MsgText" original="Blank Viewer">Blank Viewer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000328" trl="N">
+  <value column="MsgText" original="Open your own .db file">Open your own .db file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000329" trl="N">
+  <value column="MsgText" original="loading building manifest…">loading building manifest…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000330" trl="N">
+  <value column="MsgText" original="City buildings">City buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000331" trl="N">
+  <value column="MsgText" original="Landmark buildings">Landmark buildings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000332" trl="N">
+  <value column="MsgText" original="elements">elements</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000333" trl="N">
+  <value column="MsgText" original="reload">reload</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000334" trl="N">
+  <value column="MsgText" original="No DB for {name}">No DB for {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000335" trl="N">
+  <value column="MsgText" original="Reset to the start screen?&#10;&#10;Clears the in-browser building data:&#10;  • cached buildings&#10;  • any IFC scene you dropped in (not saved to a .db file)&#10;and returns you to the red / blue choice.&#10;&#10;Keeps: the installed app + offline data, and any .db you saved yourself.">Reset to the start screen?
+
+Clears the in-browser building data:
+  • cached buildings
+  • any IFC scene you dropped in (not saved to a .db file)
+and returns you to the red / blue choice.
+
+Keeps: the installed app + offline data, and any .db you saved yourself.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000336" trl="N">
+  <value column="MsgText" original="Grid Bays">Grid Bays</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000337" trl="N">
+  <value column="MsgText" original="Share">Share</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000338" trl="N">
+  <value column="MsgText" original="Min/Max">Min/Max</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000339" trl="N">
+  <value column="MsgText" original="Menu">Menu</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000340" trl="N">
+  <value column="MsgText" original="Previous phase">Previous phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000341" trl="N">
+  <value column="MsgText" original="Next phase">Next phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000342" trl="N">
+  <value column="MsgText" original="Bookmark this cut position">Bookmark this cut position</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000343" trl="N">
+  <value column="MsgText" original="Remove bookmark">Remove bookmark</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000344" trl="N">
+  <value column="MsgText" original="Update ready — tap to refresh">Update ready — tap to refresh</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000345" trl="N">
+  <value column="MsgText" original="Report Bug">Report Bug</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000346" trl="N">
+  <value column="MsgText" original="Save Building">Save Building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000347" trl="N">
+  <value column="MsgText" original="Open Building">Open Building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000348" trl="N">
+  <value column="MsgText" original="Find / Navigate">Find / Navigate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000349" trl="N">
+  <value column="MsgText" original="Role View">Role View</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000350" trl="N">
+  <value column="MsgText" original="Help">Help</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000351" trl="N">
+  <value column="MsgText" original="World History">World History</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000352" trl="N">
+  <value column="MsgText" original="Page History">Page History</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000353" trl="N">
+  <value column="MsgText" original="Walk">Walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000354" trl="N">
+  <value column="MsgText" original="Pick Walk">Pick Walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000355" trl="N">
+  <value column="MsgText" original="Share">Share</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000356" trl="N">
+  <value column="MsgText" original="Human-Asset">Human-Asset</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000357" trl="N">
+  <value column="MsgText" original="Measure">Measure</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000358" trl="N">
+  <value column="MsgText" original="Clash Matrix">Clash Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000359" trl="N">
+  <value column="MsgText" original="Sanity">Sanity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000360" trl="N">
+  <value column="MsgText" original="Egress">Egress</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000361" trl="N">
+  <value column="MsgText" original="X-Ray / Bbox">X-Ray / Bbox</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000362" trl="N">
+  <value column="MsgText" original="Bounding Boxes">Bounding Boxes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000363" trl="N">
+  <value column="MsgText" original="Time Machine">Time Machine</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000364" trl="N">
+  <value column="MsgText" original="4D Window">4D Window</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000365" trl="N">
+  <value column="MsgText" original="4D Window — tap to generate a programme">4D Window — tap to generate a programme</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000366" trl="N">
+  <value column="MsgText" original="Section Cut">Section Cut</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000367" trl="N">
+  <value column="MsgText" original="Background">Background</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000368" trl="N">
+  <value column="MsgText" original="Night">Night</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000369" trl="N">
+  <value column="MsgText" original="Palette">Palette</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000370" trl="N">
+  <value column="MsgText" original="Shadow + Ground">Shadow + Ground</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000371" trl="N">
+  <value column="MsgText" original="Fly Tour">Fly Tour</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000372" trl="N">
+  <value column="MsgText" original="Nav LOD (large bldgs)">Nav LOD (large bldgs)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000373" trl="Y">
+  <value column="MsgText" original="4D / 5D">4D / 5D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000374" trl="N">
+  <value column="MsgText" original="Issues">Issues</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000375" trl="N">
+  <value column="MsgText" original="Fullscreen">Fullscreen</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000376" trl="N">
+  <value column="MsgText" original="Precision (Fine)">Precision (Fine)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000377" trl="N">
+  <value column="MsgText" original="Reset Camera">Reset Camera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000378" trl="N">
+  <value column="MsgText" original="Auto-Pivot">Auto-Pivot</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000379" trl="N">
+  <value column="MsgText" original="Home">Home</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000380" trl="N">
+  <value column="MsgText" original="Sound FX">Sound FX</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000381" trl="N">
+  <value column="MsgText" original="Settings">Settings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000382" trl="N">
+  <value column="MsgText" original="Navigate">Navigate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000383" trl="N">
+  <value column="MsgText" original="Inspect">Inspect</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000384" trl="N">
+  <value column="MsgText" original="Camera / View">Camera / View</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000385" trl="N">
+  <value column="MsgText" original="Plumber">Plumber</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000386" trl="N">
+  <value column="MsgText" original="Electrician">Electrician</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000387" trl="N">
+  <value column="MsgText" original="ACMV Tech">ACMV Tech</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000388" trl="N">
+  <value column="MsgText" original="Structural">Structural</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000389" trl="N">
+  <value column="MsgText" original="Cleaner">Cleaner</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000390" trl="N">
+  <value column="MsgText" original="5D Rate Pack">5D Rate Pack</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000391" trl="N">
+  <value column="MsgText" original="Cache Info">Cache Info</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000392" trl="N">
+  <value column="MsgText" original="Reset Pill Icons">Reset Pill Icons</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000393" trl="N">
+  <value column="MsgText" original="Defaults restored">Defaults restored</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000394" trl="N">
+  <value column="MsgText" original="Shadow + Ground — cycle Off → Earth → Grass → Paved">Shadow + Ground — cycle Off → Earth → Grass → Paved</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000395" trl="N">
+  <value column="MsgText" original="None">None</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000396" trl="N">
+  <value column="MsgText" original="Grass">Grass</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000397" trl="N">
+  <value column="MsgText" original="Earth">Earth</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000398" trl="N">
+  <value column="MsgText" original="Paved">Paved</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000399" trl="N">
+  <value column="MsgText" original="Blank scene — press Ctrl+O (Open Building) to load a .db file">Blank scene — press Ctrl+O (Open Building) to load a .db file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000400" trl="N">
+  <value column="MsgText" original="change in ⚙">change in ⚙</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000401" trl="N">
+  <value column="MsgText" original="History — across pages">History — across pages</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000402" trl="N">
+  <value column="MsgText" original="Whole">Whole</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000403" trl="N">
+  <value column="MsgText" original="This page">This page</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000404" trl="N">
+  <value column="MsgText" original="Close">Close</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000405" trl="N">
+  <value column="MsgText" original="Fine precision">Fine precision</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000406" trl="N">
+  <value column="MsgText" original="Reset camera">Reset camera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000407" trl="Y">
+  <value column="MsgText" original="Auto-pivot on scene centre">Auto-pivot on scene center</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000408" trl="N">
+  <value column="MsgText" original="Still Refine (Alt+S)">Still Refine (Alt+S)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000409" trl="N">
+  <value column="MsgText" original="Populate (Alt+P)">Populate (Alt+P)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000410" trl="N">
+  <value column="MsgText" original="MaxQ Movie (Alt+C — press again to cancel)">MaxQ Movie (Alt+C — press again to cancel)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000411" trl="N">
+  <value column="MsgText" original="Time Machine">Time Machine</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000412" trl="N">
+  <value column="MsgText" original="Find">Find</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000413" trl="N">
+  <value column="MsgText" original="Share">Share</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000414" trl="N">
+  <value column="MsgText" original="Help">Help</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000415" trl="N">
+  <value column="MsgText" original="Clash Matrix">Clash Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000416" trl="N">
+  <value column="MsgText" original="Color Studio">Color Studio</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000417" trl="N">
+  <value column="MsgText" original="Night">Night</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000418" trl="N">
+  <value column="MsgText" original="Shadow">Shadow</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000419" trl="N">
+  <value column="MsgText" original="Background">Background</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000420" trl="N">
+  <value column="MsgText" original="Bounding Boxes">Bounding Boxes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000421" trl="N">
+  <value column="MsgText" original="Cinema Orbit">Cinema Orbit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000422" trl="N">
+  <value column="MsgText" original="Document">Document</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000423" trl="N">
+  <value column="MsgText" original="Grid">Grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000424" trl="N">
+  <value column="MsgText" original="Table">Table</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000425" trl="N">
+  <value column="MsgText" original="Next Phase">Next Phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000426" trl="N">
+  <value column="MsgText" original="Save Design">Save Design</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000427" trl="N">
+  <value column="MsgText" original="Open Design">Open Design</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000428" trl="N">
+  <value column="MsgText" original="MEP Routes">MEP Routes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000429" trl="N">
+  <value column="MsgText" original="UBBL Compliance">UBBL Compliance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000430" trl="N">
+  <value column="MsgText" original="Rosetta Stone">Rosetta Stone</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000431" trl="N">
+  <value column="MsgText" original="Disciplines">Disciplines</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000432" trl="N">
+  <value column="MsgText" original="Sun intensity">Sun intensity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000433" trl="N">
+  <value column="MsgText" original="Exposure">Exposure</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000434" trl="N">
+  <value column="MsgText" original="Ambient">Ambient</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000435" trl="N">
+  <value column="MsgText" original="Hemisphere">Hemisphere</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000436" trl="N">
+  <value column="MsgText" original="All">All</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000437" trl="N">
+  <value column="MsgText" original="Off">Off</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000438" trl="N">
+  <value column="MsgText" original="On — {n} fixtures">On — {n} fixtures</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000439" trl="N">
+  <value column="MsgText" original="Find">Find</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000440" trl="N">
+  <value column="MsgText" original="Ask">Ask</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000441" trl="N">
+  <value column="MsgText" original="Save .xlsx">Save .xlsx</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000442" trl="N">
+  <value column="MsgText" original="All Types">All Types</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000443" trl="N">
+  <value column="MsgText" original="View back">View back</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000444" trl="N">
+  <value column="MsgText" original="View forward">View forward</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000445" trl="N">
+  <value column="MsgText" original="Expand">Expand</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000446" trl="N">
+  <value column="MsgText" original="Voice not supported">Voice not supported</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000447" trl="N">
+  <value column="MsgText" original="Loading Find…">Loading Find…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000448" trl="N">
+  <value column="MsgText" original="Find failed to load">Find failed to load</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000449" trl="N">
+  <value column="MsgText" original="Compiling GPU shaders — please wait...">Compiling GPU shaders — please wait...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000450" trl="N">
+  <value column="MsgText" original="GPU shaders compiled in {ms}ms — rendering">GPU shaders compiled in {ms}ms — rendering</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000451" trl="N">
+  <value column="MsgText" original="OFFLINE">OFFLINE</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000452" trl="N">
+  <value column="MsgText" original="BIM OOTB — 4D/5D Analytics">BIM OOTB — 4D/5D Analytics</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000453" trl="N">
+  <value column="MsgText" original="BIM OOTB — Clash Coordination Report">BIM OOTB — Clash Coordination Report</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000454" trl="N">
+  <value column="MsgText" original="BIM OOTB — MEP Bill of Quantities">BIM OOTB — MEP Bill of Quantities</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000455" trl="N">
+  <value column="MsgText" original="4D/5D Analytics">4D/5D Analytics</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000456" trl="N">
+  <value column="MsgText" original="5D — Cost Excel">5D — Cost Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000457" trl="N">
+  <value column="MsgText" original="4D — Schedule Excel">4D — Schedule Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000458" trl="N">
+  <value column="MsgText" original="MEP Bill of Quantities">MEP Bill of Quantities</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000459" trl="N">
+  <value column="MsgText" original="Copy shareable link">Copy shareable link</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000460" trl="N">
+  <value column="MsgText" original="Change locale / currency">Change locale / currency</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000461" trl="N">
+  <value column="MsgText" original="Change locale">Change locale</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000462" trl="N">
+  <value column="MsgText" original="Loading...">Loading...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000463" trl="N">
+  <value column="MsgText" original="Requesting data from viewer...">Requesting data from viewer...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000464" trl="N">
+  <value column="MsgText" original="Waiting for DB to cache in main scene...">Waiting for DB to cache in main scene...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000465" trl="N">
+  <value column="MsgText" original="Loading {url}...">Loading {url}...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000466" trl="N">
+  <value column="MsgText" original="Site Resources">Site Resources</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000467" trl="N">
+  <value column="MsgText" original="5D — Bill of Quantities">5D — Bill of Quantities</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000468" trl="N">
+  <value column="MsgText" original="Clash Coordination Report">Clash Coordination Report</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000469" trl="N">
+  <value column="MsgText" original="Home">Home</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000470" trl="N">
+  <value column="MsgText" original="Report Downloaded">Report Downloaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000471" trl="N">
+  <value column="MsgText" original="HTML file saved. Share via WhatsApp, Email, or any medium.&lt;br&gt;Recipient opens it in any browser — full charts, no setup needed.">HTML file saved. Share via WhatsApp, Email, or any medium.&lt;br&gt;Recipient opens it in any browser — full charts, no setup needed.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000472" trl="Y">
+  <value column="MsgText" original="OK">OK</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000473" trl="N">
+  <value column="MsgText" original="Total Clashes">Total Clashes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000474" trl="N">
+  <value column="MsgText" original="Reviewed">Reviewed</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000475" trl="N">
+  <value column="MsgText" original="Resolved">Resolved</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000476" trl="N">
+  <value column="MsgText" original="Accepted">Accepted</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000477" trl="N">
+  <value column="MsgText" original="Total bbox overlaps detected across all discipline pairs">Total bbox overlaps detected across all discipline pairs</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000478" trl="N">
+  <value column="MsgText" original="Acknowledged clashes under investigation">Acknowledged clashes under investigation</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000479" trl="N">
+  <value column="MsgText" original="Clashes fixed in the model — ready for re-check">Clashes fixed in the model — ready for re-check</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000480" trl="N">
+  <value column="MsgText" original="Risk accepted — no design change needed">Risk accepted — no design change needed</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000481" trl="N">
+  <value column="MsgText" original="By Discipline Pair">By Discipline Pair</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000482" trl="N">
+  <value column="MsgText" original="Discipline Risk Profile">Discipline Risk Profile</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000483" trl="N">
+  <value column="MsgText" original="By Severity">By Severity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000484" trl="N">
+  <value column="MsgText" original="By Status">By Status</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000485" trl="N">
+  <value column="MsgText" original="Top Offenders — Fix These First">Top Offenders — Fix These First</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000486" trl="N">
+  <value column="MsgText" original="By Element Class">By Element Class</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000487" trl="N">
+  <value column="MsgText" original="Discipline Matrix Summary">Discipline Matrix Summary</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000488" trl="N">
+  <value column="MsgText" original="Source">Source</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000489" trl="N">
+  <value column="MsgText" original="Target">Target</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000490" trl="N">
+  <value column="MsgText" original="Tolerance">Tolerance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000491" trl="N">
+  <value column="MsgText" original="Clashes">Clashes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000492" trl="N">
+  <value column="MsgText" original="clashes">clashes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000493" trl="N">
+  <value column="MsgText" original="Day/night cycle">Day/night cycle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000494" trl="N">
+  <value column="MsgText" original="Drone Pilot — cinematic camera">Drone Pilot — cinematic camera</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000495" trl="N">
+  <value column="MsgText" original="Gantt chart">Gantt chart</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000496" trl="N">
+  <value column="MsgText" original="What-if: slip a phase, watch the chain re-fold in blue">What-if: slip a phase, watch the chain re-fold in blue</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000497" trl="Y">
+  <value column="MsgText" original="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML program onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000498" trl="N">
+  <value column="MsgText" original="Dashboard">Dashboard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000499" trl="N">
+  <value column="MsgText" original="Budget vs Actual variance">Budget vs Actual variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000500" trl="N">
+  <value column="MsgText" original="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.">Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today's rendering, unchanged.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000501" trl="N">
+  <value column="MsgText" original="4D Construction Playback">4D Construction Playback</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000502" trl="N">
+  <value column="MsgText" original="DAY">DAY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000503" trl="N">
+  <value column="MsgText" original="HR">HR</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000504" trl="N">
+  <value column="MsgText" original="MIN">MIN</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000505" trl="N">
+  <value column="MsgText" original="Jump to start">Jump to start</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000506" trl="N">
+  <value column="MsgText" original="Deconstruct">Deconstruct</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000507" trl="N">
+  <value column="MsgText" original="Stop">Stop</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000508" trl="N">
+  <value column="MsgText" original="Build">Build</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000509" trl="N">
+  <value column="MsgText" original="Jump to end">Jump to end</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000510" trl="N">
+  <value column="MsgText" original="Undo edit">Undo edit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000511" trl="N">
+  <value column="MsgText" original="Undo the last Gantt drag/resize">Undo the last Gantt drag/resize</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000512" trl="N">
+  <value column="MsgText" original="Set Baseline">Set Baseline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000513" trl="N">
+  <value column="MsgText" original="Snapshot current dates as the baseline for schedule variance">Snapshot current dates as the baseline for schedule variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000514" trl="N">
+  <value column="MsgText" original="Pull Back">Pull Back</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000515" trl="N">
+  <value column="MsgText" original="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000516" trl="N">
+  <value column="MsgText" original="Drag to resize the Gantt drawer">Drag to resize the Gantt drawer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000517" trl="N">
+  <value column="MsgText" original="Locked">Locked</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000518" trl="N">
+  <value column="MsgText" original="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000519" trl="N">
+  <value column="MsgText" original="Editing">Editing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000520" trl="N">
+  <value column="MsgText" original="Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.">Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000521" trl="N">
+  <value column="MsgText" original="Drag to shift the whole project's start/finish (Editing must be unlocked)">Drag to shift the whole project's start/finish (Editing must be unlocked)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000522" trl="N">
+  <value column="MsgText" original="Drag to resize the drawer">Drag to resize the drawer</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000523" trl="N">
+  <value column="MsgText" original="Import">Import</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000524" trl="N">
+  <value column="MsgText" original="Export">Export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000525" trl="N">
+  <value column="MsgText" original="P6/MSP file">P6/MSP file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000526" trl="Y">
+  <value column="MsgText" original="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">Import a Primavera P6 program (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000527" trl="N">
+  <value column="MsgText" original="auto-bind">auto-bind</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000528" trl="N">
+  <value column="MsgText" original="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.">If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000529" trl="N">
+  <value column="MsgText" original="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000530" trl="N">
+  <value column="MsgText" original="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000531" trl="N">
+  <value column="MsgText" original="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000532" trl="N">
+  <value column="MsgText" original="Diff vs Model">Diff vs Model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000533" trl="N">
+  <value column="MsgText" original="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000534" trl="N">
+  <value column="MsgText" original="Phase Progress">Phase Progress</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000535" trl="N">
+  <value column="MsgText" original="S-Curve">S-Curve</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000536" trl="N">
+  <value column="MsgText" original="Day {c} / {t} — {p}% complete">Day {c} / {t} — {p}% complete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000537" trl="N">
+  <value column="MsgText" original="{n} placed | {names}">{n} placed | {names}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000538" trl="N">
+  <value column="MsgText" original="idle">idle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000539" trl="N">
+  <value column="MsgText" original="Author engine not loaded">Author engine not loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000540" trl="N">
+  <value column="MsgText" original="What-if engine not loaded">What-if engine not loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000541" trl="N">
+  <value column="MsgText" original="⊕ Now building">⊕ Now building</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000542" trl="N">
+  <value column="MsgText" original="item">item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000543" trl="N">
+  <value column="MsgText" original="items">items</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000544" trl="N">
+  <value column="MsgText" original="Loading timeline...">Loading timeline...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000545" trl="N">
+  <value column="MsgText" original="Setting up 4D construction timeline...">Setting up 4D construction timeline...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000546" trl="N">
+  <value column="MsgText" original="No elements found in database">No elements found in database</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000547" trl="N">
+  <value column="MsgText" original="{storey} — {phase} ({n} el, Day {a}–{b}, {src})">{storey} — {phase} ({n} el, Day {a}–{b}, {src})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000548" trl="N">
+  <value column="MsgText" original="IFC 4D">IFC 4D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000549" trl="N">
+  <value column="MsgText" original="generated">generated</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000550" trl="N">
+  <value column="MsgText" original="Locked — click 🔒 Locked to enable editing">Locked — click 🔒 Locked to enable editing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000551" trl="N">
+  <value column="MsgText" original="Shift whole schedule {d}d">Shift whole schedule {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000552" trl="N">
+  <value column="MsgText" original="Time Machine couldn't complete this edit — {reason}">Time Machine couldn't complete this edit — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000553" trl="N">
+  <value column="MsgText" original="unexpected error">unexpected error</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000554" trl="N">
+  <value column="MsgText" original="Close other panels ({n})">Close other panels ({n})</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000555" trl="N">
+  <value column="MsgText" original="Blocked by {by} — clamped to {start}">Blocked by {by} — clamped to {start}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000556" trl="N">
+  <value column="MsgText" original="Not editable — no schedule task on this bar">Not editable — no schedule task on this bar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000557" trl="N">
+  <value column="MsgText" original="Move {n} bars  {d}d">Move {n} bars  {d}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000558" trl="N">
+  <value column="MsgText" original="Move">Move</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000559" trl="N">
+  <value column="MsgText" original="Resize">Resize</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000560" trl="N">
+  <value column="MsgText" original="Rejected: {reason}">Rejected: {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000561" trl="N">
+  <value column="MsgText" original="unknown">unknown</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000562" trl="N">
+  <value column="MsgText" original="Clamped to {start} by {by}">Clamped to {start} by {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000563" trl="N">
+  <value column="MsgText" original="Applied · {n} successor(s) cascaded">Applied · {n} successor(s) cascaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000564" trl="N">
+  <value column="MsgText" original="Nothing to undo">Nothing to undo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000565" trl="N">
+  <value column="MsgText" original="Undone: {mode} {task}">Undone: {mode} {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000566" trl="N">
+  <value column="MsgText" original="No schedule to baseline yet — generate a 4D schedule first">No schedule to baseline yet — generate a 4D schedule first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000567" trl="N">
+  <value column="MsgText" original="Baseline set — {n} tasks">Baseline set — {n} tasks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000568" trl="N">
+  <value column="MsgText" original="Not available">Not available</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000569" trl="N">
+  <value column="MsgText" original="Cannot compress — {reason}">Cannot compress — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000570" trl="N">
+  <value column="MsgText" original="no schedule">no schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000571" trl="N">
+  <value column="MsgText" original="Nothing to compress — schedule is already at earliest float">Nothing to compress — schedule is already at earliest float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000572" trl="N">
+  <value column="MsgText" original="Compressed 1 task">Compressed 1 task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000573" trl="N">
+  <value column="MsgText" original="Compressed {n} tasks">Compressed {n} tasks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000574" trl="N">
+  <value column="MsgText" original="project finish moved up 1 day">project finish moved up 1 day</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000575" trl="N">
+  <value column="MsgText" original="project finish moved up {d} days">project finish moved up {d} days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000576" trl="N">
+  <value column="MsgText" original="project finish unchanged (internal float closed)">project finish unchanged (internal float closed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000577" trl="N">
+  <value column="MsgText" original="Cannot shift — {reason}">Cannot shift — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000578" trl="N">
+  <value column="MsgText" original="Cannot move group — {reason}">Cannot move group — {reason}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000579" trl="N">
+  <value column="MsgText" original="Cannot edit — no real dates found for this task">Cannot edit — no real dates found for this task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000580" trl="N">
+  <value column="MsgText" original="Could not generate a schedule">Could not generate a schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000581" trl="N">
+  <value column="MsgText" original="Schedule generated — refreshing…">Schedule generated — refreshing…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000582" trl="N">
+  <value column="MsgText" original="Linked: {pred}  →  {succ}">Linked: {pred}  →  {succ}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000583" trl="N">
+  <value column="MsgText" original="Refused — that link would create a cycle">Refused — that link would create a cycle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000584" trl="N">
+  <value column="MsgText" original="Linked, but {task} clamped to {start} — blocked by {by}">Linked, but {task} clamped to {start} — blocked by {by}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000585" trl="N">
+  <value column="MsgText" original="Verifying integrity…">Verifying integrity…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000586" trl="N">
+  <value column="MsgText" original="⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again">⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000587" trl="N">
+  <value column="MsgText" original="+{n} floating">+{n} floating</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000588" trl="N">
+  <value column="MsgText" original="+{n} hanging in midair">+{n} hanging in midair</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000589" trl="N">
+  <value column="MsgText" original="No schedule available">No schedule available</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000590" trl="N">
+  <value column="MsgText" original="critical">critical</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000591" trl="N">
+  <value column="MsgText" original="with float">with float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000592" trl="N">
+  <value column="MsgText" original="Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.&#10;Project duration {pf}d · total float {minF}..{maxF}d.&#10;CPM reads the dates the drag produced — it never changes one.">Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.
+Project duration {pf}d · total float {minF}..{maxF}d.
+CPM reads the dates the drag produced — it never changes one.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000593" trl="N">
+  <value column="MsgText" original="← after">← after</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000594" trl="N">
+  <value column="MsgText" original="→ before">→ before</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000595" trl="N">
+  <value column="MsgText" original="unlink">unlink</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000596" trl="N">
+  <value column="MsgText" original="no dependencies">no dependencies</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000597" trl="N">
+  <value column="MsgText" original="{n} elements · {task}">{n} elements · {task}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000598" trl="N">
+  <value column="MsgText" original="CRITICAL PATH · zero float">CRITICAL PATH · zero float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000599" trl="N">
+  <value column="MsgText" original="Total float {n}d">Total float {n}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000600" trl="N">
+  <value column="MsgText" original="(CPM, dates unchanged)">(CPM, dates unchanged)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000601" trl="N">
+  <value column="MsgText" original="Start">Start</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000602" trl="N">
+  <value column="MsgText" original="Finish">Finish</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000603" trl="N">
+  <value column="MsgText" original="Dependencies">Dependencies</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000604" trl="N">
+  <value column="MsgText" original="Apply">Apply</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000605" trl="N">
+  <value column="MsgText" original="Budget vs Actual">Budget vs Actual</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000606" trl="N">
+  <value column="MsgText" original="Reading records…">Reading records…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000607" trl="N">
+  <value column="MsgText" original="No project records for this model">No project records for this model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000608" trl="N">
+  <value column="MsgText" original="from records">from records</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000609" trl="N">
+  <value column="MsgText" original="Cost">Cost</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000610" trl="N">
+  <value column="MsgText" original="Schedule">Schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000611" trl="N">
+  <value column="MsgText" original="(planned baseline)">(planned baseline)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000612" trl="N">
+  <value column="MsgText" original="Projected finish">Projected finish</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000613" trl="N">
+  <value column="MsgText" original="projected from cost">projected from cost</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000614" trl="N">
+  <value column="MsgText" original="forecast">forecast</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000615" trl="N">
+  <value column="MsgText" original="cost · from records">cost · from records</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000616" trl="N">
+  <value column="MsgText" original="Recording in progress — import refused">Recording in progress — import refused</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000617" trl="N">
+  <value column="MsgText" original="Interop module not loaded — reopen the P6/MSP section">Interop module not loaded — reopen the P6/MSP section</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000618" trl="N">
+  <value column="MsgText" original="Interop modules failed to load: {err}">Interop modules failed to load: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000619" trl="N">
+  <value column="MsgText" original="No model open yet">No model open yet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000620" trl="N">
+  <value column="MsgText" original="Imported {format} &quot;{file}&quot; — {wbs} WBS / {acts} activities / {links} links.">Imported {format} "{file}" — {wbs} WBS / {acts} activities / {links} links.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000621" trl="N">
+  <value column="MsgText" original="Pre-bound {n} elements across {a} activities by convention">Pre-bound {n} elements across {a} activities by convention</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000622" trl="N">
+  <value column="MsgText" original="({n} selector(s) matched nothing — review)">({n} selector(s) matched nothing — review)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000623" trl="N">
+  <value column="MsgText" original="({n} activities carry a bind token — tick auto-bind to resolve.)">({n} activities carry a bind token — tick auto-bind to resolve.)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000624" trl="N">
+  <value column="MsgText" original="Import failed: {err}">Import failed: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000625" trl="N">
+  <value column="MsgText" original="No schedule to export">No schedule to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000626" trl="N">
+  <value column="MsgText" original="No tasks to export">No tasks to export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000627" trl="N">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to MS Project XML ({file}).">Exported {n} tasks / {m} links to MS Project XML ({file}).</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000628" trl="N">
+  <value column="MsgText" original="Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000629" trl="N">
+  <value column="MsgText" original="No schedule loaded">No schedule loaded</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000630" trl="N">
+  <value column="MsgText" original="Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.">Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000631" trl="N">
+  <value column="MsgText" original="Computing schedule diff…">Computing schedule diff…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000632" trl="N">
+  <value column="MsgText" original="Diff failed: {err}">Diff failed: {err}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000633" trl="N">
+  <value column="MsgText" original="theirs {a}d vs ours {b}d">theirs {a}d vs ours {b}d</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000634" trl="N">
+  <value column="MsgText" original="{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED">{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000635" trl="N">
+  <value column="MsgText" original="4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.">4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000636" trl="N">
+  <value column="MsgText" original="What-if schedule">What-if schedule</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000637" trl="N">
+  <value column="MsgText" original="Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.">Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000638" trl="N">
+  <value column="MsgText" original="Accept — re-baseline">Accept — re-baseline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000639" trl="N">
+  <value column="MsgText" original="Discard">Discard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000640" trl="N">
+  <value column="MsgText" original="Official (planned)">Official (planned)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000641" trl="N">
+  <value column="MsgText" original="What-if (blue ripple)">What-if (blue ripple)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000642" trl="N">
+  <value column="MsgText" original="Finish:">Finish:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000643" trl="N">
+  <value column="MsgText" original="BAC:">BAC:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000644" trl="N">
+  <value column="MsgText" original="(unchanged — same scope)">(unchanged — same scope)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000645" trl="N">
+  <value column="MsgText" original="PV @ finish:">PV @ finish:</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000646" trl="N">
+  <value column="MsgText" original="drag to slip · official {a}→{b}">drag to slip · official {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000647" trl="N">
+  <value column="MsgText" original="blue {a}→{b}">blue {a}→{b}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000648" trl="N">
+  <value column="MsgText" original="pull in 7 days">pull in 7 days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000649" trl="N">
+  <value column="MsgText" original="slip out 7 days">slip out 7 days</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000650" trl="N">
+  <value column="MsgText" original="What-if accepted — schedule re-baselined (finish +{d}d)">What-if accepted — schedule re-baselined (finish +{d}d)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000651" trl="N">
+  <value column="MsgText" original="What-if discarded — official schedule restored">What-if discarded — official schedule restored</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000652" trl="N">
+  <value column="MsgText" original="What-if: ERP engine not ready">What-if: ERP engine not ready</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000653" trl="N">
+  <value column="MsgText" original="What-if: no folded project yet — push one to ERP first">What-if: no folded project yet — push one to ERP first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000654" trl="N">
+  <value column="MsgText" original="Project {id}">Project {id}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000655" trl="N">
+  <value column="MsgText" original="Downloading {name}... {pct}% ({a}/{b}MB)">Downloading {name}... {pct}% ({a}/{b}MB)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000656" trl="N">
+  <value column="MsgText" original="Cost variance">Cost variance</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000657" trl="N">
+  <value column="MsgText" original="· from records">· from records</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000658" trl="N">
+  <value column="MsgText" original="match">match</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000659" trl="N">
+  <value column="MsgText" original="matches">matches</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000660" trl="N">
+  <value column="MsgText" original="planned">planned</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000661" trl="N">
+  <value column="MsgText" original="Phase">Phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000662" trl="N">
+  <value column="MsgText" original="Project">Project</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000663" trl="N">
+  <value column="MsgText" original="⏱ View at this moment">⏱ View at this moment</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000664" trl="N">
+  <value column="MsgText" original="Construction window">Construction window</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000665" trl="N">
+  <value column="MsgText" original="Not yet assigned to a dated task in &quot;{name}&quot;.">Not yet assigned to a dated task in "{name}".</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000666" trl="N">
+  <value column="MsgText" original="Which schedule this window comes from">Which schedule this window comes from</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000667" trl="N">
+  <value column="MsgText" original="Task">Task</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000668" trl="N">
+  <value column="MsgText" original="Window">Window</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000669" trl="N">
+  <value column="MsgText" original="Trade">Trade</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000670" trl="N">
+  <value column="MsgText" original="Float">Float</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000671" trl="N">
+  <value column="MsgText" original="(critical path)">(critical path)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000672" trl="N">
+  <value column="MsgText" original="Type a command...">Type a command...</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000673" trl="N">
+  <value column="MsgText" original="Zoom In">Zoom In</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000674" trl="N">
+  <value column="MsgText" original="Zoom Out">Zoom Out</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000675" trl="N">
+  <value column="MsgText" original="MaxQ Movie">MaxQ Movie</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000676" trl="N">
+  <value column="MsgText" original="Populate (people + trees)">Populate (people + trees)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000677" trl="N">
+  <value column="MsgText" original="Hover Name">Hover Name</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000678" trl="N">
+  <value column="MsgText" original="Installed ✔">Installed ✔</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000679" trl="N">
+  <value column="MsgText" original="Download · Run Offline">Download · Run Offline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000680" trl="N">
+  <value column="MsgText" original="Viewer User Guide">Viewer User Guide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000681" trl="N">
+  <value column="MsgText" original="Save the open building to a .db file">Save the open building to a .db file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000682" trl="N">
+  <value column="MsgText" original="Native Save As… dialog — pick name + folder">Native Save As… dialog — pick name + folder</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000683" trl="N">
+  <value column="MsgText" original="Re-openable with Open (Ctrl+O)">Re-openable with Open (Ctrl+O)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000684" trl="N">
+  <value column="MsgText" original="Open a saved .db file">Open a saved .db file</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000685" trl="N">
+  <value column="MsgText" original="Native Open… dialog">Native Open… dialog</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000686" trl="N">
+  <value column="MsgText" original="Replaces the current scene">Replaces the current scene</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000687" trl="N">
+  <value column="MsgText" original="Search by name/class">Search by name/class</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000688" trl="N">
+  <value column="MsgText" original="Filter by storey/type">Filter by storey/type</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000689" trl="N">
+  <value column="MsgText" original="Voice search (mic)">Voice search (mic)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000690" trl="N">
+  <value column="MsgText" original="Navigate to element">Navigate to element</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000691" trl="N">
+  <value column="MsgText" original="Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)">Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000692" trl="N">
+  <value column="MsgText" original="Filters the 3D scene + Outliner to that role's disciplines">Filters the 3D scene + Outliner to that role's disciplines</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000693" trl="N">
+  <value column="MsgText" original="Convenience filter only — not access control">Convenience filter only — not access control</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000694" trl="N">
+  <value column="MsgText" original="History across ALL pages — viewer, iDempiere, Gravity">History across ALL pages — viewer, iDempiere, Gravity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000695" trl="N">
+  <value column="MsgText" original="Whole | This page toggle">Whole | This page toggle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000696" trl="N">
+  <value column="MsgText" original="Day strip — step back/forward by day">Day strip — step back/forward by day</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000697" trl="N">
+  <value column="MsgText" original="Tap a card to jump to that building/doc">Tap a card to jump to that building/doc</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000698" trl="N">
+  <value column="MsgText" original="Long-press → clear (bomb), warns first">Long-press → clear (bomb), warns first</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000699" trl="N">
+  <value column="MsgText" original="This page's own dot timeline">This page's own dot timeline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000700" trl="N">
+  <value column="MsgText" original="Step back/forward through your edits">Step back/forward through your edits</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000701" trl="N">
+  <value column="MsgText" original="Route over locators (walk order)">Route over locators (walk order)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000702" trl="N">
+  <value column="MsgText" original="Fly-to next bin, FIND-lens depth">Fly-to next bin, FIND-lens depth</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000703" trl="N">
+  <value column="MsgText" original="Scan bin QR / type code">Scan bin QR / type code</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000704" trl="N">
+  <value column="MsgText" original="Signed pick group per bin">Signed pick group per bin</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000705" trl="N">
+  <value column="MsgText" original="Operate-phase (7D) cockpit — one model, lenses each answering ONE question">Operate-phase (7D) cockpit — one model, lenses each answering ONE question</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000706" trl="N">
+  <value column="MsgText" original="Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard">Occupancy (incl. lease status) · Presence · Unit class · Assets/IoT · Dashboard</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000707" trl="N">
+  <value column="MsgText" original="Wake-aware: only lenses with data in THIS building are enabled (others greyed)">Wake-aware: only lenses with data in THIS building are enabled (others greyed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000708" trl="N">
+  <value column="MsgText" original="All off one signed op-log; toggle a lens off restores the model">All off one signed op-log; toggle a lens off restores the model</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000709" trl="N">
+  <value column="MsgText" original="Discipline pair grid">Discipline pair grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000710" trl="N">
+  <value column="MsgText" original="Tolerance 1–100mm">Tolerance 1–100mm</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000711" trl="N">
+  <value column="MsgText" original="Status: Review/Resolve/Accept">Status: Review/Resolve/Accept</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000712" trl="N">
+  <value column="MsgText" original="HTML Report + CSV export">HTML Report + CSV export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000713" trl="N">
+  <value column="MsgText" original="Floating Member (STR beams)">Floating Member (STR beams)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000714" trl="N">
+  <value column="MsgText" original="Span/Depth (advisory)">Span/Depth (advisory)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000715" trl="N">
+  <value column="MsgText" original="Column Continuity">Column Continuity</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000716" trl="N">
+  <value column="MsgText" original="Isolated Room (no measured route out)">Isolated Room (no measured route out)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000717" trl="N">
+  <value column="MsgText" original="Circulation Distance (to real exit, falls back to spine)">Circulation Distance (to real exit, falls back to spine)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000718" trl="N">
+  <value column="MsgText" original="Door Width (advisory)">Door Width (advisory)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000719" trl="N">
+  <value column="MsgText" original="Gantt timeline">Gantt timeline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000720" trl="N">
+  <value column="MsgText" original="Author 4D schedule (✎)">Author 4D schedule (✎)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000721" trl="N">
+  <value column="MsgText" original="What-if (slip a phase)">What-if (slip a phase)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000722" trl="N">
+  <value column="MsgText" original="Play / Pause sequence">Play / Pause sequence</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000723" trl="N">
+  <value column="MsgText" original="Phase slider">Phase slider</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000724" trl="N">
+  <value column="MsgText" original="Share ?tm=play link">Share ?tm=play link</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000725" trl="N">
+  <value column="MsgText" original="Task name + start→finish beside the picked element">Task name + start→finish beside the picked element</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000726" trl="N">
+  <value column="MsgText" original="Trade + float, critical-path marker">Trade + float, critical-path marker</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000727" trl="N">
+  <value column="MsgText" original="One extra line on hover">One extra line on hover</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000728" trl="N">
+  <value column="MsgText" original="No schedule yet? Tap to generate one on the fly">No schedule yet? Tap to generate one on the fly</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000729" trl="N">
+  <value column="MsgText" original="Y axis (vertical)">Y axis (vertical)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000730" trl="N">
+  <value column="MsgText" original="X axis (lateral)">X axis (lateral)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000731" trl="N">
+  <value column="MsgText" original="Z axis (depth)">Z axis (depth)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000732" trl="N">
+  <value column="MsgText" original="Slider 0–100%">Slider 0–100%</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000733" trl="N">
+  <value column="MsgText" original="Bookmarks">Bookmarks</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000734" trl="N">
+  <value column="MsgText" original="Ambience 0–100">Ambience 0–100</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000735" trl="N">
+  <value column="MsgText" original="Sun 0–5">Sun 0–5</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000736" trl="N">
+  <value column="MsgText" original="Exposure 0.1–3">Exposure 0.1–3</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000737" trl="N">
+  <value column="MsgText" original="Ambient 0–2">Ambient 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000738" trl="N">
+  <value column="MsgText" original="Hemisphere 0–2">Hemisphere 0–2</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000739" trl="N">
+  <value column="MsgText" original="Night">Night</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000740" trl="N">
+  <value column="MsgText" original="Shadow + Ground (cycle)">Shadow + Ground (cycle)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000741" trl="N">
+  <value column="MsgText" original="Reverse background">Reverse background</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000742" trl="N">
+  <value column="MsgText" original="Sound FX">Sound FX</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000743" trl="N">
+  <value column="MsgText" original="Boxes far/off-screen elements while you fly/orbit">Boxes far/off-screen elements while you fly/orbit</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000744" trl="N">
+  <value column="MsgText" original="Real mesh within 50 m + in view">Real mesh within 50 m + in view</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000745" trl="N">
+  <value column="MsgText" original="Off during Time Machine, Find isolate, Cinema">Off during Time Machine, Find isolate, Cinema</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000746" trl="N">
+  <value column="MsgText" original="Snag photo + annotation">Snag photo + annotation</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000747" trl="N">
+  <value column="MsgText" original="Fly to clash deep-link">Fly to clash deep-link</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000748" trl="N">
+  <value column="MsgText" original="Export Excel">Export Excel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000749" trl="N">
+  <value column="MsgText" original="Time Machine: earcon per construction phase">Time Machine: earcon per construction phase</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000750" trl="N">
+  <value column="MsgText" original="Fly Tour: positional waypoint cues">Fly Tour: positional waypoint cues</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000751" trl="N">
+  <value column="MsgText" original="UI: soft tap tick">UI: soft tap tick</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000752" trl="N">
+  <value column="MsgText" original="Synthesized — no audio files, default OFF">Synthesized — no audio files, default OFF</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000753" trl="N">
+  <value column="MsgText" original="Iso">Iso</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000754" trl="N">
+  <value column="MsgText" original="Move Grid">Move Grid</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000755" trl="N">
+  <value column="MsgText" original="Drag Item">Drag Item</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000756" trl="N">
+  <value column="MsgText" original="Sketch">Sketch</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000757" trl="N">
+  <value column="MsgText" original="Extrude">Extrude</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000758" trl="N">
+  <value column="MsgText" original="Axis">Axis</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000759" trl="N">
+  <value column="MsgText" original="Cut">Cut</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000760" trl="N">
+  <value column="MsgText" original="Route">Route</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000761" trl="N">
+  <value column="MsgText" original="Sweep Run">Sweep Run</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000762" trl="N">
+  <value column="MsgText" original="Fillet">Fillet</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000763" trl="N">
+  <value column="MsgText" original="Insert">Insert</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000764" trl="N">
+  <value column="MsgText" original="History">History</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000765" trl="N">
+  <value column="MsgText" original="Guide">Guide</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000766" trl="N">
+  <value column="MsgText" original="Delete">Delete</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000767" trl="N">
+  <value column="MsgText" original="Sound">Sound</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000768" trl="N">
+  <value column="MsgText" original="Connect">Connect</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000769" trl="N">
+  <value column="MsgText" original="Teams">Teams</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000770" trl="N">
+  <value column="MsgText" original="X-ray">X-ray</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000771" trl="N">
+  <value column="MsgText" original="history">history</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000772" trl="N">
+  <value column="MsgText" original="OUTLINER">OUTLINER</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000773" trl="N">
+  <value column="MsgText" original="BOM Tree">BOM Tree</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000774" trl="N">
+  <value column="MsgText" original="STR Walker">STR Walker</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000775" trl="N">
+  <value column="MsgText" original="Open a resident (▾) or local .db (🏗) to walk">Open a resident (▾) or local .db (🏗) to walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000776" trl="N">
+  <value column="MsgText" original="Walls">Walls</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000777" trl="N">
+  <value column="MsgText" original="Openings">Openings</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000778" trl="N">
+  <value column="MsgText" original="Routes">Routes</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000779" trl="N">
+  <value column="MsgText" original="Fillets">Fillets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000780" trl="N">
+  <value column="MsgText" original="Grid Moves">Grid Moves</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000781" trl="N">
+  <value column="MsgText" original="Arrays">Arrays</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000782" trl="N">
+  <value column="MsgText" original="Lofts">Lofts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000783" trl="N">
+  <value column="MsgText" original="Revolves">Revolves</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000784" trl="N">
+  <value column="MsgText" original="Shells">Shells</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000785" trl="N">
+  <value column="MsgText" original="Offsets">Offsets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000786" trl="N">
+  <value column="MsgText" original="Var. Fillets">Var. Fillets</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000787" trl="N">
+  <value column="MsgText" original="Chamfers∠">Chamfers∠</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000788" trl="N">
+  <value column="MsgText" original="Drafts">Drafts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000789" trl="N">
+  <value column="MsgText" original="Components">Components</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000790" trl="N">
+  <value column="MsgText" original="{n} features">{n} features</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000791" trl="N">
+  <value column="MsgText" original="Help — toolbar &amp; shortcuts">Help — toolbar &amp; shortcuts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000792" trl="N">
+  <value column="MsgText" original="Back to the Matrix">Back to the Matrix</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000793" trl="N">
+  <value column="MsgText" original="Open a building — load a resident or a local .db → walk + bom-graph">Open a building — load a resident or a local .db → walk + bom-graph</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000794" trl="N">
+  <value column="MsgText" original="Zoom to fit (F) — frames the selection, or all">Zoom to fit (F) — frames the selection, or all</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000795" trl="N">
+  <value column="MsgText" original="Cycle view: Iso / Top">Cycle view: Iso / Top</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000796" trl="N">
+  <value column="MsgText" original="Drag a gridline — attached walls recompose">Drag a gridline — attached walls recompose</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000797" trl="N">
+  <value column="MsgText" original="Move the selected object — drag an axis handle or nudge with arrow keys (M)">Move the selected object — drag an axis handle or nudge with arrow keys (M)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000798" trl="N">
+  <value column="MsgText" original="Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)">Drag a fixture/fitting freely — gated by the real placement resolver (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000799" trl="N">
+  <value column="MsgText" original="Constraint intent the solver enforces on the sketch">Constraint intent the solver enforces on the sketch</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000800" trl="N">
+  <value column="MsgText" original="Sweep a profile along a route (MEP run)">Sweep a profile along a route (MEP run)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000801" trl="N">
+  <value column="MsgText" original="Round a selected solid's picked edges">Round a selected solid's picked edges</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000802" trl="N">
+  <value column="MsgText" original="Insert a library component (assemble, don't draw)">Insert a library component (assemble, don't draw)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000803" trl="N">
+  <value column="MsgText" original="Refine the selected component's level of detail (same signed row)">Refine the selected component's level of detail (same signed row)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000804" trl="N">
+  <value column="MsgText" original="Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue">Export — Native .db (full fidelity: the signed op-log), IFC4, or a BCF 2.1 issue</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000805" trl="N">
+  <value column="MsgText" original="Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)">Save — clash-check + auto-heal, then write a physical-DB snapshot (blocks on residual RED)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000806" trl="N">
+  <value column="MsgText" original="World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)">World History: cross-page timeline (Viewer, iDempiere, Gravity, Modeller)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000807" trl="N">
+  <value column="MsgText" original="Modeller User Guide — how to Open, walk, edit &amp; export">Modeller User Guide — how to Open, walk, edit &amp; export</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000808" trl="N">
+  <value column="MsgText" original="Delete selected (Del)">Delete selected (Del)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000809" trl="N">
+  <value column="MsgText" original="Authoring sound feedback">Authoring sound feedback</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000810" trl="N">
+  <value column="MsgText" original="Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)">Connect Scene — share selection/timeline with the Viewer &amp; ERP (opt-in; surfaces stay separate)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000811" trl="N">
+  <value column="MsgText" original="Teams — who's on this scene (presence &amp; activity). Click to enable.">Teams — who's on this scene (presence &amp; activity). Click to enable.</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000812" trl="N">
+  <value column="MsgText" original="X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours">X-ray reveal (X) — structure goes glass so the routed MEP systems glow through in their discipline colours</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000813" trl="N">
+  <value column="MsgText" original="Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)">Move/nudge step (m) — arrow keys move the selection by this (Shift ×10, Alt ÷10)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000814" trl="N">
+  <value column="MsgText" original="Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)">Rotate by typed degrees — Enter commits one signed GEOM_ROTATE (drag-only before §P6)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000815" trl="N">
+  <value column="MsgText" original="Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)">Scale by typed axis+factor (x1.5, y2, z0.5) — Enter commits one signed GEOM_SCALE (single component only, like the cube handles)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000816" trl="N">
+  <value column="MsgText" original="Wall height / extrude depth (m)">Wall height / extrude depth (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000817" trl="N">
+  <value column="MsgText" original="Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style">Sketch width (m) — Enter re-solves the whole rect/square, drag-one-dimension style</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000818" trl="N">
+  <value column="MsgText" original="Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style">Sketch height (m) — Enter re-solves the whole rect/square, drag-one-dimension style</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000819" trl="N">
+  <value column="MsgText" original="Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle">Sketch corner angle (°, default 90) — Enter re-solves as a parallelogram at the typed angle</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000820" trl="N">
+  <value column="MsgText" original="Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)">Circle radius (m) — Enter sets the radius exactly (commits a pending centre, or edits the latest circle)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000821" trl="N">
+  <value column="MsgText" original="Sweep profile size w×h (m)">Sweep profile size w×h (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000822" trl="N">
+  <value column="MsgText" original="Fillet / chamfer radius (m)">Fillet / chamfer radius (m)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000823" trl="N">
+  <value column="MsgText" original="History — ‹ older · newer › (click a dot to jump · ←/→ when focused)">History — ‹ older · newer › (click a dot to jump · ←/→ when focused)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000824" trl="N">
+  <value column="MsgText" original="Older (←)">Older (←)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000825" trl="N">
+  <value column="MsgText" original="Newer (→)">Newer (→)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000826" trl="N">
+  <value column="MsgText" original="Collapse panel">Collapse panel</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000827" trl="N">
+  <value column="MsgText" original="Collapse all — fold the tree to its top-level trunk">Collapse all — fold the tree to its top-level trunk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000828" trl="N">
+  <value column="MsgText" original="Adjacency lens — highlight a selected element’s abutting neighbours">Adjacency lens — highlight a selected element’s abutting neighbours</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000829" trl="N">
+  <value column="MsgText" original="double-click: collapse all">double-click: collapse all</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000830" trl="N">
+  <value column="MsgText" original="Toolbar">Toolbar</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000831" trl="N">
+  <value column="MsgText" original="Show Outliner">Show Outliner</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000832" trl="N">
+  <value column="MsgText" original="🔍 find…">🔍 find…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000833" trl="N">
+  <value column="MsgText" original="TOOLBAR · PILL REGISTRY">TOOLBAR · PILL REGISTRY</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000834" trl="N">
+  <value column="MsgText" original="KEYBOARD">KEYBOARD</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000835" trl="N">
+  <value column="MsgText" original="Redo">Redo</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000836" trl="N">
+  <value column="MsgText" original="Cancel current mode">Cancel current mode</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000837" trl="N">
+  <value column="MsgText" original="Snap-to-geometry on/off (while moving)">Snap-to-geometry on/off (while moving)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000838" trl="N">
+  <value column="MsgText" original="Arm rotate ring (turn, in Move)">Arm rotate ring (turn, in Move)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000839" trl="N">
+  <value column="MsgText" original="Arm scale cubes (in Move)">Arm scale cubes (in Move)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000840" trl="N">
+  <value column="MsgText" original="OPEN A BUILDING">OPEN A BUILDING</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000841" trl="N">
+  <value column="MsgText" original="FROM IFC (ARC only)">FROM IFC (ARC only)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000842" trl="N">
+  <value column="MsgText" original="Open local .db / .ifc…">Open local .db / .ifc…</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000843" trl="N">
+  <value column="MsgText" original="Not extracted — walk from duplex_rules.db">Not extracted — walk from duplex_rules.db</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000844" trl="N">
+  <value column="MsgText" original="▶▶ Walk ALL Services">▶▶ Walk ALL Services</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000845" trl="N">
+  <value column="MsgText" original="{n} services not extracted · x-ray reveal">{n} services not extracted · x-ray reveal</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000846" trl="N">
+  <value column="MsgText" original="▶ walk">▶ walk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000847" trl="N">
+  <value column="MsgText" original="{n} columns">{n} columns</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000848" trl="N">
+  <value column="MsgText" original="{n} girders">{n} girders</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000849" trl="N">
+  <value column="MsgText" original="RED {r} · ORANGE {o} · GREEN {g}">RED {r} · ORANGE {o} · GREEN {g}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000850" trl="N">
+  <value column="MsgText" original="Confidence {p}% mean">Confidence {p}% mean</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000851" trl="N">
+  <value column="MsgText" original="✓ all girders ≥80% (oracle-calibrated)">✓ all girders ≥80% (oracle-calibrated)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000852" trl="N">
+  <value column="MsgText" original="Building Parts">Building Parts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000853" trl="N">
+  <value column="MsgText" original="Route trunk · from entry (seed)">Route trunk · from entry (seed)</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000854" trl="N">
+  <value column="MsgText" original="walk a discipline first, then route its trunk">walk a discipline first, then route its trunk</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000855" trl="N">
+  <value column="MsgText" original="{n} features 🔒 {h}">{n} features 🔒 {h}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000856" trl="N">
+  <value column="MsgText" original="Opened {name}">Opened {name}</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000857" trl="N">
+  <value column="MsgText" original="hide in 3D">hide in 3D</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000858" trl="N">
+  <value column="MsgText" original="Move this room — drag on canvas after grabbing">Move this room — drag on canvas after grabbing</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000859" trl="N">
+  <value column="MsgText" original="Walk this discipline">Walk this discipline</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000860" trl="N">
+  <value column="MsgText" original="Walk ALL services">Walk ALL services</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000861" trl="N">
+  <value column="MsgText" original="ERP ▸ Project Order">ERP ▸ Project Order</value>
+  <value column="MsgTip" original=""/>
+ </row>
+ <row id="1000862" trl="N">
+  <value column="MsgText" original="Read / generate / open the ERP Project Order of the selected parts">Read / generate / open the ERP Project Order of the selected parts</value>
+  <value column="MsgTip" original=""/>
+ </row>
+</idempiereTrl>

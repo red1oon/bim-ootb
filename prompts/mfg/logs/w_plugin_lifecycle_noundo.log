@@ -1,0 +1,27 @@
+§PLG-LOAD break=noundo baseline hash=27f4ccb7 bytes=742 coreModels=1 (core registry is real: model_trade, model_order, BOMVerify, CalloutOrder, default validators)
+  §PLG P1 install: registry dump unchanged (INSTALLED has no behaviour) PASS
+§PLG-P2 contributions live: model=true overridesCore=true coreHooksKept=true doc=true validator=true process=true callout=true docClass=true token=true dictActive=true dictInserted=true budget=true | dump changed=true
+  §PLG P2 start: every contribution is live (model hook, core-hook override, doc action, validators incl. hot chunk, process, callout, posting class, token, dictionary rows, budget) PASS
+§PLG-P3 after stop: hash b7b3df31 baseline 27f4ccb7 LEFTOVER in: core,layers | core c_order.beforeSave restored identically=false
+  §PLG P3 stop: the canonical dump of every registry (+tokens, +dictionary rows) equals the baseline; the core hook is the very same function again FAIL {"leftover":["core","layers"]}
+  §PLG P4 second start/stop cycle: identical live dump to the first start, baseline again after stop FAIL {"first":"893a13c3","second":"f3af473f"}
+§PLG-P5 B over A over core: {"both":true,"coreOverride":true,"doc":true} | stop B -> {"a":false,"coreA":false,"doc":false,"token":true} | stop A -> hash 15909908 | other order (stop A first): B still fully effective (hook, shared dictionary rows kept, B token, A rows gone)=true final hash 7bafca3
+  §PLG P5 stacking: latest/highest layer wins; stopping B restores A, stopping A restores core; either stop order ends at the baseline FAIL {"eff":{"both":true,"coreOverride":true,"doc":true},"afterB":{"a":false,"coreA":false,"doc":false,"token":true},"d5":"15909908","mid":true}
+§PLG-P6 f1(activate throws half-way)=activate F1 failed half-way state=INSTALLED | f2(hot chunk throws)=hot chunk F2 failed state=INSTALLED | hash 7c95f361
+  §PLG P6 failing start is atomic: error propagated, state INSTALLED, dump == baseline (half-made contributions undone), for a throw in activate AND in a hot chunk FAIL {"r6":{"f1":"activate F1 failed half-way","f2":"hot chunk F2 failed"}}
+§PLG-P7 saved=com.test.a:ACTIVE com.test.b:STOPPED com.test.f1:INSTALLED com.test.f2:INSTALLED -> restored states {"com.test.a":"ACTIVE","com.test.b":"INSTALLED","com.test.f1":"INSTALLED","com.test.f2":"INSTALLED"} started=com.test.a failed=0
+  §PLG P7 restore: ACTIVE bundles are re-activated (A), STOPPED/INSTALLED ones are only installed; live again == first start FAIL {"st2":{"com.test.a":"ACTIVE","com.test.b":"INSTALLED","com.test.f1":"INSTALLED","com.test.f2":"INSTALLED"},"rr":{"started":["com.test.a"],"failed":[]}}
+§PLG-P9 lazy start: {"state":"STARTING","calls":0,"same":false,"op":true}
+  §PLG P9 lazy start = STARTING: the bundle code was NOT activated (0 calls), hooks not live, registry dump == baseline, PLUGIN_START logged FAIL {"state":"STARTING","calls":0,"same":false,"op":true}
+  §PLG P11 demand on a table/process that is not a trigger activates nothing (still STARTING) PASS
+§PLG-P10 first demand (C_Order, case-insensitive): {"hit":["com.test.l"],"state":"ACTIVE","calls":1,"live":true,"op":true,"changed":true}
+  §PLG P10 first demand on a trigger table activates it: ACTIVE, activated once, contributions live, signed PLUGIN_ACTIVATE logged PASS
+  §PLG P13a stop after on-demand activation restores the baseline hash FAIL {"now":"67deba36","base":"27f4ccb7"}
+  §PLG P12 concurrent demand (3 callers) activates the bundle exactly once and every caller resolves PASS
+  §PLG P13b stop while STARTING cancels it: never activated, state STOPPED, dump == baseline, a later demand does nothing FAIL {}
+  §PLG P14 the ADMIN policy override (eager) beats the manifest default (lazy): start activates immediately FAIL {"lpState":"ACTIVE","calls":1}
+  §PLG P15 a failing lazy activation is atomic: the demanding caller gets the error, state INSTALLED, dump == baseline FAIL {"lfErr":"activate LF failed half-way","state":"INSTALLED"}
+  §PLG P16 restore() brings a STARTING bundle back STARTING (not activated), and the next demand activates it PASS
+  §PLG P17 noteTouched: a run that touched a trigger table of a STARTING bundle is logged (§PLUGIN-LAZY-MISSED) and the bundle is activated for the next run PASS
+  §PLG P8 after the whole run every registry is at the baseline hash (nothing leaked across 9 start/stop operations) FAIL {"now":"fe6ce0e","base":"27f4ccb7"}
+§PLG-VERDICT FAIL break=noundo judged=18 failed=11 inconclusive=0

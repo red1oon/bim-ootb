@@ -9,27 +9,31 @@
   'use strict';
   const TAG = '§GRID';
 
-  function labelSprite(text, x, y) {
+  function labelSprite(text, x, y, z0) {
     const THREE = window.THREE;
     const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64;
     const cx = cv.getContext('2d'); cx.fillStyle = '#6fb0e8'; cx.font = 'bold 40px ui-monospace, monospace';
     cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(text, 32, 34);
     const tex = new THREE.CanvasTexture(cv);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-    sp.position.set(x, y, 0.02); sp.scale.set(0.6, 0.6, 1); return sp;
+    sp.position.set(x, y, (z0 || 0) + 0.02); sp.scale.set(0.6, 0.6, 1); return sp;
   }
 
   const Grid = {
     // xs/ys = gridline coordinates; xlabels/ylabels = their architectural refs (A.. / 1..).
-    xs: [], ys: [], xlabels: [], ylabels: [], active: false, _group: null, snapTol: 0.4,
+    xs: [], ys: [], xlabels: [], ylabels: [], active: false, _group: null, snapTol: 0.4, z: 0,   // z = the plane the grid is drawn/dragged on (0 = the sketch plane; a column-derived grid sits at the columns' foot — §GRID-SPAN-GATE)
 
     define(spec) {
-      spec = spec || {};
+      const given = !!spec; spec = spec || {};
       this.xs = spec.xs || [0, 4, 8, 12];
       this.ys = spec.ys || [0, 3, 6];
       this.xlabels = spec.xlabels || this.xs.map((_, i) => String.fromCharCode(65 + i));   // A,B,C…
       this.ylabels = spec.ylabels || this.ys.map((_, i) => String(i + 1));                  // 1,2,3…
       if (this.snapTol == null && spec.snapTol) this.snapTol = spec.snapTol;
+      this.z = (spec.z != null) ? spec.z : 0;
+      this._isDefault = !given;   // §GRID-SPAN-GATE: true only for the untouched no-arg default (modeller.html boot) — a user/witness-authored grid is never replaced
+      this._columnDerived = !!spec.columnDerived;            // §GRID-SPAN-GATE: lines were measured from the building's own columns (swbGridSpec)
+      this._baseXlabels = this.xlabels.slice(); this._baseYlabels = this.ylabels.slice();
       this._baseXs = this.xs.slice(); this._baseYs = this.ys.slice();   // immutable base — grid coords FOLD from this + active GEOM_GRID_MOVE deltas (M1)
       console.log(TAG + ' define xs=[' + this.xs + '] ys=[' + this.ys + '] labels=' + this.xlabels.join('') + '/' + this.ylabels.join(''));
       if (this._group) this.render();
@@ -44,18 +48,30 @@
       const O = window.Bonsai && window.Bonsai.oplog;
       if (!this._baseXs || !this._baseYs || !O || !O.db) return;
       const xs = this._baseXs.slice(), ys = this._baseYs.slice();
+      const xl = (this._baseXlabels || this.xlabels).slice(), yl = (this._baseYlabels || this.ylabels).slice();
       const ops = O._geomOps ? O._geomOps() : [];
       const upto = (typeof O.cursor === 'number') ? Math.min(O.cursor, ops.length) : ops.length;
+      const splitSeen = {};
       for (let i = 0; i < upto; i++) {
-        const op = ops[i]; if (!op || op.op_type !== 'GEOM_GRID_MOVE') continue;
-        const p = op.parameters || {}; const mm = /^g([xy])(\d+)$/.exec(p.gridId || '');
+        const op = ops[i]; if (!op) continue;
+        const p = op.parameters || {};
+        // §GRID-SPAN-GATE: "Add one more" lands a column line as GEOM_INSERT rows carrying params.spanSplit
+        // {id,axis,index,pos} — folded here IN OP ORDER so later gx/gy indices (recorded at their commit time) stay right.
+        if (op.op_type === 'GEOM_INSERT' && p.spanSplit) {
+          const sp = p.spanSplit; if (splitSeen[sp.id]) continue; splitSeen[sp.id] = 1;
+          const arr = sp.axis === 'x' ? xs : ys, lab = sp.axis === 'x' ? xl : yl;
+          if (sp.index >= 0 && sp.index <= arr.length) { arr.splice(sp.index, 0, sp.pos); lab.splice(sp.index, 0, (lab[sp.index - 1] || '') + '.5'); }
+          continue;
+        }
+        if (op.op_type !== 'GEOM_GRID_MOVE') continue;
+        const mm = /^g([xy])(\d+)$/.exec(p.gridId || '');
         if (!mm || !p.delta) continue;
         const arr = mm[1] === 'x' ? xs : ys, idx = +mm[2];
         if (idx >= 0 && idx < arr.length) arr[idx] += p.delta;
       }
       const changed = xs.length !== this.xs.length || ys.length !== this.ys.length ||
         xs.some((v, i) => v !== this.xs[i]) || ys.some((v, i) => v !== this.ys[i]);
-      this.xs = xs; this.ys = ys;
+      this.xs = xs; this.ys = ys; this.xlabels = xl; this.ylabels = yl;
       if (changed && this._group && this.active) this.render();   // only rebuild lines when a grid coord actually moved
     },
 
@@ -67,12 +83,12 @@
       const mat = new THREE.LineBasicMaterial({ color: 0x35506e });
       const x0 = this.xs[0], x1 = this.xs[this.xs.length - 1], y0 = this.ys[0], y1 = this.ys[this.ys.length - 1];
       this.xs.forEach((x, i) => {
-        this._group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y0, 0), new THREE.Vector3(x, y1, 0)]), mat));
-        this._group.add(labelSprite(this.xlabels[i], x, y0 - 0.6));
+        this._group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, y0, this.z), new THREE.Vector3(x, y1, this.z)]), mat));
+        this._group.add(labelSprite(this.xlabels[i], x, y0 - 0.6, this.z));
       });
       this.ys.forEach((y, j) => {
-        this._group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x0, y, 0), new THREE.Vector3(x1, y, 0)]), mat));
-        this._group.add(labelSprite(this.ylabels[j], x0 - 0.6, y));
+        this._group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x0, y, this.z), new THREE.Vector3(x1, y, this.z)]), mat));
+        this._group.add(labelSprite(this.ylabels[j], x0 - 0.6, y, this.z));
       });
       console.log(TAG + ' render lines=' + (this.xs.length + this.ys.length));
     },

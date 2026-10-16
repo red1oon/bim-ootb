@@ -4,6 +4,10 @@
 // typed arrays. The fold is the SAME code path proven by W-KERNEL-FOLD (build/kernel/spike.html).
 // occt needs WASM tail-calls => Chrome 114+/Safari 17.2+, NO Firefox (gated host-side in bonsai_kernel.js).
 import { OcctKernel } from './lib/kernel/index.js';
+// §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE's meaning — a classic triple-export
+// script evaluated here as a module (it binds `self.CutMove`; the main thread's <script> binds window.CutMove).
+import './cut_move.js?v=2';
+const CutMove = self.CutMove;
 
 let kernelPromise = null;
 let _wasmBytes = null;   // pre-fetched bytes handed in by the host (preload) → single download, no re-fetch
@@ -335,7 +339,7 @@ function faceMidpoints(kernel, solid) {
 // `hash` (op_hash that produced the current shape) keys the mesh cache. Cached shapes/inputs are NEVER released
 // here — the cache owns them (released only by clearCache). Only LOCAL intermediates (void box, edge subshapes)
 // are released. A cache MISS rebuilds via occt (and counts); a HIT skips occt entirely.
-function buildSolids(kernel, ops, seedBoxes) {
+function buildSolids(kernel, ops, seedBoxes, seedLayers) {
   const solids = new Map();
   // §CUT-ON-ARC (W-E2E-CUT): a seeded ARC wall is a baked GEOM_INSERT mesh, not a worker B-rep — so a GEOM_CUT/
   // GEOM_FILLET on it had no parent solid to subtract from (threw "parent not found"). The host PROMOTES a box-like
@@ -351,18 +355,91 @@ function buildSolids(kernel, ops, seedBoxes) {
       solids.set(+fid, { shape: box, hash: 'seedbox:' + fid + ':' + b.c1.join(',') + ':' + b.c2.join(',') });
     }
   }
+  // §LAYER-SOLID-SEED — Implementing CUT_GATE_CSG_SPEC.md §THE CALL — Witness: W-LAYER-SOLID-SEED /
+  // W-LAYER-CUT-EXACT. An insert whose real fold isn't an idealized box (a multi-layer authored wall) is
+  // seeded here from its REAL per-layer triangle ranges instead — one real OCCT solid per authored layer
+  // (buildTriFace, one call per triangle, then sewAndSolidify), fused (fuseAll) into ONE seed solid so the
+  // rest of this function (GEOM_CUT/FILLET/SHELL/…) treats it identically to a box seed, same Map key
+  // shape, same downstream real-B-rep chain — non-invent: every vertex is the extractor's own, nothing
+  // idealized/flattened. A layer that fails to sew into a closed solid REFUSES loudly (console.error) and
+  // leaves that featureId un-seeded — the existing GEOM_CUT/FILLET "parent … not found" throw is the same
+  // honest refuse a non-box, non-layered insert already produced before this change (never a silent box
+  // fallback for a real per-layer wall that partially fails).
+  if (seedLayers) {
+    for (const fid in seedLayers) {
+      const sl = seedLayers[fid];
+      const pos = sl.positions, idx = sl.indices, ranges = sl.layers || [];
+      const layerSolids = [];
+      let ok = true;
+      for (const lr of ranges) {
+        const faces = [];
+        const t0 = lr.start, t1 = lr.start + lr.count;
+        for (let t = t0; t < t1; t++) {
+          const i0 = idx[t * 3], i1 = idx[t * 3 + 1], i2 = idx[t * 3 + 2];
+          const a = { x: pos[i0 * 3], y: pos[i0 * 3 + 1], z: pos[i0 * 3 + 2] };
+          const b = { x: pos[i1 * 3], y: pos[i1 * 3 + 1], z: pos[i1 * 3 + 2] };
+          const c = { x: pos[i2 * 3], y: pos[i2 * 3 + 1], z: pos[i2 * 3 + 2] };
+          try { faces.push(kernel.buildTriFace(a, b, c)); } catch (e) { /* one degenerate tri — skip, sew tolerates a gap */ }
+        }
+        let solid = null;
+        if (faces.length) { try { solid = kernel.sewAndSolidify(faces, 1e-4); } catch (e) { solid = null; } }
+        faces.forEach(f => { try { kernel.release(f); } catch (e) { /* local intermediate */ } });
+        if (!solid) { ok = false; break; }
+        layerSolids.push(solid);
+      }
+      if (!ok || !layerSolids.length) {
+        layerSolids.forEach(s => { try { kernel.release(s); } catch (e) { } });
+        console.error('§LAYER-SOLID-SEED-REFUSE fid=' + fid + ' layers=' + ranges.length +
+          ' — a layer failed to sew into a closed solid, refusing to seed (no invented fallback)');
+        continue;
+      }
+      let combined = layerSolids[0];
+      if (layerSolids.length > 1) {
+        combined = kernel.fuseAll(layerSolids);
+        layerSolids.forEach(s => { try { kernel.release(s); } catch (e) { } });
+      }
+      solids.set(+fid, { shape: combined, hash: 'seedlayers:' + fid + ':' + ranges.length });
+    }
+  }
+  // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §2 — Witness: W-CUT-MOVE): a GEOM_CUT_MOVE {cutId, dx,dy,dz} is a pure
+  // FOLD OVERRIDE of an EARLIER GEOM_CUT's void (the signed row is never rewritten). Pre-scan THIS fold's rows → net
+  // shift per cutId (cut_move.js netShifts — rows naming a cut that is not active here are ignored, tolerant like
+  // GEOM_MOVE on a missing parent); the GEOM_CUT branch below subtracts `void + shift` at the cut's own position.
+  // CACHE: op_hash keys assume output = f(prefix); a cut-move is retroactive, so when any shift is non-zero EVERY key
+  // in this fold carries the fold's cut-move signature — one rebuild per distinct shift set, and a scrub/undo back to
+  // a prefix without the move hits the original (unsuffixed) keys. Zero cut-moves ⇒ keys byte-identical to before.
+  const cutMoves = CutMove.netOverrides(ops), cmKey = CutMove.keySuffix(cutMoves.sig);
   for (const op of ops) {
     const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-    const key = op.op_hash || ('nohash:' + op.id);    // op_hash = unique per immutable prefix → the cache key
+    const key = (op.op_hash || ('nohash:' + op.id)) + cmKey;    // op_hash = unique per immutable prefix → the cache key (+ §CUT-MOVE suffix)
     if (op.op_type === 'GEOM_CUT') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
-      const void_ = kernel.makeBoxFromCorners(v(P.void.c1), v(P.void.c2));
+      const ov = cutMoves.byCut[String(op.id)];
+      let vd = ov ? CutMove.applyOverrides(P.void, ov) : P.void;   // §CUT-MOVE/§CUT-RESIZE: the void at its net-overridden place
+      // §CUT-THROUGH (MODELLER_MASTER §SESSION 2026-09-30b — Witness: W-E2E-SLIDE-REAL E3): a void face FLUSH with the parent's
+      // bounding face (|Δ| < 0.1 mm — an authored IFC opening is exactly as deep as its wall; a door starts at the wall base)
+      // is pushed 1 cm OUTWARD before the boolean. The removed region INSIDE the parent is identical (the push is outside
+      // the parent's AABB); what it removes is the float32-vs-float64 skin a coplanar boolean leaves behind — measured on
+      // SampleHouse host #23: void y1 = −1.101418 vs host face −1.1014177 → a 0.3 µm skin closed every hole on that wall.
+      const pb = kernel.getBoundingBox(pe.shape, false), pmin = [pb.xmin, pb.ymin, pb.zmin], pmax = [pb.xmax, pb.ymax, pb.zmax];
+      const c1t = vd.c1.slice(), c2t = vd.c2.slice(); let pushed = 0;
+      for (let k = 0; k < 3; k++) {
+        const lo = Math.min(c1t[k], c2t[k]), hi = Math.max(c1t[k], c2t[k]), i1 = c1t[k] <= c2t[k] ? c1t : c2t, i2 = c1t[k] <= c2t[k] ? c2t : c1t;
+        if (Math.abs(lo - pmin[k]) < 1e-4) { i1[k] = Math.min(lo, pmin[k]) - 0.01; pushed++; }
+        if (Math.abs(hi - pmax[k]) < 1e-4) { i2[k] = Math.max(hi, pmax[k]) + 0.01; pushed++; }
+      }
+      if (pushed) { console.log('§CUT-THROUGH cut=' + op.id + ' parent=' + op.parent + ' flushFaces=' + pushed + ' (void pushed 1 cm past the parent face — no coplanar skin)'); vd = { c1: c1t, c2: c2t }; }
+      const void_ = kernel.makeBoxFromCorners(v(vd.c1), v(vd.c2));
       const cut = kernel.cut(pe.shape, void_);
       kernel.release(void_);                          // local intermediate (parent is cached → NOT released)
       shapeCache.set(key, cut); solids.set(op.parent, { shape: cut, hash: key });
+    } else if (op.op_type === 'GEOM_CUT_MOVE') {       // §CUT-MOVE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
+    } else if (op.op_type === 'GEOM_CUT_RESIZE') {     // §CUT-RESIZE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
     } else if (op.op_type === 'GEOM_FILLET') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
@@ -537,6 +614,24 @@ function buildSolids(kernel, ops, seedBoxes) {
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
       }
+    } else if (op.op_type === 'GEOM_ROOM_MOVE') {     // §ROOMMOVE — one op rigidly translates N members (W-ROOM-MOVE)
+      // Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.4. Structurally the GEOM_GRID_MOVE branch
+      // above, minus everything that cannot occur here: a room move is a PURE RIGID TRANSLATION by ONE (dx,dy,dz)
+      // shared by every member — no SCALE ever happens, so none of the anchored-min / §SCALE-YAW-GUARD /
+      // §ROTATION-GUARD-3AXIS machinery applies (a translation is yaw- and tilt-safe by construction). Same
+      // cache-per-(op_hash, featureId) discipline. TOLERANT like GEOM_MOVE/GRID_MOVE (NOT CUT's throw): a member
+      // that is a HOST-folded GEOM_INSERT is not in this worker's solids map and is a silent no-op here — it is
+      // re-placed host-side via library.foldInsert's `mv` path (PATH B, see bonsai_kernel.js §ROOMMOVE).
+      const dx = P.dx || 0, dy = P.dy || 0, dz = P.dz || 0;
+      for (const m of (P.members || [])) {
+        if (!m || m.featureId == null) continue;
+        const pe = solids.get(m.featureId); if (!pe) continue;
+        const ckey = key + ':' + m.featureId;
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(m.featureId, { shape: shapeCache.get(ckey), hash: ckey }); continue; }
+        _stats.rebuilt++;
+        const out = kernel.translate(pe.shape, dx, dy, dz);   // SAME primitive as GEOM_MOVE / GRID_MOVE TRANSLATE
+        shapeCache.set(ckey, out); solids.set(m.featureId, { shape: out, hash: ckey });
+      }
     } else if (op.op_type === 'GEOM_ARRAY') {          // N real independent solids from ONE signed op (W-BONSAI-ARRAY).
       // Unlike GEOM_CUT/FILLET/MOVE/ROTATE (which mutate the parent's SINGLE solid in place), an array REPLACES
       // the one referenced template with N clones — so the template's own map entry is deleted and N fresh
@@ -609,8 +704,8 @@ function buildSolids(kernel, ops, seedBoxes) {
   }
   return solids;
 }
-function foldChain(kernel, ops, seedBoxes) {
-  const solids = buildSolids(kernel, ops, seedBoxes);
+function foldChain(kernel, ops, seedBoxes, seedLayers) {
+  const solids = buildSolids(kernel, ops, seedBoxes, seedLayers);
   const meshes = [];
   for (const [fid, ent] of solids) {
     let m = meshCache.get(ent.hash);
@@ -638,8 +733,11 @@ self.onmessage = async (e) => {
     }
     const kernel = await getKernel();
     if (e.data.listEdges) {                          // EDGE-PICK: fold to the parent solid, report its edge midpoints
-      const { ops: cops, parentId } = e.data.listEdges;
-      const solids = buildSolids(kernel, cops);
+      // §CHAIN-SURVIVES-LAYER-CUT: seedBoxes/seedLayers now threaded through (see bonsai_kernel.js
+      // _computeSeeds) — a §CUT-ON-ARC box- or layer-promoted wall's edges resolve for a SECOND
+      // parent-mutating op (e.g. Fillet after Cut), same as the main foldChainToScene fold already did.
+      const { ops: cops, parentId, seedBoxes, seedLayers } = e.data.listEdges;
+      const solids = buildSolids(kernel, cops, seedBoxes, seedLayers);
       const pe = solids.get(parentId);
       const edges = pe ? edgeMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
       self.postMessage({ id, ok: true, edges });
@@ -647,8 +745,8 @@ self.onmessage = async (e) => {
     }
     if (e.data.listFaces) {                          // §FACE-PICK (GEOM_SHELL/GEOM_DRAFT): fold to the parent
       // solid, report its face midpoints in canonical order — the SAME device shape as listEdges above.
-      const { ops: cops, parentId } = e.data.listFaces;
-      const solids = buildSolids(kernel, cops);
+      const { ops: cops, parentId, seedBoxes, seedLayers } = e.data.listFaces;
+      const solids = buildSolids(kernel, cops, seedBoxes, seedLayers);
       const pe = solids.get(parentId);
       const faces = pe ? faceMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
       self.postMessage({ id, ok: true, faces });
@@ -656,7 +754,7 @@ self.onmessage = async (e) => {
     }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
       _stats = { rebuilt: 0, hits: 0, tess: 0, tessHits: 0 };
-      const meshes = foldChain(kernel, ops, e.data.seedBoxes);
+      const meshes = foldChain(kernel, ops, e.data.seedBoxes, e.data.seedLayers);
       const transfer = [];
       meshes.forEach(m => { transfer.push(m.positions.buffer); if (m.normals) transfer.push(m.normals.buffer); if (m.indices) transfer.push(m.indices.buffer); });
       self.postMessage({ id, ok: true, meshes, stats: _stats }, transfer);

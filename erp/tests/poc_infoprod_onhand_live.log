@@ -1,0 +1,30 @@
+§INFOPROD before {"rows":4,"oh":"50","rs":"0","od":"0","av":"50","stockTab":[["HQ Warehouse","50","50","0"],["Total","50","50","0"]],"atpTab":[["","50","","0","0","Default HQ Locator","","","HQ Warehouse"]]}
+  ✅ I1 the toolbar Product button opened Info Product (dictionary AD_InfoWindow 200000) — rows for product 137=4
+  ✅ I2 On Hand / Reserved / Ordered / Available are all shown for Mulch — {"oh":"50","rs":"0","od":"0","av":"50"}
+  ✅ I3 DOM On Hand == tip StorageOnHand sum of warehouse 103 and Available == OnHand − Reserved — dom=50 tip=50 avail=50 reserved=0
+  ✅ I4 Warehouse Stock tab On Hand and ATP per-locator tab On Hand equal the same figure — stock=[["HQ Warehouse","50","50","0"],["Total","50","50","0"]] atp=[["","50","","0","0","Default HQ Locator","","","HQ Warehouse"]]
+§DEPTH before onhand(137)=50 m_transaction=28
+  ✅ D1 a New order saved with the preview number ("<80003>") is NOT rejected by the numeric pin — §CRUD validate key=c_order verb=create ok
+  ✅ D1b the sequence number is allocated at save (PO.saveNew) — §DOCNO table=c_order docno=80003 seqOps=ad_sequence:CRUD_UPDATE via=ModelTrade.MSequence bump=in-group
+  ✅ D2 Complete on an order typed this session reaches the model layer and succeeds (not "no lines") — §MODEL-DOCACTION table=c_order id=-1 action=CO ok=true status=CO ops=60 tables={"ad_wf_process:CREATE":1,"ad_wf_activity:CREATE":3,"ad_wf_eventaudit:CREATE":3,"
+  ✅ D3 ONE group wrote shipment + invoice + stock + transaction + postings — {"ad_wf_process:CREATE":1,"ad_wf_activity:CREATE":3,"ad_wf_eventaudit:CREATE":3,"c_acctschema:UPDATE":1,"c_order:UPDATE":1,"c_ordertax:CREATE":1,"ad_sequence:UPDATE":4,"m_inout:CREATE":1,"m_inoutline:CREATE":1,"m_inoutli
+  ✅ D3b the group is signed and chain-verified
+§INFOPROD after {"rows":4,"oh":"49","rs":"0","od":"0","av":"49","stockTab":[["HQ Warehouse","49","49","0"],["Total","49","49","0"]],"atpTab":[["","49","","0","0","Default HQ Locator","","","HQ Warehouse"]]}
+  ✅ I5 On Hand fell by EXACTLY 1 after the POS Order completed, and still equals the tip sum — before=50 after=49 tipAfter=49
+  ✅ I5b Available moved with it (OnHand − Reserved) and the Warehouse Stock tab agrees — avail=49 stockTab=[["HQ Warehouse","49","49","0"],["Total","49","49","0"]]
+  §INFOWIN open table=M_Product infowindow=200000 "Product Info" criteria=12 displayed=15 ctx={}
+  §INFOWIN-COL-SKIP expr=(SELECT SUM(c.TargetQty) FROM M_MovementLineConfirm c INNER JOIN M_MovementLine  (no such table: M_MovementLineConfirm) → blank, named-deferred
+  §INFOWIN refresh table=M_Product rows=4 ctx={"M_Warehouse_ID":"103"} sql=SELECT p.M_Product_ID AS k, p.Discontinued AS c0, p.Value AS c1, p.Name AS c2, (CASE WHEN (SELECT isbom FROM m_product x WHERE x.m_product_id=p.M_Product_ID)='N' AND ((SELECT producttype FROM m_product x WHERE x.m_product_id=p.M_Product_ID)<>'I' OR (SELECT iss
+  §INFOWIN row0 {"key":137,"Discontinued":"N","Value":"Mulch","Name":"Mulch 10#","QtyAvailable":50,"PriceList":3,"PriceStd":2.7,"QtyOnHand":50,"QtyReserved":0,"QtyOrdered":0,"QtyUnconfirmed":null,"QtyUnconfirmedMove":null,"Margin":0.15000000000000036,"Vendor":"Seed Farm Inc.","PriceLimit":2.55,"IsInstanceAttribute":null}
+  §INFOWIN tab=stock key=137 rows=1 row0=["HQ Warehouse",50,50,0] totals=["Total",50,50,0]
+  §INFOWIN tab=stock key=137 rows=1 row0=["HQ Warehouse",50,50,0] totals=["Total",50,50,0]
+  §INFOWIN tab=atp key=137 rows=1 row0=["",50,"",0,0,"Default HQ Locator","","","HQ Warehouse"]
+  §INFOWIN open table=M_Product infowindow=200000 "Product Info" criteria=12 displayed=15 ctx={}
+  §INFOWIN refresh table=M_Product rows=4 ctx={"M_Warehouse_ID":"103"} sql=SELECT p.M_Product_ID AS k, p.Discontinued AS c0, p.Value AS c1, p.Name AS c2, (CASE WHEN (SELECT isbom FROM m_product x WHERE x.m_product_id=p.M_Product_ID)='N' AND ((SELECT producttype FROM m_product x WHERE x.m_product_id=p.M_Product_ID)<>'I' OR (SELECT iss
+  §INFOWIN row0 {"key":137,"Discontinued":"N","Value":"Mulch","Name":"Mulch 10#","QtyAvailable":49,"PriceList":3,"PriceStd":2.7,"QtyOnHand":49,"QtyReserved":0,"QtyOrdered":0,"QtyUnconfirmed":null,"QtyUnconfirmedMove":null,"Margin":0.15000000000000036,"Vendor":"Seed Farm Inc.","PriceLimit":2.55,"IsInstanceAttribute":null}
+  §INFOWIN tab=stock key=137 rows=1 row0=["HQ Warehouse",49,49,0] totals=["Total",49,49,0]
+  §INFOWIN tab=stock key=137 rows=1 row0=["HQ Warehouse",49,49,0] totals=["Total",49,49,0]
+  §INFOWIN tab=atp key=137 rows=1 row0=["",49,"",0,0,"Default HQ Locator","","","HQ Warehouse"]
+  ✅ D0 0 page errors
+
+§INFOPROD-ONHAND PASS pass=12 fail=0 inconclusive=0

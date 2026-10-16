@@ -1,0 +1,696 @@
+02:37:54.140 +    0.0s §CLI_BAKE_ENV root=/tmp/wt-sunarc-fill commit=07456a03 sw=v1142 db=Hospital_silent_local gpu=real out=/home/red1/Downloads/sunarc/sunarc_pin_after.mp4
+02:37:54.368 +    0.2s §CLI_BAKE_NAV http://127.0.0.1:8582/viewer/viewer.html?db=/buildings/Hospital_silent_local.db
+02:37:54.462 +    0.3s [con] §CPE_LOADED v25 — full changelog moved to this file's own comment above (search any §TAG)
+02:37:54.463 +    0.3s [con] §CPE_WALK_MODULE_LOADED
+02:37:54.463 +    0.3s [con] §CPE_XR_MODULE_LOADED
+02:37:54.464 +    0.3s [con] §MAXQ_LOADED v22 — full changelog moved to this file's own comment above (search any §TAG)
+02:37:54.464 +    0.3s [con] §INPUTREG ready (facade over scene.js focus state)
+02:37:54.484 +    0.4s [con] §WH-WALK loaded (data-gated pick-walk lens, SPATIAL_PICKING_SPEC §S-3..§S-5)
+02:37:54.491 +    0.4s [con] §KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+02:37:54.508 +    0.4s [con] §HIST_CONFIGURE source=viewer depth=high host=status-bar-wrap treeKey=bim.hist.tree._buildings_Hospital_silent_local.db.s1788575874481
+02:37:54.508 +    0.4s [con] §HIST_LIST n=0 cursor=-1 
+02:37:54.508 +    0.4s [con] §HIST_SESSION id=s1788575874481 reHome=false treeKey=bim.hist.tree._buildings_Hospital_silent_local.db.s1788575874481 dots=0
+02:37:54.508 +    0.4s [con] §HIST_WRAP commitOp wrapped
+02:37:54.509 +    0.4s [con] §EVT SNIFF|on — recording every §act, deny-filtered
+02:37:54.509 +    0.4s [con] §HIST_TAP_WIRED fields(ghost,xray,cam,section,palette,clash) + sniffer ON + bar SUBSCRIBES tap — one symmetric line each
+02:37:54.510 +    0.4s [con] §WHOLE-MOUNT page=viewer rootPrefix="../" mode=whole
+02:37:54.511 +    0.4s [con] §WHOLE-LANDED page=viewer origin=http://127.0.0.1:8582 db=/buildings/Hospital_silent_local.db ghost=0 sess=none reHome=false
+02:37:54.511 +    0.4s [con] §UNIVERSAL_HISTORY_LOADED v3 (viewer adapter on shared HistoryBar)
+02:37:54.522 +    0.4s [con] §ROOM-WALKER module loaded, version=v3 (§LOCAL-FRAME + §RASTER-EPS + §CONTAINMENT-ALIAS, post-§SUSPECT-LARGE)
+02:37:54.522 +    0.4s [con] §LEVEL_DERIVE module loaded
+02:37:54.523 +    0.4s [con] §LOC_AXIS module loaded
+02:37:54.527 +    0.4s [con] §DLOD_NAV_READY pill=off engaged=false
+02:37:54.527 +    0.4s [con] §SCHEDULE_AUTHOR_LOADED v8
+02:37:54.528 +    0.4s [con] §SCHEDULE_SYNC_LOADED v1
+02:37:54.528 +    0.4s [con] §SCHEDULE_AUTHOR_UI_LOADED v4
+02:37:54.531 +    0.4s [con] §CONNECT broker loaded v1 (channels: selection/timeline/identity + toggle)
+02:37:54.532 +    0.4s [con] §MAIN_JS v38 loaded — S287b single-owner render loop
+02:37:54.532 +    0.4s [con] §BUILD_VERSION (no active controller yet — reload once to confirm)
+02:37:54.532 +    0.4s [con] §TRL_LOADED fetched locale=en_US keys=334
+02:37:54.547 +    0.4s [con] §SFX_INIT enabled=false sounds=24 style=cinematic violin=false
+02:37:54.547 +    0.4s [con] §SFX_CONFIG loaded=json sounds=24
+02:37:54.580 +    0.5s [con] §UPGRADE_THREE local WebGPU ESM loaded r=185 WebGPURenderer=function
+02:37:54.580 +    0.5s [con] §UPGRADE_THREE_DONE r=185 ms=161 BatchedMesh=function
+02:37:54.580 +    0.5s [con] §COLOR_MGMT enabled=false
+02:37:54.598 +    0.5s [con] §SW_REG scope=http://127.0.0.1:8582/viewer/
+02:37:54.609 +    0.5s [con] §UPGRADE_ORBIT local ESM loaded
+02:37:54.610 +    0.5s [con] §UPGRADE_ORBIT_DONE ms=30 OrbitControls=function
+02:37:54.610 +    0.5s [con] §UPGRADE_API_CHECK BatchedMesh=function InstancedMesh=function BufferGeometry=function WebGLRenderer=undefined NeutralToneMapping=7 SRGBColorSpace=srgb
+02:37:54.610 +    0.5s [con] §BVH_LOADING importing three-mesh-bvh@0.8.0 from CDN...
+02:37:54.743 +    0.6s [con] goatcounter: not counting because of: localhost
+02:37:54.746 +    0.6s [con] Failed to load resource: the server responded with a status of 404 (Not Found)
+02:37:54.751 +    0.6s [con] §PWA_INSTALL prompt captured (early)
+02:37:54.752 +    0.6s [con] Banner not shown: beforeinstallpromptevent.preventDefault() called. The page must call beforeinstallpromptevent.prompt() to show the banner.
+02:37:54.935 +    0.8s [con] §BVH_FETCHED ms=325 exports=AVERAGE,BVHShaderGLSL,CENTER,CONTAINED,ExtendedTriangle,FloatVertexAttributeTexture,INTERSECTED,IntVertexAttributeTexture,MeshBVH,MeshBVHHelper,MeshBVHUniformStruct,NOT_INTERSECTED,OrientedBox,SAH,StaticGeometryGenerator,UIntVertexAttributeTexture,VertexAttributeTexture,acceleratedRaycast,computeBatchedBoundsTree,computeBoundsTree,disposeBatchedBoundsTree,disposeBoundsTree,estimateMemoryInBytes,getBVHExtremes,getJSONStructure,getTriangleHitPointInfo,shaderDistanceFunction,shaderIntersectFunction,shaderStructs,validateBounds
+02:37:54.935 +    0.8s [con] §BVH_INIT three-mesh-bvh v0.8.0 monkey-patch applied in 325ms
+02:37:54.935 +    0.8s [con] §BVH_SELFTEST boundsTree=true
+02:37:55.018 +    0.9s [con] §S277b_RENDERER WebGLRenderer r184 (WebGPU deferred)
+02:37:55.019 +    0.9s [con] §RENDERER_CAPS multi_draw=on (fast batched path) gpu=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)
+02:37:55.020 +    0.9s [con] §GPU_BASELINE_INIT gpu=ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2) multi_draw=true
+02:37:55.023 +    0.9s [con] §TONEMAPPING type=ACESFilmic exposure=0.45
+02:37:55.037 +    0.9s [con] §SKY_SHADER loaded — Preetham r184 (hidden until Shadow H or TM sun)
+02:37:55.060 +    0.9s [con] §ENV_MAP Sky-based atmospheric env map ready (per-material, not scene.environment)
+02:37:55.063 +    0.9s [con] §LENSFLARE loaded — disc + halo sprites
+02:37:55.125 +    1.0s [con] §EFFECTS_INIT loaded — TAARenderPass + SSAO + Outline + Output
+02:37:55.125 +    1.0s [con] §EFFECTS_LOADED v25 (§CPE_DISCIPLINE_REVEAL_FLYBACK new fast eased retrace sub-beat replaces the pull-out->round-2 teleport cut; §CPE_DISCIPLINE_REVEAL_ORDER discs sorted ascending by real avg bbox volume, MEP forced last; §CPE_DISCIPLINE_REVEAL_FADE tail-parade boundaries get a brief overlap window instead of an instant swap; §CPE_AIM_DEPTH_RETIRED (2026-09-02) §CPE_AIM_DEPTH REMOVED — path-follow is now the ONLY automatic gaze rule in the walk. It was the sole surviving exception (§CPE_AIM_SIMPLIFY, 2026-08-14, which had already retired §CPE_AIM_DENSITY), and its own formula shows why it had to go: clearM = clamp(envelope*0.06, 3, 8) = 8.0m on Hospital and w = 1 - smoothstep( fwdClear/clearM), so HALF its authority was spent at 4m of forward clearance — a "something within 8m" rule, not the dead-end rescue it was described as. Measured before removal: Hospital 28/91 probes firing / gaze turned 83.45deg, HHS_Office 65/65 probes active. Gone with it: §CPE_AIM_GRID, §CPE_AIM_LATCH, §CPE_AIM_DEPTH_SERIES/_SCALE/_VERTICALITY/ _OPEN_TAPER/_FWD_CLEAR/_BUILDUP, and §CPE_STICK_HOLD's aim half (_holdBoostAt fed only _aimDepthApply — a held beat is now a pure rate dip; §CPE_AIM_PIN is the authored head-turn that replaces it). §CPE_AIM_DEPTH_FREEZE and §CPE_CORR_BRANCH are KEPT, both reduce motion; §CPE_AIM_PIN a pinned band's Voronoi zone of the walk overrides path-follow outright (_buildPinZones/_pinLookAtAt inside _beat3Pose); §CPE_PACE_SWING_SOFTEN CINEMA_PACE_SWING 1.6->1.45, direct user tuning request; §CINEMA_LOOKAHEAD_ARC no-threshold look-ahead; §CPE_EVEN_TURN cost-parameterized walk + §CPE_SEAM_CONTINUOUS Beat2→3 opening blend; §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM)
+02:37:55.127 +    1.0s [con] §HELPERS_READY collectMeshes+filterInstancedMesh+dbQuery+reportBug+QR+snags
+02:37:55.131 +    1.0s [con] §COLOR_PALETTE built with bim-panel + icon slider rows
+02:37:55.131 +    1.0s [con] §PILL_AUDIT ids_checked=7 collisions=[xray,section,sunglass,fly,shadow,bg,grid2d] removed=[xray,section,sunglass,fly,shadow,bg,grid2d] (dead overflow-menu registration removed — canonical path = pill_builder.js _actions/_sync)
+02:37:55.131 +    1.0s [con] §UI_PILL rendered=true icons=0 total=0
+02:37:55.133 +    1.0s [con] §SHADOW_GROUND_SWATCH key=off
+02:37:55.134 +    1.0s [con] §VISUALFX_EXTEND rows=4
+02:37:55.135 +    1.0s [con] §PILL_BUILDER ready actions=35 layout=rail
+02:37:55.135 +    1.0s [con] §MOBILE_BAR_READY actions=35
+02:37:55.137 +    1.0s [con] [TOUR] §TOUR_VERSION v19 (timeline-scrub + highlight-first + SUSPECT_OPEN + wall-legal room-spine bridge + A* polyline flight + no lift-door entrance — FLY_TOUR_CORRIDOR_GRAPH.md)
+02:37:55.139 +    1.0s [con] §MEASURE_VERSION S245e-v1
+02:37:55.139 +    1.0s [con] §CLASH_MATRIX_INIT loaded
+02:37:55.140 +    1.0s [con] §CLASH_REPORT_MODULE loaded
+02:37:55.140 +    1.0s [con] §CLASH_SNAG_MODULE loaded
+02:37:55.141 +    1.0s [con] [S210] §SITECAM_INIT textBtn=removed
+02:37:55.141 +    1.0s [con] §SHARE_LOADED share.js v2 (S265 Phase 3 — navigator.share + buildShareUrl)
+02:37:55.142 +    1.0s [con] §CONNECT register surface=viewer inst=inst-5oaw92l
+02:37:55.146 +    1.0s [con] [S211] §NLP_INIT voice=true
+02:37:55.146 +    1.0s [con] [S211] §NLP_READY patterns=10 voice=true
+02:37:55.146 +    1.0s [con] §GHOSTGLASS_READY
+02:37:55.146 +    1.0s [con] [S274] §ERROR_REPORTER_READY max=3 toasts/session
+02:37:55.146 +    1.0s [con] [GridAssembler] §GRID_ASSEMBLE loaded=[GridDims, GridConfig, GridViews, DoorArcs, SectionCut, Elevation, GridContours, DimChains, GridDrag, setupGridOverlay]
+02:37:55.148 +    1.0s [con] [GridDrag] §GRID_DRAG init — pointer events wired
+02:37:55.148 +    1.0s [con] [GridOverlay] §GRID_INIT GridDrag wired
+02:37:55.148 +    1.0s [con] [GridScissors] §GRID_SCISSORS init — all 3 axes ready
+02:37:55.149 +    1.0s [con] [GridOverlay] §GRID_INIT GridScissors wired
+02:37:55.149 +    1.0s [con] [GridOverlay] §GRID_INIT ready
+02:37:55.149 +    1.0s [con] [GridAssembler] §GRID_ASSEMBLE OK — APP.toggleGridOverlay ready
+02:37:55.150 +    1.0s [con] §4D_CHANNEL_READY listener=viewer
+02:37:55.150 +    1.0s [con] §RENDER_LOOP start total=1
+02:37:55.157 +    1.0s [con] §PILL_SYNC synced=5
+02:37:55.158 +    1.0s [con] [S203] §QUOTA available=10242MB used=2MB
+02:37:55.164 +    1.0s [con] §IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=1
+02:37:55.164 +    1.0s [con] [S203] §PERSIST granted=false — cache is best-effort, browser may evict
+02:37:55.165 +    1.0s [con] [GridDrag] §GRID_RULES loaded grid_move={"min_bay_m":0.5,"max_extend_m":5,"snap_m":0.05,"max_step_m":2} clearance_count=6
+02:37:55.165 +    1.0s [con] [GridDrag] §GRID_RULES loaded — shared to window._gridRules
+02:37:55.172 +    1.0s [con] §PHOTO_STAFFAGE_PRELOAD warming 12 cutouts + car mesh
+02:37:55.192 +    1.1s [con] §STAFFAGE_CAR_MESH loaded verts=2058 tris=686
+02:37:55.193 +    1.1s [con] §STAFFAGE_TEX_READY people/person_standing_casual_male.png
+02:37:55.193 +    1.1s [con] §STAFFAGE_TEX_READY people/person_standing_gesture_female.png
+02:37:55.193 +    1.1s [con] §STAFFAGE_TEX_READY people/person_walking_gym_female.png
+02:37:55.194 +    1.1s [con] §STAFFAGE_TEX_READY people/person_walking_shopping_female.png
+02:37:55.194 +    1.1s [con] §STAFFAGE_TEX_READY people/person_sitting_formal_male.png
+02:37:55.195 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_oak_big.png
+02:37:55.195 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_linden_big_old.png
+02:37:55.195 +    1.1s [con] Failed to load resource: the server responded with a status of 404 (Not Found)
+02:37:55.195 +    1.1s [con] [S192] §DB_SPLIT_DETECT meta=/buildings/Hospital_silent_local_meta.db geo=/buildings/Hospital_silent_local_geo.db found=false
+02:37:55.197 +    1.1s [con] §STAFFAGE_TEX_READY people/person_sitting_casual_female.png
+02:37:55.197 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_poplar.png
+02:37:55.197 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_oak_young.png
+02:37:55.198 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_beech.png
+02:37:55.198 +    1.1s [con] §STAFFAGE_TEX_READY trees/tree_linden_city.png
+02:37:55.335 +    1.2s [con] [S260] §DB_SIZE_CHECK size=0MB src=network
+02:37:55.335 +    1.2s [con] [S203] §CACHE_KEY url=Hospital_silent_local.db key=buildings/Hospital_silent_local.db
+02:37:55.336 +    1.2s [con] [S203] §CACHE_MISS_READ url=Hospital_silent_local.db — not in IDB, will fetch
+02:37:55.434 +    1.3s [con] §SWUPDATE_TOAST skip reason=first-claim (page had no controller at load; this is the initial install taking over, not a new version) — no toast
+02:37:55.448 +    1.3s [con] §SHORTCUT key=2 status=ok target=open2DPlans
+02:37:55.448 +    1.3s [con] §SHORTCUT key=4 status=ok target=export4D5D
+02:37:55.449 +    1.3s [con] §SHORTCUT key=+ status=ok target=_zoomStep
+02:37:55.449 +    1.3s [con] §SHORTCUT key=- status=ok target=_zoomStep
+02:37:55.449 +    1.3s [con] §SHORTCUT key=x status=ok target=console.log
+02:37:55.449 +    1.3s [con] §SHORTCUT key=f status=ok target=openFindPanel
+02:37:55.449 +    1.3s [con] §SHORTCUT key=p status=ok target=toggleSunglass
+02:37:55.450 +    1.3s [con] §SHORTCUT key=t status=ok target=toggleTimeMachine
+02:37:55.450 +    1.3s [con] §SHORTCUT key=z status=ok target=UniversalHistory.toggleOpen
+02:37:55.450 +    1.3s [con] §SHORTCUT key=w status=ok target=WholeHistory.toggleOpen
+02:37:55.450 +    1.3s [con] §SHORTCUT key=l status=ok target=toggleFlyAround
+02:37:55.451 +    1.3s [con] §SHORTCUT key=o status=ok target=toggleDlodNav
+02:37:55.451 +    1.3s [con] §SHORTCUT key=v status=ok target=toggleSfx
+02:37:55.451 +    1.3s [con] §SHORTCUT key=s status=ok target=screenshot
+02:37:55.451 +    1.3s [con] §SHORTCUT key=n status=ok target=toggleNightMode
+02:37:55.452 +    1.3s [con] §SHORTCUT key=b status=ok target=toggleBackground
+02:37:55.452 +    1.3s [con] §SHORTCUT key=i status=ok target=toggleIssues
+02:37:55.452 +    1.3s [con] §SHORTCUT key=h status=ok target=toggleShadow
+02:37:55.452 +    1.3s [con] §SHORTCUT key=c status=ok target=_panels.splice
+02:37:55.453 +    1.3s [con] §SHORTCUT key=m status=ok target=toggleMeasure
+02:37:55.453 +    1.3s [con] §SHORTCUT key=r status=ok target=_cycleRoom
+02:37:55.453 +    1.3s [con] §SHORTCUT key=a status=ok target=resetCamOrbit
+02:37:55.453 +    1.3s [con] §SHORTCUT key=q status=ok target=toggleCamPivot
+02:37:55.453 +    1.3s [con] §SHORTCUT key=Ctrl+S status=ok target=saveModelDb
+02:37:55.454 +    1.3s [con] §SHORTCUT key=Ctrl+O status=ok target=openModelDb
+02:37:55.454 +    1.3s [con] §SHORTCUT key== status=ok target=_openSettingsPanel
+02:37:55.454 +    1.3s [con] §SHORTCUT key=/ status=ok target=quickShare
+02:37:55.454 +    1.3s [con] §SHORTCUT key=' status=ok target=toggleHoverName
+02:37:55.455 +    1.3s [con] §SHORTCUT key=. status=ok target=toggleMobilePill
+02:37:55.455 +    1.3s [con] §SHORTCUT_AUDIT total=29 ok=29 inline=0 dead=0 deadKeys=-
+02:37:55.455 +    1.3s [con] §SCRIPT_DUP_AUDIT total=164 dup=0
+02:37:55.646 +    1.5s [con] §PANEL_REGISTER id=toolbar hasNav=true hasClose=false totalPanels=1 allIds=[toolbar]
+02:37:55.646 +    1.5s [con] §LISTNAV_WIRE panel=toolbar
+02:37:55.646 +    1.5s [con] §PANEL_REGISTER id=section hasNav=true hasClose=true totalPanels=2 allIds=[toolbar,section]
+02:37:55.646 +    1.5s [con] §LISTNAV_WIRE panel=section
+02:37:55.646 +    1.5s [con] §PANEL_REGISTER id=sunglass hasNav=true hasClose=true totalPanels=3 allIds=[toolbar,section,sunglass]
+02:37:55.646 +    1.5s [con] §LISTNAV_WIRE panel=sunglass
+02:37:55.647 +    1.5s [con] §PANELS_INIT static panels registered
+02:37:56.233 +    2.1s [con] [S203] §CACHE_WRITE_OK url=Hospital_silent_local.db size=300.8MB
+02:37:57.627 +    3.5s [con] [S281] §POSITIONS_SKIP single-DB — Offset is outside the bounds of the DataView; full download
+02:37:57.627 +    3.5s [con] [S203] §CACHE_KEY url=Hospital_silent_local.db key=buildings/Hospital_silent_local.db
+02:37:57.629 +    3.5s [con] §SHORTCUT_AUDIT MISS action=help key=F1 — no scene.js shortcut
+02:37:57.629 +    3.5s [con] §SHORTCUT_AUDIT MISS action=xray key=Alt+Z — no scene.js shortcut
+02:37:57.629 +    3.5s [con] §SHORTCUT_AUDIT MISS action=fullscreen key=F11 — no scene.js shortcut
+02:37:57.629 +    3.5s [con] §SHORTCUT_AUDIT MISS action=precision key=Caps Lock — no scene.js shortcut
+02:37:57.629 +    3.5s [con] §SHORTCUT_AUDIT matched=23 missing=4
+02:37:57.944 +    3.8s [con] [S203] §CACHE_REVALIDATE_SKIP url=Hospital_silent_local.db reason=no-stored-comparator
+02:37:57.944 +    3.8s [con] [S203] §CACHE_HIT Hospital_silent_local.db size=300.8MB
+02:37:57.947 +    3.8s [con] Failed to load resource: the server responded with a status of 404 (Not Found)
+02:37:57.948 +    3.8s [con] [S203] §PATCH_NONE Hospital_silent_local.db (404)
+02:37:58.128 +    4.0s [con] [S203] §NOGEO_COMPOSE_SKIP no ghosts, ms=57
+02:37:58.128 +    4.0s [con] [S192] §DB_LOADED size=301MB
+02:37:58.128 +    4.0s [con] §CENTRES_QUERY A.db=true tables=[{"columns":["name"],"values":[["project_metadata"],["elements_meta"],["element_transforms"],["element_instances"],["schedules"],["task_sequences"],["task_elements"],["storey_walkable_raster"],["rel_aggregates"],["spatial_structure"],["kernel_ops"],["rel_contained_in_space"],["rooms_meta"],["tasks"],["component_geometries"],["cinema_path"],["scene_state"]]}]
+02:37:58.226 +    4.1s [con] §CENTRES_RESULT rows=1 bldCol=true first=["Hospital",64150,46.24303094979363,92.99372583949037,181.23844413754918]
+02:37:58.226 +    4.1s [con] [S192] §BOOTSTRAP centres=1
+02:37:58.226 +    4.1s [con] §FOG_DENSITY env=100m density=0.00400
+02:37:58.239 +    4.1s [con] [S261b] §SINGLE_DB_HUD building=Hospital
+02:37:58.240 +    4.1s [con] [S192] §OFFSET ifc=(46, 93, 181)
+02:37:58.249 +    4.1s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:37:58.249 +    4.1s [con] [S200] §GROUND_INIT y=-15.9 visible=false
+02:37:58.293 +    4.2s [con] §RENDER_LOOP start total=2
+02:37:58.293 +    4.2s [con] [S203] §CAMERA envelope=101x151x43m dist=226m
+02:37:58.293 +    4.2s [con] [S192] §DS_AUTO_START bld=Hospital dist=192m
+02:37:58.294 +    4.2s [con] §MATNAME_COL present=true
+02:37:58.682 +    4.6s [con] [BBOX] §BBOX_PLACEHOLDERS total=63182 shown=63182 step=1 discs=6 mobile=false short_rows=0
+02:37:58.682 +    4.6s [con] [S192] §DS_QUEUED bld=Hospital elements=63182 dlod=false (sorted by camera distance)
+02:37:58.683 +    4.6s [con] [S241] §BBOX_EARLY placeholders drawn before library fetch
+02:37:58.683 +    4.6s [con] §FPS_MODE mean=3527 max=3527.0 n=1 dlod=off disp=solid fly=0 orbit=0
+02:37:58.702 +    4.6s [con] §IDLE_GATE wake parks=1 (1-in-25 sample)
+02:37:58.703 +    4.6s [con] §HELPERS_QUERY_ERR no such table: m_bom_line SELECT COUNT(*) FROM m_bom_line WHERE role='BIN'
+02:37:58.709 +    4.6s [con] §WH PILL gate=off (locator-GUID bins absent)
+02:37:58.709 +    4.6s [con] [S241] §BBOX_PAINT_YIELD bboxes painted; enabling mesh stream
+02:37:58.710 +    4.6s [con] [S223] §DIFF_PARAM diffdb=none db_ready=true computeDiff=function
+02:37:58.710 +    4.6s [con] §HASH_PARSE keys= clash=none db=true
+02:37:58.717 +    4.6s [con] [S231] §NORMALS_PROBE libHasNormals=false
+02:37:58.828 +    4.7s [con] [S231] §BLOB_FETCH new=250 total_cached=250 normals_pre=0 normals_cpu=250 bvh=0
+02:37:58.829 +    4.7s [con] [S231] §INSTANCED_STREAM batch=500 pending_hashes=250
+02:37:58.831 +    4.7s [con] §TRIPLANAR_INIT class=IfcMember tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.832 +    4.7s [con] §TRIPLANAR_INIT class=IfcPlate tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.833 +    4.7s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.836 +    4.7s [con] §TRIPLANAR_INIT class=IfcBeam tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.838 +    4.7s [con] §TRIPLANAR_INIT class=IfcPipeSegment tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.838 +    4.7s [con] §TRIPLANAR_INIT class=IfcDuctFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.839 +    4.7s [con] §TRIPLANAR_INIT class=IfcColumn tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:37:58.840 +    4.7s [con] §TRIPLANAR_INIT class=IfcDuctSegment tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.840 +    4.7s [con] §TRIPLANAR_INIT class=IfcWall tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:37:58.840 +    4.7s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.841 +    4.7s [con] §TRIPLANAR_INIT class=IfcColumn tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:37:58.841 +    4.7s [con] §TRIPLANAR_INIT class=IfcPipeSegment tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.842 +    4.7s [con] §TRIPLANAR_INIT class=IfcCovering tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:37:58.842 +    4.7s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:37:58.843 +    4.7s [con] [S260] §BATCHED_FLUSH instanced=217 batched=283 drawCalls=57 (was 500) mobile=false
+02:37:58.843 +    4.7s [con] §MEP_DISC_COVERAGE instancedMeshes uniformDisc=25 mixedDisc=0 (100% now keyed; these were ALL 'Unknown' before §MEP_DISC_PALETTE)
+02:37:58.843 +    4.7s [con] §BATCHED_DETAIL buckets=32 elements=283 saved=251 drawCalls
+02:37:58.857 +    4.7s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:37:58.857 +    4.7s [con] [S260] §PROGRESSIVE_FLUSH at=500/63182 drawCalls=71
+02:38:00.130 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/plaster_rough_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/concrete_rough_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/concrete_color_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/metal_normal_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/plaster_color_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/metal_rough_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/metal_color_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/concrete_normal_1k.jpg
+02:38:00.131 +    6.0s [con] §TRIPLANAR_TEX_READY path=textures/materials/plaster_normal_1k.jpg
+02:38:00.535 +    6.4s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:00.536 +    6.4s [con] §TRIPLANAR_INIT class=IfcPipeSegment tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:00.536 +    6.4s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:00.536 +    6.4s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:00.542 +    6.4s [con] §TRIPLANAR_INIT class=IfcCovering tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:00.587 +    6.5s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:00.612 +    6.5s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:00.621 +    6.5s [con] §TRIPLANAR_INIT class=IfcColumn tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:00.624 +    6.5s [con] §TRIPLANAR_INIT class=IfcStair tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:00.627 +    6.5s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:00.639 +    6.5s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:00.811 +    6.7s [con] [DLOD] §DLOD_ENABLE count=6500 mode=per_slot_frustum
+02:38:00.811 +    6.7s [con] §SCENE_STATE_RESTORE camera dlod
+02:38:00.811 +    6.7s [con] §FPS_MODE mean=354.9 max=680.5 n=6 dlod=off disp=solid fly=0 orbit=0
+02:38:01.331 +    7.2s [con] [DLOD] §DLOD_REFS built instanced=344 imInstances=2753 (BM handled by r184 perObjectFrustumCulled)
+02:38:01.332 +    7.2s [con] §DLOD_TICK n=1 ms_mean=0.70 ms_max=0.70 flips_mean=0.0 fly=0 vfCamActive=0 imHid=0 imVis=2753
+02:38:02.034 +    7.9s [con] §TRIPLANAR_INIT class=IfcValve tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:02.094 +    8.0s [con] §TRIPLANAR_INIT class=IfcCovering tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:02.095 +    8.0s [con] §ENTOURAGE_INIT variant=tree class=IfcBuildingElementProxy
+02:38:02.119 +    8.0s [con] §TRIPLANAR_INIT class=IfcColumn tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:02.121 +    8.0s [con] §TRIPLANAR_INIT class=IfcRailing tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:02.126 +    8.0s [con] §TRIPLANAR_INIT class=IfcValve tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:02.129 +    8.0s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:02.130 +    8.0s [con] §TRIPLANAR_INIT class=IfcWall tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:02.147 +    8.0s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:02.922 +    8.8s [con] §FPS_MODE mean=422.1 max=532.1 n=5 dlod=off disp=solid fly=0 orbit=0
+02:38:03.151 +    9.0s [con] §TRIPLANAR_INIT class=IfcFooting tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:03.178 +    9.0s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:03.219 +    9.1s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:03.220 +    9.1s [con] §TRIPLANAR_INIT class=IfcRailing tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:03.221 +    9.1s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:03.237 +    9.1s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:04.340 +   10.2s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:04.342 +   10.2s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:04.357 +   10.2s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:04.982 +   10.9s [con] §FPS_MODE mean=412 max=531.1 n=5 dlod=off disp=solid fly=0 orbit=0
+02:38:05.663 +   11.5s [con] §TRIPLANAR_INIT class=IfcCableCarrierSegment tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:05.677 +   11.5s [con] §TRIPLANAR_INIT class=IfcFooting tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:05.677 +   11.5s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:05.677 +   11.5s [con] §TRIPLANAR_INIT class=IfcCableCarrierFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:05.694 +   11.6s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:05.697 +   11.6s [con] §TRIPLANAR_INIT class=IfcMember tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:05.704 +   11.6s [con] §TRIPLANAR_INIT class=IfcStair tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:05.716 +   11.6s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:06.992 +   12.9s [con] §TRIPLANAR_INIT class=IfcWallStandardCase tex=textures/materials/plaster_color_1k.jpg src=class name=
+02:38:06.992 +   12.9s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:06.993 +   12.9s [con] §TRIPLANAR_INIT class=IfcPipeFitting tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:07.007 +   12.9s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:07.105 +   13.0s [con] §FPS_MODE mean=424.6 max=546.5 n=5 dlod=off disp=solid fly=0 orbit=0
+02:38:11.905 +   17.8s [con] §MEP_SMOOTH_NORMALS geoms=1087 ranges=8393 vertsSmoothed=15591998 vertsKeptHard=5510980 creaseDeg=55 minDistinctN=16 ms=4510.5
+02:38:11.905 +   17.8s [con] §DUCT_SILHOUETTE considered=12800 measured=9392 refined=781 skippedTooSmall=8611 skippedNotCurved=3408 addedVerts=1006146 addedTris=335382 smoothMid=30635 hardMid=135633 gateM=5 alpha=0.5 kPxPerRad=935.3 meanSagittaMm=21.304->5.320 (4.00x)
+02:38:11.905 +   17.8s [con] §IDX16 geoms=0 saved=0.0MB (merged path unused on this building — the per-element site in scene.js carries it)
+02:38:11.907 +   17.8s [con] §PHOTO_PREWARM ms=4512 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+02:38:11.907 +   17.8s [con] §FPS_MODE mean=4800.8 max=4800.8 n=1 dlod=off disp=solid fly=0 orbit=0
+02:38:12.717 +   18.6s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:14.055 +   19.9s [con] §TRIPLANAR_INIT class=IfcValve tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:14.069 +   19.9s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:14.199 +   20.1s [con] §FPS_MODE mean=458.6 max=507.7 n=5 dlod=off disp=solid fly=0 orbit=0
+02:38:15.200 +   21.1s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:15.200 +   21.1s [con] [S260] §PROGRESSIVE_FLUSH at=54500/63182 drawCalls=3897
+02:38:16.141 +   22.0s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:16.235 +   22.1s [con] §FPS_MODE mean=339.3 max=391.3 n=6 dlod=off disp=solid fly=0 orbit=0
+02:38:16.529 +   22.4s [con] §TRIPLANAR_INIT class=IfcRailing tex=textures/materials/metal_color_1k.jpg src=class name=
+02:38:16.529 +   22.4s [con] §TRIPLANAR_INIT class=IfcStairFlight tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:16.529 +   22.4s [con] §TRIPLANAR_INIT class=IfcSlab tex=textures/materials/concrete_color_1k.jpg src=class name=
+02:38:16.529 +   22.4s [con] [S260] §BATCHED_FLUSH instanced=1224 batched=1458 drawCalls=214 (was 2682) mobile=false
+02:38:16.529 +   22.4s [con] §MEP_DISC_COVERAGE instancedMeshes uniformDisc=2865 mixedDisc=7 (100% now keyed; these were ALL 'Unknown' before §MEP_DISC_PALETTE)
+02:38:16.530 +   22.4s [con] §BATCHED_DETAIL buckets=94 elements=1458 saved=1364 drawCalls
+02:38:16.537 +   22.4s [con] §CONTRACT_CHECK batch=38169 instanced=25013 merged=0 mergedIndex=0 guidMap=63182 streamed=63182 orphans=0
+02:38:16.548 +   22.4s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:16.549 +   22.4s [con] [BBOX] §BBOX_CLEARED
+02:38:16.575 +   22.4s [con] §TRI_SRC_TALLY bld=Hospital rows=63182 palette_tick=0 palette_recoloured=0 named=0 approx_named=0 by_name=0 by_class=51516 alpha_none=1442 none=10224 textured=51516 distinct_names_resolved=0 NO-OP — no element resolved by material_name on this building
+02:38:16.673 +   22.5s [con] §MEP_HUE_TALLY bld=Hospital rows=63182 mep_elements=41987 tinted=40634 tier1_authored_name=0 tier1_own_hue=1353 no_trade_hue=0 distinct_hues=5 trade_codes=5 legend_ceiling=12 T=0.344 inst_mep_uniform=2872 inst_mep_mixed=0 consulted_T=41987 min_dist_to_T=0.2679 hue_off=0
+02:38:16.673 +   22.5s [con] §MEP_HUE_CODE bld=Hospital code=PLB n=17096
+02:38:16.674 +   22.5s [con] §MEP_HUE_CODE bld=Hospital code=MEP n=13495
+02:38:16.674 +   22.5s [con] §MEP_HUE_CODE bld=Hospital code=FP n=6832
+02:38:16.674 +   22.5s [con] §MEP_HUE_CODE bld=Hospital code=ELEC n=1623
+02:38:16.674 +   22.5s [con] §MEP_HUE_CODE bld=Hospital code=SAN n=1588
+02:38:16.674 +   22.5s [con] [DLOD] §DLOD_ENABLE count=63182 mode=per_slot_frustum
+02:38:16.734 +   22.6s [con] §KERNEL_OP committed id=63418 uuid=2b3805de type=BUILDING_OPEN params={"name":"Hospital","count":63182}
+02:38:16.734 +   22.6s [con] §WHOLE-DEDUP doc=viewer|Opened Hospital day=2026-09-05 action=append count=1
+02:38:16.734 +   22.6s [con] §WHOLE-REC page=viewer kind=op ts=1788575896731 label="Opened Hospital"
+02:38:16.734 +   22.6s [con] §HIST_PUSH n=1 idx=0 kind=op label="Opened Hospital" opType=BUILDING_OPEN opId=63418
+02:38:16.855 +   22.7s [con] §IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=2
+02:38:16.874 +   22.7s [con] §HBA_LAZY armed — no seed, no pill promotion until the Human-Asset pill is used (guidMap=63182, deep_link=no)
+02:38:17.162 +   23.0s [con] §LAYER2_HDRI_READY belfast_sunset_puresky_1k — real photographed envMap ready
+02:38:17.216 +   23.1s §CLI_BAKE_LOADED building=Hospital meshes=4499
+02:38:17.217 +   23.1s §CLI_BAKE_PREWARM_SEEN §PHOTO_PREWARM ms=4512 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+02:38:17.260 +   23.1s §CLI_BAKE_GL vendor="Google Inc. (NVIDIA Corporation)" renderer="ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2, OpenGL ES 3.2)"
+02:38:17.261 +   23.1s §CLI_BAKE_BUILDUP_RESOLVED on=0 source=cli — decides whether the Time Machine is primed before the bake asks for a timeline
+02:38:17.261 +   23.1s §CLI_BAKE_CLIP in=0.5 out=0.5032 (§SDC — a window of the same film)
+02:38:17.312 +   23.2s [con] §CINEMA_PATH_RESTORE bands=4 total=278.8s holdCol=true holds=0 flagCol=true buildup=1 roomTitle=1 reveal=1 dayCounter=tl — authored path in force
+02:38:17.392 +   23.3s [con] §CINEMA_PIVOT src=controls-target(plausible) pivot=(2.5,-3.6,-0.8) targetOffCentre=21.3 targetOffCam=125.9 boundingR=91.4 envelope=147.4
+02:38:18.143 +   24.0s [con] §CINEMA_SPACE cand=bbox-centre area=0.0 enclosed=100% chosen=true (fallback)
+02:38:18.143 +   24.0s [con] §CINEMA_DIVE src=bbox-centre (no enclosed candidate among top 0) space="bbox-centre" areaM2=0.0 settle=(-6.7,-7.7,12.2) floorY=-9.43 eye=1.7 fanMin=2.5 fanMax=50.3 fanMean=11.3 openBearing=270° facingFree=9.0 nudge=5.90m fanMinGlazing=false nudgeCap=9 enclosed=100% yaw0=-144.3° pitch0=-35.8° diveDist=129.3m
+02:38:18.183 +   24.1s [con] §CINEMA_EXIT chosen=2Z53YGJ0T2pP6FkQ22SHss name="Curtain Wall Dbl Glass:Curtain Wall Dbl Glass:816393" dist=8.6 facingDot=0.936 perimFactor=1.85 cost=14.3 src=db-doors candidates=400 runnerUp=3Y4DbCGAX3uQt5nUIwFqOS@14.6 hadToTravel=true diveDist=129.3m mood=rushed
+02:38:18.183 +   24.1s [con] §CPE_REPLAN_LAZY miss=1 prefixMs=790.2 key=Hospital|3238|85.4745,70.0336,58.8676,-2
+02:38:18.439 +   24.3s [con] §CINEMA_BANDS bands=4 waypoints=8 flown=125 connectors=3 k=[0.09,0.55] maxBow=2.57m unmeasuredJoins=0/3
+02:38:18.439 +   24.3s [con] §CINEMA_PATH_EDIT authored waypoints=8 (derived route replaced) orbitScale=0.436 orbitDY=7.52m
+02:38:18.439 +   24.3s [con] §CINEMA_GAZE_SENSE refDeltaDeg=26.6 antipodal=false (branch chosen once; per-frame deltas are taken as the representative NEAREST this)
+02:38:18.439 +   24.3s [con] §CINEMA_SPIN dYawRawSignedDeg=14.8 dYawRawDeg=14.8 class=already-facing(no-spin) finalSpinDeg=0.0 ceilingDeg=360 capped=false
+02:38:18.440 +   24.3s [con] §CINEMA_ORBIT_ELASTIC scale=0.436 requested=38.8 granted=132.7 band=[132.7,368.6] clamped=true dY=7.52m
+02:38:18.533 +   24.4s [con] §CPE_NOISE_LAW beat=dive src=bbox elems=64150 w=0/1 (density/change) meanNoise=0.491 busy=0.00..1.00 samples=64 swing=1.45 deliveredRange=1.45x series=[0.01:0.00 0.13:0.00 0.26:0.42 0.38:0.89 0.51:0.53 0.63:0.76 0.76:0.97 0.88:0.61 0.99:0.07] — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number
+02:38:18.545 +   24.4s [con] §CPE_NOISE_LAW beat=walk-budget src=bbox probes=33 radius=60.0m elems=64150 meanBusy=0.387 maxChange=5977 swing=1.45 — the walk SECONDS below are bought by this number, the same signal that already spaces its frames
+02:38:18.606 +   24.5s [con] §CPE_REVEAL_DISC_ORDER [PLB=0.011,FP=0.016,ELEC=0.071,MEP=0.425]
+02:38:18.634 +   24.5s [con] §CPE_REVEAL_ROUND on pulloutSec=1.5 flybackSec=19.8 round2Sec=56.0 tailSec=10.0 discs=[PLB,FP,ELEC,MEP] totalSec=87.4
+02:38:18.634 +   24.5s [con] §CPE_WALK_BUDGET_NOISE_BLIND totalLen=128.89m walkMps=2.3 turnDeg=351.2 turnDps=45 travelSec=56.039 turnSec=7.803 rawSec=63.842 busy=0.387 swing=1.45 busyMult=1.1742 outSec=74.966
+02:38:18.634 +   24.5s [con] §CPE_SPIN_WHIP flownDeg=0.0 ceilingDeg=360 turnDps=45 rawSec=0.000 busy=0.000 swing=1.45 busyMult=1.0000 minSec=0(no-floor) settleHoldSec=0.000 spinSec=0.000
+02:38:18.635 +   24.5s [con] §CPE_SEAM_CONTINUOUS openDeg=130.7 openU=0.0574 (~2.90s of the 50.6s walk) handoffYawDeg=-144.3
+02:38:18.635 +   24.5s [con] §CINEMA_PACING natural=195.8s = dive 7.9 + spin 0.0 + walk 75.0 + pullout 1.5 + flyback 19.8 + round2 56.0 + tail 10.0 + pullback 17.6 + orbit 8.0  (walk 128.9m @2.3m/s, dive 129.3m @20m/s, pullback 114.1m @6.5m/s, dive raw 129m capped to envelope 129m, spin 0deg flown @45deg/s x1.00 busy) override=true running=60.0s
+02:38:18.635 +   24.5s [con] §CINEMA_BEATS dive=0.094 spin=0.094 out=0.353 pullout=0.361 flyback=0.462 round2=0.750 rise=0.959 turnOverlap=0.25 (dur=60.0s) route=authored waypoints=8 pathLen=128.9 spinDeg=0
+02:38:18.635 +   24.5s [con] §CINEMA_SUN_ORDER exitAzDeg=-33.3 sunAzDeg=-90.0 swoopU=0.843 (~2.1s) sunFirst=false loopSec=2.5 caughtSun=false entryTiltDeg=45.0 lookdownDeg=45.0
+02:38:18.635 +   24.5s [con] §CINEMA_FLAT_ENDING descentStartU=0.250 (~0.6s) holdStartU=0.550 (~1.4s) flatTiltDeg=0
+02:38:18.635 +   24.5s [con] §CINEMA_SMOOTH_ORBIT easeU=0.400 (~1.0s each end) loopSec=2.5
+02:38:18.636 +   24.5s [con] §CPE_SEAM_CONTINUOUS seamGapDeg=0.000 (beat2 end -> beat3 start; must be ~0)
+02:38:18.659 +   24.5s [con] §CPE_NOISE_LAW beat=walk src=bbox probes=33 maxChange=5977 radius=60.0m elems=64150 — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap
+02:38:18.659 +   24.5s [con] §CPE_EVEN_TURN blended-cost, PACE_SWING=1.45 walkLen=128.81m totalTurn=427.9deg samples=241 boundPerFrameTurn=1378.7deg/N speedRange=1.45x x1.5 more from the smoothstep ease at the beat midpoint
+02:38:18.660 +   24.5s [con] §CPE_BEAT3_END_DIR beat3EndDir=(0.264,-0.392,0.881) offOutwardDeg=87.1 — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid
+02:38:18.662 +   24.5s [con] §CPE_GAZE_CONSTANT_RATE probes=513 spanSec=51.91 (beats 3+4) walkSec=50.58 capDps=45 capPerProbeDeg=4.563 rawPeakDeg=50.31 limitedPeakDeg=8.79 rawPeakDps=496.2 limitedPeakDps=86.7 acquirePeakMult=1.93x (max 2x) — the composed gaze, bounded at the rate the spin and orbit already turn at
+02:38:18.662 +   24.5s [con] §CINEMA_PLAN_MS 1347.8 (fanRays=32 spaceCands=0 exitCands=400)
+02:38:18.662 +   24.5s [con] §CLI_BAKE_RESOLVED source=db:cinema_path bands=4 clip=0.5→0.5032 total=278.8s buildup=0 roomTitle=0 reveal=0 dayCounter=off
+02:38:18.664 +   24.5s [con] §MAXQ_FRAME_BUDGET taa=8 ao=12 renders/frame=20 (was 16+24=40) — bake only, Alt+S stills keep the full fold
+02:38:18.665 +   24.5s [con] §CINEMA_DAMPING_BLEED held (enableDamping true -> false for preview+bake)
+02:38:18.666 +   24.5s [con] §MAXQ_WAKELOCK acquired (screen stays awake for the bake)
+02:38:18.769 +   24.6s [con] §KRN_SEAL_FROM fromId=63417 sealed=1 tip=e9f824224b4f…
+02:38:19.452 +   25.3s [con] §KRN_PERSIST url=/buildings/Hospital_silent_local.db size=308060KB tip=e9f824224b4f…
+02:38:19.638 +   25.5s [con] §NAV_FIND_VERSION v41 — yellow-outline + focus-bg(tree+results) + adjustable-panel
+02:38:19.835 +   25.7s [con] §PANEL_REGISTER id=find hasNav=true hasClose=true totalPanels=4 allIds=[toolbar,section,sunglass,find]
+02:38:19.835 +   25.7s [con] §PANEL_NAV_WIRE id=find zones=4
+02:38:19.835 +   25.7s [con] §PANEL_NAV_FIND wired zones=4
+02:38:19.836 +   25.7s [con] [S233] §NAV_FIND_MODULE_LOADED panel=true
+02:38:19.836 +   25.7s [con] [S233] §NAV_FIND_WIRED openFindPanel=function
+02:38:19.836 +   25.7s [con] [S233] §NAV_MODULE_LOADED
+02:38:19.836 +   25.7s [con] [S239] §NAVIGATE_LAZY_LOADED
+02:38:19.836 +   25.7s [con] §PANEL_PLACE id=find-panel col=0 right=12 others=0
+02:38:19.920 +   25.8s [con] §CINEMA_PIVOT src=controls-target(plausible) pivot=(2.5,-3.6,-0.8) targetOffCentre=21.3 targetOffCam=125.9 boundingR=91.4 envelope=147.4
+02:38:19.920 +   25.8s [con] §CINEMA_DIVE src=bbox-centre (no enclosed candidate among top 0) space="bbox-centre" areaM2=0.0 settle=(-6.7,-7.7,12.2) floorY=-9.43 eye=1.7 fanMin=2.5 fanMax=50.3 fanMean=11.3 openBearing=270° facingFree=9.0 nudge=5.90m fanMinGlazing=false nudgeCap=9 enclosed=100% yaw0=-144.3° pitch0=-35.8° diveDist=129.3m
+02:38:19.921 +   25.8s [con] §CINEMA_EXIT chosen=2Z53YGJ0T2pP6FkQ22SHss name="Curtain Wall Dbl Glass:Curtain Wall Dbl Glass:816393" dist=8.6 facingDot=0.936 perimFactor=1.85 cost=14.3 src=db-doors candidates=400 runnerUp=3Y4DbCGAX3uQt5nUIwFqOS@14.6 hadToTravel=true diveDist=129.3m mood=rushed
+02:38:19.921 +   25.8s [con] §CPE_REPLAN_LAZY hit=1 savedMs=790.2 key=Hospital|3238|85.4745,70.0336,58.8676,-2
+02:38:20.147 +   26.0s [con] §CINEMA_BANDS bands=4 waypoints=8 flown=125 connectors=3 k=[0.09,0.55] maxBow=2.57m unmeasuredJoins=0/3
+02:38:20.147 +   26.0s [con] §CINEMA_PATH_EDIT authored waypoints=8 (derived route replaced) orbitScale=0.436 orbitDY=7.52m
+02:38:20.148 +   26.0s [con] §CINEMA_GAZE_SENSE refDeltaDeg=26.6 antipodal=false (branch chosen once; per-frame deltas are taken as the representative NEAREST this)
+02:38:20.148 +   26.0s [con] §CINEMA_SPIN dYawRawSignedDeg=14.8 dYawRawDeg=14.8 class=already-facing(no-spin) finalSpinDeg=0.0 ceilingDeg=360 capped=false
+02:38:20.148 +   26.0s [con] §CINEMA_ORBIT_ELASTIC scale=0.436 requested=38.8 granted=132.7 band=[132.7,368.6] clamped=true dY=7.52m
+02:38:20.322 +   26.2s [con] §CPE_NOISE_LAW beat=dive src=bbox elems=64150 w=0/1 (density/change) meanNoise=0.491 busy=0.00..1.00 samples=64 swing=1.45 deliveredRange=1.45x series=[0.01:0.00 0.13:0.00 0.26:0.42 0.38:0.89 0.51:0.53 0.63:0.76 0.76:0.97 0.88:0.61 0.99:0.07] — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number
+02:38:20.383 +   26.3s [con] §CPE_NOISE_LAW beat=walk-budget src=bbox probes=33 radius=60.0m elems=64150 meanBusy=0.387 maxChange=5977 swing=1.45 — the walk SECONDS below are bought by this number, the same signal that already spaces its frames
+02:38:20.450 +   26.3s [con] §CPE_REVEAL_DISC_ORDER [PLB=0.011,FP=0.016,ELEC=0.071,MEP=0.425]
+02:38:20.475 +   26.3s [con] §CPE_REVEAL_ROUND on pulloutSec=1.5 flybackSec=19.8 round2Sec=56.0 tailSec=10.0 discs=[PLB,FP,ELEC,MEP] totalSec=87.4
+02:38:20.475 +   26.3s [con] §CPE_WALK_BUDGET_NOISE_BLIND totalLen=128.89m walkMps=2.3 turnDeg=351.2 turnDps=45 travelSec=56.039 turnSec=7.803 rawSec=63.842 busy=0.387 swing=1.45 busyMult=1.1742 outSec=74.966
+02:38:20.476 +   26.3s [con] §CPE_SPIN_WHIP flownDeg=0.0 ceilingDeg=360 turnDps=45 rawSec=0.000 busy=0.000 swing=1.45 busyMult=1.0000 minSec=0(no-floor) settleHoldSec=0.000 spinSec=0.000
+02:38:20.476 +   26.3s [con] §CPE_SEAM_CONTINUOUS openDeg=130.7 openU=0.0574 (~2.90s of the 50.6s walk) handoffYawDeg=-144.3
+02:38:20.476 +   26.3s [con] §CINEMA_PACING natural=195.8s = dive 7.9 + spin 0.0 + walk 75.0 + pullout 1.5 + flyback 19.8 + round2 56.0 + tail 10.0 + pullback 17.6 + orbit 8.0  (walk 128.9m @2.3m/s, dive 129.3m @20m/s, pullback 114.1m @6.5m/s, dive raw 129m capped to envelope 129m, spin 0deg flown @45deg/s x1.00 busy) override=true running=24.0s
+02:38:20.476 +   26.3s [con] §CINEMA_BEATS dive=0.094 spin=0.094 out=0.353 pullout=0.361 flyback=0.462 round2=0.750 rise=0.959 turnOverlap=0.25 (dur=24.0s) route=authored waypoints=8 pathLen=128.9 spinDeg=0
+02:38:20.477 +   26.3s [con] §CINEMA_SUN_ORDER exitAzDeg=-33.3 sunAzDeg=-90.0 swoopU=0.843 (~0.8s) sunFirst=false loopSec=1.0 caughtSun=false entryTiltDeg=45.0 lookdownDeg=45.0
+02:38:20.477 +   26.3s [con] §CINEMA_FLAT_ENDING descentStartU=0.250 (~0.2s) holdStartU=0.550 (~0.5s) flatTiltDeg=0
+02:38:20.477 +   26.3s [con] §CINEMA_SMOOTH_ORBIT easeU=0.400 (~0.4s each end) loopSec=1.0
+02:38:20.477 +   26.3s [con] §CPE_SEAM_CONTINUOUS seamGapDeg=0.000 (beat2 end -> beat3 start; must be ~0)
+02:38:20.500 +   26.4s [con] §CPE_NOISE_LAW beat=walk src=bbox probes=33 maxChange=5977 radius=60.0m elems=64150 — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap
+02:38:20.500 +   26.4s [con] §CPE_EVEN_TURN blended-cost, PACE_SWING=1.45 walkLen=128.81m totalTurn=427.9deg samples=241 boundPerFrameTurn=1378.7deg/N speedRange=1.45x x1.5 more from the smoothstep ease at the beat midpoint
+02:38:20.501 +   26.4s [con] §CPE_BEAT3_END_DIR beat3EndDir=(0.264,-0.392,0.881) offOutwardDeg=87.1 — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid
+02:38:20.501 +   26.4s [con] §CPE_GAZE_CONSTANT_RATE probes=513 spanSec=20.77 (beats 3+4) walkSec=50.58 capDps=45 capPerProbeDeg=1.825 rawPeakDeg=50.31 limitedPeakDeg=3.65 rawPeakDps=1240.5 limitedPeakDps=90.0 acquirePeakMult=2.00x (max 2x) — the composed gaze, bounded at the rate the spin and orbit already turn at
+02:38:20.501 +   26.4s [con] §CINEMA_PLAN_MS 648.5 (fanRays=32 spaceCands=0 exitCands=400)
+02:38:20.501 +   26.4s [con] §MAXQ_DURATION_DERIVED 24.0s→195.8s, frames 360→2937 (paced from this building, not a fixed runtime)
+02:38:20.558 +   26.4s [con] §CINEMA_PIVOT src=controls-target(plausible) pivot=(2.5,-3.6,-0.8) targetOffCentre=21.3 targetOffCam=125.9 boundingR=91.4 envelope=147.4
+02:38:20.558 +   26.4s [con] §CINEMA_DIVE src=bbox-centre (no enclosed candidate among top 0) space="bbox-centre" areaM2=0.0 settle=(-6.7,-7.7,12.2) floorY=-9.43 eye=1.7 fanMin=2.5 fanMax=50.3 fanMean=11.3 openBearing=270° facingFree=9.0 nudge=5.90m fanMinGlazing=false nudgeCap=9 enclosed=100% yaw0=-144.3° pitch0=-35.8° diveDist=129.3m
+02:38:20.559 +   26.4s [con] §CINEMA_EXIT chosen=2Z53YGJ0T2pP6FkQ22SHss name="Curtain Wall Dbl Glass:Curtain Wall Dbl Glass:816393" dist=8.6 facingDot=0.936 perimFactor=1.85 cost=14.3 src=db-doors candidates=400 runnerUp=3Y4DbCGAX3uQt5nUIwFqOS@14.6 hadToTravel=true diveDist=129.3m mood=rushed
+02:38:20.559 +   26.4s [con] §CPE_REPLAN_LAZY hit=1 savedMs=790.2 key=Hospital|3238|85.4745,70.0336,58.8676,-2
+02:38:20.781 +   26.7s [con] §CINEMA_PATH_EDIT authored waypoints=8 (derived route replaced) orbitScale=0.436 orbitDY=7.52m
+02:38:20.782 +   26.7s [con] §CINEMA_GAZE_SENSE refDeltaDeg=26.6 antipodal=false (branch chosen once; per-frame deltas are taken as the representative NEAREST this)
+02:38:20.782 +   26.7s [con] §CINEMA_SPIN dYawRawSignedDeg=14.8 dYawRawDeg=14.8 class=already-facing(no-spin) finalSpinDeg=0.0 ceilingDeg=360 capped=false
+02:38:20.782 +   26.7s [con] §CINEMA_ORBIT_ELASTIC scale=0.436 requested=38.8 granted=132.7 band=[132.7,368.6] clamped=true dY=7.52m
+02:38:20.861 +   26.7s [con] §CPE_NOISE_LAW beat=dive src=bbox elems=64150 w=0/1 (density/change) meanNoise=0.491 busy=0.00..1.00 samples=64 swing=1.45 deliveredRange=1.45x series=[0.01:0.00 0.13:0.00 0.26:0.42 0.38:0.89 0.51:0.53 0.63:0.76 0.76:0.97 0.88:0.61 0.99:0.07] — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number
+02:38:20.877 +   26.7s [con] §CPE_NOISE_LAW beat=walk-budget src=bbox probes=33 radius=60.0m elems=64150 meanBusy=0.387 maxChange=5977 swing=1.45 — the walk SECONDS below are bought by this number, the same signal that already spaces its frames
+02:38:20.935 +   26.8s [con] §CPE_REVEAL_DISC_ORDER [PLB=0.011,FP=0.016,ELEC=0.071,MEP=0.425]
+02:38:20.959 +   26.8s [con] §CPE_REVEAL_ROUND on pulloutSec=1.5 flybackSec=19.8 round2Sec=56.0 tailSec=10.0 discs=[PLB,FP,ELEC,MEP] totalSec=87.4
+02:38:20.959 +   26.8s [con] §CPE_WALK_BUDGET_NOISE_BLIND totalLen=128.89m walkMps=2.3 turnDeg=351.2 turnDps=45 travelSec=56.039 turnSec=7.803 rawSec=63.842 busy=0.387 swing=1.45 busyMult=1.1742 outSec=74.966
+02:38:20.960 +   26.8s [con] §CPE_SPIN_WHIP flownDeg=0.0 ceilingDeg=360 turnDps=45 rawSec=0.000 busy=0.000 swing=1.45 busyMult=1.0000 minSec=0(no-floor) settleHoldSec=0.000 spinSec=0.000
+02:38:20.960 +   26.8s [con] §CPE_SEAM_CONTINUOUS openDeg=130.7 openU=0.0574 (~2.90s of the 50.6s walk) handoffYawDeg=-144.3
+02:38:20.960 +   26.8s [con] §CINEMA_PACING natural=195.8s = dive 7.9 + spin 0.0 + walk 75.0 + pullout 1.5 + flyback 19.8 + round2 56.0 + tail 10.0 + pullback 17.6 + orbit 8.0  (walk 128.9m @2.3m/s, dive 129.3m @20m/s, pullback 114.1m @6.5m/s, dive raw 129m capped to envelope 129m, spin 0deg flown @45deg/s x1.00 busy) override=true running=195.8s
+02:38:20.960 +   26.8s [con] §CINEMA_BEATS dive=0.094 spin=0.094 out=0.353 pullout=0.361 flyback=0.462 round2=0.750 rise=0.959 turnOverlap=0.25 (dur=195.8s) route=authored waypoints=8 pathLen=128.9 spinDeg=0
+02:38:20.960 +   26.8s [con] §CINEMA_SUN_ORDER exitAzDeg=-33.3 sunAzDeg=-90.0 swoopU=0.843 (~6.8s) sunFirst=false loopSec=8.0 caughtSun=false entryTiltDeg=45.0 lookdownDeg=45.0
+02:38:20.960 +   26.8s [con] §CINEMA_FLAT_ENDING descentStartU=0.250 (~2.0s) holdStartU=0.550 (~4.4s) flatTiltDeg=0
+02:38:20.960 +   26.8s [con] §CINEMA_SMOOTH_ORBIT easeU=0.374 (~3.0s each end) loopSec=8.0
+02:38:20.961 +   26.8s [con] §CPE_SEAM_CONTINUOUS seamGapDeg=0.000 (beat2 end -> beat3 start; must be ~0)
+02:38:20.978 +   26.8s [con] §CPE_NOISE_LAW beat=walk src=bbox probes=33 maxChange=5977 radius=60.0m elems=64150 — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap
+02:38:20.978 +   26.8s [con] §CPE_EVEN_TURN blended-cost, PACE_SWING=1.45 walkLen=128.81m totalTurn=427.9deg samples=241 boundPerFrameTurn=1378.7deg/N speedRange=1.45x x1.5 more from the smoothstep ease at the beat midpoint
+02:38:20.979 +   26.9s [con] §CPE_BEAT3_END_DIR beat3EndDir=(0.264,-0.392,0.881) offOutwardDeg=87.1 — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid
+02:38:20.979 +   26.9s [con] §CPE_GAZE_CONSTANT_RATE probes=513 spanSec=169.42 (beats 3+4) walkSec=50.58 capDps=45 capPerProbeDeg=14.890 rawPeakDeg=50.31 limitedPeakDeg=28.67 rawPeakDps=152.1 limitedPeakDps=86.7 acquirePeakMult=1.93x (max 2x) — the composed gaze, bounded at the rate the spin and orbit already turn at
+02:38:20.979 +   26.9s [con] §CINEMA_PLAN_MS 477.5 (fanRays=32 spaceCands=0 exitCands=400)
+02:38:20.979 +   26.9s [con] §MAXQ_START frames=2937 fps=15 path=cinema radius=102.2 height=73.6 size=1280x720
+02:38:21.039 +   26.9s [con] §CINEMA_PIVOT src=controls-target(plausible) pivot=(2.5,-3.6,-0.8) targetOffCentre=21.3 targetOffCam=125.9 boundingR=91.4 envelope=147.4
+02:38:21.039 +   26.9s [con] §CINEMA_DIVE src=bbox-centre (no enclosed candidate among top 0) space="bbox-centre" areaM2=0.0 settle=(-6.7,-7.7,12.2) floorY=-9.43 eye=1.7 fanMin=2.5 fanMax=50.3 fanMean=11.3 openBearing=270° facingFree=9.0 nudge=5.90m fanMinGlazing=false nudgeCap=9 enclosed=100% yaw0=-144.3° pitch0=-35.8° diveDist=129.3m
+02:38:21.039 +   26.9s [con] §CINEMA_EXIT chosen=2Z53YGJ0T2pP6FkQ22SHss name="Curtain Wall Dbl Glass:Curtain Wall Dbl Glass:816393" dist=8.6 facingDot=0.936 perimFactor=1.85 cost=14.3 src=db-doors candidates=400 runnerUp=3Y4DbCGAX3uQt5nUIwFqOS@14.6 hadToTravel=true diveDist=129.3m mood=rushed
+02:38:21.039 +   26.9s [con] §CPE_REPLAN_LAZY hit=1 savedMs=790.2 key=Hospital|3238|85.4745,70.0336,58.8676,-2
+02:38:21.257 +   27.1s [con] §CINEMA_BANDS bands=4 waypoints=8 flown=125 connectors=3 k=[0.09,0.55] maxBow=2.57m unmeasuredJoins=0/3
+02:38:21.257 +   27.1s [con] §CINEMA_PATH_EDIT authored waypoints=8 (derived route replaced) orbitScale=0.436 orbitDY=7.52m
+02:38:21.257 +   27.1s [con] §CINEMA_GAZE_SENSE refDeltaDeg=26.6 antipodal=false (branch chosen once; per-frame deltas are taken as the representative NEAREST this)
+02:38:21.258 +   27.1s [con] §CINEMA_SPIN dYawRawSignedDeg=14.8 dYawRawDeg=14.8 class=already-facing(no-spin) finalSpinDeg=0.0 ceilingDeg=360 capped=false
+02:38:21.258 +   27.1s [con] §CINEMA_ORBIT_ELASTIC scale=0.436 requested=38.8 granted=132.7 band=[132.7,368.6] clamped=true dY=7.52m
+02:38:21.323 +   27.2s [con] §CPE_NOISE_LAW beat=dive src=bbox elems=64150 w=0/1 (density/change) meanNoise=0.491 busy=0.00..1.00 samples=64 swing=1.45 deliveredRange=1.45x series=[0.01:0.00 0.13:0.00 0.26:0.42 0.38:0.89 0.51:0.53 0.63:0.76 0.76:0.97 0.88:0.61 0.99:0.07] — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number
+02:38:21.333 +   27.2s [con] §CPE_NOISE_LAW beat=walk-budget src=bbox probes=33 radius=60.0m elems=64150 meanBusy=0.387 maxChange=5977 swing=1.45 — the walk SECONDS below are bought by this number, the same signal that already spaces its frames
+02:38:21.333 +   27.2s [con] §CPE_WALK_BUDGET_NOISE_BLIND totalLen=128.89m walkMps=2.3 turnDeg=351.2 turnDps=45 travelSec=56.039 turnSec=7.803 rawSec=63.842 busy=0.387 swing=1.45 busyMult=1.1742 outSec=74.966
+02:38:21.333 +   27.2s [con] §CPE_SPIN_WHIP flownDeg=0.0 ceilingDeg=360 turnDps=45 rawSec=0.000 busy=0.000 swing=1.45 busyMult=1.0000 minSec=0(no-floor) settleHoldSec=0.000 spinSec=0.000
+02:38:21.333 +   27.2s [con] §CPE_SEAM_CONTINUOUS openDeg=130.7 openU=0.0574 (~2.90s of the 50.6s walk) handoffYawDeg=-144.3
+02:38:21.333 +   27.2s [con] §CINEMA_PACING natural=108.4s = dive 7.9 + spin 0.0 + walk 75.0 + pullout 0.0 + flyback 0.0 + round2 0.0 + tail 0.0 + pullback 17.6 + orbit 8.0  (walk 128.9m @2.3m/s, dive 129.3m @20m/s, pullback 114.1m @6.5m/s, dive raw 129m capped to envelope 129m, spin 0deg flown @45deg/s x1.00 busy) override=true running=278.8s
+02:38:21.334 +   27.2s [con] §CINEMA_BEATS dive=0.170 spin=0.170 out=0.639 pullout=0.639 flyback=0.639 round2=0.639 rise=0.926 turnOverlap=0.25 (dur=278.8s) route=authored waypoints=8 pathLen=128.9 spinDeg=0
+02:38:21.334 +   27.2s [con] §CINEMA_SUN_ORDER exitAzDeg=-33.3 sunAzDeg=-90.0 swoopU=0.843 (~17.4s) sunFirst=false loopSec=20.7 caughtSun=false entryTiltDeg=45.0 lookdownDeg=45.0
+02:38:21.334 +   27.2s [con] §CINEMA_FLAT_ENDING descentStartU=0.614 (~12.7s) holdStartU=0.759 (~15.7s) flatTiltDeg=0
+02:38:21.334 +   27.2s [con] §CINEMA_SMOOTH_ORBIT easeU=0.145 (~3.0s each end) loopSec=20.7
+02:38:21.334 +   27.2s [con] §CPE_SEAM_CONTINUOUS seamGapDeg=0.000 (beat2 end -> beat3 start; must be ~0)
+02:38:21.346 +   27.2s [con] §CPE_NOISE_LAW beat=walk src=bbox probes=33 maxChange=5977 radius=60.0m elems=64150 — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap
+02:38:21.346 +   27.2s [con] §CPE_EVEN_TURN blended-cost, PACE_SWING=1.45 walkLen=128.81m totalTurn=427.9deg samples=241 boundPerFrameTurn=1378.7deg/N speedRange=1.45x x1.5 more from the smoothstep ease at the beat midpoint
+02:38:21.346 +   27.2s [con] §CPE_BEAT3_END_DIR beat3EndDir=(0.264,-0.392,0.881) offOutwardDeg=87.1 — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid
+02:38:21.346 +   27.2s [con] §CPE_GAZE_CONSTANT_RATE probes=513 spanSec=210.74 (beats 3+4) walkSec=50.58 capDps=45 capPerProbeDeg=18.522 rawPeakDeg=50.27 limitedPeakDeg=35.66 rawPeakDps=122.1 limitedPeakDps=86.6 acquirePeakMult=1.93x (max 2x) — the composed gaze, bounded at the rate the spin and orbit already turn at
+02:38:21.346 +   27.2s [con] §CINEMA_PLAN_MS 367.1 (fanRays=32 spaceCands=0 exitCands=400)
+02:38:21.347 +   27.2s [con] §MAXQ_OVERRIDE_IN source=db:cinema_path bands=4 hoseOps=0 buildup=0 roomTitle=0 reveal=0 durationSec=108.4
+02:38:21.406 +   27.3s [con] §CINEMA_PIVOT src=controls-target(plausible) pivot=(2.5,-3.6,-0.8) targetOffCentre=21.3 targetOffCam=125.9 boundingR=91.4 envelope=147.4
+02:38:21.406 +   27.3s [con] §CINEMA_DIVE src=bbox-centre (no enclosed candidate among top 0) space="bbox-centre" areaM2=0.0 settle=(-6.7,-7.7,12.2) floorY=-9.43 eye=1.7 fanMin=2.5 fanMax=50.3 fanMean=11.3 openBearing=270° facingFree=9.0 nudge=5.90m fanMinGlazing=false nudgeCap=9 enclosed=100% yaw0=-144.3° pitch0=-35.8° diveDist=129.3m
+02:38:21.406 +   27.3s [con] §CINEMA_EXIT chosen=2Z53YGJ0T2pP6FkQ22SHss name="Curtain Wall Dbl Glass:Curtain Wall Dbl Glass:816393" dist=8.6 facingDot=0.936 perimFactor=1.85 cost=14.3 src=db-doors candidates=400 runnerUp=3Y4DbCGAX3uQt5nUIwFqOS@14.6 hadToTravel=true diveDist=129.3m mood=rushed
+02:38:21.406 +   27.3s [con] §CPE_REPLAN_LAZY hit=1 savedMs=790.2 key=Hospital|3238|85.4745,70.0336,58.8676,-2
+02:38:21.628 +   27.5s [con] §CINEMA_PATH_EDIT authored waypoints=8 (derived route replaced) orbitScale=0.436 orbitDY=7.52m
+02:38:21.628 +   27.5s [con] §CINEMA_GAZE_SENSE refDeltaDeg=26.6 antipodal=false (branch chosen once; per-frame deltas are taken as the representative NEAREST this)
+02:38:21.628 +   27.5s [con] §CINEMA_SPIN dYawRawSignedDeg=14.8 dYawRawDeg=14.8 class=already-facing(no-spin) finalSpinDeg=0.0 ceilingDeg=360 capped=false
+02:38:21.628 +   27.5s [con] §CINEMA_ORBIT_ELASTIC scale=0.436 requested=38.8 granted=132.7 band=[132.7,368.6] clamped=true dY=7.52m
+02:38:21.725 +   27.6s [con] §CPE_NOISE_LAW beat=dive src=bbox elems=64150 w=0/1 (density/change) meanNoise=0.491 busy=0.00..1.00 samples=64 swing=1.45 deliveredRange=1.45x series=[0.01:0.00 0.13:0.00 0.26:0.42 0.38:0.89 0.51:0.53 0.63:0.76 0.76:0.97 0.88:0.61 0.99:0.07] — frames spaced by busyness-weighted distance; the dive seconds below are bought by the same number
+02:38:21.748 +   27.6s [con] §CPE_NOISE_LAW beat=walk-budget src=bbox probes=33 radius=60.0m elems=64150 meanBusy=0.387 maxChange=5977 swing=1.45 — the walk SECONDS below are bought by this number, the same signal that already spaces its frames
+02:38:21.748 +   27.6s [con] §CPE_WALK_BUDGET_NOISE_BLIND totalLen=128.89m walkMps=2.3 turnDeg=351.2 turnDps=45 travelSec=56.039 turnSec=7.803 rawSec=63.842 busy=0.387 swing=1.45 busyMult=1.1742 outSec=74.966
+02:38:21.748 +   27.6s [con] §CPE_SPIN_WHIP flownDeg=0.0 ceilingDeg=360 turnDps=45 rawSec=0.000 busy=0.000 swing=1.45 busyMult=1.0000 minSec=0(no-floor) settleHoldSec=0.000 spinSec=0.000
+02:38:21.748 +   27.6s [con] §CPE_SEAM_CONTINUOUS openDeg=130.7 openU=0.0574 (~2.90s of the 50.6s walk) handoffYawDeg=-144.3
+02:38:21.748 +   27.6s [con] §CINEMA_PACING natural=108.4s = dive 7.9 + spin 0.0 + walk 75.0 + pullout 0.0 + flyback 0.0 + round2 0.0 + tail 0.0 + pullback 17.6 + orbit 8.0  (walk 128.9m @2.3m/s, dive 129.3m @20m/s, pullback 114.1m @6.5m/s, dive raw 129m capped to envelope 129m, spin 0deg flown @45deg/s x1.00 busy) override=true running=108.4s
+02:38:21.749 +   27.6s [con] §CINEMA_BEATS dive=0.170 spin=0.170 out=0.639 pullout=0.639 flyback=0.639 round2=0.639 rise=0.926 turnOverlap=0.25 (dur=108.4s) route=authored waypoints=8 pathLen=128.9 spinDeg=0
+02:38:21.749 +   27.6s [con] §CINEMA_SUN_ORDER exitAzDeg=-33.3 sunAzDeg=-90.0 swoopU=0.843 (~6.8s) sunFirst=false loopSec=8.1 caughtSun=false entryTiltDeg=45.0 lookdownDeg=45.0
+02:38:21.750 +   27.6s [con] §CINEMA_FLAT_ENDING descentStartU=0.250 (~2.0s) holdStartU=0.550 (~4.4s) flatTiltDeg=0
+02:38:21.750 +   27.6s [con] §CINEMA_SMOOTH_ORBIT easeU=0.373 (~3.0s each end) loopSec=8.1
+02:38:21.750 +   27.6s [con] §CPE_SEAM_CONTINUOUS seamGapDeg=0.000 (beat2 end -> beat3 start; must be ~0)
+02:38:21.771 +   27.6s [con] §CPE_NOISE_LAW beat=walk src=bbox probes=33 maxChange=5977 radius=60.0m elems=64150 — tempers the turn-driven crawl: a corner whose CONTENT is not changing stays cheap
+02:38:21.772 +   27.6s [con] §CPE_EVEN_TURN blended-cost, PACE_SWING=1.45 walkLen=128.81m totalTurn=427.9deg samples=241 boundPerFrameTurn=1378.7deg/N speedRange=1.45x x1.5 more from the smoothstep ease at the beat midpoint
+02:38:21.772 +   27.6s [con] §CPE_BEAT3_END_DIR beat3EndDir=(0.264,-0.392,0.881) offOutwardDeg=87.1 — Beat 4 opens on THIS, not on (odx,odz); offOutwardDeg is exactly the seam snap the old taper hid
+02:38:21.772 +   27.6s [con] §CPE_GAZE_CONSTANT_RATE probes=513 spanSec=81.94 (beats 3+4) walkSec=50.58 capDps=45 capPerProbeDeg=7.202 rawPeakDeg=50.27 limitedPeakDeg=13.86 rawPeakDps=314.1 limitedPeakDps=86.6 acquirePeakMult=1.93x (max 2x) — the composed gaze, bounded at the rate the spin and orbit already turn at
+02:38:21.772 +   27.6s [con] §CINEMA_PLAN_MS 424.9 (fanRays=32 spaceCands=0 exitCands=400)
+02:38:21.772 +   27.6s [con] §CPE_CLIP applied window=0.500→0.503 span=0% frames=1626→5 (poseAt remaps; the film itself is unchanged)
+02:38:21.772 +   27.6s [con] §CPE_APPLIED total=108.4s frames=5 waypoints=8 saved=false
+02:38:21.773 +   27.6s [con] §MAXQ_START_REVISED frames=2937→5 (path edited; §MAXQ_START above is superseded)
+02:38:21.869 +   27.7s [con] §MAXQ_IDB_READY store opened
+02:38:22.013 +   27.9s [con] §GLOW_BUILDUP_EARLY_OUT armed firstFixtureMs=always-lit(synthetic) fixtures=1274 — frames before this skip the whole gate
+02:38:22.013 +   27.9s [con] §PHOTO_GLOW_SPRITE staged 57/1274 sprites (0 luminaires gain 3, 57 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)
+02:38:22.014 +   27.9s [con] §CPE_REVEAL_LENS_QUAD_OFF colorScalar=1 quads=0 — VACUOUS: nothing staged yet, this transition proves nothing
+02:38:22.016 +   27.9s [con] §CPE_REVEAL_LENS_QUAD_OFF colorScalar=1 quads=1215 — lamps back for the all-together slot
+02:38:22.016 +   27.9s [con] §GLOW_LENS_QUAD staged rect=505 round=710 (57 exit signs left on the round sprite, 2 tier-2 overhead-picks skipped — PL only, no quad), 2 draw call(s), 0 scene materials touched
+02:38:22.018 +   27.9s [con] §GROUND_WETNESS_OVERRIDE value=0.5 userSet=false
+02:38:22.018 +   27.9s [con] §RENDER_LOOP start total=3
+02:38:22.149 +   28.0s [con] §PHOTO_PAINT_SEED seed=0.5139 locked=false puddles=6
+02:38:22.154 +   28.0s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:22.155 +   28.0s [con] §GROUND_ALBEDO gain=2.30 texAvgLum=0.155 effAlbedo=0.356 color=2.30 map=none
+02:38:22.160 +   28.0s [con] §MIRROR_TRUE_REFLECT bld=Hospital no mirrors — nothing to fix
+02:38:22.218 +   28.1s [con] §PHOTO_SHADOW_TARGET src=building-bbox-centre target=(-7.3,3.0,18.1) cameraTarget=(2.5,-3.6,-0.8) drift=22.2
+02:38:22.283 +   28.2s [con] §PHOTO_SHADOW_BIAS worldBias=1.682m bias=-8.497e-5 range=19792m texel=0.177m grazeElev=6 (was -0.0005 = 9.90m, which erased every caster under 8.1m tall at the arc start)
+02:38:22.666 +   28.5s [con] §PHOTO_SHADOW_FRUSTUM_COVERAGE inFrustum=4495 outsideFrustum=0 (outsideFrustum = geometry the shadow camera cannot see right now, regardless of castShadow flags -- nonzero here is a real, unfixed frustum-coverage gap; zero here rules frustum coverage OUT as the cause)
+02:38:22.667 +   28.5s [con] §PHOTO_SHADOW enabled casters=4495 sunDist=5011 env=362 texelPerM=5.7
+02:38:22.673 +   28.5s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:22.813 +   28.7s [con] §NIGHT_GLOW_REASSERT +glowMeshes=5 +windowGlowMats=3 totalGlowMats=8
+02:38:22.813 +   28.7s [con] §NIGHT_MODE on fixtures=1274 source=IFC+room-fallback(2 rooms, 0 via flow-terminal) glowMats=8
+02:38:22.817 +   28.7s [con] §NIGHT_BAKE_POOL created n=200 — point-light COUNT frozen for the bake; unused slots ride at intensity 0
+02:38:22.817 +   28.7s [con] §NIGHT_MEM_WITNESS heapMB=2120.4 matCacheKeys=99 glowMatKeys=99 nightLights=0
+02:38:22.818 +   28.7s [con] §MOVIE_SHADOW_TM sun=4.400 ambient=0.386 hemi=0.617 fill=1.003 sunFillRatio=4.387 (TM native ratio 2.155 — equal means the bake matches TM shadow strength)
+02:38:22.818 +   28.7s [con] §SUN_ARC_FILL_BASE ambient=0.3860 hemi=0.6170 plScaleStaged=0.5 nightWasOn=false
+02:38:22.818 +   28.7s [con] §GROUND_COLOR_ORDER_FIX reasserted color=2.30 gain=2.30
+02:38:22.818 +   28.7s [con] §CAM_LIGHT on intensity=3 distance=4 decay=2 forwardOffset=0.4
+02:38:22.896 +   28.8s [con] §PHOTO_ADDONS doors=6 trees=15
+02:38:22.899 +   28.8s [con] §PHOTO_PROPS built uplights=31 skylineBoxes=35 windowLights=4256
+02:38:22.953 +   28.8s [con] §PHOTO_SPARKLE_REBUILD points=24 flat=12 round=12
+02:38:22.953 +   28.8s [con] §FACADE_WARM_COOL sunAz=0.000,-1.000 warm=2 cool=2 dots=-1.00,0.00,1.00,-0.00
+02:38:22.953 +   28.8s [con] §PHOTO_FACING facades=4 strengths=0.30,0.79,0.30,0.54
+02:38:22.965 +   28.8s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:37.142 +   43.0s [con] §MIRROR_ROOM_PROBE built pos=(-7.3,-6.2,16.4) envelope=150.9 size=128
+02:38:37.142 +   43.0s [con] §PHOTO_STAGING on nightWasOn=false
+02:38:37.142 +   43.0s [con] §NIGHT_STILL_LIGHTS raised to 200 lights, near-fade floor 1 (was 0.3), plScale 0.5 (§STAGED_PL_CUT) for the still
+02:38:37.142 +   43.0s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:38:37.143 +   43.0s [con] §FPS_MODE mean=6969.5 max=20632.5 n=3 dlod=off disp=solid fly=0 orbit=0
+02:38:37.263 +   43.1s [heap] usedMB=216.4 totalMB=295.7
+02:38:37.351 +   43.2s [con] §IDLE_GATE wake parks=2 (1-in-25 sample)
+02:38:44.833 +   50.7s [con] §IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=3
+02:38:46.307 +   52.2s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:46.307 +   52.2s [con] §GROUND_MAP key=earth src=textures/ground/earth_1k.jpg repeat=64 aniso=8 nor=ok rough=ok detailMean=0.1599
+02:38:46.307 +   52.2s [con] §SHADOW_GROUND_SWATCH key=off
+02:38:47.671 +   53.5s [con] §FPS_MODE mean=10527.8 max=10527.8 n=1 dlod=off disp=solid fly=0 orbit=0
+02:38:47.745 +   53.6s [con] §IDLE_GATE wake parks=3 (1-in-25 sample)
+02:38:47.825 +   53.7s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:38:47.825 +   53.7s [con] §STILL_REFINE done accumulateIndex=9 elapsedMs=25809 (frozen — stays until interaction)
+02:38:47.873 +   53.7s [con] §SUN_SHADOW_RESTORE_INIT_OK kernelPx=4 strength=1 kernelMaxScale=4 (§SUN_SHADOW_GRAZE_SCALE — kernel now widens per-pixel at grazing sun incidence)
+02:38:47.874 +   53.7s [con] §PHOTO_AO_INIT_OK N8AOPass in native composer chain (lazy) size=1280x720
+02:38:47.874 +   53.7s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:38:49.643 +   55.5s [con] [S258] §BVH_DEFERRED built=20609 ms=32969 (incremental)
+02:38:49.781 +   55.7s [con] §PHOTO_AO done frames=12 totalMs=1956 avgRenderMs=98.7 (frozen with AO — stays until interaction)
+02:38:49.850 +   55.7s [con] §MAXQ_HDRI_RACE waitedMs=0
+02:38:49.850 +   55.7s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:38:49.854 +   55.7s [con] §GLOW_LENS_QUAD removed
+02:38:49.855 +   55.7s [con] §PHOTO_GLOW_SPRITE removed 57 sprites
+02:38:49.856 +   55.7s [con] §CAM_LIGHT off
+02:38:49.857 +   55.7s [con] §SFR_UNIFORM_NOT_DEFINE teardown envMapIntensity restored on 99 material(s) — the map itself never moved, so nothing holds a disposed target
+02:38:49.857 +   55.7s [con] §NIGHT_MEM_WITNESS heapMB=1794.3 matCacheKeys=99 glowMatKeys=0 nightLights=0
+02:38:49.858 +   55.7s [con] §NIGHT_MODE off
+02:38:49.858 +   55.7s [con] §SUN_FILL_RATIO teardown envMap restored on 80 material(s), stale _photoBoosted cleared on 27
+02:38:49.859 +   55.7s [con] §PHOTO_SHADOW disabled reassertRuns=2 reassertSkips=6 forcedSaves=1
+02:38:49.859 +   55.7s [con] §GROUND_MAP key=none map=cleared color=0x222233
+02:38:49.859 +   55.7s [con] §SHADOW_GROUND_SWATCH key=off
+02:38:49.860 +   55.7s [con] §GROUND_ALBEDO restored gain=1.00 color=0.13
+02:38:49.864 +   55.7s [con] §PHOTO_STAGING off
+02:38:49.864 +   55.7s [con] §STILL_REFINE cancelled (interaction) elapsedMs=27848
+02:38:49.864 +   55.7s [con] §TRIPLANAR_PERF ms=27848 materials=52
+02:38:49.864 +   55.7s [con] §FPS_MODE mean=2193.4 max=2193.4 n=1 dlod=off disp=solid fly=0 orbit=0
+02:38:52.928 +   58.8s [con] §CPE_PATH_OVERVIEW off — rides the Label ON checkbox, which is off for this bake
+02:38:53.182 +   59.1s [con] §CPE_TAIL_LIGHTS_ALL_ONLY frame=0/5 lights=ON (not a one-discipline slot)
+02:38:53.186 +   59.1s [con] §GLOW_BUILDUP_EARLY_OUT armed firstFixtureMs=always-lit(synthetic) fixtures=1274 — frames before this skip the whole gate
+02:38:53.187 +   59.1s [con] §PHOTO_GLOW_SPRITE staged 57/1274 sprites (0 luminaires gain 3, 57 exit signs gain 0.9 x0.4 size — §GLOW_EXIT_SOFT, below the bloom threshold on purpose), 1 draw call, 0 scene materials touched (size 1.1m, eye-offset 0.3m, bloom threshold 1.2, strength 0.45)
+02:38:53.187 +   59.1s [con] §CPE_REVEAL_LENS_QUAD_OFF colorScalar=1 quads=0 — VACUOUS: nothing staged yet, this transition proves nothing
+02:38:53.189 +   59.1s [con] §CPE_REVEAL_LENS_QUAD_OFF colorScalar=1 quads=1215 — lamps back for the all-together slot
+02:38:53.189 +   59.1s [con] §GLOW_LENS_QUAD staged rect=505 round=710 (57 exit signs left on the round sprite, 2 tier-2 overhead-picks skipped — PL only, no quad), 2 draw call(s), 0 scene materials touched
+02:38:53.190 +   59.1s [con] §GROUND_WETNESS_OVERRIDE value=0.5 userSet=false
+02:38:53.327 +   59.2s [con] §PHOTO_PAINT_SEED seed=0.7487 locked=false puddles=6
+02:38:53.332 +   59.2s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:53.337 +   59.2s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:53.338 +   59.2s [con] §GROUND_MAP key=earth src=textures/ground/earth_1k.jpg repeat=64 aniso=8 nor=ok rough=ok detailMean=0.1599
+02:38:53.338 +   59.2s [con] §SHADOW_GROUND_SWATCH key=off
+02:38:53.338 +   59.2s [con] §GROUND_ALBEDO gain=2.30 texAvgLum=0.155 effAlbedo=0.356 color=2.30 map=paved
+02:38:53.398 +   59.3s [con] §PHOTO_SHADOW_TARGET src=building-bbox-centre target=(-7.3,3.0,18.1) cameraTarget=(2.4,9.7,-7.5) drift=28.2
+02:38:53.466 +   59.3s [con] §PHOTO_SHADOW_BIAS worldBias=1.682m bias=-8.497e-5 range=19792m texel=0.177m grazeElev=6 (was -0.0005 = 9.90m, which erased every caster under 8.1m tall at the arc start)
+02:38:53.469 +   59.3s [con] §PHOTO_SHADOW_FRUSTUM_COVERAGE inFrustum=4495 outsideFrustum=0 (outsideFrustum = geometry the shadow camera cannot see right now, regardless of castShadow flags -- nonzero here is a real, unfixed frustum-coverage gap; zero here rules frustum coverage OUT as the cause)
+02:38:53.469 +   59.3s [con] §PHOTO_SHADOW enabled casters=4495 sunDist=5011 env=362 texelPerM=5.7
+02:38:53.475 +   59.3s [con] §GROUND_Y src=gf-storey-slab(Level 1) z=165.36 y=-15.88
+02:38:53.630 +   59.5s [con] §NIGHT_GLOW_REASSERT +glowMeshes=5 +windowGlowMats=3 totalGlowMats=8
+02:38:53.630 +   59.5s [con] §NIGHT_MODE on fixtures=1274 source=IFC+room-fallback(2 rooms, 0 via flow-terminal) glowMats=8
+02:38:53.633 +   59.5s [con] §NIGHT_MEM_WITNESS heapMB=1773.1 matCacheKeys=99 glowMatKeys=99 nightLights=0
+02:38:53.633 +   59.5s [con] §MOVIE_SHADOW_TM sun=4.400 ambient=0.386 hemi=0.617 fill=1.003 sunFillRatio=4.387 (TM native ratio 2.155 — equal means the bake matches TM shadow strength)
+02:38:53.633 +   59.5s [con] §SUN_ARC_FILL_BASE ambient=0.3860 hemi=0.6170 plScaleStaged=0.5 nightWasOn=false
+02:38:53.634 +   59.5s [con] §GROUND_COLOR_ORDER_FIX reasserted color=2.30 gain=2.30
+02:38:53.634 +   59.5s [con] §CAM_LIGHT on intensity=3 distance=4 decay=2 forwardOffset=0.4
+02:38:53.710 +   59.6s [con] §PHOTO_ADDONS doors=6 trees=15
+02:38:53.712 +   59.6s [con] §PHOTO_PROPS built uplights=31 skylineBoxes=35 windowLights=4635
+02:38:53.765 +   59.6s [con] §PHOTO_SPARKLE_REBUILD points=24 flat=12 round=12
+02:38:53.765 +   59.6s [con] §FACADE_WARM_COOL sunAz=0.000,-1.000 warm=2 cool=2 dots=-1.00,0.00,1.00,-0.00
+02:38:53.765 +   59.6s [con] §PHOTO_FACING facades=4 strengths=0.54,0.30,0.30,0.30
+02:38:53.777 +   59.6s [con] §BILLBOARD_NAME no BIM_OOTB_NamePlate element in this db — apply migration/billboards/terminal_billboard_nameplate.sql
+02:38:57.660 +   63.5s [heap] usedMB=150.1 totalMB=218.2
+02:39:00.735 +   66.6s [con] §MIRROR_ROOM_PROBE reused pos=(-7.3,-6.2,16.4) envelope=150.9 size=128
+02:39:00.736 +   66.6s [con] §PHOTO_STAGING on nightWasOn=false
+02:39:00.736 +   66.6s [con] §NIGHT_STILL_LIGHTS raised to 200 lights, near-fade floor 1 (was 0.3), plScale 0.5 (§STAGED_PL_CUT) for the still
+02:39:00.736 +   66.6s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:00.736 +   66.6s [con] §SUN_ARC_STEP tNorm=0.000 elevation=55.0 (start=55 end=6)
+02:39:00.737 +   66.6s [con] §SUN_ARC_FILL_PIN tNorm=0.000 elevation=55.00 ambient=0.3860 hemi=0.6170 plScale=0.5000 budget=50 nearFloor=1 poolLit=200 poolSum=200.000 sun=4.4000 sunPos=-980.873,4095.760,-2694.928 drift=none (pinned to the Alt+S baseline — sun and shadow untouched by this step)
+02:39:00.737 +   66.6s [con] §FPS_MODE mean=10872.5 max=10872.5 n=1 dlod=off disp=solid fly=0 orbit=0
+02:39:04.027 +   69.9s [con] §ENVMAP_STOMP_GUARD skipped procedural regen — HDRI active; skips=1 regens=0 (1-in-100 sample; every call is counted, only the line is sampled)
+02:39:04.290 +   70.2s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:39:04.290 +   70.2s [con] §STILL_REFINE done accumulateIndex=8 elapsedMs=11101 (frozen — stays until interaction)
+02:39:04.290 +   70.2s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:39:04.764 +   70.6s [con] §PHOTO_AO done frames=12 totalMs=473 avgRenderMs=36.2 (frozen with AO — stays until interaction)
+02:39:05.045 +   70.9s [con] §MAXQ_FRAME i=0/5 elapsedMs=12116 perFrameMs=12116 etaSec=-1 (rolling-15, log every 5s)
+02:39:05.045 +   70.9s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:39:05.045 +   70.9s [con] §GLOW_LENS_QUAD skip (count unchanged 1274)
+02:39:05.047 +   70.9s [con] §STILL_REFINE cancelled (interaction) elapsedMs=11857 (staging kept)
+02:39:05.047 +   70.9s [con] §TRIPLANAR_PERF ms=11857 materials=52
+02:39:05.047 +   70.9s [con] §FPS_MODE mean=4310.3 max=4310.3 n=1 dlod=off disp=solid fly=0 orbit=0
+02:39:05.054 +   70.9s [con] [DLOD] §DLOD_REFS built instanced=2872 imInstances=25013 (BM handled by r184 perObjectFrustumCulled)
+02:39:05.056 +   70.9s [con] §DLOD_TICK n=1 ms_mean=2.20 ms_max=2.20 flips_mean=16149.0 fly=0 vfCamActive=0 imHid=16149 imVis=8864
+02:39:14.163 +   80.0s [con] §GLOW_BUILDUP_EARLY_OUT armed firstFixtureMs=always-lit(synthetic) fixtures=1274 — frames before this skip the whole gate
+02:39:14.164 +   80.0s [con] §PHOTO_STAGING already on — skip re-apply (Stage-2 refire)
+02:39:14.164 +   80.0s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:14.165 +   80.0s [con] §SUN_ARC_STEP tNorm=0.250 elevation=42.8 (start=55 end=6)
+02:39:14.165 +   80.0s [con] §SUN_ARC_FILL_PIN tNorm=0.250 elevation=42.75 ambient=0.3860 hemi=0.6170 plScale=0.5000 budget=50 nearFloor=1 poolLit=200 poolSum=200.000 sun=4.4000 sunPos=-1255.765,3394.004,-3450.187 drift=none (pinned to the Alt+S baseline — sun and shadow untouched by this step)
+02:39:14.180 +   80.1s [con] §FPS_MODE mean=9132.3 max=9132.3 n=1 dlod=off disp=solid fly=0 orbit=0
+02:39:14.666 +   80.5s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:39:14.666 +   80.5s [con] §STILL_REFINE done accumulateIndex=8 elapsedMs=503 (frozen — stays until interaction)
+02:39:14.667 +   80.5s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:39:15.163 +   81.0s [con] §PHOTO_AO done frames=12 totalMs=497 avgRenderMs=38.1 (frozen with AO — stays until interaction)
+02:39:15.457 +   81.3s [con] §MAXQ_FRAME i=1/5 elapsedMs=22528 perFrameMs=11264 etaSec=34 (rolling-15, log every 5s)
+02:39:15.457 +   81.3s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:39:15.459 +   81.3s [con] §STILL_REFINE cancelled (interaction) elapsedMs=1295 (staging kept)
+02:39:15.459 +   81.3s [con] §TRIPLANAR_PERF ms=1295 materials=52
+02:39:15.506 +   81.4s [con] §PHOTO_STAGING already on — skip re-apply (Stage-2 refire)
+02:39:15.506 +   81.4s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:15.506 +   81.4s [con] §SUN_ARC_STEP tNorm=0.500 elevation=30.5 (start=55 end=6)
+02:39:15.506 +   81.4s [con] §SUN_ARC_FILL_PIN tNorm=0.500 elevation=30.50 ambient=0.3860 hemi=0.6170 plScale=0.5000 budget=50 nearFloor=1 poolLit=200 poolSum=200.000 sun=4.4000 sunPos=-1473.473,2537.692,-4048.333 drift=none (pinned to the Alt+S baseline — sun and shadow untouched by this step)
+02:39:15.994 +   81.9s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:39:15.994 +   81.9s [con] §STILL_REFINE done accumulateIndex=8 elapsedMs=489 (frozen — stays until interaction)
+02:39:15.995 +   81.9s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:39:16.479 +   82.3s [con] §PHOTO_AO done frames=12 totalMs=485 avgRenderMs=36.5 (frozen with AO — stays until interaction)
+02:39:17.266 +   83.1s [heap] usedMB=166.6 totalMB=245.0
+02:39:17.634 +   83.5s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:39:17.636 +   83.5s [con] §STILL_REFINE cancelled (interaction) elapsedMs=2131 (staging kept)
+02:39:17.637 +   83.5s [con] §TRIPLANAR_PERF ms=2131 materials=52
+02:39:17.637 +   83.5s [con] §FPS_MODE mean=1152.4 max=2124.1 n=3 dlod=off disp=solid fly=0 orbit=0
+02:39:17.684 +   83.6s [con] §PHOTO_STAGING already on — skip re-apply (Stage-2 refire)
+02:39:17.684 +   83.6s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:17.684 +   83.6s [con] §SUN_ARC_STEP tNorm=0.750 elevation=18.3 (start=55 end=6)
+02:39:17.684 +   83.6s [con] §SUN_ARC_FILL_PIN tNorm=0.750 elevation=18.25 ambient=0.3860 hemi=0.6170 plScale=0.5000 budget=50 nearFloor=1 poolLit=200 poolSum=200.000 sun=4.4000 sunPos=-1624.081,1565.819,-4462.126 drift=none (pinned to the Alt+S baseline — sun and shadow untouched by this step)
+02:39:18.171 +   84.0s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:39:18.171 +   84.0s [con] §STILL_REFINE done accumulateIndex=8 elapsedMs=488 (frozen — stays until interaction)
+02:39:18.171 +   84.0s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:39:18.680 +   84.6s [con] §PHOTO_AO done frames=12 totalMs=508 avgRenderMs=39.3 (frozen with AO — stays until interaction)
+02:39:18.944 +   84.8s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:39:18.946 +   84.8s [con] §STILL_REFINE cancelled (interaction) elapsedMs=1263 (staging kept)
+02:39:18.946 +   84.8s [con] §TRIPLANAR_PERF ms=1263 materials=52
+02:39:18.949 +   84.8s [con] §DLOD_TICK n=1 ms_mean=2.10 ms_max=2.10 flips_mean=270.0 fly=0 vfCamActive=0 imHid=16419 imVis=8594
+02:39:18.992 +   84.9s [con] §PHOTO_STAGING already on — skip re-apply (Stage-2 refire)
+02:39:18.992 +   84.9s [con] §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:18.992 +   84.9s [con] §SUN_ARC_STEP tNorm=1.000 elevation=6.0 (start=55 end=6)
+02:39:18.992 +   84.9s [con] §SUN_ARC_FILL_PIN tNorm=1.000 elevation=6.00 ambient=0.3860 hemi=0.6170 plScale=0.5000 budget=50 nearFloor=1 poolLit=200 poolSum=200.000 sun=4.4000 sunPos=-1700.733,522.642,-4672.724 drift=none (pinned to the Alt+S baseline — sun and shadow untouched by this step)
+02:39:19.173 +   85.0s §CLI_BAKE_PROGRESS frame=1/5 20.0% rate=10.412s/frame (trailing 2) elapsed=23s eta=42s (4 frames left) — early estimate runs LOW; frames get heavier as the model fills in
+02:39:19.457 +   85.3s [con] §PHOTO_SHADOW_FORCE_REASSERT visMeshes=4530 flippedOn=0 (0 flipped = every visible mesh already had castShadow on)
+02:39:19.458 +   85.3s [con] §STILL_REFINE done accumulateIndex=8 elapsedMs=466 (frozen — stays until interaction)
+02:39:19.458 +   85.3s [con] §PHOTO_AO start frames=12 radius=32 intensity=4 denoiseRadius=7 denoiseSamples=5 (still-only fold — Alt+G untouched)
+02:39:19.896 +   85.8s [con] §PHOTO_AO done frames=12 totalMs=438 avgRenderMs=33.3 (frozen with AO — stays until interaction)
+02:39:20.158 +   86.0s [con] §MAXQ_FRAME i=4/5 elapsedMs=27230 perFrameMs=5446 etaSec=0 (rolling-15, log every 5s)
+02:39:20.159 +   86.0s [con] §GLOW_LENS_QUAD repeats=3 (identical, suppressed — flushed at still exit)
+02:39:20.159 +   86.0s [con] §NIGHT_STILL_LIGHTS repeats=4 (identical, suppressed — flushed at still exit)
+02:39:20.159 +   86.0s [con] §PHOTO_GLOW_SPRITE repeats=4 (identical, suppressed — flushed at still exit)
+02:39:20.159 +   86.0s [con] §PHOTO_GLOW_SPRITE repeats=4 (identical, suppressed — flushed at still exit)
+02:39:20.160 +   86.0s [con] §GROUND_WETNESS_OVERRIDE repeats=4 (identical, suppressed — flushed at still exit)
+02:39:20.160 +   86.0s [con] §PHOTO_AO off (cancelled (interaction)) — pass disabled, zero cost during normal nav
+02:39:20.164 +   86.0s [con] §GLOW_LENS_QUAD removed
+02:39:20.165 +   86.0s [con] §PHOTO_GLOW_SPRITE removed 57 sprites
+02:39:20.165 +   86.0s [con] §CAM_LIGHT off
+02:39:20.165 +   86.0s [con] §SFR_UNIFORM_NOT_DEFINE teardown envMapIntensity restored on 99 material(s) — the map itself never moved, so nothing holds a disposed target
+02:39:20.166 +   86.0s [con] §NIGHT_MEM_WITNESS heapMB=1845.6 matCacheKeys=99 glowMatKeys=0 nightLights=0
+02:39:20.166 +   86.0s [con] §NIGHT_MODE off
+02:39:20.166 +   86.0s [con] §SUN_FILL_RATIO teardown envMap restored on 80 material(s), stale _photoBoosted cleared on 27
+02:39:20.167 +   86.0s [con] §PHOTO_SHADOW disabled reassertRuns=6 reassertSkips=34 forcedSaves=5
+02:39:20.167 +   86.0s [con] §GROUND_MAP key=none map=cleared color=0x222233
+02:39:20.167 +   86.0s [con] §SHADOW_GROUND_SWATCH key=off
+02:39:20.168 +   86.0s [con] §GROUND_ALBEDO restored gain=1.00 color=0.13
+02:39:20.172 +   86.0s [con] §PHOTO_STAGING off
+02:39:20.172 +   86.0s [con] §STILL_REFINE cancelled (interaction) elapsedMs=1181
+02:39:20.172 +   86.0s [con] §TRIPLANAR_PERF ms=1181 materials=52
+02:39:20.172 +   86.0s [con] §CPE_PIE_HOLD heldFrames=0/5 (0% of the film) — trades were active for every frame, the pie was never held
+02:39:20.173 +   86.0s [con] §CPE_STATS_TAIL revolvedFrames=0/5 (0% of the film) — the Reveal round never revolved: no topout on the plan and the ops never froze
+02:39:20.173 +   86.0s [con] §MAXQ_QUALITY frames=5 unconverged=0 (every frame converged) hiddenPauses=0 totalHiddenMs=0
+02:39:20.183 +   86.1s [con] §FPS_MODE mean=636.6 max=1250.5 n=4 dlod=off disp=solid fly=0 orbit=0
+02:39:20.224 +   86.1s [con] §MAXQ_MP4 probe codec=avc1.640034 supported=true
+02:39:20.225 +   86.1s [con] §MAXQ_MP4 configured codec=avc1.640034 size=1280x720 bitrate=2764800 fps=15 frames=5
+02:39:20.289 +   86.2s [con] §MAXQ_MP4 encoded chunks=5 bytes=90854 avcCBytes=38 ms=116 (no real-time replay — 0.3s of footage)
+02:39:20.290 +   86.2s [con] §MAXQ_MP4 mux samples=5 avcC=encoder ctts=no timescale=15000
+02:39:20.294 +   86.2s §CLI_BAKE_SINK begin name=BIM_MaxQ_Hospital_1788575960291.mp4 type=video/mp4 totalBytes=91563 → /home/red1/Downloads/sunarc/sunarc_pin_after.mp4
+02:39:20.302 +   86.2s §CLI_BAKE_SINK end bytes=91563
+02:39:20.303 +   86.2s [con] §MAXQ_DELIVERED bytes=91563 name=BIM_MaxQ_Hospital_1788575960291.mp4
+02:39:20.303 +   86.2s [con] §MAXQ_DONE frames=5 bytes=91563 type=video/mp4 codec=avc1.640034
+02:39:20.304 +   86.2s [con] §CINEMA_DAMPING_BLEED released (enableDamping restored to true)
+02:39:24.175 +   90.0s §CLI_BAKE_RESULT {"ok":true,"r":{"source":"db:cinema_path","deliveredBytes":91563}}
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP_MODE pinOff=false pinReplaced=false pinCallsSwallowed=0
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP i=0 pinOff=false elevation=55 ambient=0.386 hemi=0.617 plScale=0.5 budget=50 nearFloor=1 poolLit=200 poolSum=200 base=0.386/0.617/0.5 still=50/1/0.5 exposure=0.3825 sun=4.4 sunPos=-980.87347,4095.76022,-2694.92772 sunTgt=-7.31243,2.969,18.06005 shadowCam=-362,362,362,-362,250.53492,20042.79352 shadowMat=fcca8bea shadowMap=7891e81e (fmt=1023 type=1009 4096x4096) cam=-17.1641,7.4086,-3.9836,2.3889,9.688,-7.517
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP i=1 pinOff=false elevation=42.75 ambient=0.386 hemi=0.617 plScale=0.5 budget=50 nearFloor=1 poolLit=200 poolSum=200 base=0.386/0.617/0.5 still=50/1/0.5 exposure=0.3825 sun=4.4 sunPos=-1255.76545,3394.00373,-3450.18722 sunTgt=-7.31243,2.969,18.06005 shadowCam=-362,362,362,-362,250.53492,20042.79352 shadowMat=5000c5dd shadowMap=cfbb8600 (fmt=1023 type=1009 4096x4096) cam=-16.8677,7.4434,-4.028,2.6818,9.7307,-7.576
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP i=2 pinOff=false elevation=30.5 ambient=0.386 hemi=0.617 plScale=0.5 budget=50 nearFloor=1 poolLit=200 poolSum=200 base=0.386/0.617/0.5 still=50/1/0.5 exposure=0.3825 sun=4.4 sunPos=-1473.47264,2537.69181,-4048.33282 sunTgt=-7.31243,2.969,18.06005 shadowCam=-362,362,362,-362,250.53492,20042.79352 shadowMat=c4288ec3 shadowMap=1495639f (fmt=1023 type=1009 4096x4096) cam=-16.5694,7.4777,-4.0738,2.9765,9.7735,-7.6359
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP i=3 pinOff=false elevation=18.25 ambient=0.386 hemi=0.617 plScale=0.5 budget=50 nearFloor=1 poolLit=200 poolSum=200 base=0.386/0.617/0.5 still=50/1/0.5 exposure=0.3825 sun=4.4 sunPos=-1624.08116,1565.81903,-4462.1263 sunTgt=-7.31243,2.969,18.06005 shadowCam=-362,362,362,-362,250.53492,20042.79352 shadowMat=7a0463ca shadowMap=a11a8cae (fmt=1023 type=1009 4096x4096) cam=-16.269,7.5117,-4.121,3.2732,9.8174,-7.6969
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP i=4 pinOff=false elevation=6 ambient=0.386 hemi=0.617 plScale=0.5 budget=50 nearFloor=1 poolLit=200 poolSum=200 base=0.386/0.617/0.5 still=50/1/0.5 exposure=0.3825 sun=4.4 sunPos=-1700.73261,522.64232,-4672.72443 sunTgt=-7.31243,2.969,18.06005 shadowCam=-362,362,362,-362,250.53492,20042.79352 shadowMat=b9ef24c4 shadowMap=f88b4c63 (fmt=1023 type=1009 4096x4096) cam=-15.9662,7.546,-4.1685,3.5721,9.8629,-7.758
+02:39:24.178 +   90.0s §CLI_BAKE_TAP §SUN_ARC_FILL_TAP_VERDICT frames=5 pinOff=false
+02:39:24.179 +   90.0s §CLI_BAKE_TAP_FILE /home/red1/Downloads/sunarc/sunarc_pin_after_tap.json lines=7 rows=5
+02:39:24.181 +   90.1s §CLI_BAKE_FRAMES poses=5 meanMs=6452.5 p50Ms=2177.6 worstMs=20981.4
+02:39:24.183 +   90.1s §CLI_BAKE_POSECHECK INCONCLUSIVE clip window set — t-mapping not identity, check by hand
+02:39:24.184 +   90.1s §CLI_BAKE_HEAP samples=3 minMB=150 maxMB=216 lastMB=167
+02:39:24.184 +   90.1s §CLI_BAKE_FILE path=/home/red1/Downloads/sunarc/sunarc_pin_after.mp4 bytes=91563
+02:39:24.245 +   90.1s §CLI_BAKE_FFPROBE codec=h264 1280x720 frames=5 fps=15/1 durationSec=0.333333 bitrate=2197514
+02:39:24.245 +   90.1s §CLAIM §PHOTO_PREWARM ms=4512 did=[mepSmooth,hdri,groundTex] — this work is now OFF the first Alt+S press (measured 8,923.6 ms of it on Hospital)
+02:39:24.245 +   90.1s §CLAIM §CINEMA_PATH_RESTORE bands=4 total=278.8s holdCol=true holds=0 flagCol=true buildup=1 roomTitle=1 reveal=1 dayCounter=tl — authored path in force
+02:39:24.245 +   90.1s §CLAIM §CLI_BAKE_RESOLVED source=db:cinema_path bands=4 clip=0.5→0.5032 total=278.8s buildup=0 roomTitle=0 reveal=0 dayCounter=off
+02:39:24.245 +   90.1s §CLAIM §MAXQ_FRAME_BUDGET taa=8 ao=12 renders/frame=20 (was 16+24=40) — bake only, Alt+S stills keep the full fold
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §STILL_REFINE start samples=8 triplanarMaterials=52 §MAXQ_FRAME_BUDGET taa=8 ao=12 (bake budget — Alt+S stills are unaffected)
+02:39:24.245 +   90.1s §CLAIM §MAXQ_START frames=2937 fps=15 path=cinema radius=102.2 height=73.6 size=1280x720
+02:39:24.245 +   90.1s §CLAIM §MAXQ_OVERRIDE_IN source=db:cinema_path bands=4 hoseOps=0 buildup=0 roomTitle=0 reveal=0 durationSec=108.4
+02:39:24.245 +   90.1s §CLAIM §CPE_APPLIED total=108.4s frames=5 waypoints=8 saved=false
+02:39:24.245 +   90.1s §CLAIM §MAXQ_START_REVISED frames=2937→5 (path edited; §MAXQ_START above is superseded)
+02:39:24.245 +   90.1s §CLAIM §MAXQ_HDRI_RACE waitedMs=0
+02:39:24.245 +   90.1s §CLAIM §CPE_PIE_HOLD heldFrames=0/5 (0% of the film) — trades were active for every frame, the pie was never held
+02:39:24.245 +   90.1s §CLAIM §CPE_STATS_TAIL revolvedFrames=0/5 (0% of the film) — the Reveal round never revolved: no topout on the plan and the ops never froze
+02:39:24.245 +   90.1s §CLAIM §MAXQ_QUALITY frames=5 unconverged=0 (every frame converged) hiddenPauses=0 totalHiddenMs=0
+02:39:24.245 +   90.1s §CLAIM §MAXQ_DELIVERED bytes=91563 name=BIM_MaxQ_Hospital_1788575960291.mp4
+02:39:24.245 +   90.1s §CLAIM §MAXQ_DONE frames=5 bytes=91563 type=video/mp4 codec=avc1.640034
+02:39:24.245 +   90.1s §CLI_BAKE_WALL totalSec=66 aborted=no fileOk=true

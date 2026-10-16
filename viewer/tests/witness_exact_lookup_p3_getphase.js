@@ -50,8 +50,8 @@ vm.runInContext(block, sandbox);
 
 assert(sandbox.getPhase('IfcFooting') === 'Substructure', 'G-Y IfcFooting (tier 1 explicit) resolves Substructure');
 assert(sandbox.getPhase('IfcTank') === 'MEP Rough-in', 'G-Z IfcTank (tier 2, via IfcFlowStorageDevice) resolves MEP Rough-in, not the generic default');
-assert(sandbox.getPhase('IfcDoorType') === 'Architecture', 'G-AA IfcDoorType (tier 1 substring, via IfcDoor) resolves Architecture, not the generic default');
-assert(sandbox.getPhase('IfcActor') === 'Architecture', 'G-AB IfcActor (genuine tier 3) resolves the generic default (Architecture) — getPhase has no Unsequenced/OTHER concept of its own, unchanged from before');
+assert(sandbox.getPhase('IfcDoorType') === SEQUENCE_RULES.IfcDoor.phase && SEQUENCE_RULES.IfcDoor.phase !== SEQUENCE_DEFAULT.phase, 'G-AA IfcDoorType (tier 1 substring, via IfcDoor) resolves ' + SEQUENCE_RULES.IfcDoor.phase + ', not the generic default');
+assert(sandbox.getPhase('IfcActor') === SEQUENCE_DEFAULT.phase, 'G-AB IfcActor (genuine tier 3) resolves the generic default (' + SEQUENCE_DEFAULT.phase + ') — getPhase has no Unsequenced/OTHER concept of its own, unchanged from before');
 
 console.log('\n§EXACT_LOOKUP_P3_GETPHASE_SUMMARY pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

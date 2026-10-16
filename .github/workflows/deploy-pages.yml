@@ -37,6 +37,16 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           printf '{"version":"%s","build":"%s","sha":"%s","pr":%s,"date":"%s"}\n' "$VERSION" "$BUILD" "$SHA" "${PR:-null}" "$DATE" > erp/version.json
           echo "§SYSMON-RELEASE stamped erp/version.json: $(cat erp/version.json)"
+      # Rebuild the two SHIPPED AGENT BUNDLES (prompts/AGENT_QUEUE.md §AGENT-ZIPS-BUILT / §PZ.3).
+      # ⚠ THIS STEP DOES NOT REACH USERS TODAY, and neither does the version.json stamp above or the
+      # minify below: Pages for this repo is build_type "legacy", source {branch: main, path: /}, so it
+      # serves the TRACKED FILES ON MAIN and the artifact this job uploads is published by nothing
+      # (measured — erp/version.json has been 404 live since it was introduced, and the live JS is
+      # byte-identical to source, unminified). The zips are therefore COMMITTED; this step is kept so the
+      # artifact is correct the day Pages is switched to build_type "workflow", and it is harmless now.
+      - name: Build the shipped agent zips from their source directories
+        run: node erp/tools/build_agent_zips.js
+
       # Minify OUR OWN JS in the ephemeral checkout only (prompts/UI_PAYLOAD_PERF.md Win #1).
       # The repo source in git is NEVER changed — readable-source ethos preserved; only the
       # uploaded Pages artifact is minified. Whitespace+syntax only (no identifier mangling),

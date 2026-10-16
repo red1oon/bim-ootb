@@ -61,8 +61,9 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'boq_charts.html'), 'utf8
   console.log('§P4_GENERATESCHEDULE groups=' + Object.keys(grouped).join(' | '));
   assert(!!grouped['MEP Rough-in|||L1'] && grouped['MEP Rough-in|||L1'].some(a => a.cls === 'IfcTank'),
     'G-AF generateSchedule: IfcTank (tier 2) groups into MEP Rough-in|||L1, not the generic default bucket');
-  assert(!!grouped['Architecture|||L1'] && grouped['Architecture|||L1'].some(a => a.cls === 'IfcDoorType'),
-    'G-AG generateSchedule: IfcDoorType (tier 1 substring, via IfcDoor) groups into Architecture|||L1');
+  const DOOR_KEY = SEQUENCE_RULES.IfcDoor.phase + '|||L1';   // derived from the shipped rules
+  assert(!!grouped[DOOR_KEY] && grouped[DOOR_KEY].some(a => a.cls === 'IfcDoorType'),
+    'G-AG generateSchedule: IfcDoorType (tier 1 substring, via IfcDoor) groups into ' + DOOR_KEY);
 }
 
 // ── buildScheduleFromOps's classification block (:908 area) ──
