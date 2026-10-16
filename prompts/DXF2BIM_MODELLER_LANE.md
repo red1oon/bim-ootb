@@ -11,7 +11,7 @@ Read this block first, then the sections it names. Work to zero; spec first, the
   - L2 qualify verdict (`deploy/dev/dxf2qualify.js`).
   - L3 Modeller import → Convert (ARC-seed form) → IFC4 with storeys.
   - L4 metadata editor, including @BY, @LAYER and the door schedule (#2071).
-  - The std Duplex set QUALIFIES with 0 blocking; a RAW set reached Qualifies through the editor in #2071 (282 UI actions), BUT that relied on model-derived window labels (a sidecar, since removed). Without them, 12 stacked FF windows stay `GAP:fill_unbound`, because the Tag tool cannot say which stacked window a tag means. Fix in flight (§L4.4): tag on ELEVATION sheets, with z taken from the pick. Verify that #2071/#2072 landed with E7 passing honestly.
+  - The std Duplex set QUALIFIES with 0 blocking; a RAW set reaches Qualifies HONESTLY through the editor (#2071 bc9fff0a + §L4.4 elevation tagging: stacked windows tagged by clicking them in elevations, z from the pick; E7 33/33, 319 UI actions, 40 → 0 blocking). Library labels now live in the marked DXF (#2072 a5759c69). PUBLIC site verified: fresh browser → library source=oci → OCI marked sample qualifies → Convert 36/36 fills. Open: L2 page witness flakes under load (4/9 OCI runs, no crash found; crash capture added).
 - **Library:** published to OCI as versioned shards `dxf2bim/library/<sha12>/` + `latest.json`, with samples at `dxf2bim/samples/duplex/{raw,marked}/`. Labels now go in the marked DXF as `@TAG … @BY=model` (BIMCompiler #195). Check that bim-ootb #2071 (doors) and #2072 (labels fix) landed on main, and that the public Modeller loads `source=oci`.
 - **Docs (live):**
   - https://red1oon.github.io/BIMCompiler/DXF2BIMGuide/
