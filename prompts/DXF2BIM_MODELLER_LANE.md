@@ -300,6 +300,18 @@ Written before the code. BIMCompiler branch `fix/std2d-plan-cut` (off master 73a
 - **Pipeline double count:** `rosetta_dx_shell` (DXSET=std) is checked so that each source wall is reconstructed once. The same model wall drawn on two plans must not become two 3D walls. If it does, this is reported, not hacked. On the Duplex no wall is on two plans (see above).
 - **Re-run from master:** std2d `--door-ops`, then `mark_dx_set.js std <door_ops.db>`, `DXSET=std rosetta_dx_shell.js`, `rosetta_qualify.js`. The target is std set blocking = 0.
 
+**L1.5 results (2026-10-16, BIMCompiler #188, from master 73ad2c00f).**
+- `§PLAN_CUT`: FLOOR_GF cut_z 1.200 has 17 walls, 0 from other storeys. FLOOR_FF cut_z 4.300 has 19 walls; 2 belong to another storey (`…FL8v`, `…FLTF` @ Level 1).
+- **test_std2d:** `fail=0`.
+  - W10 GF 17/17, FF 19/19.
+  - W10-control FAILS, as required.
+  - The origin/master FF plan FAILS W10, missing exactly the 2 walls.
+- **Std Duplex qualify:** **qualifies, blocking 0** (was 8), advisory 36.
+- **Regression:** unit suites 18/18 `fail=0`; rosetta_dx_section, rosetta_qualify and rosetta_dx std `fail=0`; rosetta_dx_shell old 33/3, unchanged.
+- **R1a answer key** (`rosetta_dx`, `rosetta_dx_shell`): it took source walls by storey, so the 2 walls' 4 FF pieces read as "invented". Precision is now checked against every wall the plane cuts. Recall (R1b) stays storey-scoped (L2's call).
+- **Open (reader/witness lane):** `rosetta_dx_shell` std OV Level 2 FAILS for doors 150/152 (`below=false`). Their host walls start at 2.612, but FF walls are rebuilt from the FF level 3.1, and OV samples only wall solids. Either the below-level part of a cross-storey wall is rebuilt (from the section or a marking), or the FF slab (2.795..3.1) counts as the material below.
+- **Double count:** not exercised (no Duplex wall is on two plans). The reader has no cross-plan identity, so a wall drawn on two plans would become one 3D wall per plan.
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
