@@ -12,7 +12,7 @@ export const DEFERRED = [
   'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
+export const SOURCE = { voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
@@ -241,11 +241,14 @@ export function create(ctx) {
   }
   function orderAfterSave(trx, live, isNew, old) {
     if (live.docaction === 'CL' || live.docaction === 'VO') return null;   // :451-455
-    let e;
-    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { if ((e = deleteWorkflowAndBOM(trx, live))) return e; if ((e = explosion(trx, live))) return e; }
+    let e, exploded = false;
+    if (changed(live, old, isNew, 'qtyentered', trx) && !isDelivered(live)) { if ((e = deleteWorkflowAndBOM(trx, live))) return e; if ((e = explosion(trx, live))) return e; exploded = true; }
     if (changed(live, old, isNew, 'qtyentered', trx) && isDelivered(live)) return 'Cannot Change Quantity, Only for Draft or In-Progess Status';
     if (!isNew) return null;
-    return explosion(trx, live);   // :466-475 - second explosion for a new record (faithful, see spec §LIBERO-DOUBLE-EXPLODE)
+    // :466-475 explodes AGAIN for a new record. DECISION (owner, 2026-10-15, "explode once"): a new order whose QtyEntered branch already exploded is NOT exploded a second time. This is a DECLARED deviation from the
+    // verbatim port (it produced two Parent Product rows and doubled every backflush issue and cost); SOURCE.explodeOnce=false restores the verbatim behaviour (LIBERO_BREAK=explodetwice). Spec: LIBERO_BUNDLE_SLICE1_SPEC.md §LIBERO-DOUBLE-EXPLODE.
+    if (SOURCE.explodeOnce && exploded) { trx.say('§LIBERO-DEVIATION explodeOnce: new-record second explosion skipped (MPPOrder.afterSave :473-474)'); return null; }
+    return explosion(trx, live);
   }
 
   // ── MPPMRP (MFG_Validator AFTER_NEW/AFTER_CHANGE -> MPPMRP.PP_Order / PP_Order_BOMLine) ──────────────
@@ -343,8 +346,129 @@ export function create(ctx) {
       trx.update('pp_order', trx.get('pp_order', doc.pp_order_id), { docaction: 'CL' });
       return 'CO';
     },
+    // ── slice 7 (prompts/mfg/LIBERO_ORDER_END_SLICE7_SPEC.md): void / re-activate / reverse-correct, MPPOrder.java :745-790, :852-870 ──
+    voidIt(trx, doc) {
+      const o = trx.get('pp_order', doc.pp_order_id);
+      let e = ML.fire(trx, 'BEFORE_VOID', 'pp_order', o); if (e) { trx._msg = e; return false; }
+      if (SOURCE.voidGuard && isDelivered(o)) throw new Error('Cannot void this document because exist transactions');
+      for (const line of orderLines(trx, o.pp_order_id)) {                                  // :754-763
+        const old = dec(line.qtyrequiered);
+        if (old.signum() !== 0) { const po = ML.po(trx, 'pp_order_bomline', line); po.set('description', addDesc(line.description, msgT(trx, '@Voided@ @QtyRequired@ : (' + old.toString() + ')'))).set('qtyrequiered', 0); if (!po.save()) throw new Error(po.error); }
+      }
+      if (SOURCE.voidNodes) voidActivities(trx, o);                                         // :765 getMPPOrderWorkflow().voidActivities()
+      let cur = trx.get('pp_order', o.pp_order_id), old = dec(cur.qtyordered);
+      if (old.signum() !== 0) {                                                             // :767-775
+        const po = ML.po(trx, 'pp_order', cur); po.set('description', addDesc(cur.description, msgT(trx, '@Voided@ @QtyOrdered@ : (' + old.toString() + ')'))).set('qtyordered', 0).set('qtyentered', 0); if (!po.save()) throw new Error(po.error);
+      }
+      cur = trx.get('pp_order', o.pp_order_id); const rec = Object.assign({}, cur);
+      e = orderStock(trx, rec); if (e) throw new Error(e);                                  // :777 (a no-op after the QtyOrdered save above already ran orderStock in beforeSave :425-430, kept as written) "Clear Ordered Quantities"
+      if (lc(rec.qtyreserved) !== lc(cur.qtyreserved)) ML.po(trx, 'pp_order', cur).set('qtyreserved', rec.qtyreserved).save();
+      orderLines(trx, o.pp_order_id).forEach((l) => reserveLine(trx, l));                   // :778 "Clear Reservations"
+      e = ML.fire(trx, 'AFTER_VOID', 'pp_order', trx.get('pp_order', o.pp_order_id)); if (e) { trx._msg = e; return false; }
+      trx.update('pp_order', trx.get('pp_order', o.pp_order_id), { docstatus: 'VO', docaction: '--' });   // DocumentEngine.voidIt -> STATUS_Voided; :785 setDocAction(None)
+      return true;
+    },
+    reverseCorrectIt(trx, doc) { return orderDoc.voidIt(trx, doc); },                     // :852-856
+    reverseAccrualIt() { return false; },                                                  // :858-862
+    reActivateIt(trx, doc) {                                                               // :864-875
+      const o = trx.get('pp_order', doc.pp_order_id);
+      const e = ML.fire(trx, 'AFTER_REACTIVATE', 'pp_order', o); if (e) { trx._msg = e; return false; }
+      if (isDelivered(o)) throw new Error('Cannot re activate this document because exist transactions');
+      trx.update('pp_order', o, { docaction: 'CO', processed: 'N', docstatus: 'IP' });     // DocumentEngine.reActivateIt -> STATUS_InProgress
+      return true;
+    },
+    closeIt(trx, doc) {                                                                    // :792-850
+      const cost = ctx.libero && ctx.libero.cost; if (!cost) throw new Error('the cost chunk is not active (collector entry points unavailable)');
+      let o = trx.get('pp_order', doc.pp_order_id), e = ML.fire(trx, 'BEFORE_CLOSE', 'pp_order', o); if (e) { trx._msg = e; return false; }
+      if (o.docstatus === 'CL') return true;
+      if (o.docstatus !== 'CO') { const st = orderDoc.completeIt(trx, o); trx.update('pp_order', trx.get('pp_order', o.pp_order_id), { docstatus: st, docaction: '--' }); }   // :803-807
+      o = trx.get('pp_order', o.pp_order_id);
+      if (!isDelivered(o)) throw new Error('Cannot close this document because do not exist transactions');
+      const when = o.updated || (trx.env && trx.env.now) || null;                            // getUpdated()
+      if (SOURCE.closeVariances) createVariances(trx, o, cost, when);                        // :816
+      for (const line of orderLines(trx, o.pp_order_id)) {                                   // :818-827
+        const old = dec(line.qtyrequiered);
+        if (old.compareTo(dec(line.qtydelivered)) !== 0) { const po = ML.po(trx, 'pp_order_bomline', line); po.set('qtyrequiered', line.qtydelivered).set('description', addDesc(line.description, msgT(trx, '@closed@ @QtyRequired@ (' + old.toString() + ')'))); if (!po.save()) throw new Error(po.error); }
+      }
+      if (SOURCE.closeActivities) closeActivities(trx, trx.get('pp_order', o.pp_order_id), cost, when);   // :830-831 closeActivities(lastNode, getUpdated(), false)
+      let cur = trx.get('pp_order', o.pp_order_id); const oldQ = dec(cur.qtyordered);
+      if (oldQ.signum() !== 0) { const po = ML.po(trx, 'pp_order', cur); po.set('description', addDesc(cur.description, msgT(trx, '@closed@ @QtyOrdered@ : (' + oldQ.toString() + ')'))).set('qtyordered', cur.qtydelivered); if (!po.save()) throw new Error(po.error); }   // :833-839
+      cur = trx.get('pp_order', o.pp_order_id); const rec = Object.assign({}, cur);
+      e = orderStock(trx, rec); if (e) throw new Error(e);                                   // :841 "Clear Ordered Quantities"
+      if (lc(rec.qtyreserved) !== lc(cur.qtyreserved)) ML.po(trx, 'pp_order', cur).set('qtyreserved', rec.qtyreserved).save();
+      orderLines(trx, o.pp_order_id).forEach((l) => reserveLine(trx, l));                    // :842 "Clear Reservations"
+      trx.update('pp_order', trx.get('pp_order', o.pp_order_id), { docstatus: 'CL', docaction: '--' });   // :844-846
+      e = ML.fire(trx, 'AFTER_CLOSE', 'pp_order', trx.get('pp_order', o.pp_order_id)); if (e) { trx._msg = e; return false; }
+      return true;
+    },
     getSummary(trx, doc) { return 'Manufacturing Order ' + (doc && doc.documentno); }
   };
+  // MPPOrderWorkflow.getNodesInOrder :311-344 + addNodesSF :352-385 (first node, then its transitions sibling-first, then any node without a transition)
+  function nodesInOrder(trx, o) {
+    const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return [];
+    const client = (n) => Number(n.ad_client_id || 0) === 0 || Number(n.ad_client_id) === Number(o.ad_client_id);
+    const all = trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter((n) => active(n) && client(n)), byId = {}; all.forEach((n) => { byId[n.pp_order_node_id] = n; });
+    const list = [];
+    const add = (id) => {
+      const n = byId[id]; if (!n) return; if (list.indexOf(n) < 0) list.push(n);
+      const nexts = []; trx.find('pp_order_nodenext', { pp_order_node_id: n.pp_order_node_id }).filter((x) => active(x) && client(x)).sort((a, b) => Number(a.seqno) - Number(b.seqno) || Number(a.pp_order_nodenext_id) - Number(b.pp_order_nodenext_id)).forEach((x) => {
+        const c = byId[x.pp_order_next_id]; if (c && list.indexOf(c) < 0) { list.push(c); nexts.push(x.pp_order_next_id); }
+      });
+      nexts.forEach(add);
+    };
+    add(wf.pp_order_node_id);
+    all.forEach((n) => { if (list.indexOf(n) < 0) list.push(n); });
+    return list;
+  }
+  // MPPOrder.createVariances :1578-1595 + createUsageVariance(line) :1597-1646 + createUsageVariance(node) :1648-1695
+  function createVariances(trx, o, cost, when) {
+    const dt = cost.mccDocType(trx), sumCC = (where, col) => trx.find('pp_cost_collector', where).filter((c) => c.docstatus === 'CO' || c.docstatus === 'CL').reduce((a, c) => a.add(dec(c[col])), dec(0));
+    for (const l of orderLines(trx, o.pp_order_id)) {
+      if (dec(l.qtybatch).signum() === 0 && dec(l.qtybom).signum() === 0) continue;       // a method variance, not a usage variance
+      const prev = sumCC({ pp_order_bomline_id: l.pp_order_bomline_id, pp_order_id: o.pp_order_id, costcollectortype: '120' }, 'movementqty');
+      const v = dec(l.qtyrequiered).subtract(dec(l.qtydelivered)).subtract(prev); if (v.signum() === 0) continue;
+      let loc = Number(l.m_locator_id || 0); if (!(loc > 0)) { const d = defaultLocator(trx, o.m_warehouse_id); loc = d ? d.m_locator_id : 0; }
+      cost.createCollector(trx, o, { type: '120', docTypeId: dt, locatorId: loc, asiId: l.m_attributesetinstance_id || 0, resourceId: o.s_resource_id, bomLineId: l.pp_order_bomline_id, nodeId: 0, productId: l.m_product_id, movementDate: when, qty: v, scrap: 0, reject: 0, durationSetup: 0, duration: 0 });
+    }
+    for (const n of nodesInOrder(trx, o)) {
+      const sReal = Number(n.setuptimereal || 0), dReal = Number(n.durationreal || 0);
+      if (sReal === 0 && dReal === 0) continue;                                           // nothing reported: auto-reported on close
+      const prevS = sumCC({ pp_order_node_id: n.pp_order_node_id, pp_order_id: o.pp_order_id, costcollectortype: '120' }, 'setuptimereal').toString(), prevD = sumCC({ pp_order_node_id: n.pp_order_node_id, pp_order_id: o.pp_order_id, costcollectortype: '120' }, 'durationreal').toString();
+      const sVar = Number(n.setuptimerequiered || 0) - sReal - Number(prevS), dVar = Number(n.durationrequiered || 0) - dReal - Number(prevD), qtyOpen = dec(n.qtyrequiered).subtract(dec(n.qtydelivered));
+      if (qtyOpen.signum() === 0 && sVar === 0 && dVar === 0) continue;
+      const d = defaultLocator(trx, o.m_warehouse_id);
+      cost.createCollector(trx, o, { type: '120', docTypeId: dt, locatorId: d ? d.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: n.s_resource_id, bomLineId: 0, nodeId: n.pp_order_node_id, productId: o.m_product_id, movementDate: when, qty: qtyOpen, scrap: 0, reject: 0, durationSetup: sVar, duration: dVar });
+    }
+  }
+  // MPPOrderWorkflow.closeActivities(lastNode, date, milestone=false) :583-640
+  function closeActivities(trx, o, cost, when) {
+    const nodes = nodesInOrder(trx, o); if (!nodes.length) return;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      let node = trx.get('pp_order_node', nodes[i].pp_order_node_id);
+      if (node.docstatus === 'DR') {
+        const qtyToDeliver = dec(node.qtyrequiered).subtract(dec(node.qtydelivered)); if (qtyToDeliver.signum() <= 0) continue;
+        const setup = Number(node.setuptimerequiered || 0) - Number(node.setuptimereal || 0), dur = cost.estimateWorkingTime(node, qtyToDeliver), d = defaultLocator(trx, o.m_warehouse_id);
+        cost.createCollector(trx, o, { type: '160', docTypeId: cost.mccDocType(trx), locatorId: d ? d.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: node.s_resource_id, bomLineId: 0, nodeId: node.pp_order_node_id, productId: o.m_product_id, movementDate: when, qty: qtyToDeliver, scrap: 0, reject: 0, durationSetup: setup, duration: dur });
+        cost.nodeCloseIt(trx, node.pp_order_node_id);
+      } else if (node.docstatus === 'CO' || node.docstatus === 'IP') cost.nodeCloseIt(trx, node.pp_order_node_id);
+    }
+  }
+  // Msg.parseTranslation: @token@ -> AD_Message.MsgText, else AD_Element.Name, else the token itself (Msg.translate :740-742)
+  function msgT(trx, text) {
+    return String(text).replace(/@([^@]+)@/g, (m, t) => { const am = trx.find('ad_message', { value: t })[0]; if (am && am.msgtext) return am.msgtext; const ae = trx.find('ad_element', { columnname: t })[0]; return ae ? ae.name : t; });
+  }
+  const addDesc = (cur, add) => (cur == null || cur === '' ? add : cur + ' | ' + add);
+  // MPPOrderWorkflow.voidActivities :647-658 + MPPOrderNode.voidIt :404-425 (an already voided node is skipped inside voidIt)
+  function voidActivities(trx, o) {
+    const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return;
+    for (const n of trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter((x) => active(x) && (Number(x.ad_client_id || 0) === 0 || Number(x.ad_client_id) === Number(o.ad_client_id)))) {
+      const old = dec(n.qtyrequiered); if (old.signum() === 0) continue;
+      const po = ML.po(trx, 'pp_order_node', n); const tag = msgT(trx, '@Voided@') + ' (' + old.toString() + ')';
+      po.set('description', addDesc(n.description, tag));                                   // voidActivities addDescription, then voidIt adds the same tag once more when not yet voided
+      if (n.docstatus !== 'VO') { po.set('description', addDesc(addDesc(n.description, tag), tag)); po.set('docstatus', 'VO').set('docaction', '--').set('qtyrequiered', 0).set('setuptimerequiered', 0).set('durationrequiered', 0); }
+      if (!po.save()) throw new Error(po.error);
+    }
+  }
   // MPPOrder.createStandardCosts :1495-1580 - the standard-cost snapshot (PP_Order_Cost) of the finished product, every BOM-line product and every routing resource product
   function costDim(trx, product, as, org, asi) { const lvl = globalThis.ModelCost.costingLevel(trx, product, as); return { org: lvl === 'C' || lvl === 'B' ? 0 : org, asi: lvl === 'C' || lvl === 'O' ? 0 : asi }; }   // CostDimension.updateForProduct
   function createStandardCosts(trx, order) {
@@ -392,7 +516,7 @@ export async function activate(ctx) {
   Object.keys(m.models).forEach((t) => ctx.docAction.registerModel(t, m.models[t]));
   Object.keys(m.docActions || {}).forEach((t) => ctx.docAction.registerDocAction(t, m.docActions[t]));
   // the document-action FSM entry (ad_docfsm DOC_FAMILY) of AD_Table PP_Order 53027: prepare/complete are ported; void/close/reverse/re-activate are DEFERRED (MPPOrder.voidIt/closeIt/reActivateIt), so no Void arm is offered (vo: {}).
-  if (ctx.docFsm) ctx.docFsm.register(53027, { name: 'PP_Order', reActivate: false, rc: false, ra: false, vo: {} });
+  if (ctx.docFsm) ctx.docFsm.register(53027, { name: 'PP_Order', reActivate: true, rc: true, ra: false, vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO' } });
   m.validators.forEach((v) => ctx.modelval.registerValidator(v[0], v[1], v[2], v[3]));
 }
 export async function deactivate() {}

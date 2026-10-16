@@ -3,7 +3,7 @@
 #   EXTRACT ONLY: each definition is `pg_get_viewdef` read from the pilot (docker container `postgres`, db idempiere_pilot), translated mechanically (casts stripped, = ANY(ARRAY[..]) -> IN (..));
 #   nothing is hand-written. Idempotent (DROP VIEW IF EXISTS + CREATE VIEW). READ the "§VIEWS-PATCH" line after a run; the judge is erp/tests/witness_views_parity.js (rows vs the pilot's view).
 # usage: build_views_patch.py <ad_seed.db.sql>   (the previous views section, between the markers, is replaced)
-import re, subprocess, sys
+import re, subprocess, sys, os
 OUT = sys.argv[1]
 EXTRA_TABLES = ['m_locatortype']      # tables a shipped view/UDF reads that the seed lacks: DDL extracted from the pilot (information_schema); legacy has no rows either
 VIEWS = ['m_storage', 'm_product_stock_v', 'm_product_substituterelated_v', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
@@ -13,14 +13,10 @@ def pg(sql):
     r = subprocess.run(['docker', 'exec', '-i', 'postgres', 'psql', '-U', 'postgres', '-d', 'idempiere_pilot', '-tA', '-c', 'set search_path=adempiere;' + sql], capture_output=True, text=True)
     if r.returncode: raise SystemExit('pilot query failed: ' + r.stderr[:200])
     return r.stdout.replace('SET\n', '', 1).strip()
-TYPES = r'(?:character varying|timestamp without time zone|timestamp with time zone|bpchar|numeric|text|integer|bigint|smallint|date|char)'
-def translate(sql):
-    s = re.sub(r'::' + TYPES + r'(?:\(\d+(?:,\s*\d+)?\))?(?:\[\])?', '', sql)                  # PG casts: SQLite is dynamically typed
-    arr = r'\(\s*(?:\(ARRAY\[(.*?)\]\)|ARRAY\[(.*?)\])\s*\)'                      # ANY (ARRAY[..])  or  ANY ((ARRAY[..])) - the closing parens must pair with the opening ones
-    s = re.sub(r'=\s*ANY\s*' + arr, lambda m: 'IN (' + (m.group(1) or m.group(2)) + ')', s, flags=re.S)
-    s = re.sub(r'<>\s*ALL\s*' + arr, lambda m: 'NOT IN (' + (m.group(1) or m.group(2)) + ')', s, flags=re.S)
-    s = s.replace(' / ', ' * 1.0 / ')                                                              # PG numeric / is exact decimal division; SQLite divides two whole-number values as INTEGERS
-    return s
+def translate(sql):   # ONE translator for core and plugin views: erp/pg_view_sql.js (bim-compiler ERP_FRIENDLY_OPS_LENS.md §24); Pack In uses the same module in the page
+    r = subprocess.run(['node', '-e', 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(require(process.argv[1]).translate(d)))', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'pg_view_sql.js')], input=sql, capture_output=True, text=True)
+    if r.returncode: raise SystemExit('pg_view_sql.js failed: ' + r.stderr[:200])
+    return r.stdout
 # Only views the twin can actually USE are emitted: SQLite re-validates every view on ALTER/DROP/RENAME of any table, so a view over a table the twin lacks would make unrelated schema changes fail
 # ("error in view rv_unprocessed: no such table: main.c_cash" - witness_period_status). The rest are NAMED (printed), never shipped broken.
 import os, sqlite3

@@ -143,7 +143,15 @@
         undoAll: function () { var errs = []; while (undo.length) { try { undo.pop()(); } catch (e) { errs.push(e.message); } } once = {}; labels = []; return errs; }
       };
     }
-    var SAFE_ID = /^[A-Za-z_][A-Za-z0-9_]*$/;
+    var SAFE_ID = /^[A-Za-z_][A-Za-z0-9_]*$/, packed = {};   // packed[id] = this bundle's packs went in through the host's Pack In
+    // §PACKIN-CHECK (§22 B7): a bundle that ships its dictionary as packs may register a form only under a Classname its dictionary carries (legacy: AD_Form.Classname -> the factory lookup).
+    function formCheck(manifest, classname) {
+      if (!(manifest.packs || []).length || !packed[manifest.id] || !host.db || typeof host.db.query !== 'function') return;
+      var n = host.db.query("SELECT COUNT(*) AS n FROM ad_form WHERE classname=? AND isactive='Y'", [classname]);
+      var ok = n && n[0] && Number(n[0].n) > 0;
+      console.log('§PACKIN-CHECK bundle=' + manifest.id + ' form=' + classname + ' row=' + (ok ? 'yes' : 'NO'));
+      if (!ok) throw new Error('§PACKIN-CHECK ' + manifest.id + ': form ' + classname + ' has no active AD_Form row');
+    }
     // The BundleContext the lane card specifies — injected into activate/deactivate. Each engine is wrapped by a facade that records for undo.
     function buildCtx(manifest, scope) {
       var id = manifest.id, own = { owner: id, rank: 1 };
@@ -157,6 +165,7 @@
       if (callout) {
         callout.registerHandler = function (name, fn) { host.callout.registerHandler(name, fn, own); scope.label('ICallout handler  ' + name); scope.once('callout', function () { if (host.callout.removeOwner) host.callout.removeOwner(id); }); };
         if (host.callout.defineCallout) callout.defineCallout = function (fqcn, factory) { var r = host.callout.defineCallout(fqcn, factory, own); scope.label('ICallout class  ' + fqcn); scope.once('callout', function () { if (host.callout.removeOwner) host.callout.removeOwner(id); }); return r; };
+        if (host.callout.defineColumnCallout) callout.defineColumnCallout = function (table, columns, name, start) { host.callout.defineColumnCallout(table, columns, name, start, own); scope.label('IColumnCallout  ' + table + '.' + [].concat(columns).join('/') + '  ' + name); scope.once('callout', function () { if (host.callout.removeOwner) host.callout.removeOwner(id); }); };
       }
       var processE = facade(host.process);
       if (processE) {
@@ -169,6 +178,8 @@
         docAction.registerDocAction = function (table, impl) { var r = host.docAction.registerDocAction(table, impl, own); scope.label('DocAction class  ' + table); scope.once('model', function () { if (host.docAction.removeOwner) host.docAction.removeOwner(id); }); return r; };
       }
       var docFsm = host.docFsm ? { register: function (tableId, fam) { host.docFsm.registerFamily(tableId, fam, id); scope.label('DocAction FSM  AD_Table ' + tableId + '  (' + (fam && fam.name) + ')'); scope.once('docfsm', function () { host.docFsm.removeFamilyOwner(id); }); } } : null;
+      var form = host.form ? { register: function (classname, desc) { formCheck(manifest, classname); host.form.register(classname, desc, own); scope.label('IFormFactory  ' + classname); scope.once('form', function () { host.form.removeOwner(id); }); } } : null;   // the generic AD_Form engine (ad_form_generic.js): a form is a descriptor, never host code
+      var lens = host.lens ? { register: function (lid, desc) { host.lens.register(lid, desc, own); scope.label('Ops lens  ' + lid); scope.once('lens', function () { host.lens.removeOwner(id); }); } } : null;   // the opt-in operations lens (ad_lens.js): record actions over the host's own seams, never a write of its own
       var docClass = host.docClass ? { register: function (table, impl) { host.docClass.registerDocClass(table, impl, own); scope.label('IDocFactory  ' + table); scope.once('docclass', function () { host.docClass.removeDocClassOwner(id); }); } } : null;
       // postTokens: a plain object the bundle assigns into; a Proxy turns every assignment into a LAYER owned by this bundle (rank 1), so stopping in ANY order restores the right value.
       var postTokens = null;
@@ -234,6 +245,8 @@
         // DocAction class (registerDocAction) and model hooks (registerModel) for its tables; zero host code per table.
         docAction:  docAction,
         docFsm:     docFsm,                    // the document-action state machine entry of a plugin's own document table (ad_docfsm.js DOC_FAMILY, layered, owner-removed)
+        form:       form,                      // generic AD_Form descriptor: register(classname, { params, columns, rows, run })
+        lens:       lens,                      // opt-in operations lens: register(id, { actions(api), run(actionId, api) }) (ERP_FRIENDLY_OPS_LENS.md §15)
         docClass:   docClass,                  // doc_poster posting class (legacy IDocFactory): register(table, { derive })
         dict:       dict,                      // dictionary staging with rollback (IsActive flips, row inserts)
         db:         host.db         || { query: function () { throw new Error('plugin ctx: no db host injected'); } },
@@ -292,6 +305,19 @@
       dict.forEach(function (d) { n += c.dict.insert(d.table, d.idCol, d.rows) || 0; });
       return n;
     }
+    // manifest.packs = ['dir/2Pack_<x.y.z>.zip', ...] relative to the bundle (ERP_FRIENDLY_OPS_LENS.md §22 B1); manifest.sqlFunctions = './x.mjs' exporting functions(R) -> { name: { arity, fn } } (§24). The host applies them (fetch + PipoPackIn.incremental on the dictionary DB) and keeps them;
+    //   the rows they write are DICTIONARY data, outside the bundle's undo scope: Stop and Uninstall leave them, as legacy does.
+    async function packIn(rec) {
+      var packs = (rec.manifest && rec.manifest.packs) || []; if (!packs.length) return null;
+      if (!host.packs || typeof host.packs.apply !== 'function') {   // a headless host (node model witnesses) has no dictionary pipeline: said loudly, and the §PACKIN-CHECK is not applied (nothing was packed in)
+        console.log('§PACKIN-SKIP bundle=' + rec.id + ' packs=' + packs.length + ' reason=host has no Pack In (headless host; the dictionary rows of the packs are NOT applied)'); packed[rec.id] = false; return null; }
+      var list = packs.map(function (p) { var m = /2Pack_(\d+\.\d+\.\d+)\.zip$/.exec(p); if (!m) throw new Error('plugin ' + rec.id + ': pack name ' + p + ' is not 2Pack_<x.y.z>.zip'); return { version: m[1], url: resolveChunk(p, rec.url) }; });
+      var fnUrl = rec.manifest.sqlFunctions ? resolveChunk(rec.manifest.sqlFunctions, rec.url) : null;   // the bodies of the packs' CREATE FUNCTION statements (§24): they belong to the pack, bound by the host with it
+      var r = await host.packs.apply(rec.id, list, { functions: fnUrl });
+      if (!r || !r.ok) throw new Error('plugin ' + rec.id + ': Pack In failed - ' + (r && r.error || 'no result'));
+      packed[rec.id] = true;
+      return r;
+    }
     function undoStartScope(id) { var lh = loaded[id]; if (lh && lh.startScope) { var errs = lh.startScope.undoAll(); lh.startScope = null; return errs; } return []; }
 
     async function startBundle(id) {
@@ -299,6 +325,7 @@
       if (!rec) throw new Error('plugin not installed: ' + id);
       if (rec.state === STATES.ACTIVE || rec.state === STATES.STARTING) return { id: id, state: rec.state, opId: null };
       checkRequires(rec, false);
+      await packIn(rec);   // §22 B2: the bundle's 2Packs go in BEFORE its dictionary staging and before any code (Incremental2PackActivator.start); a failed pack refuses the Start
       if (policyOf(rec) === 'lazy') {
         var sc0 = makeScope(id); try { stageDictionary(rec, sc0); } catch (e0) { sc0.undoAll(); throw e0; } (loaded[id] || (loaded[id] = {})).startScope = sc0;
         var t = rec.manifest.triggers; pending[id] = { tables: norm(t.tables), processes: norm(t.processes), windows: norm(t.windows) };

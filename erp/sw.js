@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v866';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v868';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -85,7 +85,12 @@ const PRECACHE_ASSETS = [
   'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
   'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage
   'ad_parser.js',
+  'ad_form_generic.js', // generic AD_Form engine (window.AdFormGeneric): a bundle describes a form, ONE renderer draws it
+  'ad_lens.js',         // opt-in operations lens registry (window.AdLens): a bundle contributes record actions, ONE lens bar (bim-compiler ERP_FRIENDLY_OPS_LENS.md §15)
   'ad_recent.js',     // §UDP-6 AD_RecentItem engine (window.AdRecent), W-UDP6-ENGINE / W-UDP6-LIVE
+  'pg_view_sql.js',   // the Postgres->SQLite view translator (window.PgViewSql): core views + plugin packs (§24, W-PLUGIN-SQLFN)
+  'pipo_packin.js',   // Pack In of a bundle's 2Packs (window.PipoPackIn), bim-compiler ERP_FRIENDLY_OPS_LENS.md §22, W-PLUGIN-PACKS
+  'pipo_packout.js',  // Pack Out to a real 2Pack (window.PipoPackOut), §25, W-PACKOUT
   'ad_find.js',       // §UDP-3 Find window engine (window.AdFind), W-UDP3-ENGINE / W-UDP3-LIVE
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
   // 'ad_table_map.js' — REMOVED from the precache 2026-09-04 (E-14, prompts/AGENT_QUEUE.md §HYGIENE-E14).
@@ -137,6 +142,7 @@ const PRECACHE_ASSETS = [
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
   'ad_callout.js',
   'processes/AcctSchemaCopyAcct.js',
+  'processes/PackOut.js',   // Pack Out process (org.adempiere.pipo.PackOut), §25
   'processes/AllocationReset.js',
   'processes/BOMVerify.js',
   'processes/BankStatementMatcher.js',
@@ -216,6 +222,7 @@ const PRECACHE_ASSETS = [
   'plugins/widget_callout.mjs',     // example bundle — M_Product.Name → upper (C-1)
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
+  'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
   'icons.js',
   '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)

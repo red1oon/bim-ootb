@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — W-LIBERO-BUNDLE (spec prompts/mfg/LIBERO_BUNDLE_SLICE1_SPEC.md). READ THE LOG after every run: verdict = §LIBERO-VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: the Libero Manufacturing layer as a LAZY bundle (a) contributes no CODE while STARTING (only its 2Pack menu rows, so the trigger is reachable), (b) wakes on its first consumer, (c) when active makes ModelLayer.save of a pp_order write the child rows the Java
 //   writes (pp_order_bom, pp_order_bomline, pp_mrp) through Trx, (d) when stopped leaves the base byte-identical with the data kept.  Oracle: the Libero Java (cites in libero_pporder.mjs) + the 2008 seed rows WHERE they agree;
-//   every divergence between source and seed is printed as §LIBERO-SEED-DELTA and must be one of the declared three. Breaks (MUST exit 1): LIBERO_BREAK=uom|bomuse|eager|nostop|mrpfinish|mrpdelete|cycles
+//   every divergence between source and seed is printed as §LIBERO-SEED-DELTA and must be one of the declared three. Breaks (MUST exit 1): LIBERO_BREAK=uom|bomuse|eager|nostop|mrpfinish|mrpdelete|cycles|explodetwice
 'use strict';
 var fs = require('fs'), path = require('path');
 if (!global.window) global.window = {};
@@ -62,7 +62,7 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   var counts = function () { return ['pp_order', 'pp_order_bom', 'pp_order_bomline', 'pp_mrp'].map(function (t) { return t + '=' + q('SELECT COUNT(*) n FROM ' + t)[0].n; }).join(' '); };
 
   var URL = 'file://' + path.join(ERP, 'plugins', 'libero_manufacturing.mjs');
-  if (BREAK) { var chunkMod = await import('file://' + path.join(ERP, 'plugins', 'libero_pporder.mjs')); if (BREAK === 'uom') chunkMod.SOURCE.uomPrecision = false; if (BREAK === 'bomuse') chunkMod.SOURCE.bomUseCopied = false; if (BREAK === 'mrpfinish') chunkMod.SOURCE.mrpFinishFromOrder = false; if (BREAK === 'mrpdelete') chunkMod.SOURCE.mrpDelete = false; if (BREAK === 'cycles') chunkMod.SOURCE.cyclesRounded = false; }
+  if (BREAK) { var chunkMod = await import('file://' + path.join(ERP, 'plugins', 'libero_pporder.mjs')); if (BREAK === 'explodetwice') chunkMod.SOURCE.explodeOnce = false; if (BREAK === 'uom') chunkMod.SOURCE.uomPrecision = false; if (BREAK === 'bomuse') chunkMod.SOURCE.bomUseCopied = false; if (BREAK === 'mrpfinish') chunkMod.SOURCE.mrpFinishFromOrder = false; if (BREAK === 'mrpdelete') chunkMod.SOURCE.mrpDelete = false; if (BREAK === 'cycles') chunkMod.SOURCE.cyclesRounded = false; }
   var reg = PR.create(host), base = dump(), pre = counts();
   _log('§LIBERO-L0 baseline hash=' + base.h + ' bytes=' + base.n + ' menuRows=' + base.menu + ' rows: ' + pre);
   if (base.n < 300) { inconclusive++; _log('§LIBERO L0 INCONCLUSIVE — baseline dump is nearly empty'); }
@@ -210,8 +210,8 @@ function djb(s) { var a = 5381; for (var i = 0; i < s.length; i++) a = ((a << 5)
   // L6 the faithful quirk: QtyEntered set on a NEW order -> explosion runs twice (changed-branch + new-record branch)
   mute(); var rD = saveOrder({ ad_client_id: 11, ad_org_id: 50006, documentno: 'X-dbl', m_product_id: 136, pp_product_bom_id: 50004, ad_workflow_id: 50017, qtyordered: 100, qtyentered: 100, m_warehouse_id: 50002, c_uom_id: 100, datestartschedule: '2008-08-16 00:00:00', datepromised: '2008-08-17 00:00:00' }); unmute();
   var dOrder = q("SELECT pp_order_id FROM pp_order WHERE documentno='X-dbl'")[0], dB = dOrder ? q('SELECT COUNT(*) n FROM pp_order_bom WHERE pp_order_id=?', [dOrder.pp_order_id])[0].n : -1;
-  _log('§LIBERO-DOUBLE-EXPLODE QtyEntered=100 on a new PP_Order -> pp_order_bom rows=' + dB + ' (port-faithful to MPPOrder.afterSave :466-475 in pshepetko AND logilite forks; OPEN: confirm against a running legacy before relying on it)');
-  check('L6 the quirk is reproduced as a MEASURED fact, not hidden (port-faithful: 2 BOM headers when QtyEntered is set at creation)', rD.ok && dB === 2, { ok: rD.ok, boms: dB });
+  _log('§LIBERO-DOUBLE-EXPLODE QtyEntered=100 on a new PP_Order -> pp_order_bom rows=' + dB + ' (verbatim port = 2 per MPPOrder.afterSave :466-475, in every upstream version read; owner decision 2026-10-15: explode once, SOURCE.explodeOnce)');
+  check('L6 DECLARED DEVIATION (owner: explode once): QtyEntered set at creation now yields ONE BOM header (the verbatim port made 2; LIBERO_BREAK=explodetwice restores that and this check goes red)', rD.ok && dB === 1, { ok: rD.ok, boms: dB });
 
   // L6b the REAL HOST route (crud_overlay): the host writes the pp_order row itself, then ML.run(AFTER_SAVE, isNew) runs afterSave + AFTER_NEW -> explosion + MRP with a REAL FK (not an opRef)
   db.run("INSERT INTO pp_order (pp_order_id, ad_client_id, ad_org_id, documentno, m_product_id, pp_product_bom_id, ad_workflow_id, qtyordered, m_warehouse_id, c_uom_id, datestartschedule, datefinishschedule, datepromised, docstatus, docaction, isactive) VALUES (9100001, 11, 50006, 'X-host', 136, 50004, 50017, 20, 50002, 100, '2008-08-16 00:00:00', '2008-08-17 00:00:00', '2008-08-17 00:00:00', 'DR', 'CO', 'Y')");

@@ -40,12 +40,15 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await me.send('Page.startScreencast', { format: 'jpeg', quality: 90, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
   }
   const nowT = () => (T0 === null ? 0 : Date.now() / 1000 - T0);
-  const beat = (id, note) => say('§ERP_FILM_BEAT id=' + id + ' t=' + nowT().toFixed(2) + ' ' + (note || ''));
+  // per-beat gesture tally (ERP_FRIENDLY_OPS_LENS.md §14): G = clicks + selects + typed fields, the same unit the Odoo recorder counts
+  const GT = { click: 0, select: 0, type: 0 }; let GPrev = null, GPrevId = null;
+  const gestFlush = () => { if (GPrevId) { const d = Object.fromEntries(Object.keys(GT).map(k => [k, GT[k] - GPrev[k]])); say('§ERP_FILM_GESTURES beat=' + GPrevId + ' G=' + (d.click + d.select + d.type) + ' clicks=' + d.click + ' selects=' + d.select + ' typed=' + d.type); } };
+  const beat = (id, note) => { gestFlush(); GPrev = { ...GT }; GPrevId = id; say('§ERP_FILM_BEAT id=' + id + ' t=' + nowT().toFixed(2) + ' ' + (note || '')); };
   async function glide(sel) { const loc = page.locator(sel).first(); await loc.scrollIntoViewIfNeeded().catch(() => {}); const b = await loc.boundingBox(); if (!b) throw new Error('no box for ' + sel); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: DRY ? 3 : 22 }); await hold(DRY ? 40 : 160); }
   let clicks = 0, cursorOk = 0;
   async function hclick(sel) { await glide(sel); const c = await page.evaluate(() => { const e = document.getElementById('__fc'); return e ? [parseFloat(e.style.left), parseFloat(e.style.top)] : null; }); const b = await page.locator(sel).first().boundingBox();
-    clicks++; if (c && b && Math.abs(c[0] - (b.x + b.width / 2)) < 2 && Math.abs(c[1] - (b.y + b.height / 2)) < 2) cursorOk++; await page.mouse.down(); await hold(60); await page.mouse.up(); await hold(DRY ? 150 : 280); }
-  const htype = async (sel, text) => { await glide(sel); await page.click(sel); await page.fill(sel, ''); await page.type(sel, text, { delay: DRY ? 5 : 80 }); await hold(DRY ? 60 : 350); };
+    clicks++; GT.click++; if (c && b && Math.abs(c[0] - (b.x + b.width / 2)) < 2 && Math.abs(c[1] - (b.y + b.height / 2)) < 2) cursorOk++; await page.mouse.down(); await hold(60); await page.mouse.up(); await hold(DRY ? 150 : 280); }
+  const htype = async (sel, text) => { GT.type++; await glide(sel); await page.click(sel); await page.fill(sel, ''); await page.type(sel, text, { delay: DRY ? 5 : 80 }); await hold(DRY ? 60 : 350); };
   const pace = (ms) => hold(DRY ? Math.min(ms, 120) : ms);
 
   await page.goto(base + '/idempiere.html?lang=en_US', { waitUntil: 'networkidle' });
@@ -87,7 +90,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
         while (n && n.id !== 'idmp-tree') { if (n.classList.contains('idmp-node')) out.unshift(n.querySelector(':scope > .idmp-row').getAttribute('data-menu-id')); n = n.parentElement; } return out; }, menuId);
       if (!chain) throw new Error('menu id not in tree: ' + menuId);
       for (const id of chain) { const open = await page.evaluate(i => { const r = document.querySelector('#idmp-tree .idmp-row[data-menu-id="' + i + '"]'); return r && r.parentElement.classList.contains('open'); }, id); if (!open) await hclick('#idmp-tree .idmp-row[data-menu-id="' + id + '"]'); }
-      await hold(400); await hclick('#idmp-tree .idmp-row.leaf[data-menu-id="' + menuId + '"]');
+      await hold(400); await page.locator('#idmp-tree .idmp-row.leaf[data-menu-id="' + menuId + '"]').scrollIntoViewIfNeeded(); await hclick('#idmp-tree .idmp-row.leaf[data-menu-id="' + menuId + '"]');
     }
     const n3 = PAGELOG.length; await openMenuById(53055); await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 }); await pace(1500);
     const act = PAGELOG.slice(n3).findIndex(l => /§PLUGIN-ACTIVATE id=org.idempiere.mfg/.test(l)), win = PAGELOG.slice(n3).findIndex(l => /§IDEMPIERE window=Manufacturing Order\(53009\)/.test(l));
@@ -98,20 +101,20 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ helpers for the order / collector beats ═══
     const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [title^="Save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
     const optBy = async (col, re) => { const o = (await page.$$eval('#idmp-inline-mount select[data-col="' + col + '"] option', os => os.map(x => ({ v: x.value, t: x.text })))).find(x => x.v && re.test(x.t)); if (!o) throw new Error('no option ' + col + ' ' + re); return o; };
-    const hselect = async (sel, val) => { await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
+    const hselect = async (sel, val) => { GT.select++; await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
     const tip = (q) => page.evaluate(x => window.__crud.withModelTrx(f => f(x)), q);
     const TAB = (table) => '#idmp-tabstrip .idmp-adtab[title$="· ' + table + '"]';
     const GRIDROWS = () => page.$$eval('.idmp-grid tbody tr', e => e.length);
 
     // ═══ B4 prerequisite, OFF CAMERA (announced on the card as "set up for this demonstration"): Standard Costing, standard prices, on-hand ═══
-    const fx = await page.evaluate(() => { const db = window.__idmpDb; const run = (s) => db.run(s);
+    const fx = await page.evaluate((KGOH) => { const db = window.__idmpDb; const run = (s) => db.run(s);
       const cats = db.exec("SELECT DISTINCT m_product_category_id FROM m_product WHERE m_product_id IN (50007,50008,50014)")[0].values.map(r => r[0]);
       cats.forEach(c => run("UPDATE m_product_category_acct SET costingmethod='S' WHERE m_product_category_id=" + c));
       run("UPDATE m_cost SET currentcostprice=2.5 WHERE m_product_id=50008 AND m_costelement_id=100 AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0");
       run("UPDATE m_cost SET currentcostprice=0.4 WHERE m_product_id=50014 AND m_costelement_id=100 AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0");
       run("DELETE FROM m_storageonhand WHERE m_product_id IN (50007,50008,50014)");
-      run("INSERT INTO m_storageonhand (ad_client_id, ad_org_id, isactive, m_locator_id, m_product_id, m_attributesetinstance_id, qtyonhand, datematerialpolicy, m_storageonhand_uu) VALUES (11,50006,'Y',50001,50008,0,10000,'2026-01-01 00:00:00','film-kg'),(11,50006,'Y',50001,50014,0,500,'2026-01-01 00:00:00','film-bag')");
-      return { cats: cats, method: db.exec("SELECT costingmethod FROM m_product_category_acct WHERE m_product_category_id IN (" + cats.join(',') + ") AND c_acctschema_id=101")[0].values.map(r => r[0]) }; });
+      run("INSERT INTO m_storageonhand (ad_client_id, ad_org_id, isactive, m_locator_id, m_product_id, m_attributesetinstance_id, qtyonhand, datematerialpolicy, m_storageonhand_uu) VALUES (11,50006,'Y',50001,50008,0," + KGOH + ",'2026-01-01 00:00:00','film-kg'),(11,50006,'Y',50001,50014,0,500,'2026-01-01 00:00:00','film-bag')");
+      return { cats: cats, method: db.exec("SELECT costingmethod FROM m_product_category_acct WHERE m_product_category_id IN (" + cats.join(',') + ") AND c_acctschema_id=101")[0].values.map(r => r[0]) }; }, Number(process.env.KG_ONHAND || 10000));   // KG_ONHAND is an investigation switch only: the film uses the default 10000
     fact('prerequisite.offCamera', JSON.stringify(fx) + ' standard price KG=2.5 BAG=0.4 on-hand KG=10000 BAG=500');
 
     // ═══ B5 a Manufacturing Order, typed in the real form ═══
@@ -125,7 +128,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('order.productCallout', JSON.stringify(await page.evaluate(() => ['ad_workflow_id', 'pp_product_bom_id', 'c_uom_id', 'qtybatchsize'].map(c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return c + '=' + (e ? (e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value) : 'absent'); }))));
     await page.waitForTimeout(DRY ? 100 : 1200);
     await hselect(F('priorityrule', 'select'), (await optBy('priorityrule', /Medium/)).v); await htype(F('qtyentered'), '100'); await hold(DRY ? 200 : 800); fact('order.formQty', JSON.stringify(await page.evaluate(() => ['qtyentered', 'qtyordered', 'c_uom_id'].map(c => { const e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]'); return c + '=' + (e ? e.value + (e.offsetParent ? '' : '(hidden)') : 'absent'); }))));
-    await page.fill(F('datestartschedule'), '2008-08-16'); await page.fill(F('datepromised'), '2008-08-17'); await page.fill(F('datefinishschedule'), '2008-08-17'); await pace(700);
+    await page.fill(F('datestartschedule'), '2008-08-16'); await page.fill(F('datepromised'), '2008-08-17'); await page.fill(F('datefinishschedule'), '2008-08-17'); GT.type += 3; await pace(700);
     const nS = PAGELOG.length, cnt0 = (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n; await hclick(SAVEB);
     for (let i = 0; i < 60 && (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n === cnt0; i++) await page.waitForTimeout(200);
     await hold(DRY ? 600 : 2500);
@@ -168,37 +171,30 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     }
     const ip0 = { kg: await infoProduct('kg.before', 'Fertilizer', 50008), bag: await infoProduct('bag.before', 'Bag70', 50014), fg: await infoProduct('fg.before', 'Fertilizer#70', 50007) };
 
-    // ═══ B6b Component Issues: the page's own commit funnel (the legacy Receipt & Issue form is a custom ZK form and is not ported; the SAME DocAction path completes the collector) ═══
-    beat('b6b', 'Component Issues through the funnel');
+    // ═══ B6b the Order Receipt & Issue form (AD_Form 53007), drawn by the generic form engine from the plugin's descriptor: ONE click = issues + receipt, all completed in one transaction ═══
+    beat('b6b', 'Order Receipt & Issue: Backflush');
     const ordId = (await tip("SELECT pp_order_id AS id FROM pp_order WHERE pp_order_id<0 ORDER BY pp_order_id DESC LIMIT 1"))[0].id;
-    async function collector(type, bomLineId, productId, qty, label) {
-      const n0 = PAGELOG.length;
-      await page.evaluate(({ ordId, type, bomLineId, productId, qty }) => {
-        const db = window.__idmpDb, o = window.__crud.withModelTrx(q => q('SELECT * FROM pp_order WHERE pp_order_id=' + ordId))[0];
-        const wf = window.__crud.withModelTrx(q => q('SELECT pp_order_workflow_id AS id FROM pp_order_workflow WHERE pp_order_id=' + ordId + ' ORDER BY pp_order_workflow_id DESC'))[0];
-        const f = { ad_client_id: 11, ad_org_id: o.ad_org_id, pp_order_id: ordId, pp_order_workflow_id: wf ? wf.id : null, m_warehouse_id: o.m_warehouse_id, s_resource_id: o.s_resource_id, m_product_id: productId, c_uom_id: bomLineId ? null : o.c_uom_id,
-          pp_order_bomline_id: bomLineId || null, m_locator_id: 50001, costcollectortype: type, c_doctypetarget_id: 50013, c_doctype_id: 50013, movementdate: '2026-10-15', dateacct: '2026-10-15', movementqty: qty, scrappedqty: 0, qtyreject: 0, docstatus: 'DR', docaction: 'CO', isactive: 'Y', processed: 'N', posted: 'N' };
-        window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: 'pp_cost_collector', table: 'pp_cost_collector', verb: 'create', fields: f });
-      }, { ordId, type, bomLineId, productId, qty });
-      for (let i = 0; i < 60 && !(await tip("SELECT 1 AS x FROM pp_cost_collector WHERE pp_cost_collector_id<0 AND costcollectortype='" + type + "' AND movementqty=" + qty))[0]; i++) await page.waitForTimeout(200);
-      const cc = (await tip("SELECT pp_cost_collector_id AS id, documentno FROM pp_cost_collector WHERE pp_cost_collector_id<0 AND costcollectortype='" + type + "' AND movementqty=" + qty + " ORDER BY pp_cost_collector_id DESC"))[0];
-      fact('collector.' + label + '.created', JSON.stringify(cc) + ' ' + lastLog(n0, /§MODEL-AFTER-SAVE table=pp_cost_collector|MODEL-SAVE-ROLLBACK/));
-      const n1 = PAGELOG.length; await page.evaluate(({ id }) => window.__crud.process('PP_Cost_Collector', id, 'CO', { from: 'DR', to: 'CO' }), { id: cc.id }); await page.waitForTimeout(DRY ? 3500 : 4500);
-      fact('collector.' + label + '.complete', lastLog(n1, /§MODEL-DOCACTION table=pp_cost_collector/) + ' ' + lastLog(n1, /refused|rolled|DEFERRED|MODEL-ERR|not supported/));
-      return cc;
-    }
-    const lines = await tip("SELECT pp_order_bomline_id AS id, m_product_id AS p, qtyrequiered AS q FROM pp_order_bomline WHERE pp_order_id=" + ordId + " ORDER BY line");
-    const kgLine = lines.find(l => l.p === 50008), bagLine = lines.find(l => l.p === 50014);
-    await collector('110', kgLine.id, 50008, 7070.71, 'issue.kg'); await pace(1500); await collector('110', bagLine.id, 50014, 100, 'issue.bag'); await pace(1500);
-    fact('costDetails.issues', JSON.stringify(await tip("SELECT pp_cost_collector_id AS cc, c_acctschema_id AS s, m_costelement_id AS e, amt, qty FROM m_costdetail WHERE pp_cost_collector_id<0 AND c_acctschema_id=101 AND m_costelement_id=100 ORDER BY m_costdetail_id")));
-    fact('storage.kg.afterIssue', JSON.stringify(await tip('SELECT m_locator_id AS l, m_attributesetinstance_id AS a, qtyonhand AS q, substr(datematerialpolicy,1,10) AS d FROM m_storageonhand WHERE m_product_id=50008')));
+    const nF = PAGELOG.length; await hclick('#infowin-close, #idmp-infowin button[title="Close"]').catch(() => {}); await pace(500);
+    await openMenuById(53059); await page.waitForSelector('[data-gform]', { timeout: DRY ? 6000 : 20000 }).catch(async (e) => { fact('form.debug', JSON.stringify(await page.evaluate(() => ({ status: (document.getElementById('idmp-status') || {}).textContent, leaf: (document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="53059"]') || {}).className, af: !!window.AdFormGeneric, reg: window.AdFormGeneric ? window.AdFormGeneric.describe() : null })))); throw e; }); await pace(1500);
+    fact('form.opened', lastLog(nF, /§AD-FORM-LIVE open form=53007/));
+    const ordLabel = await page.$$eval('[data-gform-param=PP_Order_ID] option', os => os.map(o => o.textContent).find(t => /^80000 /.test(t)) || os.map(o => o.textContent).join(' | '));
+    await hselect('[data-gform-param=PP_Order_ID]', { label: ordLabel }); await hold(DRY ? 600 : 1500);
+    fact('form.defaults', JSON.stringify(await page.evaluate(() => Array.from(document.querySelectorAll('[data-gform-param]')).map(c => c.getAttribute('data-gform-param') + '=' + (c.tagName === 'SELECT' ? (c.options[c.selectedIndex] || {}).textContent : c.type === 'checkbox' ? (c.checked ? 'Y' : 'N') : c.value)))));
+    fact('form.grid', JSON.stringify(await page.evaluate(() => Array.from(document.querySelectorAll('tr[data-gform-row]')).map(tr => ({ key: tr.getAttribute('data-gform-row'), sel: tr.querySelector('[data-gform-sel]').checked, cells: Array.from(tr.querySelectorAll('td')).slice(1).map(td => td.querySelector('input') ? td.querySelector('input').value : td.textContent) })))));
+    await pace(2200);
+    const nP = PAGELOG.length; await hclick('[data-gform-run]');
+    for (let i = 0; i < 80 && !(await page.$eval('[data-gform-msg]', e => e.textContent).catch(() => '')); i++) await page.waitForTimeout(250);
+    await hold(DRY ? 1500 : 3500);
+    fact('form.run', lastLog(nP, /§AD-FORM-GENERIC run/)); fact('form.commit', lastLog(nP, /§AD-FORM-GENERIC commit/)); fact('form.message', await page.$eval('[data-gform-msg]', e => e.className + ' | ' + e.textContent).catch(() => ''));
+    fact('collectors.created', JSON.stringify(await tip("SELECT costcollectortype AS t, movementqty AS q, docstatus AS s FROM pp_cost_collector WHERE pp_cost_collector_id<0 ORDER BY pp_cost_collector_id")));
+    fact('costDetails.all', JSON.stringify(await tip("SELECT c.costcollectortype AS t, d.amt, d.qty FROM m_costdetail d JOIN pp_cost_collector c ON c.pp_cost_collector_id=d.pp_cost_collector_id WHERE d.pp_cost_collector_id<0 AND d.c_acctschema_id=101 AND d.m_costelement_id=100 ORDER BY d.m_costdetail_id")));
+    fact('storage.kg.afterBackflush', JSON.stringify(await tip('SELECT m_locator_id AS l, m_attributesetinstance_id AS a, qtyonhand AS q, substr(datematerialpolicy,1,10) AS d FROM m_storageonhand WHERE m_product_id=50008')));
+    await openMenuById(53055); await page.waitForSelector('#idmp-toolbar [data-tb="productinfo"]', { timeout: 20000 }); await pace(1200);   // back to the Manufacturing Order window for the Info Product look
     beat('b6c', 'Info Product: on hand after the issues');
     const ip1 = { kg: await infoProduct('kg.afterIssue', 'Fertilizer', 50008), bag: await infoProduct('bag.afterIssue', 'Bag70', 50014) };
 
     // ═══ B7 Material Receipts: 40 then 60 ═══
-    beat('b7', 'Material Receipts');
-    await collector('100', null, 50007, 40, 'receipt.40'); await pace(1500); await collector('100', null, 50007, 60, 'receipt.60'); await pace(1500);
-    fact('costDetails.receipts', JSON.stringify(await tip("SELECT pp_cost_collector_id AS cc, amt, qty FROM m_costdetail WHERE pp_cost_collector_id<0 AND c_acctschema_id=101 AND m_costelement_id=100 AND qty>0 ORDER BY m_costdetail_id")));
+    beat('b7', 'Finished goods after the backflush');
     fact('order.afterReceipts', JSON.stringify((await tip("SELECT qtyordered, qtydelivered, qtyreserved, datestart, datefinish FROM pp_order WHERE pp_order_id=" + ordId))[0]));
     const ip2 = { fg: await infoProduct('fg.afterReceipts', 'Fertilizer#70', 50007) };
 
@@ -206,7 +202,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     beat('b8', 'Cost Collector window');
     await page.waitForTimeout(300); await hclick('#infowin-close, #idmp-infowin button[title="Close"]').catch(() => {}); await pace(500);
     await openMenuById(53082); await page.waitForSelector(NEWB, { timeout: 20000 }); await pace(1800);
-    fact('cc.grid', (await page.$$eval('.idmp-grid tbody tr', e => e.length)) + ' collectors listed (4 created above + any seeded)'); await pace(2500);
+    fact('cc.grid', (await page.$$eval('.idmp-grid tbody tr', e => e.length)) + ' collectors listed (the 3 the Backflush created + any seeded)'); await pace(2500);
     await hclick('#idmp-tabstrip .idmp-adtab[title$="· PP_Cost_Collector"]').catch(() => {}); await pace(800);
 
     // ═══ B9 a refusal: an order with no routing is refused and rolled back (nothing saved) ═══
@@ -247,6 +243,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('home.afterStop.docstatus', lastLog(nB, /§DASH-GADGET docstatus/)); fact('home.afterStop.performance', lastLog(nB, /§DASH-GADGET performance/));
     fact('home.afterStop.plugin', await page.evaluate(() => { const r = window.PluginEngine._reg().get('org.idempiere.mfg'); return r ? r.state : 'absent'; }) + ' menuLeaf53055=' + await page.locator('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]').count());
     await hold(DRY ? 200 : 3500);
+    gestFlush(); GPrevId = null;
     say('§ERP_FILM_CURSOR clicks=' + clicks + ' cursorOnTarget=' + cursorOk + (clicks === cursorOk ? ' OK' : ' WRONG'));
   } catch (e) { say('§ERP_FILM_ERROR ' + String(e.stack || e.message).split('\n').slice(0, 3).join(' | ')); }
   if (cdp) await cdp.send('Page.stopScreencast').catch(() => {}); await page.waitForTimeout(300).catch(() => {});

@@ -1135,6 +1135,36 @@
     var v = _formCtx.verb, e = _formCtx.e, id = _formCtx.id;
     saveForm(v, e, v === 'create' ? null : (_inlineBaseline || _formCtx.baseline), id);   // the SAME call the inline Save button makes
   }
+  // §SAVE-PREVIEW (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §16 FO-M1): previewInline(cb) runs the SAME saveForm chain as Save (beforeSave hooks, derived
+  //   values, validation, buildOp) and stops before applyOp: the model's afterSave runs in a transaction that is never committed (_modelAfterSave), so nothing is
+  //   sealed and no DocumentNo is allocated (commitCrud does that, and it is not reached). cb({ ok, preview, op, ops, refusal | reason, error }).
+  var _previewMode = false;
+  function previewInline(cb) {
+    var b = _inlineHost ? _inlineHost.querySelector('.ic-vb[data-v="save"]') : null;
+    if (!b || !_formCtx) { cb({ ok: false, reason: 'no-open-form' }); return; }
+    if (_saveWaiter) _settleSave({ ok: false, reason: 'superseded' });
+    _previewMode = true;
+    _saveWaiter = function (res) { _previewMode = false; cb(res); };
+    _saveWaiterT = setTimeout(function () { _settleSave({ ok: false, reason: 'timeout' }); }, 15000);
+    var v = _formCtx.verb, e = _formCtx.e, id = _formCtx.id;
+    saveForm(v, e, v === 'create' ? null : (_inlineBaseline || _formCtx.baseline), id);
+  }
+  function _previewRun(op0) {
+    // Save allocates the DocumentNo BEFORE the model's afterSave runs (commitCrud -> _allocDocNo -> _commitCrudSealed), and children copy it (e.g. PP_MRP.Name);
+    //   the preview gets that same number from the NON-consuming _previewDocNo, on a copy of the op, so what it shows is what Save writes.
+    var op = JSON.parse(JSON.stringify(op0));
+    if (op.op_type === 'CRUD_CREATE' && op.fields) {
+      var dk = Object.keys(op.fields).filter(function (k) { return k.toLowerCase() === 'documentno'; })[0], cur = dk ? op.fields[dk] : null;
+      if (cur == null || cur === '' || _previewIssued[String(cur)] || /^<.*>$/.test(String(cur))) { var pdn = _previewDocNo(op.table, op.fields); if (pdn != null) op.fields[dk || 'documentno'] = pdn; }
+    }
+    withSidecar(function (db) {
+      _modelAfterSave(op, db, function (ops, refusal) {
+        var tables = (ops || []).reduce(function (m, x) { m[x.table] = (m[x.table] || 0) + 1; return m; }, {});
+        console.log('§SAVE-PREVIEW table=' + op.table + ' op=' + op.op_type + ' ok=' + (refusal ? 'N refused="' + String(refusal).slice(0, 160) + '"' : 'Y') + ' ops=' + (ops || []).length + ' tables=' + JSON.stringify(tables) + ' (nothing committed)');
+        _settleSave(refusal ? { ok: false, preview: true, op: op, ops: [], refusal: refusal, reason: 'refused', error: refusal } : { ok: true, preview: true, op: op, ops: ops || [] });
+      });
+    });
+  }
   function saveForm(verb, e, orig, id) {
     var vals = gatherVals(e);
     var _cx = _coExtras(e); Object.keys(_cx).forEach(function (c) { if (!Object.prototype.hasOwnProperty.call(vals, c)) vals[c] = _cx[c]; });   // §CP callout-set columns with no form field
@@ -1205,6 +1235,7 @@
       }
       console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
       var op = CORE.buildOp(verb, e, vals, orig, { id: id });
+      if (_previewMode) { _previewRun(op); return; }   // §SAVE-PREVIEW: stop before applyOp
       if (op.op_type === 'CRUD_UPDATE') {
         // §CP — a callout-set column with no form field is part of the GridTab row; it is saved like any changed column
         Object.keys(_cx).forEach(function (c) { var ov = orig ? (orig[c] !== undefined ? orig[c] : orig[String(c).toLowerCase()]) : undefined;
@@ -1618,6 +1649,7 @@
     return { client: A.clientId != null ? Number(A.clientId) : null, org: A.orgId != null ? Number(A.orgId) : 0, user: A.actor != null ? A.actor : null,
              date: day + ' 00:00:00', now: day + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), nowMillis: d.getTime(),
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
+             eventSeq: !!global.__eventSeq,   // §EVENT_SEQ trace (ERP_FRIENDLY_OPS_LENS.md §15.6): off unless a witness sets window.__eventSeq
              uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
   }
   // _needThen(table, run) - the OSGi lazy-activation seam (Host work H2): if a lazy plugin bundle declares `table` as a trigger and is still STARTING, activate it FIRST (async, before the synchronous model layer runs), then run.
@@ -2912,6 +2944,7 @@
                     update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
                     editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
+                    previewInline: previewInline,   // §SAVE-PREVIEW (ERP_FRIENDLY_OPS_LENS.md §16): the Save chain up to the commit, nothing committed
                     saveInline: saveInline,   // §GT (W-GRIDTAB-LIVE): onSave0 seam — Save the inline form, report ok/REJECT to the navigating host
                     ignoreInline: ignoreInline, inlineDirty: _inlineDirty, formNeedsSave: _inlineContentDirty,   // Leg 4 (W-DIRTY-GATE): content-aware "leaving loses real work?" seam
                     formValues: function () { return _formCtx ? gatherVals(_formCtx.e) : null; },   // §P2 (W-PARITY-REFLIST): read-only witness seam — the open form's values AS THE ENGINE READS THEM (Y/N for a Yes-No)
@@ -2919,6 +2952,7 @@
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     calloutTab: function () { return _co ? _co.tab : null; },
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
+                    bindUdf: _coBindUdf,   // the stored-function UDFs + their data access (AdCallout.RUNTIME.DB) on a DB handle; idempiere.html calls it at load (ERP_FRIENDLY_OPS_LENS.md §24.1)
                     withModelTrx: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
                       try { _coBindUdf(db); var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
                     // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):

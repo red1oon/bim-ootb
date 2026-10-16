@@ -380,10 +380,12 @@
     if (!CLASSES[short]) _addClass(short, C, opts);  // AD rows carry the bare class name too ("CalloutGLJournal.period")
     return C;
   }
-  function defineColumnCallout(table, columns, name, start) {
+  // opts {owner}: a plugin bundle's IColumnCallout extension (plugin.xml org.adempiere.base.IColumnCallout); removeOwner drops exactly that bundle's entries.
+  function defineColumnCallout(table, columns, name, start, opts) {
+    var owner = opts && opts.owner || null;
     (Array.isArray(columns) ? columns : [columns]).forEach(function (c) {
       var k = String(table).toLowerCase() + '|' + String(c).toLowerCase();
-      (COLUMN_CALLOUTS[k] = COLUMN_CALLOUTS[k] || []).push({ name: name, start: start });
+      (COLUMN_CALLOUTS[k] = COLUMN_CALLOUTS[k] || []).push({ name: name, start: start, owner: owner });
     });
   }
   function findColumnCallouts(table, column) {
@@ -966,7 +968,8 @@
     var h = 0, c = 0;
     LEG_L.keys().forEach(function (k) { h += unregisterHandler(k, owner); });
     CLASS_L.keys().forEach(function (k) { var n = CLASS_L.remove(k, owner); if (n) { c += n; _reclass(k); } });
-    return { handlers: h, classes: c };
+    var cc = 0; Object.keys(COLUMN_CALLOUTS).forEach(function (k) { var a = COLUMN_CALLOUTS[k], b = a.filter(function (e) { return e.owner !== owner; }); cc += a.length - b.length; if (b.length) COLUMN_CALLOUTS[k] = b; else delete COLUMN_CALLOUTS[k]; });
+    return { handlers: h, classes: c, columnCallouts: cc };
   }
   function describe() {
     var o = { handlers: {}, classes: {} };

@@ -52,6 +52,86 @@
   // ── Module singleton: ONE registry per page, hydrated once from IDB. ────────────────────────────────────
   var _reg = null, _glue = null, _hydrated = false;
 
+  // ── 2Packs a bundle shipped (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §22 B2-B4) ─────────────────────────────────────────────
+  //   IDB key 'packs': { <bundle>: { fingerprint, packs: [{version, bytes}], delta: [[sql, params], ...] } }. The rows are dictionary data: kept whatever the bundle's state.
+  var PACKS_KEY = 'packs';
+  function _kvGet(key, dflt) {
+    return _idb().then(function (db) { return new Promise(function (res) { var r = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key); r.onsuccess = function () { res(r.result || dflt); }; r.onerror = function () { res(dflt); }; }); })
+      .catch(function () { return dflt; });
+  }
+  function _kvPut(key, val) {
+    return _idb().then(function (db) { return new Promise(function (res) { var tx = db.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(val, key); tx.oncomplete = function () { res(true); }; tx.onerror = function () { res(false); }; }); })
+      .catch(function () { return false; });
+  }
+  function _rawDb() { var d = _glue && _glue.db; return (d && typeof d.run === 'function' && typeof d.exec === 'function') ? d : null; }
+  function _heapMB() { try { return performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 'n/a'; } catch (e) { return 'n/a'; } }
+  function _packOpts(db) {
+    return { say: function (l) { console.log(l); }, convertSql: global.AdCallout && global.AdCallout.convertSql,
+      hasFunction: function (n) { try { db.exec('SELECT ' + n + '()'); return true; } catch (e) { return !/no such function/i.test(e.message); } },
+      uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
+  }
+  // §24: a pack's stored functions. The module's bodies are bound on the dictionary DB like core's sqlfn.js UDFs (AdCallout.RUNTIME.bindSqlFunctions) - at Start BEFORE the Pack In
+  //   (so its CREATE FUNCTION statements are provided and views over them compile) and at every load BEFORE the replay, for every kept pack, whatever the bundle's state.
+  function _bindFunctions(db, url, bundleId) {
+    if (!url) return Promise.resolve([]);
+    var R = global.AdCallout && global.AdCallout.RUNTIME; if (!R || !R.bindSqlFunctions) return Promise.reject(new Error('AdCallout.RUNTIME.bindSqlFunctions missing'));
+    return import(/* @vite-ignore */ url).then(function (m) {
+      var names = R.bindSqlFunctions(function (n, f) { db.create_function(n, f); }, (m.functions || (m.default && m.default.functions))(R));
+      console.log('§PACKIN-FN bundle=' + bundleId + ' bound=[' + names.join(',') + '] from=' + String(url).split('/').pop());
+      return names;
+    });
+  }
+  // B2: apply a bundle's packs at Start (the Incremental2PackActivator rule inside PipoPackIn.incremental), keep the bytes of every pack that went in and the delta it wrote.
+  function _packApply(bundleId, list, more) {
+    var db = _rawDb(), P = global.PipoPackIn, t0 = performance.now(), fnUrl = more && more.functions || null;
+    if (!db) return Promise.resolve({ ok: false, error: 'no writable dictionary DB' });
+    if (!P) return Promise.resolve({ ok: false, error: 'pipo_packin.js not loaded' });
+    return _bindFunctions(db, fnUrl, bundleId).then(function () { return Promise.all(list.map(function (p) { return fetch(p.url).then(function (r) { if (!r.ok) throw new Error(p.url + ' HTTP ' + r.status); return r.arrayBuffer(); }).then(function (b) { return { version: p.version, bytes: new Uint8Array(b) }; }); }))
+      .then(function (loaded) {
+        return _kvGet(PACKS_KEY, {}).then(function (store) {
+          var rdb = P.recording(db), fromScratch = !P.installedVersions(db, bundleId).length;   // nothing of this bundle in the base: what is written now is the WHOLE delta, not an addition
+          return P.incremental(rdb, bundleId, loaded, _packOpts(db)).then(function (res) {
+            var ok = res.every(function (r) { return r.ok; }), bad = res.filter(function (r) { return !r.ok; })[0];
+            var done = !res.length ? Promise.resolve() : (function () {
+              var rec = store[bundleId] || { packs: [], delta: [] };
+              res.filter(function (r) { return r.ok; }).forEach(function (r) { rec.packs = rec.packs.filter(function (k) { return k.version !== r.version; }).concat(loaded.filter(function (l) { return l.version === r.version; })); });
+              rec.delta = fromScratch ? rdb.delta() : rec.delta.concat(rdb.delta()); rec.fingerprint = global.__adSeedFingerprint || null; if (fnUrl) rec.functions = fnUrl; store[bundleId] = rec;
+              return _kvPut(PACKS_KEY, store);
+            })();
+            return done.then(function () {
+              console.log('§PACKIN-START bundle=' + bundleId + ' applied=[' + res.filter(function (r) { return r.ok; }).map(function (r) { return r.version; }).join(',') + '] ok=' + ok +
+                ' statements=' + rdb.delta().length + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB() + (bad ? ' error=' + (bad.stat && bad.stat.error) : ''));
+              return { ok: ok, applied: res.map(function (r) { return r.version; }), error: bad ? (bad.version + ': ' + (bad.stat && bad.stat.error)) : null };
+            });
+          });
+        });
+      }); }).catch(function (e) { console.log('§PACKIN-START bundle=' + bundleId + ' ok=false error=' + e.message); return { ok: false, error: e.message }; });
+  }
+  // B4: every load, BEFORE the bundles are restored, every kept bundle's rows are put back: the delta on the same base, else a full Pack In from the kept bytes.
+  function _packsReplay() {
+    var db = _rawDb(), P = global.PipoPackIn; if (!db || !P) return Promise.resolve();
+    return _kvGet(PACKS_KEY, {}).then(function (store) {
+      var ids = Object.keys(store), fp = global.__adSeedFingerprint || null, changed = false;
+      return ids.reduce(function (chain, id) {
+        return chain.then(function () {
+          var r = store[id], t0 = performance.now(), reason;
+          return _bindFunctions(db, r.functions, id).catch(function (e) { console.log('§PACKIN-FN-ERR bundle=' + id + ' ' + e.message); }).then(function () {
+          if (r.fingerprint === fp && (r.delta || []).length) {
+            var rr = P.replay(db, r.delta);
+            if (rr.ok) { console.log('§PACKIN-REPLAY bundle=' + id + ' mode=delta statements=' + rr.statements + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB()); return; }
+            reason = 'replay failed at ' + rr.statements + ': ' + rr.error;
+          } else reason = 'fingerprint ' + r.fingerprint + ' -> ' + fp;
+          var rdb = P.recording(db);
+          return P.incremental(rdb, id, r.packs || [], _packOpts(db)).then(function (res) {
+            r.delta = rdb.delta(); r.fingerprint = fp; changed = true;
+            console.log('§PACKIN-REPLAY bundle=' + id + ' mode=full reason=' + reason + ' applied=[' + res.map(function (x) { return x.version + (x.ok ? '' : '!'); }).join(',') + '] statements=' + r.delta.length + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB());
+          });
+          });
+        });
+      }, Promise.resolve()).then(function () { return changed ? _kvPut(PACKS_KEY, store) : null; });
+    }).catch(function (e) { console.log('§PACKIN-REPLAY-ERR ' + e.message); });
+  }
+
   function _buildRegistry(glue) {
     // db: bind the WRITABLE sql.js handle when the page gave us a raw one (glue.db has .run/.exec) — Ninja
     // Create's bundle.activate → stageModels writes through it; engine bundles still read via the .query
@@ -76,6 +156,9 @@
       postTokens: glue.engines && glue.engines.postTokens,
       docAction:  global.ModelLayer || null,   // the DocAction extension point (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 2)
       docFsm:     global.AdDocFsm || null,     // the document-action FSM family table (plugin documents get the DocAction bar): registerFamily / removeFamilyOwner
+      form:       global.AdFormGeneric || null, // the generic AD_Form engine (ad_form_generic.js): a bundle registers a form descriptor, the host draws it
+      lens:       global.AdLens || null,       // the opt-in operations lens (ad_lens.js, bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15): a bundle registers record actions, the host draws ONE lens bar
+      packs:      { apply: _packApply },          // a bundle's 2Packs (manifest.packs): Pack In at Start, kept + replayed at load (§22)
       docClass:   global.DocPoster || null,    // the posting-class extension point (legacy IDocFactory): registerDocClass / removeDocClassOwner (Host work H1)
       import: function (url) { return import(/* @vite-ignore */ url); }
       // store: default in-memory; IDB persistence is a side-channel (_persist below) so the registry stays sync.
@@ -92,7 +175,7 @@
   // Hydrate: read persisted bundles, re-install (and re-activate the ACTIVE ones) into the fresh registry.
   function _hydrate() {
     if (_hydrated) return Promise.resolve();
-    return _idbGet().then(function (saved) {
+    return _packsReplay().then(_idbGet).then(function (saved) {
       // one implementation: the registry's restore() installs every saved bundle then restarts the ACTIVE ones in dependency order (Host work H1); failures are collected, never thrown.
       var chain = _reg.restore((saved || []).filter(function (b) { return b && b.url; }))
         .then(function (r) { (r.failed || []).forEach(function (f) { console.warn('§PLUGIN-PILL rehydrate failed id=' + f.id + ': ' + f.error); }); });
