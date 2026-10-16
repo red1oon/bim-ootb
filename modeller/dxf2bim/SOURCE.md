@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `8e325790b` — std2d JS port S1: plan contours + W-S1 parity witness (#201)
+Commit: `b44f0ccc6` — std2d §L1.8 S1: an orthogonal wall's sliver contour (mean width < 1 mm) becomes its bound
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -14,7 +14,7 @@ Commit: `8e325790b` — std2d JS port S1: plan contours + W-S1 parity witness (#
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
 | dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | e682bc8dc1e2aacf1c258bdc20419506acbd9e5bceec215bc93db3762587eca5 |
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 4d6b010af89b3b2fe113ca904105c61230fa6afd65dc1adf0379caf9a484468e |
-| dxf2bim/std2d.js | deploy/dev/std2d.js | 9779a932008564f6a063db93092abcbb02fe4175561c3dacd36ae906d2a2fce9 |
+| dxf2bim/std2d.js | deploy/dev/std2d.js | 1d19b33512ba6ca814e10af6810e6d4d56d7d7f9a44ab49fc9eefb16a0e7db89 |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | b048dbd18853177e3235d460200fa86e4c81a6b815a943e94d744b00e47f5f6d |
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | 67704c069ce55d6a7053c22d3fc5a56c74e507e16d90661d7b357d13c01ba551 |
@@ -22,4 +22,4 @@ Commit: `8e325790b` — std2d JS port S1: plan contours + W-S1 parity witness (#
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 16accb7e37683247535e9b3a776e15aec5ab27c63dc58536ac2bc3d2e6c8a3d5 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 8e325790b:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show b44f0ccc6:deploy/dev/<file> | sha256sum` equals the column above.
