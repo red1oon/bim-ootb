@@ -2956,7 +2956,7 @@
                       });
                     },
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
-                    changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    changeLog: function (table, id, opts) { return SIDE ? CORE.changeLog(SIDE, table, id, opts) : null; },   // §ADMIN-2 opts {roleChangeLog, insertLog, baseRow}
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
                     restoreDraft: restoreDraft, bufferDraft: _bufferDraft,   // Item 1 (W-DRAFT-RESTORE-LIVE): opt-in restore + leave-buffer (host/witness seam)
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log
