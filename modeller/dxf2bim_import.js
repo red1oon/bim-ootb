@@ -124,6 +124,15 @@
     return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
 
+  // §L4.3 the door openings of ONE plan sheet as the reader sees them (Dxf2Bim.run with the set's plan map + the sheet's @LAYER rules):
+  // the editor's Doors section resolves a canvas click and places a @TAG with the reader's own door geometry. Pure; metres.
+  function planDoors(sheet, setName, opts) {
+    var SET = setWith(setName); if (!SET || !sheet || sheet.desc.view !== 'PLAN' || !(sheet.desc.units in MK.UNITS)) return null;
+    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), C.CFG, { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
+    return { factor: MK.UNITS[sheet.desc.units], snap_tol: C.CFG.snap_tol, doors: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge; }).map(function (o) {
+      var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }) };
+  }
+
   // ---- the pipeline: rosetta_dx_shell.js pipeline({convention:false}), same calls, same order ----
   // library (optional): { families:[{id, ot, ifc_class, w, h, d}], wallTypes:[{id, t}], geoms:[{element_ref, ifc_class, geometry_hash, vertices, faces, bbox}], labels:{<storey>:[...]} }
   function convert(sheets, opts) {
@@ -467,5 +476,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });
