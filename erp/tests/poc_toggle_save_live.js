@@ -23,6 +23,7 @@ const OUT = []; const say = (s) => { OUT.push(s); console.log(s); };
   try {
     await page.goto(base + '/idempiere.html?login=GardenAdmin&window=146', { waitUntil: 'load' });
     await page.waitForSelector('#idmp-toolbar [data-tb="toggle"]', { timeout: 30000 }); await page.waitForTimeout(1500);
+    if ((await page.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await page.click('#idmp-toolbar [data-tb="toggle"]'); await page.waitForTimeout(900); }   // §OPEN-MODE: a single-row tab opens as a form; this witness starts from the grid
     const recs = await page.$$eval('.idmp-grid tbody tr[data-ad-record]', e => e.length);
     const d0 = await saveDis();
     await page.click('#idmp-toolbar [data-tb="toggle"]'); await page.waitForTimeout(900);

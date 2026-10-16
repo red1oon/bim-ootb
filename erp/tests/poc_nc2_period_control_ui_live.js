@@ -95,6 +95,7 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   await hc('#idmp-toolbar [title^="Next record"]'); await pg.waitForTimeout(900);
   await hc(TAB('Period Control')); await pg.waitForTimeout(1400);
   const row = (await tip("SELECT c_periodcontrol_id AS id FROM c_periodcontrol WHERE c_period_id=" + P[1] + " AND docbasetype='SOO'"))[0];
+  if (await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form'))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(800); }   // §OPEN-MODE: a single-row child tab opens as a form
   const rows = await pg.$$eval('.idmp-grid tbody tr', t => t.map(x => x.textContent.slice(0, 80)));
   console.log('§NC2-UI period-control grid rows=' + rows.length);
   const idx = (await tip("SELECT docbasetype AS d FROM c_periodcontrol WHERE c_period_id=" + P[1] + " ORDER BY c_periodcontrol_id")).map(x => x.d).indexOf('SOO');

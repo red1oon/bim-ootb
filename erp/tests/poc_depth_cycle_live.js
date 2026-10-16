@@ -74,7 +74,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
   await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
-  await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900);
+  if (!(await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: the header tab already remembers its form view
 
   // ── D2/D3 · Complete
   n0 = logs.length; await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
@@ -90,6 +90,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('D4', 'Zoom Across lists the generated Shipment (Customer) and Sales Invoice', /Shipment \(Customer\)\(1\)/.test(z) && /Sales Invoice and Credit\/Debit Note\(1\)/.test(z), z.slice(0, 200));
   // ── D5 · drill into the Shipment
   await pg.locator('#idmp-zoom-ov >> text=Shipment (Customer)').first().click(); await pg.waitForTimeout(2000);
+  if ((await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: a one-record zoom opens as a form
   const st = await pg.$eval('#idmp-status', e => e.innerText).catch(() => ''), row = await pg.$$eval('.idmp-grid tbody tr[data-ad-record]', e => e.map(x => x.innerText.replace(/\s+/g, ' ')));
   ok('D5', 'the Shipment window opens filtered to this order: 1 record, Completed, Posted button', /Shipment \(Customer\)/.test(st) && row.length === 1 && /Completed/.test(row[0]) && /Posted/.test(row[0]), st + ' | ' + (row[0] || '').slice(0, 90));
 
@@ -131,7 +132,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
   await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
-  await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900);
+  if (!(await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: the header tab already remembers its form view
   n0 = logs.length; await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
   const d8 = logs.slice(n0).filter(l => /§MODEL-DOCACTION table=c_order/.test(l)).pop() || '';
   await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1800);

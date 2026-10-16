@@ -816,6 +816,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _records = [];
   var _recIdx = 0;
   var _viewMode = 'grid';    // 'grid' | 'form'
+  // §OPEN-MODE the presentation a tab opens in (ADTabpanel.init :1017 + GridTab.isSingleRow :1617-1622, AdGridTab.singleRow): the user's
+  //   AD_Tab_Customization.IsDisplayedGrid, else AD_Tab.IsSingleRow -> form. A tab already shown in this window keeps the view it was left in
+  //   (the ADTabpanel instance lives as long as the window; renderBody records it).
+  function _openModeFor(idx) {
+    var ow = _openWins[_activeWin], w = _curWin(), tab = w && w.tabs ? w.tabs[idx] : null;
+    if (ow && ow.view && ow.view[idx]) return ow.view[idx];
+    if (!tab || !window.AdGridTab || !AdGridTab.singleRow) return 'grid';
+    var mode = AdGridTab.singleRow(tab.isSingleRow, _tabCust[String(tab.id)] || null) ? 'form' : 'grid';
+    console.log('§OPEN-MODE window=' + _activeWin + ' tab=' + tab.id + ' (' + tab.name + ') isSingleRow=' + !!tab.isSingleRow + ' IsDisplayedGrid=' + ((_tabCust[String(tab.id)] || {}).isdisplayedgrid || '-') + ' -> ' + mode);
+    return mode;
+  }
   var _gridSel = Object.create(null);  // GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select: set of record PK strings (reset on _records reload)
   var _selByLevel = {};      // tabLevel -> selected record's key value (drives master-detail filtering)
   var _recByLevel = {};      // §P7 — tabLevel -> the selected RECORD (the window context a detail tab reads)
@@ -1571,7 +1582,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _openWins[windowId].initialQuery = true;   // §UDP-4 first open: AbstractADWindowContent.initTab(0) -> initialQuery
       console.log('§IDEMPIERE window=' + win.name + '(' + windowId + ') tabs=' + (win.tabs ? win.tabs.length : 0) + ' source=sqlite');
     }
-    _activeWin = windowId; _activeTabIdx = 0; _viewMode = 'grid'; _selByLevel = {}; _recByLevel = {}; _curKeyByTab = {}; _curQ = null;
+    _activeWin = windowId; _activeTabIdx = 0; _viewMode = _openModeFor(0); _selByLevel = {}; _recByLevel = {}; _curKeyByTab = {}; _curQ = null;
     renderWinTabs(); renderToolbar(); renderTabStrip(); renderActiveTab();
     _histPush('window');   // §B — window opened / window-tab switched (this is the single activation choke point)
   }
@@ -2152,7 +2163,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var t = el('div', 'idmp-adtab' + (i === _activeTabIdx ? ' active' : ''), tab.name);   // no tree glyph — iDempiere shows plain tab names
       if (lvl) t.style.paddingLeft = (16 + lvl * 10) + 'px';   // child tabs subtly indented (iDempiere parent→child)
       t.title = 'TabLevel ' + lvl + (tab.tableName ? ' · ' + tab.tableName : '');
-      t.addEventListener('click', function () { if (i === _activeTabIdx) return; _saveAndNavigate(function () { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); }, 'tab'); });
+      t.addEventListener('click', function () { if (i === _activeTabIdx) return; _saveAndNavigate(function () { _activeTabIdx = i; _viewMode = _openModeFor(i); renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); }, 'tab'); });
       strip.appendChild(t);
     });
   }
@@ -2645,6 +2656,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function renderBody() {
     var tab = _curTab(); if (!tab) return;
     var host = $('idmp-content'); host.innerHTML = '';
+    var _ow0 = _openWins[_activeWin]; if (_ow0) (_ow0.view = _ow0.view || {})[_activeTabIdx] = _viewMode;   // §OPEN-MODE
     if (_drillActive && _drillSaved) host.appendChild(_drillBanner());   // DASH_DRILL — "show all" to restore the full set
     if (_viewMode === 'grid') {
       host.appendChild(buildGrid(tab));
@@ -4863,9 +4875,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       refresh: function () { _newMode = null; renderActiveTab(); _viewMode = 'form'; refreshForm(); },
       onNew: function () { _startInlineNew(null); },
       onCopy: function () { _startInlineNew(_curRecPk()); },
-      afterSaveCreate: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
-      afterDiscardNew: function () { _newMode = null; _viewMode = 'grid'; renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
-      afterDelete: function () { _newMode = null; _viewMode = 'grid'; renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
+      afterSaveCreate: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderActiveTab(); renderToolbar(); },   // saved New → show the new row in the grid
+      afterDiscardNew: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderActiveTab(); renderToolbar(); },   // Ignore on a New → back to grid
+      afterDelete: function () { _newMode = null; _viewMode = _openModeFor(_activeTabIdx); renderToolbar(); },                          // tombstone → grid (overlay:committed refolds)
       // §CP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §CP — W-CP-CALLOUT-LIVE): the GridTab context the callout
       //   engine needs — this AD_Tab, its TabNo (GridWindow index), the window IsSOTrx (AbstractADWindowContent sets it in the
       //   window ctx) and each parent tab's CURRENT row (GridTab.setCurrentRow pushed those into the window ctx).
@@ -5090,7 +5102,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _selectTabByTable(table) {
     var w = _curWin(); if (!w || !w.tabs) return false;
     for (var i = 0; i < w.tabs.length; i++) {
-      if (_adMatch(w.tabs[i].tableName, table)) { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); return true; }
+      if (_adMatch(w.tabs[i].tableName, table)) { _activeTabIdx = i; _viewMode = _openModeFor(i); renderActiveTab(); renderTabStrip(); renderToolbar(); return true; }
     }
     return false;
   }
@@ -5109,7 +5121,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // openTab(key, tab): switch the focused window to the tab named `tab`.
     openTab: function (key, tab) {
       var w = _curWin(); if (!w || !w.tabs || !tab) return;
-      for (var i = 0; i < w.tabs.length; i++) if ((w.tabs[i].name || '').toLowerCase() === String(tab).toLowerCase()) { _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); return; }
+      for (var i = 0; i < w.tabs.length; i++) if ((w.tabs[i].name || '').toLowerCase() === String(tab).toLowerCase()) { _activeTabIdx = i; _viewMode = _openModeFor(i); renderActiveTab(); renderTabStrip(); renderToolbar(); return; }
     },
     // has(key): does THIS chrome currently render the AD table `key` (a [data-ad-table] is in the DOM)?
     has: function (key) { return !!key && !!_firstByTable(key); },
@@ -5852,7 +5864,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function _restoreFromDrill() {
     if (!_drillSaved) return;
-    _records = _drillSaved; _drillSaved = null; _drillActive = false; _recIdx = 0; _viewMode = 'grid';
+    _records = _drillSaved; _drillSaved = null; _drillActive = false; _recIdx = 0; _viewMode = _openModeFor(_activeTabIdx);
     renderBody(); renderToolbar();
     console.log('§DASH-DRILL-RESTORE recs=' + _records.length);
   }
@@ -7463,7 +7475,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try {
       if (e.windowId != null) openWindow(e.windowId);                          // re-open / re-activate the window
       if (typeof e.tabIdx === 'number' && e.tabIdx !== _activeTabIdx && _curWin() && _curWin().tabs[e.tabIdx]) {
-        _activeTabIdx = e.tabIdx; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar();
+        _activeTabIdx = e.tabIdx; _viewMode = _openModeFor(e.tabIdx); renderActiveTab(); renderTabStrip(); renderToolbar();
       }
       if (e.kind === 'record' && e.recordId != null) {
         var tab = _curTab();
