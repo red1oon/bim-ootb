@@ -356,6 +356,7 @@ Problem (user, 2026-10-17): "we could not even place the knife cut right … som
 - LB3 exterior (R4(b), per storey envelope);
 - LB4 columns (C2).
 When a foundation storey exists (Duplex), R4(a)+R4(b) on the grid storey govern as before and LB1/LB2 are not used. No footing → grid storey = the lowest storey with walls.
+- Precedence (amended 2026-10-17 after the first SampleCastle run, before re-running): a model statement wins over inference. A wall whose `LoadBearing` is stated (TRUE or FALSE) is judged by LB1 alone; LB2 applies only to walls with no statement. Measured: with LB2 applied to every wall SampleCastle gets 55 × 50 grid lines (221 walls gridded by continuity alone, most of them stated `LoadBearing = FALSE`); with the precedence 27 × 31. HHS states FALSE on all 112 walls, so its grid is exterior-only.
 
 **Out of scope here (stated):** stair symbols (the cut outline of IfcStair/IfcStairFlight only, if the cut passes; no tread arrows); curtain-wall plan symbol (HHS facade: its panels are IfcPlate/IfcMember with storey "Unknown"); elevations stay envelope bbox rectangles; roof = bbox; skewed walls stay `GAP:wall_not_orthogonal`; only SINGLE_SWING doors get arcs.
 
