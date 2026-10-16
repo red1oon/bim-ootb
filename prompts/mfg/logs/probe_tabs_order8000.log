@@ -1,0 +1,18 @@
+§PROBE menu chain=53014>53052>53053
+§PROBE header tab (before select): {"rows":18,"firstRow":"DraftedGardenWorldStore West800010Manufacturing OrderYNot Posted","form":0,"status":""}
+§PROBE header rows sample: ["DraftedGardenWorldStore West800010Manufacturing OrderYNot Po","DraftedGardenWorldStore West800110Manufacturing OrderYNot Po","DraftedGardenWorldHQMO-9900000YSubstructure — CONCRETE_GANG "] total=18
+§PROBE target rows matching "8000": 1
+§PROBE after select: {"rows":0,"firstRow":"","form":96,"status":""} sel=null
+§PROBE tab 0 "Manufacturing Order" {"rows":0,"firstRow":"","form":96,"status":""}
+§PROBE tab 1 "Order Parent Product" {"rows":1,"firstRow":"GardenWorldStore West8000Fertilizer#50Fertilizer #5050 # Bag of Lawn F","form":0,"status":""}
+§PROBE tab 2 "Orden BOM Translation" {"rows":1,"firstRow":"GardenWorldStore WestFertilizer #50es_COYFertilizante #5050 # Bolsa de","form":0,"status":""}
+§PROBE tab 3 "Components of the Manufacturing Order" {"rows":2,"firstRow":"10Y2007-09-22 00:00:00","form":0,"status":""}
+§PROBE tab 4 "Order Components Translation" {"rows":1,"firstRow":"GardenWorldStore West50000es_COY","form":0,"status":""}
+§PROBE tab 5 "Workflow" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 6 "Workflow Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 7 "Order Activity" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 8 "Order Activity Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 9 "Node Product" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 10 "Node Asset" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 11 "Transition Next" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 12 "Cost" {"rows":1,"firstRow":"No records","form":0,"status":""}

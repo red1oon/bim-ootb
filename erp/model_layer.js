@@ -21,13 +21,13 @@
 (function (root, factory) {
   var api;
   if (typeof module !== 'undefined' && module.exports) {
-    api = factory(require('./bigdecimal'), require('./ad_modelval'), (function () { try { return require('./ad_workflow'); } catch (e) { return null; } })());
+    api = factory(require('./bigdecimal'), require('./ad_modelval'), (function () { try { return require('./ad_workflow'); } catch (e) { return null; } })(), require('./layered_registry'));
     module.exports = api;
   } else {
-    api = factory(root.BigDecimal, root.AdModelVal, root.AdWorkflow);
+    api = factory(root.BigDecimal, root.AdModelVal, root.AdWorkflow, root.LayeredRegistry);
     root.ModelLayer = api;
   }
-})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (BigDecimal, MV, WF) {
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (BigDecimal, MV, WF, LR) {
 
   var NEW = '#new:';
   function isNewId(v) { return typeof v === 'string' && v.indexOf(NEW) === 0; }
@@ -272,8 +272,15 @@
   function saveEx(trx, table, row, changes) { var r = save(trx, table, row, changes); if (!r.ok) throw new Error(r.error || 'SaveError'); return r.row; }
 
   // ══ the model registry — ONE: ad_modelval.js. Model classes (afterSave etc.) + validators share it ══════════
-  var MODEL = {};   // table -> { beforeSave(trx,row,isNew,old), afterSave(trx,row,isNew,old), afterDelete(trx,row) } — the M*.java overrides
-  function registerModel(table, impl) { MODEL[table.toLowerCase()] = Object.assign(MODEL[table.toLowerCase()] || {}, impl); }
+  // LAYERED (Host work H1, layered_registry.js): the core classes are layer 'core'/rank 0; a plugin bundle registers with {owner, rank:1} like an OSGi IModelFactory (service.ranking) and stopping it removes ITS layers, so the core hooks are
+  //   effective again. MODEL[table] is the MATERIALISED view (per hook: the highest layer defining it) - readers are unchanged. No opts => owner 'core', exactly the old merge behaviour.
+  var MODEL = {}, MODEL_L = LR.create();   // table -> { beforeSave(trx,row,isNew,old), afterSave(trx,row,isNew,old), afterDelete(trx,row) } — the M*.java overrides
+  function _remodel(t) {
+    var ls = MODEL_L.layers(t);
+    if (!ls.length) delete MODEL[t]; else MODEL[t] = Object.assign.apply(null, [{}].concat(ls.map(function (r) { return r.value; })));
+  }
+  function registerModel(table, impl, opts) { var t = table.toLowerCase(); MODEL_L.add(t, impl, opts); _remodel(t); }
+  function unregisterModel(table, owner) { var t = table.toLowerCase(), n = MODEL_L.remove(t, owner); _remodel(t); return n; }
   function fire(trx, timing, table, row, extra) {
     if (!MV || typeof MV.fireHooks !== 'function') return null;
     var r = MV.fireHooks(timing, Object.assign({ table: table, record: row }, extra || {}), Object.assign({ trx: trx }, trx.env.ctx || {}));
@@ -343,7 +350,23 @@
   // or boolean. A plugin bundle calls this through PluginRegistry ctx.docAction — no host code per table.
   var DOCS = {}, _poster = null;
   function setPoster(fn) { _poster = fn; }
-  function registerDocAction(table, impl) { DOCS[table.toLowerCase()] = impl; return Object.keys(DOCS).length; }
+  var DOCS_L = LR.create();   // layered like MODEL: DOCS[table] = the effective DocAction class (highest layer)
+  function _redoc(t) { var top = DOCS_L.top(t); if (top) DOCS[t] = top.value; else delete DOCS[t]; }
+  function registerDocAction(table, impl, opts) { var t = table.toLowerCase(); DOCS_L.add(t, impl, opts); _redoc(t); return Object.keys(DOCS).length; }
+  function unregisterDocAction(table, owner) { var t = table.toLowerCase(), n = DOCS_L.remove(t, owner); _redoc(t); return n; }
+  // removeOwner - everything one bundle contributed to MODEL + DOCS (plugin_registry stop). Returns { models, docs }.
+  function removeOwner(owner) {
+    var m = 0, d = 0;
+    MODEL_L.keys().forEach(function (t) { var n = MODEL_L.remove(t, owner); if (n) { m += n; _remodel(t); } });
+    DOCS_L.keys().forEach(function (t) { var n = DOCS_L.remove(t, owner); if (n) { d += n; _redoc(t); } });
+    return { models: m, docs: d };
+  }
+  // describe - a plain dump for witnesses: model hooks per table (with the layer owners) and the effective doc-action tables.
+  function describe() {
+    var models = {}; MODEL_L.keys().sort().forEach(function (t) { models[t] = MODEL_L.layers(t).map(function (r) { return r.owner + '@' + r.rank + ':' + Object.keys(r.value).sort().join(','); }); });
+    var docs = {}; DOCS_L.keys().sort().forEach(function (t) { docs[t] = DOCS_L.layers(t).map(function (r) { return r.owner + '@' + r.rank; }); });
+    return { models: models, docs: docs };
+  }
   function docActionFor(table) { return DOCS[(table || '').toLowerCase()] || null; }
 
   // DocumentEngine.processIt(action) — process/DocumentEngine.java:301-360 + prepareIt :489-498 + completeIt.
@@ -452,6 +475,10 @@
         // the host has ALREADY written the record (its own CRUD op in the same group): make it visible to the Trx
         // without re-emitting it, then run PO.afterSave + the AFTER_NEW|CHANGE validators exactly as save() would.
         var rec = {}; for (var rk in spec.record) rec[rk.toLowerCase()] = spec.record[rk];
+        // the host's op carries only the FORM values; Client/Org are stamped later from op.stdDefaults (crud_core.js CRUD_CREATE fold, PO.setStandardDefaults
+        // PO.java:1973-2000 = the session Env) -- the model must see them now, from the same session env, or every client-scoped afterSave lookup answers "no rows"
+        if (rec.ad_client_id == null && trx.env.client != null) rec.ad_client_id = trx.env.client;
+        if (rec.ad_org_id == null && trx.env.org != null) rec.ad_org_id = trx.env.org;
         trx._p(table)[String(rec[trx.idCol(table)])] = { row: rec, orig: Object.assign({}, rec), isNew: false, opIdx: null };
         var M = MODEL[table] || {}, e = M.afterSave ? M.afterSave(trx, rec, !!spec.isNew, spec.old || null) : null;
         if (!e) e = fire(trx, spec.isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, rec, { recordOld: spec.old || null }) || fire(trx, 'AFTER_SAVE', table, rec, { recordOld: spec.old || null });
@@ -473,7 +500,7 @@
     return Object.assign({ ok: r.ok !== false, ops: ops, log: trx.log, trx: trx }, r, { ops: ops });
   }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });

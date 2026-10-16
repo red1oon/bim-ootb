@@ -103,15 +103,22 @@ function buildImportDBs(SQL, data) {
   // (rates.js); a page without rates.js keeps the old behaviour (normals written).
   var _civ = (typeof window !== 'undefined' && window.SEQUENCE_CIVIL) || null, _slim = false;
   if (_civ) for (var ci = 0; ci < data.elements.length && !_slim; ci++) if (_civ[data.elements[ci].discipline]) _slim = true;
-  var _nDrop = 0, _nBytes = 0;
+  var _nDrop = 0, _nBytes = 0, _wB = 0, _wA = 0;
   var stmtGeo = db.prepare('INSERT OR IGNORE INTO component_geometries VALUES (?,?,?,?,?)');
   for (var i = 0; i < data.geometries.length; i++) {
     var g = data.geometries[i];
     if (_slim && g.normals) { _nDrop++; _nBytes += g.normals.byteLength; }
-    stmtGeo.run([g.geomHash, new Uint8Array(g.vertices), new Uint8Array(g.indices),
+    var _gv = g.vertices, _gi = g.indices;
+    if (_slim && window.VertexWeld) {   // §VERT_WELD_IMPORT: same weld as save (vertex_weld.js), civil only
+      var _wv = new Float32Array(_gv.buffer ? _gv.buffer.slice(_gv.byteOffset, _gv.byteOffset + _gv.byteLength) : _gv), _wi = new Uint32Array(_gi.buffer ? _gi.buffer.slice(_gi.byteOffset, _gi.byteOffset + _gi.byteLength) : _gi);
+      var _w = window.VertexWeld.weld(_wv, _wi);
+      if (_w) { _wB += _w.before; _wA += _w.after; _gv = _w.vertices.buffer; _gi = _w.faces.buffer; }
+    }
+    stmtGeo.run([g.geomHash, new Uint8Array(_gv), new Uint8Array(_gi),
       (g.normals && !_slim) ? new Uint8Array(g.normals) : null, buildingName]);
   }
   stmtGeo.free();
+  if (_slim) console.log('§VERT_WELD_IMPORT vertsBefore=' + _wB + ' vertsAfter=' + _wA + (_wB === _wA ? ' INCONCLUSIVE(nothing welded)' : ''));
   if (_slim) console.log('§MESH_SLIM_IMPORT civil=1 normalsDropped=' + _nDrop + ' bytes=' + _nBytes + ' (derived on load)');
 
   // §S267: bom_tree — IFC parent→child relationships (IfcRelVoids/Fills/Aggregates)

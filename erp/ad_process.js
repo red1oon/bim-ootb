@@ -39,6 +39,9 @@
   var REF_TYPE = {
     10: 'string', 14: 'string',                                  // String / Text
     11: 'integer', 13: 'integer', 18: 'integer', 19: 'integer',  // Integer / ID / Table / TableDirect (all *_ID)
+    // the rest of DisplayType.isID (DisplayType.java:249-255): Location, Account, Search, Locator, Image, Assignment, PAttribute,
+    // Chart, RecordID - their editors hold an Integer, so a saved parameter is P_Number (W-UDP2-ENGINE B: Search params were 'string')
+    21: 'integer', 25: 'integer', 30: 'integer', 31: 'integer', 32: 'integer', 33: 'integer', 35: 'integer', 53370: 'integer', 200202: 'integer',
     12: 'number', 22: 'number', 29: 'number',                    // Amount / Number / Quantity
     15: 'date', 16: 'date',                                      // Date / Date+Time
     17: 'list', 20: 'yesno', 28: 'button'
@@ -63,11 +66,19 @@
   // handler needs (e.g. ctx.report = report_overlay CORE, ctx.fetch = a row-fetcher) so the spine stays
   // data-source-agnostic (node witness injects sqlite fetchers; browser injects the bundle).
   // REPORT handlers resolve to report_overlay.js folds — NOT reinvented here.
-  var REGISTRY = {};
+  // LAYERED (Host work H1, layered_registry.js): REGISTRY / JAVA are the MATERIALISED effective views; a bundle registers with opts {owner, rank} and stopping it removes its layers (core entry effective again).
+  function _CC() { return (typeof module !== 'undefined' && module.exports) ? require('./crud_core.js') : global.CrudCore; }   // §LOCAL-TIME localDay
+  function _LR() { return (typeof module !== 'undefined' && module.exports) ? require('./layered_registry.js') : global.LayeredRegistry; }
+  var REGISTRY = {}, REG_L = _LR().create();
 
-  // registerHandler(classname, fn[, meta]) — meta.kind ∈ {report, docaction}; meta.reportKey wires to REPORT_MAP.
-  function registerHandler(classname, fn, meta) {
-    REGISTRY[classname] = { fn: fn, meta: meta || {} };
+  // registerHandler(classname, fn[, meta[, opts]]) — meta.kind ∈ {report, docaction}; meta.reportKey wires to REPORT_MAP.
+  function registerHandler(classname, fn, meta, opts) {
+    REG_L.add(classname, { fn: fn, meta: meta || {} }, opts); REGISTRY[classname] = REG_L.top(classname).value;
+  }
+  function unregisterHandler(classname, owner) {
+    var n = REG_L.remove(classname, owner), t = REG_L.top(classname);
+    if (t) REGISTRY[classname] = t.value; else delete REGISTRY[classname];
+    return n;
   }
   function hasHandler(classname) { return !!REGISTRY[classname]; }
   function registeredClassnames() { return Object.keys(REGISTRY); }
@@ -85,6 +96,16 @@
     var RC = reportCore || null;
 
     // report:c_order / report:c_invoice — fold ONE document's receipt via report_overlay.foldReceipt.
+    // org.compiere.report.FinReport (AD_Process 202 "Create Report", PA_Report window button): Record_ID = PA_Report_ID, optional C_Period_ID
+    // (FinReport.prepare :134-135 + setPeriods :296-343: no period -> the one containing today, else the last).
+    registerHandler('org.compiere.report.FinReport', function (ctx, info) {
+      var p = (info && info.params) || {}, rid = Number(info && info.Record_ID);
+      if (!(rid > 0) || typeof ctx.finReport !== 'function') return { ok: false, message: rid > 0 ? 'FinReport: no report fold available' : '@FillMandatory@ PA_Report_ID', rows: 0 };
+      var res = ctx.finReport(rid, { periodId: Number(p.C_Period_ID) > 0 ? Number(p.C_Period_ID) : 0, today: ctx.today });
+      if (!res) return { ok: false, message: 'FinReport: report ' + rid + ' not in the bundle', rows: 0 };
+      return { ok: true, message: '@OK@', rows: res.lines.length, result: { statement: res } };
+    }, { kind: 'report' });
+
     function receiptHandler(reportKey) {
       return function (ctx, info) {
         if (!RC || typeof RC.foldReceipt !== 'function') return { ok: false, message: 'report core unavailable', rows: 0 };
@@ -592,7 +613,7 @@
   function readProcess(db, ad_process_id) {
     var p = db.prepare('SELECT ad_process_id,value,name,classname,isreport,procedurename,jasperreport,ad_reportview_id FROM ad_process WHERE ad_process_id=?').get(ad_process_id);
     if (!p) throw new Error('no ad_process row for ' + ad_process_id);
-    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
+    var paras = db.prepare('SELECT name,columnname,ismandatory,ad_reference_id,isrange,defaultvalue,seqno,ad_val_rule_id,ad_reference_value_id FROM ad_process_para WHERE ad_process_id=? ORDER BY seqno').all(ad_process_id);
     return {
       AD_Process_ID: p.ad_process_id, value: p.value, name: p.name,
       classname: p.classname || '', isReport: p.isreport === 'Y',
@@ -602,6 +623,7 @@
           name: r.name, columnName: r.columnname, mandatory: r.ismandatory === 'Y',
           ad_reference_id: r.ad_reference_id, type: refType(r.ad_reference_id),
           isRange: r.isrange === 'Y', defaultValue: r.defaultvalue, seqno: r.seqno,
+          ad_reference_value_id: r.ad_reference_value_id,   // List (17) parameter -> its AD_Ref_List set
           ad_val_rule_id: r.ad_val_rule_id   // FS-9: a TableDir param with a val rule keeps its text box (named)
         };
       })
@@ -688,10 +710,11 @@
     try { var F = R.M && R.M.SqlFn; if (!F) throw new Error('Aging: callouts/sqlfn.js (paymenttermduedate/paymenttermduedays) not loaded'); return fn(F); }
     finally { R.DB = prevDB; R.PO = prevPO; }
   }
-  function _agRate(q, from, to, when) {                     // MConversionRate.getRate, same ORDER BY as crud_overlay _rate
+  function _agRate(q, from, to, when, client, org) {          // MConversionRate.getRate(…, default type, client, org) == currencyRate(): the SAME pick as model_trade.rate / doc_poster.fxRate (W-NC5-RATES, legacy-measured)
     if (!Number(from) || !Number(to) || Number(from) === Number(to)) return 1;
-    var r = q('SELECT multiplyrate FROM c_conversion_rate WHERE c_currency_id=' + Number(from) + ' AND c_currency_id_to=' + Number(to) +
-      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(validfrom) AND date(validto) AND upper(isactive)='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC LIMIT 1")[0];
+    var r = q('SELECT cr.multiplyrate FROM c_conversion_rate cr JOIN c_conversiontype ct ON ct.c_conversiontype_id=cr.c_conversiontype_id AND ct.isdefault=' + "'Y'" + ' WHERE cr.c_currency_id=' + Number(from) + ' AND cr.c_currency_id_to=' + Number(to) +
+      " AND date('" + String(when || '').slice(0, 10) + "') BETWEEN date(cr.validfrom) AND date(cr.validto) AND upper(cr.isactive)='Y'" +
+      (client != null ? ' AND cr.ad_client_id IN (0,' + Number(client) + ')' : '') + ' AND cr.ad_org_id IN (0,' + Number(org || 0) + ') ORDER BY cr.ad_client_id DESC, cr.ad_org_id DESC, cr.validfrom DESC LIMIT 1')[0];
     return r && r.multiplyrate != null ? Number(r.multiplyrate) : null;
   }
   // invoiceopen(C_Invoice_ID, C_InvoicePaySchedule_ID) — the live function, transcribed.
@@ -706,7 +729,7 @@
     q("SELECT al.amount, al.discountamt, al.writeoffamt, a.c_currency_id, a.datetrx FROM c_allocationline al JOIN c_allocationhdr a ON a.c_allocationhdr_id=al.c_allocationhdr_id " +
       "WHERE al.c_invoice_id=" + Number(inv.c_invoice_id) + " AND a.isactive='Y'").forEach(function (a) {
       var t = (Number(a.amount || 0) + Number(a.discountamt || 0) + Number(a.writeoffamt || 0)) * mulAP;
-      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx); paid += rt == null ? t : t * rt;
+      var rt = _agRate(q, a.c_currency_id, cur, a.datetrx, inv.ad_client_id, inv.ad_org_id); paid += rt == null ? t : t * rt;
     });
     var open;
     if (Number(ipsId) > 0 && sched) {
@@ -798,7 +821,7 @@
       if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
       if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
       if (Number(p.ConvertAmountsInCurrency_ID) > 0) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
-      var today = ctx.today || new Date().toISOString().slice(0, 10);
+      var today = ctx.today || _CC().localDay();   // §LOCAL-TIME
       var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
       var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
       var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';
@@ -1205,10 +1228,29 @@
     remove: function (trx, table, po) { return _ML().remove(trx, String(table).toLowerCase(), po.row || po); },
     newPO: function (trx, table, fields) { return _ML().newPO(trx, String(table).toLowerCase(), PO_HELPERS.plainMap(fields || {})); }
   };
-  function defineProcess(classname, factory) {
+  var JAVA_L = _LR().create();
+  function defineProcess(classname, factory, opts) {
     var C = factory(SvrProcess, PO_HELPERS);
-    JAVA[classname] = C;
+    JAVA_L.add(classname, C, opts); JAVA[classname] = JAVA_L.top(classname).value;
     return C;
+  }
+  function undefineProcess(classname, owner) {
+    var n = JAVA_L.remove(classname, owner), t = JAVA_L.top(classname);
+    if (t) JAVA[classname] = t.value; else delete JAVA[classname];
+    return n;
+  }
+  // removeOwner - everything one bundle contributed here (plugin_registry stop). Returns { handlers, processes }.
+  function removeOwner(owner) {
+    var h = 0, j = 0;
+    REG_L.keys().forEach(function (k) { h += unregisterHandler(k, owner); });
+    JAVA_L.keys().forEach(function (k) { j += undefineProcess(k, owner); });
+    return { handlers: h, processes: j };
+  }
+  function describe() {
+    var o = { handlers: {}, processes: {} };
+    REG_L.keys().sort().forEach(function (k) { o.handlers[k] = REG_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    JAVA_L.keys().sort().forEach(function (k) { o.processes[k] = JAVA_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); });
+    return o;
   }
   // runJava(query, env, pi) — ProcessUtil.startJavaProcess (ProcessUtil.java:145-205) inside one ModelLayer.Trx.
   //   pi = { AD_Process_ID, className, title, Record_ID, Table_ID, AD_PInstance_ID, params:{name:{v,vTo}|v}, ctx(Ctx) }
@@ -1250,6 +1292,107 @@
     return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, log: trx.log, trx: trx };
   }
 
+  // ── §UDP-2 SAVED PARAMETERS / LAST RUN — AD_PInstance + AD_PInstance_Para (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2) ──
+  // Pure ports, rows in / rows out; the host reads/writes the rows (seed + signed op-log). Witness: W-UDP2-ENGINE.
+  // lastRunLabel — Msg LastRun + " " + java.sql.Timestamp.toString() of Created (MPInstance.java:566): the fraction
+  //   is printed without trailing zeros and never empty (".0").
+  function lastRunLabel(created, msg) {
+    var m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?/.exec(String(created || ''));
+    var ts = m ? m[1] + ' ' + m[2] + '.' + ((m[3] || '0').replace(/0+$/, '') || '0') : String(created || '');
+    return (msg || 'Last Run') + ' ' + ts;
+  }
+  // paramsStr — MPInstance.getParamsStr (MPInstance.java:590-613): paras by SeqNo, ParameterName; report fields appended.
+  //   Values are compared only with each other (dedup), so each side's own text form is used as-is.
+  function _s(v) { return v == null ? 'null' : String(v); }
+  function paramsStr(inst, paras, isReport) {
+    var ps = paras.slice().sort(function (a, b) { return (Number(a.seqno) - Number(b.seqno)) || String(a.parametername).localeCompare(String(b.parametername)); });
+    var s = ps.map(function (p) {
+      var z = function (x) { return x == null ? '0' : x; };   // getP_Number()/getP_Number_To() return ZERO for null (X_AD_PInstance_Para.java:260-265)
+      return '(' + [p.parametername, p.p_string, p.p_string_to, z(p.p_number), z(p.p_number_to), p.p_date, p.p_date_to, p.info, p.info_to].map(_s).join('|') + '|)';
+    }).join('');
+    if (isReport) s += _s(inst.ad_language_id) + '|' + _s(inst.ad_printformat_id) + _s(inst.ad_language_id) + _s(inst.reporttype) + _s(inst.issummary);
+    return s;
+  }
+  // pinstanceList — MPInstance.get(ctx, AD_Process_ID, AD_User_ID) (MPInstance.java:527-585).
+  //   opts = { processId, userId, clientId, isReport, lastRunCount (MSysConfig LASTRUN_RECORD_COUNT, default 5), lastRunMsg }
+  //   insts/paras = AD_PInstance / AD_PInstance_Para rows (lower-case keys). Returns [{ id, name, named, row }].
+  // _ins — insertion order: seed/migrated rows (pk >= 0) first by pk, then op-log rows (synthetic pk = -opId) by opId.
+  function _ins(i) { var k = Number(i.ad_pinstance_id); return k >= 0 ? k : 1e15 - k; }
+  function pinstanceList(insts, paras, opts) {
+    opts = opts || {};
+    var n = opts.lastRunCount == null ? 5 : Number(opts.lastRunCount);
+    var byInst = {}; (paras || []).forEach(function (p) { (byInst[String(p.ad_pinstance_id)] = byInst[String(p.ad_pinstance_id)] || []).push(p); });
+    var mine = (insts || []).filter(function (i) {
+      return String(i.ad_process_id) === String(opts.processId) && String(i.ad_user_id) === String(opts.userId) &&
+        (opts.clientId == null || String(i.ad_client_id) === String(opts.clientId)) && String(i.isactive || 'Y').toUpperCase() === 'Y';
+    });
+    var pstr = function (i) { return paramsStr(i, byInst[String(i.ad_pinstance_id)] || [], !!opts.isReport); };
+    var tie = opts.tieKey || _ins;   // legacy's ORDER BY Created DESC leaves equal-Created rows in heap order (undefined); witness seam
+    var out = [], seen = [];
+    mine.filter(function (i) { return i.name != null; })                                                    // :531-541
+      .sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; })
+      .forEach(function (i) { out.push({ id: i.ad_pinstance_id, name: i.name, named: true, row: i }); seen.push(pstr(i)); });
+    if (n > 0) {                                                                                            // :543-576
+      var un = mine.filter(function (i) { return i.name == null; }).sort(function (a, b) {
+        var ca = String(a.created), cb = String(b.created);
+        return ca < cb ? 1 : ca > cb ? -1 : (tie(a) - tie(b));   // ties: the DB's insertion (heap) order, as PG returns them (W-UDP2-ENGINE 53154/10/0)
+      });
+      var run = 0;
+      for (var k = 0; k < un.length; k++) {
+        var s = pstr(un[k]);
+        if (seen.indexOf(s) < 0) {
+          out.push({ id: un[k].ad_pinstance_id, name: lastRunLabel(un[k].created, opts.lastRunMsg), named: false, row: un[k] });
+          seen.push(s); if (++run === n) break;
+        }
+        if (k + 1 === 10 * n) break;
+      }
+    }
+    return out;
+  }
+  // paramsToParas — ProcessParameterPanel.saveParameters (:893-983): SeqNo = the field's index, only set values;
+  //   date -> P_Date ('yyyy-MM-dd HH:mm:ss'), integer/number (IDs too) -> P_Number, yes-no -> P_String Y/N, else P_String.
+  //   params = { ColumnName: v | {v, vTo} }; info = { ColumnName: displayText | {v, vTo} } (the editor's getDisplay()).
+  function paramsToParas(proc, params, info) {
+    var rows = [];
+    (proc.paras || []).forEach(function (pp, i) {
+      var raw = params ? params[pp.columnName] : undefined;
+      var v = raw && typeof raw === 'object' ? raw.v : raw, vTo = raw && typeof raw === 'object' ? raw.vTo : undefined;
+      var empty = function (x) { return x == null || x === ''; };
+      if (empty(v) && empty(vTo)) return;
+      var r = { seqno: i, parametername: pp.columnName, p_string: null, p_string_to: null, p_number: null, p_number_to: null, p_date: null, p_date_to: null, info: null, info_to: null };
+      var ts = function (x) { return empty(x) ? null : (/^\d{4}-\d{2}-\d{2}$/.test(String(x)) ? x + ' 00:00:00' : String(x).replace('T', ' ')); };
+      if (pp.type === 'date') { r.p_date = ts(v); r.p_date_to = ts(vTo); }
+      else if (pp.type === 'integer' || pp.type === 'number') { r.p_number = empty(v) ? null : Number(v); r.p_number_to = empty(vTo) ? null : Number(vTo); }
+      else if (pp.type === 'yesno') { r.p_string = (v === true || v === 'Y') ? 'Y' : 'N'; }
+      else { r.p_string = empty(v) ? null : String(v); r.p_string_to = empty(vTo) ? null : String(vTo); }
+      var inf = info ? info[pp.columnName] : undefined;
+      r.info = inf && typeof inf === 'object' ? (inf.v == null ? null : String(inf.v)) : (inf == null ? (v == null ? null : String(v)) : String(inf));
+      if (pp.isRange) r.info_to = inf && typeof inf === 'object' ? (inf.vTo == null ? null : String(inf.vTo)) : (vTo == null ? null : String(vTo));
+      rows.push(r);
+    });
+    return rows;
+  }
+  // parasToParams — ProcessParameterPanel.loadParameters (:741-832): per field the FIRST matching para; P_Date(_To) wins,
+  //   then P_String(_To), then a non-zero P_Number(_To) (ID types as integers). Returns { ColumnName: v | {v, vTo} }
+  //   holding EVERY field (null = cleared, as the editor is setValue(null) first).
+  function parasToParams(proc, paras) {
+    var out = {}, nz = function (x) { return x != null && x !== '' && Number(x) !== 0; };
+    (proc.paras || []).forEach(function (pp) {
+      var p = (paras || []).filter(function (x) { return String(x.parametername) === String(pp.columnName); })[0], v = null, vTo = null;
+      if (p) {
+        if (p.p_date != null || p.p_date_to != null) { v = p.p_date == null ? null : String(p.p_date).slice(0, 10); vTo = p.p_date_to == null ? null : String(p.p_date_to).slice(0, 10); }
+        else if (p.p_string != null || p.p_string_to != null) { v = p.p_string; vTo = p.p_string_to; }
+        else if (nz(p.p_number) || nz(p.p_number_to)) {
+          var asInt = pp.type === 'integer';
+          v = p.p_number == null ? null : (asInt ? Math.trunc(Number(p.p_number)) : Number(p.p_number));
+          vTo = p.p_number_to == null ? null : (asInt ? Math.trunc(Number(p.p_number_to)) : Number(p.p_number_to));
+        }
+      }
+      out[pp.columnName] = pp.isRange ? { v: v, vTo: vTo } : v;
+    });
+    return out;
+  }
+
   var API = {
     REGISTRY: REGISTRY, registerHandler: registerHandler, hasHandler: hasHandler,
     registeredClassnames: registeredClassnames, installDefaultHandlers: installDefaultHandlers,
@@ -1262,11 +1405,12 @@
     registerCreateFromInvoice: registerCreateFromInvoice, createFromInvoiceGate: createFromInvoiceGate,
     shipLineFields: shipLineFields, sameOrderLineUOM: sameOrderLineUOM,
     readProcess: readProcess, resolveClassname: resolveClassname,
+    pinstanceList: pinstanceList, paramsToParas: paramsToParas, parasToParams: parasToParams, lastRunLabel: lastRunLabel,   // §UDP-2
     validateParams: validateParams, dispatch: dispatch,
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
     openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
-    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

@@ -58,9 +58,18 @@
     // The writable ERP db is loaded lazily (fetch erp/ad_seed.db → sql.js) and the folded result is
     // persisted to OPFS (bim_project_orders.db) — a viewer-owned project-orders store. NOTE: the
     // cross-page hand-off so the ERP app reads it is the BIMtoERP §B write-path (follow-on).
-    var _bimErpDb = null;
+    var _bimErpDb = null, _bimErpStamp = null;
+    function _stamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
     function _ensureErpDb() {
-      if (_bimErpDb) return Promise.resolve(_bimErpDb);
+      // §STORE_STAMP: reuse the cached store only while the file on disk is the one we loaded/wrote; else reload (logged, never silent).
+      return _stamp().then(function (st) {
+        if (_bimErpDb && st === _bimErpStamp && st !== 'unknown') return _bimErpDb;
+        if (_bimErpDb) console.log('[RP-C] §PUSH_STORE_RELOAD writer=find_erp_push was=' + _bimErpStamp + ' now=' + st);
+        _bimErpDb = null; _bimErpStamp = st;
+        return _loadErpDb();
+      });
+    }
+    function _loadErpDb() {
       var SQL = A._SQL || (typeof window !== 'undefined' && (window.SQL || window._SQL_CACHED));   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !global.ProjFold) return Promise.resolve(null);
       // §S9 (TM_4D5D_VARIANCE_LANE §S9): OPFS-FIRST, exactly as diff.js _loadVoErpDb already does for the VO path — so a Project Order the MODELLER (or an
@@ -83,7 +92,7 @@
           .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
           .then(function (fh) { return fh.createWritable(); })
           .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-          .then(function () { return true; }).catch(function () { return false; });
+          .then(function () { return _stamp().then(function (st) { if (db === _bimErpDb) _bimErpStamp = st; return true; }); }).catch(function () { return false; });
       } catch (e) { return Promise.resolve(false); }
     }
     // ── §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold ─────────────────────────────────────────────────

@@ -123,6 +123,8 @@ async function switchVia(page, sel, lang) {
 (async () => {
   const SQL = await initSqlJs({ locateFile: f => path.join(path.dirname(require.resolve(process.env.SQLJS || (os.homedir() + '/bim-ootb/node_modules/sql.js'))), f) });
   DB = new SQL.Database(fs.readFileSync(path.join(ERP, 'ad_seed.db')));
+  // the oracle reads the seed AS THE APP LOADS IT: idempiere.html applies patches/<seed>.sql then patches/mfg.sql on every load (menu rows the patches add must be in the oracle)
+  ['ad_seed.db.sql', 'mfg.sql'].forEach(pf => { try { fs.readFileSync(path.join(ERP, 'patches', pf), 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { DB.run(st); } catch (e) { /* idempotent self-heal: a failing statement never blocks, same as the loader */ } }); } catch (e) { /* no patch file */ } });
   CAT = JSON.parse(fs.readFileSync(path.join(ERP, 'i18n', 'chrome.json'), 'utf8')).keys;
   await new Promise(r => server.listen(0, r));
   const base = 'http://localhost:' + server.address().port + '/erp';

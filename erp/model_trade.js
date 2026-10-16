@@ -44,14 +44,22 @@
   // primary schema has AutoPeriodControl='Y' the gate is today−Period_OpenHistory ≤ date ≤ today+Period_OpenFuture (today =
   // the recorded env.date) and the schema's C_Period_ID follows today's period (:740-748 — a WRITE); else C_PeriodControl 'O'.
   function addDays(d, n) { var t = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
-  function periodOf(trx, d) {
-    try { return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN ad_clientinfo ci ON ci.c_calendar_id=y.c_calendar_id WHERE ci.ad_client_id=? AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [trx.env.client, d, d])[0] || null; }
+  // MPeriod.getC_Calendar_ID(ctx, AD_Org_ID) :981-997 — the org's own calendar (AD_OrgInfo.C_Calendar_ID) wins, else the client's; findByCalendar :170-190
+  function calendarOf(trx, org) {
+    var cal = 0;
+    if (org) { var oi = trx.q('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=?', [org])[0]; cal = oi && oi.c ? Number(oi.c) : 0; }
+    if (!cal) { var ci = trx.q('SELECT c_calendar_id AS c FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0]; cal = ci && ci.c ? Number(ci.c) : 0; }
+    return cal;
+  }
+  function periodOf(trx, d, org) {
+    try { var cal = calendarOf(trx, org);
+      return trx.q("SELECT p.* FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id WHERE y.c_calendar_id=? AND p.isactive='Y' AND p.periodtype='S' AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?) ORDER BY p.c_period_id", [cal, d, d])[0] || null; }
     catch (e) { return undefined; }
   }
-  function periodOpen(trx, date, dbt) {
+  function periodOpen(trx, date, dbt, org) {
     var d = String(date || '').slice(0, 10);
     if (!d || !dbt) return false;
-    var per = periodOf(trx, d);
+    var per = periodOf(trx, d, org);
     if (per === undefined) { trx.say('§MODEL-PERIOD calendar tables absent → gate not evaluable (named)'); return true; }
     if (!per || per.isactive === 'N') return false;
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -59,7 +67,7 @@
     if (as && Y(as.autoperiodcontrol) && trx.env.date) {
       var today = String(trx.env.date).slice(0, 10);
       if (d < addDays(today, -Number(as.period_openhistory || 0)) || d > addDays(today, Number(as.period_openfuture || 0))) return false;
-      var tp = periodOf(trx, today);
+      var tp = periodOf(trx, today, org);
       if (tp && tp.c_period_id === per.c_period_id && String(as.c_period_id) !== String(per.c_period_id)) trx.update('c_acctschema', as, { c_period_id: per.c_period_id });
       return true;
     }
@@ -261,20 +269,29 @@
     });
     return D(inv.grandtotal).multiply(D(m.cm)).subtract(paid).setScale(precisionOf(trx, inv.c_currency_id), HU);
   }
+  // PL/pgSQL paymentAvailable(C_Payment_ID) (ported 1:1 as the sqlfn.js UDF, W-FN-PARITY): 0 for a charge; C_Payment_v.PayAmt less every ACTIVE allocation line converted
+  // into the payment currency (currencyConvert at the allocation's DateTrx/client/org), a remainder under one currency unit of precision is 0, rounded to precision.
+  // Kept as a Trx-aware body (not the UDF) so allocation lines still pending in THIS transaction count - W-FN-PARITY judges it against the pilot too (fn paymentAvailable@model_trade).
   function paymentAvailable(trx, p) {
     if (nz(p.c_charge_id)) return Z;
-    var amt = D(p.payamt).multiply(D(Y(p.isreceipt) ? 1 : -1));                              // C_Payment_v (AP/AR corrected)
+    var prec = precisionOf(trx, p.c_currency_id), avail = D(p.payamt).multiply(D(Y(p.isreceipt) ? 1 : -1));                  // C_Payment_v (AP/AR corrected)
     trx.find('c_allocationline', { c_payment_id: p.c_payment_id }).forEach(function (al) {
-      var h = trx.get('c_allocationhdr', al.c_allocationhdr_id); if (h && h.isactive === 'Y') amt = amt.subtract(D(al.amount));
+      var h = trx.get('c_allocationhdr', al.c_allocationhdr_id); if (!h || h.isactive !== 'Y') return;
+      var v = String(h.c_currency_id) === String(p.c_currency_id) ? D(al.amount)
+        : D(trx.q('SELECT currencyconvert(?, ?, ?, ?, NULL, ?, ?) AS v', [Number(al.amount), h.c_currency_id, p.c_currency_id, h.datetrx, h.ad_client_id, h.ad_org_id])[0].v);
+      avail = avail.subtract(v);
     });
-    return amt.setScale(precisionOf(trx, p.c_currency_id), HU);
+    var min = new BigDecimal(1n, prec);                                                                                           // 10^-prec
+    if (avail.compareTo(min.negate()) > 0 && avail.compareTo(min) < 0) avail = Z;
+    return avail.setScale(prec, HU);
   }
   // MConversionRate.getRate — client/org specific first, latest ValidFrom (conversion type: the document's, else the default)
-  function rate(trx, from, to, date, convType) {
+  // optional 6th arg = the document/fact line's org (MConversionRate.getRate(…, AD_Client_ID, AD_Org_ID)): rows of org 0 or THAT org, ORDER BY client DESC, org DESC, ValidFrom DESC; default = the session org
+  function rate(trx, from, to, date, convType, org) {
     if (String(from) === String(to)) return BigDecimal.ONE;
     var ct = convType;
     if (!nz(ct)) { var d = trx.q("SELECT c_conversiontype_id AS c FROM c_conversiontype WHERE isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0]; ct = d ? d.c : null; }
-    var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client])[0];
+    var r = trx.q("SELECT multiplyrate AS m FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND date(validfrom)<=date(?) AND date(validto)>=date(?) AND ad_client_id IN (0,?) AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC, validfrom DESC", [from, to, ct, String(date || '').slice(0, 10), String(date || '').slice(0, 10), trx.env.client, nz(org) ? org : (trx.env.org || 0)])[0];
     return r ? D(r.m) : null;
   }
   // currencyBase(amt, cur, date, client, org) (PG function) — into the client's accounting currency (AD_ClientInfo.C_AcctSchema1_ID)
@@ -357,18 +374,52 @@
     };
     S.sysConfigBool = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt ? 'Y' : 'N', client, org); return v == null ? dflt : 'Y' === String(v); };
     S.sysConfigInt = function (name, dflt, client, org) { var v = S.sysConfig(name, dflt == null ? null : String(dflt), client, org); return v == null ? dflt : parseInt(v, 10); };
-  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072)
+  // RV_UnPosted (postgres view rv_unposted, read from the legacy DB): UNION over 15 document tables, each `posted<>'Y'` and (except the three marked) `docstatus<>'VO'`.
+  //   [table, DateAcct column, DocBaseType (null = JOIN c_doctype), fixed DocStatus (null = the column, VO excluded)]
+  var RV_UNPOSTED = [['gl_journal', 'dateacct', null, null], ['c_projectissue', 'movementdate', 'PJI', 'CO'], ['c_invoice', 'dateacct', null, null], ['m_inout', 'dateacct', null, null],
+    ['m_inventory', 'movementdate', null, null], ['m_movement', 'movementdate', null, null], ['m_production', 'movementdate', 'MMP', null], ['c_cash', 'dateacct', 'CMC', null],
+    ['c_payment', 'dateacct', null, null], ['c_allocationhdr', 'dateacct', null, null], ['c_bankstatement', 'statementdate', 'CMB', null], ['m_matchinv', 'dateacct', 'MXI', 'CO'],
+    ['m_matchpo', 'dateacct', 'MXP', 'CO'], ['c_order', 'dateacct', null, null], ['m_requisition', 'datedoc', null, null]];
+  S.RV_UNPOSTED = RV_UNPOSTED;
+  // rvUnposted() -> a `WITH rv_unposted AS (...)` prefix over the tables this bundle carries. A table the bundle does NOT have holds no rows, so it cannot hold an unposted document (skipped, counted).
+  //   A table that EXISTS but cannot be judged (a column the view reads is missing, or c_doctype / its docbasetype is) must NOT count as "no unposted documents": legacy would have judged it, so
+  //   the process refuses by name (throw => the process fails, nothing is committed). Memoised per DB handle (R().DB is one per process run / Trx), logged once per handle.
+  var RVU_MEMO = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  function tableCols(DB, t) { try { return DB.query('SELECT name FROM pragma_table_info(?)', [t]).map(function (r) { return String(r.name || r.NAME).toLowerCase(); }); } catch (e) { return []; } }
+  function needCols(DB, t, cols) { var cs = tableCols(DB, t), miss = cols.filter(function (c) { return cs.indexOf(c) < 0; }); return { present: cs.length > 0, miss: miss }; }
+  S.rvUnposted = function () {
+    var DB = R().DB, hit = RVU_MEMO && RVU_MEMO.get(DB); if (hit) return hit.sql;
+    var parts = [], present = 0, dtc = null;
+    RV_UNPOSTED.forEach(function (v) {
+      var t = v[0], need = ['ad_client_id', 'ad_org_id', 'posted', v[1]].concat(v[3] ? [] : ['docstatus']).concat(v[2] ? [] : ['c_doctype_id']), n = needCols(DB, t, need);
+      if (!n.present) return; present++;
+      if (n.miss.length) throw new Error('RV_UnPosted cannot be evaluated: table ' + t + ' exists but lacks column(s) ' + n.miss.join(',') + ' (legacy rv_unposted reads them) -- refusing rather than counting it as no unposted documents');
+      if (!v[2]) { if (dtc == null) dtc = needCols(DB, 'c_doctype', ['c_doctype_id', 'docbasetype']);
+        if (!dtc.present || dtc.miss.length) throw new Error('RV_UnPosted cannot be evaluated: table ' + t + ' needs c_doctype.' + (dtc.present ? dtc.miss.join(',') : '(table absent)') + ' -- refusing rather than counting it as no unposted documents'); }
+      parts.push('SELECT x.ad_client_id, x.ad_org_id, x.' + v[1] + ' AS dateacct, ' + (v[3] ? "'" + v[3] + "'" : 'x.docstatus') + ' AS docstatus, ' + (v[2] ? "'" + v[2] + "'" : 'dt.docbasetype') + ' AS docbasetype FROM ' + t + ' x'
+        + (v[2] ? '' : ' JOIN c_doctype dt ON dt.c_doctype_id=x.c_doctype_id') + " WHERE x.posted<>'Y'" + (v[3] ? '' : " AND x.docstatus<>'VO'"));
+    });
+    var sql = parts.length ? 'WITH rv_unposted AS (' + parts.join(' UNION ALL ') + ') ' : null;
+    R().log('§PERIOD-UNPOSTED RV_UnPosted tables=' + parts.length + '/' + RV_UNPOSTED.length + ' (absent from the bundle: ' + (RV_UNPOSTED.length - present) + ')');
+    if (RVU_MEMO) RVU_MEMO.set(DB, { sql: sql });
+    return sql;
+  };
+  // MPeriod.hasUnpostedDocs (M/MPeriod.java:1024-1072) -- the ONE implementation (processes 167 and 168 both call it).
+  //   Dates: the Java binds Timestamps (setTimestamp StartDate/EndDate) against the view's timestamp DateAcct, so the comparison is on full timestamps: datetime() on both sides makes a date-only
+  //   value equal to its 00:00:00 (a raw string compare sorts 'YYYY-MM-DD' below 'YYYY-MM-DD 00:00:00'). A time-of-day on the LAST day is therefore after EndDate (00:00:00) and is not counted -- as in legacy.
   S.hasUnpostedDocs = function (ctx, period, periodControlID) {
-    var Env = A().Env, DB = R().DB;
+    var Env = A().Env, DB = R().DB, pre = S.rvUnposted();
+    if (pre == null) return false;                                              // none of the 15 tables is in the bundle: nothing can be unposted (named by the §PERIOD-UNPOSTED line)
+    [['c_year', ['c_year_id', 'c_calendar_id']], ['ad_clientinfo', ['ad_client_id', 'c_calendar_id']], ['ad_orginfo', ['ad_org_id', 'ad_client_id', 'c_calendar_id']]].forEach(function (x) {
+      var n = needCols(DB, x[0], x[1]); if (!n.present || n.miss.length) throw new Error('RV_UnPosted check cannot run: ' + x[0] + (n.present ? ' lacks column(s) ' + n.miss.join(',') : ' is absent') + ' -- refusing rather than accepting the close'); });
     var cal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM C_Year WHERE C_Year_ID=?', period.getC_Year_ID());
     var clientCal = DB.getSQLValue(null, 'SELECT C_Calendar_ID FROM AD_ClientInfo WHERE AD_Client_ID=?', Env.getAD_Client_ID(ctx));
-    var sql = "SELECT 1 FROM RV_UnPosted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND up.DateAcct BETWEEN ? AND ? " +
+    var sql = pre + "SELECT 1 FROM rv_unposted up WHERE up.DocStatus IN('CO', 'CL', 'RE', 'VO') AND up.AD_Client_ID=? AND datetime(up.DateAcct) BETWEEN datetime(?) AND datetime(?) " +
       ' AND AD_Org_ID IN (SELECT AD_Org_ID FROM AD_OrgInfo WHERE AD_Client_ID=? AND (C_Calendar_ID=?' + (cal === clientCal ? ' OR C_Calendar_ID IS NULL' : '') + ')) ';
     var args = [Env.getAD_Client_ID(ctx), period.getStartDate(), period.getEndDate(), Env.getAD_Client_ID(ctx), cal];
     if (periodControlID > 0) { sql += ' AND up.DocBaseType = ? '; args.push(R().PO.get('C_PeriodControl', periodControlID).getDocBaseType()); }
     sql += ' LIMIT 1';
-    try { return DB.query(sql, args).length > 0; }
-    catch (e) { R().unportedDep('MPeriod.hasUnpostedDocs', 'view RV_UnPosted (absent from the bundle) — treated as no unposted docs'); return false; }
+    return DB.query(sql, args).length > 0;
   };
 
   // ══ GL Journal ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -660,7 +711,7 @@
       for (var month = 0; month < 12; month++) {                                        // :250
         var start = new Date(Date.UTC(y, m, d));
         var name = PXS_.formatDate(trx, dateFormat, start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-        var endD = new Date(Date.UTC(y, m + 1, d - 1));                                 // :256-258 +1 month, -1 day
+        var endD = addMonthClamp(start); endD = new Date(endD.getTime() - 86400000);   // :256-258 cal.add(MONTH,1) CLAMPS to the target month's last day (GregorianCalendar), then add(DAY_OF_YEAR,-1)
         var startS = ts(start), endS = ts(endD);
         // MPeriod.findByCalendar(ctx, start, calendar, trx) :169 — the period of this calendar that contains the date
         var found = trx.q('SELECT p.c_period_id AS id FROM C_Period p INNER JOIN C_Year y ON (p.C_Year_ID=y.C_Year_ID) WHERE y.C_Calendar_ID=? AND p.IsActive=? AND p.PeriodType=? AND date(?) BETWEEN date(p.StartDate) AND date(p.EndDate) ORDER BY p.C_Period_ID',
@@ -672,11 +723,12 @@
           var cur = trx.get('c_period', found.id);                                    // :267-272 MPeriod.getCopy + setters
           S.MPeriod_save(trx, cur.row || cur, { c_year_id: year.getC_Year_ID(), periodno: month + 1, name: name, startdate: startS, enddate: endS }, year);
         }
-        y = start.getUTCFullYear(); m = start.getUTCMonth();
-        var nx = new Date(Date.UTC(y, m + 1, d)); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 first day of next month (end+1)
+        var nx = new Date(endD.getTime() + 86400000); y = nx.getUTCFullYear(); m = nx.getUTCMonth(); d = nx.getUTCDate();   // :280 cal.add(DAY_OF_YEAR,1): the day after this period's end
       }
       return true;
     };
+    // GregorianCalendar.add(MONTH,1): same day-of-month, clamped to the last day of the next month (Jan-31 -> Feb-28/29)
+    function addMonthClamp(dt) { var y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1, d = dt.getUTCDate(), last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(d, last))); }
     function ts(dt) { function p(n) { return n < 10 ? '0' + n : '' + n; } return dt.getUTCFullYear() + '-' + p(dt.getUTCMonth() + 1) + '-' + p(dt.getUTCDate()) + ' 00:00:00'; }
     // MPeriod.saveEx = beforeSave :799-846 → write → afterSave :849-873 (new: one C_PeriodControl per distinct DocBaseType of the client's active doc types)
     S.MPeriod_save = function (trx, row, fields, year) {

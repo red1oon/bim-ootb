@@ -231,7 +231,7 @@
   //             A=add / S=subtract / R=range / P=percent over oper_1_id,oper_2_id line ids).
   //   - cols:   pa_reportcolumn rows, SeqNo-ordered. columntype 'C'=calc column (combined last), else relative.
   //             paamounttype in B/S/C/D/Q/R -> amount expr (== MReportColumn.getSelectClause, verbatim):
-  //               B->acctBalance(acct,Dr,Cr) . S->Dr-Cr . C->Cr . D->Dr . Q->Qty . R->acctBalance(acct,Qty,0).
+  //               B->acctBalance(acct,Dr,Cr) . S->Dr-Cr . C->Cr . D->Dr . R->Qty . Q->acctBalance(acct,Qty,0).
   //             A LINE's own paamounttype overrides the column's (FinReport.insertLine). postingtype filters facts.
   //   - sourcesByLine: { lineId:[{account_ids:[..LEAF ids..]}] } — host PRE-EXPANDS each pa_reportsource
   //             c_elementvalue_id to leaf accounts via the EV account tree (ad_treenode; MReportTree rule:
@@ -262,8 +262,8 @@
       case 'S': return bd(r.amtacctdr).subtract(bd(r.amtacctcr));                         // Dr-Cr (accounted sign)
       case 'C': return bd(r.amtacctcr);                                                   // Cr only
       case 'D': return bd(r.amtacctdr);                                                   // Dr only
-      case 'Q': return bd(r.qty);                                                         // Qty (accounted sign)
-      case 'R': return signedBalance(bd(r.qty), sign);                                    // acctBalance(Qty,0)
+      case 'R': return bd(r.qty);                                                         // Qty (accounted sign) — X_PA_ReportColumn.PAAMOUNTTYPE_QuantityAccountedSign = "R" (MReportColumn.getSelectClause :103-104)
+      case 'Q': return signedBalance(bd(r.qty), sign);                                    // acctBalance(Account_ID,Qty,0) — QuantityExpectedSign = "Q" (:105-106); was swapped with R (legacy shows +57 on a liability, twin -57)
       default:  return BD.ZERO;                                                           // unknown -> 0 (FinReport SEVERE)
     }
   }
@@ -503,8 +503,10 @@
   //   cols: [{pa_reportcolumn_id, columntype, paperiodtype, relativeperiod}]
   //   -> { periodWindows:{colId:Set}, reportIdx, busiestIdx, sourcePeriod:{id,name}|null, coverage, scopeFacts, totalFacts }
   // coverage: 'live' (a user-chosen period — future) | 'default→history' (our derived default) | 'absent' (no facts).
-  function resolveScope(periods, factRows, cols) {
+  // opts {periodId, today} = the LEGACY rule (FinReport.setPeriods :296-342): the chosen C_Period, else the period containing today, else the LAST period; no busiest-year heuristic, no history fall-through.
+  function resolveScope(periods, factRows, cols, opts) {
     periods = periods || []; factRows = factRows || []; cols = cols || [];
+    var legacy = !!(opts && (opts.periodId || opts.today));
     var factCnt = {}, totalFacts = 0;
     factRows.forEach(function (r) { factCnt[r.c_period_id] = (factCnt[r.c_period_id] || 0) + 1; totalFacts++; });
     var yearFacts = {};
@@ -516,6 +518,12 @@
     var reportIdx = -1, repN = -1;
     periods.forEach(function (p, i) { var n = factCnt[p.id] || 0; if (p.yr === bestYr && n > repN) { repN = n; reportIdx = i; } });
     if (reportIdx < 0) reportIdx = (busiestIdx >= 0) ? busiestIdx : periods.length - 1;
+    if (legacy) {
+      var li = -1;
+      if (opts.periodId) periods.forEach(function (p, i) { if (String(p.id) === String(opts.periodId)) li = i; });
+      else { var td = String(opts.today).slice(0, 10); periods.forEach(function (p, i) { if (li < 0 && String(p.sd).slice(0, 10) <= td && td <= String(p.ed).slice(0, 10)) li = i; }); }
+      reportIdx = li >= 0 ? li : periods.length - 1;          // today after the latest period -> the last one (:339-343)
+    }
     function winFor(idx, paperiodtype, relativeperiod) {
       var i = idx + (relativeperiod || 0), set = {};
       if (i < 0 || i >= periods.length) return set;
@@ -545,6 +553,8 @@
     var windows = buildWindows(reportIdx, false), srcIdx = reportIdx, coverage = 'default→history';
     if (totalFacts === 0) {
       coverage = 'absent';
+    } else if (legacy) {
+      coverage = opts.periodId ? 'live' : 'default→today';
     } else if (countFacts(windows) === 0 && busiestIdx >= 0) {    // empty-scope edge -> history fall-through
       windows = buildWindows(busiestIdx, true); srcIdx = busiestIdx;
     }
@@ -653,7 +663,7 @@
   }
   // EV chart + leaf-expansion over the account tree (== MReportTree.getWhereClause: SUMMARY node -> non-summary leaves).
   function evModel(db) {
-    var EV = {}; rowsOf(db.exec('SELECT c_elementvalue_id, value, accounttype, accountsign, issummary FROM c_elementvalue'))
+    var EV = {}; rowsOf(db.exec('SELECT c_elementvalue_id AS c_elementvalue_id, value AS value, accounttype AS accounttype, accountsign AS accountsign, issummary AS issummary FROM c_elementvalue'))   // aliased: the bundle's c_elementvalue carries CamelCase column names, an unaliased SELECT returns them as declared (EV was empty -> every Balance Sheet line 0.00)
       .forEach(function (r) { EV[r.c_elementvalue_id] = r; });
     var kids = {};
     rowsOf(db.exec('SELECT node_id, parent_id FROM ad_treenode WHERE ad_tree_id=' + STMT_TREE))
@@ -675,7 +685,7 @@
       " AND p.isactive='Y' AND p.periodtype='S' ORDER BY p.startdate"));
   }
   // assemble the foldStatement inputs for one pa_report, reading ONLY the bundle (the browser path).
-  function statementInputs(db, reportId) {
+  function statementInputs(db, reportId, opts) {
     var report = rowsOf(db.exec('SELECT pa_report_id, name, pa_reportlineset_id, pa_reportcolumnset_id, c_acctschema_id, c_calendar_id FROM pa_report WHERE pa_report_id=' + (reportId | 0)))[0];
     if (!report) return null;
     var lines = rowsOf(db.exec("SELECT pa_reportline_id, seqno, name, linetype, calculationtype, oper_1_id, oper_2_id, paamounttype, paperiodtype FROM pa_reportline WHERE pa_reportlineset_id=" + report.pa_reportlineset_id + " AND isactive='Y' ORDER BY seqno"));
@@ -686,10 +696,14 @@
       var srcs = rowsOf(db.exec("SELECT c_elementvalue_id ev FROM pa_reportsource WHERE pa_reportline_id=" + l.pa_reportline_id + " AND isactive='Y'"));
       sourcesByLine[l.pa_reportline_id] = srcs.map(function (s) { return { account_ids: ev.leaves(s.ev) }; });
     });
-    var factRows = rowsOf(db.exec('SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct'));
+    // Fact_Acct = the bundle's rows PLUS those posted this session (the model layer writes them into the signed sidecar). The tip-shadowed reader
+    // returns both; reading the bare bundle left every financial statement blind to a document completed a moment ago (§ERP-DEPTH-FILM reporting clip).
+    var factSql = 'SELECT account_id, amtacctdr, amtacctcr, qty, c_period_id, c_acctschema_id, postingtype FROM fact_acct';
+    var tipFacts = (typeof window !== 'undefined' && window.__crud && typeof window.__crud.withModelTrx === 'function') ? window.__crud.withModelTrx(function (q) { return q(factSql); }) : null;
+    var factRows = (opts && opts.factRows) ? opts.factRows : ((tipFacts && tipFacts.length) ? tipFacts : rowsOf(db.exec(factSql)));   // opts.factRows = the witness seam: fold ANOTHER system's journal (the legacy pilot's) through the same code
     // R-T2 default + history fall-through is the PURE CORE.resolveScope — the browser path and the headless
     // witness run the SAME code (REPORTING_UI_DEFAULT_FALLTHROUGH.md). No user period yet -> coverage=default→history.
-    var sc = CORE.resolveScope(periodsOf(db), factRows, cols);
+    var sc = CORE.resolveScope(periodsOf(db), factRows, cols, opts);
     var accounts = {};
     Object.keys(ev.EV).forEach(function (id) { accounts[id] = { accounttype: ev.EV[id].accounttype, accountsign: ev.EV[id].accountsign }; });
     return { report: report, lines: lines, cols: cols, sourcesByLine: sourcesByLine, factRows: factRows, accounts: accounts,
@@ -1062,7 +1076,22 @@
     document.head.appendChild(css);
   }
 
-  global.__report = { show: show, statement: statement, menu: openMenu, print: printDoc, printRecord: printRecord, trialBalance: trialBalance,
+  // fold — the Create Report process body (FinReport.doIt): fold one PA_Report for opts {periodId, today}; returns the table the dialog renders.
+  function foldFor(reportId, opts) {
+    var out = null;
+    if (typeof withBundle !== 'function') return null;
+    withBundle(function (db) {
+      if (!bundleHasStatements(db)) return;
+      var inp = statementInputs(db, reportId, opts || {}); if (!inp) return;
+      var folded = CORE.foldStatement(inp.report, inp.lines, inp.cols, inp.sourcesByLine, inp.factRows, inp.accounts, inp.periodWindows);
+      out = { title: inp.report.name, cols: inp.cols.map(function (c) { return c.name; }),
+              lines: inp.lines.map(function (l) { return { name: l.name, calc: l.linetype === 'C', cells: inp.cols.map(function (c) { var v = (folded.cells[l.pa_reportline_id] || {})[c.pa_reportcolumn_id]; return v == null ? null : Number(v).toFixed(2); }) }; }),
+              period: inp.sourcePeriod, coverage: inp.coverage, scopeFacts: inp.scopeFacts, totalFacts: inp.totalFacts };
+      console.log('§FINREPORT report=' + inp.report.pa_report_id + ' period=' + (inp.sourcePeriod ? inp.sourcePeriod.id + '/' + inp.sourcePeriod.name : 'none') + ' coverage=' + inp.coverage + ' scopeFacts=' + inp.scopeFacts + ' totalFacts=' + inp.totalFacts);
+    });
+    return out;
+  }
+  global.__report = { show: show, statement: statement,fold: foldFor,  menu: openMenu, print: printDoc, printRecord: printRecord, trialBalance: trialBalance,
                       core: CORE, panel: function () { return panel; }, close: close };
   console.log('§REPORT layer mounted (read face — ▤ Report)');
 })(typeof window !== 'undefined' ? window : this);

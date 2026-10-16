@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v79';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v87';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -30,6 +30,7 @@ const DEFERRED_LIBS = [
   'lib/kernel/occt-wasm.js',
   'lib/kernel/occt-wasm.wasm',
   'lib/planegcs/planegcs_dist/planegcs.wasm',
+  'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
 ];
 const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
 const CDN_ASSETS = [];
@@ -71,6 +72,18 @@ const PRECACHE_ASSETS = [
   'bonsai_roommove.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2 — whole-room move (GEOM_ROOM_MOVE)
   'bonsai_itemdrag.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3 — free single-item drag (gated by the line above)
   'routewalker.js',
+  // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
+  'dxf_import_ui.js',
+  'dxf2bim_import.js',
+  'dxf2bim/dxf2bim.js',
+  'dxf2bim/dxf2marks.js',
+  'dxf2bim/dxf2elev.js',
+  'dxf2bim/dxf2mesh.js',
+  'dxf2bim/dxf2types.js',
+  'dxf2bim/dxf2shell.js',
+  'dxf2bim/dxf2shell_config.js',
+  'dxf2bim/dxf2qualify.js',
+  'dxf_meta_editor.js',   // §DXF-META (lane L4): the Drawing metadata editor
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
   '../viewer/locale_loader.js',  // S226 §R3 — the Modeller's UI language (shared loader; i18n/<code>.json cache on first use)
@@ -116,6 +129,9 @@ const _PRECACHE_SET = new Set(PRECACHE_ASSETS.map(p => p.split('/').pop()));
 
 function isNetworkFirst(url) {
   var base = url.split('?')[0];
+  if (base.includes('/dxf2bim/local/')) return true;   // §L3.2 locally generated library subset: regenerated in place, never served stale
+  if (base.endsWith('/dxf2bim/library/latest.json')) return true;   // §L3.4 the ONE mutable library object (names the current library sha)
+  if (/\/dxf2bim\/library\/([0-9a-f]{12}|labels)\//.test(base)) return false;   // §L3.4 OCI library index/shards (per sha) + labels (per run_id): immutable → cache-first
   if (base.includes('/lib/')) return false;            // versioned/immutable → cache-first
   var filename = base.split('/').pop();
   if (_PRECACHE_SET.has(filename)) return false;       // precached → cache-first (version bump refreshes)

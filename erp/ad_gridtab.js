@@ -184,8 +184,108 @@
     return -1;
   }
 
-  var API = { open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
+  // ── §UDP-4 the initial query of a window (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-4; Witness: W-UDP4-ENGINE / W-UDP4-LIVE).
+  //   AbstractADWindowContent :416-422 (a transaction window - AD_Window.WindowType 'T' - queries only current rows), initialQuery
+  //   :899-991 (Find first when the tab is high volume, or - not a transaction window - when isQueryRequire(row count)),
+  //   GridTable :437-446 (the only-current clause, header tab only), GridTab.getMaxQueryRecords :3677-3687, isQueryRequire :3694-3703,
+  //   MRole.getConfirmQueryRecords :414-420 (0 -> 500), GridTab.DEFAULT_GLOBAL_MAX_QUERY_RECORDS = 100000 (:245).
+  function onlyCurrentClause(dialect) { return "(Processed='N' OR Updated>" + (dialect === 'pg' ? 'getDate()-1' : "datetime('now','localtime','-1 day')") + ')'; }
+  function maxQueryRecords(tabMax, roleMax, globalMax) {
+    var t = Number(tabMax) || 0, r = Number(roleMax) || 0;
+    if (r > 0 && (r < t || t === 0)) t = r;
+    if (t === 0) t = globalMax != null && String(globalMax) !== '' ? Number(globalMax) : 100000;
+    return t;
+  }
+  function isQueryRequire(n, maxQ, confirm) {
+    if (n < 2) return false;
+    if (maxQ > 0 && n > maxQ) return true;
+    return n > ((Number(confirm) || 0) === 0 ? 500 : Number(confirm));
+  }
+  // o = { isTransaction, isHighVolume, tabMax, roleMax, globalMax, roleConfirm, countAll: fn -> n (or -1 on failure) }
+  function initialDecision(o) {
+    var require = !!o.isHighVolume, n = null;
+    if (!require && !o.isTransaction) { n = o.countAll ? o.countAll() : -1; require = n === -1 ? true : isQueryRequire(n, maxQueryRecords(o.tabMax, o.roleMax, o.globalMax), o.roleConfirm); }
+    return { onlyCurrentRows: !!o.isTransaction, findFirst: require, countAll: n };
+  }
+
+  // ── §GRID-COLS the grid's columns (bim-compiler prompts/ERP_DEPTH_FILM.md §GRID-COLS; Witnesses: W-GRID-COLS-ENGINE, W-GRID-COLS-LIVE).
+  //   GridView.setupFields :409-470 (no tab customization): the GridTab fields (AD_Field_v order: SeqNo, IsDisplayed DESC; active field +
+  //   column) with isDisplayedGrid and not a toolbar-only button; on mobile only the first ZK_GRID_MOBILE_MAX_COLUMNS (default 10) in
+  //   that order; then a STABLE sort by SeqNoGrid. Returns null when the bundle has no IsDisplayedGrid (legacy-shape) - caller falls back.
+  function gridFields(fields, o) {
+    o = o || {};
+    var all = (fields || []).filter(function (f) { return f.isColumnActive !== false; });
+    if (!all.length || all[0].isDisplayedGrid === undefined) return null;
+    var ord = all.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) {
+      var d = (Number(a.f.seqNo) || 0) - (Number(b.f.seqNo) || 0); if (d) return d;
+      var e = (b.f.isDisplayed ? 1 : 0) - (a.f.isDisplayed ? 1 : 0); return e || a.i - b.i; }).map(function (x) { return x.f; });
+    var max = o.mobile ? (Number(o.maxMobile) > 0 ? Number(o.maxMobile) : 10) : 0, out = [];
+    for (var i = 0; i < ord.length; i++) { var f = ord[i]; if (f.isDisplayedGrid && !f.isToolbarOnlyButton) out.push(f); if (max > 0 && out.length >= max) break; }
+    return out.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) { return (a.f.seqNoGrid - b.f.seqNoGrid) || a.i - b.i; }).map(function (x) { return x.f; });
+  }
+
+  var API = { gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
               query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
+  // ── §UDP-ORDER the row order of a tab (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-ORDER; Witness: W-UDP-ORDER).
+  //   GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo slots 1..3 (|SortNo|, negative = DESC;
+  //   GridTab.initTab :386-423 walks the fields in AD_Field_v order, a later field overwrites a slot), else "Created" (+ " DESC" on a
+  //   header tab queried with onlyCurrentRows). fields = [{ columnName, sortNo }] in AD_Field_v order (IsDisplayed DESC, SeqNo).
+  function orderByOf(tabOrderBy, fields, onlyCurrentRows, isDetail) {
+    if (tabOrderBy && String(tabOrderBy).length > 0) return String(tabOrderBy);
+    var slots = [null, null, null];
+    (fields || []).forEach(function (f) {
+      var n = Number(f.sortNo) || 0, a = Math.abs(n); if (a < 1 || a > 3) return;
+      slots[a - 1] = f.columnName + (n < 0 ? ' DESC' : '');
+    });
+    var ob = slots.filter(function (x) { return x; }).join(',');
+    if (ob) return ob;
+    // Third prio "Created" + " DESC" when m_vo.onlyCurrentRows on a header tab. In a running legacy server that flag is TRUE for every
+    // window opened before (GridWindowVO :154 serves a cached clone; GridTabVO.clone :754 sets onlyCurrentRows=true), so the steady state
+    // is DESC on every header tab; only the very first open after a server restart lists a non-transaction window ASC. The twin follows
+    // the steady state (W-UDP-ORDER: M_Shipper window 142 is DESC on the pilot although it is not a transaction window).
+    return 'Created' + (!isDetail ? ' DESC' : '');
+  }
+  // sortRows — PostgreSQL's ORDER BY semantics over rows already read (SQLite cannot: it orders text by bytes and puts NULLs first on
+  //   ASC). Terms that are plain columns ("Col", "Col DESC", "Table.Col ASC", optional NULLS FIRST/LAST) are applied; any other term
+  //   (an expression) keeps the order SQLite gave (returns { applied:false }). Text = collate (the pilot DB's glibc en_US.utf8, AdFind.collate),
+  //   numbers numeric; NULL is larger than any value (ASC -> last, DESC -> first). Stable.
+  function rowComparator(orderBy, collate) {
+    var terms = String(orderBy || '').split(',').map(function (t) { return t.trim(); }).filter(Boolean), spec = [];
+    for (var i = 0; i < terms.length; i++) {
+      var m = /^(?:[A-Za-z0-9_]+\.)?([A-Za-z0-9_]+)(?:\s+(ASC|DESC))?(?:\s+NULLS\s+(FIRST|LAST))?$/i.exec(terms[i]);
+      if (!m) return { cmp: null, reason: 'expression: ' + terms[i] };
+      var desc = /desc/i.test(m[2] || ''), nulls = m[3] ? m[3].toUpperCase() : (desc ? 'FIRST' : 'LAST');
+      spec.push({ col: m[1].toLowerCase(), desc: desc, nullsFirst: nulls === 'FIRST' });
+    }
+    if (!spec.length) return { cmp: null, reason: 'no order' };
+    var keyOf = {};
+    function val(r, c) {
+      if (!keyOf[c]) { for (var k in r) if (r.hasOwnProperty(k) && k.toLowerCase() === c) { keyOf[c] = k; break; } if (!keyOf[c]) keyOf[c] = c; }
+      return r[keyOf[c]];
+    }
+    var cmpV = function (a, b) {
+      if (typeof a === 'number' && typeof b === 'number') return a < b ? -1 : a > b ? 1 : 0;
+      if (collate) return collate(String(a), String(b));
+      a = String(a); b = String(b); return a < b ? -1 : a > b ? 1 : 0;
+    };
+    return { cmp: function (x, y) {
+      for (var s = 0; s < spec.length; s++) {
+        var t = spec[s], a = val(x, t.col), b = val(y, t.col), an = a == null, bn = b == null, c;
+        if (an || bn) { if (an && bn) continue; return an ? (t.nullsFirst ? -1 : 1) : (t.nullsFirst ? 1 : -1); }
+        c = cmpV(a, b); if (t.desc) c = -c; if (c) return c;
+      }
+      return 0;
+    } };
+  }
+  function sortRows(rows, orderBy, collate) {
+    var rc = rowComparator(orderBy, collate);
+    if (!rc.cmp) return { rows: rows, applied: false, reason: rc.reason };
+    if (!rows || rows.length < 2) return { rows: rows, applied: true };
+    var idx = rows.map(function (r, i) { return { r: r, i: i }; });
+    idx.sort(function (x, y) { return rc.cmp(x.r, y.r) || (x.i - y.i); });   // stable
+    return { rows: idx.map(function (x) { return x.r; }), applied: true };
+  }
+  API.orderByOf = orderByOf; API.sortRows = sortRows; API.rowComparator = rowComparator;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.AdGridTab = API;
 })(typeof window !== 'undefined' ? window : this);

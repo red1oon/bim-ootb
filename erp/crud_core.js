@@ -56,8 +56,16 @@
     if (n > 0 && n < 1e12) n = n * 1000;                 // looks like epoch-seconds → ms
     var d = new Date(n); if (isNaN(d.getTime())) return ts;
     function p(x) { return (x < 10 ? '0' : '') + x; }
-    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
-           ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
+    // §LOCAL-TIME (bim-compiler prompts/ERP_DEPTH_FILM.md; Witness W-LOCAL-TIME): LOCAL wall clock, as legacy stamps Created/Updated with
+    //   the server's local time (the device is the server here). Was getUTC*: Record Info showed 03:15 at 11:15 (+08:00).
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  // localDay — today's LOCAL date yyyy-MM-dd (legacy #Date). The ONE implementation every "today" uses (was toISOString = the UTC date:
+  //   a document created between 00:00 and 08:00 at +08:00 was dated yesterday).
+  function localDay(ms) {
+    var d = new Date(ms == null ? Date.now() : Number(ms)); function p(x) { return (x < 10 ? '0' : '') + x; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -173,6 +181,10 @@
         if (f.admitted && !Object.prototype.hasOwnProperty.call(f.admitted, String(val))) return 'valrule:not-admitted';
         break;
       case 'string':
+        // PO.saveNew:3571-3572 — a DocumentNo of the form "<n>" is the not-yet-allocated PREVIEW iDempiere shows on a New and is
+        // treated as EMPTY (the number is allocated at save: crud_overlay._allocDocNo already does exactly that). The numeric
+        // pin must not judge the preview, or no New order can be saved by leaving the number as shown (§ERP-DEPTH-FILM P1).
+        if (V.regex && String(f.col).toLowerCase() === 'documentno' && /^<.*>$/.test(String(val))) break;
         if (V.regex && !new RegExp(V.regex).test(String(val))) return 'regex:' + (V.valRule || V.regex);
         break;
     }
@@ -486,8 +498,11 @@
             }
             // Task 1 — stamp Updated/UpdatedBy for CRUD_UPDATE (iDempiere PO.save parity)
             var ucols = _getTableCols(want);
-            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex['updated'] = _fmtKernelTs(opTs);   // lowercase — same #968 convention as its `updatedby` sibling below; CREATE stamps `updated` lowercase (:431), so the mixed-case form left a created-then-updated row carrying BOTH keys
-            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex['updatedby'] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
+            // §ADMIN-2: stamp into the row's EXISTING key casing (a seed row carries 'Updated'/'UpdatedBy'; a second lowercase key left readers
+            //   that match the exact key first - recVal - on the stale seed value: Record Info showed no UpdatedBy after a save)
+            var _ciKey = function (o, k) { if (Object.prototype.hasOwnProperty.call(o, k)) return k; for (var q in o) if (o.hasOwnProperty(q) && q.toLowerCase() === k) return q; return k; };
+            if (opTs != null && ucols['updated'] && !Object.prototype.hasOwnProperty.call(ch, 'Updated') && !Object.prototype.hasOwnProperty.call(ch, 'updated')) ex[_ciKey(ex, 'updated')] = _fmtKernelTs(opTs);   // lowercase — same #968 convention as its `updatedby` sibling below; CREATE stamps `updated` lowercase (:431), so the mixed-case form left a created-then-updated row carrying BOTH keys
+            if (p.actor != null && ucols['updatedby'] && !Object.prototype.hasOwnProperty.call(ch, 'UpdatedBy') && !Object.prototype.hasOwnProperty.call(ch, 'updatedby')) ex[_ciKey(ex, 'updatedby')] = p.actor;   // lowercase — the #968 convention (was 'UpdatedBy': a created-then-updated row carried BOTH keys; W-AUDIT-CHANGELOG/W-RECINFO caught it)
           }
         } else if (type === 'CRUD_DELETE') {
           if (p.idCol && p.id != null) { hiddenBy.push([p.idCol, String(p.id)]); return; }   // composite-key row by its UU
@@ -801,12 +816,13 @@
     var fields = (adFields || []).map(function (f) {
       // type from the AUTHORITATIVE AD_Reference_ID; fall back to the coarse referenceType string.
       var type = (f && f.referenceId != null ? mapRefDisplayType(f.referenceId) : null) || mapRefType(f && f.referenceType);
-      return f && f.isDisplayed && !f.isKey && type !== 'button' && type !== 'id' ? { f: f, type: type } : null;
+      // DefaultEditorFactory:121-123 — an ID (Reference 13) field that the dictionary DISPLAYS gets a WNumberEditor (read-only: the key is never updateable); undisplayed keys stay out.
+      return f && f.isDisplayed && type !== 'button' && (!f.isKey || type === 'id') ? { f: f, type: type } : null;
     }).filter(Boolean).map(function (ft) {
-      var f = ft.f, type = ft.type;
+      var f = ft.f, type = ft.type, idField = type === 'id'; if (idField) type = 'number';
       // IsUpdateable='N' is SETTABLE on New (iDempiere fills it once) but display-only on Edit; isReadOnly + a
       // read-only table/tab are always read-only.
-      var readonly = !!f.isReadOnly || roTable || !!f.isVirtual || (forVerb === 'update' && f.isUpdateable === false);
+      var readonly = idField || !!f.isReadOnly || roTable || !!f.isVirtual || (forVerb === 'update' && f.isUpdateable === false);
       // §P7 P7.1 — GridField.isMandatory():377-385's window exemptions, before anything else reads `required`.
       var exempt = gridFieldMandatoryExempt(f.columnName, !!f.isKey);
       if (exempt) exemptLog.push(String(f.columnName) + ':' + exempt);
@@ -855,6 +871,9 @@
           else if (ds.indexOf('@') >= 0) unresolvedLog.push(spec.col + '="' + ds + '"');
         }
       }
+      // GridField.getDefault stage 1, defaultForSpecialCase -> defaultForActiveField (GridField.java:777-785): a column named IsActive ALWAYS defaults to 'Y', whatever the dictionary says (Libero's EE01 columns carry no DefaultValue;
+      //   without this the New form shows IsActive unchecked and §GT.7 then makes the whole new record read-only). The callout-layer GridField (ad_callout.js:637) already had it; this is the form-spec peer.
+      if (spec.col === 'isactive') spec.default = 'Y';
       // §P7 P7.2 — the DATA-TYPE stage of GridField.getDefault(), reached ONLY when no earlier stage
       // resolved (Java: priority "123457", :98). Faithful to :1022-1051 including its order. iDempiere's
       // mandatory check then reads this filled row (GridTable.dataNew:2129-2143 → getMandatory:1985, where
@@ -1067,49 +1086,95 @@
     } catch (e) { return { allowed: true, reason: 'gate-error' }; }
   }
 
-  // ── Task 2 — changeLog: op-log CRUD trail for one record, AD-config-filtered (iDempiere AD_ChangeLog parity)
-  // Returns [{opId,ts,actor,column,old,new}] for logged columns only; null if table not in IsChangeLog=Y.
-  // NON-INVENT: the IsAllowLogging/IsChangeLog filter is READ from the main db (global.__idmpDb); we follow AD.
-  function changeLog(sideDb, table, recordId) {
+  // ── changeLog — AD_ChangeLog DERIVED from the signed op-log (bim-compiler prompts/ERP_DEPTH_FILM.md §ADMIN-2; Witnesses: W-CHANGELOG-RULE,
+  //   W-RECINFO-LIVE). Never persisted (user decision 2026-10-16): the rows legacy WOULD have written, folded from the ops.
+  //   Legacy rule: MSession.changeLog :380-403 (skip null->null and old==new; logged when MChangeLog.isLogged = IsChangeLog='Y' OR the
+  //   table has an EntityType column (fillChangeLog :66-73), or the role IsChangeLog='Y'); per column PO.java :3289-3295 / :3653-3662 /
+  //   :4405-4411 (IsAllowLogging, not encrypted, not virtual, not Password). Insert only with SysConfig SYSTEM_INSERT_CHANGELOG Y (all
+  //   columns) / K (key column); delete only when the TABLE IsChangeLog='Y' (POInfo.isChangeLog), every non-null old value -> null.
+  //   The old value is the record's running state (opts.baseRow = the seed row, then every earlier op), never the op's own `old`.
+  //   changeRule(mdb, table, opts) is the pure rule (also judged column by column against the pilot dictionary).
+  function changeRule(mdb, table, opts) {
+    opts = opts || {};
+    var q = function (sql, p) { var r = mdb.exec(sql, p || []); return r.length ? r[0].values : []; };
+    var t = q("SELECT AD_Table_ID, IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [String(table || '')])[0];
+    if (!t) return null;
+    var cols = q("SELECT c.ColumnName, c.IsAllowLogging, c.IsEncrypted, c.ColumnSQL, c.IsKey FROM AD_Column c WHERE c.AD_Table_ID=? AND c.IsActive='Y'", [t[0]]);
+    var tableFlag = String(t[1]).toUpperCase() === 'Y', hasEntity = q("SELECT 1 FROM AD_Column WHERE AD_Table_ID=? AND ColumnName='EntityType' LIMIT 1", [t[0]]).length > 0;   // fillChangeLog: any EntityType column (active or not)
+    var loggable = {}, key = null;
+    cols.forEach(function (c) {
+      var n = String(c[0]).toLowerCase();
+      if (String(c[4]).toUpperCase() === 'Y') key = n;
+      if (String(c[1]).toUpperCase() === 'Y' && String(c[2]).toUpperCase() !== 'Y' && (c[3] == null || String(c[3]).trim() === '') && n !== 'password') loggable[n] = String(c[0]);
+    });
+    return { tableId: t[0], logged: String(table).toLowerCase() !== 'ad_changelog' && (tableFlag || hasEntity || !!opts.roleChangeLog), tableChangeLog: tableFlag, loggable: loggable, key: key };
+  }
+  // _clFold — the legacy AD_ChangeLog rows a sequence of ops WOULD have written. want = a table name or null (every logged table),
+  //   rid = one record or null; opts.baseRowOf(table, keyCol, id) = the record's row before the first op (the seed row).
+  function _clFold(sideDb, mdb, want, rid, opts) {
+    var rules = {}, rule = function (t) { if (!(t in rules)) rules[t] = changeRule(mdb, t, opts); return rules[t]; };
+    var ins = String(opts.insertLog || 'N').toUpperCase(), states = {}, entries = [];
+    var same = function (a, b) { return a != null && b != null && String(a) === String(b); };
+    var stateOf = function (t, R, id) {
+      var k = t + '|' + id; if (states[k]) return states[k];
+      var st = {}, b = opts.baseRowOf ? opts.baseRowOf(t, R.key || (t + '_id'), id) : null;
+      if (b) Object.keys(b).forEach(function (c) { st[c.toLowerCase()] = b[c]; });
+      return (states[k] = st);
+    };
+    var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0 ORDER BY id ASC");
+    (r.length ? r[0].values : []).forEach(function (row) {
+      var opId = row[0], opType = row[1], ts = row[3], p;
+      try { p = JSON.parse(row[2]); } catch (e) { return; }
+      var t = p && String(p.table || '').toLowerCase(); if (!t || (want && t !== want)) return;
+      var id = opType === 'CRUD_CREATE' ? String(-opId) : String(p.id); if (rid !== null && id !== rid) return;
+      var R = rule(t); if (!R) return;
+      var st = stateOf(t, R, id), seq = 0;
+      var push = function (ev, actor, col, o, n) {
+        if (!R.logged || !R.loggable[col] || (o == null && n == null) || same(o, n)) return;
+        entries.push({ opId: opId, seq: seq++, ts: ts, actor: actor, table: t, tableId: R.tableId, record: id, uu: st[t + '_uu'] == null ? null : st[t + '_uu'], client: st.ad_client_id, org: st.ad_org_id,
+          column: R.loggable[col], old: o == null ? null : o, 'new': n == null ? null : n, event: ev });
+      };
+      if (opType === 'CRUD_CREATE') {
+        var f = p.fields || {}, actor = p.stdDefaults && p.stdDefaults.actor;
+        Object.keys(f).forEach(function (c) { st[c.toLowerCase()] = f[c]; });
+        if (p.stdDefaults) { if (st.ad_client_id == null) st.ad_client_id = p.stdDefaults.clientId; if (st.ad_org_id == null) st.ad_org_id = p.stdDefaults.orgId; }
+        if (ins === 'Y') Object.keys(f).forEach(function (c) { push('I', actor, c.toLowerCase(), null, f[c]); });
+        else if (ins === 'K' && R.key) push('I', actor, R.key, null, f[R.key] != null ? f[R.key] : -opId);
+      } else if (opType === 'CRUD_UPDATE') {
+        var ch = p.changes || {};
+        Object.keys(ch).forEach(function (c) {
+          var n = c.toLowerCase(), pair = ch[c], nv = pair && typeof pair === 'object' && ('new' in pair) ? pair['new'] : pair;
+          push('U', p.actor, n, st[n], nv); st[n] = nv;
+        });
+      } else {
+        if (R.tableChangeLog) Object.keys(st).forEach(function (n) { push('D', p.actor, n, st[n], null); });
+        states[t + '|' + id] = {};
+      }
+    });
+    return entries;
+  }
+  function changeLog(sideDb, table, recordId, opts) {
     var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
     if (!mdb || !sideDb) return null;
+    opts = opts || {};
     try {
-      var tbl = String(table || '');
-      // IsChangeLog check
-      var tc = mdb.exec("SELECT IsChangeLog FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tbl]);
-      if (!tc.length || !tc[0].values.length || String(tc[0].values[0][0]).toUpperCase() !== 'Y') return null;
-      // loggable columns (IsAllowLogging=Y) for this table
-      var lc = mdb.exec("SELECT c.ColumnName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE UPPER(t.TableName)=UPPER(?) AND c.IsAllowLogging='Y'", [tbl]);
-      var loggable = {};
-      if (lc.length && lc[0].values.length) lc[0].values.forEach(function (v) { loggable[String(v[0]).toLowerCase()] = 1; });
-      // walk op-log
-      var r = sideDb.exec("SELECT id, op_type, parameters, timestamp FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE') AND undone=0 ORDER BY id ASC");
-      if (!r.length) return [];
-      var want = tbl.toLowerCase(), rid = recordId != null ? String(recordId) : null, entries = [];
-      r[0].values.forEach(function (row) {
-        var opId = row[0], opType = row[1], ts = row[3], p;
-        try { p = JSON.parse(row[2]); } catch (e) { return; }
-        if (!p || String(p.table || '').toLowerCase() !== want) return;
-        if (opType === 'CRUD_CREATE') {
-          if (rid !== null && String(-opId) !== rid) return;
-          var f = p.fields || {};
-          Object.keys(f).forEach(function (col) {
-            if (!loggable[col.toLowerCase()]) return;
-            entries.push({ opId: opId, ts: ts, actor: p.stdDefaults && p.stdDefaults.actor, column: col, old: null, 'new': f[col] });
-          });
-        } else if (opType === 'CRUD_UPDATE') {
-          if (rid !== null && String(p.id) !== rid) return;
-          var ch = p.changes || {};
-          Object.keys(ch).forEach(function (col) {
-            if (!loggable[col.toLowerCase()]) return;
-            var pair = ch[col]; entries.push({ opId: opId, ts: ts, actor: p.actor, column: col, old: pair && pair.old, 'new': pair && pair['new'] });
-          });
-        }
-      });
-      console.log('§CHANGELOG table=' + tbl + ' rec=' + rid + ' entries=' + entries.length + ' filtered(IsAllowLogging)=Y');
+      var tbl = String(table || ''), R = changeRule(mdb, tbl, opts);
+      if (!R) return null;
+      var base = opts.baseRow || null, o2 = {}; for (var k in opts) o2[k] = opts[k];
+      o2.baseRowOf = function () { return base; };
+      var entries = _clFold(sideDb, mdb, tbl.toLowerCase(), recordId != null ? String(recordId) : null, o2);
+      console.log('§CHANGELOG table=' + tbl + ' rec=' + recordId + ' logged=' + R.logged + ' entries=' + entries.length + ' insertLog=' + String(opts.insertLog || 'N') + ' (derived from the op-log; legacy MSession.changeLog rule)');
       return entries;
     } catch (e) { return null; }
   }
+  // changeLogAll — every logged change of every table (the Change Audit window's rows); opts.baseRowOf supplies the seed rows.
+  function changeLogAll(sideDb, opts) {
+    var mdb = (typeof globalThis !== 'undefined' && globalThis.__idmpDb) || null;
+    if (!mdb || !sideDb) return [];
+    try { return _clFold(sideDb, mdb, null, null, opts || {}); } catch (e) { console.log('§CHANGELOG all failed ' + e.message); return []; }
+  }
+
+
 
   // ── Item 3a (FRONTEND_LANE_MASTER §OUTSTANDING) — recordInfo: record-level last-touch (the iDempiere "(i)"
   // popup), reconstructed from the immutable op-log. UNLIKE changeLog this is ALWAYS-ON (no AD IsChangeLog gate)
@@ -1300,7 +1365,7 @@
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
+    changeLog: changeLog, changeLogAll: changeLogAll, changeRule: changeRule, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs, localDay: localDay,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
     fieldLineage: fieldLineage,                                                  // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
     draftPut: draftPut, draftGet: draftGet, draftClear: draftClear, draftList: draftList,
     draftDirty: draftDirty, draftChangedCols: draftChangedCols, draftDrift: draftDrift   // Item 1 (W-DRAFT-RESTORE): private draft buffer — unsaved typing, never an official dot

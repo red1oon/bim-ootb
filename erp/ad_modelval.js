@@ -36,6 +36,12 @@
     (REGISTRY[t] = REGISTRY[t] || {});
     (REGISTRY[t][timing] = REGISTRY[t][timing] || []).push({ name: name, fn: fn });
   }
+  // unregisterValidator(table, timing, name) - remove the LAST validator registered under that name in that slot (a bundle's stop). Returns the number removed (0 or 1).
+  function unregisterValidator(table, timing, name) {
+    var t = table.toLowerCase(), a = REGISTRY[t] && REGISTRY[t][timing]; if (!a) return 0;
+    for (var i = a.length - 1; i >= 0; i--) if (a[i].name === name) { a.splice(i, 1); if (!a.length) { delete REGISTRY[t][timing]; if (!Object.keys(REGISTRY[t]).length) delete REGISTRY[t]; } return 1; }
+    return 0;
+  }
   function registeredCount() {
     var n = 0, t, ti; for (t in REGISTRY) for (ti in REGISTRY[t]) n += REGISTRY[t][ti].length; return n;
   }
@@ -45,32 +51,9 @@
     return db.prepare('SELECT ad_modelvalidator_id,name,modelvalidationclass,entitytype FROM ad_modelvalidator ORDER BY ad_modelvalidator_id').all();
   }
 
-  // installDefaultHooks — faithful ports of real M*.beforeSave / completeIt invariants.
-  function installDefaultHooks() {
-    // MOrderLine.beforeSave: a line must carry a positive quantity (TYPE_BEFORE_NEW/CHANGE).
-    function qtyPositive(ctx, info) {
-      var r = info.record || {};
-      var q = Number(r.QtyOrdered != null ? r.QtyOrdered : r.qtyordered);
-      if (!(q > 0)) return 'QtyOrdered must be > 0 (got ' + q + ')';
-      return null;
-    }
-    registerValidator('C_OrderLine', 'BEFORE_SAVE', 'MOrderLine.qtyPositive', qtyPositive);
-    registerValidator('C_InvoiceLine', 'BEFORE_SAVE', 'MInvoiceLine.qtyPositive', function (ctx, info) {
-      var r = info.record || {}; var q = Number(r.QtyInvoiced != null ? r.QtyInvoiced : r.qtyinvoiced);
-      return q > 0 ? null : 'QtyInvoiced must be > 0 (got ' + q + ')';
-    });
-
-    // MOrder.completeIt precondition: the document must have at least one line (docValidate BEFORE_COMPLETE).
-    registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.hasLines', function (ctx, info) {
-      var n = ctx.lineCount ? ctx.lineCount(info) : (info.lineCount || 0);
-      return n > 0 ? null : 'Cannot complete an order with no lines';
-    });
-    // a second BEFORE_COMPLETE hook to prove ordered multi-hook dispatch (grand total must be non-negative).
-    registerValidator('C_Order', 'BEFORE_COMPLETE', 'MOrder.totalNonNegative', function (ctx, info) {
-      var r = info.record || {}; var g = Number(r.GrandTotal != null ? r.GrandTotal : r.grandtotal);
-      return g >= 0 ? null : 'GrandTotal must be >= 0 (got ' + g + ')';
-    });
-  }
+  // installDefaultHooks - NONE. The twin-only 'MOrder.hasLines' BEFORE_COMPLETE hook (refusal 'Cannot complete an order with no lines') is DELETED: legacy has no such validator, the
+  //   no-line refusal is MOrder.prepareIt's @NoLines@ (model_order.js:141 -> AD_Message "No Document Lines found"). W-VOID case NOLINES. Kept as an empty function so callers (crud_overlay.js:1493) are unchanged.
+  function installDefaultHooks() { }
 
   // installMOrderSaveHooks(db) — faithful port of MOrder.beforeSave (MOrder.java:1183-1396), the H-1.3
   // archetype delta. Each hook cites its Java lines. iDempiere's beforeSave BOTH derives defaults (setters)
@@ -561,10 +544,13 @@
   // shared cent-exact add (REAL columns; the balances are 2dp money columns)
   function addMoney(a, b) { return (Math.round(Number(a || 0) * 100) + Math.round(Number(b || 0) * 100)) / 100; }
   // shared standard-period lookup (MPeriod.getC_Period_ID: the client-calendar period containing the date)
-  function periodOf(db, date) {
+  function periodOf(db, date, org, client) {
     if (date == null || date === '') return null;
-    var d = String(date).slice(0, 10);
-    return db.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);
+    var d = String(date).slice(0, 10), cal = 0;                                   // MPeriod.getC_Calendar_ID :981-997 — org's own calendar wins, else the client's
+    if (Number(org) > 0) { var oi = db.prepare('SELECT c_calendar_id AS c FROM ad_orginfo WHERE ad_org_id=?').get(Number(org)); cal = oi && oi.c ? Number(oi.c) : 0; }
+    if (!cal && Number(client) > 0) { var ci = db.prepare('SELECT c_calendar_id AS c FROM ad_clientinfo WHERE ad_client_id=?').get(Number(client)); cal = ci && ci.c ? Number(ci.c) : 0; }
+    if (!cal) return db.prepare("SELECT c_period_id FROM c_period WHERE periodtype='S' AND date(?)>=date(startdate) AND date(?)<=date(enddate) ORDER BY c_period_id").get(d, d);   // no calendar known: the old unscoped lookup (named)
+    return db.prepare("SELECT p.c_period_id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id WHERE y.c_calendar_id=? AND p.isactive='Y' AND p.periodtype='S' AND date(?)>=date(p.startdate) AND date(?)<=date(p.enddate) ORDER BY p.c_period_id").get(cal, d, d);
   }
 
   // installMJournalSaveHooks(db) — faithful port of MJournal.beforeSave (MJournal.java:298-380).
@@ -592,7 +578,7 @@
         var r = info.record;
         if (r.processed === 'Y') return null;
         var da = (info.derived && info.derived.dateacct) != null ? info.derived.dateacct : r.dateacct;
-        var p = periodOf(db, da);
+        var p = periodOf(db, da, r.ad_org_id, r.ad_client_id);
         if (!p) return 'PeriodNotFound: ' + da;
         if (Number(p.c_period_id) !== Number(r.c_period_id)) {  // :333-337 reassign ONLY off a standard period
           var cur = db.prepare('SELECT periodtype FROM c_period WHERE c_period_id=?').get(Number(r.c_period_id));
@@ -653,7 +639,7 @@
         var r = info.record;
         if (r.processed === 'Y') return null;
         var da = (info.derived && info.derived.dateacct) != null ? info.derived.dateacct : r.dateacct;
-        var p = periodOf(db, da);
+        var p = periodOf(db, da, r.ad_org_id, r.ad_client_id);
         if (!p) return 'PeriodNotFound: ' + da;
         if (Number(p.c_period_id) !== Number(r.c_period_id)) {
           var cur = db.prepare('SELECT periodtype FROM c_period WHERE c_period_id=?').get(Number(r.c_period_id));
@@ -852,7 +838,7 @@
   }
 
   var API = {
-    TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, registeredCount: registeredCount,
+    TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, unregisterValidator: unregisterValidator, registeredCount: registeredCount,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
     installMOrderSaveHooks: installMOrderSaveHooks, fireHooks: fireHooks, hooksFor: hooksFor,
     installMInOutSaveHooks: installMInOutSaveHooks, installMInvoiceSaveHooks: installMInvoiceSaveHooks,

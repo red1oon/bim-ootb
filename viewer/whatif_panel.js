@@ -38,8 +38,18 @@
   function _fmt(ds) { return (typeof ds === 'number' ? global.WhatIf._date(ds) : String(ds)).slice(0, 10); }
 
   // Load the ERP db (OPFS push-store first, then bundled seed). Returns a sql.js Database or null.
+  var _dbStamp = null;
+  function _wiStamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
   function _loadDb() {
-    if (_db) return Promise.resolve(_db);
+    return _wiStamp().then(function (st) {
+      if (_db && st === _dbStamp && st !== 'unknown') return _db;
+      if (_db) console.log('§PUSH_STORE_RELOAD writer=whatif was=' + _dbStamp + ' now=' + st);
+      _db = null; _dbStamp = st;
+      return _openDb();
+    });
+  }
+  function _openDb() {
     var SQL = _SQL();
     if (!SQL || !global.WhatIf) return Promise.resolve(null);
     var fromOpfs = Promise.resolve(null);
@@ -65,7 +75,10 @@
   function _hasFoldedProject(db) {
     return Number(_scalar(db, "SELECT COUNT(*) FROM C_ProjectPhase") || 0) > 0;
   }
-  // pick the folded project: the active building's C_Project if it has phases, else the first project that does.
+  // pick the folded project: the active building's C_Project if it has phases — ONLY that one.
+  // §NO_FALLTHROUGH (user 2026-10-07: "falling thru to pick up Hospital … just where clause proper"): there used to be an
+  //   "else the newest project with phases" branch, which on the bundled seed is always Hospital (C_Project 990000) — so a
+  //   Civil Works session showed and edited Hospital's schedule. No match now returns null + a § line; open() tells the user.
   function _pickProject(db) {
     var building = A().activeBuilding;
     // NB: don't filter on branch_id here — that column only exists AFTER a blue commit ALTERs it in. readPhases is
@@ -74,8 +87,7 @@
       var pid = _scalar(db, "SELECT p.C_Project_ID FROM C_Project p WHERE p.Value=? AND EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID)", [building]);
       if (pid != null) return { id: pid, name: _scalar(db, "SELECT Name FROM C_Project WHERE C_Project_ID=?", [pid]) };
     }
-    var r = db.exec("SELECT p.C_Project_ID, p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
-    if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+    console.log('§WHATIF-UI no-project-for-building building="' + (building || '') + '" (no fall-through to another project)');
     return null;
   }
 
@@ -172,6 +184,18 @@
 
   function _persist() {
     if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    // §STORE_STAMP: the panel held this copy while open — if the store changed on disk since (reset, another push), writing would
+    // put old orders back. Refuse, say so; the user reopens What-if on the current store.
+    return _wiStamp().then(function (st) {
+      if (st !== _dbStamp) {
+        console.log('§PUSH_STORE_STALE writer=whatif was=' + _dbStamp + ' now=' + st + ' — accept refused, reopen What-if');
+        var stx = A().status; if (stx) stx.textContent = _wiTrl('wi_store_changed', 'What-if: the project store changed since you opened this — reopen What-if');
+        _db = null; return false;
+      }
+      return _writeDb();
+    });
+  }
+  function _writeDb() {
     try {
       var bytes = _db.export();
       return navigator.storage.getDirectory()
@@ -179,7 +203,7 @@
         .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
         .then(function (fh) { return fh.createWritable(); })
         .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
+        .then(function () { return _wiStamp().then(function (st) { _dbStamp = st; return true; }); }).catch(function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
 
