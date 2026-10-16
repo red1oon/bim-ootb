@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `8cba44890` — DXF2BIM §13: std set config in the shared module (STD maps, QUALIFY, CASING moved verbati
+Commit: `be1dcda91` — DXF2BIM §13: std set config in the shared module (STD maps, QUALIFY, CASING moved verbati
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -16,4 +16,4 @@ Commit: `8cba44890` — DXF2BIM §13: std set config in the shared module (STD m
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | b42fe8c051b5e399ab0bff198a97fe60500f7a5da08d580502a887444b856737 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 8cba44890:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show be1dcda91:deploy/dev/<file> | sha256sum` equals the column above.
