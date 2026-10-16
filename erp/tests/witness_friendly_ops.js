@@ -143,7 +143,10 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     await openMenuById(53055, false); await page.waitForSelector(NEWB, { timeout: 20000 }); await hold(800);
     if (await page.locator('.idmp-grid tbody tr').count() === 0) await click('#idmp-toolbar [data-tb="toggle"]', false);
     const rowSel = '.idmp-grid tbody tr:has(td:text-is("' + (oL && oL.documentno) + '"))';
-    if (await page.locator(rowSel).count()) { await click(rowSel, false); await hold(800); }
+    const rowHit = await page.locator(rowSel).count();
+    console.log('§FOPS F8 locate order ' + (oL && oL.documentno) + ': grid rows=' + (await page.locator('.idmp-grid tbody tr').count()) + ' headers=' + JSON.stringify(await page.$$eval('.idmp-grid thead th', e => e.map(x => x.textContent.trim()).slice(0, 12))) + ' rowHit=' + rowHit + ' findDialog=' + (await page.locator('.idmp-find, #idmp-find, [data-find-dialog]').count()));
+    if (rowHit) { await click(rowSel, false); await hold(800); }
+    console.log('§FOPS F8 lens buttons on the selected order: ' + JSON.stringify(await page.$$eval('[data-lens-action]', e => e.map(x => x.getAttribute('data-lens-action')))));   // a grid click must make the row current (W-GRID-CLICK, bim-ootb #2080)
     const rel = await page.$$eval('[data-lens-action^="friendly-ops:rel:"]', e => e.map(x => ({ a: x.getAttribute('data-lens-action'), label: x.textContent })));
     const relChk = [];
     for (const r of rel) { const m = /^friendly-ops:rel:(\d+):(.+)$/.exec(r.a), n = Number((/\((\d+)\)$/.exec(r.label) || [])[1]);
