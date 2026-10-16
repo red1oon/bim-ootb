@@ -8,6 +8,7 @@
 // residual (Terminal 259 windowBlocked live, 2026-08-16) must die here. Loading pattern verbatim
 // from probe_captured_floating.js. Read the log after every run.
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.js'));
@@ -15,7 +16,7 @@ const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate
 const ScheduleAuthor = require(path.join(__dirname, '..', 'viewer', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));
 const SupportSweep = require(path.join(__dirname, '..', 'viewer', 'support_sweep.js'));   // §S58: required, never sliced
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.lastIndexOf('function ' + name + '(');
@@ -57,7 +58,7 @@ function floatingCensus(items) {
 }
 
 async function runBuilding(SQL, RATES, name) {
-  const db = new SQL.Database(fs.readFileSync(path.join(BLD_DIR, name + '.db')));
+  const db = new SQL.Database(__readSrc(path.join(BLD_DIR, name + '.db')));
   const rawElements = ScheduleAuthor._buildScheduleElements(db, RATES.SEQUENCE_RULES, {
     laborRates: RATES.LABOR_RATES, rates: RATES.RATES, nameOverrides: RATES.SEQUENCE_NAME_OVERRIDES,
     defaultRule: RATES.SEQUENCE_DEFAULT
@@ -247,8 +248,8 @@ async function runBuilding(SQL, RATES, name) {
 }
 
 async function main() {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const ratesSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'rates.js'), 'utf8');
   const RATES = (new Function(ratesSrc +
     '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES, SEQUENCE_DEFAULT:SEQUENCE_DEFAULT, ' +
     'SEQUENCE_NAME_OVERRIDES:SEQUENCE_NAME_OVERRIDES, LABOR_RATES:LABOR_RATES, RATES:RATES};'))();

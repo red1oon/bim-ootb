@@ -35,6 +35,7 @@
  * RUN: node witness/witness_storey_reveal_list.js
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
 const setupCpeStoreyReveal = require('../viewer/cpe_storey_reveal.js');
@@ -178,7 +179,7 @@ CREATE TABLE spatial_structure (guid TEXT, type TEXT, name TEXT, parent_guid TEX
 
   // ── §60.2 — source-level guard (see the HONEST LIMITATION note in this file's header) ──
   console.log('\n§W-STOREY-LIST §60.2 — §STOREY_REVEAL_WINDOW honesty (source-level guard)');
-  const eff = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'effects.js'), 'utf8');
+  const eff = __readSrc(path.join(__dirname, '..', 'viewer', 'effects.js'), 'utf8');
   // §129.60 — this latched onto the FIRST match of "'§STOREY_REVEAL_WINDOW", which is
   // `'§STOREY_REVEAL_WINDOW_FIT` at effects.js:8385 — a PREFIX of the tag it wanted. It then sliced
   // 900 chars from there and never reached the real line at 8404, so it reported ABSENT while

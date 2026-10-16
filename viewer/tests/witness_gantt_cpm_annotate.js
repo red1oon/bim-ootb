@@ -26,6 +26,7 @@
 //
 // Command: node viewer/tests/witness_gantt_cpm_annotate.js
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -35,7 +36,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 
 // ─────────────────────────────── W-CPM-1 / W-CPM-4: source gates ───────────────────────────────
 const TM = path.join(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(TM, 'utf8');
+const src = __readSrc(TM, 'utf8');
 
 function namedFns(text) {
   const out = [];
@@ -164,7 +165,7 @@ const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 // viewer builds (the live page reports 58% critical on Duplex where the empty-rates path reports
 // 100%). Same rates.js slice loader witness_gantt_native_generate.js uses.
 function loadRules() {
-  const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   const end = txt.indexOf('};', defIdx) + 2;
@@ -175,8 +176,8 @@ const RULES = loadRules();
 
 initSqlJs({ locateFile: f => path.join(SQLJS_DIST, f) }).then(function (SQL) {
   const dbPath = path.join(os.homedir(), 'bim-ootb', 'buildings', 'Duplex_extracted.db');
-  const db = new SQL.Database(fs.readFileSync(dbPath));
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const db = new SQL.Database(__readSrc(dbPath));
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
   const mres = ScheduleAuthor.materializeZones(db, SEQUENCE_RULES,
     { start: '2026-01-01', laborRates: RULES.LABOR_RATES, rates: RULES.RATES, scheduleGate: ScheduleGate });
@@ -253,7 +254,7 @@ initSqlJs({ locateFile: f => path.join(SQLJS_DIST, f) }).then(function (SQL) {
   const table = [];
   for (const f of fleet) {
     try {
-      const fdb = new SQL.Database(fs.readFileSync(path.join(bDir, f)));
+      const fdb = new SQL.Database(__readSrc(path.join(bDir, f)));
       const fm = ScheduleAuthor.materializeZones(fdb, SEQUENCE_RULES,
         { start: '2026-01-01', laborRates: RULES.LABOR_RATES, rates: RULES.RATES, scheduleGate: ScheduleGate });
       if (!fm.ok) { table.push({ b: f, note: 'materialize_fail' }); fdb.close(); continue; }

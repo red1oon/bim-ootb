@@ -1,3 +1,4 @@
+const __readSrc = require('../../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // zoom_tm_route_witness.js — W-ZOOM-TM-ROUTE (FUSED_4D5D_WEDGE_LANE §ARCH-OWNERSHIP)
 //
 // ISSUE PROVED: ZoomAcross/Connect scope routing is "TM-if-open, else Find" — when the Time Machine
@@ -15,7 +16,7 @@ function check(name, cond, detail) {
   if (cond) { pass++; console.log('§W-ZTM PASS  ' + name + (detail ? '  ' + detail : '')); }
   else { fail++; console.log('§W-ZTM FAIL  ' + name + (detail ? '  ' + detail : '')); }
 }
-function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
+function read(f) { return __readSrc(path.join(VIEWER, f), 'utf8'); }
 
 var nf = require('../../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
 var tm = read('time_machine.js');

@@ -33,6 +33,7 @@
 // ⚠ Brace-matched extraction, never a fixed slice window (§S65 G-COH-6 false-negative class).
 // Command: node viewer/tests/witness_tm_p6_interop_fold.js     (no browser, no building fixture)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -42,9 +43,9 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const V = f => path.join(__dirname, '..', f);
-const src = fs.readFileSync(V('time_machine.js'), 'utf8');
-const html = fs.readFileSync(V('viewer.html'), 'utf8');
-const sw = fs.readFileSync(V('sw.js'), 'utf8');
+const src = __readSrc(V('time_machine.js'), 'utf8');
+const html = __readSrc(V('viewer.html'), 'utf8');
+const sw = __readSrc(V('sw.js'), 'utf8');
 
 function namedFns(text) {
   const out = [];
@@ -125,7 +126,7 @@ assert(!/schedule_editor/.test(html),
 const FSx = require(V('foreign_schedule.js'));
 const SA = require(V('schedule_author.js'));
 const FIXTURE = path.join(__dirname, '..', '..', 'tests', 'fixtures', 'Hospital_GW_Programme.xer');
-const xerText = fs.readFileSync(FIXTURE, 'utf8');
+const xerText = __readSrc(FIXTURE, 'utf8');
 
 const NAMES = ['tmImportForeign', 'tmExportMSProject', '_tmExportP6', 'tmExportPMXML', 'tmExportXER',
   'tmDiffVsModel', '_p6DaysBetween', '_tmP6BaseName'];
@@ -133,7 +134,7 @@ const extracted = NAMES.map(n => { const f = fn(n); assert(!!f, 'W-FOLD-4a ' + n
 if (extracted.some(f => !f)) { console.log('§TM_P6_FOLD_SUMMARY pass=' + pass + ' fail=' + fail); process.exit(1); }
 const SLICE = extracted.map(f => f.body).join('\n');
 
-initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) }).then(function (SQL) {
+initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) }).then(function (SQL) {
   const db = new SQL.Database();
   const calls = { invalidate: 0, annotate: [], persist: [], refold: 0, locked: 0, say: [], downloads: [] };
   const logs = [];

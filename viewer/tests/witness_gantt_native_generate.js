@@ -8,6 +8,7 @@
 // never touches the old panel. Sliced by balanced braces from the real shipped function — same
 // convention as commitGanttDrag/undoLastGanttEdit's witnesses, never reimplemented.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -19,7 +20,7 @@ const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');
   if (idx < 0) throw new Error(name + ' not found');
@@ -52,7 +53,7 @@ const sliced = 'var _GANTT_CACHE_VERSION = ' + _verMatch[1] + ';\n' +
   sliceFn(tmSrc, 'generateGanttSchedule');
 
 function loadRules() {
-  var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  var txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   var start = txt.indexOf('var RATES = {');
   var defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   var end = txt.indexOf('};', defIdx) + 2;
@@ -71,7 +72,7 @@ const BUILDING = process.argv[2] || 'Duplex';
 
   // ── Scenario A: no schedule exists yet — native generate must actually create one ──
   {
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     var toggleCalled = 0, tipMsgs = [];
     const sandbox = {
       console: console, JSON: JSON, Date: Date, Math: Math, setTimeout: setTimeout,
@@ -96,7 +97,7 @@ const BUILDING = process.argv[2] || 'Duplex';
 
   // ── Scenario B: a captured (imported) schedule already exists — must NOT be clobbered ──
   {
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     // A real schedule under a non-SCH_AUTHORED id — the SAME real materializeZones call (real
     // columns, real write path), just a different scheduleId, standing in for a real Bonsai/Revit
     // import the same way activeSchedule() actually distinguishes one: schedule_id !== 'SCH_AUTHORED'.

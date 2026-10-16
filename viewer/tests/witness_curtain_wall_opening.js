@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — W-CWO — §CURTAIN_WALL_OPENING
 // Spec: bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §CURTAIN_WALL_OPENING.
 //
@@ -134,7 +135,7 @@ function sliceFn(src, name, which) {
 }
 
 function loadRatesTable() {
-  const txt = fs.readFileSync(path.join(VIEWER_DIR, 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(VIEWER_DIR, 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   return (new Function(txt.slice(start, txt.indexOf('};', defIdx) + 2) + '\n return RATES;'))();
@@ -195,12 +196,12 @@ function countEarly(pairs, getS, getE, sccOf) {
 }
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(SQLJS_DIR, 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(SQLJS_DIR, 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(VIEWER_DIR, 'rates', 'sequence_rules.json'), 'utf8'));
   const SR = rulesJson.SEQUENCE_RULES, SD = rulesJson.SEQUENCE_DEFAULT, LR = rulesJson.LABOR_RATES;
   const NO = rulesJson.NAME_OVERRIDES || [];
   const RATES = loadRatesTable();
-  const tmSrc = fs.readFileSync(path.join(VIEWER_DIR, 'time_machine.js'), 'utf8');
+  const tmSrc = __readSrc(path.join(VIEWER_DIR, 'time_machine.js'), 'utf8');
   const zoneParts = [sliceFn(tmSrc, '_zoneIndexBuild'), sliceFn(tmSrc, '_zoneIndex')].filter(Boolean);
   // §S20: dropped from this slice list — `_buildXrayElements`/`_contactGraph`/`_midairAudit`/
   // `_displayTimeline` never reach `_tier1Extents`, `_tier1Serialize`, `_tier1Protrusion`,
@@ -223,7 +224,7 @@ function countEarly(pairs, getS, getE, sccOf) {
   for (const bld of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { console.log(`      (skip ${bld} — fixture missing)`); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
     // browser exposes, so _displayTimeline's §S6_CREW_PASS max_crews_fixed/max_crews lookup sees
     // real per-resource caps instead of running crew-unconstrained.

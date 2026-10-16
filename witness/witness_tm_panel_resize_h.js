@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_tm_panel_resize_h.js — prompts/4D_SCHEDULE_PERFECTION.md §TM_PANEL_RESIZE_H.
 //
 // THE ISSUE THIS PROVES OR DISPROVES:
@@ -19,7 +20,7 @@
 var fs = require('fs');
 var path = require('path');
 var SRC = path.join(__dirname, '..', 'viewer', 'time_machine.js');
-var txt = fs.readFileSync(SRC, 'utf8');
+var txt = __readSrc(SRC, 'utf8');
 
 var pass = 0, fail = 0;
 function check(name, cond, detail) {

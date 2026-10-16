@@ -26,6 +26,7 @@
 //
 // Command: node viewer/tests/witness_retyped_constants.js
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const VIEWER_DIR = process.env.VIEWER_DIR || path.join(__dirname, '..');
@@ -34,7 +35,7 @@ const ScheduleAuthor = require(path.join(VIEWER_DIR, 'schedule_author.js'));
 const KIT = path.join(__dirname, '..', '..', 'witness_kit');
 const { Witness } = require(path.join(KIT, 'contract'));
 
-const read = f => fs.readFileSync(path.join(VIEWER_DIR, f), 'utf8');
+const read = f => __readSrc(path.join(VIEWER_DIR, f), 'utf8');
 const lineOf = (src, frag) => { const i = src.indexOf(frag); return i < 0 ? -1 : src.slice(0, i).split('\n').length; };
 
 // ── THE REGISTRY. Every production re-type of EPS(0.05)/GAP(0.5), with its verdict and its reason.
@@ -126,7 +127,7 @@ console.log('§RTC_SEQDEFAULT browserBinding withGlobal=' + JSON.stringify(withG
   ' — the second is the PRE-§S65 literal, still shipped at 7 sites and REPORTED, not corrected (§I.5i)');
 
 // ── the measured blocker, asserted against the blocking witness's own source, not remembered.
-const ogSrc = fs.readFileSync(path.join(__dirname, 'witness_og_guard_bearing_bound.js'), 'utf8');
+const ogSrc = __readSrc(path.join(__dirname, 'witness_og_guard_bearing_bound.js'), 'utf8');
 const stubReal = ogSrc.indexOf('ScheduleGate: { CELL: 4 }') >= 0;
 rows.push({ kind: 'blockerproof', id: 'OG_GUARD_STUB_SANDBOX', file: 'tests/witness_og_guard_bearing_bound.js',
   line: lineOf(ogSrc, 'ScheduleGate: { CELL: 4 }'), found: stubReal, status: 'blocked',

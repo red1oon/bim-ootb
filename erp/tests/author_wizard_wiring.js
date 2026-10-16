@@ -1,3 +1,4 @@
+const __readSrc = require('../../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // author_wizard_wiring.js — W-AUTHOR-WIZARD-WIRE (FUSED_4D5D_WEDGE_LANE §AUTHOR-1 slice-2)
 //
 // ISSUE PROVED: the authoring wizard is correctly MOUNTED on the Time-Machine surface and its
@@ -26,7 +27,7 @@ function check(name, cond, detail) {
   if (cond) { pass++; console.log('§W-WIRE PASS  ' + name + (detail ? '  ' + detail : '')); }
   else { fail++; console.log('§W-WIRE FAIL  ' + name + (detail ? '  ' + detail : '')); }
 }
-function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
+function read(f) { return __readSrc(path.join(VIEWER, f), 'utf8'); }
 
 (async function () {
   // ── (a) UI module loads and exposes the launch API (no DOM needed at load) ────
@@ -69,7 +70,7 @@ function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
   var RULES = (new Function(slice + '\n return SEQUENCE_RULES;'))();
 
   var SQL = await initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } });
-  var db = new SQL.Database(new Uint8Array(fs.readFileSync(SH_DB)));
+  var db = new SQL.Database(new Uint8Array(__readSrc(SH_DB)));
   var res = SA.materializeDefault(db, RULES, { start: '2026-01-01', phaseDays: 30 });
   check('handler-draft-folds', res.phases.length >= 2 && res.assignmentCount > 0,
     'phases=' + res.phases.length + ' assignments=' + res.assignmentCount);

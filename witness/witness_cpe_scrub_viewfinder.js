@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — §CPE_SCRUB / §CPE_VIEWFINDER (Parts A and B).
 // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md Part A §CPE_SCRUB, Part B §CPE_VIEWFINDER.
 //
@@ -358,7 +359,7 @@ async function gates(browser, BLD, repoDir) {
     `hookInstalled=${vf1.hookInstalled} delta=${dVF == null ? 'n/a' : dVF.toExponential(2)}m rect=${vf1.rect ? JSON.stringify(vf1.rect) : 'null'}`);
 
   // ── G-VF-2: static — the vf functions never call tmSetCursor, only tmGetState ──────────────────
-  const src = fs.readFileSync(repoDir + '/viewer/cinema_path_editor.js', 'utf8');
+  const src = __readSrc(repoDir + '/viewer/cinema_path_editor.js', 'utf8');
   const vfBlock = src.slice(src.indexOf('function _vfUpdateReadout'), src.indexOf('function _wireViewfinderToggle'));
   const noSecondClock = vfBlock.includes('tmGetState') && !vfBlock.includes('tmSetCursor');
   P('G-VF-2a static: the viewfinder block reads tmGetState and never calls tmSetCursor', noSecondClock,
@@ -577,7 +578,7 @@ async function gates(browser, BLD, repoDir) {
   P('G-PERF-1a B\'s render-pass cost is measured (not guessed) during a real rehearsal', perfOk, perfDetail);
 
   // ── G-PERF-1b: static — cinema_maxq.js (the bake loop) never references the hook ────────────────
-  const maxqSrc = fs.readFileSync(repoDir + '/viewer/cinema_maxq.js', 'utf8');
+  const maxqSrc = __readSrc(repoDir + '/viewer/cinema_maxq.js', 'utf8');
   const bakeClean = !maxqSrc.includes('_cpeViewfinderRender');
   P('G-PERF-1b static: cinema_maxq.js (the MaxQ bake loop) has zero references to the viewfinder render hook',
     bakeClean, `occurrences=${(maxqSrc.match(/_cpeViewfinderRender/g) || []).length}`);
