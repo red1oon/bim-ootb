@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 2600,
-      "unit": "EA",
+      "rate": 611.66,
+      "unit": "M3",
       "desc": "ฐานรากแผ่",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 6950,

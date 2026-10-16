@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 520,
-      "unit": "EA",
+      "rate": 122.33,
+      "unit": "M3",
       "desc": "基础",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 1380,

@@ -170,6 +170,8 @@ function gitShowLines(commit, relPath, startLine, endLine) {
     var window = { ScheduleAuthor: realScheduleAuthor, RATES: realRates };
     var db = realDb;
     var LR = realLaborRates;
+    // §ARCH_AREA_WEIGHT/§VOL_WEIGHT: the sliced block's _area/_vol wrappers read the injectGantt closure's SR/SD/NO — provide the same upvalues
+    var SR = globals.SEQUENCE_RULES, SD = globals.SEQUENCE_DEFAULT, NO = globals.SEQUENCE_NAME_OVERRIDES || [];
     // eslint-disable-next-line no-eval
     eval(postFixSrc);
     // eslint-disable-next-line no-undef

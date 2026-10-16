@@ -197,7 +197,8 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1635';
+const CACHE_VERSION = 'v1636';
+// v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
 // v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
