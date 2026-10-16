@@ -228,6 +228,16 @@ export const manifest = {
   // the bodies of 2Pack_1.0.0's four CREATE FUNCTION statements (PL/pgSQL there, JS here; §24): bound with the packs, kept while they are installed
   sqlFunctions: './libero_sqlfn.mjs',
   packs: ['libero_2pack/2Pack_1.0.0.zip', 'libero_2pack/2Pack_1.0.1.zip', 'libero_2pack/2Pack_1.0.2.zip', 'libero_2pack/2Pack_1.0.3.zip'],
+  // §26 (slice D): the rows of OUR pack declared, not hand-written; erp/tools/gen_2pack.js writes them out as libero_2pack/2Pack_<version>.zip once (pipo_packgen.js -> the Pack Out engine),
+  //   then that zip is a released pack like 1.0.0-1.0.2 (immutable: a change = a new version). Inert at runtime: Start applies the zip, never this block. UUs pinned = the rows installed profiles hold.
+  provides: { version: '1.0.3', date: '2026-10-16 00:00:00', updateDictionary: true, packsDir: 'libero_2pack',
+    description: 'Order Receipt & Issue on the Manufacturing Order toolbar (Kernel ERP twin, bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §18/§22)',
+    elements: [
+      { key: 'receiptIssueProcess', table: 'AD_Process', uu: '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', values: { Value: 'PP_Order_ReceiptIssue', Name: 'Order Receipt & Issue',
+        Description: 'Issue the components and receive the finished product of a Manufacturing Order (opens the Order Receipt & Issue form)', IsReport: 'N', AccessLevel: '3', EntityType: 'EE01',
+        IsBetaFunctionality: 'N', AllowMultipleExecution: 'Y', AD_Form_ID: { table: 'AD_Form', uu: '77081588-9733-4792-80ae-257638ebc534' } } },
+      { key: 'receiptIssueButton', table: 'AD_ToolBarButton', uu: '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a02', values: { Name: 'Order Receipt & Issue', ComponentName: 'PP_Order_ReceiptIssue', Action: 'W',
+        SeqNo: 10, EntityType: 'EE01', AD_Tab_ID: { table: 'AD_Tab', uu: '383f0c8e-ac6a-4ba4-8b2a-5defaa046e7a' }, AD_Process_ID: { ref: 'receiptIssueProcess' } } }] },
   // twin-only staging (the slim twin seed lacks these rows; legacy carries the EE01 menu inactive): refcounted, removed on Stop
   dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },
     { table: 'pa_documentstatus', idCol: 'pa_documentstatus_id', rows: DASH_STATUS }, { table: 'pa_measurecalc', idCol: 'pa_measurecalc_id', rows: DASH_CALC },
