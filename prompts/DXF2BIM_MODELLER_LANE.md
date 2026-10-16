@@ -1225,6 +1225,19 @@ User (2026-10-17): "Yes do send those library to OCI" (the library stays local w
 - Regression: `witness_dxf_convert.js` local mode 17/17 (`source=local`), `witness_dxf_import_node.js` old + std fail=0, `witness_dxf_meta_editor.js` fail=0, W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
 - Stated: the sample run's 12 Level 2 window labels come from the source model (round trip); any other drawing set gets none.
 
+
+### L3.5 No labels sidecar: the window products are @TAG markings in the marked set (lead review 2026-10-17, written before the code)
+Supersedes the labels parts of §L3.4 (its "Labels finding" route, `labels/<run_id>.json`, the loader's labels fetch, `convert`'s `labelsByRun`). Rule: metadata lives IN the DXF (`DXF2BIM-MARK`), its source via `@BY`; no sidecar (§L4.1/§L4.2, the @BY decision).
+- **BIMCompiler (§14 LF-4, PR #195).** `mark_dx_set.js std` writes, for each `819mm x 759mm` window of the plan's storey, `@TAG=window,z=<mid z m>,<family id> @BY=model` at its plan bbox centre (mm), with the same model-name → family map and the same points/z the Node run used as labels (`M_Fixed` → DUPLEX_SMALL_FIXED, `M_Casement` → DUPLEX_CASEMENT); a window with no family → REFUSE. Grammar: `@TAG=<class>,[z=m,]<text>` (dxf2marks.js), applied by `Dxf2Types.applyTags` with the same `hits()` as `applyLabels`. `rosetta_dx_shell.js` applies no source-model labels to the std set (the old DX set keeps them). `--full` exports library data only (no `--labels`).
+- **Modeller.** `loadOci` fetches latest → index → shards only; `convert` reads `library.labels` (the local subset's, now empty for std) as before §L3.4. sw.js: the `labels/` cache rule goes. OCI: the labels object is deleted; `marked/DX_FLOOR_FF_marked.dxf` is replaced in place (+12 `@TAG`), README notes it (sha256 list + change line). The RAW set lacks the tags by design: the editor's Tag tool is where a user states them.
+- **Witnesses.** L1 O1-O4 (no labels anywhere), L2 `DXF_LIB=oci` C0-C5 (C1 FILLS 36/36 from the marked set + library alone), L3 C5, regression as §L3.4 + `witness_dxf_import_node.js` std without labels (issue: the tags do not bind as the labels did → P2/P6 fail). The std run_id changes (the FF plan text changed); elements equal the §L3.3 run by class, storey, product, hash, bbox, volume (only guids, which hash the run_id, change).
+
+
+**L3.5 results (2026-10-17).** BIMCompiler PR #195 `eb259b90c` (mark std: 12 window tags, Level 2 tags labelled=20; `DXSET=std rosetta_dx_shell.js` fail=0, fills 36/36, run_id `0215ad6c…`, elements equal the §L3.3 run but for guids; `rosetta_qualify.js` std qualifies 0/75; `verify_marks_dx.js std` fail=0). OCI: `labels/…` deleted (404), `marked/DX_FLOOR_FF_marked.dxf` + README replaced, sha256 == local; library objects unchanged (re-export byte-identical).
+- L1 O1-O4 PASS: 2 passes, 29 shards, 31 objects (no labels) == fresh export; fills 36/36 (14 + 22) == the Node run, verdict qualifies.
+- L2 `DXF_LIB=oci` 17/17: `source=oci … passes=2`, C1 RUN-ID `0215ad6c…`, C1 FILLS 36/36; L3 C5 PASS; local mode 17/17.
+- Regression: `witness_dxf_import_node.js` old + std (std without labels) fail=0, `witness_dxf_meta_editor.js` fail=0, W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**
   - Sheets (role, level / face)

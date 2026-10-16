@@ -131,7 +131,7 @@ function isNetworkFirst(url) {
   var base = url.split('?')[0];
   if (base.includes('/dxf2bim/local/')) return true;   // §L3.2 locally generated library subset: regenerated in place, never served stale
   if (base.endsWith('/dxf2bim/library/latest.json')) return true;   // §L3.4 the ONE mutable library object (names the current library sha)
-  if (/\/dxf2bim\/library\/([0-9a-f]{12}|labels)\//.test(base)) return false;   // §L3.4 OCI library index/shards (per sha) + labels (per run_id): immutable → cache-first
+  if (/\/dxf2bim\/library\/[0-9a-f]{12}\//.test(base)) return false;   // §L3.4 OCI library index/shards, versioned by library sha: immutable → cache-first
   if (base.includes('/lib/')) return false;            // versioned/immutable → cache-first
   var filename = base.split('/').pop();
   if (_PRECACHE_SET.has(filename)) return false;       // precached → cache-first (version bump refreshes)
