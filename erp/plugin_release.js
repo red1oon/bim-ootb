@@ -34,7 +34,6 @@
     { id: 'system_tenant', core: true, label: 'System(0) login surface' },
     { id: 'pos_lens', core: false, label: 'POS terminal lens' },
     { id: 'kanban_lens', core: false, label: 'Kanban board' },
-    { id: 'ninja_create', core: false, label: 'Ninja window builder' },
     { id: 'plugin_overlay', core: false, label: 'Plugin Engine (foreign bundles)' },
     { id: 'blue_future', core: false, label: 'Blue Future (speculative branch)' },
     { id: 'system_monitor', core: false, label: 'System Monitor' }
