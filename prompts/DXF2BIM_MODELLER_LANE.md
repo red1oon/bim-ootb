@@ -2,6 +2,76 @@
 SCOPE: DXF2BIM inside the Modeller: Duplex → standard 2D set → import → metadata editor → qualify → convert (basic shapes) → IFC4; then the demo film.
 Spec before code, for every lane below. Read the log after every run (exit code is not evidence). Every value traces to a DXF entity, a marking a user confirmed, or a named standard convention; nothing is guessed. Work in a /tmp/wt-* worktree (editing ~/bim-ootb directly is hook-blocked). Neutral naming: no client names anywhere.
 
+## ▶ RESUME (next session, written 2026-10-17)
+Read this block first, then the sections it names. Work to zero; spec first, then code; read every log; use worktrees only (editing ~/bim-ootb directly is hook-blocked); neutral naming (no client name in any repo, film or doc).
+
+**Where things stand (all merged unless marked).**
+- **Round trip, witnessed on the Duplex:**
+  - L1 standard 2D writer (BIMCompiler `2D_Layout/python/std2d.py`): grid on load-bearing axes, 3-tier DIMENSION entities, door hinge/swing from IFC `door_operation`, plan = everything the cut plane passes through, roof plan, section.
+  - L2 qualify verdict (`deploy/dev/dxf2qualify.js`).
+  - L3 Modeller import → Convert (ARC-seed form) → IFC4 with storeys.
+  - L4 metadata editor, including @BY, @LAYER and the door schedule (#2071).
+  - The std Duplex set QUALIFIES with 0 blocking; a RAW set reached Qualifies through the editor in #2071 (282 UI actions), BUT that relied on model-derived window labels (a sidecar, since removed). Without them, 12 stacked FF windows stay `GAP:fill_unbound`, because the Tag tool cannot say which stacked window a tag means. Fix in flight (§L4.4): tag on ELEVATION sheets, with z taken from the pick. Verify that #2071/#2072 landed with E7 passing honestly.
+- **Library:** published to OCI as versioned shards `dxf2bim/library/<sha12>/` + `latest.json`, with samples at `dxf2bim/samples/duplex/{raw,marked}/`. Labels now go in the marked DXF as `@TAG … @BY=model` (BIMCompiler #195). Check that bim-ootb #2071 (doors) and #2072 (labels fix) landed on main, and that the public Modeller loads `source=oci`.
+- **Docs (live):**
+  - https://red1oon.github.io/BIMCompiler/DXF2BIMGuide/
+  - https://red1oon.github.io/BIMCompiler/DXF2BIM_TechnicalNote/
+  - Deploy only via `scripts/safe_gh_deploy.sh`. The live site carries pages from other branches (BIMToolsGuide, CivilWorksGuide, NinjaExcel manual, LegacyOracle spec, figs, glassbowl_data.db), so bring their sources into the deploy tree.
+  - Update the guide with: the sample-set links, the raw → Qualifies walkthrough (Doors section), library on OCI, multi-storey results.
+- **Films:**
+  - EN `~/Videos/DXF2BIM_Demo_EN_1920x1080_24fps_2026-10-16_v2_resync.mp4` (BIMCompiler #192; click ripple ~2:42 needs a re-take).
+  - MS in progress at handoff: check for `~/Videos/DXF2BIM_Demo_MS_*.mp4` and its PR.
+  - The EN film predates the door schedule. A re-cut of chapter 6 (raw → Qualifies) is now possible.
+- **Possibly in flight at handoff** (check PRs/branches, resume or redo):
+  - multi-storey acid test (SampleCastle + HHS), plus the Node extractor additions (`rel_fills_host` incl. void-only openings, world bboxes/meshes, Pset IsExternal/LoadBearing), §L1.6 (openings from the host relation, not the knife; columns as gridded column symbols; storey names from the model);
+  - the MS film.
+
+**Multi-storey acid test result (2026-10-17; BIMCompiler #196 merged; spec §L1.6 = bim-ootb #2074):**
+- **What #196 delivered:**
+  - The Node extractor now writes world bboxes, `rel_fills_host`, IsExternal/LoadBearing and storey placement. Existing tables are unchanged on 5 IFCs; the witness passes on 8. std2d reads ONE DB.
+  - Duplex from the Node DB: the same entity counts. Plan polygons differ 7–24 mm² because the geometry engines cut casings differently.
+  - Columns are now gridded column symbols (SampleCastle 9/9, HHS structure 257/257).
+  - One building grid across storeys; 3 dimension tiers pass; SampleCastle storeys come from the model (0/3/6/9 m; the old knife was 240 mm low).
+- **What is NOT solved:**
+  - SampleCastle plan openings: 9/164, 7/136, 7/116, 10/39. The knife is not the cause.
+    - 357 of 455 openings have no wall host (no fills relation, no void).
+    - 65 hosts (51 walls) have EMPTY geometry from web-ifc.
+    - HHS curtain walls have no geometry either, so the HHS façade is empty.
+  - Readability: SampleCastle's grid at 28×31 is too dense (the 10 mm merge tol was a Duplex choice; the user decides). Bubbles and dim texts overlap. 8 columns are too asymmetric to grid.
+  - mark_dx_set.js / rosetta_dx_shell.js are Duplex-specific (sheet list, @SET=DX, old-schema SQL, 1-char grid labels). Generalise them to N storeys + the Node schema.
+  - Re-sync modeller/dxf2bim copies (dxf2shell_config.js changed in #196).
+- **PNGs:** ~/Videos/dxf2bim_work/acid/
+
+**NEXT LANES (in order).**
+1. **Extractor = one schema.** std2d must read ONLY the Node extractor DB (`scripts/extractIFC2DB.js`; never the Python one). Prove the Duplex std set is identical from the Node DB.
+2. **§L1.6 acid test on multi-storey models:** SampleCastle (5 storeys, stairs, 259 windows, 205 doors, 23 columns) and HHS (257 columns).
+   - Pass condition: every door/window of each storey is a gap in its host wall in plan whatever its sill height, with high windows dashed; columns are drawn as columns and gridded; three dimension tiers; one building grid across storeys.
+   - Before/after numbers per storey.
+3. **NEW (user, 2026-10-17): BIM → 2D export INSIDE the Modeller.**
+   - User flow: "Loading user BIM into Modeller as present feature is good so user and code can examine that all is proper and markings can auto derive …, then allow export to choose DXF".
+   - **Steps:**
+     - (a) open the user's IFC (exists);
+     - (b) a "drawable?" check report (storeys, hosts, door handing, geometry readable);
+     - (c) markings derived automatically from the model (`@BY=model`, as `mark_dx_set.js std` does);
+     - (d) Export → "2D drawings (DXF)" writes the standard set with markings embedded; re-importing it must Qualify.
+   - **Decision to make in the spec:** port std2d.py to JS (recommended) vs Pyodide.
+   - Depends on lanes 1–2.
+4. **Zone-stretch of real LOD400 meshes** (user proposal, agreed in principle):
+   - Stretch planes per door/window family, read from the mesh structure (frame vs panel). Frame and hardware keep their real size; only the panel/glass zones stretch.
+   - Exact catalogue match first. Stretch only when the type is known.
+   - Range limits → `GAP:stretch_out_of_range`.
+   - Provenance "family X stretched from W0×H0 to W×H", and BOM as a custom size.
+   - Witness on the Farmhouse openings (0 bound today).
+5. **CAD DXF (BricsCAD/AutoCAD): INSERT/block expansion** (nested transforms, mirror) + ATTRIB values as tags (`@BY=file`). ASCII DXF only today. Ask the user for a real BricsCAD-exported set for a blind test.
+6. **Fewer UI actions:** smarter proposals (levels/faces from title and level texts, schedules from drawing tables) to cut the 282 actions.
+7. **Prior-art search** (commercial tools, ML research, patents) before any "first/unique" wording. Optionally, a Zenodo DOI for the technical note (the user's account).
+
+**Standing decisions.**
+- Metadata lives IN the DXF (`DXF2BIM-MARK`, `@BY=model|user`, no sidecars).
+- Library data is never committed to git, and the old root `component_library.db` on OCI is never touched.
+- The old hand-made Duplex sheets stay as a recorded finding: swings 6/14, casing-inclusive arcs, roof +43 mm.
+- No "any DXF" claim until a blind test passes.
+
 # DXF2BIM in the Modeller: lane spec (2026-10-16)
 
 ## 0. Sources
@@ -1049,6 +1119,39 @@ The film uses the std Duplex set (BIMCompiler master `d06a63c8a`: 8 sheets GF/FF
 - Page (`witness_dxf_convert.js`, read): C0 std 8 sheets PASS (SECTION: all read layers at x = 2.30425, A-SECT spanning the envelope -17.8..0); C0 GATE: one gate → STD set, qualifies; C1 run_id `0c538552…` equal, PARITY 71 solids + 28 cut bodies (51 infill) within 1 mm, COUNTS, PROVENANCE (171 ops), CUTS 36; **C1 FILLS 36/36** (IfcDoor 14, IfcWindow 22) within 1 mm; C1 FALSIFY; **C2** reimport IfcWall 96 / IfcSlab 2 / IfcRoof 1 / IfcDoor 14 / IfcWindow 22, storeys 2, contained 135 = products; C4 one undo; C1-FILLS-FALSIFY (mesh 00b72db6 dropped → fills 110, 112 `GAP:lod400_mesh_missing`, the only 2 blocking, refused, op-log 0→0); C3 raw GF refused by roles naming it; C3 old set: C0 PASS, refused by the verdict (blocked 347). All PASS.
 - Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS. Screenshot `l3_std_converted.png` read: two storeys, doors and glazing in the cut openings, roof with two skylight holes; `l3_std_imported_sheets.png`: 8 sheets incl. the section on its plane.
 - Stated: the gate runs the whole pipeline at import (the convert commits that judged run). The page reads ONE local subset file; the witness writes the std one (the old set then reports `GAP:lod400_not_in_subset` for its other products, and is blocked anyway). Old marked set: no longer converts (qualify blocks it).
+
+### L3.4 The library on OCI, the public Modeller loads it (2026-10-17, written before the code)
+User (2026-10-17): "Yes do send those library to OCI" (the library stays local while prototyping, goes to OCI at deploy). Closes the §L3.2 open item "deploy of the subset (OCI) and the full-library loader".
+- **Measured first.** `component_library.db` 230,539,264 bytes, sha256 `7e5df6e1…`: 23,888 meshes (187 MB of blobs, every IFC class). The binder (`bindTypes` + `familyToRef` + `placeFills`) reads only `ad_opening_family` (68 active), `ad_wall_type` (18 active) and the IfcDoor/IfcWindow `ad_geometry_map` rows (804, 337 after the element_ref|hash dedup) with their meshes (331 hashes, 87,100 vertices, 168,256 triangles, normals NULL 331/331, 0 rows without a mesh). The GitHub Pages Modeller cannot range-stream a DB (no COOP/COEP), so the library ships as JSON. **FULL = that binder universe**, not the 23,888 meshes (pipes, plates, … are never read by a DXF fill).
+- **Labels finding.** The std set's 36 fills need the 12 Level 2 window labels the Node run takes from the source model (round trip, stated in §L3.2): the module with the subset minus its labels places 24/36 and the verdict is blocked (12). Labels are run data, not library data: they ship per run_id (below) and apply only when the imported set's run_id equals it; any other drawing set gets none (its ambiguous windows stay blocked until `@TAG`, §L4.1).
+- **Export (BIMCompiler `scripts/export_library_subset.js --full --out-dir <dir> [--labels <labels.json> …]`).** Same queries, decoding and dedup as the subset mode. Writes, deterministic (no timestamp; twice → byte-identical):
+  - `<sha12>/index.json` (`dxf2bim-library-index/1`): source {db, sha256, bytes}; encoding; shard rule `geometry_hash[0:2]`; counts; `rows.ad_opening_family` + `rows.ad_wall_type` (all active: the binder chooses among all of them); `rows.ad_geometry_map` = every deduped door/window row with its `shard`; `geometry_shard` {hash: shard}; `shards` [{name, meshes, rows, bytes, sha256}].
+  - `<sha12>/shard_XX.json` (`dxf2bim-library-shard/1`): the meshes whose hash starts with XX (decoded as the subset) + the map rows that point at them.
+  - `labels/<run_id>.json` (`dxf2bim-labels/1`) per `--labels` file: {run_id, source file + sha256, labels}.
+  - `latest.json`: {format, library_sha256, path `<sha12>/index.json`}. `<sha12>` = first 12 hex of the DB sha256, so a cached shard is never served for another library.
+- **OCI (bucket `bim-ootb`, new prefix `dxf2bim/`; the old root `component_library.db` is untouched).** `dxf2bim/library/<sha12>/…`, `dxf2bim/library/latest.json`, `dxf2bim/library/labels/<run_id>.json` (the export dir uploaded as is), each `--content-type application/json`, gzip-encoded as the bucket's building DBs (OCI_UPLOAD rule 8); verified by curl (`--compressed` sha256 == local, Content-Type, `Access-Control-Allow-Origin` for Origin `https://red1oon.github.io`). latest.json is the one mutable object: an overwrite may lag the OCI edge cache (OCI_UPLOAD), the versioned files never change.
+- **Loader (`dxf_import_ui.js loadLibrary(sheets)`, pure parts in `dxf2bim_import.js`).**
+  1. Local override: `dxf2bim/local/library_subset_duplex.json` present → used as today; log `§DXF-LIB source=local sha=<db sha12>`.
+  2. Else OCI: `latest.json` (no-store) → `index.json` → `Dxf2BimImport.loadOci`: starts from the index alone (families + wall types, no meshes, `complete` = []). Iterate (≤ 4 passes, each one `convert`, ~0.1 s): the run's `GAP:lod400_not_in_subset` type ids are the bound families not yet loaded → their candidate rows (`Dxf2Shell.pairKey`, the export's rule) → their shards (fetched once, memoised) → `libraryFromShards` (the subset form, then `librarySubset`, so withheld/missing behave as §L3.2); the run's run_id → `labels/<run_id>.json` (404 = none, memoised). Stop when no new family and the labels of that run_id are known. Log `§DXF-LIB source=oci sha=<sha12> shards=<n> families=<n> labels=<run_id12|none> passes=<n>`.
+  3. Any fetch or format failure → `null` → `GAP:lod400_library_unreachable` (no box), as today; log `§DXF-LIB source=none reason=…`.
+  - The module: `convert` takes the labels from `library.labelsByRun[run_id]` when the library carries `labelsByRun` (run_id is computed before the labels are applied), else `library.labels` (the local subset, unchanged).
+- **sw.js.** `…/dxf2bim/library/<sha12>/…` and `…/dxf2bim/library/labels/…` cache-first (immutable per name); `latest.json` network-first; local/ network-first as before. CACHE_VERSION bump, `?v=` on the changed files.
+- **Witnesses (each names its issue; read every log).**
+  - L1 `witness_dxf_lib_oci_node.js`: the module fed from the shards DOWNLOADED from OCI (the loader's own iteration, Node fetch) vs the Node run from the local DB: the 36 std fills (14 IfcDoor, 22 IfcWindow) equal by guid, element_ref, geometry_hash, bbox 1 mm; verdict qualifies. Issue: the shards lost a candidate, a mesh or the labels, so a fill binds or sits differently. Plus: the downloaded objects' sha256 == the export (index lists them), and two exports byte-identical.
+  - L2 (page, `witness_dxf_convert.js` `DXF_LIB=oci`): the local subset URL answers 404 (as on GitHub Pages, where the folder does not exist); the std set → log `source=oci`, qualifies, convert, C1 FILLS 36/36 within 1 mm. Issue: the public page cannot reach the library (CORS, content type, path) or builds another one.
+  - L3 falsify (page, test hook = puppeteer answering latest.json with a non-existent sha; production code unchanged): `GAP:lod400_library_unreachable`, no fill insert, gate refuses. Issue: an unreachable library silently yields boxes or a pass.
+  - Regression: `witness_dxf_import_node.js` (old + std), `witness_dxf_convert.js` (local subset), `witness_dxf_meta_editor.js`, W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC.
+- **Samples (for the user guide, BIMCompiler PR #194).** `dxf2bim/samples/duplex/raw/` = the std2d output (8 sheets, no markings), `…/marked/` = `mark_dx_set.js std` output (8 sheets), from one master chain run; `text/plain`; a `README.txt` (source: the public Duplex IFC in bim-ootb `IFC/`, the chain, what raw vs marked means). Not committed to git.
+
+
+**L3.4 results (2026-10-17).** BIMCompiler PR #195 (`--full`, on master `0c0abb7b2`; std chain re-run first: std2d output and marked std set byte-equal to master's, std run_id `0c538552…` SUMMARY fail=0). Logs `modeller/tests/logs/witness_dxf_lib_oci_node.log`, `witness_dxf_convert.log`.
+- Export: 190 shards + index + 1 labels + latest = 7,404,950 bytes in 193 files (1,498,603 gzip-encoded on OCI); two runs `diff -r` empty; subset mode output unchanged (136,432 bytes, same sha256).
+- OCI: `dxf2bim/library/7e5df6e10027/` + `latest.json` + `labels/0c538552….json`: all 193 objects sha256 == local (curl `--compressed`); `Content-Type: application/json`, `content-encoding: gzip`, `access-control-allow-origin: *` for Origin `https://red1oon.github.io` (GET and OPTIONS preflight). Old root `component_library.db` untouched (477,155,328 bytes, 2026-04-20). Samples `dxf2bim/samples/duplex/{raw,marked}/` 8 + 8 DXF (`application/dxf`, sha256 == local) + `README.txt`.
+- L1 `witness_dxf_lib_oci_node.js` O1-O4 PASS: loader 3 passes, 29 shards / 9 families / labels of run `0c538552…`, 32 objects fetched (941,177 bytes decoded) byte-identical to a fresh export; fills 36/36 (IfcDoor 14, IfcWindow 22, 14 meshes) == the Node run (guid, product, hash, bbox 1 mm), verdict qualifies.
+- L2 `DXF_LIB=oci witness_dxf_convert.js` (local URL 404): `§DXF-LIB source=oci sha=7e5df6e10027 shards=29 families=9 labels=0c538552e616 passes=3`; C0-C4 PASS incl. **C1 FILLS 36/36** (1 mm), C2 reimport IfcDoor 14 / IfcWindow 22. One earlier attempt died in `waitForFunction` ("Waiting failed") under machine load average 22; the re-run passed whole.
+- L3 C5 LIB-UNREACHABLE PASS (both modes): latest.json → sha `000…` → `§DXF-LIB source=none`, 36 `GAP:lod400_library_unreachable`, the only blocking code, gate refused, forced convert refused, op-log 0→0, 0 meshes.
+- Regression: `witness_dxf_convert.js` local mode 17/17 (`source=local`), `witness_dxf_import_node.js` old + std fail=0, `witness_dxf_meta_editor.js` fail=0, W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+- Stated: the sample run's 12 Level 2 window labels come from the source model (round trip); any other drawing set gets none.
 
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**

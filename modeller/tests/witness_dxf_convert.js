@@ -30,6 +30,13 @@
  *                 (7 sheets, dxf2qualify verdict blocked): gate refused with the verdict (its canvas C0 still checked). Both: Convert
  *                 disabled, a forced convert() refused, op-log unchanged. Issue: a sheet without a role, or a set qualify blocks, converted.
  *   C4 UNDO     — ONE undo: every converted op inactive and no converted mesh left. Issue: convert is not one gesture.
+ *   §L3.4 DXF_LIB=oci (L2) — the main page answers the local subset URL with 404 (as on GitHub Pages, where dxf2bim/local/ does not
+ *                 exist): the library comes from OCI (log `§DXF-LIB source=oci`), and C0-C4 above must hold unchanged, incl. C1 FILLS
+ *                 36/36. Issue: the public page cannot reach the OCI library (CORS, content type, path) or builds another one.
+ *                 Default (no DXF_LIB): the local subset, `§DXF-LIB source=local` (the dev override).
+ *   C5 LIB-UNREACHABLE (L3 falsify, always) — test hook = puppeteer answers latest.json with a non-existent library sha (production code
+ *                 unchanged) and the local URL with 404: `§DXF-LIB source=none`, every opening GAP:lod400_library_unreachable, gate refused,
+ *                 forced convert refused, op-log unchanged, no mesh. Issue: an unreachable library silently yields boxes or a pass.
  * Screenshots: ~/Videos/dxf2bim_work/l3/ (imported sheets; converted Duplex).
  * Inputs (not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler): tests/dxf2bim/out/{marked,marked_shell}, the Node summary,
  * 2D_Layout/output/DXF/DX_FLOOR_GF_20260428_0636.dxf (C3). Run BIMCompiler tests/dxf2bim/rosetta_dx_shell.js first.
@@ -58,10 +65,18 @@ const server = http.createServer((q, r) => {
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(b); });
 });
 
-async function openPage(br, port, tag) {
+const LIBMODE = process.env.DXF_LIB === 'oci' ? 'oci' : 'local';
+const LOCAL_RE = /dxf2bim\/local\/library_subset_duplex\.json/, LATEST_RE = /\/dxf2bim\/library\/latest\.json$/;
+// routes: [[RegExp, {status, contentType, body}]] answered by interception (the SW is bypassed so it cannot answer first)
+async function openPage(br, port, tag, routes) {
   const pg = await br.newPage();
   await pg.setViewport({ width: 1400, height: 900 });
-  pg.on('console', m => { const t = m.text(); if (/§DXF|§IFC-SPATIAL|§IFC reimport|§IFC build|§IFC §IFC-SEED|commitGesture|GESTURE-UNDO|LOD400-REFUSE|insert fold fail|ERR/.test(t)) say('  [' + tag + '] ' + t.slice(0, 400)); });
+  pg._logs = [];
+  if (routes) {
+    await pg.setBypassServiceWorker(true); await pg.setRequestInterception(true);
+    pg.on('request', rq => { const hit = routes.find(([re]) => re.test(rq.url().split('?')[0])); if (hit) rq.respond(hit[1]); else rq.continue(); });
+  }
+  pg.on('console', m => { const t = m.text(); pg._logs.push(t); if (/§DXF|§IFC-SPATIAL|§IFC reimport|§IFC build|§IFC §IFC-SEED|commitGesture|GESTURE-UNDO|LOD400-REFUSE|insert fold fail|ERR/.test(t)) say('  [' + tag + '] ' + t.slice(0, 400)); });
   pg.on('pageerror', e => say('  [' + tag + '] PAGEERR ' + String(e).slice(0, 300)));
   await pg.goto(`http://localhost:${port}/modeller.html`, { waitUntil: 'load', timeout: 90000 });
   await pg.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.Bonsai.library && window.DxfImportUI && window.A && window.A.scene', { timeout: 90000 });
@@ -91,7 +106,8 @@ async function openViaChooser(pg, files) {
   say('BC=' + BC);
 
   // ---------------- C1 / C2 / C4 on the marked set ----------------
-  const pg = await openPage(br, port, 'set');
+  say('library mode=' + LIBMODE);
+  const pg = await openPage(br, port, 'set', LIBMODE === 'oci' ? [[LOCAL_RE, { status: 404, contentType: 'text/plain', body: 'not found' }]] : null);
   const multiple = await openViaChooser(pg, SET);
   const imp = await pg.evaluate(() => ({ gate: gateSum(window.DxfImportUI.state.gate), roles: window.DxfImportUI.state.sheets.map(s => [s.name, s.role]),
     lines: window.DxfImportUI.state.group ? window.DxfImportUI.state.group.children.map(c => [c.userData.dxfSheet, c.geometry.attributes.position.count / 2]) : [],
@@ -116,6 +132,9 @@ async function openViaChooser(pg, files) {
     'sheets=' + cv.sheets.length + ' envelope=' + JSON.stringify(cv.env) + (cbad.length ? ' bad: ' + cbad.join('; ') : ''));
   };
   await c0(pg, 'std', SET.length);
+  const srcLine = pg._logs.filter(t => /^§DXF-LIB /.test(t));
+  check('C0 LIB-SOURCE', 'the library came from another source than this run asks for (' + LIBMODE + '), or no §DXF-LIB line',
+    srcLine.length > 0 && srcLine.every(t => t.indexOf('§DXF-LIB source=' + LIBMODE + ' ') === 0) && srcLine.every(t => /sha=7e5df6e10027/.test(t)), srcLine.join(' || ').slice(0, 400));
   check('C0 GATE std', 'the std set (Node verdict qualifies) is not allowed to convert by the ONE gate (roles + dxf2qualify)', imp.gate.ok && imp.gate.verdict && imp.gate.verdict.verdict === 'qualifies' && !imp.convertDisabled,
     JSON.stringify(imp.gate));
   say('import: multiple=' + multiple + ' gate.ok=' + imp.gate.ok + ' roles=' + JSON.stringify(imp.roles) + ' canvas=' + JSON.stringify(imp.lines));
@@ -289,6 +308,25 @@ async function openViaChooser(pg, files) {
       !r3.gate.ok && named && r3.disabled && r3.forced && r3.forced.refused && r3.before === r3.after,
       'gate=' + JSON.stringify(r3.gate).slice(0, 500) + ' disabled=' + r3.disabled + ' op-log ' + r3.before + '->' + r3.after + ' panel="' + r3.why.slice(0, 300) + '"');
     await pg3.close();
+  }
+
+  // ---------------- C5 LIB-UNREACHABLE (§L3.4 L3 falsify): latest.json names a library sha that does not exist ----------------
+  {
+    const fake = JSON.stringify({ format: 'dxf2bim-library-latest/1', library_sha256: '0'.repeat(64), index: '000000000000/index.json' });
+    const pg5 = await openPage(br, port, 'nolib', [[LOCAL_RE, { status: 404, contentType: 'text/plain', body: 'not found' }], [LATEST_RE, { status: 200, contentType: 'application/json', body: fake, headers: { 'Access-Control-Allow-Origin': '*' } }]]);
+    await openViaChooser(pg5, SET);
+    const r5 = await pg5.evaluate(async () => { const st = window.DxfImportUI.state, g = st.gate, before = window.Bonsai.oplog.length, dis = document.getElementById('dxf-convert').disabled;
+      const forced = await window.DxfImportUI.convert();
+      return { gate: gateSum(g), disabled: dis, forced: !!(forced && forced.refused), before, after: window.Bonsai.oplog.length, lib: !!g.lib,
+        codes: [...new Set((g.R && g.R.ST || []).reduce((a, st) => a.concat(st.fills.gaps), []).map(x => x.code))], nGaps: (g.R && g.R.ST || []).reduce((n, st) => n + st.fills.gaps.length, 0),
+        blockingCodes: g.verdict ? [...new Set(g.verdict.blocking.map(x => x.code))] : [],
+        meshes: window.Bonsai.group().children.filter(m => m.isMesh && m.userData && m.userData.featureId != null).length }; });
+    const src5 = pg5._logs.filter(t => /^§DXF-LIB /.test(t));
+    check('C5 LIB-UNREACHABLE', 'an unreachable library silently yields boxes, a substitute or a pass (must be GAP:lod400_library_unreachable, gate refused, no op)',
+      src5.length > 0 && src5.every(t => /^§DXF-LIB source=none /.test(t)) && !r5.lib && r5.nGaps > 0 && r5.codes.length === 1 && r5.codes[0] === 'GAP:lod400_library_unreachable' && r5.blockingCodes.length === 1 && r5.blockingCodes[0] === 'GAP:lod400_library_unreachable' &&
+      r5.gate && !r5.gate.ok && r5.disabled && r5.forced && r5.before === r5.after && r5.meshes === 0,
+      'log=' + src5.join(' || ').slice(0, 300) + ' gaps=' + r5.nGaps + ' codes=' + JSON.stringify(r5.codes) + ' blocking codes=' + JSON.stringify(r5.blockingCodes) + ' verdict=' + JSON.stringify(r5.gate && r5.gate.verdict) + ' disabled=' + r5.disabled + ' forced refused=' + r5.forced + ' op-log ' + r5.before + '->' + r5.after + ' meshes=' + r5.meshes);
+    await pg5.close();
   }
 
   await br.close(); server.close();
