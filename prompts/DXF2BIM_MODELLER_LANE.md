@@ -168,6 +168,25 @@ Closes the R9 `GAP:door_hinge` upstream, as R9 asked: the extractor persists the
   - Reader R3 FAILS on the std set: it compares the arc radius with the source door bbox long side, which includes the 2 × 76 mm casing (0.914 vs 0.762 …). The std arc radius is the leaf width (= OverallWidth = the IFC Plan arc radius). R1b-stated already removes the casing; R3 does not. Fix in the reader lane, not here (the old sheets passed R3 because their arcs used the casing-inclusive width).
   - W1 across processes is not deterministic on origin/master either: ezdxf's OBJECTS section order follows Python's hash seed (FRONT differed in 1 of 3 runs; identical with `PYTHONHASHSEED=0`). Within one process W1 holds. Pre-existing; the L1.1 claim "across two separate CLI processes" was a lucky pair.
 
+### L1.3 Fixes from the §L1.2 findings: cross-process determinism + reader R3 leaf width (2026-10-16)
+**F1 Determinism (std2d, R13).**
+- Cause, read in ezdxf 1.4.3 `sections/classes.py`: at save, `ClassesSection.add_required_classes` appends one CLASS per DXF type in use by iterating `entitydb.dxf_types_in_use()`, a Python `set` of strings. String hashes are salted per process, so the CLASSES section order (e.g. LAYOUT vs ACDBPLACEHOLDER) changes between processes. Entities, handles and every other section were identical in the observed diffs.
+- Fix: before each `saveas`, std2d registers the CLASS entries itself in a fixed order: ezdxf's own `REQUIRED_CLASSES` list for the DXF version, then the types in use **sorted**. `ClassesSection.register` skips keys that already exist, so ezdxf's own call at save then adds nothing in hash order. This needs no `PYTHONHASHSEED`: the caller's environment is not used.
+- Test W1-proc (issue: nondeterminism across processes): 5 separate CLI runs, each with a different `PYTHONHASHSEED` (1..5), must give byte-identical files for all 6 views. Control W1-proc-control: the same 5 runs with the fix disabled (the CLI run with `_stable_classes` replaced by a no-op) must differ, which proves the 5 seeds really change the hash order.
+
+**F2 Reader R3 (`tests/dxf2bim/rosetta_dx.js`).**
+- R3 compared the arc radius with the source door bbox long side. That side includes the casing on both jambs, so a correct leaf-width arc (the std set, radius = IFC OverallWidth) failed.
+- Rule: the source door width for R3 = bbox long side − 2 × `CASING`. This is the same constant (0.076, evidenced by `R1-evidence`) and the same casing rule that R1b-stated already applies to doors. No second casing value. Tolerance unchanged: 2 mm.
+- The script reads the std set when `STD_DIR` is set (`DX_<view>_std.dxf`); otherwise it reads the old timestamped set, as before.
+- Expected: std set with door ops → R3 14/14 (6 + 8). Old timestamped set: its arcs were drawn with the casing-inclusive width (0.914 / 0.965 / 1.016 / 1.402 m), so on the leaf rule they are no source leaf width. R3 states the old set's verdict as measured (see results), not adjusted to pass.
+
+**Results (2026-10-16, BIMCompiler branch `fix/std2d-det-r3`).**
+- F1: W1-proc PASS (5 CLI runs, seeds 1..5, one digest for the 6-file set); W1-proc-control PASS (fix disabled: seed 4 differs, 2 distinct digests). Five more runs with `PYTHONHASHSEED` unset (random): one digest. W1–W7 and the W5 controls unchanged (`SUMMARY fail=0`).
+- F2: std set with door ops → R3 PASS on both storeys (Level 1 6/6, Level 2 8/8 = 14/14). The rest of rosetta_dx is unchanged on the std set (`SUMMARY fail=0`).
+- F2, old timestamped set: R3 changes from PASS to **FAIL** on both storeys. Its arc radii (0.914 / 0.965 / 1.402, and 0.914 / 1.016) equal the casing-inclusive bbox exactly, and no leaf width (0.762 / 0.813 / 0.864 / 1.25). Keeping its old PASS would need a second criterion that accepts the casing-inclusive radius, which is the error R3 now catches. Open decision (coordinator/user): accept the old-set R3 FAIL as the truth about those sheets (their swings were already 6/14 and hinges 8/14 right), or retire the old set from rosetta_dx in favour of the std set.
+- Unit suites `tests/dxf2bim/test_*.js` 16/16 `SUMMARY fail=0`. `rosetta_dx_shell.js` 35 PASS, 1 FAIL: the known RF-d roof top (6.5 drawn vs 6.457 source).
+- G8 / `DXF2BIM-MARK` for the std set: no writer on master yet. #179/#180 read markings, and `mark_dx_set.js` marks only the old set. So the std set was regenerated with door ops only: `2D_Layout/output/STD/` (14 arcs, 0 GAPs).
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
