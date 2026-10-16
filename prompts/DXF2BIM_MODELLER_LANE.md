@@ -613,6 +613,116 @@ Input: the std set regenerated from master `std2d.py` with `--door-ops` (a `door
   - farm_heights: identical; t8: identical except timing
   - rosetta_qualify: fail=0
 
+### L2.6 Std set: per-wall heights, door symbol accounting, door heights from the schedule, leaf-width check (2026-10-16, before code)
+Decisions (coordinator, 2026-10-16), as rules. The SECTION / roof-sheet work and `std2d.py` belong to another lane and are not touched here.
+
+**A. Interior wall heights, per wall, from the model** (`mark_dx_set.js std`).
+- Grammar (dxf2marks, key `WALLTOP`, multi):
+  - `@WALLTOP=<level>,slab_above`: the storey-wide rule (L2.3).
+  - `@WALLTOP=handle:<h>,<z_top_m>`: wall entity `<h>` (a DXF handle on a wall-typed layer of that plan) has its top at absolute `<z_top_m>` metres. Its base stays the plan's storey level.
+  - The two forms combine on one plan: a per-wall marking wins for its handle; the storey rule covers the other wall-height gaps of that plan.
+  - Malformed → `MARK:malformed`. The same handle with two values → `MARK:conflict`.
+- Tool:
+  - The plan is run through `Dxf2Bim.run` (std map, shell CFG) to get its DXF_WALL pieces. A piece belongs to a model interior wall when its rect lies inside the wall's plan bbox within 2 mm.
+  - The tool writes `@WALLTOP=<level>,slab_above` when at least one interior wall that has a piece on the plan passes the L2.5 W1 test (top = slab underside). For each interior wall on the plan that fails it, it writes a `handle:` line: `<h>` = the piece's handle, `<z_top_m>` = the wall's model maxZ (3 decimals).
+  - A wall whose model base ≠ the storey level (> tol), or whose piece matches 2 walls with different tops, gets no marking: the gap stays and is logged.
+  - Measured: the exceptions on the plans are GF 9F → wall 1029 (3.1) and FF 99/9B → walls 1034/1033 (5.695). Walls 1014/1019/1037/1038 start at 2.612, so the plan cut does not show them.
+- Pipeline:
+  - New `Dxf2Elev.applyWallTops(after, before, desc, level, U)` runs after `applyWallHeights`, and only when the plan carries `@WALLTOP`.
+  - A per-wall entry makes the wall op height `z − level`, `height_source: 'marking'`.
+  - The storey rule makes it `U − level`, with U the slab underside (§4.2 / W-H3), `height_source: 'slab_above_marking'`.
+  - Without markings nothing changes, so the old set is unchanged.
+  - rosetta_dx_shell variant A calls it.
+- qualify: a `GAP:no_elevation_height` whose handle has a per-wall marking → advisory `QF:height_stated` (source marking). The storey form stays `QF:convention_applied` (L2.3).
+- Tests: grammar, conflict, per-wall wins over storey-wide, and a mutation (a wrong handle leaves the gap).
+
+**B. Door symbol accounting** (`deploy/dev/dxf2bim.js` §12 D1).
+- Today a segment is absorbed into a door only when one of its endpoints is on the hinge or an arc end, so the rest of that polyline is `GAP:opening_unclassified`.
+- New rule: an entity on an opening-typed layer (LINE / LWPOLYLINE / POLYLINE) is a door part when any point of its outline (vertex or segment) lies within `snap_tol` of that door's hinge or either arc end. The WHOLE entity is then absorbed into the door's `parts` (all its segments).
+- An entity touching points of two different doors is ambiguous → `GAP:door_part_ambiguous`, not absorbed.
+- Entities touching no door point stay as before: rectangle clusters, else `GAP:opening_unclassified`.
+- Measured, std GF: 20 of 34 A-DOOR polylines touch a hinge or arc end (distance 0); 6 of 6 leaf LINEs do. The other 14 are not attached: the casing on the far wall face (417 / 124 mm away = the wall thickness) and leaf panels (104 mm). They stay gaps, and the report lists them.
+- Tests:
+  - DP1: a polyline touching the hinge mid-segment is absorbed whole
+  - DP2: a far-face casing stays a gap
+  - DP3: touching two doors → ambiguous
+  - DP4: mutation (moved 2×snap_tol away → gap)
+  - DP5: determinism
+
+**C. Door heights from the schedule** (USER_GUIDE §1: labels set what geometry cannot decide). Path checked first: no schedule → height path exists today. `bindTypes` B5 only compares the schedule with the measured size (`GAP:schedule_conflict`), and `applyDoorHeights` replaces a door with no elevation by its gap.
+- New, in `applyDoorHeights(ops, elevs, cfg, opts)`, with `opts.schedule` from `Dxf2Types.scheduleFromDesc`:
+  - The elevation is tried first.
+  - If no elevation matches and the door carries a `label` (from `@TAG` / `@LABEL`) whose schedule entry is class door with a height, then height = schedule h and `height_source: 'schedule'`.
+  - Otherwise `GAP:no_elevation_height`, as today.
+  - The width stays the arc's. Schedule vs measured differences stay `GAP:schedule_conflict` (B5), as today.
+- Order in the pipeline: `applyTags` on the plan's `@TAG`s runs before `applyDoorHeights`.
+- Std set: it has no schedule or tags (L1 writes none; the other lane will add them). For now `mark_dx_set.js std` writes them **model-derived**, logged as such, and only when the door-ops DB is given (`node mark_dx_set.js std <door_ops.db>`):
+  - `@SCHEDULE=<element_type>,door,<w_mm>,<h_mm>`, one per door type, with w/h = IFC OverallWidth / OverallHeight from `door_operation`. If two doors of one type differ, it refuses that type.
+  - `@TAG=door,<element_type>` at each door's plan bbox centre.
+- Tests:
+  - DS1: no elevation + tag + schedule → schedule height
+  - DS2: elevation present → elevation wins
+  - DS3: no tag → gap
+  - DS4: schedule entry of class window → gap
+  - DS5: mutation (wrong tag text) → gap
+
+**D. rosetta_dx_shell DW-doors width.** The source door width is the bbox long side − 2 × `CASING`, using the `CASING` already defined in rosetta_dx_shell.js (0.076, the R1b constant that §L1.3 used). No new number.
+
+**E. Std ROOF and SECTION sheets** (L1 #183: 8 sheets; the SECTION format is §L1.4).
+- `mark_dx_set.js std` marks both:
+  - ROOF: `@SET @VIEW=ROOF @UNITS=mm @NAME @LEVEL @ROOF`. `@LEVEL` = the "Roof" storey from the model (R1, min wall minZ); `@ROOF` = R11 T/ROOF from the model.
+  - SECTION: `@SET @VIEW=SECTION @UNITS=mm @NAME @CUT @HAXIS @GRIDH @Z @ROOF`.
+    - `@CUT` comes from the sheet title "… AT X=2304.25". The value is in the sheet's `@UNITS` (mm), so it is written `@CUT=X,2304.25`, not 2.30425.
+    - `@HAXIS` by a unique fit against the GF plan grid; `@GRIDH` / `@Z` by the same evidence rules as the elevations; `@ROOF` from the model.
+    - Same evidence rules as the `markSection` step of `rosetta_dx_section.js`, whose header names this script as the place for it.
+- Std shell pipeline (`DXSET=std`):
+  - the roof plan stage reads the marked DX_ROOF;
+  - `Dxf2Shell.sectionSlabs` on the marked section feeds `slabZ(…, {section})` for both storeys and `roofZ`.
+- qualify:
+  - a SECTION sheet is a stated role (no `sheet_no_role`);
+  - it gets the role-independent checks (layers, units, dimension texts) and `elev_align_fail` alignment against the reference plan;
+  - its `@ROOF` takes part in `roof_level_mismatch`;
+  - it is not a face (no `face_no_elev`).
+
+**F. Old-set R3 / DW-doors (lead decision).** The old set's arcs are drawn at the casing-inclusive bbox, so its DW-doors now FAIL on the leaf rule. That FAIL is kept and recorded in the log as a known finding, like RF-d. No rule is added to accept it.
+
+**G. Door hinge on the wall face** (found while coding D).
+- `Dxf2Shell.doorStrip` requires the hinge on the wall strip's CENTRE line. The old set draws it there; the std set (L1.2 R9) draws it on the wall FACE: arc 10E at x 8.800, wall 8.383..8.800.
+- Rule: the hinge lies within the strip's thickness band (between its two faces, ±tol).
+- One strip per direction is still required; ambiguity is still `GAP:door_host_ambiguous`.
+- Tests: DH1 hinge on a face → strip found; DH2 hinge outside the band → `door_no_strip`; old set unchanged.
+
+**Report:** the std-set verdict by cause.
+
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-doors`, rebased on #183).** The std set is 8 sheets, regenerated from master `std2d.py --door-ops`.
+- **A:** markings written from the model:
+  - GF: `@WALLTOP=0,slab_above` + `handle:9F,3.1`
+  - FF: `@WALLTOP=3.1,slab_above` + `handle:99,5.695` + `handle:9B,5.695`
+  - Pipeline: L1 marking 1 + slab_above 16; L2 marking 2 + slab_above 21. 0 interior-wall gaps remain.
+- **B:** std `opening_unclassified` 34→14 (GF) and 40→16 (FF); the old set is unchanged.
+- **C:**
+  - schedule heights for 6/6 GF doors and 4/8 FF doors.
+  - The other 4 FF doors (14C, 14E, 156, 158) stay `no_elevation_height`. Their tag is `GAP:label_ambiguous` because the reader's door hit rule (SANDBOX: a swing disc around the hinge) catches two doors whose hinges are 0.22 m apart.
+- **D:** with leaf widths, std DW-doors widths are 14/14 equal.
+- **E:**
+  - ROOF and SECTION are marked: `@CUT=X,2304.25` (mm), `@HAXIS=+Y`, A..D, `@Z` 0/3.1/6/6.457, `@ROOF` 6.457.
+  - The section feeds slabZ: L1 −0.127..0, L2 2.795..3.1. The roof plan: outline + 2 holes, z 6..6.457.
+  - rosetta_dx_shell std: SL-d, RF-a, RF-d and DW-doors L1 now PASS (31/4).
+- **F:** the old set's DW-doors L1/L2 FAIL is logged as KNOWN FINDING, as is RF-d. Old rosetta_dx_shell: 33/3.
+- **G:** std DW-doors L1 6/6, L2 2/8.
+- **Std verdict: blocked, 56. Walls, slabs and roof qualify; all 56 blocking items are doors:**
+  - `opening_unclassified` 30: A-DOOR outlines touching no hinge or arc end (far-face casing 417/124 mm away, leaf panels)
+  - `no_host_cut` 8 and `no_elevation_height` 4 (FF)
+  - `fill_size_mismatch` 6 (GF): library products include the casing, dw 0.152 / dh 0.076 vs the leaf
+  - `fill_no_void` 4, `door_host_ambiguous` 2 and `opening_gap_unbounded` 2 (FF T-junction hinges on a face shared by two strips)
+- **Regression** (each vs the master baseline):
+  - unit suites 18/18 fail=0: test_qualify 58, test_std_rules 20, test_section 17
+  - rosetta_dx: old 13/2 (L1.3 known), std 15/0, both unchanged
+  - rosetta_dx_section: 9 PASS, plus its required control FAIL; fail=0, unchanged
+  - farm_heights: identical; t8: identical except timing
+  - rosetta_qualify: fail=0
+  - old marked copies: byte-identical
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
