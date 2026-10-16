@@ -25,6 +25,7 @@
     layers: SVG('<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>'),
     tag: SVG('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>'),
     exclude: SVG('<path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/>'),
+    door: SVG('<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>'),
     walltop: SVG('<path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/>'),
     verdict: SVG('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>'),
     ok: SVG('<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>'),
@@ -41,8 +42,8 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'];
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, excludes: false, walltops: false, verdict: true },
-    vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null };
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+    vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
   function parseRaw(raw) {
@@ -229,7 +230,7 @@
 
   // ---- the live verdict: the ONE gate (DxfImportUI.convertGate via applySheets) judges the EFFECTIVE sheets; this editor only shows it ----
   var _t = null;
-  function changed() { S.saved = null; render(); schedule(); }
+  function changed() { S.saved = null; syncSchedule(); render(); schedule(); }
   function schedule(ms) { clearTimeout(_t); S.busy = true; renderHead(); if (window.DxfImportUI.holdGate) window.DxfImportUI.holdGate('Checking the drawings…'); _t = setTimeout(run, ms === undefined ? 250 : ms); }
   async function run() {
     var tok = ++S.token, t0 = performance.now();
@@ -288,15 +289,48 @@
     var st = window.DxfImportUI.state;
     if (S.tool === 'tag') {
       var ray = rayFrom(ev); ray.params.Line = { threshold: 0.12 };
-      var objs = st.group ? st.group.children.filter(function (o) { var c = st.canvas[o.userData.dxfSheet]; return c && (c.role === 'plan' || c.role === 'roof'); }) : [];
-      var hit = ray.intersectObjects(objs, false)[0];
+      var objs = st.group ? st.group.children.filter(function (o) { var c = st.canvas[o.userData.dxfSheet]; return c && (c.role === 'plan' || c.role === 'roof' || c.role === 'elev'); }) : [];
+      var hits = ray.intersectObjects(objs, false);
+      // §L4.4: an elevation OPENING under the pointer wins (the drafting way: a stacked window is picked where it is drawn, z from the
+      // elevation); a hit on an elevation line that is not an opening is reported, never guessed; otherwise the nearest plan/roof entity
+      var eh = null, ewhy = null;
+      for (var hi = 0; hi < hits.length && !eh; hi++) {
+        var ho = hits[hi].object; if (st.canvas[ho.userData.dxfSheet].role !== 'elev') continue;
+        var eS = S.sheets.filter(function (q) { return q.name === ho.userData.dxfSheet; })[0], eHd = ho.userData.segHandles[Math.floor(hits[hi].index / 2)];
+        var r = I.elevPick(plans().map(effSheet), effSheet(eS), curSet(), eHd);
+        if (r.ok) eh = { r: r, sheet: eS.name, handle: eHd }; else if (!ewhy) ewhy = eS.name.replace(/\.dxf$/i, '') + ' handle ' + eHd + ': ' + r.why;
+      }
+      if (eh) {
+        S.pick = { sheet: eh.r.plan, handle: eh.r.opening, layer: '(from ' + eh.sheet.replace(/\.dxf$/i, '') + ' ' + eh.handle + ')', x: eh.r.x, y: eh.r.y, z: eh.r.z, cls: eh.r.cls, elev: eh.sheet, elevHandle: eh.handle };
+        console.log(TAG + ' tag picked elevation=' + eh.sheet + ' handle=' + eh.handle + ' -> plan=' + eh.r.plan + ' opening=' + eh.r.opening + ' at ' + eh.r.x + ',' + eh.r.y + ' z=' + eh.r.z + ' class=' + eh.r.cls + ' faceDist=' + eh.r.faceDist);
+        S.tmsg = null; S.sec.tags = true; render(); highlight({ code: 'tag', sheet: eh.sheet, handles: eh.r.elevHandles, pos: null });
+        ev.stopPropagation(); ev.preventDefault(); return;
+      }
+      var hit = hits.filter(function (x) { var c = st.canvas[x.object.userData.dxfSheet]; return c.role === 'plan' || c.role === 'roof'; })[0];
+      if (ewhy && (!hit || hits.indexOf(hit) > 0 && st.canvas[hits[0].object.userData.dxfSheet].role === 'elev')) {
+        S.pick = null; S.tmsg = 'No tag: ' + ewhy; console.log(TAG + ' tag: ' + S.tmsg); S.sec.tags = true; render(); ev.stopPropagation(); ev.preventDefault(); return; }
       if (!hit) { console.log(TAG + ' tag: no entity under the pointer'); return; }
+      S.tmsg = null;
       var hnd = hit.object.userData.segHandles[Math.floor(hit.index / 2)], sn = hit.object.userData.dxfSheet;
       var sh = S.sheets.filter(function (s) { return s.name === sn; })[0], e = sh.dxf.entities.filter(function (q) { return q.handle === hnd; })[0];
       var bb = entBox(e);
       S.pick = { sheet: sn, handle: hnd, layer: e.layer, x: Number(((bb[0] + bb[2]) / 2).toFixed(3)), y: Number(((bb[1] + bb[3]) / 2).toFixed(3)), cls: guessCls(sh, e.layer) };
       console.log(TAG + ' tag picked sheet=' + sn + ' handle=' + hnd + ' layer=' + e.layer + ' centre=' + S.pick.x + ',' + S.pick.y);
       S.sec.tags = true; render(); highlight({ code: 'tag', sheet: sn, handles: [hnd], pos: null });
+      ev.stopPropagation(); ev.preventDefault();
+    } else if (S.tool === 'door') {
+      var rd = rayFrom(ev); rd.params.Line = { threshold: 0.12 };
+      var po = st.group ? st.group.children.filter(function (o) { var c = st.canvas[o.userData.dxfSheet]; return c && c.role === 'plan'; }) : [];
+      // the plans whose lines pass under the pointer, nearest first; the first one with a door under the pointer (plans stack: an upper
+      // plan's line can lie between the camera and the door the user aims at on a lower plan)
+      var hs = rd.intersectObjects(po, false), seen = {}, cand = [];
+      hs.forEach(function (x) { var n = x.object.userData.dxfSheet; if (!seen[n]) { seen[n] = 1; cand.push(n); } });
+      if (!cand.length) { S.dmsg = 'No plan line under the pointer: click a door\'s arc or leaf.'; console.log(TAG + ' door pick: no plan line under the pointer'); render(); return; }
+      var chosen = cand[0], at = null;
+      for (var ci = 0; ci < cand.length; ci++) { var pc = planeHit(rd, st.canvas[cand[ci]].z); if (!pc) continue; var shc = S.sheets.filter(function (q) { return q.name === cand[ci]; })[0], Dc = shc && doorsOf(shc);
+        if (Dc && Dc.doors.some(function (d) { return inDoor(d, pc.x, pc.y, Dc.snap_tol); })) { chosen = cand[ci]; at = pc; break; } }
+      if (!at) at = planeHit(rd, st.canvas[chosen].z) || hs[0].point;
+      pickDoor(chosen, at.x, at.y);
       ev.stopPropagation(); ev.preventDefault();
     } else if (S.tool === 'exclude') {
       var c = S.exSheet && canvasOf(S.exSheet); if (!c || c.z === undefined) { console.log(TAG + ' exclude: choose a plan or roof sheet first'); return; }
@@ -332,11 +366,141 @@
     return v.sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
   }
   function setTool(t) {
-    S.tool = S.tool === t ? null : t; S.pick = null;
+    S.tool = S.tool === t ? null : t; S.pick = null; S.dpick = null; S.dmsg = null;
     var el = window.A && window.A.renderer && window.A.renderer.domElement;
     if (el && !el._dmBound) { el.addEventListener('pointerdown', onDown, true); window.addEventListener('pointermove', onMove, true); window.addEventListener('pointerup', onUp, true); el._dmBound = true; }
     if (el) el.style.cursor = S.tool ? 'crosshair' : '';
     console.log(TAG + ' tool=' + (S.tool || 'none')); render();
+  }
+
+
+  // ---- §L4.3 Doors: the door schedule (@SCHEDULE=<mark>,door,<w>,<h>) and door tags (@TAG=door,<mark>) ----
+  // The reader reads the schedule per plan (Dxf2Types.scheduleFromDesc) and binds a tag to the door whose swing box or drawn opening box
+  // holds it (lane §L2.7 rule 3, Dxf2Types hits). The door geometry is the reader's own (Dxf2BimImport.planDoors = Dxf2Bim.run).
+  function plans() { return S.sheets.filter(function (sh) { return viewOf(sh) === 'PLAN'; }); }
+  function planUnits() {
+    var P = plans(), u = {}; P.forEach(function (sh) { var m = get1(sh, 'UNITS'); u[m ? m.value : ''] = 1; });
+    var k = Object.keys(u);
+    if (!P.length) return { why: 'no plan sheet yet (choose a PLAN role first)' };
+    if (k.length !== 1 || !k[0] || !MK.UNITS[k[0]]) return { why: k.indexOf('') >= 0 ? 'a plan has no @UNITS yet' : 'the plans state different units (' + k.join(', ') + '); no conversion is guessed' };
+    return { units: k[0] };
+  }
+  function doorsOf(sh) {   // the plan's doors (metres), cached on the markings that shape the plan run (not its tags / schedule / wall tops)
+    if (viewOf(sh) !== 'PLAN' || !get1(sh, 'UNITS')) return null;
+    var base = { name: sh.name, text: sh.text, dxf: sh.dxf, fileSig: sh.fileSig, stripped: sh.stripped, marks: sh.marks.filter(function (m) { return ['TAG', 'SCHEDULE', 'WALLTOP'].indexOf(m.key) < 0; }) };
+    var key = sh.name + '|' + curSet() + '|' + sigOf(base);
+    if (!S.dcache[key]) { try { S.dcache[key] = I.planDoors(effSheet(base), curSet()) || { doors: [], factor: 1, snap_tol: 0 }; } catch (e) { console.warn(TAG + ' doors: plan run failed ' + sh.name + ' ' + e.message); S.dcache[key] = { doors: [], factor: 1, snap_tol: 0, err: e.message }; } }
+    return S.dcache[key];
+  }
+  function inDoor(d, x, y, tol) {   // metres; mirrors Dxf2Types hits (door): swing box (hinge + both arc ends) or the drawn opening box
+    var H = d.hinge, pts = [H].concat([d.swing_start_deg, d.swing_end_deg].map(function (a) { return [H[0] + d.width * Math.cos(a * Math.PI / 180), H[1] + d.width * Math.sin(a * Math.PI / 180)]; }));
+    var sx = pts.map(function (q) { return q[0]; }), sy = pts.map(function (q) { return q[1]; });
+    if (x >= Math.min.apply(null, sx) - tol && x <= Math.max.apply(null, sx) + tol && y >= Math.min.apply(null, sy) - tol && y <= Math.max.apply(null, sy) + tol) return true;
+    var b = d.opening_box; if (!b) return false;
+    var u = b.axis === 'x' ? x : y, v = b.axis === 'x' ? y : x, L = b.along || b.s;
+    return u >= L[0] - tol && u <= L[1] + tol && v >= b.band[0] - tol && v <= b.band[1] + tol;
+  }
+  function doorCentre(d) {   // the drawn opening-box centre, else the swing-box centre (metres)
+    var b = d.opening_box;
+    if (b) { var L = b.along || b.s, a = (L[0] + L[1]) / 2, c = (b.band[0] + b.band[1]) / 2; return b.axis === 'x' ? [a, c] : [c, a]; }
+    var H = d.hinge, pts = [H].concat([d.swing_start_deg, d.swing_end_deg].map(function (a) { return [H[0] + d.width * Math.cos(a * Math.PI / 180), H[1] + d.width * Math.sin(a * Math.PI / 180)]; }));
+    var sx = pts.map(function (q) { return q[0]; }), sy = pts.map(function (q) { return q[1]; });
+    return [(Math.min.apply(null, sx) + Math.max.apply(null, sx)) / 2, (Math.min.apply(null, sy) + Math.max.apply(null, sy)) / 2];
+  }
+  function tagText(m) { var p = m.value.split(','); return p[0] === 'door' && !/^z=/.test(p[1] || '') ? p.slice(1).join(',') : null; }
+  function doorTags(sh, D, d) { return sh.marks.filter(function (m) { return m.key === 'TAG' && tagText(m) !== null && inDoor(d, m.x * D.factor, m.y * D.factor, D.snap_tol); }); }
+  function schedRows() {   // the table: the user's rows, the plans' file rows, and marks tags name with no size (red)
+    var rows = [], by = {}, U = planUnits();
+    S.sched.forEach(function (r) { by[r.mark] = { mark: r.mark, w: r.w, h: r.h, src: 'user', n: 0, conflict: false }; rows.push(by[r.mark]); });
+    plans().forEach(function (sh) { sh.marks.forEach(function (m) {
+      if (m.key !== 'SCHEDULE' || m.source === 'user') return; var p = m.value.split(','); if (p[1] !== 'door' || p.length !== 4) return;
+      var r = by[p[0]];
+      if (!r) { r = by[p[0]] = { mark: p[0], w: p[2], h: p[3], src: m.by === 'model' ? 'model' : m.by === 'user' ? 'user' : 'file', fileBy: m.by, n: 0, conflict: false, file: true }; rows.push(r); }
+      else if (r.file && (String(r.w) !== p[2] || String(r.h) !== p[3])) r.conflict = true;
+    }); });
+    plans().forEach(function (sh) { sh.marks.forEach(function (m) { var t = m.key === 'TAG' ? tagText(m) : null; if (t === null) return;
+      if (!by[t]) { by[t] = { mark: t, w: '', h: '', src: null, n: 0, missing: true }; rows.push(by[t]); } by[t].n++; }); });
+    rows.forEach(function (r) { r.units = U.units || ''; });
+    return rows.sort(function (a, b) { return a.mark < b.mark ? -1 : a.mark > b.mark ? 1 : 0; });
+  }
+  function syncSchedule() {   // a user row is written on every plan whose @TAG names it; a row no tag names yet on every plan (nothing typed is lost)
+    var P = plans(); if (!P.length) return;
+    P.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.source === 'user' && m.door); }); });
+    S.sched.forEach(function (r) {
+      var on = P.filter(function (sh) { return sh.marks.some(function (m) { return m.key === 'TAG' && tagText(m) === r.mark; }); });
+      (on.length ? on : P).forEach(function (sh) { sh.marks.push({ key: 'SCHEDULE', value: r.mark + ',door,' + r.w + ',' + r.h, x: 0, y: 0, source: 'user', door: true }); });
+    });
+  }
+  function markOk(t) { return t !== '' && t.indexOf(',') < 0 && !/^z=/.test(t); }
+  function setRow(mark, w, h, rule) {
+    mark = String(mark).trim(); w = String(w).trim(); h = String(h).trim();
+    if (!markOk(mark)) { S.dmsg = 'A mark needs text, no comma.'; console.log(TAG + ' schedule refused: mark "' + mark + '"'); render(); return false; }
+    if (!(Number(w) > 0) || !(Number(h) > 0)) { S.dmsg = 'Width and height are positive numbers in the plans\' units.'; console.log(TAG + ' schedule refused: ' + mark + ' w=' + w + ' h=' + h); render(); return false; }
+    S.dmsg = null;
+    S.sheets.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.source !== 'user' && m.value.split(',')[0] === mark && m.value.split(',')[1] === 'door'); }); });   // a file row edited becomes the user's
+    var r = S.sched.filter(function (q) { return q.mark === mark; })[0]; if (r) { r.w = w; r.h = h; } else S.sched.push({ mark: mark, w: w, h: h });
+    console.log(TAG + ' schedule row ' + mark + ' door ' + w + ' x ' + h + (rule ? ' (confirmed proposal ' + rule + ')' : ''));
+    changed(); return true;
+  }
+  function removeRow(mark) {
+    S.sched = S.sched.filter(function (q) { return q.mark !== mark; });
+    S.sheets.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.value.split(',')[0] === mark && m.value.split(',')[1] === 'door'); }); });
+    console.log(TAG + ' schedule row ' + mark + ' removed'); changed();
+  }
+  function writeTag(sheetName, handle, mark, rule) {
+    var sh = S.sheets.filter(function (q) { return q.name === sheetName; })[0], D = sh && doorsOf(sh), d = D && D.doors.filter(function (q) { return q.handle === handle; })[0];
+    mark = String(mark || '').trim();
+    if (!d) { S.dmsg = 'That door is no longer on the plan.'; render(); return false; }
+    if (!markOk(mark)) { S.dmsg = 'A mark needs text, no comma.'; render(); return false; }
+    var c = doorCentre(d), n = D.doors.filter(function (q) { return inDoor(q, c[0], c[1], D.snap_tol); });
+    if (n.length !== 1) { S.dmsg = 'Not tagged: the door centre lies in ' + n.length + ' doors\' boxes (the reader would call the tag ambiguous).'; console.log(TAG + ' tag refused door ' + handle + ' centre in ' + n.length + ' boxes'); render(); return false; }
+    var old = doorTags(sh, D, d); sh.marks = sh.marks.filter(function (m) { return old.indexOf(m) < 0; });
+    var x = Number((c[0] / D.factor).toFixed(3)), y = Number((c[1] / D.factor).toFixed(3));
+    S.dmsg = null; S.dpick = null;
+    console.log(TAG + ' door tag sheet=' + sheetName + ' door=' + handle + ' mark=' + mark + ' at ' + x + ',' + y + (old.length ? ' (replaces ' + old.map(markText).join(' | ') + ')' : '') + (rule ? ' (confirmed proposal ' + rule + ')' : ''));
+    addMulti(sh, 'TAG', 'door,' + mark, x, y, rule);
+    return true;
+  }
+  function pickDoor(sn, xm, ym) {   // a canvas click resolved by the reader's door rule
+    var sh = S.sheets.filter(function (q) { return q.name === sn; })[0], D = sh && doorsOf(sh);
+    if (!D) { S.dmsg = 'Not a plan with units: no doors to tag here.'; render(); return; }
+    var hit = D.doors.filter(function (d) { return inDoor(d, xm, ym, D.snap_tol); });
+    console.log(TAG + ' door pick sheet=' + sn + ' at ' + xm.toFixed(3) + ',' + ym.toFixed(3) + ' doors=' + hit.map(function (d) { return d.handle; }).join(','));
+    if (hit.length !== 1) { S.dpick = null; S.dmsg = hit.length ? hit.length + ' doors here (' + hit.map(function (d) { return d.handle; }).join(', ') + '): click closer to one.' : 'No door here: click a door\'s arc or leaf.'; render(); return; }
+    var d = hit[0], cur = doorTags(sh, D, d)[0];
+    S.dmsg = null; S.dpick = { sheet: sn, handle: d.handle, width: Number((d.width / D.factor).toFixed(3)), mark: cur ? tagText(cur) : null };
+    S.sec.doors = true; render(); highlight({ code: 'door', sheet: sn, handles: [d.handle], pos: null });
+  }
+  var MARK_HDR = /\bMARK\b/i, SIZE_HDR = /\b(SIZE|WIDTH)\b/i;
+  var ROW_RE = /^\s*([A-Za-z0-9][A-Za-z0-9._\/-]*)\s*(?:\^I|\t|\s)\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*(.*)$/;
+  function cleanText(t) { return String(t || '').replace(/\{\\[^;]*;/g, '').replace(/[{}]/g, '').replace(/\\[A-Za-z]\d*;?/g, function (m) { return m === '\\P' ? m : ''; }); }
+  function doorProposals() {   // §L4.3 PR-SCHEDULE / PR-TAG: evidence only (the drawing's own text), never a marking until ticked
+    var out = [], refused = [], have = {}; schedRows().forEach(function (r) { if (!r.missing) have[r.mark] = r; });
+    plans().forEach(function (sh) {
+      var u = get1(sh, 'UNITS'), T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; });
+      var lines = []; T.forEach(function (e) { cleanText(e.text).split('\\P').forEach(function (l) { lines.push({ t: l, h: e.handle }); }); });
+      if (lines.some(function (l) { return MARK_HDR.test(l.t) && SIZE_HDR.test(l.t); })) {
+        lines.forEach(function (l) {
+          var m = ROW_RE.exec(l.t); if (!m || MARK_HDR.test(l.t)) return;
+          var desc = m[6] || '', cls = /DOOR|PANEL|GLAZED/i.test(desc) ? 'door' : /WINDOW|DOUBLE HUNG|CASEMENT|FIXED/i.test(desc) ? 'window' : null, sym = m[3] || m[5] || '';
+          if (!cls) { refused.push({ rule: 'PR-SCHEDULE', why: 'row "' + l.t.trim().slice(0, 40) + '" (text ' + l.h + ') names neither a door nor a window' }); return; }
+          if (cls === 'window') { refused.push({ rule: 'PR-SCHEDULE', why: 'row ' + m[1] + ' (text ' + l.h + '): window, not a door row' }); return; }
+          if (!u) { refused.push({ rule: 'PR-SCHEDULE', why: 'row ' + m[1] + ': the plan has no @UNITS yet' }); return; }
+          if (sym && ({ '"': 'in', mm: 'mm' })[sym] !== u.value) { refused.push({ rule: 'PR-SCHEDULE', why: 'row ' + m[1] + ': size written in ' + sym + ', the plan states ' + u.value }); return; }
+          if (have[m[1]] && String(have[m[1]].w) === m[2] && String(have[m[1]].h) === m[4]) return;
+          if (out.some(function (p) { return p.rule === 'PR-SCHEDULE' && p.mark === m[1]; })) return;
+          out.push({ rule: 'PR-SCHEDULE', mark: m[1], w: m[2], h: m[4], sheet: sh.name, why: 'schedule text ' + l.h + ' on ' + sh.name.replace(/\.dxf$/i, '') });
+        });
+      }
+      var D = doorsOf(sh); if (!D || !D.doors.length) return;
+      sh.dxf.entities.filter(function (e) { return e.type === 'TEXT' && e.layer !== LAYER && have[String(e.text || '').trim()]; }).forEach(function (e) {
+        var mk = String(e.text).trim(), p = txtPos(e), x = p[0] * D.factor, y = p[1] * D.factor, hit = D.doors.filter(function (d) { return inDoor(d, x, y, D.snap_tol); });
+        if (hit.length !== 1) { refused.push({ rule: 'PR-TAG', why: 'text "' + mk + '" (' + e.handle + ') lies in ' + hit.length + ' door boxes' }); return; }
+        var cur = doorTags(sh, D, hit[0]); if (cur.some(function (m) { return tagText(m) === mk; })) return;
+        out.push({ rule: 'PR-TAG', mark: mk, sheet: sh.name, handle: hit[0].handle, why: 'text ' + e.handle + ' "' + mk + '" in door ' + hit[0].handle + '\'s box' });
+      });
+    });
+    return { list: out, refused: refused };
   }
 
   // ---- save: one marked COPY per sheet (originals never written) ----
@@ -394,6 +558,7 @@
       '.dm-tt{font-size:9.5px;border:1px solid #2c303a;border-radius:6px;padding:1px 6px;color:#9aa3b2}',
       '.dm-shape{display:grid;grid-template-columns:1fr 46px 46px;gap:2px 6px;font-size:11px;margin:2px 0 6px}.dm-shape .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-shape .b{color:#f2a3a3;text-align:right;font-family:ui-monospace,monospace}.dm-shape .a{color:#f0c674;text-align:right;font-family:ui-monospace,monospace}.dm-shape .z{color:#5b6473}',
       '.dm-tabs{display:flex;gap:5px;margin:4px 0}',
+      '.dm-sched{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px 30px 44px 22px;gap:3px 5px;align-items:center;font-size:10.5px;margin:2px 0 6px}.dm-sched .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-sched .mk{font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-sched .mk.bad{color:#f2a3a3}.dm-sched .n{color:#9aa3b2;text-align:right;font-family:ui-monospace,monospace}.dm-sched .dm-in.n{width:auto}.dm-sched .dm-src{width:auto}',
       '.dm-it{display:flex;gap:7px;align-items:flex-start;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:10.5px;line-height:1.35}.dm-it:hover{background:#20232b}.dm-it.nopos{cursor:default}',
       '.dm-it .c{font-family:ui-monospace,monospace;color:#f2a3a3;flex:0 0 auto;width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-it.adv .c{color:#f0c674}.dm-it .m{color:#9aa3b2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
       '#dm-panel .ip-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid #23262e}#dm-note{width:100%;font-size:10.5px;color:#7f8aa0;line-height:1.4}',
@@ -459,7 +624,7 @@
         if (v === 'PLAN') { h += field(sh, si, 'LEVEL', 'Level (m)', mi.miss, 'num'); h += multiBlock(sh, si, ['GRIDX', 'GRIDY'], 'Grid lines', mi.miss, 'GRID'); }
         if (v === 'ELEV') { h += field(sh, si, 'FACE', 'Face', mi.miss, 'select', ['minX', 'maxX', 'minY', 'maxY']) + field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num'); }
         if (v === 'ROOF') h += field(sh, si, 'LEVEL', 'Level (m)', mi.miss, 'num') + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num');
-        if (v === 'SECTION') h += field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'CUT', 'Cut', mi.miss);
+        if (v === 'SECTION') h += field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'CUT', 'Cut', mi.miss) + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num');   // §L4.3: the section states @ROOF (§L2.6 E)
         if (v === 'ELEV' || v === 'SECTION') { h += multiBlock(sh, si, ['GRIDH'], 'Grid lines', mi.miss, 'GRIDH') + multiBlock(sh, si, ['Z'], 'Level datums (@Z)', mi.miss, 'Z'); }
         mi.errors.forEach(function (e) { h += '<div class="dm-ref" style="color:#f2a3a3">' + esc(e.code + ' ' + e.message) + '</div>'; });
         h += proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);
@@ -522,9 +687,59 @@
       h += '<div class="dm-card" style="padding:6px 8px"><div class="dm-ref" style="margin:0 0 4px">' + esc(S.pick.sheet.replace(/\.dxf$/i, '') + ' · ' + S.pick.layer + ' · handle ' + S.pick.handle) + '</div>' +
         '<div class="dm-row"><select class="dm-sel" id="dm-tag-cls">' + ['door', 'window', 'wall'].map(function (c) { return opt(c, S.pick.cls || 'door'); }).join('') + '</select>' +
         '<select class="dm-sel" id="dm-tag-val" style="flex:1">' + (V.length ? V.map(function (q) { return opt(q.id, '', q.id + ' (' + q.src + ')'); }).join('') : '<option value="">no vocabulary (no library subset, no @SCHEDULE)</option>') + '</select>' +
+        '<input class="dm-in" id="dm-tag-z" style="flex:0 0 72px" title="z (m, optional): the opening\'s height for stacked openings" placeholder="z (m)" value="' + (S.pick.z !== undefined ? esc(String(S.pick.z)) : '') + '">' +
         '<button class="dm-btn primary" data-act="tagadd"' + (V.length ? '' : ' disabled') + '>' + IC.check + '<span>Tag</span></button></div></div>';
     }
+    if (S.tmsg) h += '<div class="dm-ref" id="dm-tag-msg" style="color:#ffb74d">' + esc(S.tmsg) + '</div>';
     return secHead('tags', IC.tag, 'Tags', L.n || '') + (S.sec.tags ? '<div class="dm-sb">' + h + L.h + '</div>' : '');
+  }
+
+  function renderDoors() {
+    var v = S.verdict, isDoorItem = function (x) { return x.shape === 'openings' && (x.code === 'GAP:no_elevation_height' || x.code === 'GAP:no_host_cut') && x.sheet && x.handles; };
+    var nB = v ? v.blocking.filter(isDoorItem).length : 0, rows = schedRows();
+    var head = secHead('doors', IC.door, 'Doors', nB ? nB + ' blocking' : rows.length ? rows.length + ' marks' : '', nB);
+    if (!S.sec.doors) return head;
+    var U = planUnits(), h = '', DP = doorProposals();
+    var blk = {}; if (v) v.blocking.filter(isDoorItem).forEach(function (x) { x.handles.forEach(function (hd) { blk[x.sheet + '|' + hd] = (blk[x.sheet + '|' + hd] || []).concat([x.code.replace(/^GAP:/, '')]); }); });
+    h += '<div class="dm-sub">Door schedule' + (U.units ? ' · sizes in ' + esc(U.units) : '') + '</div>';
+    if (!U.units) h += '<div class="dm-ref" style="color:#f2a3a3">' + esc(U.why) + '</div>';
+    h += '<div class="dm-sched"><span class="h">mark</span><span class="h">width</span><span class="h">height</span><span class="h">doors</span><span class="h"></span><span class="h"></span>';
+    rows.forEach(function (r) {
+      var bad = r.missing || r.conflict, dis = U.units ? '' : ' disabled';
+      h += '<span class="mk' + (bad ? ' bad' : '') + '" data-srow="' + esc(r.mark) + '" title="' + esc(r.missing ? 'a tag names this mark: enter its width and height' : r.conflict ? 'two sizes on the plans' : r.mark) + '">' + esc(r.mark) + '</span>' +
+        '<input class="dm-in n' + (r.missing && !r.w ? ' need' : '') + '" data-act="dsz" data-mark="' + esc(r.mark) + '" data-dim="w" value="' + esc(r.w) + '" inputmode="decimal"' + dis + '>' +
+        '<input class="dm-in n' + (r.missing && !r.h ? ' need' : '') + '" data-act="dsz" data-mark="' + esc(r.mark) + '" data-dim="h" value="' + esc(r.h) + '" inputmode="decimal"' + dis + '>' +
+        '<span class="n">' + r.n + '</span>' + (r.src ? srcLabel({ source: r.src === 'user' ? 'user' : 'file', by: r.fileBy }) : '<span class="dm-src" style="color:#f2a3a3">no size</span>') +
+        '<button class="dm-ib" title="Remove this row (its @SCHEDULE markings)" data-act="drm" data-mark="' + esc(r.mark) + '">' + IC.trash + '</button>';
+    });
+    h += '<input class="dm-in" id="dm-ds-mark" placeholder="mark" spellcheck="false"' + (U.units ? '' : ' disabled') + '><input class="dm-in n" id="dm-ds-w" placeholder="width" inputmode="decimal"' + (U.units ? '' : ' disabled') + '><input class="dm-in n" id="dm-ds-h" placeholder="height" inputmode="decimal"' + (U.units ? '' : ' disabled') + '>' +
+      '<span></span><span></span><button class="dm-ib" title="Add the row" data-act="dsadd"' + (U.units ? '' : ' disabled') + '>' + IC.plus + '</button></div>';
+    if (DP.list.length) {
+      h += '<div class="dm-sub">' + IC.bulb + 'Suggestions from the drawing text (not markings until ticked)</div>';
+      DP.list.forEach(function (p, i) { h += '<div class="dm-pr" data-dprop="' + esc(p.rule + ':' + p.mark + (p.handle ? '@' + p.handle : '')) + '"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=door,' + p.mark + '  door ' + p.handle) + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
+        '<button class="dm-ib" title="Confirm this suggestion" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>'; });
+    }
+    DP.refused.slice(0, 8).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
+    S.dprops = DP.list;
+    h += '<div class="dm-row"><button class="dm-btn' + (S.tool === 'door' ? ' on' : '') + '" data-act="tool" data-tool="door">' + IC.crosshair + '<span>' + (S.tool === 'door' ? 'Click a door on a plan' : 'Tag doors') + '</span></button></div>';
+    if (S.dmsg) h += '<div class="dm-ref" style="color:#f0c674">' + esc(S.dmsg) + '</div>';
+    if (S.dpick) {
+      var marks = rows.filter(function (r) { return !r.missing; }).map(function (r) { return r.mark; });
+      h += '<div class="dm-card" style="padding:6px 8px" id="dm-dpick"><div class="dm-ref" style="margin:0 0 4px">' + esc(S.dpick.sheet.replace(/\.dxf$/i, '') + ' · door ' + S.dpick.handle + ' · leaf ' + num(S.dpick.width) + (U.units ? ' ' + U.units : '') + (S.dpick.mark ? ' · tagged ' + S.dpick.mark : ' · no tag')) + '</div>' +
+        '<div class="dm-row"><select class="dm-sel" id="dm-dt-sel" style="flex:1">' + [''].concat(marks).map(function (m) { return opt(m, S.dpick.mark || '', m === '' ? '— schedule mark —' : m); }).join('') + '</select>' +
+        '<input class="dm-in" id="dm-dt-new" placeholder="or a new mark" style="width:96px;flex:0 0 auto" spellcheck="false">' +
+        '<button class="dm-btn primary" data-act="dtag">' + IC.check + '<span>Tag</span></button></div></div>';
+    }
+    plans().forEach(function (sh) {
+      var D = doorsOf(sh); if (!D) return;
+      h += '<div class="dm-sub">' + esc(sh.name.replace(/\.dxf$/i, '')) + ' · ' + D.doors.length + ' door(s)</div>';
+      D.doors.forEach(function (d) {
+        var t = doorTags(sh, D, d), b = blk[sh.name + '|' + d.handle];
+        h += '<div class="dm-it' + (b ? '' : ' adv') + '" data-act="dzoom" data-sheet="' + esc(sh.name) + '" data-h="' + esc(d.handle) + '" data-door="' + esc(sh.name + '|' + d.handle) + '"><span class="c" style="width:96px">door ' + esc(d.handle) + ' · ' + num(Number((d.width / D.factor).toFixed(3))) + '</span><span class="m">' +
+          esc(t.length ? t.map(tagText).join(', ') + (t.length > 1 ? ' (two tags)' : '') : 'no tag') + (b ? ' · blocking: ' + esc(b.join(', ')) : '') + '</span></div>';
+      });
+    });
+    return head + '<div class="dm-sb">' + h + '</div>';
   }
   function renderExcludes() {
     var L = listMarks('EXCLUDE'), horiz = S.sheets.filter(function (sh) { var v = viewOf(sh); return v === 'PLAN' || v === 'ROOF'; });
@@ -579,16 +794,18 @@
     var body = document.getElementById('dm-body'), top = body ? body.scrollTop : 0, ae = document.activeElement, fid = ae && ae.id;
     // keep what the user is typing: unsent "Add" rows and the focused field survive a re-render (a verdict landing mid-typing)
     if (S.panel) S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); S.draft[k] = el.value; });
+    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el) S.draft[id] = el.value; });
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
     S.panel.innerHTML = h;
     var nb = document.getElementById('dm-body'); nb.scrollTop = top;
     S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); if (S.draft[k] !== undefined) el.value = S.draft[k]; });
+    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el && S.draft[id] !== undefined) el.value = S.draft[id]; });
     if (fid) { var f = document.getElementById(fid); if (f) { f.focus(); if (focusVal && focusVal.sel === '#' + fid && f.value !== focusVal.v) { f.value = focusVal.v; try { f.setSelectionRange(focusVal.s, focusVal.s); } catch (e) { /* select */ } } } }
     wire();
   }
@@ -620,8 +837,9 @@
       else if (a === 'tool') el.onclick = function () { setTool(el.getAttribute('data-tool')); };
       else if (a === 'exsheet') el.onchange = function () { S.exSheet = el.value; };
       else if (a === 'tpl') el.onchange = function () { S.setOverride = el.value || null; console.log(TAG + ' layer set=' + (S.setOverride || 'from the drawings')); changed(); };
-      else if (a === 'tagadd') el.onclick = function () { var c = document.getElementById('dm-tag-cls').value, val = document.getElementById('dm-tag-val').value, pk = S.pick; if (!val) return;
-        S.pick = null; addMulti(S.sheets.filter(function (s) { return s.name === pk.sheet; })[0], 'TAG', c + ',' + val, pk.x, pk.y); };
+      else if (a === 'tagadd') el.onclick = function () { var c = document.getElementById('dm-tag-cls').value, val = document.getElementById('dm-tag-val').value, pk = S.pick, zt = (document.getElementById('dm-tag-z').value || '').trim(); if (!val) return;
+        if (zt !== '' && !isFinite(Number(zt))) { S.tmsg = 'z must be a number in metres (or empty)'; render(); return; }   // §L4.4 optional z (m)
+        S.pick = null; S.tmsg = null; addMulti(S.sheets.filter(function (s) { return s.name === pk.sheet; })[0], 'TAG', c + ',' + (zt !== '' ? 'z=' + Number(zt) + ',' : '') + val, pk.x, pk.y); };
       else if (a === 'walltop' || a === 'walltoplevel') el.onchange = function () {
         var sh = sheetAt(el), si = el.getAttribute('data-sheet'), cb = P.querySelector('[data-act="walltop"][data-sheet="' + si + '"]'), lv = document.getElementById('dm-wt-' + si).value.trim();
         S.wtLevel[si] = lv;   // the typed level survives a re-render while the convention is off
@@ -632,6 +850,16 @@
         sh.marks = sh.marks.filter(function (m) { return !(m.key === 'WALLTOP' && m.value.indexOf('handle:' + hd + ',') === 0); });
         if (z !== '' && isFinite(Number(z))) addMulti(sh, 'WALLTOP', 'handle:' + hd + ',' + z, 0, 0); else changed(); }; }
       else if (a === 'zoomwall') el.onclick = function () { highlight({ code: 'wall', sheet: sheetAt(el).name, handles: [el.getAttribute('data-h')], pos: null }); };
+      else if (a === 'dsadd') el.onclick = function () { var mk = document.getElementById('dm-ds-mark').value, w = document.getElementById('dm-ds-w').value, hh = document.getElementById('dm-ds-h').value;
+        ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { document.getElementById(id).value = ''; delete S.draft[id]; });
+        if (!setRow(mk, w, hh)) [['dm-ds-mark', mk], ['dm-ds-w', w], ['dm-ds-h', hh]].forEach(function (q) { var e = document.getElementById(q[0]); if (e) e.value = q[1]; }); };
+      else if (a === 'dsz') { el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; el.onchange = function () { var mk = el.getAttribute('data-mark'), r = schedRows().filter(function (q) { return q.mark === mk; })[0] || {};
+        var w = el.getAttribute('data-dim') === 'w' ? el.value : r.w, hh = el.getAttribute('data-dim') === 'h' ? el.value : r.h; if (String(w).trim() !== '' && String(hh).trim() !== '') setRow(mk, w, hh); }; }
+      else if (a === 'drm') el.onclick = function () { removeRow(el.getAttribute('data-mark')); };
+      else if (a === 'dconfirm') el.onclick = function () { var p = S.dprops[Number(el.getAttribute('data-i'))]; if (!p) return;
+        if (p.rule === 'PR-SCHEDULE') setRow(p.mark, p.w, p.h, p.rule); else writeTag(p.sheet, p.handle, p.mark, p.rule); };
+      else if (a === 'dtag') el.onclick = function () { var pk = S.dpick; if (!pk) return; var nw = document.getElementById('dm-dt-new').value.trim(), mk = nw || document.getElementById('dm-dt-sel').value; if (!mk) { S.dmsg = 'Pick a schedule mark or type a new one.'; render(); return; } writeTag(pk.sheet, pk.handle, mk); };
+      else if (a === 'dzoom') el.onclick = function () { highlight({ code: 'door', sheet: el.getAttribute('data-sheet'), handles: [el.getAttribute('data-h')], pos: null }); };
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
@@ -651,7 +879,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.exSheet = null; S.wtLevel = {}; S.draft = {};
+    S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
@@ -665,7 +893,7 @@
   function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); }
 
   window.DxfMetaEditor = { load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
-    effText: effText, highlight: highlight, setTool: setTool, ICON: IC,
+    effText: effText, highlight: highlight, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
 })();
