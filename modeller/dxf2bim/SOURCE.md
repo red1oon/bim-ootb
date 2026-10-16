@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `8c57b3cfe` — std2d: drawableReport (lane L5.1 b): counts + sources per line, honest reasons when not dr
+Commit: `8e325790b` — std2d JS port S1: plan contours + W-S1 parity witness (#201)
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -22,4 +22,4 @@ Commit: `8c57b3cfe` — std2d: drawableReport (lane L5.1 b): counts + sources pe
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 16accb7e37683247535e9b3a776e15aec5ab27c63dc58536ac2bc3d2e6c8a3d5 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 8c57b3cfe:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 8e325790b:deploy/dev/<file> | sha256sum` equals the column above.
