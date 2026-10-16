@@ -41,7 +41,7 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'];
-  var S = { sheets: [], layerRules: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -113,11 +113,12 @@
   // ---- proposals (§L4.1 PR-*; evidence only; ambiguous -> refused with the reason) ----
   function unitsK(sh) { var u = get1(sh, 'UNITS'); if (u && MK.UNITS[u.value]) return MK.UNITS[u.value]; var h = HEADER_UNITS[sh.dxf.header && sh.dxf.header.$INSUNITS]; return h ? MK.UNITS[h] : null; }
   function txtPos(e) { var p = e.startPoint || e.position || {}; return [p.x, p.y]; }
-  function gridLayers() { return tmplQualify().layers.grid; }
+  function gridLayers(sh) { var st = sh ? sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return l && l.type === 'grid'; }).map(function (q) { return layerOf(q).layer; }) : [];
+    return tmplQualify().layers.grid.concat(st); }   // the set's grid layers + the sheet's @LAYER …,grid
   function levelLayers() { var M = maps(); return M.levl.rules.filter(function (r) { return r.type === 'levelline'; }).map(function (r) { return r.pattern; }); }
   function propGrid(sh, vertical, out, refused, key) {     // mark_dx_set.js gridLines: grid-layer LINEs + exactly one 1-char label near an end
     var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-GRID', why: 'units unknown (no @UNITS, no $INSUNITS)' }); return; }
-    var tolAx = 0.001 / k, along = 0.060 / k, perp = 0.700 / k, GL = gridLayers();
+    var tolAx = 0.001 / k, along = 0.060 / k, perp = 0.700 / k, GL = gridLayers(sh);
     var T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && /^[A-Z0-9]$/.test(String(e.text || '').trim()); });
     var res = {};
     sh.dxf.entities.filter(function (e) { return GL.indexOf(e.layer) >= 0 && e.type === 'LINE' && e.vertices && e.vertices.length >= 2; }).forEach(function (l) {
@@ -186,27 +187,43 @@
   }
 
   // ---- layer maps: the layer-map set of the ONE gate (Dxf2BimImport.SETS: DX / STD, from the copied dxf2shell_config.js; chosen from the
-  // elevation-wall layer evidence, or stated by the user here) + the user's rules for layers the set does not match ----
+  // elevation-wall layer evidence, or stated by the user here). A layer the set does not read is mapped by a @LAYER=<layer>,<reader type>
+  // MARKING on each sheet of that role (§L4.2): it travels with the drawing and the readers apply it (Dxf2Marks.withLayers). ----
   function gateNow() { return window.DxfImportUI && window.DxfImportUI.state.gate; }
   function curSet() { var g = gateNow(); return S.setOverride || (g && g.set) || 'DX'; }
-  function rulesOut() { return S.layerRules.map(function (r) { return { role: r.role, layer: r.layer, type: r.type, ui: r.ui }; }); }
-  function maps() { var X = I.setWith(curSet(), rulesOut()); return { plan: X.MAP_PLAN, elev: X.MAP_ELEV, levl: X.MAP_LEVL, roof: X.MAP_ROOF, sect: X.MAP_SECT }; }
-  function tmplQualify() { return I.setWith(curSet(), rulesOut()).QUALIFY; }
+  function maps() { var X = I.setWith(curSet()); return { plan: X.MAP_PLAN, elev: X.MAP_ELEV, levl: X.MAP_LEVL, roof: X.MAP_ROOF, sect: X.MAP_SECT }; }
+  function tmplQualify() { return I.setWith(curSet()).QUALIFY; }
+  var VIEW_OF_ROLE = { plan: 'PLAN', elev: 'ELEV', roof: 'ROOF', section: 'SECTION' };
   function ruleType(ui, role) {
-    if (ui === 'wall') return role === 'elev' ? 'elevwall' : 'wall';
+    if (ui === 'wall') return role === 'elev' ? 'elevwall' : role === 'section' ? 'sectwall' : 'wall';
     if (ui === 'door') return role === 'elev' ? 'elevdoor' : 'opening';
-    if (ui === 'glazing') return 'glazing'; if (ui === 'roof') return 'roof'; if (ui === 'level') return 'levelline';
-    return 'ignore';
+    if (ui === 'level') return 'levelline';
+    return ui;   // glazing, roof, dims, grid, ignore
+  }
+  function uiOf(type) { return { wall: 'wall', elevwall: 'wall', sectwall: 'wall', opening: 'door', elevdoor: 'door', levelline: 'level', glazing: 'glazing', roof: 'roof', dims: 'dims', grid: 'grid', ignore: 'ignore' }[type] || null; }
+  function uiChoices(role) {   // only the choices the reader of that view accepts (Dxf2Marks.LAYER_TYPES)
+    var T = MK.LAYER_TYPES, ok = (T[VIEW_OF_ROLE[role]] || []).concat(T.ANY);
+    return LAYER_TYPES.concat(['roof']).filter(function (u, i, a) { return a.indexOf(u) === i && ok.indexOf(ruleType(u, role)) >= 0; });
   }
   function templateType(role, layer) {
-    var X = I.setWith(curSet(), []), ms = role === 'plan' ? [X.MAP_PLAN] : role === 'elev' ? [X.MAP_ELEV, X.MAP_LEVL].concat(X.EXCL_ELEV ? [X.EXCL_ELEV] : []) : role === 'roof' ? [X.MAP_ROOF] : role === 'section' ? [X.MAP_SECT] : [];
+    var X = I.setWith(curSet()), ms = role === 'plan' ? [X.MAP_PLAN] : role === 'elev' ? [X.MAP_ELEV, X.MAP_LEVL].concat(X.EXCL_ELEV ? [X.EXCL_ELEV] : []) : role === 'roof' ? [X.MAP_ROOF] : role === 'section' ? [X.MAP_SECT] : [];
     for (var i = 0; i < ms.length; i++) { var r = B.matchRule(layer, ms[i].rules); if (r) return r.type; }
     return null;
   }
+  function layerOf(m) { var c = m.value.lastIndexOf(','); return c > 0 ? { layer: m.value.slice(0, c).trim(), type: m.value.slice(c + 1).trim() } : null; }
+  function statedLayer(role, layer) {   // the first @LAYER marking for that layer on a sheet of that role
+    for (var i = 0; i < S.sheets.length; i++) { var sh = S.sheets[i]; if (ROLE_VIEW[viewOf(sh)] !== role) continue;
+      var m = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return l && l.layer === layer; })[0]; if (m) return { mark: m, type: layerOf(m).type }; }
+    return null;
+  }
   function setLayerRule(role, layer, ui) {
-    S.layerRules = S.layerRules.filter(function (r) { return !(r.uiRole === role && r.layer === layer); });
-    if (ui) S.layerRules.push({ role: role === 'elev' && ui === 'level' ? 'levl' : role === 'section' ? 'sect' : role, uiRole: role, layer: layer, type: ruleType(ui, role), ui: ui });
-    console.log(TAG + ' layer role=' + role + ' layer=' + layer + ' -> ' + (ui || '(unset)'));
+    var n = 0;
+    S.sheets.forEach(function (sh) {
+      if (ROLE_VIEW[viewOf(sh)] !== role || !sh.dxf.entities.some(function (e) { return e.layer === layer; })) return;
+      sh.marks = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return !(l && l.layer === layer); });
+      if (ui) { sh.marks.push({ key: 'LAYER', value: layer + ',' + ruleType(ui, role), x: 0, y: 0, source: 'user' }); n++; }
+    });
+    console.log(TAG + ' layer role=' + role + ' layer=' + layer + ' -> ' + (ui ? '@LAYER=' + layer + ',' + ruleType(ui, role) + ' on ' + n + ' sheet(s)' : '(cleared)'));
     changed();
   }
 
@@ -218,7 +235,7 @@
     var tok = ++S.token, t0 = performance.now();
     try {
       var eff = S.sheets.map(effSheet);
-      var g = await window.DxfImportUI.applySheets(eff, rulesOut(), S.setOverride || null);
+      var g = await window.DxfImportUI.applySheets(eff, S.setOverride || null);
       if (tok !== S.token) return;
       var v = g.verdict; v.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') };
       S.verdict = v; S.busy = false; S.lib = g.lib;
@@ -474,19 +491,21 @@
       if (!byRole[role]) return;
       h += '<div class="dm-sub">' + (role === 'none' ? 'Sheets without a role (choose a role first)' : role.toUpperCase() + ' sheets') + '</div>';
       Object.keys(byRole[role]).sort().forEach(function (L) {
-        var tt = role === 'none' ? null : templateType(role, L), ur = S.layerRules.filter(function (r) { return r.uiRole === role && r.layer === L; })[0];
-        h += '<div class="dm-lay"><span class="nm" title="' + esc(L) + '">' + esc(L) + '</span><span class="n">' + byRole[role][L] + '</span>';
-        if (role === 'none' || (role === 'section' && !tt)) h += '<span class="dm-tt">' + (role === 'none' ? 'no role' : 'not read') + '</span>';
-        else if (tt) h += '<span class="dm-tt" title="NCS/AIA template (dxf2shell_config.js)">' + esc(tt) + ' · template</span>';
-        else { if (!ur) nBad++;
-          h += '<select class="dm-sel' + (ur ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + [''].concat(LAYER_TYPES, role === 'roof' ? ['roof'] : []).map(function (t) { return opt(t, ur ? ur.ui : ''); }).join('') + '</select>' + (ur ? '<span class="dm-src user" data-src="user">you</span>' : ''); }
+        var tt = role === 'none' ? null : templateType(role, L), st = role === 'none' ? null : statedLayer(role, L);
+        h += '<div class="dm-lay" data-layer-row="' + esc(role + '|' + L) + '"><span class="nm" title="' + esc(L) + '">' + esc(L) + '</span><span class="n">' + byRole[role][L] + '</span>';
+        if (role === 'none') h += '<span class="dm-tt">no role</span>';
+        else if (tt && !st) h += '<span class="dm-tt" title="layer set ' + esc(curSet()) + ' (dxf2shell_config.js)">' + esc(tt) + ' · template</span>';
+        else if (st && (tt || !uiOf(st.type))) h += '<span class="dm-tt" title="@LAYER marking: overrides the set">' + esc(st.type) + ' · stated</span>' + srcLabel(st.mark);
+        else { if (!st) nBad++;
+          var cur = st ? uiOf(st.type) : '';
+          h += '<select class="dm-sel' + (st ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + [''].concat(uiChoices(role)).map(function (t) { return opt(t, cur); }).join('') + '</select>' + (st ? srcLabel(st.mark) : ''); }
         h += '</div>';
       });
     });
     var g = gateNow(), ev = g && g.roles ? (g.roles.evidence !== undefined ? g.roles.evidence : g.roles.set) : null;
     h = '<div class="dm-f"><label style="width:auto">Layer set</label><select class="dm-sel" data-act="tpl" style="flex:1">' + opt('', S.setOverride || '', 'From the drawings' + (ev ? ' (' + ev + ')' : ' (none fits)')) +
       Object.keys(I.SETS).map(function (k) { return opt(k, S.setOverride || '', k === 'DX' ? 'NCS/AIA, Duplex DX' : k === 'STD' ? 'NCS/AIA R12, standard set' : k); }).join('') + '</select></div>' +
-      '<div class="dm-ref" style="margin:2px 0 6px">Set in use: ' + esc(curSet()) + (S.setOverride ? ' (you)' : ' (elevation-wall layers)') + ', maps from dxf2shell_config.js. Red = a layer the set does not read; choose what it is.</div>' + h;
+      '<div class="dm-ref" style="margin:2px 0 6px">Set in use: ' + esc(curSet()) + (S.setOverride ? ' (you)' : ' (elevation-wall layers)') + ', maps from dxf2shell_config.js. Red = a layer the set does not read; your choice is saved as a @LAYER marking on each sheet of that role.</div>' + h;
     return secHead('layers', IC.layers, 'Layers', nBad ? nBad + ' unmapped' : 'mapped', nBad) + (S.sec.layers ? '<div class="dm-sb">' + h + '</div>' : '');
   }
   function listMarks(key) {
@@ -632,7 +651,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.layerRules = []; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.exSheet = null; S.wtLevel = {}; S.draft = {};
+    S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.exSheet = null; S.wtLevel = {}; S.draft = {};
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();

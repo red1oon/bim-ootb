@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '2';
+  var V = '3';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -74,7 +74,7 @@
     if (!THREE || !A || !A.scene) { console.warn(TAG + ' canvas: no scene'); return null; }
     if (state.group) { A.scene.remove(state.group); state.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
     var I = window.Dxf2BimImport, MK = window.Dxf2Marks, Cf0 = window.Dxf2ShellConfig, Bm = window.Dxf2Bim, Sh = window.Dxf2Shell;
-    var Cf = Object.assign({ CFG: Cf0.CFG, MARK_ALIGN_TOL: Cf0.MARK_ALIGN_TOL }, I.setWith((state.gate && state.gate.set) || 'DX', state.layerRules));   // §L3.3 the set's layer maps (+ §L4.1 the editor's layer rules)
+    var Cf = Object.assign({ CFG: Cf0.CFG, MARK_ALIGN_TOL: Cf0.MARK_ALIGN_TOL }, I.setWith((state.gate && state.gate.set) || 'DX'));   // §L3.3 the set's layer maps
     var g = new THREE.Group(); g.name = 'dxf-sheets'; g.userData.dxfSheets = true;
     state.canvas = {};
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
@@ -85,7 +85,7 @@
     }
     state.envelope = env;
     sheets.forEach(function (s) {
-      var maps = mapsFor(s.role, Cf), k = s.factor || 1, z, w = null;
+      var maps = mapsFor(s.role, Cf).map(function (m) { return MK.withLayers(m, s.desc); }), k = s.factor || 1, z, w = null;   // §L4.2 the sheet's @LAYER rules
       if (s.role === 'plan' || s.role === 'roof') { z = s.role === 'plan' ? s.level : s.roofZ; w = (function (zz) { return function (x, y) { return [x * k, y * k, zz]; }; })(z); }
       else if (s.role === 'elev' && plans.length && env) {
         var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL);
@@ -195,7 +195,7 @@
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     state.sheets = window.Dxf2BimImport.readSheets(list);
-    state.last = null; state.linesOn = true; state.layerRules = []; state.setOverride = null;
+    state.last = null; state.linesOn = true; state.setOverride = null;
     await convertGate();
     state.sheets.forEach(function (s) {
       console.log(TAG + ' sheet=' + s.name + ' bytes=' + s.text.length + ' sha=' + s.sha.slice(0, 12) + ' marks=' + s.marks + ' role=' + (s.role || 'NONE') +
@@ -254,11 +254,11 @@
   // ---- §L3.3 the ONE convert gate (shared with the L4 metadata editor): roles R1-R5 -> the pipeline with the local library subset
   // -> Dxf2Qualify verdict on the run's own gaps. Convert is allowed only when roles pass AND the verdict qualifies. ----
   async function convertGate() {
-    var I = window.Dxf2BimImport, rules = state.layerRules || [], roles = I.gate(state.sheets, { set: state.setOverride });   // §L4.1: + the editor's stated set and layer rules
+    var I = window.Dxf2BimImport, roles = I.gate(state.sheets, { set: state.setOverride });   // §L4.1: + the set the editor states (layer rules are @LAYER markings, §L4.2)
     var g = { ok: false, set: roles.set, setFrom: roles.setFrom, roles: roles, refused: roles.refused.slice(), verdict: null, R: null, lib: null };
     if (roles.ok) {
       g.lib = await loadLibrary();
-      var R = I.convert(state.sheets, { library: g.lib || undefined, layerRules: rules, set: state.setOverride }); g.R = R;
+      var R = I.convert(state.sheets, { library: g.lib || undefined, set: state.setOverride }); g.R = R;
       if (R.refused) g.refused = R.refused;
       else {
         g.verdict = R.verdict;
@@ -266,7 +266,7 @@
       }
     }
     // §L4.1: the pipeline did not run -> its gaps are unknown: the verdict still lists the markings / layers / units / dims / grid items + GAP:pipeline_not_run
-    if (!g.verdict) g.verdict = I.qualifyNotRun(state.sheets, { set: g.set, layerRules: rules, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') });
+    if (!g.verdict) g.verdict = I.qualifyNotRun(state.sheets, { set: g.set, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') });
     g.ok = g.refused.length === 0 && g.verdict.verdict === 'qualifies';
     state.gate = g;
     console.log(TAG + ' gate ok=' + g.ok + ' set=' + g.set + ' roles=' + roles.ok + (g.verdict ? ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' counts=' + JSON.stringify(g.verdict.counts) : '') +
@@ -306,11 +306,11 @@
   // §L4.1: the editor hands in the EFFECTIVE sheets (its markings), its layer rules and the set it states; the ONE gate re-judges them;
   // the canvas is rebuilt (camera kept) only when a role / placement / map changed
   var _gateSeq = 0;
-  async function applySheets(sheets, layerRules, setOverride) {
+  async function applySheets(sheets, setOverride) {
     var sig = function () { return JSON.stringify(state.sheets.map(function (s) { return [s.name, s.role, s.level, s.face, s.roofZ, s.cut, s.factor, s.desc && [s.desc.gridsX, s.desc.gridsY, s.desc.gridsH, s.desc.zs, s.desc.haxis]]; })) +
-      JSON.stringify(state.layerRules || []) + (state.gate && state.gate.set); };
+      JSON.stringify(state.sheets.map(function (s) { return s.desc && s.desc.layers || null; })) + (state.gate && state.gate.set); };
     var before = state.sheets ? sig() : null, seq = ++_gateSeq;
-    state.sheets = sheets; state.layerRules = layerRules || []; state.setOverride = setOverride || null;
+    state.sheets = sheets; state.setOverride = setOverride || null;
     var g = await convertGate();
     if (seq === _gateSeq && sig() !== before) { console.log(TAG + ' canvas rebuilt from the edited markings'); buildCanvas(state.sheets, true); }
     return g;

@@ -9,9 +9,16 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER'];
   var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
+  // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
+  var LAYER_TYPES = {
+    PLAN: ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'ignore'],   // Dxf2Bim validateMap TYPES (the plan reader's own check)
+    ELEV: ['elevwall', 'elevdoor', 'glazing', 'levelline', 'ignore'],                  // Dxf2Elev.elevWallRects / elevClusters('glazing'|'elevdoor'), Dxf2Shell.levelLinesZ
+    ROOF: ['roof', 'glazing', 'ignore'],                                               // Dxf2Shell.roofPlan
+    SECTION: ['sectslab', 'sectwall', 'roof', 'ignore'],                               // Dxf2Shell.sectionSlabs (+ L2.8 section walls)
+    ANY: ['dims', 'grid'] };
   function err(code, message, extra) { return Object.assign({ code: code, message: message }, extra || {}); }
 
   // entities: parsed by dxf-parser (TEXT/MTEXT with .text and .startPoint/.position)
@@ -96,6 +103,12 @@
         var sdup = d.schedule.find(function (q) { return q.text === sent.text && q.class === sent.class; });
         if (sdup && JSON.stringify(Object.assign({}, sdup, { by: undefined })) !== JSON.stringify(sent)) { errors.push(err('MARK:conflict', '@SCHEDULE ' + sent.text + ' (' + sc + ') has two sizes', { handle: m.handle })); return; }
         if (!sdup) { sent.by = by; d.schedule.push(sent); }
+      } else if (key === 'LAYER') {                                                         // L4.2: name = everything before the LAST comma
+        var lc = val.lastIndexOf(','), ln = lc > 0 ? val.slice(0, lc).trim() : '', lt = lc > 0 ? val.slice(lc + 1).trim() : '';
+        if (!ln || !lt) { errors.push(err('MARK:malformed', '@LAYER needs <layer name>,<type>: ' + val, { handle: m.handle })); return; }
+        var L0 = d.layers || (d.layers = []), ld = L0.find(function (q) { return q.layer === ln; });
+        if (ld && ld.type !== lt) { errors.push(err('MARK:conflict', '@LAYER ' + ln + ' has two types: ' + ld.type + ' / ' + lt, { handle: m.handle })); return; }
+        if (!ld) L0.push({ layer: ln, type: lt, by: by, handle: m.handle });
       } else if (key === 'WALLTOP') {                                                      // L2.3 D3: user-stated convention, never a default
         var wp = val.split(','), wl = Number(wp[0]);
         if (/^handle:/.test(wp[0])) {                                                       // L2.6 A: per-wall top, @WALLTOP=handle:<h>,<z_top_m>
@@ -128,6 +141,10 @@
     if (d.view === 'ELEV' || d.view === 'SECTION') {      // z comes from the position in an elevation; checked after the loop because marker order is not guaranteed
       d.tags = d.tags.filter(function (q) { if (q.z === undefined) return true; errors.push(err('MARK:malformed', '@TAG z= is not allowed in an ELEV view (z comes from the position): ' + q.text)); return false; });
     }
+    if (d.layers && LAYER_TYPES[d.view]) d.layers = d.layers.filter(function (q) {      // checked after the loop: the view may come later in handle order
+      if (LAYER_TYPES[d.view].indexOf(q.type) >= 0 || LAYER_TYPES.ANY.indexOf(q.type) >= 0) return true;
+      errors.push(err('MARK:layer_type', '@LAYER ' + q.layer + ',' + q.type + ': a ' + d.view + ' sheet reads ' + LAYER_TYPES[d.view].concat(LAYER_TYPES.ANY).join('|'), { handle: q.handle, layer: q.layer, type: q.type, view: d.view })); return false;
+    });
     {
       var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined; });
       if (d.view === 'PLAN') {
@@ -154,7 +171,19 @@
     d.excludes.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1] || p[2] - q[2] || p[3] - q[3]; });
     d.walltop.sort(function (p, q) { return p.level - q.level; });
     d.walltop_walls.sort(function (p, q) { return parseInt(p.wall, 16) - parseInt(q.wall, 16); });
+    if (d.layers) d.layers.sort(function (p, q) { return p.layer < q.layer ? -1 : p.layer > q.layer ? 1 : 0; });   // present only when the sheet states @LAYER
     return { desc: d, errors: errors };
+  }
+
+  // L4.2: the sheet's stated layer rules as a layer map (dims / grid -> 'ignore' for the readers), or null; withLayers puts them FIRST
+  // (Dxf2Bim.matchRule: first match wins), so a stated rule overrides the configured set's rule for that layer and nothing else.
+  function layerMap(desc) {
+    if (!desc || !desc.layers || !desc.layers.length) return null;
+    return { version: 1, rules: desc.layers.map(function (q) { return { match: 'exact', pattern: q.layer, type: LAYER_TYPES.ANY.indexOf(q.type) >= 0 ? 'ignore' : q.type }; }) };
+  }
+  function withLayers(map, desc) {
+    var lm = layerMap(desc); if (!lm) return map;
+    return { version: map ? map.version : 1, rules: lm.rules.concat(map ? map.rules : []) };
   }
 
   // several views in one file (§31): markers belong to the REGION rectangle that contains their insertion point
@@ -225,5 +254,5 @@
     return lines.slice(0, endIdx).concat(out, lines.slice(endIdx)).join(eol);
   }
 
-  return { readMarks: readMarks, describe: describe, describeAll: describeAll, align: align, writeMarks: writeMarks, LAYER: LAYER, UNITS: K };
+  return { readMarks: readMarks, describe: describe, describeAll: describeAll, align: align, writeMarks: writeMarks, layerMap: layerMap, withLayers: withLayers, LAYER_TYPES: LAYER_TYPES, LAYER: LAYER, UNITS: K };
 });

@@ -1115,5 +1115,42 @@ Scope: the "Drawing metadata" panel, the live verdict, propose → confirm, save
 - T1 `@TAG=door,BATHROOM_DOOR` at the picked door centre; X1 `@EXCLUDE` from a drag.
 - Regression: Node old + std SUMMARY fail=0; `witness_dxf_convert.js` 15/15; W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
 
+
+### L4.2 Layer rules as markings: `@LAYER=<name>,<type>` (lead decision 2026-10-16, written before the code)
+Closes the L4.1 open question "layer rules are session only". The layer map a user states becomes part of the drawing, like every other marking.
+
+**Grammar (BIMCompiler `deploy/dev/dxf2marks.js`).**
+- `@LAYER=<layer name>,<type>`, MULTI key, per sheet (a plan sheet and an elevation sheet each carry their own). The name is everything before the LAST comma (layer names may hold commas; types never do); both parts non-empty, else `MARK:malformed`.
+- `<type>` is a rule type the reader of THAT view accepts (one table in dxf2marks, `LAYER_TYPES`, each entry traced to the code that reads it), plus `dims` and `grid`:
+  - PLAN: `wall wallline slab component opening glazing ignore` (= `Dxf2Bim` `validateMap` TYPES, the plan reader's own check)
+  - ELEV: `elevwall elevdoor glazing levelline ignore` (`Dxf2Elev.elevWallRects` / `elevClusters(…,'glazing'|'elevdoor')`, `Dxf2Shell.levelLinesZ`)
+  - ROOF: `roof glazing ignore` (`Dxf2Shell.roofPlan`)
+  - SECTION: `sectslab sectwall roof ignore` (`Dxf2Shell.sectionSlabs`, L2.8 section walls)
+  - `dims` / `grid` (every view): the layer joins the qualify settings `layers.dims` / `layers.grid` for that sheet; for the readers it is `ignore`.
+  - A type outside the view's list → `MARK:layer_type {layer, type, view}`. Checked after the loop (the view may come later in handle order); a sheet without `@VIEW` keeps its `@LAYER` unchecked (its `MARK:missing VIEW` already blocks).
+- The same layer stated twice with different types → `MARK:conflict`. `@BY` applies as for every marking (L2.7 rule 5).
+- `desc.layers = [{layer, type, by, handle}]` sorted by layer. Helpers: `Dxf2Marks.layerMap(desc)` → `{version:1, rules:[{match:'exact', pattern, type (dims/grid → ignore)}]}` or null; `Dxf2Marks.withLayers(map, desc)` → the map with those rules FIRST (first match wins in `matchRule`, so a stated rule overrides the configured set's rule for that layer; every other layer keeps the set's rule).
+
+**Reader.**
+- `dxf2qualify.js`: every configured map of a sheet passes through `withLayers` (the stated rules first in EACH map: qualify reads some types map by map, e.g. level lines, so a separate prepended map would not override them); with no configured map, the sheet's maps are `[layerMap(desc)]`. Grid / dims checks use `settings.layers.grid|dims` ∪ the sheet's `@LAYER …,grid|dims`. The verdict lists `layer_rules: [{sheet, layer, type, source: file|model|user, handle}]` (stated, like `conventions`).
+- The pipeline callers apply `withLayers` per sheet: BIMCompiler `rosetta_dx_shell.js` (plans, elevations: elev + level maps, roof, section) and the Modeller port `dxf2bim_import.js` (same calls). Files without `@LAYER` are unchanged (identity), so every existing log and run_id stays.
+
+**Modeller.** Copies re-synced by `sync.sh` from the BIMCompiler branch commit (re-sync from master once it merges). `dxf2bim_import.js` passes every map of a sheet through `Dxf2Marks.withLayers(map, sheet.desc)` (plan run, elevation elev + level maps, roof, section, and `qualifyNotRun`'s plan runs); the canvas brightness rule too.
+
+**Editor (Modeller, L4.1 Layers section).** A user layer choice IS a `@LAYER=<layer>,<reader type> @BY=user` marking on every sheet of that role holding the layer (types: wall → wall / elevwall, door → opening / elevdoor, glazing, level → levelline, roof, dims, grid, ignore). File `@LAYER` markings show in the Layers section as "from file" / "from model". The session-only layer rules of L4.1 (`setWith` rules) are removed; the user-stated layer set stays.
+
+**Tests.**
+- BIMCompiler `tests/dxf2bim/test_layer_marks.js`, each names its issue: grammar (name with a comma, missing type, unknown type per view → `MARK:layer_type`, conflict, `@BY` kept, order-independent); `withLayers` overrides only the stated layer; the PLAN list equals what `Dxf2Bim.run` validateMap accepts (each type runs, an unknown one throws).
+- `test_qualify.js`: QL1 an unmapped layer stated `ignore` → its `layer_unmapped` goes and the verdict lists the rule with its source; QL2 **mutation**: the FRONT elevation states `@LAYER=A-ANNO-LEVL,ignore` (wrong type for its level lines) → exactly 2 new blocking `QF:elev_level_mismatch` on FX_FRONT (z 0 and the roof 3), nothing else; QL3 `@LAYER=X,grid` makes X a grid layer for that sheet only.
+- Regression: all BIMCompiler dxf2bim unit suites, rosetta_dx_shell (old + std: logs identical but timing), rosetta_qualify fail=0.
+- Modeller `witness_dxf_meta_editor.js` E6 ROUND-TRIP, on the OLD marked set (its sheets carry 31 `QF:layer_unmapped`: A-ANNO-SECT on plans, annotation / title layers on elevations): every unmapped layer is mapped through the Layers UI (`ignore`, or `grid` / `dims` where the layer is one) → no `layer_unmapped` left and nothing else new; Save → each saved copy carries exactly those `@LAYER=… @BY=user` markings; re-import → the Layers section shows them as "you" with the same types, no red layer, and the verdict counts equal the pre-save verdict. Plus E1–E5 unchanged.
+
+**Not built (as recorded in L4.1, decided "fine as recorded"):** one local library subset file; excludes on elevations; `@REGION` multi-view files; changing a set-mapped layer's type through the UI (it can be stated as `@LAYER` in the file, which then overrides).
+
+**L4.2 results (2026-10-16).** BIMCompiler PR branch `feat/dxf2bim-layer-marking` `5ff2d85a7` (on master `be1dcda91`); Modeller copies synced from it by `sync.sh` (re-sync from master once it merges).
+- BIMCompiler: `test_layer_marks.js` LM1-LM7 PASS (LM7 mutation: the wall layer stated `ignore` → 4 walls → 0); `test_qualify.js` QL1-QL3 PASS (QL2 mutation: exactly 2 `elev_level_mismatch` on FX_FRONT, z 0 and 3; QL3: plan `grid_missing` 4 → 0 with its own `@LAYER=A-GRID,grid`, FRONT unchanged). Regression vs master: 18 unit suites, rosetta_dx_shell old + std, mark_dx_set old + std, rosetta_qualify: outputs identical (paths aside) + the new checks.
+- Modeller `witness_dxf_meta_editor.js`: E0-E6, T1, X1 PASS (SUMMARY fail=0 gap=0). E6: 12 layer choices (plans A-ANNO-SECT; elevations 0, A-ANNO-DIMS dims, A-ANNO-TEXT, A-GRID grid, A-ROOF, A-TTLB; roof sheet layers) → the 31 `layer_unmapped` gone, nothing new (347 → 316), verdict `layer_rules` all `user`; saved copies carry exactly those `@LAYER=… @BY=user` (1 per plan, 6 per elevation); re-import restores 12/12 ("you", same type), 0 red, verdict 316 / 28 equal. E2 (stripped → filled → saved → re-imported) still equal to E1; the witness now waits for the panel to settle before typing a row (a verdict re-render left puppeteer handles stale: a test race, not a user path).
+- Regression: `witness_dxf_import_node.js` old + std fail=0, `witness_dxf_convert.js` 15/15, W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS. Screenshot `l4_editor_layers_reimport.png` read: stated layers with their select and "you", set layers as "template".
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → film (FILM_PLAN §10), English first.

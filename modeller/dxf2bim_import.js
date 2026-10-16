@@ -94,21 +94,8 @@
       return el.length && el.every(function (s) { return s.dxf.entities.some(function (e) { return ly.indexOf(e.layer) >= 0; }); }); });
     return { name: fit.length === 1 ? fit[0] : null, fits: fit, layers: Object.keys(SETS).map(function (k) { return k + ':' + elevWallLayers(SETS[k].MAP_ELEV).join('|'); }) };
   }
-  // §L4.1: the editor's layer rules [{role:'plan'|'elev'|'levl'|'roof'|'sect', layer, type, ui}] appended as exact rules to that role's map of the set
-  // (pipeline AND qualify); 'dims'/'grid' also join QUALIFY.layers. With rules, the run_id hashes the effective maps (stated). No rules = the set itself.
-  function setWith(name, rules) {
-    var S0 = SETS[name]; if (!S0) return null;
-    rules = (rules || []).slice().sort(function (a, b) { return a.role < b.role ? -1 : a.role > b.role ? 1 : a.layer < b.layer ? -1 : a.layer > b.layer ? 1 : 0; });
-    if (!rules.length) return S0;
-    var add = function (role, M) { var ex = rules.filter(function (r) { return r.role === role; }).map(function (r) { return { match: 'exact', pattern: r.layer, type: r.type }; });
-      return ex.length ? { version: M.version, rules: M.rules.concat(ex) } : M; };
-    var Qs = JSON.parse(JSON.stringify(S0.QUALIFY));
-    rules.forEach(function (r) { ['dims', 'grid'].forEach(function (k) { if (r.ui === k && Qs.layers[k].indexOf(r.layer) < 0) Qs.layers[k].push(r.layer); }); });
-    var o = { MAP_PLAN: add('plan', S0.MAP_PLAN), MAP_ELEV: add('elev', S0.MAP_ELEV), MAP_LEVL: add('levl', S0.MAP_LEVL), MAP_ROOF: add('roof', S0.MAP_ROOF), MAP_SECT: add('sect', S0.MAP_SECT),
-      EXCL_ELEV: S0.EXCL_ELEV, QUALIFY: Qs, rules: rules };
-    o.maps = { plan: o.MAP_PLAN, elev: o.MAP_ELEV, levl: o.MAP_LEVL, roof: o.MAP_ROOF, sect: o.MAP_SECT, layer_rules: rules.map(function (r) { return [r.role, r.layer, r.type]; }) };
-    return o;
-  }
+  // §L4.2: layer rules are @LAYER markings now (Dxf2Marks.withLayers per sheet); the L4.1 session rules are gone. setWith = the set by name.
+  function setWith(name) { return SETS[name] || null; }
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
@@ -128,11 +115,11 @@
   // GAP:pipeline_not_run {reason} stands for them (never a silent pass); markings, layers, units, dimension and grid checks still run.
   function qualifyNotRun(sheets, opts) {
     opts = opts || {};
-    var SET = setWith(opts.set, opts.layerRules), CFG = C.CFG, files = [], planOps = {};
+    var SET = setWith(opts.set), CFG = C.CFG, files = [], planOps = {};
     var mapsOf = function (v) { return !SET ? null : v === 'PLAN' ? [SET.MAP_PLAN] : v === 'ROOF' ? [SET.MAP_ROOF] : v === 'SECTION' ? [SET.MAP_SECT] : v === 'ELEV' ? [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []) : null; };
     sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).forEach(function (sh) {
       var f = { name: sh.name, dxf: sh.dxf }, lm = mapsOf(sh.desc.view); if (lm) f.layer_maps = lm; files.push(f);
-      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, SET.MAP_PLAN, CFG, { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
+      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, MK.withLayers(SET.MAP_PLAN, sh.desc), CFG, { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
     });
     return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
@@ -143,7 +130,7 @@
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, library = opts.library || null;
     var g = gate(sheets, { set: opts.set }); if (!g.ok) return { refused: g.refused };
-    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] }, SET = setWith(g.set, opts.layerRules);   // §L4.1 + the editor's layer rules
+    var CFG = C.CFG, deps = { DxfParser: DxfParser, hashHex: hashHex, library: [] }, SET = setWith(g.set);
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var roofSh = sheets.filter(function (s) { return s.role === 'roof'; })[0], sectSh = sheets.filter(function (s) { return s.role === 'section'; })[0] || null;
     var elevSh = sheets.filter(function (s) { return s.role === 'elev'; }).sort(function (a, b) { return FACE_ORDER.indexOf(a.face) - FACE_ORDER.indexOf(b.face); });
@@ -154,9 +141,9 @@
     for (var ei = 0; ei < elevSh.length; ei++) {
       var es = elevSh[ei], al = MK.align(base, es.desc, C.MARK_ALIGN_TOL);
       if (!al.map || !al.map.zOf) return refuse(es.name, 'elevation does not align with plan ' + plans[0].name + ' (' + J(al.errors || al.error || null) + ')');
-      elevs.push({ name: es.name, face: es.face, roof: es.desc.roof, map: al.map, lines: S.levelLinesZ(es.dxf.entities, SET.MAP_LEVL, al.map),
-        clusters: E.elevClusters(es.dxf.entities, SET.MAP_ELEV, al.map, CFG.snap_tol, 'glazing'), walls: E.elevWallRects(es.dxf.entities, SET.MAP_ELEV, al.map),
-        doors: E.elevClusters(es.dxf.entities, SET.MAP_ELEV, al.map, CFG.snap_tol, 'elevdoor') });
+      elevs.push({ name: es.name, face: es.face, roof: es.desc.roof, map: al.map, lines: S.levelLinesZ(es.dxf.entities, MK.withLayers(SET.MAP_LEVL, es.desc), al.map),   // §L4.2: the sheet's @LAYER rules first in every map
+        clusters: E.elevClusters(es.dxf.entities, MK.withLayers(SET.MAP_ELEV, es.desc), al.map, CFG.snap_tol, 'glazing'), walls: E.elevWallRects(es.dxf.entities, MK.withLayers(SET.MAP_ELEV, es.desc), al.map),
+        doors: E.elevClusters(es.dxf.entities, MK.withLayers(SET.MAP_ELEV, es.desc), al.map, CFG.snap_tol, 'elevdoor') });
     }
     R.elevs = elevs;
     var allRects = [].concat.apply([], elevs.map(function (e) { return e.walls; }));
@@ -167,7 +154,7 @@
       if (!st.levelDrawn.length) return refuse(st.sheet, '@LEVEL=' + st.level + ' is not a drawn elevation boundary (BASIC_SHAPES_SPEC §2.3 LV)');
       var nxt = ST[si + 1] ? ST[si + 1].level : Math.max.apply(null, allRects.filter(function (r) { return Math.abs(r.z0 - st.level) <= CFG.elev_tol; }).map(function (r) { return r.z1; }));
       st.top = nxt;
-      var run = B.run(st.sh.text, SET.MAP_PLAN, CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
+      var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
       var ops = E.applyElevations(run.ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex }).ops;
       ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
       // L2.6 C: the plan's door tags label the doors before their heights; a door no elevation shows takes the scheduled height
@@ -182,7 +169,7 @@
     var sopt = null;
     if (sectSh) {
       var sal = MK.align(base, sectSh.desc, C.MARK_ALIGN_TOL);
-      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, SET.MAP_SECT, sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof)
+      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, MK.withLayers(SET.MAP_SECT, sectSh.desc), sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof)
         : { slabs: {}, roof: null, gaps: [{ code: 'GAP:section_align_fail', errors: sal.errors.map(function (e) { return e.code; }) }] };
       R.sectionSheet = sectSh.name; sopt = { section: R.section };
       if (sectSh.desc.cut && sal.map) { var cp = sectSh.desc.cut.split(','); R.sectionCut = { axis: cp[0], at: Number(cp[1]) * MK.UNITS[sectSh.desc.units] }; }
@@ -205,7 +192,7 @@
       st.after = wb.ops; st.baseAdv = wb.advisories; st.baseRep = wb.report;
     });
     ST.forEach(function (st) { st.ring = S.innerRing(st.after, CFG); });
-    R.roofPlan = S.roofPlan(roofSh.dxf.entities, SET.MAP_ROOF, roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
+    R.roofPlan = S.roofPlan(roofSh.dxf.entities, MK.withLayers(SET.MAP_ROOF, roofSh.desc), roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
     R.roofSheet = roofSh.name;
     R.run_id = C.runId(B.canon, hashHex, ST.map(function (st) { return st.run_id; }), sheets.map(function (s) { return s.sha; }), SET.maps);
     // type binding + labels: only with library rows (the rosetta_dx_types chain)

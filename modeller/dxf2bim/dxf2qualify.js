@@ -154,6 +154,7 @@
         var ex = v.desc.excludes || [];
         if (ex.length) scoped = scoped.filter(function (e) { var p = pointsOf(e); return !(p.length && ex.some(function (R) { return p.every(function (q) { return inRect(q, R); }); })); });
         var maps = (f.layer_maps_by_view && v.desc.view && f.layer_maps_by_view[v.desc.view]) || f.layer_maps || null;
+        if (MK.layerMap(v.desc)) maps = maps && maps.length ? maps.map(function (m) { return MK.withLayers(m, v.desc); }) : [MK.layerMap(v.desc)];   // bim-ootb lane spec L4.2: the sheet's @LAYER rules first in EVERY map (they override the set's rule for that layer)
         out.push({ id: id, file: f.name, region: v.region, desc: v.desc, errors: v.errors, ents: scoped, all: ents, header: (f.dxf && f.dxf.header) || {}, blocks: (f.dxf && f.dxf.blocks) || {}, maps: maps, no_anchor: noAnchor });
       });
     });
@@ -179,7 +180,10 @@
     var tolG = settings.tol && settings.tol.grid, tolD = settings.tol && settings.tol.dim, tolL = settings.tol && settings.tol.level, tolA = settings.tol && settings.tol.align;
 
     var S = sheets(input.files), SH = S.sheets, byId = {};
-    SH.forEach(function (s) { byId[s.id] = s; s.k = s.desc.units ? K[s.desc.units] : null; });
+    SH.forEach(function (s) { byId[s.id] = s; s.k = s.desc.units ? K[s.desc.units] : null;
+      var st = function (t) { return (s.desc.layers || []).filter(function (q) { return q.type === t; }).map(function (q) { return q.layer; }); };   // L4.2 @LAYER …,grid|dims: this sheet only
+      s.gridL = (Array.isArray(get(settings, 'layers.grid')) ? settings.layers.grid : []).concat(st('grid'));
+      s.dimsL = (Array.isArray(get(settings, 'layers.dims')) ? settings.layers.dims : []).concat(st('dims')); });
     S.fileErrors.forEach(function (fe) { block('QF:mark_invalid', fe.file, fe.err.handle ? [fe.err.handle] : [], null, fe.file + ': ' + fe.err.code + ' ' + fe.err.message, { mark_code: fe.err.code }); });
 
     // ---------- markings ----------
@@ -257,7 +261,7 @@
       });
       if (unitEv.length) block('QF:units_conflict', s.id, unitEv.map(function (e) { return e.handle; }), posOf(unitEv[0]), s.id + ': ' + unitEv.length + ' dimension texts read in ' + Object.keys(implied).sort().join('/') + ', not in ' + uname + (s.desc.units ? ' (@UNITS)' : ' ($INSUNITS)'), { units: uname, implied: Object.keys(implied).sort() });
       if (has('layers.dims') && has('tol.dim')) s.ents.forEach(function (e) {
-        if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || settings.layers.dims.indexOf(e.layer) < 0) return;
+        if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || s.dimsL.indexOf(e.layer) < 0) return;
         var t = clean(e.text); if (parseLen(t)) block('QF:dim_not_entity', s.id, [e.handle], posOf(e), s.id + ': "' + t + '" on ' + e.layer + ' is a text, not a DIMENSION entity (exploded or typed dimension, G3)', { text: t });
       });
     });
@@ -267,7 +271,7 @@
     plans.forEach(function (s) { if (input.plan_ops && input.plan_ops[s.id]) allWs = allWs.concat(wallRects(input.plan_ops[s.id])); });
     plans.forEach(function (s) {
       if (!s.k || !has('tol.grid') || !has('layers.grid')) return;
-      var k = s.k, tolRaw = tolG / k, G = gridOf[s.id] = gridLines(s.ents, settings.layers.grid, tolRaw);
+      var k = s.k, tolRaw = tolG / k, G = gridOf[s.id] = gridLines(s.ents, s.gridL, tolRaw);
       count('grid_lines', G.lines.length);
       G.skew.forEach(function (e) { item(advisory, 'QF:grid_line_skew', 'set', s.id, [e.handle], posOf(e), s.id + ': grid-layer line ' + e.handle + ' is not axis-parallel; not read as a grid line'); });
       var gpos = function (L) { return L.axis === 'x' ? { x: r6(L.pos), y: r6(L.hi) } : { x: r6(L.hi), y: r6(L.pos) }; };
@@ -378,7 +382,7 @@
       // grid bubbles projected onto the face
       var RG = gridOf[ref.id];
       if (RG && has('tol.grid')) {
-        var EG = gridLines(s.ents, settings.layers.grid, tolG / ke);
+        var EG = gridLines(s.ents, s.gridL, tolG / ke);
         var ext = refEnv ? (map.axis === 'X' ? [refEnv[0], refEnv[2]] : [refEnv[1], refEnv[3]]) : null;
         RG.lines.filter(function (L) { return L.label && L.axis === map.axis.toLowerCase(); }).forEach(function (L) {
           var P = L.pos * ref.k; if (ext && (P < ext[0] - tolG || P > ext[1] + tolG)) return;
@@ -463,11 +467,14 @@
     });
     var counts = {}; blocking.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
     var ck = {}; Object.keys(checks).sort().forEach(function (k) { ck[k] = checks[k]; });
-    return {
+    var layerRules = [].concat.apply([], SH.map(function (s) { return (s.desc.layers || []).map(function (q) { return { sheet: s.id, layer: q.layer, type: q.type, source: q.by || 'file', handle: q.handle }; }); }));
+    var out = {
       verdict: blocking.length ? 'blocked' : 'qualifies', blocking: blocking, advisory: advisory, by_shape: by, counts: counts,
       sheets: SH.map(function (s) { return { id: s.id, view: s.desc.view || null, units: s.desc.units || null, level: s.desc.level === undefined ? null : s.desc.level, face: s.desc.face || null, roof: s.desc.roof === undefined ? null : s.desc.roof, region: s.region || null, entities: s.ents.length }; }),
       reference_plan: ref ? ref.id : null, conventions: conventions, checks: ck
     };
+    if (layerRules.length) out.layer_rules = layerRules;   // L4.2: the stated layer rules, with their source (file|model|user); absent when none
+    return out;
   }
 
   return { qualify: qualify, sheets: function (files) { return sheets(files).sheets.map(function (s) { return { id: s.id, file: s.file, region: s.region, view: s.desc.view || null }; }); }, parseLen: parseLen, clean: clean, ADVISORY_GAP: ADVISORY_GAP };

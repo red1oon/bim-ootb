@@ -13,6 +13,8 @@
  *                 new marking's handle; control 3.1 -> no new blocking, the FF wall height gaps leave the blocking list (pipeline applies the stated tops). Issue: a wrong level passes.
  *   E5 GATE       Convert disabled while blocked (forced convert refused, op-log unchanged); the real std set (8 sheets) through the chooser,
  *                 layer set from the drawings (STD) -> the editor verdict == the gate; qualifies -> Convert enabled and a real click converts. Issue: Convert on a guess.
+ *   E6 LAYERS     §L4.2: the old set's unmapped layers mapped in the Layers UI -> exactly the layer_unmapped items go; saved copies carry those
+ *                 @LAYER=… @BY=user markings; re-import restores the mapping ("you", same types, no red) and the verdict. Issue: a layer map that does not travel.
  *   T1/X1         UI sanity: Tag tool click on the canvas writes @TAG at the entity centre; Exclude tool drag writes @EXCLUDE.
  * Inputs (local, not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler) tests/dxf2bim/out/{marked,marked_shell} + dx_shell_gaps.json
  * (run there: mark_dx_set.js, rosetta_dx_shell.js), out/{marked_std,marked_std_shell} (std2d.py --door-ops, mark_dx_set.js std, DXSET=std rosetta_dx_shell.js),
@@ -245,9 +247,10 @@ runE2E('W-DXF-META', async (t) => {
     await ensureSec(pg2, 'sheets'); await ensureCard(pg2, si);
     const one = key => M.find(m => m.key === key);
     await pg2.select('select[data-act="single"][data-key="VIEW"][data-sheet="' + si + '"]', one('VIEW').value); actions++; await sleep(200);
-    for (const key of ['SET', 'NAME', 'LEVEL', 'ROOF']) { const m = one(key); if (!m) continue; await typeInto(pg2, 'input[data-act="single"][data-key="' + key + '"][data-sheet="' + si + '"]', m.value); actions++; }
+    for (const key of ['SET', 'NAME', 'LEVEL', 'ROOF']) { const m = one(key); if (!m) continue; await idle(pg2); await typeInto(pg2, 'input[data-act="single"][data-key="' + key + '"][data-sheet="' + si + '"]', m.value); actions++; }
     for (const key of ['FACE', 'HAXIS']) { const m = one(key); if (!m) continue; await pg2.select('select[data-act="single"][data-key="' + key + '"][data-sheet="' + si + '"]', m.value); actions++; await sleep(150); }
     for (const m of M.filter(q => /^GRID|^Z$/.test(q.key))) {
+      await idle(pg2);   // a user types the row once the panel has settled (a verdict landing re-renders the panel; puppeteer element handles would go stale)
       const grp = m.key === 'Z' ? 'Z' : m.key === 'GRIDH' ? 'GRIDH' : 'GRID';
       if (grp === 'GRID') await pg2.select('select[data-add-key="' + si + '-GRID"]', m.key);
       await pg2.type('input[data-add-val="' + si + '-' + grp + '"]', m.value);
@@ -301,6 +304,53 @@ runE2E('W-DXF-META', async (t) => {
     'suggestions listed=' + nProps + ' (e.g. ' + props[0].p.slice(0, 4).join(' ; ') + ') ticked=GF PR-UNITS | saved markings ' + J(got4));
   await pg4.close();
 
+  // ================= E6 (§L4.2): layer choices are @LAYER markings: mapped through the UI -> saved -> re-imported (round trip) =================
+  {
+    const pg6 = await newPage(t, 'layers');
+    const DL6 = path.join(TMP, 'saved_e6'); await setDownloads(pg6, DL6);
+    const v60 = await openSet(pg6, SET);
+    await ensureSec(pg6, 'layers');
+    const chosen = [];
+    for (let guard = 0; guard < 80; guard++) {
+      const nx = await pg6.evaluate(() => { const e = document.querySelector('select[data-act="layer"].need'); return e ? [e.getAttribute('data-role'), e.getAttribute('data-layer')] : null; });
+      if (!nx) break;
+      const ch = nx[1] === 'A-GRID' ? 'grid' : nx[1] === 'A-ANNO-DIMS' ? 'dims' : 'ignore';
+      await pg6.select('select[data-act="layer"][data-role="' + nx[0] + '"][data-layer="' + nx[1] + '"]', ch); chosen.push([nx[0], nx[1], ch]); await sleep(150);
+    }
+    const v61 = await idle(pg6);
+    const k0 = new Set(v60.blocking.map(keyOf)), un = v60.blocking.filter(x => x.code === 'QF:layer_unmapped').map(keyOf);
+    const gone = v60.blocking.filter(x => !new Set(v61.blocking.map(keyOf)).has(keyOf(x))).map(keyOf), nw = v61.blocking.filter(x => !k0.has(keyOf(x)));
+    const lr = await pg6.evaluate(() => (window.DxfImportUI.state.gate.verdict.layer_rules || []).map(r => r.sheet + '|' + r.layer + '|' + r.type + '|' + r.source));
+    check('E6 MAPPED', 'mapping the unmapped layers through the UI does not remove exactly the layer_unmapped items (or adds others), or the verdict does not list them as user-stated',
+      chosen.length > 0 && un.length === v60.counts['QF:layer_unmapped'] && J(gone.sort()) === J(un.sort()) && nw.length === 0 && lr.length > 0 && lr.every(x => /\|user$/.test(x)),
+      'choices=' + chosen.length + ' ' + J(chosen.slice(0, 6)) + ' layer_unmapped ' + un.length + ' -> gone ' + gone.length + ', new=' + nw.length + ' | layer_rules=' + lr.length + ' e.g. ' + J(lr.slice(0, 3)));
+    const want = await pg6.evaluate(() => { const o = {}; window.DxfMetaEditor.state.sheets.forEach(sh => { o[window.DxfMetaEditor.saveName(sh.name)] = sh.marks.filter(m => m.key === 'LAYER').map(m => '@LAYER=' + m.value).sort(); }); return o; });
+    await clk(pg6, '#dm-save');
+    const saved6 = await waitFiles(DL6, 7);
+    const bad6 = [];
+    saved6.forEach(n => { const raws = MK.readMarks(parse(fs.readFileSync(path.join(DL6, n), 'utf8')).entities).map(m => m.raw).filter(r => /^@LAYER=/.test(r));
+      const got = raws.map(r => r.replace(/\s+@BY=\S+$/, '')).sort();
+      if (J(got) !== J(want[n] || [])) bad6.push(n + ' got ' + J(got) + ' want ' + J(want[n]));
+      if (!raws.every(r => / @BY=user$/.test(r))) bad6.push(n + ' a @LAYER without @BY=user'); });
+    check('E6 SAVED', 'a saved copy lacks the @LAYER markings the user chose (or carries others, or without @BY=user)', bad6.length === 0 && saved6.length === 7,
+      bad6.length ? bad6.join(' ; ') : J(Object.keys(want).map(k => k + ':' + want[k].length)));
+    await pg6.close();
+    const pg7 = await newPage(t, 'layers-reimport');
+    const v7 = await openSet(pg7, saved6.map(n => path.join(DL6, n)));
+    await ensureSec(pg7, 'layers');
+    const shown = await pg7.evaluate(ch => ch.map(([role, layer, c]) => { const sel = document.querySelector('select[data-act="layer"][data-role="' + role + '"][data-layer="' + layer + '"]');
+      const src = sel && sel.parentElement.querySelector('[data-src]'); return [role, layer, sel ? sel.value : null, src ? src.getAttribute('data-src') : null, c]; }), chosen);
+    const red7 = await pg7.evaluate(() => document.querySelectorAll('select[data-act="layer"].need').length);
+    const badShown = shown.filter(x => x[2] !== x[4] || x[3] !== 'user');
+    check('E6 ROUND-TRIP', 'the re-imported copies do not restore the layer mapping (type or "you" source lost, a layer red again) or give another verdict',
+      badShown.length === 0 && red7 === 0 && sortObj(v7.counts) === sortObj(v61.counts) && v7.nA === v61.nA, 'restored ' + (shown.length - badShown.length) + '/' + shown.length + (badShown.length ? ' bad=' + J(badShown.slice(0, 4)) : '') + ' red=' + red7 + ' verdict ' + v7.nB + '/' + v7.nA + ' vs ' + v61.nB + '/' + v61.nA);
+    await pg7.evaluate(() => { const S = window.DxfMetaEditor.state; S.sec.sheets = false; S.sec.units = false; S.sec.verdict = false; });
+    await clk(pg7, '[data-act="sec"][data-sec="layers"]'); await clk(pg7, '[data-act="sec"][data-sec="layers"]');
+    await pg7.evaluate(() => { const r = document.querySelector('[data-layer-row^="elev|"] select'); if (r) r.scrollIntoView({ block: 'center' }); }); await sleep(500);
+    await pg7.screenshot({ path: path.join(SHOTS, 'l4_editor_layers_reimport.png') });
+    await pg7.close();
+  }
+
   // ================= E5 (b): the real std Duplex set (8 sheets; BIMCompiler chain std2d.py --door-ops -> mark_dx_set.js std -> DXSET=std rosetta_dx_shell.js) =================
   const STDF = ['marked_std/DX_FLOOR_GF_marked.dxf', 'marked_std/DX_FLOOR_FF_marked.dxf', 'marked_std_shell/DX_FRONT_shell.dxf', 'marked_std_shell/DX_REAR_shell.dxf',
     'marked_std_shell/DX_LEFT_shell.dxf', 'marked_std_shell/DX_RIGHT_shell.dxf', 'marked_std/DX_ROOF_marked.dxf', 'marked_std/DX_SECTION_marked.dxf'].map(f => path.join(OUT, f));
@@ -328,7 +378,7 @@ runE2E('W-DXF-META', async (t) => {
   }
   await pg5.screenshot({ path: path.join(SHOTS, 'l4_editor_std.png') });
   await pg5.close();
-  say('screenshots: ' + ['l4_editor_filled.png', 'l4_editor_verdict_zoom.png', 'l4_editor_raw.png', 'l4_editor_midfill.png', 'l4_editor_std.png'].map(f => path.join(SHOTS, f)).join(' , '));
+  say('screenshots: ' + ['l4_editor_filled.png', 'l4_editor_verdict_zoom.png', 'l4_editor_raw.png', 'l4_editor_midfill.png', 'l4_editor_layers_reimport.png', 'l4_editor_std.png'].map(f => path.join(SHOTS, f)).join(' , '));
   say('SUMMARY fail=' + fail + ' gap=' + gapN);
   t.assert('W-DXF-META checks', fail === 0, 'fail=' + fail + ' gap=' + gapN);
   fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');
