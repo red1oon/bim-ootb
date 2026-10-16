@@ -60,6 +60,7 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   for (const id of chain2) { const open = await pg.evaluate(i => { const r = document.querySelector('#idmp-tree .idmp-row[data-menu-id="' + i + '"]'); return r && r.parentElement.classList.contains('open'); }, id);
     if (!open) await hc('#idmp-tree .idmp-row[data-menu-id="' + id + '"]'); }
   await hc('#idmp-tree .idmp-row.leaf[data-menu-id="' + mid2 + '"]'); await pg.waitForSelector(NEWB); await pg.waitForTimeout(1200);
+  if ((await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: a single-row tab opens as a form; the legacy user switches to the grid
   const rows = await pg.$$eval('.idmp-grid tbody tr', t => t.map(x => x.textContent));
   console.log('§NC2B-UI Financial Report records=' + JSON.stringify(rows));
   const bsIdx = rows.findIndex(r => /Balance Sheet/.test(r));

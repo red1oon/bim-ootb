@@ -272,7 +272,14 @@
     return { selected: cur.map(function (id) { return byId[id]; }).filter(Boolean), available: cand.filter(function (f) { return cur.indexOf(String(f.id)) < 0; }) };
   }
 
-  var API = { parseCustom: parseCustom, customString: customString, autoHideToSave: autoHideToSave, isAutoHide: isAutoHide, tabCustSave: tabCustSave, customizeLists: customizeLists, gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
+  // §OPEN-MODE GridTab.isSingleRow :1617-1622 - the presentation a tab opens in: the user's AD_Tab_Customization.IsDisplayedGrid wins ("N" = form),
+  //   else AD_Tab.IsSingleRow. ADTabpanel.init :1017 then switches a non-single-row tab to the grid; a single-row tab stays in the form.
+  function singleRow(tabIsSingleRow, custRow) {
+    var g = custRow && custRow.isdisplayedgrid != null ? custRow.isdisplayedgrid : null;
+    return g != null ? g === 'N' : !!tabIsSingleRow;
+  }
+
+  var API = { singleRow: singleRow, parseCustom: parseCustom, customString: customString, autoHideToSave: autoHideToSave, isAutoHide: isAutoHide, tabCustSave: tabCustSave, customizeLists: customizeLists, gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
               query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
   // ── §UDP-ORDER the row order of a tab (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-ORDER; Witness: W-UDP-ORDER).
   //   GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo slots 1..3 (|SortNo|, negative = DESC;
