@@ -1825,7 +1825,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§ZOOM-ACROSS-OPEN window=' + d.name + '(' + d.windowId + ') filter=' + d.col + '=' + d.val + ' via=lens');
         openWindow(d.windowId, d.name, true);
       },
-      openForm: function (formId, preset) { openAdForm(Number(formId), null, preset || null); }
+      openForm: function (formId, preset) { openAdForm(Number(formId), null, preset || null); },
+      // §FO-A1 (ERP_FRIENDLY_OPS_LENS.md §29): tab seams only - the tab click body, then the toolbar New; saving stays _saveAndNavigate / the model .save().
+      level: tab ? (tab.tabLevel || 0) : 0,
+      childTabs: function () { var w = _curWin(), out = [], lv = tab ? (tab.tabLevel || 0) : 0; if (!w || !w.tabs) return out;
+        for (var i = _activeTabIdx + 1; i < w.tabs.length; i++) { var l = w.tabs[i].tabLevel || 0; if (l <= lv) break; if (l === lv + 1) out.push({ idx: i, name: w.tabs[i].name }); } return out; },
+      parentTab: function () { var w = _curWin(), lv = tab ? (tab.tabLevel || 0) : 0; if (!w || !w.tabs || !lv) return null;
+        for (var i = _activeTabIdx - 1; i >= 0; i--) if ((w.tabs[i].tabLevel || 0) < lv) return { idx: i, name: w.tabs[i].name }; return null; },
+      goTab: function (idx) { _activeTabIdx = idx; _viewMode = _openModeFor(idx); renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); console.log('§OPS-LENS goTab idx=' + idx); },
+      openChildNew: function (idx) { _activeTabIdx = idx; _viewMode = _openModeFor(idx); renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); _openCreate(); console.log('§OPS-LENS openChildNew idx=' + idx); }
     };
   }
   // §SAVE-PREVIEW panel (ERP_FRIENDLY_OPS_LENS.md §16 FO-M1): what Save would write, read from the uncommitted model run. Generic: per child table its dictionary name and
