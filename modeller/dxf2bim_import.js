@@ -133,6 +133,55 @@
       var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }) };
   }
 
+  // ---- §L4.4 a Tag-tool click on an ELEVATION opening → the plan position + z the reader binds (pure; the reader's own functions) ----
+  // plans: described PLAN sheets ({name, text, dxf, desc}); elev: the described ELEV sheet; handle: the picked entity. Returns
+  // {ok, cls, plan, x, y (plan drawing units), z (m), elevHandles, opening, p:[p0,p1], why}. Never guesses: none / a tie → ok:false + why.
+  function footprintOf(op) {   // = Dxf2Types footprint (window: bbox, else centre/width/depth); door: its drawn opening box, else the swing box
+    var p = op.params;
+    if (p.kind === 'door' && p.hinge) {
+      var b = p.opening_box; if (b) { var L = b.along || b.s; return b.axis === 'x' ? [L[0], b.band[0], L[1], b.band[1]] : [b.band[0], L[0], b.band[1], L[1]]; }
+      var H = p.hinge, pts = [H].concat([p.swing_start_deg, p.swing_end_deg].map(function (a) { return [H[0] + p.width * Math.cos(a * Math.PI / 180), H[1] + p.width * Math.sin(a * Math.PI / 180)]; }));
+      return [Math.min.apply(null, pts.map(function (q) { return q[0]; })), Math.min.apply(null, pts.map(function (q) { return q[1]; })), Math.max.apply(null, pts.map(function (q) { return q[0]; })), Math.max.apply(null, pts.map(function (q) { return q[1]; }))];
+    }
+    if (p.bbox) return p.bbox;
+    if (p.centre && typeof p.width === 'number' && typeof p.depth === 'number') {
+      var hx = (p.angle_deg === 90 ? p.depth : p.width) / 2, hy = (p.angle_deg === 90 ? p.width : p.depth) / 2;
+      return [p.centre[0] - hx, p.centre[1] - hy, p.centre[0] + hx, p.centre[1] + hy];
+    }
+    return null;
+  }
+  function elevPick(plans, elev, setName, handle) {
+    var SET = setWith(setName), no = function (why) { return { ok: false, why: why }; };
+    if (!SET) return no('no layer-map set');
+    var P = plans.filter(function (s) { return s && s.desc && s.desc.view === 'PLAN' && typeof s.desc.level === 'number' && (s.desc.units in MK.UNITS); }).sort(function (a, b) { return a.desc.level - b.desc.level; });
+    if (!P.length) return no('no plan with @LEVEL and @UNITS');
+    if (!elev || !elev.desc || elev.desc.view !== 'ELEV' || !elev.desc.face) return no('not an elevation with @FACE');
+    var al = MK.align(P[0].desc, elev.desc, C.MARK_ALIGN_TOL);
+    if (!al.map || !al.map.zOf) return no('the elevation does not align with plan ' + P[0].name);
+    var em = MK.withLayers(SET.MAP_ELEV, elev.desc), cls = null, cl = null;
+    [['glazing', 'window'], ['elevdoor', 'door']].forEach(function (t) {
+      if (cl) return; var c = E.elevClusters(elev.dxf.entities, em, al.map, C.CFG.snap_tol, t[0]).filter(function (q) { return q.handles.indexOf(handle) >= 0; })[0];
+      if (c) { cl = c; cls = t[1]; } });
+    if (!cl) return no('handle ' + handle + ' is not on an opening layer of this elevation (glazing / door)');
+    var z = Math.round((cl.z0 + cl.z1) / 2 * 1e4) / 1e4;
+    var pl = P.filter(function (s) { return s.desc.level <= z; }).pop();
+    if (!pl) return no('z ' + z + ' is below the lowest plan level ' + P[0].desc.level);
+    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), C.CFG, { DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
+    var walls = run.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; });
+    if (!walls.length) return no('plan ' + pl.name + ' has no wall pieces (no envelope)');
+    var env = S.envelope(walls), face = elev.desc.face, ax = (face === 'minY' || face === 'maxY') ? 0 : 1, fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face];
+    var cand = run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && (o.params.category || o.params.kind) === cls; }).map(function (o) {
+      var f = footprintOf(o); if (!f) return null;
+      var lo = f[ax], hi = f[ax + 2]; if (Math.min(hi, cl.p1) - Math.max(lo, cl.p0) <= 0) return null;
+      var a0 = f[1 - ax], a1 = f[3 - ax], d = fc < a0 ? a0 - fc : fc > a1 ? fc - a1 : 0;
+      return { op: o, f: f, d: Math.round(d * 1e6) / 1e6 };
+    }).filter(Boolean).sort(function (a, b) { return a.d - b.d; });
+    if (!cand.length) return no('no ' + cls + ' in plan ' + pl.name + ' over ' + cl.p0 + '..' + cl.p1 + ' along the ' + face + ' face');
+    if (cand.length > 1 && cand[1].d === cand[0].d) return no('two ' + cls + 's in plan ' + pl.name + ' at the same distance from the ' + face + ' face (' + cand[0].op.params.handle + ', ' + cand[1].op.params.handle + ')');
+    var k = MK.UNITS[pl.desc.units], f0 = cand[0].f, r3 = function (v) { return Math.round(v * 1000) / 1000; };
+    return { ok: true, cls: cls, plan: pl.name, x: r3((f0[0] + f0[2]) / 2 / k), y: r3((f0[1] + f0[3]) / 2 / k), z: z, elevHandles: cl.handles, opening: cand[0].op.params.handle, p: [cl.p0, cl.p1], faceDist: cand[0].d };
+  }
+
   // ---- the pipeline: rosetta_dx_shell.js pipeline({convention:false}), same calls, same order ----
   // library (optional): { families:[{id, ot, ifc_class, w, h, d}], wallTypes:[{id, t}], geoms:[{element_ref, ifc_class, geometry_hash, vertices, faces, bbox}], labels:{<storey>:[...]} }
   function convert(sheets, opts) {
@@ -476,5 +525,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });
