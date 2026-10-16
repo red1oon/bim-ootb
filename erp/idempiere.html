@@ -1402,10 +1402,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (_pendingWid) { var w = Number(_pendingWid); _pendingWid = null; if (_session.winSet[w]) {
       // §UDP-4 a record link is a ZOOM (AEnv.zoom -> MQuery on the key): the window opens on that record only - no Find-first, no
       //   only-current-rows (initialQuery :901-905 returns the zoom query; initTab :777-779 turns onlyCurrentRows off)
-      var _zw = _pendingRid ? (function () { try { return ADP.getWindow(db, w); } catch (e) { return null; } })() : null, _zt = _zw && _zw.tabs && _zw.tabs[0];
-      if (_zt && _zt.tableName) { _zoomFilter = { windowId: w, table: _zt.tableName, col: _keyCol(_zt), val: _pendingRid }; openWindow(w, null, true); }
-      else openWindow(w);
-      _wOpened = true; if (_pendingRid) { _landOnRecord(_pendingRid); _pendingRid = null; } } }
+      if (_pendingRid) _zoom(w, null, _pendingRid, 'deeplink'); else openWindow(w);
+      _wOpened = true; _pendingRid = null; } }
     // §AD-PROC-LIVE deep link — same role gate as windows: the role's REAL ad_process_access set decides.
     if (_pendingPid) { var pp = Number(_pendingPid); _pendingPid = null;
       if (_session.procSet && _session.procSet[pp]) { openProcess(pp); _wOpened = true; }
@@ -1630,9 +1628,27 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 
   // §DEEPLINK — after openWindow() loads _records, jump to the record whose PK matches ?record=<pk>
   // and switch to form view. If it isn't in the role/client-scoped set, log + stay on the grid (honest blank).
-  function _landOnRecord(rid) {
+  // §UDP-6G zoom — AEnv.zoom(AD_Window_ID, MQuery) :537-550 / DPRecentItems.doOnClick :222-260: open the window with an EQUAL query on
+  //   its header tab (column defaults to the key) and land on that record. ONE implementation: the ?record= deep link, the Home gadgets
+  //   (IdmpHost.zoom) all come here. Role gate = the window access set (MRole.getWindowAccess).
+  function _zoom(windowId, column, value, why) {
+    var w = Number(windowId);
+    if (!_session || !_session.winSet || !_session.winSet[w]) { console.log('§ZOOM refused window=' + w + ' (no window access for this role)' + (why ? ' from=' + why : '')); return false; }
+    var zw = null; try { zw = ADP.getWindow(db, w); } catch (e) {}
+    var zt = zw && zw.tabs && zw.tabs[0];
+    if (!zt || !zt.tableName || value == null || value === '') { openWindow(w); console.log('§ZOOM window=' + w + ' no query (header tab or value missing)'); return false; }
+    var col = column || _keyCol(zt);
+    _needBundles(_windowTriggers(w), function () {
+      _zoomFilter = { windowId: w, table: zt.tableName, col: col, val: value };
+      _openWindowNow(w, null, true);
+      var ok = _landOnRecord(value, col);
+      console.log('§ZOOM window=' + w + ' ' + zt.tableName + '.' + col + '=' + value + ' rows=' + _records.length + ' landed=' + ok + (why ? ' from=' + why : ''));
+    });
+    return true;
+  }
+  function _landOnRecord(rid, col) {
     var tab = _curTab(); if (!tab) return false;
-    var kc = _keyCol(tab);
+    var kc = col || _keyCol(tab);
     for (var i = 0; i < _records.length; i++) {
       if (String(recVal(_records[i], kc)) === String(rid)) {
         _recIdx = i; _viewMode = 'form';
@@ -4866,12 +4882,17 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var r = e.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) return null;
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: 14, rRaw: 14 };
-    }
+    },
+    // §UDP-6G (user decision 2026-10-16) — zoom(windowId, column, value): AEnv.zoom; recentItems(cb) / recentRemove(id, cb): the MRecentItem
+    //   model behind the Home Recent Items gadget (getFromUser + getLabel + role filter; riDBremove). Read + signed writes stay in the core.
+    zoom: function (windowId, column, value) { return _zoom(windowId, column, value, 'host'); },
+    recentItems: function (cb) { _recentItems(cb); },
+    recentRemove: function (id, cb) { _recentRemove(id, cb); }
     // TODO(STEP-0 seam#1 — write path): inject the engine C0 dispatch(intent, ctx) + populated ctx
     //   {actor,pubKey,roleId,allowOrgs} so the lens chromes can commit (kanban drag / chat send). The kernel
     //   write path is PROVEN (W-CRUD-WRITELOOP 11/11); only the C0 wrapper + ctx wiring remain (ENGINE_CONTRACT §6).
   };
-  console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate mount=#idmp-content');
+  console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate,zoom,recentItems,recentRemove mount=#idmp-content');
 
   // ── SO_FULL_CRUD_GAP.md T3 / GAP 3 — host adapter for the SHARED crud_overlay.js (no fork) ───────────
   // The overlay reads page globals (typeof-guarded): withBundle/curChain/fname + __crudHostAnchor. Glassbowl
@@ -5128,6 +5149,63 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
     if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { go(base); return; }
     c.withSidecar(function (sdb) { go(sdb ? c.core.listTip(sdb, 'ad_recentitem', 'ad_recentitem_id', base, null).rows.filter(function (r) { return String(r.ad_user_id) === String(App.actor); }) : base); });
+  }
+
+  // §UDP-6G — the Recent Items read for the Home gadget (DPRecentItems.refresh :262-306 over MRecentItem.getFromUser/getLabel :336-413).
+  //   Rows = seed + op-log tip; window access filter (getWindowAccess); a record that no longer loads -> its recent row is deleted (signed)
+  //   and skipped; stop at RecentItems_MaxShown (default 10). isRecordAccess is not ported (no AD_Record_Access engine in the twin) - logged.
+  function _recentTip(table, pk, base, cb) {
+    var c = window.__crud;
+    if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(base); return; }
+    c.withSidecar(function (sdb) { cb(sdb ? c.core.listTip(sdb, table, pk, base, null).rows : base); });
+  }
+  function _recentItems(cb) {
+    cb = typeof cb === 'function' ? cb : function () {};
+    var App = window.APP || {};
+    if (!window.AdRecent || App.actor == null || App.clientId == null) { cb([]); return; }
+    var mx = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='RecentItems_MaxShown' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId) + ") ORDER BY ad_client_id DESC")[0];
+    var maxShown = mx && mx.v != null && String(mx.v).trim() !== '' ? Number(mx.v) : 10;
+    if (!(maxShown > 0)) { console.log('§UDP6G-LIST shown=0 maxShown=' + maxShown); cb([]); return; }
+    _recentTip('ad_recentitem', 'ad_recentitem_id', _sqlRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), function (all) {
+      var rows = AdRecent.listFor(all.filter(function (r) { return String(r.ad_user_id) === String(App.actor); }), App.actor, App.clientId);
+      var out = [], stale = [], noAccess = 0, i = 0;
+      var next = function () {
+        if (i >= rows.length || out.length >= maxShown) {
+          console.log('§UDP6G-LIST user=' + App.actor + ' rows=' + rows.length + ' shown=' + out.length + ' maxShown=' + maxShown + ' noWindowAccess=' + noAccess + ' staleDeleted=' + stale.length +
+            ' recordAccess=NOT-PORTED labels=' + JSON.stringify(out.map(function (o) { return o.label; })));
+          if (stale.length) _recentRemove(stale, function () {});
+          cb(out); return;
+        }
+        var r = rows[i++], wid = Number(r.ad_window_id);
+        if (wid > 0 && !(_session && _session.winSet && _session.winSet[wid])) { noAccess++; next(); return; }
+        var tb = _sqlRows('SELECT tablename AS t FROM ad_table WHERE ad_table_id=' + Number(r.ad_table_id))[0];
+        if (!tb || !tb.t) { stale.push(r.ad_recentitem_id); next(); return; }
+        var tn = String(tb.t).toLowerCase(), kc = tn + '_id', uuc = tn + '_uu', hasUU = r.record_uu != null && String(r.record_uu) !== '';
+        var where = hasUU ? (uuc + '=' + _lit(String(r.record_uu))) : (kc + '=' + Number(r.record_id));
+        var base = _colExists(tn, hasUU ? uuc : kc) ? _sqlRows('SELECT * FROM ' + tn + ' WHERE ' + where) : [];
+        _recentTip(tn, kc, base, function (recs) {
+          var po = recs.filter(function (x) { return hasUU ? String(x[uuc]) === String(r.record_uu) : String(x[kc]) === String(r.record_id); })[0] || null;
+          if (po) po.__id = r.record_id;
+          var w = _sqlRows('SELECT name, titlelogic FROM ad_window WHERE ad_window_id=' + wid)[0] || {};
+          var wname = window.ErpI18n && ErpI18n.windowName ? ErpI18n.windowName(wid, w.name) : w.name;
+          var resolve = function (tbl, col, id, sub) { var x = _sqlRows('SELECT ' + sub + ' AS v FROM ' + tbl + ' WHERE ' + col + '=' + _lit(id))[0]; return x ? x.v : null; };
+          var lb = AdRecent.label(wname, w.titlelogic, po, resolve);
+          if (lb == null) { stale.push(r.ad_recentitem_id); next(); return; }
+          out.push({ id: r.ad_recentitem_id, label: lb, windowId: wid, column: hasUU ? uuc : kc, value: hasUU ? String(r.record_uu) : r.record_id });
+          next();
+        });
+      };
+      next();
+    });
+  }
+  // §UDP-6G riDBremove (DPRecentItems :183-190): delete the recent row(s) as ONE signed CRUD group.
+  function _recentRemove(ids, cb) {
+    cb = typeof cb === 'function' ? cb : function () {};
+    var list = (Array.isArray(ids) ? ids : [ids]).filter(function (x) { return x != null && x !== ''; }), c = window.__crud;
+    if (!list.length) { cb(false); return; }
+    if (!c || typeof c.applyOpGroup !== 'function') { console.log('§UDP6G-REMOVE ids=' + list.join(',') + ' NOT persisted (no signed op-log)'); cb(false); return; }
+    c.applyOpGroup(list.map(function (id) { return _procCrud('delete', 'ad_recentitem', { id: id }); }), function (cr) {
+      console.log('§UDP6G-REMOVE ids=' + list.join(',') + ' committed=' + !!(cr && cr.committed)); cb(!!(cr && cr.committed)); });
   }
 
   // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
