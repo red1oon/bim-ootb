@@ -26,6 +26,22 @@ Read this block first, then the sections it names. Work to zero; spec first, the
   - multi-storey acid test (SampleCastle + HHS), plus the Node extractor additions (`rel_fills_host` incl. void-only openings, world bboxes/meshes, Pset IsExternal/LoadBearing), §L1.6 (openings from the host relation, not the knife; columns as gridded column symbols; storey names from the model);
   - the MS film.
 
+**Multi-storey acid test result (2026-10-17; BIMCompiler #196 merged; spec §L1.6 = bim-ootb #2074):**
+- **What #196 delivered:**
+  - The Node extractor now writes world bboxes, `rel_fills_host`, IsExternal/LoadBearing and storey placement. Existing tables are unchanged on 5 IFCs; the witness passes on 8. std2d reads ONE DB.
+  - Duplex from the Node DB: the same entity counts. Plan polygons differ 7–24 mm² because the geometry engines cut casings differently.
+  - Columns are now gridded column symbols (SampleCastle 9/9, HHS structure 257/257).
+  - One building grid across storeys; 3 dimension tiers pass; SampleCastle storeys come from the model (0/3/6/9 m; the old knife was 240 mm low).
+- **What is NOT solved:**
+  - SampleCastle plan openings: 9/164, 7/136, 7/116, 10/39. The knife is not the cause.
+    - 357 of 455 openings have no wall host (no fills relation, no void).
+    - 65 hosts (51 walls) have EMPTY geometry from web-ifc.
+    - HHS curtain walls have no geometry either, so the HHS façade is empty.
+  - Readability: SampleCastle's grid at 28×31 is too dense (the 10 mm merge tol was a Duplex choice; the user decides). Bubbles and dim texts overlap. 8 columns are too asymmetric to grid.
+  - mark_dx_set.js / rosetta_dx_shell.js are Duplex-specific (sheet list, @SET=DX, old-schema SQL, 1-char grid labels). Generalise them to N storeys + the Node schema.
+  - Re-sync modeller/dxf2bim copies (dxf2shell_config.js changed in #196).
+- **PNGs:** ~/Videos/dxf2bim_work/acid/
+
 **NEXT LANES (in order).**
 1. **Extractor = one schema.** std2d must read ONLY the Node extractor DB (`scripts/extractIFC2DB.js`; never the Python one). Prove the Duplex std set is identical from the Node DB.
 2. **§L1.6 acid test on multi-storey models:** SampleCastle (5 storeys, stairs, 259 windows, 205 doors, 23 columns) and HHS (257 columns).
