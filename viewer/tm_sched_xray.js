@@ -180,7 +180,7 @@
     var ov = _classifyNameOverride(cls, name, nameOverrides);
     if (ov) return ov;
     if (window.ScheduleAuthor && window.ScheduleAuthor.matchRule) {
-      // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map; ScheduleAuthor.matchRule is the one owner of the 3 tiers.
+      // tier-2 schema-ancestor map (schedule_author.js); ScheduleAuthor.matchRule is the one owner of the 3 tiers.
       return window.ScheduleAuthor.matchRule(cls, rules, dflt, window.IFC_SCHEMA_HIERARCHY || {});
     }
     var bestKey = null, bestLen = 0;
