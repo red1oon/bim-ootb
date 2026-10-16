@@ -16,6 +16,15 @@
  *   E6 LAYERS     §L4.2: the old set's unmapped layers mapped in the Layers UI -> exactly the layer_unmapped items go; saved copies carry those
  *                 @LAYER=… @BY=user markings; re-import restores the mapping ("you", same types, no red) and the verdict. Issue: a layer map that does not travel.
  *   T1/X1         UI sanity: Tag tool click on the canvas writes @TAG at the entity centre; Exclude tool drag writes @EXCLUDE.
+ *   E7 RAW→QUALIFIES §L4.3: the std set with DXF2BIM-MARK stripped, EVERYTHING filled through the UI incl. the Doors section (schedule rows
+ *                 typed, 14 door tags by canvas clicks) -> blocked 28 -> qualifies; saved markings == the marked std set's; Convert == E5's
+ *                 conversion element for element. E7-FALSIFY one schedule height mistyped -> exactly that mark's doors block. E7 PROPOSE:
+ *                 schedule / tag texts drawn in a plan are suggested, never written until ticked. Issue: a raw drawing cannot reach "Qualifies"
+ *                 through the editor, or the doors it fills differ from the stated ones.
+ *   E7 WINDOW-PICKS §L4.4: the 12 stacked FF windows are tagged by real clicks on their glazing in the 4 elevations (z from the elevation,
+ *                 never typed); each pick = the plan position (0.01 drawing units) + z of the marked set's tag. E7-ELEV-FALSIFY: a click on an
+ *                 elevation wall line tags nothing and shows why. Issue: a stacked window cannot be stated in the editor, or is stated wrong.
+ * W_ONLY=E7 runs E0 + E5(b) + E7 only (development); the recorded log is the full run.
  * Inputs (local, not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler) tests/dxf2bim/out/{marked,marked_shell} + dx_shell_gaps.json
  * (run there: mark_dx_set.js, rosetta_dx_shell.js), out/{marked_std,marked_std_shell} (std2d.py --door-ops, mark_dx_set.js std, DXSET=std rosetta_dx_shell.js),
  * scripts/export_library_subset.js.
@@ -33,6 +42,7 @@ const SET = [['marked', 'DX_FLOOR_GF_marked.dxf'], ['marked', 'DX_FLOOR_FF_marke
   ['marked_shell', 'DX_LEFT_shell.dxf'], ['marked_shell', 'DX_RIGHT_shell.dxf'], ['marked_shell', 'DX_ROOF_shell.dxf']].map(([d, n]) => path.join(OUT, d, n));
 const SUBSET = path.join(__dirname, '..', 'dxf2bim', 'local', 'library_subset_duplex.json');
 const lines = []; let fail = 0, gapN = 0;
+const ONLY = process.env.W_ONLY || '';
 const say = s => { lines.push(s); console.log(s); };
 const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL ') + id + ' | ' + issue + ' | ' + d); };
 const gap = (id, d) => { gapN++; say('GAP  ' + id + ' | ' + d); };
@@ -124,6 +134,7 @@ runE2E('W-DXF-META', async (t) => {
     gaps: G.gaps, resolved: G.resolved }, DX.QUALIFY);
   say('Node verdict: ' + vNode.verdict + ' blocking=' + vNode.blocking.length + ' advisory=' + vNode.advisory.length + ' counts=' + sortObj(vNode.counts));
 
+  if (!ONLY) {
   // ================= E1 =================
   const pg = await newPage(t, 'marked');
   const v1 = await openSet(pg, SET);
@@ -351,6 +362,8 @@ runE2E('W-DXF-META', async (t) => {
     await pg7.close();
   }
 
+  }   // !ONLY
+
   // ================= E5 (b): the real std Duplex set (8 sheets; BIMCompiler chain std2d.py --door-ops -> mark_dx_set.js std -> DXSET=std rosetta_dx_shell.js) =================
   const STDF = ['marked_std/DX_FLOOR_GF_marked.dxf', 'marked_std/DX_FLOOR_FF_marked.dxf', 'marked_std_shell/DX_FRONT_shell.dxf', 'marked_std_shell/DX_REAR_shell.dxf',
     'marked_std_shell/DX_LEFT_shell.dxf', 'marked_std_shell/DX_RIGHT_shell.dxf', 'marked_std/DX_ROOF_marked.dxf', 'marked_std/DX_SECTION_marked.dxf'].map(f => path.join(OUT, f));
@@ -369,16 +382,310 @@ runE2E('W-DXF-META', async (t) => {
   check('E5 GATE', 'Convert state disagrees with the verdict the editor shows (enabled while blocked, or disabled while it qualifies)', (v6.verdict === 'qualifies') === !g6.dis && g6.shown === v6.verdict && v6.pipeline.ran,
     'verdict=' + v6.verdict + ' disabled=' + g6.dis + ' status="' + g6.st + '"');
   check('E5 STD QUALIFIES', 'the std set (Node: qualifies, 0 blocking) is not shown as qualifying in the editor', v6.verdict === 'qualifies' && v6.nB === 0, 'blocking=' + v6.nB + ' advisory=' + v6.nA);
+  const elSig = () => window.DxfImportUI.state.gate.R.els.map(e => { const v = e.vertices, m = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
+    for (let i = 0; i < v.length; i += 3) for (let a = 0; a < 3; a++) { m[a] = Math.min(m[a], v[i + a]); m[a + 3] = Math.max(m[a + 3], v[i + a]); }
+    return e.class + '|' + e.storey + '|' + m.map(x => x.toFixed(3)).join(','); }).sort();
+  const ref5 = { els: await pg5.evaluate(elSig), adv: v6.advisory.reduce((o, x) => (o[x.code] = (o[x.code] || 0) + 1, o), {}), nA: v6.nA, last: null };
   if (!g6.dis) {   // the enabled button converts (real click): one gesture lands
     const before = await pg5.evaluate(() => window.Bonsai.oplog.length);
     await clk(pg5, '#dxf-convert');
     await pg5.waitForFunction('window.DxfImportUI.state.last', { timeout: 600000 });
     const after = await pg5.evaluate(() => ({ n: window.Bonsai.oplog.length, last: { inserts: window.DxfImportUI.state.last.nInserts, cuts: window.DxfImportUI.state.last.nCuts, run_id: window.DxfImportUI.state.last.run_id } }));
     check('E5 CONVERT', 'the enabled Convert does not convert the qualifying set', after.n > before && after.last.inserts > 0, 'op-log ' + before + '->' + after.n + ' ' + J(after.last));
+    ref5.last = await pg5.evaluate(() => { const L = window.DxfImportUI.state.last; return { inserts: L.nInserts, cuts: L.nCuts, counts: L.counts, ops: window.Bonsai.oplog.length }; });
+    ref5.last.ops -= before;
+    // test isolation: the browser profile is shared by every page of this run and the op-log autosaves per origin (bonsai_oplog.js);
+    // a converted model does not survive a reload (rg: meshes are per session, §L3 Not claimed), so E7 starts from an empty op-log
+    await pg5.evaluate(() => window.Bonsai.oplog.clear()); await sleep(800);
+    say('E5 op-log cleared after the reference conversion (shared browser profile; E7 converts on a fresh page)');
   }
   await pg5.screenshot({ path: path.join(SHOTS, 'l4_editor_std.png') });
   await pg5.close();
-  say('screenshots: ' + ['l4_editor_filled.png', 'l4_editor_verdict_zoom.png', 'l4_editor_raw.png', 'l4_editor_midfill.png', 'l4_editor_layers_reimport.png', 'l4_editor_std.png'].map(f => path.join(SHOTS, f)).join(' , '));
+
+  // ================= E7 (§L4.3): the RAW std set -> everything through the UI incl. the Doors section -> Qualifies -> Convert == the marked std set =================
+  {
+    const RAWD = path.join(TMP, 'raw_std'); fs.mkdirSync(RAWD, { recursive: true });
+    const rawName = f => idOf(path.basename(f)) + '_std.dxf';
+    const RAWF = STDF.map(f => { const o = path.join(RAWD, rawName(f)); fs.writeFileSync(o, stripMarks(fs.readFileSync(f, 'utf8'))); return o; });
+    const eqStd = RAWF.map(f => { const src = path.join(BC, '2D_Layout/output/STD', path.basename(f)); return path.basename(f) + (fs.existsSync(src) ? (fs.readFileSync(src, 'utf8') === fs.readFileSync(f, 'utf8') ? ' == std2d output' : ' != std2d output') : ' (no std2d file)'); });
+    say('E7 raw set = the marked std sheets with DXF2BIM-MARK stripped by this witness: ' + eqStd.join(', '));
+    // the user's knowledge, stated: the marked std set's own markings (model-derived, @BY=model; §L2.6 C for the schedule and tags)
+    const ORIG = {}; STDF.forEach((f, i) => { ORIG[path.basename(RAWF[i])] = MK.readMarks(parse(fs.readFileSync(f, 'utf8')).entities).map(m => { const p = /^@([A-Z]+)=(.*)$/.exec(m.raw.replace(/\s+@BY=\S+$/, '')); return { key: p[1], value: p[2], x: m.x, y: m.y }; }); });
+    const SCHED = {}; Object.values(ORIG).forEach(M => M.filter(m => m.key === 'SCHEDULE').forEach(m => { const q = m.value.split(','); SCHED[q[0]] = { w: q[2], h: q[3] }; }));
+    say('E7 user knowledge (stated): door schedule ' + J(SCHED) + ' = the std set\'s @SCHEDULE (IFC OverallWidth/OverallHeight via door_operation, §L2.6 C); door marks = its @TAG per door; every other value = its markings');
+    const pgE = await newPage(t, 'raw7');
+    const DL7 = path.join(TMP, 'saved_e7'); await setDownloads(pgE, DL7);
+    const v70 = await openSet(pgE, RAWF);
+    say('E7 op-log at open: ' + await pgE.evaluate(() => window.Bonsai.oplog.length) + ' ops');
+    say('E7 opened raw: verdict ' + v70.verdict + ' blocking=' + v70.nB + ' ' + sortObj(v70.counts));
+    const act = { select: 0, typed: 0, click: 0, canvas: 0, tick: 0 };
+    for (const f of RAWF) {
+      const name = path.basename(f), si = await sheetIdx(pgE, name), M = ORIG[name], one = key => M.find(m => m.key === key);
+      await ensureSec(pgE, 'sheets'); await ensureCard(pgE, si);
+      await pgE.select('select[data-act="single"][data-key="VIEW"][data-sheet="' + si + '"]', one('VIEW').value); act.select++; await sleep(200);
+      for (const key of ['SET', 'NAME', 'LEVEL', 'ROOF', 'CUT']) { const m = one(key); if (!m) continue; await idle(pgE); await typeInto(pgE, 'input[data-act="single"][data-key="' + key + '"][data-sheet="' + si + '"]', m.value); act.typed++; }
+      for (const key of ['FACE', 'HAXIS']) { const m = one(key); if (!m) continue; await pgE.select('select[data-act="single"][data-key="' + key + '"][data-sheet="' + si + '"]', m.value); act.select++; await sleep(150); }
+      for (const m of M.filter(q => /^GRID|^Z$/.test(q.key))) {
+        await idle(pgE);
+        const grp = m.key === 'Z' ? 'Z' : m.key === 'GRIDH' ? 'GRIDH' : 'GRID';
+        if (grp === 'GRID') { await pgE.select('select[data-add-key="' + si + '-GRID"]', m.key); act.select++; }
+        await pgE.type('input[data-add-val="' + si + '-' + grp + '"]', m.value); act.typed++;
+        await pgE.type('input[data-add-pos="' + si + '-' + grp + '"]', String(m.key === 'GRIDY' || m.key === 'Z' ? m.y : m.x)); act.typed++;
+        await clk(pgE, 'button[data-act="add"][data-sheet="' + si + '"][data-group="' + grp + '"]'); act.click++; await sleep(150);
+      }
+      await ensureSec(pgE, 'units');
+      await pgE.select('select[data-act="single"][data-key="UNITS"][data-sheet="' + si + '"]', one('UNITS').value); act.select++; await sleep(150);
+      const left = M.filter(m => ['VIEW', 'SET', 'NAME', 'LEVEL', 'ROOF', 'CUT', 'FACE', 'HAXIS', 'UNITS', 'WALLTOP', 'SCHEDULE', 'TAG'].indexOf(m.key) < 0 && !/^GRID|^Z$/.test(m.key));
+      if (left.length) say('  E7 no UI path used for ' + left.map(m => m.key).join(',') + ' on ' + name);
+    }
+    const v71 = await idle(pgE);
+    const redLayers = await pgE.evaluate(() => document.querySelectorAll('select[data-act="layer"].need').length);
+    say('E7 sheets + units filled: verdict ' + v71.verdict + ' blocking=' + v71.nB + ' ' + sortObj(v71.counts) + ' | unmapped layers (red)=' + redLayers);
+    // wall tops: the convention per plan (tick; the level field defaults to the plan's @LEVEL), per-wall tops where the UI lists the wall
+    await ensureSec(pgE, 'walltops');
+    const notListed = [];
+    for (const f of RAWF) {
+      const name = path.basename(f), si = await sheetIdx(pgE, name), M = ORIG[name];
+      for (const m of M.filter(q => q.key === 'WALLTOP')) {
+        if (/,slab_above$/.test(m.value)) {
+          const lvl = m.value.split(',')[0], cur = await pgE.$eval('#dm-wt-' + si, e => e.value);
+          if (cur !== lvl) { await typeInto(pgE, '#dm-wt-' + si, lvl); act.typed++; }
+          await clk(pgE, '[data-act="walltop"][data-sheet="' + si + '"]'); act.tick++; await idle(pgE);
+        } else {
+          const hd = m.value.slice(7).split(',')[0], z = m.value.split(',')[1];
+          const has = await pgE.$('input[data-act="wallz"][data-sheet="' + si + '"][data-h="' + hd + '"]');
+          if (has) { await typeInto(pgE, 'input[data-act="wallz"][data-sheet="' + si + '"][data-h="' + hd + '"]', z); act.typed++; await idle(pgE); }
+          else notListed.push(name.replace(/_std\.dxf$/, '') + ' ' + hd + ' (' + m.value + ')');
+        }
+      }
+    }
+    say('E7 per-wall @WALLTOP not asked by the UI (the wall has a height from the drawings; applyWallTops applies a per-wall top only to a height gap): ' + (notListed.join(', ') || 'none'));
+    const v72 = await idle(pgE);
+    say('E7 before the Doors section: verdict ' + v72.verdict + ' blocking=' + v72.nB + ' ' + sortObj(v72.counts));
+    // §L4.4: + the 12 stacked windows whose product the drawing cannot tell (GAP:fill_unbound, FF plan) until they are tagged below
+    const nWin = Object.values(ORIG).reduce((n, M) => n + M.filter(m => m.key === 'TAG' && /^window,/.test(m.value)).length, 0);
+    const doorB = v72.blocking.filter(x => (x.code === 'GAP:no_elevation_height' || x.code === 'GAP:no_host_cut') && /DOOR/.test((x.detail && x.detail.layer) || '')), winB = v72.blocking.filter(x => x.code === 'GAP:fill_unbound');
+    check('E7 BLOCKED-BY-DOORS+WINDOWS', 'after every non-door, non-tag field the raw set is not blocked by exactly the doors (no_elevation_height + no_host_cut per door) and the untagged stacked windows (fill_unbound)',
+      doorB.length > 0 && winB.length === nWin && nWin === 12 && doorB.length + winB.length === v72.nB, 'blocking=' + v72.nB + ' ' + sortObj(v72.counts) + ' | doors ' + doorB.length + ', windows ' + winB.length + ' of ' + nWin + ' window tags');
+    // ---- Doors: the schedule typed, then each door tagged on the canvas ----
+    await pgE.evaluate(() => { const S = window.DxfMetaEditor.state; S.sec.sheets = false; S.sec.units = false; S.sec.walltops = false; S.sec.layers = false; S.sec.verdict = false; });
+    await ensureSec(pgE, 'doors');
+    for (const mk of Object.keys(SCHED).sort()) {
+      await idle(pgE);
+      await pgE.type('#dm-ds-mark', mk); await pgE.type('#dm-ds-w', SCHED[mk].w); await pgE.type('#dm-ds-h', SCHED[mk].h); act.typed += 3;
+      await clk(pgE, '[data-act="dsadd"]'); act.click++; await sleep(200);
+    }
+    await idle(pgE);
+    const rows7 = await pgE.evaluate(() => window.DxfMetaEditor.schedRows().map(r => r.mark + ' ' + r.w + 'x' + r.h + ' ' + r.src));
+    say('E7 schedule rows: ' + J(rows7));
+    await clk(pgE, '[data-act="tool"][data-tool="door"]'); act.click++;
+    const tagged = [], tagFail = [];
+    let nTag = 0;
+    for (const f of RAWF) {
+      const name = path.basename(f), tags = ORIG[name].filter(m => m.key === 'TAG' && /^door,/.test(m.value));   // §L4.4: window tags are picked in the elevations below
+      for (const tg of tags) {
+        const mark = tg.value.split(',').slice(1).join(',');
+        // the door this tag names (the reader rule: the door whose swing box or opening box holds the tag point)
+        const door = await pgE.evaluate((n, x, y) => { const D = window.DxfMetaEditor.doorsOf(n), P = [x * D.factor, y * D.factor], tol = D.snap_tol;
+          const inD = d => { const H = d.hinge, pts = [H].concat([d.swing_start_deg, d.swing_end_deg].map(a => [H[0] + d.width * Math.cos(a * Math.PI / 180), H[1] + d.width * Math.sin(a * Math.PI / 180)]));
+            const sx = pts.map(q => q[0]), sy = pts.map(q => q[1]); if (P[0] >= Math.min(...sx) - tol && P[0] <= Math.max(...sx) + tol && P[1] >= Math.min(...sy) - tol && P[1] <= Math.max(...sy) + tol) return true;
+            const b = d.opening_box; if (!b) return false; const u = b.axis === 'x' ? P[0] : P[1], v = b.axis === 'x' ? P[1] : P[0], L = b.along || b.s; return u >= L[0] - tol && u <= L[1] + tol && v >= b.band[0] - tol && v <= b.band[1] + tol; };
+          const h = D.doors.filter(inD); return h.length === 1 ? h[0].handle : null; }, name, tg.x, tg.y);
+        if (!door) { tagFail.push(name + ' tag ' + mark + ' at ' + tg.x + ',' + tg.y + ': no unique door'); continue; }
+        // frame the door (its row in the door list), then a real click on its arc on the canvas
+        await clk(pgE, '[data-act="dzoom"][data-door="' + name + '|' + door + '"]'); await sleep(500);
+        let picked = null;
+        const segN = await pgE.evaluate((n, h) => (window.DxfImportUI.state.canvas[n].segOf[h] || []).length / 6, name, door);
+        for (const k of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+          const px = await pgE.evaluate((n, h, k) => { const s = window.DxfImportUI.state.canvas[n].segOf[h], i = Math.min(Math.floor(s.length / 6 * k), s.length / 6 - 1) * 6;
+            const v = new window.THREE.Vector3((s[i] + s[i + 3]) / 2, (s[i + 1] + s[i + 4]) / 2, (s[i + 2] + s[i + 5]) / 2).project(window.A.camera), r = window.A.renderer.domElement.getBoundingClientRect();
+            return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top]; }, name, door, k);
+          await pgE.mouse.click(px[0], px[1]); act.canvas++; await sleep(300);
+          picked = await pgE.evaluate(() => window.DxfMetaEditor.state.dpick);
+          if (picked && picked.handle === door && picked.sheet === name) break;
+          say('  E7 canvas click on door ' + door + ' (' + name + ', arc segment ' + k + ' of ' + segN + ') picked ' + J(picked) + ' msg=' + J(await pgE.evaluate(() => window.DxfMetaEditor.state.dmsg)));
+          picked = null;
+        }
+        if (!picked) { tagFail.push(name + ' door ' + door + ': canvas click never picked it'); continue; }
+        await pgE.select('#dm-dt-sel', mark); act.select++;
+        await clk(pgE, '[data-act="dtag"]'); act.click++; await sleep(150);
+        tagged.push(name.replace(/_std\.dxf$/, '') + ':' + door + '=' + mark);
+        if (++nTag === 7) { await idle(pgE); await pgE.evaluate(() => { const b = document.getElementById('dm-dpick') || document.querySelector('.dm-sched'); if (b) b.scrollIntoView({ block: 'start' }); }); await sleep(500);
+          await pgE.screenshot({ path: path.join(SHOTS, 'l4_doors_schedule.png') }); }
+      }
+    }
+    await clk(pgE, '[data-act="tool"][data-tool="door"]');   // tool off (not counted: closing a tool)
+    // ---- §L4.4 Windows: the stacked windows tagged by clicking them IN THE ELEVATIONS (z from the elevation, never typed) ----
+    // Where to click (answer key, stated): the elevation glazing cluster whose reader pick (Dxf2BimImport.elevPick on the MARKED set) lands on
+    // a marked window tag's plan position (0.01 drawing units) and z. The page then decides everything from the user's markings alone.
+    const IM = require(path.join(__dirname, '..', 'dxf2bim_import.js')), EL = require(path.join(__dirname, '..', 'dxf2bim', 'dxf2elev.js')), CF = require(path.join(__dirname, '..', 'dxf2bim', 'dxf2shell_config.js'));
+    const mSheets = IM.readSheets(STDF.map(f => ({ name: path.basename(f), text: fs.readFileSync(f, 'utf8') })), { hashHex: sha });
+    const mPlans = mSheets.filter(q => q.role === 'plan').sort((a, b) => a.level - b.level), mElev = mSheets.filter(q => q.role === 'elev'), XS = IM.setWith('STD');
+    const winTags = []; RAWF.forEach(f => ORIG[path.basename(f)].filter(m => m.key === 'TAG' && /^window,/.test(m.value)).forEach(m => winTags.push(Object.assign({ plan: path.basename(f) }, m))));
+    const zOfV = v => Number((/z=([-\d.]+)/.exec(v) || [])[1]);
+    const target = winTags.map(tg => { let hit = null;
+      mElev.forEach(e => { const al = MK.align(mPlans[0].desc, e.desc, CF.MARK_ALIGN_TOL); EL.elevClusters(e.dxf.entities, MK.withLayers(XS.MAP_ELEV, e.desc), al.map, CF.CFG.snap_tol, 'glazing').forEach(c => {
+        const r = IM.elevPick(mPlans, e, 'STD', c.handles[0]);
+        if (r.ok && Math.abs(r.x - tg.x) <= 0.01 && Math.abs(r.y - tg.y) <= 0.01 && r.z === zOfV(tg.value)) hit = { elev: e.name.replace(/_marked\.dxf$|_shell\.dxf$/, '_std.dxf'), face: e.desc.face, handles: c.handles }; }); });
+      return Object.assign({ hit }, tg); });
+    say('E7 window tags to state (' + winTags.length + '), clicked in: ' + target.map(t => t.value.replace(/^window,/, '') + '@' + (t.hit ? t.hit.elev.replace(/_std\.dxf$/, '') + ':' + t.hit.handles.join('+') : 'NONE')).join(' '));
+    await ensureSec(pgE, 'tags');
+    await clk(pgE, '[data-act="tool"][data-tool="tag"]'); act.click++;
+    // face an elevation (camera on the face's outward normal, 7 m out, at the handles' centre), panned clear of the editor panel
+    const frameFace = (en, hs, face) => pgE.evaluate((n, hs, face) => { const c = window.DxfImportUI.state.canvas[n], P = []; hs.forEach(h => { (c.segOf[h] || []).forEach(v => P.push(v)); });
+        const mid = [0, 1, 2].map(a => { let lo = Infinity, hi = -Infinity; for (let i = a; i < P.length; i += 3) { lo = Math.min(lo, P[i]); hi = Math.max(hi, P[i]); } return (lo + hi) / 2; });
+        const nrm = { minY: [0, -1, 0], maxY: [0, 1, 0], minX: [-1, 0, 0], maxX: [1, 0, 0] }[face], T = window.THREE, A = window.A;
+        A.camera.up.set(0, 0, 1); A.controls.target.set(mid[0], mid[1], mid[2]); A.camera.position.set(mid[0] + 7 * nrm[0], mid[1] + 7 * nrm[1], mid[2] + 7 * nrm[2]); A.controls.update(); A.camera.updateMatrixWorld();
+        // pan clear of the editor panel, as the editor's own framing does (the free strip right of the panel)
+        const cv = A.renderer.domElement.getBoundingClientRect(), Sp = window.DxfMetaEditor.state.panel, pr = Sp && Sp.style.display !== 'none' ? Sp.getBoundingClientRect().right : cv.left, dxPx = (pr + (cv.right - pr) / 2) - (cv.left + cv.width / 2);
+        if (dxPx > 0) { const right = new T.Vector3().setFromMatrixColumn(A.camera.matrixWorld, 0), wpp = 2 * 7 * Math.tan(A.camera.fov * Math.PI / 360) / cv.height; right.multiplyScalar(-dxPx * wpp); A.camera.position.add(right); A.controls.target.add(right); A.controls.update(); A.camera.updateMatrixWorld(); }
+        if (A.markDirty) A.markDirty(); if (A.requestRender) A.requestRender(); }, en, hs, face);
+    const wPicks = [], wFail = [];
+    for (const tg of target) {
+      if (!tg.hit) { wFail.push(tg.value + ': no elevation cluster in the marked set'); continue; }
+      const en = tg.hit.elev;
+      await frameFace(en, tg.hit.handles, tg.hit.face);
+      await sleep(400);
+      let picked = null;
+      for (const hh of tg.hit.handles) {
+        for (const k of [0.5, 0.3, 0.7]) {
+          const px = await pgE.evaluate((n, h, k) => { window.A.camera.updateMatrixWorld(); const s = window.DxfImportUI.state.canvas[n].segOf[h]; if (!s) return null; const i = Math.min(Math.floor(s.length / 6 * k), s.length / 6 - 1) * 6;
+            const v = new window.THREE.Vector3((s[i] + s[i + 3]) / 2, (s[i + 1] + s[i + 4]) / 2, (s[i + 2] + s[i + 5]) / 2).project(window.A.camera), r = window.A.renderer.domElement.getBoundingClientRect();
+            return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top]; }, en, hh, k);
+          if (!px) continue;
+          await pgE.mouse.click(px[0], px[1]); act.canvas++; await sleep(300);
+          const pk = await pgE.evaluate(() => { const p = window.DxfMetaEditor.state.pick; return p ? { sheet: p.sheet, x: p.x, y: p.y, z: p.z, cls: p.cls, elev: p.elev, elevHandle: p.elevHandle } : null; });
+          if (pk && pk.elev === en && tg.hit.handles.indexOf(pk.elevHandle) >= 0) { picked = pk; break; }
+          say('  E7 window click on ' + en + ' handle ' + hh + ' (segment ' + k + ') picked ' + J(pk) + ' msg=' + J(await pgE.evaluate(() => window.DxfMetaEditor.state.tmsg)));
+        }
+        if (picked) break;
+      }
+      if (!picked) { wFail.push(tg.value + ': no click picked ' + en + ' ' + tg.hit.handles.join('+')); continue; }
+      const val = tg.value.split(',').slice(2).join(',');
+      await pgE.select('#dm-tag-val', val); act.select++;
+      await clk(pgE, '[data-act="tagadd"]'); act.click++; await sleep(150);
+      wPicks.push({ tag: tg.value, plan: picked.sheet, wantPlan: tg.plan, want: [tg.x, tg.y, zOfV(tg.value)], got: [picked.x, picked.y, picked.z], elev: en, h: picked.elevHandle, cls: picked.cls });
+    }
+    const dmax = wPicks.reduce((m, w) => Math.max(m, Math.abs(w.got[0] - w.want[0]), Math.abs(w.got[1] - w.want[1])), 0), zmax = wPicks.reduce((m, w) => Math.max(m, Math.abs(w.got[2] - w.want[2])), 0);
+    wPicks.forEach(w => say('  E7 window ' + w.tag + ' <- ' + w.elev.replace(/_std\.dxf$/, '') + ':' + w.h + ' -> ' + w.plan.replace(/_std\.dxf$/, '') + ' at ' + w.got.join(',') + ' (marked ' + w.want.join(',') + ')'));
+    const distinct = new Set(wPicks.map(w => w.got.join(','))).size;
+    check('E7 WINDOW-PICKS', 'a click on a stacked window in an elevation does not resolve to the plan position + z of that window (or two clicks to the same one)',
+      wFail.length === 0 && wPicks.length === winTags.length && winTags.length === 12 && distinct === 12 && wPicks.every(w => w.cls === 'window' && w.plan === w.wantPlan) && dmax <= 0.01 && zmax === 0,
+      'picked ' + wPicks.length + '/' + winTags.length + ' distinct=' + distinct + ' max |Δx|,|Δy| = ' + dmax.toFixed(4) + ' drawing units (mm), max |Δz| = ' + zmax + ' m' + (wFail.length ? ' FAILED ' + J(wFail) : ''));
+    // E7-ELEV-FALSIFY: a click on an elevation WALL line (not an opening) tags nothing and says why (not counted in the E7 actions)
+    {
+      const fr = target[0] && target[0].hit ? target[0].hit.elev : null;
+      const wh = fr ? await pgE.evaluate(n => { const sh = window.DxfMetaEditor.state.sheets.find(s => s.name === n), c = window.DxfImportUI.state.canvas[n];
+        const e = sh.dxf.entities.find(q => q.layer === 'A-WALL' && c.segOf[q.handle] && c.segOf[q.handle].length >= 6); return e ? e.handle : null; }, fr) : null;
+      let fz = null;
+      if (wh) {
+        const before = await pgE.evaluate(() => window.DxfMetaEditor.state.sheets.reduce((n, s) => n + s.marks.filter(m => m.key === 'TAG').length, 0));
+        await frameFace(fr, [wh], target[0].hit.face); await sleep(300);
+        const px = await pgE.evaluate((n, h) => { window.A.camera.updateMatrixWorld(); const s = window.DxfImportUI.state.canvas[n].segOf[h], v = new window.THREE.Vector3((s[0] + s[3]) / 2, (s[1] + s[4]) / 2, (s[2] + s[5]) / 2).project(window.A.camera), r = window.A.renderer.domElement.getBoundingClientRect();
+          return [(v.x * 0.5 + 0.5) * r.width + r.left, (-v.y * 0.5 + 0.5) * r.height + r.top]; }, fr, wh);
+        await pgE.mouse.click(px[0], px[1]); await sleep(300);
+        fz = await pgE.evaluate(b => { const S = window.DxfMetaEditor.state; return { pick: S.pick, msg: S.tmsg, shown: !!document.getElementById('dm-tag-msg'), tags: S.sheets.reduce((n, s) => n + s.marks.filter(m => m.key === 'TAG').length, 0), before: b }; }, before);
+      }
+      check('E7-ELEV-FALSIFY', 'a click on an elevation wall line (not an opening) writes a tag or picks something instead of saying why',
+        !!fz && !fz.pick && /^No tag: /.test(fz.msg || '') && fz.shown && fz.tags === fz.before, 'wall handle ' + wh + ' on ' + fr + ': ' + J(fz));
+    }
+    await clk(pgE, '[data-act="tool"][data-tool="tag"]');   // tool off (not counted)
+    const v73 = await idle(pgE);
+    const nActs = act.select + act.typed + act.click + act.canvas + act.tick;
+    say('E7 doors tagged ' + tagged.length + ': ' + tagged.join(' ') + (tagFail.length ? ' | FAILED ' + J(tagFail) : ''));
+    say('E7 UI actions=' + nActs + ' ' + J(act) + ' (selects, typed fields, Add/Tag/tool clicks, canvas clicks on doors and on elevation windows, ticks; door-list clicks that only frame a door and the camera framing of an elevation not counted)');
+    const advE7 = v73.advisory.reduce((o, x) => (o[x.code] = (o[x.code] || 0) + 1, o), {});
+    say('E7 verdict ' + v72.nB + ' blocking -> ' + v73.verdict + ' blocking=' + v73.nB + ' advisory=' + v73.nA + ' ' + sortObj(advE7) + ' | marked std (E5) advisory ' + ref5.nA + ' ' + sortObj(ref5.adv));
+    check('E7 VERDICT', 'the raw std set filled through the UI does not qualify, or its advisory counts differ from the marked std set\'s', v73.verdict === 'qualifies' && v73.nB === 0 && sortObj(advE7) === sortObj(ref5.adv) && tagFail.length === 0,
+      v72.nB + ' -> ' + v73.nB + ' blocking, advisory ' + v73.nA + ' vs ' + ref5.nA);
+    // ---- E7-FALSIFY: one schedule height mistyped (0864: 2032 -> 2132) ----
+    {
+      const fm = Object.keys(SCHED).find(m => /^0864/.test(m)) || Object.keys(SCHED)[0], good = SCHED[fm].h, bad = String(Number(good) + 100);
+      const want = await pgE.evaluate(mk => { const out = []; window.DxfMetaEditor.state.sheets.forEach(sh => { const D = window.DxfMetaEditor.doorsOf(sh.name); if (!D) return;
+        sh.marks.filter(m => m.key === 'TAG' && m.value === 'door,' + mk).forEach(m => { const P = [m.x * D.factor, m.y * D.factor];
+          D.doors.forEach(d => { const b = d.opening_box; if (!b) return; const u = b.axis === 'x' ? P[0] : P[1], v = b.axis === 'x' ? P[1] : P[0], L = b.along || b.s; if (u >= L[0] && u <= L[1] && v >= b.band[0] && v <= b.band[1]) out.push(sh.name + '|' + d.handle); }); }); }); return out.sort(); }, fm);
+      const sel = 'input[data-act="dsz"][data-mark="' + fm + '"][data-dim="h"]';
+      await typeInto(pgE, sel, bad); const vF = await idle(pgE);
+      const got = vF.blocking.map(x => x.sheet + '|' + x.handles.join(',')).sort(), codes = vF.blocking.reduce((o, x) => (o[x.code] = (o[x.code] || 0) + 1, o), {});
+      check('E7-FALSIFY', 'a mistyped schedule height does not block exactly the doors tagged with that mark (or blocks others)', vF.nB === want.length && want.length > 0 && J(got) === J(want) && Object.keys(codes).length === 1,
+        fm + ' height ' + good + ' -> ' + bad + ': blocking ' + vF.nB + ' ' + J(codes) + ' on ' + J(got.map(g => g.replace(/_std\.dxf/, ''))) + ' | doors tagged ' + fm + ': ' + want.length);
+      await typeInto(pgE, sel, good); const vB = await idle(pgE);
+      check('E7-FALSIFY RESTORE', 'typing the height back does not return to "Qualifies"', vB.verdict === 'qualifies' && vB.nB === 0, 'blocking=' + vB.nB);
+    }
+    await pgE.evaluate(() => { const S = window.DxfMetaEditor.state; S.sec.doors = false; S.sec.verdict = true; S.sec.sheets = true; S.open = {}; });
+    await clk(pgE, '[data-act="sec"][data-sec="doors"]'); await clk(pgE, '[data-act="sec"][data-sec="doors"]');
+    await pgE.evaluate(() => { document.getElementById('dm-body').scrollTop = 0; }); await sleep(600);
+    await pgE.screenshot({ path: path.join(SHOTS, 'l4_raw_qualifies.png') });
+    // ---- saved copies: canonical markings == the marked std set's (TAG positions within 0.01 drawing units), every marking @BY=user ----
+    await clk(pgE, '#dm-save');
+    const saved7 = await waitFiles(DL7, 8);
+    const bad7 = [], extra = [], missing = [];
+    const canonT = text => MK.readMarks(parse(text).entities).map(m => { const raw = m.raw.replace(/\s+@BY=\S+$/, ''); const k = (/^@([A-Z]+)=/.exec(raw) || [])[1], p = POS[k];
+      return { s: raw + (p === 'x' ? '@x=' + n6(m.x) : p === 'y' ? '@y=' + n6(m.y) : ''), tag: k === 'TAG', x: m.x, y: m.y, by: / @BY=user$/.test(m.raw) }; });
+    STDF.forEach((f, i) => { const sn = path.basename(RAWF[i]).replace(/\.dxf$/, '') + '_marked.dxf', p = path.join(DL7, sn);
+      if (!fs.existsSync(p)) { bad7.push('no saved copy ' + sn); return; }
+      const A = canonT(fs.readFileSync(f, 'utf8')), Bm = canonT(fs.readFileSync(p, 'utf8')), used = new Set();
+      if (!Bm.every(m => m.by)) bad7.push(sn + ': a marking without @BY=user');
+      A.forEach(a => { const j = Bm.findIndex((b, bi) => !used.has(bi) && b.s === a.s && (!a.tag || (Math.abs(b.x - a.x) <= 0.01 && Math.abs(b.y - a.y) <= 0.01))); if (j >= 0) used.add(j); else missing.push(sn.replace(/_std_marked\.dxf/, '') + ' ' + a.s + (a.tag ? '@' + a.x + ',' + a.y : '')); });
+      Bm.forEach((b, bi) => { if (!used.has(bi)) extra.push(sn.replace(/_std_marked\.dxf/, '') + ' ' + b.s + (b.tag ? '@' + b.x + ',' + b.y : '')); }); });
+    const missOk = missing.every(m => /@WALLTOP=handle:/.test(m));
+    check('E7 SAVED', 'a saved copy\'s markings differ from the marked std set\'s (beyond the per-wall tops the UI never asks for), or lack @BY=user', bad7.length === 0 && extra.length === 0 && missOk && saved7.length === 8,
+      saved7.length + ' copies; missing=' + J(missing) + ' extra=' + J(extra) + (bad7.length ? ' bad=' + J(bad7) : ''));
+    // ---- Convert (real click) == E5's conversion of the marked std set ----
+    const sig7 = await pgE.evaluate(elSig);
+    const dis7 = await pgE.evaluate(() => document.getElementById('dxf-convert').disabled);
+    const b7 = await pgE.evaluate(() => window.Bonsai.oplog.length);
+    if (!dis7) { await clk(pgE, '#dxf-convert'); await pgE.waitForFunction('window.DxfImportUI.state.last', { timeout: 600000 }); }
+    const c7 = dis7 ? null : await pgE.evaluate(() => { const L = window.DxfImportUI.state.last; return { inserts: L.nInserts, cuts: L.nCuts, counts: L.counts, ops: window.Bonsai.oplog.length }; });
+    if (c7) c7.ops -= b7;
+    const dA = ref5.els.filter(x => !sig7.includes(x)), dB = sig7.filter(x => !ref5.els.includes(x));
+    check('E7 CONVERT', 'Convert of the filled raw set differs from the marked std set\'s (inserts, cuts, counts by storey/class, or any element class/storey/bbox 1 mm)',
+      !!c7 && !!ref5.last && c7.inserts === ref5.last.inserts && c7.cuts === ref5.last.cuts && sortObj(c7.counts) === sortObj(ref5.last.counts) && c7.ops === ref5.last.ops && dA.length === 0 && dB.length === 0 && sig7.length === ref5.els.length,
+      'E7 ' + J(c7) + ' | E5 ' + J(ref5.last) + ' | elements ' + sig7.length + ' vs ' + ref5.els.length + ', only-marked=' + dA.length + ' only-raw=' + dB.length + (dA.length ? ' e.g. ' + J(dA.slice(0, 2)) + ' / ' + J(dB.slice(0, 2)) : ''));
+    await pgE.close();
+  }
+
+  // ================= E7 PROPOSE (§L4.3): schedule + door marks drawn as TEXT in a plan are suggested, never written until ticked =================
+  {
+    const gfF = STDF[0], gfTxt = fs.readFileSync(gfF, 'utf8');
+    const kept = MK.readMarks(parse(gfTxt).entities).filter(m => !/^@(TAG|SCHEDULE)=/.test(m.raw)).map(m => ({ text: m.raw, x: m.x, y: m.y }));
+    const tagsGF = MK.readMarks(parse(gfTxt).entities).filter(m => /^@TAG=/.test(m.raw)).map(m => ({ mark: m.raw.replace(/\s+@BY=\S+$/, '').split(',').slice(1).join(','), x: m.x, y: m.y }));
+    const schedGF = MK.readMarks(parse(gfTxt).entities).filter(m => /^@SCHEDULE=/.test(m.raw)).map(m => m.raw.replace(/\s+@BY=\S+$/, '').slice(10).split(','));
+    const short = {}; schedGF.forEach((q, i) => { short[q[0]] = 'D' + (i + 1); });   // a drafter's one-token marks (fixture), sizes = the std schedule
+    const fixture = [{ text: 'DOOR SCHEDULE  MARK  SIZE  DESCRIPTION', x: 12000, y: -1000 }].concat(schedGF.map((q, i) => ({ text: short[q[0]] + '  ' + q[2] + ' x ' + q[3] + '  DOOR', x: 12000, y: -1400 - 400 * i })),
+      tagsGF.map(tg => ({ text: short[tg.mark], x: tg.x, y: tg.y })));
+    // fixture texts on a drawing layer (A-ANNO-NOTE, ignored by the std plan map), then the file's other markings
+    const L = MK.writeMarks(stripMarks(gfTxt), fixture).split(/\r?\n/);
+    for (let i = 0, n = 0; i + 1 < L.length; i++) if (L[i] === '8' && L[i + 1] === 'DXF2BIM-MARK') { L[i + 1] = 'A-ANNO-NOTE'; n++; }
+    const fxTxt = MK.writeMarks(L.join('\n'), kept);
+    const PD = path.join(TMP, 'propose'); fs.mkdirSync(PD, { recursive: true });
+    const fxF = path.join(PD, path.basename(gfF)); fs.writeFileSync(fxF, fxTxt);
+    const set8 = [fxF].concat(STDF.slice(1).filter(f => !/FLOOR_FF/.test(f)));   // GF fixture + the marked elevations, roof, section (FF left out: its tags are not in the fixture)
+    const pgP = await newPage(t, 'propose');
+    const DLP = path.join(TMP, 'saved_e7p'); await setDownloads(pgP, DLP);
+    await openSet(pgP, set8);
+    await ensureSec(pgP, 'doors');
+    const pr0 = await pgP.evaluate(() => Array.from(document.querySelectorAll('[data-dprop]')).map(e => e.getAttribute('data-dprop')));
+    const mk0 = await pgP.evaluate(() => window.DxfMetaEditor.state.sheets.reduce((n, s) => n + s.marks.filter(m => m.key === 'TAG' || m.key === 'SCHEDULE').length, 0));
+    await clk(pgP, '#dm-save'); const sP0 = await waitFiles(DLP, set8.length);
+    const leak0 = sP0.reduce((n, f) => n + MK.readMarks(parse(fs.readFileSync(path.join(DLP, f), 'utf8')).entities).filter(m => /^@(TAG|SCHEDULE)=/.test(m.raw)).length, 0);
+    sP0.forEach(f => fs.unlinkSync(path.join(DLP, f)));
+    // tick ONE schedule row: it becomes the user's row; the tag texts of that mark are now suggested (their doors resolved by the reader rule)
+    const i1 = pr0.findIndex(p => /^PR-SCHEDULE:D1$/.test(p));
+    if (i1 >= 0) { await clk(pgP, '[data-act="dconfirm"][data-i="' + i1 + '"]'); await idle(pgP); }
+    const pr1 = await pgP.evaluate(() => Array.from(document.querySelectorAll('[data-dprop]')).map(e => e.getAttribute('data-dprop')));
+    const iT = pr1.findIndex(p => /^PR-TAG:D1@/.test(p));
+    if (iT >= 0) { await clk(pgP, '[data-act="dconfirm"][data-i="' + iT + '"]'); await idle(pgP); }
+    await clk(pgP, '#dm-save'); const sP1 = await waitFiles(DLP, set8.length);
+    const got = []; sP1.forEach(f => MK.readMarks(parse(fs.readFileSync(path.join(DLP, f), 'utf8')).entities).filter(m => /^@(TAG|SCHEDULE)=/.test(m.raw)).forEach(m => got.push(f.replace(/_marked\.dxf$/, '') + ' ' + m.raw)));
+    const d1 = schedGF[0], d1Tag = tagsGF.filter(tg => tg.mark === d1[0]);
+    const okP = pr0.filter(p => /^PR-SCHEDULE:/.test(p)).length === schedGF.length && pr0.filter(p => /^PR-TAG:/.test(p)).length === 0 && mk0 === 0 && leak0 === 0 &&
+      pr1.filter(p => /^PR-TAG:D1@/.test(p)).length === d1Tag.length && got.length === 2 && got.some(g => g === 'DX_FLOOR_GF ' + '@SCHEDULE=D1,door,' + d1[2] + ',' + d1[3] + ' @BY=user') && got.some(g => /^DX_FLOOR_GF @TAG=door,D1 @BY=user$/.test(g));
+    check('E7 PROPOSE', 'schedule / door-mark texts drawn in the plan are not suggested, or a suggestion reaches a file unticked, or a ticked one writes something else',
+      okP, 'suggested at open ' + J(pr0) + ' (markings TAG/SCHEDULE in the editor=' + mk0 + ', in files saved unticked=' + leak0 + ') | after ticking PR-SCHEDULE D1: ' + J(pr1) + ' | saved after ticking D1 + one PR-TAG: ' + J(got));
+    await pgP.close();
+  }
+  say('screenshots: ' + ['l4_editor_filled.png', 'l4_editor_verdict_zoom.png', 'l4_editor_raw.png', 'l4_editor_midfill.png', 'l4_editor_layers_reimport.png', 'l4_editor_std.png', 'l4_doors_schedule.png', 'l4_raw_qualifies.png'].map(f => path.join(SHOTS, f)).join(' , '));
   say('SUMMARY fail=' + fail + ' gap=' + gapN);
   t.assert('W-DXF-META checks', fail === 0, 'fail=' + fail + ' gap=' + gapN);
   fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');

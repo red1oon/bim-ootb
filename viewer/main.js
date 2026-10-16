@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, window.setupCpeFreezePerf, window.setupCpeRoadPanels, window.setupCivilSections, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, window.setupCpeFreezePerf, window.setupCpeRoadPanels, window.setupCivilSections, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupBcfExport, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -362,6 +362,7 @@ async function initViewer() {
   window.toggleBackground = APP.toggleBackground;
   window.toggleIssues = APP.toggleIssues;
   window.exportIssuesExcel = APP.exportIssuesExcel;
+  window.exportIssuesBcf = APP.exportBcf;
   window.clearAllIssues = APP.clearAllIssues;
   window._issueBackToList = APP._issueBackToList;
   window.toggleWalkMode = APP.toggleWalkMode;
@@ -489,7 +490,12 @@ async function initViewer() {
             "SUM(MAX(t.bbox_x, t.bbox_y, t.bbox_z) * " +
             "CASE WHEN t.bbox_x >= t.bbox_y AND t.bbox_x >= t.bbox_z THEN MAX(t.bbox_y, t.bbox_z) " +
             "WHEN t.bbox_y >= t.bbox_x AND t.bbox_y >= t.bbox_z THEN MAX(t.bbox_x, t.bbox_z) " +
-            "ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area " +
+            "ELSE MAX(t.bbox_x, t.bbox_y) END) as total_area, " +
+            // §FOOTING_M3 (2026-08-12): 6th column. IfcFooting is now priced unit:'M3' (rates.js),
+            // and boq_charts' M3 branch bills this SUM. Without it the relay path silently fell
+            // through to count and under-billed the class by avgVolume (5.66x on cidb rates).
+            // Same expression as foldCost/_volumeWeighting/analysis_sidecar vol_m3 — one volume.
+            "SUM(t.bbox_x * t.bbox_y * t.bbox_z) as total_vol " +
             "FROM elements_meta m JOIN element_transforms t ON m.guid = t.guid " +
             "WHERE m.building = '" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x > 0 " +
             "GROUP BY m.discipline, m.ifc_class, m.storey"

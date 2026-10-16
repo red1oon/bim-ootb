@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // WITNESS — §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM
 // (prompts/STAFFAGE_WALKABLE_PLACEMENT.md, user report 2026-07-26).
 //
@@ -63,7 +64,7 @@ async function run(root,label,presses){
   const A=R['AFTER'], B=R['BEFORE'];
   let basePool=null;
   if(baseline){
-    const src=fs.readFileSync(path.join(baseline,'viewer/effects.js'),'utf8');
+    const src=__readSrc(path.join(baseline,'viewer/effects.js'),'utf8');
     const tbl=/var _STAFFAGE_PEOPLE = \[([\s\S]*?)\];/.exec(src);
     const usesOldFilter=/outsidePoses = _STAFFAGE_PEOPLE\.filter\(function\(p\) \{ return p\.role === 'stand' && p\.facing === 'toward'; \}\)/.test(src);
     if(tbl&&usesOldFilter)

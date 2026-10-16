@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-LOADPATH-BEARING, §129.40 (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §129.40).
  *
  * THE ISSUE IT PROVES OR DISPROVES:
@@ -26,7 +27,7 @@
  */
 const fs = require('fs'), vm = require('vm');
 const SRC = process.argv[2] || require('path').join(__dirname, '..', 'cpe_load_path.js');
-const src = fs.readFileSync(SRC, 'utf8');
+const src = __readSrc(SRC, 'utf8');
 
 // ── Fixtures. bz/tz derived from the shipped DB's centre_z +/- bbox_z/2, plan rects wide enough to
 //    overlap (both real chains sit on one column line / one footprint, verified in the same bake).

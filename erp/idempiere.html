@@ -546,7 +546,7 @@
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
-<script src="ad_gridtab.js?v=4"></script>
+<script src="ad_gridtab.js?v=5"></script>
 <script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -1390,6 +1390,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { var _adv = db.exec('SELECT IsAccessAdvanced FROM AD_Role WHERE AD_Role_ID=?', [_session.role.id]); window.APP.showAdvanced = _adv.length && _adv[0].values.length && _adv[0].values[0][0] === 'Y' ? 'Y' : 'N'; } catch (eA) { window.APP.showAdvanced = 'N'; }   // #ShowAdvanced (Login.java:531)
     _sessionOpen();   // §UDP-8 AD_Session: the login is recorded (AdempiereWebUI :317 -> MSession :194-210)
     _changeAuditRefresh('login');   // §ADMIN-3 the derived AD_ChangeLog (Change Audit / Session Audit windows)
+    _tabCustLoad();                 // §GRID-CUSTOM the user's AD_Tab_Customization rows (seed + op-log tip)
     // T-0 item 4 (prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md) — record-level access gate seam for
     // crud_core.js's recordAccessGate (canView AccessLevel + org/client scope, W-ACCESS-HARDEN-proven
     // headless). A closure over THIS session's db + role so crud_core.js never needs a raw db handle.
@@ -1766,6 +1767,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     tgl.innerHTML = _viewMode === 'grid' ? '▦ ' + _T('tb.grid', 'Grid') : '▤ ' + _T('tb.form', 'Form');
     tgl.setAttribute('data-tb', 'toggle');
+    var cgb = btn('▥', 'Customize grid — choose and order the columns (Customize)', !!(_curTab() && _curTab().id), function () { _openCustomize(); });   // §GRID-CUSTOM AD_ToolBarButton 200058
+    cgb.setAttribute('data-tb', 'customize');
     _renderTabProcessButtons(tb);
     _renderLensBar(tb);
   }
@@ -2613,8 +2616,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _gridCols(tab) {
     var mobile = false; try { mobile = window.matchMedia('(max-width:760px)').matches; } catch (e) {}
     var mx = mobile ? _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_GRID_MOBILE_MAX_COLUMNS' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number((window.APP || {}).clientId || 0) + ") ORDER BY ad_client_id DESC")[0] : null;
-    var g = window.AdGridTab && AdGridTab.gridFields ? AdGridTab.gridFields(tab.fields || [], { mobile: mobile, maxMobile: mx && mx.v }) : null;
-    if (g) console.log('§GRID-COLS tab=' + tab.name + ' cols=' + g.length + ' mobile=' + mobile + ' [' + g.map(function (f) { return f.columnName; }).join(',') + ']');
+    var cu = _tabCust[String(tab.id)] || null;
+    var g = window.AdGridTab && AdGridTab.gridFields ? AdGridTab.gridFields(tab.fields || [], { mobile: mobile, maxMobile: mx && mx.v, custom: cu && cu.custom }) : null;
+    if (g) console.log('§GRID-COLS tab=' + tab.name + ' cols=' + g.length + ' mobile=' + mobile + (cu ? ' custom=' + cu.custom : '') + ' [' + g.map(function (f) { return f.columnName; }).join(',') + ']');
     return g || _displayFields(tab);
   }
   function _displayFields(tab) {
@@ -2730,12 +2734,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   #ShowAcct / #ShowAdvanced / #AD_*); the header stays. Uncertain or unparsable logic -> shown (GridField parity, as the form does).
     var App0 = window.APP || {}, gctx = { '#ShowAcct': _acctRole() ? 'Y' : 'N', '#ShowAdvanced': App0.showAdvanced ? 'Y' : 'N', '#AD_Client_ID': App0.clientId, '#AD_Org_ID': App0.orgId, '#AD_User_ID': App0.actor, '#AD_Role_ID': App0.roleId };
     var cellShown = function (f, rec) { if (!f.displayLogic || !window.AdEvaluator) return true; try { return window.AdEvaluator.evaluate(f.displayLogic, rec, gctx) !== false; } catch (e) { return true; } };
-    cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
+    cols.forEach(function (f) { var th = el('th', null, f.name); th.setAttribute('data-ad-col', f.columnName); if (f.customWidth) { th.style.width = f.customWidth; th.style.minWidth = f.customWidth; th.style.maxWidth = f.customWidth; } htr.appendChild(th); });
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
-      var tr = el('tr'); tr.dataset.i = i;
+      var tr = el('tr'); tr.dataset.i = i; if (i === _recIdx) tr.classList.add('idmp-grid-cur');   // the current row (GridTabRowRenderer.setCurrentRow)
       var pk = _pkOf(tab, rec);
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
       var tdCk = el('td', 'idmp-cbcol');
@@ -2762,6 +2766,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       tb.appendChild(tr);
     });
     table.appendChild(tb);
+    _gridAutoHide(tab, table, cols);   // §GRID-CUSTOM GridView.autoHideEmptyColumns :882-962
 
     // MOBILE_CARDS.md §2/§3 — ONE DOM, two skins: the desktop table (UNCHANGED above) + a mobile .acc card
     // list. CSS toggles which shows (.idmp-cards{display:none} desktop; @≤760 .idmp-grid hidden, cards shown).
@@ -4901,6 +4906,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
     var pk = rec ? recVal(rec, _keyCol(tab)) : null;
     var openForm = function () { _recIdx = recIdx; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); };
+    // GridView.onEvent ON_CLICK (org.adempiere.ui.zk .../adwindow/GridView.java:1031-1072): a click on a row that is NOT the current row only changes the
+    //   current row (onSelectedRowChange -> GridTab.navigate; toolbar, Zoom Across and the lens follow it); a click on the CURRENT row enters edit mode.
+    if (recIdx !== _recIdx) {
+      _saveAndNavigate(function () { _recIdx = recIdx; _setSel(tab); renderBody(); renderToolbar(); _histPush('record');
+        console.log('§GRID-SELECT table=' + tab.tableName + ' row=' + recIdx + ' key=' + pk + ' (click on a non-current row selects it; a click on the current row edits)'); });
+      return;
+    }
     if (!tn || pk == null || String(pk) === '' || !window.__crud || typeof window.__crud.editCell !== 'function' || !_crudHas(tn)) { openForm(); return; }
     if (td.classList.contains('idmp-cell-edit')) return;   // already editing this cell
     var prevHtml = td.innerHTML;
@@ -5531,6 +5543,95 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
   }
   window.addEventListener('overlay:committed', function () { clearTimeout(_caTimer); _caTimer = setTimeout(function () { _changeAuditRefresh('commit'); }, 300); });
+
+  // §GRID-CUSTOM — AD_Tab_Customization (bim-compiler prompts/ERP_DEPTH_FILM.md §GRID-CUSTOM; Witnesses W-GRID-CUSTOM-ENGINE / -LIVE).
+  //   The user's row per tab (MTabCustomization.get :90-93: user, tab, IsQuickForm='N', client) read from seed + op-log tip into _tabCust;
+  //   the Customize dialog = CustomizeGridViewPanel (loadData :347-432, saveData :575-632); the write is ONE signed CRUD op (AdGridTab.tabCustSave).
+  var _tabCust = {};
+  function _tabCustLoad(cb) {
+    var App = window.APP || {}; _tabCust = {};
+    if (App.actor == null) { if (cb) cb(); return; }
+    var base = _tableExists('ad_tab_customization') ? _sqlRows('SELECT * FROM ad_tab_customization WHERE ad_user_id=' + Number(App.actor)) : [];
+    _recentTip('ad_tab_customization', 'ad_tab_customization_id', base, function (rows) {
+      rows.filter(function (r) { return String(r.ad_user_id) === String(App.actor) && String(r.isquickform || 'N') !== 'Y' && (r.ad_client_id == null || String(r.ad_client_id) === String(App.clientId)) && String(r.isactive || 'Y') === 'Y'; })
+        .forEach(function (r) { _tabCust[String(r.ad_tab_id)] = r; });
+      console.log('§GRID-CUSTOM loaded user=' + App.actor + ' tabs=[' + Object.keys(_tabCust).join(',') + ']');
+      if (cb) cb();
+    });
+  }
+  function _sysBool(name, def) {
+    var r = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='" + name + "' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number((window.APP || {}).clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+    return r && r.v != null && String(r.v).trim() !== '' ? /^(y|true)$/i.test(String(r.v).trim()) : def;
+  }
+  // GridView.autoHideEmptyColumns :882-962: when on, a column whose display text is empty in EVERY row is hidden (no rows = nothing hidden)
+  function _gridAutoHide(tab, table, cols) {
+    var cu = _tabCust[String(tab.id)], mobile = false; try { mobile = window.matchMedia('(max-width:760px)').matches; } catch (e) {}
+    var on = window.AdGridTab && AdGridTab.isAutoHide(cu && cu.isautohideemptycolumn, mobile ? _sysBool('ZK_GRID_MOBILE_AUTO_HIDE_EMPTY_COLUMNS', true) : _sysBool('ZK_GRID_AUTO_HIDE_EMPTY_COLUMNS', false));
+    if (!on || !_records.length) return;
+    var hidden = [];
+    cols.forEach(function (f) {
+      var cells = table.querySelectorAll('tbody td[data-ad-col="' + f.columnName + '"]');
+      var empty = cells.length > 0 && Array.prototype.every.call(cells, function (td) { return String(td.textContent || '').trim() === ''; });
+      if (empty) { hidden.push(f.columnName); Array.prototype.forEach.call(cells, function (td) { td.style.display = 'none'; }); var th = table.querySelector('thead th[data-ad-col="' + f.columnName + '"]'); if (th) th.style.display = 'none'; }
+    });
+    console.log('§GRID-CUSTOM autoHide tab=' + tab.name + ' hidden=[' + hidden.join(',') + ']');
+  }
+  function _openCustomize() {
+    var tab = _curTab(), App = window.APP || {}; if (!tab || !tab.id || !window.AdGridTab) return;
+    var cu = _tabCust[String(tab.id)] || null, cols = _gridCols(tab);
+    var rows = _sqlRows("SELECT AD_Field_ID AS id, Name AS name, SeqNoGrid AS sng, SeqNo AS sn FROM AD_Field WHERE AD_Tab_ID=" + Number(tab.id) + " AND (IsDisplayed='Y' OR IsDisplayedGrid='Y') AND IsActive='Y'")
+      .map(function (r) { var en = r.name, tf = (tab.fields || []).filter(function (f) { return String(f.id) === String(r.id); })[0]; return { id: r.id, name: (tf && tf.name) || en, sortName: en, seqNoGrid: r.sng, seqNo: r.sn }; });   // label = the tab's (translated) field name; sort = AD_Field.Name as legacy's query
+    var L = AdGridTab.customizeLists(rows.map(function (r) { return { id: r.id, name: r.sortName, seqNoGrid: r.seqNoGrid, seqNo: r.seqNo, label: r.name }; }), cols.map(function (f) { return f.id; }), window.AdFind && AdFind.collate);
+    var sysHide = _sysBool('ZK_GRID_AUTO_HIDE_EMPTY_COLUMNS', false);
+    console.log('§GRID-CUSTOM open tab=' + tab.name + '(' + tab.id + ') selected=' + L.selected.length + ' available=' + L.available.length + ' row=' + (cu ? cu.custom : 'none'));
+    var old = document.getElementById('idmp-gcust-ov'); if (old) old.remove();
+    var ov = el('div', null); ov.id = 'idmp-gcust-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.42);display:flex;align-items:center;justify-content:center';
+    var box = el('div', null); box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;width:min(640px,94vw);box-shadow:0 8px 28px rgba(0,0,0,.35);font:13px system-ui';
+    var hdr = el('div', null, 'Customize - ' + (tab.name || '')); hdr.style.cssText = 'font-weight:700;padding:10px 16px;border-bottom:1px solid var(--idmp-border,#e0e0e0)'; box.appendChild(hdr);
+    var body = el('div', null); body.style.cssText = 'display:flex;gap:10px;padding:12px 16px;align-items:center';
+    var mk = function (id, items) { var wrap = el('div', null); wrap.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:4px';
+      wrap.appendChild(el('div', null, id === 'idmp-gcust-no' ? 'Available' : 'Selected'));
+      var sel = el('select', null); sel.id = id; sel.multiple = true; sel.size = 14; sel.style.cssText = 'width:100%;font:inherit';
+      items.forEach(function (f) { var o = el('option', null, f.label || f.name); o.value = String(f.id); sel.appendChild(o); }); wrap.appendChild(sel); return { wrap: wrap, sel: sel }; };
+    var no = mk('idmp-gcust-no', L.available), yes = mk('idmp-gcust-yes', L.selected);
+    var mid = el('div', null); mid.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+    var move = function (from, to) { Array.prototype.slice.call(from.selectedOptions).forEach(function (o) { to.appendChild(o); o.selected = false; }); };
+    var shift = function (dir) { var opts = Array.prototype.slice.call(yes.sel.options); var picked = opts.filter(function (o) { return o.selected; }); if (dir > 0) picked.reverse();
+      picked.forEach(function (o) { var sib = dir < 0 ? o.previousElementSibling : o.nextElementSibling; if (sib && !sib.selected) yes.sel.insertBefore(o, dir < 0 ? sib : sib.nextElementSibling); }); };
+    [['›', 'Add', function () { move(no.sel, yes.sel); }, 'add'], ['‹', 'Remove', function () { move(yes.sel, no.sel); }, 'remove'], ['↑', 'Up', function () { shift(-1); }, 'up'], ['↓', 'Down', function () { shift(1); }, 'down']].forEach(function (b) {
+      var x = el('button', null, b[0]); x.title = b[1]; x.setAttribute('data-gcust', b[3]); x.style.cssText = 'padding:4px 10px;cursor:pointer'; x.onclick = b[2]; mid.appendChild(x); });
+    body.appendChild(no.wrap); body.appendChild(mid); body.appendChild(yes.wrap); box.appendChild(body);
+    var opt = el('div', null); opt.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;padding:0 16px 10px;align-items:center';
+    var ck = function (id, label, on) { var l = el('label', null); var c = el('input'); c.type = 'checkbox'; c.id = id; c.checked = !!on; l.appendChild(c); l.appendChild(document.createTextNode(' ' + label)); opt.appendChild(l); return c; };
+    var cW = ck('idmp-gcust-width', 'Save column width', cu && /px/.test(String(cu.custom || '')));
+    var cH = ck('idmp-gcust-hide', 'Auto Hide Empty Column', cu && cu.isautohideemptycolumn != null && String(cu.isautohideemptycolumn) !== '' ? String(cu.isautohideemptycolumn) === 'Y' : sysHide);
+    var gl = el('label', null, 'Open in grid mode '); var gm = el('select', null); gm.id = 'idmp-gcust-mode';
+    [['', ''], ['Y', 'Yes'], ['N', 'No']].forEach(function (p) { var o = el('option', null, p[1]); o.value = p[0]; if (cu && String(cu.isdisplayedgrid || '') === p[0]) o.selected = true; gm.appendChild(o); });   // AD_Ref_List 319
+    gl.appendChild(gm); opt.appendChild(gl); box.appendChild(opt);
+    var foot = el('div', null); foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;padding:8px 16px;border-top:1px solid var(--idmp-border,#e0e0e0)';
+    var cancel = el('button', null, 'Cancel'), okb = el('button', null, 'OK'); okb.setAttribute('data-gcust', 'ok'); cancel.setAttribute('data-gcust', 'cancel');
+    cancel.onclick = function () { ov.remove(); };
+    okb.onclick = function () {
+      var ids = Array.prototype.map.call(yes.sel.options, function (o) { return o.value; }), widths = null;
+      if (cW.checked) { widths = ids.map(function (id) { var f = cols.filter(function (c) { return String(c.id) === id; })[0], th = f && document.querySelector('#idmp-content .idmp-grid thead th[data-ad-col="' + f.columnName + '"]'); return th && th.offsetWidth ? th.offsetWidth + 'px' : ''; }); if (!widths.some(Boolean)) widths = null; }
+      var input = { custom: AdGridTab.customString(ids, widths), displayedGrid: gm.value === '' ? null : gm.value, autoHide: AdGridTab.autoHideToSave(cH.checked, sysHide, cu && cu.isautohideemptycolumn), tab: tab.id, user: App.actor };
+      var intents = AdGridTab.tabCustSave(cu, input), c = window.__crud, now = _procNowTs();
+      var ops = intents.map(function (it) {
+        if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.created = now; f.updated = now; return _procCrud('create', 'ad_tab_customization', { fields: f }); }
+        if (it.op === 'update') { var ch = {}; for (var k2 in it.changes) ch[k2] = { old: cu ? cu[k2] : null, 'new': it.changes[k2] }; ch.updated = { old: null, 'new': now }; return _procCrud('update', 'ad_tab_customization', { id: it.id, changes: ch }); }
+        return _procCrud('delete', 'ad_tab_customization', { id: it.id });
+      });
+      ov.remove();
+      var done = function (committed) { _tabCustLoad(function () { console.log('§GRID-CUSTOM save tab=' + tab.id + ' custom="' + input.custom + '" mode=' + input.displayedGrid + ' autoHide=' + input.autoHide + ' ' + intents.map(function (i) { return i.op; }).join(',') + ' committed=' + committed); renderActiveTab(); }); };
+      if (!ops.length) { done(true); return; }
+      if (!c || typeof c.applyOpGroup !== 'function') { console.log('§GRID-CUSTOM save NOT persisted (no signed op-log)'); return; }
+      c.applyOpGroup(ops, function (cr) { done(!!(cr && cr.committed)); });
+    };
+    foot.appendChild(cancel); foot.appendChild(okb); box.appendChild(foot);
+    ov.appendChild(box); ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
 
   // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
   // grid/form re-read through the now-branch-aware read-sites (blue rows appear in blue, vanish on discard).

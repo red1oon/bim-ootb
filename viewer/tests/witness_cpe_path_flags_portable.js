@@ -17,13 +17,14 @@
 // (viewer/effects.js) are SLICED OUT of the shipped files by brace matching and executed against
 // stub A/transform objects — never re-typed, so this cannot pass against a copy that is not shipped.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const HOME = require('os').homedir();
 const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
 const initSqlJs = require(path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js'));
 
-const sceneSrc = fs.readFileSync(path.join(__dirname, '..', 'scene.js'), 'utf8');
-const fxSrc = fs.readFileSync(path.join(__dirname, '..', 'effects.js'), 'utf8');
+const sceneSrc = __readSrc(path.join(__dirname, '..', 'scene.js'), 'utf8');
+const fxSrc = __readSrc(path.join(__dirname, '..', 'effects.js'), 'utf8');
 
 function sliceFn(src, marker) {
   const i = src.indexOf(marker);

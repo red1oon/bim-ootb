@@ -27,6 +27,7 @@
 //
 // Command: node viewer/tests/witness_gantt_retime_resync_wiring.js     (no fixtures, no DB, no browser)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 
@@ -34,7 +35,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const TM = path.join(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(TM, 'utf8');
+const src = __readSrc(TM, 'utf8');
 
 // Enclosing-NAMED-function extraction by BRACE MATCHING. Not "the nearest `function` above the
 // call" — that lands on whatever anonymous callback happens to be nearer. Every `function NAME(` is

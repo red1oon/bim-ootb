@@ -155,6 +155,7 @@
   "setupDiff": "readonly",
   "setupEffects": "readonly",
   "setupErrorReporter": "readonly",
+  "setupBcfExport": "readonly",
   "setupExcel": "readonly",
   "setupGIPoc": "readonly",
   "setupGhostGlass": "readonly",

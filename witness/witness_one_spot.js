@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // One spot, one phase, one process — avoids whatever caused repeated in-process browser
 // relaunches to hang (2nd+ puppeteer.launch() in the same node process reliably stalled).
 // Usage: node witness/witness_one_spot.js <before|after> <A|B|C>
@@ -25,7 +26,7 @@ if (!['before', 'after'].includes(phase) || !HHS_SPOTS[spotName]) {
 const spot = HHS_SPOTS[spotName];
 
 function ensurePhase(target) {
-  const src = fs.readFileSync(EFFECTS, 'utf8');
+  const src = __readSrc(EFFECTS, 'utf8');
   const isFixed = src.includes(DD_FIXED) && src.includes(LAT_FIXED);
   const isOld = src.includes(DD_OLD) && src.includes(LAT_OLD);
   if (!isFixed && !isOld) throw new Error('file in neither known state — drifted, aborting');
@@ -38,7 +39,7 @@ function ensurePhase(target) {
 
 (async () => {
   ensurePhase(phase);
-  console.log('on-disk: ' + fs.readFileSync(EFFECTS, 'utf8').split('\n').filter(l => l.includes('for (var dd') || l.includes('for (var lat')).join(' | '));
+  console.log('on-disk: ' + __readSrc(EFFECTS, 'utf8').split('\n').filter(l => l.includes('for (var dd') || l.includes('for (var lat')).join(' | '));
 
   const browser = await puppeteer.launch({
     headless: 'new',

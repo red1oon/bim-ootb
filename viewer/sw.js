@@ -186,11 +186,21 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
+// v1633 (2026-10-17) time_machine.js split move-only into tm_core.js tm_render.js tm_panel.js tm_sched_xray.js tm_gantt_build.js tm_gantt_edit.js tm_dash.js tm_lifecycle_api.js (precached, loaded before it) by scripts/split_closure.js. time_machine.js?v=87
+// v1599 (2026-10-06) cpe_load_path.js split move-only into lp_chain.js lp_geom_pick.js lp_build.js lp_backdrop_diag.js lp_apply_restore.js lp_hud.js (precached, loaded before it) by scripts/split_closure.js — supersedes the one-off split of PR #1903. cpe_load_path.js?v=12
+// v1598 (2026-10-06) effects.js split move-only into fx_composer.js fx_props_staffage.js fx_sun_shadow.js fx_photo_staging.js fx_still_refine.js fx_cpe_reveal_bands.js fx_cinema_path_plan.js fx_cinema_orbit.js (precached, loaded before it); early mobile return preserved; W-SPLIT-SURFACE + split_verify. effects.js?v=150
+// v1597 (2026-10-06) cinema_maxq.js split move-only into maxq_buildup_ghost.js maxq_infra.js maxq_hud_layers.js maxq_capture_stitch.js maxq_start.js (precached, loaded before it); W-SPLIT-SURFACE + split_verify. cinema_maxq.js?v=43
+// v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
+// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=2, #sec-axes.
+// v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=1, main.js setupCivilSections.
 // v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1632';
+const CACHE_VERSION = 'v1637';
+// v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
+// v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
+// v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
 // v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
 // v1627 (2026-10-09) §INSPECT_EARTH_ROAD: earthworks_overlay.js (Inspect EW + RW panels, inferred Cut & Fill overlay) added to PRECACHE_ASSETS; std_values.json gains _cut_fill; panels.js ew/rw rows.
@@ -608,6 +618,10 @@ const CACHE_VERSION = 'v1632';
 // injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
 // loadOps) instead of the bare error message, which could not locate a live user's GUID-key
 // crash. Logging-only, no behavior change.
+// v1633 (rebase of PR #255 onto origin/main) §OFFLINE-SURFACE: GET_OFFLINE_STATUS message handler reports
+// which DEFERRED_LIBS are actually cached (honest offline status for the new Settings panel row);
+// _startOfflineDownload's controller-null race on first visit fixed via serviceWorker.ready + reg.active
+// fallback (scene.js). Witness: viewer/tests/poc_offline_surface.js.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
@@ -998,8 +1012,8 @@ const PRECACHE_ASSETS = [
   'sourced_light.js',   // §SOURCED_LIGHT: zone-bound lamps/portals, no sourceless sky indoors
   'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
-  'effects.js',
-  'cinema_maxq.js',
+  'fx_composer.js','fx_props_staffage.js','fx_sun_shadow.js','fx_photo_staging.js','fx_still_refine.js','fx_cpe_reveal_bands.js','fx_cinema_path_plan.js','fx_cinema_orbit.js','effects.js',
+  'maxq_buildup_ghost.js','maxq_infra.js','maxq_hud_layers.js','maxq_capture_stitch.js','maxq_start.js','cinema_maxq.js',
   'gi_still.js',  // §GI_LIVE: Alt+S bounce (desktop + WebGPU only); its two lib/gi modules cache on first use
   'cinema_path_editor.js',
   'cpe_walk.js',
@@ -1015,7 +1029,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','cpe_freeze_perf.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','lp_chain.js','lp_geom_pick.js','lp_build.js','lp_backdrop_diag.js','lp_apply_restore.js','lp_hud.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
   'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
@@ -1033,6 +1047,7 @@ const PRECACHE_ASSETS = [
   'sitecam.js',
   'issues.js',
   'excel.js',
+  'bcf_export.js',
   'walk.js',
   'city.js',
   'rates.js',
@@ -1106,7 +1121,7 @@ const PRECACHE_ASSETS = [
   'gantt_model.js',      // §S53 (F3) — the Gantt bar model, extracted from time_machine.js
   'zone_index.js',       // §S62 — median-Z storey banding, extracted from time_machine.js
   'support_sweep.js',    // §S58 — support-order physics, extracted from time_machine.js
-  'time_machine.js',
+  'tm_core.js','tm_render.js','tm_panel.js','tm_sched_xray.js','tm_gantt_build.js','tm_gantt_edit.js','tm_dash.js','tm_lifecycle_api.js','time_machine.js',
   'dlod_nav.js',
   'schedule_author.js',
   'schedule_read_4d.js',
@@ -1163,6 +1178,10 @@ const PRECACHE_ASSETS = [
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
   // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
   'rates/sequence_rules.json',
+  // §CLASS_UNMATCHED_INHERITED (BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md §P1/§P2): real IFC schema
+  // ancestor chains for matchRule()'s tier-2 fallback. Precached so loadIfcSchemaHierarchy() resolves
+  // offline (else tier 2 simply never fires — tier 1/tier 3 unaffected, never a hard dependency).
+  'rates/ifc_schema_hierarchy.json',
   // §TPL_MODEL (2026-08-27) — the 4D programme template DEFINES the canonical task grid
   // (schedule_author.js instantiateTemplate; user ruling 2026-08-27). It was NOT precached while
   // sequence_rules.json above was, so on a cold SW or offline the fetch in time_machine.js
@@ -1350,5 +1369,21 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'GET_PRECACHE') {
     // Return the full precache list so the install flow can force-cache all assets
     event.ports[0].postMessage({ assets: PRECACHE_ASSETS, libs: LOCAL_LIBS, version: CACHE_VERSION });
+  }
+  if (event.data && event.data.type === 'GET_OFFLINE_STATUS') {
+    // Report which DEFERRED_LIBS are actually in the cache (honest offline status)
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(DEFERRED_LIBS.map(url =>
+        cache.match(url).then(r => ({ url, cached: !!r }))
+      ))
+    ).then(results => {
+      const status = {};
+      results.forEach(r => { status[r.url] = r.cached; });
+      event.ports[0].postMessage({
+        deferred: status,
+        allDeferred: results.every(r => r.cached),
+        version: CACHE_VERSION,
+      });
+    });
   }
 });

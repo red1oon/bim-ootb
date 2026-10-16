@@ -29,7 +29,7 @@ function makeIndexer(src) {
     ${body}
     _tmBuildEventIndex(st.app, st.linger); return { ev: _evMesh, has: _tmHasEventIn };`);
 }
-const cur = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+const cur = require('./_split_families.js').readSource(path.join(V, 'time_machine.js'), 'utf8');   // split-aware: the original text of a split module
 const old = cp.execSync('git show origin/main:viewer/time_machine.js', { cwd: V, maxBuffer: 64 << 20 }).toString();
 S('§W-CWS — civil-only solidify events in the Time Machine delta index');
 

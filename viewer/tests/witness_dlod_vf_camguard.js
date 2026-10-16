@@ -17,6 +17,7 @@
 // unchanged, so the two pre-existing GI hold-converge call sites are untouched) and that the DLOD
 // call site inside renderAtTime passes the SAME resolved camera the frustum was built from.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -35,7 +36,7 @@ function sliceFn(src, name) {
   throw new Error('unbalanced braces for ' + name);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 const sliced = sliceFn(tmSrc, '_dlodResolveCamera');
 
 function run(windowObj) {

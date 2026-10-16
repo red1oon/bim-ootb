@@ -14,7 +14,33 @@
 
   // matchRule — REPLICATES time_machine.js matchRule EXACTLY (longest-substring containment),
   // so authored phases are identical to what injectGantt would group elements into.
-  function matchRule(cls, rules, dflt) {
+  //
+  // Implementing BUILDINGSMART_IFC_SCHEMA_CLASSIFICATION.md §PROPOSED MECHANISM — Witness:
+  // witness_schema_exhaustive_fallback.js. Three-tier resolution, tier 1 UNCHANGED (still wins,
+  // zero risk to PRs #1186/#1187's shipped explicit entries):
+  //   1. Explicit SEQUENCE_RULES entry (today's substring-containment lookup, below) — unchanged.
+  //   2. NEW: `hierarchy` (optional 4th param — the class -> [ancestor1, ..., IfcRoot] map from
+  //      tools/dump_ifc_schema_hierarchy.py / viewer/rates/ifc_schema_hierarchy.json, a REAL
+  //      buildingSMART IFC2X3/IFC4/IFC4X3 schema fact, never guessed). Walk cls's real ancestor
+  //      chain, nearest first, until one IS an explicit `rules` key (exact match — ancestor names
+  //      are canonical schema class names, not fragments; substring matching stays tier 1's job for
+  //      real element ifc_class strings only). Type-suffixed classes (IfcSensorType) walk their own
+  //      Type-suffixed ancestor chain (IfcDistributionControlElementType, ...) automatically — the
+  //      JSON already encodes that as a real schema fact, nothing stripped/guessed here. Logs
+  //      `§CLASS_UNMATCHED_INHERITED`, a DISTINCT tag from tier 3's `§CLASS_UNMATCHED` so an
+  //      inherited classification is visibly different from a genuinely-unclassified one.
+  //      Omitted `hierarchy` (existing 3-arg callers, incl. witness_class_fallback_blackbox.js) ==
+  //      tier 2 never fires, behavior identical to before this change.
+  //   3. Generic `dflt` default — only reached if the ENTIRE chain to IfcRoot has no classified
+  //      member (or no hierarchy was supplied at all). Still logs today's `§CLASS_UNMATCHED`
+  //      unchanged (same message, same trigger condition relative to tier 1+2 combined).
+  //   §OPEN QUESTION resolved: a Type class's Occurrence counterpart being classified does NOT by
+  //   itself classify the Type class — IsTypedBy is a peer association, not a SUBTYPE OF ancestor
+  //   relationship, and the hierarchy JSON (real schema fact) never encodes it as one. A Type class
+  //   with no explicit entry and no classified Type-ancestor genuinely falls to tier 3, same as any
+  //   other truly-unclassified family — inventing an Occurrence<->Type inheritance edge that the
+  //   schema itself does not have would violate PRIME RULE (extract, don't invent).
+  function matchRule(cls, rules, dflt, hierarchy) {
     rules = rules || {};
     // §I.5i (bim-compiler prompts/4D_MODEL_INTEGRITY.md, §FUTURE item 7 Stage 5, queue item B-2) —
     // CONSULT THE CANONICAL OBJECT BEFORE THE LITERAL, as this file's six other fallbacks already do
@@ -40,12 +66,42 @@
     for (var key in rules) {
       if (cls.indexOf(key) >= 0 && key.length > bestLen) { bestKey = key; bestLen = key.length; }
     }
-    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key at all used to
-    // land on `dflt` silently — found live on real Hospital data (861 IfcDistributionControlElement,
-    // 113 IfcSwitchingDevice). Loud, not silent: whoever imports a new IFC set with a genuinely
-    // unclassified class sees it in the log instead of it vanishing into the generic default.
-    if (!bestKey) console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
-    return bestKey ? rules[bestKey] : dflt;
+    if (bestKey) return rules[bestKey];   // tier 1 — explicit entry, always wins
+
+    var chain = hierarchy && hierarchy[cls];
+    if (chain && chain.length) {
+      for (var i = 0; i < chain.length; i++) {
+        var anc = chain[i];
+        if (Object.prototype.hasOwnProperty.call(rules, anc)) {
+          console.warn('§CLASS_UNMATCHED_INHERITED cls=' + cls + ' via=' + anc + ' phase=' + rules[anc].phase);
+          return rules[anc];   // tier 2 — inherited from a classified real schema ancestor
+        }
+      }
+    }
+
+    // §CLASS_UNMATCHED_FALLBACK (2026-08-04): a class with no SEQUENCE_RULES key anywhere in its
+    // own name OR its real ancestor chain used to land on `dflt` silently — found live on real
+    // Hospital data (861 IfcDistributionControlElement, 113 IfcSwitchingDevice). Loud, not silent:
+    // whoever imports a new IFC set with a genuinely unclassified class family sees it in the log
+    // instead of it vanishing into the generic default.
+    console.warn('§CLASS_UNMATCHED cls=' + cls + ' falling back to default phase=' + dflt.phase);
+    return dflt;   // tier 3 — generic default
+  }
+
+  // classify — thin convenience wrapper around matchRule for the exact-lookup consumers named in
+  // CLASSIFICATION_EXACT_LOOKUP_BLINDSPOT.md §PROPOSED FIX: callers that used to do a raw
+  // `SEQUENCE_RULES[cls]` dictionary lookup (bypassing tier 1's substring match, tier 2's schema-
+  // hierarchy walk, and tier 3's `§CLASS_UNMATCHED` visibility entirely) call this instead. Real
+  // browser call sites only ever need `classify(cls)` or `classify(cls, hierarchy)` — rules/dflt
+  // default from the same window globals matchRule's own callers already default from (rates.js).
+  // `rules`/`dflt` are accepted as trailing overrides so a Node witness can drive this against real
+  // fixture data without a window global to read (module-scope `global` here is `this`, not
+  // `globalThis` — see witness_schema_exhaustive_classify.js).
+  function classify(cls, hierarchy, rules, dflt) {
+    rules = rules || global.SEQUENCE_RULES || {};
+    dflt = dflt || global.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+    hierarchy = hierarchy || global.IFC_SCHEMA_HIERARCHY || {};
+    return matchRule(cls, rules, dflt, hierarchy);
   }
 
   // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
@@ -116,6 +172,8 @@
   // by its class's real average length. A flat per-unit rate assumes every element is "typical
   // sized" (e.g. a 5.7m beam); this element's own real size scales the flat rate instead, so a 60m
   // beam and a 0.9m beam charge differently even though both are counted as "1 IfcBeam".
+  // `areaRatio` / `volumeRatio` (optional) — the M2 and M3 twins of lengthRatio (§ARCH_AREA_WEIGHT,
+  // §VOL_WEIGHT below): same ratio-to-class-average form, on dominant-face area and on bbox volume.
   // §TPL_ZERO_MINUTE (2026-08-25, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §S65) — the 120s
   // returns below are a FLOOR, not a real duration: on a 45-day axis a 120-second element draws a
   // zero-width Gantt bar, and every floored element starts at the same instant, so they stack. That
@@ -136,7 +194,7 @@
   // B-3): both numbers below now READ laborRates._productivity_basis_secs / ._zero_minute_floor_secs
   // (sequence_rules.json), falling back to the SAME literals that shipped before this — a caller
   // (older cached JSON, a minimal test object) that omits either key is byte-identical to pre-fix.
-  function _installSecs(cls, rule, laborRates, realQty, lengthRatio) {
+  function _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio, volumeRatio) {
     var resource = rule && rule.resource;
     var _floorSecs = (laborRates && laborRates._zero_minute_floor_secs) || 120;
     if (!resource || !laborRates[resource]) { _reportFloor(cls, resource, 'no-resource'); return _floorSecs; }
@@ -153,6 +211,15 @@
     var secsPerUnit = ((laborRates && laborRates._productivity_basis_secs) || 28800) / prod;
     if (realQty != null) return Math.round(secsPerUnit * realQty);
     if (lengthRatio != null) return Math.round(secsPerUnit * lengthRatio);
+    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of lengthRatio; §VOL_WEIGHT below is the M3 one,
+    // so all three sized units now redistribute instead of charging flat. Same REDISTRIBUTION form,
+    // and that form is the whole safety argument: ratio = thisArea / classAvgArea, so mean(ratio)=1
+    // by construction and a class's total labour is preserved exactly. Do NOT confuse it with the
+    // realQty branch two lines up, which MULTIPLIES by absolute area — _classFragmentation's own
+    // header records what that does to a non-fragmented class: "measured: IfcWall would jump from
+    // ~14 days to 563 days."
+    if (areaRatio != null) return Math.round(secsPerUnit * areaRatio);
+    if (volumeRatio != null) return Math.round(secsPerUnit * volumeRatio);
     return Math.round(secsPerUnit);
   }
 
@@ -184,6 +251,10 @@
     "WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) " +
     "WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) " +
     "ELSE MAX(t.bbox_x,t.bbox_y) END";
+  // §VOL_WEIGHT — the M3 quantity expression. Byte-identical to the `vol` column foldCost (this
+  // file) already computes for M3-priced cost, which is what makes it canonical here rather than
+  // a second, differently-derived volume.
+  var _VOL_EXPR = 't.bbox_x*t.bbox_y*t.bbox_z';
   function _classFragmentation(db, qsRates) {
     var out = { fragmented: {}, area: {} };
     qsRates = qsRates || {};
@@ -277,6 +348,181 @@
     console.log('§HEAVY_MEMBER_SPEED_LIMIT classes=' + haveClasses.length + ' [' +
       haveClasses.map(function (c) { return c + ':avg=' + out.avgLength[c].toFixed(2) + 'm'; }).join(', ') +
       '] — real LENGTH redistributes each class\'s existing flat total, per-element speed now scales with real size');
+    return out;
+  }
+
+  // §ARCH_AREA_WEIGHT (2026-08-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md §DAY_GAP_PHASE_OCC
+  // GAP 4 — Witness: viewer/tests/witness_arch_area_weight.js W-AREA) ───────────────────────────
+  // _linearWeighting selects on `unit === 'M'`, which is why the 7 metre-priced classes (beam,
+  // column, member, railing, pipe/duct/cable segments) scale with real size and NOTHING ELSE does.
+  // The M2 set — IfcSlab, IfcWall, IfcWallStandardCase, IfcCurtainWall, IfcCovering, IfcRoof,
+  // IfcPlate — is the architecture bulk, and it fell through every branch of _installSecs to the
+  // flat `28800/productivity`. MEASURED on Hospital: IfcWallStandardCase spans 1.07m..78.50m (73x),
+  // IfcWall 0.90..78.79 (88x), IfcCovering 1.21..85.72 (71x), IfcSlab 3.70..100.83 (27x) — and
+  // every one of those elements was charged the SAME install time. User, live: "The ARCH still
+  // comes on too fast. They are heavy items should take longer relatively to MEP etc."
+  //
+  // Generic by construction — nothing here names a class. Selection is `unit === 'M2'` straight
+  // from the shipped rates table, and the measure is the SAME dominant-face _AREA_EXPR
+  // _classFragmentation already uses. A model whose heavy class is curtain-wall glazing or brick
+  // coursing is caught identically.
+  //
+  // ⚠ EXCLUDES classes _classFragmentation already flagged: those take the realQty branch (absolute
+  // area, deliberately inflating a class whose element count is not a real installable unit), and
+  // applying both would double-weight them. Fragmented wins; this fills the gap it leaves.
+  // ⚠ RATE-UNIFORM CLASSES ONLY. mean(ratio)=1 preserves a class total only when every element in
+  // the class shares one secsPerUnit. MEASURED counter-example: HHS IfcPlate splits 438 elements at
+  // 120s (no-resource fallback) and 191 at 2400s — the ratio correlates with the subgroup, so the
+  // class total moved 510,960 -> 258,260 and monotonicity broke. Mixed-rate classes degrade to
+  // flat, the same honest-degrade every other branch here uses; no inflation is possible.
+  function _areaWeighting(db, qsRates, fragmented, rules, dflt, nameOverrides, laborRates) {
+    var out = { avgArea: {}, area: {} };
+    qsRates = qsRates || {}; fragmented = fragmented || {};
+    var m2 = [];
+    for (var cls in qsRates) {
+      if (qsRates[cls] && qsRates[cls].unit === 'M2' && !fragmented[cls]) m2.push(cls);
+    }
+    if (!m2.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      // ⚠ The average MUST be taken over exactly the elements that will receive a ratio, or
+      // mean(ratio) != 1 and the class total moves — which is the one thing this form exists to
+      // prevent. Witnessed: without the `> 0` guard, elements whose second bbox dimension is 0
+      // measured area 0, took ratio 0, and were charged ZERO install time — HHS IfcPlate total
+      // halved (510,960 -> 258,260) and monotonicity broke. Zero-area elements now fall through to
+      // flat, the same honest-degrade the realQty and lengthRatio branches already use.
+      r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _AREA_EXPR + ') FROM elements_meta m ' +
+        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(m2) + ') GROUP BY m.ifc_class');
+    } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
+    var have = [], mixed = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgArea[cls] = avg; have.push(cls); }
+      });
+    }
+    if (!have.length) return out;
+    // Rate-uniformity scan — one pass, only over the candidate classes.
+    if (rules && laborRates) {
+      var keep = [];
+      have.forEach(function (cls) {
+        var er;
+        try {
+          er = db.exec("SELECT COALESCE(m.element_name,'') FROM elements_meta m WHERE m.ifc_class='" +
+            cls.replace(/'/g, "''") + "'");
+        } catch (e) { return; }
+        if (!er.length || !er[0].values.length) return;
+        var first = null, uniform = true;
+        for (var i = 0; i < er[0].values.length; i++) {
+          var rl = matchNameOverride(cls, er[0].values[i][0], nameOverrides || []) ||
+                   matchRule(cls, rules, dflt);
+          var sc = _installSecs(cls, rl, laborRates, null, null);
+          if (first === null) first = sc;
+          else if (sc !== first) { uniform = false; break; }
+        }
+        if (uniform) keep.push(cls); else { mixed.push(cls); delete out.avgArea[cls]; }
+      });
+      have = keep;
+      if (mixed.length) console.log('§ARCH_AREA_WEIGHT_SKIP mixed-rate classes left FLAT: ' + mixed.join(',') +
+        ' — a class total is only preserved when every element shares one secsPerUnit');
+      if (!have.length) return out;
+    }
+    var ar = db.exec('SELECT m.guid, ' + _AREA_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+      'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _AREA_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
+    if (ar.length && ar[0].values.length) ar[0].values.forEach(function (row) { out.area[row[0]] = row[1] || 0; });
+    console.log('§ARCH_AREA_WEIGHT classes=' + have.length + ' [' +
+      have.map(function (c) { return c + ':avg=' + out.avgArea[c].toFixed(2) + 'm2'; }).join(', ') +
+      '] — real AREA redistributes each class\'s existing flat total (mean ratio 1.0, class total unchanged), ' +
+      'so a 78m wall no longer installs as fast as a 1m one');
+    return out;
+  }
+
+  // §VOL_WEIGHT (2026-08-12 — Witness: viewer/tests/witness_arch_area_weight.js G-VOL-*) ─────────
+  // The third and last sized unit. _linearWeighting owns `unit === 'M'`, _areaWeighting owns
+  // `unit === 'M2'`; a class priced `unit === 'M3'` (volume — footings, pads, and other heavy
+  // cast/bulk items) still fell through every branch of _installSecs to the flat
+  // `28800/productivity`, so a tiny pad footing and a massive raft footing charged the SAME install
+  // time. Same complaint that drove the M2 fix, user live: "They are heavy items should take longer
+  // relatively to MEP etc."
+  //
+  // ⚠ MEASURED SHIPPED-DATA REALITY (2026-08-12) — read this before expecting it to fire: NO class
+  // in the shipped rates model is priced M3 today. rates.js RATES is 32 EA / 11 M / 7 M2 / 1 KG,
+  // and all 17 rates/*.json templates carry the identical split (0 M3 in every one). So this path
+  // selects ZERO classes on shipped data and is INERT by construction until a class is repriced to
+  // M3 — via the Settings JSON editor, a rate template, or rates.js. It is not speculative code:
+  // `unit === 'M3'` is already a live branch in foldCost (this file) and analysis_sidecar.js
+  // compute5D, so the cost side has honoured M3 all along and only the LABOUR side was missing it.
+  // The real case waiting on it is IfcFooting — measured 821 elements across Hospital/LTU_AHouse/
+  // Clinic spanning 0.26..602.09 m³ (2320x) while priced `unit:'EA'` (rates.js:49), i.e. all 821
+  // charge one identical install time today. Repricing it is a rates DATA decision, deliberately
+  // NOT made here.
+  //
+  // Every safety property of _areaWeighting is reproduced verbatim: the fragmented-class exclusion
+  // (no double-weighting), the `> 0` zero-guard (a zero bbox dimension makes volume 0 — those fall
+  // through to flat rather than being charged ZERO install time, the bug that halved HHS IfcPlate),
+  // the rate-uniformity scan (mixed-rate classes degrade to flat), and mean(ratio)=1 so a class's
+  // total labour is preserved exactly. Generic by construction — no class is named in the logic.
+  function _volumeWeighting(db, qsRates, fragmented, rules, dflt, nameOverrides, laborRates) {
+    var out = { avgVolume: {}, volume: {} };
+    qsRates = qsRates || {}; fragmented = fragmented || {};
+    var m3 = [];
+    for (var cls in qsRates) {
+      if (qsRates[cls] && qsRates[cls].unit === 'M3' && !fragmented[cls]) m3.push(cls);
+    }
+    if (!m3.length) return out;
+    var q = function (list) { return list.map(function (c) { return "'" + c.replace(/'/g, "''") + "'"; }).join(','); };
+    var r;
+    try {
+      // The average MUST be taken over exactly the elements that will receive a ratio, or
+      // mean(ratio) != 1 and the class total moves — the one thing this form exists to prevent.
+      r = db.exec('SELECT m.ifc_class, COUNT(*), SUM(' + _VOL_EXPR + ') FROM elements_meta m ' +
+        'JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 ' +
+        'AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(m3) + ') GROUP BY m.ifc_class');
+    } catch (e) { return out; }   // no element_transforms — degrade to flat, exactly as before
+    var have = [], mixed = [];
+    if (r.length && r[0].values.length) {
+      r[0].values.forEach(function (row) {
+        var cls = row[0], cnt = row[1], total = row[2] || 0;
+        var avg = cnt > 0 ? total / cnt : 0;
+        if (avg > 0) { out.avgVolume[cls] = avg; have.push(cls); }
+      });
+    }
+    if (!have.length) return out;
+    // Rate-uniformity scan — one pass, only over the candidate classes.
+    if (rules && laborRates) {
+      var keep = [];
+      have.forEach(function (cls) {
+        var er;
+        try {
+          er = db.exec("SELECT COALESCE(m.element_name,'') FROM elements_meta m WHERE m.ifc_class='" +
+            cls.replace(/'/g, "''") + "'");
+        } catch (e) { return; }
+        if (!er.length || !er[0].values.length) return;
+        var first = null, uniform = true;
+        for (var i = 0; i < er[0].values.length; i++) {
+          var rl = matchNameOverride(cls, er[0].values[i][0], nameOverrides || []) ||
+                   matchRule(cls, rules, dflt);
+          var sc = _installSecs(cls, rl, laborRates, null, null);
+          if (first === null) first = sc;
+          else if (sc !== first) { uniform = false; break; }
+        }
+        if (uniform) keep.push(cls); else { mixed.push(cls); delete out.avgVolume[cls]; }
+      });
+      have = keep;
+      if (mixed.length) console.log('§VOL_WEIGHT_SKIP mixed-rate classes left FLAT: ' + mixed.join(',') +
+        ' — a class total is only preserved when every element shares one secsPerUnit');
+      if (!have.length) return out;
+    }
+    var vr = db.exec('SELECT m.guid, ' + _VOL_EXPR + ' FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid ' +
+      'WHERE t.bbox_x IS NOT NULL AND t.bbox_x>0 AND (' + _VOL_EXPR + ') > 0 AND m.ifc_class IN (' + q(have) + ')');
+    if (vr.length && vr[0].values.length) vr[0].values.forEach(function (row) { out.volume[row[0]] = row[1] || 0; });
+    console.log('§VOL_WEIGHT classes=' + have.length + ' [' +
+      have.map(function (c) { return c + ':avg=' + out.avgVolume[c].toFixed(2) + 'm3'; }).join(', ') +
+      '] — real VOLUME redistributes each class\'s existing flat total (mean ratio 1.0, class total unchanged), ' +
+      'so a raft footing no longer installs as fast as a pad');
     return out;
   }
 
@@ -481,8 +727,12 @@
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var qsRates = opts.rates || (global.RATES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     var _frag = _classFragmentation(db, qsRates);
     var _lin = _linearWeighting(db, qsRates);
+    var _area = _areaWeighting(db, qsRates, _frag.fragmented, rules, dflt, nameOverrides, laborRates);   // §ARCH_AREA_WEIGHT
+    var _vol = _volumeWeighting(db, qsRates, _frag.fragmented, rules, dflt, nameOverrides, laborRates);  // §VOL_WEIGHT
 
     // §OPENING_EXCLUDE (found 2026-08-04, 4D_SCHEDULE_PERFECTION.md fool-proofing pass): this query
     // must match time_machine.js's own live-movie element-building query EXACTLY (this function's own
@@ -591,7 +841,7 @@
       // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
       var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
       var ov = civilRuleFor(db, guid, opts.civilRules) || matchNameOverride(cls, name, nameOverrides);   // §CIVIL_PHASE
-      var rule = ov || matchRule(cls, rules, dflt);
+      var rule = ov || matchRule(cls, rules, dflt, hierarchy);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
       // LEFT JOIN's COALESCE(...,0) default) and its class has a real measured average — else null,
@@ -600,12 +850,23 @@
       var clsAvgLen = _lin.avgLength[cls];
       var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0)
         ? Math.max(bx, by, bz) / clsAvgLen : null;
+      // §ARCH_AREA_WEIGHT: same honest-degrade discipline — only with real geometry, a real class
+      // average, and only when neither stronger signal already claimed this element.
+      var clsAvgArea = _area.avgArea[cls];
+      var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
+                       _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
+      // §VOL_WEIGHT: same discipline again. A class carries exactly one rates unit, so M2 and M3
+      // are mutually exclusive in practice — the full guard chain is kept anyway so precedence
+      // stays explicit rather than relying on that invariant holding forever.
+      var clsAvgVol = _vol.avgVolume[cls];
+      var volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
+                         clsAvgVol > 0 && _vol.volume[guid] > 0) ? _vol.volume[guid] / clsAvgVol : null;
       return {
         guid: guid, cls: cls, name: name, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
         seq: rule.sequence, phase: rule.phase, resource: rule.resource || '_DEFAULT',
-        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio),
+        installSecs: _installSecs(cls, rule, laborRates, realQty, lengthRatio, areaRatio, volumeRatio),
         // §4D_NOGEO (2026-08-07, mirrors time_machine.js's own pool — this function's header says
         // "REPLICATES ... EXACTLY"): no transform row → COALESCE parks it at origin/zero-bbox. At
         // z=0 it has no support, schedules at day 0, and its zone's MIN start follows it there —
@@ -1863,6 +2124,8 @@
                                 // the TM until dated → _cap skips NULL-dated tasks).
     rules = rules || (global.SEQUENCE_RULES) || {};
     var nameOverrides = opts.nameOverrides || (global.SEQUENCE_NAME_OVERRIDES) || [];
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     // §PHASE_DURATION: labor rates for workload-proportional phase width (see below). Falls back to
     // {} when unavailable (blank-model bootstrap, older tests) — every element then gets the SAME
     // 120s default weight, which degrades gracefully to plain element-count proportionality, never
@@ -1915,7 +2178,7 @@
     elems.forEach(function (e) {
       var ov = civilRuleFor(db, e.guid, opts.civilRules) || matchNameOverride(e.cls, e.name, nameOverrides);   // §CIVIL_PHASE
       if (ov) nameOverridden++;
-      var rule = ov || matchRule(e.cls, rules, dflt);
+      var rule = ov || matchRule(e.cls, rules, dflt, hierarchy);
       var p = phases[rule.phase];
       if (!p) { p = phases[rule.phase] = { name: rule.phase, seq: rule.sequence, guids: [], resourceSecs: {}, storeys: {} }; }
       if (rule.sequence < p.seq) p.seq = rule.sequence;   // phase ordered by its earliest rule
@@ -2157,6 +2420,8 @@
     var dflt = opts.defaultRule || (global.SEQUENCE_DEFAULT) || { phase: 'Architecture', sequence: 6, resource: null };
     var laborRates = opts.laborRates || (global.LABOR_RATES) || {};
     var qsRates = opts.rates || (global.RATES) || {};   // §LABOR_QUANTITY_WEIGHT — see materializeDefault
+    // §CLASS_UNMATCHED_INHERITED — tier-2 schema-ancestor map, see matchRule's own header.
+    var hierarchy = opts.hierarchy || (global.IFC_SCHEMA_HIERARCHY) || {};
     var lr = db.exec("SELECT task_id FROM tasks WHERE schedule_id='" + scheduleId +
       "' AND (is_summary IS NULL OR is_summary=0) ORDER BY rowid");
     var ids = (lr.length && lr[0].values.length) ? lr[0].values.map(function (r) { return r[0]; }) : [];
@@ -2178,7 +2443,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt);   // §CIVIL_PHASE
+          var rule = civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt, hierarchy);   // §CIVIL_PHASE
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
@@ -3191,6 +3456,7 @@
   var API = {
     _cacheKeyFor: _cacheKeyFor,   // §S70: read and write MUST derive the slot the same way
     matchRule: matchRule,
+    classify: classify,
     matchNameOverride: matchNameOverride,
     // §TM_DURATION_SYNC — exported so time_machine.js's playback-clock duration engine
     // (getInstallSecs, viewer/time_machine.js ~3478) can call the SAME fragmentation-aware
@@ -3200,6 +3466,8 @@
     _installSecs: _installSecs,
     _classFragmentation: _classFragmentation,
     _linearWeighting: _linearWeighting,
+    _areaWeighting: _areaWeighting,
+    _volumeWeighting: _volumeWeighting,
     FRAGMENT_M2_FLOOR: FRAGMENT_M2_FLOOR,
     materializeDefault: materializeDefault,
     materializeZones: materializeZones,

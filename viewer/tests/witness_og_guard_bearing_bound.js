@@ -32,6 +32,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_og_guard_bearing_bound.js  (from viewer/)
 // Read the § log lines, not exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -51,8 +52,8 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 // needs SOURCE TEXT (it builds reference variants by substring substitution), but it slices BY
 // FUNCTION NAME instead of by raw text markers — immune to indentation and to log wording, the two
 // things that rotted the old marker slice once already.
-const ssSrc = fs.readFileSync(path.join(__dirname, '..', 'support_sweep.js'), 'utf8');
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const ssSrc = __readSrc(path.join(__dirname, '..', 'support_sweep.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function _sliceNamed(src, name) {
   const idx = src.indexOf('function ' + name + '(');
   if (idx < 0) throw new Error(name + ' not found in support_sweep.js — renamed?');
@@ -81,7 +82,7 @@ assert(guardBlock.indexOf('_ogTopBound') >= 0 && judgeSrc.indexOf('topBound') >=
   'W-OGB-0 both halves of §OG_BEARING_BOUND present in shipped source (guard _ogTopBound + judge topBound)');
 
 function loadRules() {
-  var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  var txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   var start = txt.indexOf('var RATES = {');
   var defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   var end = txt.indexOf('};', defIdx) + 2;
@@ -89,7 +90,7 @@ function loadRules() {
 }
 
 function buildScheduled(dbPath, SQL, rules) {
-  const db = new SQL.Database(fs.readFileSync(dbPath));
+  const db = new SQL.Database(__readSrc(dbPath));
   const r = db.exec("SELECT m.guid, m.ifc_class, COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
     "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) FROM elements_meta m " +
     "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");

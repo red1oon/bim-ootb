@@ -56,11 +56,20 @@ if (!C) refuse('container not found: ' + JSON.stringify(cfg.container));
 const isAsync = !!(C.modifiers && C.modifiers.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword));
 const params = C.parameters.map((p) => { if (!ts.isIdentifier(p.name)) refuse('non-identifier parameter'); return p.name.text; });
 const stmts = C.body.statements;
+// strictness: parts and driver are strict ONLY if the original container already ran strict (a directive in it or in
+// any enclosing function / the file). Adding 'use strict' to sloppy code would change its behaviour.
+const hasStrictDirective = (body) => { for (const st of body.statements) { if (!(ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression))) break; if (st.expression.text === 'use strict') return true; } return false; };
+let STRICT = hasStrictDirective(C.body) || hasStrictDirective(sf);
+for (let p = C.parent; p && !STRICT; p = p.parent) if (ts.isFunctionLike(p) && p.body && ts.isBlock(p.body) && hasStrictDirective(p.body)) STRICT = true;
+const USE_STRICT = STRICT ? "  'use strict';\n" : '', OWN_STRICT = hasStrictDirective(C.body);   // parts are files: they need it explicitly; the driver repeats only the container's own directive
 if (new RegExp('\\b' + SH + '\\b').test(src)) refuse('shared name "' + SH + '" already occurs in the file');
 
 // ── assign statements to parts by anchor NAME ────────────────────────────────────────────────────────────────
 const declNames = (st) => ts.isFunctionDeclaration(st) && st.name ? [st.name.text]
-  : ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => ts.isIdentifier(d.name) ? d.name.text : null) : [];
+  : ts.isVariableStatement(st) ? st.declarationList.declarations.map((d) => ts.isIdentifier(d.name) ? d.name.text : null)
+  // an anchor may also be an assignment target like "A.loadPathApplyVisual" (a part that starts with `A.x = function…`)
+  : (ts.isExpressionStatement(st) && ts.isBinaryExpression(st.expression) && st.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+    ? [st.expression.left.getText(sf)] : [];
 const partIdx = new Array(stmts.length); let cur = 0;
 stmts.forEach((st, i) => {
   const nx = cfg.parts[cur + 1];
@@ -78,12 +87,13 @@ stmts.forEach((st, i) => {
     st.declarationList.declarations.forEach((d) => { if (!ts.isIdentifier(d.name)) refuse('destructuring at container level, line ' + line(d.getStart(sf))); decl.set(ck.getSymbolAtLocation(d.name), { name: d.name.text, part: partIdx[i], kind: 'var' }); });
   } else if (ts.isClassDeclaration(st)) refuse('class at container level, line ' + line(st.getStart(sf)));
 });
-const bad = [];
+const bad = [], topReturns = [];   // container-level `return` = an EARLY EXIT of the whole setup (e.g. effects.js mobile skip)
 (function scan(n, inFn) {
-  if (!inFn && (ts.isReturnStatement(n) || (ts.isIdentifier(n) && n.text === 'arguments') || n.kind === ts.SyntaxKind.ThisKeyword)) bad.push(ts.SyntaxKind[n.kind] + '@' + line(n.getStart(sf)));
+  if (!inFn && ts.isReturnStatement(n)) topReturns.push(n);
+  if (!inFn && ((ts.isIdentifier(n) && n.text === 'arguments') || n.kind === ts.SyntaxKind.ThisKeyword)) bad.push(ts.SyntaxKind[n.kind] + '@' + line(n.getStart(sf)));
   ts.forEachChild(n, (c) => scan(c, inFn || (ts.isFunctionLike(n) && !ts.isArrowFunction(n) && n !== C)));
 })(C.body, false);
-if (bad.length) refuse('container-level return/arguments/this: ' + bad.join(','));
+if (bad.length) refuse('container-level arguments/this: ' + bad.join(','));
 // enclosing-scope captures: a symbol declared OUTSIDE the container but not at file/global level
 const outer = new Set();
 (function walk(n) {
@@ -122,8 +132,15 @@ if (thisUsers.length) refuse('shared functions use `this` (would bind to ' + SH 
 
 // ── edits: ONLY a non-owner reference becomes <SHARED>.name (owner text stays byte-identical) ─────────────────
 const edits = [];
+const render0 = (a, b) => { let o = '', p = a; edits.filter((e) => e[0] >= a && e[1] <= b).sort((x, y) => x[0] - y[0]).forEach((e) => { o += src.slice(p, e[0]) + e[2]; p = e[1]; }); return o + src.slice(p, b); };
 refs.forEach((r) => { if (!cross.has(r.d.name) || r.isDeclName || r.part === r.d.part) return;
   edits.push([r.node.getStart(sf), r.node.end, r.shorthand ? r.d.name + ': ' + SH + '.' + r.d.name : SH + '.' + r.d.name]); });
+// an early exit must stop the WHOLE setup, not just its part: `return X;` -> `return { __splitReturn: true, value: X };`
+// (the driver stops running later parts when it sees it; split_verify + readUnsplit undo exactly this text)
+topReturns.forEach((r) => { edits.push([r.getStart(sf), r.end, r.expression
+  ? 'return { __splitReturn: true, value: ' + render0(r.expression.getStart(sf), r.expression.end) + ' };'
+  : 'return { __splitReturn: true };']); });
+for (let i = edits.length - 1; i >= 0; i--) { const e = edits[i]; if (topReturns.some((r) => e[0] >= r.getStart(sf) && e[1] <= r.end && !(e[0] === r.getStart(sf) && e[1] === r.end))) edits.splice(i, 1); }
 const render = (a, b) => { let o = '', p = a; edits.filter((e) => e[0] >= a && e[1] <= b).sort((x, y) => x[0] - y[0]).forEach((e) => { o += src.slice(p, e[0]) + e[2]; p = e[1]; }); return o + src.slice(p, b); };
 const awaitsAtTop = (st) => { let f = false; (function w(n, inFn) { if (!inFn && ts.isAwaitExpression(n)) f = true; ts.forEachChild(n, (c) => w(c, inFn || ts.isFunctionLike(n))); })(st, false); return f; };
 
@@ -142,7 +159,9 @@ cfg.parts.forEach((P, pi) => {
   if (asyncRun && !isAsync) refuse('await at container level in a non-async container (part ' + P.name + ')');
   if (asyncRun) asyncParts.push(P.name);
   const text = mine.filter((st) => !(ts.isExpressionStatement(st) && ts.isStringLiteral(st.expression) && st.expression.text === 'use strict'))
-    .map((st) => render(st.getFullStart(), st.end)).join('');
+    .map((st) => render(st.getFullStart(), st.end)).join('') +
+    // the container's trailing comments (after its last statement, before its closing brace) belong to the last part
+    (pi === cfg.parts.length - 1 ? src.slice(stmts[stmts.length - 1].end, C.body.end - 1).replace(/\s+$/, '') : '');
   const pub = [].concat(
     ownCrossFn.map((n) => '  ' + SH + '.' + n + ' = ' + n + ';'),
     ownCrossVar.map((n) => '  Object.defineProperty(' + SH + ", '" + n + "', { get: function () { return " + n + '; }, set: function (v) { ' + n + ' = v; }, enumerable: true });'));
@@ -155,7 +174,7 @@ cfg.parts.forEach((P, pi) => {
     '// Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.\n' +
     G + '.' + REG + ' = ' + G + '.' + REG + ' || {};\n' +
     G + '.' + REG + '.' + P.name + ' = ' + (asyncRun ? 'async ' : '') + 'function* __split_' + FAMILY + '_' + P.name + '(' + [SH].concat(params).join(', ') + ') {\n' +
-    "  'use strict';\n" +
+    USE_STRICT +
     (pub.length ? '  // phase 1 — publish this part\'s names that other parts use (same function objects; vars as live accessors)\n' + pub.join('\n') + '\n' : '') +
     '  yield;   // phase 2 resumes here, in this same scope: the original statements, in original order\n' +
     text + '\n};\n');
@@ -166,7 +185,7 @@ cfg.parts.forEach((P, pi) => {
 // ── rewrite the container body as the driver ─────────────────────────────────────────────────────────────────
 const anyAsync = asyncParts.length > 0;
 const ind = ' '.repeat(sf.getLineAndCharacterOfPosition(stmts[0].getStart(sf)).character), indClose = ' '.repeat(Math.max(0, ind.length - 2));
-const driver = '{\n' + ind + "'use strict';\n" +
+const driver = '{\n' + (OWN_STRICT ? ind + "'use strict';\n" : '') + ind + '// <split-driver> (readUnsplit() in viewer/tests/_split_families.js rebuilds the original body here)\n' +
   ind + '// Body split move-only into ' + files.join(', ') + ' (loaded before this file) by scripts/split_closure.js\n' +
   ind + '// (bim-compiler prompts/VIEWER_FILE_SPLIT_PLAN.md). Each part is a generator: phase 1 (to its `yield`) hoists its\n' +
   ind + '// functions/vars and publishes shared names on ' + SH + '; phase 2 runs its original statements, parts in original order.\n' +
@@ -178,11 +197,13 @@ const driver = '{\n' + ind + "'use strict';\n" +
   ind + 'var parts = ORDER.map(function (n) { return R[n](' + [SH].concat(params).join(', ') + '); });\n' +
   (anyAsync
     ? ind + 'for (var i = 0; i < parts.length; i++) { var r1 = parts[i].next(); if (r1 && typeof r1.then === \'function\') await r1; }\n' +
-      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') await r2; }\n'
+      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next(); if (r2 && typeof r2.then === \'function\') r2 = await r2;\n' +
+      ind + '  if (r2 && r2.value && r2.value.__splitReturn) return r2.value.value; }   // an early `return` in the original stops the whole setup\n'
     : ind + 'parts.forEach(function (p) { p.next(); });   // phase 1\n' +
-      ind + 'parts.forEach(function (p) { p.next(); });   // phase 2\n') +
-  indClose + '}';
+      ind + 'for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next();   // phase 2\n' +
+      ind + '  if (r2 && r2.value && r2.value.__splitReturn) return r2.value.value; }   // an early `return` in the original stops the whole setup\n') +
+  ind + '// </split-driver>\n' + indClose + '}';
 const shell = src.slice(0, C.body.getStart(sf)) + driver + src.slice(C.body.end);
 fs.writeFileSync(path.join(OUT, path.basename(cfg.file)), shell);
 console.log(report.join('\n'));
-console.log('§SPLIT_DONE ' + FAMILY + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);
+console.log('§SPLIT_DONE ' + FAMILY + ' earlyReturns=' + topReturns.length + ' strict=' + STRICT + ' parts=' + files.length + ' crossNames=' + cross.size + ' edits=' + edits.length + ' async=' + JSON.stringify(asyncParts) + ' shellLines=' + shell.split('\n').length);

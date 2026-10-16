@@ -35,6 +35,7 @@
 //
 // Command: node viewer/tests/witness_gantt_reschedule_asap.js     (no browser, no building fixture)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const initSqlJs = require(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.js'));
@@ -44,7 +45,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 
 // ── W-ASAP-8 / W-ASAP-9: source gates, brace-matched (same namedFns as witness_gantt_edit_persist) ──
 const TM = path.join(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(TM, 'utf8');
+const src = __readSrc(TM, 'utf8');
 function namedFns(text) {
   const out = [];
   const re = /\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g;
@@ -81,7 +82,7 @@ assert(/id="tm-reschedule-asap"/.test(src), 'W-ASAP-8e the transport-row button 
 assert(/getElementById\('tm-reschedule-asap'\)/.test(src) && /rescheduleGanttAsap\(\);/.test(src),
   'W-ASAP-8f the button is wired to the commit path (a button nothing listens to is not the feature)');
 
-const SA_SRC = fs.readFileSync(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
+const SA_SRC = __readSrc(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
 const SA_FNS = namedFns(SA_SRC);
 const verbFn = SA_FNS.find(f => f.name === 'rescheduleAsap');
 assert(!!verbFn, 'W-ASAP-8g ScheduleAuthor.rescheduleAsap is a REAL brace-matched function in schedule_author.js');
@@ -94,7 +95,7 @@ assert(!!mtcFn && mtcFn.body.indexOf('push-only: never pull a successor earlier'
 // ─────────────────────────── behaviour: synthetic fixture, real verb ───────────────────────────
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 
-initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) }).then(function (SQL) {
+initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) }).then(function (SQL) {
   const db = new SQL.Database();
   const SCH = 'SCH_TEST';
   db.run('CREATE TABLE tasks (task_id TEXT PRIMARY KEY, schedule_id TEXT, name TEXT, is_summary INTEGER, ' +

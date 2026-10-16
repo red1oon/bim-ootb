@@ -37,6 +37,7 @@
 // Command: node viewer/tests/witness_storey_datum_frame.js
 //   env BLD_DIR (default ~/bim-ootb/buildings), SILENT_DB (default ~/Downloads/Hospital_silent.db)
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm'), os = require('os');
 const { Witness } = require('../../witness_kit/contract');
 const HOME = os.homedir();
@@ -53,14 +54,14 @@ const GM = require(path.join(V, 'gantt_model.js')); global.GanttModel = GM;
 globalThis.RoomWalker = require(path.join(V, 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
-const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
+const T = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
 const TMP = require(path.join(V, '..', 'scripts', 'lib', 'tm_played_layer.js'));
-const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(V, 'time_machine.js'), 'utf8');
 
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
   vm.createContext(sb);
-  vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8'), sb);
+  vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), sb);
   return sb;
 }
 // Mirror of viewer/scene.js A._runSqlChunked — statement split on a line ending in `;`, 500 per run.
@@ -91,12 +92,12 @@ function variants() {
 }
 
 async function judge(v, SQL, R) {
-  let db = new SQL.Database(new Uint8Array(fs.readFileSync(v.file)));
+  let db = new SQL.Database(new Uint8Array(__readSrc(v.file)));
   let patchNote = 'none';
   if (v.patch) {
-    try { const n = runSqlChunked(db, fs.readFileSync(v.patch, 'utf8')); patchNote = 'applied(' + n + ' statements)'; }
+    try { const n = runSqlChunked(db, __readSrc(v.patch, 'utf8')); patchNote = 'applied(' + n + ' statements)'; }
     catch (e) {   // A._applyPendingPatch returns the ORIGINAL buffer on any throw — mirror that, and say so
-      db.close(); db = new SQL.Database(new Uint8Array(fs.readFileSync(v.file))); patchNote = 'FAILED→unpatched(' + (e && e.message) + ')';
+      db.close(); db = new SQL.Database(new Uint8Array(__readSrc(v.file))); patchNote = 'FAILED→unpatched(' + (e && e.message) + ')';
     }
   }
   const sb = TMP.buildSandbox({ tmSrc, SA, SG, CP, GM, SS, LABOR_RATES: R.LABOR_RATES, console });

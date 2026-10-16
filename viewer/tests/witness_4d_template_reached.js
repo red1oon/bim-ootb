@@ -21,6 +21,7 @@
 //
 // Command: node viewer/tests/witness_4d_template_reached.js [Building ...]
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -50,7 +51,7 @@ function prodCallSites() {
   for (const f of PROD_FILES) {
     const p = path.join(VIEWER_DIR, f);
     if (!fs.existsSync(p)) continue;
-    const src = fs.readFileSync(p, 'utf8');
+    const src = __readSrc(p, 'utf8');
     const re = /materializeZones\s*\(/g;
     let m;
     while ((m = re.exec(src)) !== null) {
@@ -77,7 +78,7 @@ function prodCallSites() {
 function executedRules() {
   const sb = { console: { log() {}, warn() {}, error() {} } };
   vm.createContext(sb);
-  vm.runInContext(fs.readFileSync(path.join(VIEWER_DIR, 'rates.js'), 'utf8'), sb);
+  vm.runInContext(__readSrc(path.join(VIEWER_DIR, 'rates.js'), 'utf8'), sb);
   return sb;
 }
 
@@ -95,7 +96,7 @@ function executedRules() {
   for (const bld of BUILDINGS) {
     const file = path.join(BLD_DIR, bld + '_extracted.db');
     if (!fs.existsSync(file)) { console.log('§TPL_REACHED_SKIP ' + bld); continue; }
-    const db = new SQL.Database(new Uint8Array(fs.readFileSync(file)));
+    const db = new SQL.Database(new Uint8Array(__readSrc(file)));
     const _l = console.log, _w = console.warn;
     const logs = [];
     console.log = (...a) => { logs.push(a.join(' ')); };
@@ -105,7 +106,7 @@ function executedRules() {
       // VERBATIM the production opts keys, INCLUDING `template:` — since §TPL_WIRED (2026-08-26)
       // every production call site loads viewer/rates/4D_template.json and passes it. Replaying
       // the shape without it would prove nothing about what ships.
-      const T = JSON.parse(fs.readFileSync(path.join(VIEWER_DIR, 'rates', '4D_template.json'), 'utf8'));
+      const T = JSON.parse(__readSrc(path.join(VIEWER_DIR, 'rates', '4D_template.json'), 'utf8'));
       ScheduleAuthor.materializeZones(db, R.SEQUENCE_RULES, {
         start: START, laborRates: R.LABOR_RATES, rates: R.RATES,
         scheduleGate: ScheduleGate, shiftHours: (R.SHIFT_HOURS > 0 ? R.SHIFT_HOURS : 24),

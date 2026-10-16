@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_gantt_row_order.js — prompts/4D_SCHEDULE_PERFECTION.md §GANTT_EDIT K1.
 //
 // THE ISSUE THIS PROVES OR DISPROVES:
@@ -23,7 +24,7 @@ function check(name, cond, detail) {
 }
 
 // ---- The truth: phase order derived from SEQUENCE_RULES' own sequence numbers.
-var txt = fs.readFileSync(path.join(VIEWER, 'rates.js'), 'utf8');
+var txt = __readSrc(path.join(VIEWER, 'rates.js'), 'utf8');
 var s = txt.indexOf('var RATES = {'), d = txt.indexOf('var SEQUENCE_DEFAULT');
 var rules = (new Function(txt.slice(s, txt.indexOf('};', d) + 2) + '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES};'))();
 var minSeq = {};
@@ -48,7 +49,7 @@ check('G-RO-4 MEP-final-after-MEP-rough-in', before('MEP Rough-in', 'MEP Final')
 check('G-RO-5 finishes-last', TRUE_ORDER[TRUE_ORDER.length - 1] === 'Finishes', 'last=' + TRUE_ORDER[TRUE_ORDER.length - 1]);
 
 // ---- The drawer must DERIVE its order, not hardcode a copy that can drift.
-var tm = fs.readFileSync(path.join(VIEWER, 'time_machine.js'), 'utf8');
+var tm = __readSrc(path.join(VIEWER, 'time_machine.js'), 'utf8');
 var i = tm.indexOf('var _ROW_PHASE_ORDER');
 check('G-RO-6 row-order-exists', i >= 0);
 var block = i >= 0 ? tm.slice(i, i + 1200) : '';

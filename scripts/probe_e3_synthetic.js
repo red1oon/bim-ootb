@@ -8,6 +8,7 @@
 // stress case (also proves the core E1-E4 + crew-cap mechanism end to end). case2 = a level
 // missing a phase. case3 = an orphan element. case4 = parallel independent zones on one band.
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const path = require('path');
 const CpmSchedule = require(path.join(__dirname, '..', 'viewer', 'cpm_schedule.js'));
 const ScheduleGate = require(path.join(__dirname, '..', 'viewer', 'schedule_gate.js'));
@@ -31,7 +32,7 @@ function sliceFn(src, name) {
   }
   return src.slice(idx, i + 1);
 }
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 const _contactGraph = SupportSweep.contactGraph;        // §S58: the real module, not a text slice
 
 function checkCase(name, items, opts, EXPECT, EXPECT_DROPS, EXPECT_STRAG_COUNT) {

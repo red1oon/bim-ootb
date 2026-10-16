@@ -24,10 +24,11 @@
  * RUN: node viewer/tests/witness_film_overlay_lifetime.js
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
-const mq = fs.readFileSync(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
-const slab = fs.readFileSync(path.join(ROOT, 'viewer/cpe_slab_beat.js'), 'utf8');
+const mq = __readSrc(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
+const slab = __readSrc(path.join(ROOT, 'viewer/cpe_slab_beat.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const ck = (n, c, x) => { (c ? pass++ : fail++); console.log('  §OVL ' + (c ? 'ok    ' : 'WRONG ') + n + (x ? '   ' + x : '')); };
@@ -75,12 +76,12 @@ ck('…and it says so in the log, so a reader can see the box stop',
 // red1: "EscRoute should be taking over the opposing bottom HUD ... This leaves the main HUD to
 // continue displaying its overall building info", then "And the old opposing HUD is replaced".
 // The old code overwrote `_statInfo`, which EVICTED the building card for the whole escape window.
-const esc = fs.readFileSync(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
+const esc = __readSrc(path.join(ROOT, 'viewer/cpe_escape_route.js'), 'utf8');
 ck('the escape card no longer overwrites _statInfo — the building card keeps the HUD column',
    !/_statInfo = \{ shown: _ec/.test(mq) && /_escCardInfo = \{ shown: _ec/.test(mq));
 ck('…it takes the corner diagonally opposite, from cpe_film_boxes\'s OWN map, not a second copy',
    /A\.filmBoxesOppositeCorner \? A\.filmBoxesOppositeCorner\(_ovPos\)/.test(mq) &&
-   /A\.filmBoxesOppositeCorner = function/.test(fs.readFileSync(path.join(ROOT, 'viewer/cpe_film_boxes.js'), 'utf8')),
+   /A\.filmBoxesOppositeCorner = function/.test(__readSrc(path.join(ROOT, 'viewer/cpe_film_boxes.js'), 'utf8')),
    'a duplicated corner map is a thing that drifts');
 ck('…and it draws inside _drawUnlessHold, so it registers a rect and fades with the freeze',
    /_drawUnlessHold\('escroute\.card', function \(a\) \{/.test(mq),
@@ -96,14 +97,14 @@ ck('the panel holds to the last frame by INTENT, not by a dwell that happens to 
    'bounded on tNorm > 1, full opacity across the finale');
 ck('nothing reclaims the corner when it ends — red1: "IF it ends, then just cease, and not have fresh stale info"',
    /if \(A\.filmBoxesDrawMeasure && !escCardInfo\) \{/.test(mq) &&
-   /SLAB_LABEL_STALE/.test(fs.readFileSync(path.join(ROOT, 'viewer/cpe_slab_beat.js'), 'utf8')),
+   /SLAB_LABEL_STALE/.test(__readSrc(path.join(ROOT, 'viewer/cpe_slab_beat.js'), 'utf8')),
    'the Measure box has already stood its label down by then, so the corner stays blank');
 
 // ── 5. THE SERVICE WORKER VERSION MOVED WITH THE MODULES ─────────────────────────────────────
 // Not a draw defect, but the same class of silent failure: a reused bake profile renders the OLD
 // modules and looks perfectly normal doing it. Four commits of viewer changes shipped on v1207.
 {
-  const sw = fs.readFileSync(path.join(ROOT, 'viewer/sw.js'), 'utf8');
+  const sw = __readSrc(path.join(ROOT, 'viewer/sw.js'), 'utf8');
   const m = /const CACHE_VERSION = 'v(\d+)'/.exec(sw);
   ck('CACHE_VERSION has moved past v1207, which carried four commits of viewer module changes',
      !!m && +m[1] > 1207, m ? 'v' + m[1] : 'not found');

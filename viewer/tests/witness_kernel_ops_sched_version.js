@@ -41,6 +41,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node viewer/tests/witness_kernel_ops_sched_version.js
 // Read the § log lines, not exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -58,7 +59,7 @@ function finish() {
 const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 // §DAY_GAP_TAIL discipline, applied here 2026-08-12 (§ARCH_START_TEMPO / M1): `optional` lets a
 // helper that a newer time_machine.js introduced be sliced without breaking on a revision that
@@ -157,7 +158,7 @@ const DB_FILE = { LTU_AHouse: 'LTU_AHouse_meta.db' };
 const BUILDINGS = ['Terminal', 'Hospital', 'Duplex', 'HHS_Office_Federated', 'Clinic', 'LTU_AHouse', 'JKR'];
 
 function loadRatesTable() {
-  const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   const end = txt.indexOf('};', defIdx) + 2;
@@ -165,8 +166,8 @@ function loadRatesTable() {
 }
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SR = rulesJson.SEQUENCE_RULES, SD = rulesJson.SEQUENCE_DEFAULT, LR = rulesJson.LABOR_RATES;
   const NO = rulesJson.NAME_OVERRIDES || [];
   const RATES = loadRatesTable();
@@ -175,7 +176,7 @@ function loadRatesTable() {
   for (const bld of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, DB_FILE[bld] || (bld + '_extracted.db'));
     if (!fs.existsSync(dbPath)) { assert(false, 'W-KOS-4 fixture missing: ' + dbPath); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
 
     // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
     // browser exposes, so _displayTimeline's §S6_CREW_PASS max_crews_fixed/max_crews lookup sees

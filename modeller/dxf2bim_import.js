@@ -124,6 +124,64 @@
     return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
 
+  // §L4.3 the door openings of ONE plan sheet as the reader sees them (Dxf2Bim.run with the set's plan map + the sheet's @LAYER rules):
+  // the editor's Doors section resolves a canvas click and places a @TAG with the reader's own door geometry. Pure; metres.
+  function planDoors(sheet, setName, opts) {
+    var SET = setWith(setName); if (!SET || !sheet || sheet.desc.view !== 'PLAN' || !(sheet.desc.units in MK.UNITS)) return null;
+    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), C.CFG, { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
+    return { factor: MK.UNITS[sheet.desc.units], snap_tol: C.CFG.snap_tol, doors: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge; }).map(function (o) {
+      var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }) };
+  }
+
+  // ---- §L4.4 a Tag-tool click on an ELEVATION opening → the plan position + z the reader binds (pure; the reader's own functions) ----
+  // plans: described PLAN sheets ({name, text, dxf, desc}); elev: the described ELEV sheet; handle: the picked entity. Returns
+  // {ok, cls, plan, x, y (plan drawing units), z (m), elevHandles, opening, p:[p0,p1], why}. Never guesses: none / a tie → ok:false + why.
+  function footprintOf(op) {   // = Dxf2Types footprint (window: bbox, else centre/width/depth); door: its drawn opening box, else the swing box
+    var p = op.params;
+    if (p.kind === 'door' && p.hinge) {
+      var b = p.opening_box; if (b) { var L = b.along || b.s; return b.axis === 'x' ? [L[0], b.band[0], L[1], b.band[1]] : [b.band[0], L[0], b.band[1], L[1]]; }
+      var H = p.hinge, pts = [H].concat([p.swing_start_deg, p.swing_end_deg].map(function (a) { return [H[0] + p.width * Math.cos(a * Math.PI / 180), H[1] + p.width * Math.sin(a * Math.PI / 180)]; }));
+      return [Math.min.apply(null, pts.map(function (q) { return q[0]; })), Math.min.apply(null, pts.map(function (q) { return q[1]; })), Math.max.apply(null, pts.map(function (q) { return q[0]; })), Math.max.apply(null, pts.map(function (q) { return q[1]; }))];
+    }
+    if (p.bbox) return p.bbox;
+    if (p.centre && typeof p.width === 'number' && typeof p.depth === 'number') {
+      var hx = (p.angle_deg === 90 ? p.depth : p.width) / 2, hy = (p.angle_deg === 90 ? p.width : p.depth) / 2;
+      return [p.centre[0] - hx, p.centre[1] - hy, p.centre[0] + hx, p.centre[1] + hy];
+    }
+    return null;
+  }
+  function elevPick(plans, elev, setName, handle) {
+    var SET = setWith(setName), no = function (why) { return { ok: false, why: why }; };
+    if (!SET) return no('no layer-map set');
+    var P = plans.filter(function (s) { return s && s.desc && s.desc.view === 'PLAN' && typeof s.desc.level === 'number' && (s.desc.units in MK.UNITS); }).sort(function (a, b) { return a.desc.level - b.desc.level; });
+    if (!P.length) return no('no plan with @LEVEL and @UNITS');
+    if (!elev || !elev.desc || elev.desc.view !== 'ELEV' || !elev.desc.face) return no('not an elevation with @FACE');
+    var al = MK.align(P[0].desc, elev.desc, C.MARK_ALIGN_TOL);
+    if (!al.map || !al.map.zOf) return no('the elevation does not align with plan ' + P[0].name);
+    var em = MK.withLayers(SET.MAP_ELEV, elev.desc), cls = null, cl = null;
+    [['glazing', 'window'], ['elevdoor', 'door']].forEach(function (t) {
+      if (cl) return; var c = E.elevClusters(elev.dxf.entities, em, al.map, C.CFG.snap_tol, t[0]).filter(function (q) { return q.handles.indexOf(handle) >= 0; })[0];
+      if (c) { cl = c; cls = t[1]; } });
+    if (!cl) return no('handle ' + handle + ' is not on an opening layer of this elevation (glazing / door)');
+    var z = Math.round((cl.z0 + cl.z1) / 2 * 1e4) / 1e4;
+    var pl = P.filter(function (s) { return s.desc.level <= z; }).pop();
+    if (!pl) return no('z ' + z + ' is below the lowest plan level ' + P[0].desc.level);
+    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), C.CFG, { DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
+    var walls = run.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; });
+    if (!walls.length) return no('plan ' + pl.name + ' has no wall pieces (no envelope)');
+    var env = S.envelope(walls), face = elev.desc.face, ax = (face === 'minY' || face === 'maxY') ? 0 : 1, fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face];
+    var cand = run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && (o.params.category || o.params.kind) === cls; }).map(function (o) {
+      var f = footprintOf(o); if (!f) return null;
+      var lo = f[ax], hi = f[ax + 2]; if (Math.min(hi, cl.p1) - Math.max(lo, cl.p0) <= 0) return null;
+      var a0 = f[1 - ax], a1 = f[3 - ax], d = fc < a0 ? a0 - fc : fc > a1 ? fc - a1 : 0;
+      return { op: o, f: f, d: Math.round(d * 1e6) / 1e6 };
+    }).filter(Boolean).sort(function (a, b) { return a.d - b.d; });
+    if (!cand.length) return no('no ' + cls + ' in plan ' + pl.name + ' over ' + cl.p0 + '..' + cl.p1 + ' along the ' + face + ' face');
+    if (cand.length > 1 && cand[1].d === cand[0].d) return no('two ' + cls + 's in plan ' + pl.name + ' at the same distance from the ' + face + ' face (' + cand[0].op.params.handle + ', ' + cand[1].op.params.handle + ')');
+    var k = MK.UNITS[pl.desc.units], f0 = cand[0].f, r3 = function (v) { return Math.round(v * 1000) / 1000; };
+    return { ok: true, cls: cls, plan: pl.name, x: r3((f0[0] + f0[2]) / 2 / k), y: r3((f0[1] + f0[3]) / 2 / k), z: z, elevHandles: cl.handles, opening: cand[0].op.params.handle, p: [cl.p0, cl.p1], faceDist: cand[0].d };
+  }
+
   // ---- the pipeline: rosetta_dx_shell.js pipeline({convention:false}), same calls, same order ----
   // library (optional): { families:[{id, ot, ifc_class, w, h, d}], wallTypes:[{id, t}], geoms:[{element_ref, ifc_class, geometry_hash, vertices, faces, bbox}], labels:{<storey>:[...]} }
   function convert(sheets, opts) {
@@ -200,11 +258,8 @@
       var LIB = { wall: library.wallTypes.filter(function (w) { return w.id !== 'NONE'; }).map(function (w) { return { id: w.id, thickness: w.t / 1000 }; }),
         window: library.families.filter(function (f) { return f.ot === 'WINDOW'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }),
         door: library.families.filter(function (f) { return f.ot === 'DOOR'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }) };
-      // §L3.4: an OCI library carries labels per run_id (run data, shipped beside the library): applied only to the set with that run_id
-      var LABS = library.labelsByRun ? (library.labelsByRun[R.run_id] || null) : library.labels;
-      R.labelsFrom = library.labelsByRun ? (library.labelsByRun[R.run_id] ? 'run ' + R.run_id.slice(0, 12) : 'none') : (library.labels ? 'subset' : 'none');
       ST.forEach(function (st) {
-        var lr = T.applyLabels(st.after, { units: 'm', labels: (LABS && LABS[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
+        var lr = T.applyLabels(st.after, { units: 'm', labels: (library.labels && library.labels[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
         st.labelGaps = lr.gaps.length;
         st.after = T.bindTypes(lr.ops, LIB, { bind: { size_tol: C.TYPES.size_tol, prefer: C.TYPES.prefer } }, {}).ops;
       });
@@ -403,7 +458,8 @@
       header: { source: J0.source, input: J0.input, counts: J0.counts } };
   }
 
-  // ---- §L3.4: the library on OCI (BIMCompiler export_library_subset.js --full): index + shards (geometry_hash[0:2]) + labels per run_id.
+  // ---- §L3.4: the library on OCI (BIMCompiler export_library_subset.js --full): index + shards (geometry_hash[0:2]). Library data only:
+  // a drawing states its products as @TAG markings (no labels sidecar).
   // Pure except the injected fetchJson(url) → parsed JSON | null on 404 (throws on any other failure). Builds the SAME subset form
   // librarySubset reads, so the withheld / missing / not-in-subset rules of §L3.2 apply unchanged.
   var ORDER3 = function (a, b) { return a.element_ref < b.element_ref ? -1 : a.element_ref > b.element_ref ? 1 : a.ifc_class < b.ifc_class ? -1 : a.ifc_class > b.ifc_class ? 1 : a.geometry_hash < b.geometry_hash ? -1 : a.geometry_hash > b.geometry_hash ? 1 : 0; };
@@ -414,7 +470,7 @@
     return Object.keys(out).sort();
   }
   // index + the shards loaded so far → the `library` convert takes; `complete` = the families whose candidate shards are all loaded
-  function libraryFromShards(index, shards, complete, labelsByRun) {
+  function libraryFromShards(index, shards, complete) {
     var rows = [], meshes = {};
     Object.keys(shards).sort().forEach(function (n) {
       var J0 = shards[n];
@@ -426,10 +482,9 @@
       counts: { ad_opening_family: index.rows.ad_opening_family.length, ad_wall_type: index.rows.ad_wall_type.length, ad_geometry_map: rows.length, meshes: Object.keys(meshes).length },
       rows: { ad_opening_family: index.rows.ad_opening_family, ad_wall_type: index.rows.ad_wall_type, ad_geometry_map: rows }, meshes: meshes,
       complete_for_families: complete.slice().sort(), labels: null });
-    L0.labelsByRun = labelsByRun || {};
     return L0;
   }
-  // iterate: convert → the bound families not yet loaded (GAP:lod400_not_in_subset) → their shards; the run_id → its labels. ≤ maxPasses.
+  // iterate: convert → the bound families not yet loaded (GAP:lod400_not_in_subset) → their shards. ≤ maxPasses.
   async function loadOci(sheets, o) {
     var fx = o.fetchJson, base = o.base, memo = o.memo || {};
     var get = async function (u) { if (!(u in memo)) memo[u] = await fx(u); return memo[u]; };
@@ -437,16 +492,13 @@
     if (!latest || latest.format !== 'dxf2bim-library-latest/1') throw new Error('latest.json ' + (latest ? 'unknown format ' + latest.format : 'not found'));
     var index = await get(base + latest.index);
     if (!index || index.format !== 'dxf2bim-library-index/1' || index.source.sha256 !== latest.library_sha256) throw new Error('index ' + latest.index + (index ? ' does not match latest.json' : ' not found'));
-    var dir = latest.index.replace(/index\.json$/, ''), shards = {}, complete = [], labelsByRun = {}, famById = {}, passes = 0, R = null, Lb = null, max = o.maxPasses || 4;
+    var dir = latest.index.replace(/index\.json$/, ''), shards = {}, complete = [], famById = {}, passes = 0, R = null, Lb = null, max = o.maxPasses || 4;
     index.rows.ad_opening_family.forEach(function (f) { famById[f.family_id] = f; });
     while (passes < max) {
-      Lb = libraryFromShards(index, shards, complete, labelsByRun);
+      Lb = libraryFromShards(index, shards, complete);
       R = convert(sheets, Object.assign({}, o.convertOpts || {}, { library: Lb })); passes++;
       if (R.refused) break;
       var more = false;
-      if (!(R.run_id in labelsByRun)) { var lj = await get(base + 'labels/' + R.run_id + '.json');
-        if (lj && (lj.format !== 'dxf2bim-labels/1' || lj.run_id !== R.run_id)) throw new Error('labels ' + R.run_id + ': wrong format or run_id');
-        labelsByRun[R.run_id] = lj ? lj.labels : null; if (lj) more = true; }
       var need = {}; (R.fillGaps || []).forEach(function (x) { if (x.code === 'GAP:lod400_not_in_subset' && complete.indexOf(x.type_id) < 0) need[x.type_id] = 1; });
       var fams = Object.keys(need).sort();
       for (var i = 0; i < fams.length; i++) {
@@ -457,9 +509,8 @@
       }
       if (!more) break;
     }
-    Lb = libraryFromShards(index, shards, complete, labelsByRun);
-    return { library: Lb, R: R, passes: passes, sha: index.source.sha256, shards: Object.keys(shards).sort(), families: complete.slice().sort(),
-      labels: R && R.run_id && labelsByRun[R.run_id] ? R.run_id : null };
+    Lb = libraryFromShards(index, shards, complete);
+    return { library: Lb, R: R, passes: passes, sha: index.source.sha256, shards: Object.keys(shards).sort(), families: complete.slice().sort() };
   }
 
   function counts(R) {
@@ -467,5 +518,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

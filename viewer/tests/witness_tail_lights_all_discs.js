@@ -17,10 +17,11 @@
 // the shipped effects.js by brace matching and driven against a real plan shape; the three wiring
 // facts are read out of the shipped sources rather than restated here.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
-const fx = fs.readFileSync(path.join(__dirname, '..', 'effects.js'), 'utf8');
-const mq = fs.readFileSync(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
+const fx = __readSrc(path.join(__dirname, '..', 'effects.js'), 'utf8');
+const mq = __readSrc(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
 
 function sliceAssign(src, marker) {
   const i = src.indexOf(marker);

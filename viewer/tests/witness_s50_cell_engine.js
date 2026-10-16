@@ -4,6 +4,7 @@
 // ISSUE proved/disproved: the cell path emits a real schedule (finite, duration-preserving) and
 // the GRAPH fallback building's times are IDENTICAL to the pre-§S50 engine on the same inputs.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -15,7 +16,7 @@ const CpmSchedule = require(path.join(__dirname, '..', 'cpm_schedule.js'));
 globalThis.RoomWalker = require(path.join(__dirname, '..', 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(__dirname, '..', 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(__dirname, '..', 'location_axis.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name, which, optional) {
   let from = 0;
@@ -40,7 +41,7 @@ const sliced = ['var _CPM_DISPLAY = true;',
   sliceFn(tmSrc, '_promoteRoofLoadPath'), sliceFn(tmSrc, '_buildXrayElements')].join('\n');
 
 function loadRatesTable() {
-  const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   return (new Function(txt.slice(start, txt.indexOf('};', defIdx) + 2) + '\n return RATES;'))();
@@ -55,8 +56,8 @@ function resolveDbFile(bld) {
 const BUILDINGS = (process.env.ONLY || 'Clinic,Duplex').split(',');
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SR = rulesJson.SEQUENCE_RULES, SD = rulesJson.SEQUENCE_DEFAULT, LR = rulesJson.LABOR_RATES;
   const NO = rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [];
   const RATES = loadRatesTable();
@@ -64,7 +65,7 @@ const BUILDINGS = (process.env.ONLY || 'Clinic,Duplex').split(',');
 
   for (const bld of BUILDINGS) {
     const dbPath = resolveDbFile(bld);
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     const sandbox = { console: { log: () => {}, warn: () => {} }, performance: { now: () => Date.now() },
       window: { SEQUENCE_RULES: SR, SEQUENCE_DEFAULT: SD, SEQUENCE_NAME_OVERRIDES: NO, LABOR_RATES: RATES.LABOR_RATES },
       ZoneIndex: ZoneIndex,

@@ -25,6 +25,7 @@
 // Command: BLD_DIR=~/bim-ootb/buildings node tests/witness_zone_display_authoring.js  (from viewer/)
 // Read the § log lines, not the exit code alone.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -35,12 +36,12 @@ const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'))
 // §S58: support-order physics is a real module — REQUIRED, not sliced. A require() cannot
 // half-import a function, which is the failure mode that killed a witness for four days.
 const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 // W-ZDA-4a's locked pair, same file + same discipline as witness_midair_zero.js's baselines
 // (data in baselines/midair.json, the WHY here). §S63, 2026-08-22.
 const ZDA_LOCK = (function () {
-  const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'baselines', 'midair.json'), 'utf8'));
+  const j = JSON.parse(__readSrc(path.join(__dirname, 'baselines', 'midair.json'), 'utf8'));
   if (!j.zda_display_float) throw new Error('baselines/midair.json missing group "zda_display_float"');
   return j.zda_display_float;
 })();
@@ -73,7 +74,7 @@ assert(/display_authored=1 LIMIT 1/.test(tmSrc) && /if \(_cjpDisplayAuthored\)/.
 const guardIdx = tmSrc.indexOf('_cjpDisplayAuthored');
 assert(guardIdx > 0 && /_cjpJudgeParity\(_allScheduled, _cap\.win\)/.test(tmSrc.slice(guardIdx, guardIdx + 2600)),
   '_cjpJudgeParity still always runs after the guard');
-const saSrc = fs.readFileSync(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
+const saSrc = __readSrc(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
 assert(/opts\.displayRemap/.test(saSrc) && /display_authored/.test(saSrc),
   'schedule_author.js materializeZones consumes opts.displayRemap and persists display_authored');
 
@@ -145,8 +146,8 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 const BUILDINGS = (process.env.ZDA_BUILDINGS || 'Duplex_extracted,HHS_Office_Federated_extracted').split(',');
 
 async function main() {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const ratesSrc = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const RATES = (new Function(ratesSrc +
     '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES, SEQUENCE_DEFAULT:SEQUENCE_DEFAULT, ' +
     'SEQUENCE_NAME_OVERRIDES:SEQUENCE_NAME_OVERRIDES, LABOR_RATES:LABOR_RATES, RATES:RATES};'))();
@@ -160,7 +161,7 @@ async function main() {
                             // hook call too (its FIRST call per building is the fresh CPM compute; the
                             // later direct _tmDisplayRemap call below legitimately hits the one-shot
                             // §CPM_DISPLAY_ONE_TRUTH cache-reuse branch on the SAME guids, not a re-derive)
-    const bytes = fs.readFileSync(dbPath);
+    const bytes = __readSrc(dbPath);
     const mkOpts = extra => Object.assign({ laborRates: RATES.LABOR_RATES, rates: RATES.RATES,
       nameOverrides: RATES.SEQUENCE_NAME_OVERRIDES, defaultRule: RATES.SEQUENCE_DEFAULT,
       scheduleGate: ScheduleGate, shiftHours: 24, genVersion: 999, start: '2026-01-01' }, extra || {});

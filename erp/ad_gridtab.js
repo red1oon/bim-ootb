@@ -216,6 +216,14 @@
     o = o || {};
     var all = (fields || []).filter(function (f) { return f.isColumnActive !== false; });
     if (!all.length || all[0].isDisplayedGrid === undefined) return null;
+    all.forEach(function (f) { if (f.customWidth != null) f.customWidth = null; });   // no stale width once a customization is gone
+    var cu = parseCustom(o.custom);
+    if (cu.ids.length) {   // §GRID-CUSTOM GridView.setupFields :416-445: the user's AD_Tab_Customization list IS the grid (IsDisplayedGrid OR IsDisplayed, not a toolbar-only button)
+      var byId = {}; all.forEach(function (f) { byId[String(f.id)] = f; });
+      var cl = cu.ids.map(function (id) { return byId[id]; }).filter(function (f) { return f && (f.isDisplayedGrid || f.isDisplayed) && !f.isToolbarOnlyButton; });
+      cl.forEach(function (f, i) { f.customWidth = cu.widths[i] != null && cu.widths[i] !== '' ? cu.widths[i] : null; });   // :440-443 widths[i] -> gridFields[i] (after the filter, as legacy)
+      return cl;
+    }
     var ord = all.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) {
       var d = (Number(a.f.seqNo) || 0) - (Number(b.f.seqNo) || 0); if (d) return d;
       var e = (b.f.isDisplayed ? 1 : 0) - (a.f.isDisplayed ? 1 : 0); return e || a.i - b.i; }).map(function (x) { return x.f; });
@@ -224,7 +232,47 @@
     return out.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) { return (a.f.seqNoGrid - b.f.seqNoGrid) || a.i - b.i; }).map(function (x) { return x.f; });
   }
 
-  var API = { gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
+  // ── §GRID-CUSTOM AD_Tab_Customization (bim-compiler prompts/ERP_DEPTH_FILM.md §GRID-CUSTOM; Witnesses W-GRID-CUSTOM-ENGINE/-LIVE).
+  //   Custom = "<AD_Field_ID>,<AD_Field_ID>,...[;<width>,<width>,...]" (CustomizeGridViewPanel.saveData :575-614).
+  function parseCustom(custom) {
+    var c = custom == null ? '' : String(custom).trim(); if (!c) return { ids: [], widths: [] };
+    var parts = c.split(';');
+    return { ids: parts[0].split(',').map(function (x) { return x.trim(); }).filter(function (x) { return /^\d+$/.test(x); }), widths: parts.length > 1 ? parts[1].split(',') : [] };
+  }
+  function customString(ids, widths) {   // saveData :583-608 (widths only when "Save column width" is ticked and widths exist)
+    var c = (ids || []).join(',');
+    if (widths && widths.length) c += ';' + ids.map(function (id, i) { var w = widths[i]; return w == null ? '' : String(w); }).join(',');
+    return c;
+  }
+  function autoHideToSave(checked, sysDefault, prior) {   // saveData :616-621: null unless it differs from the SysConfig default or the row already had a value
+    if (!!checked !== !!sysDefault) return checked ? 'Y' : 'N';
+    if (prior != null && String(prior).trim() !== '') return checked ? 'Y' : 'N';
+    return null;
+  }
+  function isAutoHide(rowValue, sysDefault) {   // GridView.isAutoHideEmptyColumns :970-979
+    if (rowValue != null && String(rowValue).trim() !== '') return String(rowValue).toUpperCase() === 'Y';
+    return !!sysDefault;
+  }
+  // MTabCustomization.saveData :124-147 -> intents: update the user's row or create one; an empty Custom deletes the row (a new row is never saved)
+  function tabCustSave(row, input) {
+    var custom = input.custom == null ? null : String(input.custom), empty = custom == null || custom.trim() === '';
+    if (row) return empty ? [{ op: 'delete', id: row.ad_tab_customization_id }] : [{ op: 'update', id: row.ad_tab_customization_id, changes: { custom: custom, isdisplayedgrid: input.displayedGrid == null ? null : input.displayedGrid, isautohideemptycolumn: input.autoHide == null ? null : input.autoHide } }];
+    if (empty) return [];
+    return [{ op: 'create', fields: { ad_tab_id: Number(input.tab), ad_user_id: Number(input.user), custom: custom, isdisplayedgrid: input.displayedGrid == null ? null : input.displayedGrid, isquickform: 'N', isautohideemptycolumn: input.autoHide == null ? null : input.autoHide } }];
+  }
+  // the dialog's lists (loadData :347-405): rows = the AD_Field query itself (AD_Tab_ID, IsDisplayed OR IsDisplayedGrid, active - NOT joined to
+  //   AD_Column, so a field whose column is inactive is still listed, as legacy) ORDER BY SeqNoGrid (NULLs last, PostgreSQL ASC), Name (the DB
+  //   collation), SeqNo; Selected = the grid's current columns in order, Available = the rest in that order. rows: [{ id, name, seqNoGrid, seqNo }]
+  function customizeLists(rows, currentIds, collate) {
+    var cmpS = collate || function (a, b) { return a < b ? -1 : a > b ? 1 : 0; }, nl = function (v) { return v == null || v === '' ? Infinity : Number(v); };
+    var cand = (rows || []).map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) {
+      var x = nl(a.f.seqNoGrid), y = nl(b.f.seqNoGrid); if (x !== y) return x < y ? -1 : 1;
+      return cmpS(String(a.f.name || ''), String(b.f.name || '')) || (nl(a.f.seqNo) - nl(b.f.seqNo) || 0) || a.i - b.i; }).map(function (x) { return x.f; });
+    var cur = (currentIds || []).map(String), byId = {}; cand.forEach(function (f) { byId[String(f.id)] = f; });
+    return { selected: cur.map(function (id) { return byId[id]; }).filter(Boolean), available: cand.filter(function (f) { return cur.indexOf(String(f.id)) < 0; }) };
+  }
+
+  var API = { parseCustom: parseCustom, customString: customString, autoHideToSave: autoHideToSave, isAutoHide: isAutoHide, tabCustSave: tabCustSave, customizeLists: customizeLists, gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
               query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
   // ── §UDP-ORDER the row order of a tab (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-ORDER; Witness: W-UDP-ORDER).
   //   GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo slots 1..3 (|SortNo|, negative = DESC;

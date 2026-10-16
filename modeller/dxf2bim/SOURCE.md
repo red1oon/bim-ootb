@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `37a45a7cc` — DXF2BIM L4.2: @LAYER=<name>,<type> marking - stated layer rules override the set's rule pe
+Commit: `bf9401061` — DXF2BIM §14: full library export (index + shards) for the OCI-hosted Modeller (#195)
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -16,4 +16,4 @@ Commit: `37a45a7cc` — DXF2BIM L4.2: @LAYER=<name>,<type> marking - stated laye
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 4d6b010af89b3b2fe113ca904105c61230fa6afd65dc1adf0379caf9a484468e |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 37a45a7cc:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show bf9401061:deploy/dev/<file> | sha256sum` equals the column above.
