@@ -1066,5 +1066,54 @@ The film uses the std Duplex set (BIMCompiler master `d06a63c8a`: 8 sheets GF/FF
   - E3 an unconfirmed proposal never reaches the saved file
   - E4 mutation: the editor writes one wrong level → Q-verdict blocked
 
+
+### L4.1 Build spec (2026-10-16, written before the code; revised the same day on the §L3.3 base)
+Scope: the "Drawing metadata" panel, the live verdict, propose → confirm, save. Module `modeller/dxf_meta_editor.js` (lazy, loaded with the import scripts); hooks only in `dxf_import_ui.js` (button, canvas index, `applySheets`, `holdGate`) and `dxf2bim_import.js` (`setWith`, `qualifyNotRun`, a user-stated set). Inputs: the old Duplex marked set (7 sheets, `rosetta_qualify.js` Q1) and the std set (8 sheets), regenerated with BIMCompiler master `be1dcda91` (std2d `--door-ops` → `mark_dx_set.js std` → `DXSET=std rosetta_dx_shell.js`; `mark_dx_set.js` → `rosetta_dx_shell.js`).
+
+**Sources.** The copies (incl. `dxf2qualify.js`) are synced by the §L3.3 script `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`; one command, no second script. The witness checks every copy equals `git show HEAD:deploy/dev/<f>` of the BIMCompiler that made its inputs (E0).
+
+**ONE gate.** The verdict the editor shows is `DxfImportUI.convertGate()` (§L3.3), never a second computation: the editor hands in the EFFECTIVE sheets (below), its layer rules and the set it states (`applySheets`), the gate runs roles → pipeline (local library subset) → qualify, and Convert follows `gate.ok`. While a change is pending the gate is held (`holdGate`: Convert off). When the pipeline cannot run (roles incomplete, or the pipeline refuses), the gaps are UNKNOWN: `Dxf2BimImport.qualifyNotRun` qualifies the same files with one blocking `GAP:pipeline_not_run {reason}` (shape set) in place of the gaps, so marking / layer / unit / dimension / grid items still show and nothing passes silently.
+
+**Marking model.** Per sheet (one view per file; `@REGION` files: open question) a list `{key, value, x, y, source}`:
+- `file`: read by `Dxf2Marks.readMarks`. Shown by its `@BY` suffix: none → "from file", `model` → "from model", `user` → "you".
+- `user`: typed / chosen, or a proposal the user ticked. Shown "you".
+- Proposals are a separate list: never a marking, never in the verdict input, never saved until ticked.
+- Canonical form (E2): the sorted `@KEY=VALUE` strings (the `@BY` suffix stripped) plus the position that carries meaning: x for `@GRIDX`/`@GRIDH`, y for `@GRIDY`/`@Z`, x,y for `@TAG`; other positions ignored.
+- Effective sheet text: the original text when the markings equal the file's; else `Dxf2Marks.writeMarks(strip(original), markings)`; `strip` drops every TEXT/MTEXT on `DXF2BIM-MARK` in ENTITIES (group-code walk, nothing else touched). Position-free markings are written at (0,0).
+- **Source `@BY` (lead decision; BIMCompiler #187 grammar):** a per-marking suffix in the SAME TEXT, e.g. `@LEVEL=3.1 @BY=user`; it qualifies the other `@KEY` of that TEXT only (no scope by position or handle order). The editor writes ` @BY=user` on every marking the user enters or ticks, when the synced grammar accepts it (runtime check: `describe('@LEVEL=1 @BY=user')` gives level 1, no error); otherwise without it, said in the panel. No sidecar.
+
+**Sections.**
+- Sheets: role select (PLAN / ELEV / ROOF / SECTION = `@VIEW`) and the keys its role needs (`Dxf2Marks` NEED): `@SET @NAME`; PLAN `@LEVEL` + grids (`@GRIDX/@GRIDY` label + position); ELEV `@FACE @HAXIS @ROOF` + `@GRIDH` + `@Z` (z + drawing y); ROOF `@LEVEL @ROOF`; SECTION `@HAXIS @CUT` + `@GRIDH @Z`. Needed and empty → red.
+- Units: per sheet a select, empty until picked; beside it "file says X" ($INSUNITS in the tooltip). The header is never applied by itself (it is a proposal with a tick).
+- Layers: the layer-map set in use (DX / STD of `dxf2shell_config.js`, chosen by the gate from the elevation-wall layer evidence, or stated by the user in a select) and every layer per role with the set's type ("template", read-only). A layer the set does not match is red; the user picks wall / door / glazing / dims / grid / level / ignore (+ roof on ROOF sheets). The rule is appended as an exact rule to that role's map for the pipeline AND qualify (`Dxf2BimImport.setWith`); dims / grid also join `QUALIFY.layers`. With rules the run_id hashes the effective maps (stated). Type → rule: wall = wall (plan) / elevwall (elev); door = opening / elevdoor; glazing; level = levelline (levl map); roof; dims, grid, ignore = ignore.
+- Tags: a Tag tool; click an entity on a plan or roof sheet on the canvas (raycast on the sheet's lines, per-segment handle index) → class (door / window / wall) + a value from the canned vocabulary: the local library subset's family ids and the set's `@SCHEDULE` texts. Writes `@TAG=<class>,<value>` at the entity's raw bbox centre. No free text.
+- Excludes: an Exclude tool; drag a box on a chosen plan or roof sheet (on its z plane) → `@EXCLUDE=x0,y0,x1,y1` raw. Elevations: open.
+- Wall tops: per PLAN the convention `@WALLTOP=<level>,slab_above` (tick + level field, default the plan's `@LEVEL`) and the wall-layer `GAP:no_elevation_height` list of the verdict, each clickable, with a top-z field writing the per-wall grammar `@WALLTOP=handle:<h>,<z_top_m>` (BIMCompiler #186).
+- Verdict: chip "Qualifies" (green, 0 blocking) / "Blocked · N"; blocking (red) / advisory (amber) per shape (walls / slabs / roof / openings); the items (code, message); a click frames the canvas on the item (its handles' drawn segments, else its `pos`, raw → world by the sheet's role mapping), panned clear of the panel, and highlights the segments.
+
+**Proposals (evidence only; ambiguous → none, with the reason).** PR-UNITS (`$INSUNITS`), PR-VIEW / PR-NAME (one title TEXT ending PLAN / ELEVATION / SECTION; ROOF PLAN → ROOF), PR-SET (the other sheets agree), PR-GRID (grid-layer LINE axis-parallel within 1 mm + exactly one 1-char label within 0.06 m across and 0.7 m beyond an end: `mark_dx_set.js gridLines`), PR-Z (`LEVEL ±z` / level-layer `±z` text paired with its own y or a level line: `levelPairs`), PR-HAXIS (unique fit against the lowest plan's grids, 1 mm), PR-FACE (sheet name FRONT/REAR/LEFT/RIGHT, repo convention R11, labelled as such). None for `@LEVEL`, `@ROOF`, `@WALLTOP`, tags, excludes.
+
+**Save.** One button: per sheet a download `<base>_marked.dxf` (base = file name without `.dxf` and a trailing `_marked`) with the effective text. The opened files are never written. Re-import gives the same markings.
+
+**Witnesses** (`modeller/tests/witness_dxf_meta_editor.js`, real UI through `tests/e2e_harness.js`; log `tests/logs/witness_dxf_meta_editor.log`):
+- E0 COPIES: copies == BIMCompiler HEAD modules. E1 FROM-FILE: marked set → every marking "from file", no red field; editor verdict counts by code == Node `Dxf2Qualify` over the same files + maps + plan ops + `dx_shell_gaps.json`. E1 ZOOM: a verdict click frames + highlights the item's segments.
+- E2 FILL: the set stripped by the witness's own stripper → role / units red; every value entered through selects, typing and Add clicks; the in-page verdict, the saved copies' canonical markings and the re-imported copies' verdict equal the marked set's; E2 BY: every saved marking carries `@BY=user` (grammar accepts it).
+- E3 UNCONFIRMED: suggestions listed; one ticked (GF PR-UNITS); Save → only that marking in any file.
+- E4 MUTATION: `@WALLTOP=3.2,slab_above` on FF (no plan at 3.2) → exactly one new blocking `QF:walltop_unknown_storey` on the new marking's handle; control 3.1 → no new blocking, the 17 FF wall height gaps leave the blocking list (the pipeline applies stated tops, `Dxf2Elev.applyWallTops`); untick → the file verdict again.
+- E5: old set blocked → Convert disabled, `convert()` refused, op-log unchanged; std set → layer set STD from the drawings, editor verdict == gate, qualifies → Convert enabled, a real click converts (one gesture).
+- T1 / X1 UI sanity: Tag tool click writes `@TAG` at the picked entity centre; Exclude drag writes `@EXCLUDE`.
+- Screenshots `~/Videos/dxf2bim_work/l4/` (filled, verdict zoom, raw, mid-fill, std); regression `witness_dxf_import_node.js` (old + std), `witness_dxf_convert.js`, W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC.
+
+**Not claimed (L4.1).** Changing a template-mapped layer's type; excludes on elevations; `@REGION` (multi-view) files; layer rules surviving re-import (the DXF grammar has no layer key; session only).
+
+**L4.1 results (2026-10-16).** BIMCompiler master `be1dcda91` (copies equal, E0). Log `modeller/tests/logs/witness_dxf_meta_editor.log`: SUMMARY fail=0 gap=0.
+- E1: 76 file markings shown, all "from file", 0 red; verdict blocked 347 + 28 advisory, counts by code == Node. Zoom: 16 segments highlighted.
+- E2: stripped → 7/7 role + 7/7 units red (verdict 72 incl. `GAP:pipeline_not_run`); 76 UI actions; in-page verdict, 7 saved copies (markings equal, every one `@BY=user`) and their re-import all == E1.
+- E3: 21 suggestions, GF PR-UNITS ticked → saved files hold exactly `@UNITS=mm @BY=user` on GF, nothing else.
+- E4: one `QF:walltop_unknown_storey` (handle 2AC = `@WALLTOP=3.2,slab_above @BY=user`); control 3.1: 347 → 330, 17 FF wall gaps gone, nothing new; untick restores.
+- E5: old set Convert disabled, refused, op-log 0→0; std: set STD (evidence), qualifies 0 / 75 advisory, run_id `0c538552…` (= Node), Convert enabled, click → 171 ops (135 inserts, 36 cuts).
+- T1 `@TAG=door,BATHROOM_DOOR` at the picked door centre; X1 `@EXCLUDE` from a drag.
+- Regression: Node old + std SUMMARY fail=0; `witness_dxf_convert.js` 15/15; W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → film (FILM_PLAN §10), English first.
