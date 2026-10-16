@@ -12,6 +12,10 @@
  *   P3 COUNTS   — counts by storey/class equal.
  *   P4 SHA      — the module's sync SHA-256 equals Node crypto on 3 fixed strings incl. non-ASCII.
  *   P5 FALSIFY  — the P2 comparator against the Node summary with one element moved 2 mm must report exactly that one.
+ *   P6 SUBSET   — §L3.2: the module with the LOCAL library subset JSON (BIMCompiler scripts/export_library_subset.js, generated here
+ *                 first into modeller/dxf2bim/local/, git-ignored) instead of the DB equals the Node run element-for-element incl.
+ *                 the 26 fills. Issue: the subset lost a candidate row, a mesh or a label, so a fill binds or sits differently.
+ *   P7 DETERMINISM — two exports of the subset are byte-identical. Issue: the export is not a function of its inputs.
  *
  * Inputs (not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler) tests/dxf2bim/out/{marked,marked_shell}, deploy/component_library.db,
  * 2D_Layout/input/DX_extracted.db (labels only, exactly as the Node run: round trip, stated). Run the BIMCompiler rosetta_dx_shell.js first.
@@ -82,6 +86,20 @@ check('P4 SHA', 'the inlined sync SHA-256 differs from Node crypto', tv.every(s 
 const moved = JSON.parse(JSON.stringify(ref.elements)); const mi = moved.findIndex(e => e.class === 'IfcWall'); moved[mi].bbox[0] += 0.002; moved[mi].bbox[3] += 0.002;
 const fd = compare(ours, moved);
 check('P5 FALSIFY', 'the element comparator cannot fail (one element moved 2 mm must be the only difference)', fd.length === 1 && fd[0].indexOf(moved[mi].guid.slice(0, 8)) === 0, 'reported=' + fd.length + ' ' + fd.join('; '));
+// ---- §L3.2 P6/P7: the local library subset ----
+const SUBSET = path.join(__dirname, '..', 'dxf2bim', 'local', 'library_subset_duplex.json'), SUB2 = SUBSET.replace(/\.json$/, '.det2.json');
+const exportSubset = out => cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements.json'),
+  '--labels', path.join(OUT, 'duplex_basic_shapes_labels.json'), '--lib', LIBDB, '--out', out], { encoding: 'utf8' });
+const ex1 = exportSubset(SUBSET); say(ex1.trim().split('\n').map(l => '  ' + l).join('\n')); exportSubset(SUB2);
+const b1 = fs.readFileSync(SUBSET), b2 = fs.readFileSync(SUB2); fs.unlinkSync(SUB2);
+check('P7 DETERMINISM', 'two exports of the library subset differ (not a function of its inputs)', Buffer.compare(b1, b2) === 0, 'bytes=' + b1.length + ' sha256=' + crypto.createHash('sha256').update(b1).digest('hex'));
+const SL = I.librarySubset(JSON.parse(b1.toString('utf8')));
+const RS = I.convert(sheets, { hashHex, library: SL });
+const oursS = (RS.els || []).map(e => ({ guid: e.guid, class: e.class, storey: e.storey, bbox: bb(e), volume: e.volume, element_ref: e.element_ref, infill: !!RS.infillGuid[e.guid] }));
+const dS = compare(oursS, ref.elements);
+check('P6 SUBSET', 'the module with the library subset JSON differs from the Node run (a lost candidate, mesh or label binds or places a fill differently)',
+  dS.length === 0 && oursS.length === ref.elements.length && RS.fillHard.length === 0 && RS.run_id === ref.run_id,
+  'module=' + oursS.length + ' node=' + ref.elements.length + ' fills=' + oursS.filter(e => /Door|Window/.test(e.class)).length + ' hard=' + JSON.stringify(RS.fillHard) + ' differ=' + dS.length + (dS.length ? ' ' + dS.slice(0, 6).join('; ') : ''));
 say('fills hard=' + JSON.stringify(R.fillHard) + ' fills=' + ours.filter(e => /Door|Window/.test(e.class)).length);
 say('SUMMARY fail=' + fail);
 fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');

@@ -71,7 +71,7 @@
     else if (other.length) sh.why = other.join('; ');
     else if (d.view === 'PLAN' && typeof d.level === 'number' && !missing.length) { sh.role = 'plan'; sh.level = d.level; }
     else if (d.view === 'ELEV' && d.face && !missing.length) { sh.role = 'elev'; sh.face = d.face; }
-    else if (d.view === 'PLAN' && typeof d.roof === 'number' && d.level === undefined && missing.every(function (k) { return k === 'LEVEL' || k === 'GRIDX(>=2)' || k === 'GRIDY(>=2)'; })) { sh.role = 'roof'; sh.roofZ = d.roof; }
+    else if (d.view === 'ROOF' && typeof d.roof === 'number' && !missing.length) { sh.role = 'roof'; sh.roofZ = d.roof; }   // BIMCompiler #182 (lane L2.3 D1): @VIEW=ROOF + @LEVEL + @ROOF
     else sh.why = 'markings name no role (view=' + d.view + (missing.length ? ', missing ' + missing.join(',') : '') + ')';
     if (sh.role && !(d.units in MK.UNITS)) { sh.role = null; sh.why = 'no @UNITS'; }
     if (sh.role) sh.factor = MK.UNITS[d.units];
@@ -86,7 +86,7 @@
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
-    if (n('roof') !== 1) refused.push({ sheet: '(set)', reason: 'roof plans=' + n('roof') + ' (need exactly 1: @VIEW=PLAN + @ROOF)' });
+    if (n('roof') !== 1) refused.push({ sheet: '(set)', reason: 'roof plans=' + n('roof') + ' (need exactly 1: @VIEW=ROOF + @LEVEL + @ROOF)' });
     var lv = {}; sheets.filter(function (s) { return s.role === 'plan'; }).forEach(function (s) { if (lv[s.level]) refused.push({ sheet: s.name, reason: 'two plans at @LEVEL=' + s.level }); lv[s.level] = 1; });
     var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
     return { ok: refused.length === 0, refused: refused };
@@ -153,12 +153,28 @@
       st.bridge = b; st.infill = b.infill; st.voidOf = {};
       b.voids.forEach(function (v) { v.keyOf.forEach(function (k) { st.voidOf[k] = v; }); });
     });
-    R.fillHard = [];
+    R.fillHard = []; R.fillGaps = [];
     if (library) {
+      // §L3.2: a subset library holds the candidate set COMPLETE only for library.complete, and library.withheld names the families whose
+      // selected product (familyToRef's ref) has a candidate mesh the file does not hold. Their openings are taken out BEFORE placeFills
+      // and each is a named hard GAP (never a substitute, never a box); the rest go through placeFills unchanged (its own throw = storey hard fail).
+      var withheld = library.withheld || {}, complete = library.complete || null;
       var libRows = { families: library.families.map(function (f) { return { family_id: f.id, ifc_class: f.ifc_class, description: f.d }; }), geoms: library.geoms };
       ST.forEach(function (st) {
-        try { st.fills = S.placeFills(st.after, libRows, { level: st.level, hashHex: hashHex, size_tol: C.FILL.size_tol, voidOf: st.voidOf }); st.hard = null; }
-        catch (e) { st.fills = { elements: [], gaps: e.gaps || [] }; st.hard = e.message; R.fillHard.push(st.name + ': ' + e.message); }
+        var pre = [], ops = st.after.filter(function (o) {
+          var q = o.params, tid = o.op_type === 'DXF_OPENING' && (q.kind === 'window' || q.kind === 'door') && q.type && q.type.type_id;
+          if (!tid) return true;
+          if (withheld[tid]) { pre.push({ code: 'GAP:lod400_mesh_missing', handle: q.handle, kind: q.kind, type_id: tid, element_ref: withheld[tid].ref, missing: withheld[tid].hashes }); return false; }
+          if (complete && complete.indexOf(tid) < 0) { pre.push({ code: 'GAP:lod400_not_in_subset', handle: q.handle, kind: q.kind, type_id: tid }); return false; }
+          return true;
+        });
+        var hardMsg = pre.map(function (x) { return x.code + ' ' + x.kind + ' ' + x.handle + ' ' + x.type_id + (x.missing ? ' (' + x.missing.join(',') + ')' : ''); });
+        try { st.fills = S.placeFills(ops, libRows, { level: st.level, hashHex: hashHex, size_tol: C.FILL.size_tol, voidOf: st.voidOf }); }
+        catch (e) { st.fills = { elements: [], gaps: e.gaps || [] }; hardMsg.push(e.message); }
+        st.fills = { elements: st.fills.elements, gaps: pre.concat(st.fills.gaps) };
+        st.hard = hardMsg.length ? hardMsg.join('; ') : null;
+        if (st.hard) R.fillHard.push(st.name + ': ' + st.hard);
+        st.fills.gaps.forEach(function (x) { R.fillGaps.push(Object.assign({ storey: st.name }, x)); });
       });
     } else {
       // §L3 fills STOPPED: the Modeller has no reachable LOD400 library rows. Every cut opening needs a fill → one hard GAP each, no box.
@@ -189,6 +205,7 @@
     }
     els.forEach(function (e) { if (e.volume === undefined) { e.volume = r6(M.volume(e)); e.watertight = M.watertight(e); } });
     R.els = els;
+    R.libGeom = {}; if (library) library.geoms.forEach(function (gm) { if (gm.vertices && gm.vertices.length) R.libGeom[gm.geometry_hash] = gm; });
     // infill identity: the mesh guid meshFromOps gives each infill op (asked of the module, not re-derived)
     R.infillGuid = {};
     ST.forEach(function (st) {
@@ -256,7 +273,49 @@
         });
       });
     });
-    return { assets: assets, inserts: inserts, cuts: cuts, groups: groups, skipped: skipped };
+    // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
+    var libAsset = {}, fills = [];
+    R.els.forEach(function (e) {
+      if (e.class !== 'IfcDoor' && e.class !== 'IfcWindow') return;
+      var G = R.libGeom && R.libGeom[e.geometry_hash];
+      if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
+      var a = libAsset[e.geometry_hash];
+      if (!a) { a = asset('x', G.vertices, G.faces, false); a.hash = 'lib-' + e.geometry_hash; libAsset[e.geometry_hash] = a; assets.push(a); }
+      var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(e.centre[0]), y: r6(e.centre[1]), z: r6(e.centre[2] - a.halfZ), rot: 0 }, ifc_class: e.class, storey: e.storey,
+        provenance: { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id, element_ref: e.element_ref, geometry_hash: e.geometry_hash, family_id: e.family_id } };
+      if (typeof level[e.storey] === 'number') P.storey_elev = level[e.storey];
+      var col = colorFor(e.class); if (col != null) P.color = col;
+      inserts.push({ op_type: 'GEOM_INSERT', params: P, outputGuid: 'dxf-' + e.guid }); fills.push(inserts.length - 1);
+    });
+    return { assets: assets, inserts: inserts, cuts: cuts, groups: groups, skipped: skipped, fills: fills };
+  }
+
+  // §L3.2: the locally generated library subset (BIMCompiler scripts/export_library_subset.js) → the `library` convert takes.
+  // A family whose candidate set references a mesh the file does not hold is WITHHELD (selection without every candidate could pick
+  // another mesh): its openings hard-fail GAP:lod400_mesh_missing. Pure; no I/O.
+  function librarySubset(J0) {
+    if (!J0 || J0.format !== 'dxf2bim-library-subset/1') throw new Error('library subset: unknown format ' + (J0 && J0.format));
+    var rows = J0.rows, meshes = J0.meshes || {}, missing = [];
+    var geoms = rows.ad_geometry_map.map(function (m) {
+      var g = meshes[m.geometry_hash];
+      if (!g) { missing.push(m.geometry_hash); return { element_ref: m.element_ref, ifc_class: m.ifc_class, geometry_hash: m.geometry_hash, vertices: [], faces: [], missing: true }; }
+      var V = [], F = [], i;
+      for (i = 0; i + 2 < g.vertices.length; i += 3) V.push([g.vertices[i], g.vertices[i + 1], g.vertices[i + 2]]);
+      for (i = 0; i + 2 < g.faces.length; i += 3) F.push([g.faces[i], g.faces[i + 1], g.faces[i + 2]]);
+      var mn = [0, 1, 2].map(function (a) { return Math.min.apply(null, V.map(function (v) { return v[a]; })); }), mx = [0, 1, 2].map(function (a) { return Math.max.apply(null, V.map(function (v) { return v[a]; })); });
+      return { element_ref: m.element_ref, ifc_class: m.ifc_class, geometry_hash: m.geometry_hash, vertices: V, faces: F, bbox: { min: mn, max: mx } };
+    });
+    var families = rows.ad_opening_family.map(function (f) { return { id: f.family_id, ot: f.opening_type, ifc_class: f.ifc_class, w: f.default_width_mm, h: f.default_height_mm, d: f.description }; });
+    // withheld: the product familyToRef selects (from the map rows, which are all present) has a candidate row whose mesh is absent
+    var withheld = {};
+    if (missing.length) families.forEach(function (f) {
+      var m = S.familyToRef({ family_id: f.id, ifc_class: f.ifc_class, description: f.d }, geoms); if (!m.ref) return;
+      var hit = geoms.filter(function (g) { return g.missing && g.element_ref === m.ref && g.ifc_class === f.ifc_class; }).map(function (g) { return g.geometry_hash; });
+      if (hit.length) withheld[f.id] = { ref: m.ref, hashes: hit };
+    });
+    return { families: families, wallTypes: rows.ad_wall_type.map(function (w) { return { id: w.wall_type_id, t: w.total_mm }; }),
+      geoms: geoms.filter(function (g) { return !g.missing; }), labels: J0.labels || {}, complete: J0.complete_for_families, withheld: withheld, missing: missing,
+      header: { source: J0.source, input: J0.input, counts: J0.counts } };
   }
 
   function counts(R) {
@@ -264,5 +323,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });
