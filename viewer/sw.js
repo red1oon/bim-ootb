@@ -190,7 +190,7 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1632';
+const CACHE_VERSION = 'v1633';
 // v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
 // v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
 // v1627 (2026-10-09) §INSPECT_EARTH_ROAD: earthworks_overlay.js (Inspect EW + RW panels, inferred Cut & Fill overlay) added to PRECACHE_ASSETS; std_values.json gains _cut_fill; panels.js ew/rw rows.
@@ -608,6 +608,10 @@ const CACHE_VERSION = 'v1632';
 // injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
 // loadOps) instead of the bare error message, which could not locate a live user's GUID-key
 // crash. Logging-only, no behavior change.
+// v1633 (rebase of PR #255 onto origin/main) §OFFLINE-SURFACE: GET_OFFLINE_STATUS message handler reports
+// which DEFERRED_LIBS are actually cached (honest offline status for the new Settings panel row);
+// _startOfflineDownload's controller-null race on first visit fixed via serviceWorker.ready + reg.active
+// fallback (scene.js). Witness: viewer/tests/poc_offline_surface.js.
 // MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
 // version, each separate change gets its OWN bump):
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
@@ -1350,5 +1354,21 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'GET_PRECACHE') {
     // Return the full precache list so the install flow can force-cache all assets
     event.ports[0].postMessage({ assets: PRECACHE_ASSETS, libs: LOCAL_LIBS, version: CACHE_VERSION });
+  }
+  if (event.data && event.data.type === 'GET_OFFLINE_STATUS') {
+    // Report which DEFERRED_LIBS are actually in the cache (honest offline status)
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(DEFERRED_LIBS.map(url =>
+        cache.match(url).then(r => ({ url, cached: !!r }))
+      ))
+    ).then(results => {
+      const status = {};
+      results.forEach(r => { status[r.url] = r.cached; });
+      event.ports[0].postMessage({
+        deferred: status,
+        allDeferred: results.every(r => r.cached),
+        version: CACHE_VERSION,
+      });
+    });
   }
 });
