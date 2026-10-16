@@ -1,12 +1,11 @@
 // ⚠ DO NOT REMOVE — Scope guard
-// Scope: real-browser §-witness W-UDP5-LIVE (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-5). READ tests/poc_udp5_issue_live.log
-//   before any conclusion — exit code is not evidence.
-// THE ISSUE: (1) do selected error § lines and uncaught errors become AD_Issue rows like MIssue.create - but NOT spammy: a line repeated
-//   in a session = 1 row, a non-error line = 0 rows, the same issue after a reload = a touch (no new row), 51 distinct issues = 50 rows
-//   (cap)? (2) does the System Monitor show a runtime table over 500 rows in red with "OK to Housekeep", and does housekeeping delete the
-//   rows older than 7 days while KEEPING Saved Parameters (a named AD_PInstance)? On origin/main nothing writes AD_Issue and the
-//   monitor has no housekeeping panel (RED).
-// Run: node tests/poc_udp5_issue_live.js 2>&1 | tee tests/poc_udp5_issue_live.log        (cwd = bim-ootb/erp)
+// Scope: real-browser §-witness W-UDP5-HOUSEKEEP-LIVE (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-5 + §ADMIN-MINIMAL). READ
+//   tests/poc_udp5_housekeep_live.log before any conclusion — exit code is not evidence.
+// THE ISSUE: (1) errors stay on the device (user 2026-10-16): an error § line or an uncaught error writes NO AD_Issue row / op-log op,
+//   while the error beacon still records it; (2) does the System Monitor show a runtime table over 500 rows in red with "OK to Housekeep",
+//   and does housekeeping delete the rows older than 7 days while KEEPING Saved Parameters (a named AD_PInstance)?
+//   RED on #2046's tree for (1) (it wrote AD_Issue rows).
+// Run: node tests/poc_udp5_housekeep_live.js 2>&1 | tee tests/poc_udp5_housekeep_live.log        (cwd = bim-ootb/erp)
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -39,28 +38,13 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
     c.withSidecar(sdb => res((sdb ? c.core.listTip(sdb, t, pk, base, null).rows : base).filter(r => r.ad_client_id == null || String(r.ad_client_id) === String(A.clientId))));
   }), [t, pk]);
   const issues = () => tip('ad_issue', 'ad_issue_id');
-  const settle = async (n) => { for (let i = 0; i < 60; i++) { if (logs.filter(l => /^§UDP5-ISSUE /.test(l)).length >= n) break; await pg.waitForTimeout(250); } await pg.waitForTimeout(400); };
   await pg.goto(url, { waitUntil: 'networkidle' }); await login(); await pg.waitForTimeout(800);
-  const i0 = await issues(), n0 = logs.filter(l => /^§UDP5-ISSUE /.test(l)).length;
-  await pg.evaluate(() => { console.log('§TESTUDP5 error disk full op 17'); console.log('§TESTUDP5 error disk full op 18'); console.log('§TESTUDP5 error disk full op 19'); console.log('§TESTUDP5OK rows=3 failed=0'); });
-  await pg.evaluate(() => { setTimeout(() => { throw new Error('boom udp5 witness'); }, 0); });
-  await settle(n0 + 2);
-  const i1 = await issues(), added = i1.filter(r => !i0.some(x => String(x.ad_issue_id) === String(r.ad_issue_id)));
-  console.log('  added=' + JSON.stringify(added.map(r => ({ id: r.ad_issue_id, src: r.sourceclassname, sum: String(r.issuesummary).slice(0, 80), stack: !!r.stacktrace, rec: r.record_id, user: r.username, st: r.systemstatus }))));
-  const disk = added.filter(r => r.sourceclassname === '§TESTUDP5'), boom = added.filter(r => r.sourceclassname === '§FIELD-ERROR' && /boom udp5/.test(r.issuesummary));
-  ok('I1', 'a § error line logged 3 times (numbers differ) = ONE AD_Issue row; the counter line (failed=0) = none', disk.length === 1 && !added.some(r => r.sourceclassname === '§TESTUDP5OK'), added.length + ' added');
-  ok('I2', 'an uncaught error = one row with its stack (MIssue: summary + StackTrace)', boom.length === 1 && !!boom[0].stacktrace, JSON.stringify(boom.map(r => String(r.stacktrace).slice(0, 60))));
-  ok('I3', 'row shape: Record_ID 1, UserName "-" (no PII), SystemStatus E, LoggerName erp', disk.length === 1 && Number(disk[0].record_id) === 1 && disk[0].username === '-' && disk[0].systemstatus === 'E' && disk[0].loggername === 'erp');
-  await pg.reload({ waitUntil: 'networkidle' }); await login(); await pg.waitForTimeout(800);
-  const nR = logs.filter(l => /^§UDP5-ISSUE /.test(l)).length;
-  await pg.evaluate(() => console.log('§TESTUDP5 error disk full op 42'));
-  await settle(nR + 1);
-  const i2 = await issues(), tl = logs.filter(l => /^§UDP5-ISSUE /.test(l)).pop() || '';
-  ok('I4', 'the same issue after a reload = a touch of the existing row, no new row', i2.length === i1.length && /tag=§TESTUDP5 touch /.test(tl), tl + ' rows ' + i1.length + '->' + i2.length);
-  const nC = logs.filter(l => /^§UDP5-ISSUE /.test(l)).length;
-  for (let b = 0; b < 51; b += 10) { await pg.evaluate(b => { const L = 'abcdefghijklmnopqrstuvwxyz'; for (let k = b; k < Math.min(b + 10, 51); k++) console.log('§TESTCAP error case ' + L[k % 26] + L[Math.floor(k / 26)]); }, b); await settle(nC + Math.min(b + 10, 51)); }
-  const i3 = await issues();
-  ok('I5', '51 more distinct issues: the client holds at most 50 rows (cap, oldest deleted)', i3.length === 50, 'rows=' + i3.length);
+  // §ADMIN-MINIMAL (user 2026-10-16): errors stay on the device (error_beacon.js, as it is) - nothing is written to AD_Issue / the op-log
+  const i0 = await issues(), f0 = logs.filter(l => /^§FIELD-ERROR /.test(l)).length;
+  await pg.evaluate(() => { console.log('§TESTUDP5 error disk full op 17'); setTimeout(() => { throw new Error('boom udp5 witness'); }, 0); });
+  await pg.waitForTimeout(2500);
+  const i1 = await issues(), f1 = logs.filter(l => /^§FIELD-ERROR /.test(l)).length;
+  ok('I1', 'an error § line + an uncaught error write NO AD_Issue row (device-only errors); the beacon still fires §FIELD-ERROR', i1.length === i0.length && f1 === f0 + 1 && !logs.some(l => /^§UDP5-ISSUE /.test(l)), 'issues ' + i0.length + '->' + i1.length + ' beacon ' + f0 + '->' + f1);
   // housekeeping: 510 old AD_PInstance rows + 1 named old (Saved Parameters) + 5 recent, through the signed path
   const mk = await pg.evaluate(() => new Promise(res => {
     const A = window.APP, d = new Date(Date.now() - 30 * 864e5), p = n => ('0' + n).slice(-2), old = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' 10:00:00';
@@ -87,10 +71,8 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('H2', 'housekeeping deletes every row older than 7 days, keeps the recent ones and the named Saved Parameters row', hk && oldLeft.length === 0 && named.length === 1 && p1.length >= 6, hk + ' after=' + p1.length + ' named=' + named.length + ' oldLeft=' + oldLeft.length);
   const after = await pg.evaluate(() => { const r = document.querySelector('#sm-hk tr[data-hk-table="ad_pinstance"]'); return r ? { rows: Number(r.getAttribute('data-hk-rows')), red: r.classList.contains('sm-hk-red') } : null; });
   ok('H3', 'the panel re-reads: ad_pinstance no longer red', after && !after.red && after.rows === p1.length, JSON.stringify(after));
-  const pageIssues = {}; logs.filter(l => /^§UDP5-ISSUE /.test(l)).forEach(l => { const t = (l.match(/tag=(\S+)/) || [])[1]; pageIssues[t] = (pageIssues[t] || 0) + 1; });
-  console.log('§UDP5L-PAGE-ISSUES ' + JSON.stringify(pageIssues));
   const real = errs.filter(e => !/ResizeObserver|boom udp5 witness/.test(e));
   ok('H4', 'no page errors (besides the deliberate one)', real.length === 0, real.slice(0, 3).join(' | '));
-  console.log('§UDP5L-VERDICT ' + (fail ? 'FAIL' : 'PASS') + ' ' + pass + '/' + (pass + fail));
+  console.log('§UDP5HK-VERDICT ' + (fail ? 'FAIL' : 'PASS') + ' ' + pass + '/' + (pass + fail));
   await browser.close(); srv.close(); process.exit(fail ? 1 : 0);
-})().catch(e => { console.log('§UDP5L-VERDICT INCONCLUSIVE ' + (e.stack || e)); process.exit(2); });
+})().catch(e => { console.log('§UDP5HK-VERDICT INCONCLUSIVE ' + (e.stack || e)); process.exit(2); });
