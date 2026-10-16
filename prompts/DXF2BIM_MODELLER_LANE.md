@@ -576,6 +576,30 @@ Decisions (coordinator, 2026-10-16), as rules. The SECTION / roof-sheet work and
 
 **D. rosetta_dx_shell DW-doors width.** The source door width is the bbox long side − 2 × `CASING`, using the `CASING` already defined in rosetta_dx_shell.js (0.076, the R1b constant that §L1.3 used). No new number.
 
+**E. Std ROOF and SECTION sheets** (L1 #183: 8 sheets; the SECTION format is §L1.4).
+- `mark_dx_set.js std` marks both:
+  - ROOF: `@SET @VIEW=ROOF @UNITS=mm @NAME @LEVEL @ROOF`. `@LEVEL` = the "Roof" storey from the model (R1, min wall minZ); `@ROOF` = R11 T/ROOF from the model.
+  - SECTION: `@SET @VIEW=SECTION @UNITS=mm @NAME @CUT @HAXIS @GRIDH @Z @ROOF`.
+    - `@CUT` comes from the sheet title "… AT X=2304.25". The value is in the sheet's `@UNITS` (mm), so it is written `@CUT=X,2304.25`, not 2.30425.
+    - `@HAXIS` by a unique fit against the GF plan grid; `@GRIDH` / `@Z` by the same evidence rules as the elevations; `@ROOF` from the model.
+    - Same evidence rules as the `markSection` step of `rosetta_dx_section.js`, whose header names this script as the place for it.
+- Std shell pipeline (`DXSET=std`):
+  - the roof plan stage reads the marked DX_ROOF;
+  - `Dxf2Shell.sectionSlabs` on the marked section feeds `slabZ(…, {section})` for both storeys and `roofZ`.
+- qualify:
+  - a SECTION sheet is a stated role (no `sheet_no_role`);
+  - it gets the role-independent checks (layers, units, dimension texts) and `elev_align_fail` alignment against the reference plan;
+  - its `@ROOF` takes part in `roof_level_mismatch`;
+  - it is not a face (no `face_no_elev`).
+
+**F. Old-set R3 / DW-doors (lead decision).** The old set's arcs are drawn at the casing-inclusive bbox, so its DW-doors now FAIL on the leaf rule. That FAIL is kept and recorded in the log as a known finding, like RF-d. No rule is added to accept it.
+
+**G. Door hinge on the wall face** (found while coding D).
+- `Dxf2Shell.doorStrip` requires the hinge on the wall strip's CENTRE line. The old set draws it there; the std set (L1.2 R9) draws it on the wall FACE: arc 10E at x 8.800, wall 8.383..8.800.
+- Rule: the hinge lies within the strip's thickness band (between its two faces, ±tol).
+- One strip per direction is still required; ambiguity is still `GAP:door_host_ambiguous`.
+- Tests: DH1 hinge on a face → strip found; DH2 hinge outside the band → `door_no_strip`; old set unchanged.
+
 **Report:** the std-set verdict by cause.
 
 ## L3. Import + convert in the Modeller
