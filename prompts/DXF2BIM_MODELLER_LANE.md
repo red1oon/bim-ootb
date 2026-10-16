@@ -731,7 +731,9 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
   - The closed leaf direction is the arc end whose hinge→end segment runs along a wall piece's direction.
   - The strip is the wall pieces parallel to that direction whose band (between the two faces) contains the hinge (on a face or the axis).
   - Jamb to jamb: the wall-free interval along the strip that contains the leaf span: s0 = the nearest piece end ≤ the leaf start, s1 = the nearest piece start ≥ the leaf end. If either is missing, there is no box.
-  - Across: the strip band. A door-layer entity belongs to the box when its bbox lies within [s0, s1] along (±snap_tol) and its across range overlaps or touches the band (±snap_tol). Casing drawn just beyond a face therefore counts; the casing's own extent is the drawn extent.
+  - Across: the band of the two jamb pieces (union of their across ranges). Pieces are not filtered by length, because a jamb can be a short or square stub (std 10B, 0.1 m; 10D, square).
+  - Along, the box is [s0, s1] ∪ the along-extent of the parts the L2.6 touch rule already attached to that door. That is the drawn casing extent. Measured: the std walls stop at the hinge, so s0..s1 is the leaf span (1.25). The frame drawn at the hinge spans −16.879..−15.477 (1.402 = the source opening).
+  - A door-layer entity belongs to the box when its bbox lies within the along range (±snap_tol) and its across range overlaps or touches the band (±snap_tol).
   - The box is stored on the door op as `opening_box` (metres: along axis, s0, s1, band).
 - **Attachment:** an entity not attached by the L2.6 touch rule is attached to the door whose opening box holds it. If two boxes hold it → `GAP:door_part_ambiguous`. If none → unchanged (rectangle cluster, else `opening_unclassified`).
 - Tests:
@@ -747,7 +749,7 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
   - From the elevation, as drawn.
   - From the schedule, as the schedule leaf height + the head frame. The plan and the schedule do not draw the head frame, so `applyDoorHeights(opts.schedule_head_frame)` adds the caller's existing `CASING` (R1b, 0.076).
   - The leaf height is kept as `leaf_height`. Without the option, nothing is added.
-- **The fill check** (`placeFills`) compares the library product (frame included) with that opening: door width = void width (s1 − s0), height = the door's opening height. The leaf width stays only in the arc check (rosetta DW-doors).
+- **The fill check** (`placeFills`) compares the library product (frame included) with the drawn opening. Door width = the opening box's along-extent (frame drawn) when the door has one, else the void width (s1 − s0). Height = the door's opening height. The cut itself stays the drawn wall gap (bridgeOpenings void). The leaf width stays only in the arc check (rosetta DW-doors).
 - rosetta_dx_shell OV / FL keep comparing against the source opening bbox (frame included), which is the same measure.
 - Tests:
   - DF1: void width used, not the leaf
