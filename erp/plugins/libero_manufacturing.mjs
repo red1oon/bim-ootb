@@ -225,6 +225,8 @@ export const manifest = {
   activation: 'lazy',
   triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP', 'PP_Cost_Collector'] },
   // the bundle's 2Packs (Incremental2PackActivator: META-INF/2Pack_<x.y.z>.zip, applied above the installed version, ascending, each once): Libero's own 1.0.0-1.0.2 (pshepetko @ b2adfea0) + ours
+  // the bodies of 2Pack_1.0.0's four CREATE FUNCTION statements (PL/pgSQL there, JS here; §24): bound with the packs, kept while they are installed
+  sqlFunctions: './libero_sqlfn.mjs',
   packs: ['libero_2pack/2Pack_1.0.0.zip', 'libero_2pack/2Pack_1.0.1.zip', 'libero_2pack/2Pack_1.0.2.zip', 'libero_2pack/2Pack_1.0.3.zip'],
   // twin-only staging (the slim twin seed lacks these rows; legacy carries the EE01 menu inactive): refcounted, removed on Stop
   dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },

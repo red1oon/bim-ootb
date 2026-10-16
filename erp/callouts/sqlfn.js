@@ -595,6 +595,10 @@
     }
     throw new Error('arity ' + n);
   }
+  // the kit a PLUGIN's stored functions are written with (ERP_FRIENDLY_OPS_LENS.md §24): the same query, BigDecimal, PG-division and SQLite-arity helpers as core,
+  //   so a bundle's port of its PL/pgSQL reads like this file. bindSqlFunctions(reg, map): map = { name: { arity: [n..], fn } } -> reg(name, wrapped) per arity.
+  R.sqlFnKit = { q: q, D: D, out: out, pdiv: pdiv, round: round, BD: BD, RM: RM, conv: conv, arity: arity };
+  R.bindSqlFunctions = function (reg, map) { var names = []; Object.keys(map || {}).forEach(function (n) { (map[n].arity || []).forEach(function (k) { reg(n, arity(map[n].fn, k)); }); names.push(n); }); return names; };
   var prevReg = R.registerSqlFunctions;                                                                  // views.js (currencyconvertinvoice) loads BEFORE this file in idempiere.html; replacing its registrar silently dropped it
   R.registerSqlFunctions = function (reg) {
     var names = Object.keys(ARITY);

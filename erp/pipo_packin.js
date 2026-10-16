@@ -59,7 +59,7 @@
     if (!rootEl || rootEl.nodeName !== 'idempiere') throw new Error('not a PackOut.xml (root ' + (rootEl && rootEl.nodeName) + ')');
     var pack = { name: opts.name || rootEl.getAttribute('Name'), version: opts.version || rootEl.getAttribute('Version'), updateMode: String(rootEl.getAttribute('UpdateDictionary')).toLowerCase() === 'true',
       client: String(rootEl.getAttribute('Client') || '0').split('-')[0] };
-    var stat = { viewsMissing: [], functionsMissing: [], absentTables: {}, records: 0, processed: 0, skippedOfficial: 0, translationsSkipped: 0, genericForSpecial: {}, deferred: 0, unresolved: [], sql: { ok: 0, failed: 0 }, byTable: {}, details: [], afterSave: {}, afterSaveNotPorted: {} };
+    var stat = { views: [], viewsMissing: [], functionsMissing: [], absentTables: {}, records: 0, processed: 0, skippedOfficial: 0, translationsSkipped: 0, genericForSpecial: {}, deferred: 0, unresolved: [], sql: { ok: 0, failed: 0 }, byTable: {}, details: [], afterSave: {}, afterSaveNotPorted: {} };
     var cols = {}; function colsOf(t) { var k = t.toLowerCase(); if (!cols[k]) { var r = q('pragma table_info(' + k + ')'); cols[k] = r.length ? r.reduce(function (m, c) { m[String(c.name).toLowerCase()] = 1; return m; }, {}) : null; } return cols[k]; }
     function propsOf(el) { var p = {}, kids = []; for (var c = el.firstElementChild; c; c = c.nextElementSibling) { if (c.hasAttribute('type')) kids.push(c); else p[c.nodeName] = c; } return { p: p, kids: kids }; }
     function nextId(table) {   // MSequence.getNextID for a table sequence (AD_Sequence Name = TableName, IsTableID = 'Y'); never an official id
@@ -155,11 +155,24 @@
         else { stat.sql.failed++; stat.functionsMissing.push(name); stat.details.push({ table: 'SQLStatement', action: 'Failed', error: 'function ' + name + ' not ported to the twin', sql: sql.slice(0, 160), fn: name }); say('§PACKIN sql function=' + name + ' MISSING in the twin (named gap; legacy would create it)'); }
         return;
       }
-      var vw = /CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:\w+\.)?(\w+)\s+AS/i.exec(sql);
-      if (vw) {   // Postgres view DDL: the twin carries legacy views converted for SQLite (patches/*: build_views_patch.py); present = provided, absent = a named gap
-        var vn = vw[1].toLowerCase(), hv = q("SELECT 1 AS x FROM sqlite_master WHERE type='view' AND lower(name)=?", [vn]).length > 0;
-        if (hv) { stat.sql.ok++; stat.details.push({ table: 'SQLStatement', action: 'Execute', count: 0, sql: sql.slice(0, 160), view: vn, providedBy: 'twin view' }); say('§PACKIN sql view=' + vn + ' provided-by=twin view (Postgres DDL not executed)'); }
-        else { stat.sql.failed++; stat.viewsMissing.push(vn); stat.details.push({ table: 'SQLStatement', action: 'Failed', error: 'view ' + vn + ' not in the twin', sql: sql.slice(0, 160), view: vn }); say('§PACKIN sql view=' + vn + ' MISSING in the twin (named gap; legacy would create it)'); }
+      var PV = opts.pgView || (typeof PgViewSql !== 'undefined' ? PgViewSql : (typeof require === 'function' ? require('./pg_view_sql.js') : null));
+      if (PV && PV.isViewStatement(sql)) {   // a Postgres view definition: SQLite has CREATE VIEW, so it is translated (pg_view_sql.js, the core views' translator) and created HERE,
+        //   through db.run like every pack write (so it is in the pack's delta, replayed at each load, kept on Stop). Each view in its own savepoint; a view the twin cannot
+        //   query (SQLite resolves tables/functions only when used: SELECT .. LIMIT 0 compiles it) is rolled back alone and named, never left broken.
+        PV.statements(sql).forEach(function (st) {
+          if (st.kind === 'pgonly') { stat.sql.pgOnly = (stat.sql.pgOnly || 0) + 1; return; }   // OWNER TO / GRANT / COMMENT: Postgres catalog housekeeping
+          if (st.kind === 'drop') { db.run(st.sql); return; }
+          db.run('SAVEPOINT pk_view');
+          try {
+            db.run('DROP VIEW IF EXISTS ' + st.name); db.run(st.sql); db.exec('SELECT * FROM ' + st.name + ' LIMIT 0'); db.run('RELEASE pk_view');
+            stat.sql.ok++; stat.views.push(st.name); stat.details.push({ table: 'SQLStatement', action: 'Execute', count: 0, sql: sql.slice(0, 160), view: st.name, providedBy: 'translated (pg_view_sql.js)' });
+            say('§PACKIN sql view=' + st.name + ' created (translated from the Postgres DDL)');
+          } catch (e) {
+            db.run('ROLLBACK TO pk_view'); db.run('RELEASE pk_view'); stat.sql.failed++; stat.viewsMissing.push(st.name);
+            stat.details.push({ table: 'SQLStatement', action: 'Failed', error: 'view ' + st.name + ': ' + e.message, sql: sql.slice(0, 160), view: st.name });
+            say('§PACKIN sql view=' + st.name + ' FAILED (rolled back alone, pack goes on) ' + e.message);
+          }
+        });
         return;
       }
       db.run('SAVEPOINT pk_sql');
@@ -188,7 +201,7 @@
       stat.ok = false; stat.error = e.message;
     }
     say('§PACKIN pack=' + pack.name + ' version=' + pack.version + ' updateMode=' + pack.updateMode + ' ok=' + stat.ok + ' records=' + stat.records + ' processed=' + stat.processed + ' skippedOfficial=' + stat.skippedOfficial +
-      ' translationsSkipped=' + stat.translationsSkipped + ' sql=' + stat.sql.ok + '/' + (stat.sql.ok + stat.sql.failed) + ' genericForSpecial=' + JSON.stringify(stat.genericForSpecial) + ' absentTablesSkipped=' + JSON.stringify(stat.absentTables) + ' afterSave=' + JSON.stringify(stat.afterSave) + ' afterSaveNotPorted=' + JSON.stringify(stat.afterSaveNotPorted) + ' functionsMissing=[' + stat.functionsMissing.join(',') + '] viewsMissing=[' + stat.viewsMissing.join(',') + ']' + (stat.error ? ' error="' + stat.error + '"' : ''));
+      ' translationsSkipped=' + stat.translationsSkipped + ' sql=' + stat.sql.ok + '/' + (stat.sql.ok + stat.sql.failed) + ' genericForSpecial=' + JSON.stringify(stat.genericForSpecial) + ' absentTablesSkipped=' + JSON.stringify(stat.absentTables) + ' afterSave=' + JSON.stringify(stat.afterSave) + ' afterSaveNotPorted=' + JSON.stringify(stat.afterSaveNotPorted) + ' views=[' + stat.views.join(',') + '] viewsMissing=[' + stat.viewsMissing.join(',') + '] functionsMissing=[' + stat.functionsMissing.join(',') + '] viewsMissing=[' + stat.viewsMissing.join(',') + ']' + (stat.error ? ' error="' + stat.error + '"' : ''));
     stat.pack = pack;
     return stat;
   }

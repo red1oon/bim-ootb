@@ -70,12 +70,23 @@
       hasFunction: function (n) { try { db.exec('SELECT ' + n + '()'); return true; } catch (e) { return !/no such function/i.test(e.message); } },
       uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
   }
+  // §24: a pack's stored functions. The module's bodies are bound on the dictionary DB like core's sqlfn.js UDFs (AdCallout.RUNTIME.bindSqlFunctions) - at Start BEFORE the Pack In
+  //   (so its CREATE FUNCTION statements are provided and views over them compile) and at every load BEFORE the replay, for every kept pack, whatever the bundle's state.
+  function _bindFunctions(db, url, bundleId) {
+    if (!url) return Promise.resolve([]);
+    var R = global.AdCallout && global.AdCallout.RUNTIME; if (!R || !R.bindSqlFunctions) return Promise.reject(new Error('AdCallout.RUNTIME.bindSqlFunctions missing'));
+    return import(/* @vite-ignore */ url).then(function (m) {
+      var names = R.bindSqlFunctions(function (n, f) { db.create_function(n, f); }, (m.functions || (m.default && m.default.functions))(R));
+      console.log('§PACKIN-FN bundle=' + bundleId + ' bound=[' + names.join(',') + '] from=' + String(url).split('/').pop());
+      return names;
+    });
+  }
   // B2: apply a bundle's packs at Start (the Incremental2PackActivator rule inside PipoPackIn.incremental), keep the bytes of every pack that went in and the delta it wrote.
-  function _packApply(bundleId, list) {
-    var db = _rawDb(), P = global.PipoPackIn, t0 = performance.now();
+  function _packApply(bundleId, list, more) {
+    var db = _rawDb(), P = global.PipoPackIn, t0 = performance.now(), fnUrl = more && more.functions || null;
     if (!db) return Promise.resolve({ ok: false, error: 'no writable dictionary DB' });
     if (!P) return Promise.resolve({ ok: false, error: 'pipo_packin.js not loaded' });
-    return Promise.all(list.map(function (p) { return fetch(p.url).then(function (r) { if (!r.ok) throw new Error(p.url + ' HTTP ' + r.status); return r.arrayBuffer(); }).then(function (b) { return { version: p.version, bytes: new Uint8Array(b) }; }); }))
+    return _bindFunctions(db, fnUrl, bundleId).then(function () { return Promise.all(list.map(function (p) { return fetch(p.url).then(function (r) { if (!r.ok) throw new Error(p.url + ' HTTP ' + r.status); return r.arrayBuffer(); }).then(function (b) { return { version: p.version, bytes: new Uint8Array(b) }; }); }))
       .then(function (loaded) {
         return _kvGet(PACKS_KEY, {}).then(function (store) {
           var rdb = P.recording(db), fromScratch = !P.installedVersions(db, bundleId).length;   // nothing of this bundle in the base: what is written now is the WHOLE delta, not an addition
@@ -84,7 +95,7 @@
             var done = !res.length ? Promise.resolve() : (function () {
               var rec = store[bundleId] || { packs: [], delta: [] };
               res.filter(function (r) { return r.ok; }).forEach(function (r) { rec.packs = rec.packs.filter(function (k) { return k.version !== r.version; }).concat(loaded.filter(function (l) { return l.version === r.version; })); });
-              rec.delta = fromScratch ? rdb.delta() : rec.delta.concat(rdb.delta()); rec.fingerprint = global.__adSeedFingerprint || null; store[bundleId] = rec;
+              rec.delta = fromScratch ? rdb.delta() : rec.delta.concat(rdb.delta()); rec.fingerprint = global.__adSeedFingerprint || null; if (fnUrl) rec.functions = fnUrl; store[bundleId] = rec;
               return _kvPut(PACKS_KEY, store);
             })();
             return done.then(function () {
@@ -94,7 +105,7 @@
             });
           });
         });
-      }, function (e) { console.log('§PACKIN-START bundle=' + bundleId + ' ok=false error=' + e.message); return { ok: false, error: e.message }; });
+      }); }).catch(function (e) { console.log('§PACKIN-START bundle=' + bundleId + ' ok=false error=' + e.message); return { ok: false, error: e.message }; });
   }
   // B4: every load, BEFORE the bundles are restored, every kept bundle's rows are put back: the delta on the same base, else a full Pack In from the kept bytes.
   function _packsReplay() {
@@ -104,6 +115,7 @@
       return ids.reduce(function (chain, id) {
         return chain.then(function () {
           var r = store[id], t0 = performance.now(), reason;
+          return _bindFunctions(db, r.functions, id).catch(function (e) { console.log('§PACKIN-FN-ERR bundle=' + id + ' ' + e.message); }).then(function () {
           if (r.fingerprint === fp && (r.delta || []).length) {
             var rr = P.replay(db, r.delta);
             if (rr.ok) { console.log('§PACKIN-REPLAY bundle=' + id + ' mode=delta statements=' + rr.statements + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB()); return; }
@@ -113,6 +125,7 @@
           return P.incremental(rdb, id, r.packs || [], _packOpts(db)).then(function (res) {
             r.delta = rdb.delta(); r.fingerprint = fp; changed = true;
             console.log('§PACKIN-REPLAY bundle=' + id + ' mode=full reason=' + reason + ' applied=[' + res.map(function (x) { return x.version + (x.ok ? '' : '!'); }).join(',') + '] statements=' + r.delta.length + ' ms=' + Math.round(performance.now() - t0) + ' heapMB=' + _heapMB());
+          });
           });
         });
       }, Promise.resolve()).then(function () { return changed ? _kvPut(PACKS_KEY, store) : null; });

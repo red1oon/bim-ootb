@@ -305,14 +305,15 @@
       dict.forEach(function (d) { n += c.dict.insert(d.table, d.idCol, d.rows) || 0; });
       return n;
     }
-    // manifest.packs = ['dir/2Pack_<x.y.z>.zip', ...] relative to the bundle (ERP_FRIENDLY_OPS_LENS.md §22 B1). The host applies them (fetch + PipoPackIn.incremental on the dictionary DB) and keeps them;
+    // manifest.packs = ['dir/2Pack_<x.y.z>.zip', ...] relative to the bundle (ERP_FRIENDLY_OPS_LENS.md §22 B1); manifest.sqlFunctions = './x.mjs' exporting functions(R) -> { name: { arity, fn } } (§24). The host applies them (fetch + PipoPackIn.incremental on the dictionary DB) and keeps them;
     //   the rows they write are DICTIONARY data, outside the bundle's undo scope: Stop and Uninstall leave them, as legacy does.
     async function packIn(rec) {
       var packs = (rec.manifest && rec.manifest.packs) || []; if (!packs.length) return null;
       if (!host.packs || typeof host.packs.apply !== 'function') {   // a headless host (node model witnesses) has no dictionary pipeline: said loudly, and the §PACKIN-CHECK is not applied (nothing was packed in)
         console.log('§PACKIN-SKIP bundle=' + rec.id + ' packs=' + packs.length + ' reason=host has no Pack In (headless host; the dictionary rows of the packs are NOT applied)'); packed[rec.id] = false; return null; }
       var list = packs.map(function (p) { var m = /2Pack_(\d+\.\d+\.\d+)\.zip$/.exec(p); if (!m) throw new Error('plugin ' + rec.id + ': pack name ' + p + ' is not 2Pack_<x.y.z>.zip'); return { version: m[1], url: resolveChunk(p, rec.url) }; });
-      var r = await host.packs.apply(rec.id, list);
+      var fnUrl = rec.manifest.sqlFunctions ? resolveChunk(rec.manifest.sqlFunctions, rec.url) : null;   // the bodies of the packs' CREATE FUNCTION statements (§24): they belong to the pack, bound by the host with it
+      var r = await host.packs.apply(rec.id, list, { functions: fnUrl });
       if (!r || !r.ok) throw new Error('plugin ' + rec.id + ': Pack In failed - ' + (r && r.error || 'no result'));
       packed[rec.id] = true;
       return r;
