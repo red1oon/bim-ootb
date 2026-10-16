@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v80';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v81';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -30,6 +30,7 @@ const DEFERRED_LIBS = [
   'lib/kernel/occt-wasm.js',
   'lib/kernel/occt-wasm.wasm',
   'lib/planegcs/planegcs_dist/planegcs.wasm',
+  'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
 ];
 const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
 const CDN_ASSETS = [];
@@ -71,6 +72,16 @@ const PRECACHE_ASSETS = [
   'bonsai_roommove.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2 — whole-room move (GEOM_ROOM_MOVE)
   'bonsai_itemdrag.js',           // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §3 — free single-item drag (gated by the line above)
   'routewalker.js',
+  // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
+  'dxf_import_ui.js',
+  'dxf2bim_import.js',
+  'dxf2bim/dxf2bim.js',
+  'dxf2bim/dxf2marks.js',
+  'dxf2bim/dxf2elev.js',
+  'dxf2bim/dxf2mesh.js',
+  'dxf2bim/dxf2types.js',
+  'dxf2bim/dxf2shell.js',
+  'dxf2bim/dxf2shell_config.js',
   // Cross-surface broker — lives in viewer/ (shared), precache for offline Connect.
   '../viewer/connect_scene.js',
   '../viewer/locale_loader.js',  // S226 §R3 — the Modeller's UI language (shared loader; i18n/<code>.json cache on first use)

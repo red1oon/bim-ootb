@@ -312,6 +312,52 @@ Why:
 - (3) bonsai_ifc.js already exports GEOM_INSERT through the rendered mesh with the `_CLASS_MAP` class, so the extrude-at-origin export gap does not apply
 Remaining exporter work: IfcBuildingStorey per level + containment (it has none today). Honest label: wall/slab/roof bodies are drawing-derived solids (exact footprint × height read from the elevation), not catalogue LOD400 components. The LOD400 rule applies to library products, and those bodies are never a fallback for one.
 
+### L3 build spec (2026-10-16, written before the code)
+Scope: import + canvas + convert. The metadata editor is L4; the L2 verdict module does not exist yet, so the L3 gate is role-completeness only (below), stated.
+
+**Sources (copied, never forked).**
+- `modeller/dxf2bim/`: `dxf2{bim,elev,marks,mesh,types,shell}.js` VERBATIM from BIMCompiler `b4739b50a` (`deploy/dev/`), plus `dxf2shell_config.js` from the BIMCompiler branch `feat/dxf2bim-shell-config` (BASIC_SHAPES_SPEC §11: the pipeline config moved out of `rosetta_dx_shell.js`; roof-plan role marking; run_id; element summary). `SOURCE.md` names the commits and SHA-256 of each file.
+- `modeller/lib/dxf-parser.js` vendored verbatim (`DEFERRED_LIBS`).
+- `modeller/dxf2bim_import.js` (UMD, runs in Node and in the page): the ORCHESTRATION of `rosetta_dx_shell.js pipeline()` ported, nothing else. Answer-key reads (DX_extracted.db) stay in the witness; the window labels the Node run takes from the source model are an optional input (`library.labels`), never read by the module.
+- SHA-256 in the page: `crypto.subtle` is async, the modules need a sync `hashHex`; a standard FIPS 180-4 SHA-256 over the UTF-8 bytes is inlined in `dxf2bim_import.js`. Its equality with Node `crypto` is witnessed by C1 (run_id equal: every sheet hash and storey run id feeds it).
+
+**Sheet roles (R), from `DXF2BIM-MARK` markings only.**
+- R1 `@VIEW=PLAN` + `@LEVEL` → storey plan at that level. Storeys sorted by level, named `Level 1..n` (the source model's naming, as `rosetta_dx_shell.js`).
+- R2 `@VIEW=ELEV` + `@FACE` → elevation on that face.
+- R3 `@VIEW=PLAN` + `@ROOF` and no `@LEVEL` → roof plan at `@ROOF` (BASIC_SHAPES_SPEC §11 CF-2). Only for this role the `MARK:missing` keys `LEVEL`, `GRIDX(>=2)`, `GRIDY(>=2)` are expected.
+- R4 anything else (no marking, unknown view, any other marking error) → NO ROLE.
+- Gate (convert allowed): every sheet has a role, ≥1 plan, ≥1 elevation, exactly 1 roof plan. Otherwise Convert is refused and the panel names each sheet and reason (C3). The L2 verdict replaces this gate when it lands.
+
+**Canvas.** One toggleable `THREE.Group` (`dxf-sheets`) in `A.scene`, one `THREE.LineSegments` per sheet: LINE, LWPOLYLINE/POLYLINE (closed when flagged), ARC and CIRCLE (tessellated, 64 segments per full turn: a display choice, not geometry); TEXT/MTEXT/DIMENSION/INSERT are not drawn (counted in the log). Plan: (x, y) × units factor at z = `@LEVEL`. Roof plan: same at z = `@ROOF`. Elevation: horizontal coordinate h → plan axis by `Dxf2Marks.align(lowest plan, elevation).toPlan(h)`, vertical v → z by its `zOf(v)` (`@Z` calibration); the face plane coordinate is the matching side of the lowest storey's outer wall envelope (`Dxf2Shell.envelope` of its pieces: minX/maxX/minY/maxY). An elevation that does not align is drawn nowhere and logged. Log `§DXF-IMPORT`.
+
+**Convert = ONE `commitGesture`, the ARC-seed form (L3 design decision).** The pipeline output (`rosetta_dx_shell.js` variant A, the main model) maps to:
+- wall pieces (rect boxes, polygon prisms), floor slab(s) with a thickness, roof: the module's own mesh, registered `Library.registerRealGeometry` (`rg:dxf-<guid>`, recentred, anchorOffset 0) and committed `GEOM_INSERT {realGeomHash, bbox, placement{x,y,z,rot:0}, ifc_class, storey, storey_elev, provenance}`. Roof: `storey:'Roof'` with NO `storey_elev` (no drawn storey elevation; the exporter then contains it in the building, never a guessed storey).
+- openings: each §6 void group (drawn gap G between pieces A and B of a strip) becomes ONE uncut host body G × strip × [zb, zt] (`Dxf2Shell.prismRect`, registered `uncut`) plus one `GEOM_CUT {parent: that body's fid, void:{c1,c2} = G × strip × [z0,z1], slide:{opening: handles, filling: null, fillingFid: null}, provenance}` per opening z-interval, as §SLIDE-SEED. The §6 infill boxes are therefore NOT committed: the cut body is what they are. Checked before commit: union(void z-intervals) + Σ infill heights = zt − zb for each group, else convert refuses (no invented body). Parent fids are the group's own row ids (KernelOps.commitGroup assigns `max(id)+1..+N`, contiguous; asserted after commit, mismatch → undo + refuse).
+- every op: `provenance {dxf_handle, layer, sheet, run_id}` (body: `A+B` handles; cut: opening handles; slab: ring members; roof: A-ROOF handle).
+- run_id = `Dxf2ShellConfig.runId` (§11 CF-3): same inputs → same run_id as the Node run.
+- Log `§DXF-CONVERT counts=` by class and storey, cuts, fills, gaps.
+
+**Fills (LOD400) — measured 2026-10-16, STOPPED.** The Node run binds 26 fills to 10 distinct library meshes (`component_library.db` `ad_geometry_map` + `component_geometries`): 0d09a8ed5fac514f, 572cdb8f6f10644c, 34f667346c53d06d, 4c3526d658d27caf, 974f0644c797ee99, 3a5339a7cb23ab05, 02788fc8c663321e, 9a16688fa4310a1f, 00b72db6daa0796e, 7951f4f3f56f1d2b. The Modeller's geometry sources: `viewer/dagevu_geometries.json` holds 3 of them (3a5339a7…, 9a16688f…, 7951f4f3…), `Duplex_geo.db` (OCI) 0, the legacy 3-mesh CATALOG 0. The binding itself needs `ad_opening_family` (DUPLEX_*/US_* ids + descriptions), `ad_wall_type` and every door/window `ad_geometry_map` row (the ambiguity rule needs all candidates): none of these rows is in any Modeller source. So the page calls the module with no library: every opening that would need a fill is reported `GAP:lod400_library_unreachable` (hard fail, `console.error`), no fill op, no box. `Dxf2BimImport.convert` with library rows (Node) runs the full fill path; witness C1-PORT proves it equals the Node run.
+
+**Witnesses (`modeller/tests/`, each names its issue).**
+- `witness_dxf_import_node.js` C1-PORT: the module in Node, with the library rows and labels the Node run uses, reproduces `out/duplex_basic_shapes_elements.json` element-for-element (guid, class, storey, bbox 1 mm) incl. 26 fills, and its run_id. Issue: the port drifted from the pipeline.
+- `witness_dxf_convert.js` (puppeteer):
+  - C1 Duplex marked set → convert: run_id equal; every non-infill element (pieces, slab, roof) is one committed op with the Node guid, class, storey, and rendered bbox within 1 mm; every void group's rendered cut body has the bbox of the union of its Node infill boxes (1 mm) and their summed volume (1e-6 m³); counts by class and storey logged; fills: Node 26 vs page 0 = the named GAP (not a pass).
+  - C1-FALSIFY: the same comparator against a Node summary with one piece and one infill box moved 2 mm must report exactly those two.
+  - C2 export IFC → reimport: products by class equal the committed inserts by class, storeys = 2, contained == products.
+  - C3 the GF plan replaced by its raw (unmarked) original → convert refused naming that sheet, op-log unchanged.
+  - C4 one undo → every converted op inactive, no converted mesh left.
+  - Screenshot `~/Videos/dxf2bim_work/l3/` read by eye.
+- Regression: W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC.
+
+**Not claimed (L3).** Fills (library unreachable, above); IfcRelVoidsElement for converted openings (the exporter links voids only to extruded walls); the converted model surviving a page reload (`rg:` meshes are registered per session, like a resident's before its geo arrives); the L2 verdict; any building but the Duplex.
+
+**L3 results (2026-10-16).** BIMCompiler side: PR #180 (§11; OBJ `246ce6f0…` unchanged). Logs: `modeller/tests/logs/witness_dxf_import_node.log`, `witness_dxf_convert.log`.
+- C1-PORT 5/5: the module in Node equals the Node run element-for-element (106 incl. 26 fills, 40 infill), same run_id `2045e4e0…`; the inlined SHA-256 equals Node crypto; falsify reports the one moved element.
+- Page, real UI (chooser with `multiple`, 7 sheets): C0 canvas PASS (plan wall lines at z = @LEVEL, roof at 6.5, each elevation's A-ELEV-WALL on its face plane spanning the envelope [0,-17.8,8.8,0]); C1 run_id equal; parity: 40 solids (L1 18 walls, L2 20 walls + 1 slab, roof 1) one-to-one with rendered bbox within 1 mm, and 18 cut bodies (L1 8, L2 10) equal to the union of the 40 Node infill boxes (bbox 1 mm, volume 1e-5 m³); 84 ops in ONE gesture (58 GEOM_INSERT + 26 GEOM_CUT), all with provenance; C1-FALSIFY reports exactly the 2 moved boxes. **GAP C1 FILLS**: Node 26, page 0 (`GAP:lod400_library_unreachable` ×26, console.error, no box).
+- C2: reimport IfcWall 56 / IfcSlab 1 / IfcRoof 1 = committed; IfcOpeningElement 26; storeys 2; contained 58 = products. C3: the raw GF plan → refused naming that sheet, Convert disabled, op-log 0→0. C4: one undo → 0 converted ops, 0 meshes.
+- Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**
   - Sheets (role, level / face)
