@@ -288,6 +288,7 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
   - `@LEVEL` = the roof storey level (R1)
   - `@ROOF` = the roof top (BASIC_SHAPES §5.3)
 - A ROOF sheet gets the role-independent checks (layers, units, dimension texts). It gets no grid or dimension-string checks, because it has no walls.
+- A ROOF sheet's `@LEVEL` is a stated level. Elevation datums and height chains use the plan levels, plus that level, plus `@ROOF`.
 - `QF:set_no_roof` (shape **roof** only): the set has no ROOF sheet; the roof outline needs one (BASIC_SHAPES R-O).
 - `QF:roof_level_mismatch`: an elevation's `@ROOF` differs from the ROOF sheet's `@ROOF` by more than `tol.level`.
 - **Supersedes BIMCompiler BASIC_SHAPES_SPEC §11 CF-2** (merged in #180 while this was being written). CF-2 read a roof plan as "`@VIEW=PLAN` + `@ROOF`, no `@LEVEL`". The marking step of `rosetta_dx_shell.js` that writes `out/marked_shell/DX_ROOF_shell.dxf` now writes `@VIEW=ROOF`, plus `@LEVEL` = the "Roof" storey level from the model (R1: min wall minZ of storey "Roof", as `mark_dx_set.js` does for plans). `@ROOF` is unchanged (the value the elevations agree on).
@@ -318,7 +319,7 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
   - QG5 `@WALLTOP` naming no plan level → `walltop_unknown_storey`
 
 **D4 G1 reader rule for any DXF.**
-- `QF:grid_off_axis` (a stray grid line) is unchanged.
+- `QF:grid_off_axis` (a stray grid line) is tested against the wall rects of EVERY plan in the set. Per L1.1 R2, one building grid is reused on all plans. Measured: std FF grid C (y −7.8285) has its wall only on GF.
 - `QF:grid_missing` now applies to exterior envelope axes only: wall pieces whose outer face lies on the envelope face within `tol.grid`, with length ≥ `grid.min_wall_len`. Their axes merge within `tol.grid`, and each needs a parallel grid line.
 - Interior grid coverage is a writer-side rule only (L1 W2). The setting `layers.bearing` is removed.
 - Tests: QD4a an interior wall without a grid is not blocked; QD4b an exterior axis without a grid is blocked.
