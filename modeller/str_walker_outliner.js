@@ -286,6 +286,7 @@
     return { meta: parsed.meta, elements: elements, transforms: transforms, geometries: geometries, bomTree: bomTree };
   }
   function openIfcFile(file) {
+    window.__lastIfcFile = file;   // §L5: Export ▸ 2D drawings (DXF) re-reads the user's own IFC with the shared extractor core
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
     Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
       var arrayBuffer = r[0], wasmBytes = r[1];

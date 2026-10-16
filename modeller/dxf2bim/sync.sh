@@ -5,7 +5,7 @@
 set -euo pipefail
 BC="$1"; REV="$2"; HERE="$(cd "$(dirname "$0")" && pwd)"; MOD="$(dirname "$HERE")"
 FULL="$(git -C "$BC" rev-parse --short=9 "$REV")"; SUBJ="$(git -C "$BC" log -1 --format=%s "$REV" | cut -c1-90)"
-FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config dxf2qualify"
+FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config dxf2qualify std2d std2d_geom std2d_dxf std2d_marks polygon-clipping"
 {
   echo "# dxf2bim/ — verbatim copies of the BIMCompiler DXF2BIM reader modules"
   echo
@@ -19,6 +19,8 @@ FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config 
     git -C "$BC" show "$REV:deploy/dev/$f.js" > "$HERE/$f.js"
     echo "| dxf2bim/$f.js | deploy/dev/$f.js | $(sha256sum "$HERE/$f.js" | cut -c1-64) |"
   done
+  git -C "$BC" show "$REV:scripts/ifc_extract_core.js" > "$HERE/ifc_extract_core.js"
+  echo "| dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | $(sha256sum "$HERE/ifc_extract_core.js" | cut -c1-64) |"
   git -C "$BC" show "$REV:deploy/dev/dxf-parser.js" > "$MOD/lib/dxf-parser.js"
   echo "| lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | $(sha256sum "$MOD/lib/dxf-parser.js" | cut -c1-64) |"
   echo
