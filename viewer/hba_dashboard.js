@@ -38,7 +38,8 @@
 
   function mount(A) {
     var dash = dataFor(A);
-    var pane = el('div', 'position:fixed;top:54px;right:12px;width:380px;max-height:82vh;overflow:auto;z-index:10050;' +
+    // §FIX 2026-07-06c item B — cascade column 3 (right:864) so this pane never overlaps IoT/BOM's columns.
+    var pane = el('div', 'position:fixed;top:54px;right:864px;width:380px;max-height:82vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-dash-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');

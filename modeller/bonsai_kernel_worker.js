@@ -4,6 +4,10 @@
 // typed arrays. The fold is the SAME code path proven by W-KERNEL-FOLD (build/kernel/spike.html).
 // occt needs WASM tail-calls => Chrome 114+/Safari 17.2+, NO Firefox (gated host-side in bonsai_kernel.js).
 import { OcctKernel } from './lib/kernel/index.js';
+// §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md): the ONE definition of GEOM_CUT_MOVE's meaning — a classic triple-export
+// script evaluated here as a module (it binds `self.CutMove`; the main thread's <script> binds window.CutMove).
+import './cut_move.js?v=2';
+const CutMove = self.CutMove;
 
 let kernelPromise = null;
 let _wasmBytes = null;   // pre-fetched bytes handed in by the host (preload) → single download, no re-fetch
@@ -34,6 +38,41 @@ function applyFeature(kernel, op) {
     return solid;
   }
   if (op.op_type === 'GEOM_EXTRUDE_POLY') {       // sketch profile (planegcs-solved polygon) swept by depth
+    // Circle profile (BONSAI_KERNEL_RESEARCH.md §Follow-up spec — circle/arc sketch primitive — Witness:
+    // W-E2E-SKETCH-CIRCLE): profile.circle {cx,cy,r} is a SIBLING payload key to profile.points (the same
+    // convention GEOM_LOFT/GEOM_REVOLVE document for profile extensions, never a repurposing). One
+    // makeCircleEdge — the same edge-primitive class as makeLineEdge — then the SAME wire→face→extrude fold.
+    if (P.profile.circle) {
+      const c = P.profile.circle;
+      const edges = [kernel.makeCircleEdge({ x: c.cx, y: c.cy, z: 0 }, { x: 0, y: 0, z: 1 }, c.r)];
+      const wire = kernel.makeWire(edges);
+      const face = kernel.makeFace(wire);
+      const solid = kernel.extrude(face, 0, 0, P.depth);
+      kernel.release(edges[0]); kernel.release(wire); kernel.release(face);
+      return solid;
+    }
+    // Arc profile (W-E2E-SKETCH-ARC): profile.arc {cx,cy,r,startAngle,endAngle} — angles in RADIANS, CCW
+    // (same kernel convention as GEOM_REVOLVE's angleRad). A lone arc is an OPEN curve, so it is closed as
+    // the circular SECTOR (pie slice): center→start line + the arc + end→center line — the only closure
+    // built from ONLY the 3 authored points (a chord closure would silently drop the center from the
+    // boundary). Start/end points are RECOMPUTED from center+r+angles so the closing lines land EXACTLY on
+    // the arc's true endpoints (raw click coords are noisy → OCCT wire-building gap).
+    if (P.profile.arc) {
+      const a = P.profile.arc;
+      const startPt = { x: a.cx + a.r * Math.cos(a.startAngle), y: a.cy + a.r * Math.sin(a.startAngle), z: 0 };
+      const endPt   = { x: a.cx + a.r * Math.cos(a.endAngle),   y: a.cy + a.r * Math.sin(a.endAngle),   z: 0 };
+      const centerPt = { x: a.cx, y: a.cy, z: 0 };
+      const edges = [
+        kernel.makeLineEdge(centerPt, startPt),
+        kernel.makeCircleArc(centerPt, { x: 0, y: 0, z: 1 }, a.r, a.startAngle, a.endAngle),
+        kernel.makeLineEdge(endPt, centerPt),
+      ];
+      const wire = kernel.makeWire(edges);
+      const face = kernel.makeFace(wire);
+      const solid = kernel.extrude(face, 0, 0, P.depth);
+      edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
+      return solid;
+    }
     const pts = P.profile.points;                 // [[x,y],...] ring (auto-closed); same path as W-SKETCH-SOLVE
     const v = (x, y) => ({ x, y, z: 0 });
     const edges = [];
@@ -82,6 +121,57 @@ function applyFeature(kernel, op) {
     sedges.forEach(e => kernel.release(e)); kernel.release(spine);
     return solid;
   }
+  if (op.op_type === 'GEOM_LOFT') {                // BRepOffsetAPI_ThruSections: solid/shell lofted through N sketched profile wires
+    // Payload mirrors GEOM_EXTRUDE_POLY's `profile.points` ring EXACTLY (the real planegcs-solved-polygon
+    // representation the sketch tool already emits — see bonsai_sketch.js), generalized to N stacked
+    // profiles instead of one: each wire is { points: [[x,y],...], z } — the same 2D ring format, placed
+    // at its own z-height. NON-INVENT: no cross-section is synthesized here — occt's loft() interpolates
+    // the surface BETWEEN the wires the caller actually supplied; this branch only builds the wire handles.
+    const wires = P.wires;
+    if (!wires || wires.length < 2) throw new Error('GEOM_LOFT needs >=2 wire profiles');
+    const wireHandles = [];
+    const localEdges = [];
+    for (const w of wires) {
+      const pts = w.points;
+      const z = w.z || 0;
+      const edges = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        edges.push(kernel.makeLineEdge({ x: a[0], y: a[1], z }, { x: b[0], y: b[1], z }));
+      }
+      const wire = kernel.makeWire(edges);
+      wireHandles.push(wire);
+      localEdges.push(...edges);
+    }
+    const isSolid = P.isSolid !== false;   // default true (a closed loft between closed rings is a solid, not a shell)
+    const ruled = !!P.ruled;               // default false (smooth B-spline through sections) — see kernel.loft() doc comment
+    const solid = kernel.loft(wireHandles, isSolid, ruled);
+    localEdges.forEach(e => kernel.release(e));
+    wireHandles.forEach(w => kernel.release(w));
+    return solid;
+  }
+  if (op.op_type === 'GEOM_REVOLVE') {            // BRepPrimAPI_MakeRevol via kernel.revolve — Tier 1 §GAP-TO-COMPETITIVE,
+    // highest-value shoulder: axisymmetric solids (round columns, tanks/vessels, turned parts) have NO authoring
+    // path today. Reuses GEOM_EXTRUDE_POLY's profile.points ring format EXACTLY (planegcs-solved polygon), just
+    // revolved about a caller-supplied axis instead of extruded along a direction. LEAF: builds a fresh
+    // self-contained solid from its OWN parameters (profile+axis+angle), no `parent` reference — same class as
+    // GEOM_SWEEP/GEOM_LOFT (checked against buildSolids()'s branching below: falls into the terminal `else`
+    // applyFeature() branch, not a parent-lookup branch), so bonsai_oplog.js's LEAF whitelist includes it.
+    const pts = P.profile.points;
+    const z = P.profile.z || 0;
+    const edges = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      edges.push(kernel.makeLineEdge({ x: a[0], y: a[1], z }, { x: b[0], y: b[1], z }));
+    }
+    const wire = kernel.makeWire(edges);
+    const face = kernel.makeFace(wire);
+    const axis = P.axis;   // { point:{x,y,z}, direction:{x,y,z} } — SAME shape as GEOM_ROTATE's axis object below
+    const angleRad = P.angleRad != null ? P.angleRad : 2 * Math.PI;   // default: full revolution
+    const solid = kernel.revolve(face, axis, angleRad);
+    edges.forEach(e => kernel.release(e)); kernel.release(wire); kernel.release(face);
+    return solid;
+  }
   if (op.op_type === 'GEOM_OPENING') {            // IfcRelVoidsElement: base solid CUT by a void box
     const baseRect = kernel.makeRectangle(P.profile.w, P.profile.h);
     const wall = kernel.extrude(baseRect, P.dir[0], P.dir[1], P.dir[2]); kernel.release(baseRect);
@@ -92,6 +182,118 @@ function applyFeature(kernel, op) {
     return cut;
   }
   throw new Error('unknown op_type ' + op.op_type);
+}
+
+// ── GEOM_ARRAY (prompts/BONSAI_ARRAY_PATTERN_SPEC.md) ───────────────────────────────────────────────
+// "N instances of a referenced feature, placed along a line/curve, each instance's parameters
+// optionally varying by a deterministic formula." NON-INVENT: positions are COMPUTED transform math
+// (no Math.random/Date.now); the formula evaluator below is a whitelisted recursive-descent parser,
+// never eval()/Function() — see W-BONSAI-ARRAY witness for the hand-calculated per-instance proof.
+
+// Whitelisted dot-path get/set into a plain op-parameters object (used to read/override the ONE
+// numeric field a formula drives, e.g. 'depth' or 'profile.w'). Illegal characters are rejected
+// outright — this is the ONLY way GEOM_ARRAY ever touches a parameter, no dynamic eval.
+function getPath(obj, path) {
+  if (!/^[a-zA-Z0-9_.]+$/.test(path || '')) throw new Error('GEOM_ARRAY paramPath: illegal characters');
+  return path.split('.').reduce((o, k) => (o && typeof o === 'object') ? o[k] : undefined, obj);
+}
+function setPath(obj, path, val) {
+  const parts = path.split('.'); let o = obj;
+  for (let k = 0; k < parts.length - 1; k++) { o = o[parts[k]]; if (o == null) throw new Error('GEOM_ARRAY paramPath: missing segment ' + parts[k]); }
+  o[parts[parts.length - 1]] = val;
+}
+
+// Deterministic, whitelisted formula evaluator: `+ - * /`, parens, unary minus, the instance index `i`,
+// the count `n`, and the parent's base value at paramPath `v0`. NEVER eval()/Function() — a small
+// recursive-descent parser only. Any character outside the whitelist is rejected before parsing starts.
+function evalFormula(expr, vars) {
+  const s = String(expr == null ? '' : expr);
+  if (!/^[0-9.+\-*/()\s a-zA-Z_]*$/.test(s)) throw new Error('GEOM_ARRAY formula: illegal character in expression');
+  let pos = 0;
+  const peek = () => s[pos];
+  const skip = () => { while (pos < s.length && /\s/.test(s[pos])) pos++; };
+  function parseExpr() {
+    skip(); let v = parseTerm();
+    for (; ;) {
+      skip(); const c = peek();
+      if (c === '+') { pos++; v += parseTerm(); }
+      else if (c === '-') { pos++; v -= parseTerm(); }
+      else break;
+    }
+    return v;
+  }
+  function parseTerm() {
+    skip(); let v = parseFactor();
+    for (; ;) {
+      skip(); const c = peek();
+      if (c === '*') { pos++; v *= parseFactor(); }
+      else if (c === '/') { pos++; v /= parseFactor(); }
+      else break;
+    }
+    return v;
+  }
+  function parseFactor() {
+    skip();
+    if (peek() === '-') { pos++; return -parseFactor(); }
+    if (peek() === '+') { pos++; return parseFactor(); }
+    if (peek() === '(') { pos++; const v = parseExpr(); skip(); if (peek() !== ')') throw new Error('GEOM_ARRAY formula: expected )'); pos++; return v; }
+    const numMatch = /^[0-9]*\.?[0-9]+/.exec(s.slice(pos));
+    if (numMatch) { pos += numMatch[0].length; return parseFloat(numMatch[0]); }
+    const idMatch = /^[a-zA-Z_][a-zA-Z0-9_]*/.exec(s.slice(pos));
+    if (idMatch) {
+      pos += idMatch[0].length;
+      if (!(idMatch[0] in vars)) throw new Error('GEOM_ARRAY formula: unknown identifier ' + idMatch[0]);
+      return vars[idMatch[0]];
+    }
+    throw new Error('GEOM_ARRAY formula: unexpected token at ' + pos);
+  }
+  const result = parseExpr();
+  skip();
+  if (pos !== s.length) throw new Error('GEOM_ARRAY formula: trailing input');
+  return result;
+}
+
+// Per-instance translate DELTA from the reference instance (i=0, always zero delta — the reference
+// stays exactly where the parent feature was authored). 'linear': along a (normalized) axis vector,
+// `spacing` apart. 'along_curve': evenly spaced by ARC LENGTH along a polyline (>=2 points) — reuses
+// plain linear interpolation per segment (the same "walk the polyline" idea GEOM_SWEEP's spine uses,
+// no new curve-sampling primitive invented).
+function arrayDeltas(P, count) {
+  const out = [];
+  if (P.mode === 'along_curve') {
+    const pts = P.curve;
+    if (!pts || pts.length < 2) throw new Error('GEOM_ARRAY along_curve needs >=2 curve points');
+    const seglen = []; let total = 0;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const d = Math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1], pts[k + 1][2] - pts[k][2]);
+      seglen.push(d); total += d;
+    }
+    const at = (s) => {
+      let acc = 0;
+      for (let k = 0; k < seglen.length; k++) {
+        if (s <= acc + seglen[k] || k === seglen.length - 1) {
+          const t = seglen[k] > 0 ? (s - acc) / seglen[k] : 0;
+          const a = pts[k], b = pts[k + 1];
+          return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
+        }
+        acc += seglen[k];
+      }
+      return pts[pts.length - 1];
+    };
+    const p0 = pts[0];
+    for (let i = 0; i < count; i++) {
+      const s = count > 1 ? (i / (count - 1)) * total : 0;
+      const p = at(s);
+      out.push({ dx: p[0] - p0[0], dy: p[1] - p0[1], dz: p[2] - p0[2] });
+    }
+  } else {   // 'linear' (default)
+    const axis = P.axis || [1, 0, 0];
+    const al = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+    const ux = axis[0] / al, uy = axis[1] / al, uz = axis[2] / al;
+    const sp = P.spacing != null ? P.spacing : 1;
+    for (let i = 0; i < count; i++) out.push({ dx: ux * sp * i, dy: uy * sp * i, dz: uz * sp * i });
+  }
+  return out;
 }
 
 function meshOf(kernel, shape, featureId) {
@@ -116,6 +318,20 @@ function edgeMidpoints(kernel, solid) {
   return out;
 }
 
+// Face midpoints of a solid in CANONICAL getSubShapes('face') order — the §FACE-PICK input device for
+// GEOM_SHELL (facesToRemove) and GEOM_DRAFT (the one pulled face), mirroring edgeMidpoints() above exactly.
+// Midpoint = bbox centre (exact for the planar faces of our box/extrude solids); index is stable across a
+// deterministic re-fold, so a face picked by index resolves to the same face on replay.
+function faceMidpoints(kernel, solid) {
+  const faces = kernel.getSubShapes(solid, 'face');
+  const out = faces.map((f, i) => {
+    const b = kernel.getBoundingBox(f, false);
+    return { i, mid: [(b.xmin + b.xmax) / 2, (b.ymin + b.ymax) / 2, (b.zmin + b.zmax) / 2] };
+  });
+  faces.forEach(f => kernel.release(f));
+  return out;
+}
+
 // THE FEATURE-TREE FOLD (solids map): an ordered op-log -> a set of live solids. GEOM_CUT and GEOM_FILLET
 // modify their referenced parent solid IN PLACE (the child references a prior feature by id), so the op-log
 // IS the feature tree and the rendered geometry is a pure fold of the chain — replaying ops[0..k] = history.
@@ -123,7 +339,7 @@ function edgeMidpoints(kernel, solid) {
 // `hash` (op_hash that produced the current shape) keys the mesh cache. Cached shapes/inputs are NEVER released
 // here — the cache owns them (released only by clearCache). Only LOCAL intermediates (void box, edge subshapes)
 // are released. A cache MISS rebuilds via occt (and counts); a HIT skips occt entirely.
-function buildSolids(kernel, ops, seedBoxes) {
+function buildSolids(kernel, ops, seedBoxes, seedLayers) {
   const solids = new Map();
   // §CUT-ON-ARC (W-E2E-CUT): a seeded ARC wall is a baked GEOM_INSERT mesh, not a worker B-rep — so a GEOM_CUT/
   // GEOM_FILLET on it had no parent solid to subtract from (threw "parent not found"). The host PROMOTES a box-like
@@ -139,18 +355,91 @@ function buildSolids(kernel, ops, seedBoxes) {
       solids.set(+fid, { shape: box, hash: 'seedbox:' + fid + ':' + b.c1.join(',') + ':' + b.c2.join(',') });
     }
   }
+  // §LAYER-SOLID-SEED — Implementing CUT_GATE_CSG_SPEC.md §THE CALL — Witness: W-LAYER-SOLID-SEED /
+  // W-LAYER-CUT-EXACT. An insert whose real fold isn't an idealized box (a multi-layer authored wall) is
+  // seeded here from its REAL per-layer triangle ranges instead — one real OCCT solid per authored layer
+  // (buildTriFace, one call per triangle, then sewAndSolidify), fused (fuseAll) into ONE seed solid so the
+  // rest of this function (GEOM_CUT/FILLET/SHELL/…) treats it identically to a box seed, same Map key
+  // shape, same downstream real-B-rep chain — non-invent: every vertex is the extractor's own, nothing
+  // idealized/flattened. A layer that fails to sew into a closed solid REFUSES loudly (console.error) and
+  // leaves that featureId un-seeded — the existing GEOM_CUT/FILLET "parent … not found" throw is the same
+  // honest refuse a non-box, non-layered insert already produced before this change (never a silent box
+  // fallback for a real per-layer wall that partially fails).
+  if (seedLayers) {
+    for (const fid in seedLayers) {
+      const sl = seedLayers[fid];
+      const pos = sl.positions, idx = sl.indices, ranges = sl.layers || [];
+      const layerSolids = [];
+      let ok = true;
+      for (const lr of ranges) {
+        const faces = [];
+        const t0 = lr.start, t1 = lr.start + lr.count;
+        for (let t = t0; t < t1; t++) {
+          const i0 = idx[t * 3], i1 = idx[t * 3 + 1], i2 = idx[t * 3 + 2];
+          const a = { x: pos[i0 * 3], y: pos[i0 * 3 + 1], z: pos[i0 * 3 + 2] };
+          const b = { x: pos[i1 * 3], y: pos[i1 * 3 + 1], z: pos[i1 * 3 + 2] };
+          const c = { x: pos[i2 * 3], y: pos[i2 * 3 + 1], z: pos[i2 * 3 + 2] };
+          try { faces.push(kernel.buildTriFace(a, b, c)); } catch (e) { /* one degenerate tri — skip, sew tolerates a gap */ }
+        }
+        let solid = null;
+        if (faces.length) { try { solid = kernel.sewAndSolidify(faces, 1e-4); } catch (e) { solid = null; } }
+        faces.forEach(f => { try { kernel.release(f); } catch (e) { /* local intermediate */ } });
+        if (!solid) { ok = false; break; }
+        layerSolids.push(solid);
+      }
+      if (!ok || !layerSolids.length) {
+        layerSolids.forEach(s => { try { kernel.release(s); } catch (e) { } });
+        console.error('§LAYER-SOLID-SEED-REFUSE fid=' + fid + ' layers=' + ranges.length +
+          ' — a layer failed to sew into a closed solid, refusing to seed (no invented fallback)');
+        continue;
+      }
+      let combined = layerSolids[0];
+      if (layerSolids.length > 1) {
+        combined = kernel.fuseAll(layerSolids);
+        layerSolids.forEach(s => { try { kernel.release(s); } catch (e) { } });
+      }
+      solids.set(+fid, { shape: combined, hash: 'seedlayers:' + fid + ':' + ranges.length });
+    }
+  }
+  // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §2 — Witness: W-CUT-MOVE): a GEOM_CUT_MOVE {cutId, dx,dy,dz} is a pure
+  // FOLD OVERRIDE of an EARLIER GEOM_CUT's void (the signed row is never rewritten). Pre-scan THIS fold's rows → net
+  // shift per cutId (cut_move.js netShifts — rows naming a cut that is not active here are ignored, tolerant like
+  // GEOM_MOVE on a missing parent); the GEOM_CUT branch below subtracts `void + shift` at the cut's own position.
+  // CACHE: op_hash keys assume output = f(prefix); a cut-move is retroactive, so when any shift is non-zero EVERY key
+  // in this fold carries the fold's cut-move signature — one rebuild per distinct shift set, and a scrub/undo back to
+  // a prefix without the move hits the original (unsuffixed) keys. Zero cut-moves ⇒ keys byte-identical to before.
+  const cutMoves = CutMove.netOverrides(ops), cmKey = CutMove.keySuffix(cutMoves.sig);
   for (const op of ops) {
     const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
-    const key = op.op_hash || ('nohash:' + op.id);    // op_hash = unique per immutable prefix → the cache key
+    const key = (op.op_hash || ('nohash:' + op.id)) + cmKey;    // op_hash = unique per immutable prefix → the cache key (+ §CUT-MOVE suffix)
     if (op.op_type === 'GEOM_CUT') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CUT parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
       _stats.rebuilt++;
       const v = (a) => ({ x: a[0], y: a[1], z: a[2] });
-      const void_ = kernel.makeBoxFromCorners(v(P.void.c1), v(P.void.c2));
+      const ov = cutMoves.byCut[String(op.id)];
+      let vd = ov ? CutMove.applyOverrides(P.void, ov) : P.void;   // §CUT-MOVE/§CUT-RESIZE: the void at its net-overridden place
+      // §CUT-THROUGH (MODELLER_MASTER §SESSION 2026-09-30b — Witness: W-E2E-SLIDE-REAL E3): a void face FLUSH with the parent's
+      // bounding face (|Δ| < 0.1 mm — an authored IFC opening is exactly as deep as its wall; a door starts at the wall base)
+      // is pushed 1 cm OUTWARD before the boolean. The removed region INSIDE the parent is identical (the push is outside
+      // the parent's AABB); what it removes is the float32-vs-float64 skin a coplanar boolean leaves behind — measured on
+      // SampleHouse host #23: void y1 = −1.101418 vs host face −1.1014177 → a 0.3 µm skin closed every hole on that wall.
+      const pb = kernel.getBoundingBox(pe.shape, false), pmin = [pb.xmin, pb.ymin, pb.zmin], pmax = [pb.xmax, pb.ymax, pb.zmax];
+      const c1t = vd.c1.slice(), c2t = vd.c2.slice(); let pushed = 0;
+      for (let k = 0; k < 3; k++) {
+        const lo = Math.min(c1t[k], c2t[k]), hi = Math.max(c1t[k], c2t[k]), i1 = c1t[k] <= c2t[k] ? c1t : c2t, i2 = c1t[k] <= c2t[k] ? c2t : c1t;
+        if (Math.abs(lo - pmin[k]) < 1e-4) { i1[k] = Math.min(lo, pmin[k]) - 0.01; pushed++; }
+        if (Math.abs(hi - pmax[k]) < 1e-4) { i2[k] = Math.max(hi, pmax[k]) + 0.01; pushed++; }
+      }
+      if (pushed) { console.log('§CUT-THROUGH cut=' + op.id + ' parent=' + op.parent + ' flushFaces=' + pushed + ' (void pushed 1 cm past the parent face — no coplanar skin)'); vd = { c1: c1t, c2: c2t }; }
+      const void_ = kernel.makeBoxFromCorners(v(vd.c1), v(vd.c2));
       const cut = kernel.cut(pe.shape, void_);
       kernel.release(void_);                          // local intermediate (parent is cached → NOT released)
       shapeCache.set(key, cut); solids.set(op.parent, { shape: cut, hash: key });
+    } else if (op.op_type === 'GEOM_CUT_MOVE') {       // §CUT-MOVE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
+    } else if (op.op_type === 'GEOM_CUT_RESIZE') {     // §CUT-RESIZE: folded at ITS CUT's position via the pre-scan above
+      continue;                                        // (a no-op here; never a leaf, never a parent lookup)
     } else if (op.op_type === 'GEOM_FILLET') {
       const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET parent ' + op.parent + ' not found');
       if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
@@ -160,6 +449,91 @@ function buildSolids(kernel, ops, seedBoxes) {
       const r = P.radius != null ? P.radius : 0.1;
       const result = (P.kind === 'chamfer') ? kernel.chamfer(pe.shape, sel, r) : kernel.fillet(pe.shape, sel, r);
       all.forEach(e => kernel.release(e));            // local edge subshapes (parent cached → NOT released)
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_SHELL') {          // BRepOffsetAPI_MakeThickSolid via kernel.shell — hollow a
+      // solid to a wall thickness (cast-then-hollow modeling). PARENT-MUTATING like GEOM_FILLET (mutates the
+      // referenced solid in place, same solids-map key), NOT a leaf — checked against kernel.shell's real signature
+      // `shell(solid, facesToRemove, thickness, tolerance)` :286 of lib/kernel/index.js, which takes an existing
+      // solid. facesToRemove = face HANDLES (kernel.#withU32 marshals them), so P.faces are INDICES into the
+      // canonical getSubShapes('face') order (mirrors GEOM_FILLET's P.edges indices) — resolved via `listFaces`
+      // §FACE-PICK below, stable across deterministic re-folds.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_SHELL parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const allFaces = kernel.getSubShapes(pe.shape, 'face');           // canonical order — must match faceMidpoints()
+      const remove = (P.faces || []).map(i => allFaces[i]).filter(s => s != null);
+      const thickness = P.thickness != null ? P.thickness : 0.1;
+      const tolerance = P.tolerance != null ? P.tolerance : 1e-3;       // coarser legacy tolerance (kernel doc: survives more inputs)
+      const result = kernel.shell(pe.shape, remove, thickness, tolerance);
+      allFaces.forEach(f => kernel.release(f));            // local face subshapes (parent cached → NOT released)
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_OFFSET') {         // BRepOffsetAPI_MakeOffsetShape via kernel.offset — grows/
+      // shrinks ALL faces of a solid by `distance` uniformly. PARENT-MUTATING (kernel.offset(solid,...) takes an
+      // existing solid — real signature `offset(solid, distance, tolerance)` :298, NO face-list arg at all, simpler
+      // than assumed in the task brief: it is a whole-solid operation, not a per-face pick).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_OFFSET parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const distance = P.distance != null ? P.distance : 0.1;
+      const tolerance = P.tolerance != null ? P.tolerance : 1e-3;
+      const result = kernel.offset(pe.shape, distance, tolerance);
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_FILLET_VARIABLE') {   // BRepFilletAPI_MakeFillet(law) via kernel.filletVariable —
+      // a fillet whose radius VARIES start→end along ONE edge. PARENT-MUTATING like GEOM_FILLET. Real signature
+      // `filletVariable(solid, edge, startRadius, endRadius)` :1096 takes a SINGLE edge HANDLE (not an array like
+      // plain fillet/chamfer) — verified directly against lib/kernel/index.js, not assumed by analogy. P.edges[0]
+      // (an index into the SAME canonical getSubShapes('edge') order GEOM_FILLET's edge-pick already resolves) is
+      // used as the one edge; extra indices are ignored (documented, not silently dropped — see witness).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_FILLET_VARIABLE parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const all = kernel.getSubShapes(pe.shape, 'edge');               // canonical order — same as GEOM_FILLET
+      const edgeIdx = (P.edges && P.edges.length) ? P.edges[0] : 0;
+      const edge = all[edgeIdx];
+      const r0 = P.startRadius != null ? P.startRadius : 0.05, r1 = P.endRadius != null ? P.endRadius : 0.2;
+      const result = kernel.filletVariable(pe.shape, edge, r0, r1);
+      all.forEach(e => kernel.release(e));
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_CHAMFER_DIST_ANGLE') {   // BRepFilletAPI_MakeChamfer(dist,angle) via
+      // kernel.chamferDistAngle — a chamfer variant taking distance+angle instead of one distance. PARENT-MUTATING
+      // like GEOM_FILLET's `kind:'chamfer'`; kept as its OWN op_type (not folded into GEOM_FILLET's kind switch)
+      // per the task's per-op witness requirement. Real signature `chamferDistAngle(solid, edges, distance,
+      // angleDeg)` :272 — `edges` IS an array (unlike filletVariable's single edge) and `angleDeg` is DEGREES
+      // (verified against the param name, not radians like most of this kernel's other angle args).
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_CHAMFER_DIST_ANGLE parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const all = kernel.getSubShapes(pe.shape, 'edge');
+      const sel = (P.edges || []).map(i => all[i]).filter(s => s != null);
+      const distance = P.distance != null ? P.distance : 0.1;
+      const angleDeg = P.angleDeg != null ? P.angleDeg : 45;
+      const result = kernel.chamferDistAngle(pe.shape, sel, distance, angleDeg);
+      all.forEach(e => kernel.release(e));
+      shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
+    } else if (op.op_type === 'GEOM_DRAFT') {          // BRepOffsetAPI_DraftAngle via kernel.draft — a draft/pull
+      // angle applied to ONE face (precast/formwork use). PARENT-MUTATING. Real signature `draft(shape, face,
+      // angleRad, direction)` :301 takes a SINGLE face HANDLE (not an array) — mirrors filletVariable's
+      // single-edge shape. P.faces[0] (an index into the SAME canonical getSubShapes('face') order GEOM_SHELL
+      // resolves via `listFaces`) is the one face.
+      // ⚠ VERIFIED CONVENTION (probed directly against this vendored wasm build, NOT assumed from generic
+      // OCCT docs — see the Tier 1 session's `direction` investigation): `direction` must be the PICKED
+      // FACE'S OWN OUTWARD NORMAL for a genuine taper on a SIDE (vertical) face — any angleRad then produces
+      // a real shift. A direction that does NOT match the face's own normal (e.g. a generic vertical "pull"
+      // vector on a side face) is accepted WITHOUT throwing but is a silent geometric no-op. Drafting a
+      // horizontal (top/bottom) face with its own normal as direction THROWS a WebAssembly exception (a
+      // degenerate neutral-plane case for a cap face). So GEOM_DRAFT is scoped here to SIDE faces only,
+      // `direction` == that face's own outward normal — the caller (UI/witness) is responsible for supplying
+      // a correct normal, same discipline as GEOM_FILLET/SHELL expecting real edge/face indices.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_DRAFT parent ' + op.parent + ' not found');
+      if (shapeCache.has(key)) { _stats.hits++; solids.set(op.parent, { shape: shapeCache.get(key), hash: key }); continue; }
+      _stats.rebuilt++;
+      const allFaces = kernel.getSubShapes(pe.shape, 'face');
+      const faceIdx = (P.faces && P.faces.length) ? P.faces[0] : 0;
+      const face = allFaces[faceIdx];
+      const angleRad = P.angleRad != null ? P.angleRad : 0.1;
+      const dir = P.direction || { x: 0, y: 0, z: 1 };
+      const result = kernel.draft(pe.shape, face, angleRad, dir);
+      allFaces.forEach(f => kernel.release(f));
       shapeCache.set(key, result); solids.set(op.parent, { shape: result, hash: key });
     } else if (op.op_type === 'GEOM_MOVE') {          // free translate of one referenced solid (W-BONSAI-MOVE PATH A)
       // A signed GEOM_MOVE references a prior feature by `parent` and TRANSLATES its solid IN PLACE, so a later
@@ -189,16 +563,110 @@ function buildSolids(kernel, ops, seedBoxes) {
           const d = c.delta || 0;
           out = kernel.translate(pe.shape, c.axis === 'x' ? d : 0, c.axis === 'y' ? d : 0, c.axis === 'z' ? d : 0);
         } else {                                       // SCALE: non-uniform axis-stretch about the stationary (min) edge
+          // §SCALE-YAW-GUARD — Implementing GRID_ROTATED_SCALE_HARDENING.md §1 — Witness: W-GRID-SCALE-YAW-HARDENING.
+          // A world-axis stretch of a yawed solid is a SHEAR, not a stretch (no world axis is a local axis of the
+          // solid off 90°-multiples). If the command carries an OPTIONAL yawRad (radians) whose distance to the
+          // nearest multiple of π/2 exceeds 0.01 rad (~0.57°, same tolerance as GRID_ROTATION_GUARD.md §1), and the
+          // scale axis is IN-PLAN ('x'/'y' — yaw is about Z in this worker's frame, see GEOM_ROTATE below, so an
+          // axis-'z' stretch is yaw-safe as-is), compose rotate→scale→rotate-back as ONE matrix and call
+          // generalTransform exactly ONCE — never 3 chained calls (GEOM_SCALE's Copy=false aliasing hazard, below).
+          // Anchor: the shape's world-bbox CENTRE (the file's own rotated-op convention — GEOM_ROTATE spins about
+          // bbox centre; the naive branch's min-EDGE anchor is a world-AABB construct with no local analog readable
+          // from a world AABB). translateDelta stays a WORLD-axis shift (same semantics as TRANSLATE's world delta,
+          // which is yaw-correct). yawRad undefined (every caller today) ⇒ the naive branch below, byte-identical.
           const f = c.newScale != null ? c.newScale : 1;
           const b = kernel.getBoundingBox(pe.shape, false);
-          const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
-          const tx = a * (1 - f) + (c.translateDelta || 0);
-          const M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
-                  : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
-                  :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
-          out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
+          const HALF_PI = Math.PI / 2;
+          const oblique = typeof c.yawRad === 'number' && isFinite(c.yawRad) &&
+            Math.abs(c.yawRad - Math.round(c.yawRad / HALF_PI) * HALF_PI) > 0.01;
+          // §ROTATION-GUARD-3AXIS (GRID_ROTATED_SCALE_HARDENING.md §5): a non-negligible rotX/rotY tilt has
+          // no safe correction here — composing a correct rotate→scale→rotate-back for an arbitrary 3-axis
+          // tilt is real design work (this file's own §3 "genuinely open question", explicitly out of scope).
+          // REFUSE instead: leave the solid UNCHANGED rather than shear it. Tolerance is distance from ZERO
+          // (not the nearest 90°-multiple like yaw above) — see grid_kinematics.js's _hasTilt for why a pure
+          // roll/pitch has no "safe at 90°" exemption the way in-plane yaw does. Found live-reachable:
+          // SampleCastle_ARC.db fids 933/1291/2514/3055 (GRID_ROTATION_GUARD.md §5) — this is defense in
+          // depth for those exact fids should a future caller ever route them into a SCALE command.
+          const tiltX = typeof c.tiltXRad === 'number' && isFinite(c.tiltXRad) ? Math.abs(c.tiltXRad) : 0;
+          const tiltY = typeof c.tiltYRad === 'number' && isFinite(c.tiltYRad) ? Math.abs(c.tiltYRad) : 0;
+          const tilted = tiltX > 0.01 || tiltY > 0.01;
+          let M;
+          if (tilted) {
+            out = pe.shape;   // REFUSE: no-op, shape stays as-is (skips shapeCache/generalTransform below)
+          } else if (oblique && (c.axis === 'x' || c.axis === 'y')) {
+            // L = R(yaw)·S·R(−yaw) in-plan (2D about Z): L = [[sx·c²+sy·s², (sx−sy)·c·s], [(sx−sy)·c·s, sx·s²+sy·c²]]
+            const cs = Math.cos(c.yawRad), sn = Math.sin(c.yawRad);
+            const sx = c.axis === 'x' ? f : 1, sy = c.axis === 'y' ? f : 1;
+            const l00 = sx * cs * cs + sy * sn * sn, l01 = (sx - sy) * cs * sn, l11 = sx * sn * sn + sy * cs * cs;
+            const px = (b.xmin + b.xmax) / 2, py = (b.ymin + b.ymax) / 2;   // bbox-centre anchor (fixed point)
+            const td = c.translateDelta || 0;
+            const t0 = px - (l00 * px + l01 * py) + (c.axis === 'x' ? td : 0);
+            const t1 = py - (l01 * px + l11 * py) + (c.axis === 'y' ? td : 0);
+            M = [l00, l01, 0, t0, l01, l11, 0, t1, 0, 0, 1, 0];
+          } else {
+            const a = c.axis === 'x' ? b.xmin : c.axis === 'y' ? b.ymin : b.zmin;
+            const tx = a * (1 - f) + (c.translateDelta || 0);
+            M = c.axis === 'x' ? [f, 0, 0, tx, 0, 1, 0, 0, 0, 0, 1, 0]
+              : c.axis === 'y' ? [1, 0, 0, 0, 0, f, 0, tx, 0, 0, 1, 0]
+              :                  [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, f, tx];
+          }
+          if (!tilted) out = kernel.generalTransform(pe.shape, M);  // gp_GTrsf supports non-uniform scale (input cached → NOT released)
         }
         shapeCache.set(ckey, out); solids.set(c.featureId, { shape: out, hash: ckey });
+      }
+    } else if (op.op_type === 'GEOM_ROOM_MOVE') {     // §ROOMMOVE — one op rigidly translates N members (W-ROOM-MOVE)
+      // Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.4. Structurally the GEOM_GRID_MOVE branch
+      // above, minus everything that cannot occur here: a room move is a PURE RIGID TRANSLATION by ONE (dx,dy,dz)
+      // shared by every member — no SCALE ever happens, so none of the anchored-min / §SCALE-YAW-GUARD /
+      // §ROTATION-GUARD-3AXIS machinery applies (a translation is yaw- and tilt-safe by construction). Same
+      // cache-per-(op_hash, featureId) discipline. TOLERANT like GEOM_MOVE/GRID_MOVE (NOT CUT's throw): a member
+      // that is a HOST-folded GEOM_INSERT is not in this worker's solids map and is a silent no-op here — it is
+      // re-placed host-side via library.foldInsert's `mv` path (PATH B, see bonsai_kernel.js §ROOMMOVE).
+      const dx = P.dx || 0, dy = P.dy || 0, dz = P.dz || 0;
+      for (const m of (P.members || [])) {
+        if (!m || m.featureId == null) continue;
+        const pe = solids.get(m.featureId); if (!pe) continue;
+        const ckey = key + ':' + m.featureId;
+        if (shapeCache.has(ckey)) { _stats.hits++; solids.set(m.featureId, { shape: shapeCache.get(ckey), hash: ckey }); continue; }
+        _stats.rebuilt++;
+        const out = kernel.translate(pe.shape, dx, dy, dz);   // SAME primitive as GEOM_MOVE / GRID_MOVE TRANSLATE
+        shapeCache.set(ckey, out); solids.set(m.featureId, { shape: out, hash: ckey });
+      }
+    } else if (op.op_type === 'GEOM_ARRAY') {          // N real independent solids from ONE signed op (W-BONSAI-ARRAY).
+      // Unlike GEOM_CUT/FILLET/MOVE/ROTATE (which mutate the parent's SINGLE solid in place), an array REPLACES
+      // the one referenced template with N clones — so the template's own map entry is deleted and N fresh
+      // entries (synthetic featureIds 'arr:<op.id>:<i>') take its place. Each instance is a REAL, independent
+      // B-rep solid (fresh occt handle via translate, never a shared/aliased reference — see cache note below),
+      // not an instanced-render trick: this project's own instanced-by-n vs real-solids doctrine (Spatial
+      // Dependency Graph work) is decided explicitly HERE because array elements are frequently cut/filleted
+      // individually downstream, which an instanced mesh cannot support.
+      const pe = solids.get(op.parent); if (!pe) throw new Error('GEOM_ARRAY parent ' + op.parent + ' not found');
+      const parentOp = ops.find(o => o.id === op.parent);
+      if (!parentOp) throw new Error('GEOM_ARRAY parent op-row ' + op.parent + ' not found in chain');
+      const count = Math.max(1, P.count | 0);
+      const deltas = arrayDeltas(P, count);
+      const parentP = typeof parentOp.parameters === 'string' ? JSON.parse(parentOp.parameters) : parentOp.parameters;
+      const v0 = P.formula ? getPath(parentP, P.paramPath) : null;
+      if (P.formula && typeof v0 !== 'number') throw new Error('GEOM_ARRAY paramPath ' + P.paramPath + ' is not a numeric field');
+      solids.delete(op.parent);
+      for (let i = 0; i < count; i++) {
+        const ikey = key + ':a' + i;              // op_hash-derived → same free incremental-regen-cache discipline
+        const fid = 'arr:' + op.id + ':' + i;
+        if (shapeCache.has(ikey)) { _stats.hits++; solids.set(fid, { shape: shapeCache.get(ikey), hash: ikey }); continue; }
+        _stats.rebuilt++;
+        let base;
+        if (P.formula) {
+          const val = evalFormula(P.formula, { i, n: count, v0 });
+          if (typeof val !== 'number' || !isFinite(val)) throw new Error('GEOM_ARRAY formula produced a non-finite value at i=' + i);
+          const modP = JSON.parse(JSON.stringify(parentP)); setPath(modP, P.paramPath, val);
+          base = applyFeature(kernel, { op_type: parentOp.op_type, parameters: modP });   // fresh, independently-parameterized solid
+        } else {
+          base = pe.shape;                          // no per-instance variation → clone the template as-is
+        }
+        const d = deltas[i];
+        const out = kernel.translate(base, d.dx, d.dy, d.dz);   // ALWAYS a fresh occt handle (translate never mutates input)
+        if (P.formula) kernel.release(base);         // base was a one-off regen, not the cached template → free it
+        shapeCache.set(ikey, out); solids.set(fid, { shape: out, hash: ikey });
       }
     } else if (op.op_type === 'GEOM_ROTATE') {         // yaw a referenced solid about its bbox-centre Z (W-BONSAI-ROTATE-SOLID).
       // Mirror of GEOM_MOVE: rotate the parent's B-rep IN PLACE so a later GEOM_CUT on the rotated wall reads the
@@ -236,8 +704,8 @@ function buildSolids(kernel, ops, seedBoxes) {
   }
   return solids;
 }
-function foldChain(kernel, ops, seedBoxes) {
-  const solids = buildSolids(kernel, ops, seedBoxes);
+function foldChain(kernel, ops, seedBoxes, seedLayers) {
+  const solids = buildSolids(kernel, ops, seedBoxes, seedLayers);
   const meshes = [];
   for (const [fid, ent] of solids) {
     let m = meshCache.get(ent.hash);
@@ -265,16 +733,28 @@ self.onmessage = async (e) => {
     }
     const kernel = await getKernel();
     if (e.data.listEdges) {                          // EDGE-PICK: fold to the parent solid, report its edge midpoints
-      const { ops: cops, parentId } = e.data.listEdges;
-      const solids = buildSolids(kernel, cops);
+      // §CHAIN-SURVIVES-LAYER-CUT: seedBoxes/seedLayers now threaded through (see bonsai_kernel.js
+      // _computeSeeds) — a §CUT-ON-ARC box- or layer-promoted wall's edges resolve for a SECOND
+      // parent-mutating op (e.g. Fillet after Cut), same as the main foldChainToScene fold already did.
+      const { ops: cops, parentId, seedBoxes, seedLayers } = e.data.listEdges;
+      const solids = buildSolids(kernel, cops, seedBoxes, seedLayers);
       const pe = solids.get(parentId);
       const edges = pe ? edgeMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
       self.postMessage({ id, ok: true, edges });
       return;
     }
+    if (e.data.listFaces) {                          // §FACE-PICK (GEOM_SHELL/GEOM_DRAFT): fold to the parent
+      // solid, report its face midpoints in canonical order — the SAME device shape as listEdges above.
+      const { ops: cops, parentId, seedBoxes, seedLayers } = e.data.listFaces;
+      const solids = buildSolids(kernel, cops, seedBoxes, seedLayers);
+      const pe = solids.get(parentId);
+      const faces = pe ? faceMidpoints(kernel, pe.shape) : [];   // solids are cached shapes — do NOT release
+      self.postMessage({ id, ok: true, faces });
+      return;
+    }
     if (ops) {                                       // CHAIN fold (feature tree) -> array of meshes
       _stats = { rebuilt: 0, hits: 0, tess: 0, tessHits: 0 };
-      const meshes = foldChain(kernel, ops, e.data.seedBoxes);
+      const meshes = foldChain(kernel, ops, e.data.seedBoxes, e.data.seedLayers);
       const transfer = [];
       meshes.forEach(m => { transfer.push(m.positions.buffer); if (m.normals) transfer.push(m.normals.buffer); if (m.indices) transfer.push(m.indices.buffer); });
       self.postMessage({ id, ok: true, meshes, stats: _stats }, transfer);

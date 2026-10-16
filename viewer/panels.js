@@ -8,6 +8,10 @@
 // Implementing S265_UI_AESTHETICS.md §Implementation — Witness: W-PANEL
 var ICONS = {
   clock:     { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', trl: 'ui_tt_tm', key: 'T', desc: 'Time Machine' },
+  // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — Lucide "calendar" verbatim, distinct from clock
+  // (Time Machine) above: this pill is the data-gated indicator that THIS building carries a
+  // persisted 4D schedule (hover/click already read it — see hover_name.js/find_erp_push.js).
+  calendar:  { svg: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>', trl: null, key: null, desc: '4D Construction Window' },
   ruler:     { svg: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>', trl: 'ui_tt_measure', key: null, desc: 'Measure' },
   search:    { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>', trl: 'ui_tt_find', key: null, desc: 'Find' },
   share:     { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>', trl: 'ui_tt_share', key: null, desc: 'Share' },
@@ -16,9 +20,21 @@ var ICONS = {
   moreVert:  { svg: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>', trl: null, key: '.', desc: 'More' },
   moreHoriz: { svg: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>', trl: null, key: '.', desc: 'More' },  // FLAT kebab — mobile ⋯ trigger (differs from Android's vertical ⋮); parity with erp/icons.js
   scissors:  { svg: '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>', trl: 'ui_tt_section', key: null, desc: 'Section Cut' },
-  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: 'ui_tt_xray', key: 'X', desc: 'X-Ray' },
+  // §OUTLINER_TAXONOMY_REDESIGN.md §6b: X-Ray moved to `bone` (below) — Eye freed, repurposed as
+  // the Role/Profession view-filter toggle (id:'roleFilter' in _actions). trl/desc updated so a
+  // stale X-Ray tooltip can't leak if A.icon('eye',...) is ever called directly.
+  eye:       { svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="1"/><path d="M18.944 12.33a1 1 0 0 0 0-.66 7.5 7.5 0 0 0-13.888 0 1 1 0 0 0 0 .66 7.5 7.5 0 0 0 13.888 0"/>', trl: null, key: 'r', desc: 'Role View' },
   clipboard: { svg: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>', trl: 'ui_tt_issues', key: 'I', desc: 'Issues' },
+  // §INSPECT_EARTH_ROAD: a person shovelling (Roadworks; Earthworks = excavator). 24x24 stroke icon, same convention as the rest.
+  excavator: { svg: '<rect x="2" y="17" width="13" height="4" rx="2"/><path d="M4 17v-4h6v4"/><path d="M9 13l5-8"/><path d="M14 5l5 4"/><path d="M19 9l2 3.5-3.5.5z"/>', trl: null, key: 'u', desc: 'Earthworks' },
+  shovelling: { svg: '<circle cx="8" cy="4" r="2"/><path d="M8 6.5l2 5.5"/><path d="M10 12l-3 7"/><path d="M10 12l3 7"/><path d="M8.6 8.6L13 11.5"/><path d="M5 9l12 9"/><path d="M17 18l3.2 1.8-1.6 2.4-3.2-1.8z"/><path d="M2 22h8"/>', trl: null, key: 'u', desc: 'Earthworks' },
+  signpost:  { svg: '<path d="M12 13v8"/><path d="M12 3v3"/><path d="M2.354 10.354a1.207 1.207 0 0 1 0-1.708l2.06-2.06A2 2 0 0 1 5.828 6h12.344a2 2 0 0 1 1.414.586l2.06 2.06a1.207 1.207 0 0 1 0 1.708l-2.06 2.06a2 2 0 0 1-1.414.586H5.828a2 2 0 0 1-1.414-.586z"/>', trl: 'ui_tt_roadstd', key: 'J', desc: 'Road standards' },  // real Lucide v1.25.0 `signpost` (unpkg lucide-static@1.25.0)
   triangle:  { svg: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>', trl: 'ui_tt_clash', key: null, desc: 'Clash Matrix' },
+  // STRUCTURAL_SANITY.md T4 — real Lucide v1.25.0 `shield-alert` path (unpkg.com/lucide-static@1.25.0), verified against the same version this file already cites elsewhere. Do not alter the path data.
+  shieldAlert: { svg: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>', trl: null, key: null, desc: 'Sanity' },
+  // Real Lucide v1.25.0 "door-open" path, fetched and verified against the same lucide-static
+  // version this file already cites elsewhere — do not alter the path data.
+  doorOpen: { svg: '<path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/>', trl: null, key: null, desc: 'Egress' },
   plane:     { svg: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>', trl: 'ui_tt_fly', key: 'L', desc: 'Fly Tour' },
   layout:    { svg: '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>', trl: 'ui_tt_2d', key: '2', desc: '2D Plans' },
   palette:   { svg: '<path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>', trl: 'ui_tt_sunglass', key: 'P', desc: 'Color Studio' },
@@ -26,12 +42,21 @@ var ICONS = {
   cloud:     { svg: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>', trl: 'ui_tt_shadow', key: 'H', desc: 'Shadow' },
   contrast:  { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z"/>', trl: 'ui_tt_bg', key: 'B', desc: 'Background' },
   maximize:  { svg: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>', trl: 'ui_tt_fullscreen', key: null, desc: 'Fullscreen' },
-  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+X', desc: 'Bounding Boxes' },
+  box:       { svg: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>', trl: 'ui_tt_bbox', key: 'Alt+Z', desc: 'Bounding Boxes' },
   camera:    { svg: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>', trl: null, key: null, desc: 'Camera / View' },
+  video:     { svg: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>', trl: 'ui_tt_cinema', key: null, desc: 'Cinema Orbit' },
+  // §CINEMA_ROW_ICONS (2026-07-18, user ask): Lucide, pulled verbatim (unpkg.com/lucide-static@1.25.0)
+  aperture:  { svg: '<circle cx="12" cy="12" r="10" /><path d="m14.31 8 5.74 9.94" /><path d="M9.69 8h11.48" /><path d="m7.38 12 5.74-9.94" /><path d="M9.69 16 3.95 6.06" /><path d="M14.31 16H2.83" /><path d="m16.62 12-5.74 9.94" />', trl: null, key: 'Alt+S', desc: 'Still Refine' },
+  footprints:{ svg: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /><path d="M16 17h4" /><path d="M4 13h4" />', trl: null, key: 'Alt+P', desc: 'Populate' },
   // PILL_DRAWER_REORGANIZATION.md §NEW ICONS — Lucide, pulled verbatim 2026-07-05 (unpkg.com/lucide-static)
   bone:      { svg: '<path d="M17 10c.7-.7 1.69 0 2.5 0a2.5 2.5 0 1 0 0-5 .5.5 0 0 1-.5-.5 2.5 2.5 0 1 0-5 0c0 .81.7 1.8 0 2.5l-7 7c-.7.7-1.69 0-2.5 0a2.5 2.5 0 0 0 0 5c.28 0 .5.22.5.5a2.5 2.5 0 1 0 5 0c0-.81-.7-1.8 0-2.5Z" />', trl: 'ui_tt_xray', key: null, desc: 'X-Ray' },
   hardHat:   { svg: '<path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5" /><path d="M14 6a6 6 0 0 1 6 6v3" /><path d="M4 15v-3a6 6 0 0 1 6-6" /><rect x="2" y="15" width="20" height="4" rx="1" />', trl: null, key: null, desc: 'Inspect (unused, replaced by draftingCompass)' },
   draftingCompass: { svg: '<path d="m12.99 6.74 1.93 3.44" /><path d="M19.136 12a10 10 0 0 1-14.271 0" /><path d="m21 21-2.16-3.84" /><path d="m3 21 8.02-14.26" /><circle cx="12" cy="5" r="2" />', trl: null, key: null, desc: 'Inspect' },
+  // ⚠ NOT the same thing as draftingCompass above, and the names are one letter apart in a list of
+  // 68. `draftingCompass` is the DRAWING INSTRUMENT — a pair of legs and a pivot. `compass` is the
+  // MAGNETIC ROSE — a ring and a needle. The sun-compass feature needs the rose; reusing the
+  // instrument for it was considered and rejected as the wrong shape.
+  compass:   { svg: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/>', trl: null, key: null, desc: 'Sun compass' },
   sailboat:  { svg: '<path d="M10 2v15" /><path d="M7 22a4 4 0 0 1-4-4 1 1 0 0 1 1-1h16a1 1 0 0 1 1 1 4 4 0 0 1-4 4z" /><path d="M9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z" />', trl: null, key: null, desc: 'Navigate' },
   barChart:  { svg: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>', trl: 'ui_tt_export', key: null, desc: '4D/5D Export' },
   home:      { svg: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>', trl: 'ui_tt_home', key: null, desc: 'Home' },
@@ -86,6 +111,16 @@ var ICONS = {
   orbit:       { svg: '<circle cx="12" cy="12" r="3"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><path d="M10.4 21.9a10 10 0 0 0 9.941-15.416"/><path d="M13.5 2.1a10 10 0 0 0-9.841 15.416"/>', trl: null, key: null, desc: 'Gravity View' },
   waypoints:   { svg: '<circle cx="12" cy="4.5" r="2.5"/><path d="m10.2 6.3-3.9 3.9"/><circle cx="4.5" cy="12" r="2.5"/><path d="M7 12h10"/><circle cx="19.5" cy="12" r="2.5"/><path d="m13.8 17.7 3.9-3.9"/><circle cx="12" cy="19.5" r="2.5"/>', trl: null, key: null, desc: 'Untangle Graph' }
 };
+
+// §OUTLINER_TAXONOMY_REDESIGN.md §2 Layer 1: DISPLAY-ONLY word mapping for the raw discipline
+// CODE (ACMV/ELEC/PLB/FP/MEP/STR/ARC) as stored in elements_meta.discipline / BOM discipline
+// names. Every filter/query/DocCanvas.setActiveDisc still runs on the raw code — this only
+// swaps rendered text. Fixed list, unmapped code falls back to itself (never blank/invented).
+var DISC_LABELS = {
+  ACMV: 'Air-Conditioning', ELEC: 'Electrical', PLB: 'Plumbing', PLMB: 'Plumbing',
+  FP: 'Fire Protection', STR: 'Structure', ARC: 'Architecture', MEP: 'Mechanical & Electrical'
+};
+function friendlyDisc(code) { return DISC_LABELS[code] || code; }
 
 // HISTORY_KNOB_DIAL.md — the W pill's long-press drawer.
 //   §2026-07-06: Z (docHist) moved OUT to its own row in the Navigate drawer (see panels.js
@@ -173,6 +208,17 @@ function setupPanels(A) {
   };
 
   // ── S265 Phase 5: A.createPanel() — reusable panel factory ──
+  // §PANEL-ABSTRACTION (2026-07-06) — every caller of createPanel gets, for free:
+  //   · draggable + close-by-× (pre-existing)
+  //   · correct pill highlight even when THIS panel's own × closes it (common/pill_builder.js's
+  //     MutationObserver auto-resyncs on any element add/remove — no manual call needed here)
+  //   · Tab (native, real <button> rows) + Arrow-key row traversal (viewer/panel_nav.js, already
+  //     built for the Find panel, now wired as every panel's default unless it opts out or brings
+  //     its own richer opts.zones)
+  //   · no-overlap desktop placement (A._placePanel) instead of every pane author hand-picking the
+  //     next unused magic-number offset (see the row-of-hardcoded right:12/428/864 columns in
+  //     hba_bom.js/hba_iot.js/hba_dashboard.js — that pattern silently collides the moment someone
+  //     adds a 4th pane and forgets to bump the number)
   A.createPanel = function(id, opts) {
     opts = opts || {};
     var el = document.createElement('div');
@@ -196,6 +242,14 @@ function setupPanels(A) {
       if (typeof opts.content === 'string') { el.insertAdjacentHTML('beforeend', opts.content); }
       else { el.appendChild(opts.content); }
     }
+    // §PANEL-NAV-AUTO: Arrow Up/Down through this panel's own <button> rows (Tab already reaches
+    // them natively; Enter/Space already fire native <button> clicks). Opt out with opts.nav:false
+    // (e.g. a panel with no row-shaped content), or supply opts.zones for accordion-style panels
+    // (see navigate_find.js's own richer zones — this default only covers the common flat-list case).
+    if (opts.nav !== false && window.PanelNav) {
+      var _zones = opts.zones || [{ id: 'rows', items: function() { return el.querySelectorAll('button:not(.bim-panel-close)'); } }];
+      window.PanelNav({ panel: el, zones: _zones, id: id, onClose: opts.onClose || function() { el.style.display = 'none'; } });
+    }
     // Draggable
     if (opts.draggable !== false && A._makeDraggable) {
       A._makeDraggable(el);
@@ -212,6 +266,60 @@ function setupPanels(A) {
     console.log('§PANEL_CREATE id=' + id);
     return el;
   };
+
+  // §PANEL-PLACE (2026-07-06) — nearest free slot instead of a hardcoded magic-number column.
+  // opts: { top, right, width, height } — width/height only need to be given when the panel is
+  // still display:none at call time (can't measure a hidden element's real box); pass the same
+  // numbers the panel's own inline style declares. Tries the default column, then cascades right→
+  // left in (width+gap) steps against every OTHER currently-visible .bim-panel (from window._panels,
+  // the existing panel-focus registry in scene.js — no new tracking list invented); falls back to
+  // the default slot (stacked) if every column in range is occupied, never throws/loops forever.
+  A._placePanel = function(el, opts) {
+    opts = opts || {};
+    var top = opts.top != null ? opts.top : 54;
+    var right0 = opts.right != null ? opts.right : 12;
+    var gap = 16;
+    var width = opts.width || el.offsetWidth || 320;
+    var height = opts.height || el.offsetHeight || 300;
+    function rectAt(right) {
+      var left = window.innerWidth - right - width;
+      return { left: left, right: left + width, top: top, bottom: top + height };
+    }
+    function overlaps(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
+    var others = (window._panels || []).filter(function(p) {
+      return p.el !== el && p.el.classList && p.el.classList.contains('bim-panel') &&
+             p.el.style.display !== 'none' && p.el.offsetWidth > 0;
+    }).map(function(p) { var r = p.el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; });
+    for (var col = 0; col < 12; col++) {
+      var right = right0 + col * (width + gap);
+      var cand = rectAt(right);
+      if (cand.left < 8) break;   // ran off the left edge of the viewport
+      if (!others.some(function(o) { return overlaps(cand, o); })) {
+        el.style.right = right + 'px'; el.style.left = 'auto'; el.style.top = top + 'px';
+        console.log('§PANEL_PLACE id=' + el.id + ' col=' + col + ' right=' + right + ' others=' + others.length);
+        return;
+      }
+    }
+    el.style.right = right0 + 'px'; el.style.top = top + 'px';
+    console.log('§PANEL_PLACE_FALLBACK id=' + el.id + ' (no free column in range, others=' + others.length + ')');
+  };
+
+  // §PANEL-AUTOPLACE — call A._placePanel automatically the instant ANY .bim-panel transitions from
+  // hidden to visible, regardless of who created it or how. Only fires on that one transition (a
+  // per-element _bimPanelVisible flag), so it never fights A._makeDraggable's own left/top writes
+  // while a panel is already open and being dragged around.
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+    var _placeObserver = new MutationObserver(function(muts) {
+      muts.forEach(function(m) {
+        var pel = m.target;
+        if (!pel.classList || !pel.classList.contains('bim-panel')) return;
+        var visibleNow = pel.style.display !== 'none';
+        if (visibleNow && !pel._bimPanelVisible && !window._isMobile) A._placePanel(pel);
+        pel._bimPanelVisible = visibleNow;
+      });
+    });
+    _placeObserver.observe(document.body, { attributes: true, attributeFilter: ['style'], subtree: true });
+  }
 
   // ── S265 Phase 5 P1: Build Color Palette slider panel ──
   A._buildSunglassPanel = function() {
@@ -295,6 +403,69 @@ function setupPanels(A) {
     // picker (None/Grass/Earth/Paved) is REMOVED here — replaced by the single Shadow+Ground
     // cycle swatch appended by _extendVisualFxPanel()/_buildShadowGroundRow() further down
     // (runs after _actions exists, reusing the 'shadow' action's real fn/isActive).
+
+    // Separator
+    var sepCinema = document.createElement('hr');
+    sepCinema.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
+    existing.appendChild(sepCinema);
+
+    // §CINEMA_ROW_ICONS (2026-07-18, user ask): Still Refine (Alt+S) / Populate (Alt+P) / Cinema
+    // Orbit (Alt+C) — one icon-only row, no label text (dropped "Cinema Orbit (24s)" so all 3 fit
+    // on a single line). Was 1 button + text; now 3 buttons, active-state highlighted via the
+    // existing .bim-slider-row button.active CSS rule (viewer.html).
+    var cinemaRow = document.createElement('div');
+    cinemaRow.className = 'bim-slider-row';
+    cinemaRow.style.cssText = 'gap:8px;align-items:center;justify-content:center';
+
+    function _refreshCinemaRowIcons() {
+      // §CINEMA_ROW_BUSY: busy (pulsing) takes priority over active (steady) — both flags can be
+      // true at once (e.g. _stillRefineActive is true for the whole frozen-still lifetime, busy
+      // only while it's still converging) so busy must be checked first to show the right state.
+      stillBtn.classList.toggle('busy', !!A._stillRefineBusy);
+      stillBtn.classList.toggle('active', !A._stillRefineBusy && !!A._stillRefineActive);
+      var populateOn = !!(A.populateActive && A.populateActive());
+      populateBtn.classList.toggle('busy', !!A._populateBusy);
+      populateBtn.classList.toggle('active', !A._populateBusy && populateOn);
+    }
+
+    var stillBtn = A.icon('aperture', { size: 18, title: _trlD('ui_tt_still_refine', 'Still Refine (Alt+S)'), onClick: function() {
+      if (typeof A.toggleStillRefineUI === 'function') A.toggleStillRefineUI();   // §STILL_STATUS_FIRST
+      else if (typeof A.toggleStillRefine === 'function') A.toggleStillRefine();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(stillBtn);
+
+    var populateBtn = A.icon('footprints', { size: 18, title: _trlD('ui_tt_populate', 'Populate (Alt+P)'), onClick: function() {
+      if (typeof A.togglePopulate === 'function') A.togglePopulate();
+      _refreshCinemaRowIcons();
+    }});
+    cinemaRow.appendChild(populateBtn);
+
+    // §MAXQ: this icon now runs the Max-Quality Orbiter export (each frame a full Alt+S fold,
+    // ~8 min for the 24s clip). Click while running = cancel (start() toggles), so the icon
+    // stays CLICKABLE during the cook — no pointerEvents lock like the old live-capture orbit.
+    // Old A.startCinemaOrbit stays console-callable as the quick live-capture fallback.
+    var cinemaBtn = A.icon('video', { size: 18, title: _trlD('ui_tt_maxq', 'MaxQ Movie (Alt+C — press again to cancel)'), onClick: function() {
+      if (typeof A.startMaxQualityOrbit !== 'function') {
+        if (typeof A.startCinemaOrbit === 'function' && !A._stillRefineActive) A.startCinemaOrbit();
+        return;
+      }
+      A.startMaxQualityOrbit();
+      cinemaBtn.classList.add('active');
+      var _checkDone = setInterval(function() {
+        if (A._maxqActive || A._stillRefineActive) return;
+        clearInterval(_checkDone);
+        cinemaBtn.classList.remove('active');
+        _refreshCinemaRowIcons();
+      }, 500);
+    }});
+    cinemaRow.appendChild(cinemaBtn);
+    existing.appendChild(cinemaRow);
+
+    // Keep icon highlight honest against the Alt+S/Alt+P keyboard shortcuts too, not just this
+    // row's own clicks — cheap poll (same 500ms cadence as the cinema-done check above), only
+    // while the panel is actually visible.
+    setInterval(function() { if (existing.style.display !== 'none') _refreshCinemaRowIcons(); }, 500);
 
     // Draggable + pointer isolation
     if (A._makeDraggable) A._makeDraggable(existing);
@@ -572,6 +743,7 @@ function setupPanels(A) {
       A.filterBatchedMesh(mesh, meta => A._storeyVisible(meta.storey));
     });
     console.log(`[S200] §STOREY_FILTER ${Array.isArray(storey) ? '[' + storey.join(',') + ']' : (storey || 'ALL')}`);
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -599,13 +771,66 @@ function setupPanels(A) {
     A.hiddenDiscs.clear();
     if (list && list.length) {
       var keep = new Set(list);
-      // Build hiddenDiscs from scene — hide everything not in the keep set
+      // Build hiddenDiscs from scene — hide everything not in the keep set.
+      // Must enumerate ALL three mesh representations (plain Mesh, InstancedMesh,
+      // BatchedMesh), not just plain Mesh — a discipline that's ENTIRELY batched
+      // (e.g. a large, uniform discipline like Architecture) was invisible here,
+      // so it never got added to `keep`'s complement and stayed permanently hidden
+      // the first time ANY isolate/multi-select ran, even after switching back to
+      // "ALL" — because _applyDiscVisibility only re-applies whatever's already in
+      // hiddenDiscs, it never rediscovers a wrongly-omitted discipline.
       A.collectMeshes(o => o.isMesh && o.userData.disc).forEach(obj => {
         if (!keep.has(obj.userData.disc)) A.hiddenDiscs.add(obj.userData.disc);
       });
+      for (var _bmId in A._batchMeta) {
+        A._batchMeta[_bmId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
+      for (var _imId in A._instanceMeta) {
+        A._instanceMeta[_imId].forEach(function(meta) {
+          if (meta.disc && !keep.has(meta.disc)) A.hiddenDiscs.add(meta.disc);
+        });
+      }
     }
     A._applyDiscVisibility();
     console.log('[S200] §DISC_FILTER ' + (list && list.length ? '[' + list.join(',') + ']' : 'ALL'));
+  };
+
+  // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b — Role/profession VIEW FILTER. Convenience only, NOT
+  // access control: no auth, no gating, anyone can cycle it, same as any other view toggle (xray,
+  // section, night...). Reuses A.filterDiscs (§NAV_FIND_002) exclusively — the ONLY filtering
+  // mechanism in this app; no new filter engine built here. Discipline codes limited to what was
+  // actually confirmed present in elements_meta.discipline this session (ACMV/ELEC/PLB/FP/MEP/
+  // STR/ARC) — no invented trade categories.
+  // Cleaner: no discipline code represents "cleaning" — it's not an equipment trade, it's
+  // whole-building access. Tagging a cleaner to one system code would misrepresent their scope,
+  // so the honest preset is discs:[] (no filter — sees everything), distinguished from the plain
+  // "All" state only by its label/console role key, not by different scene visibility.
+  // S226 §R2 — labels resolve through the AD_Message dictionary (viewer/i18n); the English here is the in-code default.
+  function _trlD(key, dflt, repl) { return (typeof _trl === 'function') ? _trl(key, repl || null, dflt) : dflt; }
+  var ROLE_PRESETS = [
+    { key: 'plumber',     label: 'Plumber',     discs: ['PLB', 'FP'] },
+    { key: 'electrician', label: 'Electrician', discs: ['ELEC'] },
+    { key: 'acmv',        label: 'ACMV Tech',   discs: ['ACMV'] },
+    { key: 'structural',  label: 'Structural',  discs: ['STR'] },
+    { key: 'cleaner',     label: 'Cleaner',     discs: [] }
+  ];
+  A._roleFilterIdx = -1;  // -1 = All (no role active)
+
+  // Cycle: All -> Plumber -> Electrician -> ACMV Tech -> Structural -> Cleaner -> All ...
+  A.cycleRoleFilter = function() {
+    A._roleFilterIdx += 1;
+    if (A._roleFilterIdx >= ROLE_PRESETS.length) A._roleFilterIdx = -1;
+    var preset = A._roleFilterIdx === -1 ? null : ROLE_PRESETS[A._roleFilterIdx];
+    var discs = preset ? preset.discs : [];
+    A.filterDiscs(discs);
+    console.log('[S200] §ROLE_FILTER role=' + (preset ? preset.key : 'all') + ' discs=[' + discs.join(',') + ']');
+    return preset;
+  };
+
+  A._roleFilterLabel = function() {
+    return A._roleFilterIdx === -1 ? _trlD('ui_all', 'All') : _trlD('role_' + ROLE_PRESETS[A._roleFilterIdx].key, ROLE_PRESETS[A._roleFilterIdx].label);
   };
 
   // §S280d: shared traversal for disc + storey combined visibility
@@ -624,6 +849,7 @@ function setupPanels(A) {
         return !A.hiddenDiscs.has(meta.disc) && A._storeyVisible(meta.storey);
       });
     });
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -645,7 +871,17 @@ function setupPanels(A) {
     A.collectMeshes(o => o.isBatchedMesh).forEach(mesh => {
       A.filterBatchedMesh(mesh, meta => keep(meta.guid));
     });
-    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)));
+    // §MERGED_GUID: merged meshes are plain isMesh with no userData.guid — they matched NONE of the
+    // three collectors above, so an isolate used to leave them fully visible. Fourth collector, same
+    // keep() predicate, per-element via the index-range map.
+    var _mgVis = 0, _mgMeshes = 0;
+    A.collectMeshes(o => o.userData && o.userData.isMerged).forEach(mesh => {
+      _mgMeshes++;
+      A.filterMergedMesh(mesh, meta => { var k = keep(meta.guid); if (k) _mgVis++; return k; });
+    });
+    console.log('[RP-A1] §FILTER_GUIDS ' + (guidSet === null ? 'ALL' : ('isolate=' + guidSet.size)) +
+      (_mgMeshes ? ' merged_meshes=' + _mgMeshes + ' merged_visible=' + _mgVis : ''));
+    A._visibilityGen = (A._visibilityGen|0) + 1;  // §PHOTO_SHADOW_SKIP: shadow-reassert gate needs to see this
     if (A.markDirty) A.markDirty();
   };
 
@@ -866,7 +1102,7 @@ function setupPanels(A) {
             row.appendChild(ic);
             // Label
             var lbl = document.createElement('span');
-            lbl.textContent = d;
+            lbl.textContent = friendlyDisc(d);
             lbl.style.cssText = 'color:' + (_discColorMap[d] || '#ccc') + ';font:bold 13px monospace;';
             row.appendChild(lbl);
             // Active indicator
@@ -1103,6 +1339,15 @@ function setupPanels(A) {
       // source of truth — the Navigate drawer rows call these SAME entries by id).
       { id: 'find',       name: 'Find / Navigate', key: 'f', pill: false, icon: I.search.svg, fn: function() { if (A.openFindPanel) A.openFindPanel(''); },
         children: [ { name: 'Search by name/class' }, { name: 'Filter by storey/type' }, { name: 'Voice search (mic)' }, { name: 'Navigate to element' } ] },
+      // §OUTLINER_TAXONOMY_REDESIGN.md §3/§6b: Eye icon freed by the bone/X-Ray swap, repurposed
+      // as the Role/Profession view filter — cycles All -> Plumber -> Electrician -> ACMV Tech ->
+      // Structural -> Cleaner -> All, each tap calling A.filterDiscs (§NAV_FIND_002), the ONLY
+      // filtering mechanism reused here. Convenience view toggle, NOT access control (no auth).
+      { id: 'roleFilter', name: 'Role View',       key: 'r', pill: false, icon: I.eye.svg,
+        fn: function() { if (typeof A.cycleRoleFilter === 'function') A.cycleRoleFilter(); },
+        isActive: function() { return typeof A._roleFilterIdx === 'number' && A._roleFilterIdx !== -1; },
+        stateLabel: function() { return typeof A._roleFilterLabel === 'function' ? A._roleFilterLabel() : 'All'; },
+        children: [ { name: 'Cycle a profession preset (Plumber/Electrician/ACMV/Structural/Cleaner)' }, { name: 'Filters the 3D scene + Outliner to that role\'s disciplines' }, { name: 'Convenience filter only — not access control' } ] },
       { id: 'help',       name: 'Help',            key: 'F1', icon: I.circleHelp.svg, fn: function() { if (typeof showCommandPalette === 'function') showCommandPalette(); } },
       // HISTORY_KNOB_DIAL.md rework: ONE "W" World-history pill replaces the old History pill.
       //   TAP        = open the cross-page overlay (which building/doc/page).
@@ -1151,9 +1396,33 @@ function setupPanels(A) {
         fn: function() { if (typeof A.toggleMeasure === 'function') A.toggleMeasure(); },
         hold: function(btn) { _revealChip(btn, 'clash', I.triangle.svg, function(){ if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); }); },
         isActive: function() { return !!A.measureActive; } },
+      // §SIGN_CHECK (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): civil-only. A.isCivilModel() gates the row (drawer
+      // build, see _buildMasterDrawer) AND A.showRoadStandards itself, so a building never reaches it.
+      { id: 'roadstd',    name: 'Road standards',  key: 'j', pill: false, icon: I.signpost.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleRoadStandards) A.toggleRoadStandards(); }, isActive: function() { return !!(A.roadStandardsOpen && A.roadStandardsOpen()); },
+        children: [ { name: 'Sign codes vs ATJ 2A/85' }, { name: 'OK / UNKNOWN / MISSING tree' }, { name: 'Click a sign: zoom + standard' } ] },
+      // §ROAD_REPORT: civil-only, R (a building's R stays Room Cycle — scene.js)
+      { id: 'roadreport', name: 'Road report',     key: 'r', pill: false, icon: I.clipboard.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleRoadReport) A.toggleRoadReport(); }, isActive: function() { return !!(A.roadReportOpen && A.roadReportOpen()); },
+        children: [ { name: 'Alignment & Drift' }, { name: 'Earthworks' }, { name: 'Geometric Health' }, { name: 'Signs · Environment' }, { name: 'Copy / .txt / PDF' } ] },
+      // §INSPECT_EARTH_ROAD (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md E6): civil-only EW / RW panels; Cut & Fill is the one live feature.
+      { id: 'ew',         name: 'Earthworks',      key: 'u', pill: false, icon: I.excavator.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleEarthworksPanel) A.toggleEarthworksPanel(); }, isActive: function() { return !!(A.earthworksPanelOpen && A.earthworksPanelOpen()); },
+        children: [ { name: 'Cut & Fill overlay (inferred)' }, { name: 'Cost · duration · plant: pending' } ] },
+      { id: 'rw',         name: 'Roadworks',       key: 'k', pill: false, icon: I.shovelling.svg, platform: null, civilOnly: true,
+        fn: function() { if (A.toggleRoadworksPanel) A.toggleRoadworksPanel(); }, isActive: function() { return !!(A.roadworksPanelOpen && A.roadworksPanelOpen()); },
+        children: [ { name: 'Sight distance · radius · furniture: pending' } ] },
       { id: 'clash',      name: 'Clash Matrix',    key: 'c', pill: false, icon: I.triangle.svg,
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
+      // STRUCTURAL_SANITY.md T4 — rule-based load-path sanity checklist (generic A.showRuleChecklist chassis, shared with Egress later).
+      { id: 'sanity',     name: 'Sanity',          key: 's', pill: false, icon: I.shieldAlert.svg,
+        fn: function() { if (A.showStructuralSanity) A.showStructuralSanity(); },
+        children: [ { name: 'Floating Member (STR beams)' }, { name: 'Span/Depth (advisory)' }, { name: 'Column Continuity' } ] },
+      // EGRESS_SANITY.md T4 — reuses the SAME generic A.showRuleChecklist chassis as Sanity, zero new panel code.
+      { id: 'egress',     name: 'Egress',          key: 'e', pill: false, icon: I.doorOpen.svg,
+        fn: function() { if (A.showEgressSanity) A.showEgressSanity(); },
+        children: [ { name: 'Isolated Room (no measured route out)' }, { name: 'Circulation Distance (to real exit, falls back to spine)' }, { name: 'Door Width (advisory)' } ] },
       // PILL_DRAWER_REORGANIZATION.md §4: icon Eye→Bone (Eye freed, Bone = X-ray metaphor).
       // REVISED (user, 2026-07-06): Alt+X retired — this row is now a 3-state cycle
       // Off→X-Ray→Bbox→Off (A.cycleXrayBboxMode, tools.js), no more hold-to-reveal chip.
@@ -1166,6 +1435,56 @@ function setupPanels(A) {
       { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
       { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
+      // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATED like whwalk/hbaFM above (starts
+      // pill:false; a poll below flips it on ONLY when the 4D authoring engine is loaded — "no data
+      // -> no icon, no clutter", same rule as hba_lens.js's family pill and S2's own §TM_VAR_GATE).
+      // §S7-INJECT (2026-09-14) CHANGED WHAT "no data" MEANS HERE. Originally (§S7-DO item 4, PR
+      // #1733) this gated on ScheduleAuthor.activeSchedule(A.db) resolving a REAL schedule, so the
+      // icon stayed absent on every published building until ✎ Author had run (W-S7-GATE, then
+      // correct). §S7-INJECT's whole point is that the user no longer has to find ✎ Author first —
+      // so the icon must now be reachable BEFORE a schedule exists too, to offer the one-tap
+      // "Generate programme" action. The gate below therefore checks ENGINE CAPABILITY (materializeZones
+      // /activeSchedule/persistDb all present), not SCHEDULE PRESENCE — capability is what "no data ->
+      // no icon" should have meant all along (a building this app opened always has elements_meta to
+      // schedule from; the only true "no data" case is the engine module failing to load at all).
+      // #info-4d's OWN gating (info_4d_panel.js render(), keyed on activeSchedule + windowForGuid) is
+      // UNCHANGED — a schedule-less building still shows no window on hover/click, only the pill's
+      // reachability changed. See viewer/tests/witness_s7_gate.js for the updated PART B assertions
+      // this required (documented there, not silently changed).
+      { id: 'sched4d',    name: '4D Window',      pill: false, icon: I.calendar.svg,
+        fn: function() {
+          var SA = window.ScheduleAuthor;
+          var sched = null;
+          try { sched = SA && SA.activeSchedule ? SA.activeSchedule(A.db) : null; } catch (e) { sched = null; }
+          if (sched && sched.id) {
+            // Unchanged from pre-§S7-INJECT behaviour: a schedule already exists, so this tap is a
+            // discoverability cue, not an action — surface whatever #info-4d already resolved, or a
+            // one-line hint if nothing has been hovered/clicked yet (§S7-NOT-DOING rules out a
+            // second pop-up panel).
+            var box = document.getElementById('info-4d');
+            if (box && box.style.display !== 'none') {
+              var ipnl = document.getElementById('info-panel'); if (ipnl) ipnl.style.display = 'block';
+            } else if (A.status) {
+              A.status.textContent = 'Construction window: hover or click any element to see its scheduled task, dates and trade.';
+            }
+            console.log('§4D_PILL_TAP mode=hint shown=' + !!(box && box.style.display !== 'none'));
+            return;
+          }
+          // No schedule yet — §S7-INJECT's "Generate programme" action.
+          if (!window.ScheduleInject || !window.ScheduleInject.inject) {
+            if (A.status) A.status.textContent = '4D authoring engine not loaded — cannot generate a programme.';
+            console.log('§4D_PILL_TAP mode=generate skip reason=schedule_inject_not_loaded');
+            return;
+          }
+          console.log('§4D_PILL_TAP mode=generate');
+          window.ScheduleInject.inject(A).then(function (res) {
+            // A successful generate flips this building into the "has schedule" state — rebuild so
+            // the NEXT tap (and the gate's own title text) reflects that without waiting on the
+            // one-shot poll (which has already fired and will not run again this session).
+            if (res && res.ok) _syncSched4dTitle(true);
+          });
+        },
+        children: [ { name: 'Task name + start→finish beside the picked element' }, { name: 'Trade + float, critical-path marker' }, { name: 'One extra line on hover' }, { name: 'No schedule yet? Tap to generate one on the fly' } ] },
       { id: 'section',    name: 'Section Cut',     key: 'x', pill: false, icon: I.scissors.svg, fn: function() { if (A.toggleSection) A.toggleSection(); }, isActive: function() { return !!A.sectionOn; },
         children: [ { name: 'Y axis (vertical)' }, { name: 'X axis (lateral)' }, { name: 'Z axis (depth)' }, { name: 'Slider 0–100%' }, { name: 'Bookmarks' } ] },
       // PILL_DRAWER_REORGANIZATION.md §1 Visual FX — absorbed into the Palette (sunglass) panel.
@@ -1181,7 +1500,27 @@ function setupPanels(A) {
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      // effects_gi_poc.js §GI_POC: N8AO ambient-occlusion research spike, desktop-only (stubbed to
+      // a no-op on mobile — extra full-res GPU render targets, real memory cost). Registered here
+      // ONLY for desktop findability (2026-07-22 user: "i cant find it") — same fix shape as the
+      // 'o'/dlodnav entry below (v1 shortcut existed but wasn't in any drawer id-list). Do NOT lift
+      // the mobile stub via this entry; it stays hidden/no-op there by design.
+      { id: 'gi-preview', name: 'GI Preview (AO)', key: 'Alt+G', pill: false,
+        icon: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.287L3 12l5.8 1.9a2 2 0 0 1 1.287 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.287L21 12l-5.8-1.9a2 2 0 0 1-1.287-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>',
+        fn: function() { if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); },
+        isActive: function() { return !!A._giComposerActive; },
+        children: [ { name: 'N8AO ambient occlusion (research spike)' }, { name: 'Desktop only — disabled on mobile (memory)' } ] },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
+      // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
+      // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
+      // tm-lod. Default OFF; no-ops with a toast on <50k-element buildings (§DLOD_NAV_GATE).
+      // 2026-07-21 user feedback: key 'o' (bOx; 'b' is Background) + listed in Navigate drawer —
+      // v1 registered the entry but put it in NO drawer id-list, so the icon rendered nowhere.
+      { id: 'dlodnav',    name: 'Nav LOD (large bldgs)', key: 'o', pill: false,
+        icon: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+        fn: function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); },
+        isActive: function() { return !!window._dlodNavOn; },
+        children: [ { name: 'Boxes far/off-screen elements while you fly/orbit' }, { name: 'Real mesh within 50 m + in view' }, { name: 'Off during Time Machine, Find isolate, Cinema' } ] },
       { id: 'report',     name: '4D / 5D',         key: '4', pill: false, icon: I.barChart.svg, fn: function() { if (A.export4D5D) A.export4D5D(); } },
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
@@ -1230,6 +1569,15 @@ function setupPanels(A) {
       { id: 'camview',    name: 'Camera / View',   icon: I.camera.svg,
         fn: function() { _camviewDrawer.toggle(); }, isActive: function() { return _camviewDrawer.isOpen(); } }
     ];
+    // S226 §R2 — pill names through the AD_Message dictionary: key = 'pill_' + id (lower-case, '-' → '_'), the English
+    // `name` above stays the in-code default (viewer/i18n/ad_message_base.csv msgtext). Labels land async on a cold
+    // cache, so the rail is re-labelled + rebuilt on trl-ready (same rebuild verb _syncSched4dTitle already uses).
+    function _pillKey(id) { return 'pill_' + String(id).toLowerCase().replace(/-/g, '_'); }
+    // S226 §R2d: the Help palette's expandable sub-rows (children) too — key 'pillc_' + id + '_' + (index+1); W-VIEWER-I18N (3c)
+    // checks every child's English here == its CSV msgtext, so a reordered/edited child cannot silently show another row's text.
+    function _relabelPill() { _actions.forEach(function(a) { if (a._nameEn == null) a._nameEn = a.name; a.name = _trlD(_pillKey(a.id), a._nameEn);
+      (a.children || []).forEach(function(c, i) { if (c._nameEn == null) c._nameEn = c.name; c.name = _trlD('pillc_' + String(a.id).toLowerCase().replace(/-/g, '_') + '_' + (i + 1), c._nameEn); }); }); }
+    _relabelPill();
 
     // ═══════════════════════════════════════════════════════════════════
     // PILL_DRAWER_REORGANIZATION.md §STEPS 3/5 — the drawer mechanism.
@@ -1244,6 +1592,14 @@ function setupPanels(A) {
       for (var i = 0; i < _actions.length; i++) { if (_actions[i].id === id) return _actions[i]; }
       return null;
     }
+    // prompts/Viewer/SAVE_DB_SCENE_STATE.md — the one generic hook the combined scene-state restore
+    // needs: fire an action's own fn() by id, the same call its pill/drawer row already makes on tap.
+    // No new open logic — reuses the single source of truth (_actions) this whole module already is.
+    A.runPanelAction = function(id) {
+      var act = _actionById(id);
+      if (act && act.fn) { act.fn(); return true; }
+      return false;
+    };
 
     // One row = icon + label, reusing act.fn/isActive/hold verbatim. hold (Measure→Clash,
     // X-Ray→Bbox, World History→Z-drawer) replays the SAME long-press-then-tap mechanics as
@@ -1329,7 +1685,7 @@ function setupPanels(A) {
       var row = document.createElement('div');
       row.id = 'drawer-row-shadow';
       row.className = 'bim-drawer-row';
-      row.title = 'Shadow + Ground — cycle Off → Grass → Earth → Paved';
+      row.title = _trlD('ui_tt_shadow_ground_cycle', 'Shadow + Ground — cycle Off → Earth → Grass → Paved');
 
       var cloudBtn = document.createElement('button');
       cloudBtn.id = 'shadow-ground-cloud-btn';
@@ -1343,13 +1699,13 @@ function setupPanels(A) {
       cloudBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I.cloud.svg + '</svg>';
       row.appendChild(cloudBtn);
 
-      var _keys = ['grass', 'earth', 'paved'];
+      var _keys = ['earth', 'grass', 'paved'];  // §GROUND_EARTH_DEFAULT — matches _SG_CYCLE order
       var _boxes = {};
       _keys.forEach(function(key) {
         var box = document.createElement('span');
         box.id = 'shadow-ground-box-' + key;
         box.className = 'bim-drawer-swatch';
-        box.title = key.charAt(0).toUpperCase() + key.slice(1);
+        box.title = _trlD('ui_ground_' + key, key.charAt(0).toUpperCase() + key.slice(1));
         row.appendChild(box);
         _boxes[key] = box;
       });
@@ -1405,6 +1761,7 @@ function setupPanels(A) {
           var _onMobile = !!window._isMobile;
           if (act.platform === 'mobile' && !_onMobile) return;
           if (act.platform === 'desktop' && _onMobile) return;
+          if (act.civilOnly && !(A.isCivilModel && A.isCivilModel())) return;   // §SIGN_CHECK: civil-only row
           var row = _buildDrawerActionRow(act);
           rows.push(row);
           wrap.appendChild(row);
@@ -1415,11 +1772,23 @@ function setupPanels(A) {
         // Own dedicated column (left:928), stacked vertically — kept OUT of Settings'/JSON-
         // editor's columns since those run much taller (700px+) and would otherwise overlap
         // anything sharing their column further down the same column.
-        var _pos = { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
-                     camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
+        // §MOBILE-DRAWER-FIX (2026-07-11): left:928 assumes a >=1158px-wide desktop viewport.
+        // A.createPanel's §PANEL-AUTOPLACE MutationObserver would normally correct a bad
+        // hardcoded position via A._placePanel — but that observer explicitly skips mobile
+        // (`!window._isMobile`), so on a phone (~375-430px wide) these 3 drawers opened fully
+        // off-screen: toggle()/isOpen() fired correctly (master icon lit "active") but nothing
+        // was visible or reachable — witnessed via §NAV_DRAWER_RECT left=928 on a 390px viewport.
+        // Mobile gets its own right-anchored column instead (same per-drawer vertical stagger,
+        // width 230px fits any phone down to ~254px wide) — no autoplace dependency needed.
+        var _onMobileDrawer = !!window._isMobile;
+        var _pos = _onMobileDrawer
+          ? { navigate: { top: '70px', right: '12px' }, inspect: { top: '250px', right: '12px' },
+              camview: { top: '430px', right: '12px' } }[masterId] || { top: '70px', right: '12px' }
+          : { navigate: { top: '70px', left: '928px' }, inspect: { top: '250px', left: '928px' },
+              camview: { top: '640px', left: '928px' } }[masterId] || { top: '70px', left: '928px' };
         panel = A.createPanel(panelId, {
           closable: true,
-          style: { position: 'fixed', top: _pos.top, left: _pos.left, zIndex: '1100', width: '230px', padding: '10px 8px' },
+          style: Object.assign({ position: 'fixed', zIndex: '1100', width: '230px', padding: '10px 8px' }, _pos),
           content: '<h3 style="margin:0 0 8px 6px;color:#4fc3f7;font-size:13px">' + title + '</h3>',
           onClose: function() { console.log('§DRAWER_CLOSE id=' + masterId); _syncPillHighlights(); }
         });
@@ -1440,9 +1809,12 @@ function setupPanels(A) {
       };
     }
 
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'worldhist', 'docHist', 'home', 'walk']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'clash', 'xray', 'section', 'tm', 'report', 'fly']);
-    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
+    // §FLY_TO_NAVIGATE (2026-07-18, user ask): Fly Tour is camera navigation, not inspection — moved
+    // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
+    // this only changes which drawer lists it.
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report']);
+    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot', 'gi-preview']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
     // A._buildSunglassPanel(), before _actions existed — this runs AFTER, so it can reuse the
@@ -1488,21 +1860,21 @@ function setupPanels(A) {
       _buildJsonHub(content);
 
       // ── §5D Rate Pack (BIM→Project TASK A, docs/BIMtoProject.md §A): pick the active cost pack ──
-      content.appendChild(_buildSection('5D Rate Pack', false, _rate5dBody));
+      content.appendChild(_buildSection(_trlD('ui_rate_pack_5d', '5D Rate Pack'), false, _rate5dBody));
 
       // ── §9 Cache Info: per-store size + clear (history-clear keeps the signed kernel) ──
-      content.appendChild(_buildSection('Cache Info', false, _cacheInfoBody));
+      content.appendChild(_buildSection(_trlD('ui_cache_info', 'Cache Info'), false, _cacheInfoBody));
 
       // ── Reset button (Pill Icons defaults) ──
       var resetBtn = document.createElement('button');
-      resetBtn.textContent = 'Reset Pill Icons';
+      resetBtn.textContent = _trlD('ui_reset_pill_icons', 'Reset Pill Icons');
       resetBtn.style.cssText = 'margin:12px 0 0;padding:8px 16px;border:1px solid rgba(108,159,255,0.2);border-radius:8px;background:transparent;color:#6c9fff;font-size:12px;cursor:pointer;width:100%;';
       resetBtn.addEventListener('pointerup', function(e) {
         e.stopPropagation();
         if (!_mainPill) return;
         _mainPill.resetConfig();
         _renderPillEditor(pillBox);   // rebuild schema from fresh config
-        if (A.status) A.status.textContent = 'Defaults restored';
+        if (A.status) A.status.textContent = _trlD('ui_defaults_restored', 'Defaults restored');
       });
       content.appendChild(resetBtn);
 
@@ -1614,6 +1986,43 @@ function setupPanels(A) {
       addRow('Settings (localStorage)', function () { var x = _lsBytes(); return x.n + ' keys · ' + _fmtBytes(x.b); }, null);
       addRow('Imported buildings (IndexedDB)', _idbInfo, _clearImportedDbs, true);
       addRow('Offline app cache (SW)', _swCacheInfo, _clearSwCaches, true);
+
+      // §OFFLINE_SURFACE: "Make available offline" row — honest status from GET_OFFLINE_STATUS
+      (function() {
+        var offRow = document.createElement('div');
+        offRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
+        var offL = document.createElement('span'); offL.textContent = 'Make available offline'; offL.style.cssText = 'flex:1;color:#cfe;';
+        var offSt = document.createElement('span'); offSt.textContent = '…'; offSt.style.cssText = 'color:#8ab4ff;font-size:11px;';
+        var offBtn = document.createElement('button');
+        offBtn.textContent = 'Download';
+        offBtn.style.cssText = 'padding:3px 10px;border:1px solid rgba(108,159,255,0.4);border-radius:6px;background:transparent;color:#6c9fff;font-size:11px;cursor:pointer;';
+        offBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); if (typeof A !== 'undefined' && A.startOfflineDownload) A.startOfflineDownload(); });
+        offRow.appendChild(offL); offRow.appendChild(offSt); offRow.appendChild(offBtn);
+        box.appendChild(offRow);
+        function _refreshOfflineStatus() {
+          if (!navigator.serviceWorker) { offSt.textContent = 'SW not supported'; offBtn.style.display = 'none'; return; }
+          navigator.serviceWorker.ready.then(function(reg) {
+            var ctrl = navigator.serviceWorker.controller || reg.active;
+            if (!ctrl) { offSt.textContent = 'SW not active'; return; }
+            var ch = new MessageChannel();
+            ch.port1.onmessage = function(ev) {
+              var d = ev.data;
+              if (d.allDeferred) {
+                offSt.textContent = '✓ Fully offline ready'; offSt.style.color = '#4caf50'; offBtn.style.display = 'none';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=full');
+              } else {
+                offSt.textContent = 'Core: ✓ cached · Full libs: not yet'; offSt.style.color = '#8ab4ff'; offBtn.style.display = '';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=core');
+              }
+            };
+            ctrl.postMessage({ type: 'GET_OFFLINE_STATUS' }, [ch.port2]);
+          });
+        }
+        _refreshOfflineStatus();
+        offBtn.addEventListener('pointerup', function() { setTimeout(_refreshOfflineStatus, 3000); });
+        console.log('§OFFLINE-SURFACE-RESULT PASS');
+      })();
+
       var foot = document.createElement('div');
       foot.style.cssText = 'color:#777;font-size:11px;margin-top:8px;';
       box.appendChild(foot);
@@ -1877,6 +2286,8 @@ function setupPanels(A) {
       { id: 'corporate',   label: 'Corporate / Branding', url: 'corporate.json',   storageKey: 'json_corporate' },
       { id: 'grid_rules',  label: 'Grid Rules',           url: 'grid_rules.json',  storageKey: 'json_grid_rules' },
       { id: 'clash_rules', label: 'Clash Rules',          url: 'clash_rules.json', storageKey: 'json_clash_rules' },
+      { id: 'std_values',  label: 'Road Standards (ATJ sign table)', url: 'std_values.json', storageKey: 'json_std_values' },
+      { id: 'civil_labels', label: 'Civil Labels (road route / stops)', url: 'civil_labels.json', storageKey: 'json_civil_labels' },
       { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
         overrides: { color: { type: 'color' } } },
       { id: 'sfx',         label: 'Sound Effects',        url: 'sfx.json',         storageKey: 'json_sfx' },
@@ -1912,6 +2323,11 @@ function setupPanels(A) {
       });
       content.appendChild(hub);
     }
+
+    // §CLASH_TOL_SOURCING (MEP_CLASH_REVEAL_MOVIE.md §PENDING.4) — exposed so a caller outside this
+    // closure (the Clash panel's own header, measure.js) can jump straight into the SAME editor this
+    // hub already uses, instead of a user hunting through Settings to find it. Not a new editor.
+    A._jsonRegistry = _jsonRegistry;
 
     // Open one registered JSON in a SettingsEditor sub-panel.
     // source:'url' (default) -> fetch + localStorage override (editable).
@@ -1995,13 +2411,14 @@ function setupPanels(A) {
         console.warn('§JSON_EDITOR_FAIL ' + entry.id + ' ' + err);
       });
     }
+    A._openJsonEditor = _openJsonEditor;
 
     // PILL_DRAWER_REORGANIZATION.md §FINAL RAIL ORDER: Document(Save,Open) → Navigate → Inspect
     // → Visual FX → Camera/View → Share → Settings, Help. 9 visible icons (rest are pill:false,
     // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
     // and any localStorage-order migration have a stable position for them).
     var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
-      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk'];
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk','sched4d'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({
@@ -2011,11 +2428,60 @@ function setupPanels(A) {
       layout: 'rail'   // L-PATH position:fixed rail — viewer.html CSS declares the buttons fixed
     });
 
+    window.addEventListener('trl-ready', function() { _relabelPill(); if (_sched4dHas !== null) _syncSched4dTitle(_sched4dHas); if (_mainPill && _mainPill.build) _mainPill.build(); console.log('§TRL_PILL relabelled n=' + _actions.length); });   // S226 §R2c: the 4D pill's state-dependent title is re-resolved too (it was cached in the first language)
+
     // Expose for toggleDocPill restore + keyboard shortcut
     A._buildPill = _mainPill.build;
     window._syncPillHighlights = _mainPill.sync;
     window.toggleMobilePill = _mainPill.toggle;
     window._mainPillActions = _mainPill.actions; // §S281: exposed for Help panel dynamic merge
+
+    // §S7-INJECT — keep the 'sched4d' pill's hover title in step with which of its two states is
+    // live, without waiting on the (one-shot) gate poll below: called once right after that poll
+    // resolves, and again the instant a tap generates a programme (panels.js's own fn, above), so
+    // the tooltip never lies about which tap behaviour is currently wired.
+    var _sched4dHas = null;   // last state, so an in-place language switch (trl-ready) can re-resolve the title
+    function _syncSched4dTitle(hasSchedule) {
+      _sched4dHas = !!hasSchedule;
+      var acts = window._mainPillActions || [];
+      for (var i = 0; i < acts.length; i++) {
+        if (acts[i].id !== 'sched4d') continue;
+        acts[i].title = hasSchedule ? _trlD('pill_sched4d', '4D Window') : _trlD('pill_sched4d_gen', '4D Window — tap to generate a programme');
+      }
+      if (A._buildPill) A._buildPill();
+    }
+
+    // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATE poll for the 'sched4d' pill, mirroring
+    // wh_walk.js's own poll (both eager-loaded modules, both flip `.pill` on window._mainPillActions
+    // then call A._buildPill()). Unlike wh_walk/hba_lens this does NOT need to wait on guidMap/
+    // streaming — ScheduleAuthor.activeSchedule() is a single query against the sql.js db the
+    // building already loaded with, so it can resolve as soon as A.db exists. One-shot (matches the
+    // existing convention): evaluated once at the FIRST building this session loads, same limitation
+    // wh_walk/hba_lens already carry (a mid-session building switch does not re-probe — §S7-INJECT
+    // leaves this known limitation as-is, see the spec note by the same name).
+    //
+    // §S7-INJECT (2026-09-14) CHANGED THE CONDITION, not just the mechanism — see the long comment
+    // on the 'sched4d' action above for why: CAPABLE (the authoring engine is loaded) replaces HAS A
+    // SCHEDULE ALREADY as the pill-VISIBILITY gate, because the pill's new second state ("Generate
+    // programme") must be reachable precisely when there is NO schedule yet. `has` is still computed
+    // and still logged — it now only drives the tooltip text (_syncSched4dTitle) and is otherwise
+    // informational, kept so this log line stays a superset of what it reported before, not a
+    // narrower one.
+    (function () {
+      var _tries = 0, _poll = setInterval(function () {
+        _tries++;
+        if (!A || !A.db) { if (_tries > 240) clearInterval(_poll); return; }
+        clearInterval(_poll);
+        var SA = window.ScheduleAuthor;
+        var capable = !!(SA && SA.materializeZones && SA.activeSchedule && SA.persistDb);
+        var has = false;
+        try { has = !!(capable && SA.activeSchedule(A.db) && SA.activeSchedule(A.db).id); } catch (e) { has = false; }
+        var acts = window._mainPillActions || [];
+        for (var i = 0; i < acts.length; i++) { if (acts[i].id === 'sched4d') acts[i].pill = capable ? undefined : false; }
+        _syncSched4dTitle(has);
+        console.log('§4D_PILL_GATE capable=' + capable + ' has_schedule=' + has);
+      }, 500);
+    })();
 
     // §S282: Shortcut audit — cross-check key props vs scene.js _shortcuts at init
     setTimeout(function() {

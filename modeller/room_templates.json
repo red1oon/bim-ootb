@@ -1,0 +1,232 @@
+{
+  "_provenance": "Mechanical JSON transcription of bim-compiler config/room_templates.yaml (2026-07-11) — every mean/std/tier value here is MEASURED (see that file's header for the full non-invent discipline + Duplex/SampleHouse source citation). Regenerate with: node -e \"const y=require('js-yaml'),fs=require('fs');fs.writeFileSync('modeller/room_templates.json', JSON.stringify(y.load(fs.readFileSync('config/room_templates.yaml','utf8')),null,2))\" from bim-compiler. Do not hand-edit numbers here — edit the yaml and regenerate.",
+  "std_floor_fraction": 0.15,
+  "unclassified_z_threshold": 2,
+  "templates": {
+    "BEDROOM": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex, SampleHouse]",
+      "tier": "primary",
+      "canonical_type": "BEDROOM",
+      "n": 5,
+      "examples": [
+        "Duplex:A202(Bedroom 1)",
+        "Duplex:B202(Bedroom 1)",
+        "Duplex:A203(Bedroom 2)",
+        "Duplex:B203(Bedroom 2)",
+        "SampleHouse:2 - Bedroom"
+      ],
+      "area_m2": {
+        "mean": 21.62,
+        "std": 3.102,
+        "min": 15.42,
+        "max": 23.17
+      },
+      "aspect_ratio": {
+        "mean": 1.605,
+        "std": 0.16,
+        "min": 1.29,
+        "max": 1.69
+      },
+      "door_count": {
+        "mean": 1,
+        "std": 0,
+        "n": 5
+      }
+    },
+    "BATHROOM": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex]",
+      "tier": "primary",
+      "canonical_type": "BATHROOM",
+      "n": 4,
+      "examples": [
+        "Duplex:A104(Bathroom 1)",
+        "Duplex:B104(Bathroom 1)",
+        "Duplex:A204(Bathroom 2)",
+        "Duplex:B204(Bathroom 2)"
+      ],
+      "area_m2": {
+        "mean": 3.952,
+        "std": 0.791,
+        "min": 3.16,
+        "max": 4.75
+      },
+      "aspect_ratio": {
+        "mean": 1.767,
+        "std": 0.276,
+        "min": 1.49,
+        "max": 2.05
+      },
+      "door_count": {
+        "mean": 2,
+        "std": 1,
+        "n": 4
+      }
+    },
+    "KITCHEN": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex]",
+      "tier": "primary",
+      "canonical_type": "KITCHEN",
+      "n": 2,
+      "examples": [
+        "Duplex:A103(Kitchen)",
+        "Duplex:B103(Kitchen)"
+      ],
+      "area_m2": {
+        "mean": 12.954,
+        "std": 0,
+        "min": 12.95,
+        "max": 12.95
+      },
+      "aspect_ratio": {
+        "mean": 2.605,
+        "std": 0,
+        "min": 2.6,
+        "max": 2.61
+      },
+      "door_count": {
+        "mean": 0,
+        "std": 0,
+        "n": 2
+      }
+    },
+    "LIVING_ROOM": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex, SampleHouse]",
+      "tier": "primary",
+      "canonical_type": "LIVING",
+      "n": 3,
+      "examples": [
+        "Duplex:A102(Living Room)",
+        "Duplex:B102(Living Room)",
+        "SampleHouse:1 - Living room"
+      ],
+      "area_m2": {
+        "mean": 35.985,
+        "std": 11.773,
+        "min": 27.66,
+        "max": 52.63
+      },
+      "aspect_ratio": {
+        "mean": 1.355,
+        "std": 0.206,
+        "min": 1.21,
+        "max": 1.65
+      },
+      "door_count": {
+        "mean": 1.333,
+        "std": 0.471,
+        "n": 3
+      }
+    },
+    "FOYER": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex]",
+      "tier": "supplementary",
+      "canonical_type": "LOBBY",
+      "n": 2,
+      "examples": [
+        "Duplex:A101(Foyer)",
+        "Duplex:B101(Foyer)"
+      ],
+      "area_m2": {
+        "mean": 20.319,
+        "std": 0,
+        "min": 20.32,
+        "max": 20.32
+      },
+      "aspect_ratio": {
+        "mean": 4.264,
+        "std": 0,
+        "min": 4.26,
+        "max": 4.26
+      },
+      "door_count": {
+        "mean": 3,
+        "std": 0,
+        "n": 2
+      }
+    },
+    "HALLWAY": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex]",
+      "tier": "supplementary",
+      "canonical_type": "CORRIDOR",
+      "n": 2,
+      "examples": [
+        "Duplex:A201(Hallway)",
+        "Duplex:B201(Hallway)"
+      ],
+      "area_m2": {
+        "mean": 10.415,
+        "std": 0,
+        "min": 10.41,
+        "max": 10.41
+      },
+      "aspect_ratio": {
+        "mean": 2.697,
+        "std": 0,
+        "min": 2.7,
+        "max": 2.7
+      },
+      "door_count": {
+        "mean": 4,
+        "std": 0,
+        "n": 2
+      }
+    },
+    "UTILITY": {
+      "confidence": "measured",
+      "source": "measured, buildings: [Duplex]",
+      "tier": "primary",
+      "canonical_type": null,
+      "n": 2,
+      "examples": [
+        "Duplex:A205(Utility)",
+        "Duplex:B205(Utility)"
+      ],
+      "area_m2": {
+        "mean": 1.408,
+        "std": 0.012,
+        "min": 1.4,
+        "max": 1.42
+      },
+      "aspect_ratio": {
+        "mean": 1.65,
+        "std": 0.014,
+        "min": 1.64,
+        "max": 1.66
+      },
+      "door_count": {
+        "mean": 3,
+        "std": 0,
+        "n": 2
+      }
+    }
+  },
+  "exceptions": {
+    "ENTRANCE_HALL": {
+      "building": "SampleHouse",
+      "example": "3 - Entrance hall",
+      "area_m2": 8.69,
+      "aspect_ratio": 2.28,
+      "note": "Not merged into FOYER or HALLWAY despite semantic proximity — different word, no invented synonym mapping. Would promote to a template on a second real occurrence.\n"
+    },
+    "STAIR": {
+      "building": "Duplex",
+      "example": "A105 (Stair)",
+      "area_m2": 3.8,
+      "aspect_ratio": 3.7,
+      "note": "z-height 5.68m (spatial_structure.size_z), well above every real room's ~2.6-2.9m — almost certainly a stairwell shaft, not a floor-level room. Kept as an exception so a future TYPE classifier revision can special-case tall-and-narrow footprints rather than folding STAIR into the size/aspect templates above.\n"
+    },
+    "ROOM": {
+      "building": "Duplex",
+      "example": "B105 (Room)",
+      "area_m2": 3.8,
+      "aspect_ratio": 3.7,
+      "note": "Identical footprint AND z-height to STAIR above (near-certainly the mirrored B-side stairwell, generically labeled \"Room\" instead of \"Stair\" in the source IFC — a labeling inconsistency in the source data, not a compiler bug). Kept SEPARATE from STAIR per its own label — merging same-dimension-different-label rows would be exactly the \"invented synonym mapping\" this file's discipline forbids. Flagged for manual review, not corrected.\n"
+    }
+  }
+}

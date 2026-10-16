@@ -1,0 +1,74 @@
+[
+ {
+  "pose": "room@z4",
+  "real": 16246,
+  "boxed": 106084,
+  "mismatch": 12604,
+  "hash": "ef49f95e",
+  "boxVis": 106084,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "room@z8",
+  "real": 2420,
+  "boxed": 119910,
+  "mismatch": 0,
+  "hash": "9b6ef344",
+  "boxVis": 119910,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "room@z11",
+  "real": 19647,
+  "boxed": 102683,
+  "mismatch": 0,
+  "hash": "4f0be061",
+  "boxVis": 102683,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "room@z14",
+  "real": 25518,
+  "boxed": 96812,
+  "mismatch": 0,
+  "hash": "e2dff14a",
+  "boxVis": 96812,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "orbit0",
+  "real": 0,
+  "boxed": 122330,
+  "mismatch": 0,
+  "hash": "5f8f0cb6",
+  "boxVis": 122330,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "orbit1",
+  "real": 0,
+  "boxed": 122330,
+  "mismatch": 0,
+  "hash": "5f8f0cb6",
+  "boxVis": 122330,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "orbit2",
+  "real": 0,
+  "boxed": 122330,
+  "mismatch": 0,
+  "hash": "5f8f0cb6",
+  "boxVis": 122330,
+  "hiddenMeshes": 0
+ },
+ {
+  "pose": "orbit3",
+  "real": 0,
+  "boxed": 122330,
+  "mismatch": 0,
+  "hash": "5f8f0cb6",
+  "boxVis": 122330,
+  "hiddenMeshes": 0
+ }
+]

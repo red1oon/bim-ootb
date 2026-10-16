@@ -3,14 +3,16 @@
  * W-UX-DISC — headless witness for "Disc = walker" (RESUME_MODELLER_UX_OUTLINER_PILL §W-UX-4):
  *   • a discipline node in the bom-graph is a clickable WALKER entry point (carries data-disc + a ▶ glyph)
  *   • click STR → SURFACES the real STR walk (swbInit done at Open) + expands the STR Walker tab
- *   • click MEP on SampleCastle → RouteWalker has no anchors for it → HONEST refusal, NO fabricated run
+ *   • click MEP on Clinic → generic 'MEP' has no measured rule in terminal_rules.db → HONEST refusal, NO fabricated run
+ *     (retargeted from SampleCastle 2026-07-11 — SampleCastle_ARC.db is ARC-only since feat/embed-8-arc-buildings;
+ *      see bim-compiler prompts/WITNESS_SAMPLECASTLE_MEP_STALE.md. Clinic_ARC.db: ARC|1984 MEP|99 PLB|3 STR|534.)
  *
  * Wiring gate (TestArchitecture §Browser Testing); the STR walk VALUES are proven by the node W-STR-* suite.
  * Serves viewer/ + the repo modeller/ residents (the live ../modeller/<db> playground).
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm',
@@ -77,14 +79,26 @@ async function openResidentAndSeed(page, key) {
   var strTabOpen = await page.evaluate(function () { return window.Bonsai.outliner._collapsed['tcat|strwalk'] === false; });
   chk('B4 STR Walker tab expanded on STR click', strTabOpen);
 
-  // ── MEP disc → honest refusal (SampleCastle has MEP but RouteWalker has no anchors for it) ───────
-  await openResidentAndSeed(page, 'SampleCastle');
+  // ── MEP disc → honest refusal (Clinic ships MEP|99 meta rows, but the generic 'MEP' disc has NO
+  //    measured rule in terminal_rules.db — Clinic is column-framed → _dwRules routes it there) ─────
+  // Retargeted from SampleCastle (WITNESS_SAMPLECASTLE_MEP_STALE.md, 2026-07-11): SampleCastle_ARC.db
+  // is ARC-only (ARC|3342, zero MEP rows) since feat/embed-8-arc-buildings, so its MEP node no longer
+  // exists — a test-oracle drift, same pattern fix/terminal-oracle-source (PR #725) fixed elsewhere.
+  await openResidentAndSeed(page, 'Clinic');
   var mepEl = await page.waitForSelector('#bo-tree [data-disc="MEP"]', { timeout: 30000 }).catch(function () { return null; });
-  chk('B5 SampleCastle exposes an MEP disc node', !!mepEl);
+  chk('B5 Clinic exposes an MEP disc node', !!mepEl);
 
   logs.length = 0;
   var sweepsBefore = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
-  await page.click('#bo-tree [data-disc="MEP"]');
+  // Harness robustness: if B5 found no MEP node this click throws — catch it (and skip it entirely
+  // when mepEl is null, so we don't burn page.click's own 30s selector timeout) so B6-B8 still tally
+  // as honest FAILs instead of the whole suite crashing on an uncaught TimeoutError.
+  if (mepEl) {
+    try { await page.click('#bo-tree [data-disc="MEP"]'); }
+    catch (e) { logs.push('HARNESS click [data-disc="MEP"] threw: ' + e.message); }
+  } else {
+    logs.push('HARNESS no [data-disc="MEP"] node — click skipped, B6 will tally as FAIL');
+  }
   // discWalk MEP is async (rwInit + route); wait for its honest-refusal (or routed) log to land
   await page.waitForTimeout(900);
   var sweepsAfter = await page.evaluate(function () { return (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps().filter(function (o) { return o.op_type === 'GEOM_SWEEP'; }).length : 0; });
@@ -103,4 +117,8 @@ async function openResidentAndSeed(page, key) {
   console.log('W-UX-DISC: ' + pass + ' PASS / ' + fail + ' FAIL');
   await browser.close(); srv.close();
   process.exit(fail ? 1 : 0);
-})();
+})().catch(function (e) {
+  // Last-resort net (harness robustness): never die on an uncaught rejection — report + honest FAIL exit.
+  console.log('  ❌ UNCAUGHT — witness aborted: ' + String(e && e.message || e).split('\n')[0]);
+  process.exit(1);
+});

@@ -120,6 +120,27 @@
         } catch (e) { resolve(false); }
       });
     },
+    // §AUTOSAVE_FIX companion — clear()'s IndexedDB counterpart to localStorage.removeItem (Witness:
+    // W-E2E-OPLOG-CLEAR-IDB). Same defensive shape as _idbGet/_idbPut above: try/catch around indexedDB.open,
+    // every error path resolve(false), never throw. A missing store means nothing to delete → resolve(false).
+    _idbDelete(key) {
+      return new Promise((resolve) => {
+        try {
+          const rq = indexedDB.open('bim_ootb_cache');
+          rq.onsuccess = () => {
+            const idb = rq.result;
+            if (!idb.objectStoreNames.contains('oplog_fallback')) { resolve(false); return; }
+            try {
+              const tx = idb.transaction('oplog_fallback', 'readwrite');
+              tx.objectStore('oplog_fallback').delete(key);
+              tx.oncomplete = () => resolve(true);
+              tx.onerror = () => resolve(false);
+            } catch (e) { resolve(false); }
+          };
+          rq.onerror = () => resolve(false);
+        } catch (e) { resolve(false); }
+      });
+    },
     // Restore precedence: localStorage first (the common case, zero async cost); if empty, check the IDB
     // fallback (a prior save that overflowed localStorage). If BOTH exist (localStorage held an older,
     // pre-overflow save; IDB holds a later fallback save, or vice versa on a since-cleared localStorage),
@@ -141,33 +162,47 @@
     // correct in-session but silently did NOT survive a reload. Now: fall back to the IndexedDB store above so
     // the edit actually persists, and surface a one-time visible toast (reusing modeller.html's existing
     // window.toast() mechanism — no new UI-notice code) so a silent-forever failure never recurs either.
+    // §AUTOSAVE_FIX STICKY (SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4 — UPDATE 2026-07-07, Witness:
+    // W-E2E-OPLOG-CLEAR-IDB K7-K9): once ONE save has overflowed localStorage, every later save this session is
+    // doomed too (the op-log only grows — kernel_ops is append-only) — yet _save() re-attempted the synchronous
+    // setItem on EVERY _emit(), throwing+catching a real QuotaExceededError per edit for the rest of the session
+    // (the repeated "§OPLOG autosave FAILED ... QuotaExceededError" spam a real user saw twice in one session).
+    // _useIdbOnly remembers the first failure and skips straight to the IDB fallback path from then on. The
+    // fallback write + one-time toast logic itself is UNCHANGED — factored into _saveIdbFallback() so the catch
+    // path and the sticky skip-path share it (no duplicated toast/_idbFallbackNotified logic).
+    _useIdbOnly: false,
+    _saveIdbFallback(bytes) {
+      this._idbPut(this._KEY, bytes).then((ok) => {
+        if (ok) {
+          console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
+          if (!this._idbFallbackNotified && window.toast) {
+            this._idbFallbackNotified = true;
+            window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
+          }
+        } else {
+          console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
+          if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
+        }
+      });
+    },
     _save() {
       if (!this.db) return;
       let bytes;
       try { bytes = this.db.export(); } catch (e) { console.error(TAG + ' autosave FAILED — could not export db ' + e); return; }
+      if (this._useIdbOnly) { this._saveIdbFallback(bytes); return; }   // sticky: don't re-run the doomed setItem
       try {
         localStorage.setItem(this._KEY, this._b64(bytes));
       } catch (e) {
         console.error(TAG + ' autosave FAILED to localStorage (edits stay in-session; falling back to IndexedDB) ' + e);
-        this._idbPut(this._KEY, bytes).then((ok) => {
-          if (ok) {
-            console.log(TAG + ' §AUTOSAVE_FIX path=idb_fallback bytes=' + bytes.length + ' key=' + this._KEY);
-            if (!this._idbFallbackNotified && window.toast) {
-              this._idbFallbackNotified = true;
-              window.toast('This model is too large for quick-save storage — now autosaving via a larger backup store (your edits are safe).', 'info');
-            }
-          } else {
-            console.error(TAG + ' §AUTOSAVE_FIX path=idb_fallback FAILED bytes=' + bytes.length + ' key=' + this._KEY + ' — this edit may NOT survive a reload');
-            if (window.toast) window.toast('⚠ Autosave failed — this edit may not survive a reload. Use Export ▸ Native .db to be safe.', 'error');
-          }
-        });
+        this._useIdbOnly = true;                                        // remember: this session's saves go to IDB now
+        this._saveIdbFallback(bytes);
       }
     },
 
     // Boot-time restore: ensure the db (loads saved bytes), then fold it to the scene if non-empty.
     async restore() {
       await this._ensureDb();
-      if (this.length) { await this._foldUpto(); this._emit(); }
+      if (this.length) { await this._foldUpto(); this._emit(false); }   // notify-only: bytes just came FROM storage
       console.log(TAG + ' restore active=' + this.length);
       return this.length;
     },
@@ -186,7 +221,7 @@
       await this._ensureDb();
       this._cursor = wasAtTip ? this.length : Math.min(prevCursor, this.length);
       await this._foldUpto(this._cursor);
-      this._emit();
+      this._emit(false);                   // notify-only: we just re-READ the shared store another surface wrote
       console.log(TAG + ' reload active=' + this.length + ' cursor=' + this._cursor);
       return this.length;
     },
@@ -232,7 +267,7 @@
       await this._ensureDb();                             // load THIS building's saved op-log (empty on first open)
       this._cursor = this.length;
       if (this.length) await this._foldUpto(this._cursor);
-      this._emit();
+      this._emit(false);                   // notify-only: NEW key's bytes just loaded FROM storage (OLD key was flushed above)
       console.log(TAG + ' model key → ' + key + ' active=' + this.length + ' (reference stays pristine)');
       return this.length;
     },
@@ -242,8 +277,18 @@
     // touching kernel_ops. That makes _emit() the one safe choke point to invalidate the _geomOps() memo below;
     // clearing it in _foldUpto() alone (the originally drafted fix) would MISS the LEAF-commit path (bonsai_
     // oplog.js commit(): LEAF ops skip _foldUpto and append optimistically, but still _emit()).
-    _emit() { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } this._save(); },
-    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
+    // §AUTOSAVE_FIX (follow-on to Finding 4 / W-E2E-OPLOG-CLEAR-IDB): _emit(false) = notify-only, used by the
+    // 3 LOAD-only sites (restore/reload/setModelKey-after-load) that just read these exact bytes FROM storage —
+    // re-saving them was a pure no-op write that burned localStorage quota. Every mutation path still calls
+    // bare _emit() and persists exactly as before. Witness: W-E2E-OPLOG-LOAD-NO-AUTOSAVE.
+    _emit(persist) { this._opsCache = null; try { window.dispatchEvent(new CustomEvent('bonsai:oplog')); } catch (e) { } if (persist !== false) this._save(); },
+    // clear() empties BOTH persisted copies of this._KEY — localStorage AND the §AUTOSAVE_FIX IndexedDB fallback
+    // (the _loadBytesEither precedence comment above PROMISES "clear() ... empties both keys together"; before this
+    // fix only localStorage was removed, so a Terminal-scale model whose autosave had overflowed into IDB silently
+    // RESURRECTED from the stale IDB entry on the next open of the same key). The IDB purge is fire-and-forget —
+    // same style as _save()'s _idbPut — because no clear() call site awaits it; the synchronous localStorage
+    // removal + in-memory reset semantics stay exactly as before. Witness: W-E2E-OPLOG-CLEAR-IDB.
+    clear() { if (this.db) { try { this.db.close(); } catch (e) { } } this.db = null; this._n = 0; this._cursor = 0; try { localStorage.removeItem(this._KEY); } catch (e) { } this._idbDelete(this._KEY); if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache(); this._emit(); },
 
     // Read the live GEOM ops out of the signed log, mapped to fold-op shape (parent rides in parameters).
     // §OUTLINER-STALL: memoized on db-object identity (auto-invalidates on setModelKey/reload/clear, which all
@@ -292,9 +337,21 @@
       // deterministic so the optimistic mesh == the eventual chain-fold mesh (no flicker); any later scrub/cut
       // reconciles to the authoritative foldChainToScene. Full incremental regen = the op_hash-cache card.
       let r;
-      // LEAF ops (extrude/sweep) build a fresh solid → O(1) optimistic append. Everything else (GEOM_CUT,
+      // LEAF ops (extrude/sweep/loft) build a fresh solid → O(1) optimistic append. Everything else (GEOM_CUT,
       // GEOM_FILLET, GEOM_GRID_MOVE) MUTATES prior solids in the fold → must take the authoritative re-fold.
-      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP';
+      // GEOM_LOFT (prompts/BONSAI_LOFT_SPEC.md): the wires ARE the payload — no `parent` reference, exactly
+      // GEOM_SWEEP's shape (a fresh self-contained solid from its own parameters), NOT GEOM_CUT/GEOM_FILLET/
+      // GEOM_ARRAY's shape (which all resolve+mutate/replace a referenced prior feature). Decided explicitly,
+      // not defaulted — checked against buildSolids()'s branching in bonsai_kernel_worker.js, where GEOM_LOFT
+      // falls into the same terminal `else` (applyFeature) branch as GEOM_SWEEP, not the parent-lookup branches.
+      // Tier 1 (§GAP-TO-COMPETITIVE, prompts/BONSAI_KERNEL_RESEARCH.md): GEOM_REVOLVE joins this LEAF set for
+      // the SAME reason as GEOM_LOFT — its profile+axis+angle payload builds a fresh self-contained solid with
+      // NO `parent` reference (checked against bonsai_kernel_worker.js applyFeature(), the terminal-else branch).
+      // GEOM_SHELL/GEOM_OFFSET/GEOM_FILLET_VARIABLE/GEOM_CHAMFER_DIST_ANGLE/GEOM_DRAFT are DELIBERATELY
+      // EXCLUDED — each references a `parent` and MUTATES that solid in place (same class as GEOM_CUT/
+      // GEOM_FILLET, checked against the same file's buildSolids() parent-lookup branches for each), so they
+      // must take the authoritative re-fold like GEOM_CUT/GEOM_FILLET do, not the optimistic leaf append.
+      const LEAF = op.op_type === 'GEOM_EXTRUDE' || op.op_type === 'GEOM_EXTRUDE_POLY' || op.op_type === 'GEOM_SWEEP' || op.op_type === 'GEOM_LOFT' || op.op_type === 'GEOM_REVOLVE';
       if (!LEAF) {
         r = await this._foldUpto();                              // mutates a referenced solid → authoritative re-fold
       } else {
@@ -400,12 +457,27 @@
       console.log(TAG + ' delete feature=' + featureId + (kids.length ? ' +kids[' + kids + ']' : '') + ' active=' + this.length);
       return { deleted: ids };
     },
+    // §MHIST-ROWS (modeller_history.js): id-TARGETED flip of EXACTLY these rows, same fold+emit tail as delete/undo/redo.
+    // Required because redo() is NOT the inverse of deleteFeature(): both leave `undone=1` and redo() picks the LOWEST-id
+    // undone row — delete A(1) then B(2), reverse B ⇒ redo() brings back A. The history tree records each node's rows at
+    // push time and replays them here; undo()/redo() (boundary walk) stay untouched for nodes that recorded none.
+    async setUndone(ids, val) {
+      if (!this.db || !ids || !ids.length) return val ? { undone: null } : { redone: null };
+      this._setUndone(ids, val ? 1 : 0);
+      await this._foldUpto(); this._emit();
+      console.log(TAG + ' setUndone=' + (val ? 1 : 0) + ' ids=[' + ids + '] active=' + this.length);
+      const group = ids.length > 1 ? ids.slice() : undefined;
+      return val ? { undone: ids[0], group } : { redone: ids[0], group };
+    },
     // Undo = soft-delete the most-recent ACTIVE feature (LIFO; newest has no active dependents).
     // §P8: if the top row belongs to a gesture group, the WHOLE group undoes together (one gesture = one Ctrl+Z —
     // a grid-stretch's induced rider moves revert with the stretch, never a half-reverted gesture).
     async undo() {
       if (!this.db) return { undone: null };
-      const active = this._allGeom().filter(o => !o.undone);
+      // §MEP-REROUTE-SIGN: rows a re-route added or superseded are owned by the history node they ride (id-targeted
+      // setUndone) — the boundary walk must never pop or resurrect them. Empty set (no re-route yet) = unchanged pick.
+      const own = this._treeOwned;
+      const active = this._allGeom().filter(o => !o.undone && !(own && own.has(o.id)));
       if (!active.length) return { undone: null };
       const topRow = active[active.length - 1], top = topRow.id;
       const ids = this._isGestureGid(topRow.gid) ? active.filter(o => o.gid === topRow.gid).map(o => o.id) : [top];
@@ -427,7 +499,9 @@
     // diverged edit once a tree layer is added on top (see file header WHY #3/#4).
     async redo() {
       if (!this.db) return { redone: null };
-      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone);
+      const own = this._treeOwned;   // §MEP-REROUTE-SIGN: see undo()
+      const tu = this._treeUndone;   // §UNDO-RESURRECT: rows a history node left undone — only that node re-applies them
+      const all = this._allGeom(); const undoneRows = all.filter(o => o.undone && !(own && own.has(o.id)) && !(tu && tu.has(o.id)));
       if (!undoneRows.length) return { redone: null };
       const byId = new Map(all.map(o => [o.id, o]));
       const topRow = undoneRows[0], top = topRow.id;

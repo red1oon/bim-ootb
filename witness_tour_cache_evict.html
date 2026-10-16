@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>W-TOUR-CACHE-EVICT harness</title></head>
+<body>
+<div id="walk-speed-btn" style="display:none"></div>
+<script src="viewer/tour.js"></script>
+<script>
+  // Minimal stub of APP — only what setupTour()/A._startFlyTour() touch on the code path under test.
+  window.A = {
+    activeBuilding: 'WitnessBld',
+    buildingsRendered: new Set(['WitnessBld']),
+    buildingCentres: {},
+    db: { exec: function() { return [{ values: [[100, 10, 20]] }]; } }, // elCount, doorCount, roomCount
+    wlog: function(msg) { console.log('[wlog] ' + msg); },
+    status: { textContent: '' }
+  };
+  setupTour(window.A);
+  // setupTour() assigns the REAL A.buildTour (which needs a full elements_meta/element_transforms
+  // schema our db stub doesn't have) — override AFTER setup with a small fixed stand-in. This
+  // witness proves the CACHE STORE/EVICT path, not the route-planning algorithm (already proven
+  // separately by witness_tour_cache.js / W-TOUR-CACHE).
+  window.A.buildTour = function() {
+    return [
+      { type: 'orbit', dur: 5 },
+      { type: 'flyPath', pts: 3, dur: 10 },
+      { type: 'pause' }
+    ];
+  };
+  window.__runTest = function() {
+    A.walkMode = false; A.walkActions = null; A.walkActionIdx = 0;
+    try {
+      A._startFlyTour(null);
+    } catch (e) {
+      return { error: e.message, stack: e.stack };
+    }
+    return { walkMode: A.walkMode, actions: A.walkActions ? A.walkActions.length : 0 };
+  };
+</script>
+</body></html>

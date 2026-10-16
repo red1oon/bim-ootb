@@ -228,6 +228,53 @@ function setupDiff(A) {
     console.log('[S225] §ZOOM guid=' + guid.substring(0, 12));
   };
 
+  // Camera-only: pull back to fit a SET of meshes by guid, same direction-preserving move as
+  // Clash's multi-select camera step (scene.js clashListNav onToggle, "indices.length > 1"
+  // branch) — pulls back along whatever direction the camera is already looking, 20-frame
+  // ease-out, rather than jumping to a fixed isometric-style angle. NO markers of its own — for
+  // Sanity/Egress rows, the marker is A.showRuleModeTint's real-shape wireframe (rule_checklist.js
+  // wires both together on multi-select), not a dot: a rule-set element's own SHAPE is the
+  // finding (a floating beam's real length, an unsupported column's real footprint), unlike a
+  // clash's point-of-intersection, which has no shape of its own to show.
+  // Consumer: viewer/rule_checklist.js's row multi-select (via ListKeyNav, same mechanism Clash
+  // itself uses — not a bespoke trigger).
+  A.zoomToGuids = function(guids) {
+    guids = (guids || []).filter(Boolean);
+    if (!guids.length) return;
+    var guidSet = {};
+    guids.forEach(function(g) { guidSet[g] = true; });
+    var targets = A.collectMeshes(function(o) { return o.isMesh && guidSet[o.userData.guid]; });
+    if (!targets.length) { console.log('[S225] §ZOOM_SET_MISS n=' + guids.length); return; }
+
+    var minV = new THREE.Vector3(Infinity, Infinity, Infinity);
+    var maxV = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    targets.forEach(function(mesh) {
+      var mid = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+      minV.min(mid); maxV.max(mid);
+    });
+
+    var mid = minV.clone().add(maxV).multiplyScalar(0.5);
+    var span = Math.max(maxV.x - minV.x, maxV.y - minV.y, maxV.z - minV.z, 2);
+    var camDir = A.camera.position.clone().sub(A.controls.target).normalize();
+    var dist = span * 1.5;
+    var targetPos = mid.clone().add(camDir.multiplyScalar(dist));
+    var startPos = A.camera.position.clone();
+    var startTarget = A.controls.target.clone();
+    var frame = 0;
+    function step() {
+      frame++;
+      var t = frame / 20;
+      t = t * (2 - t); // ease-out — same as Clash's multi-select
+      A.camera.position.lerpVectors(startPos, targetPos, t);
+      A.controls.target.lerpVectors(startTarget, mid, t);
+      A.controls.update();
+      if (A.markDirty) A.markDirty();
+      if (frame < 20) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+    console.log('[S225] §ZOOM_SET n=' + targets.length + '/' + guids.length + ' span=' + span.toFixed(1));
+  };
+
   // Look up element info from either DB
   function _elInfo(guid) {
     var dbs = [A.diffDb, A.db];
@@ -325,9 +372,18 @@ function setupDiff(A) {
     return Object.keys(out).map(function (k) { return out[k]; });
   };
 
-  var _voErpDb = null;
+  var _voErpDb = null, _voErpStamp = null;
+  function _voStamp() { return (window.ProjOrderState && window.ProjOrderState.storeStamp) ? window.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
   function _loadVoErpDb() {
-    if (_voErpDb) return Promise.resolve(_voErpDb);
+    return _voStamp().then(function (st) {
+      if (_voErpDb && st === _voErpStamp && st !== 'unknown') return _voErpDb;
+      if (_voErpDb) console.log('[RP-F] §PUSH_STORE_RELOAD writer=diff_vo was=' + _voErpStamp + ' now=' + st);
+      _voErpDb = null; _voErpStamp = st;
+      return _openVoErpDb();
+    });
+  }
+  function _openVoErpDb() {
     var SQL = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL
     if (!SQL || !window.VoFold) return Promise.resolve(null);
     // OPFS-first: amend the project the > ERP push already wrote; fall back to the seed (plan-only).
@@ -357,7 +413,7 @@ function setupDiff(A) {
         .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
         .then(function (fh) { return fh.createWritable(); })
         .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
+        .then(function () { return _voStamp().then(function (st) { if (db === _voErpDb) _voErpStamp = st; return true; }); }).catch(function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
 

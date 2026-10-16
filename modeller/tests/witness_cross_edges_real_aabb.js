@@ -61,12 +61,19 @@ const BOUNDARY_SLACK = 0.001;
     console.log('--- ' + building + ' ---');
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
+    // §XEDGE-GEOWIRE: capture the derivation's own provenance line so G6 can assert the geo-wired
+    // re-derive ACTUALLY FIRED, not merely that the numbers look better.
+    const geoLines = []; pg.on('console', m => { const t = m.text(); if (t.indexOf('§XEDGE-GEO ') >= 0) geoLines.push(t); });
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai', { timeout: 30000 }).catch(() => {});
     await pg.click('#b-open'); await sleep(200);
     await pg.click(`.mo-row[data-key="${building}"]`);
     await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => false);
-    await sleep(building === 'SampleCastle' ? 3500 : 2000);
+    // Wait on a CONDITION, not a duration (the old fixed 3.5 s sleep caught SampleCastle mid-open: meshes=0).
+    // Done = this building's geo-phase derive has logged AND the editable mesh count has stopped changing.
+    for (const t0 = Date.now(); !geoLines.some(l => l.indexOf('phase=geo') >= 0) && Date.now() - t0 < 180000; ) await sleep(250);
+    await pg.waitForFunction(b => window.__dwName === b, { timeout: 60000 }, building).catch(() => {});
+    for (let prev = -1, n; (n = await pg.evaluate(() => window.Bonsai.group().children.length)) !== prev; prev = n) await sleep(1000);
 
     const result = await pg.evaluate(() => {
       const g = window.Bonsai.group(); const boxes = {};
@@ -100,7 +107,28 @@ const BOUNDARY_SLACK = 0.001;
       if (Math.abs(t.ov) > TOL + BOUNDARY_SLACK) { disagree++; disagreements.push('a=' + p.a + ' b=' + p.b + ' ov_mm=' + (t.ov * 1000).toFixed(1)); }
     });
     chk('G4 LIVE-AGREEMENT (' + building + ' — every corrected abuts pair confirmed touching on the LIVE render, 0 disagreement)',
-      disagree === 0 && checked > 0, 'checked=' + checked + ' disagree=' + disagree + (disagreements.length ? ' ' + disagreements.slice(0, 3).join(' | ') : ''));
+      disagree === 0 && checked > 0, 'checked=' + checked + ' disagree=' + disagree + (disagreements.length ? ' ' + disagreements.slice(0, 12).join(' | ') : ''));
+
+    // G6 §GEO-WIRED — the REGRESSION GUARD for §XEDGE-GEOWIRE. G4 alone cannot catch a re-break: if the
+    // geo-wired re-derive silently stops running, cross_edges falls back to the coarse anchor-centred box
+    // and G4 just drifts back up (843 on SampleCastle, 2 on SampleHouse) with nothing naming the cause —
+    // which is exactly how this hid for ~7 weeks. This asserts the re-derive FIRED and RESOLVED real
+    // geometry, by reading its own §XEDGE-GEO provenance line. Falsify by reverting the
+    // _reDeriveXEdgesWithGeo call in str_walker_outliner.js: phase=geo never appears and G6 goes RED.
+    const geoPhase = geoLines.filter(l => l.indexOf('phase=geo') >= 0).pop() || '';
+    const mres = geoPhase.match(/realGeomResolved=(\d+)\/(\d+)/);
+    chk('G6 GEO-WIRED (' + building + ' — the geo-wired re-derive fired and resolved real geometry)',
+      !!mres && Number(mres[1]) > 0,
+      geoPhase ? geoPhase.replace(/^.*§XEDGE-GEO /, '§XEDGE-GEO ') : 'NO §XEDGE-GEO phase=geo line — the re-derive never ran');
+
+    // G7 §XEDGE-3AXIS — the tilted path FIRED, not merely "G4 went green". SampleCastle carries 293 rotation_y≠0
+    // elements (#1738); they must be boxed by bonsai_library.js place(), not the coarse guard.
+    // Expected counts are the source rows (sqlite, 2026-09-24: element_transforms with bbox_x NOT NULL and
+    // rotation_x or rotation_y ≠ 0): SampleCastle_ARC.db 293, SampleHouse_ARC.db 3 — all with real blobs. Falsify: delete `Library.place = place;` in
+    // bonsai_library.js → tilted3axis=0 on SampleCastle, G7 RED (and G4 back to 11).
+    const mt = geoPhase.match(/tilted3axis=(\d+)/), tiltN = mt ? Number(mt[1]) : -1;
+    chk('G7 TILTED-3AXIS (' + building + ' — tilted elements boxed by the renderer\'s own place(), not the coarse guard)',
+      tiltN === ({ SampleCastle: 293, SampleHouse: 3 })[building], 'tilted3axis=' + (mt ? tiltN : 'MISSING'));
 
     chk('G5 NO-ERROR (' + building + ' — zero pageerror)', errs.length === 0, errs.slice(0, 2).join(' | '));
     await pg.close();

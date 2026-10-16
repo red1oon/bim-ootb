@@ -10,7 +10,54 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v763';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v865';   // bump on each deploy; per-change detail is the git commit message.
+// v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
+//   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
+// v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
+//   i18n/index.json precached; the 8 per-locale packs (i18n/<lang>.json, 117–349 KB) are fetched only when chosen and
+//   then served cache-first.
+// v793 (2026-09-15) §Phase E (PLUGIN_SYSTEM_LANE.md): ad_modelval_bridge.js bridges the real
+//   ad_modelvalidator AD table (3 rows: Libero MFG/Fixed Assets/Product Price) into the already-shipped
+//   plugin host — adding an ad_modelvalidator row is now the AD-native way to add a validator, install
+//   only (never auto-start — Q1; plugin_release.js's existing enable/disable click still approves).
+//   ad_seed.db gains the ad_modelvalidator table (erp/tests/bake_modelvalidator_seed.js) — it was
+//   entirely absent from the live-loaded seed before this (verified; ad_full.db, the offline oracle,
+//   is the only place these 3 rows previously existed). ad_seed_v17 -> ad_seed_v18 IDB cache key bump
+//   forces re-fetch of the updated seed for returning users (same convention as v768a).
+// v792 (2026-09-04) §ADFORM-TRXMATERIAL: form #2 of 49 — AD_Form 103 "Material Transactions"
+//   (org.compiere.apps.form.VTrxMaterial), the read face of the M_Transaction ledger erp_engine.stockMoves
+//   writes. All six TrxMaterial.refresh() restrictions, and TrxMaterial.zoom()'s five-FK source precedence.
+//   _matchRowsFor renamed _appendOnlyRowsFor — the body was never match-specific, and form #2 reads
+//   M_Transaction through the same two sources (bundle + signed op log).
+// v791 (2026-09-04) §CALLOUT-CAMPAIGN: E-1's ranked callout gap worked. Nine new dispatching atoms —
+//   CalloutInOut.orderLine/.product/.qty, CalloutPayment.invoice/.order/.charge/.docType/.amounts, and
+//   CalloutEngine.dateAcct — take live dispatch on the nine O2C/P2P document tables from 3 to 51 of 78
+//   bindings. The 3 is not a typo: nothing ever called AdCallout.installDefaultHandlers(), so the six
+//   engine line callouts had never fired in the browser; that one missing call is fixed here too, and
+//   productPrice now reads the parent document's own price list instead of any version it finds first.
+// v790 (2026-09-04, revival of PR #300) §CL-1: pos_lens.js gains a 'Copy op log' button after a
+// deliver-later sale — serializes the op group to a base64 blob for the clipboard, sent via any
+// channel to the WH walk device (see viewer sw bump for §CL-2, the paste side).
+// v789 (#1666) §HYGIENE-E14: ad_table_map.js dropped from the precache — no page loads it.
+// v787 (#1664) §AD-FORM-LIVE: the Form spine — an 'X' menu leaf resolves its AD_Form row and
+// dispatches on its own Classname; AD_Form 108 (VMatch) is implemented end to end.
+// v772 (rebase of PR #203 onto origin/main) §INTEG-WIRE-B: disposable-host persistence in-app
+// (erp_replica_client.js + erp_persist_ui.js) — back the books up to a SIGNED snapshot the user
+// owns (signed by the edge key), restore on a FRESH device -> replay recomputes tip == signed
+// tip + books to the cent; a tampered/forged file is rejected (no private key). Substrate
+// prompts/ERP_SUBSTRATE_INTEGRATION.md Phase 2 slice B; witness erp/tests/poc_persist_wire.js.
+// v771 (#429 rebase onto origin/main@e9daafa0): OK feedback dialog after both System Monitor resets
+//   (erp/system_monitor.js) — merged forward past v770's independent bumps below, neither dropped.
+// v770 (T-0 item 4, prompts/RESUME_ERP_T0_TRUTH_MAINTENANCE.md): commitCrud's UPDATE/DELETE path now
+//   consults ad_access.js's gateRecord (canView AccessLevel + org/client scope) before sealing, not just
+//   owner/CAS — idempiere.html's applySession wires window.APP.gateRecordFor; crud_core.js/crud_overlay.js
+//   gain recordAccessGate/_gateRecordAccess. New witness: scripts/poc_record_gate_live.js (bim-compiler).
+// v769 (2026-08-23) merge of two independent v768 bumps — both applied, neither dropped:
+// v768a: ad_seed.db gains AD_Form (49) + ad_val_rule (332) — see erp/tests/bake_forms_valrules_seed.js.
+//   ad_seed_v16 -> ad_seed_v17 IDB cache key bump forces re-fetch of the seed for returning users.
+// v768b (ERP_PROJECT_REVIEW.md §2.1 W-ACCESS-GATE-LIVE): ad_access.js shipped as a twin of
+//   build/erp/ad_access.js; idmp_session.js now delegates window/process/form access decisions to
+//   it (IsReadWrite/canView/org-client gateRecord) instead of a weaker independent implementation.
 const CACHE_PREFIX = 'erp-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -34,15 +81,27 @@ const PRECACHE_ASSETS = [
   'ad_evaluator.js',
   'ad_graph.js',
   'ad_modelval.js',
+  'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
+  'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
+  'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage
   'ad_parser.js',
+  'ad_recent.js',     // §UDP-6 AD_RecentItem engine (window.AdRecent), W-UDP6-ENGINE / W-UDP6-LIVE
+  'ad_find.js',       // §UDP-3 Find window engine (window.AdFind), W-UDP3-ENGINE / W-UDP3-LIVE
   'ad_process.js',    // B-5/C-5 — process dispatch spine (window.AdProcess), W-PROC / W-AD-PROC-LIVE
-  'ad_table_map.js',
+  // 'ad_table_map.js' — REMOVED from the precache 2026-09-04 (E-14, prompts/AGENT_QUEUE.md §HYGIENE-E14).
+  // It is the PB bridge module a caller hands to ADData.useBridge(map); the bridge is default OFF
+  // (ad_data.js:8-20) and NO page carries a <script> tag for this file, so precaching it downloaded a
+  // module on every install that could never run. Dormant-by-design, per TRILOGY_STALE_CODE_AUDIT.md —
+  // so the FILE stays; only the unconditional download goes. Whoever turns the bridge on has to add a
+  // script tag anyway, and puts this line back in the same PR.
+  'ad_infowin.js',   // Info Window engine (Info Product) — ERP_DEPTH_FILM.md §7
+  'ad_gridtab.js',   // §GT — GridTab layer: one AD-driven tab contract (link/WhereClause/current row) for every window (W-GRIDTAB-LIVE)
+  'ad_valrule.js',   // §P3 — AD_Val_Rule interpreter feeding the live FK pickers (W-PARITY-VALRULE)
   'vfs_detect.js',    // CONSTRAINT_MITIGATION item 3 — OPFS/IDB detection at boot (§VFS monitor)
   'error_beacon.js',  // SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed)
   'field_health.js',  // SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth)
   'op_upcaster.js',   // D2 — schema_version stamp + read-time upcaster registry (default write seam)
   'ad_ui.js',
-  'erp_panel.js',
   'erp_persist.js',
   'erp_pills.js',
   'erp_replay.js',
@@ -52,7 +111,6 @@ const PRECACHE_ASSETS = [
   'tip_fold.js',       // T7 (W-T7-INC) fix 3: memoized tip-folds (moveDeltaFor precedent, ERP-side)
   'erp_shard.js',      // T7 (W-T7-INC) fix 4/4b: signed shard boundary + lazy verified history
   '../common/about_diy.js',  // ABOUT_BOX_CONSOLIDATE.md — shared About/DIY modal (replaces migrate_showme.js here)
-  'migrate_agent.js',
   'overlay_kit.js',    // CONSISTENCY_FINISH.md §K-1 — shared import-overlay toolbox (window.OverlayKit)
   'erp_picker.js',     // MIGRATE_ERP_PICKER.md §SPEC — pick-your-ERP Install/Migrate dialog (window.ErpPicker)
   'genesis.html',      // SYSTEM_ADMIN_LANE §5 L1 — Initial Tenant Setup wizard (W-GENESIS-WIZARD-LIVE)
@@ -64,6 +122,7 @@ const PRECACHE_ASSETS = [
   'erp_snapshot_sign.js', // ECDSA P-256 signer (UMD, window.ErpSnapshotSign) — signs the genesis bundle head
   'erp_key_epochs.js', // T1 (W-ROSTER-VERIFY): HQ-signed device roster + ROTATE/REVOKE key epochs on verify/import
   '14-sap-chain.json', // SAP /DMO/ Flight PoC oracle (fetch-fold-install demo data; user can replace via file-drop)
+  'ad_access.js',       // W-ACCESS-GATE-LIVE — MRole-faithful gate engine, twin of build/erp/ad_access.js
   'idmp_session.js',
   'erp_descriptor.js',  // DESCRIPTOR SEAM (IDEMPIERE_2.md pivot, renderer #2) — one chrome, N dictionaries; AD = first descriptor
   'odoo_descriptor.js', // RENDERER #2 — the Odoo descriptor (?erp=odoo); reads the two pulled artifacts below
@@ -73,11 +132,81 @@ const PRECACHE_ASSETS = [
   'erp_postings.js',   // FRONTEND_LANE_MASTER §2 Item C — frozen read-fold (UMD copy, window.ERPPostings)
   'accts_posted.js',   // Accts-Posted lens (buildCtx/buildPostedVM/mount/mountAccordion, window.AcctsPosted)
   'post_resolver.js',  // POSTING_PREVIEW_PANEL.md — token→account resolver (UMD, window.PostResolver), FOLD-frozen
+  'ad_workflow.js', 'model_layer.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
   'doc_poster.js',     // POSTING_PREVIEW_PANEL.md — per-doc GL derivation (UMD, window.DocPoster), == fact_acct(318)
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
-  'ad_callout.js',     // PLUGIN_SYSTEM_LANE §Phase D — callout dispatch (window.AdCallout); gives callout bundles a live target
+  'ad_callout.js',
+  'processes/AcctSchemaCopyAcct.js',
+  'processes/AllocationReset.js',
+  'processes/BOMVerify.js',
+  'processes/BankStatementMatcher.js',
+  'processes/CommissionAPInvoice.js',
+  'processes/CopyFromBankStmt.js',
+  'processes/CopyFromInvoice.js',
+  'processes/CopyFromJournal.js',
+  'processes/CopyFromJournalDoc.js',
+  'processes/CopyFromOrder.js',
+  'processes/CopyProduct.js',
+  'processes/DunningRunCreate.js',
+  'processes/InOutCreateConfirm.js',
+  'processes/InOutCreateInvoice.js',
+  'processes/InventoryCountCreate.js',
+  'processes/InventoryCountUpdate.js',
+  'processes/InvoiceCreateInOut.js',
+  'processes/M_PriceList_Create.js',
+  'processes/MatchInvDelete.js',
+  'processes/MatchPODelete.js',
+  'processes/OrderLineCreateProduction.js',
+  'processes/OrderLineCreateShipment.js',
+  'processes/PackageCreate.js',
+  'processes/PaySelectionCheckReverse.js',
+  'processes/PaySelectionCreateCheck.js',
+  'processes/PaySelectionCreateFrom.js',
+  'processes/PaymentOnline.js',
+  'processes/ProductionCreate.js',
+  'processes/RMACreateOrder.js',
+  'processes/SalesOrderRateInquiryProcess.js',
+  'processes/YearCreatePeriods.js',
+  'processes/support_docgen.js',
+  'processes/support_pay.js',
+  'processes/support_stock_proc.js',
+  'callouts/CalloutRMA.js',
+  'callouts/CostAdjustmentLine.js',
+  'callouts/InOutFreightCostRule.js',
+  'processes/CostCreate.js',
+  'processes/FactAcctReset.js',
+  'processes/InvoicePayScheduleValidate.js',
+  'processes/PeriodControlStatus.js',
+  'callouts/support.js',
+  'callouts/support_stock.js',
+  'callouts/views.js',
+  'callouts/currency.js',
+  'callouts/uom.js',
+  'callouts/pricing.js',
+  'callouts/tax.js',
+  'callouts/sqlfn.js',
+  'callouts/CalloutAssignment.js',
+  'callouts/CalloutBankStatement.js',
+  'callouts/CalloutBankTransfer.js',
+  'callouts/CalloutCashJournal.js',
+  'callouts/CalloutDepositBatch.js',
+  'callouts/CalloutFillLocator.js',
+  'callouts/CalloutGLJournal.js',
+  'callouts/CalloutInOut.js',
+  'callouts/CalloutInventory.js',
+  'callouts/CalloutInvoice.js',
+  'callouts/CalloutInvoiceBatch.js',
+  'callouts/CalloutMovement.js',
+  'callouts/CalloutOrder.js',
+  'callouts/CalloutPaySelection.js',
+  'callouts/CalloutPayment.js',
+  'callouts/CalloutPaymentAllocate.js',
+  'callouts/CalloutRequisition.js',
+  'processes/PeriodStatus.js',     // PLUGIN_SYSTEM_LANE §Phase D — callout dispatch (window.AdCallout); gives callout bundles a live target
+  'osgi_console.js',   // Host work H2: the Felix-style OSGi stack console for Plugins & Releases
   'plugin_registry.js',// PLUGIN_SYSTEM_LANE §Phase A — Fold-Engine plugin host (window.PluginRegistry), W-PLUGIN
   'plugin_overlay.js', // PLUGIN_SYSTEM_LANE §Phase D — the Plugin Engine pill overlay (window.PluginEngine); v2 = +Create face
+  'ad_modelval_bridge.js', // PLUGIN_SYSTEM_LANE §Phase E — bridges ad_modelvalidator AD rows into the plugin host (window.AdModelValBridge)
   'ninja_model.js',   // NINJA CREATE (PackOut) — pure model-sheet parser (window.NinjaModel)
   'ninja_stage.js',   // NINJA CREATE — stageModels/rollbackModel into the sql.js AD (window.NinjaStage)
   'ninja_bundle.js',  // NINJA CREATE — emitBundle + makeWritableDbHost (window.NinjaBundle)
@@ -87,8 +216,6 @@ const PRECACHE_ASSETS = [
   'plugins/widget_callout.mjs',     // example bundle — M_Product.Name → upper (C-1)
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
-  'menu_seed.js',
-  'role_band.js',
   'icons.js',
   '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)
@@ -96,11 +223,16 @@ const PRECACHE_ASSETS = [
   'erp_seam.js',       // engine seam (window.ERPSeam.makeSeam) — ENGINE_CONTRACT §1 write path
   'kanban_lens.js',    // Kanban board chrome (buildBoard/resolveDrag/mount) — lens + idempiere
   'kanban_host.js',    // reusable Kanban host: publish window.ERP + persist/restore the op-log
+  'layered_registry.js', // Host work H1: layered extension registries (plugin stop restores the core)
   'bigdecimal.js',     // exact decimal compare for the rule fold (never raw JS Number) — window.BigDecimal
   'bim_orders_overlay.js', // BIM→Project §B round-trip: overlay viewer-folded Project Orders + VO amendments from OPFS at boot
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
+  'crud_core.js',      // §S60 physical split — the PURE CORE (window.CrudCore); MUST precede crud_overlay.js in page load order
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
+  'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
+  'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it
+  'erp_sync_relay.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — wires relay+rebase into crud_overlay.js sidecar (window.__crud.syncNow); idempiere.html loads it
   'blue_future.js',    // FRONTEND_LANE_MASTER §OUTSTANDING item 0 — Blue Future UNOFFICIAL speculative-branch skin (W-BLUE-FUTURE-LIVE)
   'crud_ops.json',     // SO_FULL_CRUD_GAP.md — keyed CRUD verb/field/docAction store the overlay fetches on enable (incl. T1 docPolicy fan-out table)
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
@@ -116,6 +248,8 @@ const PRECACHE_ASSETS = [
   'ninja_sample.xlsx',// runnable sample workbook (generated from ad_seed.db stored columns)
   'erp_period_close.js', // §INTEG-WIRE — period-close fold = signed checkpoint = balance b/f (window.ErpPeriodClose)
   'period_close_ui.js',  // §INTEG-WIRE — in-app close/bootstrap on the live sidecar op-log (window.PeriodClose)
+  'erp_replica_client.js', // §INTEG-WIRE-B — FROZEN read side: replay snapshot → recompute tip (window.ErpReplicaClient)
+  'erp_persist_ui.js',     // §INTEG-WIRE-B — disposable-host persistence gesture: signed backup/restore (window.ErpPersist)
   'migrate_compare.html', // evaluator-facing comparison paper (docs/MigrateComparisonPaper.md) — linked from erp.html+idempiere.html
   'migrate_compare.md',   // its single source; deep papers (ERP/HolyGrail/OpLog/Distributed/BIMERP .md) fetch on-demand, not precached
   'qrcode.min.js',

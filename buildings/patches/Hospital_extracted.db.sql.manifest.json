@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-07-25T07:46:41.306Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-main-baseline",
+    "sha": "491413ffb4e3e277c23b7e7f4a61dfb7f4bf57d2",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 0,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_extracted.db",
+    "etag": "b95cabb6-141f-46a0-a1eb-3f18910ae199",
+    "content-md5": null,
+    "size": "263307264",
+    "last-modified": "Fri, 05 Jun 2026 10:17:40 GMT",
+    "content-encoding": null
+  },
+  "artifact": {
+    "file": "buildings/patches/Hospital_extracted.db.sql",
+    "bytes": 226962,
+    "md5": "7e97413cd546d4065de67a8565a17b22",
+    "md5_b64": "fpdBPNVG1AZd5nqFZaF7Ig==",
+    "object": "buildings/patches/Hospital_extracted.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "554bd44c-e1b2-40f5-9f74-efe1a7d668da",
+    "size": "144960",
+    "last-modified": "Sat, 25 Jul 2026 00:49:12 GMT"
+  },
+  "verification": {
+    "cmd": "bash -c \"node /home/red1/bim-compiler/prompts/Modeller/DISC_Walker/poc_raster_cover.js /tmp/wt-main-baseline \\\"$GATE_DB\\\" | tail -25 | grep -q \\\"connected_rooms_below_30pct=0/\\\"\"",
+    "exit": 0,
+    "tail": [
+      ""
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-07-25T07:46:43.640Z",
+    "etag": "fbd53047-13bd-44c0-b205-cd7284120b75",
+    "verified": true
+  }
+}

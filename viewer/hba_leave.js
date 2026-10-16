@@ -92,7 +92,8 @@
     var sp = spec(A);
     if (!sp) return false;
     if (_sel == null || !sp.employees.some(function (e) { return e.id === _sel; })) _sel = sp.employees[0].id;
-    var pane = el('div', 'position:fixed;top:54px;right:12px;width:340px;max-height:82vh;overflow:auto;z-index:10050;' +
+    // §FIX 2026-07-06c item B — cascade column 4 (right:1260) so this pane never overlaps the earlier columns.
+    var pane = el('div', 'position:fixed;top:54px;right:1260px;width:340px;max-height:82vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-leave-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');

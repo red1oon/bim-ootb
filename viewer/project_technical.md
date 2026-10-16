@@ -31,7 +31,6 @@ Compare typical web BIM viewers at 50K–200K+ lines with Node backends and heav
 | sql.js | 1.10.3 | WASM SQLite (SQLite 3.44.2) |
 | web-ifc | 0.0.77 | IFC2x3 + IFC4 parsing |
 | SheetJS | 0.20.3 | Excel export |
-| dxf-parser | — | DXF file parsing |
 
 ### Browser Compatibility
 - Chrome 90+, Firefox 90+, Safari 15+, Edge 90+
@@ -69,7 +68,6 @@ Browser
   index.html          ← viewer shell (Three.js canvas + UI panels)
   landing2.html       ← building picker (manifest-driven cards)
   boq_charts.html     ← 4D/5D BOQ analytics (ExcelJS)
-  2d.html             ← DXF 2D plan viewer (Canvas2D)
 
   ┌─ Core ─────────────────────────────────────┐
   │ streaming.js      DB BLOBs → Float32 → GPU │
@@ -103,8 +101,6 @@ Browser
   │ scene_to_db.js    Three.js scene → DB        │
   │ wizard.js         Step-by-step import wizard │
   │ ifc_export_worker.js  Export to IFC          │
-  │ dxf_export.js     Export to DXF              │
-  │ dxf-parser.js     Third-party DXF parser     │
   └─────────────────────────────────────────────┘
 
   ┌─ i18n ──────────────────────────────────────┐
@@ -193,5 +189,4 @@ See `deploy/OCI_UPLOAD.md` for full procedure.
 - **sql.js** 1.11 — WASM SQLite in browser
 - **ExcelJS** — Excel export (BOQ charts)
 - **web-ifc** — IFC parsing in Web Worker
-- **dxf-parser** — DXF file parsing for 2D plans
 - **GoatCounter** — privacy-friendly analytics (no cookies)

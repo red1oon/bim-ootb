@@ -18,12 +18,107 @@
 
 // ─── Constants ───────────────────────────────────────────────
 var RW_PREFIX = 'RW2D-';
-var MEP_RW_DB_URL = 'mep_rw.db?v=2';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room)
+var MEP_RW_DB_URL = 'mep_rw.db?v=5';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3/v4/v5 add the FP_TERMINAL_01 / ACMV_TERMINAL_01 / ELEC_DUPLEX_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1/D2/D3)
+// §RW-CROSSSECTION (WalkerDoctrine.md §8, 2026-07-07): RW_PIPE_NOMINAL_MM/RW_PIPE_CROSS below are BARE
+// INVENTED LITERALS with no product/BOM-line/IFC element behind them — confirmed making every pipe/duct
+// segment (every discipline) render as an identical 50mm SQUARE prism, ~2.3x oversized vs the one real
+// product in hand (FP_Drop_Pipe, real cross-section ~21.3mm). They are KEPT here ONLY for the disclosed
+// separate use documented at rwClearStructure/the clash-pairing call sites below (a candidate-pairing
+// SAFETY-MARGIN estimate for CW/SP, which have no real product to replace it with yet — see
+// RW_REAL_CROSSSECTION's own comment). The RENDERED/GEOMETRIC use (rwSweepOps' profile:{w,h}) NO LONGER
+// reads these constants — see rwCrossSectionFor() below, which is the real, hard-fail-on-no-match
+// replacement WalkerDoctrine.md §8 requires for the visual sweep.
 var RW_PIPE_NOMINAL_MM = 50;
-var RW_PIPE_CROSS = RW_PIPE_NOMINAL_MM * 1.5;  // bbox cross-section
+var RW_PIPE_CROSS = RW_PIPE_NOMINAL_MM * 1.5;  // bbox cross-section — clash-pairing safety margin ONLY, not a render dimension (see above)
 var RW_MAX_PAIR_DIST = 50.0;  // metres — skip pairs > 50m apart
 var RW_ARC_CLASH_TOL = -0.01; // metres — pipes may touch walls but not penetrate
 var RW_WALL_SNAP_MAX = 1.5;   // metres — a wall-host fixture snaps onto a real wall within this; else keeps nominal
+
+// ─── Real cross-section products (WalkerDoctrine.md §8) ──────────────────────────────────────────────
+// EXTRACT, never a flat constant. Verified directly against library/component_library.db's
+// component_definitions table (queried 2026-07-07): that table's PIPE_SEGMENT/FLOW_SEGMENT rows are almost
+// entirely raw PER-INSTANCE IFC dumps (e.g. `IfcFlowSegment_Ifc2x3_Duplex_<guid>`, `IfcPipeSegment_
+// SJTII_Terminal_<guid>` — one row per real pipe instance extracted from a building, no shared reusable
+// name a caller can cite as "the CW pipe"/"the SP pipe"). Exactly ONE discipline has a clean, named,
+// reusable product: FP_Drop_Pipe (component_definitions.name='FP_Drop_Pipe', discipline='FP').
+//
+// A second candidate source was checked and REJECTED, disclosed here rather than silently skipped:
+// viewer/dagevu_catalog.json carries clean-named entries for CW/SP/ACMV/ELEC (PIPE_COLD_WATER_25MM,
+// PIPE_WASTE_48MM, DUCT_ROUND_250MM, CONDUIT_EMT_30MM) — but their declared w/d/h fields are LOD-200 box
+// proxies sourced from library/archive/BOM.db's M_Product master (that file's own "note" field says so),
+// NOT measured from the real geometry each entry's `gh` (geometry_hash) cites. Verified mismatch:
+// DUCT_ROUND_250MM's own linked real instance (component_library.db geometry_hash 2f28520eb4c81014 =
+// `IfcFlowSegment_Ifc2x3_Duplex_2f28520e`) actually measures a 48mm×70mm cross-section over a 4.43m run —
+// not round, not 250mm. That catalog's declared dims cannot be trusted as a "real cross-section" for this
+// hard-fail gate, so CW/SP/ACMV/ELEC stay REFUSED until component_library.db grows a verified product.
+// §RW-CW-SP-PRODUCT (2026-09-24, MODELLER_MASTER §STRATEGY L3) — SPEC. red1 decided (2026-09-24): "Use measured
+// Duplex pipes". CW and SP are each registered from ONE cited real pipe instance of the Duplex federated MEP model
+// (build/Duplex_mep_extracted.db, extracted from reference/residential/Ifc2x3_Duplex_Federated.ifc per
+// build/logs/extract_duplex_mep.log; the guids are also in internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc). The discipline
+// comes from the SOURCE's own pipe type name, not inferred: 'Pipe Types:Cold Water' → CW, 'Pipe Types:Waste' → SP
+// (SP = gravity soil/waste, RW_DISC_TO_COORD). The cross-section is that instance's measured bbox across its run.
+// It is an axis-aligned straight run, so the two short extents ARE the pipe section. Measured over ALL straight
+// axis-aligned segments of each type (2026-09-24):
+//   Waste       43 straight → 48.3 mm on 41 (1½" OD) · 42.2 ×1 · 60.3 ×1          → 48.3 mm, a clear mode
+//   Cold Water  65 straight → 25.4 mm on 31 (1")  · 12.7 mm on 30 (½")  · 6.3/6.4 ×4 → 25.4 mm, CHOSEN AS THE
+//               MAINS SIZE; the ½" branch size is nearly as common. One product per discipline is a stated
+//               simplification: branches are drawn and signed at the mains section.
+// Effect: CW/SP runs now SIGN (GEOM_SWEEP) instead of refusing, and the clash margin uses the real section instead of
+// the invented RW_PIPE_CROSS (75 mm).
+var RW_REAL_CROSSSECTION = {
+  CW: {
+    w: 0.0254, h: 0.0254,               // measured bbox cross extents, metres (run length 4.514 m)
+    product: 'Duplex_CW_Pipe_25', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3mPE5k4Z1BMwNpizluRx2t "Pipe Types:Cold Water:583067" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
+  SP: {
+    w: 0.04826, h: 0.048361,            // measured bbox cross extents, metres (run length 3.803 m)
+    product: 'Duplex_SP_Waste_Pipe_48', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 0_dkc9hC11lA4ntVXLyrTT "Pipe Types:Waste:583332" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
+  FP: {
+    w: 0.0213317871, h: 0.0213356018,   // measured local bbox X/Y extent, metres — component_library.db
+    product: 'FP_Drop_Pipe', ifc_class: 'IfcPipeSegment',
+    source: 'library/component_library.db component_definitions (name=FP_Drop_Pipe), verified 2026-07-07'
+  },
+  // §MEP-ROUTE-DISC D2 (2026-09-26): ACMV duct, ONE cited real instance of SJTII_Terminal's own ductwork (bim-ootb
+  // buildings/Terminal_extracted.db; all 568 IfcDuctSegment have rotation_z = 0, so the two short AABB extents ARE the
+  // section). Type 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' (420 straight segments; Flex Duct Round 129,
+  // Mitered 18, Round 1 are the others). Section MODE over the 420: 150×150 mm on 53 (then 300×200 = 29, 300×250 = 21,
+  // 400×300 = 21 … up to 1500×550 for the mains). 150×150 is the branch/tap size (of the 53: X 19 / Y 4 / Z 30). ONE
+  // product per discipline is the stated simplification (L3 precedent: CW at the mains size) — a mains size is red1's
+  // call (SPEC_MEP_ROUTE_DISC Q2), not this file's.
+  ACMV: {
+    w: 0.15, h: 0.15,                   // measured bbox cross extents, metres (run length 2.9935 m)
+    product: 'Terminal_Rect_Duct_150x150', ifc_class: 'IfcDuctSegment',
+    source: 'buildings/Terminal_extracted.db guid T0_Terminal_2xYwS5_$XEdxC3K5YP8DZ9 "Rectangular Duct:jkrME_duct_Radius Elbows / Taps:2502617" Aras 02 (SJTII_Terminal), measured 2026-09-26'
+  },
+  // §MEP-ROUTE-DISC D3 (2026-09-26): ELEC conduit, ONE cited real instance of the Duplex federated MEP model (the same
+  // source L3 used for CW/SP: bim-compiler build/Duplex_mep_extracted.db ← reference/residential/Ifc2x3_Duplex_Federated.ifc).
+  // The Terminal has NO cable containment at all (ELEC = 814 IfcLightFixture + 19 appliances), so the Duplex is the only
+  // real source. Its 10 straight 'Conduit with Fittings:Electrical Metallic Tubing (EMT)' IfcFlowSegment ALL measure
+  // 29.5 × 29.5 mm (10/10 — 1" EMT OD); 8 'Conduit Elbow - Steel' are the fittings. n = 10, small, disclosed.
+  ELEC: {
+    w: 0.0295, h: 0.0295,               // measured bbox cross extents, metres (run length 9.0962 m)
+    product: 'Duplex_EMT_Conduit_29', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3qI03Xhmj12QySDYgBoGRD "Conduit with Fittings:Electrical Metallic Tubing (EMT):575511" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-26'
+  }
+};
+// rwCrossSectionFor(disc) -> the REAL cross-section for a RouteWalker discipline code (CW/SP/FP/ACMV/ELEC),
+// or an honest refusal when no verified real product exists — HARD FAIL, no invented fallback
+// (WalkerDoctrine.md §8: "a wrong-but-present number is worse than an honest gap").
+// KNOWN FOLLOW-UP (WalkerDoctrine.md §10, 2026-07-07 user directive): this is a scoped, pipe-only version of
+// a shared gate a separate session is building (`resolveRealPlacement({discipline,category,ifc_class,...})`,
+// reading `ad_product_dim`/`ad_assembly_connector`, hard-failing the SAME way) so every leaf placement
+// (pipes here, fixtures elsewhere) is forced through ONE resolver instead of N point-fixes. This function is
+// deliberately kept as a single, isolated, easily-swappable call surface (every caller goes through
+// rwCrossSectionFor(disc), never RW_REAL_CROSSSECTION directly) so that follow-up can redirect its BODY to
+// call the shared resolver without touching any of this file's ~6 call sites.
+function rwCrossSectionFor(disc) {
+  var real = RW_REAL_CROSSSECTION[disc];
+  if (real) return { w: real.w, h: real.h, real: true, product: real.product, source: real.source };
+  return { refused: true, real: false, reason: 'no real cross-section product in component_library.db for discipline ' + disc };
+}
 
 // ─── MEP product → IFC class mapping ────────────────────────
 var RW_IFC_MAP = {
@@ -73,9 +168,13 @@ async function rwInit(SQL, baseUrl) {
   var url = (baseUrl || '') + MEP_RW_DB_URL;
   try {
     var buf = await _rwFetchCached(url);
-    _rwDb = new SQL.Database(new Uint8Array(buf));
-    _rwReady = true;
-    var counts = _rwDb.exec(
+    var db = new SQL.Database(new Uint8Array(buf));
+    // §M1-FIX: validate via a REAL query BEFORE flipping _rwReady — `new SQL.Database(garbageBuf)` (e.g. a
+    // 404 body that slipped past _rwFetchCached) does not always throw at construction; the first real query
+    // is what surfaces "file is not a database". _rwReady used to flip true BEFORE this query, so a failed
+    // load left it wrongly true over a dead _rwDb handle — every later caller (routePattern's bridge included)
+    // would then skip its own "not ready" guard and crash deep inside a real query instead of refusing cleanly.
+    var counts = db.exec(
       "SELECT (SELECT COUNT(*) FROM ad_space_type_mep_bom) as bom, " +
       "(SELECT COUNT(*) FROM ad_mep_pattern) as pat, " +
       "(SELECT COUNT(*) FROM ad_mep_anchor) as anc, " +
@@ -83,6 +182,7 @@ async function rwInit(SQL, baseUrl) {
       "(SELECT COUNT(*) FROM _shim_attributes) as shim, " +
       "(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='arc_envelope') as has_arc"
     );
+    _rwDb = db; _rwReady = true;
     var r = counts[0].values[0];
     console.log('§RW_INIT mep_rw.db loaded bom=' + r[0] + ' patterns=' + r[1] +
                 ' anchors=' + r[2] + ' offsets=' + r[3] + ' shims=' + r[4] + ' arc_env=' + r[5]);
@@ -128,7 +228,7 @@ function rwWalk(buildingDb, buildingName, opts) {
   var anchorKey = _rwFindAnchorKey(buildingName, dbBldName);
   var hasAnchors = anchorKey !== null;
 
-  var result = { fixtures: 0, pipes: 0, clashSkipped: 0, total: 0 };
+  var result = { fixtures: 0, pipes: 0, clashSkipped: 0, refused: 0, total: 0, fixturesRefused: 0 };
 
   if (hasAnchors && !opts.forceRegen) {
     // Path A: pattern walk using pre-mined anchors (Java port)
@@ -136,6 +236,7 @@ function rwWalk(buildingDb, buildingName, opts) {
     var patResult = _rwPatternWalk(buildingDb, anchorKey, arcEnvelope);
     result.pipes = patResult.cwLines + patResult.spLines;
     result.clashSkipped = patResult.clashSkipped;
+    result.refused += (patResult.refused || 0);
   }
 
   // Path B: room-based BOM placement (always runs — adds fixtures)
@@ -145,18 +246,22 @@ function rwWalk(buildingDb, buildingName, opts) {
     console.log('§RW_PATH_B building=' + dbBldName + ' rooms=' + rooms.length);
     var bomResult = _rwPlaceFromBOM(buildingDb, dbBldName, rooms, arcEnvelope);
     result.fixtures += bomResult.placed;
+    result.fixturesRefused += (bomResult.refused || 0);
 
     // If no pre-mined anchors, also generate pipe runs from placed fixtures
     if (!hasAnchors || opts.forceRegen) {
       var pipeResult = _rwConnectFixtures(buildingDb, dbBldName, arcEnvelope);
       result.pipes += pipeResult.pipes;
       result.clashSkipped += pipeResult.clashSkipped;
+      result.refused += (pipeResult.refused || 0);
     }
   }
 
   result.total = result.fixtures + result.pipes;
   console.log('§RW_WALK building=' + buildingName + ' fixtures=' + result.fixtures +
+              ' fixturesRefused=' + result.fixturesRefused +
               ' pipes=' + result.pipes + ' clashSkipped=' + result.clashSkipped +
+              ' refused=' + result.refused + (result.refused ? ' (no real cross-section product, WalkerDoctrine.md §8)' : '') +
               ' total=' + result.total);
   return result;
 }
@@ -240,27 +345,44 @@ function rwRouteSegments(buildingDb, buildingName, opts) {
 // Map route segments → modeller GEOM_SWEEP commit payloads (the op-log emit).
 // Each payload: { op_type:'GEOM_SWEEP', parameters:{ profile:{w,h}, path:[from,to] }, _rw:{disc,storey} }.
 // opts: { translate:[tx,ty,tz] (drop transform applied to both endpoints, default 0),
-//         profileM (pipe cross-section in metres, default RW_PIPE_NOMINAL_MM/1000),
-//         limit (cap the number of ops emitted — occt pipe is costly; default all) }.
-// Pure: no DB, no commit — caller feeds each payload to window.Bonsai.oplog.commit().
+//         profileM (pipe cross-section in metres — an explicit CALLER OVERRIDE that bypasses the real
+//         per-discipline lookup below; the walker's OWN default is now rwCrossSectionFor(s.disc), never a
+//         flat constant — WalkerDoctrine.md §8),
+//         limit (cap the number of segments considered — occt pipe is costly; default all) }.
+// HARD FAIL, no fallback: a segment whose discipline has no verified real cross-section product is
+// REFUSED (no GEOM_SWEEP emitted for it) — counted and logged, never silently dropped, never rendered at
+// an invented size (WalkerDoctrine.md §8: "a wrong-but-present number is worse than an honest gap").
+// Pure: no DB, no commit — caller feeds each payload to window.Bonsai.oplog.commit(). Returns an ARRAY of
+// ops (same shape callers have always used, `.length`/`.map` etc. all still work) with two extra
+// properties for the new refuse-accounting: `.refused` ([{disc,from,to,reason}]) and `.refusedCount`.
 function rwSweepOps(segments, opts) {
   opts = opts || {};
   var t = opts.translate || [0, 0, 0];
-  var pw = (opts.profileM != null) ? opts.profileM : (RW_PIPE_NOMINAL_MM / 1000);
   var segs = (opts.limit != null && opts.limit < segments.length) ? segments.slice(0, opts.limit) : segments;
-  return segs.map(function (s) {
-    return {
+  var ops = [], refused = [];
+  segs.forEach(function (s) {
+    var xs = (opts.profileM != null)
+      ? { w: opts.profileM, h: opts.profileM, real: false }             // explicit caller override — not a real lookup
+      : rwCrossSectionFor(s.disc);
+    if (xs.refused) { refused.push({ disc: s.disc, from: s.from, to: s.to, reason: xs.reason }); return; }
+    ops.push({
       op_type: 'GEOM_SWEEP',
       parameters: {
-        profile: { w: pw, h: pw },
+        profile: { w: xs.w, h: xs.h },
         path: [
           [s.from[0] + t[0], s.from[1] + t[1], s.from[2] + t[2]],
           [s.to[0] + t[0], s.to[1] + t[1], s.to[2] + t[2]]
         ]
       },
-      _rw: { disc: s.disc, storey: s.storey, axis: s.axis }
-    };
+      _rw: { disc: s.disc, storey: s.storey, axis: s.axis, crossSection: xs.real ? xs.product : 'override' }
+    });
   });
+  ops.refused = refused; ops.refusedCount = refused.length; ops.total = segs.length;
+  var byDisc = {}; refused.forEach(function (r) { byDisc[r.disc] = (byDisc[r.disc] || 0) + 1; });
+  console.log('§RW_SWEEP segments=' + segs.length + ' emitted=' + ops.length + ' refused=' + refused.length +
+    (refused.length ? ' (' + Object.keys(byDisc).map(function (d) { return d + ':' + byDisc[d]; }).join(' ') +
+      ' — no real cross-section product, WalkerDoctrine.md §8)' : ''));
+  return ops;
 }
 
 // Align anchor-space route segments to a WORLD-placed building (the auto-emit-on-drop transform).
@@ -454,10 +576,18 @@ function _rwPairSegments(discipline, steps, allAnchors, arcEnvelope, out) {
           dz = step.gradient * Math.sqrt(dx * dx + dy * dy);
         }
         var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        var midX = (from.x + nearest.x) / 2, midY = (from.y + nearest.y) / 2, midZ = (from.z + nearest.z) / 2;
-        if (_rwClashesWithArc(midX, midY, midZ, RW_PIPE_CROSS / 1000, RW_PIPE_CROSS / 1000, len, arcEnvelope)) {
+        // Clash-margin box: the REAL cross-section when one is verified for this discipline (WalkerDoctrine.md
+        // §8, rwCrossSectionFor), else RW_PIPE_CROSS — a disclosed, topology-level safety margin (candidate
+        // pairing, not a rendered dimension). No real CW/SP product exists yet (see RW_REAL_CROSSSECTION).
+        // NEAREST-ONLY is deliberate. Measured 2026-09-24: "try the next-nearest on a clash" exploded PLB runs
+        // (Duplex 18 fixtures → 110 runs, Terminal 969 → 7,712) by reaching targets up to RW_MAX_PAIR_DIST away.
+        // Do not "improve" this without a plausibility bound on run length.
+        var _xsPS = rwCrossSectionFor(discipline);
+        var _crossPS = (_xsPS.real ? Math.max(_xsPS.w, _xsPS.h) : RW_PIPE_CROSS / 1000);
+        if (_rwRunClashes(from, dx, dy, dz, _crossPS, arcEnvelope)) {   // §RW-RUNBOX
           return; // clash — skip, same gate as the insert path
         }
+        if (!nearest) return;
         out.push({
           disc: discipline, storey: storey, axis: step.directionAxis,
           from: [from.x, from.y, from.z], to: [nearest.x, nearest.y, from.z + dz],
@@ -480,18 +610,20 @@ function _rwPatternWalk(buildingDb, buildingName, arcEnvelope) {
 
   if (!allAnchors.length) {
     console.warn('§RW_WARN no anchors for ' + buildingName);
-    return { cwLines: 0, spLines: 0, clashSkipped: 0 };
+    return { cwLines: 0, spLines: 0, clashSkipped: 0, refused: 0 };
   }
 
-  var cwResult = cwSteps.length ? _rwApplyPattern(buildingDb, 'CW', cwSteps, allAnchors, arcEnvelope, buildingName) : { emitted: 0, clashSkipped: 0 };
-  var spResult = spSteps.length ? _rwApplyPattern(buildingDb, 'SP', spSteps, allAnchors, arcEnvelope, buildingName) : { emitted: 0, clashSkipped: 0 };
+  var cwResult = cwSteps.length ? _rwApplyPattern(buildingDb, 'CW', cwSteps, allAnchors, arcEnvelope, buildingName) : { emitted: 0, clashSkipped: 0, refused: 0 };
+  var spResult = spSteps.length ? _rwApplyPattern(buildingDb, 'SP', spSteps, allAnchors, arcEnvelope, buildingName) : { emitted: 0, clashSkipped: 0, refused: 0 };
 
   console.log('§RW_PATTERN ' + buildingName + ': CW=' + cwResult.emitted +
-              ' SP=' + spResult.emitted + ' clashSkipped=' + (cwResult.clashSkipped + spResult.clashSkipped));
+              ' SP=' + spResult.emitted + ' clashSkipped=' + (cwResult.clashSkipped + spResult.clashSkipped) +
+              ' refused=' + ((cwResult.refused || 0) + (spResult.refused || 0)) + ' (no real cross-section product, WalkerDoctrine.md §8)');
   return {
     cwLines: cwResult.emitted,
     spLines: spResult.emitted,
-    clashSkipped: cwResult.clashSkipped + spResult.clashSkipped
+    clashSkipped: cwResult.clashSkipped + spResult.clashSkipped,
+    refused: (cwResult.refused || 0) + (spResult.refused || 0)
   };
 }
 
@@ -549,7 +681,13 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
     byStorey[s].push(a);
   });
 
-  var emitted = 0, clashSkipped = 0;
+  var emitted = 0, clashSkipped = 0, refused = 0;
+  // Real cross-section for THIS discipline (WalkerDoctrine.md §8) — resolved once, this function is always
+  // called with a single fixed `discipline` (CW or SP). `xs.real` FP-style products don't exist for CW/SP
+  // today (RW_REAL_CROSSSECTION), so this path is the HARD-FAIL branch below in practice; kept generic so a
+  // future real CW/SP product (or FP, if ever pattern-routed) is picked up automatically, no code change.
+  var _xsAP = rwCrossSectionFor(discipline);
+  var _crossAP = (_xsAP.real ? Math.max(_xsAP.w, _xsAP.h) : RW_PIPE_CROSS / 1000);
 
   Object.keys(byStorey).forEach(function(storey) {
     var storeyAnchors = byStorey[storey];
@@ -594,22 +732,27 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
         var midY = (from.y + nearest.y) / 2;
         var midZ = (from.z + nearest.z) / 2;
 
-        // ARC envelope clash check
-        if (_rwClashesWithArc(midX, midY, midZ, RW_PIPE_CROSS / 1000, RW_PIPE_CROSS / 1000, pipeLen, arcEnvelope)) {
+        // ARC envelope clash check (real cross-section when verified, else the disclosed safety-margin default)
+        if (_rwRunClashes(from, dx, dy, dz, _crossAP, arcEnvelope)) {   // §RW-RUNBOX
           clashSkipped++;
           return;
         }
 
-        // Emit pipe segment
+        // HARD FAIL (WalkerDoctrine.md §8): no verified real cross-section product for this discipline ->
+        // REFUSE the DB insert entirely (never write a FABRICATED bbox_x/y/z as if it were real geometry —
+        // a persisted wrong-but-present number is worse than an honest gap, same rule as the sweep profile).
+        if (!_xsAP.real) { refused++; usedIds[nearest.anchorId] = true; return; }
+
+        // Emit pipe segment — bbox cross-section is the REAL product's, only the run-length axis varies.
         var info = discipline === 'CW' ? RW_IFC_MAP.PIPE_CW : RW_IFC_MAP.PIPE_SP;
         var guid = _rwGuid(discipline + '_PIPE');
         _rwInsertElement(buildingDb, guid, info.cls,
           discipline + ' Pipe ' + step.directionAxis + ' ' + storey,
           buildingName, storey, info.disc, info.rgba,
           midX, midY, midZ,
-          Math.abs(dx) || RW_PIPE_CROSS / 1000,
-          Math.abs(dy) || RW_PIPE_CROSS / 1000,
-          Math.abs(dz) || RW_PIPE_CROSS / 1000
+          Math.abs(dx) || _crossAP,
+          Math.abs(dy) || _crossAP,
+          Math.abs(dz) || _crossAP
         );
         emitted++;
         usedIds[nearest.anchorId] = true;
@@ -617,7 +760,9 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
     });
   });
 
-  return { emitted: emitted, clashSkipped: clashSkipped };
+  if (refused) console.log('§RW_APPLY_PATTERN_REFUSE disc=' + discipline + ' refused=' + refused +
+    ' — no real cross-section product in component_library.db, WalkerDoctrine.md §8');
+  return { emitted: emitted, clashSkipped: clashSkipped, refused: refused };
 }
 
 // A4a. ARC envelope loader from mep_rw.db (for the op-log modeller — no building DB)
@@ -721,6 +866,26 @@ function _rwAabbOverlap(c1, s1, c2, s2, tol) {
 // Optional `tol` overrides RW_ARC_CLASH_TOL. Positive tol = a REQUIRED standoff (the candidate must stay
 // `tol` metres CLEAR of the box); the default -0.01 lets a pipe touch a wall but not penetrate. The
 // discipline-aware caller (_rwStructTol) passes the cited clearance for the relevant service.
+// §RW-RUNBOX (2026-09-24, MODELLER_MASTER §STRATEGY L2) — SPEC. The pairing/insert clash box used to be
+// [cross, cross, runLength] at the run's midpoint: the THIRD (Z) axis was always treated as the pipe's long axis.
+// A horizontal run of length L therefore became a thin vertical post L tall, poking L/2 through the slab above
+// and the slab below, so almost every horizontal run "clashed" and was skipped. Measured (2026-09-24, bridge
+// probe): Duplex 141 pairs with an empty envelope vs 6 with the ARC envelope; SampleCastle 316 vs 32; SampleHouse
+// 14 vs 0. disc_walker.js's _envelopeClash had already documented the mis-orientation (and post-filters with the
+// correct box) but left routewalker.js unfixed. FIX: the box is the run's own axis-aligned extent, inflated by
+// the cross-section on every axis (all THREE call sites: _rwPairSegments, the pattern insert path, _rwConnectFixtures): [|dx|+cross, |dy|+cross, |dz|+cross], centred on the EMITTED segment's
+// midpoint (to.z = from.z + dz, so a GRADIENT step is checked where it is actually drawn). Pattern steps are
+// axis-aligned by construction, so this box is exact, not an approximation. Proof: W-ROUTE-PATTERN-BRIDGE and
+// W-MEP-OPENPATH, compared against the unmodified baseline. MEASURED (PLB runs on the real walk, L1 alone →
+// L1+§RW-RUNBOX): Duplex 8 → 18, Terminal 2,781 → 2,893, SampleCastle 32 → 18. SampleCastle's drop is a greedy
+// PAIRING-ORDER effect, not lost correctness: both variants emit only runs that pass the correct box
+// (disc_walker.js _envelopeClash post-filters with it). The old box let clashing runs consume target anchors,
+// which changed which targets later fixtures saw.
+function _rwRunClashes(from, dx, dy, dz, cross, arcEnvelope) {
+  return _rwClashesWithArc(from.x + dx / 2, from.y + dy / 2, from.z + dz / 2,
+    Math.abs(dx) + cross, Math.abs(dy) + cross, Math.abs(dz) + cross, arcEnvelope);
+}
+
 function _rwClashesWithArc(px, py, pz, pw, pd, ph, arcs, tol) {
   if (tol === undefined) tol = RW_ARC_CLASH_TOL;
   for (var i = 0; i < arcs.length; i++) {
@@ -870,7 +1035,12 @@ function rwCoordinate(routesByDisc, coord) {
 function rwClearStructure(segs, disc, structBoxes, coord) {
   var tol = _rwStructTol(disc, coord);          // FP → +0.05 (50mm standoff); else RW_ARC_CLASH_TOL (touch)
   var enforced = tol > 0;                        // a positive standoff is a VERIFIED, enforceable clearance
-  var cross = RW_PIPE_CROSS / 1000;
+  // Cross-section for the clash box half-extent: the REAL product's cross-section when one is verified for
+  // this discipline (today only FP — rwCrossSectionFor, WalkerDoctrine.md §8), else RW_PIPE_CROSS — a
+  // disclosed, SEPARATE concern from the visual sweep profile above (a candidate-level safety margin; no
+  // real CW/SP/ACMV/ELEC product exists yet to replace it here — see RW_REAL_CROSSSECTION's own comment).
+  var _rxs = rwCrossSectionFor(disc);
+  var cross = _rxs.real ? Math.max(_rxs.w, _rxs.h) : (RW_PIPE_CROSS / 1000);
 
   function clashesAt(seg) {                      // pipe midpoint + cross-section vs the structural boxes
     var mx = (seg.from[0]+seg.to[0])/2, my = (seg.from[1]+seg.to[1])/2, mz = (seg.from[2]+seg.to[2])/2;
@@ -1018,7 +1188,7 @@ function _rwClassifyRoom(name, areaSqm) {
  * Reads ad_space_type_mep_bom + ad_placement_offset + _shim_attributes.
  */
 function _rwPlaceFromBOM(buildingDb, buildingName, rooms, arcEnvelope) {
-  var placed = 0;
+  var placed = 0, refused = 0, refusedList = [];
 
   // Load placement offsets (keyed by rule name)
   var offsets = {};
@@ -1064,27 +1234,45 @@ function _rwPlaceFromBOM(buildingDb, buildingName, rooms, arcEnvelope) {
 
       var info = RW_IFC_MAP[product] || RW_IFC_MAP._DEFAULT;
 
+      // WalkerDoctrine.md §10 / real_placement_resolver.js: the ONE shared gate every leaf placement routes
+      // through instead of a hardcoded box. Real dims are the SAME for every q in this product's qty loop
+      // (per-product, not per-instance), so resolve once per BOM row. NO MATCH -> honest refuse: this product
+      // is skipped entirely for this room (never a fabricated 0.15x0.15x0.15 box) and counted in `refused`.
+      var real;
+      try {
+        var RPR = (typeof window !== 'undefined' && window.RealPlacementResolver) ||
+          (typeof globalThis !== 'undefined' && globalThis.RealPlacementResolver) || null;
+        if (!RPR) throw new Error('RealPlacementResolver module not loaded');
+        real = RPR.resolveRealPlacement({ discipline: info.disc, category: product, ifc_class: info.cls, productHint: product });
+      } catch (e) {
+        refused += qty;
+        refusedList.push({ product: product, room: room.storey + '/' + room.type, qty: qty, reason: (e && e.message) || String(e) });
+        console.error('§RW_BOM_PLACE_REFUSE product=' + product + ' room=' + room.storey + '/' + room.type +
+          ' qty=' + qty + ' reason=' + ((e && e.message) || e) + ' — WALKER_GAP, no fabricated box, skipped');
+        return;
+      }
+
       for (var q = 0; q < qty; q++) {
         // Compute XYZ from room bbox + placement offset
         var pos = _rwComputePosition(room, offset, hostSurface, q, qty);
 
-        // Check ARC clash
-        if (_rwClashesWithArc(pos.x, pos.y, pos.z, 0.1, 0.1, 0.1, arcEnvelope)) continue;
+        // Check ARC clash (real dims, not a flat constant)
+        if (_rwClashesWithArc(pos.x, pos.y, pos.z, real.width, real.depth, real.height, arcEnvelope)) continue;
 
         var guid = _rwGuid(product);
         _rwInsertElement(buildingDb, guid, info.cls,
           product + ' ' + room.storey + (qty > 1 ? ' #' + (q + 1) : ''),
           buildingName, room.storey, info.disc, info.rgba,
           pos.x, pos.y, pos.z,
-          0.15, 0.15, 0.15  // fixture bbox — small
+          real.width, real.depth, real.height  // real ad_product_dim bbox — WalkerDoctrine.md §9/§10
         );
         placed++;
       }
     });
   });
 
-  console.log('§RW_BOM_PLACE rooms=' + rooms.length + ' fixtures=' + placed);
-  return { placed: placed };
+  console.log('§RW_BOM_PLACE rooms=' + rooms.length + ' fixtures=' + placed + ' refused=' + refused);
+  return { placed: placed, refused: refused, refusedList: refusedList };
 }
 
 /**
@@ -1132,7 +1320,7 @@ function _rwComputePosition(room, offset, hostSurface, index, total) {
  * runs nearest-neighbour pairing to create pipe runs.
  */
 function _rwConnectFixtures(buildingDb, buildingName, arcEnvelope) {
-  var pipes = 0, clashSkipped = 0;
+  var pipes = 0, clashSkipped = 0, refused = 0;
 
   // Read placed fixtures grouped by storey
   var fixRows;
@@ -1145,8 +1333,8 @@ function _rwConnectFixtures(buildingDb, buildingName, arcEnvelope) {
       "AND m.ifc_class != 'IfcPipeSegment' " +
       "ORDER BY m.storey"
     );
-  } catch (e) { return { pipes: 0, clashSkipped: 0 }; }
-  if (!fixRows.length) return { pipes: 0, clashSkipped: 0 };
+  } catch (e) { return { pipes: 0, clashSkipped: 0, refused: 0 }; }
+  if (!fixRows.length) return { pipes: 0, clashSkipped: 0, refused: 0 };
 
   // Group fixtures by storey
   var byStorey = {};
@@ -1178,29 +1366,38 @@ function _rwConnectFixtures(buildingDb, buildingName, arcEnvelope) {
       var midY = (from.y + to.y) / 2;
       var midZ = (from.z + to.z) / 2;
 
-      // Clash check
-      if (_rwClashesWithArc(midX, midY, midZ, RW_PIPE_CROSS / 1000, RW_PIPE_CROSS / 1000, dist, arcEnvelope)) {
+      // Determine pipe type from fixture discipline (needed BEFORE the clash check so the real per-discipline
+      // cross-section, WalkerDoctrine.md §8, sizes the clash-margin box too — not just the eventual insert).
+      var pipeInfo = from.disc === 'PLB' ? RW_IFC_MAP.PIPE_SP : RW_IFC_MAP.PIPE_CW;
+      var _xsCF = rwCrossSectionFor(pipeInfo.disc);
+      var _crossCF = (_xsCF.real ? Math.max(_xsCF.w, _xsCF.h) : RW_PIPE_CROSS / 1000);
+
+      // Clash check (real cross-section when verified, else the disclosed safety-margin default)
+      if (_rwRunClashes(from, dx, dy, dz, _crossCF, arcEnvelope)) {   // §RW-RUNBOX
         clashSkipped++;
         continue;
       }
 
-      // Determine pipe type from fixture discipline
-      var pipeInfo = from.disc === 'PLB' ? RW_IFC_MAP.PIPE_SP : RW_IFC_MAP.PIPE_CW;
+      // HARD FAIL (WalkerDoctrine.md §8): no verified real cross-section product for this discipline -> REFUSE
+      // the DB insert entirely (never persist a FABRICATED bbox as if it were real geometry).
+      if (!_xsCF.real) { refused++; continue; }
+
       var guid = _rwGuid('PIPE');
       _rwInsertElement(buildingDb, guid, pipeInfo.cls,
         'Pipe ' + storey + ' run ' + (i + 1),
         buildingName, storey, pipeInfo.disc, pipeInfo.rgba,
         midX, midY, midZ,
-        Math.abs(dx) || RW_PIPE_CROSS / 1000,
-        Math.abs(dy) || RW_PIPE_CROSS / 1000,
-        Math.abs(dz) || RW_PIPE_CROSS / 1000
+        Math.abs(dx) || _crossCF,
+        Math.abs(dy) || _crossCF,
+        Math.abs(dz) || _crossCF
       );
       pipes++;
     }
   });
 
-  console.log('§RW_CONNECT pipes=' + pipes + ' clashSkipped=' + clashSkipped);
-  return { pipes: pipes, clashSkipped: clashSkipped };
+  console.log('§RW_CONNECT pipes=' + pipes + ' clashSkipped=' + clashSkipped + ' refused=' + refused +
+    (refused ? ' (no real cross-section product, WalkerDoctrine.md §8)' : ''));
+  return { pipes: pipes, clashSkipped: clashSkipped, refused: refused };
 }
 
 
@@ -1236,13 +1433,29 @@ function _rwInsertElement(db, guid, ifcClass, name, building, storey, disc, rgba
 // IndexedDB cache for mep_rw.db
 // ═══════════════════════════════════════════════════════════════
 
+// §M1-FIX (found + fixed this pass, pre-existing latent bug — NOT introduced by the pattern bridge, just the
+// first thing that actually exercised this code path on a fresh IFC-open session): two real bugs, both now
+// defended —
+// (1) `bim_ootb_cache` can be created by ANOTHER caller first (disc_walker.js's own _openCacheDB, no version,
+//     no store) at version 1 with NO 'dbs' object store. This function's `indexedDB.open(…, 1)` then sees "no
+//     version change needed" → onupgradeneeded never fires → `idb.transaction('dbs', …)` throws NotFoundError
+//     SYNCHRONOUSLY inside a DOM event handler — a throw there is NOT caught by the wrapping `new Promise`
+//     executor (it's a callback, not a continuation of it) and surfaces as an UNCAUGHT pageerror that bypasses
+//     every .catch() in the chain (confirmed live: W-E2E-WALK-IFCOPEN G4-G6 failed with exactly this
+//     DOMException on a fresh IFC-open session). Fixed: guard every `idb.transaction('dbs', …)` in try/catch,
+//     falling back to a bare fetch on failure — mirrors disc_walker.js's own `_idbGet`/`_idbPut` defensive style.
+// (2) The two fallback fetch branches (get.onerror/req.onerror) never checked `resp.ok` — a 404 response body
+//     was silently accepted as if it were the database (confirmed live: a 404 "404" text body passed straight
+//     to `new SQL.Database()`, throwing "file is not a database"). Fixed: same `if (!resp.ok) throw` guard the
+//     primary path already had.
 function _rwFetchCached(url) {
   return new Promise(function(resolve, reject) {
     var req = indexedDB.open('bim_ootb_cache', 1);
-    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    req.onupgradeneeded = function() { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = function() {
-      var idb = req.result;
-      var tx = idb.transaction('dbs', 'readonly');
+      var idb = req.result, tx;
+      try { tx = idb.transaction('dbs', 'readonly'); }
+      catch (e) { console.warn('§RW_CACHE_TX_FAIL ' + e.message + ' — bare fetch'); fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject); return; }
       var get = tx.objectStore('dbs').get('rw_' + url);
       get.onsuccess = function() {
         if (get.result) {
@@ -1263,11 +1476,11 @@ function _rwFetchCached(url) {
         }
       };
       get.onerror = function() {
-        fetch(url).then(function(r) { return r.arrayBuffer(); }).then(resolve).catch(reject);
+        fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject);
       };
     };
     req.onerror = function() {
-      fetch(url).then(function(r) { return r.arrayBuffer(); }).then(resolve).catch(reject);
+      fetch(url).then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(resolve).catch(reject);
     };
   });
 }

@@ -1,0 +1,116 @@
+{
+  "_spec": "GEOMETRY_TRUTH_CHAIN.md §S1 — generated, never hand-edited. Regenerate: node scripts/gen_buildings_manifest.js",
+  "_note": "geoCovered/geoMissing are the JOIN across the (meta db, geo substrate) PAIR. geoRowsInMetaDb=0 is HEALTHY for ARC residents.",
+  "generated": "2026-07-19",
+  "substrates": {
+    "mesh.db": {
+      "geometries": 9198
+    }
+  },
+  "buildings": [
+    {
+      "key": "SampleHouse",
+      "db": "SampleHouse_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 60,
+      "instances": 58,
+      "distinctHashes": 46,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 58,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "Duplex",
+      "db": "Duplex_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 218,
+      "instances": 215,
+      "distinctHashes": 155,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 215,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "SampleCastle",
+      "db": "SampleCastle_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 3342,
+      "instances": 3225,
+      "distinctHashes": 1924,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 3225,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "HHS",
+      "db": "HHS_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 2560,
+      "instances": 2527,
+      "distinctHashes": 619,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 2527,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "Clinic",
+      "db": "Clinic_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 2620,
+      "instances": 2586,
+      "distinctHashes": 1467,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 2586,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "Hospital",
+      "db": "Hospital_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 14641,
+      "instances": 14409,
+      "distinctHashes": 3568,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 14409,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "HospitalGarage",
+      "db": "Garage_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 1271,
+      "instances": 1252,
+      "distinctHashes": 476,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 1252,
+      "geoMissing": 0,
+      "coveragePct": 100
+    },
+    {
+      "key": "Terminal",
+      "db": "Terminal_ARC.db",
+      "geoDb": "mesh.db",
+      "meta": 35552,
+      "instances": 35552,
+      "distinctHashes": 917,
+      "geoRowsInMetaDb": 0,
+      "geoSubstrate": "mesh.db",
+      "geoCovered": 35552,
+      "geoMissing": 0,
+      "coveragePct": 100
+    }
+  ]
+}

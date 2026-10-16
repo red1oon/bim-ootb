@@ -1,0 +1,33 @@
+§LCOST-FIXTURE Standard Costing prerequisite: product categories of 50007,50008,50014 set to costing method S (GardenWorld ships Average PO, Libero refuses non-Standard); standard material prices KG=2.5 BAG=0.4 FG=9; on-hand KG=10000 BAG=500
+§LCOST-L0 order LC-A created: ok=true err= qtyreserved=100 FG reservation 0 -> 100 | lines 50008:req7070.71:res7070.71,50014:req100:res100
+  §LCOST L0 order creation reserves the finished product (orderStock: 100 - 0 - 0 = 100, reservation semantics) and each stocked BOM line (reserved = required: KG 7070.71, BAG 100) PASS
+  §LCOST L1 DocAction CO on the order: prepareIt reserves + completeIt snapshots standard costs; status CO, DocAction CL, approved PASS
+§LCOST-L1b PP_Order_Cost rows=20 independent count over M_Cost (FG, KG, BAG + the routing resource product 50024)=20 KG material std price in the snapshot=2.5
+  §LCOST L1b the PP_Order_Cost snapshot holds exactly the M_Cost rows of the finished product, both BOM products and the routing resource product (20 rows), KG material price 2.5 PASS
+§LCOST-L2 Issue with costing method Average PO: ok=false msg="Costing method not supported - A" onhand 10000 -> 10000 transactions 28 -> 28
+  §LCOST L2 an Issue under Average PO costing is REFUSED "Costing method not supported - A" and NOTHING moves (no storage change, no M_Transaction) PASS
+§LCOST-L3 issues: kg ok=true  | bag ok=true 
+  §LCOST L3a Component Issue KG: stock out 7070.71 (on-hand 10000 -> 2929.29), Material cost detail amt = 2.5 x -7070.71 = -17676.775 qty -7070.71, one detail per Standard element x schema PASS
+  §LCOST L3b Component Issue BAG: stock out 100 (500 -> 400), Material cost detail amt = 0.4 x -100 = -40 PASS
+  §LCOST L3c BOM lines book the delivery and release the reservation: KG delivered 7070.71 reserved 0, BAG delivered 100 reserved 0; the transaction is W- qty -7070.71 PASS
+  §LCOST L3d the issue allocated from the existing on-hand (FIFO material policy): one PP_Cost_CollectorMA row, ASI 0, qty 7070.71 PASS
+  §LCOST L3e the collector is completed: DocStatus CO, Processed Y, DocAction CL, DocType = the target (Manufacturing Cost Collector 50013), a DocumentNo assigned PASS
+  §LCOST L3f no rate variance: the order's standard price equals the actual price (2.5 / 0.4), so no variance collector exists (CostEngine.createRateVariances :541) PASS
+  §LCOST L4a Receipt 40: finished goods IN (0 -> 40), FG cost = 40/100 x (17676.775 + 40) = 7086.71 qty +40, order QtyDelivered 40, DateStart set, not finished yet FAIL {"ok":true,"msg":null,"fd1":{"amt":360,"qty":40},"oA1":{"qtydelivered":40,"qtyreserved":60,"datestart":"2026-10-15 00:00:00","datefinish":null,"datedelivered":"2026-10-15 00:00:00"}}
+  §LCOST L4b the receipt creates a NEW ASI (StorageEngine: "always create asi so fifo/lifo work"): ASI > 0 in the MA row, the W+ transaction and the storage row PASS
+  §LCOST L4c Receipt 60 (the rest): FG cost = 60/60 x (17716.775 - 7086.71) = 10630.065, so the two receipts carry exactly the issued cost 17716.775; order delivered 100, DateFinish set, reservation released (qtyreserved 0) FAIL {"ok":true,"msg":null,"fd2":{"amt":540,"qty":60},"oA2":{"qtydelivered":100,"qtyreserved":0,"datefinish":"2026-10-15 00:00:00"},"res":0}
+  §LCOST L4d finished goods on hand = 100 in two ASI rows (40 + 60); the supply MRP row follows QtyOrdered - QtyDelivered = 0 PASS
+§LCOST-L5 rate variance: issue ok=true issueAmt=-17676.775 variance collectors=1 details=[{"amt":17676.775,"qty":7070.71},{"amt":-14141.42,"qty":-7070.71}]
+  §LCOST L5 a standard price below the actual price produces ONE completed Rate Variance collector whose Material details are (+17676.775, +7070.71) and (-14141.42, -7070.71); the issue itself costs the actual 2.5 x -7070.71 = -17676.775 PASS
+  §LCOST L6a a Receipt on an order with no QtyEntered is refused (CostEngine.calculateFG divides by QtyEntered - QtyDelivered) and moves nothing FAIL {"msg":null}
+  §LCOST L6b an Activity Control collector is REFUSED by name (DEFERRED), never silently completed PASS
+  §LCOST L6c an Issue without a BOM line is refused FillMandatory (MPPCostCollector.beforeSave :726) PASS
+  §LCOST L7 stop: the collector model + DocAction classes are gone, the collectors and cost details written while active are KEPT (9/82) PASS
+§LCOST-L8 columns dropped at apply: 19 of which CORE-owned (model_cost m_cost.processed, model_trade m_storageonhand.m_warehouse_id)=19 , bundle-owned=0
+  §LCOST L8 no BUNDLE op carried a column the physical tables lack PASS
+§LIBERO-DEFERRED MPPCostCollector Activity Control (160) completeIt + CostEngine.createActivityControl + RoutingService.getResourceBaseValue
+§LIBERO-DEFERRED Usage / Method Change / Mix variance collectors (120/130/150) and CostEngine.createUsageVariances / createMethodVariances bodies
+§LIBERO-DEFERRED MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO
+§LIBERO-DEFERRED StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation
+§LIBERO-DEFERRED Doc_PPCostCollector posting (M6) and MPPOrder.voidIt / closeIt / createVariances
+§LCOST-VERDICT FAIL judged=20 failed=3

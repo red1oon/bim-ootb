@@ -105,6 +105,7 @@ function setupPicking(A) {
       A.walkPath = [];
       var _fb = document.getElementById('fly-btn'); if (_fb) _fb.classList.remove('active');
       document.getElementById('walk-speed-btn').style.display = 'none';
+      if (A._scrubHide) A._scrubHide();   // §TOUR_TIMELINE_SCRUB — canvas tap aborts the tour, bar goes with it
     }
     // Long-press (500ms) → volume info card (mobile-friendly right-click)
     // Only start on single-finger touch; cancel if pinch (2nd pointer) or any move
@@ -344,7 +345,19 @@ function setupPicking(A) {
       const meta = A._instanceMeta[hit.object.id][hit.instanceId];
       if (meta) guid = meta.guid;
     }
-    // S232: Merged mesh — resolve nearest element by hit-point distance in DB
+    // §MERGED_GUID: Merged mesh — EXACT identity. The custom raycast (streaming.js
+    // _installMergedRaycast) tags each intersection with the guid of the element whose index range
+    // produced the hit, so this is O(1) and cannot pick a neighbour. Witness: W-MERGED-PICK.
+    if (!guid && hit.object.userData.isMerged && hit._mergedGuid) {
+      guid = hit._mergedGuid;
+      var _mr = hit._mergedRange || {};
+      console.log('§MERGED_PICK guid=' + guid + ' idxStart=' + _mr.idxStart +
+        ' storey=' + (_mr.storey || '') + ' disc=' + (_mr.disc || '') + ' class=' + (_mr.ifcClass || ''));
+    }
+    // S232 LEGACY FALLBACK: merged hit with no range tag (merged mesh built before the range map,
+    // or a raycast that bypassed the custom path) — resolve nearest element by hit-point distance
+    // in DB. Approximate by construction: returns the closest CENTROID in the same storey+disc,
+    // which is the wrong element among close-packed neighbours. Kept only as a safety net.
     if (!guid && hit.object.userData.isMerged) {
       // Convert Three.js hit point back to IFC coordinates
       const hp = hit.point;
@@ -625,6 +638,15 @@ function setupPicking(A) {
       A.populateStoreys(bld);
       A.populateDiscs(bld);
       console.log(`§PICK ${cls} "${name}" ${disc} ${storey}`);
+      // §S7-OPEN (2026-09-14, bim-compiler prompts/TM_4D5D_VARIANCE_LANE.md) — "when does THIS
+      // element get built" on a PLAIN CANVAS CLICK, not only via the Find panel. Before this, both
+      // #info-4d and S2's #info-cost were wired solely to navigate_find.js's pinpoint pick, so the
+      // most common way a user selects an element showed neither block until Find had loaded once.
+      // Deliberately 4D ONLY: wiring _showClassCost here too would WIDEN S2's shipped cost surface to
+      // picks where it has never appeared, which is a product decision, not a refactor (user ruling,
+      // option 1 of §S7-OPEN). Info4DPanel is eagerly loaded (viewer.html) and self-hides on a miss.
+      try { if (window.Info4DPanel) window.Info4DPanel.render(A, g || guid); } catch (e) { console.log('§4D_INFO_PANEL_ERR ' + e.message); }
+      try { if (window.EditDeltaViewer) window.EditDeltaViewer.renderInfo(A, g || guid); } catch (e) { console.log('§S8-INFO_ERR ' + e.message); }   // §S8
       // BIM_EMBED_WINDOW_SESSION §B3 — when docked inside an ERP window (A.EMBEDDED), a pick broadcasts
       // {bim:focusRecord} to the host so it focuses the owning project line (product Value == ifc_class).
       if (A.EMBEDDED && A._bimPostFocus) A._bimPostFocus(g || guid, cls);

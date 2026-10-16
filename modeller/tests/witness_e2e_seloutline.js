@@ -78,14 +78,24 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   }
   const o1 = await pg.evaluate(() => ({ outlines: window.__e2e.outlines(), count: window.__selOutlineCount, px: window.__e2e.pixsum() }));
 
-  // O3 — shift-click a second element
+  // §ZOOM-SEL: the O1 pick auto-flew the camera (zoomToSelection) — wait it out and RECOMPUTE the candidate
+  // screen coords on the settled frame (a real user re-aims after the camera arrives); the precomputed
+  // cands coords are stale mid-fly.
+  { const t0 = Date.now(); while (Date.now() - t0 < 15000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120); }
+  await sleep(300);
+  // O3 — shift-click a second element (fresh candidates every attempt: each toggle/re-select flies again)
   let fidB = null, o3 = null;
-  for (const c of cands) {
-    if (c.fid === fidA) continue;
+  const tried = new Set([fidA]);
+  for (let attempt = 0; attempt < 6 && fidB == null; attempt++) {
+    const c = (await pg.evaluate(() => window.__e2e.candidates())).find(x => !tried.has(x.fid));
+    if (!c) break;
+    tried.add(c.fid);
     await pg.keyboard.down('Shift'); await pg.mouse.click(c.sx, c.sy); await pg.keyboard.up('Shift'); await sleep(150);
     const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
     if (sel.length === 2 && sel.includes(c.fid)) { fidB = c.fid; break; }
     if (sel.length !== 1 || sel[0] !== fidA) { await pg.evaluate(f => window.Bonsai.select(f), fidA); await sleep(80); }
+    { const t0 = Date.now(); while (Date.now() - t0 < 15000 && await pg.evaluate(() => !!window.__flyLive)) await sleep(120); }
+    await sleep(300);
   }
   if (fidB != null) o3 = await pg.evaluate(() => window.__e2e.outlines());
 

@@ -2,7 +2,7 @@
 # STATUS: TRIAGE / SPEC ONLY (captured 2026-06-06, user directive). No implementation in this pass — this doc
 #   ORGANISES three buried requirements into one systematic plan so a fresh session can execute §A→§B→§C in order.
 # SCOPE: the iDempiere renderer chrome — `bim-ootb/erp/idempiere.html` (+ erp_pills.js/pill_builder.js/pills.json,
-#   the registry; universal_history.js, the history engine). Edit shipping code ONLY in `/home/red1/bim-ootb/`.
+#   the registry; universal_history.js, the history engine). Edit shipping code in a `/tmp/wt-<feature>` worktree, PR to main — the shared tree `/home/red1/bim-ootb/` is DENIED by the worktree-enforcement hook (installed 2026-06-06).
 # DOCTRINE: Spec-first · NON-INVENT (every pill/menu/record from a real source) · whitebox §-log is the PRIMARY
 #   witness (Playwright = loader/wiring only; a forced-viewport pass ≠ a real-device pass — see [[feedback_whitebox_not_playwright]]).
 # DEPLOY: isolated worktree off origin/main → PR → CI → squash-merge; bump `erp/sw.js` CACHE_VERSION (+ any `?v=`).

@@ -1,0 +1,46 @@
+Advance-Realism staffage — decorative ground-level tree billboard cutouts, starter set (6).
+Sourced from freecutout.com (https://freecutout.com). Vendored 2026-07-17.
+See PHOTOREAL_STILL_RENDER.md §SPEC (2026-07-17) Part A.
+
+LICENSE — NOT CC0, read before reusing elsewhere in this codebase:
+  "All members on this site can download and use cutouts both commercially and
+  privatly without charge." Attribution "welcome, but not required."
+  Restrictions: cannot resell/redistribute these cutouts as a standalone product or
+  library; cannot use in offensive content. Full terms: https://freecutout.com/terms/
+  This is broader than Skalgubbar's people-license (no architecture-only restriction)
+  but still not formal CC0 — same discipline as the people NOTICE.txt, documenting
+  provenance regardless.
+
+QUALITY CONTROL — 2 of the original 8 candidates downloaded were REJECTED after
+visual inspection: "maple tree with fruits" and "small city linden with fruits" both
+had genuine RGBA alpha channels (would have passed an alpha-histogram-only check) but
+the actual cutout was botched — original sky/ground background was still intact
+inside the tree's silhouette, only the four image corners were transparent. Caught by
+viewing every candidate at full resolution before vendoring, not by trusting the
+alpha stats alone. Do not re-add those two without a manual crop/re-mask first.
+
+FILES (all confirmed genuine full-silhouette cutouts by visual inspection, then
+downscaled + palette-quantized for repo size — see PROCESSING below):
+  tree_oak_big.png         <- "Big oak" (mature, broad canopy)
+  tree_oak_young.png       <- "Young, small oak" (smaller, upright)
+  tree_poplar.png          <- "Poplar with double trunk" (tall, narrow)
+  tree_beech.png           <- "Young beech" (rounded canopy)
+  tree_linden_city.png     <- "City linden" (medium, rounded)
+  tree_linden_big_old.png  <- "Big, old linden" (large, two-tier canopy)
+
+PROCESSING: originals were 2100-3500px/6-9MB each (~46MB for 6) — too heavy for a
+plain git blob at that size. Downscaled to a 1024px long edge (matches this
+project's existing 1K-texture convention, e.g. Layer 3 PBR/Layer 2 HDRI) and
+palette-quantized to 256 colors + alpha (PIL FASTOCTREE, Floyd-Steinberg dither) —
+cuts total size ~30x (46MB -> 1.5MB) with no visible quality loss at normal preview
+size; introduces mild dither speckle under close zoom, acceptable for a background
+billboard viewed at distance, not verified acceptable for a close hero shot. If a
+future use case needs a close-up tree, re-derive from the original download instead
+of upscaling these.
+
+Selection discipline: same as the people set — pulled from the site's tree tag
+archive, downloaded, verified as genuine cutouts by viewing each one (not trusting
+alpha-channel presence alone, per the QUALITY CONTROL note above), picked for
+species/size variety, all full-leaf/season-neutral (no bare winter trees, to match
+the people set's season-neutral discipline). Not yet wired into any rendering code —
+sourcing only, per PHOTOREAL_STILL_RENDER.md §SPEC Part A open questions.

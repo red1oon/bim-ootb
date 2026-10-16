@@ -1,3 +1,4 @@
+const __readSrc = require('../../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // author_blank_start_witness.js — W-AUTHOR-BLANK-START (FUSED_4D5D_WEDGE_LANE §MI-FLOW)
 //
 // ISSUE PROVED: a "true blank start" organizes the phases (WBS) + assignments but leaves them
@@ -20,7 +21,7 @@ function check(name, cond, detail) {
   if (cond) { pass++; console.log('§W-BLANK PASS  ' + name + (detail ? '  ' + detail : '')); }
   else { fail++; console.log('§W-BLANK FAIL  ' + name + (detail ? '  ' + detail : '')); }
 }
-function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
+function read(f) { return __readSrc(path.join(VIEWER, f), 'utf8'); }
 
 function loadRules() {
   var t = read('rates.js');
@@ -42,7 +43,7 @@ function loadCap() {
   var RULES = loadRules();
   var makeCap = loadCap();
   var SQL = await initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIST, f); } });
-  var db = new SQL.Database(new Uint8Array(fs.readFileSync(SH_DB)));
+  var db = new SQL.Database(new Uint8Array(__readSrc(SH_DB)));
   var nElems = db.exec('SELECT COUNT(*) FROM elements_meta')[0].values[0][0];
 
   // ── BLANK start: organize phases + assignments, but UNDATED ───────────────────

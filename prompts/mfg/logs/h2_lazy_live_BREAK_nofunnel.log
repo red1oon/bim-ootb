@@ -1,0 +1,4 @@
+  §PLG-LAZY L3 the first pp_order DocAction ACTIVATED the bundle at the funnel (ACTIVE, exactly 1 activation, DocAction class registered) FAIL {"state":"STARTING","probe":0,"docClass":false}
+  §PLG-LAZY L4 ordering: §PLUGIN-ACTIVATE precedes §MODEL-DOCACTION, and the model layer RAN the bundle's DocAction (not the status-only path) FAIL {"iAct":-1,"iDoc":-1,"sample":["§CRUD-HOSTPROCESS table=pp_order id=50000 action=CO from=DR to=CO outcome=su
+  §PLG-LAZY L5 a second demand does not re-activate (still 1 activation) FAIL {"again":0}
+§PLG-LAZY-VERDICT FAIL failed=3

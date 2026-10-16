@@ -403,11 +403,61 @@
     return { ov: ov, stepEls: stepEls, body: body, video: video, canvas: canvas, thumb: thumb, hint: hint, err: err, close: close };
   }
 
+  // ── §REVIEW-FIX D1 seam: the POS ctx glue (price / credit / tax inputs) lifted out of open() VERBATIM so the credit+tax path can be driven headless
+  // against a b3 handle (better-sqlite3 / sql.js shim). No behaviour change; open() calls these.
+  function _lensTaxOf(b3, pos, bpId, Eng) {
+    try {
+      var taxes = qa(b3, 'SELECT * FROM c_tax WHERE ad_client_id=?', pos.ad_client_id);
+      var loc = function (id) { return id ? q1(b3, 'SELECT c_country_id, c_region_id, postal FROM c_location WHERE c_location_id=?', id) : null; };
+      var bp = q1(b3, 'SELECT istaxexempt, deliveryviarule FROM c_bpartner WHERE c_bpartner_id=?', bpId) || {};
+      var bl = q1(b3, "SELECT c_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=? AND isbillto='Y' AND isactive='Y' ORDER BY c_bpartner_location_id", bpId);
+      var oi = q1(b3, 'SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=?', pos.ad_org_id), wl = q1(b3, 'SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=?', pos.m_warehouse_id);
+      var dv = q1(b3, "SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'");
+      var today = (typeof window !== 'undefined' && window.CrudCore ? window.CrudCore : require('./crud_core.js')).localDay();   // §LOCAL-TIME
+      return function (pid, date) {   // §REVIEW2 R4: `date` = the order's DateOrdered (MOrderLine.setTax :348 getDateOrdered()); absent ⇒ today
+        var p = q1(b3, 'SELECT c_taxcategory_id AS c FROM m_product WHERE m_product_id=?', pid);
+        var r = Eng.taxLookup({ taxes: taxes, taxCategoryId: p && p.c, isSOTrx: true, billDate: date ? String(date).slice(0, 10) : today, billFrom: loc(oi && oi.l), billTo: loc(bl && bl.l), warehouse: loc(wl && wl.l),
+          deliveryViaRule: bp.deliveryviarule || (dv && dv.d), bpTaxExempt: bp.istaxexempt });
+        console.log('§POS-TAX product=' + pid + ' bp=' + bpId + ' tax=' + (r.ok ? r.c_tax_id + ' via=' + r.via : 'NONE reason=' + r.reason));
+        return r;
+      };
+    } catch (e) { console.log('§POS-TAX inputs-missing ' + (e && e.message)); return function () { return { ok: false, reason: 'tax-inputs-missing' }; }; }
+  }
+  // §REVIEW2 R8: the sysconfig reads go through DocPoster.sysConfigBool = MSysConfig.getValue semantics (AD_Client_ID IN (0,client), AD_Org_ID IN (0,org), IsActive, client DESC, org DESC),
+  // not a bare `WHERE name=?`. DocPoster reads db.prepare(sql).get(paramsArray), the lens b3 takes spread arguments — a one-line adapter.
+  function _dpDb(b3) {
+    function sp(p) { return Array.isArray(p) ? p : (p === undefined ? [] : [p]); }
+    return { prepare: function (sql) { var st = b3.prepare(sql); return { get: function (p) { return st.get.apply(st, sp(p)); }, all: function (p) { return st.all.apply(st, sp(p)); } }; } };
+  }
+  function _docPoster() { return root.DocPoster || (typeof require !== 'undefined' ? (function () { try { return require('./doc_poster'); } catch (e) { try { return require('../../scripts/doc_poster'); } catch (e2) { return null; } } })() : null); }
+  function _posGlue(b3, pos, plv) {
+    return {
+      priceOf: function (pid) { return q1(b3, 'SELECT pricestd FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=?', plv.v, pid) || null; },
+      // §36 F5 (prompts/SQLiteIDEMPIERE.md): the SO credit gate inputs — bill-BP credit row + sysconfig (absent table/row ⇒ legacy default true)
+      creditOf: function (bpId) {
+        var sys = {}, DPx = _docPoster();
+        ['CHECK_CREDIT_ON_CASH_POS_ORDER', 'CHECK_CREDIT_ON_PREPAY_ORDER'].forEach(function (k) { try { if (DPx) sys[k] = DPx.sysConfigBool(_dpDb(b3), k, true, pos.ad_client_id, pos.ad_org_id) ? 'Y' : 'N'; } catch (e) { /* no ad_sysconfig in this db ⇒ default */ } });
+        return { bp: q1(b3, 'SELECT socreditstatus, so_creditlimit, totalopenbalance FROM c_bpartner WHERE c_bpartner_id=?', bpId), sys: sys };
+      },
+      // §45 F11: tax inputs (c_tax rows, taxIncluded of the POS price list); ctx.taxOf is bound per sale to the chosen partner (lensTaxOf)
+      taxById: function (id) { return q1(b3, 'SELECT * FROM c_tax WHERE c_tax_id=?', id); },
+      taxChildren: function (id) { return qa(b3, "SELECT * FROM c_tax WHERE parent_tax_id=? AND isactive='Y'", id); },
+      taxIncluded: (function () { try { var r = q1(b3, 'SELECT istaxincluded AS t FROM m_pricelist WHERE m_pricelist_id=?', pos.m_pricelist_id); return !!(r && r.t === 'Y'); } catch (e) { return false; } })()
+    };
+  }
+
   function open(cfg) {
     _injectStyles();
     var b3 = cfg.b3, el = cfg.el;
     var pos = q1(b3, 'SELECT * FROM c_pos LIMIT 1');
     if (!pos) { cfg.status('No POS station (c_pos) in this tenant'); return; }
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — the overlay's
+    // native ✕ only tore down #posted-overlay, not the body-level cart float/dock (see the onClose hook
+    // below for the real fix); a stray pair could survive a prior visit. Guard re-open: never stack a
+    // second float/dock on top of a leftover one.
+    ['pos-float-panel', 'pos-dock'].forEach(function (id) {
+      var stale = document.getElementById(id); if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+    });
     var plv = q1(b3, 'SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=?', pos.m_pricelist_id);
     var tiles = qa(b3,
       'SELECT k.c_poskey_id, k.m_product_id, p.name, pp.pricestd FROM c_poskey k ' +
@@ -421,18 +471,18 @@
       if (p.upc)   productByCode[String(p.upc).trim()]   = p.m_product_id;
       if (p.value) productByCode[String(p.value).trim()] = p.m_product_id;
     });
+    // §45 F11: the line-tax lookup for ONE sale — body extracted to module-level _lensTaxOf (testable headless, §REVIEW-FIX D1; no behaviour change).
+    function lensTaxOf(bpId) { return _lensTaxOf(b3, pos, bpId, E); }
     var tileByPid = {};
     tiles.forEach(function (t) { tileByPid[t.m_product_id] = t; });
 
-    var ctx = {
-      pos: pos,
-      priceOf: function (pid) { return q1(b3, 'SELECT pricestd FROM m_productprice WHERE m_pricelist_version_id=? AND m_product_id=?', plv.v, pid) || null; },
+    var ctx = Object.assign({ pos: pos }, _posGlue(b3, pos, plv), {
       bomOf: function (pid) { return qa(b3, 'SELECT bl.m_product_id AS comp_id, bl.qtybom AS qtybom FROM pp_product_bomline bl JOIN pp_product_bom b ON b.pp_product_bom_id=bl.pp_product_bom_id WHERE b.m_product_id=? ORDER BY bl.m_product_id', pid); },
       wrPolicy: (function () {
         var dt = q1(b3, 'SELECT docsubtypeso AS s FROM c_doctype WHERE c_doctype_id=?', pos.c_doctype_id);
         return (dt && dt.s === 'WR') ? { isautogenerateinout: 'Y', isautogenerateinvoice: 'Y' } : { isautogenerateinout: 'N', isautogenerateinvoice: 'N' };
       })()
-    };
+    });
 
     var cart = [];
 
@@ -654,14 +704,23 @@
       (dtSO ? ' doctype=' + dtSO.c_doctype_id + ' ship=' + dtSO.c_doctypeshipment_id : '') +
       ' (dictionary-gated docsubtypeso=SO)');
 
+    // §BUGFIX 2026-07-13 (user report: "shop cart pill does not close when we exited") — root cause:
+    // the overlay's native ✕ only tore down #posted-overlay; the cart float panel + ⋯ dock live at
+    // document.body level (outside the overlay) and were left floating over iDempiere.html. Fix: pass
+    // this as the overlay's onClose (below, cfg.overlay(...)) so EVERY close path (✕ tap, back-gesture)
+    // disposes them too — one teardown, reused by the dock Home button as well (it now just clicks the
+    // overlay's own ✕ so the whole app has exactly one "POS is closed" moment).
+    function _disposePosChrome() {
+      [floatPanel, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
+      console.log('§POS-HOME closed dispose=float+dock');
+    }
     // §D-3 ⋯ dock — home · import · receipt · deliver-later (data-gated) — reveal-up
     var homeBtn   = document.createElement('button'); homeBtn.className = 'pos-dock-item'; homeBtn.title = 'Close POS';
     homeBtn.innerHTML = _svgIcon('home', 18);
     homeBtn.addEventListener('pointerup', function () {
-      var ov = document.getElementById('posted-overlay'); if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
-      // dispose POS-owned body floats (not inside the overlay — must be removed explicitly)
-      [floatPanel, dock].forEach(function (n) { if (n && n.parentNode) n.parentNode.removeChild(n); });
-      console.log('§POS-HOME closed dispose=float+modal+dock');
+      // trigger the SAME close the overlay's own ✕ uses, so onClose (→ _disposePosChrome) always fires.
+      var x = document.querySelector('#posted-overlay .posted-ov-x');
+      if (x) x.click(); else _disposePosChrome();   // fallback if the overlay DOM ever changes shape
     });
     var importBtn = document.createElement('button'); importBtn.className = 'pos-dock-item'; importBtn.id = 'pos-pill-import';
     importBtn.title = 'Register a new product (snap · scan · price)';
@@ -1425,6 +1484,7 @@
       if (!bpSel.value) { cfg.status('Pick the walk-in partner first (seed has no BPartnerCashTrx on c_pos)'); console.log('§POS-PAY refused reason=no-partner'); return; }
       var saleCart = cart.map(function (c) { return Object.assign({}, c); }); // snapshot for receipt
       var ids = nextIds(cfg.opDb);
+      ctx.taxOf = lensTaxOf(Number(bpSel.value));   // §45 F11
       var g = POS.buildSaleGroup(ctx, cart, { orderId: ids.orderId, inoutId: ids.inoutId, invoiceId: ids.invoiceId, c_bpartner_id: Number(bpSel.value) });
       if (!g.ok) { cfg.status('refused: ' + g.reason); console.log('§POS-LIVE complete REFUSED reason=' + g.reason); return; }
       cfg.KO.commitGroup(cfg.opDb, g.ops.map(function (o) { return { op_type: o.op_type, params: o }; }), {})
@@ -1475,7 +1535,8 @@
       var ids = nextIds(cfg.opDb);
       // invoice timing NAMED from the dictionary (the witness's extraction query, verbatim)
       var invR = q1(b3, "SELECT c.defaultvalue AS v FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='InvoiceRule'");
-      var g = POS.buildDeliverLaterGroup(ctx, cart, {
+      ctx.taxOf = lensTaxOf(Number(bpSel.value));   // §45 F11
+      var g = POS.buildDeliverLaterWithShipment(ctx, cart, {
         orderId: ids.orderId, inoutId: ids.inoutId, c_bpartner_id: Number(bpSel.value),
         doctype: dtSO, invoiceRule: invR ? invR.v : null
       });
@@ -1501,6 +1562,35 @@
                 ' gid=' + res.gid + ' chainOk=' + (cv && cv.ok ? 'Y' : 'N') + ' persisted=' + (saved ? 'Y' : 'N'));
               receipt.textContent = '✓ ' + POS.cartTotal(saleCart) + ' · deliver later — order ' + ids.orderId +
                 ' CO, shipment ' + ids.inoutId + ' DR · pick it in the warehouse walk';
+              // §CL-1: serialize op group → clipboard blob for cross-device relay
+              (function () {
+                var sentRows = cfg.opDb.exec('SELECT op_uuid, op_type, parameters FROM kernel_ops WHERE gid = ?', [res.gid]);
+                if (!sentRows[0]) return;
+                var sentOps = sentRows[0].values.map(function (v) {
+                  return { op_uuid: v[0], op_type: v[1], params: JSON.parse(v[2]) };
+                });
+                var blob = btoa(JSON.stringify({ v: 1, ops: sentOps }));
+                console.log('§POS-OPLOG-COPY gid=' + res.gid + ' ops=' + sentOps.length + ' bytes=' + blob.length);
+                var copyBtn = document.createElement('button');
+                copyBtn.id = 'pos-copy-oplog';
+                copyBtn.style.cssText = 'margin-top:8px;padding:7px 14px;border:1px solid #2a6a3a;border-radius:6px;' +
+                  'background:rgba(40,100,60,0.3);color:#6fb;font-size:12px;cursor:pointer;width:100%;display:flex;align-items:center;gap:6px;justify-content:center';
+                // §CL-1 REVIVAL DRIFT (2026-09-04): icons.js moved from `ICONS.<name> = '<svg body>'` to
+                // `ICONS.<name> = { svg: '<svg body>' }` in the three months this PR sat open, so the
+                // original read put an OBJECT into the markup and rendered `[object Object]`. `.svg` is
+                // the convention every current consumer uses (idempiere.html:1414/1925/5516).
+                var iconSvg = (window.ICONS && window.ICONS.clipboard && window.ICONS.clipboard.svg) ? window.ICONS.clipboard.svg : '';
+                copyBtn.innerHTML = (iconSvg ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>' : '') + ' Copy op log';
+                copyBtn.onclick = function () {
+                  navigator.clipboard.writeText(blob).then(function () {
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(function () {
+                      copyBtn.innerHTML = (iconSvg ? '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + iconSvg + '</svg>' : '') + ' Copy op log';
+                    }, 2000);
+                  });
+                };
+                receipt.parentNode && receipt.parentNode.insertBefore(copyBtn, receipt.nextSibling);
+              })();
               cart = []; renderCart();
               // §D-5 POC: open WH walk in new tab so user can immediately pick (user gesture → no popup block)
               var whUrl = (window.location.href.split('/erp/')[0] || '..') + '/viewer/viewer.html?db=../buildings/warehouse_gardenworld.db';
@@ -1520,7 +1610,7 @@
     itemsBody.insertBefore(stationInfo, cartBox);
 
     renderCart();
-    cfg.overlay('POS — ' + pos.name, wrap);
+    cfg.overlay('POS — ' + pos.name, wrap, _disposePosChrome);
     console.log('§POS-LIVE open station=' + pos.c_pos_id + ' tiles=' + tiles.length + ' priced=' + tiles.length + ' handAuthored=0');
     // §T1-SPEC lens.1: no auto-fire on open — replenishment is generated on the explicit button
     console.log('§POS-REPLENISH-IDLE trigger=#pos-repl-generate (staged review; nothing proposed until asked)');
@@ -1530,7 +1620,7 @@
   // node-witness seam (W-T7-HOST — prompts/T7_HOST_WIRING_SPEC.md): the shard-aware pure folds only;
   // open() stays DOM-bound and untestable headless by design.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { open: open, _t7: { nextIds: nextIds, logMovements: logMovements, pendingInbound: pendingInbound } };
+    module.exports = { open: open, _glue: { lensTaxOf: _lensTaxOf, posGlue: _posGlue }, _t7: { nextIds: nextIds, logMovements: logMovements, pendingInbound: pendingInbound } };
   }
   console.log('§POS-LENS loaded (dumb terminal — record, pay, send; the fold does the rest)');
 })(typeof window !== 'undefined' ? window : this);

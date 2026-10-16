@@ -27,6 +27,7 @@
       // §SE-WBS structural edits — deterministic (explicit taskId / stable child ids) so peers converge.
       case 'addtask':   return SA().addTask(db, op.schedId, { taskId: op.taskId, name: op.name, wbsParent: op.wbsParent });
       case 'breakdown': return SA().breakdownByAttribute(db, op.schedId, op.taskId, op.attr);
+      case 'reparent':  return SA().reparentTask(db, op.schedId, op.taskId, op.wbsParent);
       default:       return { ok: false, reason: 'unknown_op:' + (op.op || '?') };
     }
   }

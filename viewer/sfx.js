@@ -305,7 +305,17 @@
     if (!_on || (Date.now() - _bedLastTick) < 1500) return;
     var A = (window.APP || window.A), cam = A && A.camera, ctr = A && A.controls && A.controls.target;
     if (!cam || !cam.position || !ctr || !_ctx) return;
-    var now = Date.now(), p = cam.position, dist = Math.hypot(p.x - ctr.x, p.y - ctr.y, p.z - ctr.z) || 1;
+    var now = Date.now(), p = cam.position;
+    // §SFX-NAN-GUARD (2026-07-14, live user error report — mobile Chrome/Android, HHS building):
+    // an upstream camera/controls edge case (e.g. a degenerate orbit/pinch gesture) can leave
+    // cam.position or controls.target holding a non-finite component. Left unchecked that NaN
+    // cascades through dist/dPos/dTgt/speed straight into a Web Audio setTargetAtTime call, which
+    // throws — "Failed to execute 'setTargetAtTime' on 'AudioParam': The provided float value is
+    // non-finite" — repeatedly, once per frame, exactly as reported. Bail out BEFORE computing
+    // anything, and skip persisting the bad reading into _lastCamPos/_lastTgt too (see below) —
+    // saving it would poison every future frame's delta even once the camera recovers.
+    if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z) || !isFinite(ctr.x) || !isFinite(ctr.y) || !isFinite(ctr.z)) return;
+    var dist = Math.hypot(p.x - ctr.x, p.y - ctr.y, p.z - ctr.z) || 1;
     if (_lastCamPos && _lastTgt) {
       var dt = Math.max(16, now - _lastCamT) / 1000;
       var dPos = Math.hypot(p.x - _lastCamPos.x, p.y - _lastCamPos.y, p.z - _lastCamPos.z);

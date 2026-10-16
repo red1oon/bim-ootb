@@ -1,0 +1,46 @@
+[
+ {
+  "pose": "room@z4",
+  "real": 377,
+  "boxed": 121953,
+  "mismatch": 0,
+  "hash": "bf9caec9",
+  "boxVis": 121953,
+  "hiddenMeshes": 0,
+  "roomCur": "RM_VÅNING_1_100",
+  "roomOnlyBoxed": 17
+ },
+ {
+  "pose": "room@z7",
+  "real": 15240,
+  "boxed": 107090,
+  "mismatch": 0,
+  "hash": "4e333edf",
+  "boxVis": 107090,
+  "hiddenMeshes": 0,
+  "roomCur": "RM_VÅNING_2_77",
+  "roomOnlyBoxed": 2750
+ },
+ {
+  "pose": "room@z11",
+  "real": 735,
+  "boxed": 121595,
+  "mismatch": 0,
+  "hash": "29f92c75",
+  "boxVis": 121595,
+  "hiddenMeshes": 0,
+  "roomCur": "RM_VÅNING_3_142",
+  "roomOnlyBoxed": 4
+ },
+ {
+  "pose": "room@z14",
+  "real": 13259,
+  "boxed": 109071,
+  "mismatch": 0,
+  "hash": "f74ff0c7",
+  "boxVis": 109071,
+  "hiddenMeshes": 0,
+  "roomCur": "RM_VÅNING_4_11",
+  "roomOnlyBoxed": 4164
+ }
+]

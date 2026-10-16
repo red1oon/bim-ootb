@@ -74,15 +74,27 @@
 
   // installSigner — the one call the page makes on load: load-or-mint the edge key and hand the
   // kernel its signer. After this, sealChain signs each op_hash and verifyChain checks it.
+  // S8 (W-MULTI-DEVICE-VERIFY): the pubkey is exported BEFORE setSigner() so it can be passed as this
+  // device's own roster kid — KernelOps stamps it into every new v2 op's params as `signed_by`, letting
+  // a roster-gated verifier attribute the op to the device that actually signed it. Also exports the
+  // SAME public key as a JWK (API.pubKeyJwk) — erp_key_epochs.js's verify path (erp_snapshot_sign.js
+  // verifyTip) imports JWK, not the SPKI hex `signed_by` uses as the stable identity string; a device
+  // shares pubKeyJwk out-of-band (or via a future roster-distribution step, Phase 3, not this) so a peer
+  // can actually check its signature — the kid and the verifiable key material are deliberately separate.
   function installSigner(KernelOps, opts) {
     opts = opts || {};
     return loadOrMint(opts.dbName).then(function (kp) {
-      KernelOps.setSigner(makeSigner(kp));
-      return subtle.exportKey('spki', kp.publicKey).then(function (pub) {
-        API.pubKeyHex = _hex(pub);   // expose the edge pubKey so ctx can carry identity (ENGINE_CONTRACT §2)
+      return Promise.all([subtle.exportKey('spki', kp.publicKey), subtle.exportKey('jwk', kp.publicKey)]).then(function (r) {
+        API.pubKeyHex = _hex(r[0]);   // stable identity string (ENGINE_CONTRACT §2) — also the S8 roster kid
+        API.pubKeyJwk = r[1];         // verifiable key material for a roster-gated verifier
+        KernelOps.setSigner(makeSigner(kp), API.pubKeyHex);
         console.log('§SIGN installed alg=ECDSA-P256 pubkey=' + API.pubKeyHex.slice(0, 16) + '… custody=idb-nonextractable');
         return kp;
-      }).catch(function () { console.log('§SIGN installed alg=ECDSA-P256 custody=idb-nonextractable'); return kp; });
+      }).catch(function () {
+        KernelOps.setSigner(makeSigner(kp));   // pubkey export failed — still sign, just no roster kid
+        console.log('§SIGN installed alg=ECDSA-P256 custody=idb-nonextractable');
+        return kp;
+      });
     });
   }
 

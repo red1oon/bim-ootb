@@ -1,0 +1,49 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-08-27T01:09:13.454Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-storey-oci",
+    "sha": "515b520de8a67a85d03c6651d8794fded997e3d5",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "a84c5022-e123-45f0-b93a-be52cf82fa3b",
+    "content-md5": "S4DRfFRDGYsXcxoXfqsH8Q==",
+    "size": "4163894",
+    "last-modified": "Sat, 15 Aug 2026 17:20:49 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/Hospital_meta.db.sql",
+    "bytes": 2592837,
+    "md5": "6dfa92c5872357691c8cd47e78a48104",
+    "md5_b64": "bfqSxYcjV2kcjNR+eKSBBA==",
+    "object": "buildings/patches/Hospital_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "cee44b7c-4491-4cb6-ab4c-6e508e42560c",
+    "size": "1382739",
+    "last-modified": "Sat, 15 Aug 2026 17:27:50 GMT"
+  },
+  "verification": {
+    "cmd": "node scripts/probe_s18_elevation_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§S18_DEPLOY gate-db PASS — 56 storey datums survive the room compile, 8 names -> 8 bands"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-08-27T01:09:22.527Z",
+    "etag": "3342d90b-d667-44f6-84ed-102f5b44aeea",
+    "verified": true
+  }
+}

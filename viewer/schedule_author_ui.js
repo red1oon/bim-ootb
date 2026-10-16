@@ -12,7 +12,20 @@
   function A() { return global.APP || global.A; }
   function db() { var a = A(); return a && a.db; }
   function rules() { return global.SEQUENCE_RULES || {}; }
+  function laborRates() { return global.LABOR_RATES || {}; }
   var SA = function () { return global.ScheduleAuthor; };
+
+  // §SE-6: the wizard edits APP.db directly (shares it with the whole viewer) — but kernel_ops.js's
+  // own IDB persistence (§KRN_PERSIST) only fires on a signed commitOp(); schedule-table writes never
+  // go through it (kernel_ops mirroring is deferred, per schedule_author.js's header). So every
+  // authored phase/reassignment/date was ONLY ever in memory — closing the tab lost it, same gap the
+  // ↗ Editor tab had. Reuses the identical debounced ScheduleAuthor.persistDb helper (one
+  // implementation, not two divergent copies) keyed by APP.DB_URL — the same slot cachedFetch reads.
+  function persist(opts) {
+    var a = A(), d = db();
+    if (!SA().persistDb || !d || !a || !a.DB_URL) return;
+    SA().persistDb(d, a.DB_URL, opts);
+  }
 
   var _panel = null, _built = false;
   var _state = null;   // { schedId, start, order:[taskId], name:{}, dur:{}, count:{} }
@@ -166,20 +179,52 @@
   }
 
   // ── Authoring writes (each = an in-place edit of the IFC-native tables) ────────
+  // §PHASE_OVERLAP_BAND (GANTT_ACCURACY.md): this was a THIRD independent "lay phases out from a
+  // start date" implementation — materializeDefault and scheduleContiguous (schedule_author.js) both
+  // got the real-band overlap fix, this UI-only re-apply path did not, so hitting "Apply" in the
+  // wizard silently reverted an overlapping schedule back to strictly-contiguous (measured live:
+  // Terminal's real 229-day materialized schedule read back as span=407d — the plain Σ of the 5
+  // phase durations — after Apply). Same fix, same reasoning: a phase starts once the leading trade
+  // clears ONE real band (elements_meta.storey via task_elements), not the whole building.
+  function _bandCount(d, tid) {
+    var r = d.exec("SELECT DISTINCT COALESCE(m.storey,'') FROM task_elements te " +
+      "JOIN elements_meta m ON m.guid=te.guid WHERE te.task_id=?", [tid]);
+    var n = (r.length && r[0].values.length) ? r[0].values.length : 1;
+    return Math.max(1, n);
+  }
   function applyDates() {
     var d = db(); if (!d || !_state) return;
-    var cursor = 0, start = _state.start || '2026-01-01';
+    var cursor = 0, totalDays = 0, start = _state.start || '2026-01-01', lagByTid = {};
     _state.order.forEach(function (tid) {
       var dur = _state.dur[tid] || 30;
       var s = addDays(start, cursor), f = addDays(start, cursor + dur);
       d.run("UPDATE tasks SET schedule_start=?, schedule_finish=?, schedule_duration=? WHERE task_id=?",
         [s, f, 'P' + dur + 'D', tid]);
-      cursor += dur;
+      totalDays = Math.max(totalDays, cursor + dur);
+      var lag = Math.max(1, Math.ceil(dur / _bandCount(d, tid)));
+      lagByTid[tid] = lag;
+      cursor += lag;
     });
     // root span
     d.run("UPDATE tasks SET schedule_start=?, schedule_finish=? WHERE schedule_id=? AND is_summary=1",
-      [start, addDays(start, cursor), _state.schedId]);
-    console.log('§AUTHOR_UI_DATES start=' + start + ' span=' + cursor + 'd phases=' + _state.order.length);
+      [start, addDays(start, totalDays), _state.schedId]);
+
+    // CPM_FLOAT_GAP.md Gap 1 (phase-level) — same fix, same reasoning as the "THIRD independent
+    // lay-out implementation" note above: materializeDefault and scheduleContiguous both now write
+    // task_sequences SS edges from this exact lag; this UI-only re-apply path must too, or hitting
+    // "Apply" would silently leave stale/absent edges the same way it used to silently revert dates.
+    d.run('CREATE TABLE IF NOT EXISTS task_sequences (predecessor_id TEXT, successor_id TEXT, sequence_type TEXT, lag_days REAL DEFAULT 0, PRIMARY KEY (predecessor_id, successor_id))');
+    d.run("DELETE FROM task_sequences WHERE predecessor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?) OR successor_id IN (SELECT task_id FROM tasks WHERE schedule_id=?)", [_state.schedId, _state.schedId]);
+    var stmtSeq = d.prepare('INSERT OR IGNORE INTO task_sequences VALUES (?,?,?,?)');
+    var seqN = 0;
+    for (var i = 1; i < _state.order.length; i++) {
+      stmtSeq.run([_state.order[i - 1], _state.order[i], 'SS', lagByTid[_state.order[i - 1]]]);
+      seqN++;
+    }
+    stmtSeq.free();
+    if (seqN) console.log('§AUTHOR_UI_SEQUENCES edges=' + seqN + ' (SS, lag=leading-phase band-clear days)');
+
+    console.log('§AUTHOR_UI_DATES start=' + start + ' span=' + totalDays + 'd phases=' + _state.order.length);
   }
 
   function renamePhase(tid, name) {
@@ -200,9 +245,18 @@
     console.log('§AUTHOR_UI_FOCUS ' + guid);
   }
 
-  // ── First draft: materialize the smart default from rules (the prebaked start) ──
-  // §MI-FLOW: a "Start blank" toggle organizes phases+assignments but leaves them UNDATED, so the
-  // user originates the schedule (the auto-dates become an optional "suggest a start" — scheduleNow).
+  // ── First draft: the DEFAULT generated output is now fine-detail zone-level (phase × real floor),
+  // not the old coarse 5-phase rollup. §PERFECT_FIRST (2026-08-04 user ruling, 4D_SCHEDULE_PERFECTION.md
+  // session): "the 4D schedule has to be perfect first, nothing to skip" — the persisted, editable
+  // schedule is its own correctness target, not a lesser artifact that gets to stay coarse because the
+  // live movie (schedule_gate.js's own instant computeSchedule fallback) already looks right. That
+  // movie path is untouched by this change — a SEPARATE concern, deliberately left alone.
+  // materializeZones uses the SAME movie-coherent per-element times as before (CPM_FLOAT_GAP.md /
+  // 4D_SCHEDULE_PERFECTION.md), just made the default instead of a second opt-in button.
+  // §MI-FLOW still applies to "Start blank": organizes coarse phases+assignments but leaves them
+  // UNDATED so the user originates the schedule by hand — zone detail has no undated form (it's
+  // derived directly from the real crew-capped placement engine, which needs real dates to run), so
+  // blank mode keeps the coarse materializeDefault path, unchanged.
   function generateDraft() {
     var d = db(); if (!d) { status('No model loaded'); return; }
     if (!SA()) { status('Author engine not loaded'); return; }
@@ -218,20 +272,43 @@
     }
     var blankEl = document.getElementById('sa-blank');
     var blank = !!(blankEl && blankEl.checked);
-    var res = SA().materializeDefault(d, rules(), { start: '2026-01-01', phaseDays: 30, blank: blank });
+    if (blank) {
+      var resB = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: true });
+      _state = { schedId: resB.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
+      refreshState();
+      console.log('§AUTHOR_UI_DRAFT mode=blank phases=' + resB.phases.length + ' assignments=' + resB.assignmentCount);
+      status('Blank: ' + resB.phases.length + ' phases organized, ' + resB.assignmentCount + ' elements assigned — now set the dates');
+      render();
+      return;
+    }
+    // §TPL_WIRED (2026-08-26) — the authoring UI draws from the SAME 4D programme template as the
+    // Time Machine, so a draft and the movie can never describe two different programmes.
+    // window._4dTemplate is set by time_machine.js's _load4DTemplate(); absent -> null -> the
+    // legacy zone path, byte-identical to pre-2026-08-26.
+    var _tpl = (typeof window !== 'undefined' && window._4dTemplate) || null;
+    var res = SA().materializeZones ? SA().materializeZones(d, rules(), { start: '2026-01-01', laborRates: laborRates(), template: _tpl }) : { ok: false, reason: 'no_materializeZones' };
+    if (!res.ok) {
+      // Honest degrade — no ScheduleGate loaded, or genuinely no elements. Not invented.
+      console.log('§AUTHOR_UI_ZONE_FALLBACK reason=' + (res.reason || 'unknown'));
+      res = SA().materializeDefault(d, rules(), { start: '2026-01-01', laborRates: laborRates(), blank: false });
+      _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
+      refreshState();
+      console.log('§AUTHOR_UI_DRAFT mode=dated-fallback phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
+      status('Zone detail unavailable (' + (res.reason || 'unknown') + ') — fell back to coarse phases');
+      render();
+      return;
+    }
     _state = { schedId: res.scheduleId, start: '2026-01-01', order: [], name: {}, dur: {}, count: {} };
     refreshState();
-    console.log('§AUTHOR_UI_DRAFT mode=' + (blank ? 'blank' : 'dated') + ' phases=' + res.phases.length + ' assignments=' + res.assignmentCount);
-    status(blank
-      ? 'Blank: ' + res.phases.length + ' phases organized, ' + res.assignmentCount + ' elements assigned — now set the dates'
-      : 'Draft: ' + res.phases.length + ' phases, ' + res.assignmentCount + ' elements assigned');
+    console.log('§AUTHOR_UI_DRAFT mode=zone-detail zones=' + res.zoneCount + ' edges=' + res.edgeCount + ' totalDays=' + res.totalDays);
+    status('Draft: ' + res.zoneCount + ' zones (phase × floor), ' + res.totalDays + 'd — movie-coherent detail schedule');
     render();
   }
 
   // The user's deliberate "originate the dates" act (blank mode) — lay phases out from the start date.
   function scheduleNow() {
     var d = db(); if (!d || !SA() || !_state) return;
-    SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', phaseDays: 30 });
+    SA().scheduleContiguous(d, _state.schedId, { start: _state.start || '2026-01-01', laborRates: global.LABOR_RATES });
     refreshState(); render();
     status('Scheduled — phases now carry dates and appear in the timeline.');
     _syncWhatIf();   // dates just originated → mirror into C_ProjectPhase for the What-if panel
@@ -250,6 +327,7 @@
       setTimeout(function () { global.toggleTimeMachine(); }, 60);   // fallback (older viewer)
     }
     _syncWhatIf();   // mirror the authored phases into C_ProjectPhase so the What-if (⑂) panel matches
+    persist({ immediate: true });   // §SE-6 — Apply-to-4D is a deliberate commit, flush without delay
   }
 
   function render() {
@@ -341,6 +419,7 @@
         else box.style.display = 'none';
       };
     });
+    if (_state && _state.order.length) persist();   // §SE-6 — only once a real schedule exists to save
   }
 
   function _fillElements(box, tid, opts) {
@@ -387,6 +466,11 @@
     document.getElementById('sa-draft').onclick = generateDraft;
     document.getElementById('sa-apply').onclick = applyTo4D;
     dragByHandle(_panel, document.getElementById('sa-head'));   // panel is repositionable (drag the header)
+    // §SE-6: immediate flush when the tab is backgrounded/closed — safety net alongside the debounced
+    // save in render(). visibilitychange (not beforeunload) per Chrome's own guidance on reliability.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') persist({ immediate: true });
+    });
     _built = true;
     render();
   }

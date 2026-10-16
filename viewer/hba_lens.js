@@ -170,6 +170,21 @@
   // bind the Find-lens storey index from the LIVE model (rooms→IfcBuildingStorey) so density dots use real
   // storeys — non-invent, honest no-op on a building without spatial_structure. Uses the viewer's A.dbQuery.
   var _storeysBound = false;
+  // §HBA_LAZY — the ONE entry point that wakes HBA. Idempotent (bindStoreysFromModel has its own
+  // _storeysBound guard and _ensureErpGovern its own _erpTried guard; this adds the timing + a single
+  // §-line so the deferred cost is MEASURABLE rather than asserted). Called from every public entry
+  // that reads seeded state, never at load. Witness: W-HBA-LAZY.
+  var _hbaSeedMs = null;
+  function ensureHbaData(A) {
+    if (_hbaSeedMs !== null) return false;              // already awake
+    var t0 = (G.performance && G.performance.now) ? G.performance.now() : Date.now();
+    bindStoreysFromModel(A);
+    _hbaSeedMs = +(((G.performance && G.performance.now) ? G.performance.now() : Date.now()) - t0).toFixed(1);
+    console.log('§HBA_SEED ms=' + _hbaSeedMs + ' rooms=' + ((A && A._hbaRooms) ? A._hbaRooms.length : 0) +
+      ' — this is the work that used to run at page load on every building');
+    return true;
+  }
+
   function bindStoreysFromModel(A) {
     var h = HBA();
     if (_storeysBound || !h.L || !h.L.bindStoreys || !A || typeof A.dbQuery !== 'function') return;
@@ -420,8 +435,14 @@
       var pos = A.ifc2three(fp.cx, fp.cy, fp.cz);
       var geo = new THREE.BoxGeometry(fp.sx, fp.sz, fp.sy);               // size swap matches ifc2three's y<->z
       var edges = new THREE.EdgesGeometry(geo);
-      var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2 });
+      // §FIX 2026-07-06c (user report: outline doesn't "shine through" occluding geometry) — plain depth-tested
+      // LineBasicMaterial was occluded by any wall/slab in front of it, same as an ordinary mesh. navigate_find.js's
+      // Find/pick highlight solves the same "see it through walls" ask via OutlinePass (a postprocess pass, built
+      // for solid selectedObjects — not applicable to bare LineSegments edges). depthTest:false + a high renderOrder
+      // is the equivalent for line geometry: always draws on top, regardless of what's in front of it in the scene.
+      var mat = new THREE.LineBasicMaterial({ color: toHex(tint.color), linewidth: 2, depthTest: false, transparent: true });
       var lines = new THREE.LineSegments(edges, mat);
+      lines.renderOrder = 999;
       lines.position.set(pos.x, pos.y, pos.z);
       group.add(lines); geo.dispose(); drawn++;
     });
@@ -433,6 +454,10 @@
   // non-matching guid never tints (honest). OFF (or switching mode) → full restore (zero residue).
   function toggle(A, mode) {
     if (!ready()) { if (A && A.status) A.status.textContent = 'HR overlay not loaded'; return false; }
+    // §HBA_LAZY: second wake point. A lens can be driven directly (witness scripts, deep-links,
+    // HBALens.toggle from the console) without the drawer, and every plan below reads the seeded
+    // specs — so wake here too rather than assuming the drawer ran first.
+    ensureHbaData(A);
     if (_port) { _port.restoreAll(); _port = null; }            // clear prior mode first (one mode at a time)
     _clearOutlines(A);                                          // §2026-07-05e — perimeter outlines ride the SAME one-mode-at-a-time rule
     if (G.HBAAvatars && G.HBAAvatars.isActive()) G.HBAAvatars.unmount(A);   // §AVATAR-LOD — avatars ride the presence lens; clear them with it
@@ -513,7 +538,9 @@
     var drawerOpen = (typeof document !== 'undefined') && !!document.getElementById('hba-fm-drawer');
     return availableLenses(G.APP || G.A || {}).some(function (x) { return x.active; }) || drawerOpen;
   }
-  function activateLens(A, entry) { if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
+  // §HBA_LAZY: third wake point — the 'pane' branch calls p.toggle(A) DIRECTLY, bypassing toggle()
+  // above, and every pane (dashboard/payslip/leave/tenancy/bom) reads A._hba* specs.
+  function activateLens(A, entry) { ensureHbaData(A); if (entry.kind === 'pane') { var p = paneFor(entry); if (p) p.toggle(A); } else { toggle(A, entry.mode); } }
 
   // remove every child via removeChild/remove (NOT `.innerHTML = ''` — matches the codebase's own convention,
   // see hba_leave.js/hba_payslip.js headers: innerHTML-clearing isn't reliable across the lightweight witness
@@ -720,6 +747,66 @@
     return { x: facing[0], y: facing[1], z: facing[2] };  // node-witness/stub fallback — no ifc2three to mirror
   }
 
+  // §2026-07-06c item D-followup — user: "the rest is OK as POC... By cam u will know its the cam POV" (once
+  // picked up). The CCTV tiles (viewer/hba_iot.js) painted crops of one SHARED static ContaCam still photo —
+  // not this building, not that camera's own viewpoint. This renders an ACTUAL frame of the REAL loaded scene
+  // from that camera's own eye/facing — the SAME ground-truth eye+direction flyToFacing already flies to —
+  // instead of moving the user's own live camera (flyToFacing) or leaving a static stub photo in place.
+  // Offscreen render only: a dedicated PerspectiveCamera + cached WebGLRenderTarget, never touches A.camera/
+  // A.controls, so a background capture never disturbs whatever the user is actually looking at. Honest no-op
+  // (no draw, {captured:false, reason}) when the engine/facing/rendered-members aren't available — same
+  // discipline as flyToFacing/flyToPOV, never a fabricated frame.
+  var _snapRT = null, _snapCam = null;
+  function _ensureSnap(w, h) {
+    if (!_snapRT || _snapRT.width !== w || _snapRT.height !== h) {
+      if (_snapRT && _snapRT.dispose) _snapRT.dispose();
+      _snapRT = new THREE.WebGLRenderTarget(w, h);
+    }
+    if (!_snapCam) _snapCam = new THREE.PerspectiveCamera(60, w / h, 0.1, 1000);
+    return { rt: _snapRT, cam: _snapCam };
+  }
+  function captureFacingSnapshot(A, guid, facing, ctx, opts) {
+    opts = opts || {};
+    var w = opts.width || (ctx && ctx.canvas ? ctx.canvas.width : 120);
+    var h = opts.height || (ctx && ctx.canvas ? ctx.canvas.height : 68);
+    if (!A || !A.renderer || !A.scene || typeof THREE === 'undefined' || !ready()) {
+      return { captured: false, reason: 'no-engine' };
+    }
+    if (!facing || facing.length !== 3) return { captured: false, reason: 'no-facing' };
+    var hit = _zoneCentroid(A, guid);
+    if (!hit) return { captured: false, reason: 'no-members' };
+    var eye = hit.center;
+    var f3 = _rawFacingToThree(A, facing);
+    var lookDir = new THREE.Vector3(f3.x, f3.y, f3.z);
+    if (lookDir.lengthSq() > 1e-9) lookDir.normalize(); else lookDir.set(0, 0, -1);
+    var standoff = opts.dist != null ? opts.dist : 3;                                  // matches flyToFacing's own default standoff
+    var eyePos = new THREE.Vector3(eye.x, eye.y, eye.z).addScaledVector(lookDir, -standoff);
+    var lookAt = new THREE.Vector3(eye.x, eye.y, eye.z).add(lookDir);                   // direction-only target, arbitrary lookahead
+
+    var s = _ensureSnap(w, h);
+    s.cam.aspect = w / h; s.cam.updateProjectionMatrix();
+    s.cam.position.copy(eyePos);
+    s.cam.lookAt(lookAt);
+
+    var prevTarget = A.renderer.getRenderTarget();
+    A.renderer.setRenderTarget(s.rt);
+    A.renderer.render(A.scene, s.cam);
+    A.renderer.setRenderTarget(prevTarget);   // restore immediately — never leaves the live view render-targeted offscreen
+
+    if (ctx) {
+      var buf = new Uint8Array(w * h * 4);
+      A.renderer.readRenderTargetPixels(s.rt, 0, 0, w, h, buf);
+      var imgData = ctx.createImageData(w, h);
+      // WebGL readback is bottom-up; canvas ImageData is top-down — flip rows on the way out.
+      for (var row = 0; row < h; row++) {
+        var srcRow = h - 1 - row;
+        imgData.data.set(buf.subarray(srcRow * w * 4, (srcRow + 1) * w * 4), row * w * 4);
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+    return { captured: true, guid: hit.resolvedGuid, eye: eyePos, look: lookAt };
+  }
+
   function flyToFacing(A, guid, facing, opts) {
     opts = opts || {};
     if (!A || !A.guidMap || !ready()) { console.log('§HBA_FACING no-op guid=' + guid + ' (no engine/guidMap)'); return { flew: false, reason: 'no-engine' }; }
@@ -910,18 +997,46 @@
       rowsEl.appendChild(row);
     });
   }
+  // §PANEL-ABSTRACTION (2026-07-06) — this drawer used to be entirely hand-rolled (own DOM, own ✕,
+  // no drag, no keyboard nav, a hardcoded position). It now rides the shared panel infrastructure:
+  //   · the ✕'s original bug (closing here left the hbaFM pill stuck highlighted) is fixed
+  //     STRUCTURALLY by common/pill_builder.js's MutationObserver auto-resync — no manual call here.
+  //   · draggable (A._makeDraggable) + Arrow-key row traversal (window.PanelNav, the same module the
+  //     Find panel already uses) + a no-overlap desktop slot (A._placePanel, replacing what would
+  //     otherwise become another hand-picked magic-number position) — all opt-in, defensive (`&&`-
+  //     guarded) since this file is additive/host-injected and must stay inert if any of them is
+  //     absent from a page that doesn't load the full viewer.
+  //   · this stays a plain floating overlay on mobile too (NOT re-parented into G.HbaPaneHost's
+  //     card-stack) — deliberately, matching the existing z-index treatment in this same file's
+  //     syncLauncher(), which already treats 'hba-fm-drawer'/'hba-presence-drawer' as PERSISTENT
+  //     LAUNCHER chips that float above/behind the stack, never as stack content themselves. Tried
+  //     folding it into the stack first; live-testing (viewer/tests/poc_hba_mobile_stack.js) showed
+  //     this conflates two different roles — the drawer is the PICKER a user reopens to add more
+  //     panes, so it can never legitimately reach "zero cards" alongside the content it's used to
+  //     open, and tapping/swiping through the deck would displace the very picker needed to browse
+  //     the rest. Panes = content cards; this drawer = a menu. Keeping them structurally separate
+  //     is the correct generalization, not a shortcut.
   function openFamilyDrawer(A) {
     if (typeof document === 'undefined') return null;
     var ex = document.getElementById('hba-fm-drawer'); if (ex) { ex.remove(); _closePresenceDrawer(); return null; }
+    // §HBA_LAZY: the pill IS the wake signal. Seeding here (not at page load) is what makes HBA
+    // opt-in — availableLenses()/familyHasData() below read the specs this call compiles, so it must
+    // precede them. Idempotent: a second open is a no-op.
+    ensureHbaData(A);
     var d = document.createElement('div'); d.id = 'hba-fm-drawer';
-    d.style.cssText = 'position:fixed;z-index:10000;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
+    // §FIX 2026-07-06c item B follow-on: this menu's rows are how a user opens a 2nd/3rd pane — it must stay
+    // clickable ABOVE any already-open pane (panes are z-index:10050), or opening the first pane hides the
+    // very menu needed to open the next one. Was z-index:10000 (below panes), found while live-verifying the
+    // panel-cascade fix (opening BOM then clicking Maintenance failed: BOM pane intercepted the pointer event).
+    d.style.cssText = 'position:fixed;z-index:10060;right:64px;top:50%;transform:translateY(-50%);background:#0e1b2a;'
       + 'color:#fff;border-radius:10px;padding:8px;box-shadow:0 8px 28px rgba(0,0,0,.45);font:13px/1.3 system-ui,sans-serif;min-width:250px;';
 
     var hdr = document.createElement('div'); hdr.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 4px 8px;';
     var title = document.createElement('span'); title.textContent = 'Human-Asset'; title.style.cssText = 'font-weight:700;opacity:.85;';
     var closeBtn = document.createElement('button'); closeBtn.textContent = '✕'; closeBtn.title = 'Close'; closeBtn.setAttribute('data-role', 'close');
     closeBtn.style.cssText = 'background:transparent;border:0;color:#fff;opacity:.6;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;';
-    closeBtn.addEventListener('click', function () { d.remove(); _closePresenceDrawer(); });
+    function _closeDrawer() { d.remove(); _closePresenceDrawer(); }
+    closeBtn.addEventListener('click', _closeDrawer);
     hdr.appendChild(title); hdr.appendChild(closeBtn);
     d.appendChild(hdr);
 
@@ -940,6 +1055,12 @@
     _renderRows(A, d, rows);
 
     document.body.appendChild(d);
+    if (A && A._makeDraggable) A._makeDraggable(d);
+    if (A && A._placePanel && !G._isMobile) A._placePanel(d, { top: d.getBoundingClientRect().top, right: 64 });
+    if (G.PanelNav) {
+      G.PanelNav({ panel: d, id: 'hba-fm-drawer', onClose: _closeDrawer,
+        zones: [{ id: 'rows', items: function () { return rows.querySelectorAll('button'); } }] });
+    }
     console.log('§HBA_FM drawer open — ' + availableLenses(A).filter(function (x) { return x.available; }).length + '/' + FAMILY.length + ' lenses available');
     return d;
   }
@@ -964,8 +1085,10 @@
   G.HBALens = { detect: detect, toggle: toggle, isActive: isActive, buildMeshPort: buildMeshPort, tintedCount: tintedCount,
     maintenanceSchedule: maintenanceSchedule, availableLenses: availableLenses, familyHasData: familyHasData,
     familyActive: familyActive, activateLens: activateLens, openFamilyDrawer: openFamilyDrawer, FAMILY: FAMILY, _ready: ready,
-    flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
+    flyToZone: flyToZone, flyToPOV: flyToPOV, flyToFacing: flyToFacing, captureFacingSnapshot: captureFacingSnapshot,
+    openPresenceDrawer: openPresenceDrawer, closePresenceDrawer: _closePresenceDrawer,
     erpLink: erpLink, AD_WINDOWS: AD_WINDOWS,
+    ensureHbaData: ensureHbaData,   // §HBA_LAZY — public wake seam (witnesses + any future entry point)
     _regovern: _regovern, _buildingName: _buildingName, _ensureErpGovern: _ensureErpGovern,
     _consumeFindGuid: _consumeFindGuid, bindStoreysFromModel: bindStoreysFromModel };  // §STAGE2 / §2026-07-04c / §2026-07-05e — witness hooks (additive)
   if (typeof module === 'object' && module.exports) { module.exports = G.HBALens; return; }   // node witness — no DOM gate
@@ -1007,17 +1130,18 @@
     if (!ready() || !hasMesh) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — engine/guidMap not ready'); } return; }
     if (A.streaming) { if (_tries > 240) { clearInterval(_poll); console.warn('§HBA_GATE timeout — still streaming'); } return; }
     clearInterval(_poll);
-    bindStoreysFromModel(A);   // real storeys for the density dots (honest no-op if the model lacks them)
-    _consumeFindGuid(A);       // §2026-07-04c — the reverse Zoom-Across's finer scope (viewer/config.js A.FIND_GUID)
-    // ONE family pill (hbaFM) — flip it on when ANY lens has data (familyHasData = the wake-aware gate). The
-    // per-lens availability/greying is computed live in the drawer (availableLenses), not on the bar.
-    var acts = G._mainPillActions || [], lenses = availableLenses(A), any = familyHasData(A);
-    for (var i = 0; i < acts.length; i++) {
-      if (acts[i].id === 'hbaFM') { acts[i].pill = any ? undefined : false; }
-    }
-    if (any && A._buildPill) A._buildPill();
-    console.log('§HBA_GATE FM=' + (any ? 'on' : 'off') + ' available=['
-      + lenses.filter(function (x) { return x.available; }).map(function (x) { return x.id; }).join(',')
-      + '] (guidMap=' + Object.keys(A.guidMap).length + ')');
+    // §HBA_LAZY (user directive 2026-07-28: "It should only come on if called from the pill. No early
+    // casting needed."). WAS: this tick ran the ENTIRE HBA compile — bindStoreysFromModel() (IfcSpace
+    // footprints, rel_contained_in_space members, the elements_meta aisle-fallback scan, and seven
+    // demonstrator spec seeds) plus the async ad_seed.db fetch in _ensureErpGovern — and then
+    // auto-promoted the hbaFM pill into the rail by flipping acts[i].pill and calling _buildPill().
+    // Two costs, both unasked-for: (1) the pill CAST ITSELF onto the bar on any building with rooms,
+    // (2) all of that DB work landed on the main thread the instant streaming finished — precisely
+    // when a large building is still settling (BVH build, consolidation, bbox ghost).
+    // NOW: nothing runs here. ensureHbaData() does the same work, once, on first real HBA use.
+    // Deep-link (A.FIND_GUID) is an EXPLICIT request, so it still seeds — but only when actually set.
+    if (A.FIND_GUID) { ensureHbaData(A); _consumeFindGuid(A); }
+    console.log('§HBA_LAZY armed — no seed, no pill promotion until the Human-Asset pill is used' +
+      ' (guidMap=' + Object.keys(A.guidMap).length + ', deep_link=' + (A.FIND_GUID ? 'yes' : 'no') + ')');
   }, 500);
 })();

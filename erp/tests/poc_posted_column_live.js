@@ -41,6 +41,7 @@ const server = http.createServer((req, res) => {
 
   async function login(loginName, windowId) {
     await page.goto(`http://localhost:${port}/idempiere.html?login=${loginName}&window=${windowId}`, { waitUntil: 'networkidle' });
+    await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
     await page.waitForSelector('#idmp-content table.idmp-grid, #idmp-placeholder', { timeout: 20000 });
     await page.waitForTimeout(800);
   }
@@ -97,7 +98,9 @@ const server = http.createServer((req, res) => {
     return { headerHasPosted: ths.includes('Posted'), anyButton: cells };
   });
   console.log('§POSTED-E acctGate=' + JSON.stringify(gate) + ' headerHasPosted=' + E.headerHasPosted + ' anyButton=' + E.anyButton);
-  const actE = /isShowAcct=false/.test(gate) && !E.headerHasPosted && E.anyButton === 0;
+  // §GRID-COLS (ERP_DEPTH_FILM.md): legacy keeps the dictionary's Posted COLUMN header and hides each CELL by the field's display logic
+  //   (@Processed@=Y & @#ShowAcct@=Y; GridView :1453) - a non-accounting role sees the header with no button in any row.
+  const actE = /isShowAcct=false/.test(gate) && E.anyButton === 0;
 
   // ── PART 3 — Admin on a NON-posting window (Business Partner 123 → C_BPartner, no AD Posted col). ──
   await login('GardenAdmin', 123);

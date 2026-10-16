@@ -1,3 +1,4 @@
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // # ⚠ DO NOT REMOVE — W-TM-REFOLD
 // ISSUE PROVED: after an external 4D schedule edit (bim_4d 4D_SCHED_EDIT), the Time Machine re-fold must
 //   re-read the EDITED tasks — NOT replay the stale cached schedule. The old consumer toggled the TM
@@ -14,7 +15,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 const initSqlJs = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'sql.js'));
 const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'));
 
-const TM_SRC = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const TM_SRC = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 // ── slice the SHIPPED _invalidateSchedule(db) from time_machine.js (drift-proof: tests the real fn) ──
 function sliceFn(src, sig) {

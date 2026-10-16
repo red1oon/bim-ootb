@@ -30,9 +30,38 @@
     // OUT of the current drag (green). Seeded empty every session (modeller.html enterGridMove/exitGridMove
     // call resetOverrides()) — NOT persisted, NOT a per-user config (that's explicitly deferred).
     _overrides: new Set(),
-    resetOverrides() { this._overrides = new Set(); console.log(TAG + ' §GREEN-EXCLUDE reset (new drag session, all orange)'); },
+    // §DAGEVU (prompts/SPEC_DAGEVU_ENGINE.md §4): per-session RIDE opt-in set for hosted openings. ANCHOR (the
+    // opening keeps its world position while its host's length changes) is the DEFAULT; a filling in this set
+    // rides proportionally instead (the pre-§DAGEVU behaviour). Same lifecycle as _overrides (reset per session).
+    _rideFids: new Set(), _dagevuCache: null,
+    resetOverrides() { this._overrides = new Set(); this._rideFids = new Set(); this._dagevuCache = null; console.log(TAG + ' §GREEN-EXCLUDE reset (new drag session, all orange) §DAGEVU all openings anchor'); },
+    // The DAGeVu relationship-edge engine over the REAL rel_fills_host + abuts rows through the §ARC-1 bridge.
+    // Cached per drag session (§SCALE_CHECK_FIX invariant — never rebuilt per pointermove frame); invalidated on
+    // a ride toggle; build-and-discard outside a session. null when the engine or the bridge is not loaded — the
+    // caller then falls back to the pre-§DAGEVU stretchRide path byte-identically.
+    _dagevu() {
+      if (this._dagevuCache) return this._dagevuCache;
+      const DE = window.DagevuEngine && window.DagevuEngine.DagevuEngine;
+      if (!DE || !window.SdgCascade || !window.__arcGuidByFid || !window.__arcFidByGuid || !window.swXEdges || !window.swXEdges.fills) return null;
+      const eng = new DE({ guidByFid: window.__arcGuidByFid, fidByGuid: window.__arcFidByGuid, fills: window.swXEdges.fills,
+        abuts: window.swXEdges.abuts || [], cascade: window.SdgCascade, gate: window.SdgGate, rideFids: Array.from(this._rideFids) });
+      if (this._engine) this._dagevuCache = eng;              // inside a drag session → cache alongside the attach-map engine
+      return eng;
+    },
+    isFilling(fid) { const e = this._dagevu(); return !!(e && e.isFilling(fid)); },
+    rideList() { return Array.from(this._rideFids); },
     // toggleOverride(fid) → true if now EXCLUDED (green), false if now back to included (orange). Bidirectional.
+    // §DAGEVU: a hosted OPENING (a real rel_fills_host filling) is never directly governed — for it the SAME
+    // ctrl+click toggles anchor(held, green) ↔ ride(moves, blue) instead: returns true when now HELD (anchor),
+    // false when now RIDING. One interaction, two meanings, decided by what was clicked (spec §1 reuse row 5).
     toggleOverride(fid) {
+      if (this.isFilling(fid)) {
+        const wasRide = this._rideFids.has(fid);
+        if (wasRide) this._rideFids.delete(fid); else this._rideFids.add(fid);
+        this._dagevuCache = null;
+        console.log(TAG + ' §DAGEVU toggle opening fid=' + fid + ' -> ' + (wasRide ? 'anchor(held)' : 'ride(opt-in)'));
+        return wasRide;
+      }
       const wasExcluded = this._overrides.has(fid);
       if (wasExcluded) this._overrides.delete(fid); else this._overrides.add(fid);
       console.log(TAG + ' §GREEN-EXCLUDE toggle fid=' + fid + ' -> ' + (wasExcluded ? 'orange(included)' : 'green(excluded)'));
@@ -52,15 +81,96 @@
       return { commands: commands2, riders: riders2, excluded };
     },
 
+    // §GRIDSCOPE (prompts/GRID_SMART_ELEMENT_SCOPE.md, 2026-07-09 — decided direction, built here):
+    // TWO independent narrowings of grid governance, both applied here, neither touching the shared
+    // (Viewer-used) grid_kinematics.js engine itself:
+    //
+    // 1. CLASS ALLOWLIST — furniture/coverings/openings never participate in DIRECT grid attachment (a
+    //    couch sitting in a room doesn't drag when the room's wall stretches). Doors/windows are excluded
+    //    here too -- they ride via §STRETCH-RIDE (resolved off REAL rel_fills_host edges, sdg_cascade.js),
+    //    NOT by being independently classified against the grid -- excluding them from elementData() does
+    //    not affect their movement, only removes a redundant (and sometimes WRONG-tint) direct classification.
+    _STRUCTURAL_CLASSES: ['IfcWall', 'IfcWallStandardCase', 'IfcSlab', 'IfcFooting', 'IfcColumn', 'IfcBeam',
+      'IfcRailing', 'IfcStairFlight', 'IfcRoof'],
+    // fid -> ifc_class, read from the REAL committed GEOM_INSERT op parameters (arc_editable.js's
+    // buildSeedOps already writes params.ifc_class per seed op -- extracted, not invented). A synthetic/
+    // hand-authored wall (GEOM_EXTRUDE_POLY etc.) has no ifc_class recorded at all -- treated as UNKNOWN,
+    // kept eligible (unchanged behavior for the tool's actual primary use case: freshly-sketched content).
+    // §ROTATION-GUARD (prompts/GRID_ROTATION_GUARD.md §1 step 3): the SAME pass over the SAME parsed JSON
+    // also yields fid -> yawRad from params.placement.rot — which is DEGREES at this boundary (buildSeedOps
+    // commits `rot: rz * 180 / Math.PI`); convert to RADIANS here, the engine speaks radians only. Absent
+    // (synthetic content, or the §ARC-3AXIS tilted shape that carries rotZRad instead) → undefined →
+    // unguarded/eligible, symmetric with the class-UNKNOWN rule above.
+    // §ROTATION-GUARD-3AXIS (GRID_ROTATION_GUARD.md §5): the §ARC-3AXIS placement shape ({rotX,rotY,rotZRad},
+    // arc_editable.js buildSeedOps ~line 218) carries genuine roll/pitch tilt the yaw-only read above never
+    // sees (no `.rot` field on that shape) — read rotX/rotY here too. Already RADIANS at this boundary (no
+    // degrees step, unlike `.rot`). Found live-reachable: SampleCastle_ARC.db fids 933/1291/2514/3055 all
+    // have yawRadByFid undefined (§ARC-3AXIS rows) yet ATTACH/EDGE-classified today with zero guard.
+    _buildInsertMaps() {
+      const O = window.Bonsai.oplog;
+      const maps = { classByFid: {}, yawRadByFid: {}, tiltXRadByFid: {}, tiltYRadByFid: {} };
+      if (!O || !O.db) return maps;
+      try {
+        const r = O.db.exec("SELECT id, parameters FROM kernel_ops WHERE op_type='GEOM_INSERT'");
+        if (r.length) r[0].values.forEach(v => { try {
+          const p = JSON.parse(v[1]);
+          if (p && p.ifc_class) maps.classByFid[v[0]] = p.ifc_class;
+          if (p && p.placement && typeof p.placement.rot === 'number') maps.yawRadByFid[v[0]] = p.placement.rot * Math.PI / 180;
+          if (p && p.placement && typeof p.placement.rotX === 'number') maps.tiltXRadByFid[v[0]] = p.placement.rotX;
+          if (p && p.placement && typeof p.placement.rotY === 'number') maps.tiltYRadByFid[v[0]] = p.placement.rotY;
+        } catch (e) { } });
+      } catch (e) { }
+      return maps;
+    },
+    _buildClassByFid() { return this._buildInsertMaps().classByFid; },
+    // 2. GRAB-LOCALITY — a gridline is otherwise infinite (grid_kinematics.js's _findBestGrid classifies
+    // purely by along-axis centerline distance, §ATTACH_TOL=0.5m, with NO awareness of position along the
+    // line's own length). Fine for a small authored scene; genuinely wrong for a real, dense building where
+    // dozens of walls at completely different rooms can all coincidentally sit within 0.5m of the SAME x or
+    // y coordinate (confirmed real: Duplex, one gridline drag, ~50 real elements swept into one commit).
+    // Scope candidates to elements near WHERE THE USER ACTUALLY GRABBED the line (the pointerdown hit's
+    // ORTHOGONAL coordinate — e.g. hit.y for an x-axis line) — matches how a user actually thinks about it
+    // ("I grabbed THIS stretch"), not a re-derivation of "architectural convenience" via face tolerance.
+    // Radius is DERIVED from the grid's own orthogonal-axis line spacing (one bay, +50% margin so an
+    // element right at a bay boundary still qualifies) — extracted from the real grid definition already
+    // present, not an invented constant. `draggedAxis` names the axis of the GRIPPED line ('x' or 'y') --
+    // the orthogonal-axis lines (whose spacing defines the bay) are the OTHER grid axis.
+    _localityRadius(draggedAxis) {
+      const G = window.Bonsai.grid; const lines = (draggedAxis === 'x' ? G.ys : G.xs) || [];
+      if (lines.length < 2) return Infinity;   // a single-line grid on the orthogonal axis has no "bay" to derive -- don't filter
+      const sorted = lines.slice().sort((a, b) => a - b);
+      let maxGap = 0;
+      for (let i = 1; i < sorted.length; i++) maxGap = Math.max(maxGap, sorted[i] - sorted[i - 1]);
+      return maxGap * 1.5;
+    },
+
     // The engine's elementData = each authored solid's centre + bbox extents (the geometry it must recompose).
     elementData() {
       const g = window.Bonsai.group && window.Bonsai.group(); if (!g) return [];
-      return g.children.filter(o => o.isMesh && o.userData.featureId != null).map(m => {
+      const maps = this._buildInsertMaps();
+      const classByFid = maps.classByFid, yawRadByFid = maps.yawRadByFid;
+      const tiltXRadByFid = maps.tiltXRadByFid, tiltYRadByFid = maps.tiltYRadByFid;
+      const allow = this._STRUCTURAL_CLASSES;
+      const draggedAxis = this._dragAxis, orthoAt = this._dragOrthoAt;   // set by beginDragSession(); null outside a session (unchanged/global behavior for direct computeCommands() callers, e.g. discovery-sweep tests)
+      const radius = draggedAxis != null ? this._localityRadius(draggedAxis) : Infinity;
+      return g.children.filter(o => {
+        if (!(o.isMesh && o.userData.featureId != null)) return false;
+        const cls = classByFid[o.userData.featureId];
+        if (cls != null && allow.indexOf(cls) === -1) return false;   // known class, not structural/enclosure -> exclude
+        return true;
+      }).map(m => {
         m.geometry.computeBoundingBox(); const bb = m.geometry.boundingBox;
         return { guid: m.userData.featureId,
           x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2,
           bboxX: bb.max.x - bb.min.x, bboxY: bb.max.y - bb.min.y, bboxZ: bb.max.z - bb.min.z,
-          ifcClass: 'IfcWall' };
+          ifcClass: 'IfcWall',
+          yawRad: yawRadByFid[m.userData.featureId],   // §ROTATION-GUARD: undefined when unrecorded ⇒ engine behavior unchanged
+          tiltXRad: tiltXRadByFid[m.userData.featureId],   // §ROTATION-GUARD-3AXIS: ditto
+          tiltYRad: tiltYRadByFid[m.userData.featureId] };
+      }).filter(elem => {
+        if (draggedAxis == null || !isFinite(radius)) return true;
+        const orthoPos = draggedAxis === 'x' ? elem.y : elem.x;   // draggedAxis names the GRIPPED line's axis; the element's ORTHOGONAL coordinate is the OTHER one
+        return Math.abs(orthoPos - orthoAt) <= radius;
       });
     },
 
@@ -85,26 +195,47 @@
     // the two sibling per-frame O(n) scans (mesh-by-fid for gmTint, box-by-fid for §STRETCH-RIDE) for the
     // duration of this ONE drag session. Logged so the cache lifecycle is visible in the console, not just
     // inferred from timing.
-    beginDragSession() {
+    // §GRIDSCOPE: draggedAxis/orthoAt (OPTIONAL, both new params) are the grabbed line's axis + the
+    // pointerdown hit's orthogonal-axis coordinate (modeller.html's pointerdown handler) — feeds
+    // elementData()'s grab-locality filter above. Omitted (any pre-existing caller) ⇒ draggedAxis stays
+    // null ⇒ locality filtering is skipped entirely (byte-identical to before this change for those callers).
+    beginDragSession(draggedAxis, orthoAt) {
+      this._dragAxis = draggedAxis != null ? draggedAxis : null;
+      this._dragOrthoAt = orthoAt != null ? orthoAt : null;
       this._engine = this._buildEngine();
       this._meshCache = this._buildMeshByFid();
       this._boxCache = this._buildBoxByFid();
-      console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)');
+      // §SCALE-YAW-GUARD (GRID_ROTATED_SCALE_HARDENING.md §1.1): session-cached fid -> yawRad/tiltXRad/tiltYRad
+      // so computeCommands() can stamp each command WITHOUT re-querying kernel_ops per pointermove frame
+      // (§SCALE_CHECK_FIX invariant). One shared cache object (one query) for all three optional fields.
+      this._insertMapsCache = this._buildInsertMaps();
+      console.log(TAG + ' §SCALE_CHECK_FIX drag-session begin — attach-map + mesh/box caches built ONCE (reused every pointermove frame)' +
+        (this._dragAxis != null ? (' §GRIDSCOPE axis=' + this._dragAxis + ' orthoAt=' + this._dragOrthoAt.toFixed(3) + ' radius=' + this._localityRadius(this._dragAxis).toFixed(3)) : '') +
+        (this._engine.getYawSkipCount && this._engine.getYawSkipCount() ? ' §ROTATION-GUARD yawSkipped=' + this._engine.getYawSkipCount() + ' element-axis classification(s) (oblique yaw, AABB edges unreal — fell through to interior)' : '') +
+        (this._engine.getTiltSkipCount && this._engine.getTiltSkipCount() ? ' §ROTATION-GUARD-3AXIS tiltSkipped=' + this._engine.getTiltSkipCount() + ' element-axis classification(s) (non-negligible rotX/rotY — fell through to interior)' : ''));
     },
     // Called on commit/cancel — the NEXT drag (or any non-session caller) rebuilds fresh off the post-commit
     // scene, so a scene edit between drags is never served a stale attach map.
     endDragSession() {
       if (this._engine) console.log(TAG + ' §SCALE_CHECK_FIX drag-session end — caches cleared');
-      this._engine = null; this._meshCache = null; this._boxCache = null;
+      this._engine = null; this._meshCache = null; this._boxCache = null; this._insertMapsCache = null; this._dagevuCache = null;
+      this._dragAxis = null; this._dragOrthoAt = null;
     },
     // PURE recompose: use the cached attached engine if a drag session is active, else build-and-discard
     // (unchanged fallback behavior for any caller outside a session, e.g. tests).
     computeCommands(gridId, delta) {
       const eng = this._engine || this._buildEngine();
+      // §SCALE-YAW-GUARD / §ROTATION-GUARD-3AXIS: fid -> yawRad/tiltXRad/tiltYRad ride each command so the
+      // worker's SCALE fold can refuse a world-axis stretch of an obliquely-yawed OR tilted solid (defense in
+      // depth — GRID_ROTATION_GUARD.md already keeps such elements out of ATTACH/EDGE/SPAN classification
+      // upstream). Unrecorded fid ⇒ undefined ⇒ worker behavior byte-identical to before.
+      const maps = this._insertMapsCache || this._buildInsertMaps();
+      const yawByFid = maps.yawRadByFid, tiltXByFid = maps.tiltXRadByFid, tiltYByFid = maps.tiltYRadByFid;
       // engine guid === our featureId; carry it forward as featureId so the worker fold is unambiguous.
       return eng.dragGrid(gridId, delta).map(c => ({
         featureId: c.guid, action: c.action, axis: c.axis,
-        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge }));
+        delta: c.delta, newScale: c.newScale, translateDelta: c.translateDelta, edge: c.edge,
+        yawRad: yawByFid[c.guid], tiltXRad: tiltXByFid[c.guid], tiltYRad: tiltYByFid[c.guid] }));
     },
     // fid -> mesh map (gmTint's per-command lookup — was g.children.find(), O(n) per command per frame).
     _buildMeshByFid() {
@@ -136,8 +267,29 @@
     // commit can never disagree.
     previewCommands(gridId, delta) {
       let commands = this.computeCommands(gridId, delta);
-      let riders = [];
-      // §STRETCH-RIDE: a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
+      let riders = [], held = [], refusals = [], proposals = [], dimLabel = '';
+      // §DAGEVU (SPEC_DAGEVU_ENGINE.md §4): the relationship-edge engine replaces the direct stretchRide call.
+      // ANCHOR default — a hosted opening keeps its world position while its host's LENGTH changes (SCALE ⇒ zero
+      // induced delta; TRANSLATE still carries it rigidly); RIDE is the per-opening ctrl+click opt-in; an
+      // opening the dictated end would cross is REFUSED (reported here, blocks commit() below). The ride math
+      // itself is still sdg_cascade.stretchRide, called by the engine — one implementation.
+      const dagevu = this._dagevu();
+      if (dagevu) {
+        const out = dagevu.propagateCommands(commands, this._boxByFid());
+        commands = out.commands; riders = out.riders; held = out.held; refusals = out.refusals; proposals = out.proposals; dimLabel = out.dimLabel;
+        const applied = this.applyOverrides(commands, riders);
+        // §CUT-MOVE (prompts/SPEC_GEOM_CUT_MOVE.md §4): a carved void (active GEOM_CUT on the host, overlapping an
+        // ANCHORED opening) would be carried away by the fold's SCALE while the door is held — emit the inverse shift
+        // as one GEOM_CUT_MOVE rider per hole (computed from the POST-override commands, so a green-excluded wall
+        // emits none). An unmappable frame is a refusal that blocks commit() like anchor-no-free-end.
+        const cm = this._cutRiders(applied.commands, held.concat(applied.riders.map(r => r.featureId)), dagevu, refusals);
+        if (cm.riders.length) dimLabel = (dimLabel ? dimLabel + ' · ' : '') + cm.riders.length + ' hole' + (cm.riders.length > 1 ? 's' : '') + ' held' +
+          (Math.abs(cm.residual) > 1e-9 ? ' (Δw ' + (cm.residual >= 0 ? '+' : '') + cm.residual.toFixed(2) + 'm)' : '');
+        if (cm.refused.length) dimLabel = (dimLabel ? dimLabel + ' · ' : '') + 'REFUSED hole #' + cm.refused.join(',#');
+        return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel, cutRiders: cm.riders };
+      }
+      // §STRETCH-RIDE (pre-§DAGEVU path, kept byte-identical for a LOAD_FAIL of dagevu_engine.js or an absent bridge):
+      // a hosted opening must NOT divorce or scale when its host wall is grid-stretched — the
       // engine classifies EVERY authored mesh independently (doors/windows included), so strip any rider's OWN
       // command and induce ONE rigid move instead, resolved ONLY over the REAL rel_fills_host edges through the
       // §ARC-1 bridge (non-invent — never a proximity heuristic). Absent the bridge (no fills data for this
@@ -150,14 +302,74 @@
         commands = ride.commands; riders = ride.riders;
       }
       const applied = this.applyOverrides(commands, riders);
-      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded };
+      return { commands: applied.commands, riders: applied.riders, excluded: applied.excluded, held, refusals, proposals, dimLabel, cutRiders: [] };
+    },
+    // §CUT-MOVE (SPEC_GEOM_CUT_MOVE.md §3-4): for every ANCHORED opening whose host has a SCALE command, every active
+    // GEOM_CUT {parent: host} whose (net-shifted) void overlaps the opening's pre-drag AABB gets the inverse of the
+    // fold's proportional shift, s = −Δ/(f·F), so its centre stays under the held door (cut_move.js anchorShift — the
+    // ONE definition the worker fold, the slide and this path share). TRANSLATE-only hosts need nothing (hole and
+    // held door move together); a RIDE opening needs nothing (door and hole take the same mapping). The width
+    // residual (f−1)·F·w is REPORTED (max-magnitude, signed), never corrected (a void resize is step 2).
+    _cutRiders(commands, candidateFids, dagevu, refusals) {
+      const out = { riders: [], refused: [], residual: 0 };
+      const CM = window.CutMove; if (!CM || !dagevu || !candidateFids.length) return out;
+      const O = window.Bonsai.oplog, ops = (O && O._geomOps) ? O._geomOps() : [];
+      const boxByFid = this._boxByFid(), AXI = CM.AX;
+      const cmdsByHost = {};
+      commands.forEach(c => { if (c && c.featureId != null) (cmdsByHost[c.featureId] = cmdsByHost[c.featureId] || []).push(c); });
+      const seen = {};
+      for (const fid of candidateFids) {
+        if (dagevu.modeOf(fid) !== 'anchor') continue;
+        const edge = dagevu.edgeFor(fid); if (!edge) continue;
+        const host = edge.hostFid, cmds = cmdsByHost[host] || [];
+        if (!cmds.some(c => c.action !== 'TRANSLATE')) continue;
+        const fb = boxByFid[fid], hb = boxByFid[host]; if (!fb || !hb) continue;
+        for (const cutOp of CM.cutsOver(ops, host, fb)) {
+          if (seen[cutOp.id]) continue; seen[cutOp.id] = 1;
+          const d = [0, 0, 0], g = [1, 1, 1], minShift = [0, 0, 0]; let bad = null, res = 0;
+          for (const c of cmds) {                                  // in command order: a preceding TRANSLATE moves the anchor min
+            const k = AXI[c.axis]; if (k == null) continue;
+            if (c.action === 'TRANSLATE') { minShift[k] += c.delta || 0; continue; }
+            const r = CM.anchorShift({ cutOp, ops, hostBox: hb, axis: k, f: c.newScale != null ? c.newScale : 1, translateDelta: c.translateDelta || 0, minShift: minShift[k] });
+            if (!r.ok) { bad = r.reason; break; }
+            // §CUT-FRAME-ROTATE: r.s/r.g are AUTHORED-frame quantities — place them at r.authoredAxis (= M.perm[k]),
+            // NOT at the world axis k, once a post-cut rotation can permute the frame (identity-perm ⇒ same index,
+            // so this is a no-op for every unrotated host — byte-identical to step 1/2).
+            d[r.authoredAxis] += r.s;
+            // §CUT-RESIZE (SPEC_GEOM_CUT_RESIZE.md §3): a non-through axis is fully held — accumulate the resize
+            // g=1/f and the residual on it is 0; a through axis (the bCut's thickness axis) gets NO resize and keeps
+            // reporting its residual as before (shrinking a through-void by 1/f could stop it cutting through).
+            if (!r.through) { g[r.authoredAxis] *= r.g; } else if (Math.abs(r.residual) > Math.abs(res)) res = r.residual;
+          }
+          if (bad) { out.refused.push(cutOp.id); refusals.push({ kind: 'cut-move-unmappable', fillingFid: fid, hostFid: host, cutId: cutOp.id, reason: bad }); continue; }
+          out.riders.push({ cutId: cutOp.id, parent: host, dx: d[0], dy: d[1], dz: d[2], fx: g[0], fy: g[1], fz: g[2], fillingFid: fid, residual: res });
+          if (Math.abs(res) > Math.abs(out.residual)) out.residual = res;
+        }
+      }
+      return out;
     },
 
     // Commit ONE signed GEOM_GRID_MOVE per drag-release; the worker folds the recompose deterministically.
     // Implementing RESUME_CASCADE_INTO_STRETCH.md §STRETCH-RIDE — Witness: W-STRETCH-RIDE.
-    async commit(gridId, delta) {
+    async commit(gridId, delta, extra) {
       const preview = this.previewCommands(gridId, delta);
       let commands = preview.commands, riders = preview.riders;
+      // §DAGEVU: an honest refusal is a hard stop, never a fabricated resolution — nothing is committed. The thrown
+      // message lands in modeller.html's existing catch → status 'FAIL …' with the drag still armed, so the user
+      // can shorten the drag or ctrl+click the opening to let it ride.
+      if (preview.refusals && preview.refusals.length) {
+        const r = preview.refusals[0];
+        const msg = (r.kind === 'cut-move-unmappable'
+          ? '§CUT-MOVE refused: hole GEOM_CUT #' + r.cutId + ' under held opening #' + r.fillingFid + ' on wall #' + r.hostFid + ' cannot follow the stretch (' + r.reason +
+            ') — ctrl+click the opening to let it ride, or ctrl+click the wall to exclude it'
+          : '§DAGEVU refused: opening #' + r.fillingFid + ' would leave wall #' + r.hostFid + ' on ' + r.axis +
+          ' (wall ' + r.hostAfter[0].toFixed(2) + '..' + r.hostAfter[1].toFixed(2) + ' vs opening ' + r.filling[0].toFixed(2) + '..' + r.filling[1].toFixed(2) +
+          ') — drag less, or ctrl+click the opening to let it ride') + (preview.refusals.length > 1 ? ' [+' + (preview.refusals.length - 1) + ' more]' : '');
+        console.warn(TAG + ' ' + msg);
+        throw new Error(msg);
+      }
+      if (preview.held && preview.held.length) console.log(TAG + ' §DAGEVU anchor held=' + preview.held.length + ' opening(s) in place: ' + preview.held.join(','));
+      if (preview.proposals && preview.proposals.length) console.log(TAG + ' §DAGEVU abuts-realign proposed (report-only, not applied): ' + JSON.stringify(preview.proposals));
       if (preview.excluded.length) console.log(TAG + ' §GREEN-EXCLUDE commit skipped=' + preview.excluded.length + ' fid(s) (green, did not move): ' + preview.excluded.join(','));
       if (riders.length) console.log(TAG + ' §STRETCH-RIDE stripped=' + riders.length + ' rider cmd(s) → induced move instead: ' + riders.map(r => r.featureId).join(','));
       // §P8 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-GESTURE-UNDO): with riders, the stretch + its
@@ -165,16 +377,30 @@
       // Ctrl+Z reverts the whole thing (before: GEOM_GRID_MOVE then N separate GEOM_MOVEs = N+1 undos, a
       // half-reverted stretch in between). Rider ops stay byte-identical GEOM_MOVE {parent,d*,induced} rows —
       // only the grouping changes. Zero riders ⇒ the existing single-op path below, untouched.
-      if (riders.length && window.Bonsai.oplog.commitGesture) {
+      // §CUT-MOVE: the held openings' carved voids ride the SAME gesture as GEOM_CUT_MOVE rows (SPEC_GEOM_CUT_MOVE.md §4).
+      // §CUT-RESIZE: when any factor ≠ 1, one GEOM_CUT_RESIZE row rides the SAME gesture too (SPEC_GEOM_CUT_RESIZE.md §3).
+      const cutRiders = preview.cutRiders || [];
+      const resizeRiders = cutRiders.filter(c => c.fx !== 1 || c.fy !== 1 || c.fz !== 1);
+      // §GRID-SPAN-GATE: extra.ops = the "Add one more" GEOM_INSERT rows — they join THIS gesture (one Ctrl+Z).
+      const extraOps = (extra && extra.ops) || [];
+      if ((riders.length || cutRiders.length || extraOps.length) && window.Bonsai.oplog.commitGesture) {
         const ops = [{ op_type: 'GEOM_GRID_MOVE', params: { gridId, delta, commands } }]
           .concat(riders.map(r => ({ op_type: 'GEOM_MOVE',
-            params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })));
+            params: { parent: r.featureId, dx: r.dx, dy: r.dy, dz: r.dz, induced: 'hosted-by' } })))
+          .concat(cutRiders.map(c => ({ op_type: 'GEOM_CUT_MOVE',
+            params: { cutId: c.cutId, parent: c.parent, dx: c.dx, dy: c.dy, dz: c.dz, induced: 'anchor-hold' } })))
+          .concat(resizeRiders.map(c => ({ op_type: 'GEOM_CUT_RESIZE',
+            params: { cutId: c.cutId, parent: c.parent, fx: c.fx, fy: c.fy, fz: c.fz, induced: 'anchor-hold' } })))
+          .concat(extraOps);
         const gres = await window.Bonsai.oplog.commitGesture(ops);
         console.log(TAG + ' commit grid=' + gridId + ' delta=' + delta + ' cmds=' + commands.length +
-          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount);
+          ' §GESTURE gid=' + gres.gid + ' riders=' + riders.length + ' cutRiders=' + cutRiders.length + ' verify=' + gres.verify + ' tris=' + gres.triangleCount + (extraOps.length ? ' §GRID-SPAN extraOps=' + extraOps.length : ''));
         riders.forEach(r => console.log(TAG + ' §STRETCH-RIDE hosted-by rider=' + r.featureId + ' induced dx=' + r.dx.toFixed(3) +
           ' dy=' + r.dy.toFixed(3) + ' dz=' + r.dz.toFixed(3) + ' (in gesture group)'));
-        return { ...gres, commands, riders };
+        cutRiders.forEach(c => console.log(TAG + ' §CUT-MOVE anchor-hold cut=#' + c.cutId + ' (wall #' + c.parent + ', under held opening #' + c.fillingFid + ') authored shift dx=' + c.dx.toFixed(3) +
+          ' dy=' + c.dy.toFixed(3) + ' dz=' + c.dz.toFixed(3) + ' resize=(' + c.fx.toFixed(3) + ',' + c.fy.toFixed(3) + ',' + c.fz.toFixed(3) + ')' +
+          ' width residual=' + c.residual.toFixed(3) + 'm (reported for through-axes only, not corrected) (in gesture group)'));
+        return { ...gres, commands, riders, cutRiders };
       }
       const res = await window.Bonsai.oplog.commit({ op_type: 'GEOM_GRID_MOVE',
         parameters: { gridId, delta, commands } }, {});

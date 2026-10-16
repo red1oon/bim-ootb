@@ -1,19 +1,8 @@
-// import_own.js — own-IFC import + multi-file merge engine.
+// import_own.js — drop-own-IFC for the Matrix hub (index2 ONLY).
 // VERBATIM EXTRACT from index.html (the live landing) — non-invent. S224 merge prompt removed
 // per MORPHEUS_PLATE_REBUILD.md (always new project → auto-open viewer). Loaded after import_db_builder.js.
-// Also loaded from viewer/viewer.html (§OPEN_BUTTON_IFC_MERGE, 2026-07-06) — the Open button's
-// IFC-import path reuses this engine unmodified; see _fromViewerHost below for the two seams that
-// actually differ between hosts (asset paths, project-open navigation).
 var _base = '';            // GH Pages = same-origin root (index.html _ociMatch → '')
 function trackTab(){}      // landing tab-tracker not present on the plate — no-op
-
-// §OPEN_BUTTON_IFC_MERGE: this file is VERBATIM-loaded a second time from viewer/viewer.html (the
-// Open button's IFC-import path) — set by that page BEFORE this script tag runs. All the
-// 'viewer/…'-relative asset paths below were written assuming a root-relative host (index.html);
-// from inside viewer/ they must collapse to same-dir, and project-open must navigate the CURRENT
-// tab in place instead of spawning a new one (see openProject()'s opts.sameTab branch).
-var _fromViewerHost = !!window._IMPORT_OWN_VIEWER_HOST;
-var _viewerAssetPrefix = _fromViewerHost ? '' : 'viewer/';
 
 // ── discipline-from-filename ──
 var _VALID_DISCS = ['ARC','STR','MEP','PLB','ACMV','ELEC','FP','VENT','HEAT','SAN','COOL','VOID'];
@@ -208,17 +197,6 @@ async function openProject(key, btnEl, opts) {
     }
   }
 
-  // §OPEN_BUTTON_IFC_MERGE: triggered from viewer/viewer.html's Open button — load the merged
-  // result into the CURRENT tab (same pattern scene.js already uses for cached native-.db opens),
-  // never spawn a second tab on top of the viewer the user is already sitting in.
-  if (opts && opts.sameTab) {
-    var sameTabUrl = 'viewer.html?db=' + encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) +
-      diffParam + wizardParam + '&ghost=1';
-    console.log('§OPEN_PROJECT_SAMETAB key=' + key + ' url=' + sameTabUrl);
-    location.assign(sameTabUrl);
-    return;
-  }
-
   var viewerUrl = (_base || '') + 'viewer/viewer.html?db=' +
     encodeURIComponent(dbUrl) + '&lib=' + encodeURIComponent(libUrl) + diffParam + wizardParam + '&ghost=1';
   var win = window.open(viewerUrl, '_blank');
@@ -256,7 +234,7 @@ async function _loadSqlJs() {
       console.log('§STANDALONE_SQL inline initSqlJs loaded');
     } else {
       // Load local sql-wasm.js text (network or SW cache), then eval to define initSqlJs
-      var jsResp = await _fetchLocalOrCache(_viewerAssetPrefix + 'lib/sql-wasm.js');
+      var jsResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.js');
       var jsText = await jsResp.text();
       (new Function(jsText + '\n; if (typeof initSqlJs !== "undefined") window.initSqlJs = initSqlJs;'))();
       console.log('§SQL_LOCAL initSqlJs loaded from viewer/lib');
@@ -270,12 +248,12 @@ async function _loadSqlJs() {
     return await initSqlJs({ wasmBinary: buf.buffer });
   }
   // PWA / online: feed the local WASM binary directly (works offline via Cache Storage)
-  var wasmResp = await _fetchLocalOrCache(_viewerAssetPrefix + 'lib/sql-wasm.wasm');
+  var wasmResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.wasm');
   var wasmBuf = await wasmResp.arrayBuffer();
   return await initSqlJs({ wasmBinary: wasmBuf });
 }
 var _IFC_ENGINE_CACHE = 'bim-ifc-engine';
-var _IFC_WASM_URL = _viewerAssetPrefix + 'lib/web-ifc.wasm';
+var _IFC_WASM_URL = 'viewer/lib/web-ifc.wasm';
 async function _getWebIfcWasm() {
   // 1. Standalone HTML — bytes embedded as base64.
   if (window._WEBIFC_WASM_B64) {
@@ -346,7 +324,7 @@ function _createWorker(scriptUrl) {
 
 // ── trimmed import handler: single file, NEW project only (no S224 merge modal), auto-open viewer ──
 // Mirrors index.html handleImportFile new-project path verbatim, minus merge/renderImportCards.
-async function handleImportFile(file, opts) {
+async function handleImportFile(file) {
   if (!file) return;
   var fmt = detectLandingFormat(file.name);
   if (!fmt.route) { document.getElementById('import-status').textContent = 'Unsupported: .' + fmt.ext + ' — Accepted: IFC, OBJ, DAE, GLB, STL, FBX, 3DS'; return; }
@@ -372,7 +350,7 @@ async function handleImportFile(file, opts) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? _viewerAssetPrefix + 'import_worker.js?v=9' : _viewerAssetPrefix + 'mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=15' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -431,7 +409,7 @@ async function handleImportFile(file, opts) {
         }
         status.textContent = 'Imported ' + msg.meta.elementCount + ' elements — opening viewer...';
         progressBar.style.width = '100%'; progressBar.style.background = '#44cc44';
-        openProject(projectKey, null, opts);
+        openProject(projectKey);
         console.log('§IMPORT_AUTO_OPEN key=' + projectKey);
         setTimeout(function () { status.textContent = ''; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; }, 3000);
       } catch (dbErr) { status.textContent = 'DB error: ' + dbErr.message; progressBar.style.background = '#cc4444'; console.log('§IMPORT_DB_ERROR ' + dbErr.message); }
@@ -550,12 +528,12 @@ function _commonPrefix(strs) {
 
 // Parse ONE IFC file via worker → resolves the 'done' msg (elements/geometries/transforms/meta),
 // with discipline-from-filename override applied (mirrors handleImportFile's parse half).
-function _parseOwnIFC(file, onProgress) {
+function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
   return new Promise(async function (resolve, reject) {
-    var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name };
+    var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker(_viewerAssetPrefix + 'import_worker.js?v=9');
+    var worker = _createWorker('viewer/import_worker.js?v=15');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }
@@ -576,9 +554,54 @@ function _parseOwnIFC(file, onProgress) {
   });
 }
 
+// §SITE_IDENTITY (2026-07-12): general, not hardcoded to any one file/discipline/project. A
+// federated multi-file drop's files each re-serialize the SAME real-world IfcSite entity —
+// same GlobalId, one copy per file. If 2+ files in the drop agree on that entity's placement and
+// one disagrees by a wide margin, the disagreeing copy is a source authoring defect (proven by
+// GUID identity, not guessed), and the fix is to correct that file's elements using the
+// sibling-agreed (real, extracted, not invented) value — same principle already used for the
+// federation offset itself, just keyed by the site's own identity instead of a derived bbox.
+function _applySiteIdentityCorrection(fileResults, sessionGeorefOffset) {
+  var byGuid = {};
+  fileResults.forEach(function (fr) {
+    var g = fr.result.meta.siteGuid, loc = fr.result.meta.siteLocation;
+    if (!g || !loc) return;
+    (byGuid[g] = byGuid[g] || []).push({ fr: fr, loc: loc });
+  });
+  var sessOff = sessionGeorefOffset || [0, 0, 0];
+  Object.keys(byGuid).forEach(function (guid) {
+    var entries = byGuid[guid];
+    if (entries.length < 2) return; // only one file carries this site — nothing to compare against
+    var bestCluster = null, bestSize = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var cand = entries[i].loc;
+      var cluster = entries.filter(function (e) {
+        return Math.abs(e.loc[0] - cand[0]) < 10 && Math.abs(e.loc[1] - cand[1]) < 10 && Math.abs(e.loc[2] - cand[2]) < 10;
+      });
+      if (cluster.length > bestSize) { bestSize = cluster.length; bestCluster = cluster; }
+    }
+    if (bestSize < 2) return; // every file disagrees pairwise — no safe consensus to correct against
+    var canonical = bestCluster[0].loc;
+    entries.forEach(function (e) {
+      var dev = Math.max(Math.abs(e.loc[0] - canonical[0]), Math.abs(e.loc[1] - canonical[1]), Math.abs(e.loc[2] - canonical[2]));
+      if (dev <= 1000) return; // already agrees with consensus, nothing to correct
+      var applied = e.fr.result.meta.appliedGeorefOffset || [0, 0, 0];
+      var shift = [
+        applied[0] - e.loc[0] + canonical[0] - sessOff[0],
+        applied[1] - e.loc[1] + canonical[1] - sessOff[1],
+        applied[2] - e.loc[2] + canonical[2] - sessOff[2],
+      ];
+      e.fr.result.transforms.forEach(function (t) { t.cx += shift[0]; t.cy += shift[1]; t.cz += shift[2]; });
+      console.log('§SITE_IDENTITY_AUTOFIX ' + e.fr.name + ' site guid=' + guid + ' own=(' + e.loc.join(',') +
+        ') vs sibling-consensus=(' + canonical.join(',') + ') corrected shift=(' +
+        shift.map(function (v) { return v.toFixed(2); }).join(',') + ')');
+    });
+  });
+}
+
 // ── Multi-IFC merge: N files → ONE building DB → auto-open viewer. NO merge modal, NO card. ──
 // Mirrors index.html A.importMultiIFC, self-contained on the plate's saveProject/openProject path.
-async function importMultiIFC(files, opts) {
+async function importMultiIFC(files) {
   var status = document.getElementById('import-status');
   var progressBar = document.getElementById('import-progress-bar');
   if (progressBar) { progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; }
@@ -605,7 +628,17 @@ async function importMultiIFC(files, opts) {
     ' names=' + Array.prototype.map.call(files, function (f) { return f.name; }).join(','));
   if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
 
-  var allElements = [], allGeometries = [], allTransforms = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;
+  var allElements = [], allGeometries = [], allTransforms = [], allPsets = [], allDiscs = {}, allStoreys = new Set(), totalElements = 0;   // §CIVIL_PSETS
+  // §GEOREF_REBASE federation frame (ported from viewer/import.js fe535d5 — this landing-page
+  // path builds its OWN worker calls and was missing the fix entirely): the first file that
+  // computes a georef offset pins it for every subsequent file in this drop, so all disciplines
+  // rebase into ONE shared local frame. Without this, each file rebases independently and a
+  // multi-discipline federated drop (e.g. JKR's 7 files) shears apart by however much each
+  // file's own bbox-midpoint rounds differently — verified live 2026-07-12: JKR disciplines
+  // landed up to ~7m apart, and the CW file (zeroed IfcSite defect) silently landed ~300m away
+  // with no warning at all.
+  var sessionGeorefOffset = null, sessionUnitScale = 1;
+  var fileResults = []; // §SITE_IDENTITY — deferred concat so a correction pass can run first
 
   for (var fi = 0; fi < files.length; fi++) {
     var file = files[fi];
@@ -617,10 +650,14 @@ async function importMultiIFC(files, opts) {
         var filePct = (fi / files.length + pct / 100 / files.length) * 90;
         if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
         if (status) status.textContent = fileLabel + ' — ' + phase;
-      });
-      allElements = allElements.concat(result.elements);
-      allGeometries = allGeometries.concat(result.geometries);
-      allTransforms = allTransforms.concat(result.transforms);
+      }, sessionGeorefOffset);
+      if (!sessionGeorefOffset && result.meta.georefOffset &&
+          (result.meta.georefOffset[0] || result.meta.georefOffset[1] || result.meta.georefOffset[2])) {
+        sessionGeorefOffset = result.meta.georefOffset;
+        console.log('§GEOREF_SESSION frame pinned by ' + file.name + ' offset=(' + sessionGeorefOffset.join(',') + ')');
+      }
+      if (result.meta.unitScale && result.meta.unitScale !== 1) sessionUnitScale = result.meta.unitScale;
+      fileResults.push({ name: file.name, result: result });
       totalElements += result.meta.elementCount;
       for (var d in result.meta.disciplines) allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
       result.meta.storeys.forEach(function (s) { allStoreys.add(s); });
@@ -633,14 +670,25 @@ async function importMultiIFC(files, opts) {
     }
   }
 
+  // §SITE_IDENTITY correction pass — now that every file's own site GUID/location is known,
+  // fix any file whose site entity disagrees with the sibling consensus for that same GUID.
+  _applySiteIdentityCorrection(fileResults, sessionGeorefOffset);
+  fileResults.forEach(function (fr) {
+    allElements = allElements.concat(fr.result.elements);
+    allGeometries = allGeometries.concat(fr.result.geometries);
+    allTransforms = allTransforms.concat(fr.result.transforms);
+    if (fr.result.psets && fr.result.psets.length) allPsets = allPsets.concat(fr.result.psets);   // §CIVIL_PSETS
+  });
+
   if (status) status.textContent = 'Building merged database (' + totalElements + ' elements)...';
   if (progressBar) progressBar.style.width = '92%';
   try {
     var SQL = await _loadSqlJs();
     var mergedData = {
       meta: { name: buildingName, filename: buildingName, elementCount: totalElements, geomCount: allGeometries.length,
-              disciplines: allDiscs, storeys: Array.from(allStoreys).sort() },
-      elements: allElements, geometries: allGeometries, transforms: allTransforms,
+              disciplines: allDiscs, storeys: Array.from(allStoreys).sort(),
+              georefOffset: sessionGeorefOffset || [0, 0, 0], unitScale: sessionUnitScale },
+      elements: allElements, geometries: allGeometries, transforms: allTransforms, psets: allPsets,
     };
     var dbs = buildImportDBs(SQL, mergedData);
     var _recSplit = dbs.metaDb && dbs.geoDb;
@@ -678,7 +726,7 @@ async function importMultiIFC(files, opts) {
       ' discs=' + Object.keys(allDiscs).join(',') + ' split=' + !!_recSplit);
     if (status) status.textContent = 'Merged ' + files.length + ' files → ' + totalElements + ' elements — opening viewer...';
     if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
-    openProject(projectKey, null, opts);
+    openProject(projectKey);
     console.log('§MULTI_AUTO_OPEN key=' + projectKey);
     setTimeout(function () { if (status) status.textContent = ''; if (progressBar) { progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; progressBar.parentElement.style.display = 'none'; } }, 3000);
   } catch (dbErr) {
@@ -690,12 +738,25 @@ async function importMultiIFC(files, opts) {
 
 // Route dropped/picked files: 2+ IFC → silent merge into one building; else single-file import.
 // Mirrors index.html's decision (ifcFiles.length > 1 ? merge : single). NO card, NO modal.
-function handleImportFiles(files, opts) {
+function handleImportFiles(files) {
   if (!files || !files.length) return;
   var ifcFiles = [];
   for (var fi = 0; fi < files.length; fi++) {
     if (detectLandingFormat(files[fi].name).route === 'ifc') ifcFiles.push(files[fi]);
   }
-  if (ifcFiles.length > 1) importMultiIFC(ifcFiles, opts);
-  else handleImportFile(files[0], opts);
+  if (ifcFiles.length > 1) importMultiIFC(ifcFiles);
+  else handleImportFile(files[0]);
+}
+
+// wire the hub drop zone + file input (called when the hub opens)
+function wireImportZone() {
+  var zone = document.getElementById('m-import-zone'); var input = document.getElementById('m-import-file');
+  if (!zone || !input || zone._wired) return; zone._wired = 1;
+  input.multiple = true;   // multi-select → merge in one shot
+  zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', function () { zone.classList.remove('drag'); });
+  zone.addEventListener('drop', function (e) { e.preventDefault(); zone.classList.remove('drag'); handleImportFiles(e.dataTransfer.files); });
+  zone.addEventListener('click', function () { input.click(); });
+  input.addEventListener('change', function () { handleImportFiles(input.files); });
+  console.log('§IMPORT_ZONE wired (drop-own-IFC, multi-merge)');
 }

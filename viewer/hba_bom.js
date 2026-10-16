@@ -32,6 +32,9 @@
     var sp = spec(A);
     if (!sp) return false;
     var totalLines = sp.assemblies.reduce(function (s, a) { return s + a.lines.length; }, 0);
+    // §FIX 2026-07-06c item B — all 6 HBA panes shared the identical fixed anchor, fully covering each other
+    // when 2+ opened together. Each pane now gets its own column (cumulative right-offset, gap 16px) so any
+    // pair is non-overlapping; this one anchors the cascade at right:12 (column 1).
     var pane = el('div', 'position:fixed;top:54px;right:12px;width:400px;max-height:82vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-bom-pane';

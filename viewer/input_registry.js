@@ -138,17 +138,29 @@
           status = 'dead'; target = 'not-fn'; dead.push(k);
         } else {
           var body = Function.prototype.toString.call(fn);
-          var names = [], re = /(?:\b(?:window|A|APP)\.)?([a-zA-Z_$][\w$]*)\s*\(/g, mm;
+          // §SHORTCUT-AUDIT-QUALIFIED: capture the owner of a dotted call too — the old regex
+          // reduced `WholeHistory.toggleOpen(` to bare `toggleOpen`, looked it up on
+          // window/APP/A only, and misreported a perfectly-working shortcut as dead
+          // (z/w/+/-/r false positives, seen live 2026-08-10).
+          var names = [], re = /(?:\b([a-zA-Z_$][\w$]*)\.)?([a-zA-Z_$][\w$]*)\s*\(/g, mm;
           while ((mm = re.exec(body)) !== null) {
-            var n = mm[1];
-            if (KEYWORDS.indexOf(n) < 0 && OBJS.indexOf(n) < 0 && DOM_BUILTINS.indexOf(n) < 0) names.push(n);
+            var owner = mm[1], n = mm[2];
+            if (owner && OBJS.indexOf(owner) >= 0) owner = null;   // window./A./APP. prefix = same as bare
+            if (KEYWORDS.indexOf(n) < 0 && OBJS.indexOf(n) < 0 && DOM_BUILTINS.indexOf(n) < 0)
+              names.push(owner ? owner + '.' + n : n);
           }
           if (!names.length) { status = 'inline'; inlineN++; }
           else {
-            var hit = names.filter(function (n) {
-              return typeof window[n] === 'function'
-                || (window.APP && typeof window.APP[n] === 'function')
-                || (window.A && typeof window.A[n] === 'function');
+            var hit = names.filter(function (q) {
+              var dot = q.indexOf('.');
+              if (dot > 0) {   // qualified Obj.fn — resolve the owner object globally, then the method
+                var o = q.slice(0, dot), f = q.slice(dot + 1);
+                var obj = window[o] || (window.APP && window.APP[o]) || (window.A && window.A[o]);
+                return !!(obj && typeof obj[f] === 'function');
+              }
+              return typeof window[q] === 'function'
+                || (window.APP && typeof window.APP[q] === 'function')
+                || (window.A && typeof window.A[q] === 'function');
             });
             if (hit.length) { status = 'ok'; target = hit[0]; okN++; }
             else { status = 'dead'; target = names.join(','); dead.push(k); }
@@ -161,6 +173,33 @@
       console.log('§SHORTCUT_AUDIT total=' + keys.length + ' ok=' + okN +
         ' inline=' + inlineN + ' dead=' + dead.length + ' deadKeys=' + (dead.join(',') || '-'));
       return dead;
+    },
+
+    // §SCRIPT_DUP (F2, 4D_SCHEDULE_PERFECTION.md 2026-08-10): the same script loaded twice under
+    // different paths lets LOAD ORDER silently pick the winner — the live log printed BOTH
+    // "§KERNEL_OPS_LOADED v13" and "v8" banners and nothing flagged it; the stale v8 clobbered v13
+    // and silently broke blue_fold/whatif (v13-only APIs). Log-only audit, zero behavior change:
+    // any <script> basename (query stripped) appearing more than once is warned. If a legitimate
+    // same-basename-different-file pair ever appears, list it in DUP_OK with the reason.
+    checkScriptDups: function () {
+      var DUP_OK = [];   // basenames allowed to repeat, each entry needs a reason comment
+      var seen = {}, dups = [];
+      var scripts = document.scripts || [];
+      for (var i = 0; i < scripts.length; i++) {
+        var src = scripts[i].getAttribute('src');
+        if (!src) continue;                                  // inline blocks can't collide by path
+        var base = src.split('?')[0].split('/').pop();
+        (seen[base] = seen[base] || []).push(src);
+      }
+      Object.keys(seen).forEach(function (base) {
+        if (seen[base].length > 1 && DUP_OK.indexOf(base) < 0) {
+          dups.push(base);
+          console.warn('§SCRIPT_DUP basename=' + base + ' srcs=[' + seen[base].join(', ') + ']');
+        }
+      });
+      console.log('§SCRIPT_DUP_AUDIT total=' + scripts.length + ' dup=' + dups.length +
+        (dups.length ? ' dupBasenames=' + dups.join(',') : ''));
+      return dups;
     },
 
     // Test/debug surface
@@ -176,6 +215,7 @@
   (function pollAudit(tries) {
     if (window._shortcuts && Object.keys(window._shortcuts).length) {
       try { InputReg.checkShortcuts(); } catch (e) { console.warn('§SHORTCUT_AUDIT error=' + e.message); }
+      try { InputReg.checkScriptDups(); } catch (e) { console.warn('§SCRIPT_DUP_AUDIT error=' + e.message); }
       return;
     }
     if (tries <= 0) { console.warn('§SHORTCUT_AUDIT error=_shortcuts never appeared (scene init incomplete)'); return; }

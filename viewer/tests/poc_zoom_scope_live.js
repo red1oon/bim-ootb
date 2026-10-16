@@ -52,9 +52,19 @@ const grab = re => { for (const l of log) { const m = re.exec(l); if (m) return 
 
   // A/B — the boot ?find handler should have auto-applied the scope. Give it a beat, then assert.
   await page.waitForTimeout(3000);
-  const cls = grab(/§ZOOM-SCOPE kind=class scope="([^"]+)" matches=(\d+)/);
+  // §BUGFIX 2026-07-13: the log line grew a "route=find|tm " prefix (§ARCH-OWNERSHIP, TM-if-open else
+  // Find) after this regex was written — it never matched since, so A/A2/C below were silently absent
+  // (not failing loudly; `grab` just returns null and cls[2]>0 skipped). Widened to tolerate the prefix.
+  const cls = grab(/§ZOOM-SCOPE route=\w+ kind=class scope="([^"]+)" matches=(\d+)/);
   verdict(!!cls && cls[1] === SCOPE && Number(cls[2]) > 0, 'A — ?find auto-ran Find on the class, matches>0', cls ? (cls[1] + ' matches=' + cls[2]) : 'absent');
   verdict(seen(/§FOCUS_ELEM guids=\d+ lit=[1-9]/), 'B — matches lit via the Find highlighter (focusElement), not a parallel one');
+  // §BUGFIX 2026-07-13 (user report: "the ERP drawer at the bottom does not appear" after Zoom Across) —
+  // A.focusElement only does the 3D highlight; #find-selected (cost + › ERP push + iDempiere ↗ links) was
+  // never revealed by this boot path (every OTHER selection path — item click, storey/disc group tap —
+  // already did). See navigate_find.js _revealSelectedBar, wired into both applyFindScope branches.
+  const barVisible = await page.evaluate(() => { var e = document.getElementById('find-selected'); return !!e && getComputedStyle(e).display !== 'none'; });
+  const barText = await page.evaluate(() => { var e = document.getElementById('find-selected-text'); return e ? e.textContent : ''; });
+  verdict(barVisible && barText.length > 0, 'D — #find-selected (the ERP drawer) is REVEALED with a label after a class scope lands', 'visible=' + barVisible + ' text="' + barText + '"');
 
   // expected count cross-check against the raw DB (non-invent: the fold must equal the data)
   const dbCount = await page.evaluate((c) => {
@@ -70,8 +80,11 @@ const grab = re => { for (const l of log) { const m = re.exec(l); if (m) return 
     await page.evaluate((g) => window.APP.applyFindScope(g.join(',')), guids);
     await page.waitForTimeout(800);
   }
-  const gv = grab(/§ZOOM-SCOPE kind=guids n=(\d+) lit=(\d+)/);
+  const gv = grab(/§ZOOM-SCOPE route=\w+ kind=guids n=(\d+) lit=(\d+)/);
   verdict(!!gv && Number(gv[1]) === guids.length && Number(gv[2]) > 0, 'C — guid-set scope focuses those exact elements', gv ? ('n=' + gv[1] + ' lit=' + gv[2]) : 'absent');
+  const barVisible2 = await page.evaluate(() => { var e = document.getElementById('find-selected'); return !!e && getComputedStyle(e).display !== 'none'; });
+  const barText2 = await page.evaluate(() => { var e = document.getElementById('find-selected-text'); return e ? e.textContent : ''; });
+  verdict(guids.length === 0 || (barVisible2 && barText2.length > 0), 'E — #find-selected also revealed after a guid-set scope lands', 'visible=' + barVisible2 + ' text="' + barText2 + '"');
 
   verdict(errs.length === 0, '0 pageerrors', errs.length ? errs.slice(0, 3).join(' | ') : 'clean');
 

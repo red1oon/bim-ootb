@@ -4,7 +4,8 @@
 // before the move shows the base line, with snap() always targeting the correct (current) gridline. Previously
 // bonsai_gridmove.commit mutated grid.xs imperatively and undo never reverted it → the next snap used a stale line.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-gridundo', 'viewer');
+// 2026-07-08: was hardcoded to a long-dead worktree (/tmp/wt-gridundo/viewer) — serve THIS checkout instead.
+const VIEWER = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };

@@ -139,9 +139,17 @@ function setupImport(A) {
       (dbs.geoDb.byteLength / 1024).toFixed(0) + 'KB)');
   }
 
+  // §IMPORT_FEEDBACK (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Z, user 2026-10-05: "it takes some time before
+  // [status], may leave user wondering"). The importer runs from the landing import card (#import-status + progress bar)
+  // AND from the viewer's Open door (scene.js A._openIfcFiles) — viewer.html has neither element, so every progress line
+  // went nowhere until the import finished. One sink: the card when present, else the viewer's own status line; with no
+  // bar the percent goes into the text.
+  function _importStatusEl() { return document.getElementById('import-status') || A.status || null; }
+  function _pctText(bar, pct) { return (!bar && typeof pct === 'number') ? ' (' + Math.round(pct) + '%)' : ''; }
+
   // ── Process IFC file ──
   A.importIFC = async function(file) {
-    const status = document.getElementById('import-status');
+    const status = _importStatusEl();
     const progressBar = document.getElementById('import-progress-bar');
     const importZone = document.getElementById('import-zone');
     if (status) status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_reading_file||'Reading file...';
@@ -158,13 +166,13 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=8', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=15', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
         const msg = e.data;
         if (msg.type === 'progress') {
-          if (status) status.textContent = msg.phase;
+          if (status) status.textContent = msg.phase + _pctText(progressBar, msg.pct);
           if (progressBar) progressBar.style.width = msg.pct + '%';
           return;
         }
@@ -265,7 +273,7 @@ function setupImport(A) {
 
   // ── Multi-IFC merge: process N files sequentially, merge into one building DB ──
   A.importMultiIFC = async function(files) {
-    const status = document.getElementById('import-status');
+    const status = _importStatusEl();
     const progressBar = document.getElementById('import-progress-bar');
     if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; }
 
@@ -278,17 +286,22 @@ function setupImport(A) {
 
     console.log('[S220] §MULTI_IMPORT_START files=' + files.length + ' building=' + buildingName +
       ' names=' + Array.from(files).map(function(f) { return f.name; }).join(','));
-    if (status) status.textContent = 'Merging ' + files.length + ' IFC files → ' + buildingName + '...';
+    var totalMB = 0; for (var _si = 0; _si < files.length; _si++) totalMB += (files[_si].size || 0) / 1048576;
+    if (status) status.textContent = 'Merging ' + files.length + ' IFC files (' + totalMB.toFixed(0) + ' MB) → ' + buildingName + '...';
 
     // Process each file sequentially — accumulate results
-    var allElements = [], allGeometries = [], allTransforms = [];
+    var allElements = [], allGeometries = [], allTransforms = [], allPsets = [];   // §CIVIL_PSETS
     var allDiscs = {}, allStoreys = new Set();
     var totalElements = 0;
+    // §GEOREF_REBASE federation frame: the first file that computes a georef offset pins it
+    // for every subsequent file in this drop, so all disciplines rebase into ONE shared local
+    // frame (per-file self-offsets can differ by metres — that would shear the federation).
+    var sessionGeorefOffset = null, sessionUnitScale = 1;
 
     for (var fi = 0; fi < files.length; fi++) {
       var file = files[fi];
       var fileLabel = (fi + 1) + '/' + files.length + ': ' + file.name;
-      if (status) status.textContent = 'Parsing ' + fileLabel;
+      if (status) status.textContent = 'Reading ' + fileLabel + ' (' + (file.size / 1048576).toFixed(0) + ' MB)' + _pctText(progressBar, fi / files.length * 90);
       console.log('[S220] §MULTI_FILE_START ' + fileLabel);
 
       try {
@@ -296,12 +309,19 @@ function setupImport(A) {
           // Scale progress: each file gets an equal slice
           var filePct = (fi / files.length + pct / 100 / files.length) * 90;
           if (progressBar) progressBar.style.width = filePct.toFixed(1) + '%';
-          if (status) status.textContent = fileLabel + ' — ' + phase;
-        });
+          if (status) status.textContent = fileLabel + ' — ' + phase + _pctText(progressBar, filePct);
+        }, sessionGeorefOffset);
+        if (!sessionGeorefOffset && result.meta.georefOffset &&
+            (result.meta.georefOffset[0] || result.meta.georefOffset[1] || result.meta.georefOffset[2])) {
+          sessionGeorefOffset = result.meta.georefOffset;
+          console.log('[S220] §GEOREF_SESSION frame pinned by ' + file.name + ' offset=(' + sessionGeorefOffset.join(',') + ')');
+        }
+        if (result.meta.unitScale && result.meta.unitScale !== 1) sessionUnitScale = result.meta.unitScale;
 
         allElements = allElements.concat(result.elements);
         allGeometries = allGeometries.concat(result.geometries);
         allTransforms = allTransforms.concat(result.transforms);
+        if (result.psets && result.psets.length) allPsets = allPsets.concat(result.psets);   // §CIVIL_PSETS
         totalElements += result.meta.elementCount;
         for (var d in result.meta.disciplines) {
           allDiscs[d] = (allDiscs[d] || 0) + result.meta.disciplines[d];
@@ -332,10 +352,13 @@ function setupImport(A) {
           geomCount: allGeometries.length,
           disciplines: allDiscs,
           storeys: Array.from(allStoreys).sort(),
+          georefOffset: sessionGeorefOffset || [0, 0, 0],  // §GEOREF_REBASE traceability → project_metadata
+          unitScale: sessionUnitScale,
         },
         elements: allElements,
         geometries: allGeometries,
         transforms: allTransforms,
+        psets: allPsets,   // §CIVIL_PSETS
       };
       var dbs = buildImportDBs(SQL, mergedData);
 
@@ -365,6 +388,10 @@ function setupImport(A) {
       if (progressBar) { progressBar.style.width = '100%'; progressBar.style.background = '#44cc44'; }
 
       if (A.renderImportCards) A.renderImportCards();
+      // §SCENE_MERGE (prompts/LANDING_MULTIMERGE_SAVEOPEN_RESURRECT.md §SM-7.1 step 5): hand the
+      // produced DB back so the Viewer's Open door can merge it into the LIVE scene. Purely
+      // additive — every pre-existing caller ignores the return value.
+      return { key: key, record: record, buildingName: buildingName, split: !!_recSplit, meta: mergedData.meta };
     } catch (dbErr) {
       console.log('[S220] §MULTI_DB_ERROR ' + dbErr.message);
       if (status) status.textContent = 'DB merge failed: ' + dbErr.message;
@@ -373,10 +400,10 @@ function setupImport(A) {
   };
 
   // Parse one IFC file via worker — returns promise with raw data
-  function _parseOneIFC(file, onProgress) {
+  function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=8', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=15', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {
@@ -399,7 +426,8 @@ function setupImport(A) {
         };
         // §S284d: transfer the wasm bytes so the worker never fetches the binary itself.
         _getWebIfcWasmBytes().then(function(wasmBytes){
-          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+          worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes,
+            forceGeorefOffset: forceGeorefOffset || null }, [arrayBuffer]);
         }).catch(function(engineErr){ worker.terminate(); reject(engineErr); });
       });
     });
@@ -420,7 +448,7 @@ function setupImport(A) {
 
   // ── Process mesh file (DAE/OBJ/GLB/3DS/FBX/STL) — S228 ──
   A.importMesh = async function(file, ext) {
-    var status = document.getElementById('import-status');
+    var status = _importStatusEl();
     var progressBar = document.getElementById('import-progress-bar');
     if (status) status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_reading_fmt||'Reading {fmt} file...').replace('{fmt}', ext.toUpperCase());
     if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; }
@@ -437,7 +465,7 @@ function setupImport(A) {
       worker.onmessage = async function(e) {
         var msg = e.data;
         if (msg.type === 'progress') {
-          if (status) status.textContent = msg.phase;
+          if (status) status.textContent = msg.phase + _pctText(progressBar, msg.pct);
           if (progressBar) progressBar.style.width = msg.pct + '%';
           return;
         }
@@ -612,6 +640,10 @@ function setupImport(A) {
       ARC: '#4488ff', STR: '#44cccc', MEP: '#44cc44',
       ELEC: '#cccc44', FP: '#cc8844', ACMV: '#cc4444',
       PLB: '#8844cc',
+      // §CIVIL_DISC (#1844) — same civil colours as rates.js DISC_COLORS
+      ROAD: '#777777', FURNITURE: '#d9a441', LIGHTING: '#f2e85c', DRAINAGE: '#3d8fd1',
+      SIGNAGE: '#e0503c', MARKING: '#f5f5f5', EARTHWORK: '#8b6b3e',
+      GEOTECH: '#a0522d', GABION: '#8f8f6e', CHAINAGE: '#ffd27a', ROW: '#d04fd0',   // §PARTNER_DISCS
     };
 
     for (const item of imports) {
@@ -719,7 +751,7 @@ function setupImport(A) {
 
     db.close();
 
-    var status = document.getElementById('import-status');
+    var status = _importStatusEl();
     if (status) status.textContent = 'Exporting IFC (' + elements.length + ' elements)...';
 
     var worker = new Worker(new URL('ifc_export_worker.js?v=1', location.href).href);
@@ -790,7 +822,7 @@ function setupImport(A) {
         if (fmt.route === 'mesh') {
           A.importMesh(file, fmt.ext);
         } else {
-          document.getElementById('import-status').textContent =
+          _importStatusEl().textContent =
             (typeof _TRL!=='undefined'&&_TRL.ui_unsupported||'Unsupported: .{ext} \u2014 Accepted: IFC, DAE, OBJ, GLB, 3DS, FBX, STL').replace('{ext}', fmt.ext);
         }
       }

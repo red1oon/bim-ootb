@@ -32,7 +32,7 @@
     init() {
       if (this._worker) return this._worker;
       if (!this.isSupported()) { console.warn(TAG + ' unsupported host (needs WASM tail-calls + Worker)'); return null; }
-      const url = new URL('bonsai_kernel_worker.js?v=6', _self);   // v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET)
+      const url = new URL('bonsai_kernel_worker.js?v=10', _self);   // v10: §CUT-THROUGH flush void faces pushed past the parent face · v9: §CUT-RESIZE GEOM_CUT_RESIZE fold override (cut_move.js netOverrides/applyOverrides) · v8: §CUT-MOVE GEOM_CUT_MOVE fold override (cut_move.js) · v2: GEOM_MOVE PATH A · v3: GEOM_ROTATE tolerant branch · v4: GEOM_ROTATE real occt solid spin · v5: GEOM_SCALE tolerant no-op (W-BONSAI-SCALE; solid scale deferred #3b) · v6: §CUT-ON-ARC seedBoxes (promote box-like insert to B-rep for GEOM_CUT/FILLET) · v7: Tier 1 shoulders GEOM_REVOLVE/SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT + listFaces
       this._worker = new Worker(url.href, { type: 'module' });
       this._worker.onmessage = (e) => {
         const d = e.data || {};
@@ -105,29 +105,81 @@
       return this._preload;
     },
 
+    // §LAYER-SOLID-SEED / §CHAIN-SURVIVES-LAYER-CUT: the SAME seed computation foldChainToScene runs
+    // (below), factored out so queryEdges/queryFaces can seed too — PRE-EXISTING GAP found while building
+    // this: neither ever passed seedBoxes, so edge/face-picking a §CUT-ON-ARC box-promoted wall for a
+    // SECOND parent-mutating op (Fillet/Shell/Offset/Draft after a Cut) threw "parent not found" in the
+    // worker exactly like an un-promoted insert did before §CUT-ON-ARC — box-seeded and layer-seeded alike.
+    // Fixing it here closes that gap for BOTH (not layer-specific), which is what the spec's
+    // §CHAIN-SURVIVES-LAYER-CUT claim actually needs (fillet must reach a layer-cut solid's real edges).
+    _computeSeeds(ops) {
+      const PARENT_MUTATING = new Set(['GEOM_CUT', 'GEOM_FILLET', 'GEOM_SHELL', 'GEOM_OFFSET', 'GEOM_FILLET_VARIABLE', 'GEOM_CHAMFER_DIST_ANGLE', 'GEOM_DRAFT']);
+      const cutFilletParents = new Set();
+      for (const o of ops) { if (PARENT_MUTATING.has(o.op_type)) { const P = typeof o.parameters === 'string' ? JSON.parse(o.parameters) : o.parameters; if (P && P.parent != null) cutFilletParents.add(P.parent); } }
+      const seedBoxes = {}; const seedLayers = {}; const promoted = new Set();
+      for (const o of ops) {
+        if (o.op_type !== 'GEOM_INSERT' || !cutFilletParents.has(o.id)) continue;
+        const box = this._insertCutBox(o);
+        if (box) { seedBoxes[o.id] = box; promoted.add(o.id); continue; }
+        const ls = this._insertCutLayerSeed(o);
+        if (ls) { seedLayers[o.id] = ls; promoted.add(o.id); }
+      }
+      return { seedBoxes, seedLayers, hasSeed: promoted.size > 0, hasLayerSeed: Object.keys(seedLayers).length > 0, promoted };
+    },
+
     // EDGE-PICK support: ask the worker for the edge midpoints of a parent feature's solid (in canonical
     // getSubShapes order). The host renders these as pickable markers; the picked indices ride a GEOM_FILLET op.
+    //
+    // §GEOM-INSERT-FILTER (found building §CHAIN-SURVIVES-LAYER-CUT): a SEPARATE pre-existing bug from the
+    // seedBoxes gap above — the worker's ops loop (buildSolids) has no GEOM_INSERT case; it falls into the
+    // LEAF branch, which calls applyFeature and THROWS "unknown op_type GEOM_INSERT". foldChainToScene has
+    // always filtered GEOM_INSERT rows out before sending ops to the worker (`kernelOps`, GEOM_INSERT folds
+    // host-side); queryEdges/queryFaces never did — they always sent the WHOLE raw op-log including every
+    // GEOM_INSERT row, so edge/face-pick has THROWN on any scene with even one insert since day one. Never
+    // surfaced before because the only fillet witness (witness_e2e_fillet.js) always `#b-clear`s first (an
+    // insert-free scene). Filtering here mirrors foldChainToScene's own kernelOps filter exactly.
     queryEdges(parentId) {
       const w = this.init();
       if (!w) return Promise.reject(new Error('bonsai unsupported'));
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog._geomOps) ? window.Bonsai.oplog._geomOps() : [];
+      const s = this._computeSeeds(ops);
+      const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');
       const id = ++this._seq;
       return new Promise((resolve, reject) => {
         this._pending.set(id, { resolve, reject });
-        w.postMessage({ id, listEdges: { ops, parentId } });
+        w.postMessage({ id, listEdges: { ops: kernelOps, parentId, seedBoxes: s.hasSeed ? s.seedBoxes : undefined, seedLayers: s.hasLayerSeed ? s.seedLayers : undefined } });
+      });
+    },
+
+    // §FACE-PICK (Tier 1 GEOM_SHELL/GEOM_DRAFT): ask the worker for the face midpoints of a parent feature's
+    // solid (canonical getSubShapes('face') order). Mirrors queryEdges() exactly — the picked indices ride a
+    // GEOM_SHELL (facesToRemove) or GEOM_DRAFT (the one pulled face) op. Same §GEOM-INSERT-FILTER fix.
+    queryFaces(parentId) {
+      const w = this.init();
+      if (!w) return Promise.reject(new Error('bonsai unsupported'));
+      const ops = (window.Bonsai.oplog && window.Bonsai.oplog._geomOps) ? window.Bonsai.oplog._geomOps() : [];
+      const s = this._computeSeeds(ops);
+      const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');
+      const id = ++this._seq;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        w.postMessage({ id, listFaces: { ops: kernelOps, parentId, seedBoxes: s.hasSeed ? s.seedBoxes : undefined, seedLayers: s.hasLayerSeed ? s.seedLayers : undefined } });
       });
     },
 
     // Fold a whole op-log CHAIN -> array of mesh payloads (the feature tree, evaluated in one pass).
     // seedBoxes (optional): {featureId: {c1,c2}} pre-seeds B-rep boxes for box-like inserts that are cut/fillet
     // targets (§CUT-ON-ARC) so the worker can subtract a void from a baked ARC wall.
-    _foldChain(ops, seedBoxes) {
+    // seedLayers (optional, §LAYER-SOLID-SEED): {featureId: {positions,indices,layers:[{start,count},…]}}
+    // pre-seeds a REAL per-layer solid (fused from N buildTriFace+sewAndSolidify solids, one per authored
+    // material layer) for inserts _insertCutBox refused but _insertCutLayerSeed resolved.
+    _foldChain(ops, seedBoxes, seedLayers) {
       const w = this.init();
       if (!w) return Promise.reject(new Error('bonsai unsupported'));
       const id = ++this._seq;
       return new Promise((resolve, reject) => {
         this._pending.set(id, { resolve, reject });
-        w.postMessage({ id, ops, seedBoxes });
+        w.postMessage({ id, ops, seedBoxes, seedLayers });
       });
     },
 
@@ -155,6 +207,45 @@
       return { c1: [xmin, ymin, zmin], c2: [xmax, ymax, zmax] };
     },
 
+    // §LAYER-SOLID-SEED — Implementing CUT_GATE_CSG_SPEC.md §THE CALL — Witness: W-LAYER-SOLID-SEED.
+    // The refinement path for an insert _insertCutBox refused (not a plain box — a real authored
+    // multi-layer wall, per §3c NOT idealizable as N boxes without inventing away real per-layer detail
+    // like corner notches/reveals). Returns the WORLD-space positions+indices of the insert's REAL fold
+    // (the SAME buffer bonsai_library.js already renders, unchanged) plus its per-layer triangle ranges
+    // (component_geometry_layers, carried hash-keyed via arc_editable.js → registerRealGeometry →
+    // Library.layersFor) — the worker slices these ranges into N real solids (buildTriFace+sewAndSolidify,
+    // already-vendored, previously unused by the cut path) and fuses them into ONE seed solid, non-invent
+    // (every vertex is the extractor's own, nothing idealized). null if there is no realGeomHash, or that
+    // hash carries no layer index, or the fold itself fails — the caller then leaves the insert un-seeded
+    // (the SAME honest refuse _insertCutBox already produces for a non-box, non-layered insert).
+    _insertCutLayerSeed(op) {
+      if (!window.Bonsai.library) return null;
+      const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
+      if (!P || !P.realGeomHash) return null;
+      let layers = window.Bonsai.library.layersFor(P.realGeomHash);
+      // §SLIDE-SEED (§SLIDE-REAL-WALLS Phase B): an UNCUT host body (slide_hosts patch — its authored openings are GEOM_CUT
+      // rows) has no layer index but IS one closed real solid, so it seeds as a SINGLE range through the same
+      // buildTriFace+sewAndSolidify path a layered wall takes — the "single-range seed opens it to plain walls" the
+      // Phase M verdict named. Every vertex is the extractor's own (opening subtraction disabled), nothing idealized.
+      const uncut = (!layers || !layers.length) && window.Bonsai.library.isUncutBody && window.Bonsai.library.isUncutBody(P.realGeomHash);
+      if ((!layers || !layers.length) && !uncut) return null;
+      let fold; try { fold = window.Bonsai.library.foldInsert(op, null, null); } catch (e) { return null; }
+      if (!fold || !fold.positions || !fold.indices || !fold.positions.length || !fold.indices.length) return null;
+      if (uncut) layers = [{ start: 0, count: fold.indices.length / 3 }];
+      return { positions: fold.positions, indices: fold.indices, layers: layers.map(l => ({ start: l.start, count: l.count })) };
+    },
+
+    // §LAYER-SOLID-SEED: can a GEOM_CUT/FILLET/… target this insert AT ALL — the plain-box path
+    // (_insertCutBox) or the real-per-layer-mesh path (_insertCutLayerSeed) above. Used both by the UI cut
+    // gate (modeller.html bCut.onclick) and the E2E harness's `cuttable` candidate filter, so both ask the
+    // SAME production gate rather than re-implementing the eligibility check twice.
+    canCut(op) {
+      if (!op) return false;
+      if (op.op_type !== 'GEOM_INSERT') return true;   // a non-insert solid is already worker-native B-rep
+      if (this._insertCutBox(op)) return true;
+      return !!this._insertCutLayerSeed(op);
+    },
+
     _buildMesh(d, opts) {
       opts = opts || {};
       const THREE = window.THREE;
@@ -164,7 +255,27 @@
       if (d.indices) geo.setIndex(new THREE.BufferAttribute(d.indices, 1));
       if (!d.normals) geo.computeVertexNormals();
       geo.computeBoundingBox();
-      const mat = new THREE.MeshStandardMaterial({ color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide });
+      // §ANCHOR (W-E2E-VOID-ANCHOR): an anchorOnly fold becomes a REAL-but-INVISIBLE mesh — a real
+      // m.isMesh in the group is REQUIRED (bonsai_gridmove.js _buildBoxByFid/elementData only see real
+      // meshes; a bare map entry provably does not ride) but it must never render, never pick, never
+      // count. .visible=false (skipped by the renderer AND by every §V1 o.visible pick filter),
+      // userData.anchor=true (the unmistakable tag for every count/audit exclusion), minimal
+      // MeshBasicMaterial (no lighting cost — it never rasterizes anyway).
+      if (d.anchor) {
+        const amesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x000000 }));
+        amesh.name = 'anchor:' + d.featureId;
+        amesh.visible = false;
+        amesh.userData.featureId = d.featureId;
+        amesh.userData.anchor = true;
+        return amesh;
+      }
+      const matOpts = { color: opts.color != null ? opts.color : 0x9fb4c8, metalness: 0.1, roughness: 0.85, side: THREE.DoubleSide };
+      // §MAT-PARITY (MODELLER_RENDER_MATERIAL_PARITY.md Task 1): mirror viewer/streaming.js A._getMaterial's
+      // own opacity gate exactly (`if (parts.length >= 4 && parts[3] < 1.0) { opts.transparent = true; opts.opacity = a; }`)
+      // — glass/IfcWindow etc. now render see-through instead of solid, sourced from real material_rgba alpha
+      // (arc_editable.js → bonsai_library.js foldInsert → here). opts.opacity absent/>=1 ⇒ unchanged opaque path.
+      if (opts.opacity != null && opts.opacity < 1.0) { matOpts.transparent = true; matOpts.opacity = opts.opacity; }
+      const mat = new THREE.MeshStandardMaterial(matOpts);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = opts.name || ('bonsai:' + d.featureId);
       mesh.userData.featureId = d.featureId;
@@ -187,15 +298,18 @@
       // box (seedBoxes) and rendered by the worker (with the void subtracted) — NOT host-side (else the uncut baked
       // mesh would paint over the cut). Rotated/non-box inserts return null from _insertCutBox → stay host-side
       // (the cut handler refuses them up front, so no dead op reaches here).
-      const cutFilletParents = new Set();
-      for (const o of ops) { if (o.op_type === 'GEOM_CUT' || o.op_type === 'GEOM_FILLET') { const P = typeof o.parameters === 'string' ? JSON.parse(o.parameters) : o.parameters; if (P && P.parent != null) cutFilletParents.add(P.parent); } }
-      const seedBoxes = {}; const promoted = new Set();
-      for (const o of ops) {
-        if (o.op_type !== 'GEOM_INSERT' || !cutFilletParents.has(o.id)) continue;
-        const box = this._insertCutBox(o);
-        if (box) { seedBoxes[o.id] = box; promoted.add(o.id); }
-      }
-      const hasSeed = promoted.size > 0;
+      // Tier 1 (§GAP-TO-COMPETITIVE): GEOM_SHELL/OFFSET/FILLET_VARIABLE/CHAMFER_DIST_ANGLE/DRAFT are ALSO
+      // parent-mutating ops on a worker B-rep solid (same class as GEOM_CUT/GEOM_FILLET) — an ARC-seeded
+      // box-like insert must be promoted for these too, or shelling/drafting a seeded box would throw
+      // "parent not found" exactly like an un-promoted cut did before §CUT-ON-ARC.
+      // §LAYER-SOLID-SEED: a box-like insert seeds seedBoxes exactly as before (byte-identical path,
+      // §NO-BOX-FALLBACK-REGRESSION). An insert _insertCutBox refuses (not a plain box) falls to
+      // _insertCutLayerSeed — a real authored multi-layer wall seeds seedLayers instead, so the worker
+      // fuses N real per-layer solids into the seed rather than refusing the cut outright. Neither path
+      // fires for an insert that resolves NEITHER (stays un-promoted → un-seeded → the SAME "parent not
+      // found" refuse a rotated/non-box/non-layered insert already produced before this change).
+      // Computed via _computeSeeds (shared with queryEdges/queryFaces — see that method's comment).
+      const { seedBoxes, seedLayers, hasSeed, hasLayerSeed, promoted } = this._computeSeeds(ops);
       const insertOps = ops.filter(o => o.op_type === 'GEOM_INSERT' && !promoted.has(o.id));
       const kernelOps = ops.filter(o => o.op_type !== 'GEOM_INSERT');   // KEEPS GEOM_MOVE → PATH A translates moved walls
       const moveBy = new Map();                                          // targetFeatureId -> {dx,dy,dz,drot} (net, summed)
@@ -208,6 +322,21 @@
         else { a.fx *= P.fx != null ? P.fx : 1; a.fy *= P.fy != null ? P.fy : 1; a.fz *= P.fz != null ? P.fz : 1; }   // GEOM_SCALE: net multiplicative scale (W-BONSAI-SCALE PATH B)
         moveBy.set(P.parent, a);
       }
+      // §ROOMMOVE — Implementing prompts/Modeller/ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.4 — Witness: W-ROOM-MOVE.
+      // ONE signed GEOM_ROOM_MOVE row carries the whole resolved member list plus ONE rigid (dx,dy,dz): the spec's
+      // own words, "semantically N GEOM_MOVEs, folded from one row". It accumulates into the SAME net-per-feature
+      // delta map the GEOM_MOVE loop above fills, so bonsai_library.js foldInsert applies it through its EXISTING
+      // `mv` path — that file needs (and gets) ZERO change. The accumulation itself lives in bonsai_roommove.js so
+      // the production fold and the pure-node witnesses share exactly ONE definition of what the op means; it is
+      // resolved LAZILY at call time (this codebase's own "check window.X fresh at call time" pattern —
+      // cross_edges.js:52 documents why a load-time capture would freeze a null). Module absent ⇒ REFUSE to
+      // half-apply: warn loudly and fold nothing, never a partial room move.
+      for (const op of ops) {
+        if (op.op_type !== 'GEOM_ROOM_MOVE') continue;
+        const RM = (typeof window !== 'undefined' && window.Bonsai) ? window.Bonsai.roommove : null;
+        if (!RM || !RM.accumulate) { console.warn(TAG + ' §ROOMMOVE bonsai_roommove.js not loaded — GEOM_ROOM_MOVE rows NOT folded (refusing to half-apply)'); break; }
+        RM.accumulate(typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters, moveBy);
+      }
       // §STRETCH-1: GEOM_GRID_MOVE makes inserts grid-STRETCHABLE host-side. Collect each op's per-feature commands
       // IN OP ORDER (the worker folds B-rep solids; inserts are skipped there → host-side here, NO double-apply).
       const gridBy = new Map();                                          // featureId -> [command,…] (ordered)
@@ -216,13 +345,14 @@
         const P = typeof op.parameters === 'string' ? JSON.parse(op.parameters) : op.parameters;
         for (const cmd of (P.commands || [])) { if (cmd.featureId == null) continue; const list = gridBy.get(cmd.featureId) || []; list.push(cmd); gridBy.set(cmd.featureId, list); }
       }
-      const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined) : { meshes: [] };
+      const d = (kernelOps.length || hasSeed) ? await this._foldChain(kernelOps, hasSeed ? seedBoxes : undefined, hasLayerSeed ? seedLayers : undefined) : { meshes: [] };
       const meshes = (d.meshes || []).slice();
       if (g) { while (g.children.length) g.remove(g.children[0]); }   // replay = clear then re-fold
-      let totalTris = 0;
+      this._byFid = new Map();   // §B1-ROW6: the fid→mesh index is rebuilt with the group
+      let totalTris = 0, anchorN = 0;   // §ANCHOR: anchors are counted SEPARATELY, never in solids/tris
       // PER-MESH colour wins over the fold-level colour: a folded insert (RouteWalker fixture) carries md.color
       // (its discipline hex from parameters.color); B-rep solids have none → fall back to the fold-level opts.color.
-      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color }); totalTris += md.triangleCount; if (g) g.add(m); });
+      meshes.forEach(md => { const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity }); totalTris += md.triangleCount; if (g) { g.add(m); this._fidNote(m); } });
 
       // §LOD400-STALL: GEOM_INSERT folds HOST-side (bonsai.library) — CHUNKED + YIELDED above CHUNK ops so a
       // Terminal-scale open (tens of thousands of raw-bbox ARC inserts) actually PAINTS PROGRESSIVELY between
@@ -235,8 +365,9 @@
         const buildOne = (op) => {
           const md = window.Bonsai.library.foldInsert(op, moveBy.get(op.id), gridBy.get(op.id));
           meshes.push(md);
-          const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color });
-          totalTris += md.triangleCount; if (g) g.add(m);
+          const m = this._buildMesh(md, { color: md.color != null ? md.color : opts.color, opacity: md.opacity });
+          if (md.anchor) anchorN++; else totalTris += md.triangleCount;   // §ANCHOR: excluded from every count
+          if (g) { g.add(m); this._fidNote(m); }
         };
         if (insertOps.length > CHUNK) {
           for (let i = 0; i < insertOps.length; i += CHUNK) {
@@ -253,9 +384,18 @@
       this._lastRegenStats = d.stats || null;   // {rebuilt, hits, tess, tessHits} — incremental-regen cache witness hook
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const st = d.stats ? ' regen[rebuilt=' + d.stats.rebuilt + ' hits=' + d.stats.hits + ' tess=' + d.stats.tess + ' tessHits=' + d.stats.tessHits + ']' : '';
-      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + meshes.length + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st);
+      // §ANCHOR: solids/tris count RENDERED geometry only; anchors get their own separate tally.
+      const solidsN = meshes.length - anchorN;
+      console.log(TAG + ' chain ops=' + ops.length + ' solids=' + solidsN + ' tris=' + totalTris + ' ms=' + Math.round(ms) + ' inScene=' + !!g + st +
+        (anchorN ? ' §ANCHOR invisible-anchors=' + anchorN + ' (excluded from solids/tris)' : ''));
       if (window.A && typeof A.requestRender === 'function') A.requestRender();
-      return { solids: meshes.length, triangleCount: totalTris, meshes };
+      // §SEL-TINT-REFOLD (MODELLER_MASTER.md row 16 — Witness: W-E2E-SEL-TINT-REFOLD): every authoritative
+      // re-fold lands HERE with its rebuilt meshes already in the group — announce it so selection paint
+      // (modeller.html _paintSel) can re-apply the emissive tint to the NEW mesh objects (same featureIds).
+      // Needed because bonsai_oplog.scrubTo (history slider undo/redo, x-ray restore, Connect timeline)
+      // deliberately never _emit()s — the existing bonsai:oplog → _paintSel hook cannot fire on those paths.
+      try { window.dispatchEvent(new CustomEvent('bonsai:refold', { detail: { solids: solidsN } })); } catch (e) { }
+      return { solids: solidsN, triangleCount: totalTris, meshes };
     },
 
     // INCREMENTAL REGEN CACHE control: drop the worker's op_hash-keyed shape/mesh cache (a new/cleared model).
@@ -263,6 +403,34 @@
       if (!this._worker) return Promise.resolve();   // no worker yet → nothing cached
       const id = ++this._seq;
       return new Promise((resolve) => { this._pending.set(id, { resolve, reject: resolve }); this._worker.postMessage({ id, clearCache: true }); });
+    },
+
+    // §B1-ROW6 (pattern review row 6): featureId → mesh, maintained where the kernel adds meshes to the authored
+    // group, so a lookup is O(1) instead of a linear `g.children.find` over every mesh (16 call sites in
+    // modeller.html). meshFor() returns EXACTLY what `g.children.find(o => o.isMesh && o.userData.featureId === fid)`
+    // returns: an entry is trusted only while it is still a child of the group carrying that featureId; anything
+    // else (a clear done outside the kernel, a fid never indexed) falls back to that same scan and repairs the entry.
+    // First-wins on insert, like Array.find (children only ever get appended; removals are whole-group clears).
+    _byFid: null,
+    _meshForStats: { hit: 0, scan: 0 },
+    _fidNote(m) {
+      if (!m || !m.isMesh) return;
+      const f = m.userData.featureId; if (f == null) return;
+      if (!this._byFid) this._byFid = new Map();
+      const cur = this._byFid.get(f);
+      if (cur && cur.parent === this._group && cur.userData.featureId === f) return;
+      this._byFid.set(f, m);
+    },
+    meshFor(fid) {
+      const g = this.group(); if (!g) return undefined;
+      if (fid != null && this._byFid) {
+        const m = this._byFid.get(fid);
+        if (m && m.parent === g && m.userData.featureId === fid) { this._meshForStats.hit++; return m; }
+      }
+      this._meshForStats.scan++;
+      const s = g.children.find(o => o.isMesh && o.userData.featureId === fid);
+      if (s && fid != null) { if (!this._byFid) this._byFid = new Map(); this._byFid.set(fid, s); }
+      return s;
     },
 
     group() {
@@ -291,7 +459,7 @@
       mesh.userData.bonsaiOp = op;
       if (opts.featureId != null) mesh.userData.featureId = opts.featureId;   // match chain-built meshes → pick-select + cut-target work on an optimistically-appended feature
       const g = this.group();
-      if (g) g.add(mesh);
+      if (g) { g.add(mesh); this._fidNote(mesh); }
       const ms = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : 0) - t0;
       const r = (n) => Math.round(n * 1e3) / 1e3;
       const bbox = [r(bb.min.x), r(bb.min.y), r(bb.min.z), r(bb.max.x), r(bb.max.y), r(bb.max.z)].join(',');

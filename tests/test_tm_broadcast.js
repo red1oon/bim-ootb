@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /**
  * test_tm_broadcast.js — W-TM-PINPOINT + W-TM-BROADCAST (TM_4D5D_VARIANCE_LANE §S3).
  *
@@ -16,7 +17,7 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  🟢 ' + msg); } else { fail++; console.log('  🔴 FAIL: ' + msg); } }
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 const a = src.indexOf('var _applyingRemoteScrub = false;');
 const b = src.indexOf('// ── §S260c: Outline effect');
 if (a < 0 || b < 0 || b < a) { console.log('§TEST FAIL: could not locate §S3 broadcast span'); process.exit(1); }

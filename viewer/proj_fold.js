@@ -208,10 +208,16 @@
       // lines per IFC class (the BoQ line); roll the cls's per-group rounded costs (BigDecimal)
       var phAmt = BD.ZERO;
       var byCls = {};
-      P.rows.forEach(function (r) { (byCls[r.cls] || (byCls[r.cls] = [])).push(r); });
+      // §PROXY_BY_DISC: the generic IfcBuildingElementProxy says nothing about WHAT it is (every civil element is one) —
+      // its identity is the DISCIPLINE, so a proxy with a discipline gets one line per discipline. Other classes unchanged.
+      function _lineKey(r) { return (r.cls === 'IfcBuildingElementProxy' && r.disc && r.disc.charAt(0) !== '_') ? r.cls + ':' + r.disc : r.cls; }
+      P.rows.forEach(function (r) { var k = _lineKey(r); (byCls[k] || (byCls[k] = [])).push(r); });
       var lineNo = 10;
-      Object.keys(byCls).forEach(function (cls) {
-        var rows = byCls[cls];
+      Object.keys(byCls).forEach(function (key) {
+        var rows = byCls[key];
+        var cls = rows[0].cls, byDisc = key !== cls;
+        var pName = byDisc ? rows[0].disc.charAt(0) + rows[0].disc.slice(1).toLowerCase() : cls;
+        var unpriced = rows.some(function (r) { return r.unpriced; });
         var unit = rows[0].unit, rate = rows[0].rate, disc = rows[0].disc, res = (SR[cls] || {}).resource || 'GENERAL';
         var qty = 0, amt = BD.ZERO, cnt = 0;
         rows.forEach(function (r) {
@@ -232,14 +238,14 @@
           _seedCategoryAcct(db, catId, CL, OG, U, now); // §F3 — GL accounts from schema defaults
         }
         var uomId = _scalar(db, "SELECT C_UOM_ID FROM C_UOM WHERE X12DE355=?", [unit]) || 100; // seed lacks M/M2/M3 → EA
-        if (uomId === 100 && unit !== 'EA') notes.push('UOM_FALLBACK ' + cls + ' ' + unit + '→EA (seed lacks ' + unit + ')');
-        var prodId = _scalar(db, "SELECT M_Product_ID FROM M_Product WHERE Value=?", [cls]);
+        if (uomId === 100 && unit !== 'EA') notes.push('UOM_FALLBACK ' + key + ' ' + unit + '→EA (seed lacks ' + unit + ')');
+        var prodId = _scalar(db, "SELECT M_Product_ID FROM M_Product WHERE Value=?", [key]);
         if (prodId == null) {
           prodId = id('M_Product', 'M_Product_ID');
           db.run("INSERT INTO M_Product (M_Product_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
             "Value,Name,Description,M_Product_Category_ID,C_UOM_ID,ProductType,IsSummary,IsStocked,IsSold,IsPurchased,M_Product_UU) " +
             "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,?,?,'I','N','Y','Y','Y',?)",
-            [prodId, CL, OG, now, U, now, U, cls, cls + ' (BIM)', 'BIM type · billed per ' + unit, catId, uomId, _uu()]);
+            [prodId, CL, OG, now, U, now, U, key, pName + ' (BIM)', 'BIM type · billed per ' + unit, catId, uomId, _uu()]);
           created.products++;
         }
 
@@ -251,7 +257,8 @@
           db.run("INSERT INTO C_ProjectLine (c_projectline_id,c_project_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby," +
             "line,description,plannedqty,plannedprice,plannedamt,m_product_id,m_product_category_id,c_projectphase_id,c_projecttask_id," +
             "isprinted,processed,dopricing,c_projectline_uu) VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,?,?,?,?,?,?,'Y','N','Y',?)",
-            [lnId, projId, CL, OG, now, U, now, U, lineNo, cls + ' · ' + cnt + ' ea · per ' + unit,
+            [lnId, projId, CL, OG, now, U, now, U, lineNo,
+             byDisc ? cnt + ' ea · discipline ' + disc + (unpriced ? ' · rate not set' : '') : cls + ' · ' + cnt + ' ea · per ' + unit,
              qtyStr, rateStr, amtStr, prodId, catId, phId, taskByRes[res], _uu()]);
           created.lines++;
         } else {

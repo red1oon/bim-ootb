@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BIM Tools</title>
+<!-- bim.html — drop an IFC, a single-job tool runs. Spec: prompts/BIM_UTILITY_KNIFE.md (bim-compiler). Witness hooks: §BIM_* console lines + window.__bim. -->
+<style>
+:root{--bg:#0f1318;--panel:#171d25;--ink:#e6edf3;--mute:#8b98a5;--line:#2a3340;--acc:#4ea1ff;--ok:#3fb950;--bad:#f85149;--sel:#ffb020}
+@media (prefers-color-scheme:light){:root{--bg:#f4f6f8;--panel:#fff;--ink:#16202a;--mute:#5b6875;--line:#d6dde5;--acc:#0b6bcb;--ok:#1a7f37;--bad:#cf222e;--sel:#d97706}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden}
+#drop{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:24px 72px 24px 24px}
+#drop h1{font-size:22px;font-weight:600;margin:0}#drop p{margin:0;color:var(--mute)}
+#armed{color:var(--acc);font-weight:600}
+body.over #drop{outline:3px dashed var(--acc);outline-offset:-14px}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:none}
+body.view #cv{display:block}body.view #drop{display:none}
+#rail{position:fixed;right:10px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:8px;padding:8px;background:color-mix(in srgb,var(--panel) 85%,transparent);border:1px solid var(--line);border-radius:28px;backdrop-filter:blur(8px);z-index:5}
+.pill{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:grid;place-items:center;cursor:pointer;position:relative;padding:0}
+.pill svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.pill:hover,.pill:focus-visible{border-color:var(--acc)}.pill.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pill kbd{position:absolute;right:-2px;bottom:-2px;font:600 10px system-ui;background:var(--bg);color:var(--mute);border:1px solid var(--line);border-radius:5px;padding:0 4px}
+.pill .pin{position:absolute;left:-2px;top:-2px;width:10px;height:10px;border-radius:50%;background:var(--ok);display:none}.pill.pinned .pin{display:block}
+#corner{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:4}
+#corner .cl{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--mute);background:color-mix(in srgb,var(--panel) 80%,transparent);border:1px solid var(--line);opacity:.55;transition:opacity .2s,box-shadow .2s,color .2s}
+#corner .cl svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#corner .cl img{width:26px;height:26px;image-rendering:auto}
+#corner .cl:hover,#corner .cl:focus-visible{opacity:1;color:var(--acc);outline:none}
+#redpill:hover,#redpill:focus-visible{box-shadow:0 0 0 2px #ff3b30aa,0 0 18px #ff3b30aa}
+@media (max-height:520px){#corner{display:none}}
+#busy{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,88vw);display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;z-index:13;box-shadow:0 8px 30px #0006}
+#busy.on{display:block}#btxt{font-size:14px;margin-bottom:10px;word-break:break-word}
+#bbar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;position:relative}
+#bfill{display:block;height:100%;width:0;background:var(--acc);border-radius:6px;transition:width .12s}
+#bbar.ind #bfill{position:absolute;width:34%;transition:none;animation:bslide 1.1s ease-in-out infinite alternate}
+@keyframes bslide{from{transform:translateX(0)}to{transform:translateX(190%)}}   /* transform animations run on the compositor: they keep moving while the page thread is busy */
+#tip{position:fixed;pointer-events:none;background:#000c;color:#fff;font-size:12px;padding:5px 8px;border-radius:6px;display:none;z-index:9;white-space:nowrap}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 14px;display:none;z-index:9;max-width:80vw}
+#chip{position:fixed;left:14px;top:14px;display:none;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 10px;z-index:6}
+body.view #chip{display:flex}
+button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}button.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+#search{position:fixed;left:14px;top:62px;width:340px;max-height:70vh;display:none;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:12px;z-index:6;overflow:hidden}
+#search.open{display:flex}#search input{border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;padding:10px 12px;outline:none}
+#sl{overflow:auto;flex:1}.row{padding:6px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:13px}.row:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}.row.sel{color:var(--sel)}
+.row small{color:var(--mute)}.row .loc{border:1px solid var(--line);background:transparent;color:var(--mute);border-radius:6px;cursor:pointer;padding:0 6px}.row .loc:hover{color:var(--acc);border-color:var(--acc)}#sf{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
+#menu{position:fixed;display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:10;min-width:190px;padding:4px}
+#menu div{padding:7px 12px;border-radius:6px;cursor:pointer}#menu div:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}
+#kit{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);display:none;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;z-index:12}
+#kit.open{display:block}#kit p{color:var(--mute);margin:6px 0;font-size:13px}#kit label.t{display:flex;gap:8px;padding:3px 0}.krow{display:flex;gap:8px;margin-top:10px}#kh{word-break:break-all;font-family:ui-monospace,monospace;font-size:11px}
+#help{position:fixed;inset:0;display:none;place-items:center;background:#0008;z-index:11}#help.open{display:grid}#help div{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 22px;min-width:300px}
+#help td{padding:3px 12px 3px 0}
+</style>
+</head>
+<body>
+<div id="drop"><h1>Drop an IFC</h1><p><span id="lead"><span>Runs </span></span><span id="armed">…</span><span id="lead2"> straight away when you drop a file.</span> <kbd>?</kbd> lists keys.</p><p id="note"></p></div>
+<canvas id="cv"></canvas>
+<div id="chip"><b id="fname" title="The file you have loaded"></b><span id="cnt">0 selected</span><button class="btn" id="exp">Export</button><button class="btn alt" id="clr">Clear</button><button class="btn alt" id="rv" title="Back to the starting view">Reset view</button><button class="btn alt" id="cls" title="Close this file and forget it">Close file</button></div>
+<div id="search"><input id="sq" placeholder="Search name, class, GlobalId…" autocomplete="off"><div id="sl"></div><div id="sf"><span id="sc"></span><button class="btn alt" id="sa">Select all matches</button></div></div>
+<div id="kit"><b>Toolkit (zip)</b><p>Launchers you can drop IFC files on, for batch use. Needs Node.js 18+.</p><div id="kt"></div>
+<label>System <select id="kos"><option value="win">Windows</option><option value="mac">macOS</option><option value="sh">Linux</option></select></label>
+<p id="kn">Unsigned scripts, plain text, no network calls. The zip includes SHA256SUMS.txt and a README with the Unblock / Open Anyway steps.</p>
+<div class="krow"><button class="btn" id="kgo">Create zip</button><button class="btn alt" id="kx">Close</button></div><p id="kh"></p></div>
+<div id="corner">
+  <a id="manual" class="cl" href="https://red1oon.github.io/BIMCompiler/BIMToolsGuide/" target="_blank" rel="noopener" title="User manual" aria-label="BIM Tools user manual (opens in a new tab)"><svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></a>
+  <a id="redpill" class="cl" href="https://red1oon.github.io/BIMCompiler/RED_PILL/" target="_blank" rel="noopener" title="Where does this come from?" aria-label="The red pill — where BIM Tools comes from (opens in a new tab)"><img src="viewer/redpill.png" alt="" width="40" height="40"></a>
+</div>
+<div id="busy" role="status" aria-live="polite"><div id="btxt"></div><div id="bbar"><i id="bfill"></i></div></div>
+<div id="rail"></div><div id="tip"></div><div id="toast"></div><div id="menu"></div>
+<div id="help"><div><b>Keys</b><table id="ht"></table><p style="color:var(--mute);margin:8px 0 0">Esc closes panels</p></div></div>
+
+<script type="importmap">{"imports":{"three":"./viewer/lib/three.module.min.js"}}</script>
+<script src="bim/tools/step.js"></script>
+<script src="bim/tools/upgrade_map.js"></script>
+<script src="bim/tools/upgrade.js"></script>
+<script src="bim/tools/extract.js"></script>
+<script src="bim/tools/split.js"></script>
+<script src="bim/tools/health.js"></script>
+<script src="bim/tools/table.js"></script>
+<script src="bim/tools/zip.js"></script>
+<script src="bim/tools/kit.js"></script>
+<script src="viewer/lib/web-ifc-api-iife.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './viewer/lib/OrbitControls.module.js';
+const S = BIM_STEP, T = BIM_TOOLS, $ = (id) => document.getElementById(id);
+const LIBS = { BIM_UPGRADE, BIM_EXTRACT, BIM_SPLIT, BIM_HEALTH };
+const params = new URLSearchParams(location.search), SERVED = params.get('served') === '1';
+const ICON = { // Lucide-style line icons, one idiom (feedback_pill_icon_consistency)
+  upgrade: '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>', extract: '<path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
+  split: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9"/><path d="m14.5 14.5 5.5 5.5"/><path d="M8.1 8.1 12 12"/>', health: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  kit: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>' };
+let armed = null;   // nothing is armed after a refresh: a drop never runs a tool you did not choose THIS visit
+let serverUp = true;   // served mode only: false once the launcher's local server stops answering
+let cur = null;       // {name, bytes(Uint8Array), model, prods, byId}
+let selected = new Set();
+const log = (s) => console.log(s);
+function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.display = 'none'), ms || 6000); }
+const pinned = (id) => { try { return localStorage.getItem('bim.pin.' + id) === '1'; } catch (e) { return false; } };
+
+// ── rail ────────────────────────────────────────────────────────────────────
+function pill(id, title, key, svg) {
+  const b = document.createElement('button'); b.className = 'pill'; b.dataset.id = id; b.title = title + (key ? ' (' + key + ')' : '');
+  b.innerHTML = '<svg viewBox="0 0 24 24">' + svg + '</svg>' + (key ? '<kbd>' + key.toUpperCase() + '</kbd>' : '') + '<i class="pin"></i>'; return b;
+}
+function buildRail() {
+  const r = $('rail'); r.innerHTML = '';
+  T.forEach((t) => { const b = pill(t.id, t.name + ' — ' + t.desc, t.key, ICON[t.id]); if (pinned(t.id)) b.classList.add('pinned'); b.onclick = () => arm(t.id, false, true); b.draggable = true; b.addEventListener('dragstart', (e) => dragOut(e, t)); b.oncontextmenu = (e) => { e.preventDefault(); openMenu(t, e.clientX, e.clientY); }; r.appendChild(b); });
+  const s = pill('search', 'Search (F)', 'f', ICON.search); s.onclick = () => toggleSearch(); r.appendChild(s);
+  const k = pill('kit', 'Toolkit zip — launchers for batch use (9)', '9', ICON.kit); k.onclick = () => toggleKit(); r.appendChild(k);
+  syncArmed();
+}
+function syncArmed() {
+  document.querySelectorAll('#rail .pill').forEach((b) => b.classList.toggle('on', b.dataset.id === armed));
+  const t = T.find((x) => x.id === armed);
+  $('armed').textContent = t ? t.name + (t.mode === 'interactive' ? ' (opens the model so you can pick)' : ' (runs in the background)') : 'nothing yet — pick a tool on the right (or press its key); click it again or press Esc to clear it';
+  const lead = $('lead'); if (lead) lead.firstChild.textContent = t ? 'Runs ' : 'Armed: ';
+  const rest = $('lead2'); if (rest) rest.textContent = t ? ' straight away when you drop a file.' : '. With nothing armed, a dropped file only opens.';
+}
+function disarm() { if (!armed) return false; log('§BIM_DISARM tool=' + armed); armed = null; syncArmed(); toast('Tool cleared. A dropped file will just open.', 3500); return true; }
+function arm(id, noRun, fromPill) {
+  if (fromPill && armed === id && !(id === 'extract' && cur && selected.size && document.body.classList.contains('view'))) { disarm(); return; }   // a second click on the lit button clears it
+  armed = id; syncArmed();
+  log('§BIM_ARM tool=' + id);
+  // Extract pressed while the model is open: that IS the "do it" — export what is selected (or say what to do first)
+  if (id === 'extract' && cur && !noRun && document.body.classList.contains('view')) {
+    if (selected.size) exportSelected(); else { toast('Nothing selected yet — click items in the model, or press F to search.'); log('§BIM_EXPORT verdict=INCONCLUSIVE reason=empty-selection'); }
+    return;
+  }
+  if (cur && !noRun) runOn(cur, T.find((t) => t.id === id));
+}
+
+// ── pin menu (right-click) ──────────────────────────────────────────────────
+let deferredInstall = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
+const stub = (tool, os) => BIM_STUB(tool, os);
+function openMenu(t, x, y) {
+  const m = $('menu'); m.innerHTML = '';
+  const add = (label, fn) => { const d = document.createElement('div'); d.textContent = label; d.onclick = () => { m.style.display = 'none'; fn(); }; m.appendChild(d); };
+  add('Pin to desktop', async () => {
+    if (!deferredInstall) { toast('This browser cannot pin web apps. Use "Download launcher" instead.'); log('§BIM_PIN tool=' + t.id + ' result=unsupported'); return; }
+    deferredInstall.prompt(); const r = await deferredInstall.userChoice; deferredInstall = null;
+    if (r.outcome === 'accepted') { try { localStorage.setItem('bim.pin.' + t.id, '1'); } catch (e) {} buildRail(); }
+    log('§BIM_PIN tool=' + t.id + ' result=' + r.outcome);
+  });
+  const os = /Win/.test(navigator.platform) ? 'win' : 'sh';
+  add('Download launcher (' + (os === 'win' ? '.bat' : '.sh') + ')', () => { const s = stub(t, os); dl(new Blob([s.body], { type: 'text/plain' }), s.name); toast('Put ' + s.name + ' next to bim-cli.js, then drop IFC files on it.'); log('§BIM_PIN tool=' + t.id + ' result=launcher:' + s.name); });
+  m.style.left = Math.min(x, innerWidth - 210) + 'px'; m.style.top = y + 'px'; m.style.display = 'block';
+}
+addEventListener('click', () => { $('menu').style.display = 'none'; });
+// Drag a pill out of the browser window onto the desktop (user idea 2026-10-09). Chromium's "DownloadURL" drag format lets the OS
+// create a real file where it is dropped. Default = a web shortcut that opens this page with that tool armed (no toolkit needed);
+// hold Shift = the droplet launcher instead (needs bim-cli.js beside it). Firefox/Safari ignore DownloadURL: the pin menu remains.
+function shortcutFile(t, os) {
+  const url = location.origin + location.pathname + '?tool=' + t.id;
+  if (os === 'win') return { name: 'BIM ' + t.name + '.url', mime: 'application/internet-shortcut', body: '[InternetShortcut]\r\nURL=' + url + '\r\n' };
+  if (os === 'mac') return { name: 'BIM ' + t.name + '.webloc', mime: 'application/xml', body: '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>URL</key><string>' + url + '</string></dict></plist>\n' };
+  return { name: 'BIM ' + t.name + '.desktop', mime: 'application/x-desktop', body: '[Desktop Entry]\nType=Link\nName=BIM ' + t.name + '\nURL=' + url + '\n' };
+}
+function osOf() { return /Win/.test(navigator.platform) ? 'win' : /Mac/.test(navigator.platform) ? 'mac' : 'linux'; }
+function dragOut(e, t) {
+  const os = osOf(); let f;
+  if (e.shiftKey) { const s = stub(t, os === 'win' ? 'win' : 'sh'); f = { name: s.name, mime: 'application/octet-stream', body: s.body }; } else f = shortcutFile(t, os);
+  const data = f.mime + ':' + f.name + ':data:' + f.mime + ';charset=utf-8,' + encodeURIComponent(f.body);
+  e.dataTransfer.setData('DownloadURL', data); e.dataTransfer.setData('text/uri-list', location.origin + location.pathname + '?tool=' + t.id); e.dataTransfer.effectAllowed = 'copy';
+  window.__bim.lastDrag = { tool: t.id, name: f.name, kind: e.shiftKey ? 'launcher' : 'shortcut', body: f.body };
+  log('§BIM_DRAGOUT tool=' + t.id + ' file=' + f.name + ' kind=' + window.__bim.lastDrag.kind);
+}
+
+// ── remember the last model across reloads (IndexedDB; any failure just means "no memory", never an error) ──
+const idb = () => new Promise((res, rej) => { try { const q = indexedDB.open('bim-tools', 1); q.onupgradeneeded = () => q.result.createObjectStore('last'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); } catch (e) { rej(e); } });
+async function idbPut(k, v) { try { const d = await idb(); await new Promise((res, rej) => { const t = d.transaction('last', 'readwrite'); t.objectStore('last').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); d.close(); return true; } catch (e) { log('§BIM_STORE put ' + k + ' failed: ' + e); return false; } }
+async function idbGet(k) { try { const d = await idb(); const v = await new Promise((res, rej) => { const q = d.transaction('last').objectStore('last').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); d.close(); return v; } catch (e) { return undefined; } }
+function saveSel() { if (!cur || SERVED) return; idbPut('sel', [...selected].map((id) => cur.byId.get(id)).filter(Boolean).map((p) => p.guid)); }
+// ── file in ─────────────────────────────────────────────────────────────────
+function dl(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+const base = (n) => n.replace(/\.ifc$/i, '');
+// ── "Opening…" status with a progress bar. frac = 0..1 for a real percentage, null for "working, no percentage available".
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));   // let the browser draw the new text BEFORE a long blocking step
+function busy(text, frac) { const b = $('busy'); b.classList.add('on'); $('btxt').textContent = text + (frac != null ? '  ' + Math.round(frac * 100) + '%' : ''); const bar = $('bbar'); bar.classList.toggle('ind', frac == null); $('bfill').style.width = frac == null ? '' : Math.round(frac * 100) + '%'; (window.__bim && window.__bim.busyLog || []).push({ t: text, f: frac == null ? null : +frac.toFixed(3) }); }
+function busyOff() { $('busy').classList.remove('on'); }
+const MB = (n) => (n / 1048576 >= 10 ? Math.round(n / 1048576) : (n / 1048576).toFixed(1)) + ' MB';
+async function onFile(name, buf, opt) {
+  opt = opt || {};
+  const bytes = new Uint8Array(buf);
+  busy('Opening ' + name + ' (' + MB(bytes.length) + ') — reading…', null); await nextFrame();
+  const text = new TextDecoder('utf-8').decode(bytes);
+  let model; try { model = await S.parseAsync(text, (f) => busy('Opening ' + name + ' — reading structure', f)); } catch (e) { busyOff(); toast('Not an IFC (STEP) file: ' + e.message); log('§BIM_LOAD name=' + name + ' verdict=ERROR ' + e.message); return; }
+  busy('Opening ' + name + ' — indexing items…', null); await nextFrame();
+  const prods = S.listProducts(model), byId = new Map(prods.map((p) => [p.id, p]));
+  cur = { name, bytes, text, model, prods, byId }; selected.clear();
+  if (!opt.restore && !SERVED) { idbPut('file', { name, bytes }); idbPut('sel', []); }
+  if (opt.sel) { const g = new Set(opt.sel); prods.forEach((p) => { if (g.has(p.guid)) selected.add(p.id); }); }
+  log('§BIM_LOAD name=' + name + ' bytes=' + bytes.length + ' schema=' + model.schema + ' entities=' + model.ents.size + ' products=' + prods.length);
+  if (opt.restore) { showView(); return; }   // a reload brings the model back; it must NOT re-run Split/Upgrade/Health and save files again
+  const tl = T.find((t) => t.id === armed);
+  if (!tl) { showView(); toast('Opened ' + name + '. Press U to upgrade, K to split, 6 for a health report, E to pick items.', 9000); log('§BIM_OPEN_ONLY name=' + name + ' (no tool armed)'); return; }
+  runOn(cur, tl);
+  if (document.body.classList.contains('view')) busyOff();   // the model is already on screen and no later step will clear the panel
+  syncNote();
+}
+function runOn(c, tool) {
+  if (c.bytes.length > 20e6 && tool.mode !== 'interactive') { busy('Running ' + tool.name + ' on ' + c.name + ' (' + MB(c.bytes.length) + ')…', null); return nextFrame().then(() => runOnNow(c, tool)).finally(busyOff); }
+  return runOnNow(c, tool);
+}
+function runOnNow(c, tool) {
+  if (tool.mode === 'interactive') { showView(); return; }
+  const lib = LIBS[tool.lib], t0 = performance.now(), res = lib.run(c.text, {});
+  const rep = res.report;
+  if (tool.id === 'split') res.parts.filter((p) => !p.empty).forEach((p) => dl(new Blob([p.bytes], { type: 'application/octet-stream' }), base(c.name) + '_' + p.name.replace(/[^\w.-]+/g, '_') + '.ifc'));
+  else if (tool.id === 'health') dl(new Blob([JSON.stringify(rep, null, 2)], { type: 'application/json' }), base(c.name) + '_health.json');
+  else if (res.bytes) dl(new Blob([res.bytes], { type: 'application/octet-stream' }), base(c.name) + '_' + tool.suffix + '.ifc');
+  const ms = Math.round(performance.now() - t0);
+  log('§' + tool.id.toUpperCase() + ' file=' + c.name + ' verdict=' + rep.verdict + ' ms=' + ms); log('§' + tool.id.toUpperCase() + '_REPORT ' + JSON.stringify(rep));
+  toast(oneLine(tool, rep, ms));
+  // The tool has run and saved first (fast, no drawing needed). Then the loaded model stays/appears on the canvas so you always see what you are working on.
+  // Very large files are not drawn automatically (parsing the geometry costs memory): the page says so and O draws them.
+  if (!document.body.classList.contains('view')) { if (c.bytes.length < 60e6) showView(); else { syncNote(); busyOff(); } }
+}
+function oneLine(tool, r, ms) {
+  if (r.verdict === 'INCONCLUSIVE') return tool.name + ': nothing done — ' + (r.note || 'empty');
+  if (tool.id === 'upgrade') return 'Upgraded to IFC4.3: ' + r.entitiesIn + ' → ' + r.entitiesOut + ' entities' + (Object.keys(r.requiredEmpty).length ? ', ' + Object.values(r.requiredEmpty).reduce((a, b) => a + b, 0) + ' unrepresentable dropped' : '') + ' (' + ms + ' ms) — ' + r.verdict;
+  if (tool.id === 'split') return 'Split into ' + r.files + ' storey files — ' + r.verdict;
+  if (tool.id === 'health') return 'Health: ' + r.M3_elements + ' elements, ' + r.M15_duplicateGuids + ' duplicate GUIDs, ' + r.M14_orphans + ' orphans, psets ' + r.M7_psetPct + '%';
+  return tool.name + ': ' + r.verdict;
+}
+addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('over'); });
+addEventListener('dragleave', () => document.body.classList.remove('over'));
+addEventListener('drop', async (e) => { e.preventDefault(); document.body.classList.remove('over'); for (const f of e.dataTransfer.files) { busy('Opening ' + f.name + ' (' + MB(f.size) + ') — loading from disk…', null); await nextFrame(); await onFile(f.name, await f.arrayBuffer()); } });
+if ('launchQueue' in window) launchQueue.setConsumer(async (p) => { for (const h of p.files) { const f = await h.getFile(); await onFile(f.name, await f.arrayBuffer()); } });
+
+// ── interactive view (web-ifc + three) ──────────────────────────────────────
+let R = null;
+async function ensureRenderer() {
+  if (R) return R;
+  const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, preserveDrawingBuffer: false });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1)); const dl = new THREE.DirectionalLight(0xffffff, 1.2); dl.position.set(1, 2, 1.5); scene.add(dl);
+  const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100000); const ctl = new OrbitControls(cam, $('cv'));
+  ctl.zoomToCursor = true; ctl.screenSpacePanning = true; ctl.minPolarAngle = 0; ctl.maxPolarAngle = Math.PI;   // zoom TOWARD what the pointer is on, so any spot can be reached; no polar stop
+  R = { renderer, scene, cam, ctl, group: null, meshes: [], ray: new THREE.Raycaster(), mouse: new THREE.Vector2(), hover: null };
+  addEventListener('resize', fit); fit();
+  // draw only when something changed (orbit, resize, selection): a continuous loop starves timers on software GL and wastes battery
+  R.dirty = true; R.ctl.addEventListener('change', () => { R.dirty = true; });
+  (function loop() { requestAnimationFrame(loop); if (document.body.classList.contains('view') && R.dirty) { R.dirty = false; R.ctl.update(); R.renderer.render(R.scene, R.cam); } })();
+  // Orbit/zoom pivot = what the pointer is ON (a selected item wins even behind a wall). Without this the wheel can only travel as far as the old
+  // pivot (the building centre) and stalls short of anything beyond it — the "border". The pivot is moved ALONG the view axis, so the picture does not jump.
+  const repivot = (e) => { if (!R || !R.meshes.length) return; const rc = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1); R.ray.setFromCamera(R.mouse, R.cam);
+    const dir = new THREE.Vector3(); R.cam.getWorldDirection(dir); let depth = 0;
+    // 1) aiming at a SELECTED item (even through walls) pivots on that item: ray passes within its bounding sphere
+    let best = Infinity; for (const eid of selected) { const b = new THREE.Box3(); R.meshes.forEach((m) => { if (m.userData.eid === eid) b.expandByObject(m); }); if (b.isEmpty()) continue; const sp = b.getBoundingSphere(new THREE.Sphere()); if (R.ray.ray.distanceToPoint(sp.center) <= Math.max(sp.radius * 1.3, 0.4)) { const dd = sp.center.clone().sub(R.cam.position).dot(dir); if (dd > R.cam.near * 2 && dd < best) best = dd; } }
+    if (best < Infinity) depth = best;
+    else { const hits = R.ray.intersectObjects(R.meshes, false); if (!hits.length) return; depth = hits[0].point.clone().sub(R.cam.position).dot(dir); }   // 2) otherwise the surface under the pointer
+    if (depth > R.cam.near * 2) R.ctl.target.copy(R.cam.position).addScaledVector(dir, depth); };
+  $('cv').addEventListener('wheel', repivot, { capture: true, passive: true }); $('cv').addEventListener('pointerdown', repivot, { capture: true });
+  $('cv').addEventListener('pointermove', onMove); $('cv').addEventListener('click', onPick); $('cv').addEventListener('pointerdown', (e) => { R.down = [e.clientX, e.clientY]; });
+  return R;
+}
+function fit() { if (!R) return; R.dirty = true; R.renderer.setSize(innerWidth, innerHeight, false); R.cam.aspect = innerWidth / innerHeight; R.cam.updateProjectionMatrix(); }
+async function loadMeshes(c) {
+  if (location.protocol === 'file:') { toast('3D view needs the launcher or a web address (file:// cannot load the IFC engine).'); log('§BIM_RENDER verdict=INCONCLUSIVE reason=file-protocol'); return false; }
+  let r; try { r = await ensureRenderer(); } catch (e) {
+    // no WebGL (remote desktop, blocked GPU, old driver): the tool still works from the search list
+    R = null; log('§BIM_RENDER verdict=INCONCLUSIVE reason=no-webgl ' + String(e.message).slice(0, 80));
+    toast('3D view is not available on this computer. Use the search list to pick items, then press E.', 12000); c.renderedEids = null; c.rendered = false; document.body.classList.add('view'); chip(); toggleSearch(true); return true;
+  }
+  if (c.rendered) return true;
+  busy('Building 3D — starting the IFC engine…', null); await nextFrame();
+  const api = new WebIFC.IfcAPI(); api.SetWasmPath(new URL('viewer/lib/', location.href).href, true); await api.Init();
+  busy('Building 3D — opening ' + c.name + ' in the IFC engine (' + MB(c.bytes.length) + ', big files take a while)…', null); await nextFrame();
+  const id = api.OpenModel(c.bytes, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
+  busy('Building 3D — drawing the shapes…', null); await nextFrame();
+  if (r.group) r.scene.remove(r.group);
+  const grp = new THREE.Group(); r.meshes = []; const seen = new Set(); let tris = 0;
+  api.StreamAllMeshes(id, (fm) => {
+    const eid = fm.expressID, geoms = fm.geometries;
+    for (let i = 0; i < geoms.size(); i++) {
+      const pg = geoms.get(i), g = api.GetGeometry(id, pg.geometryExpressID);
+      const v = api.GetVertexArray(g.GetVertexData(), g.GetVertexDataSize()), ix = api.GetIndexArray(g.GetIndexData(), g.GetIndexDataSize());
+      const pos = new Float32Array(v.length / 2), nor = new Float32Array(v.length / 2);
+      for (let k = 0, j = 0; k < v.length; k += 6, j += 3) { pos[j] = v[k]; pos[j + 1] = v[k + 1]; pos[j + 2] = v[k + 2]; nor[j] = v[k + 3]; nor[j + 1] = v[k + 4]; nor[j + 2] = v[k + 5]; }
+      const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); bg.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); bg.setIndex(new THREE.BufferAttribute(new Uint32Array(ix), 1));
+      const col = pg.color, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(col.x, col.y, col.z), opacity: col.w, transparent: col.w < 1, side: THREE.DoubleSide, metalness: 0, roughness: 0.9 });
+      const m = new THREE.Mesh(bg, mat); m.matrixAutoUpdate = false; m.matrix.fromArray(pg.flatTransformation); m.userData.eid = eid; m.userData.base = mat.color.clone();
+      grp.add(m); r.meshes.push(m); seen.add(eid); tris += ix.length / 3; g.delete();
+    }
+  });
+  api.CloseModel(id);
+  // IFC is Z-up; three is Y-up
+  // Which local axis do the FLOORS / ROOFS face? (area-weighted |normal| of slab-like triangles; falls back to all geometry.) The scene's up must be Y.
+  const upShare = (only) => { const s = [0, 0, 0]; const a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(); for (const m of r.meshes) { if (only && !only.test(c.byId.get(m.userData.eid) ? c.byId.get(m.userData.eid).type : '')) continue; const pos = m.geometry.attributes.position, ix = m.geometry.index.array; for (let t = 0; t < ix.length; t += 3) { a.fromBufferAttribute(pos, ix[t]).applyMatrix4(m.matrix); b.fromBufferAttribute(pos, ix[t + 1]).applyMatrix4(m.matrix); d.fromBufferAttribute(pos, ix[t + 2]).applyMatrix4(m.matrix); const n = b.sub(a).cross(d.sub(a)); s[0] += Math.abs(n.x); s[1] += Math.abs(n.y); s[2] += Math.abs(n.z); } } return s; };
+  let sh = upShare(/^IFC(SLAB|ROOF|COVERING|PLATE|FOOTING)$/); if (sh[0] + sh[1] + sh[2] < 1e-6) sh = upShare(null);
+  const upAxis = sh[1] >= sh[0] && sh[1] >= sh[2] ? 'Y' : (sh[2] >= sh[0] ? 'Z' : 'X');
+  if (upAxis === 'Z') grp.rotation.x = -Math.PI / 2; else if (upAxis === 'X') grp.rotation.z = Math.PI / 2;
+  log('§BIM_UP axis=' + upAxis + ' rotated=' + (upAxis === 'Y' ? 'no' : 'yes') + ' shares=' + sh.map((x) => +(x / ((sh[0] + sh[1] + sh[2]) || 1)).toFixed(3)).join('/'));
+  r.scene.add(grp); r.group = grp; grp.updateMatrixWorld(true);
+  let box = new THREE.Box3().setFromObject(grp, true), ctr = box.getCenter(new THREE.Vector3());   // precise = from the vertices; the loose box is inflated far from the origin
+  // Georeferenced models (a road in map coordinates sits millions of metres from 0,0,0): float32 vertices jitter and the camera clips there.
+  // Same rule as the baseline loader (bim-compiler deploy/dev/import_worker.js §UNITS v3 / georef): any axis more than 10 km from the origin is moved to a local origin. Display only — exports never touch the meshes.
+  const off = [ctr.x, ctr.y, ctr.z].map((v) => (Math.abs(v) > 1e4 ? Math.round(v) : 0));
+  if (off.some((v) => v !== 0)) { grp.position.set(-off[0], -off[1], -off[2]); grp.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(grp, true); ctr = box.getCenter(new THREE.Vector3()); }
+  log('§BIM_REBASE ' + (off.some((v) => v !== 0) ? 'shifted by ' + off.join(',') + ' m to a local origin' : 'none (model is near the origin)') + ' centre=' + ctr.toArray().map((v) => Math.round(v)).join(','));
+  const sz = box.getSize(new THREE.Vector3()).length() || 10;
+  r.cam.position.copy(ctr).add(new THREE.Vector3(sz * 0.6, sz * 0.5, sz * 0.6)); r.modelDiag = sz; r.cam.near = sz / 1000; r.cam.far = sz * 40; r.ctl.maxDistance = sz * 8; r.ctl.minDistance = 0;
+  if (r.grid) r.scene.remove(r.grid);
+  r.grid = new THREE.GridHelper(Math.ceil(sz * 1.6), 24, 0x7c8794, 0x7c8794); r.grid.material.transparent = true; r.grid.material.opacity = 0.35; r.grid.position.set(ctr.x, box.min.y, ctr.z); r.scene.add(r.grid);
+  r.home = { pos: r.cam.position.clone(), tgt: ctr.clone() }; r.cam.updateProjectionMatrix(); r.ctl.target.copy(ctr); r.ctl.update();
+  c.rendered = true; c.renderedEids = seen;
+  const inTable = c.prods.filter((p) => seen.has(p.id)).length;
+  const boxLike = r.meshes.filter((m) => (m.geometry.index ? m.geometry.index.count / 3 : 0) <= 12).length;
+  log('§BIM_FIDELITY trisPerMesh=' + (r.meshes.length ? (tris / r.meshes.length).toFixed(1) : 0) + ' boxLikeMeshes=' + boxLike + ' of ' + r.meshes.length + ' (fake geometry = EVERY mesh is a 12-triangle box; plain walls and slabs are legitimately 12)');
+  log('§BIM_RENDER meshes=' + r.meshes.length + ' elementsRendered=' + seen.size + ' productsWithGeometry=' + inTable + ' tris=' + tris + ' verdict=' + (seen.size ? 'PASS' : 'INCONCLUSIVE'));
+  return true;
+}
+async function showView() {
+  try {
+    if (!(await loadMeshes(cur))) { hideView(); return; }
+    document.body.classList.add('view'); if (R) R.dirty = true; paint(); chip();
+  } finally { busyOff(); }
+}
+function hideView() { document.body.classList.remove('view'); syncNote(); }
+function paint() {
+  if (!R) return; R.dirty = true;
+  for (const m of R.meshes) { const s = selected.has(m.userData.eid); m.material.depthTest = !s; m.renderOrder = s ? 999 : 0; m.material.color.copy(s ? new THREE.Color(0xffb020) : m.userData.base); m.material.emissive = new THREE.Color(s ? 0x442200 : 0x000000); }
+}
+function chip() { $('fname').textContent = cur ? cur.name + ' · ' + cur.model.schema + ' · ' + cur.prods.length + ' items' : ''; $('cnt').textContent = selected.size + ' selected'; $('exp').disabled = !selected.size; saveSel(); }
+function pickAt(e) {
+  const r = $('cv').getBoundingClientRect(); R.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  R.ray.setFromCamera(R.mouse, R.cam); const h = R.ray.intersectObjects(R.meshes, false); return h.length ? h[0].object.userData.eid : null;
+}
+let mvT = 0;
+function onMove(e) {
+  const now = performance.now(); if (now - mvT < 40) return; mvT = now;
+  const eid = pickAt(e), tip = $('tip');
+  if (eid == null) { tip.style.display = 'none'; return; }
+  const p = cur.byId.get(eid), cls = p ? p.type : '#' + eid, nm = p && p.name ? p.name : '(no name)';
+  tip.textContent = cls + ' · ' + nm + ' — click to select'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px'; tip.style.display = 'block';
+  if (R.hover !== eid) { R.hover = eid; log('§BIM_HOVER eid=' + eid + ' class=' + cls + ' name=' + nm); }
+}
+function onPick(e) {
+  if (R.down && Math.hypot(e.clientX - R.down[0], e.clientY - R.down[1]) > 4) return;     // a drag, not a click
+  const eid = pickAt(e); if (eid == null) return;
+  if (selected.has(eid)) selected.delete(eid); else selected.add(eid);
+  paint(); chip(); log('§BIM_SELECT n=' + selected.size + ' last=' + eid);
+}
+function syncNote() { const n = $('note'); if (!n) return; n.textContent = cur && !document.body.classList.contains('view') ? 'Loaded: ' + cur.name + ' — press O to see it, E to pick items. (Drop another file to replace it.)' : ''; }
+async function closeFile() {
+  const nm = cur && cur.name; cur = null; selected.clear(); document.body.classList.remove('view'); $('tip').style.display = 'none'; toggleSearch(false);
+  if (R && R.group) { R.scene.remove(R.group); R.group = null; R.meshes = []; R.dirty = true; }
+  await idbPut('file', null); await idbPut('sel', []); chip(); syncNote(); renderList();
+  if (nm) toast('Closed ' + nm + '. Drop an IFC to start again.'); log('§BIM_CLOSE name=' + nm);
+}
+$('cls').onclick = closeFile;
+$('rv').onclick = () => { if (!R || !R.home) return; R.cam.position.copy(R.home.pos); R.ctl.target.copy(R.home.tgt); R.ctl.update(); R.dirty = true; log('§BIM_RESETVIEW'); };
+$('clr').onclick = () => { selected.clear(); paint(); chip(); renderList(); };
+async function exportSelected() {
+  const r = BIM_EXTRACT.extractModel(cur.model, { ids: [...selected], fillings: false, outName: base(cur.name) + '_extract.ifc' });
+  if (r.empty) { toast('Nothing to export'); return; }
+  log('§BIM_EXPORT selected=' + r.report.selected + ' out=' + r.report.entitiesOut + ' dangling=' + r.report.dangling + ' verdict=' + r.report.verdict);
+  let saved = false;
+  if (SERVED && serverUp) { try { const rs = await fetch('/__save', { method: 'POST', body: r.bytes }); if (rs.ok) { toast('Saved beside your file: ' + (await rs.text())); saved = true; } } catch (e) { serverUp = false; log('§BIM_SAVE launcher unreachable: ' + e.message); } }
+  if (!saved) {
+    if (SERVED) toast('The launcher closed, so this downloads instead: ' + base(cur.name) + '_extract.ifc', 9000); dl(new Blob([r.bytes], { type: 'application/octet-stream' }), base(cur.name) + '_extract.ifc'); if (!SERVED) toast('Exported ' + r.report.selected + ' items → ' + r.report.entitiesOut + ' entities — ' + r.report.verdict); }
+}
+$('exp').onclick = exportSelected;
+
+// ── search ──────────────────────────────────────────────────────────────────
+function matches(q) {
+  q = q.trim().toLowerCase(); if (!cur) return [];
+  if (!q) return cur.prods.filter((p) => !cur.renderedEids || cur.renderedEids.has(p.id)).slice(0, 400);
+  return cur.prods.filter((p) => (p.type.toLowerCase().indexOf(q) >= 0 || (p.name || '').toLowerCase().indexOf(q) >= 0 || p.guid.toLowerCase().indexOf(q) >= 0) && (!cur.renderedEids || cur.renderedEids.has(p.id)));
+}
+function renderList() {
+  const q = $('sq').value, m = matches(q), box = $('sl'); box.innerHTML = '';
+  if (!cur) { box.innerHTML = '<div class="row"><span>Drop an IFC first, then search it here.</span></div>'; $('sc').textContent = ''; return; }
+  m.slice(0, 400).forEach((p) => { const d = document.createElement('div'); d.className = 'row' + (selected.has(p.id) ? ' sel' : ''); d.innerHTML = '<span></span><small></small>'; d.firstChild.textContent = p.name || '(no name)'; d.lastChild.textContent = p.type.replace(/^IFC/, ''); d.onclick = () => { if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search eid=' + p.id); };   // highlight only: the camera stays where you put it
+    const loc = document.createElement('button'); loc.className = 'loc'; loc.title = 'Fly the camera to this item'; loc.textContent = '⌖'; loc.onclick = (ev) => { ev.stopPropagation(); frame(p.id); log('§BIM_LOCATE eid=' + p.id); }; d.insertBefore(loc, d.firstChild); box.appendChild(d); });
+  $('sc').textContent = m.length + ' match' + (m.length === 1 ? '' : 'es'); log('§BIM_SEARCH q="' + q + '" matches=' + m.length); window.__bim.lastSearch = m.length;
+}
+function frame(eid) { if (!R) return; const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); if (b.isEmpty()) return; const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3()).length() || 1; R.ctl.target.copy(c); const d = Math.max(s * 1.6, (R.modelDiag || 0) * 0.3);   // stay far enough back that the building around the item stays on screen
+  R.cam.position.copy(c).add(new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(d)); R.ctl.update(); }
+function toggleSearch(open) {
+  const s = $('search'); const o = open === undefined ? !s.classList.contains('open') : open; s.classList.toggle('open', o);
+  if (o) {
+    // Search is for picking, and picking needs the model on screen. If a model is loaded but a background tool (Health, Split, Upgrade)
+    // hid the canvas, bring the model back and arm Extract — otherwise a click on a row selects something nobody can see.
+    if (cur && !document.body.classList.contains('view')) { arm('extract', true); showView(); }
+    $('sq').focus(); renderList();
+  }
+}
+$('sq').oninput = renderList;
+$('sa').onclick = () => { matches($('sq').value).forEach((p) => selected.add(p.id)); paint(); chip(); renderList(); log('§BIM_SELECT n=' + selected.size + ' via=search-all'); };
+
+// ── toolkit zip ─────────────────────────────────────────────────────────────
+function toggleKit(open) {
+  const k = $('kit'), o = open === undefined ? !k.classList.contains('open') : open; k.classList.toggle('open', o); if (!o) return;
+  $('kt').innerHTML = T.map((t) => '<label class="t"><input type="checkbox" data-id="' + t.id + '"' + (t.tier === 'easy' ? ' checked' : '') + '> ' + t.name + ' <small style="color:var(--mute)">' + (t.mode === 'interactive' ? 'opens the model' : 'background') + '</small></label>').join('');
+  $('kos').value = osOf() === 'win' ? 'win' : osOf() === 'mac' ? 'mac' : 'sh'; $('kh').textContent = '';
+}
+$('kx').onclick = () => toggleKit(false);
+$('kgo').onclick = async () => {
+  if (location.protocol === 'file:') { toast('Building the zip needs a web address or the launcher (file:// cannot read its own files).'); log('§BIM_KIT verdict=INCONCLUSIVE reason=file-protocol'); return; }
+  const ids = [...document.querySelectorAll('#kt input:checked')].map((i) => i.dataset.id); if (!ids.length) { toast('Tick at least one tool'); return; }
+  const os = $('kos').value;
+  const sha = async (b) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', b))).map((x) => x.toString(16).padStart(2, '0')).join('');
+  try {
+    const r = await BIM_KIT.build(async (p) => { const rs = await fetch(p); if (!rs.ok) throw new Error('missing ' + p); return new Uint8Array(await rs.arrayBuffer()); }, sha, { tools: ids, os });
+    const zh = await sha(r.bytes); dl(new Blob([r.bytes], { type: 'application/zip' }), 'bim-tools-kit-' + os + '.zip');
+    $('kh').textContent = 'SHA-256 of this zip: ' + zh; log('§BIM_KIT os=' + os + ' tools=' + r.tools.join(',') + ' files=' + r.names.length + ' bytes=' + r.bytes.length + ' sha256=' + zh); toast('Zip downloaded. Read README.txt first.');
+  } catch (e) { toast('Could not build the zip: ' + e.message); log('§BIM_KIT verdict=ERROR ' + e.message); }
+};
+
+// ── keys ────────────────────────────────────────────────────────────────────
+$('ht').innerHTML = T.map((t) => '<tr><td><kbd>' + t.key.toUpperCase() + '</kbd></td><td>' + t.name + '</td></tr>').join('') + '<tr><td><kbd>O</kbd></td><td>Show / hide the model</td></tr><tr><td><kbd>F</kbd></td><td>Search</td></tr><tr><td><kbd>9</kbd></td><td>Toolkit zip</td></tr><tr><td><kbd>?</kbd></td><td>This list</td></tr>';
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const inInput = /INPUT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName);
+  if (e.key === 'Escape') {
+    const anyOpen = $('search').classList.contains('open') || $('help').classList.contains('open') || $('kit').classList.contains('open') || $('menu').style.display === 'block';
+    toggleSearch(false); $('help').classList.remove('open'); toggleKit(false); $('menu').style.display = 'none'; if (inInput) document.activeElement.blur();
+    if (!anyOpen) disarm();   // nothing to close: Esc clears the lit tool
+    return;
+  }
+  if (inInput) return;
+  const k = e.key.toLowerCase();
+  const t = T.find((x) => x.key === k);
+  if (t) { arm(t.id); return; }
+  if (k === 'o') { if (!cur) { toast('Drop an IFC first'); return; } if (document.body.classList.contains('view')) hideView(); else showView(); return; }
+  if (k === 'f') { e.preventDefault(); toggleSearch(true); return; }
+  if (k === '9') { toggleKit(); return; }
+  if (e.key === '?') $('help').classList.toggle('open');
+});
+$('help').onclick = () => $('help').classList.remove('open');
+
+window.__bim = { busyLog: [], screenOf: (eid) => { const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); const c = b.getCenter(new THREE.Vector3()).project(R.cam); const r = $('cv').getBoundingClientRect(); return { x: r.left + (c.x + 1) / 2 * r.width, y: r.top + (1 - c.y) / 2 * r.height, depth: c.z }; }, itemCenter: (eid) => { const b = new THREE.Box3(); R.meshes.filter((m) => m.userData.eid === eid).forEach((m) => b.expandByObject(m)); return b.getCenter(new THREE.Vector3()).toArray(); }, get cur() { return cur; }, get selected() { return selected; }, get R() { return R; }, arm, onFile, matches, pickAt: (x, y) => pickAt({ clientX: x, clientY: y }), frame, renderList };
+buildRail();
+if (params.get('kit') === '1') toggleKit(true);   // deep link from the manual: opens the toolkit-zip panel
+if (params.get('tool') && !SERVED && T.find((t) => t.id === params.get('tool'))) arm(params.get('tool'), true);
+log('§BIM_READY tools=' + T.map((t) => t.id).join(',') + ' served=' + SERVED + ' armed=' + (armed || 'none'));
+// plain page reload: bring back the last model (and what was selected) instead of an empty page
+if (!SERVED) (async () => {
+  const f = await idbGet('file'); if (!f || !f.bytes) { log('§BIM_RESTORE verdict=INCONCLUSIVE reason=nothing-stored'); return; }
+  const sel = (await idbGet('sel')) || [];
+  await onFile(f.name, f.bytes.buffer ? f.bytes.buffer.slice(f.bytes.byteOffset, f.bytes.byteOffset + f.bytes.byteLength) : f.bytes, { restore: true, sel });
+  toast('Restored ' + f.name + (sel.length ? ' (' + sel.length + ' selected)' : '') + '. Nothing was re-run — press a tool key to run it, or Close file.', 9000); log('§BIM_RESTORE name=' + f.name + ' selected=' + selected.size + ' verdict=PASS');
+})();
+// served by the CLI launcher: the model is waiting at /__file
+if (SERVED) {
+  armed = params.get('tool') || 'extract'; syncArmed();
+  (async () => { const r = await fetch('/__file'); const name = decodeURIComponent(r.headers.get('X-Name') || 'model.ifc'); await onFile(name, await r.arrayBuffer()); })().catch((e) => log('§BIM_LOAD verdict=ERROR ' + e.message));
+  let miss = 0; setInterval(() => { if (!serverUp) return; fetch('/__ping').then(() => { miss = 0; }).catch(() => { if (++miss >= 2) { serverUp = false; toast('The launcher closed. You can keep working; exports will download.', 9000); log('§BIM_SERVER gone after ' + miss + ' missed pings'); } }); }, 5000);
+}
+</script>
+</body>
+</html>

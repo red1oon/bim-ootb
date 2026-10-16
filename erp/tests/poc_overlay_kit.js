@@ -47,14 +47,14 @@ const ok = (c, m) => { if (!c) { fails++; console.log('  ✗ FAIL: ' + m); } els
   console.log('\n══ W-OVERLAY-KIT — one toolbox, Lucide-only import overlays ══\n');
 
   // ── §A KIT (static): duplication is GONE from both module sources ──
+  // migrate_showme.js retired 2026-07-12 (TRILOGY_STALE_CODE_AUDIT — superseded by overlay_kit + about_diy)
   const pickerSrc = fs.readFileSync(path.join(ROOT, 'erp_picker.js'), 'utf8');
-  const showmeSrc = fs.readFileSync(path.join(ROOT, 'migrate_showme.js'), 'utf8');
-  ok(!/function _el\(/.test(pickerSrc) && !/function _el\(/.test(showmeSrc),
-    'no local _el() left in either overlay (kit-owned)');
-  ok(!/function _ensureSql\(/.test(pickerSrc) && !/function _ensureSql\(/.test(showmeSrc),
-    'no local _ensureSql() left in either overlay (kit-owned)');
-  ok(/OverlayKit/.test(pickerSrc) && /OverlayKit/.test(showmeSrc), 'both overlays consume OverlayKit');
-  console.log('§OVERLAY-KIT static dedup=clean consumers=2');
+  ok(!/function _el\(/.test(pickerSrc),
+    'no local _el() left in the overlay (kit-owned)');
+  ok(!/function _ensureSql\(/.test(pickerSrc),
+    'no local _ensureSql() left in the overlay (kit-owned)');
+  ok(/OverlayKit/.test(pickerSrc), 'overlay consumes OverlayKit');
+  console.log('§OVERLAY-KIT static dedup=clean consumers=1');
 
   await new Promise(r => server.listen(0, r));
   const port = server.address().port, base = `http://localhost:${port}/idempiere.html`;

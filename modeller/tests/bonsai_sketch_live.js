@@ -4,7 +4,7 @@
 // GEOM_EXTRUDE_POLY in the worker, and it lands in A.scene and draws. Proves the sketch->solve->
 // extrude pipeline is interactive (driven from clicked points), not the hardcoded sample ops.
 const http = require('http'), fs = require('fs'), path = require('path');
-const VIEWER = path.join('/tmp/wt-bonsai', 'viewer');
+const VIEWER = path.join(__dirname, '..');   // serve THIS tree's modeller/ (was a stale hardcoded /tmp/wt-bonsai path)
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.map': 'application/json' };

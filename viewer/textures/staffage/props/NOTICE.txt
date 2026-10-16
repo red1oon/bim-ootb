@@ -1,0 +1,25 @@
+Real vehicle mesh — extracted from this project's OWN data, not external content.
+
+geometry_hash 8c0e2517038456a4, extracted from buildings/BimWhale_Advanced_extracted.db's
+component_geometries table (guid 0xKelnDbLBsf$3TAffmU3X, element_name "M_RPC Beetle" — a
+Revit RPC entourage vehicle, IfcBuildingElementProxy). BimWhale_Advanced is a sample building
+already shipped as part of this repo's own census set — this is our own previously-extracted
+IFC geometry, reused as a cross-building presentation prop, not a sourced/licensed image asset
+(see prompts/PHOTOREAL_STILL_RENDER.md §Open items and prompts/STAFFAGE_WALKABLE_PLACEMENT.md
+§CORRECTION 2026-07-18 for the full investigation — user's own direction: "we wana use the car
+IFCs already in our project", not a cutout photo).
+
+Confirmed local/object-space geometry (not baked to world coordinates): two different guids
+sharing this same geometry_hash have different center_x/y/z in element_transforms, proving the
+mesh itself is placement-independent — the standard shared-geometry + per-instance-transform
+pattern this codebase already uses everywhere (streaming.js), just reused ACROSS buildings
+instead of within one.
+
+FORMAT (car_beetle.bin): uint32 vertCount, uint32 idxCount, then vertCount*3 float32 (xyz,
+local/object space, no normals stored — computed at runtime via
+BufferGeometry.computeVertexNormals()), then idxCount uint32 (triangle indices, three.js
+default winding). vertCount=2058, idxCount=2058 (686 triangles). Real bbox ~2.42 x 3.93 x
+1.51m (matches element_transforms.bbox_x/y/z for the source instance exactly).
+
+No license/attribution question applies — this is the project's own previously-extracted BIM
+data, reused within the same project, not third-party content.

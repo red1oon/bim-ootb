@@ -3,6 +3,8 @@
 // loaded locally from ../modeller/terminal_rules.db (NO OCI). The discipline is a DATA filter
 // (WHERE disc=?), never a code fork — grep-clean, like the SDG builders.
 //
+// ⚠ READ docs/internal/WalkerDoctrine.md FIRST — it indexes every sibling spec this file must obey.
+//
 // prompts/RESUME_TERMINAL_RULE_MINING.md §CONVERGENCE + §ELEGANT SHARED ABSTRACTION:
 //   Placer — rule_placement/rule_space_bom → array-on-a-datum (FP sprinklers, ELEC lights,
 //            STR columns, roof plates are ALL "measured cadence on a datum", one code path).
@@ -19,6 +21,14 @@
   'use strict';
   var TAG = '§DW';
   var ROOT = (typeof window !== 'undefined') ? window : {};
+  // §ROOM-TYPE-WEIGHT (prompts/DISC_WALK_ROOM_TYPE_AWARE.md, 2026-07-11): geometry-based room-type
+  // classifier (modeller/room_type_classifier.js, ported verbatim from bim-compiler) — used ONLY as a
+  // FALLBACK inside _spaceTypeFor() below, when a space's real LABEL does not resolve via the existing
+  // rule_space_type/rule_space_alias string match. Dual-mode load, same convention as every other
+  // sibling module this file already reaches for (RoomTypeClassifier = require(...) in Node, or
+  // window.RoomTypeClassifier in browser once modeller/room_type_classifier.js is <script>-tagged).
+  var RoomTypeClassifier = (typeof window !== 'undefined') ? window.RoomTypeClassifier :
+    (typeof require !== 'undefined' ? (function () { try { return require('./room_type_classifier.js'); } catch (e) { return null; } })() : null);
   var _db = null, _ready = false, _loadedFile = null;
   // §BORROW — per-discipline source map (docs/WalkerDoctrine.md §2). The PRIMARY _db is the building-class
   // ruleset (e.g. duplex_rules.db for residential). A discipline ABSENT from the residential set (e.g. FP/
@@ -28,6 +38,20 @@
   // a borrowed discipline reuses that DB's MEASURED rows; nothing is fabricated.
   var _borrow = {};                                              // disc -> borrowed sql.js db handle
   function _dbFor(disc) { return _borrow[disc] || _db; }
+  // §ROOM-TYPE-WEIGHT state: opt-in, defaults OFF (null) — every existing caller that never invokes
+  // dwSetRoomTypeConfig gets byte-identical behavior (label match only, exactly as before this change).
+  var _roomTypeConfig = null;
+  function dwSetRoomTypeConfig(config) { _roomTypeConfig = config || null; return !!_roomTypeConfig; }
+  // MEASURED disc->room-type density correlation (build/measure_disc_room_type_density.js, real Duplex
+  // MEP data, 2026-07-11): PLB and FP each show a real, replicated categorical presence/absence signal
+  // by classified room type (PLB concentrates in BATHROOM/UTILITY, ~0 elsewhere; FP concentrates in
+  // FOYER, ~0 elsewhere including HALLWAY) — see prompts/DISC_WALK_ROOM_TYPE_AWARE.md for the full table.
+  // ELEC is present in EVERY room type (no discriminating presence signal, only a density gradient that
+  // n=2-per-type cannot separate from noise) and ACMV has ZERO real elements in the only real MEP
+  // substrate this repo has (Duplex — real Malaysian residential units use split-unit A/C, not ducted
+  // diffusers) — both are honestly EXCLUDED here, never forced. Adding a disc to this set requires a
+  // NEW measured citation, not an assumption.
+  var ROOM_TYPE_MEASURED_DISCS = { PLB: true, FP: true };
   // Register/clear a borrowed discipline source. dwBorrow('FP', terminalDb) → FP rules read from terminalDb.
   function dwBorrow(disc, db) { if (db) _borrow[disc] = db; else delete _borrow[disc]; return _borrow; }
   // Browser borrow-by-FILE (docs/WalkerDoctrine.md §2): IDB-cached load + open + register a borrowed discipline
@@ -164,7 +188,12 @@
       "t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid");
     var by = {};
-    els.forEach(function (e) { if (e.s == null) return; (by[e.s] = by[e.s] || []).push(e); });
+    // §STOREY-UNKNOWN-EXCLUDE (found chasing SampleCastle ELEC X-ray shot, 2026-07-13): 'Unknown' is a
+    // data-extraction artifact (elements — mostly IfcBuildingElementPart sub-parts — whose storey inherit
+    // from a parent failed), not a real floor. Grouping it in here synthesizes a fake storey (bogus median
+    // Z + huge bogus footprint from scattered unrelated elements spanning multiple REAL floors), which
+    // place() then walks fixtures onto with no real wall to host-bind against — the drifting-fixture bug.
+    els.forEach(function (e) { if (e.s == null || e.s === 'Unknown') return; (by[e.s] = by[e.s] || []).push(e); });
     var storeys = [];
     Object.keys(by).forEach(function (s) {
       var g = by[s];
@@ -177,6 +206,603 @@
     });
     // habitable-ish: positive footprint + more than a trivial element count
     return storeys.filter(function (st) { return (st.x1 - st.x0) > 0.5 && (st.y1 - st.y0) > 0.5 && st.n >= 2; });
+  }
+
+  // §SPACE-SCOPED piece 2 (SPACE_SCOPED_DISC_INSTALL_VISION.md, 2026-07-10): a real IfcSpace's own bbox,
+  // reshaped into the EXACT same {name,z,x0,x1,y0,y1} shape substrate() already produces per storey — so
+  // place()/occupancy() need NO new math, just a narrower input. NON-INVENT: the boundary is the space's
+  // own measured bbox (elements_meta/element_transforms), nothing inferred or drawn. Returns null (honest
+  // REFUSE upstream in dwWalk) if the guid isn't a real IfcSpace row with a resolved transform.
+  function spaceAsStorey(bdb, spaceGuid) {
+    var r = _rows(bdb, "SELECT m.storey s, t.center_x cx, t.center_y cy, t.center_z cz, " +
+      "COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_ FROM elements_meta m JOIN element_transforms t " +
+      "ON m.guid=t.guid WHERE m.guid='" + _esc(spaceGuid) + "' AND m.ifc_class='IfcSpace'")[0];
+    if (!r || !r.bx || !r.by_) return null;
+    return { name: r.s, z: r.cz, x0: r.cx - r.bx / 2, x1: r.cx + r.bx / 2, y0: r.cy - r.by_ / 2,
+      y1: r.cy + r.by_ / 2, n: 1, spaceGuid: spaceGuid };
+  }
+
+  // ── SPACE-SCHEDULE PLACEMENT (Step 2 PLACE of the geometry-hell fix, 2026-07-10) ──────────
+  // The Java-era generative placer solved fixture placement in Oct-Dec (schedule per space type ×
+  // offset semantics × real room bbox — reproduced a real compile EXACTLY, 43/43, W-SCHED-MINE).
+  // Step 1 mined that MEASURED data into rule_space_schedule/rule_space_type/rule_space_alias/
+  // rule_code_spacing (projected, verbatim). This section is the JS transcription of the PROVEN
+  // Java semantics (SpaceScheduleDAO.resolveQty/computePosition + MEPDevicePlacer.distributeInstance
+  // + PlacementCollectorVisitor's FLOOR half-height lift and co-location spacing) — not a new design.
+  // OPT-IN via dwWalk(..., {schedule:true}) so every pre-existing walk path stays byte-identical;
+  // the default flips only after the DX walkback RSGT (W1-W5) numbers are reviewed.
+  // LOD400 LAW (WalkerDoctrine §11, UNBREAKABLE): a schedule device with NO real mesh
+  // (geometry_hash NULL, stamped by the miner) is REFUSED with a §-log — never a fallback shape.
+
+  // All REAL spaces of a building. Two real sources, tried in order:
+  //  (a) elements_meta IfcSpace rows (piece-1 re-extraction path, e.g. Clinic — 269 spaces);
+  //  (b) spatial_structure IfcSpace rows WITH measured center/size (older DAGCompiler tessellation
+  //      path, e.g. Duplex — 21 real rooms). Synthetic flood-fill rows (guid 'RM_%' / name '≈',
+  //      compile_rooms.py heuristic, ~5/21 recall) are EXCLUDED — they are guesses, not extraction.
+  // LongName (the space-TYPE key, e.g. 'Bathroom 1') rides in element_name for (a) and in
+  // object_type for (b) (stamped verbatim from the source IFC by scripts/stamp_space_longnames.py).
+  function spacesOf(bdb) {
+    var out = _rows(bdb, "SELECT m.guid guid, COALESCE(m.element_name, m.guid) label, m.storey storey, " +
+      "t.center_x cx, t.center_y cy, t.center_z cz, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_, " +
+      "COALESCE(t.bbox_z,0) bz FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.ifc_class='IfcSpace'").filter(function (s) { return s.bx > 0.1 && s.by_ > 0.1; });
+    // §LIVEWIRE hardening (2026-07-10, caught by W-DW-LIVEWIRE L4 on real SampleCastle_ARC.db): the
+    // shipped ARC residents mostly carry NO spatial_structure table at all — probe sqlite_master first
+    // (same idiom as placeMeasured's rule_placement probe) instead of throwing out of the whole walk.
+    if (!out.length && _rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='spatial_structure'").length) {
+      out = _rows(bdb, "SELECT guid, COALESCE(NULLIF(object_type,''), name) label, name room_no, " +
+        "parent_guid, center_x cx, center_y cy, center_z cz, COALESCE(size_x,0) bx, " +
+        "COALESCE(size_y,0) by_, COALESCE(size_z,0) bz FROM spatial_structure WHERE type='IfcSpace' " +
+        "AND guid NOT LIKE 'RM\\_%' ESCAPE '\\' AND name NOT LIKE '%≈%'")
+        .filter(function (s) { return s.bx > 0.1 && s.by_ > 0.1; });
+      var storeyName = {};
+      _rows(bdb, "SELECT guid, name FROM spatial_structure WHERE type='IfcBuildingStorey'")
+        .forEach(function (r) { storeyName[r.guid] = r.name; });
+      out.forEach(function (s) { s.storey = storeyName[s.parent_guid] || 'Unknown'; });
+    }
+    return out.map(function (s) {
+      return { guid: s.guid, label: s.label, storey: s.storey,
+        x0: s.cx - s.bx / 2, x1: s.cx + s.bx / 2, y0: s.cy - s.by_ / 2, y1: s.cy + s.by_ / 2,
+        z0: s.cz - s.bz / 2, z1: s.cz + s.bz / 2 };
+    });
+  }
+
+  // LongName → schedule space_type: normalize (upper, spaces→_, strip trailing numbering — the
+  // same normalization H6's deriveSpaceType applied), then direct rule_space_type match, then
+  // rule_space_alias ('LIVING_ROOM'→LIVING, 'HALLWAY'→CORRIDOR, ...). null = no schedule (skip).
+  //
+  // §ROOM-TYPE-WEIGHT FALLBACK (prompts/DISC_WALK_ROOM_TYPE_AWARE.md): when the LABEL match above
+  // finds nothing (e.g. a synthetic COMPILED room with no semantic name — the case this repo's
+  // shipped non-Duplex/Terminal buildings mostly are), and the caller has loaded a room-type config
+  // (dwSetRoomTypeConfig) AND this disc has a real MEASURED density signal (ROOM_TYPE_MEASURED_DISCS —
+  // today: PLB, FP only; ELEC/ACMV honestly excluded, see that const's comment), classify the space's
+  // OWN bbox geometry (area+aspect, same features the classifier trains on) and use ITS type as a
+  // second-chance space_type — but ONLY after validating the classifier's `canonical_type` (or its own
+  // type name) actually exists in this disc's rule_space_type, so this NEVER returns a type the
+  // schedule tables don't recognize. Zero regression: this branch is unreachable whenever the label
+  // match above already succeeded, and unreachable entirely until dwSetRoomTypeConfig is called.
+  function _spaceTypeFor(disc, sp) {
+    var label = (sp && typeof sp === 'object') ? sp.label : sp;   // back-compat: a bare string still works
+    var db = _dbFor(disc);
+    if (label) {
+      var norm = String(label).toUpperCase().replace(/[\s]+/g, '_').replace(/[_\s]*\d+$/, '').trim();
+      if (norm) {
+        if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(norm) + "'").length) return norm;
+        var a = _rows(db, "SELECT space_type_id st FROM rule_space_alias WHERE alias='" + _esc(norm) + "'");
+        if (a.length) return a[0].st;
+      }
+    }
+    // ── geometry fallback ──
+    if (!_roomTypeConfig || !RoomTypeClassifier || !ROOM_TYPE_MEASURED_DISCS[disc]) return null;
+    if (!sp || typeof sp !== 'object' || sp.x0 == null || sp.x1 == null || sp.y0 == null || sp.y1 == null) return null;
+    var feats = RoomTypeClassifier.featuresFromRects([{
+      size_x: sp.x1 - sp.x0, size_y: sp.y1 - sp.y0, center_x: (sp.x0 + sp.x1) / 2, center_y: (sp.y0 + sp.y1) / 2
+    }]);
+    if (!feats) return null;
+    var result = RoomTypeClassifier.classifyRoom(feats, _roomTypeConfig);
+    if (result.unclassified || !result.type) return null;
+    var tmpl = _roomTypeConfig.templates && _roomTypeConfig.templates[result.type];
+    var candidates = [];
+    if (tmpl && tmpl.canonical_type) candidates.push(String(tmpl.canonical_type).toUpperCase());
+    candidates.push(result.type);
+    for (var i = 0; i < candidates.length; i++) {
+      if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(candidates[i]) + "'").length) {
+        console.log(TAG + ' §DW-ROOMTYPE ' + disc + ' space "' + (label || sp.guid || '?') + '" — no label match, ' +
+          'geometry classifier -> ' + result.type + ' (conf=' + (result.confidence * 100).toFixed(1) +
+          '%, area=' + feats.area.toFixed(2) + 'm2 aspect=' + feats.aspect.toFixed(2) + ') -> space_type=' +
+          candidates[i] + ' [measured signal: build/measure_disc_room_type_density.js]');
+        return candidates[i];
+      }
+    }
+    return null;
+  }
+
+  // Ported VERBATIM from SpaceScheduleDAO.resolveQty (§6.12.4 §8): per_area first;
+  // orderQty 99/blank → qty_normal, 0 → qty_max, N → budget cap; always ≥ qty_min.
+  function _resolveQty(orderQty, e, areaM2) {
+    var qty;
+    if (e.per_area_normal > 0) qty = Math.ceil(areaM2 * e.per_area_normal);
+    else if (orderQty === 0) qty = e.qty_max;
+    else if (orderQty === 99 || orderQty < 0) qty = e.qty_normal;
+    else qty = orderQty;
+    return Math.max(e.qty_min, qty);
+  }
+
+  // Ported from SpaceScheduleDAO.computePosition: x by x_ref (MIN edge / MAX edge / CENTER),
+  // y by y_ref, z by z_rule (FLOOR: z0+off, CEILING: z1-off, MID: middle).
+  function _schedBasePos(sp, e) {
+    var px = (sp.x0 + sp.x1) / 2, py = (sp.y0 + sp.y1) / 2, pz = (sp.z0 + sp.z1) / 2;
+    if (e.x_ref === 'MIN') px = sp.x0 + (e.edge_x_m || 0);
+    else if (e.x_ref === 'MAX') px = sp.x1 - (e.edge_x_m || 0);
+    if (e.y_ref === 'MIN') py = sp.y0 + (e.edge_y_m || 0);
+    else if (e.y_ref === 'MAX') py = sp.y1 - (e.edge_y_m || 0);
+    if (e.z_rule === 'FLOOR') pz = sp.z0 + (e.z_offset_m || 0);
+    else if (e.z_rule === 'CEILING') pz = sp.z1 - (e.z_offset_m || 0);
+    return [px, py, pz];
+  }
+
+  // Ported from MEPDevicePlacer.distributeInstance (qty>1 spreads evenly, spacing len/(n+1))
+  // with ONE deliberate correction the DX walkback witness caught on first run (W3 WALL-HOST/
+  // FACING, 2026-07-10): Java spread along the space's DOMINANT axis, which drags a wall-anchored
+  // rule (x_ref/y_ref MIN|MAX, e.g. WALL_SPACED outlets) OFF its wall into mid-room — Java then
+  // compensated post-hoc with collision-shift + ShimMatcher wall-snap. Here the fixture stays ON
+  // its anchored wall at source: spread runs ALONG the wall (perpendicular to the anchored edge);
+  // only non-anchored rules (CENTER/CENTER, e.g. ceiling grids) use the dominant axis.
+  function _schedDistribute(sp, base, i, total, e) {
+    var wallX = e && (e.x_ref === 'MIN' || e.x_ref === 'MAX');   // anchored to a ±X wall
+    var wallY = e && (e.y_ref === 'MIN' || e.y_ref === 'MAX');   // anchored to a ±Y wall
+    var alongX;
+    if (wallX && !wallY) alongX = false;                          // spread along the wall (Y)
+    else if (wallY && !wallX) alongX = true;                      // spread along the wall (X)
+    else alongX = (sp.x1 - sp.x0) >= (sp.y1 - sp.y0);             // corner/centre → dominant axis
+    var min = alongX ? sp.x0 : sp.y0, len = alongX ? (sp.x1 - sp.x0) : (sp.y1 - sp.y0);
+    var pos = min + (len / (total + 1)) * (i + 1);
+    return alongX ? [pos, base[1], base[2]] : [base[0], pos, base[2]];
+  }
+
+  // Wall-mounted fixtures face INTO the room: yaw from the edge the offset rule anchored to.
+  // Convention: yaw = atan2(dir_y, dir_x) of the facing direction (radians, world XY).
+  function _schedFacing(e) {
+    if (e.x_ref === 'MIN') return 0;                 // on -X wall → faces +X
+    if (e.x_ref === 'MAX') return Math.PI;           // on +X wall → faces -X
+    if (e.y_ref === 'MIN') return Math.PI / 2;       // on -Y wall → faces +Y
+    if (e.y_ref === 'MAX') return -Math.PI / 2;      // on +Y wall → faces -Y
+    return 0;
+  }
+
+  // ── REAL-WALL SNAP for wall-anchored schedule rules (DX walkback W3 finding, 2026-07-10) ──
+  // A space's bbox edge is NOT always a wall (open-plan boundaries, irregular rooms) — anchoring
+  // to the bbox edge left switches/fans floating on wall-less sides. Same doctrine as Java's
+  // ShimMatcher and hostBind: mount on the NEAREST REAL WALL FACE. The fixture keeps its
+  // rule-driven along-wall spread + z; only the mount is corrected to real geometry:
+  //   pos'  = nearest wall's inner face + (device_depth/2 + 10mm) toward the room centre,
+  //   yaw   = the face normal pointing INTO the room, clamped inside the space bbox.
+  // Honest REFUSE-to-snap: no real wall within REACH (1.5m) of the space → keep the bbox-edge
+  // position, return snapped:false (caller logs §SCHED-NOWALL) — never an invented wall.
+  var _SNAP_REACH = 1.5;
+  function _spaceWalls(bdb, sp, geoDb) {
+    // BBOX-INTERSECT selection (a long perimeter wall's CENTER can sit far outside this space —
+    // filtering by center missed real bordering walls) + _trueMidpoint correction (the measured
+    // raw-placement-origin defect on walls, up to 3.12m on Duplex — same fix occupancy() uses).
+    var pad = 0.5;
+    var raw = _rows(bdb, "SELECT m.guid g, t.center_x x, t.center_y y, t.center_z z, " +
+      "COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_, COALESCE(t.bbox_z,0) bz, " +
+      "COALESCE(t.rotation_x,0) rx, COALESCE(t.rotation_y,0) ry, COALESCE(t.rotation_z,0) rot " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%Wall%' " +
+      "AND (t.center_x + COALESCE(t.bbox_x,0)/2) >= " + (sp.x0 - pad) +
+      " AND (t.center_x - COALESCE(t.bbox_x,0)/2) <= " + (sp.x1 + pad) +
+      " AND (t.center_y + COALESCE(t.bbox_y,0)/2) >= " + (sp.y0 - pad) +
+      " AND (t.center_y - COALESCE(t.bbox_y,0)/2) <= " + (sp.y1 + pad));
+    return raw.map(function (w) {
+      var mid = _trueMidpoint(bdb, w.g, { x: w.x, y: w.y, z: w.z, rx: w.rx, ry: w.ry, rot: w.rot }, geoDb);
+      return { x: mid.verified ? mid.x : w.x, y: mid.verified ? mid.y : w.y, bx: w.bx, by_: w.by_,
+        z: w.z, bz: w.bz };
+    });
+  }
+  function _snapToWall(spWalls, sp, pos, halfDepth) {
+    var best = null, bestD = Infinity;
+    spWalls.forEach(function (w) {
+      // the wall must EXIST at the fixture's mounting height — a downstand/bulkhead segment
+      // whose z-band misses the fixture is not a mount (W3 finding: switches snapped to
+      // above-door wall segments that stop 1.5m over their heads).
+      if (w.bz > 0 && (pos[2] < w.z - w.bz / 2 - 0.05 || pos[2] > w.z + w.bz / 2 + 0.05)) return;
+      var dx = Math.max(Math.abs(pos[0] - w.x) - w.bx / 2, 0);
+      var dy = Math.max(Math.abs(pos[1] - w.y) - w.by_ / 2, 0);
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < bestD) { bestD = d; best = w; }
+    });
+    // No wall in reach of the rule's anchor point = the rule anchored to an OPEN boundary
+    // (open-plan edge). A wall-mounted device still needs A wall: relocate to the nearest
+    // REAL z-valid wall of the room (any distance inside it), reported via moved. Refuse
+    // only when the room has no z-valid wall at all — never an invented mount.
+    if (!best) return { snapped: false, pos: pos, yaw: null };
+    var moved = bestD > _SNAP_REACH ? bestD : 0;
+    var cx = (sp.x0 + sp.x1) / 2, cy = (sp.y0 + sp.y1) / 2;
+    var standoff = (halfDepth || 0.05) + 0.01;
+    var p = pos.slice(), yaw;
+    if (best.bx >= best.by_) {                       // wall runs along X → mount on a ±Y face
+      var faceY = (cy >= best.y) ? (best.y + best.by_ / 2) : (best.y - best.by_ / 2);
+      var dirY = (cy >= best.y) ? 1 : -1;
+      p[1] = faceY + dirY * standoff;
+      p[0] = Math.min(Math.max(p[0], Math.max(best.x - best.bx / 2, sp.x0)), Math.min(best.x + best.bx / 2, sp.x1));
+      yaw = dirY > 0 ? Math.PI / 2 : -Math.PI / 2;
+    } else {                                          // wall runs along Y → mount on a ±X face
+      var faceX = (cx >= best.x) ? (best.x + best.bx / 2) : (best.x - best.bx / 2);
+      var dirX = (cx >= best.x) ? 1 : -1;
+      p[0] = faceX + dirX * standoff;
+      p[1] = Math.min(Math.max(p[1], Math.max(best.y - best.by_ / 2, sp.y0)), Math.min(best.y + best.by_ / 2, sp.y1));
+      yaw = dirX > 0 ? 0 : Math.PI;
+    }
+    p[0] = Math.min(Math.max(p[0], sp.x0 + 0.02), sp.x1 - 0.02);
+    p[1] = Math.min(Math.max(p[1], sp.y0 + 0.02), sp.y1 - 0.02);
+    return { snapped: true, pos: p, yaw: yaw, moved: moved };
+  }
+
+  // Place one discipline's scheduled devices into every REAL space (or one space via
+  // opts.spaceGuid). Returns { placements, spaces, skippedSpaces, refused } — refused =
+  // LOD400-law refusals (no real mesh), honest and counted, never substituted.
+  function placeSchedule(disc, bdb, opts) {
+    opts = opts || {};
+    if (!_rows(_dbFor(disc), "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_space_schedule'").length) {
+      return { placements: [], spaces: -1, spacesUsed: 0, skippedSpaces: [], refused: {},
+        noRules: 'rules DB has no rule_space_schedule (run build/project_rule_space_schedule.py)' };
+    }
+    var orderQty = (opts.orderQty == null) ? 99 : opts.orderQty;
+    var all = spacesOf(bdb);
+    if (opts.spaceGuid) all = all.filter(function (s) { return s.guid === opts.spaceGuid; });
+    // §W7-COLLISION cross-disc coordination: opts.avoid = prior discs' placements. Checked in FULL
+    // (not per-space): adjacent space bboxes overlap (Hallway×Stair), so a same-space scan misses
+    // real cross-space overlaps.
+    var avoidAll = opts.avoid || [];
+    var out = [], refused = {}, skipped = [], used = 0;
+    var schedYawN = 0, schedYawMeshN = 0;             // §SCHED-YAW: wall-anchored devices given a mesh-frame yaw (of which: frame measured off the mesh)
+    all.forEach(function (sp) {
+      var stype = _spaceTypeFor(disc, sp);
+      if (!stype) { skipped.push(sp.label); return; }
+      var sched = _rows(_dbFor(disc), "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
+        "' AND space_type_id='" + _esc(stype) + "'");
+      if (!sched.length) return;
+      used++;
+      var area = (sp.x1 - sp.x0) * (sp.y1 - sp.y0);
+      var perAxisCount = {};                          // co-location spreader (Java GAP-10 port)
+      var spWalls = null;                             // real walls near this space (lazy, once)
+      var spaceStart = out.length;                    // §W7-COLLISION: this space's own placements
+      sched.forEach(function (e) {
+        var qty = _resolveQty(orderQty, e, area);
+        if (qty <= 0) return;
+        if (!e.geometry_hash) {                       // LOD400 LAW: no real mesh → REFUSE
+          refused[e.device_id] = (refused[e.device_id] || 0) + qty;
+          console.log(TAG + ' §LOD400-REFUSE ' + disc + '/' + e.device_id + ' ×' + qty + ' in ' +
+            sp.label + ' — no real mesh in the catalog; refused, never a fallback shape');
+          return;
+        }
+        var base = _schedBasePos(sp, e);
+        var hz = (e.dim_z_m || 0.1) / 2;
+        var wallAnchored = (e.x_ref === 'MIN' || e.x_ref === 'MAX' || e.y_ref === 'MIN' || e.y_ref === 'MAX');
+        for (var i = 0; i < qty; i++) {
+          var pos = (qty === 1) ? base.slice() : _schedDistribute(sp, base, i, qty, e);
+          var yaw = _schedFacing(e);
+          if (wallAnchored) {                          // W3 finding: mount on a REAL wall face,
+            if (spWalls === null) spWalls = _spaceWalls(bdb, sp, opts.geoDb);   // not the space bbox edge
+            var snap = _snapToWall(spWalls, sp, pos, (e.dim_y_m || e.dim_x_m || 0.1) / 2);
+            if (snap.snapped) {
+              pos = snap.pos; yaw = snap.yaw;
+              if (snap.moved) console.log(TAG + ' §SCHED-RELOC ' + disc + '/' + e.device_id + ' in ' +
+                sp.label + ' — rule anchored to an OPEN boundary; mounted on the nearest REAL wall ' +
+                snap.moved.toFixed(2) + 'm away (real geometry, never an invented mount)');
+            } else console.log(TAG + ' §SCHED-NOWALL ' + disc + '/' + e.device_id + ' in ' + sp.label +
+              ' — room has no z-valid real wall; kept rule position (never an invented wall)');
+          }
+          if (e.host_surface === 'FLOOR') pos[2] += hz;      // W-FRIDGE-Z: bottom on floor
+          // co-located same-position devices (e.g. two CEILING_CENTER classes): spread by the
+          // measured code spacing (rule_code_spacing max_spacing/2), 0.5m fallback — Java GAP-10.
+          var key = pos[0].toFixed(2) + '_' + pos[1].toFixed(2) + '_' + pos[2].toFixed(2);
+          var idx = (perAxisCount[key] = (perAxisCount[key] || 0) + 1) - 1;
+          if (idx > 0) {
+            var spc = _rows(_dbFor(disc), "SELECT max_spacing_m m FROM rule_code_spacing WHERE " +
+              "element_type='" + _esc(e.device_id) + "' AND (space_type='" + _esc(stype) + "' OR space_type='ANY') " +
+              "ORDER BY CASE WHEN space_type='" + _esc(stype) + "' THEN 0 ELSE 1 END LIMIT 1");
+            var step = (spc.length && spc[0].m > 0) ? spc[0].m / 2 : 0.5;
+            if ((sp.x1 - sp.x0) >= (sp.y1 - sp.y0)) pos[0] = Math.min(pos[0] + idx * step, sp.x1 - 0.05);
+            else pos[1] = Math.min(pos[1] + idx * step, sp.y1 - 0.05);
+          }
+          // §W7-COLLISION (BIMEyes item 3, found by the pairwise check 2026-07-10): the code-spacing
+          // step alone doesn't clear WIDE co-located devices (CEILING_FAN 1.2m × 0.5m step → 48 real
+          // bbox overlaps), and separate per-disc walks can't see each other (fan×diffuser, outlet×
+          // sink). Every device slides in 0.1m steps until its MEASURED bbox clears (a) fixtures
+          // already placed in this space this walk and (b) the caller-passed `opts.avoid` list
+          // (prior discs' placements — cross-disc coordination). Direction: wall-anchored devices
+          // slide ALONG their wall run (yaw+90°, staying mounted); free devices along the room's
+          // spread axis. Dims are measured; the Java code-spacing base/step semantics are unchanged.
+          var dirx, diry;
+          if (wallAnchored) { dirx = Math.cos((yaw || 0) + Math.PI / 2); diry = Math.sin((yaw || 0) + Math.PI / 2); }
+          else if ((sp.x1 - sp.x0) >= (sp.y1 - sp.y0)) { dirx = 1; diry = 0; } else { dirx = 0; diry = 1; }
+          function _clashAt(px, py, pz2) {
+            var q, o;
+            for (q = 0; q < out.length; q++) {
+              o = out[q];
+              if (Math.abs(pz2 - o.z) >= ((e.dim_z_m || 0.2) + (o.bz || 0.2)) / 2) continue;
+              if (Math.abs(px - o.x) < ((e.dim_x_m || 0.2) + (o.bx || 0.2)) / 2 &&
+                  Math.abs(py - o.y) < ((e.dim_y_m || 0.2) + (o.by || 0.2)) / 2) return true;
+            }
+            for (q = 0; q < avoidAll.length; q++) {
+              o = avoidAll[q];
+              if (Math.abs(pz2 - o.z) >= ((e.dim_z_m || 0.2) + (o.bz || 0.2)) / 2) continue;
+              if (Math.abs(px - o.x) < ((e.dim_x_m || 0.2) + (o.bx || 0.2)) / 2 &&
+                  Math.abs(py - o.y) < ((e.dim_y_m || 0.2) + (o.by || 0.2)) / 2) return true;
+            }
+            return false;
+          }
+          var basePos = pos.slice(), movedClear = 0, cleared = !_clashAt(pos[0], pos[1], pos[2]);
+          [1, -1].forEach(function (sgn) {                     // try +dir first, then −dir from base
+            if (cleared) return;
+            pos[0] = basePos[0]; pos[1] = basePos[1];
+            for (var guard = 0; guard < 200; guard++) {
+              var nxp = Math.min(Math.max(pos[0] + 0.1 * sgn * dirx, sp.x0 + 0.05), sp.x1 - 0.05);
+              var nyp = Math.min(Math.max(pos[1] + 0.1 * sgn * diry, sp.y0 + 0.05), sp.y1 - 0.05);
+              if (Math.abs(nxp - pos[0]) < 1e-9 && Math.abs(nyp - pos[1]) < 1e-9) break;   // clamped
+              pos[0] = nxp; pos[1] = nyp; movedClear += 0.1;
+              if (!_clashAt(pos[0], pos[1], pos[2])) { cleared = true; break; }
+            }
+          });
+          if (!cleared) { pos[0] = basePos[0]; pos[1] = basePos[1]; console.log(TAG + ' §SCHED-CLASH ' + disc + '/' + e.device_id + ' in ' + sp.label + ' — no clear position in this space (kept rule position, residual overlap reported)'); }
+          else if (movedClear > 0.05) console.log(TAG + ' §SCHED-CLEAR ' + disc + '/' + e.device_id + ' in ' +
+            sp.label + ' — slid to clear a co-located fixture bbox' + (wallAnchored ? ' (along its wall run)' : ''));
+          // §SCHED-YAW (2026-09-30, W-DW-ROT-UNITS re-point): every consumer of a walked placement reads `yaw` (radians —
+          // _renderDiscWalk makeRotationZ(p.yaw), _commitDiscWalk placement.rot = p.yaw·180/π), but this path wrote its
+          // facing to `rot` only, so all 102 Duplex ELEC fixtures were drawn AND signed at 0° (measured 2026-09-30).
+          // `yaw` here is the facing (the wall normal INTO the room, _snapToWall/_schedFacing) re-expressed in the mesh's
+          // own frame: the mesh's thin horizontal axis is its depth (MEASURED from the geo buffer — Duplex receptacle
+          // 031416… is 0.0587 deep on local X, 23c614…/4730c9… 0.0587 deep on local Y — else the rule's own dims), and that
+          // axis is what turns onto the normal: thin X → yaw = facing, thin Y → yaw = facing − π/2. Only wall-anchored
+          // devices carry it; a ceiling/floor device has no wall to face and stays unrotated (never an invented turn).
+          var meshYaw = null;
+          if (wallAnchored && yaw != null) {
+            var ext = _meshLocalXY(opts.geoDb || bdb, e.geometry_hash) || { dx: e.dim_x_m || 0, dy: e.dim_y_m || 0, src: 'rule-dims' };
+            meshYaw = (ext.dx > 0 && ext.dy > 0 && ext.dy < ext.dx) ? yaw - Math.PI / 2 : yaw;
+            schedYawN++; if (ext.src !== 'rule-dims') schedYawMeshN++;
+          }
+          out.push({ disc: disc, ifc_class: 'IfcFlowTerminal', device: e.device_id,
+            x: pos[0], y: pos[1], z: pos[2], storey: sp.storey, spaceGuid: sp.guid,
+            space: sp.label, rot: yaw, yaw: meshYaw == null ? undefined : meshYaw,
+            bx: e.dim_x_m || null, by: e.dim_y_m || null, bz: e.dim_z_m || null,
+            geometry_hash: e.geometry_hash, element_name: e.element_name,
+            prim: _primFor('IfcFlowTerminal'),
+            prov: 'sched:space-schedule:' + e.placement_rule, src: e.standard || '' });
+        }
+      });
+    });
+    if (schedYawN) console.log(TAG + ' §SCHED-YAW disc=' + disc + ' wallAnchored=' + schedYawN + ' meshFrameMeasured=' + schedYawMeshN +
+      ' ruleDims=' + (schedYawN - schedYawMeshN) + ' (facing → mesh-frame yaw; every consumer reads placement.yaw)');
+    return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused };
+  }
+
+  // ── §NOSPACES (item 2, RESUME_DISC_WALKER_ENVELOPE_BOUND.md, 2026-07-10): measured-band placement
+  // for buildings with NO real IfcSpace rows (Terminal-class). Each rule_placement row IS the zone: its
+  // ABSOLUTE measured z-band + n_measured + src_storey_area_m2. Count = n_measured × bandArea/srcArea
+  // (the walked building's own rules ⇒ ratio≈1; envelope is the ceiling, §DW-CAP style). Position =
+  // envelope-bound grid cells from real ARC elements whose vertical EXTENT intersects the band (true
+  // geometric overlap, no invented pad); pitch = the row's own measured mean spacing √(srcArea/n);
+  // z = the measured band midpoint. ANTI-CHEAT: the cell query EXCLUDES every rules-generatable class
+  // (derived from rule_placement itself, no hand list) — the walker never consults MEP rows even when
+  // the caller hands it a full extraction. LOD400 law (WalkerDoctrine §11): each class carries its
+  // MINED dominant real mesh hash (rule_mesh_binding, projected by build/project_rule_mesh_binding.py)
+  // or the whole class REFUSEs — never a fallback shape.
+  // ── §ROOF-PATTERN (row 8, bim-compiler prompts/Modeller/NEXT_0926/SPEC_ROW8_ROOF_PERELEMENT.md, 2026-09-26):
+  // a TESSELLATING class is one whose mined unit tiles its source area contiguously —
+  //   fill = bbox_dx · bbox_dy · n_measured / src_storey_area_m2 ≥ TESS_FILL   (roof/IfcPlate 0.90; every MEP row ≪ 0.5)
+  // — derived from the row's own measured numbers, never a class whitelist. Such a class has NO measured surface in
+  // the substrate other than its own element array: MEASURED on Terminal, the canopy is z=f(x,y) (1-D strip profile
+  // residual 1.16 m, quadric 1.29 m, the two IfcRoof rows sit 14 m below it), so the band fill below put 10,584 boxes
+  // at the flat band-mid z — RMS 2.63 m to the real plates, −68 % count, and 331 fabricated plates on Clinic's glazing.
+  // A tessellating row therefore walks PER ELEMENT on the building's OWN measured array (the same input
+  // swDeriveTessellation(plates) has always taken) — after MEASURING that it IS an array: modal-unit share, 3-D
+  // nearest-neighbour cadence + cv, checked against the rule's mined unit/spacing. Not arrayed (HHS/Clinic glazing
+  // panels, cv 0.32/1.25) or absent → REFUSE, never the fill: "represent as one surface, never fabricate a fake array"
+  // (red1 2026-06-27). Returns null for a non-tessellating row (caller keeps its byte-identical path).
+  var TESS_FILL = 0.5;
+  function _arrayMeasure(els, cell) {
+    var hist = {}; els.forEach(function (e) { var k = (+e.bx).toFixed(2) + 'x' + (+e.by_).toFixed(2) + 'x' + (+e.bz).toFixed(2); hist[k] = (hist[k] || 0) + 1; });
+    var mk = Object.keys(hist).sort(function (a, b) { return hist[b] - hist[a]; })[0], mu = mk.split('x').map(Number);
+    var grid = {}; els.forEach(function (e, i) { var k = Math.floor(e.x / cell) + ',' + Math.floor(e.y / cell) + ',' + Math.floor(e.z / cell); (grid[k] = grid[k] || []).push(i); });
+    var ds = [], found = 0;
+    els.forEach(function (e, i) {
+      var cx = Math.floor(e.x / cell), cy = Math.floor(e.y / cell), cz = Math.floor(e.z / cell), best = Infinity;
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
+        var b = grid[(cx + dx) + ',' + (cy + dy) + ',' + (cz + dz)]; if (!b) continue;
+        for (var j = 0; j < b.length; j++) { if (b[j] === i) continue; var o = els[b[j]];
+          var d = Math.sqrt((o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y) + (o.z - e.z) * (o.z - e.z)); if (d < best) best = d; }
+      }
+      if (isFinite(best)) { ds.push(best); found++; }
+    });
+    var nn = _med(ds), mean = ds.length ? ds.reduce(function (s, v) { return s + v; }, 0) / ds.length : NaN;
+    var sd = ds.length ? Math.sqrt(ds.reduce(function (s, v) { return s + (v - mean) * (v - mean); }, 0) / ds.length) : NaN;
+    var ux = {}; els.forEach(function (e) { ux[(+e.x).toFixed(3)] = 1; });
+    var xs = Object.keys(ux).map(Number).sort(function (a, b) { return a - b; }), dh = {};
+    for (var i = 1; i < xs.length; i++) { var dk = (xs[i] - xs[i - 1]).toFixed(3); dh[dk] = (dh[dk] || 0) + 1; }
+    var sx = xs.length > 1 ? Number(Object.keys(dh).sort(function (a, b) { return dh[b] - dh[a]; })[0]) : 0;
+    return { unit: { bx: mu[0], by: mu[1], bz: mu[2] }, share: hist[mk] / els.length, nn: nn, cv: (mean > 0 ? sd / mean : NaN),
+             nnFound: found / els.length, sx: sx, uniqueX: xs.length };
+  }
+  function _tessellatingWalk(disc, r, bdb, ghash) {
+    if (!(r.bbox_dx > 0 && r.bbox_dy > 0 && r.n_measured > 0 && r.src_storey_area_m2 > 0)) return null;
+    var fill = r.bbox_dx * r.bbox_dy * r.n_measured / r.src_storey_area_m2;
+    if (fill < TESS_FILL) return null;
+    var tag = disc + '/' + r.ifc_class, pad = r.bbox_dz > 0 ? r.bbox_dz : 0;
+    var bandTxt = '[' + r.z_band_lo.toFixed(2) + ',' + r.z_band_hi.toFixed(2) + ']';
+    var hasInst = _rows(bdb, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='element_instances'").length > 0;
+    var els = _rows(bdb, 'SELECT m.guid guid, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz' +
+      (hasInst ? ', ei.geometry_hash gh' : ', NULL gh') + ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
+      (hasInst ? ' LEFT JOIN element_instances ei ON ei.guid = m.guid' : '') +
+      " WHERE m.ifc_class='" + _esc(r.ifc_class) + "' AND t.center_z >= " + (r.z_band_lo - pad) + ' AND t.center_z <= ' + (r.z_band_hi + pad));
+    console.log(TAG + ' §DW-TESSELLATE ' + tag + ' fill=' + fill.toFixed(2) + ' (unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) +
+      ' × n ' + r.n_measured + ' / ' + r.src_storey_area_m2.toFixed(0) + ' m² ≥ ' + TESS_FILL + ') → per-element on the measured array; rows of ' +
+      r.ifc_class + ' in band' + bandTxt + '=' + els.length);
+    if (!els.length) {
+      console.log(TAG + ' §ROOF-PATTERN-NOPLATES ' + tag + ' band=' + bandTxt + ' 0 rows → REFUSE (a tessellating class has no other measured surface; never the band fill)');
+      return { placements: [], refused: 'no ' + r.ifc_class + ' rows in band' };
+    }
+    var m = _arrayMeasure(els, 1.0);
+    var fine = Math.min(r.spacing_x_m > 0 ? r.spacing_x_m : Infinity, r.spacing_y_m > 0 ? r.spacing_y_m : Infinity);
+    function within(a, b, tol) { return b > 0 && a > 0 && Math.abs(a - b) / b <= tol; }
+    var ok = m.share >= 0.5 && m.nnFound >= 0.5 && within(m.unit.bx, r.bbox_dx, 0.2) && within(m.unit.by, r.bbox_dy, 0.2) &&
+      (!(r.bbox_dz > 0) || within(m.unit.bz, r.bbox_dz, 0.2)) && (!isFinite(fine) || within(m.nn, fine, 0.2)) && m.cv <= 0.10;
+    var desc = 'n=' + els.length + ' unit=' + m.unit.bx.toFixed(2) + '×' + m.unit.by.toFixed(2) + '×' + m.unit.bz.toFixed(2) +
+      ' share=' + (m.share * 100).toFixed(1) + '% nn=' + (isFinite(m.nn) ? m.nn.toFixed(3) : 'NaN') + ' cv=' + (isFinite(m.cv) ? m.cv.toFixed(3) : 'NaN') +
+      ' nnFound=' + (m.nnFound * 100).toFixed(0) + '% sx=' + m.sx.toFixed(3) + ' uniqueX=' + m.uniqueX;
+    var ruleTxt = 'rule unit ' + r.bbox_dx.toFixed(2) + '×' + r.bbox_dy.toFixed(2) + '×' + (r.bbox_dz || 0).toFixed(2) + ' spacing ' + (isFinite(fine) ? fine : '-');
+    if (!ok) {
+      console.log(TAG + ' §ROOF-PATTERN-REFUSE ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' — irregular/non-arrayed: represent as one surface, never a fake array');
+      return { placements: [], refused: 'not an array of the rule unit' };
+    }
+    // §ROOF-PATTERN-PRESENT (review 2026-09-26): the measured array IS the building's own IfcPlate rows, which the ARC seed has
+    // already committed (seedArc seeds discipline='ARC' — all 33,324 on Terminal). Re-placing them would sign an exact second
+    // copy (RMS 0 by identity, 33k duplicate rows) — not generation. Nothing to generate: report it, place nothing.
+    console.log(TAG + ' §ROOF-PATTERN-PRESENT ' + tag + ' ' + desc + ' vs ' + ruleTxt + ' → the building already carries this array (' +
+      els.length + ' real ' + r.ifc_class + ', seeded with the ARC) — nothing to generate, 0 placed');
+    return { placements: [], refused: 'already present: ' + els.length + ' real ' + r.ifc_class + ' form the measured array — nothing to generate', present: els.length };
+  }
+  function placeMeasured(disc, bdb, opts) {
+    var db = _dbFor(disc);
+    if (!_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_placement'").length)
+      return { noRules: 'rules DB has no rule_placement' };
+    var rows = _rows(db, "SELECT * FROM rule_placement WHERE disc='" + _esc(disc) +
+      "' AND n_measured>0 AND z_band_lo IS NOT NULL AND z_band_hi IS NOT NULL AND src_storey_area_m2>0");
+    if (!rows.length) return { noRules: 'no measured z-band rule_placement rows for ' + disc };
+    var bind = {}, verdicts = [];
+    var bandMid = {}, bandMidMoved = 0;   // §BAND-MIDPOINT: per-guid corrected midpoints for this walk (+ how many moved >0.5 m)
+    if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_mesh_binding'").length)
+      _rows(db, "SELECT ifc_class, geometry_hash FROM rule_mesh_binding WHERE disc='" + _esc(disc) + "'")
+        .forEach(function (b) { bind[b.ifc_class] = b.geometry_hash; });
+    var genCls = _rows(db, 'SELECT DISTINCT ifc_class FROM rule_placement')
+      .map(function (r) { return "'" + _esc(r.ifc_class) + "'"; }).join(',');
+    // §NOSPACES frame reconciliation: the bands were baked in the 2026-06-28 building-datum frame;
+    // the extraction was later re-datumed to site coords. The MEASURED offset (median of each rule
+    // row's own src_guids' site z − band mid, stamped by project_rule_mesh_binding.py) converts
+    // band → the walked db's frame. Missing key → 0 (bands already in the db's frame).
+    var zOffRow = _rows(db, "SELECT value FROM rules_meta WHERE key='z_datum_offset'");
+    var zOff = zOffRow.length ? parseFloat(zOffRow[0].value) || 0 : 0;
+    // §TE-ARC-DATUM-FIX (bim-compiler RESUME_DISC_WALKER_ENVELOPE_BOUND.md §TE-ARC-DATUM, 2026-07-10,
+    // ported from build/disc_walker.js): the baked z_datum_offset targets ONE frame (the mining
+    // extraction's) — the shipped Terminal_ARC.db sits 14.66 m below it and every band starved. With
+    // rule_frame_ref (per-class mean_z refs in the BAND frame, stamped from measured data), MEASURE
+    // the offset from the walked substrate itself: median over shared non-generatable classes of
+    // (walked class mean z − ref mean z). Same-frame substrates reproduce the legacy offset exactly;
+    // any pure-translation frame reconciles. <3 shared classes → honest fallback, logged.
+    if (_rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_frame_ref'").length) {
+      var deltas = [];
+      _rows(db, 'SELECT ifc_class, mean_z FROM rule_frame_ref').forEach(function (fr) {
+        var w = _rows(bdb, "SELECT COUNT(*) n, AVG(t.center_z) mz FROM elements_meta em " +
+          "JOIN element_transforms t ON t.guid = em.guid WHERE em.ifc_class='" + _esc(fr.ifc_class) + "'");
+        if (w.length && w[0].n >= 5 && w[0].mz !== null) deltas.push(w[0].mz - fr.mean_z);
+      });
+      if (deltas.length >= 3) {
+        deltas.sort(function (a, b) { return a - b; });
+        var mid = deltas[Math.floor(deltas.length / 2)];
+        var mad = deltas.map(function (d) { return Math.abs(d - mid); }).sort(function (a, b) { return a - b; });
+        zOff = mid;
+        console.log(TAG + ' §DW-DATUM ' + disc + ' zOff=' + mid.toFixed(3) + ' measured from walked substrate (' +
+          deltas.length + ' ref classes, MAD=' + mad[Math.floor(mad.length / 2)].toFixed(3) + ')');
+      } else {
+        console.log(TAG + ' §DW-DATUM-FALLBACK ' + disc + ' only ' + deltas.length +
+          ' shared ref classes (<3) — legacy z_datum_offset=' + zOff + ' applied');
+      }
+    }
+    var out = [], refused = {}, zones = 0;
+    rows.forEach(function (r) {
+      r = Object.assign({}, r);
+      r.z_band_lo += zOff; r.z_band_hi += zOff;               // site-frame band from here on
+      var ghash = bind[r.ifc_class] || null;
+      if (!ghash) {                                           // LOD400 REFUSE — no mined real mesh
+        refused[r.ifc_class] = (refused[r.ifc_class] || 0) + r.n_measured;
+        console.log(TAG + ' §LOD400-REFUSE ' + disc + '/' + r.ifc_class + ' ×' + r.n_measured +
+          ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] (no rule_mesh_binding row — no real mesh, never a fallback shape)');
+        return;
+      }
+      // §ROOF-PATTERN: a tessellating row (fill ≥ TESS_FILL) walks per element on the measured array or REFUSES —
+      // it never reaches the ARC-cell/top-up fill below. Every other row: null → unchanged path.
+      var tess = _tessellatingWalk(disc, r, bdb, ghash);
+      if (tess) {
+        if (tess.placements.length) { tess.placements.forEach(function (p) { out.push(p); }); zones++; }
+        if (tess.refused) verdicts.push(tess.refused);        // a DELIBERATE 0 (present / refused) — the caller must not fall back
+        return;                                               // refused → 0 placements (§ROOF-PATTERN-* line carries why)
+      }
+      var pitch = Math.max(0.5, Math.sqrt(r.src_storey_area_m2 / r.n_measured));
+      var els = _rows(bdb,
+        'SELECT em.guid g, t.center_x cx, t.center_y cy, t.center_z cz, t.bbox_x bx, t.bbox_y by_, ' +
+        'COALESCE(t.rotation_x,0) rx, COALESCE(t.rotation_y,0) ry, COALESCE(t.rotation_z,0) rot FROM elements_meta em ' +
+        'JOIN element_transforms t ON t.guid = em.guid ' +
+        'WHERE em.ifc_class NOT IN (' + genCls + ",'IfcSpace') " +
+        'AND t.center_z + t.bbox_z/2 >= ' + r.z_band_lo + ' AND t.center_z - t.bbox_z/2 <= ' + r.z_band_hi);
+      // §BAND-MIDPOINT (2026-09-30, W-DW-DENSITY-TE D3 re-baseline): a raw element_transforms.center is the IFC placement-line
+      // ORIGIN, not the element's midpoint (§BUG-A: up to 11.27 m off on 73/2147 elements of this substrate). occupancy()/
+      // hostBind already correct it through _trueMidpoint; this band envelope did not, so its bbox and cells — and every
+      // §NOSPACES-TOPUP grid point spread across that bbox — could sit up to 9.9 m outside the real building (measured:
+      // OFFBOX PLB 47 / ELEC 142 / FP 79 / ACMV 93 placements). Same correction, cached per guid for the walk.
+      // The COUNT keeps the miner's own raw-centre bbox (stamp_terminal_src_area.py band_area(): min/max of center ± bbox/2)
+      // so ratio ≈ 1 on a building's own rules is byte-identical to before; only WHERE the fixtures go is corrected.
+      var rx0 = Infinity, rx1 = -Infinity, ry0 = Infinity, ry1 = -Infinity;
+      els.forEach(function (e) {
+        rx0 = Math.min(rx0, e.cx - e.bx / 2); rx1 = Math.max(rx1, e.cx + e.bx / 2);
+        ry0 = Math.min(ry0, e.cy - e.by_ / 2); ry1 = Math.max(ry1, e.cy + e.by_ / 2);
+        var mid = bandMid[e.g] || (bandMid[e.g] = _trueMidpoint(bdb, e.g, { x: e.cx, y: e.cy, z: e.cz, rx: e.rx, ry: e.ry, rot: e.rot }, opts && opts.geoDb));
+        if (mid.verified) { if (Math.abs(mid.x - e.cx) > 0.5 || Math.abs(mid.y - e.cy) > 0.5) bandMidMoved++; e.cx = mid.x; e.cy = mid.y; }
+      });
+      var seen = {}, cells = [];
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      els.forEach(function (e) {
+        x0 = Math.min(x0, e.cx - e.bx / 2); x1 = Math.max(x1, e.cx + e.bx / 2);
+        y0 = Math.min(y0, e.cy - e.by_ / 2); y1 = Math.max(y1, e.cy + e.by_ / 2);
+        var k = Math.round(e.cx / pitch) + '_' + Math.round(e.cy / pitch);
+        if (!seen[k]) { seen[k] = 1; cells.push({ x: Math.round(e.cx / pitch) * pitch, y: Math.round(e.cy / pitch) * pitch }); }
+      });
+      // cell quantization can round an edge cell past the measured envelope — clamp back inside
+      // (envelope-bound by definition; the envelope itself is measured, not invented).
+      cells.forEach(function (c) {
+        c.x = Math.min(Math.max(c.x, x0), x1); c.y = Math.min(Math.max(c.y, y0), y1);
+      });
+      if (!cells.length) {                                    // no ARC envelope in the band → honest skip
+        console.log(TAG + ' §NOSPACES-NOCELLS ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] 0 ARC cells — skipped');
+        return;
+      }
+      // bandArea: SAME XY-bbox footprint formula the mining side used to stamp src_storey_area_m2
+      // (stamp_terminal_src_area.py band_area(): min/max of RAW center ± bbox/2) — parity keeps the
+      // ratio ≈1 when a building walks its own measured rules; cells stay the position sampler.
+      var bandArea = (rx1 - rx0) * (ry1 - ry0);
+      var count = Math.round(r.n_measured * bandArea / r.src_storey_area_m2);
+      // a thin band (ceiling grids: 0.14–1.6 m) holds few ARC elements — when the area-bound count
+      // exceeds the ARC cells, TOP UP from a uniform grid at the row's own MEASURED cadence
+      // (spacing_x/y_m mined with the rule) across the measured band bbox. Logged, never silent.
+      if (count > cells.length) {
+        var gx = r.spacing_x_m > 0 ? r.spacing_x_m : pitch, gy = r.spacing_y_m > 0 ? r.spacing_y_m : pitch;
+        var added = 0;
+        for (var ux = x0 + gx / 2; ux <= x1 && cells.length < count; ux += gx) {
+          for (var uy = y0 + gy / 2; uy <= y1 && cells.length < count; uy += gy) {
+            var uk = Math.round(ux / pitch) + '_' + Math.round(uy / pitch);
+            if (!seen[uk]) { seen[uk] = 1; cells.push({ x: ux, y: uy }); added++; }
+          }
+        }
+        if (added) console.log(TAG + ' §NOSPACES-TOPUP ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo.toFixed(2) + ',' + r.z_band_hi.toFixed(2) + '] +' + added + ' measured-cadence grid positions (ARC cells ' + (cells.length - added) + ' < count ' + count + ')');
+      }
+      var placeN = Math.min(count, cells.length), stride = cells.length / Math.max(1, placeN);
+      if (count > cells.length) console.log(TAG + ' §DW-CAP ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi + '] placed=' + placeN + ' of ' + count + ' (envelope is the ceiling)');
+      var z = (r.z_band_lo + r.z_band_hi) / 2;
+      for (var c = 0; c < placeN; c++) {
+        var cell = cells[Math.floor(c * stride)];
+        out.push({ disc: disc, ifc_class: r.ifc_class, x: cell.x, y: cell.y, z: z,
+          storey: r.storey_scope, band: [r.z_band_lo, r.z_band_hi],
+          bx: r.bbox_dx || null, by: r.bbox_dy || null, bz: r.bbox_dz || null,
+          geometry_hash: ghash, prim: _primFor(r.ifc_class),
+          prov: 'placed:measured-band', src: r.provenance || '' });
+      }
+      zones++;
+      console.log(TAG + ' §NOSPACES-ZONE ' + disc + '/' + r.ifc_class + ' band=[' + r.z_band_lo + ',' + r.z_band_hi +
+        '] n_measured=' + r.n_measured + ' ratio=' + (bandArea / r.src_storey_area_m2).toFixed(2) + ' placed=' + placeN);
+    });
+    var bandMidN = Object.keys(bandMid).length;
+    if (bandMidN) console.log(TAG + ' §BAND-MIDPOINT disc=' + disc + ' elements=' + bandMidN + ' corrected>0.5m=' + bandMidMoved +
+      ' (band envelope + cells on mesh-recovered midpoints, not raw placement origins)');
+    return { placements: out, zones: zones, refused: refused, verdicts: verdicts };
   }
 
   // Reduce a discipline's rule_placement rows to ONE representative per ifc_class
@@ -227,11 +853,20 @@
   // ref_kind='host' rule, the device tacks onto a REAL wall in the target storey —
   // position=wall centre, z=floor+measured dz, yaw=wall rotation_z (the host normal = the
   // SHIM facing). NON-INVENT: every position is a real wall; height + count are measured.
-  function hostWalls(bdb, storeyName) {
-    return _rows(bdb,
-      "SELECT t.center_x cx, t.center_y cy, t.rotation_z rot, m.guid guid " +
+  function hostWalls(bdb, storeyName, spaceBBox) {
+    var sql = "SELECT t.center_x cx, t.center_y cy, t.rotation_z rot, m.guid guid " +
       "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
-      "WHERE m.storey='" + _esc(storeyName) + "' AND m.ifc_class LIKE '%Wall%'");
+      "WHERE m.storey='" + _esc(storeyName) + "' AND m.ifc_class LIKE '%Wall%'";
+    // §SPACE-SCOPED piece 2: the ref_kind='host' placement path (wall-tacked fixtures, e.g. FP alarms) is a
+    // SEPARATE code path from occupancy()/place()'s density branch — it doesn't go through occupancy() at
+    // all, so it needs its OWN space-scoping. Same shape as _occElements' narrowing: restrict to walls whose
+    // CENTER falls inside the space's own real bbox, when one is given. Storey-wide calls (spaceBBox omitted)
+    // are unchanged.
+    if (spaceBBox) {
+      sql += " AND t.center_x BETWEEN " + spaceBBox.x0 + " AND " + spaceBBox.x1 +
+        " AND t.center_y BETWEEN " + spaceBBox.y0 + " AND " + spaceBBox.y1;
+    }
+    return _rows(bdb, sql);
   }
   // Measured per-storey count for a host class (rule_space_bom); 0 = unknown -> one per host.
   function countPer(disc, cls) {
@@ -247,26 +882,75 @@
   // occupied only where a real element's XY footprint covers it. Per-element cell span is
   // bounded so one giant slab can't blow up the grid (it still marks its own footprint).
   var _OCC_SPAN = 256;                                       // max cells one element marks per axis
-  function occupancy(bdb, st, cell) {
+  // §BUG-A-OCC-SCOPE (RESUME_DISC_WALKER_ENVELOPE_BOUND.md ⛔ item 1, MEASURED 2026-07-09): occupancy() reads
+  // EVERY element on a storey to build the footprint mask that density/single fixture placement snaps to —
+  // and unlike routing classes (pipes/fittings/ducts, measured max delta 0.21m — negligible, left uncorrected),
+  // it's dominated by IfcWall*, which carries the SAME raw-placement-line-origin defect proven in hostBind
+  // (measured true-midpoint delta up to 3.12m on Duplex, 1.03m SampleCastle). Corrected here the same way.
+  // Cached per (bdb,storey) since occupancy() is called once per placement RULE for the same storey (place()
+  // loops rules×storeys) — recomputing _trueMidpoint per element on every call would be O(rules) redundant work.
+  // `geoDb` (optional, §GEO-SPLIT): threaded through to `_trueMidpoint` for residents whose geometry table
+  // lives in a separate handle (Terminal_geo.db). Cache is keyed by `bdb` only — a given bdb is always paired
+  // with the same geoDb within one walk, so this doesn't need a second cache dimension.
+  var _occMidCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function _occElements(bdb, st, geoDb) {
+    // §SPACE-SCOPED piece 2: a space-scoped "storey" (from spaceAsStorey) carries the SAME name as its
+    // real storey, so it needs its OWN cache slot — key on name+spaceGuid, not name alone.
+    var cacheKey = st.spaceGuid ? (st.name + '::' + st.spaceGuid) : st.name;
+    var byStorey = _occMidCache ? _occMidCache.get(bdb) : null;
+    if (!byStorey) { byStorey = {}; if (_occMidCache) _occMidCache.set(bdb, byStorey); }
+    if (byStorey[cacheKey]) return byStorey[cacheKey];
+    // §SPACE-SCOPED blind-spot-1 (SPACE_SCOPED_DISC_INSTALL_VISION.md, MEASURED 2026-07-10): IfcSpace rows
+    // are open floor area, not solid mass — piece 1's extractor fix made them real rows in elements_meta for
+    // 5/8 buildings, so without this exclusion the footprint mask would treat empty room area as a no-go
+    // obstruction, wrongly starving fixture placement inside the very spaces it's meant to serve.
+    var sql = "SELECT m.guid g, t.center_x cx, t.center_y cy, t.center_z cz, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_, " +
+      "COALESCE(t.rotation_x,0) rx, COALESCE(t.rotation_y,0) ry, COALESCE(t.rotation_z,0) rot " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.storey='" + _esc(st.name) +
+      "' AND m.ifc_class<>'IfcSpace'";
+    // §SPACE-SCOPED piece 2: when scoped to one space (st.spaceGuid set via spaceAsStorey), further narrow
+    // to elements whose CENTER falls inside that space's own real bbox — same query shape, one more AND.
+    // Reuses st's own x0/x1/y0/y1 (the space's measured boundary, set by spaceAsStorey), no new math.
+    if (st.spaceGuid) {
+      sql += " AND t.center_x BETWEEN " + st.x0 + " AND " + st.x1 +
+        " AND t.center_y BETWEEN " + st.y0 + " AND " + st.y1;
+    }
+    var raw = _rows(bdb, sql);
+    var out = raw.map(function (e) {
+      var mid = _trueMidpoint(bdb, e.g, { x: e.cx, y: e.cy, z: e.cz, rx: e.rx, ry: e.ry, rot: e.rot }, geoDb);
+      return { cx: mid.verified ? mid.x : e.cx, cy: mid.verified ? mid.y : e.cy, bx: e.bx, by_: e.by_ };
+    });
+    byStorey[cacheKey] = out;
+    return out;
+  }
+  function occupancy(bdb, st, cell, geoDb) {
     cell = Math.max(cell > 0 ? cell : 1, 0.5);
-    var rows = _rows(bdb,
-      "SELECT t.center_x cx, t.center_y cy, COALESCE(t.bbox_x,0) bx, COALESCE(t.bbox_y,0) by_ " +
-      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.storey='" + _esc(st.name) + "'");
+    var els = _occElements(bdb, st, geoDb);
     var occ = {};
-    rows.forEach(function (e) {
+    els.forEach(function (e) {
       var i0 = Math.floor((e.cx - e.bx / 2) / cell), i1 = Math.floor((e.cx + e.bx / 2) / cell);
       var j0 = Math.floor((e.cy - e.by_ / 2) / cell), j1 = Math.floor((e.cy + e.by_ / 2) / cell);
       for (var i = i0; i <= i1 && i < i0 + _OCC_SPAN; i++)
         for (var j = j0; j <= j1 && j < j0 + _OCC_SPAN; j++) occ[i + ',' + j] = 1;
     });
-    return Object.keys(occ).map(function (k) {
+    var cells = Object.keys(occ).map(function (k) {
       var ij = k.split(','); return { x: (+ij[0] + 0.5) * cell, y: (+ij[1] + 0.5) * cell };
     });
+    // §SPACE-SCOPED piece 2: _occElements already restricts to elements CENTERED inside the space (when
+    // st.spaceGuid is set), but a straddling element's own bbox can still generate a cell that pokes past
+    // the space's real boundary (e.g. a slab/covering whose center is barely inside the room). Clip the
+    // returned candidate cells to the space's own bbox so every fixture position this feeds into place()
+    // stays inside the real boundary the user picked. Storey-wide (non-scoped) calls are BYTE-IDENTICAL —
+    // this only fires when a space is the input, never for the existing whole-storey path.
+    if (st.spaceGuid) {
+      cells = cells.filter(function (c) { return c.x >= st.x0 && c.x <= st.x1 && c.y >= st.y0 && c.y <= st.y1; });
+    }
+    return cells;
   }
 
   // ── PLACER ──────────────────────────────────────────────────────────────────────
   var _MAX_PER_STOREY = 50000;                               // legacy spacing-tile backstop (never silent)
-  function place(disc, storeys, bdb) {
+  function place(disc, storeys, bdb, geoDb) {
     var reps = repRules(disc), out = [];
     // §PRIM: attach the class's MEASURED bbox (or null) to every placement so the modeller
     // sizes its GENERATED-fixture box per class. SIZE only — count/position untouched.
@@ -282,7 +966,7 @@
         if (rp.density > 0 && rp.sx > 0) {                  // AREA-SCALED measured count, envelope-placed (FIXTURES only)
           var count = Math.round(rp.density * w * d);       // n_measured × (target_area / src_area)
           if (count > 0) {
-            var cells = occupancy(bdb, st, rp.sx);
+            var cells = occupancy(bdb, st, rp.sx, geoDb);
             if (!cells.length) cells = [{ x: (st.x0 + st.x1) / 2, y: (st.y0 + st.y1) / 2 }];
             var cap = cells.length, placeN = Math.min(count, cap), stride = cap / placeN;
             for (var c = 0; c < placeN; c++) {
@@ -304,7 +988,7 @@
               y: st.y0 + (j + 0.5) * (d / ny), z: z, storey: st.name, prov: 'placed:array', src: rp.src }, rp);
           }
         } else if (rp.ref_kind === 'host' && bdb) {         // SHIM → tack onto real host walls
-          var walls = hostWalls(bdb, st.name);
+          var walls = hostWalls(bdb, st.name, st.spaceGuid ? st : null);
           if (walls.length) {
             var cap = countPer(disc, rp.ifc_class);
             var nP = (cap > 0) ? Math.min(cap, walls.length) : walls.length;
@@ -320,7 +1004,7 @@
           // void at the raw bbox centre. Snap the centre to the nearest occupied cell (same envelope as the array
           // path). NON-INVENT: the cell is a real ARC footprint cell; no occupancy (bare DB) → keep the centre.
           var scx = (st.x0 + st.x1) / 2, scy = (st.y0 + st.y1) / 2;
-          var scells = occupancy(bdb, st, rp.sx > 0 ? rp.sx : 1);
+          var scells = occupancy(bdb, st, rp.sx > 0 ? rp.sx : 1, geoDb);
           if (scells.length) {
             var sbest = scells[0], sbd = Infinity;
             for (var sc = 0; sc < scells.length; sc++) {
@@ -353,15 +1037,201 @@
   // is supplied (sourced from ERP.db `_shim_attributes`), never guessed. A placement with no host within
   // `reach_m` is REFUSED (kept floating + counted) — REFUSE beats fabricate. host_ifc_class matches as a
   // substring so 'IfcWall' still picks up IfcWallStandardCase (backward-compatible with the wall-only path).
-  function hostBind(placements, bdb, shim) {
+  // §BUG-A-TRUE-MIDPOINT (RESUME_DISC_WALKER_ENVELOPE_BOUND.md): element_transforms.center is the raw IFC
+  // placement-line origin, NOT a bbox midpoint -- proven off by up to a wall's own half-length on real,
+  // non-centred walls (measured: Duplex wall 2O2Fr$t4X7Zf8NOew3FNqI, Y off by 0.81m; bbox_x/y/z themselves ARE
+  // reliable, computed as maxXYZ-minXYZ by the extractor -- only the CENTRE is suspect). Recover the TRUE
+  // world-bbox midpoint from the host's OWN real mesh (component_geometries via element_instances, mirroring
+  // scripts/test_orientation_proof.py's proven P2 BBOX_RECONSTRUCT: R(rotation) @ local_mesh_bbox_corners +
+  // centre = world bbox). Available today on Duplex/SampleHouse/SampleCastle (100% wall coverage measured);
+  // Terminal has neither this nor elements_rtree -- falls back to the raw (unverified) centre rather than
+  // inventing one; callers get `verified:false` and log the uncertainty once per host, never silently trusting
+  // an unmeasured number as ground truth (mirrors the existing §DW-NONCARDINAL refuse-and-log precedent).
+  // §ROTATION-CONVENTION FIX (RESUME_DISC_WALKER_ENVELOPE_BOUND.md item 3, 2026-07-09): this used to build a
+  // literal XYZ rotation matrix straight from (rotation_x, rotation_y, rotation_z) -- but the ACTUAL production
+  // renderer takes ONE OF TWO DIFFERENT CODE PATHS depending on whether the element has a genuine 3-axis tilt
+  // (modeller/bonsai_library.js:76, `if (pl.rotX || pl.rotY)`, mirrored by arc_editable.js:211's `if (rx||ry)`):
+  //   - rx||ry truthy (Terminal doors/windows/furniture/proxies -- 325 real elements): render applies
+  //     `new THREE.Euler(rotX, rotZRad, -rotY)` (default 'XYZ' order) -- the render's Y-axis angle is
+  //     rotation_z and its Z-axis angle is -rotation_y, NOT rotation_y/rotation_z taken literally.
+  //   - rx=ry=0 (the COMMON case -- ordinary wall/door/window yaw, ALL of Duplex/SampleHouse/SampleCastle and
+  //     most of Terminal): render takes the SEPARATE plain-Z-axis-yaw path (bonsai_library.js:92-97, standard
+  //     cos/sin about Z using rotation_z directly) -- NOT the Euler remap at all.
+  // ⚠ A FIRST VERSION OF THIS FIX APPLIED THE EULER REMAP UNCONDITIONALLY and broke the common case: with
+  // rx=ry=0, `_eulerXYZ_toQuat(0, rz, 0)` is a PURE Y-AXIS rotation, silently rotating every ordinary yawed
+  // wall about the wrong axis (caught by scripts/witness_true_midpoint.js's T5 regression, 65->33 outside on
+  // real Duplex -- diffed against a `git stash` baseline to confirm it was a genuine regression, not a
+  // pre-existing flake, before concluding anything). Branching on `rx||ry` (matching the render's OWN branch
+  // condition exactly) fixes this: the rx=ry=0 case reduces to the ORIGINAL cardinal-Z formula, byte-identical
+  // to pre-fix behaviour (zero regression risk on the common case) -- VERIFIED against real Terminal_ARC.db
+  // elements (325 with non-zero rotation_y: IfcBuildingElementProxy 242, IfcDoor 36, IfcFurniture 43,
+  // IfcWindow 4) using the REAL browser-side THREE.js as ground truth: old (unconditional-literal) formula
+  // diverged up to 1.1569m on the tilt cases, this fix matches the real renderer to 0.00000000m across every
+  // real case tested (tilt + zero-rotation controls). eulerXYZ_toQuat/quatToMat9 = the EXACT quaternion/matrix
+  // math extracted verbatim from modeller/lib/three.core.min.js by the embed-8-arc rotation-consolidation
+  // session (prompts/Modeller/DISC_Walker/embed8_scripts/finalize_all_8.js), already proven bit-for-bit
+  // correct there (max error 1e-13 to 1e-17) -- reused here, not reinvented.
+  function _eulerXYZ_toQuat(ex, ey, ez) {
+    var c1 = Math.cos(ex / 2), c2 = Math.cos(ey / 2), c3 = Math.cos(ez / 2), s1 = Math.sin(ex / 2), s2 = Math.sin(ey / 2), s3 = Math.sin(ez / 2);
+    return { x: s1 * c2 * c3 + c1 * s2 * s3, y: c1 * s2 * c3 - s1 * c2 * s3, z: c1 * c2 * s3 + s1 * s2 * c3, w: c1 * c2 * c3 - s1 * s2 * s3 };
+  }
+  function _quatToMat9(q) {
+    var x = q.x, y = q.y, z = q.z, w = q.w, x2 = x + x, y2 = y + y, z2 = z + z,
+      xx = x * x2, xy = x * y2, xz = x * z2, yy = y * y2, yz = y * z2, zz = z * z2, wx = w * x2, wy = w * y2, wz = w * z2;
+    return [1 - (yy + zz), xy + wz, xz - wy, xy - wz, 1 - (xx + zz), yz + wx, xz + wy, yz - wx, 1 - (xx + yy)];
+  }
+  function _eulerMat3(rx, ry, rz) {
+    if (rx || ry) {                                   // genuine 3-axis tilt -> render's Euler(rotX,rotZ,-rotY) remap
+      var q = _eulerXYZ_toQuat(rx, rz, -ry);
+      var m = _quatToMat9(q);
+      return [[m[0], m[3], m[6]], [m[1], m[4], m[7]], [m[2], m[5], m[8]]];
+    }
+    var cc = Math.cos(rz), sc = Math.sin(rz);          // rx=ry=0 -> render's OTHER path: plain cardinal-Z yaw
+    return [[cc, -sc, 0], [sc, cc, 0], [0, 0, 1]];
+  }
+  // §BUG-A CORRECTION (found by an independent reviewer session, re-verified here before touching code): the
+  // LIVE building DBs (e.g. ~/bim-ootb/modeller/Duplex_extracted.db, the actual 65/267-outside evidence DB) name
+  // this table `base_geometries`, NOT `component_geometries` -- this repo's own committed `deploy/buildings/*`
+  // copies happen to use the other name, which is why the fix "worked" there and did NOTHING on the real evidence
+  // DB (confirmed: live Duplex has 0 `component_geometries` rows, 170/170 populated `base_geometries` rows).
+  // `scripts/measure_narrowphase.js` already carries this exact two-name fallback precedent for the same reason
+  // -- mirrored here, not invented.
+  var _GEOM_TABLES = ['component_geometries', 'base_geometries'];
+  // §GEO-SPLIT (2026-07-09, mirrors real_geometry.js's buildGeometryIndex(db,geoDb), already proven live for
+  // Terminal in the modeller): `geoDb` is an OPTIONAL second sql.js handle carrying the geometry table, for
+  // residents where element_instances (in `bdb`) and component_geometries (250MB, in a SEPARATE file --
+  // Terminal_geo.db) can't be sql.js-JOINed because they're independently-opened databases. Defaults to `bdb`
+  // (single-file residents: SampleHouse/Duplex/SampleCastle) -- byte-identical old behaviour when omitted.
+  function _geomRow(bdb, ghash, geoDb) {
+    var g = geoDb || bdb;
+    for (var i = 0; i < _GEOM_TABLES.length; i++) {
+      try {
+        var r = _rows(g, "SELECT vertices vb FROM " + _GEOM_TABLES[i] + " WHERE geometry_hash='" + _esc(ghash) + "'")[0];
+        if (r && r.vb && r.vb.length) return r;
+      } catch (e) { /* table doesn't exist on this DB -- try the next name */ }
+    }
+    return null;
+  }
+  // §SCHED-YAW: a mesh's LOCAL horizontal extents {dx, dy} read off its own vertex buffer (the geo handle or the building
+  // DB), cached per hash; null when the hash is not in this DB. The thin one is the device's depth — what faces a wall.
+  var _meshXYCache = {};
+  function _meshLocalXY(db, ghash) {
+    if (!db || !ghash) return null;
+    if (_meshXYCache[ghash] !== undefined) return _meshXYCache[ghash];
+    var geo = _geomRow(db, ghash), res = null;
+    if (geo && geo.vb && geo.vb.length) {
+      var u8 = (geo.vb instanceof Uint8Array) ? geo.vb : new Uint8Array(geo.vb);
+      var n3 = Math.floor(u8.byteLength / 4 / 3) * 3, f32 = new Float32Array(u8.buffer, u8.byteOffset, n3);
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (var i = 0; i + 2 < f32.length; i += 3) { if (f32[i] < x0) x0 = f32[i]; if (f32[i] > x1) x1 = f32[i]; if (f32[i + 1] < y0) y0 = f32[i + 1]; if (f32[i + 1] > y1) y1 = f32[i + 1]; }
+      if (isFinite(x0) && isFinite(y0)) res = { dx: x1 - x0, dy: y1 - y0, src: 'mesh' };
+    }
+    return (_meshXYCache[ghash] = res);
+  }
+  function _trueMidpoint(bdb, guid, w, geoDb) {
+    var fallback = { x: w.x, y: w.y, z: w.z, verified: false };
+    var inst, geo;
+    try { inst = _rows(bdb, "SELECT geometry_hash gh FROM element_instances WHERE guid='" + _esc(guid) + "'")[0]; }
+    catch (e) { return fallback; }                                // no element_instances table on this DB
+    if (!inst || !inst.gh) return fallback;
+    geo = _geomRow(bdb, inst.gh, geoDb);
+    if (!geo || !geo.vb || !geo.vb.length) return fallback;
+    var u8 = (geo.vb instanceof Uint8Array) ? geo.vb : new Uint8Array(geo.vb);
+    var n3 = Math.floor(u8.byteLength / 4 / 3) * 3;
+    var f32 = new Float32Array(u8.buffer, u8.byteOffset, n3);
+    if (f32.length < 3) return fallback;
+    var lMin = [Infinity, Infinity, Infinity], lMax = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i + 2 < f32.length; i += 3) {
+      for (var k = 0; k < 3; k++) { var v = f32[i + k]; if (v < lMin[k]) lMin[k] = v; if (v > lMax[k]) lMax[k] = v; }
+    }
+    var R = _eulerMat3(w.rx || 0, w.ry || 0, w.rot || 0);
+    var wMin = [Infinity, Infinity, Infinity], wMax = [-Infinity, -Infinity, -Infinity];
+    [0, 1].forEach(function (xi) { [0, 1].forEach(function (yi) { [0, 1].forEach(function (zi) {
+      var c = [xi ? lMax[0] : lMin[0], yi ? lMax[1] : lMin[1], zi ? lMax[2] : lMin[2]];
+      var wx = R[0][0] * c[0] + R[0][1] * c[1] + R[0][2] * c[2] + w.x;
+      var wy = R[1][0] * c[0] + R[1][1] * c[1] + R[1][2] * c[2] + w.y;
+      var wz = R[2][0] * c[0] + R[2][1] * c[1] + R[2][2] * c[2] + w.z;
+      if (wx < wMin[0]) wMin[0] = wx; if (wx > wMax[0]) wMax[0] = wx;
+      if (wy < wMin[1]) wMin[1] = wy; if (wy > wMax[1]) wMax[1] = wy;
+      if (wz < wMin[2]) wMin[2] = wz; if (wz > wMax[2]) wMax[2] = wz;
+    }); }); });
+    return { x: (wMin[0] + wMax[0]) / 2, y: (wMin[1] + wMax[1]) / 2, z: (wMin[2] + wMax[2]) / 2, verified: true };
+  }
+
+  // `geoDb` (optional, §GEO-SPLIT): a SEPARATE sql.js handle carrying the geometry table for residents where
+  // it can't live in `bdb` itself (Terminal_geo.db, 250MB, kept apart from Terminal_meta.db). Omitted → old
+  // single-file behaviour, unchanged (SampleHouse/Duplex/SampleCastle all embed their own geometry).
+  // ── §STOREY-ZBAND — shared, NAMED Z-selection primitives (WalkerDoctrine §10 shape: ONE shared gate,
+  // not N point-fixes — same move as real_placement_resolver.js, PR #693). Implements the fix for
+  // RESUME_DISC_WALKER_ENVELOPE_BOUND.md §STOREY-UNKNOWN's residual (11/270 SampleCastle ELEC fixtures
+  // bound to walls a full storey below: fixture z=8.21 on '02 tweede verdieping' → wall topping 2.62–5.77
+  // on '00'/'01'). Witness: W-DW-STOREY-BAND (modeller/tests/witness_dw_storey_band.js).
+  //
+  // _zOverlaps: closed-interval overlap — the general predicate for "this candidate host physically
+  // exists at the height the fixture will occupy". Interval-vs-interval on MEASURED extents, in
+  // deliberate contrast to point ± guessed-radius: the flat p.z±1.5m window was tried 2026-07-13 and
+  // REVERTED — instrumented post-mortem (§DIAG, logs/wdwsb_DIAG_fallback.log) proved it refused 29
+  // fixtures whose rule-z is poisoned (dz mined mid-building: dak IfcFlowController p.z=storeyZ+5.7=17.74),
+  // leaving them FLOATING 4m+ above the roof. The window around p.z was the invented constant; the
+  // measured intervals below are the tell-tale signal that was there all along.
+  function _zOverlaps(a0, a1, b0, b1) { return a1 >= b0 && a0 <= b1; }
+  // _mountBand: the placement's MEASURED final SIDE-mount interval [storey median .. mount height].
+  // Every endpoint traces to real data: p.storeyZ = median center_z of the storey's own elements
+  // (substrate(), extracted geometry); shim.height_m = the mined shim row. p.z is deliberately NOT
+  // used — for SIDE mounts the final z is storeyZ+height_m (host-independent, line ~1101 below), while
+  // p.z carries the raw rule dz which is only meaningful relative to the SOURCE storey (the poison the
+  // reverted window was built around). An explicit measured §NOSPACES band wins untouched; placements
+  // where no honest interval can be derived (no storeyZ / no height_m) return null → NO guard, legacy
+  // behaviour byte-identical.
+  function _mountBand(p, shim) {
+    if (p.band) return p.band;
+    if (p.storeyZ == null || shim.height_m == null) return null;
+    var mz = p.storeyZ + shim.height_m;
+    return [Math.min(p.storeyZ, mz), Math.max(p.storeyZ, mz)];
+  }
+  // §DW-ZTRACE — provenance trace for the final pz of every host-bound placement: which mount branch,
+  // which host won, which measured band gated it, and the arithmetic. OFF by default (270-line walks);
+  // flip on via DiscWalker.dwTraceZ(true) or window.__dwTraceZ=1 — the reusable version of the one-off
+  // instrumentation this bug needed twice.
+  var _traceZ = false;
+  function dwTraceZ(on) { _traceZ = !!on; return _traceZ; }
+  function _ztrace(msg) {
+    if (_traceZ || (typeof self !== 'undefined' && self.__dwTraceZ)) console.log(TAG + ' §DW-ZTRACE ' + msg);
+  }
+
+  function hostBind(placements, bdb, shim, geoDb, spaceBBox) {
     shim = shim || {};
     var reach = shim.reach_m != null ? shim.reach_m : 6;
     var hostClass = shim.host_ifc_class || 'IfcWall';
     var mount = (shim.mount || 'SIDE').toUpperCase();
-    var hosts = _rows(bdb,
-      "SELECT m.guid g, m.storey st, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz " +
-      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%" + _esc(hostClass) + "%'");
+    var hostSql = "SELECT m.guid g, m.storey st, t.center_x x, t.center_y y, t.center_z z, t.bbox_x bx, t.bbox_y by_, t.bbox_z bz, " +
+      "t.rotation_x rx, t.rotation_y ry, t.rotation_z rot " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.ifc_class LIKE '%" + _esc(hostClass) + "%'";
+    // §SPACE-SCOPED piece 2 — EXTENDS the vision doc's original "hostBind needs no change" note (revised,
+    // not silently overridden — see SPACE_SCOPED_DISC_INSTALL_VISION.md): the TOP/BOTTOM/CENTER mount branch
+    // below re-snaps a placement's x/y to the HOST's own centroid (bh.x/bh.y), not the fixture's original
+    // position. Measured on real Clinic data: without this, an ACMV diffuser generated correctly inside
+    // CENTER WAITING's own bbox got re-snapped to a same-storey IfcCovering panel centered ~1m OUTSIDE the
+    // room — the density/occupancy scoping alone does not guarantee the FINAL bound position stays inside
+    // the space the user picked, because hostBind's host search is storey/building-wide by design. This
+    // optional 5th param (spaceBBox) narrows host CANDIDATES to the space when the caller opts in — every
+    // EXISTING caller (4-arg calls) is byte-identical; only dwWalk's own space-scoped path passes it.
+    if (spaceBBox) {
+      hostSql += " AND t.center_x BETWEEN " + spaceBBox.x0 + " AND " + spaceBBox.x1 +
+        " AND t.center_y BETWEEN " + spaceBBox.y0 + " AND " + spaceBBox.y1;
+    }
+    var hosts = _rows(bdb, hostSql);
     if (!hosts.length) return { bound: [], refused: placements.length, noHost: true, hostClass: hostClass };
+    var unverifiedHosts = 0;
+    hosts.forEach(function (h) {
+      var mid = _trueMidpoint(bdb, h.g, h, geoDb);
+      h.tx = mid.x; h.ty = mid.y; h.tz = mid.z; h.midVerified = mid.verified;
+      if (!mid.verified) {
+        unverifiedHosts++;
+        console.log(TAG + ' §DW-UNVERIFIED-MIDPOINT host=' + h.g + ' ifc=' + hostClass +
+          ' (no mesh geometry on this DB -- raw center used, may be off up to half the host length; RESUME_DISC_WALKER_ENVELOPE_BOUND.md §BUG-A)');
+      }
+    });
     var off = shim.offset_m || 0;
     var bound = [], refused = 0, refusedList = [];
 
@@ -370,13 +1240,21 @@
       var lines = hosts.map(function (w) {
         var horiz = w.bx >= w.by_ ? 0 : 1;                       // dominant horizontal axis = host run
         var hlen = (horiz === 0 ? w.bx : w.by_) / 2, thick = (horiz === 0 ? w.by_ : w.bx);
-        var a = [w.x, w.y], b = [w.x, w.y]; a[horiz] -= hlen; b[horiz] += hlen;
+        var a = [w.tx, w.ty], b = [w.tx, w.ty]; a[horiz] -= hlen; b[horiz] += hlen;   // §BUG-A: TRUE midpoint, not raw centre
         return { a: a, b: b, horiz: horiz, thick: thick, w: w };
       });
       placements.forEach(function (p) {
         var best = Infinity, bl = null, bpt = null;
+        // §STOREY-ZBAND (2026-07-13, closes RESUME_DISC_WALKER_ENVELOPE_BOUND.md §STOREY-UNKNOWN residual):
+        // a candidate wall must vertically INTERSECT the placement's measured mount interval — an explicit
+        // §NOSPACES band when the placement carries one (schedule/measured-band walks, unchanged), else the
+        // derived [storeyZ .. storeyZ+height_m] interval (legacy density walks, previously PURE-2D here —
+        // which let a wall two floors down win: z=8.21 fixtures bound to walls topping at 2.62). Placements
+        // with neither signal keep the unguarded legacy behaviour (honest: no measured interval, no guard).
+        var zband = _mountBand(p, shim);
         for (var i = 0; i < lines.length; i++) {
           var L = lines[i], abx = L.b[0] - L.a[0], aby = L.b[1] - L.a[1];
+          if (zband && !_zOverlaps(L.w.tz - L.w.bz / 2, L.w.tz + L.w.bz / 2, zband[0], zband[1])) continue;
           var l2 = abx * abx + aby * aby;
           var t = l2 > 0 ? ((p.x - L.a[0]) * abx + (p.y - L.a[1]) * aby) / l2 : 0;
           t = t < 0 ? 0 : (t > 1 ? 1 : t);
@@ -384,7 +1262,27 @@
           var d = Math.hypot(p.x - cx, p.y - cy);
           if (d < best) { best = d; bl = L; bpt = [cx, cy]; }
         }
-        if (!bl || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse (stays floating)
+        if (!bl || best > reach) {
+          // §STOREY-ZBAND float re-base: a SIDE mount's z NEVER depends on the host (pz below is
+          // storeyZ+height_m for every bound sibling) — so a REFUSED placement with the same derivable
+          // measured interval keeps its envelope XY but carries that same measured mount z, NOT the raw
+          // rule-z (st.z + source dz), which is only meaningful relative to the SOURCE storey and put
+          // refused dak fixtures 4m+ above the roof (p.z=17.74 vs real roof 13.36 — the reverted-window
+          // post-mortem's actual blowup mechanism). Placements without the derived interval (p.band
+          // schedule walks: their z is building-local measured; no-storeyZ/no-height_m: no honest basis)
+          // are untouched. XY is never re-based — refusal still means "no real wall here", kept honest.
+          if (zband && !p.band && p.storeyZ != null && shim.height_m != null) {
+            _ztrace('SIDE REFUSE-REBASE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+              ' rule-z=' + (+p.z).toFixed(2) + ' → z=storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=' +
+              (p.storeyZ + shim.height_m).toFixed(2) + (bl ? ' (nearest in-band wall ' + best.toFixed(2) + 'm > reach ' + reach + ')' : ' (no wall intersects band)'));
+            p.z = p.storeyZ + shim.height_m;
+          } else {
+            _ztrace('SIDE REFUSE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+              (bl ? ' nearest=' + bl.w.g + ' dist=' + best.toFixed(2) + '>reach=' + reach : ' no-wall-in-band') +
+              ' → floats at rule-z p.z=' + (+p.z).toFixed(2));
+          }
+          refused++; refusedList.push(p); return;               // no host in reach → honest refuse (stays floating)
+        }
         // push from centreline to the room-side face: perpendicular toward the original (floating) point.
         var perpx = p.x - bpt[0], perpy = p.y - bpt[1], pl = Math.hypot(perpx, perpy) || 1;
         var faceOff = bl.thick / 2 + off;
@@ -392,18 +1290,31 @@
         // Z: preserve the MEASURED rule-z by default (non-invent); use the shim mount height only when the
         // witness supplies a storey base (height isn't measured for that building).
         var pz = (shim.height_m != null && p.storeyZ != null) ? (p.storeyZ + shim.height_m) : p.z;
+        _ztrace('SIDE BIND cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(zband) +
+          ' host=' + bl.w.g + ' hostStorey="' + bl.w.st + '" hostZ=[' + (bl.w.tz - bl.w.bz / 2).toFixed(2) + ',' +
+          (bl.w.tz + bl.w.bz / 2).toFixed(2) + '] pz=' + ((shim.height_m != null && p.storeyZ != null)
+            ? ('storeyZ(' + (+p.storeyZ).toFixed(2) + ')+height_m(' + shim.height_m + ')=') : 'rule-z p.z=') + pz.toFixed(2));
         bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: fx, y: fy, z: pz, yaw: bl.horiz === 0 ? 0 : Math.PI / 2,
           storey: p.storey, host: bl.w.g, mount: 'SIDE', prov: 'shim:host-' + hostClass + '-side',
-          bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+          bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bl.w.midVerified,
+          band: p.band, geometry_hash: p.geometry_hash });      // §NOSPACES carry-through (undefined on legacy walks)
       });
-      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+      return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
     }
 
     // ── TOP / BOTTOM / CENTER: nearest host by XY, bind to its top/bottom/centre face ──
     // CENTER (z = host centre + signed offset) is the natural anchor when the device rides at a fixed rise off
-    // the host centre (e.g. SC vent grilles sit 0.415m above their same-storey window centre). TOP/BOTTOM add a
+    // the host centre (e.g. SC vent grilles sit above their same-storey window centre). TOP/BOTTOM add a
     // half-extent to reach the named face. `shim.same_storey` constrains host selection to the placement's own
     // storey — required for vertically STACKED hosts (windows stack floor-on-floor; nearest-XY alone is ambiguous).
+    // §BUG-A-OCC-SCOPE (2026-07-09, supersedes the earlier "deliberately RAW" note): the earlier scope-out was
+    // because the MINED offset (VENT_WINDOW_SHIM) was measured against the window's RAW centre_z, so correcting
+    // only the apply side introduced a fresh mismatch. MEASURED (scripts/witness_hostbind_agnostic.js H0): the
+    // 7 SC grille-associated windows carry a REAL, consistent Z true-midpoint defect (true_z = raw_z − 0.0835m,
+    // MAD≈0 — not noise), so VENT_WINDOW_SHIM's 0.415m raw-measured offset was itself contaminated (true rise
+    // is 0.498m). Now BOTH sides use the true midpoint (`tz`, mining re-measured accordingly) — self-consistent.
+    // XY uses `bh.x/bh.y` still (no window XY defect was ever measured; §BUG-A's proven defect is wall-linear,
+    // not point-host XY — same "don't overfit past the evidence" scope discipline as before, now for X/Y only).
     var sign = mount === 'BOTTOM' ? -1 : 1;                       // TOP=+half above, BOTTOM=−half below, CENTER=face 0
     var faceHalf = mount === 'CENTER' ? 0 : 1;                    // CENTER rides the centre; TOP/BOTTOM the face
     var sameStorey = !!shim.same_storey;
@@ -412,17 +1323,35 @@
       for (var i = 0; i < hosts.length; i++) {
         var h = hosts[i];
         if (sameStorey && p.storey != null && h.st !== p.storey) continue;  // stacked-host disambiguation
+        // §NOSPACES stacked-host disambiguation for measured-band placements (no storey names to match):
+        // a candidate host must VERTICALLY INTERSECT the placement's own measured z-band — nearest-XY
+        // alone binds a ground-floor light to a level-3 covering. No-band placements are untouched
+        // (§STOREY-ZBAND scope note: the SIDE-branch _mountBand derivation is NOT applied here — this
+        // branch's final pz comes from the HOST's own face, height_m is null on every TOP/BOTTOM/CENTER
+        // shim row in both dialects, and the instrumented SampleCastle run proved this branch never fires
+        // there (270/270 SIDE, 0 TBC) — no measured evidence a change is needed; same shared predicate).
+        if (p.band && !_zOverlaps(h.tz - h.bz / 2, h.tz + h.bz / 2, p.band[0], p.band[1])) continue;
         var d = Math.hypot(p.x - h.x, p.y - h.y);                 // XY proximity = host association
         if (d < best) { best = d; bh = h; }
       }
-      if (!bh || best > reach) { refused++; refusedList.push(p); return; }  // no host in reach → honest refuse
+      if (!bh || best > reach) {
+        _ztrace(mount + ' REFUSE cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(p.band || null) +
+          (bh ? ' nearest=' + bh.g + ' dist=' + best.toFixed(2) + '>reach=' + reach : ' no-host-in-band') +
+          ' → floats at rule-z p.z=' + (+p.z).toFixed(2));
+        refused++; refusedList.push(p); return;                   // no host in reach → honest refuse
+      }
       var horiz = bh.bx >= bh.by_ ? 0 : 1;                        // host run axis (for yaw)
-      var pz = bh.z + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the REAL host + offset
+      var pz = bh.tz + sign * faceHalf * (bh.bz / 2) + sign * off; // named face of the TRUE host + offset
+      _ztrace(mount + ' BIND cls=' + p.ifc_class + ' storey="' + p.storey + '" band=' + JSON.stringify(p.band || null) +
+        ' host=' + bh.g + ' hostStorey="' + bh.st + '" pz=hostTz(' + bh.tz.toFixed(2) + ')' +
+        (faceHalf ? (sign > 0 ? '+' : '-') + 'bz/2(' + (bh.bz / 2).toFixed(2) + ')' : '') +
+        (off ? (sign > 0 ? '+' : '-') + 'off(' + off + ')' : '') + '=' + pz.toFixed(2));
       bound.push({ disc: p.disc, ifc_class: p.ifc_class, x: bh.x, y: bh.y, z: pz, yaw: horiz === 0 ? 0 : Math.PI / 2,
         storey: p.storey, host: bh.g, mount: mount, prov: 'shim:host-' + hostClass + '-' + mount.toLowerCase(),
-        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4) });
+        bx: p.bx, by: p.by, bz: p.bz, prim: p.prim, src: p.src, snapDist: +best.toFixed(4), midVerified: bh.midVerified,
+        band: p.band, geometry_hash: p.geometry_hash });        // §NOSPACES carry-through (undefined on legacy walks)
     });
-    return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount };
+    return { bound: bound, refused: refused, refusedList: refusedList, hostCount: hosts.length, hostClass: hostClass, mount: mount, unverifiedHosts: unverifiedHosts };
   }
 
   // ── ROUTER ────────────────────────────────────────────────────────────────────────
@@ -623,6 +1552,452 @@
     return { segs: segs, byRule: byRule };
   }
 
+  // ── PATTERN-TOPOLOGY BRIDGE (RESUME_MODELLER_WALK_SUBSTRATE.md §CAMPAIGN M1, REDIRECTED 2026-07-07: bridge
+  // ARC-derived anchors into routewalker.js's ALREADY-PROVEN ad_mep_pattern engine — do not reinvent a second,
+  // less-tested generation mechanism here) ──────────────────────────────────────────────────────────────────
+  // routewalker.js's _rwApplyPattern/_rwPairSegments is a faithful JS port of RouteWalker.java (same node-type
+  // mapping, same nearest-unmatched-anchor pairing, same GRADIENT slope rule, same ARC-clash skip — the engine
+  // DAGCompiler's RouteWalkerTest.java exercises 7/7 against HospitalAuckland, PR #450/#456). It is normally
+  // anchor-DEPENDENT: it reads PRE-MINED ad_mep_anchor rows keyed to one of 3 hardcoded building names via
+  // mep_rw.db (the "drop a BOM assembly" flow, modeller.html autoRouteMEP). This bridges the SAME pairing engine
+  // to an ARBITRARY opened ARC-only building by deriving the anchor roles LIVE, mirroring defaultSeed()'s own
+  // technique (a real element, heuristically picked, human-confirmable):
+  //   METER   = the service-entry door (defaultSeed, IfcDoor)            — CW's mains connection point.
+  //   STACK   = the nearest real stair/riser core (defaultSeed, IfcStair) — SP's vertical drain-stack point
+  //             (ad_mep_anchor's schema has no separate STACK anchor_type — a METER-typed anchor becomes a
+  //             STACK NODE only when the pattern discipline is SP; _rwToNodeType's own mapping, unchanged here).
+  //   FIXTURE = this discipline's OWN measured density-placed fixtures (place()) — already non-invented.
+  //   JUNCTION= real corridor WAYPOINTS, sampled off SeedTrunk.planTrunk's already-proven, wall-avoiding
+  //             Dijkstra backbone (reuses seed_trunk's corridor derivation for WAYPOINT POSITIONS ONLY — the
+  //             actual pairing/gradient/clash DECISION is routewalker's own _rwPairSegments, untouched).
+  // SCOPE, MEASURED not assumed: `ad_mep_pattern` carries rows for exactly two disciplines, 'CW' (pressurised
+  // cold-water supply) and 'SP' (gravity soil/waste drain) — both PLUMBING sub-networks (routewalker.js's own
+  // RW_DISC_TO_COORD: CW/SP→DWATER/DRAIN, same table PLB→DWATER). So this bridges disc_walker's 'PLB' discipline
+  // to a CW pass + an SP pass. ELEC/ACMV/FP had ZERO ad_mep_pattern rows until §MEP-ROUTE-DISC (2026-09-26,
+  // MODELLER_MASTER NEXT #4) MINED and authored them the same way CW/SP were (IFCtoERP.java seedMepPatterns:
+  // axis-dominance counts of the discipline's real straight segments + measured nearest-element node roles; every
+  // row's `notes` cites its counts and example guids, `source_building` the IFC). A discipline absent from the
+  // map below still honestly REFUSES (no pattern to walk) — refuse-beats-fabricate. NON-INVENT: every anchor is a real element
+  // position (door/stair/measured-generated-fixture) or a real wall-avoiding corridor waypoint; the pairing/
+  // gradient/clash logic is routewalker.js's own proven code, called, never re-implemented.
+  //   FP  → FP_TERMINAL_01 (D1): 2,672 'jkrME_pipe_Poly Steel' IfcPipeSegment of SJTII_Terminal — the nearest pipe of
+  //         909/909 IfcFireSuppressionTerminal (median 0.053 m); X 1,092 / Y 380 / Z 1,205 drops; product FP_Drop_Pipe.
+  //   ACMV → ACMV_TERMINAL_01 (D2): 420 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' IfcDuctSegment of SJTII_Terminal,
+  //         X 204 / Y 156 / Z 60; 713 IfcDuctFitting junctions; 289 IfcAirTerminal fed by flex (157) or a tap (132). No
+  //         METER step: the Terminal models no AHU/plant. Product = the section mode 150×150 mm (RW_REAL_CROSSSECTION.ACMV).
+  //   ELEC → ELEC_DUPLEX_01 (D3): the Duplex federated MEP's 10 'Conduit with Fittings:Electrical Metallic Tubing (EMT)'
+  //         IfcFlowSegment + 8 elbows + 2 IfcFlowTerminal '400 A' panels = a FEEDER (panel rise Z, ceiling mains Y/X); no
+  //         source anywhere wires a branch to a fixture, so ELEC routes MAINS ONLY (no JUNCTION→FIXTURE step — SPEC Q4).
+  var _RW_PATTERN_DISC = { PLB: ['CW', 'SP'], FP: ['FP'], ACMV: ['ACMV'], ELEC: ['ELEC'] };   // disc_walker disc -> routewalker pattern discipline(s)
+  // real IfcStair columns, deduped by XY (mirrors modeller.html's own _seedRisers) — the riser/STACK candidates
+  // SeedTrunk climbs and this bridge treats as the SP discipline's STACK proxy.
+  function _risers(bdb) {
+    var r = _rows(bdb, "SELECT m.guid g, t.center_x x, t.center_y y FROM elements_meta m JOIN element_transforms t " +
+      "ON m.guid=t.guid WHERE m.ifc_class LIKE '%Stair%'");
+    var out = [];
+    r.forEach(function (s) { if (!out.some(function (o) { return Math.hypot(o.x - s.x, o.y - s.y) < 0.5; })) out.push(s); });
+    return out;
+  }
+  // Real STR members (columns/beams/struts) as clash boxes — SAME shape as routewalker.js's own
+  // _rwLoadArcEnvelope ({cx,cy,cz,w,d,h}), so the two arrays concat directly into ONE envelope _rwPairSegments
+  // already knows how to clash-check against. FOLLOW-UP fix (RESUME_MODELLER_WALK_SUBSTRATE.md, found by
+  // witness_str_mep_clash_gate.js M2, 1/63 real penetration): routewalker.js's OWN clash gate
+  // (_rwLoadArcEnvelope) only ever queried ARC walls/slabs/roof/covering — a real STR column was never in the
+  // bus a pattern-bridged pipe run was checked against. This is the ARC-envelope's exact sibling query, just
+  // discipline='STR' + the structural classes, so a routed run now honestly refuses (or the pairing engine
+  // routes AROUND it — same clash-skip `_rwPairSegments` already applies to ARC) when it would penetrate real
+  // structure, not just real architecture.
+  function _strEnvelope(bdb) {
+    return _rows(bdb,
+      "SELECT t.center_x cx, t.center_y cy, t.center_z cz, t.bbox_x w, t.bbox_y d, t.bbox_z h " +
+      "FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.discipline='STR' AND m.ifc_class IN ('IfcColumn','IfcBeam','IfcMember')")
+      .filter(function (b) { return b.w > 0 && b.d > 0 && b.h > 0; });
+  }
+  // Correct axis-aligned segment-vs-envelope-box overlap — the REAL fix, found while wiring the STR envelope
+  // above. routewalker.js's OWN _rwPairSegments clash-skip calls _rwClashesWithArc with a box shaped
+  // [crossSection, crossSection, LEN] — i.e. it ALWAYS treats the THIRD (Z) axis as the pipe's long axis,
+  // regardless of whether the run is actually horizontal (X or Y, the common case for a corridor/pattern run).
+  // A horizontal run's clash box is therefore a thin 0.075m×0.075m COLUMN at its midpoint that never reaches
+  // sideways along the run's real path — so adding _strEnvelope to arcEnv alone did NOT change the segment
+  // count (verified: re-ran witness_route_pattern_bridge.js/witness_str_mep_clash_gate.js, chainSegs unchanged,
+  // the 2.6cm penetration still present) — the missing envelope was never the actual blocker, the box
+  // orientation was. NOT fixed inside routewalker.js itself (a separate file with its own witness suite this
+  // session is careful not to widen scope into) — instead this is an ADDITIONAL, correctly-oriented AABB
+  // check disc_walker.js applies as an authoritative POST-filter on _rwPairSegments' output. Safe because every
+  // pattern step declares a direction_axis (X/Y/Z) — these runs are axis-aligned BY CONSTRUCTION, so a plain
+  // axis-aligned box (spanning the segment's real extent on whichever axis it actually moves along, inflated
+  // by the pipe's real half cross-section on the other two) is exact, not an approximation.
+  function _envelopeClash(from, to, envelope, halfWidth) {
+    var minX = Math.min(from[0], to[0]) - halfWidth, maxX = Math.max(from[0], to[0]) + halfWidth;
+    var minY = Math.min(from[1], to[1]) - halfWidth, maxY = Math.max(from[1], to[1]) + halfWidth;
+    var minZ = Math.min(from[2], to[2]) - halfWidth, maxZ = Math.max(from[2], to[2]) + halfWidth;
+    for (var i = 0; i < envelope.length; i++) {
+      var e = envelope[i];
+      var ox = Math.min(maxX, e.cx + e.w / 2) - Math.max(minX, e.cx - e.w / 2);
+      var oy = Math.min(maxY, e.cy + e.d / 2) - Math.max(minY, e.cy - e.d / 2);
+      var oz = Math.min(maxZ, e.cz + e.h / 2) - Math.max(minZ, e.cz - e.h / 2);
+      if (ox > 0 && oy > 0 && oz > 0) return true;
+    }
+    return false;
+  }
+  // Sample SeedTrunk's corridor backbone every `step` metres into JUNCTION-role waypoint anchors. Pure position
+  // derivation — no pairing decision made here (that is entirely _rwPairSegments' job on the anchors we hand it).
+  function _corridorJunctions(bdb, seed, placements, sub, opts) {
+    var ST = (opts && opts.SeedTrunk) || ROOT.SeedTrunk;
+    if (!ST) return [];
+    var risers = _risers(bdb);
+    var net = ST.planTrunk(bdb, placements, seed, risers, { storeys: sub, groundStorey: seed.storey });
+    if (net.refused === true) return [];
+    var STEP = (opts && opts.junctionStep > 0) ? opts.junctionStep : 3, out = [], seen = {}, n = 0;
+    net.storeys.forEach(function (st) {
+      (st.edges || []).forEach(function (poly) {
+        var acc = 0;
+        for (var i = 1; i < poly.length; i++) {
+          var a = poly[i - 1], b = poly[i];
+          acc += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+          if (acc >= STEP) {
+            var k = b[0].toFixed(2) + ',' + b[1].toFixed(2) + ',' + b[2].toFixed(2);
+            if (!seen[k]) { seen[k] = 1; out.push({ anchorId: 'JN' + (n++), anchorType: 'GENERIC', x: b[0], y: b[1], z: b[2], storey: st.name }); }
+            acc = 0;
+          }
+        }
+      });
+    });
+    return out;
+  }
+  function routePattern(disc, bdb, opts) {
+    opts = opts || {};
+    var loadSteps = opts.loadPatternSteps || ROOT._rwLoadPatternSteps;
+    var pair = opts.pairSegments || ROOT._rwPairSegments;
+    var loadArc = opts.loadArcEnvelope || ROOT._rwLoadArcEnvelope;
+    if (typeof loadSteps !== 'function' || typeof pair !== 'function') {
+      return { segs: [], refused: true, reason: 'routewalker.js pattern engine not loaded' };
+    }
+    // routewalker.js's _rwLoadPatternSteps reads its OWN module-scope _rwDb (populated only after rwInit(SQL,
+    // baseUrl) resolves, today only awaited by the BOM-drop flow's _rwReadyOnce()). Rather than reach into that
+    // async init from here (this function stays sync, like routeChains/place — no new async surface on the
+    // live walk path), honestly refuse when it hasn't run yet; the caller wires rwInit() before Walk (see
+    // RESUME_MODELLER_WALK_SUBSTRATE.md M1 follow-on note) or passes opts.loadPatternSteps/opts.pairSegments
+    // directly (a witness's own explicit rwInit, as this file's tests do).
+    if (!opts.loadPatternSteps && !(opts.rwReady != null ? opts.rwReady : ROOT._rwReady)) {
+      return { segs: [], refused: true, reason: 'routewalker.js mep_rw.db pattern table not loaded (call rwInit first)' };
+    }
+    var rwDiscs = (opts.rwPatternDisc || _RW_PATTERN_DISC)[disc];
+    if (!rwDiscs) return { segs: [], refused: true, reason: 'no ad_mep_pattern coverage for ' + disc + ' (pattern-mapped: ' + Object.keys(opts.rwPatternDisc || _RW_PATTERN_DISC).join('/') + ')' };
+    var sub = opts.storeys || substrate(bdb);
+    if (!sub.length) return { segs: [], refused: true, reason: 'no habitable storeys' };
+    var placements = opts.placements || place(disc, sub, bdb);
+    if (!placements.length) return { segs: [], refused: true, reason: 'no measured placement rule for ' + disc };
+    var seed = (opts.seed && opts.seed.guid) ? opts.seed : defaultSeed(bdb, {});
+    if (seed.refused) return { segs: [], refused: true, reason: seed.reason };
+    var riser = defaultSeed(bdb, { classes: ['IfcStair'] });    // STACK proxy; refusal here is honest (e.g. single-storey)
+    var junctions = _corridorJunctions(bdb, seed, placements, sub, opts);
+    var fixtureAnchors = placements.map(function (p, i) {
+      return { anchorId: 'FX' + i, anchorType: 'FIXTURE', x: p.x, y: p.y, z: p.z, storey: p.storey };
+    });
+    // FOLLOW-UP fix: the clash envelope is ARC (walls/slabs/roof/covering, routewalker.js's own query) PLUS
+    // real STR members (columns/beams/struts) — a routed run must clash-refuse against BOTH, not just ARC.
+    // opts.arcEnvelope (a caller override) is honoured AS-IS (no STR appended) — that override existed before
+    // this fix and callers using it explicitly opt out of the default envelope entirely (e.g. a witness that
+    // wants to isolate the ARC-only behaviour). opts.strEnvelope lets a caller override the STR side alone.
+    var arcEnv = opts.arcEnvelope ||
+      (typeof loadArc === 'function' ? loadArc(bdb) : []).concat(opts.strEnvelope || _strEnvelope(bdb));
+    var segs = [], byRule = [];
+    rwDiscs.forEach(function (rwd) {
+      // Defensive boundary: routewalker.js's rwInit has a KNOWN latent bug (found this pass, not fixed here —
+      // out of scope, a separate file with its own witness suite) — it sets its readiness flag TRUE before
+      // confirming mep_rw.db actually parsed (a failed/404 fetch can leave _rwReady=true over a garbage DB
+      // handle); the first real query against it then throws deep inside loadSteps/pair. That must never crash
+      // the WHOLE walk (refuse-beats-fabricate applies to engine failures too, not just missing data) — so this
+      // pass is try/catched into an honest per-rwd skip, exactly like assemble()'s own try/catch in modeller.html.
+      try {
+        var steps = loadSteps(rwd, opts.buildingType || 'GENERIC');
+        if (!steps.length) { byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'no-pattern-steps' }); return; }
+        // METER role: the door-seed feeds CW's mains entry; the stair-riser feeds SP's STACK (via _rwToNodeType's
+        // own METER->STACK mapping for discipline='SP') — kept SEPARATE per pass so a stair is never mistaken for
+        // a cold-water main and a door is never mistaken for a drain stack.
+        var meterAnchor = (rwd === 'SP')
+          ? (riser.refused ? null : { anchorId: 'STK0', anchorType: 'METER', x: riser.x, y: riser.y, z: riser.z, storey: riser.storey })
+          : { anchorId: 'MTR0', anchorType: 'METER', x: seed.x, y: seed.y, z: seed.z, storey: seed.storey };
+        if (!meterAnchor) { byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'no-stack-riser' }); return; }
+        var anchors = fixtureAnchors.concat(junctions, [meterAnchor]);
+        var out = [];
+        pair(rwd, steps, anchors, arcEnv, out);
+        // Authoritative post-filter (see _envelopeClash above) — routewalker.js's own internal clash-skip
+        // mis-orients its box for horizontal runs, so re-check every emitted segment properly before accepting
+        // it. halfWidth mirrors routewalker.js's OWN measured pipe cross-section (RW_PIPE_CROSS/1000/2), not an
+        // invented constant; opts.pipeHalfWidth lets a caller override for a witness. §MEP-ROUTE-DISC: a bulky
+        // discipline (a duct) is checked at ITS real half-section (rwCrossSectionFor, WalkerDoctrine §8) when that is
+        // larger — max(), so CW/SP (25.4 / 48.3 mm, both under 75 mm) keep the exact half-width they had (PLB runs unchanged).
+        var _xsB = (typeof ROOT.rwCrossSectionFor === 'function') ? ROOT.rwCrossSectionFor(rwd) : null;
+        var _realHalf = (_xsB && _xsB.real) ? Math.max(_xsB.w, _xsB.h) / 2 : 0;
+        var halfW = (opts.pipeHalfWidth > 0) ? opts.pipeHalfWidth : Math.max(ROOT.RW_PIPE_CROSS ? ROOT.RW_PIPE_CROSS / 1000 / 2 : 0.0375, _realHalf);
+        var envClashed = 0;
+        out.forEach(function (s) {
+          if (_envelopeClash(s.from, s.to, arcEnv, halfW)) { envClashed++; return; }
+          segs.push({ disc: disc, rule: 'pattern:' + rwd, from_kind: 'RW_' + rwd, to_kind: 'RW_' + rwd,
+            from: s.from, to: s.to, storey: s.storey, mode: 'pattern-bridge', axis: s.axis });
+        });
+        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: out.length - envClashed, noNbr: envClashed,
+          steps: steps.length, anchors: anchors.length, envelopeClashed: envClashed });
+      } catch (e) {
+        byRule.push({ from: 'pattern:' + rwd, to: disc, mode: rwd, segs: 0, noNbr: 0, skipped: 'engine-error: ' + (e && e.message) });
+      }
+    });
+    return { segs: segs, refused: false, seed: seed, riser: riser.refused ? null : riser, byRule: byRule,
+      anchorCounts: { fixture: fixtureAnchors.length, junction: junctions.length } };
+  }
+
+  // ── M5: BEND/TEE FITTING PLACEMENT (RESUME_MODELLER_WALK_SUBSTRATE.md §CAMPAIGN M5 SPEC, 2026-07-07) ──────
+  // routePattern()'s (and routewalker.js's own rwRouteSegments()'s) segments are independent straight runs
+  // with NO adjacency/merge logic between them (routewalker.js's rwSweepOps maps each 1:1 to its own
+  // GEOM_SWEEP) — a direction change today is just two straight tubes meeting at a shared point, rendered as
+  // one continuous tube (M4). This bend-finder groups segments of the SAME sub-network (from_kind — 'RW_CW'
+  // vs 'RW_SP' are DIFFERENT pipe services and must never be joined into one fake fitting just because they
+  // independently sample the same shared corridor JUNCTION waypoint — routePattern computes `junctions` ONCE
+  // and re-uses it for BOTH the CW and SP passes, so a coincident coordinate across the two is a sampling
+  // artefact, not a real shared pipe joint) by COINCIDENT endpoint (a real shared anchor, rounded to
+  // BEND_ANCHOR_TOL decimal places) and classifies what meets there:
+  //   N=2, outward vectors ~antiparallel -> STRAIGHT (no fitting — M4's continuous-tube rendering is correct
+  //                                          as-is; this is the REGRESSION GUARD the M5 witness checks)
+  //   N=2, NOT antiparallel              -> ELBOW (2-way bend)
+  //   N=3                                -> TEE (the catalog's only 3-port generic fitting — a documented
+  //                                          simplification: this does not distinguish a true in-line branch
+  //                                          from a Y/wye junction; the catalog carries no separate wye/cross
+  //                                          part, so every 3-way junction maps to the one 3-port fitting it has)
+  //   N>=4                               -> REFUSE (no catalog fitting for a 4+-way cross — refuse-beats-
+  //                                          fabricate, logged, never a placeholder)
+  var BEND_ANCHOR_TOL = 3;                // decimal places for the coincident-endpoint key (~1mm at metre scale)
+  var BEND_STRAIGHT_DOT = 0.999;          // dot(u1,u2) <= -this = antiparallel enough to call it a straight run
+  function _bendKey(p) { return p[0].toFixed(BEND_ANCHOR_TOL) + ',' + p[1].toFixed(BEND_ANCHOR_TOL) + ',' + p[2].toFixed(BEND_ANCHOR_TOL); }
+  function _vSub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+  function _vAdd(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+  function _vLen(v) { return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); }
+  function _vNorm(v) { var l = _vLen(v); return l > 1e-9 ? [v[0] / l, v[1] / l, v[2] / l] : [0, 0, 0]; }
+  function _vDot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function _vCross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+
+  // Group segs by shared anchor -> joint descriptors. opts.networkKey overrides the default (from_kind, falling
+  // back to disc) grouping — a witness can pass a stricter/looser key to prove the CW/SP separation matters.
+  function bendFinder(segs, opts) {
+    opts = opts || {};
+    var netKey = opts.networkKey || function (s) { return s.from_kind || s.disc; };
+    var nets = {};
+    (segs || []).forEach(function (s) {
+      if (_vLen(_vSub(s.to, s.from)) < 1e-6) return;              // zero-length segment — nothing to bend
+      var k = netKey(s); (nets[k] = nets[k] || []).push(s);
+    });
+    var out = [];
+    Object.keys(nets).forEach(function (nk) {
+      var byAnchor = {};
+      nets[nk].forEach(function (s) {
+        var dir = _vNorm(_vSub(s.to, s.from));
+        (byAnchor[_bendKey(s.from)] = byAnchor[_bendKey(s.from)] || []).push({ seg: s, out: dir });                 // outward = downstream, away from this anchor
+        (byAnchor[_bendKey(s.to)] = byAnchor[_bendKey(s.to)] || []).push({ seg: s, out: [-dir[0], -dir[1], -dir[2]] }); // outward = upstream, away from this anchor
+      });
+      Object.keys(byAnchor).forEach(function (ak) {
+        var touches = byAnchor[ak], n = touches.length;
+        if (n < 2) return;
+        var coord = ak.split(',').map(Number);
+        var vectors = touches.map(function (t) { return t.out; });
+        if (n === 2) {
+          var dp = _vDot(vectors[0], vectors[1]);
+          if (dp <= -BEND_STRAIGHT_DOT) return;                    // antiparallel -> straight-through, no fitting
+          out.push({ network: nk, anchor: coord, kind: 'ELBOW', n: 2, vectors: vectors, dot: dp });
+        } else if (n === 3) {
+          out.push({ network: nk, anchor: coord, kind: 'TEE', n: 3, vectors: vectors });
+        } else {
+          out.push({ network: nk, anchor: coord, kind: 'REFUSE', n: n, vectors: vectors,
+            reason: n + '-way junction has no catalog fitting (elbow/tee only)' });
+        }
+      });
+    });
+    return out;
+  }
+
+  // ── Fitting rotation: real angle-bisector trig between the adjoining run direction vectors — the genuinely
+  // NEW part (M5 SPEC item 4): searched disc_walker.js's own SIDE/TOP/BOTTOM hostBind branches + arc_editable.js's
+  // rotation handling for existing bisector/miter/atan2 two-vector-to-rotation logic — NONE found; every existing
+  // rotation in this codebase is either a stored single rotation_z or a dominant-AABB-axis pick (0/π/2 only, the
+  // M6 heuristic). This is new engineering, not reuse.
+  //
+  // PLACEMENT CONVENTION (a real decision this task must disclose, since the generic catalog meshes — measured
+  // directly, see session report — carry no documented canonical port axis: FITTING_ELBOW_GENERIC's own local
+  // mesh is close to symmetric about the anchor, likely a low-poly generic placeholder, not a faithfully-modeled
+  // bend): the fitting's LOCAL reference direction is +X; final orientation rotates local +X onto the BISECTOR
+  // of every adjoining outward run vector at the joint. For N=2 this is the standard angle-bisector formula
+  // normalize(u1+u2); it generalizes cleanly to a 3-way TEE as the vector-sum mean direction (no single true
+  // bisector exists for 3 non-coplanar vectors — the normalized sum is the well-defined, hand-checkable choice
+  // used here, consistent with assemble()'s own existing "mean incident run vector" orientation convention a few
+  // hundred lines up — same idea, extended here into a full rotation instead of a bare direction).
+  //
+  // Horizontal case (bisector.z ~ 0 — the common Manhattan-turn bend, and the ONLY case every OTHER rotation in
+  // this codebase supports, see M6's own finding): plain yaw (placement.rot degrees), matching place()'s yaw-only
+  // path. Non-horizontal (a REAL vertical run exists in Duplex's own SP network — the STACK riser drop) uses
+  // place()'s already-existing 3-axis quaternion path (rotX/rotY/rotZRad) via a dependency-free "rotate a
+  // reference vector onto a target vector" quaternion + XYZ-Euler decomposition — the SAME algorithm THREE.js's
+  // own Quaternion.setFromUnitVectors + Euler.setFromRotationMatrix('XYZ') use (ported here, not re-derived, so
+  // it runs identically in Node — this witness's hand-calculated proof, no window.THREE — and in the browser,
+  // where place() reconstructs the identical Euler from rotX/rotY/rotZRad using THREE itself).
+  var FIT_REF = [1, 0, 0];
+  var FIT_HORIZ_TOL = 1e-4;                // |bisector.z| below this -> treat the bend as horizontal (yaw-only)
+  function _quatFromTo(ref, target) {
+    var d = _vDot(ref, target);
+    if (d < -0.999999) {                   // ref and target opposite (180°) -> any axis perpendicular to ref works
+      var alt = Math.abs(ref[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      var axis = _vNorm(_vCross(ref, alt));
+      return [axis[0], axis[1], axis[2], 0];
+    }
+    var c = _vCross(ref, target), w = d + 1;
+    var l = Math.sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2] + w * w);
+    return l > 1e-12 ? [c[0] / l, c[1] / l, c[2] / l, w / l] : [0, 0, 0, 1];
+  }
+  // Quaternion -> Euler 'XYZ' (three.js's own Euler.setFromRotationMatrix('XYZ') algorithm, ported verbatim —
+  // MUST agree with it bit-for-bit, since place()'s 3-axis branch reconstructs a THREE.Euler from exactly these
+  // three numbers; a hand-rolled DIFFERENT formula would silently misplace every non-horizontal fitting).
+  function _quatToEulerXYZ(q) {
+    var x = q[0], y = q[1], z = q[2], w = q[3];
+    var m11 = 1 - 2 * (y * y + z * z), m12 = 2 * (x * y - w * z), m13 = 2 * (x * z + w * y);
+    var m21 = 2 * (x * y + w * z), m22 = 1 - 2 * (x * x + z * z), m23 = 2 * (y * z - w * x);
+    var m31 = 2 * (x * z - w * y), m32 = 2 * (y * z + w * x), m33 = 1 - 2 * (x * x + y * y);
+    var ey = Math.asin(Math.max(-1, Math.min(1, m13)));
+    var ex, ez;
+    if (Math.abs(m13) < 0.9999999) { ex = Math.atan2(-m23, m33); ez = Math.atan2(-m12, m11); }
+    else { ex = Math.atan2(m32, m22); ez = 0; }
+    return [ex, ey, ez];
+  }
+  // vectors: the outward run direction unit vectors touching one joint (2 for an elbow, 3 for a tee). Returns
+  // { bisector:[x,y,z], horizontal, rot (deg, yaw-only path), rotX, rotY, rotZRad (3-axis path, non-horizontal
+  // only) } — shape matches `place()`'s placement fields exactly (bonsai_library.js place()/foldInsert).
+  function fittingOrientation(vectors) {
+    var sum = (vectors || []).reduce(function (a, v) { return _vAdd(a, v); }, [0, 0, 0]);
+    if (_vLen(sum) < 1e-6) return { bisector: [0, 0, 0], degenerate: true, rot: 0 };  // exactly-opposing set — no well-defined bisector
+    var bis = _vNorm(sum);
+    if (Math.abs(bis[2]) < FIT_HORIZ_TOL) {
+      return { bisector: bis, horizontal: true, rot: Math.atan2(bis[1], bis[0]) * 180 / Math.PI };
+    }
+    var q = _quatFromTo(FIT_REF, bis), e = _quatToEulerXYZ(q);
+    return { bisector: bis, horizontal: false, rot: 0, rotX: e[0], rotZRad: e[1], rotY: -e[2] };
+  }
+  // ── M6: REAL mini-BOM RosettaStone lookup, checked BEFORE fittingOrientation's bisector (WalkerDoctrine.md
+  // §7 / prompts/Modeller/DISC_Walker/DISC_ROSETTASTONE_MEP_MINISET.md Task 4) ─────────────────────────────
+  // fittingOrientation's bisector trig (above) is PROVEN WRONG on real data: on a real tee it predicts ~-45°
+  // vs the real ~135°-off π/2 axis-aligned turn; on a real reducer/transition (coaxial — path direction does
+  // NOT change) it predicts ZERO rotation vs the real compound (−π/2, π/2, 0) turn that re-orients the
+  // piece's own authored local mesh axes — something no path-vector bisector can see at all. Full numbers +
+  // GUIDs: prompts/Modeller/DISC_Walker/mep_rosettastone_miniset.db (`mep_run_piece` id=3 tee, id=4
+  // transition), extracted from a REAL SJTII_Terminal fire-suppression sprinkler branch. Per §4/§7's
+  // LANDED/GENERATED distinction: when a real mini-BOM fragment matches the discovered joint's topology
+  // shape, REPLAY its extracted rotation (LANDED) instead of computing one; only fall back to bisector
+  // (flagged low-confidence, never presented as equally solid) when genuinely no real match exists.
+  //
+  // HONESTY (per spec, not oversold): this reference set is EXACTLY these 2 real pieces from ONE real run —
+  // not a fitting library. `kind` here is a TOPOLOGY tag, not bendFinder's own `j.kind` ('ELBOW'/'TEE') —
+  // 'TEE' matches bendFinder's 3-way TEE 1:1. 'COAXIAL' (the transition/reducer — 2-way, NO directional
+  // turn) does NOT match bendFinder's 'ELBOW' (bendFinder's own doc above: N=2 antiparallel outward vectors
+  // -> STRAIGHT, no fitting emitted at all — see BEND_STRAIGHT_DOT). This is a REAL, DISCLOSED gap: a
+  // diameter-changing-but-direction-preserving fitting is invisible to bendFinder's direction-vector-only
+  // detection (segs carry no diameter/bbox at all — rwRouteSegments()'s `{disc,rule,from_kind,to_kind,
+  // from,to,storey,mode,axis}` shape has nothing to detect it from), so the COAXIAL entry is NOT reachable
+  // through the live bendFittings()->bendFinder() path today — extending bendFinder's DETECTION to notice a
+  // diameter-only change is a bigger, separate change (threading real diameter data from IFC extraction
+  // through rwRouteSegments) and is OUT OF SCOPE here (this task wires the ROTATION lookup for bends already
+  // discovered, not new detection). It is kept here, real and directly callable (`lookupRealFitting('COAXIAL',
+  // 2, ...)`, proven in witness_mep_rosettastone_lookup.js), documented rather than silently dropped, so a
+  // future bendFinder extension has a real value to replay instead of re-deriving one.
+  //
+  // Field mapping (replay, not invented trig): bonsai_library.js's OWN existing 3-axis placement contract
+  // (place()/foldInsert, bonsai_library.js:78/110) reconstructs `new THREE.Euler(pl.rotX, pl.rotZRad,
+  // -pl.rotY, 'XYZ')` for ANY placement carrying rotX/rotY — the SAME contract fittingOrientation's own
+  // non-horizontal branch already targets (`rotX: e[0], rotZRad: e[1], rotY: -e[2]`, e = XYZ-Euler decomp).
+  // The real extracted `rotation_x/rotation_y/rotation_z` (mep_run_piece, itself an XYZ-order Euler triple of
+  // the real world rotation) is replayed into that SAME existing contract: rotX=rotation_x, rotZRad=
+  // rotation_y, rotY=-rotation_z. No new trigonometry — only this existing field-order mapping. (The TEE case
+  // is single-axis (rotation_y=rotation_z=0) so this mapping is UNAMBIGUOUSLY correct regardless of Euler
+  // order; the transition's compound case relies on this file's own already-established XYZ convention.)
+  var MEP_REAL_FITTINGS = [
+    {
+      key: 'TEE_THREADED_FP', kind: 'TEE', n: 3,
+      diaMin: 0.0278, diaMax: 0.2855,                    // real 1,035-row family envelope (component_library.db)
+      rotation_x: 1.5707963267949, rotation_y: 0, rotation_z: 0,
+      source_guid: 'T0_Terminal_1c33yVIIL358EhW_$Ep9bA',
+      source: 'mep_rosettastone_miniset.db mep_run_piece id=3 (SJTII_Terminal, real threaded tee)'
+    },
+    {
+      key: 'TRANSITION_REDUCER_FP', kind: 'COAXIAL', n: 2,
+      diaMin: 0.0056, diaMax: 0.1132,                    // real 911-row HORIZONTAL-family envelope
+      rotation_x: -1.5707963267949, rotation_y: 1.5707963267949, rotation_z: 0,
+      source_guid: 'T0_Terminal_1c33yVIIL358EhW_$Ep9bx',
+      source: 'mep_rosettastone_miniset.db mep_run_piece id=4 (SJTII_Terminal, real coaxial transition/reducer)'
+    }
+  ];
+  // lookupRealFitting(topoKind, n, diameterHint) -> the matching real reference row, or null (honest no-match).
+  // Match = topoKind + n exact (never cross ELBOW<->COAXIAL, a real physical difference — see comment above).
+  // diameterHint narrows only when >1 candidate ties on topoKind+n; today there is exactly one of each, so a
+  // caller with no diameter data (production segs carry none) still gets a real, unambiguous match — this is
+  // the "generous enough to be useful" match the spec calls for, not diameter-strict.
+  function lookupRealFitting(topoKind, n, diameterHint) {
+    var cands = MEP_REAL_FITTINGS.filter(function (f) { return f.kind === topoKind && f.n === n; });
+    if (!cands.length) return null;
+    if (cands.length === 1 || diameterHint == null) return cands[0];
+    var narrowed = cands.filter(function (f) { return diameterHint >= f.diaMin && diameterHint <= f.diaMax; });
+    return narrowed.length ? narrowed[0] : cands[0];
+  }
+  // Elbow (2-way) / Tee (3-way) -> the real catalog hashes (viewer/dagevu_catalog.json), verified present.
+  // ASMONLY DECISION (M5 SPEC item 2, disclosed not silently bypassed): grepped every consumer of the catalog's
+  // `asmOnly` field across modeller/*.js + modeller/*.html + viewer/*.js — it is set once (bonsai_library.js:38,
+  // copied from the catalog JSON) and read NOWHERE else in this codebase; foldInsert/Library.get/search() apply
+  // NO asmOnly check at all. So there is no live gate to bypass here — a direct GEOM_INSERT of these hashes is
+  // already structurally reachable today exactly like any other catalog placement. Flagging (not silently
+  // assuming) that `asmOnly:true` in the DATA still likely signals an INTENDED future restriction (e.g. hiding
+  // these parts from the general catalog browse/insert picker so a user can't hand-place a bare "assembly part"
+  // outside a real assembly) — if that gate gets wired later, it should stay scoped to the interactive catalog
+  // PICKER, not to this programmatic disc-walker placement (a different call path, analogous to how RouteWalker's
+  // own fixtures/pipes are placed via RW_IFC_MAP without going through that picker either).
+  function _fittingHash(kind) {
+    if (kind === 'ELBOW') return 'FITTING_ELBOW_GENERIC';
+    if (kind === 'TEE') return 'FITTING_TEE_GENERIC';
+    return null;
+  }
+  // Top-level: segs (rwRouteSegments()/routePattern().segs shape) -> fitting placements ready for a normal
+  // GEOM_INSERT ({hash, placement:{x,y,z,rot[,rotX,rotY,rotZRad]}}) — no new placement path, per M5 SPEC item 2.
+  function bendFittings(disc, segs, opts) {
+    opts = opts || {};
+    var joints = bendFinder(segs, opts), out = [], refused = 0, landedN = 0, computedN = 0;
+    joints.forEach(function (j) {
+      var hash = _fittingHash(j.kind);
+      if (!hash) { refused++; return; }
+      // M6: real mini-BOM RosettaStone lookup FIRST — replay an extracted rotation (LANDED) when a real
+      // fragment matches this joint's topology shape; only compute a bisector (flagged low-confidence) when
+      // genuinely no real match exists (docs/internal/WalkerDoctrine.md §7's LANDED/GENERATED distinction).
+      var real = lookupRealFitting(j.kind, j.n, opts.diameterHint);
+      var pl, landed, bisector, horizontal;
+      if (real) {
+        pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: 0,
+          rotX: real.rotation_x, rotZRad: real.rotation_y, rotY: -real.rotation_z };
+        landed = true; landedN++;
+      } else {
+        var orient = fittingOrientation(j.vectors);
+        if (orient.degenerate) { refused++; return; }
+        pl = { x: j.anchor[0], y: j.anchor[1], z: j.anchor[2], rot: orient.rot };
+        if (!orient.horizontal) { pl.rotX = orient.rotX; pl.rotY = orient.rotY; pl.rotZRad = orient.rotZRad; }
+        landed = false; computedN++; bisector = orient.bisector; horizontal = !!orient.horizontal;
+      }
+      out.push({ disc: disc, network: j.network, kind: j.kind, hash: hash, anchor: j.anchor,
+        placement: pl, n: j.n, bisector: bisector, horizontal: horizontal,
+        landed: landed, prov: landed ? 'landed:mep-rosettastone' : 'computed:bisector-lowconfidence',
+        realMatch: landed ? real.key : null, realSourceGuid: landed ? real.source_guid : null });
+    });
+    console.log(TAG + ' §BEND disc=' + disc + ' joints=' + joints.length +
+      ' elbow=' + out.filter(function (o) { return o.kind === 'ELBOW'; }).length +
+      ' tee=' + out.filter(function (o) { return o.kind === 'TEE'; }).length +
+      ' refused=' + refused + (joints.length ? ' (' + joints.map(function(j){return j.kind + ':' + j.n;}).join(' ') + ')' : ''));
+    console.log(TAG + ' §MEP-RS disc=' + disc + ' landed=' + landedN + ' computed(bisector-lowconfidence)=' + computedN);
+    return out;
+  }
+
+
   // ── ROUTE → ASSEMBLE bridge (docs/WalkerDoctrine.md roadmap #3) ──────────────────────────────────
   // routeChains gives the real nn-NETWORK (segments between real extracted element guids). assemble() turns that
   // network into instantiated catalog PARTS: at each routed NODE (a real element endpoint), instantiate the matching
@@ -803,13 +2178,37 @@
   function _d3(p, q) {
     return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y) + (p.z - q.z) * (p.z - q.z));
   }
-  function gate(placements) {
+  // §GATE-STOREY-FLOOR (2026-09-25) — SPEC. The yield rule pushes a lower-priority fixture DOWN by min_clear, never
+  // below `floor`. The floor was ONE global value: the lowest ORIGINAL z of ANY walked fixture of ANY discipline.
+  // Measured on Duplex Walk ALL (2026-09-25): after ELEC+PLB, 20 fixtures were honestly flagged (residual 20, floor
+  // 0.229). Then FP (borrowed from terminal_rules) added sprinklers at z0 = -1.257 (Duplex's T/FDN foundation storey),
+  // the floor dropped to -1.257, and all 20 flagged fixtures were "resolved" by sinking them 1.0–3.5 m (e.g. an ELEC
+  // at 2.46 m → -1.05 m), about 1 m below ground. Residual read 0, and the sunk fixtures were drawn and signed there.
+  // FIX: when the caller passes opts.storeyFloors (sorted real storey floor z's, each = the lowest element bottom of that
+  // storey in THIS building, derived from its own elements by storeyFloors(bdb) below), each fixture's floor is the
+  // highest storey floor at or below its own ORIGINAL z. So a fixture can yield down within its own storey, never
+  // into the one below. Whatever still clashes is FLAGGED (the honest residual pass below). Without opts.storeyFloors
+  // the old global floor is kept (back-compat for callers without a building).
+  function storeyFloors(bdb) {
+    return _rows(bdb, "SELECT MIN(t.center_z - t.bbox_z / 2.0) f FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid " +
+      "WHERE m.storey IS NOT NULL AND m.storey <> 'Unknown' AND t.bbox_z IS NOT NULL GROUP BY m.storey")
+      .map(function (r) { return r.f; }).filter(function (f) { return f != null && isFinite(f); }).sort(function (a, b) { return a - b; });
+  }
+  function gate(placements, opts) {
     var ord = order(), clr = clearance(), yields = 0;
+    var floors = opts && opts.storeyFloors && opts.storeyFloors.length ? opts.storeyFloors : null;
     // remember each placement's ORIGINAL z once (idempotent across repeated gate() calls
     // as the modeller re-gates the cumulative set after each new walk).
     placements.forEach(function (p) { if (p._z0 == null) p._z0 = p.z; });
     // floor = lowest measured band across the walked set — the bottom of real, measured space.
     var floor = Infinity; placements.forEach(function (p) { if (p._z0 < floor) floor = p._z0; });
+    // §GATE-STOREY-FLOOR: per-fixture floor = highest real storey floor ≤ its original z (else the global floor).
+    function _floorOf(p) {
+      if (!floors) return floor;
+      var f = floors[0];
+      for (var i = 0; i < floors.length; i++) if (floors[i] <= p._z0 + 1e-6) f = floors[i];
+      return f;
+    }
     var byDisc = {}; placements.forEach(function (p) { (byDisc[p.disc] = byDisc[p.disc] || []).push(p); });
     var discs = Object.keys(byDisc);
     var MAXIT = 16, it = 0, changed = true;
@@ -820,7 +2219,7 @@
           for (var i = 0; i < hi.length; i++) {
             if (_d3(pl, hi[i]) < mc) {
               var nz = pl.z - mc;
-              if (nz >= floor - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
+              if (nz >= _floorOf(pl) - 1e-6) { pl.z = nz; if (!pl.gated) yields++; pl.gated = true; changed = true; }
               break;                                          // re-checked next iteration
             }
           }
@@ -912,10 +2311,126 @@
     }
     return _shimForDisc(shims, disc);
   }
+  // §WALK-BRIDGE-ALL (2026-09-24, MODELLER_MASTER §STRATEGY L1) — SPEC. The §CAMPAIGN M1 routePattern bridge used
+  // to run ONLY on the legacy walk (below). The live Walk calls dwWalk(…,{schedule:true}) first
+  // (modeller.html _discWalkOne), and its schedule and measured-band branches returned early with routeChains alone.
+  // So on an ARC-only building (routeChains = 0 by construction) 7 of 8 residents routed NOTHING (W-MEP-OPENPATH M2,
+  // baseline 2026-09-24: Duplex 0, Terminal 0; only SampleCastle routed, via §SCHED-FALLBACK to legacy). This helper
+  // is the ONE bridge call all three branches share. Two honest additions:
+  //   - measured-band placements carry the RULE's storey (`storey_scope`, a source-building name), not this
+  //     building's storey, and routePattern pairs per storey. So for the bridge's anchors only (placements are NOT
+  //     mutated), a placement whose storey is not one of this building's substrate storeys is keyed to the storey
+  //     whose substrate z (the MEDIAN element-centre z of that storey, i.e. roughly mid-storey, from this building's
+  //     own elements, not invented) is NEAREST its z. The count re-keyed is logged.
+  //   - an empty-but-not-refused bridge result is logged (§WALK-PATTERN EMPTY); it used to be silent.
+  function _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts) {
+    if (rc.segs.length || (opts && opts.noPattern) || !placements || !placements.length) return { rc: rc, patternInfo: null };
+    var sub = substrate(bdb), names = {}, rekeyed = 0, pl = placements;
+    sub.forEach(function (st) { names[st.name] = 1; });
+    if (sub.length && placements.some(function (p) { return !names[p.storey]; })) {
+      pl = placements.map(function (p) {
+        if (names[p.storey]) return p;
+        var st = sub[0];
+        for (var i = 1; i < sub.length; i++) if (Math.abs(sub[i].z - p.z) < Math.abs(st.z - p.z)) st = sub[i];
+        rekeyed++;
+        return Object.assign({}, p, { storey: st.name });
+      });
+    }
+    var pat = routePattern(disc, bdb, { placements: pl, buildingType: buildingName, storeys: sub });
+    if (pat.refused) { console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + pat.reason); return { rc: rc, patternInfo: null }; }
+    // Per-rule detail (§MEP-ROUTE-DISC): kept/survivors@anchors — "survivors" = pairs routewalker's OWN clash-skip let
+    // through, "kept" = those that also pass this bridge's post-filter. A 0/2@501 is the engine refusing (recorded,
+    // SampleCastle FP 2026-09-26), a 0/0@0 is no anchors at all — different causes, now told apart in the log.
+    var _byRule = function () { return (pat.byRule && pat.byRule.length ? ' [' + pat.byRule.map(function (b) {
+      return b.from + ':' + (b.skipped || (b.segs + '/' + (b.segs + (b.noNbr || 0)) + '@' + (b.anchors || 0))); }).join(' ') + ']' : ''); };
+    if (!pat.segs.length) {
+      console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' EMPTY placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
+      return { rc: rc, patternInfo: null };
+    }
+    console.log(TAG + ' §WALK-PATTERN disc=' + disc + ' bldg=' + buildingName + ' ROUTED segs=' + pat.segs.length + ' placements=' + pl.length + ' storeyRekeyed=' + rekeyed + _byRule());
+    return { rc: { segs: pat.segs, byRule: pat.byRule }, patternInfo: pat };
+  }
+
   function dwWalk(disc, bdb, buildingName, opts) {
     if (!_ready) { console.warn(TAG + ' not initialised'); return { disc: disc, refused: true, reason: 'engine not initialised', placed: 0 }; }
+    // §SCHED-WALK (Step 2 PLACE, opt-in): schedule-driven per-space placement — the transcribed
+    // Java semantics over the Step-1 mined rules. Fixture generation ONLY; routing (route/
+    // routeChains) still runs below-shape via the same calls. Every non-schedule call path is
+    // byte-identical (this returns before any legacy placement code is touched).
+    if (opts && opts.schedule) {
+      var ps = placeSchedule(disc, bdb, opts);
+      // §NOSPACES (item 2): a building the schedule walk cannot serve (no schedule tables in its class
+      // DB — Terminal by design, M6 — or no real IfcSpace rows) falls through to the measured-band walk
+      // instead of a flat REFUSE. Residential schedule data is NEVER consumed here (placeMeasured reads
+      // rule_placement/rule_mesh_binding only); a building with BOTH schedule tables AND real spaces is
+      // byte-identical to before (this branch is unreachable there).
+      if (ps.noRules || !ps.spaces) {
+        var pm = placeMeasured(disc, bdb, opts);
+        if (!pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
+          // §ROOF-PATTERN: a deliberate verdict (the array is already present / not an array) — report it as the walk's
+          // outcome with verdict:true so the Modeller does NOT fall back to the legacy fill (§SCHED-FALLBACK).
+          console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' VERDICT ' + pm.verdicts.join('; '));
+          return { disc: disc, refused: true, verdict: true, reason: pm.verdicts.join('; '), placed: 0 };
+        }
+        if (pm.noRules) {
+          var why = (ps.noRules || 'no real spaces for schedule walk') + '; measured-band: ' + pm.noRules;
+          console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + why);
+          return { disc: disc, refused: true, reason: why, placed: 0 };
+        }
+        // same grouped host-bind flow as the legacy walk: measured-band floats snap to real hosts via
+        // the projected rule_shim; refused stay envelope-bound at the measured z (honest §NOSPACES-FLOAT).
+        var mPlaced = pm.placements, mBound = 0, mFloat = 0;
+        if (!(opts.noHostBind || opts.hostBind === false)) {
+          var mShim = (opts && opts.shims) || _loadRuleShims(disc);
+          var mByCls = {}; mPlaced.forEach(function (p) { (mByCls[p.ifc_class] = mByCls[p.ifc_class] || []).push(p); });
+          var mOut = [];
+          Object.keys(mByCls).forEach(function (cls) {
+            var grp = mByCls[cls], shim = _shimForFixture(mShim, disc, cls);
+            if (!shim) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
+            var hb = hostBind(grp, bdb, shim, opts && opts.geoDb, null);
+            if (hb.noHost) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
+            mOut = mOut.concat(hb.bound, hb.refusedList || []);
+            mBound += hb.bound.length; mFloat += hb.refused;
+          });
+          mPlaced = mOut;
+        } else mFloat = mPlaced.length;
+        var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
+        var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
+        console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
+          ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
+          (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
+        return { disc: disc, refused: false, mode: 'measured-band', placed: mPlaced.length, placements: mPlaced,
+          measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
+          chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo };
+      }
+      var schains = route(disc, bdb), sBr = _bridgeIfEmpty(disc, bdb, buildingName, ps.placements, routeChains(disc, bdb), opts), src2 = sBr.rc;
+      var refusedN = Object.keys(ps.refused).reduce(function (a, k) { return a + ps.refused[k]; }, 0);
+      console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' placed=' + ps.placements.length +
+        ' spaces=' + ps.spacesUsed + '/' + ps.spaces + ' lod400Refused=' + refusedN +
+        (Object.keys(ps.refused).length ? ' [' + Object.keys(ps.refused).map(function (k) { return k + '×' + ps.refused[k]; }).join(' ') + ']' : '') +
+        ' skippedSpaces=' + ps.skippedSpaces.length);
+      return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements,
+        schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
+        chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo };
+    }
     var reps = repRules(disc);
-    var sub = substrate(bdb);
+    // §SPACE-SCOPED piece 2: opts.spaceGuid narrows the walk to ONE real IfcSpace's own boundary instead
+    // of the whole building's storeys — same place()/occupancy() pipeline, just a 1-element "storeys" list
+    // shaped by spaceAsStorey(). Honest REFUSE (not a crash, not a silent whole-building fallback) if the
+    // guid doesn't resolve to a real space with a measured bbox.
+    var sub;
+    if (opts && opts.spaceGuid) {
+      var spaceSt = spaceAsStorey(bdb, opts.spaceGuid);
+      if (!spaceSt) {
+        console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE space-not-found guid=' + opts.spaceGuid);
+        return { disc: disc, refused: true, reason: 'spaceGuid does not resolve to a real IfcSpace bbox', placed: 0 };
+      }
+      sub = [spaceSt];
+      console.log(TAG + ' §WALK-SPACE disc=' + disc + ' bldg=' + buildingName + ' space=' + opts.spaceGuid +
+        ' storey=' + spaceSt.name + ' bbox=' + (spaceSt.x1 - spaceSt.x0).toFixed(2) + 'x' + (spaceSt.y1 - spaceSt.y0).toFixed(2));
+    } else {
+      sub = substrate(bdb);
+    }
     if (!reps.length && !_rows(_dbFor(disc), "SELECT 1 FROM rule_routing WHERE disc='" + _esc(disc) + "' LIMIT 1").length) {
       console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE no-measured-rule');
       return { disc: disc, refused: true, reason: 'no measured rule for ' + disc, placed: 0 };
@@ -924,7 +2439,8 @@
       console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE no-substrate');
       return { disc: disc, refused: true, reason: 'no habitable storeys', placed: 0 };
     }
-    var placements = place(disc, sub, bdb);
+    var geoDb = opts && opts.geoDb;                                              // §GEO-SPLIT (Terminal_geo.db)
+    var placements = place(disc, sub, bdb, geoDb);
     // ── HOST-BIND from the PROJECTION: snap floating host-bound placements onto a real host (anti-float),
     // count-preserving. Source = caller opts.shims (override) ELSE the projected `rule_shim` table (the
     // first-class §SHIM flow — same as routing/placement). §SHIM-SELECT made this DEFAULT-ON (2026-06-30): the
@@ -954,7 +2470,7 @@
         var grp = byCls[cls];
         var shim = _shimForFixture(shimSrc, disc, cls);
         if (!shim) { rebuilt = rebuilt.concat(grp); totRefused += 0; return; }   // no shim for class → leave floating
-        var hb = hostBind(grp, bdb, shim);
+        var hb = hostBind(grp, bdb, shim, geoDb, (opts && opts.spaceGuid) ? sub[0] : null);
         if (hb.noHost) {
           rebuilt = rebuilt.concat(grp);                                          // host class absent in bldg → kept floating
           console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value +
@@ -979,11 +2495,18 @@
     }
     var chains = route(disc, bdb);
     var rc = routeChains(disc, bdb);                         // LIVE nn-chain geometry (real on MEP-rich bldgs, 0 on residents)
+    // §CAMPAIGN M1 bridge: routeChains legitimately returns 0 on an ARC-only building (no real MEP elements
+    // exist to nn-pair — that is the whole reason the discipline needs GENERATING). When it does, try the
+    // ARC-derived-anchors → routewalker.js pattern-topology bridge (routePattern, PLB-only per its own measured
+    // ad_mep_pattern coverage) before falling back to an honest 0. opts.noPattern=true restores the old
+    // byte-identical behaviour (used by generalization/regression checks that want routeChains in isolation).
+    var br = _bridgeIfEmpty(disc, bdb, buildingName, placements, rc, opts), patternInfo = br.patternInfo;
+    rc = br.rc;
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
     return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo,
-      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length };
+      chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo };
   }
 
   // ── SEED PICKER (human-in-the-loop service entry; W-SEED-TRUNK / W-SEED-DEFAULT) ──────────────────
@@ -1033,10 +2556,20 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind,
-    route: route, routeChains: routeChains, gate: gate, repRules: repRules, order: order, clearance: clearance,
-    hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed,
+  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+    route: route, routeChains: routeChains, routePattern: routePattern,
+    // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
+    patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
+    // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
+    bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
+    gate: gate, storeyFloors: storeyFloors, repRules: repRules, order: order, clearance: clearance,
+    hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
+    spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
+    _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
+    _trueMidpoint: _trueMidpoint,
+    bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
+    lookupRealFitting: lookupRealFitting, MEP_REAL_FITTINGS: MEP_REAL_FITTINGS,
     disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

@@ -11,7 +11,7 @@
  */
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path');
-var { chromium } = require('playwright');
+var { chromium } = require(path.join(process.env.HOME, 'bim-ootb', 'tests', 'node_modules', 'playwright'));   // absolute — no NODE_PATH dependency (same pattern as witness_dw_pixelprobe's puppeteer)
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json',
   '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream', '.png': 'image/png' };
@@ -38,7 +38,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   await page.goto('http://localhost:' + port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(function () {
     return window.__sceneReady === true && !!window.SQL && !!window.ArcEditable && !!window.DiscWalker &&
-           !!window.__renderDiscWalk && !!window.__dwPixelProbe;
+           !!window.__renderDiscWalk && !!window.__dwOcclusionProbe;
   }, { timeout: 25000 }).catch(function () {});
 
   var pass = 0, fail = 0;
@@ -50,6 +50,13 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     var O = window.Bonsai.oplog; await O.setModelKey('mo_dwclash');
     var abuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_arcstr_proof.db')).arrayBuffer();
     window.__dwBuf = abuf; window.__dwName = 'TE';
+    // §WALK-LOD400-ONLY (2026-09-27): the walk render draws ONLY real LOD400 meshes resolved from the geo buffer; before this the
+    // witness had none, so every 'rendered fixture' was a measured box (red1: "All must be LOD400 or fail hard"). Load Terminal's
+    // own _geo.db exactly as the app does — from the resident registry's geoBase/geoDb/geoV.
+    var _te = (window.STRWalkerOutliner._residents || []).filter(function (r) { return r.key === 'Terminal'; })[0];
+    var _gr = await fetch(_te.geoBase + _te.geoDb + '?v=' + _te.geoV);
+    window.__dwGeoBuf = _gr.ok ? await _gr.arrayBuffer() : null;
+    console.log('§TE-GEO ' + _te.geoDb + ' http=' + _gr.status + ' bytes=' + (window.__dwGeoBuf ? window.__dwGeoBuf.byteLength : 0));
     var adb = new window.SQL.Database(new Uint8Array(abuf));
     await window.ArcEditable.seedArc(adb, {
       commitGroup: function (ops, gid) { return O.commitSeedGroup(ops, gid); },
@@ -61,7 +68,15 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     var byDisc = {}, all = [];
     DISCS.forEach(function (disc) {
       var bdb = new window.SQL.Database(new Uint8Array(abuf));
-      var w = window.DiscWalker.dwWalk(disc, bdb, 'TE'); bdb.close();
+      // §NET-AUDIT WRONG-PATH (2026-09-27): production (_discWalkOne) walks with { schedule: true, geoDb } and falls back to the legacy
+      // walk only on 0; this witness called the bare legacy walk, whose placements carry no mesh hash — i.e. it measured a walk users
+      // never get, and every fixture it 'rendered' was a box. Same call as production now; mesh-less placements are refused (§WALK-LOD400-ONLY).
+      var _g = window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+      var w = window.DiscWalker.dwWalk(disc, bdb, 'TE', { schedule: true, geoDb: _g || undefined });
+      if ((w.refused || !w.placed) && !w.verdict) w = window.DiscWalker.dwWalk(disc, bdb, 'TE', { geoDb: _g || undefined });
+      if (_g) _g.close();
+      w.placements = (w.placements || []).filter(function (p) { return !!p.geometry_hash; }); w.placed = w.placements.length;
+      bdb.close();
       byDisc[disc] = w.placements || []; all = all.concat(byDisc[disc]);
     });
 
@@ -103,7 +118,10 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
     // 5) render each disc (now carrying clash flags) for the sight-check + readPixels
     DISCS.forEach(function (disc) { window.__renderDiscWalk(disc, byDisc[disc]); });
 
-    // 6) ORACLE — real Terminal inter-disc clash RATE under the SAME rules (sampled, cap 400/disc)
+    // 6) ORACLE — real Terminal inter-disc clash RATE under the SAME rules (sampled, cap 400/disc).
+    // Terminal_meta.db (all-discipline real extraction) is the designed oracle source; Terminal_ARC.db is
+    // the shipped ARC-only resident (0 MEP rows since the embed-8 strip, 6068fab) — stale fetch path, not
+    // a data gap.
     var mbuf = await (await fetch('http://localhost:' + port + '/modeller/Terminal_meta.db')).arrayBuffer();
     var mdb = new window.SQL.Database(new Uint8Array(mbuf));
     var realAll = [];
@@ -124,7 +142,7 @@ var DISCS = ['PLB', 'ELEC', 'FP', 'ACMV'];
   }, { DISCS: DISCS, port: port });
   await page.waitForTimeout(400);
 
-  var probe = await page.evaluate(function () { return window.__dwPixelProbe(); });
+  var probe = await page.evaluate(function () { return window.__dwOcclusionProbe(); });
   var shot = path.join(ROOT, 'modeller', 'tests', 'disc_clash.png');
   await page.screenshot({ path: shot });
 

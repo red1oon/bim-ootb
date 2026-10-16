@@ -72,7 +72,8 @@
     var sp = spec(A), run = runFor(A);
     if (!sp || !run) return false;
     if (_sel == null || !sp.employees.some(function (e) { return e.c_bpartner_id === _sel; })) _sel = sp.employees[0].c_bpartner_id;
-    var pane = el('div', 'position:fixed;top:54px;right:12px;width:340px;max-height:82vh;overflow:auto;z-index:10050;' +
+    // §FIX 2026-07-06c item B — cascade column 6 (right:2012) so this pane never overlaps the earlier columns.
+    var pane = el('div', 'position:fixed;top:54px;right:2012px;width:340px;max-height:82vh;overflow:auto;z-index:10050;' +
       'background:#fff;border-radius:10px;box-shadow:0 6px 24px #0005;font-family:system-ui,sans-serif;color:#222;');
     pane.id = 'hba-payslip-pane';
     var head = el('div', 'display:flex;justify-content:space-between;align-items:center;background:#102a43;color:#fff;padding:10px 12px;border-radius:10px 10px 0 0;');

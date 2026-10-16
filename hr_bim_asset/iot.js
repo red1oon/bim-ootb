@@ -123,11 +123,18 @@ var CAMERA_ICON = '📷';
 // midnight/peak near midday) + a tiny FIXED per-hour offset table — NOT Math.random/Date.now, so the same
 // input always produces the same output (reproducible, witnessable).
 var OFFSET = [0.1, -0.2, 0.3, 0, -0.1, 0.2, -0.3, 0.1, 0.4, -0.2, 0.1, 0, 0.2, -0.1, 0.3, -0.2, 0.1, 0, -0.1, 0.2, 0.1, -0.2, 0.3, 0];
+// §FIX 2026-07-06c item C (user: bars still "grow long/short in lockstep" even after PR #671's jitter — root
+// cause was every sensor sharing the literal SAME sine phase, so all 7 peak/trough at the identical hour; the
+// small jitter on top wasn't enough to hide that). A FIXED (never random) per-sensor hour-offset shifts each
+// sensor's peak to a different time of day — a genuinely independent-looking real-world sensor shape — while
+// keeping the exact same deterministic sine+jitter machinery untouched.
+var PHASE_OFFSET_HOURS = { temp: 0, pressure: -3, sound: 5, dust: 2, solar: -6, electrical: 4, movement: -2 };
 function seriesFor(sensor, hours) {
   hours = hours || 24;
   var pts = [];
+  var offsetH = PHASE_OFFSET_HOURS[sensor.key] || 0;
   for (var h = 0; h < hours; h++) {
-    var phase = (h / 24) * Math.PI * 2 - Math.PI / 2;
+    var phase = ((h - offsetH) / 24) * Math.PI * 2 - Math.PI / 2;
     var v = sensor.baseline + sensor.amplitude * Math.sin(phase) + OFFSET[h % OFFSET.length] * sensor.amplitude * 0.1;
     pts.push({ h: h, v: Math.round(v * 100) / 100 });
   }
@@ -244,8 +251,18 @@ function dangerThresholdFor(sensor) {
   return Math.round((sensor.baseline + sensor.amplitude * DANGER_THRESHOLD_FACTOR) * 100) / 100;
 }
 var JITTER_TABLE = [0.6, -0.4, 0.9, -0.8, 0.3, -0.6, 0.7, -0.9, 0.2, -0.3, 0.5, -0.7];
+// §FIX 2026-07-06g (user: "fluctuate around normal values", confirmed by tracing the maths — no browser needed).
+// The OLD index `(hourIdx*3 + tickCounter) % 12` was a bug, not a cycle: hba_iot.js's setInterval increments
+// hourIdx and tickCounter by 1 together every tick, so the index only ever advances by (3+1)=4 mod 12 — a
+// period-3 orbit landing on JUST indices {0,4,8}, i.e. JITTER_TABLE values {0.6, 0.3, 0.2} — all POSITIVE.
+// The bar could only ever bump ABOVE the smooth curve, never below it, which is why it still read as one-sided/
+// linear-ish despite item C's per-sensor phase fix. Decoupling the index from hourIdx (tickCounter alone, which
+// really does advance by 1 every tick) walks the FULL 12-entry table in order, so both positive and negative
+// swings actually occur. A per-sensor fixed offset (same discipline as PHASE_OFFSET_HOURS) keeps the 7 bars
+// from all landing on the identical table entry at the same tick.
+var SENSOR_JITTER_OFFSET = { temp: 0, pressure: 2, sound: 5, dust: 7, solar: 9, electrical: 4, movement: 11 };
 function jitterFor(sensor, hourIdx, tickCounter) {
-  var idx = ((hourIdx || 0) * 3 + (tickCounter || 0)) % JITTER_TABLE.length;
+  var idx = ((tickCounter || 0) + (SENSOR_JITTER_OFFSET[sensor.key] || 0)) % JITTER_TABLE.length;
   return Math.round(JITTER_TABLE[idx] * sensor.amplitude * 0.12 * 100) / 100;
 }
 function isDanger(sensor, value) {

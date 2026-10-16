@@ -22,6 +22,9 @@
 //
 // Node-testable: the witness loads this in node with a localStorage shim + injected ts (no browser).
 (function (root) {
+  // S226 §R2 — Viewer pages resolve these labels through the AD_Message dictionary (viewer/locale_loader.js _trl);
+  // the ERP pages do not load that loader and show the English default. The English here == viewer/i18n/ad_message_base.csv.
+  function _wt(key, dflt) { return (typeof root._trl === 'function') ? root._trl(key, null, dflt) : dflt; }
   'use strict';
 
   var KEY = 'bim.docHistory';   // the ONE shared log (same key history_bar.js + landing already use)
@@ -103,8 +106,10 @@
   var MODE_KEY = 'bim.whole.mode';        // 'whole' | 'this'
   // root-relative path to each surface (resolved against the mounting page's rootPrefix).
   var PATHS = { viewer: 'viewer/viewer.html', idempiere: 'erp/idempiere.html',
-    glassbowl: 'erp/glassbowl.html', gravity: 'erp/glassbowl_gravity.html', landing: 'index.html' };
-  var PAGE_LABEL = { viewer: 'Viewer', idempiere: 'iDempiere', glassbowl: 'Glassbowl', gravity: 'Gravity', landing: 'Home' };
+    glassbowl: 'erp/glassbowl.html', gravity: 'erp/glassbowl_gravity.html', landing: 'index.html',
+    modeller: 'modeller/modeller.html' };
+  var PAGE_LABEL = { viewer: 'Viewer', idempiere: 'iDempiere', glassbowl: 'Glassbowl', gravity: 'Gravity',
+    landing: 'Home', modeller: 'Modeller' };
 
   var _page = null;        // this surface's page id (set in mount)
   var _rootPrefix = '';    // relative path from this page to the site root ('' landing, '../' nested)
@@ -237,7 +242,15 @@
   function _hhmm(ts) { try { var d = new Date(ts); function p(n) { return (n < 10 ? '0' : '') + n; } return p(d.getHours()) + ':' + p(d.getMinutes()); } catch (e) { return ''; } }
 
   function _ensureDom() {
-    if (_launch || typeof document === 'undefined') return;
+    // §WORLD-HIST-MODELLER-FIX: guard on _panel, not _launch. Every launcher:false surface (idempiere/
+    // glassbowl/gravity/modeller) never sets _launch (it's only built inside the `_launcher !== false`
+    // branch below), so the old `if (_launch ...)` guard never fired — open() calls _ensureDom()
+    // unconditionally on every toggle, rebuilding a DUPLICATE #whole-hist-panel (+ a duplicate
+    // #whole-hist-style) each time, silently orphaning the previous one in the DOM. Invisible to a real
+    // user (the module's own closure vars always point at the newest panel, so behaviour looked correct)
+    // but real DOM/style bloat over a session, and it broke `document.getElementById('whole-hist-panel')`
+    // lookups (returns the first, dead copy) — caught live by witness_modeller_worldhist_pill.js.
+    if (_panel || typeof document === 'undefined') return;
     var st = document.createElement('style'); st.id = 'whole-hist-style';
     st.textContent =
       '#whole-hist-launch{position:fixed;left:14px;bottom:16px;z-index:60;width:38px;height:38px;border-radius:50%;' +
@@ -290,11 +303,11 @@
     _panel.innerHTML =
       '<div id="whole-hist-card">' +
         '<div id="whole-hist-hd">' +
-          '<span class="title">History — across pages</span>' +
+          '<span class="title" data-trl="ui_hist_title">' + _wt('ui_hist_title', 'History — across pages') + '</span>' +
           '<div class="whole-seg" id="whole-seg">' +
-            '<button data-mode="whole">Whole</button><button data-mode="this">This page</button>' +
+            '<button data-mode="whole" data-trl="ui_hist_whole">' + _wt('ui_hist_whole', 'Whole') + '</button><button data-mode="this" data-trl="ui_hist_this_page">' + _wt('ui_hist_this_page', 'This page') + '</button>' +
           '</div>' +
-          '<button id="whole-hist-x" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
+          '<button id="whole-hist-x" data-trl-title="ui_close" title="' + _wt('ui_close', 'Close') + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
         '</div>' +
         '<div id="whole-hist-body"></div>' +
       '</div>';
