@@ -1,0 +1,12 @@
+§MFG-SNAP-LOAD break=live orders=2 templates=2 dispatch=ok(4 ops) ok(4 ops)
+§MFG-SNAP-N1 orders=2 fields compared=102 diffs=0 (legacy: 5050.50505051 / 100 / 7070.70707071 / 100)
+  §MFG-SNAP N1 explosion == legacy PP_Order_BOM/BOMLine rows (field by field) PASS
+§MFG-SNAP-N2 templateHash 1a3d02d1->8fc9b96b orderLinesHash 99627548->7332d18b
+  §MFG-SNAP N2 template edit (qty change + add + delete) leaves the order lines unchanged FAIL {"before":"99627548","after":"7332d18b"}
+  §MFG-SNAP N2b non-vacuous: a live-template reader would now return different lines than the snapshot PASS
+§MFG-SNAP-N3 live=85428131 replay(template absent)=85428131 replay(template edited)=85428131 ops=8 edgeMintCalls=0
+  §MFG-SNAP N3 replay-from-log scope hash == live (template absent AND edited) PASS
+  §MFG-SNAP N4 two independent runs -> byte-identical op log PASS
+  §MFG-SNAP N4b creation + replay minted no identity (edgeMintCalls delta 0) PASS
+  §MFG-SNAP N5 percentage line refused by name, nothing written PASS
+§MFG-SNAP-VERDICT FAIL judged=7 failed=1 inconclusive=0

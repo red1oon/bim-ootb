@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /**
  * test_s254_drawers.js — Whitebox §-log verification for S254 features:
  *   T1: Drawer CSS — outward positioning (left:100%)
@@ -19,12 +20,12 @@ function assert(cond, msg) {
 }
 
 // ── Load rates.js for LABOR_RATES ──
-const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+const ratesSrc = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
 const ratesSandbox = {};
 vm.runInNewContext(ratesSrc, ratesSandbox);
 
 // ── Read time_machine.js source for code-level checks ──
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 console.log('\n§TEST_S254 start — drawer + donut + camera + shadow verification\n');
 

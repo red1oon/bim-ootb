@@ -35,18 +35,14 @@ const ScheduleAuthor = require(path.join(__dirname, '..', 'schedule_author.js'))
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
-const startMark = 'var _ogCELL = ';
-// Current guard summary line (reworded by §4D_LAYER_TRUTH 2026-08-07 — the rot that killed v1).
-const endMark = "if (_ogPushed) console.log('§PHASE_OVERLAP_SUPPORT_GUARD pushed=' + _ogPushed + '/' + _allScheduled.length +\n        ' (sweeps=' + _ogSweeps + ', bearing+hang) elements later than their §PHASE_OVERLAP_BAND window to stay after their real support');";
-const si = tmSrc.indexOf(startMark);
-if (si < 0) throw new Error('start mark not found — has the block been renamed/moved?');
-const ei = tmSrc.indexOf(endMark, si);
-if (ei < 0) throw new Error('end mark not found — has the block been renamed/moved?');
-const block = tmSrc.slice(si, ei + endMark.length);
-let depth = 0;
-for (const ch of block) { if (ch === '{') depth++; else if (ch === '}') depth--; }
-assert(depth === 0, 'sliced block is brace-balanced (a self-contained statement sequence, not a truncated fragment)');
+// §S58 (SCRIPT_LENGTH_REFACTOR_SEAMS.md): this witness used to slice the guard block out of
+// time_machine.js by RAW TEXT MARKERS — 'var _ogCELL = ' through the exact bytes of the
+// §PHASE_OVERLAP_SUPPORT_GUARD console.log INCLUDING its 8-space continuation indent. That coupling
+// rotted once already (2026-08-07..11, killed by a log rewording) and is now retired: the physics is
+// a real module, so this calls it. Nothing here depends on indentation or log wording any more.
+// The brace-balance assert retires with the slice — a required module cannot be a truncated fragment.
+require(path.join(__dirname, '..', 'schedule_gate.js'));   // sets globalThis.ScheduleGate for the module
+const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
 
 function loadRules() {
   var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
@@ -76,6 +72,10 @@ function realScheduledFrom(rows, matchRule, rules) {
 //   wall pool offered to promoted slabs only; hang-carrier fallback for bearingless seq>4.
 function bruteForcePush(elements) {
   const EPS = 0.05, GAP = 0.5;
+  // §OG_HANG_BAND (2026-08-15, time_machine.js _ogSupportSweep): the hang/carrier-above search
+  // (bearingless seq>4 fallback) widened from GAP=0.5 to 9.5 — reused, not re-guessed, the same
+  // measured band this codebase already cited once (§HANG_NEAREST, 0.5-9.5m). Bearing stays at GAP.
+  const HANG_GAP = 9.5;
   const xy = function (a, b) { return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0; };
   const work = elements.map(function (e) { return { guid: e.guid, s: e.s, e: e.e, cls: e.cls, seq: e.seq, bz: e.bz, tz: e.tz, x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1 }; });
   work.sort(function (a, b) { return a.bz - b.bz; });
@@ -104,7 +104,7 @@ function bruteForcePush(elements) {
       if (!hasBearing && T.seq > 4) {
         for (let i = 0; i < work.length; i++) {
           const H = work[i]; if (H.guid === T.guid || !(H.seq <= 4 || (H.cls === 'IfcSlab' && H.seq > 4))) continue;   // §PROMOTED_CARRIER_POOL: hang pool == struct pool (audit parity)
-          if (H.bz >= T.tz - GAP && H.bz <= T.tz + GAP && H.tz > T.tz + EPS && xy(H, T) && H.e > lastEnd) lastEnd = H.e;
+          if (H.bz >= T.tz - HANG_GAP && H.bz <= T.tz + HANG_GAP && H.tz > T.tz + EPS && xy(H, T) && H.e > lastEnd) lastEnd = H.e;
         }
       }
       if (lastEnd && T.s < lastEnd) {
@@ -140,9 +140,9 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
     const origS = {};
     _allScheduled.forEach(function (e) { origS[e.guid] = e.s; });   // capture BEFORE the block mutates in place
 
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
-    vm.createContext(sandbox);
-    vm.runInContext(block, sandbox);
+    globalThis.ScheduleGate = { CELL: 4 };   // §S58: same synthetic gate the vm sandbox used to inject
+    const sandbox = { _allScheduled: _allScheduled };
+    SupportSweep.ogSupportSweep(sandbox._allScheduled, undefined);
     const realPushedIds = {};
     sandbox._allScheduled.forEach(function (T) { if (T.s !== origS[T.guid]) realPushedIds[T.guid] = T.s; });
     let mismatches = 0;
@@ -164,12 +164,13 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
       "LEFT JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
     db.close();
     const _allScheduled = realScheduledFrom(r[0].values, matchRule, rules);
-    const sandbox = { _allScheduled: _allScheduled, ScheduleGate: { CELL: 4 }, console: console, Math: Math };
-    vm.createContext(sandbox);
+    globalThis.ScheduleGate = { CELL: 4 };   // §S58
+    const sandbox = { _allScheduled: _allScheduled };
+    let _ogRes = null;
     const t0 = process.hrtime.bigint();
-    vm.runInContext(block, sandbox);
+    _ogRes = SupportSweep.ogSupportSweep(sandbox._allScheduled, undefined);
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-    console.log('§OG_GRID_PERF Terminal n=' + _allScheduled.length + ' ms=' + ms.toFixed(1) + ' pushed=' + sandbox._ogPushed + ' sweeps=' + sandbox._ogSweeps);
+    console.log('§OG_GRID_PERF Terminal n=' + _allScheduled.length + ' ms=' + ms.toFixed(1) + ' pushed=' + _ogRes.pushed + ' sweeps=' + _ogRes.sweeps);
     assert(ms < 15000, 'Terminal (the real reported-hang fixture, 48,428 elements) completes under 15s across the ≤16-sweep fixpoint — measured=' + ms.toFixed(1) + 'ms (measured 7806ms/2 sweeps 2026-08-11; single-sweep pre-§OG_GRID_Z_BAND was 4636ms — ceiling ~2× measured, tight enough to catch a real regression back to XY-only bucketing)');
   } else {
     console.log('§SKIP performance check — Terminal fixture missing');

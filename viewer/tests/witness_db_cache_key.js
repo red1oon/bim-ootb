@@ -30,6 +30,14 @@ const cases = [
   { id: 'K3-devbench', url: '/bim-compiler/deploy/dev/buildings/Terminal_extracted.db', want: '/bim-compiler/deploy/dev/buildings/Terminal_extracted.db' },
   { id: 'K3-prodbench', url: '/bim-compiler/deploy/buildings/Terminal_extracted.db',    want: '/bim-compiler/deploy/buildings/Terminal_extracted.db' },
   { id: 'K3-modeller', url: '/modeller/Duplex_extracted.db',            want: '/modeller/Duplex_extracted.db' },
+  // §S76 — the same K3 protection MUST hold with no leading slash too. Reachable today via the
+  // viewer's own ?db= query param (viewer/config.js:28 passes _params.get('db') straight through,
+  // unvalidated) — a hand-typed 'deploy/dev/buildings/X.db' against a repo-root-relative local server
+  // has no leading '/'. No KNOWN shipped tool triggers this (dlod_bench.html always uses a leading
+  // slash) but nothing guarded against a future one that doesn't.
+  { id: 'K3-devbench-noslash', url: 'deploy/dev/buildings/Terminal_extracted.db', want: 'deploy/dev/buildings/Terminal_extracted.db' },
+  { id: 'K3-prodbench-noslash', url: 'deploy/buildings/Terminal_extracted.db',    want: 'deploy/buildings/Terminal_extracted.db' },
+  { id: 'K3-modeller-noslash', url: 'modeller/Duplex_extracted.db',              want: 'modeller/Duplex_extracted.db' },
   // K1 — import:// is an IDB-only identity, never rewritten.
   { id: 'K1-import',   url: 'import://myhouse/myhouse_extracted.db',    want: 'import://myhouse/myhouse_extracted.db' },
   // K4 — anything that isn't a buildings/ asset is left exactly as it was.
@@ -62,6 +70,15 @@ const kept = kDev !== kPrd;
 kept ? pass++ : fail++;
 console.log(`§CACHEKEY ${kept ? 'PASS' : 'FAIL'} GUARD-dev-vs-prod-bench  dev=${kDev}  prod=${kPrd}` +
             (kept ? '  → kept apart' : '  → COLLIDED: dev bench would serve prod geometry'));
+
+// §S76 — the real reachable path: ?db= passed straight through with no leading slash colliding with
+// the shipped production key. This IS the bug the noslash cases above generalize from.
+const kDevNoSlash = cacheKey('deploy/dev/buildings/Terminal_extracted.db', PROD);
+const kProdOCI = cacheKey(BLD + 'Terminal_extracted.db', PROD);
+const keptNoSlash = kDevNoSlash !== kProdOCI;
+keptNoSlash ? pass++ : fail++;
+console.log(`§CACHEKEY ${keptNoSlash ? 'PASS' : 'FAIL'} GUARD-dev-noslash-vs-prod  dev=${kDevNoSlash}  prod=${kProdOCI}` +
+            (keptNoSlash ? '  → kept apart' : '  → COLLIDED: ?db=deploy/... (no leading slash) would silently serve prod-cached geometry'));
 
 console.log(`§CACHEKEY-SUMMARY ${pass}/${pass + fail} pass`);
 process.exit(fail === 0 ? 0 : 1);

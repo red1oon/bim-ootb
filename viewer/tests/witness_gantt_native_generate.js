@@ -8,6 +8,7 @@
 // never touches the old panel. Sliced by balanced braces from the real shipped function — same
 // convention as commitGanttDrag/undoLastGanttEdit's witnesses, never reimplemented.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -19,7 +20,7 @@ const ScheduleGate = require(path.join(__dirname, '..', 'schedule_gate.js'));
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');
   if (idx < 0) throw new Error(name + ' not found');
@@ -30,10 +31,29 @@ function sliceFn(src, name) {
   }
   throw new Error('unbalanced braces for ' + name);
 }
-const sliced = sliceFn(tmSrc, 'generateGanttSchedule');
+// generateGanttSchedule references two module-level names this single-function slice lacks:
+//   _GANTT_CACHE_VERSION (since §GANTT_SCHEDULE_STALE 2026-08-14 — this witness has thrown
+//   ReferenceError and exited before asserting anything since then, verified on unmodified main
+//   2026-08-16) — read the REAL value out of the source, never a hand-typed copy to drift; and
+//   _tmDisplayRemap (§ZONE_DISPLAY_AUTHORING 2026-08-16) — stubbed to null here: the remap's own
+//   behavior is witnessed end-to-end in witness_zone_display_authoring.js, this witness owns the
+//   native-generate wiring only, and a null remap takes materializeZones' legacy branch.
+const _verMatch = tmSrc.match(/var _GANTT_CACHE_VERSION = (\d+);/);
+if (!_verMatch) throw new Error('_GANTT_CACHE_VERSION not found in time_machine.js');
+const sliced = 'var _GANTT_CACHE_VERSION = ' + _verMatch[1] + ';\n' +
+  'var _tmDisplayRemap = function () { return null; };\n' +
+  // §TPL_WIRED (2026-08-26): generateGanttSchedule now hands materializeZones the loaded 4D
+  // programme template. Stubbed NULL here for the same reason _tmDisplayRemap is — this
+  // witness owns the native-generate WIRING, and a null template takes materializeZones'
+  // legacy branch, which is the branch this witness has always measured. The template path's
+  // own behaviour is witnessed by witness_4d_template_instantiation.js.
+  'var _4dTemplate = null;\n' +
+  sliceFn(tmSrc, '_tmBusyRecording') + '\n' +   // §S56: the §TM_BAKE_LOCK guard the verb now calls
+  sliceFn(tmSrc, '_tmEditLocked') + '\n' +      // §S69: ...through the one shared refusal helper
+  sliceFn(tmSrc, 'generateGanttSchedule');
 
 function loadRules() {
-  var txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  var txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   var start = txt.indexOf('var RATES = {');
   var defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   var end = txt.indexOf('};', defIdx) + 2;
@@ -52,7 +72,7 @@ const BUILDING = process.argv[2] || 'Duplex';
 
   // ── Scenario A: no schedule exists yet — native generate must actually create one ──
   {
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     var toggleCalled = 0, tipMsgs = [];
     const sandbox = {
       console: console, JSON: JSON, Date: Date, Math: Math, setTimeout: setTimeout,
@@ -77,7 +97,7 @@ const BUILDING = process.argv[2] || 'Duplex';
 
   // ── Scenario B: a captured (imported) schedule already exists — must NOT be clobbered ──
   {
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     // A real schedule under a non-SCH_AUTHORED id — the SAME real materializeZones call (real
     // columns, real write path), just a different scheduleId, standing in for a real Bonsai/Revit
     // import the same way activeSchedule() actually distinguishes one: schedule_id !== 'SCH_AUTHORED'.

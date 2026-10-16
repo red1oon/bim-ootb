@@ -55,12 +55,59 @@
   var SCRUB_PANEL_W = VF_DEFAULT_W;              // px
   // SCRUB_PANEL_GAP retired 2026-08-06 (§CPE_VF_STACK) — the bar is FUSED to B's bottom border,
   // sharing it as the divider, so there is no gap left to size.
+  // §CPE_CONE_ORIENT_ADJUST (2026-08-27) — drag the passive POV cone to correct a bad gaze without
+  // adding a stick. Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_CONE_ORIENT_ADJUST.
+  var CONE_DEFAULT_COLOR = 0xff1744;    // the standing cone colour (unchanged, matches _syncPovMarker)
+  var CONE_FOCUS_COLOR = 0x8B5A2B;      // "brownish", per the spec's own example — a tuning knob, not fixed
+  // Rotation sensitivity — UNCONFIRMED default, same status as SCRUB_H etc. above: picked so a
+  // half-screen-width drag (~600px) turns roughly 180 deg, a comfortable full reversal in one gesture.
+  var CONE_ROTATE_RAD_PER_PX = 0.006;
+  var CONE_PITCH_CLAMP_RAD = 89 * Math.PI / 180;   // never let the drag reach straight up/down (gimbal)
+  // Envelope defaults, ARC-LENGTH in metres (spec item 5: "so behaviour scales with path geometry
+  // rather than film seconds") — FIRST-GUESS numbers, not settled with the user. ramp = short ease-in
+  // BEHIND the anchor; hold = full-strength stretch FORWARD from the anchor; decay = further ease-out
+  // past the hold. Mirrored as fallbacks in effects.js's _buildCpeCorrArc (search CPE_CONE_CORR).
+  // §CPE_CONE_ORIENT_ADJUST tuning (2026-08-27, user after first live use): "the easing forward...
+  // should be more further... usually when user rotates it, is because it is pointing wrong way for
+  // some length" — the auto-heuristic's bad gaze is typically wrong across a STRETCH, not one point,
+  // so HOLD needed to reach further before handing back to it. hold 5->12 (the main ask), decay 4->6
+  // (kept roughly proportionate to the longer hold rather than left disproportionately short) — still
+  // a first-guess, not a measured number; ramp (BEHIND the anchor) left untouched, not what was asked.
+  // §CPE_CORR_FRACTION (2026-09-01, USER RULING) — a correction's reach is a SHARE OF THE WALK,
+  // not a distance in metres.
+  //
+  // MEASURED, which is why the unit changed: the metre-based defaults (2/8/12 = 22 m) were chosen
+  // against a walk believed to be 89.5 m — a figure taken from a §CPE_WALK_BUDGET code comment that
+  // does NOT reproduce. The real beat-3 walks are Duplex 13.85 m, HHS_Office 27.40 m, Hospital
+  // 39.43 m (invariant to film duration: 39.43 m at both 60 s and 150 s). So 22 m was 159% / 80% /
+  // 56% of the walk — a takeover on every building in the fleet, which is the exact thing the
+  // bounded model exists to prevent. No single metre value can be a local edit on both a 13.85 m
+  // and a 39.43 m walk; at 30% of the route that is 4 m and 12 m, a 3x spread.
+  //
+  // As a fraction, one drag feels the same on every model — which is what matters while authoring.
+  // 4% in, 12% held, 18% out = 34% of the route:
+  //     Duplex   13.85 m -> 0.6 / 1.7 / 2.5 m
+  //     HHS      27.40 m -> 1.1 / 3.3 / 4.9 m
+  //     Hospital 39.43 m -> 1.6 / 4.7 / 7.1 m
+  var CPE_CONE_CORR_RAMP_F = 0.04;
+  var CPE_CONE_CORR_HOLD_F = 0.12;
+  var CPE_CONE_CORR_DECAY_F = 0.18;
+  // Re-dragging the cone within this world distance of an EXISTING correction's anchor UPDATES that
+  // entry in place rather than stacking a second one nearby — first-guess MVP behaviour for spec item
+  // 6 (multiple/overlapping corrections, not user-decided), flagged for review same as item 6 itself.
+  var CPE_CONE_CORR_MERGE_M = 3;
   // ══════════════════════════════════════════════════════════════════════════════════════════════
   // CPE_V changelog (2026-08-06: moved out of the console.log — the full history was printing on
   // every page load, ~4KB of text nobody was reading; kept here verbatim, nothing dropped, still
   // the first place a new session should read for "what changed and why" before the spec doc's own
   // DONE blocks, search `§CPE_SCRUB`, `§CPE_VIEWFINDER`, `§CPE_AIM_PIN`). NEWEST FIRST.
   //
+  // ── 2026-08-27 ──
+  // §CPE_CONE_ORIENT_ADJUST the passive POV cone is now interactive — click to focus (brownish tint),
+  //   drag while focused to rotate ONLY its facing (position stays scrub-driven, never draggable),
+  //   release to commit an ANCHORED gaze correction (arc-length position + corrected direction + an
+  //   asymmetric ramp/hold/decay envelope), stored on its own small list, never touching a band. See
+  //   the spec section for the full design and this session's own DONE block for measured numbers.
   // ── 2026-08-06 ──
   // §CPE_VF_PLAIN_FRAME the pixel-fit chase (§CPE_VF_FRAME_CRAFT/§CPE_VF_ALIGN_DIAG(_V2)/
   //   §CPE_VF_FRAME_DIAG/§CPE_VF_RENDER_TRACE) is retired — B is a plain fixed panel with a thin
@@ -140,7 +187,7 @@
   // §CPE_PREVIEW_DIVERGENCE plan pinned to open pose.
   // §CPE_BANDS + §CPE_SCREEN_PLANE + §CPE_PANEL_DRAG.
   // ══════════════════════════════════════════════════════════════════════════════════════════════
-  var CPE_V = 'v24';
+  var CPE_V = 'v25';
   console.log('§CPE_LOADED ' + CPE_V + ' — full changelog moved to this file\'s own comment above (search any §TAG)');
 
   var HANDLE_R = 0.30;             // metres
@@ -409,6 +456,20 @@
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     return true;
   }
+  // §CPE_STICK_CLEAR (red1 2026-10-04, prompts/ALTC_FOUNDATION.md §1) — remove every middle band in
+  // ONE undo step; settle and stop stay (same rule as _removeStick).
+  function _clearSticks() {
+    if (!_state || _state.bands.length <= 2) return 0;
+    var k = _state.bands.length - 2;
+    _undoPush('clear ' + k + ' stick' + (k === 1 ? '' : 's'));
+    _state.bands = [_state.bands[0], _state.bands[_state.bands.length - 1]];
+    _state.held = null; _state.staged = false;
+    console.log('§CPE_STICK_CLEAR removed=' + k + ' remaining=' + _state.bands.length);
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return k;
+  }
   // §CPE_GHOST_PULL — a hose pull is removable exactly as a stick is. Before this existed a pull
   // could only be undone (Ctrl+Z, and only while it was still the newest edit); once buried under a
   // later edit it was permanent AND invisible. That is the whole "ghost" the user reported.
@@ -643,8 +704,24 @@
     // multiplier: a hold is authored seconds, not distance to be priced.
     var holdSec = 0;
     for (var i = 0; i < s.bands.length; i++) holdSec += +(s.bands[i].hold || 0);
-    return { len: len, outSec: outSec + holdSec, holdSec: holdSec,
-             total: s.baseTotal - s.baseOutSec + outSec + holdSec };
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT — an ESTIMATE (same shape as effects.js's authoritative
+    // pullout+flyback+reveal(round2)+tail seconds: a short pull-out + a fast retrace fly-back + ONE
+    // lap at the walk's own pace + ~2s/discipline + a final 2s together — see bim-compiler prompts/
+    // CINEMA_DISCIPLINE_REVEAL.md's 2026-08-14 pull-out-restructure and 2026-08-16 fly-back sections),
+    // so the total this panel shows/bakes to GROWS to fit the round instead of squeezing it out of the
+    // existing runtime. Exact seconds are computed authoritatively in effects.js at plan-build time —
+    // this only needs to be close enough that nFrames (cinema_maxq.js) allocates real frames for it.
+    // `1.5` mirrors effects.js's CINEMA_REVEAL_PULLOUT_SEC constant, `6.5` mirrors CINEMA_PULLBACK_MPS
+    // (the fly-back's own pace) — both duplicated here as literals, same precedent this estimate
+    // already followed for the tail's `2 * discs.length + 2` before this restructure.
+    var revealSec = 0;
+    if (s.reveal) {
+      var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
+      // §ALTC_V2 V6: a road film's parade plays inside the drive — no extra seconds
+      if (discs.length && !(a.cpeRevealInDrive && a.cpeRevealInDrive())) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
+    }
+    return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
+             total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
   }
   function _buildOverride() {
     var s = _state, nat = _naturalDuration();
@@ -669,10 +746,29 @@
         return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
                  a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };
       }),
+      // §CPE_CONE_ORIENT_ADJUST: rides the same override the plan, Save and the bake already consume
+      // — a deep copy, same §CPE_HOLDER_INTEGRITY treatment as bands/hose above. NOT band-indexed
+      // (spec item 4) — the cone's position is scrub-driven and may sit anywhere along the walk.
+      aimCorrections: (s.corrections || []).map(function(c) {
+        return { pos: { x: c.pos.x, y: c.pos.y, z: c.pos.z }, dir: { x: c.dir.x, y: c.dir.y, z: c.dir.z },
+                 ramp: c.ramp, hold: c.hold, decay: c.decay };
+      }),
       // §CPE_CLIP: null means the whole film; the bake remaps poseAt into [in,out] when set.
       clip: (s.clipIn > 0 || s.clipOut < 1) ? { in: s.clipIn, out: s.clipOut } : null,
       buildup: !!s.buildup,
       roomTitle: !!s.roomTitle,
+      reveal: !!s.reveal,
+      clash: !!s.clash,                    // §CLASH_FILM_P1
+      measure: !!s.measure,                // §FLYTHRU_DATUM
+      storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
+      loadPath: !!s.loadPath,               // §129.31 — own checkbox now, was folded under Measure
+      visualPanel: !!s.visualPanel,         // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — draws only inside the load-path freeze
+      audioPanel: !!s.audioPanel,
+      escapeRoute: !!s.escapeRoute,         // §ESCAPE_ROUTE_REVEAL
+      sunCompass: !!s.sunCompass,           // §SUN_COMPASS
+      filmBounce: s.filmBounce !== false,   // §CPE_CHECKBOX_SAVE — the Bounce-light box (default ON), persisted like its siblings
+      sunDate: s.sunDate || '',             // §SUN_DAY
+      bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
       // §CPE_STICK_HOLD: the TRAVEL part of the walk scales with the user's total, the authored hold
@@ -705,6 +801,21 @@
     if (L > 1e-6) for (i = 0; i < cum.length; i++) cum[i] /= L;
     return cum;
   }
+  // §CPE_CHECKBOX_SAVE — the boxes beyond buildup/roomTitle/reveal (those keep their own origX baselines).
+  var _CPE_FLAG_KEYS = ['clash', 'measure', 'storeyReveal', 'loadPath', 'visualPanel', 'audioPanel', 'escapeRoute', 'sunCompass'];
+  function _flagBaseline() {
+    var o = { filmBounce: _state.filmBounce !== false, sunDate: _state.sunDate || '', bakeRes: _state.bakeRes || '' };
+    _CPE_FLAG_KEYS.forEach(function(k) { o[k] = !!_state[k]; });
+    return o;
+  }
+  // The ONE handler tail for every panel box: a toggle is an edit, so a prior Save no longer covers it
+  // (staged=false, same as every other edit site) and the OK/Save buttons must re-read _isEdited().
+  function _flagChanged() {
+    if (!_state) return;
+    _state.staged = false;
+    _markPreviewStale();
+    _syncButtons();
+  }
   function _isEdited() {
     if (!_state || !_state.origBands) return false;
     // §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP are edits in their own right: a path that was ONLY hosed,
@@ -723,6 +834,22 @@
     if (_state.buildup !== _state.origBuildup) return true;
     if (_state.roomTitle) return true;
     if (_state.roomTitle !== _state.origRoomTitle) return true;
+    if (_state.reveal) return true;
+    if (_state.reveal !== _state.origReveal) return true;
+    // §CPE_CHECKBOX_SAVE (2026-10-06): every OTHER panel box is an edit in its own right — the same rule as
+    // the three above (ON must produce an override because the consumer defaults it off with none; changed
+    // from the open/restore baseline counts too). Was missing, so a path changed ONLY by one of these boxes
+    // kept Save disabled. Table-driven off _CPE_FLAG_KEYS so a new box cannot be forgotten in one place.
+    var _of = _state.origFlags || {};
+    for (var _fi = 0; _fi < _CPE_FLAG_KEYS.length; _fi++) {
+      var _fk = _CPE_FLAG_KEYS[_fi];
+      if (!!_state[_fk]) return true;
+      if (!!_state[_fk] !== !!_of[_fk]) return true;
+    }
+    if (_state.sunDate || _state.bakeRes) return true;
+    if ((_state.sunDate || '') !== (_of.sunDate || '') || (_state.bakeRes || '') !== (_of.bakeRes || '')) return true;
+    // Bounce defaults ON, so only a change away from the baseline is an edit (ON must NOT make every open dirty).
+    if ((_state.filmBounce !== false) !== (_of.filmBounce !== false)) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -734,6 +861,16 @@
       if (Math.abs(a.len - b.len) > 1e-6) return true;
       if (Math.abs(a.c.x - b.c.x) > 1e-6 || Math.abs(a.c.y - b.c.y) > 1e-6 || Math.abs(a.c.z - b.c.z) > 1e-6) return true;
       if (Math.abs(a.d.x - b.d.x) > 1e-6 || Math.abs(a.d.y - b.d.y) > 1e-6 || Math.abs(a.d.z - b.d.z) > 1e-6) return true;
+    }
+    // §CPE_CONE_ORIENT_ADJUST: a correction with no other edit (no hose, no clip, no band moved) must
+    // still produce an override, same "count as an edit" reasoning §CPE_STICK's own line above gives
+    // band-count changes.
+    var oc = _state.origCorrections || [];
+    if ((_state.corrections || []).length !== oc.length) return true;
+    for (var ci = 0; ci < oc.length; ci++) {
+      var ca = _state.corrections[ci], cb = oc[ci];
+      if (Math.abs(ca.pos.x - cb.pos.x) > 1e-6 || Math.abs(ca.pos.y - cb.pos.y) > 1e-6 || Math.abs(ca.pos.z - cb.pos.z) > 1e-6) return true;
+      if (Math.abs(ca.dir.x - cb.dir.x) > 1e-6 || Math.abs(ca.dir.y - cb.dir.y) > 1e-6 || Math.abs(ca.dir.z - cb.dir.z) > 1e-6) return true;
     }
     return false;
   }
@@ -775,6 +912,9 @@
                   'the door it walks out through — drag it back inside to shape the interior leg',
                   'end of the WALK, not the film; its far end stretches the orbit'];
 
+  // §CPE_TOGGLE_ICONS — the strip's own table, kept so a census can report what is on screen
+  // rather than re-deriving it from the DOM.
+  var _toggleSpecs = [];
   function _buildPanel() {
     if (!document.getElementById('cpe-style')) {
       var st = document.createElement('style');
@@ -785,7 +925,40 @@
         '#cpe-panel button{transition:background .15s,color .15s,border-color .15s}' +
         '#cpe-panel button:disabled{opacity:.45;cursor:default}' +
         '#cpe-panel input{background:#15181c;border:1px solid #3a3f47;border-radius:3px;padding:2px 4px;' +
-        'font-size:11px;font-family:monospace;color:#ddd}';
+        'font-size:11px;font-family:monospace;color:#ddd}' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19) — the seven overlay toggles as icon buttons that
+        // LIGHT UP when checked, instead of seven stacked rows of checkbox-plus-prose.
+        //
+        // ⚠ COSMETIC ONLY, AND THAT IS LOAD-BEARING. Every <input type="checkbox"> keeps its exact
+        // id, its change handler, its _state field and its place in the panel census and the DOM
+        // sync list. Nothing in the wiring moved — W-SUN-COMPASS-WIRING still passes unchanged,
+        // which is the point: a restyle that quietly renamed an id would silently stop a toggle
+        // from reaching the bake, and that is this project's recurring defect shape.
+        // The input is hidden with opacity/position rather than display:none or visibility:hidden,
+        // so it stays focusable and keyboard-reachable — a checkbox you cannot tab to is not a
+        // checkbox, and an icon strip is exactly where that gets lost.
+        '#cpe-panel .cpe-tgls{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}' +
+        '#cpe-panel .cpe-tgl{position:relative;display:flex;flex-direction:column;align-items:center;' +
+        'justify-content:center;gap:3px;width:60px;padding:6px 2px;cursor:pointer;border-radius:5px;' +
+        'border:1px solid #3a3f47;background:#1b1f24;color:#8a9199;font-size:9px;line-height:1.15;' +
+        'text-align:center;transition:background .15s,color .15s,border-color .15s,box-shadow .15s}' +
+        '#cpe-panel .cpe-tgl input{position:absolute;opacity:0;width:100%;height:100%;top:0;left:0;' +
+        'margin:0;cursor:pointer}' +
+        '#cpe-panel .cpe-tgl svg{width:18px;height:18px;stroke:currentColor;fill:none;' +
+        'stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}' +
+        // The lit state. Amber to match the panel's own §CPE_LIVE breathe colour, so "this overlay
+        // is on" reads as the same language as the rest of this window rather than a new one.
+        '#cpe-panel .cpe-tgl:has(input:checked){background:#2e2410;color:#ffb74d;border-color:#ffb74d;' +
+        'box-shadow:0 0 6px rgba(255,183,77,0.35)}' +
+        '#cpe-panel .cpe-tgl:hover{border-color:#6a7280;color:#cfd6dd}' +
+        // Keyboard focus must be visible, and :has(:focus-visible) is the only thing that can show
+        // it once the real input is transparent.
+        '#cpe-panel .cpe-tgl:has(input:focus-visible){outline:2px solid #64b5f6;outline-offset:1px}' +
+        // A slot with no icon yet is NOT broken — it is a caption-only button, and it says so by
+        // reserving the same box height so the strip does not jump when real icons land.
+        '#cpe-panel .cpe-tgl .cpe-noicon{width:18px;height:18px;border-radius:3px;' +
+        'border:1px dashed #4a4f57;box-sizing:border-box}' +
+        '';
       document.head.appendChild(st);
     }
     var d = document.createElement('div');
@@ -827,10 +1000,174 @@
           '<button id="cpe-mark-in" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark in</button> ' +
           '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
-          'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
-          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span></div>' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19): "all 7 Alt+C panel toggles as icon buttons that
+        // light up when checked". Built from ONE table rather than seven hand-written rows, so the
+        // eighth overlay is a table entry and cannot be added with a mismatched id, a missing
+        // title or a forgotten style.
+        //
+        // ⚠ THE IDS, THE HANDLERS AND THE STATE FIELDS ARE UNCHANGED. This is presentation only.
+        // W-SUN-COMPASS-WIRING asserts the whole chain by name and still passes untouched — which
+        // is exactly what a cosmetic change has to be able to say for itself.
+        //
+        // ⚠ THE HINTS ARE NOT LOST, and that was the one real risk in this change. Each row's
+        // prose moved into `hint`, which becomes the button's `title`. It is information the icon
+        // cannot carry — that Clash pairs are mesh-true and not the bounding-box list a third of
+        // which is false; that Measure's grid is the REAL column grid out of the DB; that Reveal's
+        // render mechanism is NOT built; that Sun compass draws NOTHING on a model with no site
+        // lat/long. Dropping those to make room for pictures would have been a downgrade wearing a
+        // restyle.
+        //
+        // ⚠ ICONS: only where an HONEST one already exists in this codebase's own set
+        // (panels.js `ICONS`, a global). Three of the seven have one, and each is the icon the
+        // SAME feature already uses elsewhere in this UI, so reusing it is consistency rather than
+        // a guess: `ruler` for Measure, `triangle` for Clash (panels.js's own Clash Matrix entry),
+        // `disciplines` for Reveal. The other four are `null` on purpose — red1 is sourcing
+        // artwork and a peer session is tracing the compass, and inventing four placeholder icons
+        // now would mean four things to un-pick later. A null slot renders a caption-only button
+        // at the same size, so the strip does not reflow when the real art lands. To add one:
+        // put the SVG inner markup on the entry, nothing else changes.
+        // ⚠ `I.draftingCompass` is NOT the right icon for the sun compass — checked, it is a pair
+        // of legs and a pivot (the drawing instrument), not a magnetic rose.
+        (function () {
+          var I = (typeof ICONS !== 'undefined') ? ICONS : {};
+          var TOGGLES = [
+            { id: 'cpe-buildup', label: 'Buildup', checked: true, icon: null,
+              hint: 'build the model as the film plays (follows the Time Machine, not a programme)' },
+            // §129.6 item 6b (2026-09-15): this toggle is still FLAGS.roomTitle / --label
+            // (--4d5d is an accepted alias, so no bake command breaks), but it now also gates
+            // the pie-chart HUD's Cost/Ledger rows and the day counter — the caption says what
+            // it actually carries. Restored on the merge: main's icon table had it back as
+            // 'Room titles', which under-states it.
+            { id: 'cpe-room-title', label: '4D/5D', icon: null,
+              hint: 'room name card, day counter, cost + ledger rows' },
+            // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so
+            // far. The checkbox + state round-trip through save/restore like every sibling here;
+            // the ghost/pacing render mechanism is NOT built (spec Open Question 1, render
+            // approach, unresolved). The hint says so, so ticking it does not silently do nothing
+            // unexplained.
+            { id: 'cpe-reveal', label: 'Reveal', icon: I.disciplines && I.disciplines.svg,
+              hint: 'retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale' },
+            // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world
+            // content. The hint states the two things a user cannot see from the button: the pairs
+            // are triangle-exact (not the bounding-box list, a third of which is false), and they
+            // stand from frame 0 rather than appearing when the buildup reaches them.
+            { id: 'cpe-clash', label: 'Clash pairs', icon: I.triangle && I.triangle.svg,
+              hint: 'mesh-true pairs, red/blue at each contact, pulsing from frame 0 so you see where the trouble is before it is built' },
+            // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
+            // drawing. The hint names the two things the button cannot show: the grid is the REAL
+            // column grid out of the DB, not a decorative module, and the marks are laid in the
+            // model's own planes, so they foreshorten with the building instead of facing camera.
+            { id: 'cpe-measure', label: 'Measure', icon: I.ruler && I.ruler.svg,
+              hint: 'setting-out drawing from the real column grid — numbered and lettered bubbles, bay chains that sum to the overall, storey rules; up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises' },
+            // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
+            // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
+            // idea, and three buttons would let a user ask for a compass with no date on it.
+            // §SUN_COMPASS. `I.compass` is Lucide's own compass — a ring and a needle — added to
+            // panels.js's set for this. ISC, the same licence covering all 68 icons there
+            // (viewer/icons/lucide/README.md), so no attribution obligation and nothing pending.
+            // ⚠ NOT `I.draftingCompass`, one entry above it: that is the drawing instrument, legs
+            // and a pivot, not a rose.
+            // ⚠ AN EARLIER ICON HERE WAS REMOVED AND MUST NOT COME BACK. A compass traced from
+            // `clipart4585220.png` was inlined on 2026-09-19, believed to be Flaticon free-tier;
+            // the real source is realclipart.com, licensed "Personal Use". That is a use
+            // restriction, not an attribution gap — no credit line makes it shippable, and a
+            // redraw keeping its exact vertices would still be derived from it.
+            // W-SUN-COMPASS-WIRING asserts its colours and viewBox stay absent.
+            // §SUN_DAY — red1's own words for the hover: "enable geo-ref truth". The longer
+            // sentence follows it, because the button still has to say the two things it cannot
+            // show: that this is TRUE north out of the IFC (not the model grid every building in
+            // this fleet silently used until now), and that it draws NOTHING on a model with no
+            // site lat/long rather than inventing a location.
+            { id: 'cpe-sun-compass', label: 'Sun compass', icon: I.compass && I.compass.svg,
+              hint: 'enable geo-ref truth — TRUE-north rose on the ground from the IFC\'s own georeference, the sun\'s real path for the site and date, and its angle of attack on the building; silent on a model with no site lat/long, never a guessed one' },            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
+            // orbit begins, fill with each storey tinting through in sequence.
+            { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,
+              hint: 'each storey glows blue/green/yellow/orange in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card' },
+            // §129.31 (2026-09-18, red1: "give it its own checkbox") — un-folds §129 GATING's
+            // "load path rides the Measure checkbox" decision, which let an unrelated toggle
+            // ("setting-out drawing") silently gate the structural freeze-frame beat. Its own
+            // entry now; cinema_maxq.js's `_loadPath` line is the runtime half of the same change.
+            // Icon null on purpose, same rule as the four above: no honest one exists in the set yet.
+            { id: 'cpe-load-path', label: 'Load path freeze', icon: null,
+              hint: 'camera holds on the structural chain from topout to ground — section-cut, cost + schedule per member, stack info panel' },
+            // §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19): panels in the load-path freeze's black space, ONLY with load path on.
+            { id: 'cpe-visual-panel', label: 'Visual (CCTV) in freeze', icon: null,
+              hint: 'with Load path freeze: CCTV coverage per room — best ceiling corner, blind m², best/worst room (IEC 62676-4 DORI, Paxton 103°×55°)' },
+            { id: 'cpe-audio-panel', label: 'Audio (RT) in freeze', icon: null,
+              hint: 'with Load path freeze: room reverberation (Sabine/Eyring) — not built yet' },
+            // §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md). `I.route` is the
+            // icon this UI ALREADY uses for a walked route (panels.js's Pick Walk entry), so reusing
+            // it is consistency rather than a guess — the same rule the three icons above follow.
+            // The hint carries the two things the button cannot: the route is the REAL computed one
+            // out of the room graph, and the walking time rests on a cited standard while the step
+            // count rests on an admitted placeholder.
+            { id: 'cpe-escape-route', label: 'Escape route', icon: I.route && I.route.svg,
+              hint: 'during the closing orbit, the worst-case room shines through and an orange dotted line traces its REAL computed route to the exit — the same distance the Egress report\'s "Longest path to exit" headline reads. Counts up live in walking time (1.19 m/s, SFPE) and in steps (0.75 m stride, uncited). The camera eases; the day counter and the sun do not.' }
+          ];
+          _toggleSpecs = TOGGLES;
+          function esc(t) {
+            return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          // ONE KIND OF ICON: 24-box, stroked, `stroke:currentColor`, no fill — the contract every
+          // entry in panels.js's set keeps (viewer/icons/lucide/README.md states it). So the button
+          // inherits its lit colour for free and nothing needs a per-icon viewBox.
+          // A `flat`/viewBox branch existed briefly for a filled 100-box PNG trace, whose fills
+          // would have been outlined by the inherited stroke-width. That artwork is gone on licence
+          // grounds and the branch went with it rather than staying as dead configuration; re-add
+          // it only if a non-conforming icon is ever genuinely cleared for use.
+          return '<div class="cpe-tgls">' + TOGGLES.map(function (t) {
+            return '<label class="cpe-tgl" title="' + esc(t.label + ' — ' + t.hint) + '">' +
+              '<input id="' + t.id + '" type="checkbox"' + (t.checked ? ' checked' : '') + '>' +
+              (t.icon ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + t.icon + '</svg>'
+                      : '<span class="cpe-noicon"></span>') +
+              '<span>' + esc(t.label) + '</span></label>';
+          }).join('') + '</div>';
+        })() +
+        // §SUN_DAY (red1, 2026-09-19) — the date field that appears with the compass. Pinning a
+        // date makes the whole film one day's daylight: the hour sweeps 9:00→17:00 solar and the
+        // sun arcs once, instead of the date advancing underneath and the season fighting the
+        // clock. Leave it empty and the 4D timeline's own dates drive the light, as before.
+        // ⚠ It only does anything with the Sun compass on — the row hides itself otherwise, so
+        // there is no field sitting there that silently does nothing.
+        '<div id="cpe-sun-date-row" style="margin-top:4px;display:none">' +
+          '<label style="cursor:pointer">light the whole film on ' +
+          '<input id="cpe-sun-date" type="date" style="font-family:inherit"></label> ' +
+          '<button id="cpe-sun-date-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;' +
+          'color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">follow the 4D dates</button>' +
+          '<div style="color:#666">(one day, sun rising to late afternoon across the film — the ' +
+          'BUILD still follows the 4D timeline, only the light is pinned)</div></div>' +
+        // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
+        // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
+        // select does not resize anything here; it is stored on the path and cli_silent_bake.js
+        // honours it when --width/--height are not passed. Same contract as §CLI_BAKE_FLAG_OVERRIDE:
+        // save it once in the panel, then bake with no arguments.
+        // §CPE_BAKE_RES_COMMAND (2026-09-06, user: "give a silent bake pop up box for user to copy
+        // onto own terminal") — the silent bake is a Node CLI tool with no server-side execution
+        // possible from a static site (there is nothing to click that could run it FOR the user), so
+        // the most honest thing this control can do is hand over the exact command, ready to paste.
+        // §FILM_PARITY (§GI_FILM) — the Alt+S bounce in the film: ON by default, a checkbox to switch it off; this window's
+        // Alt+C and the copy-bake-command line both follow it. No WebGPU -> the film stands down with §GI_FILM_OFF.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" id="cpe-film-bounce" checked style="vertical-align:middle"> ' +
+          'Bounce light (Alt+S look; needs WebGPU)</label></div>' +
+        '<div style="margin-top:4px">Silent-bake size ' +
+          '<select id="cpe-bake-res" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
+            'border-radius:3px;font-size:10px;padding:1px 2px">' +
+            '<option value="">this window (interactive)</option>' +
+            '<option value="1280x720@15">1280x720 @15fps</option>' +
+            '<option value="1920x1080@24">1920x1080 @24fps</option>' +
+            '<option value="2560x1440@24">2560x1440 @24fps</option>' +
+          '</select> ' +
+          '<span id="cpe-bake-cmd-link" style="cursor:pointer;color:#4fc3f7;font-size:10px;text-decoration:underline">copy bake command</span>' +
+          ' <span style="color:#666">(silent bake only — a developer, terminal tool; Alt+C here always renders at this window\'s size)</span>' +
+          '<div id="cpe-bake-cmd-box" style="display:none;margin-top:4px">' +
+            '<textarea id="cpe-bake-cmd-text" readonly rows="2" style="width:100%;background:rgba(0,0,0,0.3);' +
+              'color:#4fc3f7;font-family:monospace;font-size:10px;border:1px solid #3a3f47;border-radius:4px;' +
+              'padding:6px;resize:none;box-sizing:border-box"></textarea>' +
+            '<button id="cpe-bake-cmd-copy" style="margin-top:2px;padding:2px 10px;font-size:10px;' +
+              'background:#4fc3f7;color:#000;border:none;border-radius:3px;cursor:pointer">Copy</button>' +
+            '<span style="color:#666;font-size:9px;margin-left:6px">paste into a terminal with this repo cloned and Node installed</span>' +
+          '</div></div>' +
         // §CPE_DAY_COUNTER_POS — user 2026-08-02: "the movie maker panel puts the Day # counter top
         // right display option". Top right is the DEFAULT so an existing plan re-bakes identically.
         // Only meaningful with the buildup on (there is no day to show without one), which the hint
@@ -938,8 +1275,17 @@
                a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };   // the world anchor rides along
     });
   }
+  // §CPE_CONE_ORIENT_ADJUST: corrections must survive undo/redo the same way bands/hose do (spec
+  // item 7 — reuse the EXISTING §CPE_UNDO stack, no new mechanism).
+  function _cloneCorrections(cs) {
+    return (cs || []).map(function(c) {
+      return { pos: { x: c.pos.x, y: c.pos.y, z: c.pos.z }, dir: { x: c.dir.x, y: c.dir.y, z: c.dir.z },
+               ramp: c.ramp, hold: c.hold, decay: c.decay };
+    });
+  }
   function _snapshot(label) {
     return { bands: _cloneBands(_state.bands), hose: _cloneHose(_state.hose),
+             corrections: _cloneCorrections(_state.corrections),
              clipIn: _state.clipIn, clipOut: _state.clipOut, label: label };
   }
   // Call BEFORE mutating, with a label naming the edit. Redo is dropped on a new edit — the standard
@@ -967,11 +1313,16 @@
     toStack.push(_snapshot(snap.label));
     _state.bands = _cloneBands(snap.bands);
     _state.hose = _cloneHose(snap.hose);
+    // §CPE_CONE_ORIENT_ADJUST: older snapshots (taken before this feature shipped, still live in a
+    // session's undo stack across a hot-reload) carry no `corrections` field — treat as empty rather
+    // than throwing, same graceful-old-record treatment §CPE_AIM_PIN's own fields already get.
+    _state.corrections = _cloneCorrections(snap.corrections || []);
     if (snap.clipIn != null) { _state.clipIn = snap.clipIn; _state.clipOut = snap.clipOut; }
     _state.staged = false;
-    _state.held = null; _state.drag = null;
+    _state.held = null; _state.drag = null; _state._coneDrag = null;
     console.log('§CPE_UNDO ' + dir + ' "' + snap.label + '" depth=' + fromStack.length +
-      ' bands=' + _state.bands.length + ' hoseOps=' + _state.hose.length);
+      ' bands=' + _state.bands.length + ' hoseOps=' + _state.hose.length +
+      ' corrections=' + _state.corrections.length);
     _histEvent((dir === 'undo' ? 'Undo: ' : 'Redo: ') + snap.label);
     _markPreviewStale();
     _refreshFlow();
@@ -1019,7 +1370,9 @@
         head.appendChild(lbl);
         // §CPE_STICK: a spawned stick is removable; settle and stop are not (the dive lands on one
         // and the orbit stretches off the other — removing either would change what the beats mean).
-        if (b._stick && i > 0 && i < _state.bands.length - 1) {
+        // §CPE_STICK_CLEAR (red1 2026-10-04): EVERY middle band is removable, seeded or dropped —
+        // gating on `b._stick` left seeded middle bands with no way to delete them.
+        if (i > 0 && i < _state.bands.length - 1) {
           var del = document.createElement('button');
           del.textContent = '×';
           del.title = 'remove this stick';
@@ -1109,6 +1462,17 @@
         box.appendChild(row);
       })(i);
     }
+    // §CPE_STICK_CLEAR — one button for every middle band; disabled when only settle + stop remain.
+    var nMid = Math.max(0, _state.bands.length - 2);
+    var clr = document.createElement('button');
+    clr.id = 'cpe-stick-clear';
+    clr.textContent = nMid ? 'clear ' + nMid + ' stick' + (nMid === 1 ? '' : 's') : 'no sticks to clear';
+    clr.title = 'remove every middle stick (start and end stay) — Ctrl+Z brings them back';
+    clr.disabled = !nMid;
+    clr.style.cssText = 'margin:4px 12px;padding:1px 8px;font-size:10px;background:#2a2e34;border:1px solid #4a4f57;' +
+      'border-radius:3px;color:' + (nMid ? '#ddd' : '#666') + ';cursor:' + (nMid ? 'pointer' : 'default');
+    clr.addEventListener('click', function(e) { e.stopPropagation(); _clearSticks(); });
+    box.appendChild(clr);
     _renderHoseRows(box);
   }
 
@@ -1374,6 +1738,59 @@
   // QUESTION named this "deliberately DEFERRED future work", not dropped. Restoring it now: the
   // #1177 regression's actual invariant (main camera/controls untouched by any scrub) is preserved —
   // this only ever writes `_state.vfCam`, which #1177 never touched in the first place.
+  // §CPE_POV_MARKER (2026-08-13) — user: "put a red cam object that synch along the yellow path in
+  // the canvas to indicate where the cam position is at and its facing angle during pov preview."
+  // §CPE_SCRUB_POV_ONLY parks the main canvas camera on purpose while B/scrub drives the actual
+  // pose — this is the one case the main canvas otherwise shows nothing moving at all. A small red
+  // cone at the flying camera's position, oriented toward its look-at target.
+  //
+  // Purely additive, same lifecycle every other editor-drawn object in this file already has:
+  // created into `_state.objs` (so `_clearScene()` — called by every `_redrawScene()` and by
+  // `finish()` — disposes it exactly like the tube/handles/bars, no new teardown code needed) and
+  // re-created lazily if missing/detached rather than hooked into that teardown directly, the same
+  // "still there next frame" contract _applyVFPose/_applyCameraPose themselves already rely on.
+  // Touches no existing canvas/camera/panel code — new mesh only.
+  function _syncPovMarker(p) {
+    if (!p) return;
+    var a = A();
+    if (!a.scene || typeof THREE === 'undefined') return;
+    if (!_state.povMarker || !_state.povMarker.parent) {
+      var env = (_state.plan && _state.plan.envelope) || 50;
+      var mr = Math.max(0.3, Math.min(2.5, env / 40));   // same envelope-clamp shape as _redrawScene's tube radius
+      var g = new THREE.ConeGeometry(mr, mr * 2.2, 10);
+      // §CPE_CONE_ORIENT_ADJUST: focus colour is REAPPLIED below on every call (not just at creation)
+      // because _clearScene() (run by every _redrawScene()) disposes this mesh — a committed
+      // correction's own _replanFilm()/_redrawScene() pair would otherwise silently drop the user
+      // back to the default colour on a mesh they never asked to unfocus.
+      var m = new THREE.MeshBasicMaterial({ color: _state.coneFocused ? CONE_FOCUS_COLOR : CONE_DEFAULT_COLOR,
+                                            transparent: true, opacity: 0.9,
+                                            depthTest: false, depthWrite: false });
+      var o = new THREE.Mesh(g, m);
+      o.renderOrder = 1005;   // above the path tube/handles (1002-1004) — this is the playhead itself
+      a.scene.add(o);
+      _state.objs.push(o);
+      _state.povMarker = o;
+    }
+    var mk = _state.povMarker;
+    var wantColor = _state.coneFocused ? CONE_FOCUS_COLOR : CONE_DEFAULT_COLOR;
+    if (mk.material && mk.material.color.getHex() !== wantColor) mk.material.color.setHex(wantColor);
+    // §CPE_CONE_ORIENT_ADJUST spec item 1: "Position is scrub-only" — always driven by `p`, even
+    // while a correction is focused/being dragged (dragging never repositions the cone).
+    mk.position.set(p.x, p.y, p.z);
+    // ConeGeometry's tip points +Y by default; align +Y with the gaze direction so the tip is the
+    // facing angle, not just a dot at the position. SKIPPED while a live drag is rotating the cone —
+    // `_coneDragMove` owns the orientation for that one gesture; this scrub-driven sync would
+    // otherwise fight it on the very next call (e.g. a preview-fly frame landing mid-drag).
+    if (!_state._coneDrag) {
+      var dir = new THREE.Vector3(p.tx - p.x, p.ty - p.y, p.tz - p.z);
+      if (dir.lengthSq() > 1e-9) {
+        dir.normalize();
+        mk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      }
+    }
+    if (a.markDirty) a.markDirty();
+  }
+
   // §CPE_SCRUB_POV_ONLY — extracted from _scrubTo so the scrub-play button can drive ONLY B
   // (never the main camera), same invariant _scrubTo's own drag path already honours.
   function _applyVFPose(tn) {
@@ -1384,6 +1801,7 @@
       var a = A();
       if (a.markDirty) a.markDirty();
     }
+    if (p) _syncPovMarker(p);
     return p;
   }
 
@@ -1414,7 +1832,10 @@
     if (!ts.active) return null;   // conservative: never arm TM from a scrub — see block comment
     var a = A();
     var bkTn = a.buildupTAt ? a.buildupTAt(tn, s.plan) : tn;
-    var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, ts)
+    // §CPE_BUILDUP_ONSET_BLEND: same durationSec the scrub's own plan was built with, so a scrub
+    // preview and the real bake agree on where the onset window ends.
+    var _totalSec = s.plan && s.plan.durationSec;
+    var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, ts, _totalSec)
       : (ts.projectStart + bkTn * (ts.projectEnd - ts.projectStart));
     window.tmSetCursor(bkMs);
     // Same order as step(): readout refreshed AFTER this call's tmSetCursor, reading the cursor this
@@ -2073,7 +2494,11 @@
     var tm = null;
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
-      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle },
+      checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
+                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath, visualPanel: !!ov.visualPanel, audioPanel: !!ov.audioPanel,
+                    escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass, filmBounce: ov.filmBounce !== false },
+      sunDate: ov.sunDate || '',
+      bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
       tmCursor: tm ? tm.cursor : null,
@@ -2103,7 +2528,8 @@
         ' buildup=' + (rec.meta.buildup ? 1 : 0) + ' total=' + rec.meta.totalSec.toFixed(1) + 's' +
         ' — IndexedDB working store; cinema_path TABLE written separately so it travels with the .db');
       console.log('§CPE_PANEL_STATE saved buildup=' + (ps.checkboxes.buildup ? 1 : 0) +
-        ' roomTitle=' + (ps.checkboxes.roomTitle ? 1 : 0) + ' dayCounter=' + ps.dayCounter +
+        ' roomTitle=' + (ps.checkboxes.roomTitle ? 1 : 0) + ' reveal=' + (ps.checkboxes.reveal ? 1 : 0) +
+        ' dayCounter=' + ps.dayCounter +
         ' tmActive=' + (ps.tmActive ? 1 : 0) +
         ' tmCursor=' + (ps.tmCursor != null ? ps.tmCursor : 'n/a') +
         ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
@@ -2120,10 +2546,24 @@
   // bare DOM mutation the rest of the app cannot see. The dayEl seeding at wiring time already did
   // this for the select; the sibling checkboxes never got it — this closes that gap.
   function _syncPanelControls() {
-    [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle]].forEach(function(p) {
+    [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
+     ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
+     ['cpe-storey-reveal', !!_state.storeyReveal], ['cpe-load-path', !!_state.loadPath],
+     ['cpe-visual-panel', !!_state.visualPanel], ['cpe-audio-panel', !!_state.audioPanel],
+     ['cpe-escape-route', !!_state.escapeRoute],
+     ['cpe-sun-compass', !!_state.sunCompass]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
+    // §SUN_DAY — the field mirrors state, and the row only exists while the compass is on.
+    var _sdEl = document.getElementById('cpe-sun-date');
+    if (_sdEl) _sdEl.value = _state.sunDate || '';
+    var _sdRow = document.getElementById('cpe-sun-date-row');
+    if (_sdRow) _sdRow.style.display = _state.sunCompass ? '' : 'none';
+    var _fbSync = document.getElementById('cpe-film-bounce');
+    if (_fbSync && _fbSync.checked !== (_state.filmBounce !== false)) { _fbSync.checked = _state.filmBounce !== false; _fbSync.dispatchEvent(new Event('change')); }
+    var _brSync = document.getElementById('cpe-bake-res');
+    if (_brSync && _brSync.value !== (_state.bakeRes || '')) { _brSync.value = _state.bakeRes || ''; _brSync.dispatchEvent(new Event('change')); }
     var dayEl = document.getElementById('cpe-day-counter'), want = _state.dayCounter || 'tr';
     if (dayEl && dayEl.value !== want) { dayEl.value = want; dayEl.dispatchEvent(new Event('change')); }
   }
@@ -2136,10 +2576,29 @@
     if (ps.checkboxes) {
       _state.buildup = !!ps.checkboxes.buildup;
       _state.roomTitle = !!ps.checkboxes.roomTitle;
+      _state.reveal = !!ps.checkboxes.reveal;
+      // §STOREY_HIGHLIGHT_REVEAL: restored alongside its siblings. Unlike buildup/roomTitle/reveal it
+      // carries no origX baseline (matching cpe-clash's own lighter treatment — neither participates
+      // in _isEdited()'s dirty-check, both are read live by their own draw code with no beat-boundary
+      // side effect that a stale plan could get wrong).
+      _state.storeyReveal = !!ps.checkboxes.storeyReveal;
+      // §129.31: restored the same lightweight way as storeyReveal just above — no origX baseline,
+      // read live by cinema_maxq.js's own `_loadPath` line with no beat-boundary side effect.
+      _state.loadPath = !!ps.checkboxes.loadPath;
+      _state.visualPanel = !!ps.checkboxes.visualPanel; _state.audioPanel = !!ps.checkboxes.audioPanel;   // §FREEZE_PERF_PANEL
+      _state.escapeRoute = !!ps.checkboxes.escapeRoute;
+      // §CPE_CHECKBOX_SAVE: clash/measure/sunCompass/bounce were CAPTURED in panelState but never assigned here,
+      // so reopening a saved plan dropped them (the sync below then unticked the boxes to match).
+      _state.clash = !!ps.checkboxes.clash; _state.measure = !!ps.checkboxes.measure;
+      _state.sunCompass = !!ps.checkboxes.sunCompass;
+      _state.filmBounce = ps.checkboxes.filmBounce !== false;
+      _state.sunDate = ps.sunDate || ''; _state.bakeRes = ps.bakeRes || '';
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
       _state.origRoomTitle = _state.roomTitle;
+      _state.origReveal = _state.reveal;
+      _state.origFlags = _flagBaseline();   // §CPE_CHECKBOX_SAVE
     }
     if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
     _syncPanelControls();
@@ -2161,7 +2620,8 @@
       }
     }
     console.log('§CPE_PANEL_STATE restored buildup=' + (_state.buildup ? 1 : 0) +
-      ' roomTitle=' + (_state.roomTitle ? 1 : 0) + ' dayCounter=' + (_state.dayCounter || 'tr') +
+      ' roomTitle=' + (_state.roomTitle ? 1 : 0) + ' reveal=' + (_state.reveal ? 1 : 0) +
+      ' dayCounter=' + (_state.dayCounter || 'tr') +
       ' tmCursor=' + cursorNote + ' tmSpanMs=' + (ps.tmSpanMs != null ? ps.tmSpanMs : 'n/a'));
   }
   // Loading REPLACES the authored state, and only when asked — never on open. The spec left that as
@@ -2185,10 +2645,17 @@
       return { s: o.s, r: o.r, d: { x: o.d.x, y: o.d.y, z: o.d.z },
                a: o.a ? { x: o.a.x, y: o.a.y, z: o.a.z } : null };
     });
+    // §CPE_CONE_ORIENT_ADJUST: `null`/missing on any record saved before this shipped — same
+    // graceful-old-record treatment as hose/lookAt above. `origCorrections` is deliberately left
+    // untouched here, same as `origBands` above it — a LOADED plan is always treated as edited
+    // relative to the session's original open-time seed (see §CPE_PATH_NOT_PORTABLE's own comment
+    // below: it re-stages unconditionally), not a new "unedited" baseline.
+    _state.corrections = _cloneCorrections(ov.aimCorrections || []);
     _state.clipIn = ov.clip ? ov.clip.in : 0;
     _state.clipOut = ov.clip ? ov.clip.out : 1;
     _state.buildup = !!ov.buildup;
     _state.roomTitle = !!ov.roomTitle;
+    _state.reveal = !!ov.reveal;
     _state.dayCounter = ov.dayCounter || 'tr';   // older saved plans predate the choice — top right
     _state.userTotal = ov._total;
     _state.held = null;
@@ -2208,7 +2675,7 @@
     console.log('§CPE_PATH_LOADED name="' + rec.name + '" bands=' + _state.bands.length +
       ' hoseOps=' + _state.hose.length + ' clip=' + _state.clipIn.toFixed(2) + '→' + _state.clipOut.toFixed(2) +
       ' buildup=' + (_state.buildup ? 1 : 0) + ' roomTitle=' + (_state.roomTitle ? 1 : 0) +
-      ' dayCounter=' + (_state.dayCounter || 'tr') +
+      ' reveal=' + (_state.reveal ? 1 : 0) + ' dayCounter=' + (_state.dayCounter || 'tr') +
       ' savedAt=' + new Date(rec.savedAt).toISOString().slice(0, 16) +
       ' — re-staged (§CPE_PATH_NOT_PORTABLE): Ctrl+S now writes this path; Ctrl+Z restores what you had before loading');
     _markPreviewStale();
@@ -2278,8 +2745,15 @@
     // §CPE_ROOM_TITLE — live preview overlay, built ONCE per rehearsal against the film's real
     // duration in seconds (poseAt's tNorm domain is 0..1 over the WHOLE plan; `dur` above is just
     // this rehearsal's playback speed, not the film's real length).
+    // §CPE_DISCIPLINE_REVEAL_PULLOUT: the tail's disc-parade caption needs the SAME live-canvas tick
+    // running even when room titles are OFF — reveal is its own checkbox. `roomTitleLiveStart` is
+    // still called (with totalSec=0, an effectively-empty timeline — roomTitleBuildTimeline's own
+    // sampling loop runs a single near-zero-width pass) purely to RESET the module's `_liveSegs` for
+    // this run; without this a PRIOR run's real room-title segments could leak into this one's
+    // rise-proper/round-2 stretches, showing stale captions the user just turned off.
+    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal || s.escapeRoute);
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
-    if (s.roomTitle && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
+    if (_titleOn && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
     // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
     // shipped and NOTHING called them: the counter only ever existed in the exported bytes, so the
     // user could not see their own choice until a 20-minute bake finished. Wired here so the corner
@@ -2343,7 +2817,30 @@
         // was missing from step() even though _scrubTo (the drag path) always had both.
         _state.scrubTn = tn;
         _renderScrub();
-        if (s.roomTitle && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec);
+        // §CPE_DISCIPLINE_REVEAL_PULLOUT: plan/tn ride along so roomTitleLiveTick can check the
+        // tail's disc-parade caption override (A.cpeRevealCaptionAt) before falling back to the
+        // normal room-title lookup — same call the bake loop makes. Gated on _titleOn (roomTitle OR
+        // reveal), not roomTitle alone — see that flag's own comment above.
+        if (_titleOn && a.roomTitleLiveTick) a.roomTitleLiveTick(tn * _titleTotalSec, s.plan, tn);
+        // §CPE_DISCIPLINE_REVEAL Mechanism C (user, 2026-08-14: "during preview, it can also go along
+        // so user confident it is working") — pure function of (plan, tNorm), the SAME call the bake
+        // loop makes (cinema_maxq.js), so preview and bake cannot diverge. No-op when reveal is off.
+        if (s.reveal && a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(s.plan, tn);
+        // §STOREY_HIGHLIGHT_REVEAL — same "preview mirrors the bake exactly" call.
+        if (s.storeyReveal && a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(s.plan, tn);
+        if (s.storeyReveal && a.storeyRevealApplyCut) a.storeyRevealApplyCut(s.plan, tn);
+        // §ESCAPE_ROUTE_REVEAL — the preview builds lazily on first entry into the window, so a
+        // scrub that never reaches the closing orbit pays nothing for it.
+        // ⚠ THE PREVIEW SHOWS THE ROOM GLOW, NOT THE LINE OR THE CAMERA EASE, and that is stated
+        // rather than quietly true. The line and the card are composited onto the CAPTURE canvas
+        // (cinema_maxq.js _captureFrame), which the preview has no equivalent of — the same reason
+        // the clash labels and the day counter have never appeared in a preview either. The camera
+        // ease is deliberately not applied to _applyCameraPose: that function also serves the SCRUB
+        // drag, where a pose that does not match the playhead the user is holding would be a bug.
+        if (s.escapeRoute && a.escapeRouteApplyVisual) {
+          if (a.escapeRouteBuild && a.escapeRouteRecord && !a.escapeRouteRecord()) { try { a.escapeRouteBuild(); } catch (eERp) {} }
+          a.escapeRouteApplyVisual(s.plan, tn);
+        }
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2355,18 +2852,22 @@
           // §CPE_BUILDUP_TOPOUT: the same remap the bake applies — construction completes at the
           // closing-orbit boundary, so the rehearsal's ending shows the finished building too.
           var bkTn = a.buildupTAt ? a.buildupTAt(tn, _state.plan) : tn;
+          // §CPE_BUILDUP_ONSET_BLEND: same expression §CPE_GHOST_GROUND already uses below for its
+          // own totalSec — one value, reused, so onset blend and ghost-ground fade agree on the
+          // film's length instead of each computing their own.
+          var _totalSec = _titleTotalSec || dur / 1000;
           // §GHOST_GROUND_LIVE_TRIGGER: compute the cursor ONCE and reuse it for tmSetCursor,
           // ghostGroundAt and dayCounterLiveTick — previously each call re-derived it inline
           // (harmless when they agreed, but the ghost-ground trigger now needs the EXACT same
           // cursor value tmSetCursor just used, not a separately-recomputed one).
-          var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev)
+          var bkMs = a.buildupCursorAt ? a.buildupCursorAt(bkTn, bkPrev, _totalSec)
             : (bkPrev.projectStart + bkTn * (bkPrev.projectEnd - bkPrev.projectStart));
           window.tmSetCursor(bkMs);
           // §CPE_GHOST_GROUND: the rehearsal shows what the bake will show. The fade is expressed in
           // FILM fraction, so the 10 s preview and the full bake trace the identical curve even
           // though the wall-clock speeds differ by 15x. `bkMs` is the real cursor — §GHOST_GROUND_
           // LIVE_TRIGGER compares it directly to `firstAboveMs`, never a converted fraction.
-          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _titleTotalSec || dur / 1000, bkPrev, bkMs);
+          if (a.ghostGroundAt) a.ghostGroundAt(bkTn, _totalSec, bkPrev, bkMs);
           // Same cursor the buildup was just set to — never a second, separately-interpolated clock.
           if (_dayOn && a.dayCounterLiveTick) a.dayCounterLiveTick(bkMs);
         }
@@ -2393,6 +2894,15 @@
         if (a.buildupPacingReset) a.buildupPacingReset();
         if (a.roomTitleLiveStop) a.roomTitleLiveStop();
         if (a.dayCounterLiveStop) a.dayCounterLiveStop();
+        // §CPE_DISCIPLINE_REVEAL: same exit contract as ghostGroundRestore above — a rehearsal that
+        // ended mid-round (or right at it) must not leave ARC/STR hidden for the editing session that
+        // follows. plan=null is the explicit "force restore" signal cpeRevealApplyVisual reads.
+        if (a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(null, 0);
+        // §STOREY_HIGHLIGHT_REVEAL: same exit contract — a tinted storey must not follow the user
+        // back into normal editing.
+        if (a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(null, 0);
+        if (a.storeyRevealApplyCut) a.storeyRevealApplyCut(null, 0);
+        if (a.escapeRouteApplyVisual) a.escapeRouteApplyVisual(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;
@@ -2563,6 +3073,165 @@
     _markPreviewStale();
     _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
     return true;
+  }
+
+  // ══ §CPE_CONE_ORIENT_ADJUST — drag the POV cone to fix a bad gaze, no stick added ═══════════════
+  // Spec: bim-compiler prompts/CINEMA_PATH_EDITOR.md §CPE_CONE_ORIENT_ADJUST (2026-08-27). Makes the
+  // existing passive `_state.povMarker` cone (§CPE_POV_MARKER) interactive: click focuses it, drag
+  // while focused rotates ONLY its facing (position stays scrub-driven — spec item 1), release commits
+  // an ANCHORED correction (§CPE_CONE_ORIENT_ADJUST item 4), never a band/stick (item 8 — the whole
+  // point of this feature).
+  //
+  // ONE grab, split by what the hand does — the SAME convention §CPE_STICK vs §CPE_HOSE already
+  // established in this file ("let go without moving and you get a stick; move and you bend the
+  // pipe"): a plain click on the cone focuses it (or, if already focused, is a no-op — focus stands);
+  // a drag past CLICK_SLOP_PX live-rotates it and commits on release. This was a judgment call — the
+  // spec's own prose lists "click = focus" and "drag while focused = live edit" as two numbered
+  // steps, which could also read as two SEPARATE gestures (click once to focus, click-drag again to
+  // rotate). Combining them into one gesture reuses this file's own established split-by-movement
+  // pattern rather than inventing a second one; flagged here, not presented as user-confirmed.
+  //
+  // Hit-test is SCREEN-SPACE proximity (`_screenOf` + a pixel radius), not a THREE.Raycaster hit —
+  // same reasoning §CPE_GRAB_WYSIWYG's own comment gives for the band handles: the cone draws with
+  // depthTest:false (always visible, even through walls — see _syncPovMarker), so a depth-sorted
+  // raycast would disagree with what the user actually sees and could miss a cone that is genuinely
+  // on screen but occluded in the depth buffer.
+  // §CPE_CONE_ORIENT_ADJUST scoping note (a judgment call, not user-specified): a correction's
+  // envelope only ever affects `_beat3Pose` (the walk beat) — effects.js's own comment explains why
+  // (that is where `_pinLookAtAt` lives — §CPE_AIM_DEPTH used to as well, retired 2026-09-02,
+  // §CPE_AIM_DEPTH_RETIRED — and it is the beat the "staring
+  // skywards" bug this feature targets actually occurs in). Outside the walk beat (dive/spin/orbit/
+  // tail) the cone's WORLD position collapses onto a fixed point per-beat (e.g. `settle` throughout
+  // the whole spin), so a correction "anchored" there would nearest-point-snap onto the walk's own
+  // s≈0/s≈1 end and silently correct the WRONG stretch — confusing, not merely inert. Gating the
+  // whole interaction to the walk window sidesteps that rather than trying to explain it in the UI.
+  function _coneInWalkWindow() {
+    var w = _walkWindow();
+    var tn = _state ? (_state.scrubTn || 0) : 0;
+    return !!w && tn > w.spin + 1e-6 && tn < w.out - 1e-6;
+  }
+  function _hitTestCone(ev) {
+    if (!_state || !_state.povMarker || !_state.povMarker.parent || !_coneInWalkWindow()) return false;
+    var mk = _state.povMarker, s = _screenOf(mk.position);
+    if (s.behind) return false;
+    var a = A();
+    var D = Math.hypot(mk.position.x - a.camera.position.x, mk.position.y - a.camera.position.y,
+                        mk.position.z - a.camera.position.z);
+    var grabPx = GRAB_PX;
+    if (D > 1e-3) {
+      var r = a.canvas.getBoundingClientRect();
+      var pxPerM = r.height / (2 * D * Math.tan(a.camera.fov * Math.PI / 360));
+      // Read the geometry back (same "read back, don't re-derive" precedent as _handleGrabPx) — the
+      // cone's own base radius, from _syncPovMarker's ConeGeometry(mr, mr*2.2, ...).
+      var geoR = (mk.geometry && mk.geometry.parameters && isFinite(mk.geometry.parameters.radius))
+        ? mk.geometry.parameters.radius : 0.5;
+      grabPx = Math.max(GRAB_PX, geoR * pxPerM + 2);
+    }
+    return Math.hypot(ev.clientX - s.x, ev.clientY - s.y) < grabPx;
+  }
+  // Pointerdown on the cone: claims the gesture, sets up the live-rotate basis (yaw/pitch derived
+  // from the cone's CURRENT displayed direction, so the drag starts from wherever the gaze is right
+  // now — auto-aim, a pin, or an earlier correction, whichever is currently shown) and focuses it
+  // immediately (spec item 2 — a plain click alone must already show the focus colour).
+  function _coneDown(ev) {
+    var mk = _state.povMarker, a = A();
+    var up = new THREE.Vector3(0, 1, 0).applyQuaternion(mk.quaternion);
+    var yaw0 = Math.atan2(up.z, up.x), pit0 = Math.atan2(up.y, Math.hypot(up.x, up.z));
+    _state._coneDrag = { sx0: ev.clientX, sy0: ev.clientY, moved: false, yaw0: yaw0, pit0: pit0, dir: null };
+    if (!_state.coneFocused) {
+      _state.coneFocused = true;
+      if (mk.material) mk.material.color.setHex(CONE_FOCUS_COLOR);
+      console.log('§CPE_CONE_FOCUS on');
+      if (a.markDirty) a.markDirty();
+    }
+  }
+  // Live rotation, gated on the file's own CLICK_SLOP_PX so a plain click never registers as a
+  // (zero-length) drag. Cheap and visual-only — no _replanFilm()/_redrawScene() during the gesture,
+  // same "land first, persisted" reasoning §CPE_DRAG_LAND_FIRST already established for band drags —
+  // just the cone mesh's own quaternion and, per spec item 3, the live viewfinder preview.
+  function _coneDragMove(ev) {
+    var d = _state._coneDrag;
+    if (!d.moved && Math.hypot(ev.clientX - d.sx0, ev.clientY - d.sy0) < CLICK_SLOP_PX) return;
+    if (!d.moved) {
+      d.moved = true;
+      // §CPE_CONE_ORIENT_ADJUST spec item 3: the preview/viewfinder auto-shows during the drag, even
+      // if the eye toggle is currently off, so the user sees the corrected framing live. OPEN
+      // QUESTION the spec left undecided — picked "stays open until the eye toggle is used" (the
+      // less-surprising default, per the spec's own recommendation) — so this only ever turns the
+      // eye ON, never back off on release.
+      if (!_state.vfOn) _toggleViewfinder(document.getElementById('cpe-vf-toggle'));
+      console.log('§CPE_CONE_DRAG start — live orientation edit, position stays scrub-driven');
+    }
+    var yaw = d.yaw0 + (ev.clientX - d.sx0) * CONE_ROTATE_RAD_PER_PX;
+    var pit = Math.max(-CONE_PITCH_CLAMP_RAD, Math.min(CONE_PITCH_CLAMP_RAD,
+      d.pit0 - (ev.clientY - d.sy0) * CONE_ROTATE_RAD_PER_PX));
+    var cp = Math.cos(pit);
+    d.dir = { x: Math.cos(yaw) * cp, y: Math.sin(pit), z: Math.sin(yaw) * cp };
+    var mk = _state.povMarker;
+    if (mk) mk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(d.dir.x, d.dir.y, d.dir.z));
+    if (_state.vfOn && _state.vfCam && mk) {
+      _state.vfCam.position.set(mk.position.x, mk.position.y, mk.position.z);
+      _state.vfCam.lookAt(mk.position.x + d.dir.x * 20, mk.position.y + d.dir.y * 20, mk.position.z + d.dir.z * 20);
+    }
+    var a = A();
+    if (a.markDirty) a.markDirty();
+  }
+  // The actual mutation, factored out of the pointer gesture above so a witness can drive it with a
+  // KNOWN direction (deterministic — no dependency on screen-pixel drag maths), same precedent
+  // `_setPin` already established for the analogous AIM_PIN gesture.
+  function _commitConeCorrection(pos, dir) {
+    if (!_state || !pos || !dir) return false;
+    // Re-dragging near an EXISTING correction's own anchor UPDATES it in place rather than stacking a
+    // second, nearly-redundant entry — spec item 6 (multiple/overlapping corrections, not user-
+    // decided): simplest reasonable MVP, flagged for review, not presented as settled.
+    var idx = -1, bd = Infinity;
+    for (var i = 0; i < _state.corrections.length; i++) {
+      var c = _state.corrections[i];
+      var dd = Math.hypot(c.pos.x - pos.x, c.pos.y - pos.y, c.pos.z - pos.z);
+      if (dd < bd) { bd = dd; idx = i; }
+    }
+    var updating = idx >= 0 && bd < CPE_CONE_CORR_MERGE_M;
+    _undoPush(updating ? 'cone re-correct' : 'cone correction');
+    var entry = { pos: { x: pos.x, y: pos.y, z: pos.z }, dir: { x: dir.x, y: dir.y, z: dir.z },
+                  rampF: CPE_CONE_CORR_RAMP_F, holdF: CPE_CONE_CORR_HOLD_F, decayF: CPE_CONE_CORR_DECAY_F };
+    if (updating) _state.corrections[idx] = entry; else _state.corrections.push(entry);
+    _state.staged = false;
+    console.log('§CPE_CONE_CORRECTION ' + (updating ? 'update' : 'add') +
+      ' pos=(' + pos.x.toFixed(2) + ',' + pos.y.toFixed(2) + ',' + pos.z.toFixed(2) + ')' +
+      ' dir=(' + dir.x.toFixed(3) + ',' + dir.y.toFixed(3) + ',' + dir.z.toFixed(3) + ')' +
+      ' rampF=' + CPE_CONE_CORR_RAMP_F + ' holdF=' + CPE_CONE_CORR_HOLD_F + ' decayF=' + CPE_CONE_CORR_DECAY_F +
+      ' (share of the walk, §CPE_CORR_FRACTION)' +
+      ' count=' + _state.corrections.length + ' — anchored to path arc-length, never adds/moves a band (spec item 8)');
+    _markPreviewStale();
+    _replanFilm(); _redrawScene(); _renderRows(); _renderClock(); _syncButtons();
+    // Re-sync the cone (position + orientation) against the just-replanned pose at the current scrub
+    // position — the plan now carries the correction, so this proves (rather than assumes) the cone's
+    // own readout agrees with what the bake will actually fly.
+    if (_state.plan) _applyVFPose(_state.scrubTn || 0);
+    return true;
+  }
+  // Pointerup on the cone. A press that never moved is a plain click — focus already applied in
+  // _coneDown, nothing further to do (spec item 2). A real drag commits the correction using the
+  // cone's OWN current position (scrub-driven, never touched by this drag — spec item 1) and the
+  // final dragged direction.
+  function _coneUp() {
+    var d = _state._coneDrag;
+    _state._coneDrag = null;
+    if (!d || !d.moved) { console.log('§CPE_CONE_FOCUS click (no drag) — focus stands'); return; }
+    var mk = _state.povMarker;
+    if (mk && d.dir) _commitConeCorrection({ x: mk.position.x, y: mk.position.y, z: mk.position.z }, d.dir);
+  }
+  // Clicking anywhere OUTSIDE the cone clears focus and reverts the colour (spec item 2). Lightweight
+  // — direct material mutation + markDirty, no _redrawScene()/undo: focus is transient UI state, not
+  // authored data (see the field comment on `_state.coneFocused` in open()).
+  function _coneDefocus(why) {
+    if (!_state || !_state.coneFocused) return;
+    _state.coneFocused = false;
+    if (_state.povMarker && _state.povMarker.material) _state.povMarker.material.color.setHex(CONE_DEFAULT_COLOR);
+    console.log('§CPE_CONE_FOCUS off why=' + why);
+    var a = A();
+    if (a.markDirty) a.markDirty();
   }
 
   function _frameBand(bi) {
@@ -2770,6 +3439,21 @@
     var a = A(), c = a.canvas, h = {};
     h.down = function(ev) {
       if (!_state) return;
+      // ══ §CPE_CONE_ORIENT_ADJUST — checked FIRST, ahead of the handle/pipe hit-tests below, since
+      // the cone is a distinct object with its own claim on the gesture (mirrors why this sidesteps
+      // the old AIM_PIN "swallowed near-miss stick grabs" regression — see the spec section's own
+      // "chosen mechanism" paragraph: a uniquely-pickable object, not "click anywhere on the canvas").
+      if (_hitTestCone(ev)) {
+        ev.preventDefault(); ev.stopPropagation();
+        _coneDown(ev);
+        return;
+      }
+      // Not the cone. If it is currently focused, this press MIGHT be the "click outside clears
+      // focus" gesture (spec item 2) — confirmed on release (h.up), only if the pointer barely moved,
+      // same CLICK_SLOP_PX convention §CPE_AIM_PIN's own _pinCandidate uses below. Recorded WITHOUT
+      // preventDefault/stopPropagation and independently of whatever else this same gesture claims
+      // (a handle, the pipe, orbiting) — clicking a handle IS "outside the cone" too.
+      if (_state.coneFocused) _state._coneDefocusCandidate = { sx0: ev.clientX, sy0: ev.clientY };
       var hit = _hitTest(ev);
       if (!hit) {
         // §CPE_HOSE: no band handle under the cursor — try the pipe. A miss on BOTH still falls
@@ -2820,7 +3504,11 @@
       }
     };
     h.move = function(ev) {
-      if (!_state || !_state.drag) return;
+      if (!_state) return;
+      // §CPE_CONE_ORIENT_ADJUST: a claimed cone gesture owns pointermove exclusively until release —
+      // `_state.drag` is never touched by it, so the two cannot collide.
+      if (_state._coneDrag) { ev.preventDefault(); ev.stopPropagation(); _coneDragMove(ev); return; }
+      if (!_state.drag) return;
       ev.preventDefault(); ev.stopPropagation();
       var d = _state.drag;
       if (d.hose) {
@@ -2910,6 +3598,17 @@
     };
     h.up = function(ev) {
       if (!_state) return;
+      // §CPE_CONE_ORIENT_ADJUST: a claimed cone gesture resolves fully on its own and returns —
+      // it never touches `_state.drag`/`_pinCandidate`, so nothing below needs to know about it.
+      if (_state._coneDrag) { _coneUp(); return; }
+      // §CPE_CONE_ORIENT_ADJUST: "click outside the cone clears focus" (spec item 2), resolved the
+      // same way `_pinCandidate` below resolves — independently of `_state.drag`, since a genuine
+      // outside-click may not have claimed the gesture at all (e.g. empty canvas).
+      var ccd = _state._coneDefocusCandidate;
+      if (ccd) {
+        _state._coneDefocusCandidate = null;
+        if (ev && Math.hypot(ev.clientX - ccd.sx0, ev.clientY - ccd.sy0) < CLICK_SLOP_PX) _coneDefocus('clicked outside');
+      }
       // §CPE_AIM_PIN: resolved independently of `_state.drag` (which stays untouched by the
       // candidate above) — a genuine click-to-pin never claimed the gesture, so it must not be
       // gated behind "was something being dragged".
@@ -3064,6 +3763,27 @@
         // (RESUME_CPE_ROOM_TITLE.md).
         roomTitle: false,
         origRoomTitle: false,
+        // §CPE_DISCIPLINE_REVEAL: off by default, same reasoning as roomTitle — a deliberate choice,
+        // not a default-on behavior (extra film time + a real visual change, see checkbox hint).
+        reveal: false,
+        clash: false,          // §CLASH_FILM_P1
+        measure: false,        // §FLYTHRU_DATUM — same off-by-default reasoning as clash/reveal
+        storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
+        loadPath: false,       // §129.31 — off by default for a BRAND NEW path, same reasoning; an
+                                // existing saved path with no loadPath key falls back to Measure instead
+                                // of this default (cinema_maxq.js's own `_loadPath` line), never this
+        escapeRoute: false,    // §ESCAPE_ROUTE_REVEAL — off by default, same reasoning again
+        visualPanel: false, audioPanel: false,   // §FREEZE_PERF_PANEL — off by default, same reasoning
+        // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — off by default, same
+        // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
+        // silently change films the user has already signed off.
+        sunCompass: false,
+        // §SUN_DAY — '' means follow the 4D timeline's own dates (the shipped behaviour).
+        sunDate: '',
+        bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
+        origReveal: false,
+        filmBounce: true,      // §CPE_CHECKBOX_SAVE — Bounce light, default ON
+        origFlags: null,       // §CPE_CHECKBOX_SAVE — set right after _state is built
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
@@ -3076,13 +3796,22 @@
         controlsWere: a.controls ? a.controls.enabled : true,
         // §CPE_VIEWFINDER: OFF by default (user, 2026-08-04: "so it is not cluttered") — see the
         // eye-icon toggle in _buildPanel. `vfCam` is created lazily on first toggle-on, not here.
-        vfOn: false, vfCam: null
+        vfOn: false, vfCam: null,
+        // §CPE_CONE_ORIENT_ADJUST: adopted from an authored plan exactly like `bands` above (no
+        // reciprocal fan-out concern here — a correction is not band-indexed, so there is no
+        // seed-vs-authored distinction to make). `coneFocused`/`_coneDrag`/`_coneDefocusCandidate`
+        // are transient UI state, not authored data — never persisted, never undo-tracked.
+        corrections: _cloneCorrections(plan.aimCorrections || []),
+        origCorrections: _cloneCorrections(plan.aimCorrections || []),
+        coneFocused: false, _coneDrag: null, _coneDefocusCandidate: null, povMarker: null
       };
       console.log('§CPE_OPEN src=' + (authored ? 'authored' : 'seeded') +
         ' bands=' + _state.bands.length + ' waypoints=' + (_state.bands.length * 2) +
         ' bandLen=' + _state.bands[0].len.toFixed(2) + 'm pathLen=' + plan.pathLen.toFixed(1) +
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
+      _state.filmBounce = true; a._filmBounceOff = false;   // §CPE_CHECKBOX_SAVE: the box opens ticked, so state must agree with it
+      _state.origFlags = _flagBaseline();
       var panel = _buildPanel();
       // §CPE_SCRUB_EYE_GATED (2026-08-06, retires §CPE_SCRUB_STANDALONE's "built unconditionally"
       // behaviour) — user, this session: "Been minimalist, user is asked to just bake on the fly.
@@ -3155,6 +3884,7 @@
       });
       document.getElementById('cpe-buildup').addEventListener('change', function(e) {
         _state.buildup = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         // §CPE_BUILDUP_FOLLOW_TM — the reveal is the Time Machine's own timeline, unmodified. The
         // mode (S = linked schedule, T = this model's derived 4D) is decided and logged by
@@ -3180,6 +3910,7 @@
       });
       document.getElementById('cpe-room-title').addEventListener('change', function(e) {
         _state.roomTitle = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         console.log('§CPE_ROOM_TITLE ' + (_state.roomTitle ? 'ON' : 'off'));
         // a.friendlyName/a.getRoomGraph live in the lazy Navigate bundle — same load-on-first-use
@@ -3187,6 +3918,176 @@
         var _a = A();
         if (_state.roomTitle && typeof _a.friendlyName !== 'function' && typeof _a.loadNavigate === 'function') _a.loadNavigate();
         if (!_state.roomTitle && _a.roomTitleLiveStop) _a.roomTitleLiveStop();
+        _renderWhole(); _syncButtons();
+      });
+      // §CPE_DISCIPLINE_REVEAL Mechanism C (prompts/CINEMA_DISCIPLINE_REVEAL.md) — checking this box
+      // inserts an extra retrace round (last stick -> first stick -> last stick, plus a tail pause)
+      // into the bake AND preview (effects.js's _cinemaPathPlan/poseAt for the camera, A.cpeReveal
+      // ApplyVisual/A.filterDiscs for hiding ARC/STR — full hide, not a translucent fade: checked
+      // live, ~80% of ARC/STR geometry is batched/instanced with materials shared across disciplines
+      // by colour, so a scoped translucent ghost would need per-instance shader work; full hide
+      // reuses existing code and gets the sunlight-through effect for free).
+      // §CLASH_FILM_P1 — a flag read live by clash_film.js at staging; unlike Reveal it does not
+      // move any beat boundary, so a plain _markPreviewStale() is the whole handler.
+      var _clashEl = document.getElementById('cpe-clash');
+      if (_clashEl) _clashEl.addEventListener('change', function(e) {
+        _state.clash = !!e.target.checked;
+        _flagChanged();
+        console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
+          ' — mesh-true clash pairs as world content in the bake');
+      });
+      // §FLYTHRU_DATUM — like clash above, a pure overlay flag: it moves no beat boundary, so
+      // _markPreviewStale() is the whole handler.
+      var _measureEl = document.getElementById('cpe-measure');
+      if (_measureEl) _measureEl.addEventListener('change', function(e) {
+        _state.measure = !!e.target.checked;
+        _flagChanged();
+        console.log('§CPE_MEASURE checkbox=' + (_state.measure ? 'on' : 'off') +
+          ' — setting-out drawing (grid bubbles, bay chains, storey rules) in the bake');
+      });
+      // §SUN_COMPASS — a pure overlay flag like clash/measure: it moves no beat boundary, so
+      // _markPreviewStale() is the whole handler. The log line says what a re-bake will and will
+      // not contain, because whether anything is drawn depends on the BUILDING, not on this box.
+      var _sunCompassEl = document.getElementById('cpe-sun-compass');
+      if (_sunCompassEl) _sunCompassEl.addEventListener('change', function(e) {
+        _state.sunCompass = !!e.target.checked;
+        var _row = document.getElementById('cpe-sun-date-row');
+        if (_row) _row.style.display = _state.sunCompass ? '' : 'none';
+        _flagChanged();
+        console.log('§CPE_SUN_COMPASS checkbox=' + (_state.sunCompass ? 'on' : 'off') +
+          ' — true-north ground rose + day-of-year + sun angle of attack, as ONE overlay. ' +
+          'On a building with no site lat/long this draws nothing and the bake logs ' +
+          '§SUN_COMPASS INCONCLUSIVE — the checkbox cannot promise a compass the DB cannot support.');
+      });
+      // §SUN_DAY — the date field and its clear button. Pure overlay state like the checkbox
+      // above: no beat boundary moves, so _markPreviewStale() is the whole handler.
+      var _sunDateEl = document.getElementById('cpe-sun-date');
+      if (_sunDateEl) _sunDateEl.addEventListener('change', function(e) {
+        _state.sunDate = String(e.target.value || '');
+        _flagChanged();
+        console.log('§CPE_SUN_DATE ' + (_state.sunDate
+          ? 'pinned to ' + _state.sunDate + ' — the whole film is lit on that one day, hour ' +
+            'sweeping morning to late afternoon; the BUILD still follows the 4D timeline'
+          : 'cleared — the light follows the 4D timeline\'s own dates again'));
+      });
+      var _sunDateClr = document.getElementById('cpe-sun-date-clear');
+      if (_sunDateClr) _sunDateClr.addEventListener('click', function() {
+        _state.sunDate = '';
+        if (_sunDateEl) _sunDateEl.value = '';
+        _flagChanged();
+        console.log('§CPE_SUN_DATE cleared — the light follows the 4D timeline\'s own dates again');
+      });
+      // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
+      // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no
+      // _replanFilm() needed (contrast §CPE_DISCIPLINE_REVEAL's handler below, which does move one).
+      var _storeyRevealEl = document.getElementById('cpe-storey-reveal');
+      if (_storeyRevealEl) _storeyRevealEl.addEventListener('change', function(e) {
+        _state.storeyReveal = !!e.target.checked;
+        _flagChanged();
+        console.log('§STOREY_REVEAL checkbox=' + (_state.storeyReveal ? 'on' : 'off') +
+          ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
+      });
+      // §129.31 — like clash/measure above, a pure overlay flag off the existing topout hold point;
+      // no beat boundary moves, so _markPreviewStale() is the whole handler.
+      ['visualPanel', 'cpe-visual-panel', 'audioPanel', 'cpe-audio-panel'].forEach(function (_k, _i, _a) {   // §FREEZE_PERF_PANEL
+        if (_i % 2) return; var _el = document.getElementById(_a[_i + 1]);
+        if (_el) _el.addEventListener('change', function (e) { _state[_k] = !!e.target.checked; _flagChanged();
+          console.log('§CPE_FREEZE_PERF checkbox ' + _k + '=' + (_state[_k] ? 'on' : 'off') + (_state.loadPath ? '' : ' (draws nothing until Load path freeze is on)')); });
+      });
+      var _loadPathEl = document.getElementById('cpe-load-path');
+      if (_loadPathEl) _loadPathEl.addEventListener('change', function(e) {
+        _state.loadPath = !!e.target.checked;
+        _flagChanged();
+        console.log('§CPE_LOAD_PATH checkbox=' + (_state.loadPath ? 'on' : 'off') +
+          ' — structural chain freeze-frame (section-cut, cost/schedule HUD) in the bake');
+      });
+      // §ESCAPE_ROUTE_REVEAL — a pure overlay flag like clash/measure/storey above: it moves no
+      // beat boundary (its window is carved out of the closing orbit that already exists), so
+      // _markPreviewStale() is the whole handler. The log says what a re-bake will and will not
+      // contain, because whether anything is drawn depends on the BUILDING — a model whose room
+      // graph reaches no exit at all has no worst case to show, and the bake says so as
+      // §ESCAPE_ROUTE_BUILD VACUOUS rather than drawing an invented line.
+      var _escapeRouteEl = document.getElementById('cpe-escape-route');
+      if (_escapeRouteEl) _escapeRouteEl.addEventListener('change', function(e) {
+        _state.escapeRoute = !!e.target.checked;
+        _flagChanged();
+        console.log('§ESCAPE_ROUTE checkbox=' + (_state.escapeRoute ? 'on' : 'off') +
+          ' — the worst-case room\'s REAL escape route traced during the closing orbit, with a live' +
+          ' walking-time (1.19 m/s, SFPE, cited) and step (0.75 m stride, uncited) count. On a' +
+          ' building whose room graph reaches no exit this draws nothing and the bake logs' +
+          ' §ESCAPE_ROUTE_BUILD VACUOUS — read the log, do not infer from the video.');
+      });
+      // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
+      // §S274 FIX (2026-09-06, live crash reported from production, red1oon.github.io/bim-ootb):
+      // `A` here is the app GETTER FUNCTION (see `var _a = A();` a few lines above in this same
+      // file), not the app object — `A.renderer` was always undefined, `.domElement` on it threw
+      // §ERR_GLOBAL on every selection change. Fixed to call A().
+      var _resEl = document.getElementById('cpe-bake-res');
+      if (_resEl) _resEl.addEventListener('change', function(e) {
+        _state.bakeRes = e.target.value || '';
+        _flagChanged();
+        var _app = A();
+        var _winSize = (_app && _app.renderer && _app.renderer.domElement) ?
+          (_app.renderer.domElement.width + 'x' + _app.renderer.domElement.height) : 'this window';
+        console.log('§CPE_BAKE_RES stored=' + (_state.bakeRes || 'this window') +
+          ' — silent bake only; Alt+C in this window still renders at ' + _winSize);
+      });
+      // §CPE_BAKE_RES_COMMAND — there is no server behind this page, so nothing here can RUN a
+      // bake; the honest control is handing over the exact command for the user's own terminal
+      // (repo cloned, Node installed, the building's DB available locally).
+      var _fbEl = document.getElementById('cpe-film-bounce');
+      if (_fbEl) _fbEl.addEventListener('change', function(e) { var _app = A(); _state.filmBounce = !!e.target.checked; if (_app) _app._filmBounceOff = !e.target.checked; _flagChanged();
+        console.log('§GI_FILM_TOGGLE bounce=' + (e.target.checked ? 'on' : 'off') + ' (this window\'s Alt+C and the bake command)');
+        if (_cmdText && _cmdBox && _cmdBox.style.display !== 'none') _cmdText.value = _buildBakeCommand(); });
+      var _cmdLink = document.getElementById('cpe-bake-cmd-link');
+      var _cmdBox = document.getElementById('cpe-bake-cmd-box');
+      var _cmdText = document.getElementById('cpe-bake-cmd-text');
+      var _cmdCopyBtn = document.getElementById('cpe-bake-cmd-copy');
+      function _buildBakeCommand() {
+        var _app = A();
+        var bld = (_app && _app.activeBuilding) || 'YOUR_BUILDING';
+        var res = (_resEl && _resEl.value) || '';
+        var flags = '';
+        var m = res.match(/^(\d+)x(\d+)@(\d+)$/);
+        if (m) flags = ' --width ' + m[1] + ' --height ' + m[2] + ' --fps ' + m[3];
+        // no selection = cli_silent_bake.js's own default (1280x720@15), not invented here
+        var _bEl = document.getElementById('cpe-film-bounce');
+        if (_bEl && !_bEl.checked) flags += ' --bounce 0';   // §GI_FILM — default on; only the off state needs saying
+        return 'node cli_silent_bake.js --db ' + bld + flags + ' --gpu real --out /tmp/' + bld + '_bake.mp4';
+      }
+      if (_cmdLink) _cmdLink.addEventListener('click', function() {
+        var shown = _cmdBox && _cmdBox.style.display !== 'none';
+        if (_cmdBox) _cmdBox.style.display = shown ? 'none' : 'block';
+        if (!shown && _cmdText) {
+          _cmdText.value = _buildBakeCommand();
+          console.log('§CPE_BAKE_CMD shown');
+        }
+      });
+      if (_cmdCopyBtn) _cmdCopyBtn.addEventListener('click', function() {
+        var txt = (_cmdText && _cmdText.value) || _buildBakeCommand();
+        navigator.clipboard.writeText(txt).then(function() {
+          _cmdCopyBtn.textContent = 'Copied!';
+          console.log('§CPE_BAKE_CMD copied');
+          setTimeout(function() { _cmdCopyBtn.textContent = 'Copy'; }, 2000);
+        });
+      });
+      document.getElementById('cpe-reveal').addEventListener('change', function(e) {
+        _state.reveal = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
+        _markPreviewStale();
+        // §CPE_DISCIPLINE_REVEAL — real bug found live (user, 2026-08-14: "Preview also do not go
+        // 2nd round" / "the pov timeline numbering did double but the alt-c still remains not").
+        // _markPreviewStale() only bumps a counter; it does NOT rebuild _state.plan. Unlike
+        // buildup/roomTitle (flags read live by their own draw code), reveal changes the PLAN'S OWN
+        // BEAT BOUNDARIES (tV/tR) — poseAt/buildupTopoutU read _state.plan directly, so without an
+        // explicit _replanFilm() here, the next preview click keeps flying the STALE pre-toggle plan
+        // (reveal effectively off) until some unrelated edit (a band drag) happens to trigger one.
+        // Duration LABELS (_buildOverride()._total, called fresh each time) looked right regardless —
+        // that's the "numbering did double but the camera still remains not" split exactly.
+        _replanFilm(); _redrawScene(); _renderClock();
+        console.log('§CPE_REVEAL ' + (_state.reveal ? 'ON' : 'off') +
+          ' — extra retrace round, ARC/STR hides to reveal MEP/other disciplines' +
+          ' (spec: prompts/CINEMA_DISCIPLINE_REVEAL.md)');
         _renderWhole(); _syncButtons();
       });
       // Seeded from state, not left on the markup's first <option>: a plan re-opened from
@@ -3385,6 +4286,25 @@
                    speed: _state.speed, baseTotal: _state.baseTotal, baseOutSec: _state.baseOutSec };
         },
         _probeOverride: function() { return _state ? _buildOverride() : null; },
+        // §CPE_POV_MARKER — read off the REAL mesh's transform, never a re-derivation, same
+        // "product path, not a re-implementation" precedent as _probePipe/_probeHandles below.
+        _probePovMarker: function() {
+          if (!_state || !_state.povMarker || !_state.povMarker.parent) return null;
+          var mk = _state.povMarker, up = new THREE.Vector3(0, 1, 0).applyQuaternion(mk.quaternion);
+          return { x: mk.position.x, y: mk.position.y, z: mk.position.z,
+                   dirx: up.x, diry: up.y, dirz: up.z, visible: mk.visible };
+        },
+        // §CPE_CONE_ORIENT_ADJUST witness hooks — read off the REAL mesh/state, same "product path,
+        // not a re-implementation" precedent as _probePovMarker above.
+        _probeConeFocus: function() {
+          if (!_state) return null;
+          return { focused: !!_state.coneFocused, dragging: !!_state._coneDrag,
+                   hex: (_state.povMarker && _state.povMarker.material)
+                     ? '0x' + _state.povMarker.material.color.getHex().toString(16).padStart(6, '0') : null };
+        },
+        _probeCorrections: function() {
+          return _state ? _cloneCorrections(_state.corrections) : null;
+        },
         // §CPE_STICK_RED_BAR's G-RN-4c: the BAR is a separate mesh from the handles, so it needs its
         // own read-only probe or "red bar, blue dots" is asserted on half the evidence.
         _probeBars: function() {

@@ -1,0 +1,11 @@
+§OC-MODEL rows=0:system.bundle=Active 1:bim.ad_parser=Active 2:bim.pos_lens=Active 3:org.test.eager=Active 4:org.test.lazy=Starting 5:org.test.stopped=Resolved 6:org.test.fresh=Installed
+§OC-SUMMARY Bundle information: 7 bundles in total - 4 bundles active, 1 bundle starting (lazy), 1 bundle resolved, 1 bundle installed.
+  §OC C1 Id 0 is the system bundle, built-ins follow as always-active bundles (no actions), plugins continue the numbering PASS
+  §OC C2 statuses use the OSGi vocabulary: started eager = Active, started lazy = Starting, stopped = Resolved (as OSGi returns a stopped bundle), never started = Installed PASS
+  §OC C3 the Felix summary sentence with the right counts PASS
+  §OC C3b when every bundle is active the sentence is the familiar "all N bundles active" PASS
+  §OC C4 actions follow the state: Active/Starting can Stop+Refresh, Resolved/Installed can Start, every plugin can be Uninstalled; built-ins have none PASS
+  §OC C5 the filter matches name/symbolic name/status case-insensitively and is stated in the summary PASS
+  §OC C6 detail pane of an ACTIVE bundle lists the services the registry recorded (IModelFactory + DocAction class), its budget and hot-chunk count PASS
+  §OC C7 detail pane of a STARTING lazy bundle states it is not active (no services yet), shows its triggers and the Lazy policy PASS
+§OC-VERDICT PASS break=none judged=8 failed=0

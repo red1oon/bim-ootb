@@ -45,7 +45,7 @@
   var CSS =
     '#pr-root{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif}' +
     '#pr-root .pr-backdrop{position:absolute;inset:0;background:rgba(8,12,20,.55)}' +
-    '#pr-root .pr-modal{position:relative;z-index:1;background:#fff;color:#1b2430;width:600px;max-width:94vw;max-height:88vh;overflow:auto;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.45)}' +
+    '#pr-root .pr-modal{position:relative;z-index:1;background:#fff;color:#1b2430;width:1000px;max-width:96vw;max-height:88vh;overflow:auto;border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.45)}' +
     '#pr-root .pr-head{display:flex;align-items:center;gap:9px;padding:13px 16px;background:#0a4ea3;color:#fff;border-radius:10px 10px 0 0;position:sticky;top:0}' +
     '#pr-root .pr-head b{font-size:15px}#pr-root .pr-sub{font-size:11px;opacity:.82;flex:1}' +
     '#pr-root .pr-x{background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer;padding:0 4px}' +
@@ -63,7 +63,7 @@
     '#pr-root .pr-badge{display:inline-block;border-radius:4px;font-size:10px;font-weight:700;padding:1px 6px}' +
     '#pr-root .pr-badge.core{background:#f0f5ff;color:#1d39c4;border:1px solid #adc6ff}' +
     '#pr-root .pr-badge.opt{background:#f6ffed;color:#389e0d;border:1px solid #b7eb8f}' +
-    '#pr-root .pr-dim{color:#8a95a3;font-size:11.5px;padding:6px 0}';
+    '#pr-root .pr-dim{color:#8a95a3;font-size:11.5px;padding:6px 0}';   // (the old .pr-row/.pr-badge rules remain for the Release group's own rows)
   function ensureCss() { if (document.getElementById('pr-css')) return; var s = document.createElement('style'); s.id = 'pr-css'; s.textContent = CSS; document.head.appendChild(s); }
 
   function close() { var r = document.getElementById('pr-root'); if (r) r.remove(); }
@@ -94,39 +94,26 @@
       .then(function (v) { console.log('§PLUGIN-RELEASE state running=' + v[0] + ' waiting=' + (v[1] || 'none')); renderRelease(host, v[0], v[1]); });
   }
 
-  function renderPlugins(host) {
-    var el = host.querySelector('#pr-plugins'); if (!el) return;
+  // The OSGi stack console (osgi_console.js): the Felix-style Bundles page legacy administrators know. Replaces the old Plugins + Modules lists (Host work H2). Actions go through the registry; the persisted ACTIVE/STARTING list is
+  //   re-written after every action so a reload restores the same stack (PluginEngine.persist, plugin_overlay.js).
+  function renderConsole(host, cur) {
+    var el = host.querySelector('#pr-osgi'); if (!el) return;
     var pr = pluginReg();
-    var rows = pr ? pr.list() : null;
-    if (!pr) { el.innerHTML = '<div class="pr-dim">Plugin Engine not active yet — open it from the &middot;&middot;&middot; rail to load a <b>.foldbundle</b>; loaded plugins appear here to enable / disable / remove.</div>'; return; }
-    if (!rows.length) { el.innerHTML = '<div class="pr-dim">No plugins installed. A plugin is foreign code as a signed, reversible bundle — never auto-imported.</div>'; return; }
-    el.innerHTML = '';
-    rows.forEach(function (p) {
-      var on = /ACTIVE|STARTED|RESOLVED|ENABLED/i.test(String(p.state));
-      var row = document.createElement('div'); row.className = 'pr-row';
-      row.innerHTML = '<span class="nm">' + esc(p.id) + '</span><span class="meta">v' + esc(p.version || '?') + ' &middot; ' + esc(p.state) + '</span>'
-        + '<span class="sp"></span><button class="pr-btn ghost" data-pr-toggle>' + (on ? 'Disable' : 'Enable') + '</button>'
-        + '<button class="pr-btn ghost" data-pr-remove>Remove</button>';
-      row.querySelector('[data-pr-toggle]').addEventListener('click', function () {
-        try { if (on) pr.stopBundle(p.id); else pr.startBundle(p.id); console.log('§PLUGIN-RELEASE toggle id=' + p.id + ' ->' + (on ? 'stop' : 'start')); } catch (e) {}
-        renderPlugins(host);
-      });
-      row.querySelector('[data-pr-remove]').addEventListener('click', function () {
-        try { pr.uninstallBundle(p.id); console.log('§PLUGIN-RELEASE remove id=' + p.id); } catch (e) {}
-        renderPlugins(host);
-      });
-      el.appendChild(row);
+    if (!global.OsgiConsole) { el.innerHTML = '<div class="pr-dim">OSGi console module not loaded.</div>'; return; }
+    if (!pr) { el.innerHTML = '<div class="pr-dim">Plugin Engine not active yet.</div>'; return; }
+    var persist = function () { return (global.PluginEngine && global.PluginEngine.persist) ? global.PluginEngine.persist() : Promise.resolve(); };
+    global.OsgiConsole.render(el, {
+      systemName: 'BIM OOTB ERP engine (system bundle)', version: cur || '', builtins: MODULES,
+      list: function () { return pr.list(); }, describe: function (id) { return pr.describe(id); },
+      start: function (id) { console.log('§PLUGIN-RELEASE console start id=' + id); return Promise.resolve(pr.startBundle(id)).then(persist); },
+      stop: function (id) { console.log('§PLUGIN-RELEASE console stop id=' + id); return Promise.resolve(pr.stopBundle(id)).then(persist); },
+      refresh: function (id) { console.log('§PLUGIN-RELEASE console refresh id=' + id); return Promise.resolve(pr.stopBundle(id)).then(function () { return pr.startBundle(id); }).then(persist); },
+      uninstall: function (id) { console.log('§PLUGIN-RELEASE console uninstall id=' + id); return Promise.resolve(pr.uninstallBundle(id)).then(persist); },
+      install: function (url) { var abs = new URL(url, global.location ? global.location.href : url).href; console.log('§PLUGIN-RELEASE console install url=' + url + (abs !== url ? ' -> ' + abs : '')); return pr.installBundle(abs).then(function (ins) { return pr.startBundle(ins.id); }).then(persist); },
+      setPolicy: function (id, p) { console.log('§PLUGIN-RELEASE console policy id=' + id + ' -> ' + p); pr.setPolicy(id, p); return persist(); },
+      reload: function () { return Promise.resolve(); },
+      toast: function (m) { console.log('§PLUGIN-RELEASE console msg=' + m); }
     });
-  }
-
-  function renderModules(host, cur) {
-    var el = host.querySelector('#pr-modules'); if (!el) return;
-    el.innerHTML = MODULES.map(function (m) {
-      return '<div class="pr-row"><span class="nm">' + esc(m.id) + '</span>'
-        + '<span class="pr-badge ' + (m.core ? 'core">core &middot; always-on' : 'opt">optional') + '</span>'
-        + '<span class="meta">' + esc(m.label) + '</span><span class="sp"></span>'
-        + '<span class="meta">' + esc(cur || '') + '</span></div>';
-    }).join('') + '<div class="pr-dim">Our own code, folded as modules. Core modules are the substrate the fold runs through; optional features can be turned off (live on/off via the pill gate — next).</div>';
   }
 
   function open() {
@@ -138,14 +125,13 @@
       + '<button class="pr-x" data-pr-close title="Close">&times;</button></div>'
       + '<div class="pr-body">'
       + '<div class="pr-grp">Release</div><div id="pr-release"><div class="pr-dim">checking…</div></div>'
-      + '<div class="pr-grp">Plugins (foreign code)</div><div id="pr-plugins"></div>'
-      + '<div class="pr-grp">Modules (our code)</div><div id="pr-modules"></div>'
+      + '<div class="pr-grp">Bundles (OSGi console)</div><div id="pr-osgi"></div>'
       + '</div></div><div class="pr-backdrop" data-pr-close></div>';
     document.body.appendChild(root);
     root.querySelectorAll('[data-pr-close]').forEach(function (e) { e.addEventListener('click', close); });
     console.log('§PLUGIN-RELEASE open');
     workerVersion(navigator.serviceWorker && navigator.serviceWorker.controller).then(function (cur) {
-      renderModules(root, cur); renderPlugins(root); refreshRelease(root);
+      renderConsole(root, cur); refreshRelease(root);
     });
   }
 

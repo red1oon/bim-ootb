@@ -1,0 +1,18 @@
+{
+  "family": "effects",
+  "file": "viewer/effects.js",
+  "container": { "kind": "function", "name": "setupEffects" },
+  "shared": "FXS",
+  "registry": "__effectsParts",
+  "prefix": "fx_",
+  "parts": [
+    { "name": "composer" },
+    { "name": "props_staffage", "startsAt": "_buildSparklePoints" },
+    { "name": "sun_shadow", "startsAt": "_sunElevationAt" },
+    { "name": "photo_staging", "startsAt": "_groundHalfLaw" },
+    { "name": "still_refine", "startsAt": "_finishStillRefine" },
+    { "name": "cpe_reveal_bands", "startsAt": "CINEMA_WALK_MPS" },
+    { "name": "cinema_path_plan", "startsAt": "_cinemaPathPlan" },
+    { "name": "cinema_orbit", "startsAt": "_cpeGet" }
+  ]
+}

@@ -1,0 +1,68 @@
+// es_ES — machine translation (Claude, Anthropic, 2026-10-03), NOT from a published iDempiere pack. See trl_batch_2026-10-03.js.
+'use strict';
+module.exports = { es_ES: {
+  // gap fills
+  h_subtotal: 'SUBTOTAL', ui_walk_set: 'FIJAR', h_material: 'Material', h_total: 'Total', s_dashboard: 'Panel BIM 4D',
+  ui_index_ready: 'Índice espacial listo', ui_building_index: 'Construyendo el índice espacial…', ui_report_busy: 'El informe ya se está generando...',
+  ui_building_report: 'Generando el informe…', ui_no_clashes: 'Sin colisiones — abra primero la matriz', ui_report_opened: 'Informe de colisiones abierto en una pestaña nueva',
+  ui_no_clash_data: 'Sin datos de colisiones — abra primero la matriz', ui_csv_busy: 'Exportación CSV ya en curso...', ui_csv_done: 'CSV exportado — {n} colisiones',
+  ui_exporting_csv: 'Exportando CSV… par {i}/{n}', ui_no_clash_pairs: 'No hay pares de colisión que exportar', ui_matrix_need_discs: 'La matriz necesita 2+ disciplinas (encontradas: {d})',
+  ui_close_2d: 'Cierre primero la vista 2D', ui_clash_shared: 'Incidencia de colisión compartida', ui_gen_report: 'Generando informe… {done}/{total} pares',
+  ui_counting_clashes: 'Contando {a} vs {b}… {i}/{n}', ui_fetching_city: 'Obteniendo el índice de la ciudad ({url})...', ui_already_loaded: '{name} ya cargado ({n} elementos)',
+  ui_unknown_building: 'Edificio desconocido: {name}', ui_no_elements: 'No hay elementos transmisibles para {name}', ui_no_db_arch: 'No hay BD para el arquetipo: {name}',
+  // landing
+  landing_tip_red: 'Rojo — entras (sonido activado, luego cargamos)', landing_tip_blue: 'Azul — no pasa nada, no se carga nada',
+  landing_blue_quote: '«Tomas la pastilla azul — la historia termina, despiertas en tu cama y crees lo que quieras creer.»',
+  landing_back: '← volver', landing_choose_door: 'elige tu puerta', landing_stats_title: 'Estadísticas de visitas (GoatCounter)',
+  landing_hub_title: 'EDIFICIOS E IFC', landing_hub_sub: 'suelta tu propio IFC o abre un edificio listo — se abre en el visor',
+  landing_launcher_gps: 'Edificios / IFC', landing_launcher_bonsai: 'Modelador BIM', landing_launcher_erp: 'ERP', landing_launcher_doc: 'Guía del usuario',
+  landing_launcher_watch: 'Ver demo', landing_launcher_clear: 'Borrar caché', landing_more: 'Más',
+  landing_mobile_note: 'El modelado BIM (DAGeVu) es una experiencia de escritorio — ábrelo en una pantalla más grande.',
+  landing_drop_hint: '↓ Suelta aquí archivos IFC / 3D — o toca para examinar', landing_drop_sub: 'varios archivos de disciplinas se fusionan en un edificio',
+  landing_blank_viewer: 'Visor vacío', landing_open_own_db: 'Abrir tu propio archivo .db', landing_loading_manifest: 'cargando el manifiesto de edificios…',
+  landing_city_buildings: 'Edificios de la ciudad', landing_landmark_buildings: 'Edificios emblemáticos', landing_elements: 'elementos', landing_reload: 'recargar',
+  landing_no_db_for: 'No hay BD para {name}',
+  landing_clear_confirm: '¿Volver a la pantalla inicial?\n\nBorra los datos de edificios del navegador:\n  • edificios en caché\n  • cualquier escena IFC que hayas soltado (no guardada como .db)\ny te devuelve a la elección rojo / azul.\n\nSe conserva: la app instalada + los datos sin conexión, y cualquier .db que hayas guardado.',
+  // viewer.html
+  ui_grid_bays: 'Vanos', ui_share: 'Compartir', ui_tt_minmax: 'Mín/Máx', ui_tt_menu: 'Menú', ui_tt_prev_phase: 'Fase anterior', ui_tt_next_phase: 'Fase siguiente',
+  ui_tt_bookmark_add: 'Marcar esta posición de corte', ui_tt_bookmark_del: 'Quitar marcador', ui_update_ready: 'Actualización lista — toca para recargar', ui_report_bug: 'Informar de un error',
+  // pill
+  pill_save: 'Guardar edificio', pill_open: 'Abrir edificio', pill_find: 'Buscar / Navegar', pill_rolefilter: 'Vista por rol', pill_help: 'Ayuda',
+  pill_worldhist: 'Historial global', pill_dochist: 'Historial de la página', pill_walk: 'Caminar', pill_whwalk: 'Ruta de picking', pill_share: 'Compartir', pill_hbafm: 'Persona-Activo',
+  pill_measure: 'Medir', pill_clash: 'Matriz de colisiones', pill_sanity: 'Coherencia', pill_egress: 'Evacuación', pill_xray: 'Rayos X / Bbox', pill_bbox: 'Cajas envolventes',
+  pill_tm: 'Máquina del tiempo', pill_sched4d: 'Ventana 4D', pill_sched4d_gen: 'Ventana 4D — toca para generar un programa', pill_section: 'Sección',
+  pill_background: 'Fondo', pill_night: 'Noche', pill_palette: 'Paleta', pill_shadow: 'Sombra + Suelo', pill_fly: 'Sobrevuelo', pill_dlodnav: 'LOD de navegación (edificios grandes)',
+  pill_report: '4D / 5D', pill_issues: 'Incidencias', pill_fullscreen: 'Pantalla completa', pill_precision: 'Precisión (fina)', pill_cam_reset: 'Restablecer cámara', pill_cam_pivot: 'Pivote automático',
+  pill_home: 'Inicio', pill_audio: 'Efectos de sonido', pill_settings: 'Ajustes', pill_navigate: 'Navegar', pill_inspect: 'Inspeccionar', pill_camview: 'Cámara / Vista',
+  // roles, settings, ground
+  role_plumber: 'Fontanero', role_electrician: 'Electricista', role_acmv: 'Técnico de climatización', role_structural: 'Estructura', role_cleaner: 'Limpieza',
+  ui_rate_pack_5d: 'Paquete de precios 5D', ui_cache_info: 'Información de caché', ui_reset_pill_icons: 'Restablecer iconos', ui_defaults_restored: 'Valores predeterminados restaurados',
+  ui_tt_shadow_ground_cycle: 'Sombra + Suelo — ciclo Apagado → Tierra → Césped → Pavimento', ui_ground_none: 'Ninguno', ui_ground_grass: 'Césped', ui_ground_earth: 'Tierra', ui_ground_paved: 'Pavimento',
+  ui_blank_scene_hint: 'Escena vacía — pulsa Ctrl+O (Abrir edificio) para cargar un archivo .db', ui_locale_toast_hint: 'cambiar en ⚙',
+  ui_hist_title: 'Historial — todas las páginas', ui_hist_whole: 'Todo', ui_hist_this_page: 'Esta página', ui_close: 'Cerrar',
+  ui_tt_precision_fine: 'Precisión fina', ui_tt_reset_camera: 'Restablecer cámara', ui_tt_auto_pivot: 'Pivote automático en el centro de la escena',
+  ui_tt_still_refine: 'Refinar imagen fija (Alt+S)', ui_tt_populate: 'Poblar (Alt+P)', ui_tt_maxq: 'Película MaxQ (Alt+C — pulsa de nuevo para cancelar)',
+  ui_tt_tm: 'Máquina del tiempo', ui_tt_find: 'Buscar', ui_tt_share: 'Compartir', ui_tt_help: 'Ayuda', ui_tt_clash: 'Matriz de colisiones', ui_tt_sunglass: 'Estudio de color', ui_tt_night: 'Noche',
+  ui_tt_shadow: 'Sombra', ui_tt_bg: 'Fondo', ui_tt_bbox: 'Cajas envolventes', ui_tt_cinema: 'Órbita cinematográfica', ui_tt_doc: 'Documento', ui_tt_grid: 'Rejilla', ui_tt_table: 'Tabla',
+  ui_tt_next: 'Fase siguiente', ui_tt_save: 'Guardar diseño', ui_tt_open: 'Abrir diseño', ui_tt_mep: 'Trazados MEP', ui_tt_ubbl: 'Cumplimiento UBBL', ui_tt_rosetta: 'Piedra Rosetta',
+  ui_tt_disc: 'Disciplinas', ui_sun: 'Intensidad solar', ui_exposure: 'Exposición', ui_ambient: 'Ambiental', ui_hemisphere: 'Hemisferio',
+  ui_all: 'Todos', ui_off: 'Apagado', ui_night_on: 'Encendido — {n} luminarias',
+  // find / main
+  ui_find_tab_find: 'Buscar', ui_find_tab_ask: 'Preguntar', ui_save_xlsx: 'Guardar .xlsx', ui_all_types: 'Todos los tipos', ui_view_back: 'Vista anterior', ui_view_forward: 'Vista siguiente',
+  ui_expand: 'Expandir', ui_voice_unsupported: 'Voz no compatible', ui_loading_find: 'Cargando Buscar…', ui_find_load_failed: 'No se pudo cargar Buscar',
+  ui_gpu_compiling: 'Compilando sombreadores GPU — espere...', ui_gpu_compiled: 'Sombreadores GPU compilados en {ms} ms — renderizando', ui_offline_badge: 'SIN CONEXIÓN',
+  // reports
+  title_boq: 'BIM OOTB — Analítica 4D/5D', title_clash: 'BIM OOTB — Informe de coordinación de colisiones', title_mep: 'BIM OOTB — Mediciones MEP',
+  t_analytics_4d5d: 'Analítica 4D/5D', ui_tt_export_5d: '5D — Excel de costes', ui_tt_export_4d: '4D — Excel de programación', ui_tt_mep_boq: 'Mediciones MEP',
+  ui_tt_copy_link: 'Copiar enlace para compartir', ui_tt_change_locale_cur: 'Cambiar idioma / moneda', ui_tt_change_locale: 'Cambiar idioma', ui_loading_ellipsis: 'Cargando...',
+  ui_requesting_viewer: 'Solicitando datos al visor...', ui_waiting_db_cache: 'Esperando a que la BD se almacene en la escena principal...', ui_loading_url: 'Cargando {url}...',
+  t_site_resources: 'Recursos de obra', t_boq_5d: '5D — Mediciones',
+  clash_report_title: 'Informe de coordinación de colisiones', ui_tt_home: 'Inicio', ui_report_downloaded: 'Informe descargado',
+  ui_report_downloaded_body: 'Archivo HTML guardado. Compártelo por WhatsApp, correo o cualquier medio.<br>El destinatario lo abre en cualquier navegador — todos los gráficos, sin instalación.',
+  ui_ok: 'OK', clash_total: 'Colisiones totales', clash_reviewed: 'Revisadas', clash_resolved: 'Resueltas', clash_accepted: 'Aceptadas',
+  clash_tt_total: 'Solapes de cajas detectados en todos los pares de disciplinas', clash_tt_reviewed: 'Colisiones reconocidas en investigación',
+  clash_tt_resolved: 'Colisiones corregidas en el modelo — listas para recomprobar', clash_tt_accepted: 'Riesgo aceptado — no se requiere cambio de diseño',
+  clash_by_pair: 'Por par de disciplinas', clash_risk_profile: 'Perfil de riesgo por disciplina', clash_by_severity: 'Por gravedad', clash_by_status: 'Por estado',
+  clash_top_offenders: 'Principales causantes — corregir primero', clash_by_class: 'Por clase de elemento', clash_matrix_summary: 'Resumen de la matriz de disciplinas',
+  clash_source: 'Origen', clash_target: 'Destino', clash_tolerance: 'Tolerancia', clash_clashes: 'Colisiones', clash_clashes_lbl: 'colisiones'
+} };

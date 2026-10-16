@@ -1,0 +1,3 @@
+§MFG-SNAP-N1 orders=2 fields compared=102 diffs=2 (legacy: 5050.50505051 / 100 / 7070.70707071 / 100)
+  §MFG-SNAP N1 explosion == legacy PP_Order_BOM/BOMLine rows (field by field) FAIL {"diffs":["8000 line10.qtyrequiered: ours=5050.505051 legacy=5050.50505051","8001 line10.qtyrequiered: ours=7070.707071 legacy=7070.70707071"],"n":2}
+§MFG-SNAP-VERDICT FAIL judged=7 failed=1 inconclusive=0

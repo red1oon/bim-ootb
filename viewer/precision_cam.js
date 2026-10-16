@@ -8,6 +8,8 @@
    Long-press the feather pill expands Reset + Pivot chips sideways (§S281). */
 
 (function() {
+  // S226 §R2 — chip titles through the AD_Message dictionary (viewer/i18n via locale_loader.js); English = in-code default
+  function _tt(key, dflt) { return (typeof _trl === 'function') ? _trl(key, null, dflt) : dflt; }
   'use strict';
   function A() { return window.APP || window.A; }
   var _fine = false;
@@ -235,9 +237,9 @@
     var _fineIcon = '<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><circle cx="12" cy="12" r="3"/>';
     var _resetIcon = '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/>';
     _panel.innerHTML =
-      '<button id="prec-fine-btn" title="Fine precision" style="' + btnCss + '">' + _svg(_fineIcon) + '</button>' +
-      '<button id="prec-reset-btn" title="Reset camera" style="' + btnCss + '">' + _svg(_resetIcon) + '</button>' +
-      '<button id="prec-pivot-btn" title="Auto-pivot on scene centre" style="' + btnCss + '">' + _orbitIcon(22) + '</button>';
+      '<button id="prec-fine-btn" title="' + _tt('ui_tt_precision_fine', 'Fine precision') + '" style="' + btnCss + '">' + _svg(_fineIcon) + '</button>' +
+      '<button id="prec-reset-btn" title="' + _tt('ui_tt_reset_camera', 'Reset camera') + '" style="' + btnCss + '">' + _svg(_resetIcon) + '</button>' +
+      '<button id="prec-pivot-btn" title="' + _tt('ui_tt_auto_pivot', 'Auto-pivot on scene centre') + '" style="' + btnCss + '">' + _orbitIcon(22) + '</button>';
     _panel.style.flexDirection = 'row'; // icons side by side
     document.body.appendChild(_panel);
 
@@ -306,9 +308,9 @@
     if (_chips.length) { _clearChips(); return; } // toggle off if showing
     var r = btn.getBoundingClientRect();
     var defs = [
-      { id: 'prec-reset-chip', title: 'Reset camera', icon: _resetIconSvg,
+      { id: 'prec-reset-chip', title: _tt('ui_tt_reset_camera', 'Reset camera'), icon: _resetIconSvg,
         tap: function() { resetOrbit(); _clearChips(); } },
-      { id: 'prec-pivot-chip', title: 'Auto-pivot on scene centre', icon: _orbitIcon(20),
+      { id: 'prec-pivot-chip', title: _tt('ui_tt_auto_pivot', 'Auto-pivot on scene centre'), icon: _orbitIcon(20),
         tap: function() { togglePivot(); } }  // sticky — stay open, chip recolours via _pivotPaint
     ];
     defs.forEach(function(d, i) {

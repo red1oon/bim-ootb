@@ -1,0 +1,12 @@
+§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+§MFG-WHATIF-LOAD break=none official orders=2 dispatch=true,true pre: projection=5faa5b4c opset=194e5873 mrp=dabc9e5d (6 rows) logRows=8
+§MFG-WHATIF-X1 branch MRP rows=6 hash=dabc9e5d vs live 6 rows hash=dabc9e5d
+  §MFG-WHATIF X1 non-vacuous: the what-if changes the MRP answer (rows 6 -> 6, hash differs) FAIL {"branchRows":6,"branchHash":"dabc9e5d","live":"dabc9e5d"}
+§MFG-WHATIF-X2 while the branch exists: projection=28994fab opset=ffc762dd taggedOps=0 logRows=12
+  §MFG-WHATIF X2 live projection hash + official op-set hash unchanged while the branch exists; its ops are in the log, TAGGED FAIL {"during":{"proj":"28994fab","ops":"ffc762dd","tagged":0,"log":12},"pre":{"proj":"5faa5b4c","ops":"194e5873","mrp":"dabc9e5d","rows":6,"log":8}}
+§MFG-WHATIF-X4 official replay docs=3 blue-view docs=3 (branch order WI-1 in official replay: true, in blue view: true)
+  §MFG-WHATIF X4 default replay excludes the branch-tagged op; replay with {branch} includes it FAIL {"official":["PP_Order:8000","PP_Order:8001","PP_Order:WI-1"],"blue":["PP_Order:8000","PP_Order:8001","PP_Order:WI-1"]}
+§MFG-WHATIF-X3 after discard: projection=28994fab opset=ffc762dd mrp=98603f4e branchOpsAlive=0 undone=0 logRows=12 | official replay: scope=6c7e7ca0 mrp=98603f4e
+  §MFG-WHATIF X3 after discard: projection hash, official op-set hash and MRP hash equal their pre-branch values FAIL {"pre":{"proj":"5faa5b4c","ops":"194e5873","mrp":"dabc9e5d","rows":6,"log":8},"post":{"proj":"28994fab","ops":"ffc762dd","mrp":"98603f4e","alive":0,"undone":0,"log":12}}
+  §MFG-WHATIF X3b the branch is fully folded away (0 alive, 4 undone) and an official rebuild reproduces the live scope + MRP FAIL {"post":{"proj":"28994fab","ops":"ffc762dd","mrp":"98603f4e","alive":0,"undone":0,"log":12},"replayScope":"6c7e7ca0","liveScope":"6c7e7ca0","replayMrp":"98603f4e"}
+§MFG-WHATIF-VERDICT FAIL break=none judged=5 failed=5 inconclusive=0

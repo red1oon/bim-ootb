@@ -1,0 +1,1509 @@
+// LIVE ALT+S BOUNCE STILL (red1-84, 2026-09-23). §GI_LIVE: shipped in the viewer (viewer.html script
+// tag) — desktop + WebGPU + three r186 only; anywhere else it stays out of the way (§GI_STILL_OFF).
+// Sandbox origin: sandbox/spike_ssgi_webgpu/gi_still.js (kept for the dev server).
+//
+// Alt+S is NOT intercepted. The app's own photoreal still runs exactly as it always did
+// (scene.js:3228 -> A.toggleStillRefine). We wait for it to finish, then add a bounce layer on top
+// of the finished picture.
+//
+// ONE three.js instance: window.THREE (served as r186 by the same server), and the node modules are
+// the *.appbound.js copies whose imports point at the app's own module URL. A private copy is what
+// made the app's lights invisible and every frame black earlier. Do not reintroduce one.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// §GI_STILL_GEOMPASS (2026-09-23) — WHAT THE STALL ACTUALLY WAS, and why this file now looks
+// different. MEASURED, headless, HHS_Office_Federated_silent, 1280x720 (run_gi_still_headless.js,
+// out/gi_still_headless/log_base.txt):
+//
+//     §GI_STILL stage compiling shaders for 664 scene objects 127065ms
+//     HEARTBEAT rafMaxMs=127069  rafBlocks>50ms=4  worst5raf=[127069,417,119,52]
+//
+// ONE unbroken 127-second main-thread block — not many small ones. That is why none of the earlier
+// attempts helped: dropping compileAsync, the 320x180 warm render, keeping the renderer, 8 passes
+// instead of 24, the 1600x900 cap and the requestAnimationFrame yields all act OUTSIDE the block.
+// The block is inside a single synchronous render.
+//
+// The cause is in three.js itself. r186 creates WebGPU render pipelines asynchronously ONLY when
+// called from compileAsync(), which is the only caller that passes a non-null `promises` array:
+//     three.webgpu.js:85689   if ( promises === null ) {
+//     three.webgpu.js:85690       pipelineData.pipeline = device.createRenderPipeline( ... );   // BLOCKS
+//     three.webgpu.js:85720       pipelinePromise = device.createRenderPipelineAsync( ... );    // only via compileAsync
+// A normal render therefore calls the BLOCKING device.createRenderPipeline() once per distinct
+// (material, geometry layout, blend state) it meets. The photoreal still stages the scene up to 664
+// children, so the first render of the app's scene through a second renderer paid several hundred
+// synchronous pipeline creations back to back.
+//
+// THE FIX: stop making the second renderer draw the app's materials at all.
+//   1. The scene pass now renders with ONE shared override material (scene.overrideMaterial,
+//      restored immediately afterwards) that writes only the view-space normal in RGB and a
+//      geometry mask in A. Depth comes from the pass's own depth texture. One material for 664
+//      objects instead of 664 materials.
+//   2. The COLOUR comes from the app's own finished still: A.renderer.domElement copied into a
+//      THREE.CanvasTexture and handed to SSGINode as the beauty/scene-colour input. SSGINode only
+//      ever samples it — vendor/SSGINode.js:442  `const sampleBeauty = ( uv ) => this.beautyNode
+//      .sample( uv );` — and vendor/SSGINode.js:692 passes it through `convertToTexture`, which
+//      returns a TextureNode unchanged (three.webgpu.js:40386  `if ( node.isSampleNode ||
+//      node.isTextureNode ) return node;`). So an external texture is accepted as-is.
+//   3. The composite is unchanged in spirit: the app's picture underneath, the bounce layer over it.
+//
+// §GI_STILL_DOUBLE (2026-09-23, red1: "the bounce appears to be added TWICE") — same fix, second
+// half. The old layer's alpha was the APP MATERIAL's alpha, so every glazed pixel came back partly
+// transparent and got alpha-blended over an app pixel that already carried the app's own shading:
+// both pictures contributed and the shading added to itself. The override material writes a strict
+// geometry mask (1 wherever anything was drawn, 0 where nothing was), and the paste is a HARD mask
+// — at or above GEOM_MASK_T the bounce replaces, below it the app's pixel is kept untouched. Both
+// composites are computed and compared every shot; see §GI_STILL mask= in the log.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+(function () {
+  const ACCUM_DEFAULT = 8;          // passes; a still has no motion, so it can average as long as it likes
+  const MAX_PIXELS_WINDOW = 1600 * 900;   // bounce cap for preset `window` (a HiDPI buffer must not grow the bounce); a §STILL_RES preset
+                                          // bounces at the still's own buffer size (already bounded by MAX_RENDERBUFFER_SIZE in effects.js)
+  const GEOM_MASK_T = 0.5;          // hard-mask threshold on the geometry mask (see §GI_STILL_DOUBLE)
+  let busy = false, built = null;
+  let carryPrev = null;             // §GI_CARRY: the previous press's first-pass fingerprint + camera (page lifetime, survives a release)
+  function toast(msg, ms) {
+    let el = document.getElementById('gi-still-toast');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'gi-still-toast';
+      el.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:100000;' +
+        'background:rgba(20,22,28,.92);color:#e8eaf0;padding:10px 16px;border-radius:8px;font:14px/1.4 system-ui;' +
+        'box-shadow:0 6px 24px rgba(0,0,0,.45)';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.display = 'block';
+    if (ms) setTimeout(() => { el.style.display = 'none'; }, ms);
+    return el;
+  }
+  // Stage timing. Each stage reports its own time and yields the thread, so a run NAMES the slow
+  // stage instead of us guessing at it — that is how the 127s block above was found.
+  async function stage(name, fn) {
+    toast('Bounce still — ' + name + '…');
+    await new Promise(r => requestAnimationFrame(() => r()));
+    const t = performance.now();
+    const out = await fn();
+    console.log('§GI_STILL stage ' + name + ' ' + (performance.now() - t).toFixed(0) + 'ms');
+    await new Promise(r => requestAnimationFrame(() => r()));
+    return out;
+  }
+  // Count the synchronous pipeline creations, because that is the thing that hung. Patches only OUR
+  // renderer's own GPUDevice (the app's renderer is WebGL — §S277b_RENDERER WebGLRenderer r184), and
+  // only ever adds a counter around the call.
+  function instrumentPipelines(renderer) {
+    try {
+      const dev = renderer.backend && renderer.backend.device;
+      if (!dev || dev.__giPipeStats) return null;
+      const stats = { sync: 0, syncMs: 0, async: 0, modules: 0, moduleMs: 0 };
+      const orig = dev.createRenderPipeline.bind(dev);
+      dev.createRenderPipeline = function (d) { const t = performance.now(); const r = orig(d); stats.sync++; stats.syncMs += performance.now() - t; return r; };
+      if (dev.createRenderPipelineAsync) { const oa = dev.createRenderPipelineAsync.bind(dev); dev.createRenderPipelineAsync = function (d) { stats.async++; return oa(d); }; }
+      const om = dev.createShaderModule.bind(dev);
+      dev.createShaderModule = function (d) { const t = performance.now(); const r = om(d); stats.modules++; stats.moduleMs += performance.now() - t; return r; };
+      dev.__giPipeStats = stats;
+      return stats;
+    } catch (e) { console.warn('§GI_STILL pipeline instrumentation skipped: ' + (e && e.message)); return null; }
+  }
+  // Single readback point, so the orientation test and the accumulation passes cannot disagree.
+  // __GI_STILL_INJECT_READBACK_FLIP is a TEST HOOK: it simulates a platform whose readback rows run
+  // the other way, which is what the orientation search has to survive. Nothing sets it in normal use.
+  async function readRT(G, rt, rw, rh) {
+    rt = rt || G.rt; rw = rw || G.w; rh = rh || G.h;
+    const b = await G.renderer.readRenderTargetPixelsAsync(rt, 0, 0, rw, rh);
+    let fb = b instanceof Float32Array ? b : Float32Array.from(b);
+    // §GI_READBACK_ROWPAD — WebGPU pads each readback row to 256 bytes (16 px of RGBA float), the last
+    // row excepted. Any width that is not a multiple of 16 (red1's window gave 1666) came back with
+    // every row sheared sideways — the "smearing". Unpad before anything reads it.
+    if (fb.length !== rw * rh * 4) {
+      const stride = (fb.length / 4 - rw) / (rh - 1);
+      if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + fb.length + ' fits no row stride for ' + rw + 'x' + rh);
+      const out = new Float32Array(rw * rh * 4);
+      for (let y = 0; y < rh; y++) out.set(fb.subarray(y * stride * 4, y * stride * 4 + rw * 4), y * rw * 4);
+      if (!G.padLogged) { G.padLogged = true; console.log('§GI_READBACK_ROWPAD w=' + rw + ' stride=' + stride + ' px — rows unpadded'); }
+      fb = out;
+    }
+    if (window.__GI_STILL_INJECT_READBACK_FLIP) {
+      const w = rw, h = rh, out = new Float32Array(fb.length);
+      for (let y = 0; y < h; y++) out.set(fb.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+      fb = out;
+    }
+    if (G.filmCarry && rt === G.rt) G.fpLastRead = fingerprint(fb);   // §GI_FILM_CARRY: what the bounce target held at its last readback
+    return fb;
+  }
+  // §GI_READBACK_CHURN (red1 2026-09-26: Alt+S "stalls and hangs the chrome browser badly"; leak audit: ~370 MB of
+  // short-lived float arrays per press). The accumulation passes add the padded readback straight into one kept
+  // accumulator (G.acc) — no unpadded copy and no Float32Array.from per pass. Same rows, same sums as readRT + add.
+  // Returns the §GI_CARRY fingerprint of THIS pass as read back (see fingerprint() below) — computed on the padded buffer's
+  // unpadded rows, no copy.
+  async function readRTAdd(G, acc, first) {
+    if (window.__GI_STILL_INJECT_READBACK_FLIP) { const fb = await readRT(G); if (first) acc.set(fb); else for (let k = 0; k < acc.length; k++) acc[k] += fb[k]; return fingerprint(fb); }
+    const rw = G.w, rh = G.h, b = await G.renderer.readRenderTargetPixelsAsync(G.rt, 0, 0, rw, rh);
+    const stride = (b.length === rw * rh * 4) ? rw : (b.length / 4 - rw) / (rh - 1);
+    if (!Number.isInteger(stride) || stride < rw) throw new Error('readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
+    const row = rw * 4;
+    const u32 = (b instanceof Float32Array) ? new Uint32Array(b.buffer, b.byteOffset, b.length) : null;
+    let h = 0x811c9dc5, clear = 0, np = 0;
+    for (let y = 0; y < rh; y++) {
+      const s0 = y * stride * 4, d0 = y * row;
+      if (first) { for (let x = 0; x < row; x++) acc[d0 + x] = b[s0 + x]; }
+      else { for (let x = 0; x < row; x++) acc[d0 + x] += b[s0 + x]; }
+      for (let x = (y * 7) % 61; x < row; x += 61) { h ^= u32 ? u32[s0 + x] : ((b[s0 + x] * 1048576) | 0); h = Math.imul(h, 0x01000193) >>> 0; }
+      for (let x = 3; x < row; x += 28) { np++; if (b[s0 + x] < 0.02) clear++; }
+    }
+    return { hash: ('00000000' + h.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+  }
+  // §GI_CARRY fingerprint of a readback (unpadded RGBA float rows): FNV-1a over every 61st 32-bit word (~1.3 % of the buffer,
+  // every row and column touched) + the share of pixels whose alpha (the geometry mask) is clear. Consecutive passes never share
+  // it when something was drawn: SSGINode rotates its sample pattern by frame.frameId (k and k+1 differ mod 6 and mod 4), so the
+  // FIRST pass of a press equals the LAST pass of the previous press only when the target was never redrawn — measured with the
+  // __GI_STILL_INJECT_GEOM_DROP hook: first-vs-first differed (f97e833e vs ea011b79, the last pass of press 1 was what sat in the
+  // target) while the composite was the stale paste (meanAbsDiff 55.27); first-vs-last is the comparison that catches it.
+  // §GI_FILM_8BIT: the 8-bit target's readback, unpadded to w*4 bytes per row; fingerprint on the same sampling as fingerprint()
+  async function readRT8(G) {
+    const rw = G.w, rh = G.h; let b = await G.renderer.readRenderTargetPixelsAsync(G.rt8, 0, 0, rw, rh);
+    if (!(b instanceof Uint8Array)) b = new Uint8Array(b.buffer || b);
+    if (b.length !== rw * rh * 4) { const stride = (b.length / 4 - rw) / (rh - 1);
+      if (!Number.isInteger(stride) || stride < rw) throw new Error('8-bit readback length ' + b.length + ' fits no row stride for ' + rw + 'x' + rh);
+      const out = new Uint8Array(rw * rh * 4); for (let y = 0; y < rh; y++) out.set(b.subarray(y * stride * 4, y * stride * 4 + rw * 4), y * rw * 4); b = out; }
+    const u32 = new Uint32Array(b.buffer, b.byteOffset, b.length >> 2); let hh = 0x811c9dc5, clear = 0, np = 0;
+    for (let k = 0; k < u32.length; k += 61) { hh ^= u32[k]; hh = Math.imul(hh, 0x01000193) >>> 0; }
+    for (let k = 3; k < b.length; k += 28) { np++; if (b[k] < 5) clear++; }
+    G.fpLastRead = { hash: ('00000000' + hh.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+    return b;
+  }
+  function fingerprint(acc) {
+    const u32 = new Uint32Array(acc.buffer, acc.byteOffset, acc.length);
+    let h = 0x811c9dc5, clear = 0, np = 0;
+    for (let k = 0; k < u32.length; k += 61) { h ^= u32[k]; h = Math.imul(h, 0x01000193) >>> 0; }
+    for (let k = 3; k < acc.length; k += 28) { np++; if (acc[k] < 0.02) clear++; }
+    return { hash: ('00000000' + h.toString(16)).slice(-8), clearPct: +(100 * clear / np).toFixed(2) };
+  }
+  // ONE release path (Alt+Shift+S, __giStillRelease, §GI_CARRY FAIL/STALE): the next press rebuilds from scratch.
+  function release(why) {
+    if (!built) return false;
+    try { built.rt.dispose(); built.renderer.dispose(); } catch (e) {}
+    built = null; WIDE = new WeakMap();
+    console.log('§GI_STILL released (' + why + ')');
+    return true;
+  }
+  // §GI_STILL_ORIENT — DECIDE THE ORIENTATION BY MATCHING, NEVER BY ASSUMPTION.
+  // There are two independent unknowns and a brightness test cannot separate them: whether the
+  // colour texture's v runs the same way as the pass's own render targets (flipTex — get this wrong
+  // and the bounce lands on the wrong pixels, which no flip in JS can repair), and whether the
+  // readback's rows run the same way as the canvas (flipOut — a plain row reversal).
+  // All four combinations are rendered and scored against the app's own finished frame, ONLY over
+  // the pixels the geometry pass actually covered. The mask travels in the same buffer as the
+  // colour, so a wrong flipTex misaligns colour against geometry and a wrong flipOut misaligns both
+  // against the app: exactly one of the four scores is small. All four are logged.
+  // §GI_ROW_PROBE — a horizontal floor under a level camera, drawn with the SAME geometry material, the
+  // SAME renderer and read back through the SAME readRT (row unpadding + test-injection hook). A floor
+  // below the eye can only fill the BOTTOM half of the picture, so wherever its pixels land in the
+  // buffer as read says how the rows run on this machine. Decisive by construction, any view.
+  async function probeRowOrder(G) {
+    const THREE = G.THREE, W = 64, H = 64;
+    const sc = new THREE.Scene();
+    const pg = new THREE.PlaneGeometry(4000, 4000); pg.rotateX(-Math.PI / 2);
+    sc.add(new THREE.Mesh(pg, G.geoMat));
+    const pc = new THREE.PerspectiveCamera(60, 1, 0.1, 10000); pc.position.set(0, 10, 0); pc.lookAt(0, 10, -100); pc.updateMatrixWorld(true);
+    const prt = new THREE.RenderTarget(W, H, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
+    try {
+      G.renderer.setRenderTarget(prt); G.renderer.render(sc, pc); G.renderer.setRenderTarget(null);
+      const fb = await readRT(G, prt, W, H);
+      let top = 0, bottom = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (fb[(y * W + x) * 4 + 3] > 0.5) { if (y < H / 2) top++; else bottom++; }
+      const flipOut = top > bottom;
+      // §GI_FILM_CARRY C3: a floor that drew NOTHING (top=bottom=0) is no answer — measured in the 0733 bake under GPU out-of-memory.
+      if (top + bottom === 0) { console.warn('§GI_ROW_PROBE floor pixels as read: top=0 bottom=0 -> NO ANSWER (nothing was drawn; GPU errors so far=' + G.gpuErr.n + ')'); return null; }
+      console.log('§GI_ROW_PROBE floor pixels as read: top=' + top + ' bottom=' + bottom + ' -> flipOut=' + flipOut + ' (a floor below the eye fills the bottom half)');
+      return { flipOut: flipOut, top: top, bottom: bottom };
+    } finally { prt.dispose(); pg.dispose(); }
+  }
+  async function decideOrientation(G) {
+    // 256x144, not 96x54: the two candidates a colour match cannot tell apart differ only in where
+    // the AO lands, and AO's sharpest signal is the contact shading at wall/floor junctions, which a
+    // 96x54 downsample averages away. Measured at 96x54 the margin was 0.58 of 8.85.
+    const w = G.w, h = G.h, SW = 256, SH = 144;
+    const sc = document.createElement('canvas'); sc.width = SW; sc.height = SH;
+    const scx = sc.getContext('2d', { willReadFrequently: true });
+    scx.drawImage(G.colorCanvas, 0, 0, SW, SH);               // GPU downsample of the app frame
+    const ap = scx.getImageData(0, 0, SW, SH).data;
+    const appL = new Float32Array(SW * SH);
+    for (let i = 0; i < SW * SH; i++) appL[i] = (ap[i * 4] + ap[i * 4 + 1] + ap[i * 4 + 2]) / 3;
+    const scores = {}; let best = null;
+    for (const ft of [false, true]) {
+      G.setTexFlip(ft);
+      await renderGeom(G);
+      const fb = await readRT(G);
+      for (const fo of [false, true]) {
+        // TWO scores. `covered` is the sum of absolute differences over the pixels the geometry pass
+        // drew — the plain match. `composite` scores the picture that would actually be shown: the
+        // bounce where the mask is 1, the app's own pixel where it is 0. The second one is what
+        // decides, because it is the one that separates the two candidates a colour-only match
+        // cannot tell apart: the pair where the colour comes out upright but the MASK and the AO are
+        // upside down scores the same on `covered` (measured 9.53 against 10.71, a margin of 1.18)
+        // and badly on `composite`, because it paints shaded geometry over the app's sky and leaves
+        // the real geometry unshaded. Every candidate masks the same number of pixels, so neither
+        // score is biased by mask area.
+        let sum = 0, n = 0, csum = 0, cn = 0;
+        for (let j = 0; j < SH; j++) for (let i = 0; i < SW; i++) {
+          const x = Math.floor((i + 0.5) * w / SW), y = Math.floor((j + 0.5) * h / SH);
+          const k = ((fo ? (h - 1 - y) : y) * w + x) * 4;
+          const a = appL[j * SW + i];
+          const l = (fb[k] + fb[k + 1] + fb[k + 2]) / 3 * 255;
+          const drew = fb[k + 3] >= 0.5;
+          if (drew) { sum += Math.abs(l - a); n++; }
+          csum += Math.abs((drew ? l : a) - a); cn++;
+        }
+        const v = n > 200 ? sum / n : Infinity, cv = cn > 0 ? csum / cn : Infinity;
+        const key = 'tex' + (ft ? 'Flip' : 'Same') + '_out' + (fo ? 'Flip' : 'Same');
+        scores[key] = { covered: isFinite(v) ? +v.toFixed(2) : null, composite: isFinite(cv) ? +cv.toFixed(2) : null };
+        if (!best || cv < best.score) best = { flipTex: ft, flipOut: fo, score: cv, covered: v, n: n };
+      }
+    }
+    // §GI_STILL_ORIENT_GEOM (2026-09-23, red1: "image smearing from bounce ... even when indoors").
+    // The colour score above cannot separate the two colour-upright candidates: measured margins
+    // 0.08-0.33 on HHS and 0.05 on Terminal indoors, and it picked the upside-down one at 3 of 4
+    // poses — AO, bounce and mask painted onto the mirror-image rows. flipOut is a pure row order,
+    // so it is decided from GEOMETRY: a front-facing surface's view normal n and the camera ray r
+    // through its pixel satisfy n·r <= 0. Count the covered pixels that break that with the rows
+    // as read and reversed; the right order breaks it on ~0.1-2%, the wrong one on 21-32%.
+    // flipTex then follows from colour: the lower composite score at that flipOut.
+    const colourPick = { flipTex: best.flipTex, flipOut: best.flipOut };
+    const geo = await (async () => {
+      const prevMode = G.mode;
+      G.setMode('normalsraw', 'raw');
+      try {
+        await renderGeom(G);
+        const fb = await readRT(G);
+        const t = Math.tan(G.cam.fov * Math.PI / 360), asp = w / h;
+        let n = 0, asRead = 0, reversed = 0;
+        for (let y = 0; y < h; y += 4) for (let x = 0; x < w; x += 4) {
+          const rx = (2 * (x + 0.5) / w - 1) * t * asp, ry = (1 - 2 * (y + 0.5) / h) * t, L = Math.hypot(rx, ry, 1);
+          for (const fo of [false, true]) {
+            const k = ((fo ? (h - 1 - y) : y) * w + x) * 4;
+            if (fb[k + 3] < 0.5) continue;
+            const d = ((fb[k] * 2 - 1) * rx + (fb[k + 1] * 2 - 1) * ry - (fb[k + 2] * 2 - 1)) / L;
+            if (fo) { if (d > 0.05) reversed++; } else { n++; if (d > 0.05) asRead++; }
+          }
+        }
+        return { n: n, asRead: n ? 100 * asRead / n : 0, reversed: n ? 100 * reversed / n : 0 };
+      } finally {
+        const pm = (prevMode || 'composite|' + encodeMode()).split('|');
+        G.mode = null; G.setMode(pm[0], pm[1]);
+      }
+    })().catch(e => { console.warn('§GI_STILL_ORIENT_GEOM failed: ' + (e && e.message)); return null; });
+    let decidedBy = 'colour';
+    if (geo && geo.n > 2000 && !G.cam.isOrthographicCamera) {
+      const lo = Math.min(geo.asRead, geo.reversed), hi = Math.max(geo.asRead, geo.reversed);
+      // §GI_ORIENT_RATIO — a RATIO test with a small floor. The old `hi >= 2*lo + 1` carried a 1-point
+      // absolute floor sized for indoor poses (21-32% vs 0.1-2%); at a low-contrast view (live site, HHS
+      // default view) the signal was 0.02% vs 0.20% of ~90,000 samples — 10x, but under 1 point — so it
+      // fell back to colour, which picked the upside-down pair.
+      // __GI_STILL_FORCE_UNDECIDED is a TEST HOOK (like __GI_STILL_INJECT_READBACK_FLIP): it sends the
+      // decision down the undecided path so §GI_ROW_PROBE can be witnessed. Nothing sets it in normal use.
+      if (!window.__GI_STILL_FORCE_UNDECIDED && hi >= 3 * lo && hi - lo >= 0.1) {
+        const fo = geo.reversed < geo.asRead;
+        const pick = [false, true].map(ft => ({ ft: ft, s: scores['tex' + (ft ? 'Flip' : 'Same') + '_out' + (fo ? 'Flip' : 'Same')].composite }))
+          .sort((a, b2) => a.s - b2.s)[0];
+        best = { flipTex: pick.ft, flipOut: fo, score: pick.s, covered: best.covered, n: best.n };
+        decidedBy = (best.flipTex === colourPick.flipTex && best.flipOut === colourPick.flipOut) ? 'geometry (agrees with colour)'
+          : 'geometry (OVERRULED colour pick flipTex=' + colourPick.flipTex + ' flipOut=' + colourPick.flipOut + ')';
+      } else {
+        // §GI_ORIENT_RATIO — undecided (a view of mostly camera-facing walls: flipping rows barely changes
+        // which surfaces face away, measured 0.02% vs 0.09-0.20%). NEVER fall back to colour: it picked the
+        // upside-down pair in every weak case measured. The row order is a property of the pipeline, not
+        // of the view — every decisive reading on this platform (13 runs, 9 poses, 3 servers) gave
+        // flipTex=false flipOut=false. Reuse the last decisive answer this session, else that measured one.
+        // §GI_ROW_PROBE — the row order is NOT the same on every machine: red1's desktop read flipOut=true
+        // (20.93% vs 0.01%, Clinic) where every headless run reads false. So when this view cannot decide,
+        // ask the pipeline itself with a scene whose answer is known.
+        const prevGeo = window.__giOrientDecided;
+        let probe = null;
+        if (!prevGeo) probe = await probeRowOrder(G).catch(e => { console.warn('§GI_ROW_PROBE failed: ' + (e && e.message)); return null; });
+        const fo = prevGeo ? prevGeo.flipOut : (probe ? probe.flipOut : false);
+        best = { flipTex: prevGeo ? prevGeo.flipTex : false, flipOut: fo, score: best.score, covered: best.covered, n: best.n };
+        decidedBy = prevGeo ? 'geometry UNDECIDED -> last decisive answer this session'
+          : (probe ? 'geometry UNDECIDED -> row-order probe' : 'geometry UNDECIDED -> probe failed, no flips');
+        if (probe) window.__giOrientDecided = { flipTex: false, flipOut: probe.flipOut };
+      }
+    }
+    if (/^geometry \(/.test(decidedBy)) window.__giOrientDecided = { flipTex: best.flipTex, flipOut: best.flipOut };
+    G.setTexFlip(best.flipTex); G.flipOut = best.flipOut;
+    const sorted = Object.values(scores).map(v => v.composite).filter(v => v != null).sort((a, b2) => a - b2);
+    G.orient = { scores: scores, flipTex: best.flipTex, flipOut: best.flipOut, score: +best.score.toFixed(2), samples: best.n,
+                 margin: sorted.length > 1 ? +(sorted[1] - sorted[0]).toFixed(2) : null, geo: geo, decidedBy: decidedBy };
+    console.log('§GI_STILL orientation by match (scored only where the geometry pass drew): ' + JSON.stringify(scores) +
+                ' colour pick flipTex=' + colourPick.flipTex + ' flipOut=' + colourPick.flipOut + ' margin=' + G.orient.margin);
+    console.log('§GI_STILL_ORIENT_GEOM backfacing asRead=' + (geo ? geo.asRead.toFixed(2) : '?') + '% reversed=' + (geo ? geo.reversed.toFixed(2) : '?') +
+                '% covered=' + (geo ? geo.n : 0) + ' -> flipTex=' + best.flipTex + ' flipOut=' + best.flipOut + ' decidedBy=' + decidedBy +
+                ' [a front-facing surface cannot face away from its own camera ray: the right row order breaks that on ~0.1-2% of' +
+                ' pixels, the wrong one on 21-32% (HHS, 4 poses)]');
+    return G.orient;
+  }
+  // Draw the app's OWN finished frame into our colour canvas. Render and copy in the SAME task: a
+  // WebGL canvas is not guaranteed to hold its pixels afterwards, and the app parks its render loop
+  // when idle (§IDLE_GATE park appears in the log right before Alt+S), so the buffer can be empty.
+  // §GI_APP_FRAME (2026-09-24, measured: some presses fed the bounce a near-black app frame, appMean 13.3, while the
+  // still on screen was normal, mean 119). The old code RE-RENDERED the app scene before reading it — one raw render,
+  // not the finished accumulated still on screen, and on those presses that render came out dark. Now the displayed
+  // still (preserveDrawingBuffer) is read FIRST; only an empty read (mean < 2, the idle-park case the re-render was
+  // for) falls back to a re-render. Both means are logged.
+  function readCanvasInto(G) {
+    const A = window.APP;
+    G.colorCtx.clearRect(0, 0, G.w, G.h);
+    G.colorCtx.drawImage(A.renderer.domElement, 0, 0, G.w, G.h);
+    G.colorTex.needsUpdate = true;
+    const u = G.colorCtx.getImageData(0, 0, Math.min(128, G.w), Math.min(72, G.h)).data;   // 128x72 only
+    let t = 0; for (let i = 0; i < u.length; i += 4) t += (u[i] + u[i + 1] + u[i + 2]) / 3;
+    return +(t / (u.length / 4)).toFixed(1);
+  }
+  function grabAppFrame(G) {
+    const A = window.APP;
+    const first = readCanvasInto(G);
+    if (first >= 2) { console.log('§GI_APP_FRAME read=displayed mean=' + first + ' (no re-render)'); return first; }
+    try { if (A.markDirty) A.markDirty(); } catch (e) {}
+    try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); }
+    catch (e) { console.warn('§GI_STILL app render failed: ' + (e && e.message)); }
+    const second = readCanvasInto(G);
+    console.log('§GI_APP_FRAME read=rerender displayedMean=' + first + ' rerenderMean=' + second + ' (the displayed buffer was empty)');
+    return second;
+  }
+  // ONE render of the geometry pass, with the app's scene left exactly as found.
+  //  • scene.overrideMaterial — the whole point; restored in `finally`.
+  //  • scene.background — nulled, because the background mesh is built with allowOverride = false
+  //    (three.webgpu.js:51258) so it would still draw its own colour with alpha 1 and fill the mask.
+  //  • A._sky and any raw GLSL ShaderMaterial — hidden. Today the renderer REFUSES them: the
+  //    baseline log carries exactly one `THREE.NodeBuilder: Material "ShaderMaterial" is not
+  //    compatible.` and 8.6% of the frame stayed transparent because of it. With an override
+  //    material they would suddenly start drawing, and A._sky is a full-screen dome — it would
+  //    cover the picture and take the depth buffer with it.
+  // MEASURED CHOICE (§GI_STILL_SWAP): scene.overrideMaterial does NOT give one program for the whole
+  // scene. The renderer copies alphaTest/alphaMap/displacement*/transparent from each SOURCE material
+  // onto the override before every draw (three.webgpu.js:65409-65416), so the cache key still moves
+  // per object: measured 291 device.createRenderPipeline calls for 291 drawn objects. Swapping each
+  // mesh's own material for the shared one avoids that path entirely (`material.allowOverride` is
+  // only consulted when scene.overrideMaterial is set), so the numbers for both are logged and the
+  // faster one is the default. Either way every material is put back in `finally`.
+  // MEASURED A/B (fix3, same page, same still, fresh renderer for each): scene.overrideMaterial
+  // compiled in 5384ms with 292 sync pipelines; the material swap compiled in 5393ms with 289. No
+  // difference — the pipeline cache key moves per RENDER OBJECT, not per material — so the default
+  // is the non-invasive one. The swap stays available behind the flag because it was measured.
+  const SWAP = () => !!window.__GI_STILL_SWAP;
+  // §GI_SHARED_ATTR_WIDEN — the second renderer must not rewrite the APP's geometry.
+  // WebGPUAttributeUtils.createAttribute (three.webgpu.min.js:84196-84214) widens every non-normalized
+  // 8/16-bit array to 32-bit and assigns it back onto the SHARED attribute. The app's WebGL buffer stays
+  // 16-bit, but BatchedMesh.onBeforeRender then computes its draw offsets at 4 bytes per index: after
+  // one bounce pass the app's own frame lost every slab, wall and stair (measured on HHS, 60/128 index
+  // arrays Uint16 -> Uint32, 48% of pixels off by >60) — the see-through look red1 called smearing.
+  // WebGPU also reads the index format off the array at draw time (:89025), so it must SEE 32-bit
+  // while it draws: swap in a 32-bit copy we own before the render, put the app's array back after,
+  // and make every BatchedMesh rebuild its draw list at the right width on the app's next frame.
+  let WIDE = new WeakMap();   // §WIDE_RELEASE: replaced (so dropped) whenever the bounce renderer is released
+  function widenShared(scene) {
+    const out = [], seen = new Set();
+    const one = (a, isIndex) => {
+      if (!a || a.isInterleavedBufferAttribute || a.normalized) return;
+      const arr = a.array, C = arr && arr.constructor;
+      if (C !== Uint16Array && C !== Uint8Array && C !== Int16Array && C !== Int8Array) return;
+      let e = WIDE.get(a);
+      if (!e || e.narrow !== arr || e.version !== a.version) {
+        const wide = (C === Int16Array || C === Int8Array) ? new Int32Array(arr) : new Uint32Array(arr);
+        if (isIndex && C === Uint16Array) for (let i = 0; i < wide.length; i++) if (wide[i] === 0xffff) wide[i] = 0xffffffff;   // primitive restart, as upstream
+        e = { narrow: arr, wide: wide, version: a.version }; WIDE.set(a, e);
+      }
+      a.array = e.wide; out.push([a, arr]);
+    };
+    scene.traverse(o => {
+      const g = o.geometry;
+      if (!g || seen.has(g) || !(o.isMesh || o.isLine || o.isPoints)) return;
+      seen.add(g); one(g.index, true); for (const k in g.attributes) one(g.attributes[k], false);
+    });
+    return out;
+  }
+  function restoreShared(scene, widened) {
+    for (let i = widened.length - 1; i >= 0; i--) widened[i][0].array = widened[i][1];
+    scene.traverse(o => { if (o.isBatchedMesh) o._visibilityChanged = true; });
+    return widened.length;
+  }
+  let widenLogged = false;
+  async function renderGeom(G) {
+    const A = window.APP, s = A.scene;
+    const prevOverride = s.overrideMaterial, prevBg = s.background;
+    const hidden = [], swapped = [];
+    const useSwap = SWAP();
+    const widened = widenShared(s);
+    try {
+      if (A._sky && A._sky.visible) { A._sky.visible = false; hidden.push(A._sky); }
+      // §GI_GLASS_SKIP (red1, 2026-09-23: "eerie bouncing" indoors — a Terminal hall shot full of
+      // milky translucent sheets). The geometry pass writes depth and normals with ONE opaque
+      // material, so a glass panel is recorded as a solid wall: the occlusion and the bounce are then
+      // computed against a surface that light actually passes through, and the mask marks it solid so
+      // the app's own glass is replaced by that wrong shading. Transparent meshes are therefore left
+      // OUT of the geometry pass entirely — their pixels stay exactly as the app drew them.
+      // Terminal has 26 such meshes at opacity 0.25; HHS's facade is mostly glazing.
+      const GLASS_MAX_OPACITY = (window.__GI_GLASS_OPACITY != null) ? window.__GI_GLASS_OPACITY : 0.9;
+      let glass = 0, glassArr = 0;
+      s.traverse(o => {
+        const m = o.material;
+        if (!o.visible || !m) return;
+        // ### ALTS-ALL FIX 9 (DEFECT 6, measured 2026-09-27: Terminal "§GI_STILL glass skip: 0" on every press while §GLASS_FRESNEL
+        // patched 70 glazing meshes): Terminal's panes live in MATERIAL ARRAYS (R10 window arrays, frame + pane groups) and this
+        // loop returned early on every array, so each pane went into the geometry pass as a SOLID wall and the composite replaced
+        // the app's see-through glass with bounce shading ("alt-s makes them opaque"). An object with ANY glass group is left out
+        // (its frame then keeps the app's own pixels too — a sliver, against a pane-sized opaque sheet).
+        if (Array.isArray(m)) { if (m.some(x => x && x.transparent && x.opacity < GLASS_MAX_OPACITY)) { o.visible = false; hidden.push(o); glassArr++; } return; }
+        if (m.isShaderMaterial && !m.isNodeMaterial) { o.visible = false; hidden.push(o); return; }
+        if (m.transparent && m.opacity < GLASS_MAX_OPACITY) { o.visible = false; hidden.push(o); glass++; }
+      });
+      G.glassSkipped = glass + glassArr; G.glassSkippedArr = glassArr;
+      if (useSwap) {
+        s.traverse(o => {
+          if (!o.visible || !o.material || o.material === G.geoMat) return;
+          // Lines, points and sprites are hidden rather than swapped: a mesh NodeMaterial is not a
+          // line/point/sprite material, and a 1px sliver contributes nothing to depth-and-normal
+          // ambient occlusion. Leaving them on their own materials would put the per-object shader
+          // compile straight back, which is the thing being removed.
+          if (o.isLine || o.isPoints || o.isSprite) { o.visible = false; hidden.push(o); return; }
+          if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+          swapped.push([o, o.material]); o.material = G.geoMat;
+        });
+      } else {
+        s.overrideMaterial = G.geoMat;
+      }
+      s.background = null;
+      // NO `pipeline.needsUpdate = true` here. RenderPipeline._updateContext ends with
+      // `this._quadMesh.material.needsUpdate = true` (three.webgpu.js:90729-90731), so setting it
+      // per pass rebuilt the SSGI quad's program — the most expensive shader in the graph — on every
+      // one of the 8 passes. The temporal filter does not need it: SSGINode reads frame.frameId,
+      // which advances on its own (vendor/SSGINode.js:363).
+      // __GI_STILL_INJECT_GEOM_DROP is a TEST HOOK (like __GI_STILL_INJECT_READBACK_FLIP): it does what a WebGPU error does to a
+      // pass — the command buffer is dropped, nothing is drawn, the render target keeps the previous pass. §GI_CARRY must catch it.
+      if (!window.__GI_STILL_INJECT_GEOM_DROP) {
+        G.renderer.setRenderTarget(G.renderTo || G.rt);   // §GI_FILM_8BIT: films with &gi8=1 render into the 8-bit target
+        if (G.pipeline.renderAsync) await G.pipeline.renderAsync(); else G.pipeline.render();
+        G.renderer.setRenderTarget(null);
+      }
+      G.hiddenCount = hidden.length;
+      // logged on EVERY press (was once per page: a carried-state change on press 2+ was invisible — DEFECT 6); the 8 passes of one
+      // press share it (the count is per pass, identical within a press)
+      if (G.glassLoggedPress !== G.pressId) { G.glassLoggedPress = G.pressId; console.log('§GI_STILL glass skip: ' + (G.glassSkipped || 0) + ' transparent meshes left out of the geometry pass (' + (G.glassSkippedArr || 0) + ' multi-material, e.g. window frame + pane; they keep the app\'s own pixels)'); }
+    } finally {
+      for (let i = swapped.length - 1; i >= 0; i--) swapped[i][0].material = swapped[i][1];
+      s.overrideMaterial = prevOverride;
+      s.background = prevBg;
+      for (const o of hidden) o.visible = true;
+      G.swappedCount = swapped.length;
+      const nw = restoreShared(s, widened);
+      if (!widenLogged) { widenLogged = true; console.log('§GI_SHARED_ATTR_WIDEN swapped=' + nw + ' 8/16-bit attributes for the second renderer, app arrays restored after every pass'); }
+    }
+  }
+  // §GI_STILL_ENCODE — MEASURED, not assumed. With `pipeline.outputColorTransform = true` the
+  // finished frame came back in LINEAR light, not sRGB: over 19 luminance buckets the readback
+  // tracked sRGB->linear of the app's own frame to within ~2/255 the whole way
+  // (app 160.0 -> out 90.6 against a predicted 89.6; app 96.0 -> 31.3 against 29.8). The texture is
+  // decoded on sample — three.js gives an sRGB texture the hardware 'rgba8unorm-srgb' format — but
+  // the matching re-encode never ran, so the whole picture came out about half as bright. Encoding
+  // explicitly with sRGBTransferOETF makes the round trip an identity, which mode 'coloronly'
+  // checks every run. 'transform' keeps the old behaviour for comparison.
+  function encodeMode() { return window.__GI_STILL_ENCODE || 'oetf'; }
+  // §GI_STILL_GAIN_DIAL (2026-09-24, red1: bounce "MORE", tuned per press). Read at EVERY Alt+S:
+  // APP._stillBounceGain, else window.__GI_STILL_GAIN, else &bounce=<0..3>, else 1.0 (was a fixed 0.6).
+  // AO keeps its 0.55 default; window.__GI_STILL_AO still overrides, now per press too.
+  // §ZERO Z11 (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md "### Z11 SPEC" (a)): AO ONCE — §PHOTO_AO (Z10, AO on indirect light) is the
+  // one AO; this bounce adds light only. GI_AO_DEFAULT 0.55 -> 0 (the dial stays: &ao= / APP._stillAo for A/B). Witness:
+  // viewer/tests/witness_z11_bounce_receiver.js.
+  const GI_GAIN_DEFAULT = 1.0, GI_AO_DEFAULT = 0, GI_RECV_DEFAULT = 1, GI_RADIUS_DEFAULT = 12, GI_THICK_DEFAULT = 1;
+  function readGain() {
+    const A = window.APP || {};
+    let v = (typeof A._stillBounceGain === 'number') ? A._stillBounceGain : (typeof window.__GI_STILL_GAIN === 'number' ? window.__GI_STILL_GAIN : null);
+    if (v == null) { const m = /[?&]bounce=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_GAIN_DEFAULT; }
+    return Math.max(0, Math.min(3, isFinite(v) ? v : GI_GAIN_DEFAULT));
+  }
+  // §GI_STILL_AO_DIAL (red1 via watcher: AO darkening outweighed the bounce outdoors) — APP._stillAo, else
+  // window.__GI_STILL_AO, else &ao=<0..1>, else 0.55. 0 = no occlusion darkening, 1 = full.
+  // §GI_BOUNCE_STRENGTH dials (red1: "outdoor bounce ... cannot have near-zero effect"). One reader for every SSGI
+  // knob: APP[key] (number) > &name= > default, clamped. Read at EVERY press; all are uniforms, no rebuild.
+  function readNum(key, name, def, lo, hi) {
+    const A = window.APP || {};
+    let v = (typeof A[key] === 'number') ? A[key] : null;
+    if (v == null) { const m = new RegExp('[?&]' + name + '=([0-9.]+)').exec(location.search); v = m ? parseFloat(m[1]) : def; }
+    return Math.max(lo, Math.min(hi, isFinite(v) ? v : def));
+  }
+  // §ZERO Z11: a FILM keeps the pre-Z11 second AO (0.55) until Z13 (§FILM_LAW S4) inherits the approved still — Alt+C is not changed here.
+  const GI_AO_FILM_PRE_Z11 = 0.55;
+  function readAo(forFilm) {
+    const A = window.APP || {};
+    if (forFilm && typeof A._stillAo !== 'number' && typeof window.__GI_STILL_AO !== 'number' && !/[?&]ao=/.test(location.search)) return GI_AO_FILM_PRE_Z11;
+    let v = (typeof A._stillAo === 'number') ? A._stillAo : (typeof window.__GI_STILL_AO === 'number' ? window.__GI_STILL_AO : null);
+    if (v == null) { const m = /[?&]ao=([0-9.]+)/.exec(location.search); v = m ? parseFloat(m[1]) : GI_AO_DEFAULT; }
+    return Math.max(0, Math.min(1, isFinite(v) ? v : GI_AO_DEFAULT));
+  }
+  // §GI_RECEIVER — what the bounce is multiplied by at the RECEIVING pixel. Physically that is the surface's
+  // albedo; the pipeline has no albedo buffer, only the app's finished (LIT) colour, so a shaded soffit — dark in
+  // the still — received ~no bounce: the bounce was scaled by the very shading it should fill. recv 0 = the lit
+  // colour (old). recv 1 = an albedo ESTIMATE, not measured data: the lit colour's hue at a fixed brightness
+  // GI_ALBEDO_EST (0.5 = mid grey), so shade no longer cancels the bounce. Blend in between. Uniform, per press.
+  // Default recv=1 (§GI_BOUNCE_STRENGTH sweep, Hospital real GPU): bounce added courtyard 0.8% -> 4.9%, L1 interior
+  // 13.0% -> 32.0% of the app frame (linear). Radius x2/x4 did not help (screen-space radius; x4 lowered it).
+  const GI_ALBEDO_EST = 0.5;
+  // §GI_RECEIVER_QUANT (red1's rainbow voxel edge, bounce_still_1790353472343): the app frame is 8-bit sRGB, so a near-black
+  // pixel's hue is rounding noise — app [1,1,0] became a pure-yellow receiver and the composite painted [95,94,0], app [1,0,0]
+  // pure red. Each channel carries up to 0.5 code of rounding, two equal channels can differ by 1 code: the chroma (each
+  // channel's offset from the channel mean, in sRGB codes) is shrunk by 1 code before the hue is read. A pixel whose channels
+  // lie within 1 code reads grey; a bright pixel's hue moves by < 1 code (no change to lit surfaces).
+  function receiver(G, C) {
+    const T = G.TSL, code = T.sRGBTransferOETF(C.rgb).mul(255), m = code.x.add(code.y).add(code.z).div(3);
+    const dev = code.sub(T.vec3(m)), q = T.sign(dev).mul(T.max(T.abs(dev).sub(1), T.vec3(0)));
+    const Cq = T.sRGBTransferEOTF(T.clamp(T.vec3(m).add(q).div(255), 0, 1));
+    const lum = T.max(T.dot(Cq, T.vec3(0.2126, 0.7152, 0.0722)), T.float(1e-3));
+    const est = T.min(Cq.div(lum).mul(GI_ALBEDO_EST), T.vec3(1));
+    const old = T.mix(C.rgb, est, G.recvU);
+    // §ZERO Z11 (b): the REAL albedo the app shades this pixel with (SourcedLight.albedoMap, alpha 1 = real) wins; the estimate only
+    // where there is none (sky, unpatched, blended-transparent pixels) or with &gialb=0 (G.albU = 0).
+    if (!G.albNode) return old;
+    const alb = G.albNode.sample(T.uv());
+    return alb.a.mul(G.albU).greaterThan(0.5).select(alb.rgb, old);
+  }
+  function outputFor(G, mode, enc) {
+    const T = G.TSL, C = G.colorNode.sample(G.TSL.uv()), gi = G.gi, mask = G.maskNode;
+    let rgb;
+    // §GI_STILL_ORIENT_GEOM — the packed view normal with NO transfer and NO colour transform, so
+    // the readback is n*0.5+0.5 exactly and the sign test in decideOrientation needs no decoding.
+    if (mode === 'normalsraw') { G.pipeline.outputColorTransform = false; return T.vec4(G.geomTexNode.rgb, mask); }
+    if (mode === 'coloronly') rgb = C.rgb;                                      // alignment + transfer witness
+    else if (mode === 'normals') rgb = G.geomTexNode.rgb;                       // packed view normal
+    else if (mode === 'ao') rgb = T.vec3(gi.getAONode());
+    // §GI_STILL_TERM — the two parts of the composite alone, so a § line can say what the bounce ADDS and what the
+    // occlusion TAKES, in the same units as compositeMean: 'giterm' = colour x bounce x gain, 'aoloss' = colour x
+    // aoK x (1 - AO).
+    else if (mode === 'giterm') rgb = receiver(G, C).mul(gi.getGINode().rgb).mul(G.gainU);
+    else if (mode === 'aoloss') rgb = C.rgb.mul(G.aoU).mul(T.float(1).sub(gi.getAONode()));
+    else {
+      // §GI_AO_STRENGTH (red1, 2026-09-23: "there seems to be some eerie bouncing" — an aerial still
+      // where the whole roof and facade went dark and flat). Cause is scale: the occlusion term is
+      // applied at full weight everywhere, and on a big exterior surface seen from distance almost
+      // every sample reads as occluded, so it dims the whole building instead of picking out corners.
+      // The occlusion is now BLENDED rather than multiplied outright: 1 means the old behaviour,
+      // 0 leaves the app's picture alone. The bounce term keeps its own gain.
+      // Terminal measured compositeMean=163.68 against appMean=159.81 — the bounce was ADDING light
+      // in a white hall and washing it out. Default gain lowered; raise it with __GI_STILL_GAIN.
+      // §GI_STILL_GAIN_DIAL — gain and AO are UNIFORMS (G.gainU / G.aoU), set per press in shoot(), so the
+      // renderer kept across Alt+S presses picks up a new value without a shader rebuild (§GI_DIALS_FIRST_BUILD fix).
+      const gain = G.gainU, aoK = G.aoU;
+      const ao = T.float(1).sub(aoK).add(aoK.mul(gi.getAONode()));
+      // §IRC_MAX v2: the app colour already carries the zone interreflection (IR); the bounce adds only what exceeds it:
+      // added = max(0, bounce - IR_px), IR_px = colour x share (share = the IR part of the pixel's linear radiance)
+      const giT = receiver(G, C).mul(gi.getGINode().rgb).mul(gain), irPx = C.rgb.mul(G.shareNode.sample(T.uv()).r);
+      const addRaw = T.mix(giT, T.max(giT.sub(irPx), T.vec3(0)), G.irMaxU);
+      // ### ALTS-ALL FIX 13 (F10, law L2): the interreflected light at a pixel cannot exceed k2 x its direct light, k2 = R/(1-R) at the R
+      // the zone IR uses (SourcedLight IR_R) — the bound's zone mean is k2 x mean direct = the Sumpner total the IR already carries.
+      // D = C x (1 - share) (sun/sky/lamps/cove), IR_px = C x share, both on the display colour (the §IRC_MAX approximation).
+      // added <= max(0, k2 x D - IR_px). G.boundU = 0 (&gibound=0, and films until Z13) = unbounded.
+      const shr = G.shareNode.sample(T.uv()).r, room = T.max(C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2).sub(irPx), T.vec3(0));
+      // §GI_REDISTRIBUTE (red1 2026-09-28: "i suspect bounce is reduced"; log: meanAbsDiff 0.92 levels — the FIX 13 bound left the flat zone
+      // IR and removed the local surfacing): the bounced light is counted once as the LOCAL estimate instead of the flat zone mean —
+      // pixel = C - IR_px + min(bounce, k2 x D). Where the local bounce exceeds the zone's flat IR (lit areas) it adds; where it is
+      // lower (corners, under furniture) it subtracts; never above the physical k2 x direct. &giredist=0 = the FIX 13 add-only bound.
+      // §GI_REDIST_EVIDENCE (2026-09-28, red1's HHS still …583845329: black ceiling corners + blotches; A/B at that pose: redistribute
+      // dark 1.29% vs 0%, mean 129.6 -> 104.2, &giredist=0 no blotch): SSGI is SCREEN-SPACE — a surface whose bounce sources are off-frame
+      // reads bounce ~0 AND AO ~1 (no occluder seen), and the rule then took its whole zone IR away. A low bounce is evidence of local
+      // shadowing only where SSGI saw an occluder, so the IR is removed in proportion to the occlusion it saw: w = 1 - AO_ssgi.
+      // w = 0 (nothing seen) -> the FIX 13 add-only bound; w = 1 (fully occluded) -> the full redistribute.
+      const lb = T.min(giT, C.rgb.mul(T.float(1).sub(shr)).mul(G.boundK2)), wEv = T.clamp(T.float(1).sub(gi.getAONode()), 0, 1);
+      const bRedist = T.max(C.rgb.mul(ao).add(T.mix(T.max(lb.sub(irPx), T.vec3(0)), lb.sub(irPx), wEv)), T.vec3(0));
+      const bAdd = C.rgb.mul(ao).add(T.mix(addRaw, T.min(addRaw, room), G.boundU));
+      rgb = T.mix(bAdd, bRedist, G.boundU.mul(G.redistU));
+    }
+    // enc 'linear' (§GI_STILL_TERM): no transfer at all, so coloronly/giterm/aoloss means ADD up in linear light.
+    if (enc === 'linear') { G.pipeline.outputColorTransform = false; return T.vec4(rgb, mask); }
+    G.pipeline.outputColorTransform = (enc === 'transform');
+    return (enc === 'transform') ? T.vec4(rgb, mask) : T.vec4(T.sRGBTransferOETF(rgb), mask);
+  }
+  async function build(w, h) {
+    const A = window.APP, THREE = window.THREE;
+    if (!(THREE && THREE.REVISION === '186' && THREE.WebGPURenderer)) throw new Error('this page is three.js r' + (THREE && THREE.REVISION) + ' — the bounce still needs r186');
+    if (!navigator.gpu) throw new Error('this browser exposes no WebGPU (navigator.gpu missing)');
+    const TSL = await stage('loading the bounce-light code (once per page)', () => import('./lib/gi/three.tsl.appbound.js'));
+    const { ssgi } = await import('./lib/gi/SSGINode.appbound.js');
+    const renderer = new THREE.WebGPURenderer({ antialias: false, forceWebGL: false, trackTimestamp: false });
+    renderer.setPixelRatio(1); renderer.setSize(w, h);
+    // §GI_GPU_ERRORS (Z14/S4 carried state, 2026-09-28, bim-compiler prompts/PHOTOREAL_STILL_RENDER.md S4/Z14): a WebGPU error
+    // inside a pass — VK_ERROR_OUT_OF_DEVICE_MEMORY while the card is shared, then "[Invalid CommandBuffer ...] is invalid due to
+    // a previous error" — drops the whole command buffer WITHOUT throwing. three r186 only console.errors each one (55,910 lines
+    // in one press, read by nobody) and this kept renderer's render target keeps whatever the PREVIOUS press drew: measured, a
+    // Terminal exterior press after an interior press logged the interior press's mask to the digit (clear 21.73% / solid
+    // 78.27% twice; 10.74 / 89.26 in a second run) against 4.99 / 95.01 on a fresh page, and composited the interior still onto
+    // the exterior picture (meanAbsDiff 41-48 vs 4.7 fresh) — red1's "odd frames that clear on reload". The errors are COUNTED
+    // per press here and judged by §GI_CARRY in run(); the first message is kept verbatim for the log line.
+    const gpuErr = { n: 0, first: null };
+    renderer.onError = function (info) { gpuErr.n++; if (!gpuErr.first) gpuErr.first = (info && info.type || 'GPUError') + ': ' + String(info && info.message || '').split('\n')[0].slice(0, 160); };
+    // §GI_PRESS_COST (measured 2026-09-24): with the app's lights visible to this renderer, every Alt+S after the first
+    // rebuilt 3,034 pipelines + 2,799 shader modules (35 s) — the lights are new objects each press (portals, pads, lamps)
+    // and the pipelines are keyed on the scene's light set. Nothing this renderer draws is lit (the geometry pass is an
+    // unlit NodeMaterial; SSGI reads the app's finished frame), so it sees NO lights: one fixed, empty light set.
+    // A property of this renderer only — the app's WebGL renderer and its lights are untouched.
+    if (renderer.lighting) renderer.lighting.enabled = false;
+    // NO tone mapping and NO exposure lift here any more. The colour we feed in is the app's own
+    // FINISHED still — already tone-mapped, already at the app's exposure. Sampling decodes sRGB to
+    // linear (three.js gives an sRGB texture the hardware 'rgba8unorm-srgb' format) and the output
+    // node re-encodes it with sRGBTransferOETF, so an untouched pixel comes back exactly where it
+    // started: MEASURED, mode 'coloronly' returns compositeMean=113.34 against appMean=113.34,
+    // meanAbsDiff=0 over the full frame. The bake tap's exposure=1.8 exists because THAT path renders
+    // the scene itself and has to match the app's brightness; this one starts from it.
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x000000, 0);             // untouched pixels stay empty; the app's sky shows through
+    if (renderer.setClearAlpha) renderer.setClearAlpha(0);
+    await stage('starting the bounce-light graphics engine (once per page)', () => renderer.init());
+    const pipeStats = instrumentPipelines(renderer);
+    const cam = A.camera;
+    const Pipeline = THREE.RenderPipeline || THREE.PostProcessing;
+    const pipeline = new Pipeline(renderer);
+
+    // COLOUR INPUT — the app's own finished picture, as a texture.
+    const colorCanvas = document.createElement('canvas'); colorCanvas.width = w; colorCanvas.height = h;
+    const colorCtx = colorCanvas.getContext('2d', { willReadFrequently: true });
+    const colorTex = new THREE.CanvasTexture(colorCanvas);
+    colorTex.flipY = false;
+    colorTex.colorSpace = THREE.SRGBColorSpace;     // canvas holds sRGB bytes -> decoded to linear on sample
+    colorTex.generateMipmaps = false;
+    colorTex.minFilter = THREE.LinearFilter; colorTex.magFilter = THREE.LinearFilter;
+    colorTex.wrapS = colorTex.wrapT = THREE.ClampToEdgeWrapping;
+    // §GI_STILL_ORIENT — the colour texture's v is steered by UNIFORMS, not by texture.flipY, so the
+    // orientation can be decided by measurement at build time and switched without recompiling a
+    // shader. `sample()` is accepted by SSGINode unchanged: vendor/SSGINode.js:692 pipes the beauty
+    // input through convertToTexture, and that returns a SampleNode as-is
+    // (three.webgpu.js:40386 `if ( node.isSampleNode || node.isTextureNode ) return node;`), and
+    // vendor/SSGINode.js:442 only ever calls `.sample( uv )` on it. So the SSGI rays and the final
+    // composite read the colour through the SAME flip — they cannot disagree.
+    const flipSign = TSL.uniform(1), flipOff = TSL.uniform(0);
+    const colorTexNode = TSL.texture(colorTex);
+    const colorNode = TSL.sample((uv) => colorTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+
+    // GEOMETRY PASS — one material, unlit, no textures, no lights: RGB = packed view normal,
+    // A = 1 wherever anything was drawn. normalViewGeometry (not normalView) on purpose: it is the
+    // interpolated vertex normal and needs no material lighting context, so it compiles the same way
+    // for every object in the scene.
+    const geoMat = new THREE.NodeMaterial();
+    geoMat.name = 'GI_STILL_GEOM';
+    geoMat.lights = false; geoMat.fog = false;
+    geoMat.forceSinglePass = true;                  // never split a transparent object into two passes
+    geoMat.depthWrite = true; geoMat.depthTest = true;
+    geoMat.colorNode = TSL.vec4(TSL.packNormalToRGB(TSL.normalViewGeometry), 1);
+
+    const scenePass = TSL.pass(A.scene, cam);
+    const geomTexNode = scenePass.getTextureNode('output');
+    const depth = scenePass.getTextureNode('depth');
+    const nrm = TSL.sample((uv) => TSL.unpackRGBToNormal(scenePass.getTextureNode('output').sample(uv)));
+    // §GI_STILL_SKY — GEOMETRY MASK FROM DEPTH, not from the pass's colour alpha.
+    // The colour alpha coming out of this pipeline is NOT a trustworthy "did anything draw here"
+    // signal, and here is the one-variable bisect that shows it: the identical build, same frame,
+    // same renderer, measured clear(a<0.02)=0.00% with the SSGI node referenced by the output node
+    // and clear=7.87% with mode 'coloronly', where it is not. Nothing else changed.
+    // The reason is in the two sources. PassNode.updateBefore (three.webgpu.js:42967-43043) saves
+    // and sets autoClear/autoClearColor/autoClearDepth/autoClearStencil and the MRT, and never sets
+    // a clear COLOUR — it uses whatever the renderer is holding. SSGINode.updateBefore wraps its own
+    // quad render in `renderer.setClearColor( 0xffffff, 1 )` (vendor/SSGINode.js:391), and the scene
+    // pass is updated from inside that window, so the frame comes back cleared to white at alpha 1
+    // and the sky is "covered". It is not temporal history and it is not the accumulation.
+    // Depth is cleared to 1.0 whatever the clear colour is, and reversedDepthBuffer is off by
+    // default (three.webgpu.js:61759), so depth < 1 is exactly "something was drawn here".
+    // Measured after the change: clear=8.09% / 5.87% / 12.15% across three runs, against 8.6% for
+    // the old full-scene path on the same building — and partial(0.02..0.98)=0.00% every time.
+    const maskNode = depth.r.lessThan(0.999999).select(TSL.float(1), TSL.float(0));
+    const gi = ssgi(colorNode, depth, nrm, cam);
+    gi.sliceCount.value = (window.__GI_SLICES || 3); gi.stepCount.value = (window.__GI_STEPS || 16);
+    gi.useTemporalFiltering = true;                 // high preset
+    pipeline.outputColorTransform = true;
+    const rt = new THREE.RenderTarget(w, h, { type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true });
+    const G = { THREE, TSL, renderer, pipeline, rt, w, h, cam, geoMat, colorCanvas, colorCtx, colorTex, colorNode, geomTexNode, maskNode, gi, pipeStats, gpuErr, mode: null, flipTex: false, flipOut: false };
+    // §IRC_MAX v2 — the app's per-pixel IR share (SourcedLight.irShare: IR radiance / total, linear), same canvas row order as the
+    // app frame and read through the SAME flip uniforms as colorNode, so share and colour cannot disagree about orientation
+    const shareCanvas = document.createElement('canvas'); shareCanvas.width = w; shareCanvas.height = h;
+    const shareCtx = shareCanvas.getContext('2d', { willReadFrequently: true });
+    const shareTex = new THREE.CanvasTexture(shareCanvas); shareTex.flipY = false; shareTex.colorSpace = THREE.NoColorSpace; shareTex.generateMipmaps = false;
+    shareTex.minFilter = THREE.NearestFilter; shareTex.magFilter = THREE.NearestFilter; shareTex.wrapS = shareTex.wrapT = THREE.ClampToEdgeWrapping;
+    const shareTexNode = TSL.texture(shareTex);
+    G.shareCanvas = shareCanvas; G.shareCtx = shareCtx; G.shareTex = shareTex;
+    G.shareNode = TSL.sample((uv) => shareTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    // §ZERO Z11 (b): receiver albedo canvas (sRGB bytes from SourcedLight.albedoMap, decoded on sample; alpha = real), same flip uniforms
+    const albCanvas = document.createElement('canvas'); albCanvas.width = w; albCanvas.height = h;
+    const albCtx = albCanvas.getContext('2d', { willReadFrequently: true });
+    const albTex = new THREE.CanvasTexture(albCanvas); albTex.flipY = false; albTex.colorSpace = THREE.SRGBColorSpace; albTex.generateMipmaps = false;
+    albTex.minFilter = THREE.NearestFilter; albTex.magFilter = THREE.NearestFilter; albTex.wrapS = albTex.wrapT = THREE.ClampToEdgeWrapping;
+    const albTexNode = TSL.texture(albTex);
+    G.albCanvas = albCanvas; G.albCtx = albCtx; G.albTex = albTex; G.albU = TSL.uniform(0);
+    G.albNode = TSL.sample((uv) => albTexNode.sample(TSL.vec2(uv.x, uv.y.mul(flipSign).add(flipOff))));
+    G.boundU = TSL.uniform(0); G.boundK2 = TSL.uniform(1); G.redistU = TSL.uniform(1);   // §GI_REDISTRIBUTE switch   // ### ALTS-ALL FIX 13 energy bound (set per press)
+    G.irMaxU = TSL.uniform(1);   // 1 = max(IR, SSGI) (watchdog rule); 0 = the old sum (&ircmax=0, A/B only)
+    G.gainU = TSL.uniform(GI_GAIN_DEFAULT); G.aoU = TSL.uniform(GI_AO_DEFAULT);   // §GI_STILL_GAIN_DIAL
+    G.recvU = TSL.uniform(0);   // §GI_RECEIVER, set per press
+    G.setTexFlip = (f) => { G.flipTex = !!f; flipSign.value = f ? -1 : 1; flipOff.value = f ? 1 : 0; };
+    G.setMode = (m, enc) => { const k = m + '|' + enc; if (G.mode !== k) { G.mode = k; pipeline.outputNode = outputFor(G, m, enc); pipeline.needsUpdate = true; } };
+    G.setMode('composite', encodeMode());
+
+    // FIRST RENDER still compiles — far less than before, but MEASURED it was still one 5384ms
+    // block, and only 5ms of that was inside device.createRenderPipeline (292 calls) and 5ms inside
+    // createShaderModule (299). The rest is three.js building one program per RENDER OBJECT on the
+    // main thread, and there is no async door into it (three.webgpu.js:85689 takes the blocking
+    // branch for every call that is not compileAsync). So it is broken into chunks instead: the
+    // scene is revealed a few objects at a time, at 320x180 so only the compiling costs anything
+    // (a pipeline is keyed on formats, not on size, so these same pipelines serve the full-size
+    // render), with the chunk size steered by a wall-clock budget and a yield between chunks.
+    const BUDGET_MS = 40;
+    await stage('copying the building to the bounce-light engine (once per page, ' + A.scene.children.length + ' objects)', async () => {
+      grabAppFrame(G);
+      const list = [];
+      A.scene.traverse(o => { if (o.visible && (o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) list.push(o); });
+      const wasVisible = list.map(o => o.visible);
+      const t0 = performance.now();
+      let chunks = 0, worst = 0;
+      renderer.setSize(320, 180);
+      try {
+        for (const o of list) o.visible = false;
+        let i = 0, n = 2;
+        while (i < list.length) {
+          for (let k = 0; k < n && i < list.length; k++, i++) list[i].visible = true;
+          const t = performance.now();
+          await renderGeom(G);
+          const ms = performance.now() - t;
+          chunks++; if (ms > worst) worst = ms;
+          n = (ms < BUDGET_MS / 3) ? Math.min(16, n * 2) : (ms > BUDGET_MS ? Math.max(1, n >> 1) : n);   // cap 16: at 64 a chunk measured 134ms
+          toast('Bounce still — preparing shaders ' + Math.round(100 * i / list.length) + '%…');
+          await new Promise(r => requestAnimationFrame(() => r()));
+          if (performance.now() - t0 > 60000) { for (const o of list) o.visible = true; await renderGeom(G); break; }   // give up chunking, finish it
+        }
+      } finally {
+        for (let k = 0; k < list.length; k++) list[k].visible = wasVisible[k];
+        renderer.setSize(w, h);
+      }
+      console.log('§GI_STILL progressive compile: ' + list.length + ' renderables in ' + chunks + ' chunks, worst chunk ' + worst.toFixed(0) + 'ms (budget ' + BUDGET_MS + 'ms)');
+      await renderGeom(G);        // one full-size render so the final-size pipelines are hot too
+    });
+    // §GI_ORIENT_CACHE — the orientation is a fact about THIS platform (GPU + browser readback), measured at 12.7 s
+    // (red1's desktop) to 52 s (headless) on every first build. Cached per adapter+browser in localStorage; a new
+    // key, a failed read, or &giorient=measure measures again. Wrapped in try/catch: storage can be blocked.
+    const orientKey = await (async () => { try { const d = renderer.backend && renderer.backend.device; const ai = (d && d.adapterInfo) || {};
+      G.adapter = [ai.vendor, ai.architecture, ai.device, ai.description].join('|');   // §FAULT_GI S4: which GPU drew the bounce
+      if (!/[^|]/.test(G.adapter)) G.adapter = null;   // §FAULT_GI S4b (2026-10-03): all four fields empty on red1's 31 stills ('|||') -> report n/a, not a blank name
+      return [ai.vendor, ai.architecture, ai.device, ai.description, navigator.userAgent].join('|'); } catch (e) { return navigator.userAgent; } })();
+    let orientHit = null;
+    try { const c = JSON.parse(localStorage.getItem('giOrientCache') || 'null'); if (c && c.key === orientKey && !/[?&]giorient=measure/.test(location.search)) orientHit = c; } catch (e) {}
+    if (orientHit) {
+      G.setTexFlip(orientHit.flipTex); G.flipOut = orientHit.flipOut;
+      console.log('§GI_ORIENT_CACHE hit flipTex=' + orientHit.flipTex + ' flipOut=' + orientHit.flipOut + ' measured=' + orientHit.when + ' (skipped the orientation check; &giorient=measure re-measures)');
+    } else {
+      await stage('checking picture orientation (once)', () => decideOrientation(G));
+      // §GI_FILM_CARRY C3: an orientation measured while the GPU was failing is not a fact about this platform — never cache it.
+      if (G.gpuErr.n > 0 || /probe failed/.test((G.orient && G.orient.decidedBy) || '')) console.warn('§GI_ORIENT_CACHE NOT stored: gpuErrors=' + G.gpuErr.n + ' decidedBy=' + (G.orient && G.orient.decidedBy) + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : ''));
+      else {
+        try { localStorage.setItem('giOrientCache', JSON.stringify({ key: orientKey, flipTex: G.flipTex, flipOut: G.flipOut, when: new Date().toISOString() })); } catch (e) {}
+        console.log('§GI_ORIENT_CACHE stored flipTex=' + G.flipTex + ' flipOut=' + G.flipOut + ' key=' + orientKey.slice(0, 80));
+      }
+    }
+    if (pipeStats) console.log('§GI_STILL pipelines sync=' + pipeStats.sync + ' syncMs=' + pipeStats.syncMs.toFixed(0) +
+      ' async=' + pipeStats.async + ' shaderModules=' + pipeStats.modules + ' moduleMs=' + pipeStats.moduleMs.toFixed(0) +
+      ' (sync = device.createRenderPipeline, three.webgpu.js:85690 — the call the old path made several hundred times)');
+    console.log('§GI_STILL geom pass mode=' + (SWAP() ? 'material-swap' : 'scene.overrideMaterial') +
+      ' swapped=' + (G.swappedCount || 0) + ' hid ' + (G.hiddenCount || 0) + ' raw-GLSL/sky object(s)' +
+      '; scene.overrideMaterial restored=' + (A.scene.overrideMaterial === null || A.scene.overrideMaterial === undefined));
+    return G;
+  }
+  async function shoot(opts) {
+    if (busy) return null;
+    busy = true;
+    if (window.APP) window.APP._sceneBorrowed = true;   // §GI_SCENE_BORROWED — app render loop holds its last frame
+    opts = opts || {};
+    const mode = opts.mode || 'composite';
+    const t0 = performance.now();
+    const A = window.APP;
+    // §STILL_RES — the bounce is sized from the app's drawing buffer (the still's own size), not the window's CSS size.
+    const cv = A.renderer && A.renderer.domElement;
+    let w = (cv && cv.width) || window.innerWidth, h = (cv && cv.height) || window.innerHeight;
+    const cap = (A && A._stillResPreset && A._stillResPreset !== 'window') ? w * h : MAX_PIXELS_WINDOW;   // 4k at a wide window was cut to 3998x2074 by a fixed 3840x2160 area
+    const scale = Math.min(1, Math.sqrt(cap / (w * h)));
+    w = Math.max(2, Math.round(w * scale) & ~1); h = Math.max(2, Math.round(h * scale) & ~1);
+    const R = { mode: mode, w: w, h: h };
+    try {
+      toast('Bounce still — starting…');
+      // §GI_GPU_ERRORS: counted per press, INCLUDING a build (copying the building / orientation) done for this press (§GI_CARRY)
+      const gpuErrAt0 = built ? built.gpuErr.n : 0, gpuFirstAt0 = built ? built.gpuErr.first : null;
+      if (!built || built.w !== w || built.h !== h) { if (built) { try { built.renderer.dispose(); } catch (e) {} } built = await build(w, h); }
+      const G = built; G.pressId = (G.pressId || 0) + 1;   // ### ALTS-ALL FIX 9: per-press glass-skip log
+      if (G.gpuErr.n === gpuErrAt0) G.gpuErr.first = null;   // nothing failed yet this press: the next error is this press's first
+      const enc = opts.encode || encodeMode();
+      R.encode = enc;
+      G.setMode(mode, enc);
+      G.gainU.value = readGain(); G.aoU.value = readAo();
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      R.gain = G.gainU.value; R.ao = G.aoU.value; R.recv = G.recvU.value; R.girad = G.gi.radius.value; R.githick = G.gi.thickness.value;
+      R.gisteps = G.gi.stepCount.value; R.giint = G.gi.giIntensity.value;
+      console.log('§GI_STILL gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' applied (uniforms, read this press)' +
+        ' ssgi: radius=' + G.gi.radius.value + ' (screen-space: ~' + Math.round(G.gi.radius.value * (w / 2) / 16) + 'px search at ' + w + 'px wide)' +
+        ' steps=' + G.gi.stepCount.value + ' slices=' + G.gi.sliceCount.value + ' thickness=' + G.gi.thickness.value + 'm' +
+        ' giIntensity=' + G.gi.giIntensity.value + ' expFactor=' + G.gi.expFactor.value + ' screenSpace=' + G.gi.useScreenSpaceSampling.value);
+      const N = (opts.passes != null) ? opts.passes : (window.__GI_ACCUM || ACCUM_DEFAULT);
+      // The app's finished frame, taken ONCE: it is both the colour the bounce is computed from and
+      // the picture the bounce is pasted onto, so they cannot drift apart.
+      R.underMean = await stage('taking the finished picture', async () => grabAppFrame(G));
+      // §IRC_MAX v2 — the IR share of every pixel (two small linear renders by the app); none = all 0 (the old composite)
+      { let sh = null; try { sh = window.SourcedLight && window.SourcedLight.irShare ? window.SourcedLight.irShare(A, w, h) : null; } catch (eS) { console.warn('§IRC_MAX share failed: ' + eS.message); }
+        if (sh) G.shareCtx.putImageData(new ImageData(sh.data, w, h), 0, 0); else { G.shareCtx.fillStyle = '#000'; G.shareCtx.fillRect(0, 0, w, h); }
+        G.shareTex.needsUpdate = true; G.irMaxU.value = /[?&]ircmax=0/.test(location.search) ? 0 : 1;
+        R.irShare = sh ? { pixels: sh.pixels, meanShare: sh.meanShare, over50: sh.shareOver50 } : null;
+        console.log('§IRC_MAX composite rule=' + (G.irMaxU.value ? 'max(IR, SSGI)' : 'SUM (&ircmax=0)') + ' share=' + (sh ? 'pixelsWithIR ' + sh.pixels + ' mean ' + sh.meanShare : 'none (IR off or not staged)'));
+        // ### ALTS-ALL FIX 13: energy bound k2 = R/(1-R), R = the zone IR's own R
+        const bOff = /[?&]gibound=0/.test(location.search) || A._stillGiBound === false, Rr = (window.SourcedLight && window.SourcedLight.irR) ? window.SourcedLight.irR() : null;
+        // §GI_REDIST_DEFAULT_OFF (red1 2026-09-30 "yes"; bim-compiler PHOTOREAL_STILL_RENDER.md "BLOCKS … MEASURED"): on red1's 8 v1507 Clinic
+        // poses redistribute turned 16 app-frame zone steps into 77 at …720125219 (zone 0 has no IR to remove, the zone side loses it) and
+        // darkened occluded areas (compositeMean -0.2..-11); off: steps 16, blown / dark unchanged. &giredist=1 / APP._stillGiRedist = true = on.
+        G.redistU.value = (/[?&]giredist=1/.test(location.search) || A._stillGiRedist === true) ? 1 : 0;
+        G.boundU.value = (bOff || !(Rr > 0 && Rr < 1)) ? 0 : 1; G.boundK2.value = (Rr > 0 && Rr < 1) ? Rr / (1 - Rr) : 1;
+        console.log('§GI_BOUND ' + (G.boundU.value ? 'on' : 'off' + (bOff ? ' (&gibound=0)' : ' (no IR_R published)')) + ' R=' + Rr + ' k2=' + G.boundK2.value.toFixed(3) + ' rule=' + (G.redistU.value ? 'redistribute: C-IR+min(bounce,k2*C*(1-share))' : 'added<=max(0,k2*C*(1-share)-C*share)') + ' share=' + (sh ? sh.meanShare : 'none')); }
+      // §ZERO Z11 (b) — the receiver albedo of every pixel (one app render, readback mode 13); none = the old estimate everywhere
+      { let ab = null; const off = /[?&]gialb=0/.test(location.search) || A._stillGiAlb === false;
+        if (!off) { try { ab = window.SourcedLight && window.SourcedLight.albedoMap ? window.SourcedLight.albedoMap(A, w, h) : null; } catch (eA) { console.warn('§GI_RECEIVER_ALBEDO failed: ' + eA.message); } }
+        if (ab) G.albCtx.putImageData(new ImageData(ab.data, w, h), 0, 0); else G.albCtx.clearRect(0, 0, w, h);
+        G.albTex.needsUpdate = true; G.albU.value = ab ? 1 : 0;
+        R.albedo = ab ? { real: ab.real, meanAlbLum: ab.meanAlbLum, ms: ab.ms } : null;
+        console.log('§GI_RECEIVER_ALBEDO ' + (ab ? 'real=' + ab.real + ' est=' + (w * h - ab.real) + ' realPct=' + (100 * ab.real / (w * h)).toFixed(1) + ' meanAlbLum=' + ab.meanAlbLum + ' ms=' + ab.ms
+          : 'off (' + (off ? '&gialb=0' : 'SourcedLight not installed') + ') — receiver = the hue x ' + GI_ALBEDO_EST + ' estimate everywhere') + ' (% of the whole frame, sky included)'); }
+      console.log('§GI_STILL underlay mean=' + R.underMean + ' (the app frame; it is also the colour fed to SSGI — ~0 means the app canvas handed back an empty buffer)');
+      let acc = null;
+      const _ps0 = G.pipeStats ? Object.assign({}, G.pipeStats) : null, _passMs = [];
+      await stage('adding bounce light', async () => {
+        for (let i = 0; i < N; i++) {
+          const _tp = performance.now();
+          await renderGeom(G);
+          _passMs.push(Math.round(performance.now() - _tp));
+          if (!G.acc || G.acc.length !== G.w * G.h * 4) G.acc = new Float32Array(G.w * G.h * 4);   // §GI_READBACK_CHURN: kept across presses
+          const pf = await readRTAdd(G, G.acc, i === 0); acc = G.acc;
+          if (i === 0) G.fpFirst = pf; G.fpLast = pf;   // §GI_CARRY: this press's first pass (judged) and last pass (what the target holds afterwards)
+          toast('Bounce still — adding bounce light, pass ' + (i + 1) + ' of ' + N + '…');
+          await new Promise(r => requestAnimationFrame(() => r()));   // hand the main thread back between passes
+        }
+        for (let k = 0; k < acc.length; k++) acc[k] /= N;
+      });
+      // §GI_PRESS_COST — what the bounce passes created THIS press (a kept renderer should create ~0 new pipelines).
+      if (_ps0) console.log('§GI_PRESS_COST newPipelines=' + (G.pipeStats.sync - _ps0.sync) + ' (' + (G.pipeStats.syncMs - _ps0.syncMs).toFixed(0) + 'ms)' +
+        ' newShaderModules=' + (G.pipeStats.modules - _ps0.modules) + ' geomPassMs=' + JSON.stringify(_passMs) + ' sceneLights=' + (function () { let n = 0; window.APP.scene.traverse(o => { if (o.isLight) n++; }); return n; })());
+      // §GI_CARRY — the carried-state check, EVERY press (Z14/S4; see §GI_GPU_ERRORS in build()). This press's FIRST bounce pass
+      // as read back (fingerprint(): FNV-1a over a stride of its bits + the share of clear pixels) is compared with the previous
+      // press's LAST pass — the pixels the kept render target holds when this press begins. Equal means nothing was drawn and the
+      // target still holds the previous press — STALE; any WebGPU error during this press means Dawn dropped command buffers — FAIL.
+      // Both end the press without a composite (the app's own still stays on screen) and RELEASE the renderer so the next press
+      // rebuilds it from scratch. First press on the page, or two consecutive all-clear passes (nothing drawn in either, e.g. sky
+      // only), is INCONCLUSIVE, never OK: nothing was judged. (first-vs-first was the first cut and missed the hook run: the target
+      // holds the LAST pass, and consecutive passes differ by SSGINode's frameId rotation.)
+      {
+        const camKey = A.camera.position.toArray().map(v => v.toFixed(2)).join(',') + '|' + A.camera.quaternion.toArray().map(v => v.toFixed(3)).join(',') + '|' + A.camera.fov;
+        const prev = carryPrev, fp = G.fpFirst || { hash: '-', clearPct: -1 }, moved = prev ? (prev.camKey !== camKey) : null;   // carryPrev outlives a release: the rebuilt renderer is still judged against the last press
+        const errN = G.gpuErr.n - gpuErrAt0, lost = !!G.renderer._isDeviceLost;
+        let verdict, why;
+        if (lost) { verdict = 'FAIL'; why = 'WebGPU device lost'; }
+        else if (errN > 0) { verdict = 'FAIL'; why = errN + ' WebGPU error(s) during this press (the passes were dropped)'; }
+        else if (!prev) { verdict = 'INCONCLUSIVE'; why = 'first press on this page, nothing to compare'; }
+        else if (fp.hash === prev.last.hash && fp.clearPct >= 99.9) { verdict = 'INCONCLUSIVE'; why = 'nothing drawn in this pass or the previous press\'s last (all clear)'; }
+        else if (fp.hash === prev.last.hash) { verdict = 'STALE'; why = 'the first pass read back the previous press\'s last pass — nothing was drawn, the target still holds the previous still'; }
+        else { verdict = 'OK'; why = 'a fresh geometry pass'; }
+        const line = '§GI_CARRY press=' + G.pressId + ' verdict=' + verdict + ' fp=' + fp.hash + ' prevLast=' + (prev ? prev.last.hash : '-') + ' prevFirst=' + (prev ? prev.first.hash : '-') + ' maskClear=' + fp.clearPct + '% prevMaskClear=' + (prev ? prev.first.clearPct + '%' : '-') +
+          ' camMoved=' + (moved === null ? '-' : (moved ? 1 : 0)) + ' gpuErrors=' + errN + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : '') + (gpuErrAt0 ? ' (earlier presses: ' + gpuErrAt0 + (gpuFirstAt0 ? ', ' + gpuFirstAt0 : '') + ')' : '') + ' — ' + why;
+        if (verdict === 'OK' || verdict === 'INCONCLUSIVE') console.log(line); else console.warn(line);
+        carryPrev = { first: fp, last: G.fpLast || fp, camKey: camKey };
+        R.carry = { verdict: verdict, fp: fp.hash, prevLast: prev ? prev.last.hash : null, maskClear: fp.clearPct, gpuErrors: errN };
+        A._stillCarryLast = R.carry;
+        if (verdict === 'FAIL' || verdict === 'STALE') { release('§GI_CARRY ' + verdict); throw new Error('bounce pass unreliable — ' + verdict + ': ' + why + '. The app\'s own still is kept; the bounce renderer was released and rebuilds on the next press'); }
+      }
+
+      // ── COMPOSITE ────────────────────────────────────────────────────────────────────────────
+      // The app's own frame first (it is already in colorCanvas), then the bounce layer over it
+      // through a HARD mask. §GI_STILL_DOUBLE: alpha blending is what added the bounce twice.
+      const out = document.createElement('canvas'); out.width = w; out.height = h;
+      const octx = out.getContext('2d', { willReadFrequently: true });
+      octx.drawImage(G.colorCanvas, 0, 0);
+      const appPix = octx.getImageData(0, 0, w, h).data;          // the app frame, for the measurement below
+      const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+      const tctx = tmp.getContext('2d'); const img = tctx.createImageData(w, h);
+      const d = img.data;
+      // Alpha histogram of the RAW bounce layer. The "partial band" is exactly the set of pixels
+      // red1 saw doubling on: partly transparent, so both pictures contributed.
+      let nClear = 0, nPartial = 0, nSolid = 0;
+      let pApp = 0, pBounce = 0, pBlend = 0, pHard = 0;
+      const flipOut = G.flipOut;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const s = ((flipOut ? (h - 1 - y) : y) * w + x) * 4, o = (y * w + x) * 4;
+        const a = acc[s + 3];
+        const r = Math.max(0, Math.min(255, acc[s] * 255)), g = Math.max(0, Math.min(255, acc[s + 1] * 255)), bl = Math.max(0, Math.min(255, acc[s + 2] * 255));
+        if (a < 0.02) nClear++; else if (a > 0.98) nSolid++; else {
+          nPartial++;
+          const la = (appPix[o] + appPix[o + 1] + appPix[o + 2]) / 3, lb = (r + g + bl) / 3;
+          pApp += la; pBounce += lb; pBlend += a * lb + (1 - a) * la; pHard += (a >= GEOM_MASK_T ? lb : la);
+        }
+        d[o] = r; d[o + 1] = g; d[o + 2] = bl;
+        d[o + 3] = (a >= GEOM_MASK_T) ? 255 : 0;                  // HARD MASK, not alpha blending
+      }
+      const tot = w * h;
+      R.clearPct = +(100 * nClear / tot).toFixed(2);
+      R.partialPct = +(100 * nPartial / tot).toFixed(2);
+      R.solidPct = +(100 * nSolid / tot).toFixed(2);
+      console.log('§GI_STILL mask: clear(a<0.02)=' + R.clearPct + '%  partial(0.02..0.98)=' + R.partialPct + '%  solid(a>0.98)=' + R.solidPct + '%' +
+                  ' — the partial band is where alpha blending used to add the bounce on top of itself');
+      if (nPartial > 0) {
+        R.partialApp = +(pApp / nPartial).toFixed(1); R.partialBounce = +(pBounce / nPartial).toFixed(1);
+        R.partialBlend = +(pBlend / nPartial).toFixed(1); R.partialHard = +(pHard / nPartial).toFixed(1);
+        console.log('§GI_STILL over the partial band (' + nPartial + 'px): app=' + R.partialApp + ' bounce=' + R.partialBounce +
+                    ' alphaBlend=' + R.partialBlend + ' hardMask=' + R.partialHard + ' — alphaBlend-hardMask=' + (R.partialBlend - R.partialHard).toFixed(1));
+      }
+      tctx.putImageData(img, 0, 0);
+      // Keep the un-composited bounce layer and the app frame around so a driver can measure them.
+      const bounce = document.createElement('canvas'); bounce.width = w; bounce.height = h;
+      bounce.getContext('2d').drawImage(tmp, 0, 0);
+      octx.drawImage(tmp, 0, 0);
+      // §WINDOW_PULL (bim-compiler PHOTOREAL_STILL_RENDER.md §WINDOW_PULL, red1 2026-09-30 "outside light too overwhelming, can't make
+      // out the outside view"; MEASURED Terminal …753057418: far windows 255 under ACES AND AgX, interior exposure 106 = the view out ~7x over).
+      // Architectural photography's window pull: pixels whose camera ray passes glass and then reaches OUTSIDE (sky, or a surface in an open
+      // zone) are re-rendered at the daylight exposure the light law gives EV 15 ("sunny 16", = this model's 100 klx sun; exterior stills
+      // meter EV ~14-15) and blended in through a soft mask. Interior pixels untouched. &windowpull=0 / APP._stillWindowPull=false = off.
+      try { windowPull(A, octx, w, h, R); } catch (eWP) { console.warn('§WINDOW_PULL failed: ' + (eWP && eWP.message)); }
+      // §LOCAL_EXPOSURE (bim-compiler PHOTOREAL_STILL_RENDER.md, red1 2026-10-01 "indoors do show own lighting impact no matter how slight"):
+      // the eye's local adaptation (as Unreal Engine 5 "Local Exposure"): lamp-lit shadowed regions are lifted, sunlit ones held.
+      try { localExposure(A, octx, w, h, R); } catch (eLE) { console.warn('§LOCAL_EXPOSURE failed: ' + (eLE && eLE.message)); }
+      const under = document.createElement('canvas'); under.width = w; under.height = h;
+      under.getContext('2d').drawImage(G.colorCanvas, 0, 0);
+      window.__giStillDebugCanvas = { bounce: bounce, under: under };
+      // Mean luminance of the finished still against the app's own frame — blank and identical both fail.
+      let sc = 0, sa = 0, sd = 0, n = 0;
+      const fin = octx.getImageData(0, 0, w, h).data;
+      for (let i = 0; i < fin.length; i += 4 * 37) {
+        const lc = (fin[i] + fin[i + 1] + fin[i + 2]) / 3, la = (appPix[i] + appPix[i + 1] + appPix[i + 2]) / 3;
+        sc += lc; sa += la; sd += Math.abs(lc - la); n++;
+      }
+      R.compositeMean = +(sc / n).toFixed(2); R.appMean = +(sa / n).toFixed(2); R.meanAbsDiff = +(sd / n).toFixed(2);
+      // §FAULT_GI — picture-level counters on the finished still, every pixel (still_fault.js prints the state-level §FAULT line):
+      // blown = all three channels 255 (clipped white), dark = all three 0 (pure black), hueNoise = red1's rainbow edge class:
+      // the app pixel is near-black (max channel <= 3, hue unreadable at 8 bit) yet the composite shows a saturated hue
+      // (saturation > 0.25, value > 40; the thresholds of the 2026-09-26 band probe). hueNoise > 0 is the FAULT; blown/dark are
+      // logged in % (no cited limit).
+      { let nb = 0, nd = 0, nh = 0; const np = fin.length / 4, hueAt = [];
+        for (let i = 0; i < fin.length; i += 4) { const r = fin[i], g = fin[i + 1], b = fin[i + 2];
+          if (r === 255 && g === 255 && b === 255) nb++; else if (r === 0 && g === 0 && b === 0) nd++;
+          if (Math.max(appPix[i], appPix[i + 1], appPix[i + 2]) <= 3) { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx > 40 && (mx - mn) / mx > 0.25) { nh++; if (hueAt.length < 64) hueAt.push(i / 4); else if (Math.random() < 64 / nh) hueAt[Math.floor(Math.random() * 64)] = i / 4; } } }
+        R.fault = { blownPct: +(100 * nb / np).toFixed(2), darkPct: +(100 * nd / np).toFixed(2), hueNoise: nh };
+        // S4 (2026-09-26): red1's exterior stills carried hueNoise 178-1785 that the headless GPU does not reproduce (3-6 at the
+        // same poses). Classify up to 64 flagged pixels by the first surface hit so the saved PNG says what they are: behindGlass
+        // (a see-through pane is hit first), blackMat (material colour 000000, e.g. IfcWindow frames), other; + the GI adapter.
+        if (nh > 0) { try { const A2 = window.APP, T3 = window.THREE, tg = [], rc = new T3.Raycaster(), cls = { behindGlass: 0, blackMat: 0, other: 0, miss: 0 };
+          A2.scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh || o.isBatchedMesh) && o.visible && o !== A2._sky) tg.push(o); });
+          hueAt.forEach(pi => { const x = pi % w, y = Math.floor(pi / w); rc.setFromCamera(new T3.Vector2((x + 0.5) / w * 2 - 1, 1 - (y + 0.5) / h * 2), A2.camera);
+            const hs = rc.intersectObjects(tg, false).filter(q => { const m = Array.isArray(q.object.material) ? q.object.material[0] : q.object.material; return m && !m.isMeshBasicMaterial; });
+            if (!hs.length) { cls.miss++; return; } const m0 = Array.isArray(hs[0].object.material) ? hs[0].object.material[0] : hs[0].object.material;
+            if (m0.transparent && m0.opacity < 0.95) cls.behindGlass++; else if (m0.color && m0.color.getHex() === 0) cls.blackMat++; else cls.other++; });
+          R.fault.hueCls = cls; } catch (eHC) { R.fault.hueCls = { error: String(eHC && eHC.message || eHC) }; } }
+        R.fault.giAdapter = G.adapter || null;
+        // §FAULT_GI_BLANK (2026-10-03, LTU inside cam [-16.48,-0.26,-9.60]: underlay mean=0, dark 74-78 %, printed OK): the app frame fed to
+        // SSGI was empty (the underlay line's own reading: ~0 = empty buffer) -> the still is not a picture of the scene. FAULT, never OK.
+        R.fault.blankUnderlay = R.underMean != null && R.underMean < 1;
+        const bad = nh > 0 || R.fault.blankUnderlay;
+        const fl = '§FAULT_GI ' + (bad ? 'FAULT' : 'OK') + (R.fault.blankUnderlay ? ' blankUnderlay=1 (underlay mean ' + R.underMean + ')' : '') + ' hueNoise=' + nh + (R.fault.hueCls ? ' hueCls=' + JSON.stringify(R.fault.hueCls) : '') + ' giAdapter=' + (R.fault.giAdapter || 'n/a') + ' blown=' + R.fault.blownPct + '% dark=' + R.fault.darkPct + '% (' + w + 'x' + h + ')';
+        if (bad) console.warn(fl); else console.log(fl); A._stillFaultGiLast = R.fault; }
+      R.secs = +((performance.now() - t0) / 1000).toFixed(1);
+      R.orient = G.orient || null;
+      R.pipelines = G.pipeStats ? { sync: G.pipeStats.sync, syncMs: +G.pipeStats.syncMs.toFixed(0), async: G.pipeStats.async, modules: G.pipeStats.modules, moduleMs: +G.pipeStats.moduleMs.toFixed(0) } : null;
+      console.log('§GI_STILL result mode=' + mode + ' encode=' + enc + ' compositeMean=' + R.compositeMean + ' appMean=' + R.appMean +
+                  ' meanAbsDiff=' + R.meanAbsDiff + ' passes=' + N + ' secs=' + R.secs);
+      console.log('§STILL_RES bounce=' + w + 'x' + h + ' bounceMs=' + Math.round(R.secs * 1000) + ' readbackMB=' + (w * h * 16 / 1048576).toFixed(0) + ' per float RGBA buffer (JS heap, up to 2 alive while unpadding)');
+      console.log('§GI_STILL app state restored: overrideMaterial=' + String(A.scene.overrideMaterial) +
+                  ' skyVisible=' + (A._sky ? A._sky.visible : 'no-sky') + ' background=' + String(A.scene.background));
+      show(out, R.secs.toFixed(1), N);
+      acc = null;
+      window.__giStillDebug = R;
+      console.log('§GI_STILL renderer kept for the next Alt+S (Alt+Shift+S releases it)');
+      return R;
+    } catch (e) {
+      toast('Bounce still failed: ' + (e && e.message || e), 8000);
+      console.warn('§GI_STILL_FAIL ' + (e && e.stack || e));
+      R.error = String(e && e.message || e);
+      window.__giStillDebug = R;
+      return R;
+    } finally { busy = false; if (window.APP) { window.APP._sceneBorrowed = false; if (window.APP.markDirty) window.APP.markDirty(); } }
+  }
+  // §LOCAL_EXPOSURE: Y = linear luminance of the finished still; B = mean log2 Y on a 1/8 grid, Gaussian-blurred (sigma 4 cells), bilinear
+  // up; dEV = (c - 1) (B - median B) clamped to +-CAP; rgb_lin x 2^dEV. c = 0.6, CAP = 1 EV are AUTHORED (no source): &localexp=c (1 = off).
+  function localExposure(A, octx, w, h, R) {
+    const m0 = /[?&]localexp=([0-9.]+)/.exec(location.search);
+    let c = typeof A._stillLocalExp === 'number' ? A._stillLocalExp : (m0 ? parseFloat(m0[1]) : 0.6); c = Math.max(0, Math.min(1, isFinite(c) ? c : 0.6));
+    if (c >= 1) { console.log('§LOCAL_EXPOSURE off (c=1)'); return; }
+    const CAP = 1, G = 8, t0 = performance.now(), F = octx.getImageData(0, 0, w, h), D = F.data, gw = Math.ceil(w / G), gh = Math.ceil(h / G);
+    const lut = new Float32Array(256); for (let i = 0; i < 256; i++) { const v = i / 255; lut[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+    const sum = new Float32Array(gw * gh), cnt = new Float32Array(gw * gh), EPS = 1e-4;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, Y = 0.2126 * lut[D[i]] + 0.7152 * lut[D[i + 1]] + 0.0722 * lut[D[i + 2]], g = ((y / G) | 0) * gw + ((x / G) | 0); sum[g] += Math.log2(Y + EPS); cnt[g]++; }
+    let Bg = new Float32Array(gw * gh); for (let g = 0; g < Bg.length; g++) Bg[g] = cnt[g] ? sum[g] / cnt[g] : 0;
+    const SIG = 4, RAD = 12, K = []; let ks = 0; for (let k = -RAD; k <= RAD; k++) { const v = Math.exp(-k * k / (2 * SIG * SIG)); K.push(v); ks += v; } for (let k = 0; k < K.length; k++) K[k] /= ks;
+    const tmp = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * Bg[y * gw + Math.min(gw - 1, Math.max(0, x + k))]; tmp[y * gw + x] = a; }
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * tmp[Math.min(gh - 1, Math.max(0, y + k)) * gw + x]; Bg[y * gw + x] = a; }
+    const srt = Array.from(Bg).sort((p, q) => p - q), med = srt[srt.length >> 1];
+    // §LOCAL_EXPOSURE_BILATERAL (red1 2026-10-02 "slight glow halo around objects such as the helicopter on Hospital's roof"): the plain
+    // Gaussian base above mixes a dark object with the bright sky beside it, so the sky next to it is lifted (glow) and the object's rim
+    // lowered — the classic local-tone-mapping halo. The base is now taken from a BILATERAL GRID (Chen, Paris & Durand 2007; the method
+    // Unreal Engine 5's Local Exposure uses): log2 Y is splatted into (x/8, y/8, log2 Y / BIN) cells, blurred in space (the same sigma 4
+    // cells) and in brightness (sigma RSIG bins), and each pixel reads it back at its OWN brightness, so only similarly bright
+    // neighbours set its base. BIN 0.5 EV, RSIG 2 bins (1 EV) are AUTHORED. &localexpgrid=0 = the plain Gaussian base (old).
+    let BL = null;
+    if (!/[?&]localexpgrid=0/.test(location.search)) {
+      let lo = Infinity, hi = -Infinity; for (let g = 0; g < Bg.length; g++) { if (!cnt[g]) continue; }
+      const L2 = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, v = Math.log2(0.2126 * lut[D[i]] + 0.7152 * lut[D[i + 1]] + 0.0722 * lut[D[i + 2]] + EPS); L2[y * w + x] = v; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const BIN = 0.5, RSIG = 2, RR = 4, nb = Math.max(1, Math.ceil((hi - lo) / BIN) + 1), NC = gw * gh * nb, gS = new Float32Array(NC), gC = new Float32Array(NC);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = L2[y * w + x], z = Math.min(nb - 1, Math.round((v - lo) / BIN)), c0 = (z * gh + ((y / G) | 0)) * gw + ((x / G) | 0); gS[c0] += v; gC[c0] += 1; }
+      const KR = []; let kr = 0; for (let k = -RR; k <= RR; k++) { const v = Math.exp(-k * k / (2 * RSIG * RSIG)); KR.push(v); kr += v; } for (let k = 0; k < KR.length; k++) KR[k] /= kr;
+      const blur = (A0, B0) => { // x, y (spatial K), z (range KR); A0 -> A0 via B0
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) { const r0 = (z * gh + y) * gw; for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * A0[r0 + Math.min(gw - 1, Math.max(0, x + k))]; B0[r0 + x] = a; } }
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RAD; k <= RAD; k++) a += K[k + RAD] * B0[(z * gh + Math.min(gh - 1, Math.max(0, y + k))) * gw + x]; A0[(z * gh + y) * gw + x] = a; }
+        for (let z = 0; z < nb; z++) for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) { let a = 0; for (let k = -RR; k <= RR; k++) { const zz = z + k; if (zz < 0 || zz >= nb) continue; a += KR[k + RR] * A0[(zz * gh + y) * gw + x]; } B0[(z * gh + y) * gw + x] = a; }
+        A0.set(B0); };
+      const tB = new Float32Array(NC); blur(gS, tB); blur(gC, tB);
+      BL = { L2: L2, gS: gS, gC: gC, lo: lo, nb: nb, BIN: BIN };
+    }
+    // the bilateral base at pixel (x, y): trilinear in (gx, gy, own brightness bin); weight-normalised; no support -> the Gaussian base
+    const blBase = (x, y, gx, gy, x0, y0, fx, fy, b) => {
+      if (!BL) return b; const v = BL.L2[y * w + x], gz = Math.min(BL.nb - 1.001, Math.max(0, (v - BL.lo) / BL.BIN)), z0 = gz | 0, fz = gz - z0;
+      let S = 0, C = 0; for (let dz = 0; dz < 2; dz++) for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const wt = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz), c0 = ((z0 + dz) * gh + (y0 + dy)) * gw + (x0 + dx); S += wt * BL.gS[c0]; C += wt * BL.gC[c0]; }
+      return C > 1e-3 ? S / C : b; };
+    const wp = R._wpGrid, dList = []; let up = 0, dn = 0;
+    const oe = v => v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+    for (let y = 0; y < h; y++) { const gy = Math.min(gh - 1.001, Math.max(0, y / G - 0.5)), y0 = gy | 0, fy = gy - y0;
+      for (let x = 0; x < w; x++) { const gx = Math.min(gw - 1.001, Math.max(0, x / G - 0.5)), x0 = gx | 0, fx = gx - x0;
+        const b = (Bg[y0 * gw + x0] * (1 - fx) + Bg[y0 * gw + x0 + 1] * fx) * (1 - fy) + (Bg[(y0 + 1) * gw + x0] * (1 - fx) + Bg[(y0 + 1) * gw + x0 + 1] * fx) * fy;
+        const bb = blBase(x, y, gx, gy, x0, y0, fx, fy, b);
+        let dEV = Math.max(-CAP, Math.min(CAP, (c - 1) * (bb - med)));
+        if (wp) { const mx = Math.min(wp.mw - 1, Math.max(0, (x / wp.S) | 0)), my = Math.min(wp.mh - 1, Math.max(0, (y / wp.S) | 0)); const mv = wp.B[my * wp.mw + mx]; if (mv > 0) dEV *= Math.max(0, 1 - mv); }
+        if ((x & 15) === 0 && (y & 15) === 0) dList.push(dEV);
+        if (Math.abs(dEV) < 0.01) continue; if (dEV > 0) up++; else dn++;
+        const k = Math.pow(2, dEV), i = (y * w + x) * 4;
+        D[i] = Math.round(255 * Math.min(1, oe(lut[D[i]] * k))); D[i + 1] = Math.round(255 * Math.min(1, oe(lut[D[i + 1]] * k))); D[i + 2] = Math.round(255 * Math.min(1, oe(lut[D[i + 2]] * k))); } }
+    octx.putImageData(F, 0, 0);
+    dList.sort((p, q) => p - q); const pc = q => dList.length ? dList[Math.min(dList.length - 1, (q * dList.length) | 0)].toFixed(2) : '-';
+    R.localExposure = { bilateral: !!BL, bins: BL ? BL.nb : 0, c: c, cap: CAP, p5: +pc(0.05), p50: +pc(0.5), p95: +pc(0.95), liftedPct: +(100 * up / (w * h)).toFixed(1), loweredPct: +(100 * dn / (w * h)).toFixed(1) };
+    console.log('§LOCAL_EXPOSURE on base=' + (BL ? 'bilateral(' + BL.nb + ' bins x ' + BL.BIN + ' EV)' : 'gaussian') + ' c=' + c + ' cap=+-' + CAP + 'EV dEV p5/p50/p95=' + pc(0.05) + '/' + pc(0.5) + '/' + pc(0.95) + ' lifted=' + R.localExposure.liftedPct + '% lowered=' + R.localExposure.loweredPct + '% windowMask=' + (wp ? 1 : 0) + ' ms=' + Math.round(performance.now() - t0));
+  }
+  function windowPull(A, octx, w, h, R) {
+    const THREE = window.THREE, LZ = window.LightZones, LL = window.LightLaw, t0 = performance.now();
+    if (/[?&]windowpull=0/.test(location.search) || A._stillWindowPull === false) { console.log('§WINDOW_PULL off (&windowpull=0 / APP._stillWindowPull=false)'); return; }
+    if (!LZ || !LZ.atRaw || !LL || !LL.exposureFromEv) { console.log('§WINDOW_PULL VACUOUS (no LightZones / LightLaw)'); return; }
+    const cp = A.camera.position, cz = LZ.atRaw({ x: cp.x, y: cp.y, z: cp.z });
+    if (cz === 0 || cz === -1) { console.log('§WINDOW_PULL skip (camera outside: zone ' + cz + ')'); return; }
+    const Rg = A.renderer, e0 = Rg.toneMappingExposure, lp = LL.luxPer(A._stillCalibSunLux, A._stillCalibSunI), eOut = lp ? LL.exposureFromEv(15, lp, LL.acesDiv(Rg, THREE)) : 0;
+    if (!(eOut > 0) || eOut >= e0) { console.log('§WINDOW_PULL skip (outside exposure ' + eOut.toFixed(3) + ' >= inside ' + e0.toFixed(3) + ')'); return; }
+    // mask at 1/S resolution on the GPU (MEASURED v1: CPU raycasts did 2378 rays in 30 s on Terminal): depth WITH glass vs WITHOUT glass
+    // (glass is the nearest surface where they differ) x the room-debug readback with glass hidden (SourcedLight.debugZones: zone 0 = outside,
+    // or no geometry at all = sky). An interior glass partition shows a room behind it -> not a view out.
+    const S = 4, mw = Math.ceil(w / S), mh = Math.ceil(h / S), M = new Float32Array(mw * mh), SL = window.SourcedLight;
+    if (!SL || !SL.debugZones) { console.log('§WINDOW_PULL VACUOUS (no SourcedLight.debugZones)'); return; }
+    const glassy = m => !!(m && m.transparent && m.opacity < 0.95), glassObjs = [];
+    A.scene.traverse(o => { if (!o.visible || !o.material || !(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return; if ([].concat(o.material).some(glassy)) glassObjs.push(o); });
+    if (!glassObjs.length) { console.log('§WINDOW_PULL VACUOUS (no glass in the scene)'); return; }
+    const rtF = new THREE.WebGLRenderTarget(mw, mh, { type: THREE.FloatType }), rtB = new THREE.WebGLRenderTarget(mw, mh), dMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.BasicDepthPacking });
+    const prevRT = Rg.getRenderTarget(), prevOv = A.scene.overrideMaterial, prevBg = A.scene.background, cc = Rg.getClearColor(new THREE.Color()), ca = Rg.getClearAlpha(), sky = A._sky, skyVis = sky ? sky.visible : false;
+    const d1 = new Float32Array(mw * mh * 4), d2 = new Float32Array(mw * mh * 4), zb = new Uint8Array(mw * mh * 4);
+    try { A.scene.background = null; if (sky) sky.visible = false; Rg.setClearColor(0x000000, 0);
+      A.scene.overrideMaterial = dMat; Rg.setRenderTarget(rtF); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtF, 0, 0, mw, mh, d1);
+      glassObjs.forEach(o => { o.visible = false; }); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtF, 0, 0, mw, mh, d2);
+      A.scene.overrideMaterial = prevOv; SL.debugZones(1); Rg.setRenderTarget(rtB); Rg.clear(); Rg.render(A.scene, A.camera); Rg.readRenderTargetPixels(rtB, 0, 0, mw, mh, zb); }
+    finally { SL.debugZones(0); glassObjs.forEach(o => { o.visible = true; }); A.scene.overrideMaterial = prevOv; A.scene.background = prevBg; if (sky) sky.visible = skyVis; Rg.setClearColor(cc, ca); Rg.setRenderTarget(prevRT); rtF.dispose(); rtB.dispose(); dMat.dispose(); }
+    let nWin = 0, nGlass = 0; const nRay = mw * mh;
+    for (let yy = 0; yy < mh; yy++) for (let x = 0; x < mw; x++) { const si = (yy * mw + x) * 4, my = mh - 1 - yy;   // render targets are bottom-up
+      const a1 = d1[si + 3], a2 = d2[si + 3], z1 = d1[si], z2 = d2[si];   // BasicDepthPacking: r = 1 - z (nearer = larger)
+      if (!(a1 > 0) || !(z1 > z2 + 1e-6)) continue; nGlass++;
+      const out = !(a2 > 0) || zb[si + 3] === 0 || (zb[si] === 0 && zb[si + 1] === 0 && zb[si + 2] > 100 && zb[si + 2] < 160);   // zone 0 (outside, sky kept) or no geometry
+      if (out) { M[my * mw + x] = 1; nWin++; } }
+    const capped = false;
+    if (!nWin) { console.log('§WINDOW_PULL VACUOUS (no view-out pixels) glassNearest=' + nGlass + ' of ' + nRay + ' ms=' + Math.round(performance.now() - t0)); return; }
+    // the outside render: the staged scene once more at eOut (single frame, no post), read off the app canvas, exposure restored
+    Rg.toneMappingExposure = eOut; Rg.render(A.scene, A.camera);
+    const oc = document.createElement('canvas'); oc.width = w; oc.height = h; const ox = oc.getContext('2d', { willReadFrequently: true }); ox.drawImage(Rg.domElement, 0, 0, w, h);
+    Rg.toneMappingExposure = e0; if (A.markDirty) A.markDirty();
+    const O = ox.getImageData(0, 0, w, h).data, F = octx.getImageData(0, 0, w, h), D = F.data;
+    // soft mask: bilinear over the 1/S grid, then a 1-cell box blur (edge width ~S px)
+    const B = new Float32Array(mw * mh); for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { let sm = 0, c = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= mw || yy >= mh) continue; sm += M[yy * mw + xx]; c++; } B[y * mw + x] = sm / c; }
+    let nPx = 0, nCore = 0, sO = 0, sB = 0, sA = 0, clipB = 0, clipA = 0;   // self-witness over the core (mask > 0.5): mean luminance + clipped share before / after
+    for (let y = 0; y < h; y++) { const gy = Math.min(mh - 1.001, Math.max(0, y / S - 0.5)), y0 = Math.floor(gy), fy = gy - y0;
+      for (let x = 0; x < w; x++) { const gx = Math.min(mw - 1.001, Math.max(0, x / S - 0.5)), x0 = Math.floor(gx), fx = gx - x0;
+        const m = (B[y0 * mw + x0] * (1 - fx) + B[y0 * mw + x0 + 1] * fx) * (1 - fy) + (B[(y0 + 1) * mw + x0] * (1 - fx) + B[(y0 + 1) * mw + x0 + 1] * fx) * fy;
+        if (m <= 0.001) continue; const i0 = (y * w + x) * 4, lb0 = (D[i0] + D[i0 + 1] + D[i0 + 2]) / 3;
+        // highlight recovery only: a view out that is not blown keeps its pixels (MEASURED Clinic …735402935: an open-zone atrium behind glass,
+        // mean 72, went to 7 at EV15); weight ramps 0 at luminance 200 -> 1 at 250
+        const hw = Math.max(0, Math.min(1, (lb0 - 200) / 50)); if (hw <= 0) continue; const mm = m * hw;
+        nPx++; const i = i0; if (m > 0.5) { nCore++; sO += (O[i] + O[i + 1] + O[i + 2]) / 3; sB += (D[i] + D[i + 1] + D[i + 2]) / 3; if (D[i] === 255 && D[i + 1] === 255 && D[i + 2] === 255) clipB++; }
+          D[i] += (O[i] - D[i]) * mm; D[i + 1] += (O[i + 1] - D[i + 1]) * mm; D[i + 2] += (O[i + 2] - D[i + 2]) * mm;
+          if (m > 0.5) { sA += (D[i] + D[i + 1] + D[i + 2]) / 3; if (D[i] >= 254.5 && D[i + 1] >= 254.5 && D[i + 2] >= 254.5) clipA++; } } }
+    octx.putImageData(F, 0, 0);
+    R._wpGrid = { B: B, mw: mw, mh: mh, S: S };   // §LOCAL_EXPOSURE skips the view-out pixels (already exposed for outside)
+    R.windowPull = { viewOutPct: +(100 * nWin / nRay).toFixed(2), blendedPct: +(100 * nPx / (w * h)).toFixed(2), eIn: +e0.toFixed(3), eOut: +eOut.toFixed(3), stops: +Math.log2(e0 / eOut).toFixed(2), corePx: nCore, meanBefore: nCore ? +(sB / nCore).toFixed(1) : null, meanAfter: nCore ? +(sA / nCore).toFixed(1) : null, meanPullRender: nCore ? +(sO / nCore).toFixed(1) : null, clippedBefore: nCore ? +(100 * clipB / nCore).toFixed(1) : null, clippedAfter: nCore ? +(100 * clipA / nCore).toFixed(1) : null, rays: nRay, capped: capped, ms: Math.round(performance.now() - t0) };
+    console.log('§WINDOW_PULL on viewOut=' + R.windowPull.viewOutPct + '% of rays blended=' + R.windowPull.blendedPct + '% px exposure in/out=' + R.windowPull.eIn + '/' + R.windowPull.eOut + ' (' + R.windowPull.stops + ' stops) core ' + R.windowPull.corePx + 'px mean ' + R.windowPull.meanBefore + ' -> ' + R.windowPull.meanAfter + ' (pull render ' + R.windowPull.meanPullRender + ') clipped ' + R.windowPull.clippedBefore + '% -> ' + R.windowPull.clippedAfter + '% (EV15 via LightLaw) maskPx=' + nRay + ' glassNearest=' + nGlass + (capped ? ' CAPPED' : '') + ' ms=' + R.windowPull.ms);
+  }
+  // PNG tEXt chunk: length(4) 'tEXt' keyword NUL text crc32(type+data); inserted before the IEND chunk (last 12 bytes)
+  let _crcT = null;
+  function crc32(bytes) { if (!_crcT) { _crcT = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; _crcT[n] = c >>> 0; } }
+    let c = 0xffffffff; for (let i = 0; i < bytes.length; i++) c = _crcT[(c ^ bytes[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+  function pngWithText(png, key, text) {
+    const enc = s => Uint8Array.from(Array.from(s, ch => ch.charCodeAt(0) & 0xff));
+    const body = new Uint8Array([...enc('tEXt'), ...enc(key), 0, ...enc(text)]), len = body.length - 4, crc = crc32(body);
+    const chunk = new Uint8Array(12 + len), dv = new DataView(chunk.buffer); dv.setUint32(0, len); chunk.set(body, 4); dv.setUint32(8 + len, crc);
+    const iend = png.length - 12; const out = new Uint8Array(png.length + chunk.length); out.set(png.subarray(0, iend), 0); out.set(chunk, iend); out.set(png.subarray(iend), iend + chunk.length); return out;
+  }
+  // §STILL_OVERLAY_NOGI: kind 'plain' = the app's own still with no bounce (phones / no WebGPU) — same overlay, own title + file name
+  function show(canvas, secs, passes, kind) {
+    const plain = kind === 'plain';
+    // §STILL_ESC_LEAK: effects.js's still lock eats Esc first (stopImmediatePropagation) and removes the overlay itself, so this
+    // module's own Esc listener never ran exit() and was never removed: each press stranded one listener holding its overlay
+    // and the finished 1666x864 canvas (5.8 MB). The live listener is kept here and dropped before the next one is added.
+    if (window.__giStillEsc) { window.removeEventListener('keydown', window.__giStillEsc, true); window.__giStillEsc = null; }
+    const old = document.getElementById('gi-still-overlay'); if (old) old.remove();
+    const wrap = document.createElement('div'); wrap.id = 'gi-still-overlay';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column';
+    const bar = document.createElement('div');
+    bar.style.cssText = 'flex:0 0 auto;padding:8px 14px;background:#11141a;color:#e8eaf0;font:13px/1.5 system-ui;display:flex;gap:14px;align-items:center';
+    bar.innerHTML = plain ? '<b>Still</b><span>' + canvas.width + '×' + canvas.height + ' · ' + secs + 's · no bounce on this device</span>'
+                       : '<b>Bounce still</b><span>' + canvas.width + '×' + canvas.height + ' · ' + passes + ' passes · ' + secs + 's</span>';
+    const save = document.createElement('button');
+    save.textContent = 'Save PNG';
+    save.style.cssText = 'margin-left:auto;padding:6px 14px;border-radius:6px;border:1px solid #3a4150;background:#1d2230;color:#e8eaf0;cursor:pointer';
+    // §STILL_POSE_PNG (watchdog red1-c6, 2026-09-25): every saved still carries its pose — the §STILL_POSE JSON as a PNG
+    // tEXt chunk (keyword "bim-still-pose", PNG spec 11.3.4.3), inserted before IEND. Read back with e.g. `exiftool` or
+    // python PIL (Image.open(f).text). No pixel changes.
+    save.onclick = () => canvas.toBlob(async b => { let out = b;
+      try { const P0 = window.APP && window.APP._stillPoseLast, pose = P0 ? Object.assign({}, P0, { fault: window.APP._stillFaultLast || null, faultGi: window.APP._stillFaultGiLast || null, pressS: +secs, passes: passes }) : null; if (pose) { out = new Blob([pngWithText(new Uint8Array(await b.arrayBuffer()), 'bim-still-pose', JSON.stringify(pose))], { type: 'image/png' }); console.log('§STILL_POSE_PNG written bytes=' + JSON.stringify(pose).length); }
+        else console.log('§STILL_POSE_PNG none (no §STILL_POSE this session)'); } catch (e) { console.warn('§STILL_POSE_PNG failed: ' + e.message); out = b; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(out); a.download = (plain ? 'still_' : 'bounce_still_') + Date.now() + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); });   // free the PNG blob once the download has it
+    const close = document.createElement('button');
+    close.textContent = 'Close (Esc)';
+    close.style.cssText = save.style.cssText + ';margin-left:8px';
+    // §STILL_EXIT_NAV: Close must end the still, not just hide the picture (it left §STILL_LOCK on -> viewer stuck)
+    const exit = (via) => { window.removeEventListener('keydown', esc, true); if (window.APP && typeof window.APP.stillExit === 'function') window.APP.stillExit(via); else wrap.remove(); };
+    close.onclick = () => exit('close');
+    bar.appendChild(save); bar.appendChild(close);
+    canvas.style.cssText = 'flex:1 1 auto;min-height:0;object-fit:contain;width:100%;height:100%';
+    wrap.appendChild(bar); wrap.appendChild(canvas);
+    document.body.appendChild(wrap);
+    function esc(e) { if (e.key === 'Escape') exit('esc-overlay'); }
+    window.addEventListener('keydown', esc, true); window.__giStillEsc = esc;
+    toast(plain ? 'Still ready — ' + secs + 's' : 'Bounce still ready — ' + passes + ' passes in ' + secs + 's', 4000);
+  }
+  // ALT+S IS NOT INTERCEPTED (red1: "alt-s must be like original, not impacted.. just with the new
+  // bounce is what i expect"). Let the key through, wait for the app's still to finish refining
+  // (A._stillRefineActive true, A._stillRefineBusy false), then add the bounce on top of it.
+  async function waitForStill(maxMs) {
+    // §STILL_STATUS_FIRST: the app now paints its status and starts staging a frame AFTER the keypress,
+    // so the synchronous staging (~5 s desktop, ~90 s headless) runs inside this wait. The budget counts
+    // from when the still is actually active, as it did when staging ran before this handler.
+    const A = window.APP; let t0 = performance.now(), seenActive = false;
+    while (performance.now() - t0 < maxMs) {
+      if (!seenActive && A._stillRefineActive) { seenActive = true; t0 = performance.now(); }
+      if (A._stillRefineActive && !A._stillRefineBusy) {
+        await new Promise(r => setTimeout(r, 600));            // let the last refinement land
+        if (A._stillRefineActive && !A._stillRefineBusy) return true;
+      }
+      if (!A._stillRefineActive && performance.now() - t0 > 4000) return false;   // toggled off again
+      await new Promise(r => setTimeout(r, 250));
+    }
+    return A._stillRefineActive && !A._stillRefineBusy;
+  }
+  // §GI_LIVE — the bounce needs a desktop GPU with WebGPU and the app's three.js at r186. Decided at the
+  // keypress (window.THREE loads asynchronously), logged once, and never a toast: where it cannot run,
+  // Alt+S is exactly the app's own still.
+  let offLogged = false;
+  function giSupported() {
+    const T = window.THREE;
+    let reason = null;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) reason = 'touch-device';
+    else if (!navigator.gpu) reason = 'no-webgpu';
+    else if (!(T && T.REVISION === '186' && T.WebGPURenderer)) reason = 'three-r' + (T && T.REVISION);
+    if (reason && !offLogged) { offLogged = true; console.log('§GI_STILL_OFF reason=' + reason + ' — Alt+S keeps the app\'s own still, no bounce'); }
+    return !reason;
+  }
+  window.addEventListener('keydown', function (e) {
+    if (!(e.altKey && (e.key === 's' || e.key === 'S'))) return;
+    if (e.shiftKey) return;
+    if (busy) return;
+    if (!giSupported()) { plainStill(); return; }   // §GI_LIVE gate: phones / no WebGPU / not r186 keep today's Alt+S (+ §STILL_OVERLAY_NOGI)
+    const A = window.APP;
+    if (A._stillRefineActive) return;        // this press is the app's own toggle-OFF; leave it alone
+    setTimeout(async () => {
+      toast('Alt+S still — waiting for the app to finish refining, then adding bounce…');
+      // §GI_WAIT_BUDGET: the first press builds the light field inside staging (Hospital 109-138 s headless), so a fixed 120 s cap
+      // gave up on a still that was only slow — silently. Wait while the still stays active (900 s safety cap); log every give-up.
+      const tW = performance.now(), ok = await waitForStill(900000);
+      if (!ok) { console.warn('§GI_STILL_FAIL reason=' + (A._stillRefineActive ? 'wait-timeout (still busy after 900 s)' : 'still-cancelled') + ' waitedMs=' + Math.round(performance.now() - tW)); toast('Still was cancelled — no bounce pass', 3000); return; }
+      shoot();
+    }, 0);
+  }, false);     // NOT capture: the app's own handler runs first and does its normal work
+  window.addEventListener('keydown', function (e) {
+    if (e.altKey && e.shiftKey && (e.key === 'S' || e.key === 's')) {
+      e.preventDefault();
+      if (release('on request')) toast('Bounce renderer released', 2500);
+      else toast('Nothing to release', 2000);
+    }
+  }, true);
+  // ══ §FILM_PARITY bounce (§GI_FILM) — the approved Alt+S bounce in Alt+C films, from THIS file so the film uses the still's
+  // own build, dials and composite (gain 1.0, ao 0.55, receiver, radius 12 ...), not the sandbox tap's older ones. One pass
+  // per frame (a film cannot accumulate over a moving camera). Installed as cinema_maxq.js's __giCaptureFrame hook by
+  // window.GiFilm.arm() at film start, removed by disarm(). §GI_TAP_SYNC_GRAB: the app frame is copied at the hook's first
+  // line, before any await (a WebGL canvas does not keep its pixels past the task that drew it).
+  let film = null;   // { G, frames, ms, entry }
+  const GI_FILM_MAX_REBUILDS = 2;   // §GI_FILM_CARRY C2
+  async function filmFrame(ctx, w, h) {
+    const A = window.APP, t0 = performance.now();
+    if (!film.entry || film.entry.width !== w || film.entry.height !== h) { film.entry = document.createElement('canvas'); film.entry.width = w; film.entry.height = h; }
+    const ectx = film.entry.getContext('2d', { willReadFrequently: true }); ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+    // §GI_FILM_BLANK_GRAB (ported from the sandbox tap's §GI_TAP_EMPTY_GRAB/BLANK_GRAB; measured on Hospital: 5-10 of 120
+    // frames came out as the bare clear colour). A grab that is empty (alpha 0) or a FLAT field of the renderer's clear
+    // colour is not a picture: re-render synchronously through the app's composer and grab again, and log it.
+    {
+      if (!film.probe) { film.probe = document.createElement('canvas'); film.probe.width = 32; film.probe.height = 18; film.pctx = film.probe.getContext('2d', { willReadFrequently: true }); }
+      const blankNow = () => { film.pctx.clearRect(0, 0, 32, 18); film.pctx.drawImage(film.entry, 0, 0, 32, 18); const q = film.pctx.getImageData(0, 0, 32, 18).data;
+        let any = false, flat = true; for (let i = 0; i < q.length; i += 4) { if (q[i + 3] > 0) any = true; if (i && (Math.abs(q[i] - q[0]) > 2 || Math.abs(q[i + 1] - q[1]) > 2 || Math.abs(q[i + 2] - q[2]) > 2)) flat = false; }
+        const cc = A.renderer.getClearColor ? A.renderer.getClearColor(new window.THREE.Color()) : null;
+        const isClear = cc && Math.abs(q[0] - Math.round(cc.r * 255)) <= 3 && Math.abs(q[1] - Math.round(cc.g * 255)) <= 3 && Math.abs(q[2] - Math.round(cc.b * 255)) <= 3;
+        return !any || (flat && isClear); };
+      for (let tries = 0; tries < 3 && blankNow(); tries++) {
+        try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); } catch (e) {}
+        ectx.clearRect(0, 0, w, h); ectx.drawImage(A.renderer.domElement, 0, 0, w, h);
+        film.blank = (film.blank || 0) + 1;
+        console.log('§GI_FILM_BLANK_GRAB at capture ' + (film.frames + 1) + ' try ' + (tries + 1) + ' -> re-rendered, picture now=' + !blankNow() + ' (total ' + film.blank + ')');
+      }
+    }
+    // §GI_FILM_CARRY witness switch &gifilmdrop=F:N — frames F..F+N-1 (1-based) drop the geometry pass the way a WebGPU error does
+    // (the existing __GI_STILL_INJECT_GEOM_DROP hook). Set BEFORE any rebuild: left on through a rebuild, the new target was never drawn
+    // and readRenderTargetPixelsAsync threw (measured, 'format' of undefined). Test only; nothing sets it in normal use.
+    { const m = /[?&]gifilmdrop=(\d+):(\d+)/.exec(location.search); if (m) { const k = film.frames + 1; window.__GI_STILL_INJECT_GEOM_DROP = k >= +m[1] && k < +m[1] + +m[2]; } }
+    if (film.off) { ctx.drawImage(film.entry, 0, 0, w, h); film.frames++; return; }   // §GI_FILM_CARRY C2: bounce switched off for the rest of the film
+    A._sceneBorrowed = true;
+    try {
+      if (!film.G || film.G.w !== w || film.G.h !== h) {
+        const tb = performance.now();
+        if (film.G) { try { film.G.renderer.dispose(); } catch (e) {} }
+        film.G = await build(w, h);
+        film.buildMs = Math.round(performance.now() - tb);
+        console.log('§GI_FILM built ' + w + 'x' + h + ' ms=' + film.buildMs + ' (once per film)');
+      }
+      const G = film.G;
+      G.filmCarry = true;   // §GI_FILM_CARRY: from here (incl. the orientation passes) readRT remembers the target's last fingerprint
+      G.setMode('composite', encodeMode());
+      G.gainU.value = readGain(); G.aoU.value = readAo(true); G.albU.value = 0; G.boundU.value = 0;   // FIX 13: films unbounded until Z13   // §ZERO Z11: films unchanged (0.55, estimate receiver)
+      G.recvU.value = readNum('_stillGiRecv', 'girecv', GI_RECV_DEFAULT, 0, 1);
+      G.gi.radius.value = readNum('_stillGiRadius', 'girad', GI_RADIUS_DEFAULT, 0.5, 100);
+      G.gi.thickness.value = readNum('_stillGiThick', 'githick', GI_THICK_DEFAULT, 0.01, 50);
+      G.gi.stepCount.value = Math.round(readNum('_stillGiSteps', 'gisteps', window.__GI_STEPS || 16, 1, 32));
+      G.gi.giIntensity.value = readNum('_stillGiInt', 'giint', 10, 0, 100);
+      G.colorCtx.clearRect(0, 0, w, h); G.colorCtx.drawImage(film.entry, 0, 0, w, h); G.colorTex.needsUpdate = true;
+      if (!film.oriented) { film.oriented = true; await decideOrientation(G); console.log('§GI_FILM orientation on the first film frame flipTex=' + G.flipTex + ' flipOut=' + G.flipOut); }
+      const fpBefore = G.fpLastRead || null;   // the last readback of this target (a previous frame, or the orientation passes after a build)
+      const tGeom0 = performance.now();
+      // §GI_FILM_8BIT (ALTC_FOUNDATION §SPEED_PAR, opt-in &gi8=1): the pass output is already sRGB-encoded 0..1 (outputColorTransform), so
+      // an 8-bit target stores the same value the JS loop used to make from the float (x255, clamp) — the GPU does the conversion, the
+      // readback is 4 B/px instead of 16 and the per-pixel loop becomes two row copies + an alpha pass.
+      const gi8 = /[?&]gi8=1/.test(location.search);
+      if (gi8 && (!G.rt8 || G.rt8.width !== G.w || G.rt8.height !== G.h)) { if (G.rt8) G.rt8.dispose();
+        G.rt8 = new G.THREE.RenderTarget(G.w, G.h, { type: G.THREE.UnsignedByteType, format: G.THREE.RGBAFormat, depthBuffer: true }); console.log('§GI_FILM_8BIT target ' + G.w + 'x' + G.h + ' rgba8'); }
+      G.renderTo = gi8 ? G.rt8 : null;
+      try { await renderGeom(G); } finally { G.renderTo = null; }
+      const tRead0 = performance.now();
+      const f = gi8 ? await readRT8(G) : await readRT(G);
+      // §GI_FILM_CARRY (2026-10-01, ALTC_FOUNDATION §RESUME 08:30 item 1, the 0733 "bottom 43% frozen from frame 1"): the still's
+      // §GI_CARRY ported to films. build() replaces renderer.onError, so three.js's own "Uncaptured WebGPU" line never reaches the
+      // log — a dropped geometry pass was silent here. Per frame: WebGPU errors since the last frame, and this pass's fingerprint
+      // against the last one (equal = nothing was drawn, the target still holds an old pass = STALE). Logged on the first 3 frames,
+      // on every frame with errors, and whenever STALE starts/stops. Frame 1 also prints the census of what reaches the pass.
+      {
+        const fp = G.fpLastRead, errN = G.gpuErr.n - (film.errAt == null ? 0 : film.errAt);
+        // STALE needs the CAMERA to have moved (2026-10-02, HHS bake f=528-536: inside the load-path freeze the camera is frozen and the
+        // frame mostly black — consecutive passes came out identical with 0 GPU errors, three false STALEs switched the bounce off for 74%
+        // of the film). Same picture from the same pose is legitimate; same picture after the camera moved means nothing was drawn.
+        const camKey = A.camera ? A.camera.position.toArray().map(v => v.toFixed(3)).join(',') + '|' + A.camera.quaternion.toArray().map(v => v.toFixed(4)).join(',') + '|' + A.camera.fov : '-';
+        const camMoved = film.camKeyPrev != null && film.camKeyPrev !== camKey; film.camKeyPrev = camKey;
+        const stale = !!(fpBefore && fpBefore.hash === fp.hash && fp.clearPct < 99.9 && camMoved);   // all-clear twice (nothing to draw) is not stale either
+        film.errAt = G.gpuErr.n;
+        film.staleN = (film.staleN || 0) + (stale ? 1 : 0); film.errFrames = (film.errFrames || 0) + (errN > 0 ? 1 : 0);
+        if (film.frames === 0) {
+          const c = { mesh: 0, inst: 0, batched: 0, sprite: 0, points: 0, line: 0, rawGlsl: 0, lights: 0, other: 0 };
+          A.scene.traverseVisible(o => {
+            if (o.isLight) c.lights++;
+            else if (o.isSprite) c.sprite++; else if (o.isPoints) c.points++; else if (o.isLine) c.line++;
+            else if (o.isBatchedMesh) c.batched++; else if (o.isInstancedMesh) c.inst++;
+            else if (o.isMesh) { if (o.material && o.material.isShaderMaterial && !o.material.isNodeMaterial) c.rawGlsl++; else c.mesh++; }
+            else if (o.material) c.other++;
+          });
+          console.log('§GI_FILM_CENSUS visible ' + JSON.stringify(c) + ' interiorLightsOff=' + !!A._interiorLightsOff + ' gpuErrorsAtBuild=' + G.gpuErr.n + (G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : ''));
+        }
+        if (film.frames < 3 || errN > 0 || stale !== !!film.staleLast) {
+          const line = '§GI_FILM_CARRY f=' + (film.frames + 1) + ' verdict=' + (errN > 0 ? 'FAIL' : stale ? 'STALE' : (fpBefore ? 'OK' : 'INCONCLUSIVE')) +
+            ' fp=' + fp.hash + ' maskClear=' + fp.clearPct + '% gpuErrors=' + errN + (errN > 0 && G.gpuErr.first ? ' first="' + G.gpuErr.first + '"' : '') +
+            ' staleFrames=' + film.staleN + ' errFrames=' + film.errFrames + ' camMoved=' + (camMoved ? 1 : 0) + ' lost=' + !!G.renderer._isDeviceLost;
+          if (errN > 0 || stale) console.warn(line); else console.log(line);
+        }
+        film.staleLast = stale;
+        // C2 self-heal: never composite a pass that errored or did not draw. This frame is the app's own; the renderer is disposed and
+        // rebuilt on the next frame (orientation re-measured); after GI_FILM_MAX_REBUILDS the bounce is off for the rest of the film.
+        if (errN > 0 || stale) {
+          ctx.drawImage(film.entry, 0, 0, w, h);
+          film.frames++; film.ms += performance.now() - t0;
+          try { G.rt.dispose(); if (G.rt8) G.rt8.dispose(); G.renderer.dispose(); } catch (e) {}
+          film.G = null; film.oriented = false; film.errAt = null; film.staleLast = false; film.camKeyPrev = null;
+          film.rebuilds = (film.rebuilds || 0) + 1;
+          if (film.rebuilds > GI_FILM_MAX_REBUILDS) { film.off = true; console.warn('§GI_FILM_OFF reason=gpu-failures at f=' + film.frames + ' rebuilds=' + (film.rebuilds - 1) + ' — the rest of the film bakes without the bounce'); }
+          else console.warn('§GI_FILM_REBUILD f=' + film.frames + ' #' + film.rebuilds + ' of ' + GI_FILM_MAX_REBUILDS + ' — this frame without the bounce, renderer rebuilt on the next frame');
+          return;
+        }
+      }
+      const tLoop0 = performance.now();
+      const img = film.img && film.img.width === w && film.img.height === h ? film.img : (film.img = new ImageData(w, h));
+      const d = img.data, fo = G.flipOut;
+      if (gi8) {
+        const rowB = w * 4;
+        if (!fo) d.set(f); else for (let y = 0; y < h; y++) d.set(f.subarray((h - 1 - y) * rowB, (h - y) * rowB), y * rowB);
+        const aT = Math.round(GEOM_MASK_T * 255);
+        for (let k = 3; k < d.length; k += 4) d[k] = d[k] >= aT ? 255 : 0;   // the still's HARD mask, on the 8-bit alpha
+      } else if (/[?&]gifast=1/.test(location.search)) {
+        // §GI_FILM_FAST (ALTC_FOUNDATION §SPEED_PAR): the same conversion without Math.max/min — img.data is a Uint8ClampedArray, which
+        // clamps to 0..255 and rounds exactly as the clamped float did before; row offsets hoisted. Same bytes by construction.
+        for (let y = 0; y < h; y++) { let s = (fo ? (h - 1 - y) : y) * w * 4, o = y * w * 4;
+          for (let x = 0; x < w; x++, s += 4, o += 4) { d[o] = f[s] * 255; d[o + 1] = f[s + 1] * 255; d[o + 2] = f[s + 2] * 255; d[o + 3] = (f[s + 3] >= GEOM_MASK_T) ? 255 : 0; } }
+      } else
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const s = ((fo ? (h - 1 - y) : y) * w + x) * 4, o = (y * w + x) * 4, a = f[s + 3];
+        d[o] = Math.max(0, Math.min(255, f[s] * 255)); d[o + 1] = Math.max(0, Math.min(255, f[s + 1] * 255)); d[o + 2] = Math.max(0, Math.min(255, f[s + 2] * 255));
+        d[o + 3] = (a >= GEOM_MASK_T) ? 255 : 0;   // the still's HARD mask
+      }
+      const tLoop1 = performance.now();
+      if (!film.layer || film.layer.width !== w || film.layer.height !== h) { film.layer = document.createElement('canvas'); film.layer.width = w; film.layer.height = h; }
+      film.layer.getContext('2d').putImageData(img, 0, 0);
+      ctx.drawImage(film.entry, 0, 0, w, h);
+      ctx.drawImage(film.layer, 0, 0, w, h);
+      const ms = performance.now() - t0; film.frames++; film.ms += ms;
+      // §GI_FILM_PARTS: where the bounce frame's time goes (grab = WebGL frame into a 2D canvas + blank probe + colour upload; geom = WebGPU
+      // geometry/bounce pass; read = float readback 16 B/px; loop = float->byte JS loop; comp = putImageData + 2 drawImage).
+      film.pt = film.pt || { grab: 0, geom: 0, read: 0, loop: 0, comp: 0 };
+      film.pt.grab += tGeom0 - t0; film.pt.geom += tRead0 - tGeom0; film.pt.read += tLoop0 - tRead0; film.pt.loop += tLoop1 - tLoop0; film.pt.comp += t0 + ms - tLoop1;
+      if (film.frames % 24 === 0) { const P = film.pt, n = film.frames; console.log('§GI_FILM_PARTS f=' + n + ' meanMs grab=' + (P.grab / n).toFixed(1) + ' geom=' + (P.geom / n).toFixed(1) +
+        ' read=' + (P.read / n).toFixed(1) + ' loop=' + (P.loop / n).toFixed(1) + ' comp=' + (P.comp / n).toFixed(1) + (/[?&]gifast=1/.test(location.search) ? ' gifast=1' : '') + (gi8 ? ' gi8=1' : '')); }
+      if (film.frames <= 2 || film.frames % 24 === 0) {
+        let sa = 0, sc = 0, n = 0; const ap = ectx.getImageData(0, 0, w, h).data, cp = ctx.getImageData(0, 0, w, h).data;
+        for (let i = 0; i < ap.length; i += 4 * 97) { sa += (ap[i] + ap[i + 1] + ap[i + 2]) / 3; sc += (cp[i] + cp[i + 1] + cp[i + 2]) / 3; n++; }
+        console.log('§GI_FILM f=' + film.frames + ' ms=' + ms.toFixed(0) + ' meanMs=' + (film.ms / film.frames).toFixed(0) + ' appMean=' + (sa / n).toFixed(1) +
+          ' compositeMean=' + (sc / n).toFixed(1) + ' gain=' + G.gainU.value + ' ao=' + G.aoU.value + ' recv=' + G.recvU.value + ' girad=' + G.gi.radius.value + ' githick=' + G.gi.thickness.value +
+          ' gisteps=' + G.gi.stepCount.value + ' giint=' + G.gi.giIntensity.value + ' slices=' + G.gi.sliceCount.value + ' flipOut=' + fo);
+      }
+    } finally { A._sceneBorrowed = false; }
+  }
+  window.GiFilm = {
+    windowPull: windowPull,   // §FILM_WINDOW_PULL (cinema_maxq.js _captureFrame): the SAME function, called per inside frame
+    arm: function () {
+      const A = window.APP;
+      let reason = null;
+      if (A && A._filmBounceOff === true) reason = 'switched-off';
+      else if (/[?&]filmbounce=0/.test(location.search)) reason = 'switched-off (&filmbounce=0)';
+      else if (!giSupportedQuiet()) reason = giOffReason();
+      if (reason) { console.log('§GI_FILM_OFF reason=' + reason + ' — the film bakes without the bounce'); return false; }
+      film = { G: film && film.G, frames: 0, ms: 0 };
+      window.__giCaptureFrame = filmFrame;
+      console.log('§GI_FILM armed — one bounce pass per frame, Alt+S dials');
+      return true;
+    },
+    disarm: function () {
+      if (window.__giCaptureFrame === filmFrame) window.__giCaptureFrame = null;
+      if (film) { console.log('§GI_FILM done frames=' + film.frames + ' meanMs=' + (film.frames ? (film.ms / film.frames).toFixed(0) : 0) + ' buildMs=' + (film.buildMs || 0) + ' blankGrabsRecovered=' + (film.blank || 0) + ' staleFrames=' + (film.staleN || 0) + ' errFrames=' + (film.errFrames || 0) + ' rebuilds=' + (film.rebuilds || 0) + ' off=' + !!film.off + ' gpuErrors=' + (film.G ? film.G.gpuErr.n : 0) + (film.G && film.G.gpuErr.first ? ' first="' + film.G.gpuErr.first + '"' : ''));
+        if (film.G) { try { film.G.rt.dispose(); film.G.renderer.dispose(); } catch (e) {} } film = null; }
+    }
+  };
+  // §STILL_OVERLAY_NOGI (PHOTOREAL_STILL_RENDER.md, 2026-10-05): without the bounce the still finished with no sign of it —
+  // the overlay (Save PNG / Close) came only from show() on the bounce path, the toast was hidden and §STILL_LOCK ate clicks.
+  // Same wait, a copy of the app's finished frame, the same show().
+  function plainStill() {
+    const A = window.APP;
+    if (!A || A._stillRefineActive) return;          // the app's own toggle-OFF press
+    const t0 = performance.now(), reason = giOffReason();
+    setTimeout(async () => {
+      const ok = await waitForStill(120000);
+      if (!ok) { console.log('§STILL_OVERLAY_NOGI skipped reason=cancelled'); return; }
+      const src = A.renderer.domElement, c = document.createElement('canvas');
+      c.width = src.width; c.height = src.height; const ctx = c.getContext('2d');
+      const mean = () => { ctx.drawImage(src, 0, 0); const u = ctx.getImageData(0, 0, Math.min(128, c.width), Math.min(72, c.height)).data;
+        let t = 0; for (let i = 0; i < u.length; i += 4) t += (u[i] + u[i + 1] + u[i + 2]) / 3; return +(t / (u.length / 4)).toFixed(1); };
+      let m = mean();
+      if (m < 2) { try { if (A._composer) A._composer.render(); else A.renderer.render(A.scene, A.camera); } catch (e) {} ctx.clearRect(0, 0, c.width, c.height); m = mean(); }
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      if (m < 2) console.warn('§STILL_OVERLAY_NOGI FAULT blank frame mean=' + m + ' size=' + c.width + 'x' + c.height);
+      console.log('§STILL_OVERLAY_NOGI shown reason=' + reason + ' size=' + c.width + 'x' + c.height + ' mean=' + m + ' ms=' + Math.round(performance.now() - t0));
+      show(c, secs, 0, 'plain');
+    }, 0);
+  }
+  function giOffReason() {
+    const T = window.THREE;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return 'touch-device';
+    if (!navigator.gpu) return 'no-webgpu';
+    if (!(T && T.REVISION === '186' && T.WebGPURenderer)) return 'three-r' + (T && T.REVISION);
+    return null;
+  }
+  function giSupportedQuiet() { return !giOffReason(); }
+  window.__giStillShoot = shoot;
+  window.__giStillRelease = function () { return release('on request'); };
+  // §GI_STILL_DOUBLE WITNESS — renders the SAME geometry pass with only the partly-transparent
+  // (glazed) meshes left visible, so the glazing gets a real measured mask instead of a rectangle
+  // drawn by eye. Returns per-region means for the app frame, the bounce layer and the finished
+  // composite, plus what the OLD alpha-blended paste would have produced at the app's own glass
+  // opacity. Read-only apart from `visible`, which is put back in `finally`.
+  window.__giStillGlassMask = async function () {
+    if (!built) return { err: 'no renderer built — take a shot first' };
+    const G = built, A = window.APP, s = A.scene, w = G.w, h = G.h;
+    const hidden = []; const opac = [];
+    try {
+      s.traverse(o => {
+        if (!o.visible) return;
+        if (!(o.isMesh || o.isInstancedMesh || o.isBatchedMesh)) return;
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        const glass = !!(m && m.transparent === true && m.opacity < 1);
+        if (glass) opac.push(+m.opacity.toFixed(3)); else { o.visible = false; hidden.push(o); }
+      });
+      await renderGeom(G);
+    } finally { for (const o of hidden) o.visible = true; }
+    const fbRaw = await readRT(G);
+    const fb = new Float32Array(fbRaw.length);
+    for (let y = 0; y < h; y++) {                       // same row order as the composite
+      const sy = G.flipOut ? (h - 1 - y) : y;
+      fb.set(fbRaw.subarray(sy * w * 4, (sy + 1) * w * 4), y * w * 4);
+    }
+    const ov = document.getElementById('gi-still-overlay'), comp = ov && ov.querySelector('canvas');
+    const dbg = window.__giStillDebugCanvas || {};
+    if (!comp || !dbg.bounce || !dbg.under) return { err: 'no composite/bounce/under canvases yet' };
+    const gc = (c) => c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    const C = gc(comp), B = gc(dbg.bounce), U = gc(dbg.under);
+    const alphaMean = opac.length ? +(opac.reduce((x, y) => x + y, 0) / opac.length).toFixed(3) : 1;
+    const R = { glassMeshes: opac.length, glassOpacityMean: alphaMean, glassOpacityMin: opac.length ? Math.min.apply(null, opac) : null, glassOpacityMax: opac.length ? Math.max.apply(null, opac) : null };
+    const acc = { glass: [0, 0, 0, 0, 0], opaque: [0, 0, 0, 0, 0] };
+    for (let i = 0; i < w * h; i++) {
+      const k = i * 4;
+      const isGlass = fb[k + 3] > 0.5;
+      const bAlpha = B[k + 3] > 127;
+      if (!bAlpha) continue;                                   // only where the bounce layer drew
+      const g = acc[isGlass ? 'glass' : 'opaque'];
+      const lu = (U[k] + U[k + 1] + U[k + 2]) / 3, lb = (B[k] + B[k + 1] + B[k + 2]) / 3, lc = (C[k] + C[k + 1] + C[k + 2]) / 3;
+      // the OLD paste blended at the SOURCE MATERIAL's alpha: the measured glass opacity on glazing,
+      // 1 on everything opaque. That asymmetry is the defect — same picture, two different strengths.
+      const a = isGlass ? alphaMean : 1;
+      g[0]++; g[1] += lu; g[2] += lb; g[3] += lc; g[4] += a * lb + (1 - a) * lu;
+    }
+    for (const key of ['glass', 'opaque']) {
+      const g = acc[key], n = Math.max(1, g[0]);
+      R[key] = { px: g[0], app: +(g[1] / n).toFixed(2), bounce: +(g[2] / n).toFixed(2), composite: +(g[3] / n).toFixed(2), oldAlphaBlend: +(g[4] / n).toFixed(2) };
+      R[key].compositeMinusBounce = +(R[key].composite - R[key].bounce).toFixed(2);
+      R[key].oldBlendMinusBounce = +(R[key].oldAlphaBlend - R[key].bounce).toFixed(2);
+      R[key].shadingApplied = +((R[key].composite / Math.max(1e-6, R[key].app) - 1) * 100).toFixed(1);
+      R[key].oldShadingApplied = +((R[key].oldAlphaBlend / Math.max(1e-6, R[key].app) - 1) * 100).toFixed(1);
+    }
+    console.log('§GI_STILL glass witness ' + JSON.stringify(R));
+    return R;
+  };
+  console.log('§GI_STILL ready — Alt+S renders a bounce still (r186 WebGPU SSGI, ' + ACCUM_DEFAULT + ' passes, geometry-pass build)');
+})();
