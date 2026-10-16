@@ -28,7 +28,22 @@ const { Witness } = require(path.join(KIT, 'contract'));
 const { ScheduledElementRow } = require(path.join(KIT, 'schemas', 'bar_schedule'));
 const INV = require(path.join(KIT, 'invariants', 'bar_schedule'));
 
-const POLICY = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_policy.json'), 'utf8'));
+// §FUTURE-5A / Part 2 (applied 2026-09-02, queue item B-3): viewer/rates/4D_policy.json DELETED —
+// it self-described as "the ONLY authored input to 4D scheduling" but had ZERO production readers
+// (viewer.html/time_machine.js never load it; 4D_MODEL_INTEGRITY.md §A already ruled bar_model.js,
+// the only thing that ever consumed it, DEAD CODE/superseded by the 4D_template.json path). This
+// witness and witness_bar_composite.js were its only two readers, so its values move here verbatim
+// as this witness's OWN fixture — a fixed test input for bar_model.js, not a claim that anything in
+// production reads it. Full original prose/provenance (why each value, MEASURED evidence per field)
+// is preserved in git history on the deleted file, not repeated here.
+const POLICY = {
+  days_per_week: 7,               // NOT read by bar_model.js or this witness — kept for shape parity
+  phase_link: 'serial',           // packed-but-sequential within a level (2026-08-25 user ruling)
+  level_link: 'trade',            // §4D_BAND_MONOTONIC enforced per trade, not per whole-level task
+  level_bands: 'storey',          // finest granularity — one band per real storey
+  ceiling_link: 'frame_above',    // non-structural phase on level N waits for Superstructure N+1
+  building_scope: ['Substructure']   // phases occurring once for the whole building, not per storey
+};
 const BLD_DIR = process.env.BLD_DIR || path.join(HOME, 'bim-ootb', 'buildings');
 const BUILDINGS = process.argv.slice(2).length ? process.argv.slice(2)
   : ['Duplex', 'HHS_Office_Federated', 'Hospital', 'Terminal'];

@@ -25,7 +25,8 @@
  *                     which residents happen to lack them).
  *   G4 WALK-ALL-OK  — the real click on the Outliner's "▶▶ Walk ALL Disciplines" row (`[data-bnode="dw-all"]`)
  *                     completes, places > 0 fixtures OR honestly refuses every discipline (never throws/hangs).
- *   G5 COMMITTED    — op-log grows by exactly the placed count; verifyChain stays true.
+ *   G5 COMMITTED    — op-log grows by exactly the placed count PLUS the walk's own routed-network rows (signed
+ *                     runs + bend fittings, read from the op-log); verifyChain stays true.
  *   G6 NO-ERROR     — zero pageerror across the whole open+walk sequence for that resident.
  * Read the §-log after every run — exit code alone is not evidence (CLAUDE.md Log Mandate).
  */
@@ -102,7 +103,10 @@ const CASES = [
       after = await pg.evaluate(() => {
         const result = window.__dwAllResult;
         const inserts = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
-        return { result, oplogLen: window.Bonsai.oplog.length, inserts };
+        // §WALK-BRIDGE-ALL / §RW-CW-SP-PRODUCT: a walk that routes also signs its runs (GEOM_SWEEP) and bend fittings (_dw.fit),
+        // counted from the op-log itself, not assumed.
+        const routeRows = window.Bonsai.oplog._geomOps().filter(o => o.parameters && o.parameters._dw && (o.parameters._dw.fit || o.op_type === 'GEOM_SWEEP')).length;
+        return { result, oplogLen: window.Bonsai.oplog.length, inserts, routeRows };
       });
       chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); const v = await window.KernelOps.verifyChain(db); return !!v.ok; } catch (e) { return 'ERR:' + e.message; } });
     }
@@ -114,7 +118,7 @@ const CASES = [
     const refusedAll = (after && after.result && after.result.refused) || [];
     const walkedAll = (after && after.result && after.result.walked) || [];
     chk('G4 WALK-ALL-OK (completes; every disc walked or honestly refused)', rowUp && walkOk && (walkedAll.length + refusedAll.length) > 0, 'walked=' + walkedAll.length + ' refused=' + refusedAll.length);
-    chk('G5 COMMITTED (oplog += placedTotal, chain OK)', after && after.oplogLen === before.oplogLen + placedTotal && chain === true, 'oplog ' + before.oplogLen + '→' + (after && after.oplogLen) + ' (+' + placedTotal + ') chain=' + chain);
+    chk('G5 COMMITTED (oplog += placedTotal + routed-network rows, chain OK)', after && after.oplogLen === before.oplogLen + placedTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + (after && after.oplogLen) + ' (+' + placedTotal + ' placed +' + (after && after.routeRows) + ' runs/fittings) chain=' + chain);
     chk('G6 NO-ERROR', errs.length === 0, errs.slice(0, 3).join(' | '));
 
     await pg.close();

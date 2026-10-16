@@ -62,6 +62,7 @@ async function gotoTenant(page, url) {
     if (u) { await u.click(); const ok = await page.$('#idmp-login-ok'); if (ok) await ok.click(); }
     await page.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {});
   });
+  await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
   await page.waitForTimeout(1200);
 }
 // open a record's form by clicking its grid row (the realistic user path; sets _curTab + _records[_recIdx]).

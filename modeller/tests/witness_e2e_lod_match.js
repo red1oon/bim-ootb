@@ -54,11 +54,16 @@ async function realMeshTruth(guid) {
   const wasmBinary = fs.readFileSync(path.join(__dirname, '..', 'lib', 'sql-wasm.wasm'));
   const SQL = await initSqlJs({ wasmBinary });
   const db = new SQL.Database(fs.readFileSync(DBPATH));
-  const r = db.exec("SELECT bg.vertex_count, bg.face_count FROM element_instances ei " +
+  const r = db.exec("SELECT bg.vertex_count, bg.face_count, bg.vertices FROM element_instances ei " +
     "JOIN base_geometries bg ON bg.geometry_hash = ei.geometry_hash WHERE ei.guid = '" + guid.replace(/'/g, "''") + "'");
   db.close();
   if (!r.length || !r[0].values.length) return null;
-  return { verts: r[0].values[0][0], tris: r[0].values[0][1] };
+  // §NET-AUDIT (2026-09-26): `uniq` = distinct positions at 1e-4 m. The renderer splits shared vertices per face for
+  // normals (door: 762 stored → 3230 rendered, 758 distinct both sides), so the raw vertex COUNT is a representation
+  // detail, not the geometry. Triangles + distinct positions are the geometry.
+  const b = r[0].values[0][2], f = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4), u = new Set();
+  for (let i = 0; i < f.length; i += 3) u.add(f[i].toFixed(4) + ',' + f[i + 1].toFixed(4) + ',' + f[i + 2].toFixed(4));
+  return { verts: r[0].values[0][0], tris: r[0].values[0][1], uniq: u.size };
 }
 // a second ARC element, distinct from the door, to prove building-wide (not one-lucky-element) coverage.
 async function otherArcGuid() {
@@ -96,14 +101,15 @@ runE2E('W-E2E-LOD-MATCH', async (t) => {
     const m = g.children.find(o => o.isMesh && o.userData && o.userData.featureId === f);
     if (!m) return null;
     const pos = m.geometry.attributes.position, idx = m.geometry.index;
-    return { verts: pos ? pos.count : 0, tris: idx ? idx.count / 3 : (pos ? pos.count / 3 : 0), hash: m.userData.hash || null };
+    const u = new Set(); if (pos) for (let i = 0; i < pos.count; i++) u.add(pos.getX(i).toFixed(4) + ',' + pos.getY(i).toFixed(4) + ',' + pos.getZ(i).toFixed(4));
+    return { verts: pos ? pos.count : 0, uniq: u.size, tris: idx ? idx.count / 3 : (pos ? pos.count / 3 : 0), hash: m.userData.hash || null };
   }, fid);
 
   const doorSig = targetFid != null ? await sig(targetFid) : null;
   const doorTruth = await realMeshTruth(TARGET_GUID);
-  t.assert('A3 REAL-MESH-DOOR (door mesh NOT the 8-vert/12-tri box signature; verts/tris == its OWN db vertex_count/face_count)',
+  t.assert('A3 REAL-MESH-DOOR (door mesh NOT the 8-vert/12-tri box signature; tris + distinct positions == its OWN db mesh)',
     !!doorSig && !!doorTruth && !(doorSig.verts === 8 && doorSig.tris === 12) &&
-    doorSig.verts === doorTruth.verts && doorSig.tris === doorTruth.tris,
+    doorSig.uniq === doorTruth.uniq && doorSig.tris === doorTruth.tris,
     'doorSig=' + JSON.stringify(doorSig) + ' dbTruth=' + JSON.stringify(doorTruth));
 
   // A4 — a SECOND, DIFFERENT ARC element (not the door) also renders its OWN real mesh (building-wide coverage,
@@ -114,9 +120,9 @@ runE2E('W-E2E-LOD-MATCH', async (t) => {
   const otherFid = otherGuid != null ? (await t.pg.evaluate((g) => (window.__arcFidByGuid || {})[g], otherGuid)) : null;
   const otherSig = otherFid != null ? await sig(otherFid) : null;
   const otherTruth = otherGuid != null ? await realMeshTruth(otherGuid) : null;
-  t.assert('A4 REAL-MESH-OTHER (a DIFFERENT ARC element also renders its own real mesh, matching its db vertex_count/face_count — building-wide, not one lucky element)',
+  t.assert('A4 REAL-MESH-OTHER (a DIFFERENT ARC element also renders its own real mesh, matching its db tris + distinct positions — building-wide, not one lucky element)',
     !!otherSig && !!otherTruth && !(otherSig.verts === 8 && otherSig.tris === 12) &&
-    otherSig.verts === otherTruth.verts && otherSig.tris === otherTruth.tris,
+    otherSig.uniq === otherTruth.uniq && otherSig.tris === otherTruth.tris,
     'otherGuid=' + (otherGuid || '').slice(0, 10) + ' otherSig=' + JSON.stringify(otherSig) + ' dbTruth=' + JSON.stringify(otherTruth));
 
   // A5 — the ORIGINAL LOD300_CATALOG bookkeeping (matched=1/unmatched=38) is untouched, AND the NEW

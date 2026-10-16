@@ -45,7 +45,7 @@ function read(f) { return fs.readFileSync(path.join(VIEWER, f), 'utf8'); }
   check('tm-whatif-wired', /tm-whatif[\s\S]{0,400}WhatIfPanel\.open/.test(tm), 'handler→WhatIfPanel.open');
 
   // ── (c) what-if RE-HOMED off Find (satellite no longer owns the launch) ───────
-  var nf = read('navigate_find.js');
+  var nf = require('../../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
   check('find-whatif-button-removed', nf.indexOf('find-whatif-btn') < 0, 'no find-whatif-btn');
   check('find-whatif-handler-removed', nf.indexOf('WhatIfPanel.open') < 0, 'no WhatIfPanel.open in Find');
   check('find-rehome-note', nf.indexOf('RE-HOMED') >= 0, 'rehome rationale documented');

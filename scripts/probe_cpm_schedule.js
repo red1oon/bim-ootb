@@ -135,10 +135,15 @@ async function runBuilding(SQL, RATES, name) {
     const b = Gm.contacts[i] ? Gm.contacts[i].slice().sort((x, y) => x - y) : [];
     contactsJ += a.length; contactsM += b.length;
     if (a.length !== b.length || a.some((v, k) => v !== b[k])) mismatch++;
+    // §GROUND_CONNECTED — the walk's verdict is part of the parity, element-for-element: a copy
+    // whose seeds or direction drift fails HERE, not silently in one building's orphan count.
+    else if ((Gj.groundConnected ? Gj.groundConnected[i] : -1) !== (Gm.groundConnected ? Gm.groundConnected[i] : -1)) mismatch++;
   }
   console.log('§CPM_PARITY contactsJudge=' + contactsJ + ' contactsModule=' + contactsM +
     ' elementMismatch=' + mismatch + ' orphans=' + Gj.orphans + '/' + Gm.orphans +
-    ' grounded=' + Gj.groundedN + '/' + Gm.groundedN + ' ' + (mismatch === 0 ? 'PASS' : 'FAIL'));
+    ' grounded=' + Gj.groundedN + '/' + Gm.groundedN +
+    ' groundConnected=' + Gj.groundConnectedN + '/' + Gm.groundConnectedN +
+    ' seedMode=' + Gj.groundSeedMode + '/' + Gm.groundSeedMode + ' ' + (mismatch === 0 ? 'PASS' : 'FAIL'));
 
   // §CPM_PARITY_SUPPORT — designatedSupport, the same two-copy discipline extended (2026-08-18,
   // grounded-narrowing fix): the judge's own copy vs the module's, support-index-for-support-index.

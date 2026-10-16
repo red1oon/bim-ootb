@@ -129,6 +129,12 @@ function setupTour(A) {
         console.log('[TOUR] §FLY_INJECT bld=' + (A.activeBuilding || '') +
           ' status=' + (res && res.status) + ' source=' + ((res && res.source) || 'none') +
           ' rooms=' + (res && res.rooms != null ? res.rooms : '-'));
+        // §TOUR_NO_ROOMS (CIVIL_HIGHWAY_JELAPANG.md §U): Fly Tour walks a ROOM graph. A model with none (a road)
+        // has nothing to tour — say so instead of hovering silently. Log + status only; flow unchanged.
+        if (res && res.rooms === 0) {
+          console.log('[TOUR] §TOUR_NO_ROOMS VACUOUS bld=' + (A.activeBuilding || '') + ' — Fly Tour needs rooms; this model has none');
+          A.status.textContent = 'Fly Tour flies room to room — this model has no rooms to tour.';
+        }
       }
       // §THIN-GRAPH-RECURE (2026-07-17, third independent live report): rooms can be present,
       // in-frame AND compiler-owned yet still route-thin — a stale weak compile persisted in
@@ -812,7 +818,135 @@ function setupTour(A) {
   };
 
   // S206: Cinematic building tour — nearest-neighbor choreography
+  // §CIVIL_ROUTE_TOUR (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S/§U) — the SAME Fly Tour, fed a road route
+  // instead of a room route (user: "using back Fly feature the timeline scrubber must also appear.. no new invention
+  // of Fly tour"; "the markers along the timeline can be the traffic stops"). Uses only existing actions: moveTo
+  // (start), flyPath (along the road), orbit fullCircle (rise → circle → descend to eye height) at each traffic
+  // signal, named so the scrubber labels them. GATE: the model has element_psets matching civil_labels.json route_path
+  // (civil imports only, §CIVIL_PSETS) — a building has no such table → null → the room tour below, unchanged.
+  A._civilLabels = null;   // civil_labels.json — loaded once, Settings overrides honoured (§S282c)
+  (window.loadJsonWithOverrides ? window.loadJsonWithOverrides('civil_labels.json?v=1', 'json_civil_labels')
+    : fetch('civil_labels.json?v=1').then(function (r) { return r.json(); }))
+    .then(function (j) { A._civilLabels = j || null; }).catch(function (e) { console.warn('[TOUR] §CIVIL_LABELS load failed: ' + e.message); });
+  // §CIVIL_ROUTE_PATH — ONE owner of the road route (smoothed medians + junction stops), read by the Fly tour below AND the
+  // Alt+C film (effects.js A.cinemaPathPlan, §ALTC_HIGHWAY). null when the model has no civil route.
+  A.civilRoutePath = function() {
+    var q = function (sql) { try { return A.dbQuery(sql) || []; } catch (e) { return []; } };
+    var has = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_psets'").length > 0;
+    // Which labels mean "the carriageway" and "a stop" is project data (civil_labels.json, editable in Settings),
+    // never written here. sqlEsc: the values are user-editable config.
+    var L = A._civilLabels || {}, sqlEsc = function (v) { return "'" + String(v).replace(/'/g, "''") + "'"; };
+    var pathConds = (L.route_path || []).filter(function (c) { return c && c.name && c.value != null; })
+      .map(function (c) { return '(p.name=' + sqlEsc(c.name) + ' AND p.value=' + sqlEsc(c.value) + ')'; });
+    var rows = has && pathConds.length ? q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE " + pathConds.join(' OR ') + " GROUP BY t.guid") : [];
+    var routeSrc = 'mainline';
+    // §CIVIL_ROUTE_LAZY (CIVIL_HIGHWAY_JELAPANG.md §X, user 2026-10-05: "behave as expected when imported fresh … or lazy
+    // when Fly tour is called"): a civil import saved before property labels existed (no element_psets, or no route_path
+    // label) still has its ROAD discipline from the file name — fly over every ROAD piece instead of dropping to the
+    // orbit fallback. ROAD is a civil-only discipline (import_worker CIVIL_DISCS) → a building never reaches this.
+    if (rows.length < 10) {
+      var road = q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid " +
+        "WHERE m.discipline='ROAD' AND t.center_x IS NOT NULL");
+      if (road.length < 10) { console.log('[TOUR] §CIVIL_ROUTE skip mainline=' + rows.length + ' road=' + road.length + ' psets=' + has + ' (need >= 10)'); return null; }
+      console.log('[TOUR] §CIVIL_ROUTE_LAZY psets=' + has + ' labelsLoaded=' + !!A._civilLabels + ' mainline=' + rows.length + ' → road-discipline route over ' + road.length +
+        ' ROAD pieces (labels missing: re-import for the single-carriageway path + signal stops)');
+      rows = road; routeSrc = 'road-discipline';
+    }
+    // order the route pieces along their principal axis, one median point per BIN_M (data-only path, no alignment in IFC2X3)
+    var n = rows.length, mx = 0, my = 0;
+    rows.forEach(function (r) { mx += r[0]; my += r[1]; }); mx /= n; my /= n;
+    var sxx = 0, syy = 0, sxy = 0;
+    rows.forEach(function (r) { var dx = r[0] - mx, dy = r[1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+    var ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(ang), uy = Math.sin(ang);
+    var BIN_M = 50, bins = {}, lo = Infinity;
+    rows.forEach(function (r) { var u = (r[0] - mx) * ux + (r[1] - my) * uy; if (u < lo) lo = u; });
+    rows.forEach(function (r) { var u = (r[0] - mx) * ux + (r[1] - my) * uy, k = Math.floor((u - lo) / BIN_M); (bins[k] || (bins[k] = [])).push(r); });
+    var med = function (a) { a = a.slice().sort(function (x, y) { return x - y; }); return a[Math.floor(a.length / 2)]; };
+    var ALT_M = 30;                       // presentation: drone height above the road surface (not data)
+    var keys = Object.keys(bins).map(Number).sort(function (a, b) { return a - b; });
+    var path = keys.map(function (k) { var b = bins[k]; var p = A.ifc2three(med(b.map(function (r) { return r[0]; })), med(b.map(function (r) { return r[1]; })), med(b.map(function (r) { return r[2]; })) + ALT_M); return { x: p.x, y: p.y, z: p.z }; });
+    // §CIVIL_ROUTE_SMOOTH (CIVIL_HIGHWAY_JELAPANG.md §FLY, user 2026-10-05: "the Fly is jerky … moves facing backwards"):
+    // a 50 m slice can hold pieces up to 128 m apart across the axis (curves, both carriageways), so the slice medians
+    // zig-zag — measured on JELAPANG: 16 heading changes > 30°, 3 > 90° (max 125°). A 3-point moving average of the
+    // medians: 0 > 30° (max 26°), still within 50 m (median 11 m) of a ROAD piece at the 30 m drone height. Ends keep 2 points.
+    var _turns = function (pp) { var t = 0; for (var j = 1; j < pp.length - 1; j++) { var ax = pp[j].x - pp[j - 1].x, az = pp[j].z - pp[j - 1].z, bx = pp[j + 1].x - pp[j].x, bz = pp[j + 1].z - pp[j].z, la = Math.hypot(ax, az), lb = Math.hypot(bx, bz); if (la > 1e-6 && lb > 1e-6 && (ax * bx + az * bz) / (la * lb) < Math.cos(Math.PI / 6)) t++; } return t; };
+    var _turnsRaw = _turns(path);
+    path = path.map(function (p0, j) {
+      var w = path.slice(Math.max(0, j - 1), j + 2), o = { x: 0, y: 0, z: 0 };
+      w.forEach(function (q) { o.x += q.x / w.length; o.y += q.y / w.length; o.z += q.z / w.length; });
+      return o;
+    });
+    console.log('[TOUR] §CIVIL_ROUTE_SMOOTH turnsOver30=' + _turnsRaw + ' → ' + _turns(path) + ' (3-point moving average of the slice medians)');
+    var maxJump = 0;
+    for (var i = 1; i < path.length; i++) maxJump = Math.max(maxJump, Math.hypot(path[i].x - path[i - 1].x, path[i].z - path[i - 1].z));
+    // traffic signals (pset label) → stops, clustered within 60 m, each mapped to its nearest path point
+    var stopRule = (L.route_stops || []).filter(function (c) { return c && c.value_like; })[0] || null;
+    var sig = !has || !stopRule ? [] : q("SELECT t.center_x, t.center_y, t.center_z - COALESCE(t.bbox_z,0)/2 FROM element_transforms t JOIN element_psets p ON p.guid=t.guid " +
+      "WHERE p.value LIKE " + sqlEsc(stopRule.value_like) + (stopRule.value_not_like ? " AND p.value NOT LIKE " + sqlEsc(stopRule.value_not_like) : '') + " GROUP BY t.guid");
+    var stopLabel = (stopRule && stopRule.label) || 'Stop';
+    var stops = [];
+    sig.forEach(function (r) {
+      var c = A.ifc2three(r[0], r[1], r[2]), hit = null;
+      stops.forEach(function (st) { if (Math.hypot(st.x - c.x, st.z - c.z) < 60) hit = st; });
+      if (hit) { hit.n++; hit.x += (c.x - hit.x) / hit.n; hit.z += (c.z - hit.z) / hit.n; hit.y = Math.min(hit.y, c.y); }
+      else stops.push({ x: c.x, y: c.y, z: c.z, n: 1 });
+    });
+    stops.forEach(function (st) { var bi = 0, bd = Infinity; path.forEach(function (p, j) { var d = Math.hypot(p.x - st.x, p.z - st.z); if (d < bd) { bd = d; bi = j; } }); st.at = bi; st.off = bd; });
+    stops.sort(function (a, b) { return a.at - b.at; });
+    // §CIVIL_ROUTE_JUNCTION (user: "it should orbit from junction to junction, but instead it backs away and returns to the
+    // same"): one junction's signal heads sit up to ~85 m apart, so the 60 m clustering made 4 stops at route points 0-1 and
+    // the tour shuttled between them. Stops whose route position is within 2 slices (100 m along the road) are ONE junction:
+    // orbit its centroid, radius wide enough to hold every member. JELAPANG: 5 stops → 2 junctions (start, end).
+    var _stopsRaw = stops.length, junc = [];
+    stops.forEach(function (st) {
+      var j = junc.length ? junc[junc.length - 1] : null;
+      if (j && st.at - j.atMax <= 2) { j.m.push(st); j.atMax = st.at; } else junc.push({ m: [st], atMax: st.at });
+    });
+    stops = junc.map(function (j) {
+      var w = 0, o = { x: 0, y: Infinity, z: 0, n: 0 };
+      j.m.forEach(function (st) { o.x += st.x * st.n; o.z += st.z * st.n; o.n += st.n; o.y = Math.min(o.y, st.y); w += st.n; });
+      o.x /= w; o.z /= w; o.at = j.m[0].at; o.off = Math.min.apply(null, j.m.map(function (st) { return st.off; }));
+      o.r = Math.max(25, Math.max.apply(null, j.m.map(function (st) { return Math.hypot(st.x - o.x, st.z - o.z); })) + 15);
+      return o;
+    });
+    console.log('[TOUR] §CIVIL_ROUTE_JUNCTION stops=' + _stopsRaw + ' → junctions=' + stops.length + ' at=[' + stops.map(function (st) { return st.at; }).join(',') +
+      '] radiusM=[' + stops.map(function (st) { return st.r.toFixed(0); }).join(',') + ']');
+    var plen0 = 0; for (var m0 = 1; m0 < path.length; m0++) plen0 += Math.hypot(path[m0].x - path[m0 - 1].x, path[m0].z - path[m0 - 1].z);
+    return { path: path, stops: stops, stopLabel: stopLabel, src: routeSrc, n: n, sig: sig, maxJump: maxJump, altM: ALT_M, binM: BIN_M, lenM: plen0 };
+  };
+  A._civilRouteTour = function() {
+    var R = A.civilRoutePath();
+    if (!R) return null;
+    var path = R.path, stops = R.stops, stopLabel = R.stopLabel, routeSrc = R.src, n = R.n, sig = R.sig, maxJump = R.maxJump, ALT_M = R.altM, BIN_M = R.binM;
+    var SPEED = 25;                       // presentation: m/s along the road (~90 km/h)
+    var seg = function (from, to, label) {
+      var pts = path.slice(from, to + 1); if (pts.length < 2) return null;
+      var len = 0; for (var k = 1; k < pts.length; k++) len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y, pts[k].z - pts[k - 1].z);
+      var names = pts.map(function () { return ''; }); names[0] = label;
+      return { type: 'flyPath', points: pts, names: names, duration: Math.max(len / SPEED, 3) };
+    };
+    var actions = [{ type: 'moveTo', x: path[0].x, y: path[0].y, z: path[0].z, name: 'Start of highway' }];
+    var cur = 0;
+    stops.forEach(function (st, si) {
+      // forward only: a junction at the current route point is orbited where we are — never a back-and-forth hop
+      if (st.at > cur) { var f = seg(cur, st.at, si === 0 ? 'Along the highway' : 'Continue'); if (f) actions.push(f); }
+      actions.push({ type: 'orbit', cx: st.x, cy: st.y, cz: st.z, radius: st.r, tiltDeg: 35, fullCircle: true, duration: 10,
+                     name: stopLabel + ' ' + (si + 1) + (st.n > 1 ? ' (' + st.n + ' columns)' : '') });
+      cur = Math.max(cur, st.at);
+    });
+    var last = seg(cur, path.length - 1, stops.length ? 'Continue to end' : 'Along the highway');
+    if (last) actions.push(last);
+    actions.push({ type: 'pause', seconds: 1, name: 'End of highway' });
+    var plen = 0; for (var m2 = 1; m2 < path.length; m2++) plen += Math.hypot(path[m2].x - path[m2 - 1].x, path[m2].z - path[m2 - 1].z);
+    console.log('[TOUR] §CIVIL_ROUTE src=' + routeSrc + ' mainline=' + n + ' bins=' + path.length + ' binM=' + BIN_M + ' pathLen=' + plen.toFixed(0) + 'm maxStep=' + maxJump.toFixed(0) +
+      'm altM=' + ALT_M + ' speed=' + SPEED + 'm/s signals=' + sig.length + ' stops=' + stops.length +
+      ' stopOffsets=[' + stops.map(function (st) { return st.off.toFixed(0); }).join(',') + ']m actions=' + actions.length);
+    return actions;
+  };
+
   A.buildTour = function() {
+    try { var _civ = A._civilRouteTour(); if (_civ && _civ.length) return _civ; } catch (e) { console.warn('[TOUR] §CIVIL_ROUTE_ERR ' + e.message); }
     try { return A._buildTourInner(); } catch(e) {
       console.error('[TOUR] buildTour crashed:', e.message, e.stack);
       A.wlog('TOUR CRASH: ' + e.message);

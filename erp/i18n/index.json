@@ -1,0 +1,233 @@
+{
+ "generatedBy": "erp/tools/build_i18n.py",
+ "locales": [
+  {
+   "code": "en_US",
+   "dir": "ltr",
+   "native": "English",
+   "file": null,
+   "sources": [
+    "ad_seed.db base language (iDempiere en_US)"
+   ],
+   "counts": {}
+  },
+  {
+   "code": "fr_FR",
+   "dir": "ltr",
+   "native": "Français",
+   "file": "i18n/fr_FR.json",
+   "sources": [
+    "github.com/nmicoud/fr_FR@17bbc28b (iDempiere 12 export, maintainer N. Micoud — wiki.idempiere.org/en/Translations)",
+    "sourceforge.net/projects/adempiere/files/Language Packs/Francais/Latest Stable and Alpha/adempiere_fr_FR_352.tgz (ADempiere 3.5.2, 2008-10-01) — fills rows the work-in-progress iDempiere pack lacks"
+   ],
+   "counts": {
+    "AD_Menu": 365,
+    "AD_Window": 254,
+    "AD_Tab": 658,
+    "AD_Field": 56,
+    "AD_Element": 2556,
+    "AD_Process": 316,
+    "AD_Form": 28,
+    "AD_Ref_List": 746,
+    "AD_Message": 1065
+   },
+   "machineCounts": {
+    "AD_Menu": 22,
+    "AD_Window": 27,
+    "AD_Tab": 24,
+    "AD_Field": 752
+   },
+   "bytes": 225849
+  },
+  {
+   "code": "es_ES",
+   "dir": "ltr",
+   "native": "Español",
+   "file": "i18n/es_ES.json",
+   "sources": [
+    "github.com/globalqss/globalqss-idempiere-lco@31b1442b es_CO (GlobalQSS, Colombian Spanish; no es_ES pack is published — served for es_ES, labelled)"
+   ],
+   "counts": {
+    "AD_Menu": 48,
+    "AD_Window": 365,
+    "AD_Tab": 1103,
+    "AD_Field": 165,
+    "AD_Element": 3833,
+    "AD_Process": 471,
+    "AD_Form": 45,
+    "AD_Ref_List": 1342,
+    "AD_Message": 2054
+   },
+   "machineCounts": {
+    "AD_Menu": 5,
+    "AD_Window": 1,
+    "AD_Tab": 0,
+    "AD_Field": 0
+   },
+   "bytes": 349356
+  },
+  {
+   "code": "de_DE",
+   "dir": "ltr",
+   "native": "Deutsch",
+   "file": "i18n/de_DE.json",
+   "sources": [
+    "github.com/bxservice/tbayen.translations@c88fe319 de_DE (T. Bayen / Team Germany)"
+   ],
+   "counts": {
+    "AD_Menu": 46,
+    "AD_Window": 351,
+    "AD_Tab": 1064,
+    "AD_Field": 163,
+    "AD_Element": 3607,
+    "AD_Process": 433,
+    "AD_Form": 44,
+    "AD_Ref_List": 1272,
+    "AD_Message": 2021
+   },
+   "machineCounts": {
+    "AD_Menu": 5,
+    "AD_Window": 1,
+    "AD_Tab": 0,
+    "AD_Field": 52
+   },
+   "bytes": 327636
+  },
+  {
+   "code": "ar",
+   "dir": "rtl",
+   "native": "العربية",
+   "file": "i18n/ar.json",
+   "sources": [
+    "github.com/djoudi/ar_DZ@d1c2c3dc ar_DZ (A. Djoudi, work in progress, 2020)",
+    "sourceforge.net/projects/adempiere/files/Language Packs/Arabic/Beta Release by Najeh/arabic_language_By_Najeh.rar ar_TN (2008-02-05)"
+   ],
+   "counts": {
+    "AD_Menu": 190,
+    "AD_Window": 0,
+    "AD_Tab": 0,
+    "AD_Field": 0,
+    "AD_Element": 1228,
+    "AD_Process": 0,
+    "AD_Form": 9,
+    "AD_Ref_List": 0,
+    "AD_Message": 575
+   },
+   "machineCounts": {
+    "AD_Menu": 69,
+    "AD_Window": 56,
+    "AD_Tab": 75,
+    "AD_Field": 560
+   },
+   "bytes": 117371
+  },
+  {
+   "code": "zh_CN",
+   "dir": "ltr",
+   "native": "中文 (简体)",
+   "file": "i18n/zh_CN.json",
+   "sources": [
+    "sourceforge.net/projects/adempiere/files/Language Packs/Chinese/Release 352 Packages/zh_CN.zip (ADempiere 3.5.2, 2008-08-20)"
+   ],
+   "counts": {
+    "AD_Menu": 393,
+    "AD_Window": 250,
+    "AD_Tab": 800,
+    "AD_Field": 44,
+    "AD_Element": 1481,
+    "AD_Process": 119,
+    "AD_Form": 26,
+    "AD_Ref_List": 430,
+    "AD_Message": 918
+   },
+   "machineCounts": {
+    "AD_Menu": 26,
+    "AD_Window": 29,
+    "AD_Tab": 26,
+    "AD_Field": 329
+   },
+   "bytes": 141962
+  },
+  {
+   "code": "ja_JP",
+   "dir": "ltr",
+   "native": "日本語",
+   "file": "i18n/ja_JP.json",
+   "sources": [
+    "github.com/JPiere/japanese-translation@b5547855 ja_JP (H. Hagiwara / JPiere)"
+   ],
+   "counts": {
+    "AD_Menu": 43,
+    "AD_Window": 289,
+    "AD_Tab": 846,
+    "AD_Field": 104,
+    "AD_Element": 2800,
+    "AD_Process": 290,
+    "AD_Form": 26,
+    "AD_Ref_List": 856,
+    "AD_Message": 918
+   },
+   "machineCounts": {
+    "AD_Menu": 15,
+    "AD_Window": 15,
+    "AD_Tab": 19,
+    "AD_Field": 133
+   },
+   "bytes": 227761
+  },
+  {
+   "code": "ms_MY",
+   "dir": "ltr",
+   "native": "Bahasa Melayu",
+   "file": "i18n/ms_MY.json",
+   "sources": [
+    "sourceforge.net/projects/adempiere/files/Language Packs/Bahasa Malaysia/First Bahasa Release - Beta/ms_MY.zip (2008-11-25)"
+   ],
+   "counts": {
+    "AD_Menu": 143,
+    "AD_Window": 80,
+    "AD_Tab": 140,
+    "AD_Field": 14,
+    "AD_Element": 233,
+    "AD_Process": 62,
+    "AD_Form": 16,
+    "AD_Ref_List": 616,
+    "AD_Message": 118
+   },
+   "machineCounts": {
+    "AD_Menu": 68,
+    "AD_Window": 50,
+    "AD_Tab": 70,
+    "AD_Field": 5740
+   },
+   "bytes": 157187
+  },
+  {
+   "code": "th_TH",
+   "dir": "ltr",
+   "native": "ไทย",
+   "file": "i18n/th_TH.json",
+   "sources": [
+    "sourceforge.net/projects/adempiere/files/Language Packs/Thailand/ADempiere Thai Language/th_TH.350.zip (Saeree/Grandlinux, 2008-06-16)"
+   ],
+   "counts": {
+    "AD_Menu": 338,
+    "AD_Window": 188,
+    "AD_Tab": 521,
+    "AD_Field": 16,
+    "AD_Element": 1866,
+    "AD_Process": 201,
+    "AD_Form": 16,
+    "AD_Ref_List": 515,
+    "AD_Message": 802
+   },
+   "machineCounts": {
+    "AD_Menu": 37,
+    "AD_Window": 32,
+    "AD_Tab": 29,
+    "AD_Field": 236
+   },
+   "bytes": 275655
+  }
+ ]
+}

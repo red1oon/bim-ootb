@@ -419,6 +419,11 @@
       this._ensureSections(tree);
       // W-UX-6: refresh the adjacency map for this paint when the lens is ON (cheap; reads window.swXEdges).
       this._adjMap = this._adjLens ? this._buildAdjMap() : null;
+      // §NET-AUDIT / W-XEDGE-LENS E5 (2026-09-26): an ARC leaf click resolves guid→featureId and selects the NUMBER
+      // (window.Bonsai.select), but the adjacency map and the bom-graph rows are keyed by GUID — so the lens matched
+      // nothing (adjRows=0 of 44 expected, no degree badge). Read the selection in the rows' own key.
+      { const sid = window.Bonsai._selId, g = (typeof sid === 'number' && window.__arcGuidByFid) ? window.__arcGuidByFid[sid] : null;
+        this._selKey = g != null ? g : sid; }
       const ops = (window.Bonsai.oplog && window.Bonsai.oplog.db) ? window.Bonsai.oplog._geomOps() : [];
       const flatCats = this._categories.filter(c => !c.tree);
       const treeCats = this._categories.filter(c => c.tree);
@@ -600,12 +605,12 @@
         const isLeaf = n.kind === 'element';
         if (isLeaf) shown++;
         const ncol = this._collapsed['bn|' + n.id];
-        const active = window.Bonsai._selId === n.id;      // adjacency-lens degree badge below reads this
+        const active = this._selKey === n.id;      // adjacency-lens degree badge below reads this (guid-resolved, see _paint)
         const pad = 16 + depth * 14;
         // W-UX-4: a DISCIPLINE node (n.disc) is a WALKER entry point — render a ▶ walk affordance + carry data-disc.
         // MODELLER_MASTER.md row 17: the synthetic disc:'__ALL__' row (modeller.html §DISCWALK-ALL) walks EVERY
         // discipline — its tooltip must say so; ordinary disc rows keep the singular.
-        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL disciplines' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
+        const walkGlyph = n.disc ? ' <span class="bn-walk" title="' + (n.disc === '__ALL__' ? 'Walk ALL services' : 'Walk this discipline') + '" style="color:#4fc3f7">▶</span>' : '';
         // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1/§2.5 — the room node IS the grab target (IfcSpace carries no
         // rendered mesh, so there is nothing to pick in the 3D canvas; confirmed by grep — no GEOM_INSERT/
         // arc_editable seed ever runs for ifc_class='IfcSpace'). data-room carries the real guid the click
@@ -614,8 +619,8 @@
         // W-UX-6: adjacency lens — a NEIGHBOUR of the selected element gets a per-EDGE-TYPE badge (⇄ abuts ·
         // ⌂ fills · ⧉ aggregates) + amber tint; the selected element shows its per-kind degree + its element↔
         // datum relations (⊥ anchored · ↕ spans). All read the derived map (window.swXEdges), never a baked table.
-        const nbrMap = (this._adjLens && isLeaf && this._adjMap) ? this._adjMap[window.Bonsai._selId] : null;
-        const nbrKinds = (nbrMap && n.id !== window.Bonsai._selId) ? nbrMap.get(n.id) : null;
+        const nbrMap = (this._adjLens && isLeaf && this._adjMap) ? this._adjMap[this._selKey] : null;
+        const nbrKinds = (nbrMap && n.id !== this._selKey) ? nbrMap.get(n.id) : null;
         const isNbr = !!nbrKinds;
         let adjBadge = '';
         if (isNbr) {

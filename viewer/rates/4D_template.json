@@ -15,8 +15,10 @@
     "_what": "The working calendar the programme is authored against. Named here because it was previously implicit: rates.js SHIFT_HOURS alone carried it, and nothing stated the week.",
     "hours_per_shift": 24,
     "days_per_week": 7,
+    "project_start": "2026-01-01",
     "_hours_per_shift_why": "24 is the STANDING USER RULING recorded at rates.js SHIFT_HOURS (2026-08-13): 'our default, import and JSON setting can import as we align to standard model'. Carried forward verbatim, NOT changed here — this file only makes it visible and editable. A standard-model import sets 8.",
     "_days_per_week_why": "7 matches what the engine actually does today (schedule_gate.js applies no week calendar; §CREW_DAY logs '24/7 calendar unchanged'). Stated so a 5-day working week becomes an edit rather than a rewrite.",
+    "_project_start_why": "§FUTURE-5A row B2 (2026-08-27 inventory, applied 2026-09-02, queue item B-3). The literal '2026-01-01' epoch schedule_author.js materializeZones/the §GANTT_SCHEDULE_STALE_REGEN self-heal path anchor a generated programme to when nothing else supplies a start. Extracted verbatim, not changed. NOT the same call site as the live UI's 'Generate Gantt' path (time_machine.js todayStart = new Date().toISOString().slice(0,10)) — that one is deliberately today's real date, out of this key's scope. 14 more '2026-01-01' sites exist in schedule_author_ui.js/schedule_diff.js/proj_control.js/proj_fold.js — outside this audit's scope (schedule_author.js/schedule_gate.js/time_machine.js scheduling call sites only), counted but not touched.",
     "holidays": []
   },
 
@@ -38,7 +40,9 @@
     "rule": "at no instant may more than max_crews[t] elements of trade t be in progress, for every trade t",
     "applies_to": "the FINAL emitted times, not only the times at first placement",
     "_why_final_and_not_first": "MEASURED on HHS_Office_Federated (2026-08-25, A/B with the repair loop disabled): schedule_gate.js enforces the cap correctly inside claimCrew at placement — every trade sits exactly at or under its cap. The §DEQ_REPAIR sweep then moves elements forward to satisfy geometry gates by writing o.start/o.end DIRECTLY, without re-claiming a crew slot. Result: CARPENTER peaks at 8 simultaneous crews against max_crews=2, a 4.0x breach, while all 7 other trades stay legal. Disabling the repair loop returns CARPENTER to 2. The span is 46.9 days either way — the breach does not shorten the programme, it just makes it unbuildable.",
-    "_witness": "witness_4d_capacity_honoured.js — sweeps the emitted start/end times per trade and asserts peak concurrency <= max_crews."
+    "_witness": "witness_4d_capacity_honoured.js — sweeps the emitted start/end times per trade and asserts peak concurrency <= max_crews.",
+    "_level_scan_max_days": 100000,
+    "_level_scan_max_days_why": "§FUTURE-5A row B6 (applied 2026-09-02, queue item B-3). instantiateTemplate's crew-levelling search guard (`while (!fits(t, at) && guard++ < LEVEL_SCAN_MAX) at++`) — how many days it will scan forward looking for a free crew slot before giving up. Extracted verbatim, not changed. ⚠ Separate finding #1 in §FUTURE-5A (NOT fixed here, PRIME-RULE-relevant but out of this refactor's scope): guard exhaustion is committed as if it were a successful placement, with no way to tell the two apart in `capacity_levelled`'s own report — moving the number does not touch that bug."
   },
 
   "phases": [

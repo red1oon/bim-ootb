@@ -32,6 +32,11 @@ const VB = process.env.VIEWER_B || path.join(ROOT, 'viewer');
 // upstream of them). So the BEFORE run is the correct shared input for both sides, and taking it
 // from A's key is what makes A and B provably see byte-identical elements.
 const CACHE = require(path.join(VA, '..', 'scripts', 'cache_4d_run.js'));
+// §CACHE_PLAYED_LAYER — layerOf is a PURE selector over the persisted run object (no viewer state in
+// it), so it is taken from THIS checkout, not from VIEWER_A: VIEWER_A may deliberately be an older
+// tree that predates the two-layer cache, and a missing selector must not silently become "read
+// whatever key happens to be there".
+const SEL = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
 
 const SGA = require(path.join(VA, 'schedule_gate.js'));
 const SGB = require(path.join(VB, 'schedule_gate.js'));
@@ -77,9 +82,30 @@ function quietCount(fn) {
 
 let anyDelta = 0, rows = [];
 for (const bld of BUILDINGS) {
-  const r = CACHE.read(bld);
+  // The cached run keyed on VIEWER_A is the preferred input (see the note on CACHE above). If that
+  // checkout predates §CACHE_PLAYED_LAYER its run carries no played layer — then, and only then,
+  // this falls back to THIS checkout's cache key. That is still ONE run feeding BOTH sides, so the
+  // byte-identical-input invariant holds; what it must never do is silently read the other LAYER.
+  let r = CACHE.read(bld), keyedOn = 'VIEWER_A';
+  if (r && !r.play) { const r2 = SEL.read(bld); if (r2 && r2.play) { r = r2; keyedOn = 'this checkout (VIEWER_A cache predates §CACHE_PLAYED_LAYER)'; } }
+  if (!r && SEL.read(bld)) { r = SEL.read(bld); keyedOn = 'this checkout (no VIEWER_A-keyed cache)'; }
   if (!r) { console.log('§STAIR_POOL CACHE_MISS ' + bld + ' — run: node scripts/cache_4d_run.js ' + bld); continue; }
-  const els = remapEls(r.els), sched = remapSched(r.sched);
+  console.log('§STAIR_POOL_CACHE ' + bld.padEnd(22) + 'keyedOn=' + keyedOn + ' dir=' + r.dir);
+  // §CACHE_PLAYED_LAYER (2026-09-02, queue item A-9) — the layer is SELECTED and NAMED, never
+  // implicit. This probe asks "does the audit see a stair flight as support", which is a question
+  // about the times the schedule actually presents; the PLAYED layer (kernel_ops) is what the
+  // viewer's own _buildXraySupportCache audits, so that is the default. `LAYER=display` re-points
+  // it at materializeZones' unread displaySchedule deliberately, and it still says so on every line.
+  const L = SEL.layerOf(r);
+  console.log('§STAIR_POOL_LAYER ' + bld.padEnd(22) + 'layer=' + L.id + ' key=' + L.key + ' — ' + L.desc);
+  if (L.missing) {
+    console.log('§STAIR_POOL ' + bld.padEnd(22) + 'INCONCLUSIVE — layer=' + L.id + ' ABSENT from this cache ' +
+      '(predates §CACHE_PLAYED_LAYER). Rebuild: node scripts/cache_4d_run.js --force ' + bld +
+      '. NOT falling back to the other layer: that substitution is the defect A-9 removed.');
+    continue;
+  }
+  const LAY = L.id;
+  const els = remapEls(r.els), sched = remapSched(L.map);
 
   // VACUITY GUARD — does auditFloating judge ANYTHING on this input? Break the schedule for every
   // element (start everything a day before the earliest start) and demand a non-zero floating
@@ -91,7 +117,7 @@ for (const bld of BUILDINGS) {
   for (const g of Object.keys(sched)) shake[g] = { start: t0 - 86400000, end: sched[g].end };
   const shakeN = quietCount(() => SGA.auditFloating(els, shake, null, null)).v;
   if (shakeN === 0) {
-    console.log('§STAIR_POOL ' + bld.padEnd(22) + 'VACUOUS — auditFloating returned 0 on a schedule where ' +
+    console.log('§STAIR_POOL ' + bld.padEnd(22) + 'VACUOUS layer=' + LAY + ' — auditFloating returned 0 on a schedule where ' +
       'EVERY element starts before its supports finish. It is judging nothing (field-name mismatch?); no verdict is possible.');
     continue;
   }
@@ -157,7 +183,7 @@ for (const bld of BUILDINGS) {
   }
 
   const verdict = flights.length === 0 ? 'VACUOUS' : (A.v === B.v && newlySeen.length === 0 ? 'NO-OP' : 'CHANGED');
-  console.log('§STAIR_POOL ' + bld.padEnd(22) + verdict.padEnd(9) +
+  console.log('§STAIR_POOL ' + bld.padEnd(22) + verdict.padEnd(9) + 'layer=' + LAY + ' ' +
     'stairFlights=' + String(flights.length).padEnd(6) + 'seq=' + JSON.stringify(flightSeqs).padEnd(6) +
     ' floating ' + A.v + ' -> ' + B.v + ' (delta ' + (B.v - A.v >= 0 ? '+' : '') + (B.v - A.v) + ')' +
     ' newlyVisible=' + newlySeen.length + ' nowClean=' + nowClean.length +
@@ -172,6 +198,6 @@ for (const bld of BUILDINGS) {
 
 const judged = rows.filter(r => r.flights > 0).length;
 const regress = rows.filter(r => r.nowClean > 0).length;
-console.log('§STAIR_POOL VERDICT=' + (judged === 0 ? 'INCONCLUSIVE — no building in this run has a stair flight'
+console.log('§STAIR_POOL VERDICT layer=' + (process.env.LAYER || 'played') + ' =' + (judged === 0 ? 'INCONCLUSIVE — no building in this run has a stair flight'
   : (regress ? 'REGRESSION on ' + regress + ' building(s)' : (anyDelta ? 'CHANGED on ' + anyDelta + '/' + judged + ' buildings with flights' : 'NO-OP across ' + judged + ' buildings with flights'))));
 process.exit(regress ? 1 : 0);

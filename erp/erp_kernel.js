@@ -186,9 +186,18 @@ function applyOne(db, op, state) {
 }
 
 // ── Kernel.apply — apply ops[] to projection AND commit a RICH op per op ─────
+function hasBranchCol(db) { return query(db, 'PRAGMA table_info(kernel_ops)').some(function (c) { return c.name === 'branch_id'; }); }
 function apply(db, ops, ctx) {
   initProjection(db);
   ctx = ctx || {}; var actor = ctx.actor || 'local'; var ts = ctx.baseTs || 1000;
+  // W-MFG-WHATIF: a speculative branch. The ops are applied to a SCRATCH projection (a clone of live) and committed to the live log TAGGED with branch_id (BLUE FUTURE); the live projection is never written.
+  // No ctx.branch => byte-identical to before.
+  var branch = ctx.branch != null ? String(ctx.branch) : null, target = db;
+  if (branch) {
+    if (!ctx.scratch) throw new Error('branch-needs-scratch');
+    if (!hasBranchCol(db)) throw new Error('branch-unsupported: kernel_ops has no branch_id column');
+    initProjection(ctx.scratch); target = ctx.scratch;
+  }
   // global per-device order: continue numbering across apply() calls so op_uuid/timestamp are
   // unique within a device's log (was implicit via the old AUTOINCREMENT rowid).
   var seqBase = query(db, 'SELECT COUNT(*) AS c FROM kernel_ops')[0].c;
@@ -204,14 +213,16 @@ function apply(db, ops, ctx) {
     // so edgeMint/mintOp never run twice and the replay path re-reads, never re-computes.
     if (op.uuid == null) op.uuid = edgeMint(op);
     if (op.op_uuid == null) op.op_uuid = mintOp(op, gseq);
-    var res = applyOne(db, op, state);
+    var res = applyOne(target, op, state);
     // RICH op (§0.6 keystone): payload (now carrying the recorded uuid) + actor + before/after + lineage GUIDs.
     var rich = { payload: op, actor: actor, before: res.before, after: res.after, lineage: { input_guids: res.input_guids, output_guid: res.output_guid } };
     // T1 (W-T1-ATTRIB, FABLE5_WRAPUP §3): employee attribution rides the CONTENT-SIGNED parameters as
     // audit metadata — user_tag stays the device actor (owner-gate grain unchanged), the sig stays the
     // device key. Conditional: absent ctx.attrib → byte-identical rich op (back-compat, default-off).
     if (ctx.attrib) rich.attrib = ctx.attrib;
-    db.run('INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid, user_tag) VALUES (?,?,?,?,?,?,?)',
+    if (branch) db.run('INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid, user_tag, branch_id) VALUES (?,?,?,?,?,?,?,?)',
+      [op.op_uuid, ts + gseq, op.op_type, JSON.stringify(rich), JSON.stringify(res.input_guids), res.output_guid, actor, branch]);
+    else db.run('INSERT INTO kernel_ops (op_uuid, timestamp, op_type, parameters, input_guids, output_guid, user_tag) VALUES (?,?,?,?,?,?,?)',
       [op.op_uuid, ts + gseq, op.op_type, JSON.stringify(rich), JSON.stringify(res.input_guids), res.output_guid, actor]);
     committed++; ids.push(res.output_guid);
   });
@@ -221,9 +232,12 @@ function apply(db, ops, ctx) {
 // ── Kernel.replay — rebuild the projection from kernel_ops ALONE (event sourcing) ──
 // Re-applies each committed op's STORED payload (resolved ids) into a fresh projection.
 // Because we re-apply stored ops (not re-evaluate rules), old effects are FROZEN (§18.8).
-function replay(srcDbWithLog, freshDb) {
+function replay(srcDbWithLog, freshDb, opts) {
   initProjection(freshDb);
-  var log = query(srcDbWithLog, 'SELECT op_type, parameters FROM kernel_ops WHERE undone=0 ORDER BY rowid');
+  // OFFICIAL timeline only (branch_id IS NULL) - a speculative BLUE FUTURE op must never leak into a rebuild (W-MFG-WHATIF). opts.branch adds that one branch (the blue view). Logs without the column replay as before.
+  var bf = '', args = [];
+  if (hasBranchCol(srcDbWithLog)) { bf = ' AND (branch_id IS NULL' + (opts && opts.branch != null ? ' OR branch_id = ?' : '') + ')'; if (opts && opts.branch != null) args.push(String(opts.branch)); }
+  var log = query(srcDbWithLog, 'SELECT op_type, parameters FROM kernel_ops WHERE undone=0' + bf + ' ORDER BY rowid', args);
   var state = { currentDoc: null };
   var n = 0;
   log.forEach(function (row) {
@@ -298,7 +312,7 @@ function dispatch(db, cellCtx, doc) {
     return { ok: false, stage: 'violation', reason: 'out-of-log-write', blocked: true };
   }
   // 4) Kernel.apply — the kernel (not the handler) owns the write.
-  var res = apply(db, ops, { actor: cellCtx.actor, baseTs: cellCtx.baseTs });
+  var res = apply(db, ops, { actor: cellCtx.actor, baseTs: cellCtx.baseTs, branch: cellCtx.branch, scratch: cellCtx.scratch });
   return { ok: true, to: to, ops: ops, applied: res.applied, committed: res.committed, ids: res.ids };
 }
 

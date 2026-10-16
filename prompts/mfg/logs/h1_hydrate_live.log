@@ -1,0 +1,10 @@
+  §PLG-LIVE L0 before install: no bundle, no token PASS
+§PLG-LIVE-1 after start: {"state":"ACTIVE","token":true} url=http://localhost:35063/erp/plugins/wip_token.mjs
+  §PLG-LIVE L1 started through the page registry: ACTIVE and its token {Production.WIP} is contributed PASS
+§PLG-LIVE-2 after RELOAD (restore from IndexedDB): {"state":"ACTIVE","token":true}
+  §PLG-LIVE L2 a plain page reload restores the ACTIVE bundle at BOOT (no pill opened) and its token is live again PASS
+  §PLG-LIVE L3 STOP removes the token automatically (no hand-written cleanup beyond the bundle's own) PASS
+§PLG-LIVE-4 after 2nd reload (was STOPPED): {"state":"INSTALLED","token":false,"resolved":null}
+  §PLG-LIVE L4 a STOPPED bundle is installed but NOT re-activated by the next reload (no token) PASS
+  §PLG-LIVE L5 zero page errors across 3 loads PASS
+§PLG-LIVE-VERDICT PASS failed=0

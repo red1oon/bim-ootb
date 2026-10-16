@@ -1,0 +1,125 @@
+§LIBERO-LOAD seed + patches statements ok=3211 failed=0 sqljs=real break=mrpdelete
+§AD_PARSER_LOADED v1
+§LIBERO-L0 baseline hash=b0e24b8b bytes=382 menuRows=0 rows: pp_order=18 pp_order_bom=2 pp_order_bomline=4 pp_mrp=56
+  §LIBERO L0b base carries no EE01 menu rows (upstream ships them disabled) and no pp_order hooks PASS
+§LIBERO-L1 after START: state=STARTING policy=lazy hash=3f81af6d (baseline b0e24b8b) hasPending(window 53009)=true hasPending(table pp_order)=true
+§LIBERO-L1b STARTING: code registries identical to baseline=true | menu rows staged at START (2Pack part)=4 so the lazy window trigger is reachable before any code ran
+  §LIBERO L1 started LAZY: STARTING, NO code contributed (models/validators/doc classes == baseline), the 4 menu rows staged (the trigger is reachable), pending on window 53009 and table pp_order PASS
+§LIBERO-L2 demand window 53009 activated=["org.idempiere.mfg"] state=ACTIVE menu path(leaf->root)=Manufacturing Order < Discreet Manufacturing < Production Management < Manufacturing Management hooks: model pp_order=true validators=["Libero.MPPMRP.PP_Order"]
+  §LIBERO L2 the first consumer (window 53009) ACTIVATED the bundle: state ACTIVE, the 4-row menu path reaches the window, model + MRP validators live PASS
+§LIBERO-SEED-DELTA order=8000 pp_order_bom.bomuse source=A seed=M | source copies BOMUse from the template (MPPOrderBOM ctor :70-93); the 2008 seed holds M
+§LIBERO-SEED-DELTA order=8000 pp_order_bom.documentno source=Fertilizer#50 seed=50003 | source setDocumentNo(bom.getValue()) (MPPOrderBOM ctor :89); the 2008 seed holds a sequence number
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtydelivered source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyentered source=0 seed=1 | source setQtyEntered(getQtyEntered()) writes 0 for an unset value (beforeSave :163), overriding the DB DEFAULT 1; the 2008 seed holds 1
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtypost source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyreject source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyrequiered source=5050.51 seed=5050.50505051 | source rounds QtyRequired to the UOM StdPrecision (MPPOrderBOMLine.setQtyRequired :330, beforeSave :163-168); the 2008 seed holds 8 dp
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyreserved source=5050.51 seed=0 | source reserveStock() books QtyReserved = QtyRequired - Reserved - Delivered for a STOCKED product (MPPOrderBOMLine :519-543, called from beforeSave :171-175); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyscrap source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtydelivered source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyentered source=0 seed=1 | source setQtyEntered(getQtyEntered()) writes 0 for an unset value (beforeSave :163), overriding the DB DEFAULT 1; the 2008 seed holds 1
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtypost source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyreject source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyreserved source=100 seed=0 | source reserveStock() books QtyReserved = QtyRequired - Reserved - Delivered for a STOCKED product (MPPOrderBOMLine :519-543, called from beforeSave :171-175); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8000 pp_order_bomline.qtyscrap source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-L3 order 8000: bom=1 lines=2 (legacy 1/2) | lines: 10:50008:5050.51CO 20:50013:100PK | rows pp_order=18 pp_order_bom=2 pp_order_bomline=4 pp_mrp=56 -> pp_order=19 pp_order_bom=3 pp_order_bomline=6 pp_mrp=59
+§LIBERO-SEED-DELTA order=8000 pp_order_workflow.documentno source=1000000 seed=50000 | PO.saveNew assigns DocumentNo from the table sequence at save (PO.java :3563-3605): the value is sequence state, not comparable to the 2008 number; asserted non-empty below (L3d)
+§LIBERO-SEED-DELTA order=8000 pp_order_workflow.validateworkflow source=null seed=N | peer ctor does not copy the ValidateWorkflow button (MPPOrderWorkflow :132 comment) and the column has no DB DEFAULT; the 2008 seed holds N
+§LIBERO-SEED-DELTA order=8000 pp_order_workflow.yield source=100 seed=null | no Java setter; the physical column DEFAULT 100 applies (reference Postgres information_schema, mfg.sql ad_ddl_default); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_order_node.yield source=100 seed=null | no Java setter; physical DEFAULT 100 applies (reference Postgres); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_order_node.docstatus source=DR seed=null | MPPOrderNode ctor setDocStatus(Drafted) :207; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_order_node.durationrequiered source=3 seed=300 | DefaultRoutingServiceImpl.estimateWorkingTime :74-80: Duration 3 x ceil(100 / UnitsCycles 200)=1 cycle = 3; the 2008 seed holds Duration x Qty = 300
+§LIBERO-SEED-DELTA order=8000 pp_order_node.overlapunits source=0 seed=null | setOverlapUnits(wfNode.getOverlapUnits()) writes the int 0 (MPPOrderNode :172); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_order_node.qtyrequiered source=100 seed=null | setQtyOrdered -> setQtyRequired(qtyOrdered) :263-269; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_order_node.unitscycles source=200 seed=null | setUnitsCycles(wfNode.getUnitsCycles().intValueExact()) :171; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8000 pp_mrp.datefinishschedule source=2008-08-17 00:00:00 seed=2008-08-16 00:00:00 | source copies o.getDateFinishSchedule() (:680); the 2008 seed supply row holds DateStartSchedule
+§LIBERO-SEED-DELTA order=8000 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:35 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8000 pp_mrp.value source=MRP seed=50047 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-SEED-DELTA order=8000 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:27 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8000 pp_mrp.qty source=5050.51 seed=5050.50505051 | MRP demand qty = QtyRequired - QtyDelivered (MPPMRP.PP_Order_BOMLine :996), so it follows the QtyRequired UOM-precision delta
+§LIBERO-SEED-DELTA order=8000 pp_mrp.value source=MRP seed=50045 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-SEED-DELTA order=8000 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:30 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8000 pp_mrp.value source=MRP seed=50046 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-SEED-DELTA order=8001 pp_order_bom.bomuse source=A seed=M | source copies BOMUse from the template (MPPOrderBOM ctor :70-93); the 2008 seed holds M
+§LIBERO-SEED-DELTA order=8001 pp_order_bom.documentno source=Fertilizer#70 seed=50004 | source setDocumentNo(bom.getValue()) (MPPOrderBOM ctor :89); the 2008 seed holds a sequence number
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtydelivered source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyentered source=0 seed=1 | source setQtyEntered(getQtyEntered()) writes 0 for an unset value (beforeSave :163), overriding the DB DEFAULT 1; the 2008 seed holds 1
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtypost source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyreject source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyrequiered source=7070.71 seed=7070.70707071 | source rounds QtyRequired to the UOM StdPrecision (MPPOrderBOMLine.setQtyRequired :330, beforeSave :163-168); the 2008 seed holds 8 dp
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyreserved source=7070.71 seed=0 | source reserveStock() books QtyReserved = QtyRequired - Reserved - Delivered for a STOCKED product (MPPOrderBOMLine :519-543, called from beforeSave :171-175); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyscrap source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtydelivered source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyentered source=0 seed=1 | source setQtyEntered(getQtyEntered()) writes 0 for an unset value (beforeSave :163), overriding the DB DEFAULT 1; the 2008 seed holds 1
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtypost source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyreject source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyreserved source=100 seed=0 | source reserveStock() books QtyReserved = QtyRequired - Reserved - Delivered for a STOCKED product (MPPOrderBOMLine :519-543, called from beforeSave :171-175); the 2008 seed holds 0
+§LIBERO-SEED-DELTA order=8001 pp_order_bomline.qtyscrap source=null seed=0 | an unset quantity stays NULL: the X_ ctor defaults are commented out in the source and the reference Postgres has no column DEFAULT (information_schema, 2026-10-15); the 2008 seed holds 0
+§LIBERO-L3 order 8001: bom=1 lines=2 (legacy 1/2) | lines: 10:50008:7070.71CO 20:50014:100PK | rows pp_order=19 pp_order_bom=3 pp_order_bomline=6 pp_mrp=59 -> pp_order=20 pp_order_bom=4 pp_order_bomline=8 pp_mrp=62
+§LIBERO-SEED-DELTA order=8001 pp_order_workflow.documentno source=1000001 seed=50001 | PO.saveNew assigns DocumentNo from the table sequence at save (PO.java :3563-3605): the value is sequence state, not comparable to the 2008 number; asserted non-empty below (L3d)
+§LIBERO-SEED-DELTA order=8001 pp_order_workflow.validateworkflow source=null seed=N | peer ctor does not copy the ValidateWorkflow button (MPPOrderWorkflow :132 comment) and the column has no DB DEFAULT; the 2008 seed holds N
+§LIBERO-SEED-DELTA order=8001 pp_order_workflow.yield source=100 seed=null | no Java setter; the physical column DEFAULT 100 applies (reference Postgres information_schema, mfg.sql ad_ddl_default); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_order_node.yield source=100 seed=null | no Java setter; physical DEFAULT 100 applies (reference Postgres); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_order_node.docstatus source=DR seed=null | MPPOrderNode ctor setDocStatus(Drafted) :207; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_order_node.durationrequiered source=3 seed=300 | DefaultRoutingServiceImpl.estimateWorkingTime :74-80: Duration 3 x ceil(100 / UnitsCycles 200)=1 cycle = 3; the 2008 seed holds Duration x Qty = 300
+§LIBERO-SEED-DELTA order=8001 pp_order_node.overlapunits source=0 seed=null | setOverlapUnits(wfNode.getOverlapUnits()) writes the int 0 (MPPOrderNode :172); the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_order_node.qtyrequiered source=100 seed=null | setQtyOrdered -> setQtyRequired(qtyOrdered) :263-269; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_order_node.unitscycles source=200 seed=null | setUnitsCycles(wfNode.getUnitsCycles().intValueExact()) :171; the 2008 seed holds NULL
+§LIBERO-SEED-DELTA order=8001 pp_mrp.datefinishschedule source=2008-08-17 00:00:00 seed=2008-08-16 00:00:00 | source copies o.getDateFinishSchedule() (:680); the 2008 seed supply row holds DateStartSchedule
+§LIBERO-SEED-DELTA order=8001 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:46 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8001 pp_mrp.value source=MRP seed=50050 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-SEED-DELTA order=8001 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:41 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8001 pp_mrp.qty source=7070.71 seed=7070.70707071 | MRP demand qty = QtyRequired - QtyDelivered (MPPMRP.PP_Order_BOMLine :996), so it follows the QtyRequired UOM-precision delta
+§LIBERO-SEED-DELTA order=8001 pp_mrp.value source=MRP seed=50048 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-SEED-DELTA order=8001 pp_mrp.datesimulation source=2026-10-15 09:00:00 seed=2008-09-25 18:02:43 | source stamps the transaction clock (:642); wall time is not replayable
+§LIBERO-SEED-DELTA order=8001 pp_mrp.value source=MRP seed=50049 | source MPPMRP ctor setValue("MRP") :640; the 2008 seed holds the sequence number
+§LIBERO-L3 compared fields=368 declared-deltas-seen=pp_mrp.datefinishschedule,pp_mrp.datesimulation,pp_mrp.qty,pp_mrp.value,pp_order_bom.bomuse,pp_order_bom.documentno,pp_order_bomline.qtydelivered,pp_order_bomline.qtyentered,pp_order_bomline.qtypost,pp_order_bomline.qtyreject,pp_order_bomline.qtyrequiered,pp_order_bomline.qtyreserved,pp_order_bomline.qtyscrap,pp_order_node.docstatus,pp_order_node.durationrequiered,pp_order_node.overlapunits,pp_order_node.qtyrequiered,pp_order_node.unitscycles,pp_order_node.yield,pp_order_workflow.documentno,pp_order_workflow.validateworkflow,pp_order_workflow.yield undeclared=0
+  §LIBERO L3 explosion: both legacy orders re-created through ModelLayer.save -> bom 1 + lines 2 each; every field equals the legacy row or is one of the declared source-vs-seed deltas; population not empty PASS
+  §LIBERO L3d routing snapshot: 1 PP_Order_Workflow + 1 PP_Order_Node per order, workflow start node = the order node of AD_WF_Node 50092, DocumentNo assigned from the sequence (1000000) PASS
+  §LIBERO L3b the declared deltas are the MEASURED ones (qtyrequiered, bomuse, qtyentered seen on the lines/header) - a delta that never occurs is not a delta PASS
+  §LIBERO L3c spot value from the Java formula: 100 x 50 / (1-1%) = 5050.50505051 -> UOM kilogram precision 2 -> 5050.51 (source), Each precision 0 line -> 100 PASS
+§LIBERO-L3s routing fixture: ok=true err= nodes=990101:dur5:cyc3:req20:setupreq7,990102:dur2:cyc0:req20:setupreq0 nodenext=[[990101,990102,9900019]] nodeproduct.qty=[1] assets=1 wf.startnode=9900018
+  §LIBERO L3s routing mechanics: the expired node is skipped (2 of 3), durationrequiered = 5 x ceil(10/3)=4 -> 20 and 2 x qty 10 (UnitsCycles 0 -> cycles = qty) -> 20, SetupTimeRequired = SetupTime, transition resolved to the ORDER node ids, workflow start node = node 10, node product Qty 0 + subcontracting -> 1, node asset copied PASS
+§LIBERO-L5 badrouting: ok=false error="Routing is not valid. Please validate it first - FIX" nothing-written=true
+  §LIBERO L5f routing not validated (AD_Workflow.IsValid=N) -> refused "Routing is not valid", nothing written (explosion :1054-1057) PASS
+§LIBERO-L5 exprouting: ok=false error="RoutingExpired: AD_Workflow 990100 not valid at 2008-08-16 00:00:00" nothing-written=true
+  §LIBERO L5g routing expired at the order start -> refused RoutingExpired, nothing written (explosion :1095-1097) PASS
+§LIBERO-L5 norouting: ok=false error="Routing (AD_Workflow null) not found" nothing-written=true
+  §LIBERO L5h an order with NO routing is refused (Java NPE on a null workflow; the port names it) PASS
+§LIBERO-L4e re-explosion after qty 10 -> 30: ok=true err= nodes=[{"durationrequiered":50,"qtyrequiered":30},{"durationrequiered":60,"qtyrequiered":30}] boms=1 line10=[{"qtyrequiered":1515.15}]
+  §LIBERO L4e QtyEntered change on an existing order deletes and rebuilds BOM + routing: 1 BOM header, node durations 5 x ceil(30/3)=10 -> 50 and 2 x 30 = 60, line qty 30 x 50/(1-1%)... (UOM precision) PASS
+§LIBERO-L4 MRP of new order 8000: [{"typemrp":"S","qty":100,"datefinishschedule":"2008-08-17 00:00:00"},{"typemrp":"D","qty":5050.51,"datefinishschedule":"2008-08-17 00:00:00"},{"typemrp":"D","qty":100,"datefinishschedule":"2008-08-17 00:00:00"}] legacy: [{"typemrp":"S","qty":100,"datefinishschedule":"2008-08-16 00:00:00"},{"typemrp":"D","qty":5050.50505051,"datefinishschedule":"2008-08-17 00:00:00"},{"typemrp":"D","qty":100,"datefinishschedule":"2008-08-17 00:00:00"}]
+  §LIBERO L4a MRP: one supply (S) for the order + one demand (D) per BOM line (qty = QtyRequired - QtyDelivered); supply Qty = QtyOrdered - QtyDelivered PASS
+  §LIBERO L4b supply DateFinishSchedule is the ORDER's DateFinishSchedule (MPPMRP.setPP_Order :680), the declared delta vs the seed's DateStartSchedule PASS
+  §LIBERO L4c a save that changes no MRP source column (Description only) creates/changes no MRP row (MPPMRP.isChanged :462) PASS
+  §LIBERO L4d changing QtyOrdered updates the ONE supply row in place (getQuery(...).firstOnly), no second supply PASS
+  §LIBERO L4e2 after the re-explosion the MRP holds exactly 1 supply (qty 30) + 2 NEW demand rows - the deleted BOM lines took their demand rows with them (BEFORE_DELETE -> MPPMRP.deleteMRP), no stale row FAIL [{"typemrp":"S","qty":30},{"typemrp":"D","qty":10},{"typemrp":"D","qty":30},{"typemrp":"D","qty":505.05},{"typemrp":"D","qty":1515.15}]
+§LIBERO-L4f order delete: err=null children left: pp_order_bom=0 pp_order_bomline=0 pp_order_workflow=0 pp_order_node=0 pp_order_nodenext=0 pp_order_node_product=0 pp_order_node_asset=0 | order row left=0 | MRP rows named X-route: [{"typemrp":"S","name":"X-route","pp_order_id":null}]
+§LIBERO-ORPHAN-SUPPLY the supply MRP row survives an order delete, detached (pp_order_id NULL): MPPMRP.deleteMRP :517-527 nulls it before the DELETE can match (port-faithful; the Ferry comment says rows are kept for SO reference)
+  §LIBERO L4f order delete removes the whole snapshot (BOM, lines, workflow, nodes, nexts, node products/assets) and the order; the demand rows are deleted, the supply row is kept detached (faithful) PASS
+§LIBERO-L5 expired: ok=false error="BOMExpired: PP_Product_BOM 50004 not valid at 2007-01-01 00:00:00 (from=2007-09-22 00:00:0" nothing-written=true
+  §LIBERO L5a order start BEFORE the BOM ValidFrom (2007-09-22) -> refused as BOMExpired, nothing written (MPPOrder.explosion :1046) PASS
+§LIBERO-L5 mismatch: ok=false error="@NotMatch@ @PP_Product_BOM_ID@ , @M_Product_ID@" nothing-written=true
+  §LIBERO L5b BOM of another product -> refused @NotMatch@ (explosion :1032-1036) PASS
+§LIBERO-L5 unverified: ok=false error="Product BOM Configuration not verified. Please verify the product first - Fertilizer#50" nothing-written=true
+  §LIBERO L5c unverified product -> refused (explosion :1038-1042) PASS
+  §LIBERO L5d AD_Org_ID 0 with no context org -> refused (beforeSave :402-411) PASS
+  §LIBERO L5e a BOM line expired before the order start is skipped (isValidFromTo): 1 of 2 lines exploded PASS
+§LIBERO-DOUBLE-EXPLODE QtyEntered=100 on a new PP_Order -> pp_order_bom rows=2 (port-faithful to MPPOrder.afterSave :466-475 in pshepetko AND logilite forks; OPEN: confirm against a running legacy before relying on it)
+  §LIBERO L6 the quirk is reproduced as a MEASURED fact, not hidden (port-faithful: 2 BOM headers when QtyEntered is set at creation) PASS
+§LIBERO-L6b host AFTER_SAVE route: ok=true error= ops by table={"pp_order_bom":1,"pp_order_bomline":2,"pp_mrp":3,"ad_sequence":1,"pp_order_workflow":2,"pp_order_node":1} bom.pp_order_id=[9100001]
+  §LIBERO L6b host route: pp_order_bom 1 + pp_order_bomline 2 + pp_mrp 3 (1 supply + 2 demand), BOM header FK = the host row id 9100001 PASS
+§LIBERO-L7 after STOP: hash=b0e24b8b baseline=b0e24b8b | data kept: pp_order=23 pp_order_bom=7 pp_order_bomline=13 pp_mrp=70 == pp_order=23 pp_order_bom=7 pp_order_bomline=13 pp_mrp=70
+  §LIBERO L7 stop: every registry + the menu rows equal the baseline hash; the rows written while active are KEPT (data is not code) PASS
+  §LIBERO L7b restart is idempotent: the second activation dump equals the first, and the second stop returns to baseline PASS
+  §LIBERO L7c stop while STARTING (no code ever ran): menu rows staged at START are removed (4 -> 0) PASS
+  §LIBERO L7d manifest.dictionary on an eager bundle: row present while ACTIVE (1), gone after stop (0); a bundle whose activate() throws leaves no dictionary row (0) PASS
+§LIBERO-DEFERRED MPPOrder.orderStock (M_Storage QtyOrdered) - needs StorageEngine, cost side
+§LIBERO-DEFERRED RoutingService variants other than DefaultRoutingServiceImpl (estimateWorkingTime for cost collectors) - cost side
+§LIBERO-DEFERRED MPPOrderBOMLine.explodePhantom - fixtures carry no phantom
+§LIBERO-DEFERRED MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)
+§LIBERO-DEFERRED MPPOrder.beforeSave #M_Warehouse_ID context default
+§LIBERO-DEFERRED MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)
+  §LIBERO L8 deferrals are listed (never silent) PASS
+  §LIBERO L9 no op carried a column the physical table lacks (dropped=0) PASS
+§LIBERO-VERDICT FAIL judged=31 failed=1 inconclusive=0

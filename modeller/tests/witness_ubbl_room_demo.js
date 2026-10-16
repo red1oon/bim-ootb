@@ -1,32 +1,21 @@
 #!/usr/bin/env node
 /**
- * W-UBBL-ROOM-DEMO — §UBBL-DEMO value witness (PURE NODE, REAL Duplex). The 5th sdg_gate case:
- * ubblRoomSizeDemo() — a STATIC per-room UBBL-style DEMO indicator over as-extracted `spatial_structure`
- * IfcSpace rows (NOT delta-based like cases 1-4; a pre-existing undersized room is exactly what it
- * reports). Implementing UBBL_RULES_GATE.md §2 (bim-compiler prompts). DEMO/MOCKUP SCOPE ONLY
- * (user decision 2026-07-05) — every output must carry the not-a-compliance-verdict label verbatim.
- * Only the two independently-verified By-Law 42 numbers are wired: area >= 6.5 m² ("all other rooms"
- * floor), headroom >= 2.5 m. No 11/9.3 m² tiers, no per-type thresholds (spec §1c: classifier BLOCKED).
- *
- *   U1 real data      — Duplex's REAL spatial_structure has exactly 21 IfcSpace rooms, all measured
- *                       (issue: does the extraction actually feed the gate 21 real rooms, or fewer?)
- *   U2 real flags     — the gate names EXACTLY the rooms whose measured size_x*size_y < 6.5 m²
- *                       (recomputed independently in this witness from the same DB rows — the witness
- *                       does not trust the gate's own arithmetic), incl. spec §2's example A104
- *                       (1.456×2.171 = 3.161 m²) (issue: does the gate flag the right real rooms with
- *                       the right measured numbers — no false positives, no misses?)
- *   U3 real headroom  — zero Duplex rooms sit below 2.5 m (min measured size_z = 2.581) — so the
- *                       belowHeadroom branch CANNOT be proven on real data; U4b covers it
- *                       (issue: is "no headroom flags" a real measurement result, not a dead branch?)
- *   U4 synthetic fire — a 1m×1m fixture room IS flagged belowArea (issue: does the gate silently pass
- *                       an obviously undersized room? must be NO)
- *   U4b synthetic hdr — a 3m×3m×2.0m fixture IS flagged belowHeadroom (issue: is the headroom branch
- *                       dead code given no real Duplex room can trip it? must be NO)
- *   U5 label          — EVERY output (summary + each flagged row) carries the demo-indicator label
- *                       VERBATIM (issue: can any result escape the not-a-compliance-verdict guardrail?)
- *   U6 non-invent     — thresholds are explicit params (raise minArea to 30 ⇒ more rooms flag);
- *                       nothing hardcoded beyond the two §1b defaults
- *   U7 non-invent     — a room with NULL dims goes to `unmeasured`, never guessed at
+ * W-UBBL-ROOM-DEMO — §UBBL-TIERS value witness (PURE NODE, REAL Duplex). ubblRoomSizeDemo() is a STATIC per-room UBBL-style
+ * DEMO indicator over as-extracted `spatial_structure` IfcSpace rows (UBBL_RULES_GATE.md §SOURCED + §MISCITE, bim-compiler).
+ * ISSUE (2026-09-26): it applied the habitable-room minimums (6.5 m², 2.5 m, cited as By-law 42 though 2.5 m is 44(1)(a)) to
+ * EVERY room, so a legal bathroom was flagged. Now two tiers from the gazetted text; this witness recomputes both itself:
+ *   ANY-ROOM floor (real breach → `flagged`): area ≥ 0.9375 m² (43(b)) · width ≥ 0.75 m (43) · height ≥ 2.0 m (44 proviso)
+ *   HABITABLE tier (→ `check`, "would fail IF living room/bedroom"): area ≥ 6.5 (42(1)) · width ≥ 2 (42(2)) · height ≥ 2.5 (44(1)(a))
+ *   U1 real data      — Duplex feeds exactly 21 measured IfcSpace rooms.
+ *   U2 floor          — `flagged` == the rooms that breach the any-room floor, recomputed here (no misses, no extras).
+ *   U3 check          — `check` == the rooms that pass the floor but miss the habitable tier, recomputed here.
+ *   U3b no-overflag   — no room is flagged only for missing a habitable minimum (the defect this change fixes); A104
+ *                       (1.456 × 2.171 = 3.161 m²) is in `check`, not `flagged`. RED on main (it was flagged).
+ *   U4 synthetic WC   — 0.7 × 1.2 × 2.4 m → flagged, citing 43(b) and 43.
+ *   U4b height        — 3 × 3 × 1.9 m → flagged (44 proviso); 3 × 3 × 2.2 m → check only (44(1)(a)).
+ *   U5 labels         — flagged/unmeasured rows carry the demo label, check rows the "would fail IF" label, verbatim.
+ *   U6 params         — thresholds are explicit params (habitable area 30 m² ⇒ recomputed check count).
+ *   U7 non-invent     — a NULL-dim room goes to `unmeasured`, never guessed.
  */
 'use strict';
 var fs = require('fs'), path = require('path');
@@ -38,7 +27,11 @@ var initSqlJs = require(path.join(ROOT, 'lib', 'sql-wasm.js'));
 var wasmBinary = fs.readFileSync(path.join(ROOT, 'lib', 'sql-wasm.wasm'));
 var DBPATH = path.join(ROOT, 'Duplex_extracted.db');
 
-var LABEL = "UBBL-style demo indicator (By-Law 42, 'all other rooms' minimum only) — not a compliance verdict";
+var LABEL = "UBBL-style demo indicator — not a compliance verdict";
+var CHECK_LABEL = "would fail IF this is a living room/bedroom — room type not in the model";
+// independent oracle (gazetted UBBL 1984, UBBL_RULES_GATE.md §SOURCED) — NOT read from sdg_gate.js
+var ANY = { area: 0.9375, width: 0.75, height: 2.0 }, HAB = { area: 6.5, width: 2.0, height: 2.5 };
+function misses(s, T) { return (s.size_x * s.size_y < T.area) || (Math.min(s.size_x, s.size_y) < T.width) || (s.size_z < T.height); }
 
 var pass = 0, fail = 0;
 function chk(n, c, e) { if (c) { pass++; console.log('  ✅ ' + n + (e ? '  ' + e : '')); } else { fail++; console.log('  ❌ ' + n + (e ? '  ' + e : '')); } }
@@ -53,63 +46,42 @@ initSqlJs({ wasmBinary: wasmBinary }).then(function (SQL) {
 
   // U1 — real data: 21 measured rooms reach the gate
   var out = SdgGate.ubblRoomSizeDemo(spaces);
-  console.log('§UBBL-DEMO checked=' + out.checked + ' flagged=' + out.flagged.length + ' unmeasured=' + out.unmeasured.length);
+  console.log('§UBBL-DEMO checked=' + out.checked + ' flagged=' + out.flagged.length + ' check=' + (out.check || []).length + ' unmeasured=' + out.unmeasured.length);
   chk('U1 real data: Duplex feeds exactly 21 measured IfcSpace rooms', out.checked === 21 && out.unmeasured.length === 0, 'checked=' + out.checked);
+  (out.flagged || []).concat(out.check || []).forEach(function (f) { console.log('§UBBL-DEMO ' + (f.tier || '?') + ' ' + f.name + ' ' + f.size_x + '×' + f.size_y + '×' + f.size_z + ' ' + JSON.stringify(f.why || f)); });
 
-  // U2 — real flags: witness recomputes the below-area set INDEPENDENTLY from the same DB rows
-  var expectBelow = spaces.filter(function (s) { return s.size_x * s.size_y < 6.5; }).map(function (s) { return s.name; }).sort();
-  var gotBelow = out.flagged.filter(function (f) { return f.belowArea; }).map(function (f) { return f.name; }).sort();
-  out.flagged.forEach(function (f) {
-    console.log('§UBBL-DEMO FLAG ' + f.name + ' ' + f.size_x + '×' + f.size_y + '=' + f.area + 'm² z=' + f.size_z + 'm'
-      + (f.belowArea ? ' <' + f.minArea + 'm²' : '') + (f.belowHeadroom ? ' <' + f.minHeadroom + 'm' : ''));
-  });
-  chk('U2 real flags: gate names exactly the measured below-6.5m² rooms (no misses, no false positives)',
-    JSON.stringify(gotBelow) === JSON.stringify(expectBelow) && gotBelow.length > 0,
-    'gate=[' + gotBelow + '] recomputed=[' + expectBelow + ']');
-  var a104 = out.flagged.find(function (f) { return f.name === 'A104'; });
-  chk('U2b spec §2 example A104: 1.456×2.171 = 3.161 m² < 6.5 (verified against live DB, not copied)',
-    !!a104 && a104.belowArea && Math.abs(a104.area - 3.161) < 0.001 && Math.abs(a104.size_x - 1.456) < 0.001 && Math.abs(a104.size_y - 2.171) < 0.001,
-    a104 ? a104.size_x + '×' + a104.size_y + '=' + a104.area + 'm²' : 'A104 NOT FLAGGED');
+  var names = function (a) { return (a || []).map(function (f) { return f.name; }).sort(); };
+  var expFloor = spaces.filter(function (s) { return misses(s, ANY); }).map(function (s) { return s.name; }).sort();
+  var expCheck = spaces.filter(function (s) { return !misses(s, ANY) && misses(s, HAB); }).map(function (s) { return s.name; }).sort();
+  chk('U2 floor: flagged == rooms breaching the any-room floor (recomputed)', JSON.stringify(names(out.flagged)) === JSON.stringify(expFloor),
+    'gate=[' + names(out.flagged) + '] recomputed=[' + expFloor + ']');
+  chk('U3 check: check == rooms passing the floor but missing the habitable tier (recomputed, non-empty)',
+    JSON.stringify(names(out.check)) === JSON.stringify(expCheck) && expCheck.length > 0, 'gate=[' + names(out.check) + '] recomputed=[' + expCheck + ']');
+  var a104f = (out.flagged || []).find(function (f) { return f.name === 'A104'; }), a104c = (out.check || []).find(function (f) { return f.name === 'A104'; });
+  chk('U3b no-overflag: nothing flagged only for a habitable minimum; A104 (3.161 m²) is check, not flagged',
+    (out.flagged || []).every(function (f) { return misses(f, ANY); }) && !a104f && !!a104c && Math.abs(a104c.area - 3.161) < 0.001,
+    'A104 flagged=' + !!a104f + ' check=' + (a104c ? a104c.area + 'm²' : 'no'));
 
-  // U3 — real headroom: no Duplex room is below 2.5m, and that matches the raw measurements
-  var minZ = Math.min.apply(null, spaces.map(function (s) { return s.size_z; }));
-  var hdrFlags = out.flagged.filter(function (f) { return f.belowHeadroom; });
-  chk('U3 real headroom: zero rooms below 2.5m — consistent with min measured size_z',
-    hdrFlags.length === 0 && minZ >= 2.5, 'minZ=' + minZ.toFixed(3) + 'm hdrFlags=' + hdrFlags.length);
+  var wc = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX1', name: 'FIXTURE-WC', size_x: 0.7, size_y: 1.2, size_z: 2.4 }]);
+  chk('U4 synthetic WC 0.7×1.2 m → flagged citing 43(b) + 43', wc.flagged.length === 1 && /43\(b\)/.test(wc.flagged[0].why.join()) && /By-law 43\)/.test(wc.flagged[0].why.join()),
+    JSON.stringify(wc.flagged[0] && wc.flagged[0].why));
+  var low = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX2', name: 'LOW', size_x: 3, size_y: 3, size_z: 1.9 }, { guid: 'FIX3', name: 'MID', size_x: 3, size_y: 3, size_z: 2.2 }]);
+  chk('U4b height: 1.9 m → flagged (44 proviso); 2.2 m → check only (44(1)(a))',
+    names(low.flagged).join() === 'LOW' && names(low.check).join() === 'MID' && /44 proviso/.test(low.flagged[0].why.join()) && /44\(1\)\(a\)/.test(low.check[0].why.join()),
+    'flagged=[' + names(low.flagged) + '] check=[' + names(low.check) + ']');
 
-  // U4 — synthetic fire: does the gate silently pass an obviously undersized room? Must be NO.
-  var tiny = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX1', name: 'FIXTURE-1x1', size_x: 1, size_y: 1, size_z: 2.6 }]);
-  var tf = tiny.flagged[0];
-  chk('U4 synthetic 1m×1m fixture fires belowArea (gate does NOT silently pass an undersized room)',
-    tiny.flagged.length === 1 && tf.belowArea && !tf.belowHeadroom && Math.abs(tf.area - 1) < 1e-9,
-    'flagged=' + JSON.stringify(tiny.flagged));
-
-  // U4b — synthetic headroom: the belowHeadroom branch is not dead code (U3 shows real data can't trip it)
-  var low = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX2', name: 'FIXTURE-LOW', size_x: 3, size_y: 3, size_z: 2.0 }]);
-  var lf = low.flagged[0];
-  chk('U4b synthetic 2.0m-headroom fixture fires belowHeadroom (branch not dead despite no real trigger)',
-    low.flagged.length === 1 && lf.belowHeadroom && !lf.belowArea, 'flagged=' + JSON.stringify(low.flagged));
-
-  // U5 — label: EVERY output carries the demo-indicator label verbatim
-  var allOuts = [out, tiny, low];
+  var nul = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX4', name: 'FIXTURE-NULL', size_x: null, size_y: 2, size_z: 2.6 }]);
+  var allOuts = [out, wc, low, nul];
   var labelOk = allOuts.every(function (o) {
-    return o.label === LABEL && o.flagged.every(function (f) { return f.label === LABEL; })
+    return o.label === LABEL && o.flagged.every(function (f) { return f.label === LABEL; }) && (o.check || []).every(function (f) { return f.label === CHECK_LABEL; })
       && o.unmeasured.every(function (u) { return u.label === LABEL; });
   });
-  chk('U5 label: summary + every flagged row says the not-a-compliance-verdict label VERBATIM', labelOk, labelOk ? '"' + out.label + '"' : 'LABEL MISSING/DRIFTED');
+  chk('U5 labels: flagged/unmeasured = demo label, check = "would fail IF" label, verbatim', labelOk, labelOk ? '"' + out.label + '"' : 'LABEL MISSING/DRIFTED');
 
-  // U6 — non-invent: thresholds are explicit params, not buried constants
-  var strict = SdgGate.ubblRoomSizeDemo(spaces, { minArea: 30 });
-  var below30 = spaces.filter(function (s) { return s.size_x * s.size_y < 30; }).length;
-  chk('U6 non-invent: minArea is an explicit param (30m² ⇒ recomputed count matches)',
-    strict.flagged.filter(function (f) { return f.belowArea; }).length === below30,
-    'flagged@30=' + strict.flagged.length + ' recomputed=' + below30);
-
-  // U7 — non-invent: NULL dims are reported unmeasured, never guessed
-  var nul = SdgGate.ubblRoomSizeDemo([{ guid: 'FIX3', name: 'FIXTURE-NULL', size_x: null, size_y: 2, size_z: 2.6 }]);
-  chk('U7 non-invent: a NULL-dim room goes to unmeasured (checked=0, flagged=0 — no guessing)',
-    nul.checked === 0 && nul.flagged.length === 0 && nul.unmeasured.length === 1 && nul.unmeasured[0].name === 'FIXTURE-NULL',
-    JSON.stringify(nul.unmeasured));
+  var strict = SdgGate.ubblRoomSizeDemo(spaces, { habitable: { area: 30 } });
+  var exp30 = spaces.filter(function (s) { return !misses(s, ANY) && misses(s, { area: 30, width: HAB.width, height: HAB.height }); }).length;
+  chk('U6 params: habitable area is an explicit param (30 m² ⇒ recomputed check count)', strict.check.length === exp30, 'check@30=' + strict.check.length + ' recomputed=' + exp30);
+  chk('U7 non-invent: a NULL-dim room goes to unmeasured (no guessing)', nul.checked === 0 && nul.flagged.length === 0 && nul.unmeasured.length === 1, JSON.stringify(nul.unmeasured));
 
   console.log('W-UBBL-ROOM-DEMO: ' + pass + ' PASS / ' + fail + ' FAIL');
   process.exit(fail ? 1 : 0);

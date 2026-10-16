@@ -74,6 +74,14 @@
     colDef = String(colDef || '').replace(/\s+/g, '');
     if (!colDef) return null;
 
+    // extract @callout suffix before type parsing (grammar token: ColName@class.method)
+    var callout = null;
+    var atIdx = colDef.indexOf('@');
+    if (atIdx >= 0) {
+      callout = colDef.slice(atIdx + 1) || null;
+      colDef  = colDef.slice(0, atIdx);
+    }
+
     var parts = colDef.split('#');
     var prefix = '';
     var colName = colDef;
@@ -128,7 +136,7 @@
 
     var fkTable = (colName.slice(-3) === '_ID') ? colName.slice(0, -3) : null;
 
-    return { name: colName, refId: refId, isStandard: false, fkTable: fkTable, listValues: listValues };
+    return { name: colName, refId: refId, isStandard: false, fkTable: fkTable, listValues: listValues, callout: callout };
   }
 
   // ── standardColumns(tableName) — mirror PackOut.xml standard set ────────────────────────────────
@@ -156,7 +164,15 @@
     colDefs.forEach(function (def) {
       var parsed = parseColDef(def, warnings);
       if (!parsed) return;
-      if (seen[parsed.name]) return;  // idempotent (NinjaProcessor skips existing)
+      if (seen[parsed.name]) {
+        // callout annotation on an already-seen (standard) col: graft the callout onto it
+        if (parsed.callout) {
+          for (var k = 0; k < columns.length; k++) {
+            if (columns[k].name === parsed.name) { columns[k].callout = parsed.callout; break; }
+          }
+        }
+        return;
+      }
       seen[parsed.name] = true;
       columns.push(parsed);
     });

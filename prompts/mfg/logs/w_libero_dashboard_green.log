@@ -1,0 +1,11 @@
+§LDASH-L0 baseline (bundle not installed): Activities indicators=6 (Notice=0 | Request=1 | Workflow Activities=0 | Unprocessed Documents=0 | Sales Orders received today=0 | Pending Customer Shipments=0) Performance goals=4
+  §LDASH D0 baseline: no Manufacturing indicator and no Manufacturing goal on the opening screen PASS
+§LDASH-L1 bundle state=STARTING (no code activated) | indicator={"name":"Manufacturing Orders to complete","count":18,"window":53009,"err":null} independent count=18 | goal={"title":"Manufacturing Output: 2%","tooltip":"Quantity on live manufacturing orders: 410 of 20,000","color":"#d96863"} independent sum=410
+  §LDASH D1 started LAZY (STARTING, no code ran) and the opening screen ALREADY shows the Manufacturing indicator, opening window 53009 PASS
+  §LDASH D2 the indicator number equals an INDEPENDENT count over pp_order (client 11, Drafted + In Progress); population not vacuous (18) PASS
+  §LDASH D3 the Performance gadget lists the Manufacturing goal; its actual is the independent SUM(QtyOrdered) over live orders (410) and the title carries the percent of target 20000, coloured by schema 100 (2% of target = the red mark, not the black fallback) PASS
+  §LDASH D4 the other legacy indicators/goals are untouched (+1 each) PASS
+§LDASH-L2 after a new order (qty 40, saved through the model layer): ok=true indicator 18 -> 19 | goal tooltip "Quantity on live manufacturing orders: 410 of 20,000" -> "Quantity on live manufacturing orders: 450 of 20,000"
+  §LDASH D5 creating a manufacturing order moves the indicator by exactly +1 and the goal actual by its ordered quantity (40) PASS
+  §LDASH D6 STOP returns the opening screen to the baseline (indicators 6, goals 4, bundle rows 0); the manufacturing data is kept PASS
+§LDASH-VERDICT PASS judged=7 failed=0

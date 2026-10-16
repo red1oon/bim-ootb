@@ -356,6 +356,10 @@
   // carrier-above (I hang from S), embedded (S spans my whole height at my XY). Exempt: an element
   // that IS the ground layer of its own footprint (nothing overlapping it starts lower) — it rests
   // on unmodelled soil, the same exemption auditFloating's §SUPPORT_UNCHECKED 1c already carries.
+  // ⚠ SUPERSEDED for the ORPHAN count (2026-09-12, §GROUND_CONNECTED below): that footprint-local
+  // exemption is NOT the same as 1c — 1c is seq===1 (classification), and "lowest in my own column"
+  // is also true of the bottom of a stack that never reaches ground. `grounded[i]` keeps its
+  // footprint-local meaning for designatedSupport's carrier-above rejection only.
   //
   // WHY IT IS SAFE, not another reshaping. It is the WEAKEST rule that closes the gap: FIRST (min)
   // contact, not last (max) — so it fires only for an element whose EVERY neighbour is still
@@ -379,8 +383,11 @@
   // _contactGraph(items) — the one place the physical world is derived. Both the repair below and
   // the LOCK-GATE audit (_midairAudit → verifyGanttIntegrity) build on this single definition, so a
   // planner's own edit is judged by exactly the rule the generator enforced. items need bbox
-  // (x0,x1,y0,y1,bz,tz) only — times are read later, never here: geometry does not move.
-  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok }.
+  // (x0,x1,y0,y1,bz,tz) — times are read later, never here: geometry does not move — plus
+  // seq/phase for the §GROUND_CONNECTED classification seeds (absent ⇒ NOT exempt, never looser;
+  // a population carrying none at all takes the ground-band fallback, see below).
+  // Returns { contacts: [idx[]|null], grounded: Uint8Array, orphans, groundedN, ok,
+  //           groundConnected: Uint8Array, groundConnectedN, groundSeeds, groundSeedMode }.
   function _contactGraph(items) {
     var SG = (typeof ScheduleGate !== 'undefined') ? ScheduleGate : null;
     if (!SG || !SG.CELL) return { ok: false, contacts: null, grounded: null, orphans: 0, groundedN: 0 };
@@ -416,9 +423,72 @@
       }
       grounded[i] = (lowest < T.bz - GAP) ? 0 : 1;                // 1 ⇒ I am my footprint's ground layer
       contacts[i] = list;
-      if (grounded[i]) groundedN++; else if (!list) orphans++;
+      if (grounded[i]) groundedN++;
     }
-    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN };
+    // §GROUND_CONNECTED (2026-09-12, bim-compiler prompts/4D_MODEL_INTEGRITY.md §N) — the orphan
+    // exemption is DERIVED from classification and graph reachability, never from `grounded[i]`.
+    // `grounded[i]` answers "is nothing beneath me in my own XY column" (footprint-local; correct
+    // for "rests on soil in its footprint", §I.2) and was reused on this line as "is this element
+    // allowed to be unsupported" — a different question whose answer §I.2 already names: seq===1.
+    // Two failure shapes, one root line: (a) an element with ZERO contacts and nothing below it
+    // defaulted into "grounded" by the absence of any comparison; (b) the bottom of a stack that
+    // never reaches real ground read grounded=1 because "nothing below me in my column" is locally
+    // true (HHS's three 7m Stahlbalkon brackets at bz 3.74: contacts=0, grounded=1 — absorbed into
+    // groundedN, never an orphan, revealed alone in the bake). Fix: a DIRECTED walk along the
+    // support edges this function already built (contacts[i] = "what supports i"; the walk goes
+    // supporter -> supported), seeded from the true-ground population. An element is ground-
+    // connected iff it is a seed or something ground-connected supports it; everything else is an
+    // orphan REGARDLESS of grounded[i]. Directed, not undirected: the segment resting ON a floating
+    // bracket lists the bracket as its bearing contact, and an undirected walk would let that
+    // segment "rescue" the bracket — the backward "I depend on the thing resting on me" edge
+    // §GROUNDED_NEVER_HANGS already rejects (measured: undirected reaches all 6839 of HHS).
+    //   seeds (classification, §I.2): seq===1 (IfcFooting/IfcPile/§SLAB_ON_GRADE_RECLASS) OR
+    //   phase==='Substructure' (§GROUNDWORK_SLAB reclassifies slab-on-grade by mutating phase ONLY,
+    //   seq stays 4 — JKR's 16 are its whole classified ground, reachable no other way). A missing
+    //   .seq/.phase is NOT a seed — stricter, never looser.
+    //   fallback (ONLY when the population carries no classified ground at all — schedule_gate's
+    //   own buildingModelsSubstructure=false, "this building never modeled a foundation layer",
+    //   HHS today): footprint-grounded elements within ScheduleGate.GROUND_BAND of the building's
+    //   1st-percentile base — the same ground datum witness_true_orphan_floating.js (PR #1712)
+    //   exempts. Without it a building with no substructure would be 100% orphans; with it a stack
+    //   bottom metres above the datum (the HHS brackets) still cannot seed itself. The mode is
+    //   RETURNED, never silent.
+    // MEASURED on the 7 shipped buildings (2026-09-12, extracted DBs, before -> after):
+    //   Duplex 1->0 (the one old "orphan" was a seq===1 slab-on-grade — §I.2's own example, wrongly
+    //   flagged before) · Clinic 27->27 · HHS 36->44 (+3 brackets, +5 that rest only on them) ·
+    //   JKR 1->2 · Hospital 35->69 (+a 30-railing island with NOTHING beneath its lowest member) ·
+    //   Terminal 7->14 · LTU_AHouse 51->1096 (a ground-floor MEP network with no modelled substrate;
+    //   PR #1712's engine-blind detector already reports 2548 true orphans on this building).
+    //   W-MZ-4's lock (meta DBs where they exist) moves further on the two patched-elevation files:
+    //   Terminal_meta 25->2740 (2711 co-planar "Metal Deck" IfcPlate roof sheets with 18.7m of
+    //   nothing beneath them in that DB) and LTU_AHouse_meta 865->3288 — data findings the old
+    //   exemption hid, recorded in baselines/midair.json `_relocked_2026_09_12`.
+    // `grounded`/`groundedN` keep their footprint-local meaning (designatedSupport's cls=2
+    // rejection still reads them). Return fields are additive; `orphans` now counts !groundConnected.
+    var reach = new Uint8Array(n), stack = new Int32Array(n), sp = 0, seeds = 0, seedMode = 'classification';
+    for (i = 0; i < n; i++) {
+      T = items[i];
+      if (T.seq === 1 || T.phase === 'Substructure') { reach[i] = 1; stack[sp++] = i; seeds++; }
+    }
+    if (!seeds && n) {
+      seedMode = 'ground-band';
+      var zs = new Float64Array(n);
+      for (i = 0; i < n; i++) zs[i] = items[i].bz;
+      zs.sort();                                                   // typed-array sort is numeric
+      var datum = zs[Math.floor(n * 0.01)] + SG.GROUND_BAND;
+      for (i = 0; i < n; i++) if (grounded[i] && items[i].bz <= datum) { reach[i] = 1; stack[sp++] = i; seeds++; }
+    }
+    var deg = new Int32Array(n + 1);                               // CSR of the REVERSE edges: supporter -> supported
+    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) deg[arr[k] + 1]++; }
+    for (i = 0; i < n; i++) deg[i + 1] += deg[i];
+    var fill = deg.slice(0, n), sup = new Int32Array(deg[n]);
+    for (i = 0; i < n; i++) { arr = contacts[i]; if (arr) for (k = 0; k < arr.length; k++) sup[fill[arr[k]]++] = i; }
+    while (sp) { j = stack[--sp]; for (k = deg[j]; k < deg[j + 1]; k++) { c = sup[k]; if (!reach[c]) { reach[c] = 1; stack[sp++] = c; } } }
+    var groundConnectedN = 0;
+    for (i = 0; i < n; i++) if (reach[i]) groundConnectedN++;
+    orphans = n - groundConnectedN;
+    return { ok: true, contacts: contacts, grounded: grounded, orphans: orphans, groundedN: groundedN,
+             groundConnected: reach, groundConnectedN: groundConnectedN, groundSeeds: seeds, groundSeedMode: seedMode };
   }
 
   // _designatedSupport(items, G) — mirrors cpm_schedule.js's designatedSupport EXACTLY (same
@@ -503,6 +573,11 @@
     var G = _contactGraph(items);
     if (!G.ok) return out;
     out.orphans = G.orphans;
+    // §GROUND_CONNECTED — name the orphans, not just count them: no log line ever named one (the
+    // HHS brackets were found by watching a bake). Same no-cap discipline as the midair guids (§S73).
+    out.groundSeedMode = G.groundSeedMode;
+    out.orphanGuids = [];
+    if (G.groundConnected) for (var oi = 0; oi < items.length; oi++) if (!G.groundConnected[oi]) out.orphanGuids.push(items[oi].guid);
     var des = _designatedSupport(items, G);
     for (var i = 0; i < items.length; i++) {
       var sIdx = des[i]; if (sIdx < 0) continue;

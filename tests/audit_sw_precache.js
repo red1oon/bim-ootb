@@ -18,9 +18,45 @@ const swPath = path.resolve(__dirname, '..', 'viewer', 'sw.js');
 const viewerDir = path.resolve(__dirname, '..', 'viewer');
 const swSrc = fs.readFileSync(swPath, 'utf8');
 
-// Extract PRECACHE_ASSETS array
-const match = swSrc.match(/PRECACHE_ASSETS\s*=\s*\[([\s\S]*?)\]/);
-if (!match) { console.log('§SW_AUDIT FAIL: PRECACHE_ASSETS not found in sw.js'); process.exit(1); }
+// ── Extract PRECACHE_ASSETS array ────────────────────────────────────────────────────────────────
+// §SW_AUDIT_QUOTE (2026-09-15). This used to be one regex over the raw source:
+//     swSrc.match(/PRECACHE_ASSETS\s*=\s*\[([\s\S]*?)\]/)  then  body.match(/'([^']+)'/g)
+// Both halves had a SILENT failure mode, and both fired for real:
+//   (a) the quote pairer does not know what a comment is. ONE apostrophe in a comment inside the array
+//       ("the sched4d pill's on-the-fly", PR #1736) opened a phantom string, desynchronised every quote
+//       pair after it, and dropped 12 entries from the parsed set. The audit then reported files that
+//       had not changed in months — print_sheet.js, ghostglass.js — as unlisted, and said nothing about
+//       the real cause. 57 of this array's 187 body lines carry comments, so the surface is large.
+//   (b) the array capture is non-greedy to the first ']', so a ']' anywhere in a comment would truncate
+//       the body and silently hide every entry after it, the same way.
+// Fixed by stripping comments — but from the BODY ONLY, located first, never from the whole file.
+// MEASURED: a whole-file strip (the obvious version) makes the declaration itself unfindable
+// ("ARRAY NOT FOUND"), because '//' occurs in the file outside this array. Locate, then strip, then cut.
+function _stripComments(body) {
+  return body
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map(function (line) {
+      // Cut at the first '//' that is NOT inside a quoted string. Entry paths in this array carry no
+      // protocol (verified: 0 entries contain '://'), but the quote count keeps that true by
+      // construction rather than by assumption, so a future CDN entry cannot silently re-break this.
+      for (var i = 0; i + 1 < line.length; i++) {
+        if (line[i] === '/' && line[i + 1] === '/') {
+          var quotes = (line.slice(0, i).match(/'/g) || []).length;
+          if (quotes % 2 === 0) return line.slice(0, i);
+        }
+      }
+      return line;
+    })
+    .join('\n');
+}
+const _declAt = swSrc.search(/PRECACHE_ASSETS\s*=\s*\[/);
+if (_declAt < 0) { console.log('§SW_AUDIT FAIL: PRECACHE_ASSETS not found in sw.js'); process.exit(1); }
+const _afterBracket = swSrc.slice(swSrc.indexOf('[', _declAt) + 1);
+const _clean = _stripComments(_afterBracket);
+const _end = _clean.indexOf(']');
+if (_end < 0) { console.log('§SW_AUDIT FAIL: PRECACHE_ASSETS array has no closing bracket'); process.exit(1); }
+const match = [null, _clean.slice(0, _end)];
 
 const entries = match[1].match(/'([^']+)'/g);
 if (!entries) { console.log('§SW_AUDIT FAIL: No entries in PRECACHE_ASSETS'); process.exit(1); }
