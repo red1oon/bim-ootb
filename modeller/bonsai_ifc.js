@@ -391,9 +391,14 @@
       const spatial = { projects: nOf(T.IFCPROJECT), sites: nOf(T.IFCSITE), buildings: nOf(T.IFCBUILDING), storeys: nOf(T.IFCBUILDINGSTOREY),
         aggregates: nOf(T.IFCRELAGGREGATES), containRels: cIds.size(), contained };
       console.log(TAG + ' §IFC-SPATIAL reimport ' + JSON.stringify(spatial));
+      // §DXF-CONVERT C2 (DXF2BIM lane L3): products read back BY CLASS, so a converted model's walls/slabs/roof/doors/windows
+      // can be compared with what was committed (additive read-back; nothing written changes).
+      const byClass = { IfcWall: nOf(T.IFCWALL), IfcSlab: nOf(T.IFCSLAB), IfcRoof: nOf(T.IFCROOF), IfcDoor: nOf(T.IFCDOOR), IfcWindow: nOf(T.IFCWINDOW),
+        IfcOpeningElement: nOf(T.IFCOPENINGELEMENT), IfcBuildingElementProxy: nOf(T.IFCBUILDINGELEMENTPROXY) };
+      console.log(TAG + ' reimport byClass ' + JSON.stringify(byClass));
       const out = { walls: wallIds.size(), openings: openIds.size(), rels: relIds.size(), solids: solidIds.size(), firstProfile, firstDepth,
         members: memberIds.size(), memberTypes: memberTypeIds.size(), relTypes: relTypeIds.size(), memberDepths,
-        mappedItems: mappedItemIds.size(), repMaps: repMapIds.size(), spatial };
+        mappedItems: mappedItemIds.size(), repMaps: repMapIds.size(), spatial, byClass };
       api.CloseModel(id);
       console.log(TAG + ' reimport walls=' + out.walls + ' openings=' + out.openings + ' rels=' + out.rels + ' solids=' + out.solids +
         ' members=' + out.members + ' memberTypes=' + out.memberTypes + ' relTypes=' + out.relTypes + ' mappedItems=' + out.mappedItems + ' repMaps=' + out.repMaps);
