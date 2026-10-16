@@ -834,7 +834,7 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63
   - A rect counts for this plan's wall when:
     - its z0 ≥ the next lower plan level (or ≥ this plan's level for the lowest plan; walls below the lowest storey are foundations, outside the set's storeys);
     - its z0 < the piece's top; and
-    - the lower plan has no wall piece containing the point (cut, h-mid), because such a rect is that plan's wall.
+    - the lower plan draws no wall on the same line (no lower-plan piece with the same cross band ±snap_tol), because such a rect is that plan's wall. Measured: GF lintel/sill rects BB (2.52..3.1) and B9 (0..0.1) sit at a GF window where no GF piece passes the cut, but the GF plan draws that wall line, so they are GF material.
   - base = the lowest z0 of those rects; `base_source: 'section'`.
   - S-SLAB rects are never wall material.
 - (b) Else the elevation's base (`applyWallHeights`): `base_source: 'elevation'`.
@@ -848,7 +848,7 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63
   - WB4: an uncut interior piece → plan level + advisory
   - WB5 (mutation): the section rect moved 50 mm → the base follows; the S-SLAB is never used
 
-**2. One wall per footprint across consecutive plans** (`Dxf2Shell.mergeStacked`, after the bases and tops).
+**2. One wall per footprint across consecutive plans** (`Dxf2Shell.mergeStacked`, applied to the final element set just before meshing; the per-storey reasoning before it (openings bridged, slabs, witnesses) keeps the plan pieces, since FF bridging needs its own jamb pieces).
 - Two pieces, on consecutive plans (by `@LEVEL`), with the same rect (±snap_tol), whose stated z-ranges OVERLAP or TOUCH (±elev_tol), are ONE wall.
   - It is kept on the lower plan, with z = the union of the stated ranges and `height_source: 'stacked:<lower source>+<upper source>'`.
   - The upper piece is removed and recorded as `merged_into`.
