@@ -460,6 +460,8 @@ Finding (IfcOpenShell on `Ifc2x3_SampleCastle.ifc`, independent of web-ifc): the
 - **V2 witness (names its issue: a host miscounted as a defect, or a non-voided host hidden under the rule).** `witness_extract_2d_tables.py` E5: for every V1 host on the 8 IFCs, IfcOpenShell with `disable-opening-subtractions` yields vertices and with subtraction yields none; any V1 host failing this FAILS E5. Control: a V1 host whose opening is deleted from the IFC copy must leave the V1 set.
 - **V3 acid effect.** SampleCastle openings hosted by such walls (27/19/8/11 per plan) move from GAP to accounted; the other 128/110/101/18 (no authored host, no wall void) are unchanged and remain `GAP:opening_no_host` until their host class is identified (next step).
 
+- **V4 finding: the unhosted remainder is unstated in the model (measured 2026-10-17).** SampleCastle: 390 of 464 doors/windows have no IfcRelFillsElement (IfcOpenShell `FillsVoids` empty; the 74 that fill an opening sit in 60 IfcWallStandardCase and 14 IfcBuildingElementProxy). Where the other 390 sit (bbox centre +-20 mm, inside the element's z range): in no element 239, in an IfcWall bbox 59 (no void in that wall's mesh at the opening), in IfcCovering 53, in IfcSpace 27, other 12. The model states no host for any of them, so `GAP:opening_no_host` stands: choosing the IfcWall of the 59 would be a proximity guess, which O1 forbids. Closing this needs a user marking (`@TAG` host), not code.
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
