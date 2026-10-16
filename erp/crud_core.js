@@ -56,8 +56,16 @@
     if (n > 0 && n < 1e12) n = n * 1000;                 // looks like epoch-seconds → ms
     var d = new Date(n); if (isNaN(d.getTime())) return ts;
     function p(x) { return (x < 10 ? '0' : '') + x; }
-    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) +
-           ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds());
+    // §LOCAL-TIME (bim-compiler prompts/ERP_DEPTH_FILM.md; Witness W-LOCAL-TIME): LOCAL wall clock, as legacy stamps Created/Updated with
+    //   the server's local time (the device is the server here). Was getUTC*: Record Info showed 03:15 at 11:15 (+08:00).
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  // localDay — today's LOCAL date yyyy-MM-dd (legacy #Date). The ONE implementation every "today" uses (was toISOString = the UTC date:
+  //   a document created between 00:00 and 08:00 at +08:00 was dated yesterday).
+  function localDay(ms) {
+    var d = new Date(ms == null ? Date.now() : Number(ms)); function p(x) { return (x < 10 ? '0' : '') + x; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -1357,7 +1365,7 @@
     docPolicyFor: docPolicyFor, tipDocs: tipDocs,                              // T1: fan-out policy + created-doc tip
     foldBackGroup: foldBackGroup, foldForwardGroup: foldForwardGroup,          // T1 Part B: group-aware Z fold
     listTip: listTip, gateOp: gateOp,                                           // T2: list read-the-tip · T4: owner-gate/CAS pre-check
-    changeLog: changeLog, changeLogAll: changeLogAll, changeRule: changeRule, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
+    changeLog: changeLog, changeLogAll: changeLogAll, changeRule: changeRule, recordInfo: recordInfo, fmtKernelTs: _fmtKernelTs, localDay: localDay,     // Task 2: per-record AD-filtered change trail + iDempiere ts format · Item 3a (W-RECINFO): always-on record-level last-touch
     fieldLineage: fieldLineage,                                                  // Item 3b (W-FIELD-LINEAGE): always-on per-field value history (kills AD_ChangeLog)
     draftPut: draftPut, draftGet: draftGet, draftClear: draftClear, draftList: draftList,
     draftDirty: draftDirty, draftChangedCols: draftChangedCols, draftDrift: draftDrift   // Item 1 (W-DRAFT-RESTORE): private draft buffer — unsaved typing, never an official dot

@@ -496,7 +496,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=15"></script>
+<script src="ad_process.js?v=16"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
@@ -686,7 +686,7 @@
      ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
      pos_lens._sfx no-ops if absent. -->
 <script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
-<script src="pos_lens.js?v=10"></script>
+<script src="pos_lens.js?v=11"></script>
 <!-- Kitchen Display (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC) — queue = FOLD over the op log
      (KitchenCore, == bim-compiler build/erp source of truth, W-KDS-QUEUE headless) + the dumb-terminal
      lens (KitchenLens). Serve rides pos_core's completeShipmentOps — load AFTER pos_core. -->
@@ -729,8 +729,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=6"></script>
-<script src="crud_overlay.js?v=33"></script>
+<script src="crud_core.js?v=7"></script>
+<script src="crud_overlay.js?v=34"></script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -2080,7 +2080,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     put('ad_client_id', (_session && _session.client) ? _session.client.id : null);
     put('ad_org_id', (_session && _session.org) ? _session.org.id : null);
     put('ad_user_id', (_session && _session.user) ? _session.user.id : null);
-    put('date', (new Date()).toISOString().slice(0, 10));
+    put('date', CrudCore.localDay());   // §LOCAL-TIME #Date = the local day
     return ctx;
   }
   // §GT — the tab model (one per AD_Tab, cached on the open window) + the window context Env.getContext reads:
@@ -2109,7 +2109,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ln === 'ad_org_id') return _session && _session.org ? _session.org.id : null;
       if (ln === 'ad_user_id') return _session && _session.user ? _session.user.id : null;
       if (ln === 'ad_role_id') return _session && _session.role ? _session.role.id : null;
-      if (ln === 'date') return (new Date()).toISOString().slice(0, 10);
+      if (ln === 'date') return CrudCore.localDay();   // §LOCAL-TIME
       if (ln === 'issotrx') return _winIsSOTrx();
       if (ln === 'showadvanced') return window.APP && window.APP.showAdvanced ? window.APP.showAdvanced : null;   // Login.java:531 (AD_UserQuery tab WhereClause uses it)
       return null;
@@ -3125,7 +3125,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
       finReport: function (rid, opts) { return (window.__report && window.__report.fold) ? window.__report.fold(rid, opts) : null; },
-      today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
+      today: CrudCore.localDay(),   // §LOCAL-TIME the one local-day implementation
       clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
         var m = {};
@@ -4933,7 +4933,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   @#Date@) — so a mandatory system column doesn't block a folded New. iDempiere fills these from Env, never asks.
     var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
                 orgId: (_session && _session.org) ? _session.org.id : null,
-                today: (new Date()).toISOString().slice(0, 10) };
+                today: CrudCore.localDay() };   // §LOCAL-TIME
     ctx.sysPref = _loginDefaults();                          // FS-12: GridField stage 5 (#ColumnName)
     // §P2.7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-REFLIST): a List column's option set
     //   is its AD_Reference_Value_ID's AD_Ref_List rows — resolved by the SAME ADParser.resolveReference the read
