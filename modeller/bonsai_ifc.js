@@ -91,6 +91,36 @@
       const place3 = (o) => api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT3D,
         api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(o[0]), len(o[1]), len(o[2])]), z3(), x3());
 
+      // §IFC-SPATIAL (prompts/DXF2BIM_MODELLER_LANE.md L3): IfcProject > IfcSite > IfcBuilding > IfcBuildingStorey, every
+      // product contained. Until 2026-10-16 the file had NO spatial structure at all (no IfcProject), so it was not a valid IFC4
+      // model. A product goes to a storey ONLY when its op carries parameters.storey (+ storey_elev); otherwise it is contained
+      // in the building itself, never a guessed storey. Units: SI metre / square metre / cubic metre / radian.
+      const enumOf = (E, v) => (T.IFC4 && T.IFC4[E] && T.IFC4[E][v]) || { type: 3, value: v };
+      const siUnit = (ut, nm) => api.CreateIfcEntity(mID, T.IFCSIUNIT, enumOf('IfcUnitEnum', ut), null, enumOf('IfcSIUnitName', nm));
+      const units = api.CreateIfcEntity(mID, T.IFCUNITASSIGNMENT, [siUnit('LENGTHUNIT', 'METRE'), siUnit('AREAUNIT', 'SQUARE_METRE'), siUnit('VOLUMEUNIT', 'CUBIC_METRE'), siUnit('PLANEANGLEUNIT', 'RADIAN')]);
+      const ctx = api.CreateIfcEntity(mID, T.IFCGEOMETRICREPRESENTATIONCONTEXT, null, label('Model'), api.CreateIfcType(mID, T.IFCDIMENSIONCOUNT, 3), real(1e-5), place3([0, 0, 0]), null);
+      const spatialGid = (k) => api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(1000000 + k));
+      const localPl = (rel, z) => api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, rel, place3([0, 0, z || 0]));
+      const project = api.CreateIfcEntity(mID, T.IFCPROJECT, spatialGid(0), null, label('Bonsai model'), null, null, null, null, [ctx], units);
+      const sitePl = localPl(null, 0), bldPl = localPl(sitePl, 0);
+      const site = api.CreateIfcEntity(mID, T.IFCSITE, spatialGid(1), null, label('Site'), null, null, sitePl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null, null, null);
+      const building = api.CreateIfcEntity(mID, T.IFCBUILDING, spatialGid(2), null, label('Building'), null, null, bldPl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null);
+      [project, site, building].forEach(e => api.WriteLine(mID, e));
+      const storeys = new Map();                      // storey name -> { e, elev, products: [] }
+      const buildingProducts = [];
+      let _curOp = null;
+      const storeyFor = (op) => {
+        const P = op && op.parameters;
+        if (!P || P.storey == null || P.storey_elev == null || !isFinite(+P.storey_elev)) return null;
+        if (!storeys.has(P.storey)) {
+          const e = api.CreateIfcEntity(mID, T.IFCBUILDINGSTOREY, spatialGid(10 + storeys.size), null, label(String(P.storey)), null, null,
+            localPl(bldPl, +P.storey_elev), null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), len(+P.storey_elev));
+          api.WriteLine(mID, e); storeys.set(P.storey, { e, elev: +P.storey_elev, products: [] });
+        }
+        return storeys.get(P.storey);
+      };
+      const contain = (e, type) => { if (type === T.IFCOPENINGELEMENT) return; const st = storeyFor(_curOp); (st ? st.products : buildingProducts).push(e); };
+
       const productFromRep = (rep, type, name, gn, extra) => {   // an already-built IfcShapeRepresentation -> a product
         const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
         const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn));
@@ -98,10 +128,11 @@
         if (extra) args.push(...extra);                       // IfcOpeningElement adds Tag + PredefinedType
         const e = api.CreateIfcEntity(mID, type, ...args);
         api.WriteLine(mID, e);
+        contain(e, type);
         return e;
       };
       const product = (solid, type, name, gn, extra) => {     // shape shell -> IfcWall / IfcOpeningElement
-        const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
+        const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('SweptSolid'), [solid]);
         return productFromRep(rep, type, name, gn, extra);
       };
 
@@ -173,6 +204,7 @@
       };
 
       for (const op of ops) {
+        _curOp = op;
         if (op.op_type === 'GEOM_INSERT') {
           const P = op.parameters;
           // §ANCHOR — void-consumed hosts are invisible ride anchors. The user's binding condition is
@@ -188,7 +220,7 @@
           const ent = _CLASS_MAP[cls] || 'IFCBUILDINGELEMENTPROXY';
           if (!_CLASS_MAP[cls]) seedProxy++;
           seedByClass[cls] = (seedByClass[cls] || 0) + 1;
-          const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('Tessellation'), [fs]);
+          const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
           productFromRep(rep, T[ent], (P.ifc_class || 'Element') + ' ' + op.id, gn++);
           seeded++;
           continue;
@@ -243,7 +275,7 @@
             const poly = api.CreateIfcEntity(mID, T.IFCPOLYLINE, cpts);
             const prof = api.CreateIfcEntity(mID, T.IFCARBITRARYCLOSEDPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Member'), poly);
             const solid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, prof, place3([0, 0, 0]), z3(), plm(pp.depth));
-            const baseRep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
+            const baseRep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('SweptSolid'), [solid]);
             repMap = api.CreateIfcEntity(mID, T.IFCREPRESENTATIONMAP, place3([0, 0, 0]), baseRep);
           }
           for (let i = 0; i < count; i++) {
@@ -254,7 +286,7 @@
               const xform = api.CreateIfcEntity(mID, T.IFCCARTESIANTRANSFORMATIONOPERATOR3D, null, null,
                 api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(d.dx), len(d.dy), len(d.dz)]), null, null);
               const mapped = api.CreateIfcEntity(mID, T.IFCMAPPEDITEM, repMap, xform);
-              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('MappedRepresentation'), [mapped]);
+              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('MappedRepresentation'), [mapped]);
             } else {
               const depth = _evalFormula(P.formula, { i, n: count, v0 });
               const cpts = pts.map(pt => api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(pt[0]), len(pt[1])]));
@@ -262,7 +294,7 @@
               const poly = api.CreateIfcEntity(mID, T.IFCPOLYLINE, cpts);
               const prof = api.CreateIfcEntity(mID, T.IFCARBITRARYCLOSEDPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Member'), poly);
               const solid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, prof, place3([d.dx, d.dy, d.dz]), z3(), plm(depth));
-              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, null, label('Body'), label('SweptSolid'), [solid]);
+              rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('SweptSolid'), [solid]);
             }
             // IfcMember: base8 (GlobalId..Tag) + PredefinedType = 9 args
             const member = productFromRep(rep, T.IFCMEMBER, 'Array ' + op.id + ' #' + i, gn++, [T.IFC4.IfcMemberTypeEnum.MULLION]);
@@ -283,6 +315,16 @@
         }
       }
 
+      // §IFC-SPATIAL: aggregation + containment, then one log line with the counts (read it).
+      const rel = (type, a, b) => api.WriteLine(mID, api.CreateIfcEntity(mID, type, spatialGid(500000 + (gn++)), null, null, null, a, b));
+      rel(T.IFCRELAGGREGATES, project, [site]);
+      rel(T.IFCRELAGGREGATES, site, [building]);
+      const stList = [...storeys.values()].sort((a, b) => a.elev - b.elev);
+      if (stList.length) rel(T.IFCRELAGGREGATES, building, stList.map(s => s.e));
+      for (const st of stList) if (st.products.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, st.products, st.e);
+      if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
+      console.log(TAG + ' §IFC-SPATIAL storeys=' + stList.length + ' ' + JSON.stringify(stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length])) +
+        ' inBuilding=' + buildingProducts.length + ' contexts=1');
       const bytes = api.SaveModel(mID);
       api.CloseModel(mID);
       console.log(TAG + ' build walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
@@ -342,9 +384,16 @@
           break;
         }
       }
+      // §IFC-SPATIAL read-back: the spatial tree and how many products are contained
+      const nOf = t => api.GetLineIDsWithType(id, t).size();
+      const cIds = api.GetLineIDsWithType(id, T.IFCRELCONTAINEDINSPATIALSTRUCTURE);
+      let contained = 0; for (let i = 0; i < cIds.size(); i++) { const r = api.GetLine(id, cIds.get(i)); contained += (r.RelatedElements || []).length; }
+      const spatial = { projects: nOf(T.IFCPROJECT), sites: nOf(T.IFCSITE), buildings: nOf(T.IFCBUILDING), storeys: nOf(T.IFCBUILDINGSTOREY),
+        aggregates: nOf(T.IFCRELAGGREGATES), containRels: cIds.size(), contained };
+      console.log(TAG + ' §IFC-SPATIAL reimport ' + JSON.stringify(spatial));
       const out = { walls: wallIds.size(), openings: openIds.size(), rels: relIds.size(), solids: solidIds.size(), firstProfile, firstDepth,
         members: memberIds.size(), memberTypes: memberTypeIds.size(), relTypes: relTypeIds.size(), memberDepths,
-        mappedItems: mappedItemIds.size(), repMaps: repMapIds.size() };
+        mappedItems: mappedItemIds.size(), repMaps: repMapIds.size(), spatial };
       api.CloseModel(id);
       console.log(TAG + ' reimport walls=' + out.walls + ' openings=' + out.openings + ' rels=' + out.rels + ' solids=' + out.solids +
         ' members=' + out.members + ' memberTypes=' + out.memberTypes + ' relTypes=' + out.relTypes + ' mappedItems=' + out.mappedItems + ' repMaps=' + out.repMaps);
