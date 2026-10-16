@@ -2,6 +2,60 @@
 SCOPE: DXF2BIM inside the Modeller: Duplex → standard 2D set → import → metadata editor → qualify → convert (basic shapes) → IFC4; then the demo film.
 Spec before code, for every lane below. Read the log after every run (exit code is not evidence). Every value traces to a DXF entity, a marking a user confirmed, or a named standard convention; nothing is guessed. Work in a /tmp/wt-* worktree (editing ~/bim-ootb directly is hook-blocked). Neutral naming: no client names anywhere.
 
+## ▶ RESUME (next session, written 2026-10-17)
+Read this block first, then the sections it names. Work to zero; spec first, then code; read every log; use worktrees only (editing ~/bim-ootb directly is hook-blocked); neutral naming (no client name in any repo, film or doc).
+
+**Where things stand (all merged unless marked).**
+- **Round trip, witnessed on the Duplex:**
+  - L1 standard 2D writer (BIMCompiler `2D_Layout/python/std2d.py`): grid on load-bearing axes, 3-tier DIMENSION entities, door hinge/swing from IFC `door_operation`, plan = everything the cut plane passes through, roof plan, section.
+  - L2 qualify verdict (`deploy/dev/dxf2qualify.js`).
+  - L3 Modeller import → Convert (ARC-seed form) → IFC4 with storeys.
+  - L4 metadata editor, including @BY, @LAYER and the door schedule (#2071).
+  - The std Duplex set QUALIFIES with 0 blocking; a RAW set reached Qualifies through the editor in #2071 (282 UI actions), BUT that relied on model-derived window labels (a sidecar, since removed). Without them, 12 stacked FF windows stay `GAP:fill_unbound`, because the Tag tool cannot say which stacked window a tag means. Fix in flight (§L4.4): tag on ELEVATION sheets, with z taken from the pick. Verify that #2071/#2072 landed with E7 passing honestly.
+- **Library:** published to OCI as versioned shards `dxf2bim/library/<sha12>/` + `latest.json`, with samples at `dxf2bim/samples/duplex/{raw,marked}/`. Labels now go in the marked DXF as `@TAG … @BY=model` (BIMCompiler #195). Check that bim-ootb #2071 (doors) and #2072 (labels fix) landed on main, and that the public Modeller loads `source=oci`.
+- **Docs (live):**
+  - https://red1oon.github.io/BIMCompiler/DXF2BIMGuide/
+  - https://red1oon.github.io/BIMCompiler/DXF2BIM_TechnicalNote/
+  - Deploy only via `scripts/safe_gh_deploy.sh`. The live site carries pages from other branches (BIMToolsGuide, CivilWorksGuide, NinjaExcel manual, LegacyOracle spec, figs, glassbowl_data.db), so bring their sources into the deploy tree.
+  - Update the guide with: the sample-set links, the raw → Qualifies walkthrough (Doors section), library on OCI, multi-storey results.
+- **Films:**
+  - EN `~/Videos/DXF2BIM_Demo_EN_1920x1080_24fps_2026-10-16_v2_resync.mp4` (BIMCompiler #192; click ripple ~2:42 needs a re-take).
+  - MS in progress at handoff: check for `~/Videos/DXF2BIM_Demo_MS_*.mp4` and its PR.
+  - The EN film predates the door schedule. A re-cut of chapter 6 (raw → Qualifies) is now possible.
+- **Possibly in flight at handoff** (check PRs/branches, resume or redo):
+  - multi-storey acid test (SampleCastle + HHS), plus the Node extractor additions (`rel_fills_host` incl. void-only openings, world bboxes/meshes, Pset IsExternal/LoadBearing), §L1.6 (openings from the host relation, not the knife; columns as gridded column symbols; storey names from the model);
+  - the MS film.
+
+**NEXT LANES (in order).**
+1. **Extractor = one schema.** std2d must read ONLY the Node extractor DB (`scripts/extractIFC2DB.js`; never the Python one). Prove the Duplex std set is identical from the Node DB.
+2. **§L1.6 acid test on multi-storey models:** SampleCastle (5 storeys, stairs, 259 windows, 205 doors, 23 columns) and HHS (257 columns).
+   - Pass condition: every door/window of each storey is a gap in its host wall in plan whatever its sill height, with high windows dashed; columns are drawn as columns and gridded; three dimension tiers; one building grid across storeys.
+   - Before/after numbers per storey.
+3. **NEW (user, 2026-10-17): BIM → 2D export INSIDE the Modeller.**
+   - User flow: "Loading user BIM into Modeller as present feature is good so user and code can examine that all is proper and markings can auto derive …, then allow export to choose DXF".
+   - **Steps:**
+     - (a) open the user's IFC (exists);
+     - (b) a "drawable?" check report (storeys, hosts, door handing, geometry readable);
+     - (c) markings derived automatically from the model (`@BY=model`, as `mark_dx_set.js std` does);
+     - (d) Export → "2D drawings (DXF)" writes the standard set with markings embedded; re-importing it must Qualify.
+   - **Decision to make in the spec:** port std2d.py to JS (recommended) vs Pyodide.
+   - Depends on lanes 1–2.
+4. **Zone-stretch of real LOD400 meshes** (user proposal, agreed in principle):
+   - Stretch planes per door/window family, read from the mesh structure (frame vs panel). Frame and hardware keep their real size; only the panel/glass zones stretch.
+   - Exact catalogue match first. Stretch only when the type is known.
+   - Range limits → `GAP:stretch_out_of_range`.
+   - Provenance "family X stretched from W0×H0 to W×H", and BOM as a custom size.
+   - Witness on the Farmhouse openings (0 bound today).
+5. **CAD DXF (BricsCAD/AutoCAD): INSERT/block expansion** (nested transforms, mirror) + ATTRIB values as tags (`@BY=file`). ASCII DXF only today. Ask the user for a real BricsCAD-exported set for a blind test.
+6. **Fewer UI actions:** smarter proposals (levels/faces from title and level texts, schedules from drawing tables) to cut the 282 actions.
+7. **Prior-art search** (commercial tools, ML research, patents) before any "first/unique" wording. Optionally, a Zenodo DOI for the technical note (the user's account).
+
+**Standing decisions.**
+- Metadata lives IN the DXF (`DXF2BIM-MARK`, `@BY=model|user`, no sidecars).
+- Library data is never committed to git, and the old root `component_library.db` on OCI is never touched.
+- The old hand-made Duplex sheets stay as a recorded finding: swings 6/14, casing-inclusive arcs, roof +43 mm.
+- No "any DXF" claim until a blind test passes.
+
 # DXF2BIM in the Modeller: lane spec (2026-10-16)
 
 ## 0. Sources
