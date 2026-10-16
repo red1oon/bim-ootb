@@ -47,7 +47,9 @@ async function openSalesOrderGrid(page, port, mobile) {
   });
   console.log('   grid headers: ' + JSON.stringify(grid.headers));
   console.log('   grid chips: ' + JSON.stringify(grid.chips));
-  ok('grid has a Status column (DocStatus surfaced even though not in the first display fields)', grid.headers.includes('Status'));
+  // §GRID-COLS: the grid shows the dictionary's grid columns (GridView.setupFields); Sales Order's DocStatus field IS a grid column, so the
+  //   chip renders in its own "Document Status" column (the twin-only leading "Status" column is gone)
+  ok('grid has the Document Status column (the dictionary grid field; chips render in place)', grid.headers.some(h => /Document Status|Status/.test(h)));
   ok('grid renders ≥1 DocStatus chip', grid.chips.length >= 1, 'count=' + grid.chips.length);
   ok('chips show human labels (Completed/Drafted/…), not raw codes (CO/DR)', grid.chips.length > 0 && grid.chips.every(c => !/^[A-Z]{2}$/.test(c.label)), JSON.stringify(grid.chips.map(c => c.label)));
   ok('a Completed chip is green (rgb(39,192,138))', grid.chips.some(c => c.label === 'Completed' && c.dot === 'rgb(39, 192, 138)'), JSON.stringify(grid.chips.filter(c => c.label === 'Completed')));
