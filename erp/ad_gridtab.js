@@ -208,7 +208,23 @@
     return { onlyCurrentRows: !!o.isTransaction, findFirst: require, countAll: n };
   }
 
-  var API = { onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
+  // ── §GRID-COLS the grid's columns (bim-compiler prompts/ERP_DEPTH_FILM.md §GRID-COLS; Witnesses: W-GRID-COLS-ENGINE, W-GRID-COLS-LIVE).
+  //   GridView.setupFields :409-470 (no tab customization): the GridTab fields (AD_Field_v order: SeqNo, IsDisplayed DESC; active field +
+  //   column) with isDisplayedGrid and not a toolbar-only button; on mobile only the first ZK_GRID_MOBILE_MAX_COLUMNS (default 10) in
+  //   that order; then a STABLE sort by SeqNoGrid. Returns null when the bundle has no IsDisplayedGrid (legacy-shape) - caller falls back.
+  function gridFields(fields, o) {
+    o = o || {};
+    var all = (fields || []).filter(function (f) { return f.isColumnActive !== false; });
+    if (!all.length || all[0].isDisplayedGrid === undefined) return null;
+    var ord = all.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) {
+      var d = (Number(a.f.seqNo) || 0) - (Number(b.f.seqNo) || 0); if (d) return d;
+      var e = (b.f.isDisplayed ? 1 : 0) - (a.f.isDisplayed ? 1 : 0); return e || a.i - b.i; }).map(function (x) { return x.f; });
+    var max = o.mobile ? (Number(o.maxMobile) > 0 ? Number(o.maxMobile) : 10) : 0, out = [];
+    for (var i = 0; i < ord.length; i++) { var f = ord[i]; if (f.isDisplayedGrid && !f.isToolbarOnlyButton) out.push(f); if (max > 0 && out.length >= max) break; }
+    return out.map(function (f, i) { return { f: f, i: i }; }).sort(function (a, b) { return (a.f.seqNoGrid - b.f.seqNoGrid) || a.i - b.i; }).map(function (x) { return x.f; });
+  }
+
+  var API = { gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
               query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
   // ── §UDP-ORDER the row order of a tab (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-ORDER; Witness: W-UDP-ORDER).
   //   GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo slots 1..3 (|SortNo|, negative = DESC;
