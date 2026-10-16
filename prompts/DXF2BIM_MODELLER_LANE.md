@@ -836,11 +836,12 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63
     - its z0 < the piece's top; and
     - the lower plan draws no wall on the same line (no lower-plan piece with the same cross band ±snap_tol), because such a rect is that plan's wall. Measured: GF lintel/sill rects BB (2.52..3.1) and B9 (0..0.1) sit at a GF window where no GF piece passes the cut, but the GF plan draws that wall line, so they are GF material.
   - base = the lowest z0 of those rects; `base_source: 'section'`.
+  - When the cut falls inside a drawn opening (a door's `opening_box` s0..s1, or a window's bbox, on the same band), the section rects at that h state the base of that wall. The base therefore applies to the opening's two jamb pieces (the pieces ending at s0 and starting at s1). Measured: the cut passes through door 152's opening (1.483..2.347), so B5/B7 state wall 1014's base at the opening, not at a piece.
   - S-SLAB rects are never wall material.
 - (b) Else the elevation's base (`applyWallHeights`): `base_source: 'elevation'`.
 - (c) Else the plan level: `base_source: 'plan_level'`. When the piece's model storey can't be stated, nothing in the drawings states a base below the plan level, so the pipeline logs advisory `GAP:wall_base_from_plan_level` (qualify: advisory) on interior pieces whose height came from a marking or slab_above.
 - The top is unchanged. Base and top never extend through a slab: the base is a section wall rect, never an S-SLAB.
-- rosetta_dx_shell OV: "wall below missing" is explained when the host piece carries `wall_base_from_plan_level` (the drawings state no base below). Target: std fail = 0.
+- rosetta_dx_shell OV: "wall below missing" is explained when the host carries `wall_base_from_plan_level` (the drawings state no base below). The host is the piece holding the opening centre, or the jamb pieces of the infill box there. Target: std fail = 0.
 - Tests:
   - WB1: a section-cut piece takes the section base
   - WB2: a lower-plan rect (stacked wall) is not taken
