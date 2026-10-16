@@ -602,6 +602,35 @@ Decisions (coordinator, 2026-10-16), as rules. The SECTION / roof-sheet work and
 
 **Report:** the std-set verdict by cause.
 
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-doors`, rebased on #183).** The std set is 8 sheets, regenerated from master `std2d.py --door-ops`.
+- **A:** markings written from the model:
+  - GF: `@WALLTOP=0,slab_above` + `handle:9F,3.1`
+  - FF: `@WALLTOP=3.1,slab_above` + `handle:99,5.695` + `handle:9B,5.695`
+  - Pipeline: L1 marking 1 + slab_above 16; L2 marking 2 + slab_above 21. 0 interior-wall gaps remain.
+- **B:** std `opening_unclassified` 34→14 (GF) and 40→16 (FF); the old set is unchanged.
+- **C:**
+  - schedule heights for 6/6 GF doors and 4/8 FF doors.
+  - The other 4 FF doors (14C, 14E, 156, 158) stay `no_elevation_height`. Their tag is `GAP:label_ambiguous` because the reader's door hit rule (SANDBOX: a swing disc around the hinge) catches two doors whose hinges are 0.22 m apart.
+- **D:** with leaf widths, std DW-doors widths are 14/14 equal.
+- **E:**
+  - ROOF and SECTION are marked: `@CUT=X,2304.25` (mm), `@HAXIS=+Y`, A..D, `@Z` 0/3.1/6/6.457, `@ROOF` 6.457.
+  - The section feeds slabZ: L1 −0.127..0, L2 2.795..3.1. The roof plan: outline + 2 holes, z 6..6.457.
+  - rosetta_dx_shell std: SL-d, RF-a, RF-d and DW-doors L1 now PASS (31/4).
+- **F:** the old set's DW-doors L1/L2 FAIL is logged as KNOWN FINDING, as is RF-d. Old rosetta_dx_shell: 33/3.
+- **G:** std DW-doors L1 6/6, L2 2/8.
+- **Std verdict: blocked, 56. Walls, slabs and roof qualify; all 56 blocking items are doors:**
+  - `opening_unclassified` 30: A-DOOR outlines touching no hinge or arc end (far-face casing 417/124 mm away, leaf panels)
+  - `no_host_cut` 8 and `no_elevation_height` 4 (FF)
+  - `fill_size_mismatch` 6 (GF): library products include the casing, dw 0.152 / dh 0.076 vs the leaf
+  - `fill_no_void` 4, `door_host_ambiguous` 2 and `opening_gap_unbounded` 2 (FF T-junction hinges on a face shared by two strips)
+- **Regression** (each vs the master baseline):
+  - unit suites 18/18 fail=0: test_qualify 58, test_std_rules 20, test_section 17
+  - rosetta_dx: old 13/2 (L1.3 known), std 15/0, both unchanged
+  - rosetta_dx_section: 9 PASS, plus its required control FAIL; fail=0, unchanged
+  - farm_heights: identical; t8: identical except timing
+  - rosetta_qualify: fail=0
+  - old marked copies: byte-identical
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
