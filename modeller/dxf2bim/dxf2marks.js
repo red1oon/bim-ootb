@@ -9,8 +9,8 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE'];
-  var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'] };
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP'];
+  var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'] };   // ROOF view: lane spec L2.3 D1
 
   function err(code, message, extra) { return Object.assign({ code: code, message: message }, extra || {}); }
 
@@ -28,7 +28,7 @@
   }
 
   function describe(marks) {
-    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], tags: [], allowance: {} }, errors = [];
+    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], tags: [], allowance: {}, walltop: [] }, errors = [];
     marks.forEach(function (m) {
       var mt = /^@([A-Z]+)=(.*)$/.exec(m.raw);
       if (!mt) { errors.push(err('MARK:malformed', 'not @KEY=VALUE: ' + m.raw, { handle: m.handle })); return; }
@@ -43,7 +43,7 @@
           if (rp.length !== 4 || rp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@REGION needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
           val = [Math.min(rp[0], rp[2]), Math.min(rp[1], rp[3]), Math.max(rp[0], rp[2]), Math.max(rp[1], rp[3])].join(',');
         }
-        if (key === 'VIEW' && val !== 'PLAN' && val !== 'ELEV') { errors.push(err('MARK:malformed', '@VIEW must be PLAN|ELEV: ' + val, { handle: m.handle })); return; }
+        if (key === 'VIEW' && val !== 'PLAN' && val !== 'ELEV' && val !== 'ROOF') { errors.push(err('MARK:malformed', '@VIEW must be PLAN|ELEV|ROOF: ' + val, { handle: m.handle })); return; }
         if (key === 'UNITS' && !(val in K)) { errors.push(err('MARK:malformed', '@UNITS must be mm|cm|m|in|ft: ' + val, { handle: m.handle })); return; }
         if (key === 'FACE' && ['minX', 'maxX', 'minY', 'maxY'].indexOf(val) < 0) { errors.push(err('MARK:malformed', '@FACE must be minX|maxX|minY|maxY: ' + val, { handle: m.handle })); return; }
         if (key === 'HAXIS' && ['+X', '-X', '+Y', '-Y'].indexOf(val) < 0) { errors.push(err('MARK:malformed', '@HAXIS must be +X|-X|+Y|-Y: ' + val, { handle: m.handle })); return; }
@@ -84,6 +84,10 @@
         var sdup = d.schedule.find(function (q) { return q.text === sent.text && q.class === sent.class; });
         if (sdup && JSON.stringify(sdup) !== JSON.stringify(sent)) { errors.push(err('MARK:conflict', '@SCHEDULE ' + sent.text + ' (' + sc + ') has two sizes', { handle: m.handle })); return; }
         if (!sdup) d.schedule.push(sent);
+      } else if (key === 'WALLTOP') {                                                      // L2.3 D3: user-stated convention, never a default
+        var wp = val.split(','), wl = Number(wp[0]);
+        if (wp.length !== 2 || wp[0].trim() === '' || !isFinite(wl) || wp[1] !== 'slab_above') { errors.push(err('MARK:malformed', '@WALLTOP needs <level>,slab_above: ' + val, { handle: m.handle })); return; }
+        if (!d.walltop.some(function (q) { return q.level === wl; })) d.walltop.push({ level: wl, rule: wp[1], handle: m.handle });
       } else if (key === 'EXCLUDE') {
         var xp = val.split(',').map(Number);
         if (xp.length !== 4 || xp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@EXCLUDE needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
@@ -126,6 +130,7 @@
     d.tags.sort(function (p, q) { return p.x - q.x || p.y - q.y || (p.z === undefined ? -1e9 : p.z) - (q.z === undefined ? -1e9 : q.z) || (p.class < q.class ? -1 : p.class > q.class ? 1 : 0); });
     d.schedule.sort(function (p, q) { return p.text < q.text ? -1 : p.text > q.text ? 1 : p.class < q.class ? -1 : p.class > q.class ? 1 : 0; });
     d.excludes.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1] || p[2] - q[2] || p[3] - q[3]; });
+    d.walltop.sort(function (p, q) { return p.level - q.level; });
     return { desc: d, errors: errors };
   }
 

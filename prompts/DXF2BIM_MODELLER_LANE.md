@@ -126,7 +126,7 @@ Scope: import + canvas + convert. The metadata editor is L4; the L2 verdict modu
 **Sheet roles (R), from `DXF2BIM-MARK` markings only.**
 - R1 `@VIEW=PLAN` + `@LEVEL` → storey plan at that level. Storeys sorted by level, named `Level 1..n` (the source model's naming, as `rosetta_dx_shell.js`).
 - R2 `@VIEW=ELEV` + `@FACE` → elevation on that face.
-- R3 `@VIEW=PLAN` + `@ROOF` and no `@LEVEL` → roof plan at `@ROOF` (BASIC_SHAPES_SPEC §11 CF-2). Only for this role the `MARK:missing` keys `LEVEL`, `GRIDX(>=2)`, `GRIDY(>=2)` are expected.
+- R3 `@VIEW=ROOF` + `@LEVEL` + `@ROOF` (all `NEED.ROOF` keys present) → roof plan at `@ROOF` (BIMCompiler #182, lane L2.3 D1, superseding BASIC_SHAPES_SPEC §11 CF-2's `@VIEW=PLAN` + `@ROOF`; re-synced 2026-10-16, §L3.2).
 - R4 anything else (no marking, unknown view, any other marking error) → NO ROLE.
 - Gate (convert allowed): every sheet has a role, ≥1 plan, ≥1 elevation, exactly 1 roof plan. Otherwise Convert is refused and the panel names each sheet and reason (C3). The L2 verdict replaces this gate when it lands.
 
@@ -159,6 +159,37 @@ Scope: import + canvas + convert. The metadata editor is L4; the L2 verdict modu
 - Page, real UI (chooser with `multiple`, 7 sheets): C0 canvas PASS (plan wall lines at z = @LEVEL, roof at 6.5, each elevation's A-ELEV-WALL on its face plane spanning the envelope [0,-17.8,8.8,0]); C1 run_id equal; parity: 40 solids (L1 18 walls, L2 20 walls + 1 slab, roof 1) one-to-one with rendered bbox within 1 mm, and 18 cut bodies (L1 8, L2 10) equal to the union of the 40 Node infill boxes (bbox 1 mm, volume 1e-5 m³); 84 ops in ONE gesture (58 GEOM_INSERT + 26 GEOM_CUT), all with provenance; C1-FALSIFY reports exactly the 2 moved boxes. **GAP C1 FILLS**: Node 26, page 0 (`GAP:lod400_library_unreachable` ×26, console.error, no box).
 - C2: reimport IfcWall 56 / IfcSlab 1 / IfcRoof 1 = committed; IfcOpeningElement 26; storeys 2; contained 58 = products. C3: the raw GF plan → refused naming that sheet, Convert disabled, op-log 0→0. C4: one undo → 0 converted ops, 0 meshes.
 - Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+
+### L3.2 Fills from the real library (2026-10-16, written before the code)
+Closes the L3 GAP C1 FILLS (`GAP:lod400_library_unreachable` x26). User rule: no LFS or DB on GitHub; prototyping stays LOCAL on this machine, deploy = OCI later.
+- **Encoding (read from code, then measured).** `component_geometries.vertices` = float32 little-endian xyz triples, `faces` = int32 little-endian index triples (BIMCompiler `GeometryIntegrityChecker.blobToFloats/blobToInts`, `extractIFCtoDB.py` `faces.astype(np.int32).tobytes()`, the Node run's `readFloatLE`/`readInt32LE`). `normals` is NULL for all 10 bound meshes (exported as `null`, not invented). Check: decoded mesh bbox vs the source door/window extent in `DX_extracted.db`.
+- **Export (BIMCompiler `scripts/export_library_subset.js`, committed there).** Input: a pipeline run's element summary (`out/duplex_basic_shapes_elements.json`: the fills' `family_id` + `geometry_hash`) and optionally the labels that run applied. Output JSON (no timestamp; same input twice = byte-identical):
+  - header: source DB path basename, its SHA-256 and byte size, the input summary's SHA-256 + run_id, row counts per table and mesh count;
+  - `rows.ad_opening_family` (all active rows, the columns the pipeline reads) and `rows.ad_wall_type` (all active): `bindTypes` chooses among ALL size candidates, so a subset of them could bind differently;
+  - `rows.ad_geometry_map`: for every BOUND family, every door/window map row with the same class and `Dxf2Shell.pairKey` size key (the candidate set `familyToRef` and the orientation rule read), deduped by element_ref|hash as the pipeline does;
+  - `complete_for_families`: those bound family ids (the candidate set is complete only for them);
+  - `meshes[hash]`: decoded `vertices` (flat), `faces` (flat), `normals` (null when NULL), counts;
+  - `labels` (optional): the window labels the Node run applied, written by `rosetta_dx_shell.js` to `out/duplex_basic_shapes_labels.json` (from the source model: round trip, stated; L4 tags replace them).
+  The script refuses (exit 1) when a bound geometry_hash is not in the candidate set or a mesh row is missing.
+- **Where it lives.** Written to `modeller/dxf2bim/local/library_subset_duplex.json`, a git-IGNORED dir served with the Modeller. NOT committed (no library data in bim-ootb). Missing file → the page path is unchanged: `GAP:lod400_library_unreachable`, no box. Deploy: OCI (the production loader and the full-library loader are OPEN, need the user).
+- **Module (`dxf2bim_import.js`).** `librarySubset(json)` → the `library` object `convert` already takes ({families, wallTypes, geoms, labels}) plus `complete` and `missing`. A family whose selected product (`Dxf2Shell.familyToRef` over the map rows, which are all present) has a candidate row whose mesh is absent is WITHHELD: selection without every candidate mesh could pick another one (the orientation rule reads each candidate's bbox). Its openings are taken out before `placeFills` and each is a hard `GAP:lod400_mesh_missing` (product + missing hash), so EVERY fill of that product fails (both orientations), and the storey's other fills go through `placeFills` unchanged. A bound family outside `complete_for_families` → `GAP:lod400_not_in_subset`, same way. `fill_unbound` gaps (not hard in the module) are reported too.
+- **Ops.** Each fill = `GEOM_INSERT {realGeomHash:'lib-<geometry_hash>', bbox, placement{x,y,z,rot:0}, ifc_class IfcDoor|IfcWindow, storey, storey_elev, provenance{dxf_handle, layer, sheet, run_id, element_ref, geometry_hash, family_id}}` in the SAME convert gesture. The library mesh is registered ONCE per hash via `Library.registerRealGeometry` (`rg:lib-<hash>`, recentred on its bbox centre, anchorOffset 0); `lib-` keeps it apart from a resident's `rg:<hash>`. Cut `slide.filling` stays null (not claimed).
+- **Witnesses** (each run regenerates the JSON first via the export script, then reads the log):
+  - C1-PORT-SUBSET (`witness_dxf_import_node.js` P6): the module with the subset JSON instead of the DB equals the Node run element-for-element incl. 26 fills. Issue: the subset loses a candidate or a label, so a fill binds differently.
+  - P7 DETERMINISM: two exports byte-identical.
+  - C1-FILLS (page): 26 fills placed; each one's rendered centre and bbox equal the Node run's within 1 mm, class and storey equal.
+  - C1-FILLS-FALSIFY (page, JSON served with one mesh removed): exactly the Node fills of that mesh's product (element_ref) hard-fail with `GAP:lod400_mesh_missing`, all others placed, no extra insert (no box).
+  - C2: reimport adds IfcDoor 4 + IfcWindow 22 (= committed), storeys 2, contained == products.
+  - Regression: C0-C4, W-IFC-SPATIAL, W-IFC-EXPORT-SEED, W-BONSAI-IFC. Screenshot `~/Videos/dxf2bim_work/l3/l3b_fills.png`, read by eye.
+- **Re-sync (same PR).** BIMCompiler master `4bb4bf3c0` (#182) moved the roof sheet to `@VIEW=ROOF` + `@LEVEL` + `@ROOF`: `dxf2marks.js` re-copied verbatim (SOURCE.md), R3 above updated, marked inputs + Node reference regenerated with the master scripts: run_id `501b2d4e…` (was `2045e4e0…`), OBJ `246ce6f0…` unchanged. `sw.js`: `dxf2bim/local/` network-first (a regenerated subset is never served stale), cache v82.
+- **Open, needs the user:** deploy of the subset (OCI) and the full-library loader; `slide.filling` link cut↔fill; any building but the Duplex.
+
+**L3.2 results (2026-10-16).** Logs `modeller/tests/logs/witness_dxf_import_node.log`, `witness_dxf_convert.log` (inputs: BIMCompiler `feat/library-subset-export` on master 4bb4bf3c0).
+- Encoding: float32 LE vertices / int32 LE faces, normals NULL (20/20). Decoded bbox 00b72db6… = 0.467 × 1.402 × 2.086 m and 974f0644… = 4.835 × 0.417 × 2.420 m, equal to the source `M_Single-Flush:1250…` and `M_Fixed:4835…` extents in DX_extracted.db (to 0.1 mm).
+- Subset: 104,632 bytes (68 families, 18 wall types, 20 map rows, 20 meshes, 12 labels), source DB sha256 `7e5df6e1…`; two exports byte-identical (P7).
+- Node: P1-P7 PASS (P6: subset == Node run, 106 elements incl. 26 fills).
+- Page: C0, C1 RUN-ID/PARITY/COUNTS/PROVENANCE/CUTS PASS; **C1 FILLS PASS** 26/26 (IfcDoor 4, IfcWindow 22; rendered centre + bbox 1 mm); C1 FILLS-FALSIFY PASS (mesh 00b72db6 dropped → exactly fills 10F, 111 `GAP:lod400_mesh_missing`, 24 placed, 82 inserts, no box); **C2 PASS** reimport IfcWall 56 / IfcSlab 1 / IfcRoof 1 / IfcDoor 4 / IfcWindow 22, storeys 2, contained 84 = products; C3, C4 PASS.
+- Regression: W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS. Screenshot `l3b_fills.png` read: doors and glazing sit in the cut openings.
 
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**

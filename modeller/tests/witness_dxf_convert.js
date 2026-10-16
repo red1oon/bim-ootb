@@ -13,7 +13,11 @@
  *                 class, storey and RENDERED bbox within 1 mm; every void group's rendered (kernel-cut) body has the bbox of the
  *                 union of that group's Node infill boxes (1 mm) and their summed volume (1e-5 m3). Issue: the browser
  *                 convert is not the pipeline (wrong element, misplaced, cut wrong, or another identity).
- *                 Fills: Node 26 vs page 0 is the named GAP (LOD400 library unreachable), reported, never a pass.
+ *   C1 FILLS    — §L3.2: with the LOCAL library subset (generated first by BIMCompiler scripts/export_library_subset.js into
+ *                 modeller/dxf2bim/local/, git-ignored) every Node fill (26) is ONE committed GEOM_INSERT of its library mesh with
+ *                 the Node id, class, storey, rendered centre and bbox within 1 mm. Issue: fills missing, misplaced, or another product.
+ *   C1 FILLS-FALSIFY — the subset served with one mesh removed: exactly the Node fills of that mesh's product hard-fail with
+ *                 GAP:lod400_mesh_missing (console.error), every other fill is placed, no extra insert (never a box).
  *   C1 FALSIFY  — the C1 comparator against the Node summary with one piece and one infill box moved 2 mm reports exactly those
  *                 two. Issue: a comparator that cannot fail.
  *   C2 IFC      — Export ▸ IFC → reimport: products by class == committed inserts by class, storeys == 2, contained == products.
@@ -38,6 +42,8 @@ const SET = [['marked', 'DX_FLOOR_GF_marked.dxf'], ['marked', 'DX_FLOOR_FF_marke
   ['marked_shell', 'DX_LEFT_shell.dxf'], ['marked_shell', 'DX_RIGHT_shell.dxf'], ['marked_shell', 'DX_ROOF_shell.dxf']].map(([d, n]) => path.join(OUT, d, n));
 const RAW_GF = path.join(BC, '2D_Layout/output/DXF/DX_FLOOR_GF_20260428_0636.dxf');
 const lines = []; let fail = 0, gaps = 0;
+const cp = require('child_process');
+const SUBSET = path.join(ROOT, 'dxf2bim', 'local', 'library_subset_duplex.json'), DROP = '00b72db6daa0796e';
 const say = s => { lines.push(s); console.log(s); };
 const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL ') + id + ' | ' + issue + ' | ' + d); };
 const server = http.createServer((q, r) => {
@@ -66,6 +72,9 @@ async function openViaChooser(pg, files) {
 
 (async () => {
   for (const f of SET.concat([RAW_GF])) if (!fs.existsSync(f)) { say('MISSING input ' + f); process.exit(2); }
+  // §L3.2: generate the local library subset FIRST (never committed)
+  say(cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements.json'),
+    '--labels', path.join(OUT, 'duplex_basic_shapes_labels.json'), '--lib', path.join(BC, 'deploy/component_library.db'), '--out', SUBSET], { encoding: 'utf8' }).trim());
   const ref = JSON.parse(fs.readFileSync(path.join(OUT, 'duplex_basic_shapes_elements.json'), 'utf8'));
   fs.mkdirSync(SHOTS, { recursive: true });
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
@@ -113,7 +122,7 @@ async function openViaChooser(pg, files) {
       return { fid: o.id, guid, cls: o.parameters.ifc_class, storey: o.parameters.storey, storey_elev: o.parameters.storey_elev, prov: o.parameters.provenance, mesh: m ? measure(m) : null };
     });
     const cuts = ops.filter(o => o.op_type === 'GEOM_CUT').map(o => ({ fid: o.id, parent: o.parameters.parent, prov: o.parameters.provenance }));
-    return { run_id: L.run_id, gid: L.gid, ids: L.ids, groups: L.groups, counts: L.counts, fillsNeeded: L.fillsNeeded, inserts, cuts, nOps: ops.length, opsTotal: window.Bonsai.oplog.length };
+    return { run_id: L.run_id, gid: L.gid, ids: L.ids, groups: L.groups, counts: L.counts, fillsNeeded: L.fillsNeeded, fills: L.fills, fillGaps: L.fillGaps, inserts, cuts, nOps: ops.length, opsTotal: window.Bonsai.oplog.length };
   });
   say('converted: ops=' + got.nOps + ' inserts=' + got.inserts.length + ' cuts=' + got.cuts.length + ' gid=' + got.gid + ' counts=' + JSON.stringify(got.counts) + ' op-log ' + opsBefore + '->' + got.opsTotal);
   await pg.screenshot({ path: path.join(SHOTS, 'l3_converted_duplex.png') });
@@ -123,6 +132,11 @@ async function openViaChooser(pg, files) {
     A.camera.up.set(0, 0, 1); A.controls.target.copy(c); A.camera.position.copy(c).addScaledVector(d, r / Math.sin(A.camera.fov * Math.PI / 360) * 1.25); A.controls.update(); });
   await new Promise(r => setTimeout(r, 1200));
   await pg.screenshot({ path: path.join(SHOTS, 'l3_converted_front.png') });
+  await pg.evaluate(() => { const T = window.THREE, A = window.A, b = new T.Box3().setFromObject(window.Bonsai.group()), c = b.getCenter(new T.Vector3()), sz = b.getSize(new T.Vector3());
+    const r = Math.max(sz.x, sz.y, sz.z) * 0.5, d = new T.Vector3(0.75, -1, 0.35).normalize();
+    A.controls.target.copy(c); A.camera.position.copy(c).addScaledVector(d, r / Math.sin(A.camera.fov * Math.PI / 360) * 1.05); A.controls.update(); });
+  await new Promise(r => setTimeout(r, 1200));
+  await pg.screenshot({ path: path.join(SHOTS, 'l3b_fills.png') });
 
   // C1 comparator (pure, reused by the falsify control)
   function c1(refEls, gotIns, groups) {
@@ -150,25 +164,38 @@ async function openViaChooser(pg, files) {
     });
     infill.filter(e => !used.has(e.guid)).forEach(e => bad.push('infill not in any cut body ' + e.guid.slice(0, 8) + ' ' + e.openings.join('+')));
     const extra = gotIns.filter(x => !refEls.some(e => 'dxf-' + e.guid === x.guid) && !groups.some(g => g.fid === x.fid)).map(x => 'extra ' + x.cls + ' ' + x.guid);
+    // §L3.2 fills: each Node fill = one insert with its id, class, storey, rendered centre + bbox (1 mm)
+    refEls.filter(e => /IfcDoor|IfcWindow/.test(e.class)).forEach(e => {
+      const x = byGuid['dxf-' + e.guid];
+      if (!x || !x.mesh) { bad.push('fill missing ' + e.class + ' ' + e.guid.slice(0, 8) + ' ' + e.element_ref); return; }
+      const cc = [0, 1, 2].map(a => (x.mesh.bbox[a] + x.mesh.bbox[a + 3]) / 2);
+      const d = Math.max(...e.bbox.map((v, i) => Math.abs(v - x.mesh.bbox[i]))), dc = Math.max(...e.centre.map((v, i) => Math.abs(v - cc[i])));
+      if (x.cls !== e.class || x.storey !== e.storey || d > 0.001 || dc > 0.001 || !x.prov || x.prov.geometry_hash !== e.geometry_hash)
+        bad.push('fill ' + e.class + ' ' + e.guid.slice(0, 8) + ' bboxΔ=' + d.toFixed(4) + ' centreΔ=' + dc.toFixed(4) + (x.storey !== e.storey ? ' storey ' + x.storey + '/' + e.storey : ''));
+    });
     return bad.concat(extra);
   }
   check('C1 RUN-ID', 'the page convert has another identity than the Node run for the same inputs', got.run_id === ref.run_id, 'page=' + got.run_id + ' node=' + ref.run_id);
+  const nFillRef = ref.elements.filter(e => /IfcDoor|IfcWindow/.test(e.class)).length;
   const c1bad = c1(ref.elements, got.inserts, got.groups);
   const nSolid = ref.elements.filter(e => !e.infill && !/IfcDoor|IfcWindow/.test(e.class)).length, nInf = ref.elements.filter(e => e.infill).length;
   check('C1 PARITY', 'a converted element is missing, misplaced (rendered bbox 1 mm), in the wrong class/storey, or a cut body is not the union of the Node infill (bbox 1 mm, volume 1e-5 m3)',
-    c1bad.length === 0 && got.inserts.length === nSolid + got.groups.length,
+    c1bad.length === 0 && got.inserts.length === nSolid + got.groups.length + nFillRef,
     'node solids=' + nSolid + ' infill=' + nInf + ' in ' + got.groups.length + ' void groups | page inserts=' + got.inserts.length + ' cuts=' + got.cuts.length + ' | differ=' + c1bad.length + (c1bad.length ? ' ' + c1bad.slice(0, 8).join('; ') : ''));
   const cntRef = {}, cntGot = {};
   ref.elements.filter(e => !e.infill && !/IfcDoor|IfcWindow/.test(e.class)).forEach(e => { const k = e.storey + '/' + e.class; cntRef[k] = (cntRef[k] || 0) + 1; });
-  got.inserts.filter(x => !got.groups.some(g => g.fid === x.fid)).forEach(x => { const k = x.storey + '/' + x.cls; cntGot[k] = (cntGot[k] || 0) + 1; });
+  got.inserts.filter(x => !got.groups.some(g => g.fid === x.fid) && !/IfcDoor|IfcWindow/.test(x.cls)).forEach(x => { const k = x.storey + '/' + x.cls; cntGot[k] = (cntGot[k] || 0) + 1; });
   const so = o => JSON.stringify(Object.keys(o).sort().reduce((q, k) => (q[k] = o[k], q), {}));
   check('C1 COUNTS', 'element counts by storey/class (wall pieces, slab, roof) differ from the Node run', so(cntRef) === so(cntGot), 'node=' + so(cntRef) + ' page=' + so(cntGot) + ' | cut bodies by storey=' + JSON.stringify(got.groups.reduce((o, g) => (o[g.storey] = (o[g.storey] || 0) + 1, o), {})));
   const provOk = got.inserts.concat(got.cuts).every(x => x.prov && x.prov.dxf_handle && x.prov.layer && x.prov.sheet && x.prov.run_id === got.run_id);
   check('C1 PROVENANCE', 'a converted op lacks provenance {dxf_handle, layer, sheet, run_id}', provOk && got.nOps === got.inserts.length + got.cuts.length, 'ops=' + got.nOps);
   const cutParentsOk = got.cuts.every(c => got.groups.some(g => g.fid === c.parent));
   check('C1 CUTS', 'a GEOM_CUT does not target a converted opening body (wrong parent fid)', cutParentsOk && got.cuts.length > 0, 'cuts=' + got.cuts.length + ' bodies=' + got.groups.length);
-  const nodeFills = ref.elements.filter(e => /IfcDoor|IfcWindow/.test(e.class)).length;
-  gaps++; say('GAP C1 FILLS | LOD400 fills not placed: Node run placed ' + nodeFills + ' (library rows), the page has no reachable library | page fills=0 needed=' + got.fillsNeeded + ' (GAP:lod400_library_unreachable, hard fail, no box)');
+  const fillBad = c1(ref.elements, got.inserts, got.groups).filter(x => /^fill/.test(x));
+  const fillCls = got.inserts.filter(x => /IfcDoor|IfcWindow/.test(x.cls)).reduce((o, x) => (o[x.cls] = (o[x.cls] || 0) + 1, o), {});
+  check('C1 FILLS', 'a Node LOD400 fill is not placed in the page, or sits elsewhere (rendered centre/bbox 1 mm), or is another product/class/storey',
+    fillBad.length === 0 && got.fills.length === nFillRef && got.fillGaps.length === 0,
+    'node=' + nFillRef + ' page=' + got.fills.length + ' ' + JSON.stringify(fillCls) + ' gaps=' + got.fillGaps.length + (fillBad.length ? ' ' + fillBad.slice(0, 6).join('; ') : ''));
 
   // C1 FALSIFY: move one piece and one infill box 2 mm in the Node summary
   const moved = JSON.parse(JSON.stringify(ref.elements));
@@ -181,7 +208,7 @@ async function openViaChooser(pg, files) {
   const ifc = await pg.evaluate(async () => { const b = await window.Bonsai.ifc.build(); const re = await window.Bonsai.ifc.reimport(b.bytes);
     return { seeded: b.seeded, seedByClass: b.seedByClass, seedNoMesh: b.seedNoMesh, openings: b.openings, byClass: re.byClass, spatial: re.spatial, bytes: b.bytes.length }; });
   const insByClass = got.inserts.reduce((o, x) => (o[x.cls] = (o[x.cls] || 0) + 1, o), {});
-  const clsOk = Object.keys(insByClass).every(k => ifc.byClass[k] === insByClass[k]) && ifc.byClass.IfcDoor === 0 && ifc.byClass.IfcWindow === 0;
+  const clsOk = Object.keys(insByClass).every(k => ifc.byClass[k] === insByClass[k]) && ifc.byClass.IfcDoor === (insByClass.IfcDoor || 0) && ifc.byClass.IfcWindow === (insByClass.IfcWindow || 0) && insByClass.IfcDoor + insByClass.IfcWindow === nFillRef;
   check('C2 IFC', 'export->reimport loses or invents products by class, storeys != 2, or a product is outside the spatial tree',
     clsOk && ifc.spatial.storeys === 2 && ifc.spatial.contained === ifc.seeded && ifc.seeded === got.inserts.length && ifc.seedNoMesh === 0,
     'committed=' + JSON.stringify(insByClass) + ' reimport=' + JSON.stringify(ifc.byClass) + ' spatial=' + JSON.stringify(ifc.spatial) + ' seeded=' + ifc.seeded + ' noMesh=' + ifc.seedNoMesh + ' bytes=' + ifc.bytes);
@@ -197,6 +224,35 @@ async function openViaChooser(pg, files) {
   check('C4 UNDO', 'one undo leaves converted ops or meshes (convert is not one gesture)', und.active === 0 && und.meshes === 0 && und.total === opsBefore, 'activeConverted=' + und.active + ' meshes=' + und.meshes + ' op-log=' + und.total + ' (before convert ' + opsBefore + ')');
   await pg.close();
 
+  // ---------------- C1 FILLS-FALSIFY: the subset served with one mesh removed ----------------
+  {
+    const J0 = JSON.parse(fs.readFileSync(SUBSET, 'utf8')), prodRows = J0.rows.ad_geometry_map.filter(m => m.geometry_hash === DROP).map(m => m.element_ref);
+    delete J0.meshes[DROP]; const body = JSON.stringify(J0);
+    const pgf = await br.newPage(); await pgf.setViewport({ width: 1400, height: 900 });
+    await pgf.setBypassServiceWorker(true);   // the page SW would answer the fetch before interception sees it
+    await pgf.setRequestInterception(true);
+    pgf.on('request', rq => { if (/dxf2bim\/local\/library_subset_duplex\.json/.test(rq.url())) rq.respond({ status: 200, contentType: 'application/json', body }); else rq.continue(); });
+    const errs = []; pgf.on('console', m => { if (m.type() === 'error' && /§DXF-CONVERT HARD-FAIL fill/.test(m.text())) errs.push(m.text()); if (/§DXF-CONVERT (counts|library)/.test(m.text())) say('  [drop] ' + m.text().slice(0, 300)); });
+    await pgf.goto(`http://localhost:${port}/modeller.html`, { waitUntil: 'load', timeout: 90000 });
+    await pgf.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.DxfImportUI && window.A && window.A.scene', { timeout: 90000 });
+    await openViaChooser(pgf, SET);
+    await pgf.click('#dxf-convert');
+    await pgf.waitForFunction('window.DxfImportUI.state.last', { timeout: 600000 });
+    const fz = await pgf.evaluate(() => { const L = window.DxfImportUI.state.last;
+      const ops = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.provenance && o.parameters.provenance.run_id === L.run_id);
+      return { fills: L.fills.length, nIns: L.nInserts, gaps: L.fillGaps.map(g => ({ code: g.code, storey: g.storey, handle: g.handle, product: g.element_ref })),
+        ins: ops.map(o => ({ cls: o.parameters.ifc_class, hash: o.parameters.realGeomHash, prod: o.parameters.provenance.element_ref })) }; });
+    const expect = ref.elements.filter(e => /IfcDoor|IfcWindow/.test(e.class) && prodRows.indexOf(e.element_ref) >= 0);
+    const key = x => x.storey + '|' + x.handle, ms = a => a.map(key).sort().join(',');
+    const noBox = fz.ins.every(x => typeof x.hash === 'string' && x.hash.length > 0) && !fz.ins.some(x => x.prod && prodRows.indexOf(x.prod) >= 0);
+    check('C1 FILLS-FALSIFY', 'a fill whose library mesh is missing is placed anyway (substitute or box), or the hard fail hits other fills / is unnamed',
+      expect.length > 0 && fz.gaps.every(g => g.code === 'GAP:lod400_mesh_missing') && ms(fz.gaps) === ms(expect) && fz.fills === nFillRef - expect.length &&
+      fz.nIns === got.inserts.length - expect.length && noBox && errs.length === expect.length,
+      'dropped=' + DROP + ' product=' + [...new Set(prodRows)].join(',') + ' node fills of it=' + expect.length + ' gaps=' + JSON.stringify(fz.gaps) + ' placed=' + fz.fills + '/' + nFillRef +
+      ' inserts=' + fz.nIns + ' (full ' + got.inserts.length + ') console.error=' + errs.length + (errs[0] ? ' "' + errs[0].slice(0, 200) + '"' : ''));
+    await pgf.close();
+  }
+
   // ---------------- C3 refuse: the GF plan without markings ----------------
   const pg3 = await openPage(br, port, 'raw');
   await openViaChooser(pg3, [RAW_GF].concat(SET.slice(1)));
@@ -211,8 +267,8 @@ async function openViaChooser(pg, files) {
   await pg3.close();
 
   await br.close(); server.close();
-  say('screenshots: ' + ['l3_imported_sheets.png', 'l3_converted_duplex.png', 'l3_converted_front.png'].map(f => path.join(SHOTS, f)).join(' , '));
-  say('SUMMARY fail=' + fail + ' gap=' + gaps + ' (gap = C1 FILLS, named, not a pass)');
+  say('screenshots: ' + ['l3_imported_sheets.png', 'l3_converted_duplex.png', 'l3_converted_front.png', 'l3b_fills.png'].map(f => path.join(SHOTS, f)).join(' , '));
+  say('SUMMARY fail=' + fail + ' gap=' + gaps);
   fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');
   process.exit(fail ? 1 : 0);
 })().catch(e => { say('ERR ' + e.stack); try { fs.writeFileSync(LOG, lines.join('\n') + '\n'); } catch (x) {} process.exit(1); });
