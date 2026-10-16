@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 385,
-      "unit": "EA",
+      "rate": 90.57,
+      "unit": "M3",
       "desc": "Sapata de fundacao",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 1020,

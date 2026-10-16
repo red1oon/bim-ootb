@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 14500,
-      "unit": "EA",
+      "rate": 3411.16,
+      "unit": "M3",
       "desc": "基礎フーチング",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 38000,

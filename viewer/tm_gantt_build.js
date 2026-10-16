@@ -123,14 +123,40 @@
       }
       return { avgLength: {}, length: {} };
     })();
+    // §ARCH_AREA_WEIGHT (2026-08-12) — the M2 twin of _lin. Same single-source-of-truth wrapper
+    // shape as the two above; without it the live movie charges a 78m wall exactly what it charges
+    // a 1m one, which is what "ARCH comes on too fast" looks like on screen.
+    var _area = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._areaWeighting) {
+        return window.ScheduleAuthor._areaWeighting(db, window.RATES || {}, _frag.fragmented, SR, SD, NO, LR);
+      }
+      console.warn('§TM_AREA_WEIGHT_FALLBACK ScheduleAuthor not loaded — M2 classes NOT area-weighted');
+      return { avgArea: {}, area: {} };
+    })();
+    // §VOL_WEIGHT (2026-08-12) — the M3 twin, wired here for the same reason §HEAVY_MEMBER_SPEED_LIMIT
+    // had to be: the wizard path getting a weighting the live playback clock does not is exactly the
+    // fork §TM_DURATION_SYNC exists to prevent. Inert while no shipped class is priced M3 (see
+    // schedule_author.js _volumeWeighting header) — wired now so a repricing needs no code change.
+    var _vol = (function () {
+      if (window.ScheduleAuthor && window.ScheduleAuthor._volumeWeighting) {
+        return window.ScheduleAuthor._volumeWeighting(db, window.RATES || {}, _frag.fragmented, SR, SD, NO, LR);
+      }
+      return { avgVolume: {}, volume: {} };
+    })();
     function getInstallSecs(cls, rule, guid, bx, by, bz) {
       rule = rule || matchRule(cls);
       var realQty = (_frag.fragmented[cls] && guid != null && _frag.area[guid] != null) ? _frag.area[guid] : null;
       var hasGeom = bx > 0 || by > 0 || bz > 0;
       var clsAvgLen = _lin.avgLength[cls];
       var lengthRatio = (realQty == null && hasGeom && clsAvgLen > 0) ? Math.max(bx, by, bz) / clsAvgLen : null;
+      var clsAvgArea = _area.avgArea[cls];
+      var areaRatio = (realQty == null && lengthRatio == null && hasGeom && clsAvgArea > 0 &&
+                       _area.area[guid] > 0) ? _area.area[guid] / clsAvgArea : null;
+      var clsAvgVol = _vol.avgVolume[cls];
+      var volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
+                         clsAvgVol > 0 && _vol.volume[guid] > 0) ? _vol.volume[guid] / clsAvgVol : null;
       if (window.ScheduleAuthor && window.ScheduleAuthor._installSecs) {
-        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio);
+        return window.ScheduleAuthor._installSecs(cls, rule, LR, realQty, lengthRatio, areaRatio, volumeRatio);
       }
       // Fallback (ScheduleAuthor not loaded) — old per-element behavior, no area weighting.
       // §FUTURE-5A A1/B3 (applied 2026-09-02, queue item B-3): reads the SAME

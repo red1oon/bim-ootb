@@ -776,6 +776,9 @@
       var NO = window.SEQUENCE_NAME_OVERRIDES || [];
       var frag = SA._classFragmentation(db, RT) || { fragmented: {}, area: {} };
       var lin = SA._linearWeighting(db, RT) || { avgLength: {} };
+      // §ARCH_AREA_WEIGHT / §VOL_WEIGHT — the M2/M3 twins, so this recompute stays identical to injectGantt's getInstallSecs (§HR_COST_AGREE)
+      var area = (SA._areaWeighting && SA._areaWeighting(db, RT, frag.fragmented, SR, SD, NO, LRx)) || { avgArea: {}, area: {} };
+      var vol = (SA._volumeWeighting && SA._volumeWeighting(db, RT, frag.fragmented, SR, SD, NO, LRx)) || { avgVolume: {}, volume: {} };
       var rr = db.exec(
         'SELECT m.guid, m.ifc_class, m.element_name, ' +
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
@@ -795,7 +798,13 @@
         var hasGeom = bx > 0 || by > 0 || bz > 0;
         var avgLen = lin.avgLength[cls];
         var lengthRatio = (realQty == null && hasGeom && avgLen > 0) ? Math.max(bx, by, bz) / avgLen : null;
-        var secs = SA._installSecs(cls, rule, LRx, realQty, lengthRatio) || 0;
+        var avgArea = area.avgArea[cls];
+        var areaRatio = (realQty == null && lengthRatio == null && hasGeom && avgArea > 0 &&
+                         area.area[guid] > 0) ? area.area[guid] / avgArea : null;
+        var avgVol = vol.avgVolume[cls];
+        var volumeRatio = (realQty == null && lengthRatio == null && areaRatio == null && hasGeom &&
+                           avgVol > 0 && vol.volume[guid] > 0) ? vol.volume[guid] / avgVol : null;
+        var secs = SA._installSecs(cls, rule, LRx, realQty, lengthRatio, areaRatio, volumeRatio) || 0;
         var res = (rule && rule.resource) || '_DEFAULT';
         days[res] = (days[res] || 0) + secs / basis; n++;
       });

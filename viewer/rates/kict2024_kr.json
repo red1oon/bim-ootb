@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 105000,
-      "unit": "EA",
+      "rate": 24701.53,
+      "unit": "M3",
       "desc": "기초 푸팅",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 285000,

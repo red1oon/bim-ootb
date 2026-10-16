@@ -685,5 +685,5 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 41;
+  var _GANTT_CACHE_VERSION = 42;   // §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3 (PR #1317): install DURATIONS moved — a persisted v41 grid replays the old flat times, so regenerate
 };

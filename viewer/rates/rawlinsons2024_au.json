@@ -179,10 +179,11 @@
       "smm_section": "L30"
     },
     "IfcFooting": {
-      "rate": 540,
-      "unit": "EA",
+      "rate": 127.04,
+      "unit": "M3",
       "desc": "Foundation Footing",
-      "smm_section": "D20"
+      "smm_section": "D20",
+      "volFactor": 4.25074802767622
     },
     "IfcPile": {
       "rate": 1450,
