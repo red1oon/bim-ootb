@@ -794,6 +794,32 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
 
 **Report:** the std verdict by cause; rosetta_dx_shell std/old; all suites against a master baseline.
 
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-doors2`; baseline = master 550068a03).**
+- **Std set qualify: blocked, 8** (was 56). Walls, slabs and roof qualify.
+  - GF doors: 0 items. 6/6 have opening boxes, frames are absorbed, fills match the product, tags bind, heights come from the schedule + head frame.
+  - FF: 6 of 8 doors are clean.
+  - **The 8 left are all FF doors 150 and 152:** `no_host_cut` 2, `no_elevation_height` 2 (tag unmatched: no box), and their 4 casing outlines unattached (BA, BB, BF, C0).
+  - Cause (L1 writer fact): their host walls are model walls 1019 and 1014, in storey "Level 1", z 2.612..6.0. The FF cut at 4.3 m passes through them, but `std2d.py` draws walls by storey membership, so the FF plan omits them. With no drawn jamb, no opening box exists and no host is found.
+- rosetta_dx_shell:
+  - std 34 PASS / 1 FAIL: DW-doors L2, the same 2 doors; was 31/4. OV and FL now pass.
+  - old 33/3, unchanged: RF-d and DW-doors are the known findings.
+- **Old Duplex qualify:** 343 → 347. 4 new `fill_size_mismatch` dw 0.152 (GF doors). Its arcs are casing-inclusive (1.402), so the span overlaps the wall pieces, no opening box exists, and the fill is compared with the drawn wall gap (1.25). This is the rule-2 truth about drawings already ruled wrong (L2.6 F); no rule accepts it.
+- Implementation notes found while coding:
+  - Thin F5b stub candidates (e.g. AF, 20 mm) count as jamb pieces.
+  - A line's pieces are those with the band of a long parallel piece.
+  - When the door has an opening box, `doorStrip` takes the host from it: the two jamb pieces, parallel to the closed leaf. This is rule 4 by construction; without a box, the L2.6 passes and the bounded-span filter apply.
+- Tests:
+  - `test_std_rules` 38: DB1/2/4/5, DF0-3, DT1-3, DH3/4, BY1-7, plus the L2.6 set
+  - `test_qualify` 60: QG3 stated (file) / QG3b stated (model) / QBY
+  - `test_types` LB5 now uses the swing box
+- Regression:
+  - unit suites 18/18 fail=0
+  - rosetta_dx old 13/2 and std 15/0, unchanged
+  - rosetta_dx_section 9 + control, unchanged
+  - farm_heights: identical; t8: identical except timing
+  - rosetta_qualify: fail=0
+  - old marked copies: byte-identical (no `@BY`)
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
