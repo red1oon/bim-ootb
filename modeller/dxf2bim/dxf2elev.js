@@ -145,7 +145,7 @@
   /** doors: pending door ops matched to `elevdoor` clusters of the face their host wall touches. elevs: [{face, doors:[cluster...]}] */
   function applyDoorHeights(ops, elevs, cfg, opts) {
     var tol = typeof cfg.elev_tol === 'number' ? cfg.elev_tol : cfg.snap_tol, level = opts.level || 0, env = envelope(ops), out = [], rep = { elevation: 0, config: 0, none: 0 };
-    var walls = {}; ops.forEach(function (o) { if (o.op_type === 'DXF_WALL') walls[o.output_guid] = o; });
+    var sched = opts.schedule || null, walls = {}; ops.forEach(function (o) { if (o.op_type === 'DXF_WALL') walls[o.output_guid] = o; });
     function gapOp(w, code, extra) { return { op_type: 'DXF_GAP', params: Object.assign({ run_id: w.params.run_id, handle: w.params.handle, layer: w.params.layer, code: code }, extra || {}), input_guids: [], output_guid: null }; }
     ops.forEach(function (o) {
       if (!(o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.pending_elevation)) { out.push(o); return; }
@@ -169,7 +169,26 @@
       }
       if (found) { rep.elevation++; out.push(Object.assign({}, o, { params: Object.assign({}, P, { height: r6(found.z1 - found.z0), pending_elevation: false, height_source: 'elevation', face: found.face, elev_members: found.handles.slice() }) })); }
       else if (P.height_fallback !== null && P.height_fallback !== undefined) { rep.config++; out.push(Object.assign({}, o, { params: Object.assign({}, P, { height: P.height_fallback, pending_elevation: false, height_source: 'config' }) })); }
+      else if (sched && P.label !== undefined && sched[P.label] && sched[P.label].class === 'door' && typeof sched[P.label].height === 'number') {   // L2.6 C: the door schedule via the door's tag/label
+        rep.schedule = (rep.schedule || 0) + 1; var hf = typeof opts.schedule_head_frame === 'number' ? opts.schedule_head_frame : 0;   // L2.7 (2): opening = schedule leaf + the head frame the drawings do not draw (caller's CASING)
+        out.push(Object.assign({}, o, { params: Object.assign({}, P, { height: r6(sched[P.label].height + hf), leaf_height: sched[P.label].height, head_frame: hf, pending_elevation: false, height_source: 'schedule', schedule_label: P.label }) }));
+      }
       else { rep.none++; out.push(gapOp(o, 'GAP:no_elevation_height')); }
+    });
+    return { ops: out, report: rep };
+  }
+
+  // L2.6 A: wall heights the plan's markings state (@WALLTOP); never a default. desc: the plan's described markings; U: slab underside above (m) for the storey rule.
+  // Per-wall (handle:<h>,<z>) wins; the storey rule <level>,slab_above covers the other wall-height gaps of this plan. Only walls whose gap is GAP:no_elevation_height.
+  function applyWallTops(opsAfter, opsBefore, desc, level, U) {
+    var per = {}, storey = (desc.walltop || []).some(function (w) { return Math.abs(w.level - level) <= 1e-9 && w.rule === 'slab_above'; }), pend = {}, out = [], rep = { marking: 0, slab_above: 0 };
+    (desc.walltop_walls || []).forEach(function (w) { per[w.wall] = w.z; });
+    opsBefore.forEach(function (o) { if (o.op_type === 'DXF_WALL') pend[o.params.handle + '|' + o.params.part] = o; });
+    opsAfter.forEach(function (o) {
+      var w = o.op_type === 'DXF_GAP' && o.params.code === 'GAP:no_elevation_height' ? pend[o.params.handle + '|' + o.params.part] : null;
+      if (w && per[w.params.handle] !== undefined) { rep.marking++; out.push(Object.assign({}, w, { params: Object.assign({}, w.params, { base: 0, height: r6(per[w.params.handle] - level), pending_elevation: false, height_source: 'marking' }) })); return; }
+      if (w && storey && typeof U === 'number') { rep.slab_above++; out.push(Object.assign({}, w, { params: Object.assign({}, w.params, { base: 0, height: r6(U - level), pending_elevation: false, height_source: 'slab_above_marking' }) })); return; }
+      out.push(o);
     });
     return { ops: out, report: rep };
   }
@@ -247,5 +266,5 @@
     return { ops: out, unmatched_elev: unmatched };
   }
 
-  return { gapOpenings: gapOpenings, classifyOpenings: classifyOpenings, elevMarkOpenings: elevMarkOpenings, elevClusters: elevClusters, applyElevations: applyElevations, envelope: envelope, elevWallRects: elevWallRects, applyWallHeights: applyWallHeights, applyDoorHeights: applyDoorHeights };
+  return { gapOpenings: gapOpenings, classifyOpenings: classifyOpenings, elevMarkOpenings: elevMarkOpenings, elevClusters: elevClusters, applyElevations: applyElevations, envelope: envelope, elevWallRects: elevWallRects, applyWallHeights: applyWallHeights, applyDoorHeights: applyDoorHeights, applyWallTops: applyWallTops };
 });

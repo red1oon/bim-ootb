@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '1';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim_import.js'];
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js'];
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -41,7 +41,7 @@
   };
 
   var state = { sheets: null, gate: null, group: null, panel: null, last: null, linesOn: true };
-  var COL = { plan: 0x4fc3f7, elev: 0xffb74d, roof: 0x81c784, none: 0x8a8f99 };
+  var COL = { plan: 0x4fc3f7, elev: 0xffb74d, roof: 0x81c784, section: 0xce93d8, none: 0x8a8f99 };
 
   // ---- canvas: segments per sheet (drawing units) → world (metres) by role ----
   function segs2d(ents) {
@@ -66,13 +66,14 @@
   }
   // Display rule (stated, not geometry): entities on layers the pipeline READS (a non-ignore type in the sheet's layer map) are drawn
   // bright; every other entity (title block, grid, annotation, furniture) dim. Nothing is filtered out.
-  function mapsFor(role, Cf) { return role === 'plan' ? [Cf.MAP_PLAN] : role === 'elev' ? [Cf.MAP_ELEV, Cf.MAP_LEVL] : role === 'roof' ? [Cf.MAP_ROOF] : []; }
+  function mapsFor(role, Cf) { return role === 'plan' ? [Cf.MAP_PLAN] : role === 'elev' ? [Cf.MAP_ELEV, Cf.MAP_LEVL] : role === 'roof' ? [Cf.MAP_ROOF] : role === 'section' ? [Cf.MAP_SECT] : []; }
   function readLayer(Bm, maps, layer) { for (var i = 0; i < maps.length; i++) { var r = Bm.matchRule(layer, maps[i].rules); if (r && r.type !== 'ignore') return r.type; } return null; }
   function buildCanvas(sheets) {
     var THREE = window.THREE, A = window.A;
     if (!THREE || !A || !A.scene) { console.warn(TAG + ' canvas: no scene'); return null; }
     if (state.group) { A.scene.remove(state.group); state.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
-    var I = window.Dxf2BimImport, MK = window.Dxf2Marks, Cf = window.Dxf2ShellConfig, Bm = window.Dxf2Bim, Sh = window.Dxf2Shell;
+    var I = window.Dxf2BimImport, MK = window.Dxf2Marks, Cf0 = window.Dxf2ShellConfig, Bm = window.Dxf2Bim, Sh = window.Dxf2Shell;
+    var Cf = Object.assign({ CFG: Cf0.CFG, MARK_ALIGN_TOL: Cf0.MARK_ALIGN_TOL }, I.SETS[(state.gate && state.gate.set) || 'DX']);   // §L3.3 the set's layer maps
     var g = new THREE.Group(); g.name = 'dxf-sheets'; g.userData.dxfSheets = true;
     state.canvas = {};
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
@@ -90,6 +91,11 @@
         if (!al.map || !al.map.zOf) { console.warn(TAG + ' sheet=' + s.name + ' elevation does not align: not drawn ' + JSON.stringify(al.errors)); return; }
         var fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[s.face], ax = al.map.axis;
         w = function (h, v) { var a = al.map.toPlan(h), zz = al.map.zOf(v); return ax === 'X' ? [a, fc, zz] : [fc, a, zz]; };
+      } else if (s.role === 'section' && plans.length) {   // §L3.3 R5: on its cut plane; (h, v) -> map.axis = toPlan(h), cut axis = @CUT x units, z = zOf(v)
+        var sa = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), cp = String(s.cut).split(','), cutAx = cp[0], cutV = Number(cp[1]) * k;
+        if (!sa.map || !sa.map.zOf) { console.warn(TAG + ' sheet=' + s.name + ' section does not align: not drawn ' + JSON.stringify(sa.errors)); return; }
+        w = function (h, v) { var a = sa.map.toPlan(h), zz = sa.map.zOf(v); return cutAx === 'X' ? [cutV, a, zz] : [a, cutV, zz]; };
+        s.cutPlane = { axis: cutAx, value: cutV };
       } else { console.log(TAG + ' sheet=' + s.name + ' not drawn (role=' + (s.role || 'none') + ')'); return; }
       var bright = [], dim = [], skipped = {}, typeBox = {};
       s.dxf.entities.forEach(function (e) {
@@ -108,7 +114,7 @@
         var ls = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: COL[s.role] || COL.none, transparent: true, opacity: pair[1], depthWrite: false }));
         ls.name = 'dxf:' + s.name + (pair[1] < 0.5 ? ':dim' : ''); ls.userData.dxfSheet = s.name; ls.renderOrder = 2; g.add(ls);
       });
-      state.canvas[s.name] = { role: s.role, bright: bright.length / 6, dim: dim.length / 6, typeBox: typeBox, face: s.face || null };
+      state.canvas[s.name] = { role: s.role, bright: bright.length / 6, dim: dim.length / 6, typeBox: typeBox, face: s.face || null, cut: s.cutPlane || null };
       console.log(TAG + ' canvas sheet=' + s.name + ' role=' + s.role + ' segments read-layers=' + (bright.length / 6) + ' other=' + (dim.length / 6) + ' notDrawn=' + JSON.stringify(skipped) +
         ' box=' + JSON.stringify(Object.keys(typeBox).reduce(function (o, q) { o[q] = typeBox[q].map(function (v) { return Math.round(v * 1000) / 1000; }); return o; }, {})));
     });
@@ -151,6 +157,7 @@
     if (!s.role) return '<span class="dxf-role none">NO ROLE</span>';
     if (s.role === 'plan') return '<span class="dxf-role">PLAN @' + s.level + '</span>';
     if (s.role === 'elev') return '<span class="dxf-role">ELEV ' + s.face + '</span>';
+    if (s.role === 'section') return '<span class="dxf-role">SECTION ' + esc(s.cut) + '</span>';
     return '<span class="dxf-role">ROOF @' + s.roofZ + '</span>';
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -163,8 +170,11 @@
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
     });
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
+    if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
+      h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
     h += '</div><div class="ip-foot"><button class="dxf-btn" id="dxf-lines"></button><button class="dxf-btn primary" id="dxf-convert"' + (state.gate.ok ? '' : ' disabled') + '>' + ICON.box + '<span>Convert</span></button>' +
-      '<div id="dxf-status">' + (state.gate.ok ? 'Every sheet has a role. Convert builds walls, slabs, roof and cuts the openings.' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
+      '<div id="dxf-status">' + (state.gate.ok ? 'Qualifies (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
+        : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
     p.style.display = 'block';
@@ -183,13 +193,12 @@
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     state.sheets = window.Dxf2BimImport.readSheets(list);
-    state.gate = window.Dxf2BimImport.gate(state.sheets);
     state.last = null; state.linesOn = true;
+    await convertGate();
     state.sheets.forEach(function (s) {
       console.log(TAG + ' sheet=' + s.name + ' bytes=' + s.text.length + ' sha=' + s.sha.slice(0, 12) + ' marks=' + s.marks + ' role=' + (s.role || 'NONE') +
         (s.role === 'plan' ? ' level=' + s.level : s.role === 'elev' ? ' face=' + s.face : s.role === 'roof' ? ' roof=' + s.roofZ : ' why=' + s.why) + ' units=' + s.desc.units);
     });
-    console.log(TAG + ' gate ok=' + state.gate.ok + (state.gate.ok ? '' : ' refused=' + JSON.stringify(state.gate.refused)));
     buildCanvas(state.sheets);
     renderPanel();
     return { sheets: state.sheets.map(function (s) { return { name: s.name, role: s.role, why: s.why, level: s.level, face: s.face, roofZ: s.roofZ }; }), gate: state.gate };
@@ -199,10 +208,9 @@
   async function convert() {
     if (!state.sheets) throw new Error('no drawings open');
     var I = window.Dxf2BimImport;
-    if (!state.gate.ok) { console.log(TAGC + ' REFUSED ' + JSON.stringify(state.gate.refused)); status('Convert refused: ' + state.gate.refused.map(function (r) { return r.sheet + ' (' + r.reason + ')'; }).join('; ')); return { refused: state.gate.refused }; }
+    if (!state.gate || !state.gate.ok) { var gr = (state.gate && state.gate.refused) || [{ sheet: '(set)', reason: 'no gate' }]; console.log(TAGC + ' REFUSED ' + JSON.stringify(gr).slice(0, 600)); status('Convert refused: ' + gr.map(function (r) { return r.sheet + ' (' + r.reason + ')'; }).join('; ')); return { refused: gr }; }
     var t0 = performance.now();
-    var lib = await loadLibrary();
-    var R = I.convert(state.sheets, lib ? { library: lib } : {});
+    var lib = state.gate.lib, R = state.gate.R;   // the run the gate judged (qualifies): converted as judged, not re-run
     if (R.refused) { console.log(TAGC + ' REFUSED ' + JSON.stringify(R.refused)); status('Convert refused: ' + R.refused.map(function (r) { return r.sheet + ' (' + r.reason + ')'; }).join('; ')); return { refused: R.refused }; }
     var colorFor = window.ArcEditable && window.ArcEditable.colorFor ? function (c) { return window.ArcEditable.colorFor(c); } : null;
     var T = I.toOps(R, { colorFor: colorFor });
@@ -238,6 +246,28 @@
     return state.last;
   }
 
+  // ---- §L3.3 the ONE convert gate (shared with the L4 metadata editor): roles R1-R5 -> the pipeline with the local library subset
+  // -> Dxf2Qualify verdict on the run's own gaps. Convert is allowed only when roles pass AND the verdict qualifies. ----
+  async function convertGate() {
+    var I = window.Dxf2BimImport, roles = I.gate(state.sheets);
+    var g = { ok: false, set: roles.set, roles: roles, refused: roles.refused.slice(), verdict: null, R: null, lib: null };
+    if (roles.ok) {
+      g.lib = await loadLibrary();
+      var R = I.convert(state.sheets, g.lib ? { library: g.lib } : {}); g.R = R;
+      if (R.refused) g.refused = R.refused;
+      else {
+        g.verdict = R.verdict;
+        if (R.verdict.verdict !== 'qualifies') g.refused = [{ sheet: '(set)', reason: 'qualify verdict blocked: ' + R.verdict.blocking.length + ' blocking ' + JSON.stringify(R.verdict.counts) }];
+      }
+    }
+    g.ok = g.refused.length === 0;
+    state.gate = g;
+    console.log(TAG + ' gate ok=' + g.ok + ' set=' + g.set + ' roles=' + roles.ok + (g.verdict ? ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' counts=' + JSON.stringify(g.verdict.counts) : '') +
+      (g.ok ? '' : ' refused=' + JSON.stringify(g.refused).slice(0, 500)));
+    if (state.panel) renderPanel();
+    return g;
+  }
+
   // ---- §L3.2: the LOCAL library subset (git-ignored; BIMCompiler scripts/export_library_subset.js). Absent → null → GAP:lod400_library_unreachable ----
   var LIB_URL = 'dxf2bim/local/library_subset_duplex.json';
   async function loadLibrary() {
@@ -266,6 +296,6 @@
     inp.click();
   }
 
-  window.DxfImportUI = { pick: pick, openFiles: openFiles, convert: convert, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

@@ -16,6 +16,10 @@
  *                 first into modeller/dxf2bim/local/, git-ignored) instead of the DB equals the Node run element-for-element incl.
  *                 the 26 fills. Issue: the subset lost a candidate row, a mesh or a label, so a fill binds or sits differently.
  *   P7 DETERMINISM — two exports of the subset are byte-identical. Issue: the export is not a function of its inputs.
+ *   P8 VERDICT  — §L3.3: the module's dxf2qualify verdict (its own gaps + qualify input) equals the verdict on the Node run's
+ *                 dx_shell_gaps.json built as rosetta_qualify.js does (verdict, blocking and advisory by code). Issue: the port's
+ *                 gaps or qualify input drift, so the Modeller gate would pass/refuse a set the Node run judges otherwise.
+ * DXSET=std (§L3.3): the std set (out/marked_std + out/marked_std_shell, 8 sheets incl. ROOF + SECTION), the _std summary.
  *
  * Inputs (not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler) tests/dxf2bim/out/{marked,marked_shell}, deploy/component_library.db,
  * 2D_Layout/input/DX_extracted.db (labels only, exactly as the Node run: round trip, stated). Run the BIMCompiler rosetta_dx_shell.js first.
@@ -33,9 +37,12 @@ const sqlj = (db, q) => JSON.parse(cp.execFileSync('sqlite3', ['-json', '-readon
 const hashHex = s => crypto.createHash('sha256').update(s).digest('hex');
 say('BC=' + BC);
 
-const files = [['DX_FLOOR_GF_marked.dxf', 'marked'], ['DX_FLOOR_FF_marked.dxf', 'marked'], ['DX_FRONT_shell.dxf', 'marked_shell'], ['DX_REAR_shell.dxf', 'marked_shell'],
-  ['DX_LEFT_shell.dxf', 'marked_shell'], ['DX_RIGHT_shell.dxf', 'marked_shell'], ['DX_ROOF_shell.dxf', 'marked_shell']].map(([n, d]) => ({ name: n, text: fs.readFileSync(path.join(OUT, d, n), 'utf8') }));
-const ref = JSON.parse(fs.readFileSync(path.join(OUT, 'duplex_basic_shapes_elements.json'), 'utf8'));
+const STD = process.env.DXSET === 'std', SFX = STD ? '_std' : '', MD = STD ? 'marked_std' : 'marked', MS = STD ? 'marked_std_shell' : 'marked_shell';
+const fileList = [['DX_FLOOR_GF_marked.dxf', MD], ['DX_FLOOR_FF_marked.dxf', MD], ['DX_FRONT_shell.dxf', MS], ['DX_REAR_shell.dxf', MS], ['DX_LEFT_shell.dxf', MS], ['DX_RIGHT_shell.dxf', MS]]
+  .concat(STD ? [['DX_ROOF_marked.dxf', MD], ['DX_SECTION_marked.dxf', MD]] : [['DX_ROOF_shell.dxf', MS]]);
+const files = fileList.map(([n, d]) => ({ name: n, text: fs.readFileSync(path.join(OUT, d, n), 'utf8') }));
+const ref = JSON.parse(fs.readFileSync(path.join(OUT, 'duplex_basic_shapes_elements' + SFX + '.json'), 'utf8'));
+say('set=' + (STD ? 'std' : 'dx') + ' sheets=' + files.length);
 
 // library rows: the SAME queries rosetta_dx_shell.js runs (read-only)
 const LIBDB = path.join(BC, 'deploy/component_library.db'), SRC = path.join(BC, '2D_Layout/input/DX_extracted.db');
@@ -88,8 +95,8 @@ const fd = compare(ours, moved);
 check('P5 FALSIFY', 'the element comparator cannot fail (one element moved 2 mm must be the only difference)', fd.length === 1 && fd[0].indexOf(moved[mi].guid.slice(0, 8)) === 0, 'reported=' + fd.length + ' ' + fd.join('; '));
 // ---- §L3.2 P6/P7: the local library subset ----
 const SUBSET = path.join(__dirname, '..', 'dxf2bim', 'local', 'library_subset_duplex.json'), SUB2 = SUBSET.replace(/\.json$/, '.det2.json');
-const exportSubset = out => cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements.json'),
-  '--labels', path.join(OUT, 'duplex_basic_shapes_labels.json'), '--lib', LIBDB, '--out', out], { encoding: 'utf8' });
+const exportSubset = out => cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements' + SFX + '.json'),
+  '--labels', path.join(OUT, 'duplex_basic_shapes_labels' + SFX + '.json'), '--lib', LIBDB, '--out', out], { encoding: 'utf8' });
 const ex1 = exportSubset(SUBSET); say(ex1.trim().split('\n').map(l => '  ' + l).join('\n')); exportSubset(SUB2);
 const b1 = fs.readFileSync(SUBSET), b2 = fs.readFileSync(SUB2); fs.unlinkSync(SUB2);
 check('P7 DETERMINISM', 'two exports of the library subset differ (not a function of its inputs)', Buffer.compare(b1, b2) === 0, 'bytes=' + b1.length + ' sha256=' + crypto.createHash('sha256').update(b1).digest('hex'));
@@ -100,6 +107,20 @@ const dS = compare(oursS, ref.elements);
 check('P6 SUBSET', 'the module with the library subset JSON differs from the Node run (a lost candidate, mesh or label binds or places a fill differently)',
   dS.length === 0 && oursS.length === ref.elements.length && RS.fillHard.length === 0 && RS.run_id === ref.run_id,
   'module=' + oursS.length + ' node=' + ref.elements.length + ' fills=' + oursS.filter(e => /Door|Window/.test(e.class)).length + ' hard=' + JSON.stringify(RS.fillHard) + ' differ=' + dS.length + (dS.length ? ' ' + dS.slice(0, 6).join('; ') : ''));
+// ---- §L3.3 P8: the module's verdict == the verdict on the Node run's gaps, built as rosetta_qualify.js builds it ----
+{
+  const DD = path.join(BC, 'deploy/dev/'), QN = require(DD + 'dxf2qualify.js'), BN = require(DD + 'dxf2bim.js'), CN = require(DD + 'dxf2shell_config.js'), PN = require(DD + 'dxf-parser.js');
+  const SETN = STD ? CN.STD : Object.assign({}, CN, { QUALIFY: CN.QUALIFY }), G = JSON.parse(fs.readFileSync(path.join(OUT, MS, 'dx_shell_gaps.json'), 'utf8'));
+  const idOf = n => n.replace(/_(marked|shell)\.dxf$/, '');
+  const mapsOf = id => /FLOOR/.test(id) ? [SETN.MAP_PLAN] : id === 'DX_ROOF' ? [SETN.MAP_ROOF] : id === 'DX_SECTION' ? [CN.STD.MAP_SECT] : [SETN.MAP_ELEV, SETN.MAP_LEVL].concat(STD ? [CN.STD.EXCL_ELEV] : []);
+  const nf = files.map(f => ({ name: idOf(f.name), dxf: new PN().parseSync(f.text), layer_maps: mapsOf(idOf(f.name)) })).sort((a, b) => (a.name < b.name ? -1 : 1));
+  const pdeps = { DxfParser: PN, hashHex, library: [] };
+  const pops = {}; nf.filter(f => /FLOOR/.test(f.name)).forEach(f => { pops[f.name] = BN.run(files.find(x => idOf(x.name) === f.name).text, SETN.MAP_PLAN, CN.CFG, pdeps).ops; });
+  const vN = QN.qualify({ files: nf, plan_ops: pops, gaps: G.gaps, resolved: G.resolved }, SETN.QUALIFY), vM = RS.verdict;
+  const sum = v => JSON.stringify({ verdict: v.verdict, blocking: v.blocking.length, advisory: v.advisory.length, counts: v.counts, adv: v.advisory.map(x => x.code).sort(), shapes: v.by_shape });
+  check('P8 VERDICT', 'the module\'s qualify verdict differs from the verdict on the Node run\'s gaps (the gate would judge the set otherwise)', !!vM && sum(vM) === sum(vN),
+    'module=' + (vM ? sum(vM).slice(0, 300) : 'none') + (vM && sum(vM) === sum(vN) ? '' : ' | node=' + sum(vN).slice(0, 300)));
+}
 say('fills hard=' + JSON.stringify(R.fillHard) + ' fills=' + ours.filter(e => /Door|Window/.test(e.class)).length);
 say('SUMMARY fail=' + fail);
 fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');
